@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Clock } from "../core/clock.ts";
 import type { ModelClient, ModelRequest } from "../core/model-client.ts";
-import { createFixedRandom } from "../core/test-doubles.ts";
+import { createFixedRandom, createTestClock } from "../core/test-doubles.ts";
 import { bundleSourceFromRecorder } from "../evidence/bundle.ts";
 import { exportCombinedBundle } from "../evidence/combined-bundle.ts";
 import { buildEvidenceDag } from "../evidence/dag.ts";
@@ -29,7 +29,7 @@ import { readTaskGraph, type TaskGraph } from "./task-graph.ts";
  */
 
 const run = promisify(execFile);
-const clock: Clock = { now: () => 1_700_000_000_000, sleep: () => Promise.resolve() };
+const clock: Clock = createTestClock(1_700_000_000_000);
 
 let scratch = "";
 let repository = "";
@@ -136,9 +136,10 @@ function modelFor(
       if (inner === null) {
         const first = request.messages[0];
         const prompt = first?.role === "user" ? first.text : "";
+        const objective = prompt.split("\n\nEffective task contract (")[0] ?? prompt;
         inner = createFixtureModelClient({
           modelId: "fixture:worker",
-          turns: scripts[prompt] ?? [respondWithText("I do not know what to do.")],
+          turns: scripts[objective] ?? [respondWithText("I do not know what to do.")],
         });
       }
       return inner.generate(request);
@@ -383,18 +384,23 @@ describe("trying each task several ways", () => {
 
   const oneTask = { "add a shout to alpha": attemptWriting(1) };
 
-  it("writes exactly the record types it always did when each task is tried once", async () => {
+  it("preserves legacy records and adds shared controller accounting when each task is tried once", async () => {
     await parallel(oneTask);
 
-    // Pinned deliberately. A run that tries each task once must reach the ledger exactly as
-    // it did before any of the selection work existed, so a new record type showing up here
-    // is a regression rather than a detail.
+    // Shared accounting and outcome records extend the legacy chain; selection stays absent.
     const types = [...new Set(coordinator.records().map((record) => record.type))].sort();
     expect(types).toEqual([
+      "controller-assessment",
+      "controller-candidate",
+      "controller-configuration",
+      "controller-event",
+      "controller-graph",
+      "controller-transition",
       "file-set-declared",
       "gate-run",
       "gate-set-sealed",
       "merge-attempt",
+      "task-contract",
       "worker-finished",
       "worker-started",
     ]);
@@ -492,26 +498,35 @@ describe("trying each task several ways", () => {
       "add a shout to alpha": attemptWriting(1),
       "add a shout to alpha again": attemptWriting(1),
     };
-    await parallel(collide, {
+    const result = await parallel(collide, {
       redundancy: 2,
       byWorker: {
         "worker-1": attemptWriting(1),
         "worker-2": attemptWriting(4),
         "worker-3": attemptWriting(2),
-        // The winner of the second task writes the same file as the winner of the first,
-        // with different content, so the queue has a real conflict to refuse.
+        // Readiness determines arrival order. These winners conflict whichever arrives first.
         "worker-4": attemptWriting(6),
       },
     });
 
     const dag = buildEvidenceDag(coordinator.records(), coordinator.payloads());
-    expect(dag.claims.map((claim) => claim.evaluation.verdict).sort()).toEqual([
-      "unverified",
-      "verified",
-    ]);
+    expect(
+      dag.claims
+        .filter((claim) => claim.recordKind === "merge-attempt")
+        .map((claim) => claim.evaluation.verdict)
+        .sort(),
+    ).toEqual(["unverified", "verified"]);
     const refused = dag.claims.find((claim) => claim.evaluation.verdict === "unverified");
+    const rejected = result.queue?.landings.find((landing) => !landing.landed);
+    expect(
+      result.selections
+        .flatMap((selection) => (selection.winner === null ? [] : [selection.winner]))
+        .sort(),
+    ).toEqual(["worker-2", "worker-4"]);
+    expect(rejected).toBeDefined();
     expect(refused?.evaluation.reason).toBe("predicate-false");
-    expect(refused?.narrative).toMatch(/chose worker-4/);
+    expect(refused?.narrative).toContain(`chose ${rejected?.workerId}`);
+    expect(refused?.predicate).toBe(`landed == true && workerId == "${rejected?.workerId}"`);
   });
 
   it("offers only the winner to the queue, so the losers never conflict with it", async () => {
@@ -608,7 +623,8 @@ describe("running a declared task graph", () => {
 
     const result = await parallel(failing, { graph });
 
-    expect(result.workers.map((worker) => worker.task)).toEqual([shoutAlpha]);
+    expect(result.workers.length).toBeGreaterThan(0);
+    expect(result.workers.every((worker) => worker.task === shoutAlpha)).toBe(true);
 
     const dag = buildEvidenceDag(coordinator.records(), coordinator.payloads());
     const outcome = dag.claims.find((claim) => claim.recordKind === "task-graph-outcome");

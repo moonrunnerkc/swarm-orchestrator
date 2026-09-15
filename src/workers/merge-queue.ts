@@ -5,7 +5,9 @@ import type { GateStatus, LoopEvent } from "../core/loop-events.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import { harnessChildEnvironment } from "../exec/child-environment.ts";
 import type { IsolationBackend } from "../exec/execution-mode.ts";
+import type { ResourcePool } from "../exec/resource-pool.ts";
 import type { GateSetOptions } from "../gates/default-gates.ts";
+import { installFromLockfile } from "../gates/dependency-install.ts";
 import { assembleGateSet, defaultDiffBudget } from "../gates/engine.ts";
 import type { FileSetRegistry } from "../gates/file-set.ts";
 import type { GateContext, GateDefinition } from "../gates/gate-definition.ts";
@@ -24,7 +26,7 @@ import { judgeRatchet, type RatchetDecision } from "../gates/ratchet.ts";
 import { headCommit, mergeBranch, resetHard } from "./worktree.ts";
 
 /** Why a proposal did not land. Each one is handed back with the output that produced it. */
-type RejectionReason = "merge-conflict" | "gates" | "ratchet";
+type RejectionReason = "merge-conflict" | "gates" | "ratchet" | "cancelled";
 
 export interface QueueCandidate {
   readonly workerId: string;
@@ -68,6 +70,11 @@ export interface MergeQueueResult {
 }
 
 interface MergeQueueOptions {
+  readonly installDependencies?: boolean;
+  readonly remainingWallMs?: (() => number | null) | undefined;
+  readonly beforeAttempt?: (candidate: QueueCandidate, accepted: string) => Promise<void>;
+  readonly afterAttempt?: (landing: QueueLanding) => Promise<void>;
+  readonly commandPool?: ResourcePool | undefined;
   readonly isolation?: IsolationBackend;
   readonly abortSignal?: AbortSignal;
   readonly integrationPath: string;
@@ -98,7 +105,7 @@ const mergeAttemptSchema = z.object({
   branch: z.string().min(1),
   position: z.number().int().positive(),
   landed: z.boolean(),
-  reason: z.enum(["merge-conflict", "gates", "ratchet"]).nullable(),
+  reason: z.enum(["merge-conflict", "gates", "ratchet", "cancelled"]).nullable(),
   /** Whether this was the attempt the selection chose, or one that stepped in for it. */
   role: z.enum(["winner", "fallback"]),
   /** Where it ranked among the attempts at its task. One is the chosen one. */
@@ -131,6 +138,7 @@ export async function runMergeQueue(options: MergeQueueOptions): Promise<MergeQu
     harnessChildEnvironment(),
     options.isolation,
     options.abortSignal,
+    options.commandPool,
   );
   const criteriaRef = options.criteriaRef ?? options.baseCommit;
   const { detection, gates } = await assembleGateSet({
@@ -193,6 +201,16 @@ export async function runMergeQueue(options: MergeQueueOptions): Promise<MergeQu
     });
   };
 
+  if (options.installDependencies === true) {
+    const setup = await installFromLockfile({
+      workspace: options.integrationPath,
+      commands,
+      timeoutMs: options.remainingWallMs?.() ?? 300000,
+      evidence: options.evidence,
+      ...(options.abortSignal === undefined ? {} : { signal: options.abortSignal }),
+    });
+    if (!setup.succeeded) throw new Error(setup.detail);
+  }
   const baseContext = await context();
   const baseCycle = await runGateCycle(gates, baseContext, 0, {
     commands,
@@ -206,9 +224,11 @@ export async function runMergeQueue(options: MergeQueueOptions): Promise<MergeQu
   const landings: QueueLanding[] = [];
 
   for (const [index, candidate] of options.candidates.entries()) {
+    if (options.abortSignal?.aborted) break;
     const ranked = [candidate, ...(candidate.alternates ?? [])];
 
     for (const [rank, attempt] of ranked.entries()) {
+      await options.beforeAttempt?.(attempt, accepted);
       const landing = await tryCandidate({
         candidate: attempt,
         position: index + 1,
@@ -222,6 +242,7 @@ export async function runMergeQueue(options: MergeQueueOptions): Promise<MergeQu
         accepted,
         options,
       });
+      await options.afterAttempt?.(landing.landing);
       landings.push(landing.landing);
 
       if (landing.landing.landed) {
@@ -272,6 +293,7 @@ async function tryCandidate(
     options.integrationPath,
     candidate.branch,
     `land ${candidate.workerId}: ${candidate.task}`,
+    options.abortSignal,
   );
 
   if (!merge.merged) {
@@ -279,7 +301,7 @@ async function tryCandidate(
       measures: null,
       landing: await recordAttempt(attempt, {
         landed: false,
-        reason: "merge-conflict",
+        reason: options.abortSignal?.aborted ? "cancelled" : "merge-conflict",
         feedback:
           `Your branch could not be merged into the integration branch.\n` +
           `Conflicting file(s): ${merge.conflictingPaths.join(", ") || "unknown"}\n\n` +
@@ -294,6 +316,30 @@ async function tryCandidate(
     };
   }
 
+  if (options.installDependencies === true) {
+    const setup = await installFromLockfile({
+      workspace: options.integrationPath,
+      commands: attempt.commands,
+      timeoutMs: options.remainingWallMs?.() ?? 300000,
+      evidence: options.evidence,
+      ...(options.abortSignal === undefined ? {} : { signal: options.abortSignal }),
+    });
+    if (!setup.succeeded) {
+      await resetHard(options.integrationPath, attempt.accepted);
+      return {
+        measures: null,
+        landing: await recordAttempt(attempt, {
+          landed: false,
+          reason: "gates",
+          feedback: setup.detail,
+          commit: null,
+          cycle: null,
+          decision: null,
+          conflictingPaths: [],
+        }),
+      };
+    }
+  }
   const candidateContext = await attempt.context();
   const cycle = await runGateCycle(attempt.gates, candidateContext, attempt.position, {
     commands: attempt.commands,
@@ -302,13 +348,13 @@ async function tryCandidate(
   });
   const measures = await attempt.snapshot(candidateContext, cycle);
 
-  if (!isGreen(cycle)) {
+  if (!isGreen(cycle) || options.abortSignal?.aborted) {
     await resetHard(options.integrationPath, attempt.accepted);
     return {
       measures: null,
       landing: await recordAttempt(attempt, {
         landed: false,
-        reason: "gates",
+        reason: options.abortSignal?.aborted ? "cancelled" : "gates",
         feedback:
           "Your branch merged cleanly and then failed the gates on the integrated tree.\n\n" +
           describeFailuresForModel(cycle),

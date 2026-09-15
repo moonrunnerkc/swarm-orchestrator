@@ -9,6 +9,26 @@ import {
 
 const context = { currentDirectory: "/work/repo" };
 
+it("parses compact, detailed and JSON controller output without changing goal text", () => {
+  expect(
+    parseCommandLine(
+      ["parallel", "--details", "--no-tui", "--json", "--goal", "fix the API"],
+      context,
+    ),
+  ).toMatchObject({ details: true, tui: false, json: true, goal: "fix the API" });
+});
+
+it("requires an explicit supported bootstrap goal", () => {
+  expect(
+    parseCommandLine(["parallel", "--goal", "create a counter", "--bootstrap", "node"], context),
+  ).toMatchObject({ bootstrap: "node", goal: "create a counter" });
+  for (const argv of [
+    ["parallel", "--goal", "create", "--bootstrap", "python"],
+    ["parallel", "--tasks", "tasks.json", "--bootstrap", "node"],
+  ])
+    expect(() => parseCommandLine(argv, context)).toThrow("--bootstrap node requires");
+});
+
 /** Every test below drives the run command; replay has its own block. */
 function parseRun(argv: readonly string[], overrides = context): RunCommand {
   const parsed: CommandLine = parseCommandLine(argv, overrides);
@@ -602,4 +622,42 @@ describe("--attempts zero", () => {
   it("keeps the other counts positive, since zero steps could not run anything", () => {
     expect(() => parseCommandLine(["--max-steps", "0", "x y"], context)).toThrow(/positive/);
   });
+});
+
+it("parses separate shared budgets, resource classes and supplied goal checks", () => {
+  expect(
+    parseCommandLine(
+      [
+        "parallel",
+        "--goal",
+        "pagination",
+        "--goal-checks",
+        "checks.json",
+        "--max-tokens",
+        "500000",
+        "--repair-attempts",
+        "0",
+        "--model-concurrency",
+        "1",
+        "--test-concurrency",
+        "2",
+      ],
+      { currentDirectory: "/repo" },
+    ),
+  ).toMatchObject({
+    goalChecksFile: "/repo/checks.json",
+    maxTokens: 500000,
+    repairAttempts: 0,
+    modelConcurrency: 1,
+    testConcurrency: 2,
+  });
+});
+
+it("makes parallel lockfile setup explicit", () => {
+  expect(parseCommandLine(["parallel", "--goal", "fix cache", "--install"], context)).toMatchObject(
+    { command: "parallel", installDependencies: true },
+  );
+  expect(parseCommandLine(["parallel", "--goal", "fix cache"], context)).not.toHaveProperty(
+    "installDependencies",
+  );
 });

@@ -206,3 +206,27 @@ describe("amending the declared file set", () => {
     });
   });
 });
+
+it("replays declaration order and amendments without granting a fresh declaration on resume", async () => {
+  await evidence.record({
+    type: "tool-call",
+    actor: "model",
+    provenance: ["model"],
+    payload: { toolName: "write", kind: "write", decision: "allowed", facts: { path: "a.ts" } },
+  });
+  const registry = createFileSetRegistry(evidence);
+  await registry.declare(["a.ts"], "model");
+  const reopened = await openEvidenceSession({
+    root,
+    sessionId: evidence.sessionId,
+    clock: createTestClock(2000),
+  });
+  const recovered = createFileSetRegistry(reopened);
+  expect(checkFileSet(recovered.state(), ["a.ts"]).editedBeforeAuthorized).toEqual(["a.ts"]);
+  await expect(recovered.declare(["b.ts"], "model")).rejects.toThrow(FileSetAlreadyDeclaredError);
+  await recovered.amend(["a.ts", "b.ts"], "explicit recovered amendment", "user");
+  const replayed = createFileSetRegistry(reopened);
+  expect(replayed.state().declared).toEqual(["a.ts"]);
+  expect([...replayed.state().allowed].sort()).toEqual(["a.ts", "b.ts"]);
+  expect(checkFileSet(replayed.state(), ["a.ts"]).editedBeforeAuthorized).toEqual([]);
+});

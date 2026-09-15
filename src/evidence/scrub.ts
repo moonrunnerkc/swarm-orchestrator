@@ -91,6 +91,7 @@ const metricNames: ReadonlySet<string> = new Set([
   "completiontokens",
   "cachedinputtokens",
   "reasoningtokens",
+  "reservedtokens",
   "tokencount",
   "tokensused",
   "maxtokens",

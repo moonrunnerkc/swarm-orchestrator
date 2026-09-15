@@ -227,8 +227,25 @@ function stripPayloads(dag: EvidenceDag): unknown {
   };
 }
 
-function readVerifierScript(): Promise<string> {
-  return readFile(new URL("./verifier/verify.mjs", import.meta.url), "utf8");
+async function readVerifierScript(): Promise<string> {
+  const [verifier, controller] = await Promise.all([
+    readFile(new URL("./verifier/verify.mjs", import.meta.url), "utf8"),
+    readFile(new URL("./verifier/controller.mjs", import.meta.url), "utf8"),
+  ]);
+  const controllerImport = 'import { readControllerHistory } from "./controller.mjs";';
+  const cryptoImport = 'import { createHash } from "node:crypto";';
+  if (!verifier.includes(controllerImport) || !controller.includes(cryptoImport))
+    throw new Error(
+      "embedded verifier module layout changed; update and validate its standalone assembly",
+    );
+  const embedded = controller
+    .replace(cryptoImport, "")
+    .replace("export function readControllerHistory", "function readControllerHistory");
+  // The exported verifier remains one file importing only node builtins, as historical copies do.
+  return verifier.replace(
+    controllerImport,
+    `const readControllerHistory = (() => {${embedded}\nreturn readControllerHistory;})();`,
+  );
 }
 
 /** Beside the verifier and importing it, so the two ship together and share one predicate reader. */

@@ -14,3 +14,4 @@ limits reads later as a guarantee.
 | [0006](0006-one-cancellation-tree.md) | One place a run is stopped from | accepted |
 | [0007](0007-durable-run-state.md) | A run's state outlives its process | accepted |
 | [0008](0008-independent-verification.md) | The final word is a separate run | accepted |
+| [0009](0009-adaptive-goal-controller.md) | Complete goals through bounded integration repair | approved, implementation tracked |

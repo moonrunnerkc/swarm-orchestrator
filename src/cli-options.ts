@@ -260,6 +260,15 @@ export interface AddCaseCommand {
 
 /** N workers over git worktrees, then one merge queue that lands what they produced. */
 export interface ParallelCommand {
+  readonly details?: boolean;
+  readonly tui?: boolean;
+  readonly installDependencies?: boolean;
+  readonly bootstrap?: "node";
+  readonly goalChecksFile?: string;
+  readonly maxTokens?: number;
+  readonly repairAttempts?: number;
+  readonly modelConcurrency?: number;
+  readonly testConcurrency?: number;
   readonly command: "parallel";
   /**
    * One task per line, or a JSON task graph. A file rather than repeated flags, so a run is
@@ -343,6 +352,7 @@ export const usage = [
   "  swarm --version                                  which build this is",
   "    --redundancy <n>                               try each task n ways, land the best",
   "    --concurrency <n>                              how many may hold a worktree at once",
+  "    --bootstrap node                               establish Node 24 checks on an empty Git base",
   "",
   "    [--immutable <a,b>] [--json]                   the base, trusting nothing that made it",
   "    [--contract <file>] [--isolation <runtime[:image]>] [--bundle <dir>]",
@@ -361,6 +371,7 @@ export const usage = [
   "",
   "the screen:",
   "  --no-tui                     plain lines even on a terminal",
+  "  --details                    parallel: include worker events and the full assurance report",
   "  --color, --no-color          paint, or do not, whatever the terminal says",
   "  --open-evidence              open the review page when the run finishes",
   "  --no-open-evidence           never open it",
@@ -389,6 +400,7 @@ const switchFlags = new Set([
   "fix",
   "offline",
   "no-tui",
+  "details",
   "color",
   "no-color",
   "open-evidence",
@@ -574,6 +586,10 @@ export function parseCommandLine(
     const goal = flags.get("goal");
     const named = tasksFile !== undefined && tasksFile.trim().length > 0;
     const asked = goal !== undefined && goal.trim().length > 0;
+    if (flags.has("bootstrap") && (flags.get("bootstrap") !== "node" || !asked))
+      throw new InvalidCommandLineError(
+        "--bootstrap node requires --goal and supports an empty Git base with Node 24",
+      );
     if (named === asked) {
       throw new InvalidCommandLineError(
         named
@@ -585,6 +601,34 @@ export function parseCommandLine(
     }
     return {
       command: "parallel",
+      ...(flags.has("install") ? { installDependencies: true } : {}),
+      ...(flags.has("details") ? { details: true } : {}),
+      ...(flags.has("no-tui") ? { tui: false } : {}),
+      ...(flags.has("bootstrap") ? { bootstrap: "node" as const } : {}),
+      ...(flags.has("goal-checks")
+        ? { goalChecksFile: resolve(context.currentDirectory, flags.get("goal-checks") ?? "") }
+        : {}),
+      ...(flags.has("max-tokens")
+        ? { maxTokens: parseFlagCount(flags.get("max-tokens"), "--max-tokens") ?? 200_000 }
+        : {}),
+      ...(flags.has("repair-attempts")
+        ? {
+            repairAttempts:
+              parseFlagCount(flags.get("repair-attempts"), "--repair-attempts", 0) ?? 2,
+          }
+        : {}),
+      ...(flags.has("model-concurrency")
+        ? {
+            modelConcurrency:
+              parseFlagCount(flags.get("model-concurrency"), "--model-concurrency") ?? 1,
+          }
+        : {}),
+      ...(flags.has("test-concurrency")
+        ? {
+            testConcurrency:
+              parseFlagCount(flags.get("test-concurrency"), "--test-concurrency") ?? 1,
+          }
+        : {}),
       tasksFile: named ? resolve(context.currentDirectory, tasksFile) : null,
       goal: asked ? goal.trim() : null,
       isolation: flags.get("isolation") ?? null,

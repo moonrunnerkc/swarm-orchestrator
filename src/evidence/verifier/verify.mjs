@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 // Embedded bundle verifier for swarm-orchestrator evidence bundles.
 //
 // Dependency-free on purpose: it imports nothing outside node: builtins, so a reviewer can
@@ -14,6 +15,9 @@ import { createHash, createPublicKey, verify as verifySignature } from "node:cry
 import { readdirSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { readControllerHistory } from "./controller.mjs";
+
+export { readControllerHistory };
 
 const GENESIS = "genesis";
 const COMPARISONS = ["==", "!=", ">=", "<=", ">", "<"];
@@ -25,6 +29,8 @@ const SUBJECT_FIELD_BY_TYPE = {
   "gate-run": "gateId",
   "tool-call": "toolName",
   "attempt-selection": "taskId",
+  "goal-attempt-selection": "taskId",
+  "goal-candidate-verification": "workerId",
 };
 
 export function recordKindOf(type, payload) {
@@ -869,6 +875,37 @@ function collectChecks(directory) {
       `obligation conjunction implies ${accepted}`,
     );
   }
+  const setupIntents = new Map();
+  const setupSeen = new Set();
+  for (const entry of records.filter((candidate) => candidate.type === "dependency-install")) {
+    const setup = payloads.get(entry.payloadDigest);
+    let consistent = entry.actor === "harness" && setup?.version === 1;
+    if (setup?.phase === "intent") {
+      consistent &&= typeof setup.id === "string" && !setupSeen.has(setup.id);
+      setupSeen.add(setup.id);
+      setupIntents.set(setup.id, setup);
+    } else if (setup?.phase === "completed") {
+      const intent = setupIntents.get(setup.id);
+      consistent &&=
+        intent !== undefined &&
+        ["workspace", "argv", "lockDigest", "sourceDigest"].every(
+          (key) => canonicalJson(intent[key]) === canonicalJson(setup[key]),
+        ) &&
+        typeof setup.sourceAfter === "string" &&
+        (Number.isInteger(setup.exitCode) || setup.exitCode === null) &&
+        (typeof setup.unavailable === "string" || setup.unavailable === null) &&
+        setup.succeeded ===
+          (setup.exitCode === 0 &&
+            setup.unavailable === null &&
+            setup.sourceAfter === intent.sourceDigest);
+      setupIntents.delete(setup.id);
+    } else consistent = false;
+    record(
+      `dependency setup ${entry.sequence} re-derived`,
+      consistent,
+      "intent identity, process observation and source preservation determine setup status",
+    );
+  }
   for (const entry of records.filter(
     (candidate) => candidate.type === "independent-verification",
   )) {
@@ -890,12 +927,227 @@ function collectChecks(directory) {
       "the final verification cites the recorded requirement checks",
     );
   }
+  for (const entry of records.filter((candidate) => candidate.type === "goal-verification")) {
+    const reading = payloads.get(entry.payloadDigest);
+    const declaration = records.find(
+      (candidate) =>
+        candidate.type === "goal-contract" &&
+        candidate.sequence < entry.sequence &&
+        payloads.get(candidate.payloadDigest)?.digest === reading?.contractDigest,
+    );
+    const contract = payloads.get(declaration?.payloadDigest)?.contract;
+    let consistent =
+      contract?.version === 1 &&
+      sha256(canonicalJson(contract)) === reading?.contractDigest &&
+      reading?.policy === "goal-obligations-v1";
+    const requirements = contract?.requirements ?? [];
+    const checks = contract?.checks ?? [];
+    const obligations = reading?.obligations ?? [];
+    consistent &&=
+      requirements.length > 0 &&
+      requirements.length === obligations.length &&
+      new Set(requirements.map((requirement) => requirement.id)).size === requirements.length &&
+      new Set(checks.map((check) => check.id)).size === checks.length;
+    for (const [index, requirement] of requirements.entries()) {
+      const obligation = obligations[index];
+      consistent &&=
+        requirement.id === obligation?.id &&
+        requirement.checks.length === obligation?.checks?.length;
+      const statuses = [];
+      for (const [position, checkId] of requirement.checks.entries()) {
+        const definition = checks.find((check) => check.id === checkId);
+        const capturedRecord = records.find(
+          (candidate) =>
+            candidate.type === "goal-check" &&
+            candidate.sequence > declaration.sequence &&
+            candidate.sequence < entry.sequence &&
+            candidate.payloadDigest === obligation?.checks?.[position],
+        );
+        const captured = payloads.get(capturedRecord?.payloadDigest);
+        const status =
+          captured?.observation?.unavailable !== null
+            ? "unjudged"
+            : captured?.observation?.exitCode === 0 && captured?.unchanged === true
+              ? "accepted"
+              : "rejected";
+        consistent &&=
+          definition !== undefined &&
+          capturedRecord !== undefined &&
+          captured?.checkId === checkId &&
+          captured?.contractDigest === reading.contractDigest &&
+          captured?.tree === reading.tree &&
+          captured?.command === definition.command &&
+          captured?.author === definition.author &&
+          captured?.exposure === definition.exposure &&
+          captured?.status === status;
+        statuses.push(status);
+      }
+      const status =
+        statuses.length === 0 || statuses.includes("unjudged")
+          ? "unjudged"
+          : statuses.every((status) => status === "accepted")
+            ? "accepted"
+            : "rejected";
+      consistent &&= obligation?.status === status;
+    }
+    record(
+      `goal obligations ${entry.sequence} re-derived`,
+      consistent &&
+        reading?.accepted === obligations.every((obligation) => obligation.status === "accepted"),
+      "every pinned requirement is bound to its captured check observations",
+    );
+  }
+  for (const entry of records.filter(
+    (candidate) => candidate.type === "independent-verification",
+  )) {
+    const reading = payloads.get(entry.payloadDigest);
+    if (reading?.certificationPolicy !== "goal-obligations-v1") continue;
+    const observed = records
+      .filter(
+        (candidate) =>
+          candidate.type === "goal-verification" && candidate.sequence < entry.sequence,
+      )
+      .at(-1);
+    const goal = payloads.get(observed?.payloadDigest);
+    record(
+      `independent goal ${entry.sequence} bound`,
+      goal === undefined
+        ? reading.verified === false
+        : canonicalJson(goal) === canonicalJson(reading.goalAcceptance) &&
+            reading.verified === (reading.regression === "pass" && goal.accepted === true),
+      "final goal policy binds independent regression and goal observations",
+    );
+  }
+  for (const assessment of goalSelectionConformance(records, payloads))
+    record(
+      `goal alternatives ${assessment.sequence} re-derived`,
+      assessment.problems.length === 0,
+      assessment.problems.join("; ") || "complete obligations precede the declared objective",
+    );
+  if (
+    records.some(
+      (entry) =>
+        entry.type === "controller-graph" ||
+        entry.type === "bootstrap-stage" ||
+        (entry.type === "controller-launch" &&
+          payloads.get(entry.payloadDigest)?.spec?.bootstrap !== undefined),
+    )
+  ) {
+    const board = readControllerHistory(records, payloads);
+    record(
+      "controller history re-derived",
+      board.problems.length === 0,
+      board.problems.join("; ") || "bounded graph revisions and effect ordering agree",
+    );
+  }
+  for (const entry of records.filter((candidate) => candidate.type === "controller-assessment")) {
+    const reading = payloads.get(entry.payloadDigest);
+    const prior = records.filter((candidate) => candidate.sequence < entry.sequence);
+    const declaration = prior.find(
+      (candidate) =>
+        candidate.type === "controller-event" &&
+        payloads.get(candidate.payloadDigest)?.kind === "work-declared",
+    );
+    const declared = payloads.get(declaration?.payloadDigest)?.tasks ?? [];
+    const tasks = reading?.tasks ?? [];
+    const goal = prior.find((candidate) => candidate.type === "goal-contract");
+    const requirements = payloads.get(goal?.payloadDigest)?.contract?.requirements ?? [];
+    const verificationRecord = prior
+      .filter((candidate) => candidate.type === "independent-verification")
+      .at(-1);
+    const verification = payloads.get(verificationRecord?.payloadDigest);
+    let consistent =
+      ["controller-outcome-v1", "controller-outcome-v2"].includes(reading?.policy) &&
+      declared.length > 0 &&
+      tasks.length === declared.length &&
+      reading?.requirements?.length === requirements.length;
+    if (reading?.policy === "controller-outcome-v2") {
+      const board = readControllerHistory(prior, payloads);
+      consistent &&=
+        board.problems.length === 0 &&
+        board.graph?.revision === reading.graphRevision &&
+        equalIds(
+          board.graph?.obligations ?? [],
+          declared.map((task) => task.id),
+        );
+      for (const [index, task] of declared.entries()) {
+        const current = tasks[index];
+        const members =
+          board.graph?.nodes
+            .filter((node) => node.obligations.includes(task.id))
+            .map((node) => node.id) ?? [];
+        const allAccepted = members.length > 0 && members.every((id) => board.accepted.has(id));
+        consistent &&=
+          current?.id === task.id &&
+          equalIds(current?.members ?? [], members) &&
+          (current?.state === "accepted") === allAccepted &&
+          (!allAccepted ||
+            members.some((id) => board.accepted.get(id)?.workerId === current.workerId));
+      }
+    } else {
+      for (const [index, task] of declared.entries()) {
+        const current = tasks[index];
+        const workers = prior
+          .filter(
+            (candidate) =>
+              candidate.type === "worker-finished" &&
+              payloads.get(candidate.payloadDigest)?.taskId === task.id,
+          )
+          .map((candidate) => payloads.get(candidate.payloadDigest));
+        const landed = workers.find((worker) =>
+          prior.some(
+            (candidate) =>
+              candidate.type === "merge-attempt" &&
+              payloads.get(candidate.payloadDigest)?.workerId === worker.workerId &&
+              payloads.get(candidate.payloadDigest)?.landed === true,
+          ),
+        );
+        consistent &&=
+          current?.id === task.id &&
+          (current?.state === "accepted") === (landed !== undefined) &&
+          (landed === undefined || current.workerId === landed.workerId);
+      }
+    }
+    for (const [index, requirement] of requirements.entries()) {
+      consistent &&=
+        reading.requirements[index]?.id === requirement.id &&
+        reading.requirements[index]?.status ===
+          (verification?.goalAcceptance?.obligations.find(
+            (obligation) => obligation.id === requirement.id,
+          )?.status ?? "unjudged");
+    }
+    const integrated = tasks.length > 0 && tasks.every((task) => task.state === "accepted");
+    const accepted =
+      integrated &&
+      reading.status !== "cancelled" &&
+      verification?.verified === true &&
+      requirements.length > 0 &&
+      reading.requirements.every((requirement) => requirement.status === "accepted");
+    const status =
+      reading.status === "cancelled"
+        ? "cancelled"
+        : accepted
+          ? "accepted"
+          : integrated && goal === undefined
+            ? "integrated"
+            : "blocked";
+    record(
+      `controller outcome ${entry.sequence} re-derived`,
+      consistent &&
+        reading.goalAccepted === accepted &&
+        reading.status === status &&
+        reading.exitCode ===
+          (status === "cancelled" ? 130 : ["accepted", "integrated"].includes(status) ? 0 : 1),
+      "all declared tasks and requirements govern the terminal outcome",
+    );
+  }
   for (const entry of records.filter((candidate) => candidate.type === "run-assessment")) {
     const assessment = payloads.get(entry.payloadDigest);
     const inputs = assessment?.inputs;
     const verdict = assessment?.verdict;
     let consistent =
-      inputs?.policy === "run-acceptance-v1" && typeof verdict?.acceptable === "boolean";
+      ["run-acceptance-v1", "run-acceptance-v2"].includes(inputs?.policy) &&
+      typeof verdict?.acceptable === "boolean";
     const prior = records.filter((candidate) => candidate.sequence < entry.sequence);
     const lookupKind = (digest, kind) =>
       prior.some((candidate) => candidate.payloadDigest === digest && candidate.type === kind);
@@ -944,6 +1196,20 @@ function collectChecks(directory) {
       )
       .map((bond) => bond.payload.gateId);
     consistent &&= JSON.stringify(blockingVacuous) === JSON.stringify(inputs?.vacuousBlockingBonds);
+    const requiredChecks = inputs?.policy === "run-acceptance-v2" ? inputs.requiredChecks : [];
+    if (inputs?.policy === "run-acceptance-v2") {
+      const contract = payloads.get(inputs.contractRecord);
+      consistent &&=
+        lookupKind(inputs.contractRecord, "task-contract") &&
+        contract?.phase === "effective" &&
+        Array.isArray(requiredChecks) &&
+        canonicalJson(contract.requiredChecks) === canonicalJson(requiredChecks);
+    }
+    const requiredPassed =
+      Array.isArray(requiredChecks) &&
+      requiredChecks.every((id) =>
+        gates.some((gate) => gate?.gateId === id && gate.status === "passed"),
+      );
     const failed = gates.some((gate) => gate?.severity === "blocking" && gate.status === "failed");
     const policyFailed = gates.some(
       (gate) => gate?.capability === "policy" && gate.status === "failed",
@@ -954,6 +1220,7 @@ function collectChecks(directory) {
       (dynamic.some((gate) => gate.status === "passed") &&
         !dynamic.some((gate) => gate.status === "failed"));
     const acceptable =
+      requiredPassed &&
       inputs?.settled === "green" &&
       base?.accepted === true &&
       inputs?.cancelled === false &&
@@ -984,6 +1251,10 @@ function namesChainHead(payloads, chainHead) {
     }
   }
   return false;
+}
+
+function equalIds(left, right) {
+  return canonicalJson(left) === canonicalJson(right);
 }
 
 export function verifyBundle(directory, write = console.log) {
@@ -1067,4 +1338,170 @@ if (entry === import.meta.url) {
   const target = process.argv[2] ?? ".";
   console.log(`verifying bundle at ${target}`);
   process.exitCode = verifyBundle(target);
+}
+
+/** Independently re-read eligibility, usage and ordering; a selection cannot testify about itself. */
+export function goalSelectionConformance(records, payloads) {
+  return records
+    .filter((entry) => entry.type === "goal-attempt-selection")
+    .map((entry) => {
+      const problems = [];
+      const require = (condition, reason) => {
+        if (!condition) throw new Error(reason);
+      };
+      try {
+        const selection = payloads.get(entry.payloadDigest);
+        require(entry.actor === "harness" &&
+          selection?.policy ===
+            "complete-goal-selection-v1", "goal selection lacks harness authority or its declared policy");
+        const prior = records.filter((record) => record.sequence < entry.sequence);
+        const declaration = prior.find(
+          (record) => record.type === "goal-contract" && record.actor === "harness",
+        );
+        const contract = payloads.get(declaration?.payloadDigest)?.contract;
+        require(contract &&
+          Array.isArray(contract.requirements) &&
+          contract.requirements.length > 0, "goal selection has no pinned requirement set");
+        require(selection.objective ===
+          (contract.selection === "cost"
+            ? "reported-model-tokens"
+            : contract.selection), "goal selection changed the declared objective");
+        const candidates = selection.candidates;
+        require(Array.isArray(candidates) &&
+          candidates.length > 0 &&
+          new Set(candidates.map((candidate) => candidate.workerId)).size ===
+            candidates.length, "goal candidate identities are missing or duplicated");
+        for (const candidate of candidates) {
+          require(candidate.baseCommit ===
+            selection.baseCommit, "goal candidates do not share a base");
+          const captured = prior.find(
+            (record) =>
+              record.type === "controller-candidate" &&
+              record.actor === "harness" &&
+              payloads.get(record.payloadDigest)?.workerId === candidate.workerId,
+          );
+          const producer = payloads.get(captured?.payloadDigest);
+          require(producer &&
+            producer.taskId === selection.taskId &&
+            producer.baseCommit === selection.baseCommit &&
+            producer.attemptIndex ===
+              candidate.attemptIndex, "goal candidate lacks its captured task, base and attempt");
+          let obligations = [];
+          let regression = false;
+          if (candidate.verification !== null) {
+            const record = prior.find(
+              (record) =>
+                record.type === "goal-candidate-verification" &&
+                record.actor === "harness" &&
+                record.payloadDigest === candidate.verification,
+            );
+            const observation = payloads.get(record?.payloadDigest);
+            require(observation?.workerId === candidate.workerId &&
+              observation?.baseCommit ===
+                candidate.baseCommit, "goal candidate cites another attempt's verification");
+            const verified = observation.verification;
+            const goalRecord = prior
+              .filter(
+                (one) =>
+                  one.sequence < record.sequence &&
+                  one.type === "goal-verification" &&
+                  one.actor === "harness",
+              )
+              .at(-1);
+            const goal = payloads.get(goalRecord?.payloadDigest);
+            require(goal &&
+              canonicalJson(goal) === canonicalJson(verified.goalAcceptance) &&
+              goal.tree ===
+                observation.tree, "candidate verification is not bound to its goal observations and tree");
+            require(verified.verified ===
+              (verified.regression === "pass" &&
+                goal.accepted === true), "candidate verification disagrees with its goal policy");
+            obligations = goal.obligations.map((obligation) => ({
+              id: obligation.id,
+              accepted: obligation.status === "accepted",
+            }));
+            regression =
+              producer.green &&
+              verified.regression === "pass" &&
+              !verified.checks.some((check) => check.status === "failed");
+            require(candidate.changedFiles === observation.changedFiles &&
+              candidate.changedLines ===
+                observation.changedLines, "candidate change size differs from the captured Git observation");
+          }
+          require(canonicalJson(candidate.obligations) === canonicalJson(obligations) &&
+            candidate.regressionPassed ===
+              regression, "selection altered its candidate acceptance");
+          const events = prior
+            .filter((record) => record.type === "controller-event" && record.actor === "harness")
+            .map((record) => payloads.get(record.payloadDigest));
+          const calls = events.filter(
+            (event) => event?.kind === "usage-reserved" && event.activity === candidate.workerId,
+          );
+          let count = calls.length > 0 ? 0 : null;
+          for (const call of calls) {
+            const settled = events.find(
+              (event) => event?.kind === "usage-settled" && event.id === call.id,
+            );
+            if (
+              settled?.status !== "reported" ||
+              !Number.isInteger(settled.inputTokens) ||
+              !Number.isInteger(settled.outputTokens)
+            ) {
+              count = null;
+              break;
+            }
+            count += settled.inputTokens + settled.outputTokens;
+          }
+          require(candidate.tokenCount ===
+            count, "selection altered reported or unknown provider usage");
+          const missing = contract.requirements.filter(
+            (requirement) =>
+              requirement.checks.length === 0 ||
+              !obligations.some((observed) => observed.id === requirement.id && observed.accepted),
+          );
+          const reason =
+            candidate.verification === null
+              ? "no independent verification"
+              : !regression
+                ? "required integrated checks did not pass"
+                : missing.length > 0
+                  ? `unaccepted requirements: ${missing.map((requirement) => requirement.id).join(", ")}`
+                  : null;
+          require(candidate.eligible === (reason === null) &&
+            candidate.reason ===
+              reason, "goal eligibility does not cover every pinned requirement");
+        }
+        const eligible = candidates.filter((candidate) => candidate.eligible);
+        const measured = eligible.some((candidate) => candidate.tokenCount !== null);
+        const ordered = [...eligible]
+          .sort((left, right) => {
+            if (selection.objective === "reported-model-tokens" && measured) {
+              if (left.tokenCount === null)
+                return right.tokenCount === null ? left.attemptIndex - right.attemptIndex : 1;
+              if (right.tokenCount === null) return -1;
+              if (left.tokenCount !== right.tokenCount) return left.tokenCount - right.tokenCount;
+            }
+            if (selection.objective !== "stable") {
+              const size =
+                left.changedLines - right.changedLines || left.changedFiles - right.changedFiles;
+              if (size !== 0) return size;
+            }
+            return left.attemptIndex - right.attemptIndex;
+          })
+          .map((candidate) => candidate.workerId);
+        require(canonicalJson(ordered) === canonicalJson(selection.order) &&
+          selection.winner ===
+            (ordered[0] ??
+              null), "goal ranking disagrees with its declared objective and stable tie-break");
+        const abstentions =
+          selection.objective === "reported-model-tokens" && !measured
+            ? ["provider token usage was not measured; monetary cost is also unavailable"]
+            : [];
+        require(canonicalJson(abstentions) ===
+          canonicalJson(selection.abstentions), "goal selection hides an unmeasured dimension");
+      } catch (cause) {
+        problems.push(cause instanceof Error ? cause.message : String(cause));
+      }
+      return { sequence: entry.sequence, problems };
+    });
 }

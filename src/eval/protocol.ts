@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { digestOfJson } from "../evidence/canonical-json.ts";
 import { freezeJson } from "../evidence/frozen-json.ts";
+import { type GoalCampaignProtocol, goalCampaignProtocolSchema } from "./goal-protocol.ts";
 
 const digest = z.string().regex(/^sha256:[0-9a-f]{64}$/);
 const identifier = z.string().min(1);
@@ -60,16 +61,29 @@ export const campaignProtocolSchema = z
   });
 export type CampaignProtocol = z.infer<typeof campaignProtocolSchema>;
 
-export function freezeProtocol(input: unknown): { protocol: CampaignProtocol; digest: string } {
-  const protocol = freezeJson(campaignProtocolSchema.parse(input));
+export type FrozenCampaignProtocol = CampaignProtocol | GoalCampaignProtocol;
+export function freezeProtocol(input: unknown): {
+  protocol: FrozenCampaignProtocol;
+  digest: string;
+} {
+  const protocol = freezeJson(
+    z.union([campaignProtocolSchema, goalCampaignProtocolSchema]).parse(input),
+  );
   return { protocol, digest: digestOfJson(protocol) };
 }
 
-export function protocolSchedule(protocol: CampaignProtocol) {
+export function protocolSchedule(protocol: FrozenCampaignProtocol) {
   const sealed = freezeProtocol(protocol);
-  return sealed.protocol.cases.flatMap((one, index) =>
-    protocol.seeds.flatMap((seed) => {
-      const arms = index % 2 === 0 ? protocol.arms : [...protocol.arms].reverse();
+  const fixed = sealed.protocol;
+  return fixed.cases.flatMap((one, index) =>
+    fixed.seeds.flatMap((seed) => {
+      const offset = (index + fixed.seeds.indexOf(seed)) % fixed.arms.length;
+      const arms =
+        fixed.version === 1
+          ? index % 2 === 0
+            ? fixed.arms
+            : [...fixed.arms].reverse()
+          : [...fixed.arms.slice(offset), ...fixed.arms.slice(0, offset)];
       return arms.map((arm) => ({
         caseId: one.id,
         repository: one.repository,

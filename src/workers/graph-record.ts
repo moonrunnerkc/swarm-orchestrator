@@ -6,9 +6,7 @@ import { overlapsIn, type TaskGraph } from "./task-graph.ts";
 export class TaskGraphAlreadyDeclaredError extends Error {
   constructor() {
     super(
-      "a task graph was already declared for this run. A graph is declared once, before any " +
-        "node starts; widening it after the fact would describe what happened rather than " +
-        "what was intended. Start another run.",
+      "a task graph was already declared for this run. The initial graph is declared once, before any node starts. Use a bounded controller revision that preserves the authorized goal, obligations and permissions.",
     );
     this.name = "TaskGraphAlreadyDeclaredError";
   }

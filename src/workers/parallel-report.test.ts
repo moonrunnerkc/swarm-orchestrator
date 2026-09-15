@@ -10,6 +10,8 @@ const evidence = { sessionId: "s" } as EvidenceRecorder;
 
 function worker(overrides: Partial<WorkerResult> = {}): WorkerResult {
   return {
+    baseCommit: "c".repeat(40),
+    graphRevision: "initial",
     workerId: "worker-1",
     taskId: "task-1",
     attemptIndex: 0,
@@ -45,6 +47,18 @@ function landing(overrides: Partial<QueueLanding> = {}): QueueLanding {
 
 function report(overrides: Partial<ParallelRunResult> = {}): string {
   const result: ParallelRunResult = {
+    outcome: {
+      policy: "controller-outcome-v1",
+      status: "integrated",
+      goalAccepted: false,
+      exitCode: 0,
+      tree: "t",
+      tasks: [],
+      requirements: [],
+      regression: "unmeasured",
+      usage: { spent: 0, reserved: 0, unknownCalls: 0, remaining: 0 },
+    },
+    verification: null,
     workers: [worker()],
     selections: [],
     sweptBranches: [],
@@ -145,7 +159,7 @@ describe("renderParallelReport", () => {
       headCommit: "c".repeat(40),
     });
 
-    expect(text).toMatch(/no worker produced anything for the queue/);
+    expect(text).toMatch(/no candidate satisfied the required eligibility checks/);
     expect(text).not.toContain("git merge");
   });
 });

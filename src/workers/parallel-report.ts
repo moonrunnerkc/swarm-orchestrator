@@ -21,6 +21,16 @@ export function renderParallelReport(
 ): readonly string[] {
   const lines = [
     "parallel run",
+    field("outcome", result.outcome.status),
+    field("goal acceptance", result.outcome.goalAccepted ? "accepted" : "not established"),
+    field(
+      "requirements",
+      `${result.outcome.requirements.filter((requirement) => requirement.status === "accepted").length}/${result.outcome.requirements.length} accepted`,
+    ),
+    field(
+      "token budget",
+      `${result.outcome.usage.remaining} remaining; ${result.outcome.usage.spent} reported; ${result.outcome.usage.reserved} reserved; ${result.outcome.usage.unknownCalls} unknown call(s)`,
+    ),
     field("repository", context.repositoryRoot),
     field("base", `${short(result.baseCommit)} (${context.baseRef})`),
     field("workers", String(result.workers.length)),
@@ -34,11 +44,20 @@ export function renderParallelReport(
     lines.push("", "chosen", ...result.selections.map(describeSelection));
   }
 
+  for (const selection of result.goalSelections ?? []) {
+    lines.push(
+      "",
+      `goal alternatives: ${selection.candidates.filter((candidate) => candidate.eligible).length}/${selection.candidates.length} acceptable; selected ${selection.winner ?? "none"} by ${selection.objective}`,
+    );
+    for (const candidate of selection.candidates.filter((candidate) => !candidate.eligible))
+      lines.push(`  ${candidate.workerId}: ${candidate.reason}`);
+    for (const abstention of selection.abstentions) lines.push(`  not measured: ${abstention}`);
+  }
+
   if (result.queue === null) {
     lines.push(
       "",
-      "no worker produced anything for the queue: every one of them finished red, so there",
-      "was nothing to arbitrate and the integration branch stands at the base.",
+      "no candidate satisfied the required eligibility checks; the integration branch stands at the base.",
     );
     return lines;
   }

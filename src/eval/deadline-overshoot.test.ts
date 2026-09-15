@@ -44,9 +44,9 @@ describe("reading a set of overshoot samples", () => {
  * outlives it, and the whole cancellation tree between them, from the deadline timer through the
  * abort to the process group being signalled and the run settling.
  *
- * Deterministic in that the budget and the child are fixed and the bound holds every run, not in
- * that the clock is faked. A faked clock measures zero overshoot by construction, which is the
- * one answer this cannot be allowed to give.
+ * The budget and child are fixed. Vitest runs this project after competing test processes
+ * finish; OS scheduling remains part of the measurement. A faked clock would measure zero
+ * overshoot by construction.
  */
 describe("how far past its deadline a run actually goes", () => {
   /**

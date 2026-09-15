@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 // Re-derivation for swarm-orchestrator evidence bundles.
 //
 // verify.mjs checks that a bundle is what it says it is. This script asks a harder question of
@@ -23,7 +24,9 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   evaluateClaim,
+  goalSelectionConformance,
   indexCitedRecords,
+  readControllerHistory,
   recomputeBondVerdict,
   sealConformance,
   sha256,
@@ -117,6 +120,29 @@ export function rederiveOracleBond(mutants) {
  * as impossible to check when 89 of them were determinate.
  */
 export function rederiveCiVerdict(verdict) {
+  if (verdict.certificationPolicy === "goal-obligations-v1") {
+    const obligations = verdict.goalAcceptance?.obligations;
+    if (
+      !Array.isArray(obligations) ||
+      obligations.length === 0 ||
+      !verdictVocabulary.regression.includes(verdict.regression) ||
+      obligations.some((entry) => !["accepted", "rejected", "unjudged"].includes(entry.status))
+    )
+      return {
+        rederived: false,
+        missing: ["goalAcceptance.obligations"],
+        reasons: [],
+        verified: null,
+      };
+    const verified =
+      verdict.regression === "pass" && obligations.every((entry) => entry.status === "accepted");
+    return {
+      rederived: true,
+      missing: [],
+      reasons: verified ? [] : ["goal-obligations-or-regression-refused"],
+      verified,
+    };
+  }
   if (verdict.certificationPolicy === "required-obligations-v1") {
     const obligations = verdict.acceptance?.obligations;
     if (
@@ -316,6 +342,30 @@ export function rederiveBundle(directory, log = console.log) {
     else
       disagree(
         `verification-command ${entry.sequence}: recorded ${payload.status}, the rule reads ${status}`,
+      );
+  }
+  if (
+    records.some(
+      (entry) =>
+        entry.type === "controller-graph" ||
+        entry.type === "bootstrap-stage" ||
+        (entry.type === "controller-launch" &&
+          payloads.get(entry.payloadDigest)?.spec?.bootstrap !== undefined),
+    )
+  ) {
+    const board = readControllerHistory(records, payloads);
+    if (board.problems.length > 0) disagree(`controller history: ${board.problems.join("; ")}`);
+    else
+      agree(
+        `controller history: graph revision ${board.graph?.ordinal}, ${board.accepted.size} currently accepted tasks`,
+      );
+  }
+  for (const selection of goalSelectionConformance(records, payloads)) {
+    if (selection.problems.length > 0)
+      disagree(`goal selection ${selection.sequence}: ${selection.problems.join("; ")}`);
+    else
+      agree(
+        `goal selection ${selection.sequence}: complete requirements, measured objective and stable order`,
       );
   }
   const parserByGate = new Map();

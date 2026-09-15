@@ -14,6 +14,7 @@ import { evaluateClaim, recordKindOf } from "./verifier/verify.mjs";
  */
 export interface CatalogueEntry {
   readonly type: RecordType;
+  readonly controllerOnly?: boolean;
   /** The payload field the kind is keyed on, or null where the type alone is the kind. */
   readonly subjectField: string | null;
   readonly example: string;
@@ -23,6 +24,118 @@ export interface CatalogueEntry {
 }
 
 export const predicateCatalogue: readonly CatalogueEntry[] = [
+  {
+    type: "dependency-install",
+    controllerOnly: true,
+    subjectField: null,
+    example: "succeeded == true",
+    sample: { phase: "completed", succeeded: true },
+    says: "authorized lockfile setup completed under the selected execution policy",
+  },
+  {
+    type: "bootstrap-stage",
+    controllerOnly: true,
+    subjectField: null,
+    example: 'phase == "ready"',
+    sample: { phase: "ready" },
+    says: "the explicit setup stage observed its pinned toolchain and both test controls",
+  },
+  {
+    type: "goal-candidate-verification",
+    controllerOnly: true,
+    subjectField: "workerId",
+    example: "verification.verified == true",
+    sample: { workerId: "worker-1", verification: { verified: true } },
+    says: "independent checks of one complete goal candidate",
+  },
+  {
+    type: "goal-attempt-selection",
+    controllerOnly: true,
+    subjectField: "taskId",
+    example: "winner != null",
+    sample: { taskId: "goal", winner: "worker-1" },
+    says: "a declared objective compared only independently acceptable complete goal candidates",
+  },
+  {
+    type: "controller-launch",
+    controllerOnly: true,
+    subjectField: null,
+    example: "spec.version == 1",
+    sample: { spec: { version: 1 } },
+    says: "the original pre-planning inputs and permissions",
+  },
+  {
+    type: "controller-configuration",
+    controllerOnly: true,
+    subjectField: null,
+    example: "spec.version == 1",
+    sample: { spec: { version: 1 } },
+    says: "the pinned controller inputs used by dispatch and recovery",
+  },
+  {
+    type: "controller-graph",
+    controllerOnly: true,
+    subjectField: null,
+    example: "ordinal == 0",
+    sample: { ordinal: 0 },
+    says: "bounded graph revision retaining original obligations and policy",
+  },
+  {
+    type: "controller-transition",
+    controllerOnly: true,
+    subjectField: null,
+    example: 'kind == "dispatch-intent"',
+    sample: { kind: "dispatch-intent" },
+    says: "durable controller intent or observed completion",
+  },
+  {
+    type: "controller-candidate",
+    controllerOnly: true,
+    subjectField: null,
+    example: "green == false",
+    sample: { green: false },
+    says: "retained candidate snapshot bound to an attempt and base",
+  },
+  {
+    type: "coordination-event",
+    controllerOnly: true,
+    subjectField: null,
+    example: 'kind == "dependency-request"',
+    sample: { kind: "dependency-request" },
+    says: "bounded attributed coordination proposal, never a success verdict",
+  },
+  {
+    type: "controller-assessment",
+    controllerOnly: true,
+    subjectField: null,
+    example: "goalAccepted == false",
+    sample: { goalAccepted: false },
+    says: "controller task states and final goal outcome",
+  },
+  {
+    type: "goal-contract",
+    controllerOnly: true,
+    subjectField: null,
+    example: "contract.version == 1",
+    sample: { contract: { version: 1 } },
+    says: "pinned goal requirements and authored executable checks",
+  },
+  {
+    type: "goal-check",
+    controllerOnly: true,
+    subjectField: null,
+    example: 'status == "rejected"',
+    sample: { status: "rejected" },
+    says: "a goal check observed on the exact integrated tree",
+  },
+  {
+    type: "goal-verification",
+    controllerOnly: true,
+    subjectField: null,
+    example: "accepted == false",
+    sample: { accepted: false },
+    says: "the conjunction of all pinned goal requirements",
+  },
   {
     type: "model-call-started",
     subjectField: null,
@@ -125,6 +238,14 @@ export const predicateCatalogue: readonly CatalogueEntry[] = [
       baseCommit: "a".repeat(40),
     },
     says: "everything the run is measured by, fixed before the model was asked for anything",
+  },
+  {
+    type: "controller-event",
+    controllerOnly: true,
+    subjectField: null,
+    example: 'kind == "usage-settled"',
+    sample: { kind: "usage-settled" },
+    says: "a typed controller lifecycle or resource observation",
   },
   {
     type: "task-contract",

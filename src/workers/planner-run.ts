@@ -5,12 +5,21 @@ import type { LoopEvent } from "../core/loop-events.ts";
 import type { ModelClient } from "../core/model-client.ts";
 import type { RandomSource } from "../core/random-source.ts";
 import type { StopReason } from "../core/termination.ts";
+import {
+  freezeGoalContract,
+  type GoalContract,
+  goalContractSchema,
+} from "../evidence/goal-contract.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
+import { defineTool } from "../tools/tool-definition.ts";
 import { createWorkspaceTools } from "../tools/workspace-tools.ts";
 import { createDeclareTaskGraphTool, type DeclaredGraph } from "./graph-tool.ts";
 import type { TaskGraph } from "./task-graph.ts";
 
 export interface PlannerOptions {
+  readonly requireGoalChecks?: boolean;
+  readonly maxTokens?: number;
+  readonly maxWallTimeMs?: number;
   readonly goal: string;
   readonly workspace: string;
   readonly homeDir: string;
@@ -24,20 +33,24 @@ export interface PlannerOptions {
 }
 
 const plannerPrompt = [
-  "You are breaking one goal into tasks that separate workers will carry out at the same time.",
-  "Read the workspace first: the decomposition has to fit the code that is actually there, not",
-  "a guess at it. You cannot change anything, and you are not being asked to.",
-  "Then call declare_task_graph once with the whole graph.",
-  "Each task needs a brief a worker can act on alone, and the files it intends to touch.",
-  "Two tasks that could run at the same time must not name the same file: if they do they will",
-  "be run one after the other, which costs the parallelism you were asked for. Where one task",
-  "genuinely needs another's work first, say so with dependsOn rather than sharing a file.",
-  "Prefer few tasks that are each worth a worker over many that are each a line.",
-  "Nothing you write here is a result. What the workers do with these briefs is what gets",
-  "measured, and whether these tasks add up to the goal is a judgement no gate here makes.",
+  "Plan a bounded engineering goal for the existing worker loop.",
+  "Read the relevant source, tests and manifest before declaring the graph. You cannot edit.",
+  "Preserve the user's exact behavioral requirements and existing interfaces. Do not invent",
+  "current symbols or replace required return shapes with a different interface.",
+  "Prefer ONE worker for a tiny goal or a tightly coupled change across a few small files.",
+  "Keep implementation and its maintained tests in the same task and authorized file set.",
+  "Use multiple tasks only for substantial work that can progress independently; agent count",
+  "is a resource decision, not a target. An API and its trivial wrapper rarely justify separate jobs.",
+  "Each task needs an actionable brief, intended source AND test files, and required check identities.",
+  "Declare real prerequisites with dependsOn. Unordered file overlap is serialized conservatively.",
+  "Call declare_task_graph once with the complete graph, then finish without narrating scheduler work.",
+  "The controller checks graph structure and can propose bounded revisions after observed failures.",
+  "Only independent final checks of the combined tree establish executable goal requirements.",
+  "Neither a valid graph nor model-authored checks guarantee that all user intent was captured.",
 ].join(" ");
 
 export interface PlannerOutcome {
+  readonly goalContract?: GoalContract | null;
   /** Null where the model never declared one. That is not the same as an empty graph. */
   readonly graph: TaskGraph | null;
   /**
@@ -62,6 +75,7 @@ export interface PlannerOutcome {
  */
 export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcome> {
   const declared: DeclaredGraph = { graph: null };
+  let goalContract: GoalContract | null = null;
 
   const { definitions, toolInvoker } = assembleToolset({
     workspace: options.workspace,
@@ -72,6 +86,38 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
     tools: (guard) => [
       ...createWorkspaceTools(guard).filter((tool) => tool.kind === "read"),
       createDeclareTaskGraphTool(declared),
+      ...(options.requireGoalChecks !== true
+        ? []
+        : [
+            defineTool({
+              name: "declare_goal_contract",
+              description:
+                "Pin observable requirements and executable acceptance checks before implementation. Checks are candidate instruments authored by this model, never independent ground truth. A requirement without executable coverage remains unjudged. Artifact paths must be new files used only by the verifier.",
+              inputSchema: goalContractSchema,
+              kind: "evidence",
+              pathsFrom: () => [],
+              execute(input) {
+                if (goalContract !== null)
+                  throw new Error(
+                    "goal checks already declared; their requirements cannot be overwritten",
+                  );
+                if (input.goal !== options.goal)
+                  throw new Error("the goal contract must retain the supplied goal verbatim");
+                goalContract = freezeGoalContract({
+                  ...input,
+                  checks: input.checks.map((check) => ({
+                    ...check,
+                    author: "model",
+                    exposure: "shared",
+                  })),
+                }).contract;
+                return Promise.resolve({
+                  text: "candidate goal checks pinned; the independent verifier will run these on the integrated tree",
+                  facts: { requirements: goalContract.requirements.length },
+                });
+              },
+            }),
+          ]),
     ],
   });
 
@@ -95,9 +141,16 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
     clock: options.clock,
     random: options.random,
     emit: options.emit,
-    budget: { maxSteps: options.maxSteps, maxTokens: 200_000, maxWallTimeMs: 10 * 60 * 1000 },
+    budget: {
+      maxSteps: options.maxSteps,
+      maxTokens: options.maxTokens ?? 200_000,
+      maxWallTimeMs: options.maxWallTimeMs ?? 10 * 60 * 1000,
+    },
     abortSignal: options.abortSignal,
-    systemPrompt: plannerPrompt,
+    systemPrompt:
+      options.requireGoalChecks === true
+        ? `${plannerPrompt} Before finishing, also call declare_goal_contract with the supplied goal verbatim, every observable requirement and executable checks that cover their combined behavior. Author new check artifacts that can run from a fresh checkout. Do not require a reference implementation. Prefer one worker for a tiny or tightly coupled goal. Requirements without executable checks will remain unjudged.`
+        : plannerPrompt,
     maxOutputTokens: 8192,
     retryPolicy: { attempts: 3, baseDelayMs: 500, maxJitterRatio: 0.5 },
   });
@@ -114,5 +167,10 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
     },
   });
 
-  return { graph: declared.graph, stopReason: loop.stopReason, steps: loop.steps };
+  return {
+    graph: declared.graph,
+    stopReason: loop.stopReason,
+    steps: loop.steps,
+    ...(options.requireGoalChecks === true ? { goalContract } : {}),
+  };
 }

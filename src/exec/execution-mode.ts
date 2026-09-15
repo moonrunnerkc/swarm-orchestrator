@@ -251,7 +251,7 @@ export interface ExecutionEnvelope {
   readonly backend: string;
   readonly writablePaths: readonly string[];
   readonly readOnlyPaths: readonly string[];
-  readonly network: "denied" | "unrestricted";
+  readonly network: "denied" | "unrestricted" | "unknown";
   readonly environmentPolicy: "built" | "inherited";
   /** How many names the parent held that the child did not get. */
   readonly credentialNamesWithheld: number;
@@ -273,15 +273,18 @@ export function describeExecutionEnvelope(input: {
   readonly repositoryConfigTrusted: boolean;
   readonly readOnlyPaths?: readonly string[] | undefined;
 }): ExecutionEnvelope {
-  const networkEscaped = input.selfTest.probes.some(
-    (probe) => probe.id === "network-egress" && !probe.contained,
-  );
+  const networkProbe = input.selfTest.probes.find((probe) => probe.id === "network-egress");
   return {
     mode: input.selfTest.mode,
     backend: input.selfTest.backend,
     writablePaths: [input.workspaceRoot],
     readOnlyPaths: input.readOnlyPaths ?? [],
-    network: networkEscaped ? "unrestricted" : "denied",
+    network:
+      networkProbe?.contained === true
+        ? "denied"
+        : networkProbe?.contained === false
+          ? "unrestricted"
+          : "unknown",
     environmentPolicy: "built",
     credentialNamesWithheld: input.withheldEnvironmentNames.length,
     repositoryConfigTrusted: input.repositoryConfigTrusted,

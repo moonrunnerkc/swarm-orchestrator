@@ -38,3 +38,10 @@ export declare function sealConformance(
   readonly sealed: { readonly sequence: number; readonly gates: number } | null;
   readonly problems: readonly string[];
 };
+
+export { readControllerHistory } from "./controller.mjs";
+
+export declare function goalSelectionConformance(
+  records: readonly Pick<LedgerRecord, "type" | "sequence" | "actor" | "payloadDigest">[],
+  payloads: ReadonlyMap<string, JsonValue>,
+): readonly { sequence: number; problems: readonly string[] }[];

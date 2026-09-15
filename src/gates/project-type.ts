@@ -11,15 +11,16 @@ export interface ProjectDetection {
    * name, to know whether it can ask the runner for a coverage report.
    */
   readonly nodeScriptCommands: Readonly<Record<string, string>>;
-  /** Tool sections found in pyproject.toml, so a python gate is only assembled if configured. */
+  /** Tool sections found in Python manifests, so gates are assembled only when configured. */
   readonly pythonTools: readonly string[];
+  readonly pythonMypyTargetsConfigured?: boolean;
 }
 
-const manifestsByType: Readonly<Record<ProjectType, string>> = {
-  node: "package.json",
-  python: "pyproject.toml",
-  rust: "Cargo.toml",
-  go: "go.mod",
+const manifestsByType: Readonly<Record<ProjectType, readonly string[]>> = {
+  node: ["package.json"],
+  python: ["pyproject.toml", "setup.cfg", "setup.py"],
+  rust: ["Cargo.toml"],
+  go: ["go.mod"],
 };
 
 /** Reads a workspace file, or null when it is not there. */
@@ -35,19 +36,22 @@ export async function detectProject(read: ManifestReader): Promise<ProjectDetect
   const manifests: string[] = [];
   let nodeScriptCommands: Readonly<Record<string, string>> = {};
   let pythonTools: readonly string[] = [];
+  let pythonMypyTargetsConfigured = false;
 
-  for (const [type, manifest] of Object.entries(manifestsByType) as [ProjectType, string][]) {
-    const text = await read(manifest);
-    if (text === null) {
-      continue;
-    }
-    types.push(type);
-    manifests.push(manifest);
-    if (type === "node") {
-      nodeScriptCommands = readNodeScripts(text);
-    }
-    if (type === "python") {
-      pythonTools = readPythonTools(text);
+  for (const [type, candidates] of Object.entries(manifestsByType) as [
+    ProjectType,
+    readonly string[],
+  ][]) {
+    for (const manifest of candidates) {
+      const text = await read(manifest);
+      if (text === null) continue;
+      if (!types.includes(type)) types.push(type);
+      manifests.push(manifest);
+      if (type === "node") nodeScriptCommands = readNodeScripts(text);
+      if (type === "python" && manifest !== "setup.py") {
+        pythonTools = [...new Set([...pythonTools, ...readPythonTools(text)])].sort();
+        pythonMypyTargetsConfigured ||= hasMypyTargets(manifest, text);
+      }
     }
   }
 
@@ -57,7 +61,26 @@ export async function detectProject(read: ManifestReader): Promise<ProjectDetect
     nodeScripts: Object.keys(nodeScriptCommands).sort(),
     nodeScriptCommands,
     pythonTools,
+    ...(pythonMypyTargetsConfigured ? { pythonMypyTargetsConfigured: true } : {}),
   };
+}
+
+const configuredMypyTargets = z.object({
+  tool: z.object({
+    mypy: z.object({ files: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]) }),
+  }),
+});
+
+function hasMypyTargets(manifest: string, text: string): boolean {
+  if (manifest === "setup.cfg") {
+    const section = /^\s*\[mypy\]\s*$([\s\S]*?)(?=^\s*\[|$(?![\s\S]))/m.exec(text)?.[1];
+    return section !== undefined && /^\s*files\s*=\s*\S/m.test(section);
+  }
+  try {
+    return configuredMypyTargets.safeParse(parse(text)).success;
+  } catch {
+    return false;
+  }
 }
 
 function readNodeScripts(text: string): Readonly<Record<string, string>> {
@@ -82,5 +105,9 @@ function readPythonTools(text: string): readonly string[] {
       tools.add(tool);
     }
   }
+  if (/^\s*\[mypy\]\s*$/m.test(text)) tools.add("mypy");
   return [...tools].sort();
 }
+
+import { parse } from "smol-toml";
+import { z } from "zod";
