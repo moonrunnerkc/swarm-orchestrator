@@ -15,3 +15,4 @@ limits reads later as a guarantee.
 | [0007](0007-durable-run-state.md) | A run's state outlives its process | accepted |
 | [0008](0008-independent-verification.md) | The final word is a separate run | accepted |
 | [0009](0009-adaptive-goal-controller.md) | Complete goals through bounded integration repair | approved, implementation tracked |
+| [0010](0010-evidence-offload.md) | Move historical evidence payloads out of the tree, keep every digest, manifest and verifier in it | proposed |
