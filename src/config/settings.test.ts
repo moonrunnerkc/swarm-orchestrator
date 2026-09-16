@@ -236,3 +236,26 @@ describe("the transport trace path", () => {
     expect(settings.transportTracePath).toBeNull();
   });
 });
+
+describe("the approval mode", () => {
+  const withApproval = parseSwarmToml('[tools]\napproval = "auto"\n', "swarm.toml");
+
+  it("defaults to asking", () => {
+    expect(resolveSettings({ flags: noFlags, env: {}, toml: null }).approval).toBe("ask");
+  });
+
+  it("reads the file, then the environment over it, then the flag over both", () => {
+    expect(resolveSettings({ flags: noFlags, env: {}, toml: withApproval }).approval).toBe("auto");
+    expect(
+      resolveSettings({ flags: noFlags, env: { SWARM_APPROVAL: "ask" }, toml: withApproval })
+        .approval,
+    ).toBe("ask");
+    expect(
+      resolveSettings({
+        flags: { ...noFlags, approval: "auto" },
+        env: { SWARM_APPROVAL: "ask" },
+        toml: withApproval,
+      }).approval,
+    ).toBe("auto");
+  });
+});

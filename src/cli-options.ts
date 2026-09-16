@@ -9,6 +9,7 @@ import {
   tokenizeCommandLine,
   type VerifyCommand,
 } from "./cli-verify-options.ts";
+import { type ApprovalMode, parseApprovalMode } from "./config/approval-mode.ts";
 import type { InterfaceFlags } from "./config/interface-settings.ts";
 import { nearestName } from "./edit-distance.ts";
 import { bundledShortlistKeyword } from "./select/shortlist-source.ts";
@@ -57,6 +58,8 @@ export interface RunCommand {
   readonly maxWallMinutes: number | null;
   readonly localEndpoint: string | null;
   readonly interfaceFlags: InterfaceFlags;
+  /** `--approve ask|auto`, or null to let swarm.toml and the environment decide. */
+  readonly approval: ApprovalMode | null;
 }
 
 /**
@@ -87,6 +90,7 @@ export interface SessionCommand {
   readonly maxWallMinutes: number | null;
   readonly localEndpoint: string | null;
   readonly interfaceFlags: InterfaceFlags;
+  readonly approval: ApprovalMode | null;
 }
 
 /**
@@ -291,6 +295,8 @@ export const usage = [
   "                                 result at the end, each naming its schema",
   "  --isolation <runtime[:image]>  run commands behind a kernel-enforced boundary",
   "                                 (docker, podman, nerdctl); default none, which is the host",
+  "  --approve ask|auto             auto answers shell-allowlist prompts itself and records",
+  "                                 each; a derivation-heuristic prompt still asks either way",
   "",
   "the screen:",
   "  --no-tui                     plain lines even on a terminal",
@@ -508,6 +514,7 @@ export function parseCommandLine(
     maxWallMinutes: parseFlagCount(flags.get("max-wall-minutes"), "--max-wall-minutes"),
     localEndpoint: parseLocalEndpoint(flags.get("local-endpoint")),
     interfaceFlags: parseInterfaceFlags(flags),
+    approval: parseApprovalFlag(flags.get("approve")),
   };
 
   const task = words.join(" ").trim();
@@ -641,6 +648,17 @@ function parseFlagCount(raw: string | undefined, flag: string, floor = 1): numbe
     );
   }
   return parsed;
+}
+
+function parseApprovalFlag(raw: string | undefined): ApprovalMode | null {
+  if (raw === undefined) {
+    return null;
+  }
+  try {
+    return parseApprovalMode(raw, "--approve");
+  } catch (cause) {
+    throw invalid(cause instanceof Error ? cause.message : String(cause));
+  }
 }
 
 function parseLocalEndpoint(raw: string | undefined): string | null {

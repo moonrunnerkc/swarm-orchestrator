@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { parse as parseToml, TomlError } from "smol-toml";
 import { z } from "zod";
 import type { GateOverride } from "../gates/gate-definition.ts";
+import { type ApprovalMode, approvalModes } from "./approval-mode.ts";
 
 /**
  * The one optional configuration file (build guide 4.2): provider keys and endpoints, gate
@@ -51,6 +52,11 @@ const rawFileSchema = z.strictObject({
       pin: nonEmptyString.optional(),
     })
     .optional(),
+  tools: z
+    .strictObject({
+      approval: z.enum(approvalModes).optional(),
+    })
+    .optional(),
   interface: z
     .strictObject({
       tui: z.boolean().optional(),
@@ -89,6 +95,10 @@ export interface SwarmToml {
   readonly models: {
     readonly pin: string | null;
   };
+  readonly tools: {
+    /** Whether shell-allowlist prompts are answered by the run or by the person. */
+    readonly approval: ApprovalMode | null;
+  };
   readonly interface: {
     readonly tui: boolean | null;
     readonly color: "auto" | "always" | "never" | null;
@@ -112,12 +122,13 @@ export class MalformedSwarmTomlError extends Error {
   }
 }
 
-const acceptedTables = "providers, gates, budgets, models, interface, theme, keys";
+const acceptedTables = "providers, gates, budgets, models, tools, interface, theme, keys";
 
 const acceptedKeysByTable: Readonly<Record<string, string>> = {
   providers: "local_endpoint, local_thinking",
   budgets: "max_steps, attempts, max_wall_minutes, max_changed_files, max_added_lines",
   models: "pin",
+  tools: "approval",
   interface: "tui, color, open_evidence, confirm_timeout_minutes",
 };
 
@@ -132,6 +143,7 @@ const acceptedValueByKey: Readonly<Record<string, string>> = {
   "budgets.max_changed_files": "a positive whole number",
   "budgets.max_added_lines": "a positive whole number",
   "models.pin": 'a model spec such as "anthropic:claude-opus-5"',
+  "tools.approval": '"ask" or "auto"',
   "interface.tui": "true or false",
   "interface.color": '"auto", "always" or "never"',
   "interface.open_evidence": '"ask", "always" or "never"',
@@ -215,6 +227,9 @@ export function parseSwarmToml(text: string, source: string): SwarmToml {
     },
     models: {
       pin: raw.models?.pin ?? null,
+    },
+    tools: {
+      approval: raw.tools?.approval ?? null,
     },
     interface: {
       tui: raw.interface?.tui ?? null,

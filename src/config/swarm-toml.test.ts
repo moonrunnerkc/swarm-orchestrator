@@ -219,7 +219,7 @@ describe("the tables that decide what the screen does", () => {
 
   it("lists the new tables among the ones it reads", () => {
     expect(() => parseSwarmToml("[screen]\nx = 1\n", "swarm.toml")).toThrow(
-      /Accepted tables: providers, gates, budgets, models, interface, theme, keys\./,
+      /Accepted tables: providers, gates, budgets, models, tools, interface, theme, keys\./,
     );
   });
 });
@@ -250,5 +250,20 @@ describe("the settings added for local reasoning and unanswered questions", () =
     expect(() =>
       parseSwarmToml("[interface]\nconfirm_timeout_minutes = -1\n", "swarm.toml"),
     ).toThrow(/whole number of minutes/);
+  });
+});
+
+describe("the tools table", () => {
+  it("reads the approval mode", () => {
+    expect(parseSwarmToml('[tools]\napproval = "auto"\n', "swarm.toml").tools.approval).toBe(
+      "auto",
+    );
+    expect(parseSwarmToml("", "swarm.toml").tools.approval).toBeNull();
+  });
+
+  it("refuses a mode this build does not have, naming the key", () => {
+    expect(() => parseSwarmToml('[tools]\napproval = "yes"\n', "swarm.toml")).toThrow(
+      /\[tools\] approval/,
+    );
   });
 });

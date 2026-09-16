@@ -71,6 +71,7 @@ describe("parseCommandLine", () => {
       interfaceFlags: { tui: null, color: null, openEvidence: null },
       isolation: null,
       json: false,
+      approval: null,
     });
   });
 
@@ -91,6 +92,7 @@ describe("parseCommandLine", () => {
       interfaceFlags: { tui: null, color: null, openEvidence: null },
       isolation: null,
       json: false,
+      approval: null,
     });
   });
 
@@ -660,4 +662,27 @@ it("makes parallel lockfile setup explicit", () => {
   expect(parseCommandLine(["parallel", "--goal", "fix cache"], context)).not.toHaveProperty(
     "installDependencies",
   );
+});
+
+describe("--approve", () => {
+  const context = { currentDirectory: "/repo" };
+
+  it("sets the approval mode on a run and on a session", () => {
+    expect(parseCommandLine(["--approve", "auto", "fix the parser"], context)).toMatchObject({
+      command: "run",
+      approval: "auto",
+    });
+    expect(parseCommandLine(["--approve", "ask"], context)).toMatchObject({
+      command: "session",
+      approval: "ask",
+    });
+  });
+
+  it("is null when not given, so the file and the environment get their turn", () => {
+    expect(parseCommandLine(["fix the parser"], context)).toMatchObject({ approval: null });
+  });
+
+  it("refuses a mode this build does not have", () => {
+    expect(() => parseCommandLine(["--approve", "maybe", "fix it"], context)).toThrow(/--approve/);
+  });
 });
