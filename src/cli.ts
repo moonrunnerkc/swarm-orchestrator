@@ -11,7 +11,7 @@ import { runAgentTask } from "./agent-run.ts";
 import { announceBundle, writeBundle } from "./cli-bundle.ts";
 import { summarizeEvidence } from "./cli-evidence-summary.ts";
 import { gates } from "./cli-gates.ts";
-import { offerInit, offerNodeHarness } from "./cli-init.ts";
+import { approvalOfferOnDisk, offerApprovalMode, offerInit, offerNodeHarness } from "./cli-init.ts";
 import { resolveLocalBackend } from "./cli-local-backend.ts";
 import { preflightAll } from "./cli-model-preflight.ts";
 import {
@@ -218,6 +218,7 @@ async function run(options: RunCommand): Promise<number> {
   }
 
   await offerInit(options.workspace);
+  await offerApprovalMode(approvalOfferOnDisk(options.workspace));
   const settings = await settingsFor(options.workspace, {
     model: options.modelSpec,
     maxSteps: options.maxSteps,
@@ -355,6 +356,7 @@ async function run(options: RunCommand): Promise<number> {
         }
       },
       confirm: ui.confirm,
+      approvalMode: settings.approval,
       abortSignal: interruption.signal,
       homeDir: homedir(),
       ...(gateOptions === undefined ? {} : { gateOptions }),

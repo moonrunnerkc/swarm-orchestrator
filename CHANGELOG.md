@@ -4,6 +4,13 @@
 
 ### Added
 
+- **An approval mode, asked once per workspace.** The first terminal run asks whether commands
+  off the shell allowlist may be approved automatically and writes the answer to `swarm.toml`
+  as `[tools] approval`; `--approve ask|auto` and `SWARM_APPROVAL` override it. Under `auto` the
+  run answers an allowlist prompt itself and records it as pre-approved; a derivation-heuristic
+  prompt, the injection defence, asks under either mode. Every prompt gains `a`, always: the
+  call runs and its off-list programs are allowed for the rest of that run, recorded as a
+  `run-allowance` ledger record. The screen's header shows the mode.
 - **`swarm-verify`, the verification path as its own package.** `packages/swarm-verify` builds a
   binary carrying `verify`, `ci` and `gates` from the same modules `swarm` runs under those names,
   parsed by the same parser, so an invocation reads the same through either. It carries no

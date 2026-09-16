@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { type WorkerPromptProfile, workerPrompt } from "./agent-prompt.ts";
 import { buildVersion } from "./build-version.ts";
+import type { ApprovalMode } from "./config/approval-mode.ts";
 import type { Clock } from "./core/clock.ts";
 import { type AgentLoopOutcome, runAgentLoop } from "./core/loop.ts";
 import type { LoopEvent } from "./core/loop-events.ts";
@@ -137,6 +138,8 @@ export interface AgentTaskOptions {
   readonly random: RandomSource;
   readonly emit: (event: LoopEvent) => void;
   readonly confirm: ConfirmationPrompt;
+  /** Whether shell-allowlist prompts are answered by the run. Absent asks (ADR 0011). */
+  readonly approvalMode?: ApprovalMode;
   readonly abortSignal: AbortSignal;
   /** Denied to tools along with everything under it, since the session store lives there. */
   readonly homeDir: string;
@@ -208,6 +211,7 @@ export interface ToolsetOptions {
   readonly isolation?: IsolationBackend | undefined;
   readonly homeDir: string;
   readonly confirm: ConfirmationPrompt;
+  readonly approvalMode?: ApprovalMode;
   readonly evidence: EvidenceRecorder;
   /** Which tools this run offers, given the guard they have to be built against. */
   readonly tools: (guard: PolicyGuard) => readonly ToolDefinition[];
@@ -255,6 +259,7 @@ export function assembleToolset(options: ToolsetOptions): AgentToolset {
       abortSignal: options.abortSignal,
       derivation,
       confirm: options.confirm,
+      ...(options.approvalMode === undefined ? {} : { approvalMode: options.approvalMode }),
       recorder: createLedgerChokepointRecorder(options.evidence, options.observeTool),
     }),
   };
@@ -340,6 +345,7 @@ async function executeAgentTask(
     abortSignal: options.abortSignal,
     homeDir: options.homeDir,
     confirm: options.confirm,
+    ...(options.approvalMode === undefined ? {} : { approvalMode: options.approvalMode }),
     evidence: options.evidence,
     observeTool: (entry, digest, sequence) => {
       if (store === undefined) return;
