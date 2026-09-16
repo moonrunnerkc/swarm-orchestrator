@@ -88,6 +88,15 @@ swarm calibrate                  # measure candidate models on the golden set
 swarm routing                    # what the reward log adds up to
 ```
 
+With no model named and no calibration on this machine, a run discovers Ollama and rapid-mlx,
+keeps only the models they actually serve, ranks those by the shortlist's tier for the probed
+hardware, and takes the top one, printing the choice and its reason before the session opens and
+recording it as a `model-default` ledger record. A served model the shortlist does not know is
+taken only where nothing ranked is served, and is called unranked. A frontier key is used only
+where nothing local is served; with neither, the run stops and names the three remedies. This is
+a static fit, not learned routing: `--model`, `SWARM_MODEL`, `[models] pin` and a calibration
+pick all win over it.
+
 With no model named, the router picks one from what the calibration measured on this machine.
 Learned routing is off by default and there is a bar under turning it on: held-out success
 non-inferior within five points judged by the whole interval, at least thirty tasks per arm, and

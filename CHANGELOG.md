@@ -11,6 +11,12 @@
   prompt, the injection defence, asks under either mode. Every prompt gains `a`, always: the
   call runs and its off-list programs are allowed for the rest of that run, recorded as a
   `run-allowance` ledger record. The screen's header shows the mode.
+- **The default model is the best served local model for this hardware.** With nothing pinned
+  and no calibration, a run discovers the local backends, ranks what they serve by the
+  shortlist's tier for the probed hardware, prints the choice and its reason before the session
+  opens, and records it as a `model-default` ledger record. A frontier key is used only where
+  nothing local is served; with neither, the run stops and names the remedies instead of
+  defaulting to a provider it has no key for.
 - **`swarm-verify`, the verification path as its own package.** `packages/swarm-verify` builds a
   binary carrying `verify`, `ci` and `gates` from the same modules `swarm` runs under those names,
   parsed by the same parser, so an invocation reads the same through either. It carries no

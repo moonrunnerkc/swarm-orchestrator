@@ -16,10 +16,10 @@ export interface CatalogueEntry {
   readonly type: RecordType;
   readonly controllerOnly?: boolean;
   /**
-   * Written from a person's answer rather than from anything the run measured, so it is not a
-   * record a model is invited to claim against and stays out of the worker prompt.
+   * A person's answer or the run's own setup rather than anything the run measured, so it is
+   * not a record a model is invited to claim against and stays out of the worker prompt.
    */
-  readonly humanDecision?: boolean;
+  readonly notClaimable?: boolean;
   /** The payload field the kind is keyed on, or null where the type alone is the kind. */
   readonly subjectField: string | null;
   readonly example: string;
@@ -338,11 +338,25 @@ export const predicateCatalogue: readonly CatalogueEntry[] = [
   },
   {
     type: "run-allowance",
-    humanDecision: true,
+    notClaimable: true,
     subjectField: null,
     example: 'toolName == "shell"',
     sample: { callId: "c1", toolName: "shell", programs: ["pip"] },
     says: "programs a person allowed for the rest of the run with one answer",
+  },
+  {
+    type: "model-default",
+    notClaimable: true,
+    subjectField: null,
+    example: 'modelSpec == "local:small"',
+    sample: {
+      modelSpec: "local:small",
+      reason: "the highest shortlist tier served here",
+      served: [{ endpoint: "ollama", models: ["small"] }],
+      hardware: { totalRamGb: 16, appleSilicon: false },
+      shortlistRevision: "2026-08-01",
+    },
+    says: "the model the run chose for itself, from what a local backend serves",
   },
   {
     type: "claim",
