@@ -79,7 +79,7 @@ describe("off a terminal", () => {
       explanation: "overlaps a file read a moment ago",
     });
 
-    expect(approved).toBe(false);
+    expect(approved).toBe("no");
     expect(errors[0]).toContain("[chokepoint] refusing shell without a terminal to confirm on");
   });
 
@@ -135,7 +135,7 @@ describe("a terminal with the screen turned off", () => {
       explanation: "overlaps a file read a moment ago",
     });
 
-    expect(approved).toBe(true);
+    expect(approved).toBe("yes");
     expect(asked[0]).toBe('Run "bash ./deploy.sh"? [y/N] ');
   });
 
@@ -153,7 +153,7 @@ describe("a terminal with the screen turned off", () => {
         reason: "derivation-heuristic",
         explanation: "overlaps a file read a moment ago",
       }),
-    ).toBe(false);
+    ).toBe("no");
   });
 
   it("still writes plain lines, so --no-tui is the stream and nothing else", () => {

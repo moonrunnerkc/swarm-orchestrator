@@ -23,7 +23,9 @@ export const legacyWorkerPrompt = [
   '"tool-call:shell", citing the record of the test command you ran.',
   "A claim whose kind does not match the record it cites renders UNVERIFIED, so a predicate that",
   "happens to hold against some other record never stands in for the one you are claiming about.",
-  renderPredicateCatalogue(predicateCatalogue.filter((entry) => !entry.controllerOnly)),
+  renderPredicateCatalogue(
+    predicateCatalogue.filter((entry) => !entry.controllerOnly && !entry.humanDecision),
+  ),
   "The harness evaluates the predicate and decides the verdict; your prose never counts as a result.",
   "When the work is done, reply with a summary and no tool calls.",
   "Quality gates then run against the workspace. If one fails you will be given its raw output",

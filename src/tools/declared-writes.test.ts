@@ -49,7 +49,7 @@ function toolsFor(registry: ReturnType<typeof createFileSetRegistry>) {
   return createToolChokepoint({
     definitions,
     guard,
-    confirm: () => Promise.resolve(false),
+    confirm: () => Promise.resolve("no"),
     recorder: createLedgerChokepointRecorder(evidence),
   });
 }

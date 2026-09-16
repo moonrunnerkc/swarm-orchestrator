@@ -90,6 +90,12 @@ export interface PolicyGuard {
   checkPath(candidate: string): PolicyVerdict;
   /** Whether the command's executable is on the allowlist. */
   isCommandAllowed(command: string): boolean;
+  /**
+   * The executables the command needs that are not on the allowlist, each once, in command
+   * order; empty where every one is listed; null where the string cannot be read, which asks
+   * rather than assumes. What a run allowance is keyed on (ADR 0011).
+   */
+  disallowedExecutables(command: string): readonly string[] | null;
 }
 
 export function createPolicyGuard(policy: PolicyGuardRules): PolicyGuard {
@@ -173,6 +179,14 @@ export function createPolicyGuard(policy: PolicyGuardRules): PolicyGuard {
       // A string this cannot read is not allowed either, which asks rather than assumes.
       const read = readShellCommand(command);
       return read?.executables.every((name) => policy.shellAllowlist.includes(name)) ?? false;
+    },
+
+    disallowedExecutables(command: string): readonly string[] | null {
+      const read = readShellCommand(command);
+      if (read === null) {
+        return null;
+      }
+      return [...new Set(read.executables.filter((name) => !policy.shellAllowlist.includes(name)))];
     },
   };
 }

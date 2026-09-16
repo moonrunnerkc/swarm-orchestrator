@@ -1,4 +1,4 @@
-import type { ConfirmationRequest } from "../tools/chokepoint.ts";
+import type { ConfirmationAnswer, ConfirmationRequest } from "../tools/chokepoint.ts";
 
 /**
  * The bridge between the chokepoint's confirmation prompt and the running screen. Ink owns
@@ -16,12 +16,12 @@ import type { ConfirmationRequest } from "../tools/chokepoint.ts";
 export interface PendingConfirmation {
   readonly request: ConfirmationRequest;
   /** Idempotent: a second answer for the same request is ignored rather than racing. */
-  answer(approved: boolean): void;
+  answer(answer: ConfirmationAnswer): void;
 }
 
 export interface ConfirmationQueue {
   /** The `ConfirmationPrompt` the chokepoint calls. Resolves when a key answers it. */
-  ask(request: ConfirmationRequest): Promise<boolean>;
+  ask(request: ConfirmationRequest): Promise<ConfirmationAnswer>;
   current(): PendingConfirmation | null;
   subscribe(listener: (pending: PendingConfirmation | null) => void): () => void;
   /** Refuses everything still waiting. Called when the view goes away mid-question. */
@@ -37,7 +37,7 @@ export interface ConfirmationDeadline {
 
 interface Waiting {
   readonly request: ConfirmationRequest;
-  readonly settle: (approved: boolean) => void;
+  readonly settle: (answer: ConfirmationAnswer) => void;
   answered: boolean;
 }
 
@@ -53,7 +53,7 @@ export function createConfirmationQueue(deadline?: ConfirmationDeadline): Confir
   }
 
   /** The one place a question is settled, so an answer and a deadline cannot both land. */
-  function resolve(entry: Waiting, approved: boolean): void {
+  function resolve(entry: Waiting, answer: ConfirmationAnswer): void {
     if (entry.answered) {
       return;
     }
@@ -62,7 +62,7 @@ export function createConfirmationQueue(deadline?: ConfirmationDeadline): Confir
     if (at !== -1) {
       waiting.splice(at, 1);
     }
-    entry.settle(approved);
+    entry.settle(answer);
     announce();
   }
 
@@ -73,21 +73,21 @@ export function createConfirmationQueue(deadline?: ConfirmationDeadline): Confir
     }
     return {
       request: first.request,
-      answer(approved: boolean): void {
-        resolve(first, approved);
+      answer(answer: ConfirmationAnswer): void {
+        resolve(first, answer);
       },
     };
   }
 
   return {
-    ask(request: ConfirmationRequest): Promise<boolean> {
-      return new Promise<boolean>((settle) => {
+    ask(request: ConfirmationRequest): Promise<ConfirmationAnswer> {
+      return new Promise<ConfirmationAnswer>((settle) => {
         const entry: Waiting = { request, settle, answered: false };
         waiting.push(entry);
         announce();
         if (deadline !== undefined && deadline.timeoutMs > 0) {
           void deadline.sleep(deadline.timeoutMs).then(() => {
-            resolve(entry, false);
+            resolve(entry, "no");
           });
         }
       });
@@ -101,7 +101,7 @@ export function createConfirmationQueue(deadline?: ConfirmationDeadline): Confir
     },
     refuseAll(): void {
       for (const entry of [...waiting]) {
-        resolve(entry, false);
+        resolve(entry, "no");
       }
     },
   };

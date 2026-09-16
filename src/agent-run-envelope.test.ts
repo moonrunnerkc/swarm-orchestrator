@@ -29,7 +29,7 @@ describe("what a run says it executed under", () => {
     const toolset = assembleToolset({
       workspace,
       homeDir: root,
-      confirm: () => Promise.resolve(true),
+      confirm: () => Promise.resolve("yes"),
       evidence,
       tools: () => [],
     });

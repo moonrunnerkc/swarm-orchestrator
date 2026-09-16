@@ -3,7 +3,11 @@ import { createElement } from "react";
 import type { OpenEvidencePolicy } from "../config/interface-settings.ts";
 import type { Clock } from "../core/clock.ts";
 import type { LoopEvent } from "../core/loop-events.ts";
-import type { ConfirmationPrompt, ConfirmationRequest } from "../tools/chokepoint.ts";
+import type {
+  ConfirmationAnswer,
+  ConfirmationPrompt,
+  ConfirmationRequest,
+} from "../tools/chokepoint.ts";
 import { type ConfirmationQueue, createConfirmationQueue } from "./confirmation-queue.ts";
 import { describeEvidence, type EvidenceSummary } from "./evidence-panel.ts";
 import type { KeyBindings } from "./key-bindings.ts";
@@ -162,16 +166,16 @@ function streamInterface(options: SessionInterfaceOptions): SessionInterface {
 async function confirmOnStream(
   request: ConfirmationRequest,
   options: SessionInterfaceOptions,
-): Promise<boolean> {
+): Promise<ConfirmationAnswer> {
   if (!options.isTty || options.askOnTerminal === undefined) {
     options.writeError(
       `[chokepoint] refusing ${request.toolName} without a terminal to confirm on: ${request.explanation}`,
     );
-    return false;
+    return "no";
   }
   options.writeError(request.explanation);
   const answer = await options.askOnTerminal(`Run "${request.detail}"? [y/N] `);
-  return answer.trim().toLowerCase() === "y";
+  return answer.trim().toLowerCase() === "y" ? "yes" : "no";
 }
 
 /**
@@ -368,7 +372,7 @@ function interactiveInterface(options: SessionInterfaceOptions): SessionInterfac
       for (const text of line.split("\n")) transcript.push({ text, kind: "note" });
       redraw();
     },
-    confirm: (request) => (state.detached ? Promise.resolve(false) : confirmations.ask(request)),
+    confirm: (request) => (state.detached ? Promise.resolve("no") : confirmations.ask(request)),
     cancelled: () =>
       new Promise<void>((resolve) => {
         if (state.cancelRequested) {

@@ -38,6 +38,7 @@ function run(command: string, timeoutMs?: number) {
       return Promise.resolve(`sha256:${"ab".repeat(32)}`);
     },
     recordConfirmation: () => Promise.resolve(),
+    recordAllowance: () => Promise.resolve(),
   };
   const guard = createPolicyGuard({
     workspaceRoot: workspace,
@@ -50,7 +51,7 @@ function run(command: string, timeoutMs?: number) {
     guard,
     derivation: createDerivationHeuristic(),
     // Nothing here may be rescued by a person saying yes: the guard rules before the ask.
-    confirm: () => Promise.resolve(true),
+    confirm: () => Promise.resolve("yes"),
     recorder,
   });
   const invocation: ToolInvocation = {

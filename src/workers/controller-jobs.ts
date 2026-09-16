@@ -138,7 +138,7 @@ export async function runOneWorker(
         options.emit(workerId, event);
       },
       // A worker is unattended, so a call that needs a human is refused and recorded.
-      confirm: () => Promise.resolve(false),
+      confirm: () => Promise.resolve("no"),
       abortSignal: options.abortSignal,
       ...(options.isolation === undefined ? {} : { isolation: options.isolation(worktree.path) }),
       // The remainder rather than a fresh budget: a worker starting late gets what is left.

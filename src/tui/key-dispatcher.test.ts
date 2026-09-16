@@ -72,15 +72,15 @@ describe("the keys that must not fire mid-run", () => {
   it("takes the keyboard while a confirmation is waiting", () => {
     expect(decide(press("y"), initialViewState, true)).toEqual({
       kind: "answer-confirmation",
-      approved: true,
+      answer: "yes",
     });
     expect(decide(press("n"), initialViewState, true)).toEqual({
       kind: "answer-confirmation",
-      approved: false,
+      answer: "no",
     });
     expect(decide(press("", { name: "escape" }), initialViewState, true)).toEqual({
       kind: "answer-confirmation",
-      approved: false,
+      answer: "no",
     });
     // Scrolling away from the question is not an answer, so the key does nothing.
     expect(decide(press("j"), initialViewState, true)).toEqual({ kind: "ignored" });
