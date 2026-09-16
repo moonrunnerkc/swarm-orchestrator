@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { bundleFileNames } from "../evidence/bundle-manifest.ts";
+import { formatElapsed } from "./elapsed.ts";
 import { fileUrl } from "./hyperlink.ts";
 import type { EvidenceLocation } from "./open-path.ts";
 import { truncateToWidth } from "./terminal-text.ts";
@@ -20,6 +21,19 @@ export type BundleVerification =
   | { readonly kind: "refused"; readonly exitCode: number; readonly detail: string }
   | { readonly kind: "not-run"; readonly reason: string };
 
+/**
+ * What the run that wrote the bundle took, as the harness measured it: the clock, the loop's
+ * own step count, the token count the provider reported, and the price of those tokens at the
+ * published rate, or null where no rate could be read. Absent when the summary is of a past
+ * bundle, where nothing ran.
+ */
+export interface RunFacts {
+  readonly durationMs: number;
+  readonly steps: number;
+  readonly tokensUsed: number;
+  readonly costUsd: number | null;
+}
+
 export interface EvidenceSummary {
   readonly location: EvidenceLocation;
   readonly recordCount: number;
@@ -27,6 +41,29 @@ export interface EvidenceSummary {
   /** The interesting half: what the harness looked at and would not call proven. */
   readonly claimsRefused: number;
   readonly verification: BundleVerification;
+  readonly run?: RunFacts;
+}
+
+/** Dollars, with the cents that matter: a fraction of a cent is shown rather than rounded to none. */
+export function formatCost(costUsd: number | null): string {
+  if (costUsd === null) {
+    return "cost not priced";
+  }
+  return costUsd > 0 && costUsd < 0.01 ? `$${costUsd.toFixed(4)}` : `$${costUsd.toFixed(2)}`;
+}
+
+export function formatTokens(tokens: number): string {
+  return `${tokens.toLocaleString("en-US")} tokens`;
+}
+
+/** `11m 14s, 23 steps, 122,734 tokens, $0.00`, with the joiner the caller's screen uses. */
+export function describeRun(run: RunFacts, separator: string): string {
+  return [
+    formatElapsed(run.durationMs),
+    `${run.steps} steps`,
+    formatTokens(run.tokensUsed),
+    formatCost(run.costUsd),
+  ].join(separator);
 }
 
 /** `node <bundle>/verify.mjs <bundle>`, as a vector rather than a string. */
@@ -114,5 +151,38 @@ export function evidencePanelRows(
     ...(summary.verification.kind === "verified"
       ? []
       : [{ text: toWidth(`  check it yourself: ${verifyCommandText(summary.location)}`) }]),
+    ...(summary.run === undefined
+      ? []
+      : [{ text: toWidth(`  the run took ${describeRun(summary.run, ", ")}`) }]),
+  ];
+}
+
+/**
+ * The finish card's body: the two paths a person opens first, each a link, then the verifier
+ * command, then the counts on one line. The verdict line above it is the screen's, since only
+ * the screen holds the view the verdict comes from.
+ */
+export function finishCardRows(
+  summary: EvidenceSummary,
+  columns: number | null,
+): readonly EvidencePanelRow[] {
+  const directory = summary.location.directory;
+  const reviewPage = join(directory, bundleFileNames.review);
+  const toWidth = (line: string): string =>
+    columns === null ? line : truncateToWidth(line, Math.max(20, columns));
+  const verified =
+    summary.verification.kind === "verified"
+      ? `bundle verified here (exit ${summary.verification.exitCode})`
+      : describeVerification(summary.verification);
+  return [
+    { text: toWidth(`  review page   ${reviewPage}`), link: fileUrl(reviewPage) },
+    { text: toWidth(`  bundle        ${directory}`), link: fileUrl(directory) },
+    { text: toWidth(`  verify        ${verifyCommandText(summary.location)}`) },
+    {
+      text: toWidth(
+        `  ${summary.recordCount} records, ${summary.claimsVerified} claims verified, ` +
+          `${summary.claimsRefused} refused, ${verified}`,
+      ),
+    },
   ];
 }

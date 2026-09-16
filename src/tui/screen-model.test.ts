@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LoopEvent } from "../core/loop-events.ts";
 import type { EvidenceSummary } from "./evidence-panel.ts";
+import { glyphsFor } from "./glyphs.ts";
 import { fileUrl, hyperlink } from "./hyperlink.ts";
 import { resolveKeyBindings } from "./key-bindings.ts";
 import { computeLayout } from "./layout.ts";
@@ -12,7 +13,7 @@ import {
   type ScreenRow,
   spinnerAt,
 } from "./screen-model.ts";
-import { applyLoopEvent, emptySessionView } from "./session-view.ts";
+import { applyLoopEvent, applyLoopEventAt, emptySessionView } from "./session-view.ts";
 import { displayWidth } from "./terminal-text.ts";
 import { resolveTheme } from "./theme.ts";
 import { applyViewAction, initialViewState, type ViewAction } from "./view-state.ts";
@@ -326,9 +327,10 @@ describe("the overlays", () => {
       screen({ evidence: summary }, { columns: 140, rows: 40 }, [{ type: "open-evidence" }]),
     );
 
-    expect(rendered).toContain("the page a person reads");
-    expect(rendered).toContain("the bundle a stranger verifies");
-    expect(rendered).toContain("verified 3 claim(s) and refused 11");
+    expect(rendered).toContain("review page");
+    expect(rendered).toContain("bundle ");
+    expect(rendered).toContain("3 claims verified");
+    expect(rendered).toContain("11 refused");
   });
 });
 
@@ -631,5 +633,180 @@ describe("the paths a finished run shows", () => {
     expect(renderRowText(row, true)).toBe(hyperlink(row.text, "file:///tmp/b/review.html"));
     expect(renderRowText(row, false)).toBe(row.text);
     expect(renderRowText({ text: "plain" }, true)).toBe("plain");
+  });
+});
+
+describe("the redrawn run", () => {
+  const timed = [
+    [{ type: "plan", text: "read the failing test" }, 0],
+    [{ type: "model-call", step: 1, modelId: "local:gemma4:31b" }, 1000],
+    [{ type: "tool-call", callId: "a", toolName: "read", input: { path: "src/parse.ts" } }, 2000],
+    [{ type: "tool-outcome", callId: "a", toolName: "read", failed: false, output: "body" }, 2500],
+    [{ type: "tool-call", callId: "b", toolName: "shell", input: { command: "npm test" } }, 3000],
+    [
+      { type: "tool-outcome", callId: "b", toolName: "shell", failed: true, output: "1 failing" },
+      51_000,
+    ],
+    [
+      {
+        type: "gate",
+        gateId: "tests",
+        status: "passed",
+        blocking: true,
+        detail: "3 collected, 3 passed",
+        record: "sha256:aaaa",
+      },
+      60_000,
+    ],
+    [
+      {
+        type: "gate",
+        gateId: "lint",
+        status: "failed",
+        blocking: false,
+        detail: "2 findings",
+        record: "sha256:bbbb",
+      },
+      61_000,
+    ],
+    [
+      {
+        type: "gate",
+        gateId: "coverage",
+        status: "not-applicable",
+        blocking: true,
+        detail: "no report was written",
+        record: "sha256:cccc",
+      },
+      62_000,
+    ],
+  ] satisfies readonly (readonly [LoopEvent, number])[];
+  const timedView = timed.reduce(
+    (view, [event, at]) => applyLoopEventAt(view, event, at),
+    emptySessionView,
+  );
+
+  it("carries the model and the approval mode on the header's second line where it is wide", () => {
+    for (const columns of [80, 120]) {
+      const second = screen({ view: timedView, approvalMode: "ask" }, { columns, rows: 30 })[1];
+      expect(second?.text).toContain("local:gemma4:31b");
+      expect(second?.text).toContain("approval: ask");
+    }
+  });
+
+  it("keeps elapsed, step and approval on that line at 60 columns and drops the rest", () => {
+    const second = screen({ view: timedView, approvalMode: "auto" }, { columns: 60, rows: 30 }, [
+      { type: "tick", elapsedMs: 92_000 },
+    ])[1];
+    expect(second?.text).toContain("1m 32s");
+    expect(second?.text).toContain("step 1");
+    expect(second?.text).toContain("approval: auto");
+    expect(second?.text).not.toContain("/work/repo");
+    expect(second?.text).not.toContain("local:gemma4:31b");
+  });
+
+  it("marks each timeline row with what became of it, and when", () => {
+    const rendered = screen({ view: timedView }, { columns: 120, rows: 30 }).map((row) => row.text);
+    expect(rendered.find((line) => line.includes("read ok"))).toMatch(/^ {2}✓ 0:02 {2}read ok/);
+    expect(rendered.find((line) => line.includes("shell failed"))).toMatch(
+      /^ {2}✗ 0:51 {2}shell failed/,
+    );
+    expect(rendered.find((line) => line.includes("read path="))).toMatch(/^ {2}○ 0:02 {2}read/);
+  });
+
+  it("drops the elapsed column below 80 columns", () => {
+    const rendered = screen({ view: timedView }, { columns: 60, rows: 30 }).map((row) => row.text);
+    const outcome = rendered.find((line) => line.includes("read ok"));
+    expect(outcome).toMatch(/^ {2}✓ read ok/);
+    expect(outcome).not.toContain("0:02");
+  });
+
+  it("counts the gates on the strip's own line", () => {
+    const rendered = screen({ view: timedView }, { columns: 120, rows: 30 }).map((row) => row.text);
+    const strip = rendered.find((line) => line.startsWith("◆ gates"));
+    expect(strip).toContain("✓ 1 passed");
+    expect(strip).toContain("✗ 1 failed");
+    expect(strip).toContain("○ 1 n/a");
+  });
+
+  it("draws the same rows in ASCII where the terminal cannot show the marks", () => {
+    const rendered = screen(
+      { view: timedView, glyphs: glyphsFor({ LANG: "C", TERM: "xterm" }) },
+      { columns: 120, rows: 30 },
+    ).map((row) => row.text);
+    expect(rendered.join("\n")).not.toMatch(/[✓✗○◐◆·]/);
+    expect(rendered.find((line) => line.includes("read ok"))).toMatch(/^ {2}\+ 0:02 {2}read ok/);
+    expect(rendered.find((line) => line.startsWith("* gates"))).toContain("+ 1 passed");
+  });
+
+  it("never paints more rows than the window has, from six rows up", () => {
+    for (let rows = 6; rows <= 40; rows += 1) {
+      for (const columns of [60, 100]) {
+        expect(screen({ view: timedView }, { columns, rows }).length).toBeLessThanOrEqual(rows);
+      }
+    }
+  });
+});
+
+describe("the finish card", () => {
+  const accepted = [
+    { type: "stopped", reason: "completed", steps: 23, tokensUsed: 122_734 },
+    { type: "changes", changedFiles: 4 },
+    { type: "run-assessment", acceptable: true, detail: "", record: "sha256:dddd" },
+  ] satisfies readonly LoopEvent[];
+  const acceptedView = accepted.reduce(applyLoopEvent, view);
+  const priced = {
+    ...summary,
+    run: { durationMs: 674_000, steps: 23, tokensUsed: 122_734, costUsd: 0 },
+  };
+
+  it("leads with the verdict, then what the run took, then the two links", () => {
+    const rows = screen({ view: acceptedView, evidence: priced }, { columns: 140, rows: 40 }, [
+      { type: "open-evidence" },
+    ]);
+    const first = rows.findIndex((row) => row.text.startsWith("✓ work accepted"));
+    expect(first).toBeGreaterThan(0);
+    const card = rows[first];
+    expect(card?.text).toContain("11m 14s");
+    expect(card?.text).toContain("23 steps");
+    expect(card?.text).toContain("122,734 tokens");
+    expect(card?.text).toContain("$0.00");
+    expect(rows[first + 1]?.link).toBe(
+      fileUrl("/home/someone/.swarm/sessions/s-1/bundle/review.html"),
+    );
+    expect(rows[first + 2]?.link).toBe(fileUrl("/home/someone/.swarm/sessions/s-1/bundle"));
+  });
+
+  it("leads with the failed mark when the run was refused", () => {
+    const refusedView = applyLoopEvent(view, {
+      type: "run-assessment",
+      acceptable: false,
+      detail: "base ratchet rejected",
+      record: "sha256:eeee",
+    });
+    const rows = screen({ view: refusedView, evidence: priced }, { columns: 140, rows: 40 }, [
+      { type: "open-evidence" },
+    ]);
+    expect(rows.some((row) => row.text.startsWith("✗ work refused: base ratchet rejected"))).toBe(
+      true,
+    );
+  });
+
+  it("keeps both links at 60 columns", () => {
+    const rows = screen({ view: acceptedView, evidence: priced }, { columns: 60, rows: 30 }, [
+      { type: "open-evidence" },
+    ]);
+    expect(rows.filter((row) => row.link !== undefined)).toHaveLength(2);
+  });
+
+  it("says the cost was not priced rather than showing a zero", () => {
+    const unpriced = { ...priced, run: { ...priced.run, costUsd: null } };
+    const rendered = text(
+      screen({ view: acceptedView, evidence: unpriced }, { columns: 140, rows: 40 }, [
+        { type: "open-evidence" },
+      ]),
+    );
+    expect(rendered).toContain("cost not priced");
+    expect(rendered).not.toContain("$0.00");
   });
 });

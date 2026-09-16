@@ -28,7 +28,9 @@ describe("layout at the widths people actually use", () => {
   it("drops the optional columns below 80 rather than wrapping into noise", () => {
     expect(computeLayout({ ...busy, columns: narrowColumns - 1, rows: 40 }).narrow).toBe(true);
     expect(computeLayout({ ...busy, columns: narrowColumns, rows: 40 }).narrow).toBe(false);
-    expect(computeLayout({ ...busy, columns: 60, rows: 40 }).showHeaderDetail).toBe(false);
+    // The header's second line stays at 60 columns; the screen shortens what it carries.
+    expect(computeLayout({ ...busy, columns: 60, rows: 40 }).showHeaderDetail).toBe(true);
+    expect(computeLayout({ ...busy, columns: 60, rows: 11 }).showHeaderDetail).toBe(false);
   });
 
   it("gives every pane at least one row at every width", () => {

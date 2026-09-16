@@ -11,6 +11,7 @@ import type {
 } from "../tools/chokepoint.ts";
 import { type ConfirmationQueue, createConfirmationQueue } from "./confirmation-queue.ts";
 import { describeEvidence, type EvidenceSummary } from "./evidence-panel.ts";
+import type { Glyphs } from "./glyphs.ts";
 import type { KeyBindings } from "./key-bindings.ts";
 import { type OpenTarget, openEvidenceTarget, type SpawnHandler } from "./open-path.ts";
 import { describeLoopEvent } from "./plain-lines.ts";
@@ -86,6 +87,8 @@ export interface SessionInterfaceOptions {
   readonly approvalMode?: ApprovalMode;
   /** Whether the terminal understands OSC 8 links. Absent means it is not assumed to. */
   readonly hyperlinks?: boolean;
+  /** The status marks for the terminal's character set. Absent means unicode. */
+  readonly glyphs?: Glyphs;
 }
 
 /**
@@ -312,6 +315,7 @@ function interactiveInterface(options: SessionInterfaceOptions): SessionInterfac
       evidence,
       ...(options.approvalMode === undefined ? {} : { approvalMode: options.approvalMode }),
       hyperlinks: options.hyperlinks === true,
+      ...(options.glyphs === undefined ? {} : { glyphs: options.glyphs }),
     }),
     { exitOnCtrlC: false },
   );
@@ -339,7 +343,9 @@ function interactiveInterface(options: SessionInterfaceOptions): SessionInterfac
         task: currentTask,
         workspace: options.workspace,
         evidence,
+        ...(options.approvalMode === undefined ? {} : { approvalMode: options.approvalMode }),
         hyperlinks: options.hyperlinks === true,
+        ...(options.glyphs === undefined ? {} : { glyphs: options.glyphs }),
       }),
     );
   };
@@ -359,7 +365,7 @@ function interactiveInterface(options: SessionInterfaceOptions): SessionInterfac
   return {
     emit(event: LoopEvent): void {
       const before = store.getView().activity;
-      store.apply(event);
+      store.apply(event, options.clock.now() - startedAt);
       const after = store.getView().activity;
       if (after !== before) {
         activityStartedAt = after === null ? null : options.clock.now();

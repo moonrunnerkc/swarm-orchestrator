@@ -3,6 +3,8 @@ import {
   describeEvidence,
   describeVerification,
   type EvidenceSummary,
+  finishCardRows,
+  formatCost,
   verifyCommandFor,
   verifyCommandText,
 } from "./evidence-panel.ts";
@@ -220,5 +222,43 @@ describe("when opening fails", () => {
 
     expect(outcome.opened).toBe(false);
     expect(outcome.detail).toContain("ENOENT");
+  });
+});
+
+describe("what the run itself cost, where the run is known", () => {
+  const priced: EvidenceSummary = {
+    ...verified,
+    run: { durationMs: 674_000, steps: 23, tokensUsed: 122_734, costUsd: 0 },
+  };
+
+  it("says how long it took, how many steps, tokens and dollars, in the plain lines too", () => {
+    const lines = describeEvidence(priced, null).join("\n");
+    expect(lines).toContain("11m 14s");
+    expect(lines).toContain("23 steps");
+    expect(lines).toContain("122,734 tokens");
+    expect(lines).toContain("$0.00");
+  });
+
+  it("says nothing about the run where the summary is of a past bundle", () => {
+    expect(describeEvidence(verified, null).join("\n")).not.toContain("steps");
+  });
+
+  it("says a price could not be found rather than printing a zero for it", () => {
+    expect(formatCost(null)).toBe("cost not priced");
+    expect(formatCost(0)).toBe("$0.00");
+    expect(formatCost(0.0042)).toBe("$0.0042");
+    expect(formatCost(1.5)).toBe("$1.50");
+  });
+
+  it("puts the two paths a person opens first on the finish card, each carrying its link", () => {
+    const rows = finishCardRows(priced, 120);
+    expect(rows[0]?.text).toContain("review page");
+    expect(rows[0]?.link).toBe("file:///home/someone/.swarm/sessions/s-1/bundle/review.html");
+    expect(rows[1]?.text).toContain("bundle");
+    expect(rows[1]?.link).toBe("file:///home/someone/.swarm/sessions/s-1/bundle");
+    expect(rows.map((row) => row.text).join("\n")).toContain("42 records");
+    expect(rows.map((row) => row.text).join("\n")).toContain("3 claims verified");
+    expect(rows.map((row) => row.text).join("\n")).toContain("11 refused");
+    expect(rows.map((row) => row.text).join("\n")).toContain("verified here (exit 0)");
   });
 });

@@ -383,6 +383,7 @@ async function run(options: RunCommand): Promise<number> {
 
     // Every finished run is one more sample the router learns from, and the ratchet numerics
     // ride along so a pass earned by erosion cannot look like a win (section 3.8).
+    const cost = await priceTask(usable.modelSpec, evidence);
     await logReward({
       evidence,
       green,
@@ -396,7 +397,7 @@ async function run(options: RunCommand): Promise<number> {
       changedFiles: gates.outcome.finalCycle.measures.changedFiles ?? null,
       latencyMs: clock.now() - startedAt,
       recordedAt: clock.now(),
-      cost: await priceTask(usable.modelSpec, evidence),
+      cost,
       note: ui.note,
     });
 
@@ -410,7 +411,14 @@ async function run(options: RunCommand): Promise<number> {
       executionMode: verdict.executionTrust,
     });
     announceBundle(written.directory, ui.note);
-    await ui.presentEvidence(await summarizeEvidence(written));
+    await ui.presentEvidence(
+      await summarizeEvidence(written, {
+        durationMs: clock.now() - startedAt,
+        steps: loop.steps,
+        tokensUsed: loop.tokensUsed,
+        costUsd: cost.costUsd,
+      }),
+    );
     const code = exitCodeFor(loop.stopReason, green);
     if (options.json) {
       process.stdout.write(

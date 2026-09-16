@@ -1,7 +1,13 @@
 import type { ApprovalMode } from "../config/approval-mode.ts";
 import type { ConfirmationRequest } from "../tools/chokepoint.ts";
-import { formatElapsed } from "./elapsed.ts";
-import { type EvidenceSummary, evidencePanelRows } from "./evidence-panel.ts";
+import { formatClock, formatElapsed } from "./elapsed.ts";
+import {
+  describeRun,
+  type EvidenceSummary,
+  finishCardRows,
+  formatTokens,
+} from "./evidence-panel.ts";
+import { type Glyphs, glyphsFor } from "./glyphs.ts";
 import { hyperlink } from "./hyperlink.ts";
 import { type KeyAction, type KeyBindings, keyActionDescriptions } from "./key-bindings.ts";
 import { type Layout, visibleWindow } from "./layout.ts";
@@ -61,6 +67,14 @@ export interface ScreenInput {
   readonly transcript?: readonly TranscriptLine[];
   /** Which prompts the run answers itself, shown so nobody wonders why a step went unasked. */
   readonly approvalMode?: ApprovalMode;
+  /** The status marks, chosen once at the composition root for the terminal's character set. */
+  readonly glyphs?: Glyphs;
+}
+
+const defaultGlyphs = glyphsFor({ LANG: "C.UTF-8", TERM: "xterm" });
+
+function glyphsOf(input: ScreenInput): Glyphs {
+  return input.glyphs ?? defaultGlyphs;
 }
 
 export interface TranscriptLine {
@@ -125,19 +139,27 @@ function headerRows(input: ScreenInput): readonly ScreenRow[] {
   ];
 
   if (layout.showHeaderDetail) {
-    const facts = [
-      view.modelId ?? "no model call yet",
-      input.workspace,
-      formatElapsed(state.elapsedMs),
-      `step ${view.steps}`,
-      view.tokensUsed === 0 ? "tokens at the end" : `${view.tokensUsed} tokens`,
-      ...(view.attempt === null ? [] : [`attempt ${view.attempt.current}/${view.attempt.cap}`]),
-      ...(view.ratchetRejected === 0 && view.ratchetAccepted === 0
-        ? []
-        : [`ratchet +${view.ratchetAccepted}/-${view.ratchetRejected}`]),
-      ...(input.approvalMode === undefined ? [] : [`approval: ${input.approvalMode}`]),
-    ];
-    rows.push({ text: `  ${facts.join("  ")}`, dim: true });
+    const attempt =
+      view.attempt === null ? [] : [`attempt ${view.attempt.current}/${view.attempt.cap}`];
+    const approval = input.approvalMode === undefined ? [] : [`approval: ${input.approvalMode}`];
+    // Narrow keeps what changes as the run goes and what a person might wonder about when a
+    // step goes unasked; the workspace and the model are on the preflight card above the screen.
+    const facts = layout.narrow
+      ? [formatElapsed(state.elapsedMs), `step ${view.steps}`, ...attempt, ...approval]
+      : [
+          formatElapsed(state.elapsedMs),
+          `step ${view.steps}`,
+          view.tokensUsed === 0 ? "tokens at the end" : formatTokens(view.tokensUsed),
+          ...attempt,
+          ...(view.ratchetRejected === 0 && view.ratchetAccepted === 0
+            ? []
+            : [`ratchet +${view.ratchetAccepted}/-${view.ratchetRejected}`]),
+          view.modelId ?? "no model call yet",
+          ...approval,
+          // Last, so a long path is what a narrow-ish window loses rather than the mode.
+          input.workspace,
+        ];
+    rows.push({ text: `  ${facts.join(glyphsOf(input).separator)}`, dim: true });
   }
 
   return rows;
@@ -164,14 +186,14 @@ function streamRows(input: ScreenInput): readonly ScreenRow[] {
   }
 
   const window = visibleWindow(filtered, layout.actionRows, state.scrollBack);
-  if (window.rows.length === 0) {
+  if (window.rows.length === 0 && layout.actionRows > 0) {
     rows.push({ text: "  (nothing yet)", dim: true });
   }
   window.rows.forEach((action, offset) => {
     const index = window.firstIndex + offset;
     const selected = state.focus === "actions" && index === selectedIndex(filtered.length, state);
     rows.push({
-      text: `  ${firstLineToWidth(action.summary, layout.contentColumns)}`,
+      text: `  ${describeAction(action, input)}`,
       color: action.failed ? input.theme.failed.color : undefined,
       inverse: selected,
     });
@@ -183,6 +205,25 @@ function streamRows(input: ScreenInput): readonly ScreenRow[] {
 
   rows.push(...gateRows(input));
   return rows;
+}
+
+/**
+ * One timeline row: what became of it, when, and the summary. A call is pending until its
+ * outcome lands on the row below it; the outcome carries the mark that says how it went.
+ */
+function describeAction(action: ActionRow, input: ScreenInput): string {
+  const { layout } = input;
+  const glyphs = glyphsOf(input);
+  const mark = action.failed
+    ? glyphs.failed
+    : action.kind === "tool-call"
+      ? glyphs.pending
+      : action.kind === "compacted"
+        ? glyphs.bullet
+        : glyphs.done;
+  const when = layout.narrow ? "" : `${formatClock(action.at)}  `;
+  const head = `${mark} ${when}`;
+  return `${head}${firstLineToWidth(action.summary, Math.max(1, layout.contentColumns - displayWidth(head)))}`;
 }
 
 function detailRows(input: ScreenInput, filtered: readonly ActionRow[]): readonly ScreenRow[] {
@@ -240,9 +281,17 @@ function gateRows(input: ScreenInput): readonly ScreenRow[] {
 
   const rows: ScreenRow[] = [];
   if (layout.showLabels) {
+    const glyphs = glyphsOf(input);
     const attempt =
       view.attempt === null ? "" : `  attempt ${view.attempt.current}/${view.attempt.cap}`;
-    rows.push(label(`gates${attempt}`, input));
+    const count = (status: GateLine["status"]): number =>
+      view.gates.filter((gate) => gate.status === status).length;
+    const counts = [
+      `${glyphs.done} ${count("passed")} passed`,
+      `${glyphs.failed} ${count("failed")} failed`,
+      `${glyphs.pending} ${count("not-applicable")} n/a`,
+    ].join("  ");
+    rows.push(label(`gates${attempt}   ${counts}`, input));
   }
 
   const window = visibleWindow(view.gates, layout.gateRows, 0);
@@ -271,11 +320,20 @@ function gateStyle(gate: GateLine, input: ScreenInput) {
   return gate.blocking ? input.theme.failed : input.theme.advisory;
 }
 
+function gateGlyph(gate: GateLine, glyphs: Glyphs): string {
+  if (gate.status === "passed") {
+    return glyphs.done;
+  }
+  return gate.status === "not-applicable" ? glyphs.pending : glyphs.failed;
+}
+
 function describeGate(gate: GateLine, input: ScreenInput): string {
   const { layout } = input;
+  // The mark and the word both: the word is what the strip reads with colour off, and the
+  // mark is what lines the strip up with the timeline above it.
   const mark = gateStyle(gate, input).label;
   const advisory = gate.blocking ? "" : " (advisory)";
-  const head = `${padToWidth(mark, 4)} ${gate.gateId}${advisory}`;
+  const head = `${gateGlyph(gate, glyphsOf(input))} ${padToWidth(mark, 4)} ${gate.gateId}${advisory}`;
   if (layout.narrow) {
     return truncateToWidth(head, layout.contentColumns);
   }
@@ -353,6 +411,42 @@ function activityRow(input: ScreenInput): ScreenRow | null {
   const room = layout.contentColumns - displayWidth(head) - 3;
   const said = room > 12 ? truncateToWidth(view.speaking, room) : "";
   return { text: said.length === 0 ? head : `${head}   ${said}`, dim: true };
+}
+
+/**
+ * How the run ended, for the finish card's first line: the mark, the words and the colour
+ * agree with the status row below, which carries the same rule in its older wording.
+ */
+function verdictRow(input: ScreenInput): ScreenRow {
+  const { view, theme } = input;
+  const glyphs = glyphsOf(input);
+  const stoppedBadly = view.stopReason !== null && view.stopReason !== "completed";
+  const took =
+    input.evidence?.run === undefined
+      ? ""
+      : `   ${describeRun(input.evidence.run, glyphs.separator)}`;
+  if (view.escalated) {
+    return {
+      text: `${glyphs.failed} ${view.status}${took}`,
+      bold: true,
+      color: theme.failed.color,
+    };
+  }
+  if (stoppedBadly) {
+    return {
+      text: `${glyphs.failed} stopped: ${view.stopReason}, ${view.status}${took}`,
+      bold: true,
+      color: theme.failed.color,
+    };
+  }
+  if (view.finished && view.changedFiles === 0) {
+    return {
+      text: `${glyphs.pending} no files changed: ${view.status}${took}`,
+      bold: true,
+      color: theme.color("advisory"),
+    };
+  }
+  return { text: `${glyphs.done} ${view.status}${took}`, bold: true, color: theme.color("accent") };
 }
 
 function statusRow(input: ScreenInput): ScreenRow {
@@ -445,10 +539,8 @@ function helpRows(input: ScreenInput): readonly ScreenRow[] {
 function evidenceRows(input: ScreenInput, evidence: EvidenceSummary): readonly ScreenRow[] {
   const close = input.bindings.labelOf.get("back") ?? "escape";
   return [
-    ...evidencePanelRows(evidence, input.layout.columns).map((row, index) => ({
-      ...row,
-      bold: index === 0,
-    })),
+    verdictRow(input),
+    ...finishCardRows(evidence, input.layout.columns),
     { text: "" },
     // The panel is the last thing a finished run puts up, and it waits here until somebody
     // closes it. Saying neither that the run is over nor which key ends it left a person
@@ -502,14 +594,18 @@ function describeMinutes(milliseconds: number): string {
 }
 
 function label(text: string, input: ScreenInput): ScreenRow {
-  return { text, dim: true, color: input.theme.color("muted") };
+  return {
+    text: `${glyphsOf(input).bullet} ${text}`,
+    dim: true,
+    color: input.theme.color("muted"),
+  };
 }
 
 function actionsLabel(input: ScreenInput, rowCount: number): string {
   const { state } = input;
   const filter = state.filter.length === 0 ? "" : `  filter "${state.filter}" (${rowCount})`;
   const scrolled = state.scrollBack === 0 ? "" : `  ${state.scrollBack} back`;
-  return `actions${filter}${scrolled}`;
+  return `timeline${filter}${scrolled}`;
 }
 
 export function filterActions(actions: readonly ActionRow[], filter: string): readonly ActionRow[] {

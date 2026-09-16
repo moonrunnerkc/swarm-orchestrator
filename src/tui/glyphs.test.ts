@@ -3,7 +3,7 @@ import { glyphsFor } from "./glyphs.ts";
 
 /**
  * The status marks the timeline and the gate strip draw. Unicode where the terminal can be
- * expected to show it, ASCII where it cannot, and the same set of five either way so the
+ * expected to show it, ASCII where it cannot, and the same set either way so the
  * layout tests hold whichever is chosen.
  */
 describe("status glyphs", () => {
@@ -14,11 +14,19 @@ describe("status glyphs", () => {
       pending: "○",
       active: "◐",
       bullet: "◆",
+      separator: " \u00b7 ",
     });
   });
 
   it("fall back to ASCII where the locale is not UTF-8 or the terminal is dumb", () => {
-    const ascii = { done: "+", failed: "x", pending: "-", active: ">", bullet: "*" };
+    const ascii = {
+      done: "+",
+      failed: "x",
+      pending: "-",
+      active: ">",
+      bullet: "*",
+      separator: "  ",
+    };
     expect(glyphsFor({ LANG: "C", TERM: "xterm" })).toEqual(ascii);
     expect(glyphsFor({ LC_ALL: "POSIX", LANG: "en_US.UTF-8", TERM: "xterm" })).toEqual(ascii);
     expect(glyphsFor({ LANG: "en_US.UTF-8", TERM: "dumb" })).toEqual(ascii);
