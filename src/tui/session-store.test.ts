@@ -48,4 +48,14 @@ describe("the session store", () => {
     expect(before.plan).toBe("");
     expect(store.getView()).not.toBe(before);
   });
+
+  it("hands the elapsed time it is given to the row it writes", () => {
+    const store = createSessionStore();
+    store.apply(
+      { type: "tool-call", callId: "a", toolName: "read", input: { path: "x.ts" } },
+      7000,
+    );
+
+    expect(store.getView().actions[0]?.at).toBe(7000);
+  });
 });

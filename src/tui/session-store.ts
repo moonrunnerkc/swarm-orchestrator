@@ -1,9 +1,10 @@
 import type { LoopEvent } from "../core/loop-events.ts";
-import { applyLoopEvent, emptySessionView, type SessionView } from "./session-view.ts";
+import { applyLoopEventAt, emptySessionView, type SessionView } from "./session-view.ts";
 
 export interface SessionStore {
   getView(): SessionView;
-  apply(event: LoopEvent): void;
+  /** `elapsedMs` is how far into the run the event landed, off the clock the caller holds. */
+  apply(event: LoopEvent, elapsedMs?: number): void;
   /**
    * Back to nothing, for the next turn of a session. The ledger keeps every turn; the screen
    * does not, because a second task rendered under the first one's plan and gates reads as one
@@ -20,8 +21,8 @@ export function createSessionStore(): SessionStore {
 
   return {
     getView: () => view,
-    apply(event: LoopEvent): void {
-      view = applyLoopEvent(view, event);
+    apply(event: LoopEvent, elapsedMs = 0): void {
+      view = applyLoopEventAt(view, event, elapsedMs);
       for (const listener of listeners) {
         listener(view);
       }

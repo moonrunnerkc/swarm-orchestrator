@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { LoopEvent } from "../core/loop-events.ts";
 import { describeLoopEvent } from "./plain-lines.ts";
-import { applyLoopEvent, emptySessionView, type SessionView } from "./session-view.ts";
+import {
+  applyLoopEvent,
+  applyLoopEventAt,
+  emptySessionView,
+  type SessionView,
+} from "./session-view.ts";
 
 function project(events: readonly LoopEvent[]): SessionView {
   return events.reduce(applyLoopEvent, emptySessionView);
@@ -263,4 +268,22 @@ it("shows the final assessment refusal after every gate passed", () => {
   });
   expect(view.escalated).toBe(true);
   expect(view.status).toContain("base ratchet rejected");
+});
+
+describe("when each row happened", () => {
+  const call = {
+    type: "tool-call",
+    callId: "a",
+    toolName: "read",
+    input: { path: "x.ts" },
+  } satisfies LoopEvent;
+
+  it("stamps a row with the elapsed time the store hands in", () => {
+    const view = applyLoopEventAt(emptySessionView, call, 5000);
+    expect(view.actions[0]?.at).toBe(5000);
+  });
+
+  it("stamps a row at zero where nothing hands one in, never with a clock of its own", () => {
+    expect(applyLoopEvent(emptySessionView, call).actions[0]?.at).toBe(0);
+  });
 });

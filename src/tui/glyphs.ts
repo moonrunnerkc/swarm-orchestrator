@@ -1,7 +1,7 @@
 /**
  * The status marks the timeline and the gate strip draw: done, failed, pending, in progress,
  * and a bullet for a heading. Unicode where the terminal can be expected to show it, ASCII
- * where it cannot, and one set of five either way, so a layout measured with one holds with
+ * where it cannot, and one set either way, so a layout measured with one holds with
  * the other.
  */
 export interface Glyphs {
@@ -10,6 +10,8 @@ export interface Glyphs {
   readonly pending: string;
   readonly active: string;
   readonly bullet: string;
+  /** What sits between the facts on one line: a middle dot, or two spaces where there is none. */
+  readonly separator: string;
 }
 
 const unicodeGlyphs: Glyphs = {
@@ -18,9 +20,17 @@ const unicodeGlyphs: Glyphs = {
   pending: "○",
   active: "◐",
   bullet: "◆",
+  separator: " \u00b7 ",
 };
 
-const asciiGlyphs: Glyphs = { done: "+", failed: "x", pending: "-", active: ">", bullet: "*" };
+const asciiGlyphs: Glyphs = {
+  done: "+",
+  failed: "x",
+  pending: "-",
+  active: ">",
+  bullet: "*",
+  separator: "  ",
+};
 
 interface LocaleEnvironment {
   readonly LANG?: string | undefined;

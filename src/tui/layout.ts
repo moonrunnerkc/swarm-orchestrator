@@ -61,7 +61,9 @@ export function computeLayout(input: LayoutInput): Layout {
 
   const cramped = rows < minimumRows;
   const showHint = !cramped && rows >= 8;
-  const showHeaderDetail = !cramped && rows >= 12 && !narrow;
+  // Kept at every width: the screen shortens the facts on it below `narrowColumns` rather
+  // than losing the elapsed time, the step and the approval mode with the workspace.
+  const showHeaderDetail = !cramped && rows >= 12;
   const showLabels = !cramped && rows >= 10;
 
   const header = 1 + (showHeaderDetail ? 1 : 0);

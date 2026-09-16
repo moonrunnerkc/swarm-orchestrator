@@ -4,6 +4,7 @@ import type { ApprovalMode } from "../config/approval-mode.ts";
 import type { ConfirmationRequest } from "../tools/chokepoint.ts";
 import type { ConfirmationQueue } from "./confirmation-queue.ts";
 import type { EvidenceSummary } from "./evidence-panel.ts";
+import type { Glyphs } from "./glyphs.ts";
 import type { KeyBindings } from "./key-bindings.ts";
 import { dispatchKey, type KeyPress } from "./key-dispatcher.ts";
 import { computeLayout, pageRows } from "./layout.ts";
@@ -45,6 +46,7 @@ interface SessionScreenProps {
   readonly approvalMode?: ApprovalMode;
   /** Whether the terminal is known to understand OSC 8, read once at the composition root. */
   readonly hyperlinks: boolean;
+  readonly glyphs?: Glyphs;
 }
 
 /** Two rows kept back so the shell prompt and a wrapped line never push the top off screen. */
@@ -152,6 +154,7 @@ export function SessionScreen(props: SessionScreenProps): ReactElement {
       ? {}
       : { activityElapsedMs: props.activityElapsedMs() }),
     ...(props.approvalMode === undefined ? {} : { approvalMode: props.approvalMode }),
+    ...(props.glyphs === undefined ? {} : { glyphs: props.glyphs }),
   });
 
   return createElement(

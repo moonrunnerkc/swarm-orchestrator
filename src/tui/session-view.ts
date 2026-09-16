@@ -26,6 +26,11 @@ export interface ActionRow {
   /** The ledger record this row was written from, where the event carried one. */
   readonly record: string | null;
   readonly failed: boolean;
+  /**
+   * Milliseconds into the run when the row was written, from the clock the store was handed.
+   * The reducer keeps no clock of its own (invariant 8), so a row applied without one is at 0.
+   */
+  readonly at: number;
 }
 
 interface AttemptCounter {
@@ -103,6 +108,16 @@ export const emptySessionView: SessionView = {
  * event the harness emitted, never from model text presented as a result (invariant 1).
  */
 export function applyLoopEvent(view: SessionView, event: LoopEvent): SessionView {
+  return applyLoopEventAt(view, event, 0);
+}
+
+/** The same projection, with the rows it writes stamped at `elapsedMs` into the run. */
+export function applyLoopEventAt(
+  view: SessionView,
+  event: LoopEvent,
+  elapsedMs: number,
+): SessionView {
+  const at = Math.max(0, elapsedMs);
   switch (event.type) {
     case "run-assessment":
       return {
@@ -131,6 +146,7 @@ export function applyLoopEvent(view: SessionView, event: LoopEvent): SessionView
               "are no longer resent to the model. The ledger still holds all of it.",
             record: null,
             failed: false,
+            at,
           },
         ],
       };
@@ -155,6 +171,7 @@ export function applyLoopEvent(view: SessionView, event: LoopEvent): SessionView
             detail: event.message,
             record: null,
             failed: true,
+            at,
           },
         ],
       };
@@ -170,6 +187,7 @@ export function applyLoopEvent(view: SessionView, event: LoopEvent): SessionView
             detail: describeInput(event.input),
             record: null,
             failed: false,
+            at,
           },
         ],
       };
@@ -185,6 +203,7 @@ export function applyLoopEvent(view: SessionView, event: LoopEvent): SessionView
             detail: event.output,
             record: null,
             failed: event.failed,
+            at,
           },
         ],
       };
@@ -243,6 +262,7 @@ export function applyLoopEvent(view: SessionView, event: LoopEvent): SessionView
             detail: event.detail,
             record: event.record,
             failed: !event.accepted,
+            at,
           },
         ],
       };

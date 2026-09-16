@@ -3,6 +3,7 @@ import { platform } from "node:os";
 import { createInterface } from "node:readline/promises";
 import type { ResolvedSettings } from "./config/settings.ts";
 import type { Clock } from "./core/clock.ts";
+import { glyphsFor } from "./tui/glyphs.ts";
 import { terminalSupportsHyperlinks } from "./tui/hyperlink.ts";
 import { resolveKeyBindings } from "./tui/key-bindings.ts";
 import { type OpenCommand, openEnvironment } from "./tui/open-path.ts";
@@ -51,6 +52,7 @@ export async function startInterface(input: {
     platform: platform(),
     approvalMode: input.settings.approval,
     hyperlinks: terminalSupportsHyperlinks(process.env),
+    glyphs: glyphsFor(process.env),
   });
 }
 
