@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { bundleFileNames } from "../evidence/bundle-manifest.ts";
+import { fileUrl } from "./hyperlink.ts";
 import type { EvidenceLocation } from "./open-path.ts";
 import { truncateToWidth } from "./terminal-text.ts";
 
@@ -65,29 +66,53 @@ export function describeEvidence(
   summary: EvidenceSummary,
   columns: number | null,
 ): readonly string[] {
+  return evidencePanelRows(summary, columns).map((row) => row.text);
+}
+
+export interface EvidencePanelRow {
+  readonly text: string;
+  /** A file URL for the path the row names, where the row names one a person opens. */
+  readonly link?: string;
+}
+
+/**
+ * The same panel as rows, with the two paths a person opens carried as links beside their
+ * text. The text is what the plain stream prints, byte for byte; the link is what a terminal
+ * that understands OSC 8 is given as well.
+ */
+export function evidencePanelRows(
+  summary: EvidenceSummary,
+  columns: number | null,
+): readonly EvidencePanelRow[] {
   const directory = summary.location.directory;
-  const rows: readonly (readonly [string, string])[] = [
-    ["the page a person reads", join(directory, bundleFileNames.review)],
-    ["the bundle a stranger verifies", directory],
-    ["its own verifier, needing nothing installed", verifyCommandText(summary.location)],
-    ["the chain every record is on", join(directory, bundleFileNames.ledger)],
+  const reviewPage = join(directory, bundleFileNames.review);
+  const rows: readonly (readonly [string, string, string | null])[] = [
+    ["the page a person reads", reviewPage, fileUrl(reviewPage)],
+    ["the bundle a stranger verifies", directory, fileUrl(directory)],
+    ["its own verifier, needing nothing installed", verifyCommandText(summary.location), null],
+    ["the chain every record is on", join(directory, bundleFileNames.ledger), null],
   ];
 
   const toWidth = (line: string): string =>
     columns === null ? line : truncateToWidth(line, Math.max(20, columns));
 
   return [
-    "what this run produced",
-    "",
-    ...rows.map(([label, value]) => toWidth(`  ${label}: ${value}`)),
-    "",
-    toWidth(
-      `  ${summary.recordCount} records. The harness verified ${summary.claimsVerified} ` +
-        `claim(s) and refused ${summary.claimsRefused}.`,
-    ),
-    toWidth(`  ${describeVerification(summary.verification)}`),
+    { text: "what this run produced" },
+    { text: "" },
+    ...rows.map(([label, value, link]) => ({
+      text: toWidth(`  ${label}: ${value}`),
+      ...(link === null ? {} : { link }),
+    })),
+    { text: "" },
+    {
+      text: toWidth(
+        `  ${summary.recordCount} records. The harness verified ${summary.claimsVerified} ` +
+          `claim(s) and refused ${summary.claimsRefused}.`,
+      ),
+    },
+    { text: toWidth(`  ${describeVerification(summary.verification)}`) },
     ...(summary.verification.kind === "verified"
       ? []
-      : [toWidth(`  check it yourself: ${verifyCommandText(summary.location)}`)]),
+      : [{ text: toWidth(`  check it yourself: ${verifyCommandText(summary.location)}`) }]),
   ];
 }
