@@ -82,6 +82,11 @@ describe("the keys that must not fire mid-run", () => {
       kind: "answer-confirmation",
       answer: "no",
     });
+    // The third answer: this program may run unasked for the rest of the run (ADR 0011).
+    expect(decide(press("a"), initialViewState, true)).toEqual({
+      kind: "answer-confirmation",
+      answer: "always",
+    });
     // Scrolling away from the question is not an answer, so the key does nothing.
     expect(decide(press("j"), initialViewState, true)).toEqual({ kind: "ignored" });
   });
