@@ -142,6 +142,20 @@ function memoryAllowance(profile: HardwareProfile, vram: GpuReading | null): Mem
   };
 }
 
+/**
+ * Every tier this hardware matches, highest rank first. The recommender takes the first; the
+ * served-model pick walks them, since the best tier's model may be one nobody has pulled.
+ */
+export function matchingTiers(
+  profile: HardwareProfile,
+  shortlist: Shortlist,
+): readonly ShortlistTier[] {
+  const vram = measuredVram(profile);
+  return shortlist.tiers
+    .filter((tier) => tierMatches(tier, profile, vram))
+    .sort((left, right) => right.rank - left.rank);
+}
+
 function tierMatches(
   tier: ShortlistTier,
   profile: HardwareProfile,
