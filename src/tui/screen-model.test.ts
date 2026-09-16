@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { LoopEvent } from "../core/loop-events.ts";
 import type { EvidenceSummary } from "./evidence-panel.ts";
+import { fileUrl, hyperlink } from "./hyperlink.ts";
 import { resolveKeyBindings } from "./key-bindings.ts";
 import { computeLayout } from "./layout.ts";
 import { evidenceLocation } from "./open-path.ts";
-import { buildScreen, type ScreenInput, type ScreenRow, spinnerAt } from "./screen-model.ts";
+import {
+  buildScreen,
+  renderRowText,
+  type ScreenInput,
+  type ScreenRow,
+  spinnerAt,
+} from "./screen-model.ts";
 import { applyLoopEvent, emptySessionView } from "./session-view.ts";
 import { displayWidth } from "./terminal-text.ts";
 import { resolveTheme } from "./theme.ts";
@@ -595,5 +602,34 @@ describe("what the confirmation panel offers and what the header says about appr
     expect(text(screen({ approvalMode: "ask" }, { columns: 120, rows: 30 }))).toContain(
       "approval: ask",
     );
+  });
+});
+
+describe("the paths a finished run shows", () => {
+  it("carry the review page and the bundle as links, on rows whose text is the plain path", () => {
+    const rows = screen({ evidence: summary }, { columns: 160, rows: 40 }, [
+      { type: "open-evidence" },
+    ]);
+    const review = rows.find(
+      (row) => row.link === fileUrl("/home/someone/.swarm/sessions/s-1/bundle/review.html"),
+    );
+    const bundle = rows.find(
+      (row) => row.link === fileUrl("/home/someone/.swarm/sessions/s-1/bundle"),
+    );
+
+    expect(review?.text).toContain("/home/someone/.swarm/sessions/s-1/bundle/review.html");
+    expect(review?.text).not.toContain(escapeCharacter);
+    expect(bundle?.text).toContain("/home/someone/.swarm/sessions/s-1/bundle");
+  });
+
+  it("are wrapped as OSC 8 links only where the terminal is known to understand them", () => {
+    const row: ScreenRow = {
+      text: "  review: /tmp/b/review.html",
+      link: "file:///tmp/b/review.html",
+    };
+
+    expect(renderRowText(row, true)).toBe(hyperlink(row.text, "file:///tmp/b/review.html"));
+    expect(renderRowText(row, false)).toBe(row.text);
+    expect(renderRowText({ text: "plain" }, true)).toBe("plain");
   });
 });

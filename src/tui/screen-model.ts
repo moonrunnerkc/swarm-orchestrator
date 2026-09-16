@@ -1,7 +1,8 @@
 import type { ApprovalMode } from "../config/approval-mode.ts";
 import type { ConfirmationRequest } from "../tools/chokepoint.ts";
 import { formatElapsed } from "./elapsed.ts";
-import { describeEvidence, type EvidenceSummary } from "./evidence-panel.ts";
+import { type EvidenceSummary, evidencePanelRows } from "./evidence-panel.ts";
+import { hyperlink } from "./hyperlink.ts";
 import { type KeyAction, type KeyBindings, keyActionDescriptions } from "./key-bindings.ts";
 import { type Layout, visibleWindow } from "./layout.ts";
 import type { ActionRow, GateLine, SessionView } from "./session-view.ts";
@@ -21,6 +22,20 @@ export interface ScreenRow {
   readonly bold?: boolean;
   readonly dim?: boolean;
   readonly inverse?: boolean;
+  /**
+   * A URL the row's text stands for, given to a terminal that understands OSC 8. The text is
+   * complete on its own, so a terminal that does not is handed nothing it cannot show.
+   */
+  readonly link?: string;
+}
+
+/**
+ * What the terminal is given for a row: the text wrapped as a link where the row carries one
+ * and the terminal is known to understand it, the text alone otherwise. Applied after the text
+ * was neutralised, so a control sequence in tool output never reaches here as a sequence.
+ */
+export function renderRowText(row: ScreenRow, hyperlinks: boolean): string {
+  return hyperlinks && row.link !== undefined ? hyperlink(row.text, row.link) : row.text;
 }
 
 export interface ScreenInput {
@@ -430,8 +445,8 @@ function helpRows(input: ScreenInput): readonly ScreenRow[] {
 function evidenceRows(input: ScreenInput, evidence: EvidenceSummary): readonly ScreenRow[] {
   const close = input.bindings.labelOf.get("back") ?? "escape";
   return [
-    ...describeEvidence(evidence, input.layout.columns).map((text, index) => ({
-      text,
+    ...evidencePanelRows(evidence, input.layout.columns).map((row, index) => ({
+      ...row,
       bold: index === 0,
     })),
     { text: "" },

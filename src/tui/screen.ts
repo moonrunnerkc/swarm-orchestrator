@@ -8,7 +8,7 @@ import type { KeyBindings } from "./key-bindings.ts";
 import { dispatchKey, type KeyPress } from "./key-dispatcher.ts";
 import { computeLayout, pageRows } from "./layout.ts";
 import type { TranscriptLine } from "./screen-model.ts";
-import { buildScreen, filterActions, type ScreenRow } from "./screen-model.ts";
+import { buildScreen, filterActions, renderRowText, type ScreenRow } from "./screen-model.ts";
 import type { SessionStore } from "./session-store.ts";
 import type { SessionView } from "./session-view.ts";
 import type { Theme } from "./theme.ts";
@@ -43,6 +43,8 @@ interface SessionScreenProps {
   /** How long the current activity has been going. A function, so each redraw reads it fresh. */
   readonly activityElapsedMs?: () => number;
   readonly approvalMode?: ApprovalMode;
+  /** Whether the terminal is known to understand OSC 8, read once at the composition root. */
+  readonly hyperlinks: boolean;
 }
 
 /** Two rows kept back so the shell prompt and a wrapped line never push the top off screen. */
@@ -155,7 +157,9 @@ export function SessionScreen(props: SessionScreenProps): ReactElement {
   return createElement(
     Box,
     { flexDirection: "column" },
-    ...rows.map((row, index) => createElement(Text, { key: index, ...textProps(row) }, row.text)),
+    ...rows.map((row, index) =>
+      createElement(Text, { key: index, ...textProps(row) }, renderRowText(row, props.hyperlinks)),
+    ),
     ...(props.viewState.openNotice === null
       ? []
       : [createElement(Text, { key: "open-notice", dimColor: true }, props.viewState.openNotice)]),

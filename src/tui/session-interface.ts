@@ -84,6 +84,8 @@ export interface SessionInterfaceOptions {
   readonly platform: NodeJS.Platform;
   /** Shown in the header, so a person knows which prompts the run answers itself. */
   readonly approvalMode?: ApprovalMode;
+  /** Whether the terminal understands OSC 8 links. Absent means it is not assumed to. */
+  readonly hyperlinks?: boolean;
 }
 
 /**
@@ -309,6 +311,7 @@ function interactiveInterface(options: SessionInterfaceOptions): SessionInterfac
       workspace: options.workspace,
       evidence,
       ...(options.approvalMode === undefined ? {} : { approvalMode: options.approvalMode }),
+      hyperlinks: options.hyperlinks === true,
     }),
     { exitOnCtrlC: false },
   );
@@ -336,6 +339,7 @@ function interactiveInterface(options: SessionInterfaceOptions): SessionInterfac
         task: currentTask,
         workspace: options.workspace,
         evidence,
+        hyperlinks: options.hyperlinks === true,
       }),
     );
   };
