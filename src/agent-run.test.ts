@@ -102,6 +102,28 @@ function task(turns: readonly FixtureTurn[], overrides: Partial<AgentTaskOptions
 }
 
 /** Declares its file set, writes the change, and stops. What an ordinary run looks like. */
+describe("the approval mode reaches the chokepoint", () => {
+  it("pre-approves a shell-allowlist prompt under auto, and the record says who decided", async () => {
+    await task(
+      [
+        respondWithToolCalls("checking", [
+          { callId: "s", toolName: "shell", input: { command: "true" } },
+        ]),
+        respondWithText("done"),
+      ],
+      { approvalMode: "auto" },
+    );
+
+    const confirmation = evidence.records().find((record) => record.type === "confirmation");
+    const payload = evidence.payloads().get(confirmation?.payloadDigest ?? "");
+    expect(payload).toMatchObject({
+      reason: "shell-allowlist",
+      outcome: "pre-approved",
+      decidedBy: "approval-mode",
+    });
+  });
+});
+
 function goodTurns(contents: string): readonly FixtureTurn[] {
   return [
     respondWithToolCalls("declaring", [

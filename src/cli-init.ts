@@ -5,8 +5,10 @@ import { basename, join } from "node:path";
 import { promisify } from "node:util";
 import type { InitCommand } from "./cli-options.ts";
 import { askOnTerminal } from "./cli-terminal.ts";
+import { type ApprovalMode, withToolsApproval } from "./config/approval-mode.ts";
 import { initializeSwarmToml, initWouldHelp, type PlannedGate } from "./config/init.ts";
 import { hasAnyManifest, nodeHarnessFiles } from "./config/node-harness.ts";
+import { parseSwarmToml, swarmTomlFileName } from "./config/swarm-toml.ts";
 
 const runProcess = promisify(execFile);
 
@@ -156,4 +158,50 @@ export async function offerNodeHarness(workspace: string): Promise<boolean> {
   const established = await establishNodeHarness(workspace);
   process.stderr.write(`committed the Node harness as ${established.commit.slice(0, 12)}\n`);
   return true;
+}
+
+export interface ApprovalOfferDependencies {
+  readonly workspace: string;
+  readonly isTty: boolean;
+  readonly ask: (question: string) => Promise<string>;
+  readonly readFile: (path: string) => Promise<string | null>;
+  readonly writeFile: (path: string, text: string) => Promise<void>;
+}
+
+/** The offer as it runs from the composition root: the real terminal and the real files. */
+export function approvalOfferOnDisk(workspace: string): ApprovalOfferDependencies {
+  const onDisk = initOnDisk(workspace);
+  return {
+    workspace,
+    isTty: process.stdout.isTTY === true && process.stdin.isTTY === true,
+    ask: askOnTerminal,
+    readFile: onDisk.readFile,
+    writeFile: onDisk.writeFile,
+  };
+}
+
+/**
+ * Asked once per workspace: whether shell-allowlist prompts are answered by the run or by the
+ * person, written into swarm.toml so the next run does not ask (ADR 0011). A derivation
+ * heuristic prompt asks under either answer. Off a terminal nothing is asked and nothing is
+ * written; the default of asking stands.
+ */
+export async function offerApprovalMode(deps: ApprovalOfferDependencies): Promise<void> {
+  const path = join(deps.workspace, swarmTomlFileName);
+  const existing = await deps.readFile(path);
+  if (existing !== null && parseSwarmToml(existing, path).tools.approval !== null) {
+    return;
+  }
+  if (!deps.isTty) {
+    return;
+  }
+  process.stderr.write(
+    "Off-allowlist commands (pip, curl, make and the like) ask before they run. swarm can " +
+      "answer those itself for this workspace and record each one; a command that looks copied " +
+      "from something the model just read still asks either way.\n",
+  );
+  const answer = await deps.ask("Approve off-allowlist commands automatically here? [y/N] ");
+  const mode: ApprovalMode = answer.trim().toLowerCase() === "y" ? "auto" : "ask";
+  await deps.writeFile(path, withToolsApproval(existing ?? "", mode));
+  process.stderr.write(`wrote ${path}: [tools] approval = "${mode}"\n`);
 }

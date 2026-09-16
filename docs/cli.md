@@ -20,6 +20,7 @@ swarm --version                  # which build this is
 | `--max-steps <n>` | how long the loop may run before it stops |
 | `--max-wall-minutes <n>` | the whole run's clock: the loop and every retry together |
 | `--isolation <runtime[:image]>` | run commands behind a kernel-enforced boundary |
+| `--approve ask\|auto` | `auto` answers shell-allowlist prompts itself and records each; a derivation-heuristic prompt still asks |
 | `--bundle <dir>` | where to write the evidence bundle |
 | `--json` | line-delimited JSON: one line per event, one result at the end |
 | `--no-tui` | plain lines even on a terminal |
@@ -58,6 +59,19 @@ command instead, the coverage arm reports `unmeasured` with the reason named (no
 the floor for isolated coverage), and the ratchet cannot compare it. That is not a pass: a
 change touching covered lines fails the ratchet on unmeasured coverage, which is the correct
 outcome on a runtime that cannot take the measurement.
+
+## Approval
+
+Two guards can stop a tool call for a person to answer: a program not on the shell allowlist
+(`pip`, `curl`, `make`), and the derivation heuristic, which fires when a command looks copied
+from content the model just read and is the injection defence. The first run on a terminal in
+a workspace asks once whether off-allowlist commands may be approved automatically there, and
+writes the answer as `[tools] approval = "ask"` or `"auto"` in `swarm.toml`; `--approve` and
+`SWARM_APPROVAL` override it for one run. Under `auto` the run answers an allowlist prompt
+itself and records the confirmation as pre-approved by the approval mode. A derivation prompt
+asks under either mode. Every prompt takes `a` as well as `y` and `n`: always, which allows that
+program for the rest of the run, recorded as a run allowance and never written to `swarm.toml`.
+Workers under `swarm parallel` stay unattended: their prompts are refused as before.
 
 ## Gates without a model
 

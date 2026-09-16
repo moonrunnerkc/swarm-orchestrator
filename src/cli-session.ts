@@ -2,7 +2,7 @@ import { statSync } from "node:fs";
 import { homedir } from "node:os";
 import { runAgentTask } from "./agent-run.ts";
 import { announceBundle, writeBundle } from "./cli-bundle.ts";
-import { offerInit, offerNodeHarness } from "./cli-init.ts";
+import { approvalOfferOnDisk, offerApprovalMode, offerInit, offerNodeHarness } from "./cli-init.ts";
 import { resolveLocalBackend } from "./cli-local-backend.ts";
 import { preflightAll } from "./cli-model-preflight.ts";
 import type { SessionCommand } from "./cli-options.ts";
@@ -72,6 +72,7 @@ export async function session(options: SessionCommand): Promise<number> {
     baseCommitAtStart = await requireBaseCommit(options.workspace, options.baseRef);
   }
   await offerInit(options.workspace);
+  await offerApprovalMode(approvalOfferOnDisk(options.workspace));
   const settings = await settingsFor(options.workspace, {
     model: options.modelSpec,
     maxSteps: options.maxSteps,
@@ -257,6 +258,7 @@ async function runOneTurn(input: {
         ui.emit(event);
       },
       confirm: ui.confirm,
+      approvalMode: settings.approval,
       abortSignal: interruption.signal,
       homeDir: homedir(),
       history: input.history,
