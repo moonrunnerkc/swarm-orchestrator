@@ -225,6 +225,7 @@ async function run(options: RunCommand): Promise<number> {
     maxWallMinutes: options.maxWallMinutes,
     localEndpoint: options.localEndpoint,
     interfaceFlags: options.interfaceFlags,
+    approval: options.approval,
   });
   const random = createSystemRandom();
   // Before the session opens and before the model is asked for anything: a run that discovers

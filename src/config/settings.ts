@@ -1,4 +1,5 @@
 import type { GateOverride } from "../gates/gate-definition.ts";
+import { type ApprovalMode, parseApprovalMode } from "./approval-mode.ts";
 import type { ColorMode, InterfaceFlags, OpenEvidencePolicy } from "./interface-settings.ts";
 import type { SwarmToml } from "./swarm-toml.ts";
 
@@ -58,6 +59,8 @@ export interface CommandLineSettings {
   readonly maxWallMinutes?: number | null;
   readonly localEndpoint: string | null;
   readonly interfaceFlags?: InterfaceFlags;
+  /** `--approve`, or null where the flag was not given. */
+  readonly approval?: ApprovalMode | null;
 }
 
 /** Everything about the screen, resolved once. `auto` is decided against the real terminal. */
@@ -107,6 +110,8 @@ export interface ResolvedSettings {
     readonly maxAddedLines?: number;
   };
   readonly interface: ResolvedInterface;
+  /** Whether shell-allowlist prompts are answered by the run or the person (ADR 0011). */
+  readonly approval: ApprovalMode;
 }
 
 interface SettingsInput {
@@ -134,6 +139,13 @@ export function resolveSettings(input: SettingsInput): ResolvedSettings {
     transportTracePath: emptyToNull(input.env.SWARM_TRANSPORT_TRACE),
     gateCommandOverrides: input.toml?.gates ?? {},
     interface: resolveInterface(input),
+    approval:
+      input.flags.approval ??
+      (input.env.SWARM_APPROVAL === undefined || input.env.SWARM_APPROVAL.length === 0
+        ? null
+        : parseApprovalMode(input.env.SWARM_APPROVAL, "SWARM_APPROVAL")) ??
+      input.toml?.tools.approval ??
+      "ask",
     diffBudget: {
       ...(input.toml?.budgets.maxChangedFiles == null
         ? {}

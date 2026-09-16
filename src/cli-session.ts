@@ -79,6 +79,7 @@ export async function session(options: SessionCommand): Promise<number> {
     maxWallMinutes: options.maxWallMinutes,
     localEndpoint: options.localEndpoint,
     interfaceFlags: options.interfaceFlags,
+    approval: options.approval,
   });
 
   const clock = createSystemClock();
