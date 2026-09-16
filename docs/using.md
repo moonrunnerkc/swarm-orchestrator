@@ -107,24 +107,40 @@ events and never lands an accepted commit twice.
 On a terminal, a run draws a single screen you can drive. Off one, it writes the same plain
 lines it always did, so pipes and CI are unchanged.
 
+Before the screen goes up, a card says what the run settled before the model was asked for
+anything. It stays on the scrollback, so it can still be read once the screen has come down.
+
+```
+✓ repository   ~/projects/scratch-repo at aae1321a
+✓ manifest     package.json
+✓ model        local:qwen3-coder:30b-a3b  (the best served model for this hardware)
+✓ approval     ask  (a on a prompt allows that program for this run; --approve auto answers allowlist prompts itself)
+```
+
+Then the screen: a header with the task and the run's counters, the plan, a timeline with a
+mark and a clock time on every row, and the gate strip with its counts.
+
 ```
 swarm  make the parser trim before it splits
-  local:qwen3-coder:30b-a3b  /Users/brad/projects/scratch-repo  20s  step 4  5812 tokens  attempt 1/3
-plan
+  20s · step 4 · tokens at the end · attempt 1/3 · local:qwen3-coder:30b-a3b · approval: ask · ~/projects/scratch-repo
+◆ plan
   read the failing test, fix the parser, run the gates
-actions
-  edit path=src/parse.ts find=text.split replace=text.trim().split
-  shell command=npm test
-  shell failed: 1 failing
-  ratchet accepted: tests collected 12 to 12, assertions 34 to 35, skips 0 to 0
-gates  attempt 1/3
-  PASS tests: 12 collected, 0 failed
-  PASS lint: no findings in 208 files
-  N/A  coverage: no lcov artifact was written to the path the harness named
-  WARN diff-budget (advisory): 1 file changed, 1 line added, budget 12 files and 400 lines
+◆ timeline
+  ○ 0:04  edit path=src/parse.ts find=text.split replace=text.trim().split
+  ✓ 0:04  edit ok: 1 replacement
+  ○ 0:09  shell command=npm test
+  ✗ 0:17  shell failed: 1 failing
+  ✓ 0:19  ratchet accepted: tests collected 12 to 12, assertions 34 to 35, skips 0 to 0
+◆ gates  attempt 1/3   ✓ 2 passed  ✗ 1 failed  ○ 1 n/a
+  ✓ PASS tests: 12 collected, 0 failed
+  ✓ PASS lint: no findings in 208 files
+  ○ N/A  coverage: no lcov artifact was written to the path the harness named
+  ✗ WARN diff-budget (advisory): 1 file changed, 1 line added, budget 12 files and 400 lines
 DONE stopped: completed (4 steps, 5812 tokens)
 j scroll  enter expand  tab pane  / filter  e evidence  ? help  q detach  ctrl+c cancel run
 ```
+
+The marks are ASCII (`+`, `x`, `-`, `*`) where the locale is not UTF-8 or the terminal is dumb.
 
 While it works there is a line that says so: a spinner that turns, what is happening, how long
 it has been happening, and, while the model is talking, the tail of what it is saying. One
@@ -136,10 +152,22 @@ from. `q` leaves the view: the screen comes down and the run keeps going, report
 lines it writes off a terminal. `ctrl+c` cancels the run. There is no progress bar, because an
 agent run has no denominator.
 
-When the run ends, the screen lists what it produced, says how many claims the harness
-verified and how many it refused, and offers to open the review page. It says the bundle
-verified only if the bundle's own verifier ran here and exited 0. `swarm review <bundle>`
-shows the same panel for any bundle already on disk. `swarm calibrate` has a screen of its
+When the run ends, the screen becomes a finish card: the verdict, what the run took, and the
+two paths a person opens, each a clickable link where the terminal understands OSC 8 links
+(iTerm2, WezTerm, kitty, VS Code, Windows Terminal, GNOME Terminal and its relatives).
+
+```
+✓ work accepted   1m 04s · 4 steps · 5,812 tokens · $0.00
+  review page   /Users/brad/.swarm/sessions/s-20260916-1a2b/bundle/review.html
+  bundle        /Users/brad/.swarm/sessions/s-20260916-1a2b/bundle
+  verify        node /Users/brad/.swarm/sessions/s-20260916-1a2b/bundle/verify.mjs /Users/brad/.swarm/sessions/s-20260916-1a2b/bundle
+  180 records, 2 claims verified, 0 refused, bundle verified here (exit 0)
+```
+
+`o` opens the review page and `b` the bundle without the link. The cost is the run's own
+token counts at the published rate, `$0.00` for a local model, and `cost not priced` where no
+rate could be read. It says the bundle verified only if the bundle's own verifier ran here and
+exited 0. `swarm review <bundle>` shows the same facts for any bundle already on disk. `swarm calibrate` has a screen of its
 own for a sweep, built the same way, from the sweep's own records.
 
 The keymap, the `swarm.toml` surface, the degradation matrix, and a recording of a session

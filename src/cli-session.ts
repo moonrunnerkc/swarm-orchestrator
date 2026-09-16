@@ -7,6 +7,7 @@ import { resolveLocalBackend } from "./cli-local-backend.ts";
 import { defaultModelFor } from "./cli-model-default.ts";
 import { preflightAll } from "./cli-model-preflight.ts";
 import type { SessionCommand } from "./cli-options.ts";
+import { describePreflight, manifestsIn } from "./cli-preflight.ts";
 import { registrySettingsFrom } from "./cli-provider-settings.ts";
 import { runStorePath } from "./cli-run-commands.ts";
 import { reportBonds, reportGates } from "./cli-run-report.ts";
@@ -38,6 +39,7 @@ import { parseModelSpec } from "./providers/model-spec.ts";
 import { createProviderRegistry } from "./providers/registry.ts";
 import { chooseUsableModel } from "./select/model-fallback.ts";
 import { routingDecisionRecord } from "./select/routing-record.ts";
+import { glyphsFor } from "./tui/glyphs.ts";
 import type { SessionInterface } from "./tui/session-interface.ts";
 
 /**
@@ -91,6 +93,19 @@ export async function session(options: SessionCommand): Promise<number> {
     sessionId: createSessionId(clock, random),
     clock,
   });
+  // Before the screen goes up, so it stays on the scrollback. The model is chosen per task,
+  // so the card names it only where a pin has already decided it.
+  for (const line of describePreflight({
+    workspace: options.workspace,
+    home: homedir(),
+    baseCommit: baseCommitAtStart,
+    manifests: await manifestsIn(options.workspace),
+    model: settings.modelPinned ? { spec: settings.modelSpec, reason: "pinned" } : null,
+    approval: settings.approval,
+    glyphs: glyphsFor(process.env),
+  })) {
+    process.stderr.write(`${line}\n`);
+  }
   const ui = await startInterface({ task: "", workspace: options.workspace, settings, clock });
 
   let baseRef = baseCommitAtStart;

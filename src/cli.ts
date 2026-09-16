@@ -25,6 +25,7 @@ import {
   type RunCommand,
   usage,
 } from "./cli-options.ts";
+import { describePreflight, manifestsIn } from "./cli-preflight.ts";
 import { registrySettingsFrom } from "./cli-provider-settings.ts";
 import {
   abortRun,
@@ -67,6 +68,7 @@ import { routingDecisionRecord } from "./select/routing-record.ts";
 import { renderRoutingReport } from "./select/routing-report.ts";
 import { createTelemetry, jsonLinesSink, type Telemetry } from "./telemetry/otel.ts";
 import { describeEvidence } from "./tui/evidence-panel.ts";
+import { glyphsFor } from "./tui/glyphs.ts";
 
 /**
  * What stored evidence would be removed, and only then removing it. A session holds every
@@ -246,9 +248,6 @@ async function run(options: RunCommand): Promise<number> {
   // says so before the session opens, and records the choice once it has (ADR 0011).
   const chosen =
     settings.modelPinned || routed.modelSpec !== null ? null : await defaultModelFor(settings);
-  if (chosen !== null) {
-    process.stderr.write(`model: ${chosen.modelSpec}, ${chosen.reason}\n`);
-  }
   const modelSpec = chosen?.modelSpec ?? routed.modelSpec ?? settings.modelSpec;
   const spec = parseModelSpec(modelSpec);
   // Resolved before the session opens, so a machine with no local runtime fails here,
@@ -298,12 +297,29 @@ async function run(options: RunCommand): Promise<number> {
           candidates: routed.candidates,
         })
       : ({ outcome: "as-requested", modelSpec, reason: "not a local model" } as const);
-  if (usable.outcome === "substituted") {
-    process.stderr.write(
-      `model: ${usable.modelSpec} instead of ${usable.requested}, ${usable.reason}\n`,
-    );
-  }
   const runSpec = parseModelSpec(usable.modelSpec);
+
+  // The card stays on the scrollback above the screen, so what the run settled before the
+  // model was asked for anything can still be read once the screen has come down.
+  const modelReason =
+    usable.outcome === "substituted"
+      ? `instead of ${usable.requested}: ${usable.reason}`
+      : chosen !== null
+        ? chosen.reason
+        : routed.modelSpec !== null
+          ? "routed by calibration"
+          : "pinned";
+  for (const line of describePreflight({
+    workspace: options.workspace,
+    home: homedir(),
+    baseCommit,
+    manifests: await manifestsIn(options.workspace),
+    model: { spec: usable.modelSpec, reason: modelReason },
+    approval: settings.approval,
+    glyphs: glyphsFor(process.env),
+  })) {
+    process.stderr.write(`${line}\n`);
+  }
 
   const registry = createProviderRegistry(registrySettingsFrom(settings, localBackend));
   const model = createRecordingModelClient(registry.create(runSpec), evidence, {

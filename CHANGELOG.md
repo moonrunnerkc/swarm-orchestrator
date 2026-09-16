@@ -17,6 +17,16 @@
   opens, and records it as a `model-default` ledger record. A frontier key is used only where
   nothing local is served; with neither, the run stops and names the remedies instead of
   defaulting to a provider it has no key for.
+- **A preflight card, and a screen that says what became of each step.** Before the screen goes
+  up, `swarm run` and `swarm session` print four lines to stderr naming the repository and base
+  commit, the manifest, the model with the reason it was chosen, and the approval mode. On the
+  screen, the header's second line reads elapsed, step, tokens, attempt, ratchet, model,
+  approval and workspace, and stays at every width; each timeline row starts with a status
+  mark and the clock time it landed; the gate strip counts passed, failed and not-applicable.
+  A finished run ends on a finish card: the verdict, duration, steps, tokens and cost, then the
+  review page and the bundle as rows a terminal that understands OSC 8 shows as clickable
+  links. Marks fall back to ASCII where the locale is not UTF-8. The plain-line stream that CI
+  and pipes read is byte-identical to before.
 - **`swarm-verify`, the verification path as its own package.** `packages/swarm-verify` builds a
   binary carrying `verify`, `ci` and `gates` from the same modules `swarm` runs under those names,
   parsed by the same parser, so an invocation reads the same through either. It carries no
