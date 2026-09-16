@@ -13,6 +13,7 @@ import { summarizeEvidence } from "./cli-evidence-summary.ts";
 import { gates } from "./cli-gates.ts";
 import { approvalOfferOnDisk, offerApprovalMode, offerInit, offerNodeHarness } from "./cli-init.ts";
 import { resolveLocalBackend } from "./cli-local-backend.ts";
+import { defaultModelFor } from "./cli-model-default.ts";
 import { preflightAll } from "./cli-model-preflight.ts";
 import {
   type CommandLine,
@@ -241,7 +242,14 @@ async function run(options: RunCommand): Promise<number> {
         candidates: [] as readonly string[],
       }
     : await chooseModel(options.task, homedir(), random, settings);
-  const modelSpec = routed.modelSpec ?? settings.modelSpec;
+  // Nothing pinned and nothing calibrated: the run picks from what a local backend serves,
+  // says so before the session opens, and records the choice once it has (ADR 0011).
+  const chosen =
+    settings.modelPinned || routed.modelSpec !== null ? null : await defaultModelFor(settings);
+  if (chosen !== null) {
+    process.stderr.write(`model: ${chosen.modelSpec}, ${chosen.reason}\n`);
+  }
+  const modelSpec = chosen?.modelSpec ?? routed.modelSpec ?? settings.modelSpec;
   const spec = parseModelSpec(modelSpec);
   // Resolved before the session opens, so a machine with no local runtime fails here,
   // with the remedy named, rather than after an empty ledger has been created.
@@ -263,6 +271,14 @@ async function run(options: RunCommand): Promise<number> {
     });
   if (localBackend !== null) {
     await evidence.record(localEndpointRecord(localBackend));
+  }
+  if (chosen !== null) {
+    await evidence.record({
+      type: "model-default",
+      actor: "harness",
+      provenance: ["tool-output"],
+      payload: chosen.record,
+    });
   }
   if (routed.decision !== null) {
     // Written here rather than where the choice was made, because the choice has to happen

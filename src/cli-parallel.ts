@@ -4,6 +4,7 @@ import { availableParallelism, homedir, platform, tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { resolveLocalBackend } from "./cli-local-backend.ts";
+import { defaultModelFor } from "./cli-model-default.ts";
 import type { ParallelCommand } from "./cli-options.ts";
 import { type ParallelOutput, startParallelOutput } from "./cli-parallel-output.ts";
 import { registrySettingsFrom } from "./cli-provider-settings.ts";
@@ -187,7 +188,11 @@ export async function parallel(options: ParallelCommand): Promise<number> {
     })
   ).stdout.trim();
   const fromFile = options.tasksFile === null ? null : await readTasksFile(options.tasksFile);
-  const spec = parseModelSpec(settings.modelSpec);
+  const chosen = settings.modelPinned ? null : await defaultModelFor(settings);
+  if (chosen !== null) {
+    process.stderr.write(`model: ${chosen.modelSpec}, ${chosen.reason}\n`);
+  }
+  const spec = parseModelSpec(chosen?.modelSpec ?? settings.modelSpec);
   const localBackend = await resolveLocalBackend(settings, [spec]);
   const registry = createProviderRegistry(registrySettingsFrom(settings, localBackend));
   const isolation = parseIsolationOption(options.isolation, options.workspace);

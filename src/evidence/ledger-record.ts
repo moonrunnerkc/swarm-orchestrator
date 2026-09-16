@@ -53,6 +53,7 @@ export const recordTypes = [
   "tool-call",
   "confirmation",
   "run-allowance",
+  "model-default",
   "claim",
   "session-stopped",
   "session-budget",

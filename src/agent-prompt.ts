@@ -24,7 +24,7 @@ export const legacyWorkerPrompt = [
   "A claim whose kind does not match the record it cites renders UNVERIFIED, so a predicate that",
   "happens to hold against some other record never stands in for the one you are claiming about.",
   renderPredicateCatalogue(
-    predicateCatalogue.filter((entry) => !entry.controllerOnly && !entry.humanDecision),
+    predicateCatalogue.filter((entry) => !entry.controllerOnly && !entry.notClaimable),
   ),
   "The harness evaluates the predicate and decides the verdict; your prose never counts as a result.",
   "When the work is done, reply with a summary and no tool calls.",
