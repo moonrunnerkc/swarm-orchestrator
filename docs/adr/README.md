@@ -16,3 +16,4 @@ limits reads later as a guarantee.
 | [0008](0008-independent-verification.md) | The final word is a separate run | accepted |
 | [0009](0009-adaptive-goal-controller.md) | Complete goals through bounded integration repair | approved, implementation tracked |
 | [0010](0010-evidence-offload.md) | Move historical evidence payloads out of the tree, keep every digest, manifest and verifier in it | proposed |
+| [0011](0011-interactive-run-experience.md) | A run that says what it is doing, picks a served model, and asks once about approval | approved, implementation tracked |
