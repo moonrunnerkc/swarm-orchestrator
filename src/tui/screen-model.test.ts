@@ -555,3 +555,45 @@ it("shows result notes before a turn ends", () => {
   const rows = screen({ transcript: [{ text: "evidence bundle: /review/one", kind: "note" }] });
   expect(rows.some((row) => row.text.includes("evidence bundle: /review/one"))).toBe(true);
 });
+
+describe("what the confirmation panel offers and what the header says about approval", () => {
+  it("names the always key and the programs it would allow", () => {
+    const rendered = text(
+      screen({
+        confirmation: {
+          toolName: "shell",
+          detail: "pip install requests",
+          reason: "shell-allowlist",
+          explanation: '"pip install requests" is not on the shell allowlist.',
+          programs: ["pip"],
+        },
+      }),
+    );
+
+    expect(rendered).toContain("a to allow pip for the rest of this run");
+  });
+
+  it("offers no allowance on a derivation question, which is per call", () => {
+    const rendered = text(
+      screen({
+        confirmation: {
+          toolName: "shell",
+          detail: "bash ./deploy.sh",
+          reason: "derivation-heuristic",
+          explanation: "overlaps a file read a moment ago",
+        },
+      }),
+    );
+
+    expect(rendered).not.toContain("for the rest of this run");
+  });
+
+  it("carries the approval mode in the header where there is room", () => {
+    expect(text(screen({ approvalMode: "auto" }, { columns: 120, rows: 30 }))).toContain(
+      "approval: auto",
+    );
+    expect(text(screen({ approvalMode: "ask" }, { columns: 120, rows: 30 }))).toContain(
+      "approval: ask",
+    );
+  });
+});

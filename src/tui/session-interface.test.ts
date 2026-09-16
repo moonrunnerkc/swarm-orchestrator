@@ -139,6 +139,31 @@ describe("a terminal with the screen turned off", () => {
     expect(asked[0]).toBe('Run "bash ./deploy.sh"? [y/N] ');
   });
 
+  it("reads a as always, and says which programs that allows", async () => {
+    const asked: string[] = [];
+    const { ui } = start({
+      isTty: true,
+      interactive: false,
+      askOnTerminal: (question) => {
+        asked.push(question);
+        return Promise.resolve("a");
+      },
+    });
+
+    const answer = await ui.confirm({
+      toolName: "shell",
+      detail: "pip install requests",
+      reason: "shell-allowlist",
+      explanation: '"pip install requests" is not on the shell allowlist.',
+      programs: ["pip"],
+    });
+
+    expect(answer).toBe("always");
+    expect(asked[0]).toBe(
+      'Run "pip install requests"? [y/N/a] (a allows pip for the rest of this run) ',
+    );
+  });
+
   it("reads anything but y as a refusal", async () => {
     const { ui } = start({
       isTty: true,

@@ -32,6 +32,11 @@ export interface ConfirmationRequest {
   readonly reason: ConfirmationReason;
   /** One line the user can act on, including the caveat when a heuristic raised this. */
   readonly explanation: string;
+  /**
+   * The off-list programs an "always" would allow for the rest of the run. Present only on a
+   * shell-allowlist question whose command the guard could read.
+   */
+  readonly programs?: readonly string[];
 }
 
 /**
@@ -270,11 +275,13 @@ function confirmationNeeded(
   if (definition.kind === "shell") {
     const command = commandOf(input);
     if (!deps.guard.isCommandAllowed(command)) {
+      const programs = deps.guard.disallowedExecutables(command);
       return {
         toolName: definition.name,
         detail: command,
         reason: "shell-allowlist",
         explanation: `"${command}" is not on the shell allowlist.`,
+        ...(programs === null || programs.length === 0 ? {} : { programs }),
       };
     }
   }

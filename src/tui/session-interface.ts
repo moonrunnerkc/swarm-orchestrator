@@ -1,5 +1,6 @@
 import { render } from "ink";
 import { createElement } from "react";
+import type { ApprovalMode } from "../config/approval-mode.ts";
 import type { OpenEvidencePolicy } from "../config/interface-settings.ts";
 import type { Clock } from "../core/clock.ts";
 import type { LoopEvent } from "../core/loop-events.ts";
@@ -81,6 +82,8 @@ export interface SessionInterfaceOptions {
   readonly confirmTimeoutMs?: number;
   readonly spawnOpen: SpawnHandler;
   readonly platform: NodeJS.Platform;
+  /** Shown in the header, so a person knows which prompts the run answers itself. */
+  readonly approvalMode?: ApprovalMode;
 }
 
 /**
@@ -174,8 +177,13 @@ async function confirmOnStream(
     return "no";
   }
   options.writeError(request.explanation);
-  const answer = await options.askOnTerminal(`Run "${request.detail}"? [y/N] `);
-  return answer.trim().toLowerCase() === "y" ? "yes" : "no";
+  const programs = request.programs ?? [];
+  const question =
+    programs.length === 0
+      ? `Run "${request.detail}"? [y/N] `
+      : `Run "${request.detail}"? [y/N/a] (a allows ${programs.join(", ")} for the rest of this run) `;
+  const answer = (await options.askOnTerminal(question)).trim().toLowerCase();
+  return answer === "y" ? "yes" : answer === "a" && programs.length > 0 ? "always" : "no";
 }
 
 /**
@@ -300,6 +308,7 @@ function interactiveInterface(options: SessionInterfaceOptions): SessionInterfac
       task: currentTask,
       workspace: options.workspace,
       evidence,
+      ...(options.approvalMode === undefined ? {} : { approvalMode: options.approvalMode }),
     }),
     { exitOnCtrlC: false },
   );

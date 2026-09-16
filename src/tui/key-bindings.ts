@@ -23,6 +23,7 @@ export type KeyAction =
   | "cancel"
   | "confirm-yes"
   | "confirm-no"
+  | "confirm-always"
   | "back";
 
 /** What each action does, in the words the help overlay and the hint bar both read from. */
@@ -45,6 +46,7 @@ export const keyActionDescriptions: Readonly<Record<KeyAction, string>> = {
   cancel: "cancel the run",
   "confirm-yes": "approve the call being asked about",
   "confirm-no": "refuse the call being asked about",
+  "confirm-always": "approve it, and allow its programs for the rest of this run",
   back: "close the overlay, or clear the filter",
 };
 
@@ -75,6 +77,7 @@ const defaultBindings: Readonly<Record<KeyAction, readonly string[]>> = {
   cancel: ["ctrl+c"],
   "confirm-yes": ["y"],
   "confirm-no": ["n"],
+  "confirm-always": ["a"],
   back: ["escape"],
 };
 

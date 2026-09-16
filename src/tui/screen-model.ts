@@ -1,3 +1,4 @@
+import type { ApprovalMode } from "../config/approval-mode.ts";
 import type { ConfirmationRequest } from "../tools/chokepoint.ts";
 import { formatElapsed } from "./elapsed.ts";
 import { describeEvidence, type EvidenceSummary } from "./evidence-panel.ts";
@@ -43,6 +44,8 @@ export interface ScreenInput {
    * person keeps a session open for.
    */
   readonly transcript?: readonly TranscriptLine[];
+  /** Which prompts the run answers itself, shown so nobody wonders why a step went unasked. */
+  readonly approvalMode?: ApprovalMode;
 }
 
 export interface TranscriptLine {
@@ -117,6 +120,7 @@ function headerRows(input: ScreenInput): readonly ScreenRow[] {
       ...(view.ratchetRejected === 0 && view.ratchetAccepted === 0
         ? []
         : [`ratchet +${view.ratchetAccepted}/-${view.ratchetRejected}`]),
+      ...(input.approvalMode === undefined ? [] : [`approval: ${input.approvalMode}`]),
     ];
     rows.push({ text: `  ${facts.join("  ")}`, dim: true });
   }
@@ -445,6 +449,8 @@ function confirmationRows(input: ScreenInput, request: ConfirmationRequest): rea
   const { bindings, layout, theme } = input;
   const yes = bindings.labelOf.get("confirm-yes") ?? "y";
   const no = bindings.labelOf.get("confirm-no") ?? "n";
+  const always = bindings.labelOf.get("confirm-always") ?? "a";
+  const programs = request.programs ?? [];
   return [
     { text: "the chokepoint is asking", bold: true, color: theme.color("advisory") },
     { text: "" },
@@ -452,6 +458,17 @@ function confirmationRows(input: ScreenInput, request: ConfirmationRequest): rea
     { text: `  ${request.toolName}: ${truncateToWidth(request.detail, layout.contentColumns)}` },
     { text: "" },
     { text: `  ${yes} to run it, ${no} or escape to refuse. Refusing is recorded either way.` },
+    // Only an allowlist question has a program to allow; a derivation match is per call.
+    ...(programs.length === 0
+      ? []
+      : [
+          {
+            text: truncateToWidth(
+              `  ${always} to allow ${programs.join(", ")} for the rest of this run, recorded.`,
+              layout.contentColumns,
+            ),
+          },
+        ]),
     ...(input.confirmTimeoutMs === undefined || input.confirmTimeoutMs <= 0
       ? []
       : [

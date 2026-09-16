@@ -1,5 +1,6 @@
 import { Box, Text, useInput, useStdout } from "ink";
 import { createElement, type ReactElement, useEffect, useState } from "react";
+import type { ApprovalMode } from "../config/approval-mode.ts";
 import type { ConfirmationRequest } from "../tools/chokepoint.ts";
 import type { ConfirmationQueue } from "./confirmation-queue.ts";
 import type { EvidenceSummary } from "./evidence-panel.ts";
@@ -41,6 +42,7 @@ interface SessionScreenProps {
   readonly transcript?: readonly TranscriptLine[];
   /** How long the current activity has been going. A function, so each redraw reads it fresh. */
   readonly activityElapsedMs?: () => number;
+  readonly approvalMode?: ApprovalMode;
 }
 
 /** Two rows kept back so the shell prompt and a wrapped line never push the top off screen. */
@@ -147,6 +149,7 @@ export function SessionScreen(props: SessionScreenProps): ReactElement {
     ...(props.activityElapsedMs === undefined
       ? {}
       : { activityElapsedMs: props.activityElapsedMs() }),
+    ...(props.approvalMode === undefined ? {} : { approvalMode: props.approvalMode }),
   });
 
   return createElement(

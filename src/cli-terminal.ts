@@ -48,6 +48,7 @@ export async function startInterface(input: {
     confirmTimeoutMs: ui.confirmTimeoutMs,
     spawnOpen: spawnOpener,
     platform: platform(),
+    approvalMode: input.settings.approval,
   });
 }
 

@@ -77,6 +77,9 @@ export function dispatchKey(press: KeyPress, context: DispatchContext): Dispatch
     if (action === "confirm-no" || action === "back") {
       return { kind: "answer-confirmation", answer: "no" };
     }
+    if (action === "confirm-always") {
+      return { kind: "answer-confirmation", answer: "always" };
+    }
     return ignored;
   }
 
