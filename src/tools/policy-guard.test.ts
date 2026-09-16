@@ -206,3 +206,20 @@ describe("guard shell allowlist", () => {
     expect(guard.isCommandAllowed("npm test > out.txt")).toBe(true);
   });
 });
+
+describe("which executables a command needs that are not on the allowlist", () => {
+  it("names each one once, in command order", () => {
+    expect(guard.disallowedExecutables("pip install x && python3 run.py | pip freeze")).toEqual([
+      "pip",
+      "python3",
+    ]);
+  });
+
+  it("is empty for a command wholly on the allowlist", () => {
+    expect(guard.disallowedExecutables("git status && npm test")).toEqual([]);
+  });
+
+  it("is null for a string the reader cannot settle, which asks rather than assumes", () => {
+    expect(guard.disallowedExecutables("$(which pip) install x")).toBeNull();
+  });
+});

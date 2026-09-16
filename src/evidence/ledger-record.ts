@@ -52,6 +52,7 @@ export const recordTypes = [
   "transcript-component",
   "tool-call",
   "confirmation",
+  "run-allowance",
   "claim",
   "session-stopped",
   "session-budget",

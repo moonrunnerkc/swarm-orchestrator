@@ -109,7 +109,7 @@ export function SessionScreen(props: SessionScreenProps): ReactElement {
       return;
     }
     if (decision.kind === "answer-confirmation") {
-      props.confirmations.current()?.answer(decision.approved);
+      props.confirmations.current()?.answer(decision.answer);
       return;
     }
     if (decision.kind === "open") {

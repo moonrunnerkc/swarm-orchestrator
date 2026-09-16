@@ -776,9 +776,10 @@ describe("8. a shell command copied from file content (derivation-heuristic path
       derivation: heuristic,
       confirm: (request) => {
         asked.push(request.reason);
-        return Promise.resolve(false);
+        return Promise.resolve("no");
       },
       recorder: {
+        recordAllowance: () => Promise.resolve(),
         recordCall: () => Promise.resolve(`sha256:${"ab".repeat(32)}`),
         recordConfirmation: () => Promise.resolve(),
       },
@@ -1633,7 +1634,7 @@ describe("19. author the next turn's gate command by rewriting the manifest in t
       clock: createTestClock(),
       random: createFixedRandom(),
       emit: () => {},
-      confirm: () => Promise.resolve(false),
+      confirm: () => Promise.resolve("no"),
       abortSignal: new AbortController().signal,
       homeDir: root,
     });

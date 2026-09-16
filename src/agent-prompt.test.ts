@@ -85,7 +85,7 @@ it("serves the full reference through the public chokepoint and keeps a failed c
       clock,
       random: createFixedRandom(),
       emit: () => {},
-      confirm: async () => false,
+      confirm: async () => "no" as const,
       abortSignal: new AbortController().signal,
       homeDir: scratch,
     });

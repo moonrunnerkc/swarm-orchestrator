@@ -81,7 +81,7 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
     workspace: options.workspace,
     homeDir: options.homeDir,
     // A planner is unattended and touches nothing, so a call that wants a human is refused.
-    confirm: () => Promise.resolve(false),
+    confirm: () => Promise.resolve("no"),
     evidence: options.evidence,
     tools: (guard) => [
       ...createWorkspaceTools(guard).filter((tool) => tool.kind === "read"),

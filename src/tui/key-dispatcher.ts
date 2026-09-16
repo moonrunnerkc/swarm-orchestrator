@@ -1,3 +1,4 @@
+import type { ConfirmationAnswer } from "../tools/chokepoint.ts";
 import type { KeyBindings } from "./key-bindings.ts";
 import type { ViewAction, ViewState } from "./view-state.ts";
 
@@ -39,7 +40,7 @@ export type Dispatch =
    * whatever arrived in the same chunk ahead of the newline, which is what a paste looks like.
    */
   | { readonly kind: "submit-task"; readonly typedFirst: string }
-  | { readonly kind: "answer-confirmation"; readonly approved: boolean }
+  | { readonly kind: "answer-confirmation"; readonly answer: ConfirmationAnswer }
   | { readonly kind: "open"; readonly target: "review" | "bundle" }
   | { readonly kind: "ignored" };
 
@@ -71,10 +72,10 @@ export function dispatchKey(press: KeyPress, context: DispatchContext): Dispatch
 
   if (context.confirmationPending) {
     if (action === "confirm-yes") {
-      return { kind: "answer-confirmation", approved: true };
+      return { kind: "answer-confirmation", answer: "yes" };
     }
     if (action === "confirm-no" || action === "back") {
-      return { kind: "answer-confirmation", approved: false };
+      return { kind: "answer-confirmation", answer: "no" };
     }
     return ignored;
   }

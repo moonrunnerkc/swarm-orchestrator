@@ -93,7 +93,7 @@ function task(turns: readonly FixtureTurn[], overrides: Partial<AgentTaskOptions
     clock,
     random: createFixedRandom(),
     emit: () => {},
-    confirm: () => Promise.resolve(false),
+    confirm: () => Promise.resolve("no"),
     abortSignal: new AbortController().signal,
     homeDir: scratch,
     gateOptions: { commandOverrides: gateOverrides },

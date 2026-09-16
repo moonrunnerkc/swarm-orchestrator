@@ -15,6 +15,11 @@ import { evaluateClaim, recordKindOf } from "./verifier/verify.mjs";
 export interface CatalogueEntry {
   readonly type: RecordType;
   readonly controllerOnly?: boolean;
+  /**
+   * Written from a person's answer rather than from anything the run measured, so it is not a
+   * record a model is invited to claim against and stays out of the worker prompt.
+   */
+  readonly humanDecision?: boolean;
   /** The payload field the kind is keyed on, or null where the type alone is the kind. */
   readonly subjectField: string | null;
   readonly example: string;
@@ -330,6 +335,14 @@ export const predicateCatalogue: readonly CatalogueEntry[] = [
       detail: "make test",
     },
     says: "a question put to a person and the answer",
+  },
+  {
+    type: "run-allowance",
+    humanDecision: true,
+    subjectField: null,
+    example: 'toolName == "shell"',
+    sample: { callId: "c1", toolName: "shell", programs: ["pip"] },
+    says: "programs a person allowed for the rest of the run with one answer",
   },
   {
     type: "claim",

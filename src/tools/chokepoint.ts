@@ -1,3 +1,4 @@
+import type { ApprovalMode } from "../config/approval-mode.ts";
 import {
   describeUnknownError,
   type ProvenanceTag,
@@ -9,6 +10,7 @@ import { recordKindOf } from "../evidence/record-kind.ts";
 import type {
   ChokepointDecision,
   ChokepointRecorder,
+  ConfirmationDecider,
   ConfirmationReason,
   DenialReason,
 } from "./chokepoint-record.ts";
@@ -32,14 +34,26 @@ export interface ConfirmationRequest {
   readonly explanation: string;
 }
 
+/**
+ * What a person answers: yes and no settle the call; always settles it and, for a
+ * shell-allowlist question, allows the off-list programs for the rest of the run (ADR 0011).
+ */
+export type ConfirmationAnswer = "yes" | "no" | "always";
+
 /** Asked whenever a call needs a human before it runs. */
-export type ConfirmationPrompt = (request: ConfirmationRequest) => Promise<boolean>;
+export type ConfirmationPrompt = (request: ConfirmationRequest) => Promise<ConfirmationAnswer>;
 
 interface ChokepointDependencies {
   readonly abortSignal?: AbortSignal | undefined;
   readonly definitions: readonly ToolDefinition[];
   readonly guard: PolicyGuard;
   readonly confirm: ConfirmationPrompt;
+  /**
+   * Whether a shell-allowlist question is answered by the workspace's policy before a person
+   * sees it. Never covers the derivation heuristic, which is the injection defence. Absent
+   * means ask, which is what every caller did before there was a mode.
+   */
+  readonly approvalMode?: ApprovalMode;
   readonly recorder: ChokepointRecorder;
   readonly derivation?: DerivationHeuristic;
   /**
@@ -51,6 +65,29 @@ interface ChokepointDependencies {
 }
 
 const defaultGatedKinds: readonly ToolKind[] = ["shell"];
+
+/**
+ * Who settles a question before a person is asked, or null where a person must be. Only the
+ * shell-allowlist question is ever settled here: the approval mode answers it for the
+ * workspace, and a run allowance answers it for programs a person already said "always" to.
+ */
+function settleInAdvance(
+  gate: ConfirmationRequest,
+  offList: readonly string[] | null,
+  approvalMode: ApprovalMode | undefined,
+  runAllowance: ReadonlySet<string>,
+): ConfirmationDecider | null {
+  if (gate.reason !== "shell-allowlist") {
+    return null;
+  }
+  if (approvalMode === "auto") {
+    return "approval-mode";
+  }
+  if (offList !== null && offList.length > 0 && offList.every((name) => runAllowance.has(name))) {
+    return "run-allowance";
+  }
+  return null;
+}
 
 /**
  * The single execution path for every tool call (invariant 3). It records the request,
@@ -65,6 +102,8 @@ const defaultGatedKinds: readonly ToolKind[] = ["shell"];
  * to prevent.
  */
 export function createToolChokepoint(deps: ChokepointDependencies): ToolInvoker {
+  // A person's "always" answers, kept for this run and never written anywhere else.
+  const runAllowance = new Set<string>();
   const byName = new Map(deps.definitions.map((definition) => [definition.name, definition]));
   const derivation = deps.derivation ?? createDerivationHeuristic();
   const gatedKinds = deps.gatedKinds ?? defaultGatedKinds;
@@ -156,16 +195,34 @@ export function createToolChokepoint(deps: ChokepointDependencies): ToolInvoker 
 
       const gate = confirmationNeeded(definition, parsed.data, assessment, deps, gatedKinds);
       if (gate !== null) {
-        const approved = await deps.confirm(gate);
+        const offList =
+          gate.reason === "shell-allowlist"
+            ? deps.guard.disallowedExecutables(commandOf(parsed.data))
+            : null;
+        const settledInAdvance = settleInAdvance(gate, offList, deps.approvalMode, runAllowance);
+        const answer = settledInAdvance === null ? await deps.confirm(gate) : "yes";
+        const approved = answer !== "no";
         await deps.recorder.recordConfirmation({
           callId: invocation.callId,
           toolName: invocation.toolName,
           kind,
           reason: gate.reason,
           detail: gate.detail,
-          approved,
+          outcome: settledInAdvance !== null ? "pre-approved" : approved ? "approved" : "declined",
+          decidedBy: settledInAdvance ?? "user",
           derivation: assessment,
         });
+        // "always" on an allowlist question is a run allowance for its programs, recorded with
+        // the person's provenance. On a derivation question it is a yes for this call only:
+        // the heuristic is per call, and there is no program to allow.
+        if (answer === "always" && gate.reason === "shell-allowlist" && offList !== null) {
+          for (const program of offList) runAllowance.add(program);
+          await deps.recorder.recordAllowance({
+            callId: invocation.callId,
+            toolName: invocation.toolName,
+            programs: offList,
+          });
+        }
         if (!approved) {
           return settle(
             "denied",

@@ -167,7 +167,7 @@ export async function runCalibrationRepeat(
       guard,
       // Nothing to ask: calibration is unattended, so a call needing a human is refused and
       // counted, which is itself a fact about the model.
-      confirm: () => Promise.resolve(false),
+      confirm: () => Promise.resolve("no"),
       recorder: createLedgerChokepointRecorder(deps.evidence),
     }),
     toolSchemas: definitions,

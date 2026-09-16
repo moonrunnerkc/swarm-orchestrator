@@ -51,14 +51,27 @@ export interface ChokepointRecord {
   readonly derivation: DerivationAssessment | null;
 }
 
+export type ConfirmationOutcome = "approved" | "declined" | "pre-approved";
+
+/** Who settled the question: the person, the workspace's approval mode, or an earlier "always". */
+export type ConfirmationDecider = "user" | "approval-mode" | "run-allowance";
+
 export interface ConfirmationRecord {
   readonly callId: string;
   readonly toolName: string;
   readonly kind: ToolKind | "unknown";
   readonly reason: ConfirmationReason;
   readonly detail: string;
-  readonly approved: boolean;
+  readonly outcome: ConfirmationOutcome;
+  readonly decidedBy: ConfirmationDecider;
   readonly derivation: DerivationAssessment | null;
+}
+
+/** A person's "always": these programs run unasked for the rest of this run and no longer. */
+export interface AllowanceRecord {
+  readonly callId: string;
+  readonly toolName: string;
+  readonly programs: readonly string[];
 }
 
 /**
@@ -70,6 +83,7 @@ export interface ChokepointRecorder {
   /** Returns the payload digest of the appended record, which is the name a claim cites. */
   recordCall(entry: ChokepointRecord): Promise<string>;
   recordConfirmation(entry: ConfirmationRecord): Promise<void>;
+  recordAllowance(entry: AllowanceRecord): Promise<void>;
 }
 
 export function createLedgerChokepointRecorder(
@@ -112,8 +126,22 @@ export function createLedgerChokepointRecorder(
           kind: entry.kind,
           reason: entry.reason,
           detail: entry.detail,
-          outcome: entry.approved ? "approved" : "declined",
+          outcome: entry.outcome,
+          decidedBy: entry.decidedBy,
           derivation: asJsonValue(entry.derivation),
+        },
+      });
+    },
+
+    async recordAllowance(entry: AllowanceRecord): Promise<void> {
+      await evidence.record({
+        type: "run-allowance",
+        actor: "harness",
+        provenance: ["user"],
+        payload: {
+          callId: entry.callId,
+          toolName: entry.toolName,
+          programs: [...entry.programs],
         },
       });
     },

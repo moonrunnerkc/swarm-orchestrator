@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { ToolInvocation } from "../core/tool-invoker.ts";
-import { type ConfirmationRequest, createToolChokepoint } from "../tools/chokepoint.ts";
+import {
+  type ConfirmationAnswer,
+  type ConfirmationRequest,
+  createToolChokepoint,
+} from "../tools/chokepoint.ts";
 import type { ChokepointRecord, ConfirmationRecord } from "../tools/chokepoint-record.ts";
 import { createDerivationHeuristic } from "../tools/derivation.ts";
 import { createPolicyGuard, type PolicyGuardRules } from "../tools/policy-guard.ts";
@@ -32,7 +36,7 @@ function keyPress(input: string): KeyPress {
   return { input, ctrl: false, name: null };
 }
 
-function createChokepoint(confirm: (request: never) => Promise<boolean>, ran: string[]) {
+function createChokepoint(confirm: (request: never) => Promise<ConfirmationAnswer>, ran: string[]) {
   const calls: ChokepointRecord[] = [];
   const confirmations: ConfirmationRecord[] = [];
   const shell = defineTool({
@@ -61,6 +65,7 @@ function createChokepoint(confirm: (request: never) => Promise<boolean>, ran: st
         confirmations.push(entry);
         return Promise.resolve();
       },
+      recordAllowance: () => Promise.resolve(),
     },
     derivation,
   });
@@ -99,15 +104,15 @@ describe("a confirmation answered from the interactive screen", () => {
       rowCount: 0,
       pageRows: 5,
     });
-    expect(decision).toEqual({ kind: "answer-confirmation", approved: true });
+    expect(decision).toEqual({ kind: "answer-confirmation", answer: "yes" });
     if (decision.kind === "answer-confirmation") {
-      pending?.answer(decision.approved);
+      pending?.answer(decision.answer);
     }
 
     const outcome = await invoked;
     expect(outcome.failed).toBe(false);
     expect(ran).toEqual(["bash ./deploy.sh --now"]);
-    expect(confirmations[0]).toMatchObject({ approved: true, toolName: "shell" });
+    expect(confirmations[0]).toMatchObject({ outcome: "approved", toolName: "shell" });
   });
 
   it("carries a refusal the same way, and the tool never runs", async () => {
@@ -133,13 +138,13 @@ describe("a confirmation answered from the interactive screen", () => {
       rowCount: 0,
       pageRows: 5,
     });
-    expect(decision).toEqual({ kind: "answer-confirmation", approved: false });
-    queue.current()?.answer(false);
+    expect(decision).toEqual({ kind: "answer-confirmation", answer: "no" });
+    queue.current()?.answer("no");
 
     const outcome = await invoked;
     expect(outcome.failed).toBe(true);
     expect(ran).toEqual([]);
-    expect(confirmations[0]).toMatchObject({ approved: false });
+    expect(confirmations[0]).toMatchObject({ outcome: "declined" });
   });
 
   it("refuses what is still waiting when the view goes away, rather than hanging the run", async () => {
@@ -176,12 +181,12 @@ describe("the confirmation queue", () => {
     const second = queue.ask(request("two"));
 
     expect(queue.current()?.request.detail).toBe("one");
-    queue.current()?.answer(true);
-    expect(await first).toBe(true);
+    queue.current()?.answer("yes");
+    expect(await first).toBe("yes");
 
     expect(queue.current()?.request.detail).toBe("two");
-    queue.current()?.answer(false);
-    expect(await second).toBe(false);
+    queue.current()?.answer("no");
+    expect(await second).toBe("no");
     expect(queue.current()).toBeNull();
   });
 
@@ -195,10 +200,10 @@ describe("the confirmation queue", () => {
     });
 
     const pending = queue.current();
-    pending?.answer(true);
-    pending?.answer(false);
+    pending?.answer("yes");
+    pending?.answer("no");
 
-    expect(await asked).toBe(true);
+    expect(await asked).toBe("yes");
   });
 
   it("tells the screen when a question arrives and when it is gone", async () => {
@@ -212,7 +217,7 @@ describe("the confirmation queue", () => {
       reason: "derivation-heuristic",
       explanation: "overlaps content read a moment ago",
     });
-    queue.current()?.answer(true);
+    queue.current()?.answer("yes");
     await asked;
 
     expect(seen).toEqual(["one", null]);
@@ -240,7 +245,7 @@ describe("a question nobody answers", () => {
       },
     });
 
-    await expect(queue.ask(request)).resolves.toBe(false);
+    await expect(queue.ask(request)).resolves.toBe("no");
     expect(slept).toBe(1_800_000);
     expect(queue.current()).toBeNull();
   });
@@ -257,10 +262,10 @@ describe("a question nobody answers", () => {
 
     const asked = queue.ask(request);
     await waitForQuestion(queue);
-    queue.current()?.answer(true);
+    queue.current()?.answer("yes");
     expire();
 
-    await expect(asked).resolves.toBe(true);
+    await expect(asked).resolves.toBe("yes");
   });
 
   it("waits for ever at zero, which is what it did before there was a deadline", async () => {
@@ -278,8 +283,8 @@ describe("a question nobody answers", () => {
 
     expect(sleepCalls).toBe(0);
     expect(queue.current()).not.toBeNull();
-    queue.current()?.answer(true);
-    await expect(asked).resolves.toBe(true);
+    queue.current()?.answer("yes");
+    await expect(asked).resolves.toBe("yes");
   });
 });
 
