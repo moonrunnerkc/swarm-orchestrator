@@ -799,6 +799,24 @@ describe("the finish card", () => {
     expect(rows.filter((row) => row.link !== undefined)).toHaveLength(2);
   });
 
+  it("does not call an unchanged workspace accepted work, whatever the assessment said", () => {
+    // A live run: the model's one turn spiralled, no file was written, the gates ran green
+    // over nothing, and the card led with "work accepted". The status row already refused to
+    // say DONE over an empty diff; the card has to refuse the same way.
+    const untouched = accepted.reduce(applyLoopEvent, {
+      ...view,
+      changedFiles: 0,
+    });
+    const first = screen(
+      { view: applyLoopEvent(untouched, { type: "changes", changedFiles: 0 }), evidence: priced },
+      { columns: 140, rows: 40 },
+      [{ type: "open-evidence" }],
+    ).find((row) => row.text.startsWith("○ "));
+    expect(first?.text).toContain("no files changed, so nothing was done");
+    expect(first?.text).not.toContain("accepted");
+    expect(first?.text).toContain("23 steps");
+  });
+
   it("says the cost was not priced rather than showing a zero", () => {
     const unpriced = { ...priced, run: { ...priced.run, costUsd: null } };
     const rendered = text(

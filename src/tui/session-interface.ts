@@ -358,6 +358,11 @@ function interactiveInterface(options: SessionInterfaceOptions): SessionInterfac
       if (!ticking) {
         return;
       }
+      // Once the finish card is up the run is over, and a header that kept counting read as
+      // the run's length: a person came back to "1h 56m" over a run the card said took six.
+      if (evidence !== null) {
+        continue;
+      }
       dispatch({ type: "tick", elapsedMs: options.clock.now() - startedAt });
     }
   })();

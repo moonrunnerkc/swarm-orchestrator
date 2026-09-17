@@ -440,8 +440,10 @@ function verdictRow(input: ScreenInput): ScreenRow {
     };
   }
   if (view.finished && view.changedFiles === 0) {
+    // Not the assessment's words: gates over an unchanged workspace say nothing about work,
+    // and a card that led with "work accepted" over an empty diff was read as the file existing.
     return {
-      text: `${glyphs.pending} no files changed: ${view.status}${took}`,
+      text: `${glyphs.pending} no files changed, so nothing was done${took}`,
       bold: true,
       color: theme.color("advisory"),
     };
