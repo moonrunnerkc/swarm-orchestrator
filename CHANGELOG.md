@@ -37,6 +37,17 @@
 
 ### Fixed
 
+- **A turn cut off at the output cap is not a completion.** A live run's only turn was the
+  marker `<channel|>` repeated to the 8192-token cap around a fragment of a plan, with no tool
+  called; the loop read the cut-off text as the model's account of finishing, the gates ran
+  green over an unchanged workspace, and the run ended "work accepted" with nothing written.
+  Two of five samples of the same request against gemma4:31b behind Ollama spiral the same way.
+  A turn cut off at the cap before it called a tool is now sampled again, its text never becomes
+  the plan or the claim, and a run whose every sample is cut off stops as `output-cap`. A stream
+  that repeats one short unit 96 times in a row is cut off there and sampled again, rather than
+  running minutes to the cap. The finish card over an unchanged workspace says nothing was done
+  instead of repeating the assessment, and the header's elapsed counter stops when the card
+  goes up.
 - **A run stops before the session where it could never go green.** A directory that is not a
   repository, a `--base` that does not resolve, and a repository with no manifest each used to be
   found out after the model had worked: eight steps in one case, three attempts and 112,000
