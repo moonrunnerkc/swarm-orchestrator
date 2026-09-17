@@ -13,11 +13,13 @@ export type StopReason =
    */
   | "empty-response"
   /**
-   * The runtime was cut off at the output-token cap having emitted neither text nor a tool
-   * call, which is what a reasoning model does when it spends the whole budget thinking. Kept
-   * apart from "empty-response" because the two want different things done about them: an
-   * empty turn is a runtime dropping output, and this is the model being given less room than
-   * it needed. Reading a truncation as an empty response hides the one number that explains it.
+   * The runtime was cut off at the output-token cap before it called a tool, which is what a
+   * reasoning model does when it spends the whole budget thinking, and what a model does when
+   * it repeats one marker to the cap. Whatever text arrived first is not its account of
+   * finishing. Kept apart from "empty-response" because the two want different things done
+   * about them: an empty turn is a runtime dropping output, and this is the model being given
+   * less room than it needed. Reading a truncation as an empty response hides the one number
+   * that explains it.
    */
   | "output-cap";
 

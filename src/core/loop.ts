@@ -1,5 +1,6 @@
 import type { Clock } from "./clock.ts";
 import { compactConversation, estimateTokens } from "./compaction.ts";
+import { type RepeatedTail, repeatedTail } from "./degenerate-output.ts";
 import type { LoopEvent } from "./loop-events.ts";
 import { withModelCancellation } from "./model-cancellation.ts";
 import {
@@ -166,8 +167,9 @@ export async function runAgentLoop(
     });
 
     // Only a first turn states a plan. A later turn in a session is continuing one, and
-    // re-emitting would overwrite the plan pane with an answer to a follow-up.
-    if (steps === 1 && (deps.history ?? []).length === 0) {
+    // re-emitting would overwrite the plan pane with an answer to a follow-up. A turn the cap
+    // cut off is not a plan either: it is what the loop is about to stop on.
+    if (steps === 1 && (deps.history ?? []).length === 0 && !spentTheCapWithoutActing(response)) {
       plan = response.text;
       deps.emit({ type: "plan", text: response.text });
     }
@@ -178,6 +180,13 @@ export async function runAgentLoop(
       // Which of the two it was comes off the finish reason rather than a guess: a turn cut
       // off at the cap and a turn that arrived empty look identical from the content alone.
       return finish(response.finishReason === "length" ? "output-cap" : "empty-response", "");
+    }
+
+    if (spentTheCapWithoutActing(response)) {
+      // Text that the cap cut off is not the model's account of finishing, however much of it
+      // there is: every sample of this step was cut off before a tool was called, and reading
+      // the last one as a completion ended a live run "work accepted" with nothing written.
+      return finish("output-cap", "");
     }
 
     if (response.toolCalls.length === 0) {
@@ -272,6 +281,16 @@ function spentTheCapOnNothing(response: ModelResponse): boolean {
 }
 
 /**
+ * A turn cut off at the cap without having called a tool, whether or not text arrived. The
+ * text is whatever the model had said when the cap fell, which is not its account of
+ * finishing: a live run's only turn was a marker repeated to the cap around a fragment of a
+ * plan, and it was read as the completion claim of a run that wrote nothing.
+ */
+function spentTheCapWithoutActing(response: ModelResponse): boolean {
+  return response.finishReason === "length" && response.toolCalls.length === 0;
+}
+
+/**
  * A turn with neither text nor a tool call and a finish reason other than the cap is the
  * runtime dropping output, which is a transport failure wearing a response's shape. It is
  * sampled again the way a refused connection is, because one such turn used to end a
@@ -304,12 +323,14 @@ async function callWithinBudget(
   deps: AgentLoopDependencies,
   request: ModelRequest,
   remainingMs: number,
+  attemptSignal?: AbortSignal,
 ): Promise<ModelResponse> {
   if (remainingMs <= 0) throw new ModelCallDeadlineError(remainingMs);
   deps.abortSignal.throwIfAborted();
   const controller = new AbortController();
   const forward = () => controller.abort();
   deps.abortSignal.addEventListener("abort", forward, { once: true });
+  attemptSignal?.addEventListener("abort", forward, { once: true });
   const armed = deps.clock.now();
   const release = new AbortController();
   let expired = false;
@@ -329,6 +350,7 @@ async function callWithinBudget(
   } finally {
     release.abort();
     deps.abortSignal.removeEventListener("abort", forward);
+    attemptSignal?.removeEventListener("abort", forward);
   }
 }
 
@@ -348,14 +370,30 @@ async function callModelWithRetry(
     if (deps.clock.now() >= deadline) throw new ModelCallDeadlineError(0);
     if (remainingTokens() <= 0) throw new ModelTokenBudgetError();
     let willRetry = attempt < attempts - 1 && !deps.abortSignal.aborted;
+    // One attempt's stream, watched for a unit repeating itself. Cut off here rather than at
+    // the cap: the cap is minutes away at a local model's pace, and nothing after the repeats
+    // is going to be a tool call.
+    const spiral = new AbortController();
+    const stream: { text: string; repeated: RepeatedTail | null } = { text: "", repeated: null };
+    const watchText = (text: string): void => {
+      request.onText?.(text);
+      if (stream.repeated !== null) return;
+      stream.text += text;
+      stream.repeated = repeatedTail(stream.text);
+      if (stream.repeated !== null) {
+        spiral.abort();
+      }
+    };
     try {
       const response = await callWithinBudget(
         deps,
         {
           ...request,
           maxOutputTokens: Math.max(1, Math.min(request.maxOutputTokens, remainingTokens())),
+          onText: watchText,
         },
         deadline - deps.clock.now(),
+        spiral.signal,
       );
       account(response);
       if (deps.clock.now() >= deadline) throw new ModelCallDeadlineError(0);
@@ -363,7 +401,7 @@ async function callModelWithRetry(
       // The last attempt's truncation or silence is returned rather than thrown, so the loop
       // stops as output-cap or empty-response and names which. A call-failed error there would
       // say less about more.
-      if (!(spentTheCapOnNothing(response) || arrivedEmpty(response)) || !willRetry) {
+      if (!(spentTheCapWithoutActing(response) || arrivedEmpty(response)) || !willRetry) {
         return response;
       }
       deps.emit({
@@ -371,10 +409,33 @@ async function callModelWithRetry(
         step,
         message: spentTheCapOnNothing(response)
           ? `the model spent all ${response.outputTokens} output tokens without emitting text or a tool call`
-          : `the runtime answered with neither text nor a tool call (finish reason ${response.finishReason})`,
+          : spentTheCapWithoutActing(response)
+            ? `the model was cut off at the ${response.outputTokens}-token output cap before it called a tool; a turn the cap cut off is not its account of finishing`
+            : `the runtime answered with neither text nor a tool call (finish reason ${response.finishReason})`,
         willRetry: true,
       });
     } catch (cause) {
+      if (stream.repeated !== null && !deps.abortSignal.aborted) {
+        // The stream was cut off here, on purpose, and the cause is the transport's word for
+        // that. Named for what it was, and sampled again the way a spiral to the cap is.
+        lastCause = cause;
+        deps.emit({
+          type: "model-error",
+          step,
+          message: `the model repeated ${JSON.stringify(stream.repeated.unit)} ${stream.repeated.repeats} times in a row and was cut off after ${stream.text.length} characters`,
+          willRetry,
+        });
+        if (!willRetry) {
+          throw new ModelCallFailedError(deps.model.modelId, lastCause);
+        }
+        const backoffMs = baseDelayMs * 2 ** attempt;
+        await deps.clock.sleep(
+          Math.max(0, Math.min(deadline - deps.clock.now(), backoffMs)),
+          deps.abortSignal,
+          "delay",
+        );
+        continue;
+      }
       // The budget's expiry is not the model's failure, and there is nothing left to retry in.
       if (cause instanceof ModelCallDeadlineError) {
         deps.emit({ type: "model-error", step, message: cause.message, willRetry: false });
