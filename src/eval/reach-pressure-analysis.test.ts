@@ -382,7 +382,7 @@ describe("the page is a function of the summary", () => {
     expect(page).toContain("mcnemar-exact-binomial-two-sided");
     expect(page).toContain("newcombe-paired-score-95");
     expect(page).toContain("## Limitations");
-    expect(page).not.toContain("—");
+    expect(page).not.toContain(String.fromCodePoint(0x2014));
     expect(renderReport(input)).toBe(page);
   });
 });
