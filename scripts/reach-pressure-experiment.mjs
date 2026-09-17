@@ -53,7 +53,6 @@ const driverSources = [
   "src/eval/patch-metrics.ts",
   "src/eval/pr-task-judge.ts",
   "src/eval/reach-pressure-analysis.ts",
-  "src/eval/reach-pressure-report.ts",
   "src/eval/reach-pressure.ts",
   "src/eval/sealed-workspace.ts",
   "src/eval/statistics.ts",
@@ -163,7 +162,7 @@ function readJsonLines(path) {
  * A driver edited after the protocol was committed is a different experiment, and says so here
  * instead of in the analysis of rows it already wrote.
  */
-function experimentIdentity(lib, { bindToCommit }) {
+function experimentIdentity(lib, { bindToCommit, enforceDriver = true }) {
   const protocol = readProtocol(lib);
   const manifestText = readFileSync(paths.manifest, "utf8");
   const manifest = lib.manifestSchema.parse(JSON.parse(manifestText));
@@ -188,6 +187,7 @@ function experimentIdentity(lib, { bindToCommit }) {
     );
   }
   for (const key of ["manifestDigest", "driverDigest", "policyDigest"]) {
+    if (key === "driverDigest" && !enforceDriver) continue;
     if (protocol.parameters[key] !== identity[key]) {
       throw new Error(
         `the protocol froze ${key} ${protocol.parameters[key]} and this checkout has ${identity[key]}`,
@@ -760,7 +760,14 @@ async function heldBackScore({
 async function analyze({ synthetic }) {
   requireFreshDist();
   const lib = await modules();
-  const { identity, manifest, parameters } = experimentIdentity(lib, { bindToCommit: false });
+  // Rows are held to the driver the protocol registered. The checkout that re-derives the report
+  // may be a later one, and where its sources differ the page says so instead of refusing.
+  const { identity, manifest, parameters } = experimentIdentity(lib, {
+    bindToCommit: false,
+    enforceDriver: false,
+  });
+  const driverAtAnalysis = identity.driverDigest;
+  identity.driverDigest = parameters.driverDigest;
   const rows = readJsonLines(paths.results);
   // The rows name the commit that produced them, and the analysis may run at a later one: the
   // report and the evidence are committed after the run. Every other identity field must match.
@@ -800,6 +807,7 @@ async function analyze({ synthetic }) {
     environment,
     pairNotes,
     digests: {
+      driverAtAnalysis,
       results: lib.digestOfBytes(readFileSync(paths.results, "utf8")),
       hiddenScores: existsSync(paths.hiddenScores)
         ? lib.digestOfBytes(readFileSync(paths.hiddenScores, "utf8"))

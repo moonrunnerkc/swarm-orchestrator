@@ -369,7 +369,12 @@ describe("the page is a function of the summary", () => {
       parameters: { model: "local:m", endpoint: "http://127.0.0.1:8000/v1" },
       environment: null,
       pairNotes: { "lib/a#1": "The repair deleted the `value > high` branch." },
-      digests: { results: digest("r"), hiddenScores: digest("h"), summary: digest("s") },
+      digests: {
+        driverAtAnalysis: identity.driverDigest,
+        results: digest("r"),
+        hiddenScores: digest("h"),
+        summary: digest("s"),
+      },
     };
 
     const page = renderReport(input);
