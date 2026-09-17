@@ -171,3 +171,104 @@ export function pairedNonInferiority(
     method: "paired-hoeffding-95",
   };
 }
+
+export interface ExactMcNemarResult {
+  readonly onlyFirst: number;
+  readonly onlySecond: number;
+  readonly discordant: number;
+  /** Two-sided, from the binomial itself. 1 where nothing disagreed: no evidence is not a tie. */
+  readonly pValue: number;
+  readonly method: "mcnemar-exact-binomial-two-sided";
+}
+
+/**
+ * The exact form of the paired test, for the counts the chi-square above abstains on.
+ *
+ * Under the null each discordant pair falls either way with probability one half, so the smaller
+ * count is a binomial tail and doubling it is the two-sided p-value. No approximation is involved,
+ * which is what makes it usable at three discordant pairs where `mcNemar` rightly says nothing.
+ */
+export function mcNemarExact(input: {
+  readonly onlyFirst: number;
+  readonly onlySecond: number;
+}): ExactMcNemarResult {
+  for (const count of [input.onlyFirst, input.onlySecond]) {
+    if (!Number.isInteger(count) || count < 0) {
+      throw new Error(`a discordant count is a non-negative integer, and ${count} is not one`);
+    }
+  }
+  const discordant = input.onlyFirst + input.onlySecond;
+  const smaller = Math.min(input.onlyFirst, input.onlySecond);
+  let tail = 0;
+  // Built term by term from C(n, 0): factorials overflow long before these counts matter.
+  let term = 0.5 ** discordant;
+  for (let k = 0; k <= smaller; k += 1) {
+    tail += term;
+    term = (term * (discordant - k)) / (k + 1);
+  }
+  return {
+    onlyFirst: input.onlyFirst,
+    onlySecond: input.onlySecond,
+    discordant,
+    pValue: discordant === 0 ? 1 : Math.min(1, 2 * tail),
+    method: "mcnemar-exact-binomial-two-sided",
+  };
+}
+
+export interface PairedTable {
+  readonly bothPass: number;
+  readonly onlyFirst: number;
+  readonly onlySecond: number;
+  readonly bothFail: number;
+}
+
+/**
+ * The difference between two pass rates measured on the same tasks, second minus first.
+ *
+ * Newcombe's 1998 square-and-add interval for paired proportions (his method 10): a Wilson
+ * interval around each marginal rate, combined with a correction for how strongly the two
+ * outcomes move together. Pairs that agree carry that correlation, so they narrow the interval
+ * without moving the point, which an unpaired interval over the same table throws away. It stays
+ * inside [-1, 1] and behaves at zero discordant pairs, where a Wald interval collapses to a point.
+ */
+export function pairedDifferenceInterval(
+  table: PairedTable,
+): Interval & { readonly pairs: number; readonly method: "newcombe-paired-score-95" } {
+  const { bothPass: a, onlyFirst: b, onlySecond: c, bothFail: d } = table;
+  for (const count of [a, b, c, d]) {
+    if (!Number.isInteger(count) || count < 0) {
+      throw new Error(
+        `a cell of a paired table is a non-negative integer, and ${count} is not one`,
+      );
+    }
+  }
+  const pairs = a + b + c + d;
+  if (pairs === 0) {
+    return { point: 0, lower: -1, upper: 1, pairs, method: "newcombe-paired-score-95" };
+  }
+  const first = wilsonInterval(a + b, pairs);
+  const second = wilsonInterval(a + c, pairs);
+  const margins = (a + b) * (c + d) * (a + c) * (b + d);
+  const cross = a * d - b * c;
+  // Newcombe's continuity-style shrink of a positive association, left alone where negative.
+  const shrunk = cross > pairs / 2 ? cross - pairs / 2 : cross >= 0 ? 0 : cross;
+  const phi = margins === 0 ? 0 : shrunk / Math.sqrt(margins);
+  const below = Math.sqrt(
+    (second.point - second.lower) ** 2 -
+      2 * phi * (second.point - second.lower) * (first.upper - first.point) +
+      (first.upper - first.point) ** 2,
+  );
+  const above = Math.sqrt(
+    (second.upper - second.point) ** 2 -
+      2 * phi * (second.upper - second.point) * (first.point - first.lower) +
+      (first.point - first.lower) ** 2,
+  );
+  const point = (c - b) / pairs;
+  return {
+    point,
+    lower: Math.max(-1, point - below),
+    upper: Math.min(1, point + above),
+    pairs,
+    method: "newcombe-paired-score-95",
+  };
+}

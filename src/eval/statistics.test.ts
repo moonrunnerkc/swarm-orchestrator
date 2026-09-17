@@ -114,3 +114,109 @@ it("keeps the paired non-inferiority interval open at all-success boundaries", a
     ).nonInferior,
   ).toBe(true);
 });
+
+describe("the exact paired test, for counts the chi-square abstains on", () => {
+  it("matches the binomial tail worked by hand", async () => {
+    const { mcNemarExact } = await import("./statistics.ts");
+    // Five pairs all one way: 2 * (1/2)^5. One against four: 2 * (1 + 5) / 32.
+    expect(mcNemarExact({ onlyFirst: 5, onlySecond: 0 }).pValue).toBeCloseTo(0.0625, 12);
+    expect(mcNemarExact({ onlyFirst: 1, onlySecond: 4 }).pValue).toBeCloseTo(0.375, 12);
+    expect(mcNemarExact({ onlyFirst: 12, onlySecond: 2 }).pValue).toBeCloseTo(0.012939453125, 12);
+  });
+
+  it("does not care which arm is named first", async () => {
+    const { mcNemarExact } = await import("./statistics.ts");
+    expect(mcNemarExact({ onlyFirst: 2, onlySecond: 7 }).pValue).toBe(
+      mcNemarExact({ onlyFirst: 7, onlySecond: 2 }).pValue,
+    );
+  });
+
+  it("reads no disagreement and an even split as no evidence, never past 1", async () => {
+    const { mcNemarExact } = await import("./statistics.ts");
+    expect(mcNemarExact({ onlyFirst: 0, onlySecond: 0 })).toMatchObject({
+      discordant: 0,
+      pValue: 1,
+    });
+    expect(mcNemarExact({ onlyFirst: 3, onlySecond: 3 }).pValue).toBe(1);
+  });
+
+  it("refuses a count that is not a count", async () => {
+    const { mcNemarExact } = await import("./statistics.ts");
+    expect(() => mcNemarExact({ onlyFirst: -1, onlySecond: 2 })).toThrow(/non-negative integer/);
+    expect(() => mcNemarExact({ onlyFirst: 1.5, onlySecond: 2 })).toThrow(/non-negative integer/);
+  });
+});
+
+describe("the difference between two pass rates on the same tasks", () => {
+  // Known answers from an independent implementation of Newcombe's method 10 in another language.
+  it("reproduces the known answers", async () => {
+    const { pairedDifferenceInterval } = await import("./statistics.ts");
+    const harm = pairedDifferenceInterval({
+      bothPass: 36,
+      onlyFirst: 12,
+      onlySecond: 2,
+      bothFail: 0,
+    });
+    expect(harm.point).toBeCloseTo(-0.2, 10);
+    expect(harm.lower).toBeCloseTo(-0.340427603, 8);
+    expect(harm.upper).toBeCloseTo(-0.056929584, 8);
+
+    const help = pairedDifferenceInterval({
+      bothPass: 5,
+      onlyFirst: 0,
+      onlySecond: 4,
+      bothFail: 70,
+    });
+    expect(help.point).toBeCloseTo(4 / 79, 10);
+    expect(help.lower).toBeCloseTo(-0.0080293799, 8);
+    expect(help.upper).toBeCloseTo(0.1216846349, 8);
+  });
+
+  it("keeps an interval where nothing disagreed, which a Wald interval collapses to a point", async () => {
+    const { pairedDifferenceInterval } = await import("./statistics.ts");
+    const same = pairedDifferenceInterval({
+      bothPass: 20,
+      onlyFirst: 0,
+      onlySecond: 0,
+      bothFail: 59,
+    });
+    expect(same.point).toBe(0);
+    expect(same.lower).toBeCloseTo(-0.0333320625, 8);
+    expect(same.upper).toBeCloseTo(0.0333320625, 8);
+  });
+
+  it("mirrors when the arms swap", async () => {
+    const { pairedDifferenceInterval } = await import("./statistics.ts");
+    const one = pairedDifferenceInterval({
+      bothPass: 10,
+      onlyFirst: 3,
+      onlySecond: 1,
+      bothFail: 65,
+    });
+    const other = pairedDifferenceInterval({
+      bothPass: 10,
+      onlyFirst: 1,
+      onlySecond: 3,
+      bothFail: 65,
+    });
+    expect(other.point).toBeCloseTo(-one.point, 12);
+    expect(other.lower).toBeCloseTo(-one.upper, 12);
+    expect(other.upper).toBeCloseTo(-one.lower, 12);
+  });
+
+  it("says nothing from no pairs and stays inside [-1, 1]", async () => {
+    const { pairedDifferenceInterval } = await import("./statistics.ts");
+    expect(
+      pairedDifferenceInterval({ bothPass: 0, onlyFirst: 0, onlySecond: 0, bothFail: 0 }),
+    ).toMatchObject({ point: 0, lower: -1, upper: 1, pairs: 0 });
+    const extreme = pairedDifferenceInterval({
+      bothPass: 0,
+      onlyFirst: 3,
+      onlySecond: 0,
+      bothFail: 0,
+    });
+    expect(extreme.point).toBe(-1);
+    expect(extreme.lower).toBeGreaterThanOrEqual(-1);
+    expect(extreme.upper).toBeLessThanOrEqual(1);
+  });
+});
