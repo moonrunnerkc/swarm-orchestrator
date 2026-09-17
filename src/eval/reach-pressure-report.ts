@@ -15,6 +15,8 @@ export interface ReportInput {
   /** Task id to what changed between the two patches, stated as diff facts. */
   readonly pairNotes: Readonly<Record<string, string>>;
   readonly digests: {
+    /** The driver sources as they stood when this page was derived, against the registered ones. */
+    readonly driverAtAnalysis: string;
     readonly results: string;
     readonly hiddenScores: string | null;
     readonly summary: string;
@@ -104,6 +106,9 @@ export function renderReport(input: ReportInput): string {
     `- Protocol generation ${identity.generation}, protocol digest \`${identity.protocolDigest}\``,
     `- Manifest digest \`${identity.manifestDigest}\``,
     `- Experiment driver digest \`${identity.driverDigest}\`, policy digest \`${identity.policyDigest}\``,
+    digests.driverAtAnalysis === identity.driverDigest
+      ? "- This page was derived with the driver sources the protocol registered"
+      : `- This page was derived with driver sources \`${digests.driverAtAnalysis}\`, which differ from the registered ones. The rows were written under the registered driver`,
     `- Harness commit \`${identity.harness}\``,
     `- Model \`${orUnknown(parameters.model)}\` at \`${orUnknown(parameters.endpoint)}\`; no sampling parameters are sent, so the server's defaults decide decoding (see the protocol)`,
     `- Agent budget per invocation: ${orUnknown(agent?.maxWallMinutes)} wall minutes, ${orUnknown(agent?.maxTokens)} tokens; ` +
