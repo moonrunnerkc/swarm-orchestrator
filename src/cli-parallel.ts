@@ -112,7 +112,7 @@ function describePlannerStop(stopReason: string): string {
       );
     case "output-cap":
       return (
-        "It was cut off at the output-token cap before it said anything, which is what a " +
+        "It was cut off at the output-token cap before it called a tool, which is what a " +
         "reasoning model does when it spends the whole budget thinking: try a model that " +
         "reasons less, or a goal that needs less of it."
       );

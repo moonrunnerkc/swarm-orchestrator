@@ -7,9 +7,15 @@ import {
   respondWithText,
   respondWithToolCalls,
 } from "../providers/fixture-provider.ts";
+import { degenerateRepeatThreshold } from "./degenerate-output.ts";
 import { type AgentLoopDependencies, runAgentLoop } from "./loop.ts";
 import type { LoopEvent } from "./loop-events.ts";
-import type { ModelClient, ModelRequest } from "./model-client.ts";
+import {
+  type ModelClient,
+  type ModelRequest,
+  type ModelResponse,
+  unobservedPerformance,
+} from "./model-client.ts";
 import type { LoopBudget } from "./termination.ts";
 import {
   createFixedRandom,
@@ -368,6 +374,97 @@ describe("a turn that carries nothing", () => {
 
     expect(outcome.stopReason).toBe("completed");
     expect(outcome.answeredSteps).toBe(2);
+  });
+});
+
+/**
+ * A live run: gemma4:31b behind Ollama answered `<channel|>` eight hundred times, then a
+ * fragment of a plan, then the marker again until the 8192-token cap cut it off. No tool was
+ * called. The loop read the cut-off text as the model's account of finishing, the gates ran
+ * over an unchanged workspace, and the run ended "work accepted" with the file never written.
+ * Two of five samples of the same request spiral the same way, so this is what a sample looks
+ * like, not what the model looks like.
+ */
+describe("a turn cut off at the cap before it acted", () => {
+  const cutOff = (text: string): FixtureTurn => ({
+    kind: "response",
+    response: {
+      text,
+      toolCalls: [],
+      inputTokens: 2518,
+      outputTokens: 8192,
+      finishReason: "length",
+      performance: unobservedPerformance,
+      unsupportedFeatures: [],
+    },
+  });
+
+  it("is sampled again rather than read as a completion, and its text is not the plan", async () => {
+    const harness = createHarness(
+      [
+        cutOff(`${"<channel|>".repeat(40)} I will create user_profile.html.`),
+        respondWithText("done"),
+      ],
+      { budget: { ...generousBudget, maxTokens: 100_000 } },
+    );
+    const outcome = await runAgentLoop("add the page", harness.deps);
+
+    expect(outcome.stopReason).toBe("completed");
+    expect(outcome.completionClaim).toBe("done");
+    expect(outcome.plan).toBe("done");
+    expect(harness.events.filter((event) => event.type === "model-error")).toMatchObject([
+      { willRetry: true, message: expect.stringContaining("before it called a tool") },
+    ]);
+  });
+
+  it("stops as output-cap and claims nothing when every sample is cut off", async () => {
+    const harness = createHarness([cutOff("Plan: "), cutOff("Plan: "), cutOff("Plan: ")], {
+      budget: { ...generousBudget, maxTokens: 100_000 },
+    });
+    const outcome = await runAgentLoop("add the page", harness.deps);
+
+    expect(outcome.stopReason).toBe("output-cap");
+    expect(outcome.completionClaim).toBe("");
+    expect(harness.events.filter((event) => event.type === "claim")).toHaveLength(0);
+  });
+
+  it("cuts a stream off once it repeats one unit past the threshold, and samples again", async () => {
+    // The six minutes the live run spent were the cap being reached at 22 tokens a second.
+    let streamed = 0;
+    const done = respondWithText("done");
+    const spiralling: ModelClient = {
+      modelId: "fixture:spiral",
+      generate(request: ModelRequest): Promise<ModelResponse> {
+        if (streamed > 0 && done.kind === "response") {
+          return Promise.resolve(done.response);
+        }
+        return new Promise((_, reject) => {
+          const feed = (): void => {
+            if (request.abortSignal.aborted) {
+              reject(new Error("This operation was aborted"));
+              return;
+            }
+            streamed += 1;
+            request.onText?.("<channel|>");
+            setImmediate(feed);
+          };
+          feed();
+        });
+      },
+    };
+    const harness = createHarness([], { model: spiralling });
+    const outcome = await runAgentLoop("add the page", harness.deps);
+
+    expect(outcome.stopReason).toBe("completed");
+    expect(streamed).toBe(degenerateRepeatThreshold);
+    expect(harness.events.filter((event) => event.type === "model-error")).toMatchObject([
+      {
+        willRetry: true,
+        message: expect.stringContaining(
+          `repeated "<channel|>" ${degenerateRepeatThreshold} times in a row`,
+        ),
+      },
+    ]);
   });
 });
 
