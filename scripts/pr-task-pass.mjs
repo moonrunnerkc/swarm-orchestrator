@@ -20,14 +20,17 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { readArmDriver } from "../dist/eval/arm-dispatch.js";
-import { classifyAgainstHeldBackOracle } from "../dist/eval/campaign-run.js";
 import { readAnEmptyPatch } from "../dist/eval/empty-patch-attribution.js";
-import { heldBackRefusalIsReal, oracleCommand } from "../dist/eval/oracle-filter.js";
+import {
+  endpointAnswers as endpointAnswersAt,
+  halfJudgeFor,
+  judgeAgainstBothHalves,
+  runCommand,
+  whyNothingWasJudged,
+} from "../dist/eval/pr-task-judge.js";
 import { prTaskEvidenceRoot, prTaskWorkingRoot } from "../dist/eval/pr-task-paths.js";
 import { wilsonInterval } from "../dist/eval/statistics.js";
 import { casesTitled } from "../dist/eval/test-case-split.js";
-import { childEnvironment, defaultChildHome } from "../dist/exec/child-environment.js";
-import { runProcessGroup } from "../dist/exec/run-process.js";
 
 const repositoryRoot = new URL("..", import.meta.url).pathname;
 // Evidence in the repository, bulk outside it. The results and the recorded patches are what
@@ -99,63 +102,13 @@ if (
   );
 const armDriver = armConfig === null ? null : await readArmDriver(armConfig, arm);
 
+// The pass's own spelling of a command outcome, over the one process-group runner the judge uses.
+const attempt = (file, args, options = {}) =>
+  runCommand(file, args, { cwd: options.cwd, env: options.env, timeoutMs: options.timeout });
+
 const patchRoot = arm === null ? join(taskRoot, "patches") : join(taskRoot, `patches-${arm}`);
 const scoredPath =
   arm === null ? join(taskRoot, "scored.json") : join(taskRoot, `scored.${arm}.json`);
-
-/**
- * One command, with whatever it started stopped alongside it.
- *
- * `execFile`'s timeout signals the process it started and nothing else, and a mined repository's
- * suite starts servers: two thousand node processes belonging to one repository's tests were
- * still running two days after the campaign that began them, holding deleted checkouts open. The
- * harness already owns the answer, a process group and one signal to it, and a second weaker way
- * of starting a process beside it is how that leak got here.
- */
-async function attempt(file, args, options = {}) {
-  const ran = await runProcessGroup(file, args, {
-    cwd: options.cwd ?? process.cwd(),
-    env: childEnvironment(options.env ?? process.env, { homeDir: defaultChildHome() }).variables,
-    timeoutMs: options.timeout ?? 10 * 60_000,
-    maxOutputBytes: 64 * 1024 * 1024,
-  });
-  return {
-    code: ran.startFailure === null ? ran.exitCode : 127,
-    stdout: ran.stdout,
-    stderr: ran.startFailure ?? ran.stderr,
-    /** Killed at its deadline rather than finished, which is a different thing from failing. */
-    timedOut: ran.timedOut,
-  };
-}
-
-/**
- * The timezone the project's own test script sets, read from the base commit rather than from the
- * viability record: tasks judged before that fix carry no timezone, and re-deriving it here covers
- * them without re-judging. dayjs runs its suite under four zones in one command, and a timezone
- * test lifted out of that and run under whatever zone this machine is in fails for a reason that
- * is not the patch, which costs an opportunity rather than producing a wrong verdict.
- */
-async function declaredTimezone(checkout, baseCommit) {
-  const shown = await attempt("git", ["show", `${baseCommit}:package.json`], { cwd: checkout });
-  if (shown.code !== 0) return null;
-  try {
-    const declared = JSON.parse(shown.stdout).scripts?.test ?? "";
-    return (/\bTZ=([A-Za-z_+\-/0-9]+)/.exec(declared) ?? [])[1] ?? null;
-  } catch {
-    return null;
-  }
-}
-
-const runnerKind = (runner) =>
-  runner.includes("jest")
-    ? "jest"
-    : runner.includes("vitest")
-      ? "vitest"
-      : runner.includes("mocha")
-        ? "mocha"
-        : runner.includes("ava")
-          ? "ava"
-          : "node";
 
 /**
  * The commit of the tool that produced a row, recorded on the row.
@@ -177,60 +130,6 @@ const done = new Set(scored.runs.map((one) => `${one.repository}#${one.pull}`));
 
 mkdirSync(oracleRoot, { recursive: true });
 mkdirSync(patchRoot, { recursive: true });
-/**
- * The verdicts one task produces, given a judge that runs one half of its cases.
- *
- * One function because there are two callers, the fresh pass and `--rejudge`, and they disagreed.
- * The order-dependence check lived only in the fresh pass, so re-judging winston#2256 turned a
- * task already recorded as order-dependent back into a false green: the same evidence, a worse
- * answer, from the path whose whole purpose is re-deriving answers after a harness change.
- *
- * The rule itself is `heldBackRefusalIsReal`, which lives in src with tests beside it. Both
- * callers had hand-rolled copies of it and one copy was missing.
- */
-async function judgeAgainstBothHalves(judge, task) {
-  const sealed = await judge(task.sealedCases);
-  const heldBack = await judge(task.heldBackCases);
-
-  // A false green is the most consequential thing this measures, so it is the last place to take a
-  // refusal at face value. Splitting one suite assumes its tests are independent and plenty are
-  // not: winston's container tests share state, and the held-back half failed alone while passing
-  // beside the sealed half.
-  //
-  // Asked wherever the answer can change, which is wherever the sealed half accepted and the
-  // held-back half refused. It used to be asked only where the tool had certified, and that gate
-  // flattered the tool as soon as the reach check started refusing: winston#2256 was recorded as a
-  // correct refusal of a bad patch, when the patch is fine, the held-back half only fails alone,
-  // and what the tool actually did was decline to certify a change its oracle had not run.
-  let heldBackVerdict = heldBack.task;
-  let orderDependent = false;
-  if (sealed.task === "accepted" && heldBack.task === "rejected") {
-    const together = await judge([...task.sealedCases, ...task.heldBackCases]);
-    orderDependent = !heldBackRefusalIsReal({
-      aloneFailed: true,
-      togetherFailed: together.task !== "accepted",
-    });
-    if (orderDependent) {
-      heldBackVerdict = "accepted";
-    }
-  }
-
-  return {
-    sealed,
-    heldBack,
-    heldBackVerdict,
-    orderDependent,
-    corner: classifyAgainstHeldBackOracle({
-      verifiedWithFirstOracle: sealed.verified === true,
-      heldBack: heldBackVerdict,
-      regression: sealed.regression,
-      sealed: sealed.task,
-      oracleReach: sealed.oracleReach,
-      oracleBond: sealed.oracleBond,
-    }),
-  };
-}
-
 /**
  * What each half did with the same mutants, recorded together.
  *
@@ -256,94 +155,15 @@ function bondEvidence(sealed, heldBack) {
   };
 }
 
-/**
- * The judge for one task: one half's case titles in, `swarm ci`'s verdict out.
- *
- * One definition, because the fresh pass and `--rejudge` ask the same question and every place
- * they were written twice has been a defect. The order-dependence check lived in one copy and not
- * the other, so re-judging winston#2256 turned a task already recorded as order-dependent back
- * into a false green: the same evidence, a worse answer, from the path whose purpose is
- * re-deriving answers after a harness change.
- *
- * The declared timezone travels as an environment name rather than as a shell prefix on the
- * command. `TZ=x mkdir … && cp … && npx jest …` sets the zone for the mkdir and nothing else, so
- * the oracle ran under whatever zone this machine is in while the viability filter that admitted
- * the task ran under the project's own. dayjs runs its suite under four zones for a reason.
- */
-async function judgeOf(task, checkout, patchPath, storedTest) {
-  const runner = runnerKind(task.runner);
-  const runnerArgv = task.runner.split(" ");
-  const zone = await declaredTimezone(checkout, task.baseCommit);
-  /**
-   * The repository's own checks run once per task, on the first judgement.
-   *
-   * Only that judgement's `regression` is read: the corner is classified from the sealed run's,
-   * and the held-back run and the order-dependence run are asked for a task verdict alone. The
-   * suite answers the same way in all three, so running it three times is the same minutes spent
-   * three times, and on this corpus that is most of a campaign: dayjs runs its tests under four
-   * timezones and every task is judged two or three times.
-   */
-  let checksAlreadyRun = false;
-  return async (titles) => {
-    const command = oracleCommand({
-      storedTestFile: storedTest,
-      destination: task.testFile,
-      runner,
-      runnerArgv,
-      titles,
-    });
-    if (command === null) {
-      return {
-        verified: false,
-        task: "unjudged",
-        regression: "unmeasured",
-        judgeFailure: `${runner} has no filter that names exactly one half's cases`,
-      };
-    }
-    const onlyTheOracle = checksAlreadyRun;
-    checksAlreadyRun = true;
-    const asked = await attempt(
-      process.execPath,
-      [
-        join(repositoryRoot, "dist/cli.js"),
-        "ci",
-        ...(isolation === null ? [] : ["--isolation", isolation]),
-        "--patch",
-        patchPath,
-        "--workspace",
-        checkout,
-        "--base",
-        task.baseCommit,
-        "--install",
-        ...(onlyTheOracle ? ["--oracle-only"] : []),
-        "--oracle",
-        command,
-        "--json",
-      ],
-      {
-        timeout: 20 * 60_000,
-        env: zone === null ? process.env : { ...process.env, TZ: zone },
-      },
-    );
-    try {
-      return JSON.parse(`${asked.stdout}`.trim().split("\n").at(-1));
-    } catch {
-      // A judge that could not run is not a judge that had nothing to say. Both used to arrive
-      // here as `unjudged`, which is also what a run with no oracle reports, and twelve of the
-      // corpus's twenty-one unjudgeable tasks are this case with nothing recorded about why.
-      return {
-        verified: false,
-        task: "unjudged",
-        regression: "unmeasured",
-        judgeFailure:
-          (asked.timedOut
-            ? "swarm ci was killed at its deadline: "
-            : `swarm ci exited ${asked.code} without a verdict: `) +
-          `${(asked.stderr || asked.stdout).trim().split("\n").slice(-2).join(" ").slice(0, 300)}`,
-      };
-    }
-  };
-}
+const judgeOf = (task, checkout, patchPath, storedTest) =>
+  halfJudgeFor({
+    task,
+    checkout,
+    patchPath,
+    storedTestFile: storedTest,
+    cliPath: join(repositoryRoot, "dist/cli.js"),
+    isolation,
+  });
 
 function promptFor(task, storedTestSource) {
   if (!attack) {
@@ -359,47 +179,7 @@ function promptFor(task, storedTestSource) {
   );
 }
 
-/**
- * Why a verdict says nothing, in the verifier's own words, or null where it said something.
- *
- * `task: unjudged` is one word for several situations: no oracle was given, the patch did not
- * apply to a fresh base, the checkout could not be made, nothing in the checkout could run. Twelve
- * of the mined corpus's unjudgeable tasks are one of those and the rows did not say which, so a
- * sixth of the corpus was a mystery rather than a finding. The verifier already computes the
- * sentence; this keeps it.
- */
-function whyNothingWasJudged(verdict) {
-  if (verdict.judgeFailure !== undefined) return verdict.judgeFailure;
-  if (verdict.task !== "unjudged") return null;
-  if (verdict.applied === false) {
-    return "the patch did not apply to a fresh checkout of the base, so nothing was measured";
-  }
-  if (verdict.refusal) return `refused before anything ran: ${verdict.refusal}`;
-  return verdict.advice
-    ? `nothing judged: ${verdict.advice}`
-    : "nothing judged, and no reason given";
-}
-
-/**
- * Whether the model endpoint answers a trivial request, asked of the endpoint this pass was told
- * to use rather than of the model's own reachability in general.
- *
- * Spent in two places and nowhere else: once before the pass starts, so a dead endpoint costs a
- * second rather than a task's whole wall budget, and once after any run that produced no patch,
- * because that is the only verdict whose meaning depends on the endpoint having been alive.
- */
-async function endpointAnswers() {
-  try {
-    const asked = await fetch(`${endpoint.replace(/\/+$/, "")}/models`, {
-      signal: AbortSignal.timeout(15_000),
-    });
-    return asked.ok
-      ? { answered: true, detail: "" }
-      : { answered: false, detail: `HTTP ${asked.status} from ${endpoint}` };
-  } catch (cause) {
-    return { answered: false, detail: `${cause?.message ?? cause} (${endpoint})` };
-  }
-}
+const endpointAnswers = () => endpointAnswersAt(endpoint);
 
 const named = (one) => `${one.repository}#${one.pull}`;
 /**
