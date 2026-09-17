@@ -274,17 +274,6 @@ that. The arm stays unmeasured by decision rather than by accident. If that chan
 this is funding the key and running `node campaign/harness/campaign.mjs run --arm frontier`
 over a campaign's manifest, after any local arm and never beside one, then `report`.
 
-## Debt: the router chooses among the last sweep's candidates, while the table folds every sweep
-
-The competency table keeps every sweep of a golden set and folds them per class, so after the
-09-02 sweeps it knows four models. The pick on disk is the last sweep's, by design, and its
-candidate list is that sweep's run set, so a router reading both can only choose among the
-models the last sweep ran together: a table row for a model the last sweep did not run informs
-nothing until some sweep runs it beside the others. The honest fix is for the pick's candidate
-set to be the union of what the table has measured on the current golden set, restricted to what
-the backend serves, which is a change to what the pick file means and is not made while shipping
-something else.
-
 ## Debt: three documents ship inside the package and can go stale between releases
 
 The `files` allowlist puts `build-guide.md`, `security-coverage.md` and `claims.md` in the
