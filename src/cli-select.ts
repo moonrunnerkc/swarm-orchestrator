@@ -16,6 +16,7 @@ import { probeHardware } from "./select/hardware-probe.ts";
 import { defaultPickPath, readCalibrationPick } from "./select/pick-store.ts";
 import { productionRouting } from "./select/production-routing.ts";
 import { recommendModel } from "./select/recommendation.ts";
+import { routingCandidates } from "./select/routing-candidates.ts";
 import { defaultRoutingLogPath, openRoutingLog } from "./select/routing-log.ts";
 import { renderSelectReport } from "./select/select-report.ts";
 import { servableCandidates } from "./select/servable-candidates.ts";
@@ -75,23 +76,29 @@ export async function chooseModel(
     return { modelSpec: null, assignment: "pinned", decision: null, candidates: [] };
   }
 
+  const taskClass = classifyTask(task).taskClass;
+  const table = await readCompetencyTable(defaultCompetencyTablePath(home));
+  // Everything the table has measured on this class, not only the pair the last sweep ran
+  // together: a model with the best evidence of all was never in the running when a later
+  // sweep happened not to include it.
+  const measured = routingCandidates({ pick: calibrated, table, taskClass });
+
   // Route between models that can actually answer. A calibration outlives the machine it was
   // measured on: a local arm whose model is no longer served can never be tried, and an arm
   // with no samples is exactly the one UCB reaches for first, so it won a routing every time
   // and was swapped out again every time. The reader saw a model named that no longer exists
   // here, and the arm never got a sample to stop it being picked again.
-  const usable = await servedCandidates(calibrated.candidates, settings);
-  const candidates = usable.length > 0 ? usable : calibrated.candidates;
+  const usable = await servedCandidates(measured, settings);
+  const candidates = usable.length > 0 ? usable : measured;
 
   const log = await openRoutingLog({ path: defaultRoutingLogPath(home) });
-  const taskClass = classifyTask(task).taskClass;
   const calibrationPick = candidates.includes(calibrated.model)
     ? calibrated.model
     : (candidates[0] ?? calibrated.model);
   // The table is asked with the calibration pick listed first, so a tie falls to it rather
   // than to whichever model the sweep happened to run first.
   const competency = lookupCompetency({
-    table: await readCompetencyTable(defaultCompetencyTablePath(home)),
+    table,
     taskClass,
     goldenSetVersion: calibrated.goldenSetVersion,
     candidates: [calibrationPick, ...candidates.filter((model) => model !== calibrationPick)],

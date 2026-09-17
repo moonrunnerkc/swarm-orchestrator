@@ -37,6 +37,13 @@
 
 ### Fixed
 
+- **The router considers every model the table has measured, not only the last sweep's pair.**
+  The calibration pick's candidates were the models the last sweep ran together, so a model with
+  the best evidence of all on a class was never in the running when a later sweep happened not
+  to include it: on one machine qwen3.6 held the best edit share across two sweeps and the router
+  chose between gemma4 and mistral. The candidates are now the pick's own plus every model the
+  competency table has measured on the task's class, on the same golden set, at or above the
+  floor, restricted as before to what the backend serves.
 - **A turn cut off at the output cap is not a completion.** A live run's only turn was the
   marker `<channel|>` repeated to the 8192-token cap around a fragment of a plan, with no tool
   called; the loop read the cut-off text as the model's account of finishing, the gates ran
