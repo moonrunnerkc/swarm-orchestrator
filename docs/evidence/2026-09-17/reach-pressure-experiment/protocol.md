@@ -1,4 +1,4 @@
-# Reach pressure: protocol, generation 2
+# Reach pressure: protocol, generation 3
 
 Written and committed before any task of the confirmatory cohort was run. Every row the run
 writes carries the SHA-256 of this file, so an edit after the fact is a different protocol and the
@@ -24,15 +24,15 @@ The driver reads this block and nothing else from this file.
 ```json
 {
   "schema": "swarm.reach-pressure.protocol.v1",
-  "generation": 2,
+  "generation": 3,
   "cohort": "mined-pr-viable-79",
   "manifestDigest": "sha256:07a5a50b2b0d5cc87d746e214eee0c92ae1ca9828cd68adc463f579a5a0ea81a",
-  "driverDigest": "sha256:c57153381ab0e9f8fbce1337d0c082031d8d6a6027b936bed726ef34c80047b4",
+  "driverDigest": "sha256:a962c7a420d14229d797819477050bd5076dcf8fedf5656f5631f1747d06d830",
   "policyDigest": "sha256:07c1cf1bee31eafc4ce345babf8565249712325597aa7af56a58211f9b03afc4",
   "model": "local:malekoo/Qwen3.8-27B-MLX-8bit",
   "endpoint": "http://127.0.0.1:8000/v1",
   "agent": { "maxWallMinutes": 12, "maxTokens": 1000000, "thinking": false, "isolation": null },
-  "limits": { "prefixInvocations": 2, "reachRepairInvocations": 2 }
+  "limits": { "prefixInvocations": 2, "reachRepairInvocations": 2, "attemptsPerTask": 3 }
 }
 ```
 
@@ -61,7 +61,7 @@ under this directory, and stamps that commit on every row.
 | Node | v24.15.0 |
 | machine | Apple M5 Max, 18 cores, 64 GB, macOS (Darwin 25.6.0, arm64) |
 | model | `malekoo/Qwen3.8-27B-MLX-8bit`, Hugging Face snapshot `6a88621e929c7261b3f5e5c000bac8b663a3bcf3` |
-| server | `mlx_lm.server` 0.31.3 on mlx 0.32.2, `--prompt-cache-size 1 --prompt-cache-bytes 2000000000`, at `http://127.0.0.1:8000/v1` |
+| server | `mlx_lm.server` 0.31.3 on mlx 0.32.2 at `http://127.0.0.1:8000/v1`; generations 1 and 2 ran it with `--prompt-cache-size 1 --prompt-cache-bytes 2000000000`, generation 3 with `--prompt-cache-size 1 --prompt-cache-bytes 500000000 --prefill-step-size 512 --prompt-concurrency 1 --decode-concurrency 1` (memory and scheduling settings; the arithmetic of a greedy completion is the same) |
 | decoding | the agent sends no temperature, top-p or seed. The server's defaults decide: temperature 0.0, top-p 1.0, top-k 0, min-p 0.0, which is greedy decoding. Batched GPU inference is still not bit-reproducible |
 | thinking | off (`local_thinking = false`), as in the historical pass |
 | concurrency | one task at a time, one model call at a time |
@@ -250,8 +250,11 @@ Every scheduled task keeps a row. Terminal statuses:
 The whole cohort runs. There is no interim analysis and no held-back verdict to look at until
 every trajectory has settled. An interrupted attempt stays on the ledger as an
 `infrastructure-failure` row, including a launch the driver never settled, and the task is
-scheduled again under this same protocol with the next attempt number. The last attempt is the
-task's outcome and the number of interrupted attempts is reported. Nothing else is retried: not a
+scheduled again under this same protocol with the next attempt number, at most `attemptsPerTask`
+times in all; a task still failing after that stays an infrastructure failure by name. The last
+attempt is the task's outcome and the number of interrupted attempts is reported. A supervisor
+outside the driver restarts the model server with the registered arguments when the driver stops
+on an infrastructure failure and resumes it; it decides nothing else. Nothing else is retried: not a
 refused patch, not an unjudgeable verdict, not a judge that timed out.
 
 ## Changes after registration
@@ -282,6 +285,27 @@ layer recorded as `call-failed` is an infrastructure failure whatever the worksp
 server was restarted with the same arguments. Nothing about the treatment, the feedback text, the
 outcome definitions, the cohort or the statistics changed; the driver digest changed because the
 probe lives in a digested module.
+
+### Generation 2 stopped: the server dies of GPU memory, and a task could be rescheduled forever
+
+Generation 2 was registered at `4cc3999e4` (driver digest `sha256:c5715338…`) and ran from
+2026-09-17 21:20 local. The probe worked: after the first invocation of `caolan/async#1790` the
+server stopped completing, the attempt was recorded as `infrastructure-failure`, and the driver
+stopped. The server's own log names the cause, `[METAL] Command buffer execution failed:
+Insufficient Memory` in its generation thread while processing a prompt of about 32,000 tokens
+on a machine under memory pressure from the agent's own test runs; after that thread dies the
+server still lists its models and never completes again. The same task killed a freshly restarted
+server on its second attempt, and the driver would have scheduled it again without limit. Two
+tasks settled (`classnames#170`, `async#1595`), both never visibly accepted, and no held-back
+verdict was produced. The rows are kept under [`generation-2/`](generation-2/results.jsonl).
+
+The changes: `attemptsPerTask` caps how often a task is rescheduled after infrastructure
+failures, after which it stays one by name; a supervisor restarts the server with the registered
+arguments and resumes the driver, which is the resume this protocol already prescribed, done
+without a person; and the server runs with a smaller prompt cache, a smaller prefill step and one
+sequence at a time, which changes what it holds in memory and not what a greedy completion
+computes. Nothing about the treatment, the feedback text, the outcome definitions, the cohort or
+the statistics changed.
 
 ## What was exercised beforehand
 
