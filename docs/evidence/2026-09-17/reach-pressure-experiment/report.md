@@ -5,7 +5,7 @@
 - Protocol generation 3, protocol digest `sha256:9d24e8a6f74e5d6eeac389a3b546d280cadf95536b8bccdcc8b4b98845a229b5`
 - Manifest digest `sha256:07a5a50b2b0d5cc87d746e214eee0c92ae1ca9828cd68adc463f579a5a0ea81a`
 - Experiment driver digest `sha256:a962c7a420d14229d797819477050bd5076dcf8fedf5656f5631f1747d06d830`, policy digest `sha256:07c1cf1bee31eafc4ce345babf8565249712325597aa7af56a58211f9b03afc4`
-- This page was derived with the driver sources the protocol registered
+- This page was derived with driver sources `sha256:7f6658cac8cc624e15bf1bf25966c942335a1c0bed604bfb9295af69a3cbff17`, which differ from the registered ones. The rows were written under the registered driver
 - Harness commit `dce76cc7e64de048db0b98e02d59c16e5c35be42`
 - Model `local:malekoo/Qwen3.8-27B-MLX-8bit` at `http://127.0.0.1:8000/v1`; no sampling parameters are sent, so the server's defaults decide decoding (see the protocol)
 - Agent budget per invocation: 12 wall minutes, 1000000 tokens; at most 2 invocation(s) before visible acceptance and 2 reach repair invocation(s) after it
@@ -182,6 +182,26 @@ Nothing was left out.
 - **Feedback travels as task text.** Repair invocations are fresh conversations that read the task and the verifier's observations in the prompt, which is how this harness repairs, and not a continuation of the earlier conversation.
 - **What the workspace guard is.** The held-back half is kept out of the workspace, its git objects and every prompt. The tool policy is lexical and an allowed interpreter can still read outside the workspace, which no transcript here was audited for.
 - **Reach is only as good as its coverage reading.** A transforming runner can make reach read unmeasured, and those tasks cannot trigger the treatment.
+
+## Written after the run
+
+**Six of the nine reach refusals named a file no runner executes.** `typings/index.test-d.ts` is
+commander's tsd type test: assertions the type checker reads, which no coverage report can ever
+name. Reach's test-file rule recognised `.test.ts` and not `.test-d.ts`, so it read those lines as
+unexecuted source and the treatment told the model, four times with nothing else named, that lines
+nothing could run had not run. That is a false refusal of the same class as the `.d.ts` one the
+September evidence records, and it is fixed in `src/gates/oracle-reach.ts` after this run, with a
+test. The rows above are the treatment as it ran and are unchanged by the fix; a rerun would
+trigger reach on at most five of these nine tasks.
+
+**Every triggered task ended with its repairs exhausted.** In six the patch did not change at all
+across two repair invocations. In the three that changed, nothing was narrowed: one altered the
+examples and test the agent had itself added, and two added a scratch file the agent had used to
+probe the behaviour and did not delete. Under this model the refusal produced no pressure toward a
+smaller implementation, and the held-back oracle agreed with itself on every pair.
+
+**Generations 1 and 2** were stopped on instrument defects, named in the protocol, and their rows
+are kept beside this run. No held-back verdict was produced in either.
 
 ## Re-deriving this page
 

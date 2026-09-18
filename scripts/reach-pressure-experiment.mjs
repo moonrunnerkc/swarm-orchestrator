@@ -126,6 +126,7 @@ const paths = {
   summary: join(evidenceRoot, "summary.json"),
   report: join(evidenceRoot, "report.md"),
   pairNotes: join(evidenceRoot, "pair-notes.json"),
+  postscript: join(evidenceRoot, "postscript.md"),
   patches: join(evidenceRoot, "patches"),
 };
 
@@ -827,6 +828,7 @@ async function analyze({ synthetic }) {
     parameters,
     environment,
     pairNotes,
+    postscript: existsSync(paths.postscript) ? readFileSync(paths.postscript, "utf8") : null,
     digests: {
       driverAtAnalysis,
       results: lib.digestOfBytes(readFileSync(paths.results, "utf8")),

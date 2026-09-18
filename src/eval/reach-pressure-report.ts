@@ -14,6 +14,8 @@ export interface ReportInput {
   readonly environment: Record<string, unknown> | null;
   /** Task id to what changed between the two patches, stated as diff facts. */
   readonly pairNotes: Readonly<Record<string, string>>;
+  /** Prose written after the run, printed verbatim between the limitations and the footer. */
+  readonly postscript: string | null;
   readonly digests: {
     /** The driver sources as they stood when this page was derived, against the registered ones. */
     readonly driverAtAnalysis: string;
@@ -262,6 +264,7 @@ export function renderReport(input: ReportInput): string {
     "- **What the workspace guard is.** The held-back half is kept out of the workspace, its git objects and every prompt. The tool policy is lexical and an allowed interpreter can still read outside the workspace, which no transcript here was audited for.",
     "- **Reach is only as good as its coverage reading.** A transforming runner can make reach read unmeasured, and those tasks cannot trigger the treatment.",
     "",
+    ...(input.postscript === null ? [] : [input.postscript.trim(), ""]),
     "## Re-deriving this page",
     "",
     "    node scripts/reach-pressure-experiment.mjs analyze",
