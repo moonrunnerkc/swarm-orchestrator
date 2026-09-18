@@ -76,6 +76,20 @@
   added.** `security add-generic-password` with no default keychain raises a dialog and blocks
   until the store kills it; the probe fails cleanly instead and the run signs with a per-run key.
 
+### Measured
+
+- **Enforcing changed-line reach after visible acceptance changed no held-back verdict in 79
+  mined tasks.** A pre-registered shared-prefix experiment ran each task until the visible half of
+  its oracle first accepted, took that patch as the control, and forked a reach condition from the
+  same workspace that was told which added lines the oracle never executed. Thirteen tasks reached
+  visible acceptance, reach triggered on nine, no repair satisfied it, and the held-back half
+  agreed on every pair: 12 pass both, 67 fail both, zero discordant, exact McNemar p = 1, paired
+  difference 0.0 points, 95% CI [-4.0, +4.0]. Three repairs changed bytes, none narrowed the
+  implementation, two left scratch files behind. Six of the nine refusals named a tsd type-test
+  file no runner executes. The protocol, rows, patches and a report that re-derives from the rows
+  are in [`docs/evidence/2026-09-17/reach-pressure-experiment/`](docs/evidence/2026-09-17/reach-pressure-experiment/report.md).
+  Two earlier generations were stopped on instrument defects and are kept beside it.
+
 ### Changed
 
 - **The verify-only commands are command definition data.** `verify`, `ci` and `gates` are marked

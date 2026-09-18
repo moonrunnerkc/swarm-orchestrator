@@ -15,6 +15,7 @@
 | [`beta-gates.md`](beta-gates.md) | the twelve gates this project will not call itself production-ready without, and where each stands |
 | [`evidence/2026-09-06/second-oracle/`](evidence/2026-09-06/second-oracle) | how a false-green rate is measured, why one oracle cannot produce one, and the number |
 | [`evidence/2026-09-06/mined-corpus/`](evidence/2026-09-06/mined-corpus) | tasks mined from merged pull requests, the filter that replaces labelling, and the weakness |
+| [`evidence/2026-09-17/reach-pressure-experiment/`](evidence/2026-09-17/reach-pressure-experiment/report.md) | whether enforcing reach after visible acceptance changes held-back correctness, pre-registered, paired over 79 tasks |
 | [`tech-debt.md`](tech-debt.md) | what the tree carries that it would rather not, with what closing each would take |
 | [`evidence/`](evidence) | dated runs, bundles, and reports, each verified by the verifier it carries |
 | [`state/`](state) | the state file of each unattended pass, with what was done and what was not |
