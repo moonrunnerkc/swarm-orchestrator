@@ -429,6 +429,9 @@ async function run({ synthetic }) {
       }
       const last = resultsOf(task.id).at(-1);
       if (last !== undefined && last.trajectory.status !== "infrastructure-failure") continue;
+      // A task that keeps taking the server down stays an infrastructure failure by name rather
+      // than being scheduled until it happens to survive.
+      if (resultsOf(task.id).length >= parameters.limits.attemptsPerTask) continue;
       if (ran >= limit) break;
       ran += 1;
 
@@ -478,11 +481,15 @@ async function run({ synthetic }) {
     }
     const open = manifest.tasks.filter((task) => {
       const last = resultsOf(task.id).at(-1);
-      return last === undefined || last.trajectory.status === "infrastructure-failure";
+      return (
+        (last === undefined || last.trajectory.status === "infrastructure-failure") &&
+        resultsOf(task.id).length < parameters.limits.attemptsPerTask
+      );
     });
     console.log(
-      `${manifest.tasks.length - open.length} of ${manifest.tasks.length} task(s) settled`,
+      `${manifest.tasks.length - open.length} of ${manifest.tasks.length} task(s) closed`,
     );
+    console.log(`${open.length} task(s) still open`);
   });
 }
 
@@ -682,7 +689,10 @@ async function score({ synthetic }) {
     const lastOf = (id) => results.filter((row) => row.taskId === id).at(-1);
     const open = manifest.tasks.filter((task) => {
       const last = lastOf(task.id);
-      return last === undefined || last.trajectory.status === "infrastructure-failure";
+      return (
+        (last === undefined || last.trajectory.status === "infrastructure-failure") &&
+        results.filter((row) => row.taskId === task.id).length < parameters.limits.attemptsPerTask
+      );
     });
     if (open.length > 0) {
       throw new Error(
