@@ -1,4 +1,4 @@
-# Reach pressure: protocol, generation 1
+# Reach pressure: protocol, generation 2
 
 Written and committed before any task of the confirmatory cohort was run. Every row the run
 writes carries the SHA-256 of this file, so an edit after the fact is a different protocol and the
@@ -24,10 +24,10 @@ The driver reads this block and nothing else from this file.
 ```json
 {
   "schema": "swarm.reach-pressure.protocol.v1",
-  "generation": 1,
+  "generation": 2,
   "cohort": "mined-pr-viable-79",
   "manifestDigest": "sha256:07a5a50b2b0d5cc87d746e214eee0c92ae1ca9828cd68adc463f579a5a0ea81a",
-  "driverDigest": "sha256:0e03cf1cc85c6e6d8c1ec309eac9b34607d1cb2fbca8c3353c32055de006ea28",
+  "driverDigest": "sha256:c57153381ab0e9f8fbce1337d0c082031d8d6a6027b936bed726ef34c80047b4",
   "policyDigest": "sha256:07c1cf1bee31eafc4ce345babf8565249712325597aa7af56a58211f9b03afc4",
   "model": "local:malekoo/Qwen3.8-27B-MLX-8bit",
   "endpoint": "http://127.0.0.1:8000/v1",
@@ -56,7 +56,7 @@ under this directory, and stamps that commit on every row.
 | | |
 | --- | --- |
 | branch | `v13-main`, clean at registration |
-| harness commit at the start of this work | `149bf7d0e42192721e9448473eb2b14063670ec1` |
+| harness commit at the start of this work | `149bf7d0e42192721e9448473eb2b14063670ec1`; generation 1 registered at `a2a6ee1f7` |
 | harness commit of the run | the commit holding this file and the manifest, or a later one that changes nothing the driver digests; recorded on every row |
 | Node | v24.15.0 |
 | machine | Apple M5 Max, 18 cores, 64 GB, macOS (Darwin 25.6.0, arm64) |
@@ -260,6 +260,28 @@ Treatment logic, outcome definitions, task membership and statistical rules do n
 of results. If a real implementation defect forces a change, the affected run stops, the defect is
 written down here under a new heading, the generation number rises, and the whole cohort is run
 again under that one generation. Rows of two generations never make one estimate.
+
+### Generation 1 stopped: a wedged server was being recorded as the model writing nothing
+
+Generation 1 was registered at `a2a6ee1f7` (driver digest `sha256:0e03cf1c…`) and ran 12 tasks
+from 2026-09-17 18:00 local. From the second invocation of `gvergnaud/ts-pattern#319` onward,
+every invocation made exactly one model call, which the provider layer recorded as `call-failed`
+with no usage, and ended at its wall budget with an empty diff; the MLX server process was alive at
+113 MB resident and answering `/models`, and a direct completion request to it never returned. The
+generation-1 health probe asked only `/models`, so seven tasks in a row (`ts-pattern#319`,
+`hubot#1635`, `hubot#1710`, `dayjs#2330`, `dayjs#2367`, `dayjs#2640`, and the `dayjs#2948` attempt
+the driver was stopped during) were recorded as `never-visible-accepted` with a live-model empty
+diff, which is the misattribution this protocol says must not happen. No held-back verdict was
+produced for any task. The 12 rows are kept under [`generation-1/`](generation-1/results.jsonl)
+with the driver's log and are not part of any estimate.
+
+The fix, which is the whole of the driver change between the generations: the endpoint is asked
+for a four-token completion with a two-minute deadline, before the first task and after every
+invocation, instead of for its model list; and an invocation whose every model call the provider
+layer recorded as `call-failed` is an infrastructure failure whatever the workspace holds. The
+server was restarted with the same arguments. Nothing about the treatment, the feedback text, the
+outcome definitions, the cohort or the statistics changed; the driver digest changed because the
+probe lives in a digested module.
 
 ## What was exercised beforehand
 
