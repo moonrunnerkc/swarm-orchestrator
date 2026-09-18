@@ -43,7 +43,7 @@ const invocation: AgentInvocation = {
   runId: "20260917T000000-abcdef",
   ledgerDigest: digestOfBytes("ledger"),
   ledgerRecords: 12,
-  usage: { modelCalls: 3, inputTokens: 900, outputTokens: 120, status: "reported" },
+  usage: { modelCalls: 3, failedCalls: 0, inputTokens: 900, outputTokens: 120, status: "reported" },
 };
 
 /** A scripted world: each agent invocation leaves the next patch, each patch has one verdict. */
@@ -292,6 +292,29 @@ describe("what is not a model outcome is not recorded as one", () => {
     expect(world.judged).toHaveLength(1);
   });
 
+  it("reads an invocation whose every model call failed as infrastructure", async () => {
+    const world = scripted([{ patch: "first", verdict: unreached }]);
+    const effects: TrajectoryEffects = {
+      ...world.effects,
+      invokeAgent: async () => ({
+        ...invocation,
+        usage: {
+          modelCalls: 1,
+          failedCalls: 1,
+          inputTokens: null,
+          outputTokens: null,
+          status: "unknown",
+        },
+      }),
+    };
+
+    const ended = await runTrajectory({ task, limits, effects });
+
+    expect(ended.status).toBe("infrastructure-failure");
+    expect(ended.detail).toContain("model call(s) failed");
+    expect(world.judged).toHaveLength(0);
+  });
+
   it("ends a task whose visible oracle could not judge, and does not ask the model to repair that", async () => {
     const world = scripted([
       {
@@ -326,7 +349,24 @@ describe("usage that was not reported stays unknown", () => {
           payload: { usageStatus: "reported", inputTokens: 20, outputTokens: 6 },
         },
       ]),
-    ).toEqual({ modelCalls: 2, inputTokens: 30, outputTokens: 10, status: "reported" });
+    ).toEqual({
+      modelCalls: 2,
+      failedCalls: 0,
+      inputTokens: 30,
+      outputTokens: 10,
+      status: "reported",
+    });
+  });
+
+  it("counts the calls that failed before any answer, by the provider layer's own word", () => {
+    expect(
+      usageOfModelCalls([
+        {
+          type: "model-call",
+          payload: { usageStatus: "unknown", content: { reason: "call-failed" } },
+        },
+      ]),
+    ).toMatchObject({ modelCalls: 1, failedCalls: 1, status: "unknown" });
   });
 
   it("gives no total where one call did not report", () => {
@@ -341,6 +381,12 @@ describe("usage that was not reported stays unknown", () => {
           payload: { usageStatus: "unknown", inputTokens: 0, outputTokens: 0 },
         },
       ]),
-    ).toEqual({ modelCalls: 2, inputTokens: null, outputTokens: null, status: "unknown" });
+    ).toEqual({
+      modelCalls: 2,
+      failedCalls: 0,
+      inputTokens: null,
+      outputTokens: null,
+      status: "unknown",
+    });
   });
 });

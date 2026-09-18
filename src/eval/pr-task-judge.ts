@@ -305,6 +305,44 @@ export async function endpointAnswers(
   }
 }
 
+/**
+ * Whether the endpoint still generates, asked with the smallest completion it can be asked for.
+ *
+ * `endpointAnswers` is not enough. An MLX server that has wedged keeps answering `/models` while
+ * every completion hangs until the caller's deadline, and seven mined tasks in a row were recorded
+ * as the model writing nothing before anyone looked. A probe that does not generate does not
+ * measure the thing the agent needs.
+ */
+export async function endpointGenerates(
+  endpoint: string,
+  model: string,
+  timeoutMs = 120_000,
+): Promise<{ readonly answered: boolean; readonly detail: string }> {
+  try {
+    const asked = await fetch(`${endpoint.replace(/\/+$/, "")}/chat/completions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: "Say ok." }],
+        max_tokens: 4,
+        chat_template_kwargs: { enable_thinking: false },
+      }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!asked.ok) return { answered: false, detail: `HTTP ${asked.status} from ${endpoint}` };
+    const body = (await asked.json()) as { choices?: { message?: { content?: unknown } }[] };
+    return Array.isArray(body.choices) && body.choices.length > 0
+      ? { answered: true, detail: "" }
+      : { answered: false, detail: `a completion from ${endpoint} carried no choices` };
+  } catch (cause) {
+    return {
+      answered: false,
+      detail: `no completion within ${timeoutMs} ms: ${cause instanceof Error ? cause.message : String(cause)} (${endpoint})`,
+    };
+  }
+}
+
 /** Where a task's files live under a working root, named the one way every pass names them. */
 export function taskSlug(task: { readonly repository: string; readonly pull: number }): string {
   return `${task.repository.replace("/", "__")}-${task.pull}`;

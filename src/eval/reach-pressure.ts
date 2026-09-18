@@ -143,6 +143,8 @@ export const emptyPatchDigest: string = digestOfBytes("");
 
 const usageSchema = z.object({
   modelCalls: z.number().int().nonnegative().nullable(),
+  /** Calls the provider layer recorded as failed before any answer arrived. */
+  failedCalls: z.number().int().nonnegative().nullable(),
   inputTokens: z.number().int().nonnegative().nullable(),
   outputTokens: z.number().int().nonnegative().nullable(),
   /** `unknown` where any call did not report usage or the session could not be read. */
@@ -306,9 +308,14 @@ export async function runTrajectory(input: {
     // repair leaves the earlier patch in place, and judging that as the model's answer to the
     // feedback would record a dead endpoint as a model that declined to change anything.
     const health = await effects.endpointAnswers();
-    const stopped = health.answered
-      ? null
-      : `the model endpoint stopped answering: ${health.detail}`;
+    const { usage } = invocation;
+    const everyCallFailed =
+      usage.modelCalls !== null && usage.modelCalls > 0 && usage.failedCalls === usage.modelCalls;
+    const stopped = !health.answered
+      ? `the model endpoint stopped answering: ${health.detail}`
+      : everyCallFailed
+        ? `every one of the invocation's ${usage.modelCalls} model call(s) failed before an answer arrived`
+        : null;
     if (stopped === null && patch.digest !== emptyPatchDigest) {
       observation = { kind: "judged", verdict: await effects.judgeVisible(patch) };
     }
@@ -413,6 +420,7 @@ export function usageOfModelCalls(
   payloads: readonly { readonly type: string; readonly payload: unknown }[],
 ): InvocationUsage {
   let modelCalls = 0;
+  let failedCalls = 0;
   let inputTokens = 0;
   let outputTokens = 0;
   let unknown = false;
@@ -424,7 +432,9 @@ export function usageOfModelCalls(
       inputTokens?: unknown;
       outputTokens?: unknown;
       providerAttempts?: readonly { usage?: string }[];
+      content?: { reason?: string };
     };
+    if (payload.content?.reason === "call-failed") failedCalls += 1;
     unknown ||=
       payload.usageStatus !== "reported" ||
       payload.providerAttempts?.some((one) => one.usage === "unknown") === true ||
@@ -434,6 +444,6 @@ export function usageOfModelCalls(
     outputTokens += typeof payload.outputTokens === "number" ? payload.outputTokens : 0;
   }
   return unknown
-    ? { modelCalls, inputTokens: null, outputTokens: null, status: "unknown" }
-    : { modelCalls, inputTokens, outputTokens, status: "reported" };
+    ? { modelCalls, failedCalls, inputTokens: null, outputTokens: null, status: "unknown" }
+    : { modelCalls, failedCalls, inputTokens, outputTokens, status: "reported" };
 }
