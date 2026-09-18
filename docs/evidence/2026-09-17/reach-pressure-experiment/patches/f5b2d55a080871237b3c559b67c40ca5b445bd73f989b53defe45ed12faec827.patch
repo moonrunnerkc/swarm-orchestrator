@@ -1,0 +1,231 @@
+diff --git a/lib/command.js b/lib/command.js
+index d1d0c4f..8b8bf97 100644
+--- a/lib/command.js
++++ b/lib/command.js
+@@ -399,7 +399,7 @@ class Command extends EventEmitter {
+    */
+ 
+   hook(event, listener) {
+-    const allowedValues = ['preAction', 'postAction'];
++    const allowedValues = ['preSubcommand', 'preAction', 'postAction'];
+     if (!allowedValues.includes(event)) {
+       throw new Error(`Unexpected value for event passed to hook : '${event}'.
+ Expecting one of '${allowedValues.join("', '")}'`);
+@@ -1162,15 +1162,15 @@ Expecting one of '${allowedValues.join("', '")}'`);
+    * @api private
+    */
+ 
+-  _chainOrCallHooks(promise, event) {
++  _chainOrCallHooks(promise, event, callback) {
+     let result = promise;
+     const hooks = [];
+     getCommandAndParents(this)
+       .reverse()
+       .filter(cmd => cmd._lifeCycleHooks[event] !== undefined)
+       .forEach(hookedCommand => {
+-        hookedCommand._lifeCycleHooks[event].forEach((callback) => {
+-          hooks.push({ hookedCommand, callback });
++        hookedCommand._lifeCycleHooks[event].forEach((hookCallback) => {
++          hooks.push({ hookedCommand, callback: hookCallback });
+         });
+       });
+     if (event === 'postAction') {
+@@ -1182,9 +1182,40 @@ Expecting one of '${allowedValues.join("', '")}'`);
+         return hookDetail.callback(hookDetail.hookedCommand, this);
+       });
+     });
++    if (callback) {
++      result = this._chainOrCall(result, callback);
++    }
+     return result;
+   }
+ 
++  /**
++   * Call the preSubcommand hooks, then dispatch the subcommand.
++   *
++   * @api private
++   */
++
++  _callPreSubcommandHooks(subcommand, suboperands, unknown) {
++    const hooks = [];
++    getCommandAndParents(subcommand)
++      .reverse()
++      .filter(cmd => cmd._lifeCycleHooks.preSubcommand !== undefined)
++      .forEach(hookedCommand => {
++        hookedCommand._lifeCycleHooks.preSubcommand.forEach((callback) => {
++          hooks.push({ hookedCommand, callback });
++        });
++      });
++
++    let result;
++    hooks.forEach((hookDetail) => {
++      result = this._chainOrCall(result, () => {
++        return hookDetail.callback(hookDetail.hookedCommand, subcommand);
++      });
++    });
++    return this._chainOrCall(result, () => {
++      return this._dispatchSubcommand(subcommand._name, suboperands, unknown);
++    });
++  }
++
+   /**
+    * Process arguments in context of this command.
+    * Returns action result, in case it is a promise.
+@@ -1201,7 +1232,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
+     this.args = operands.concat(unknown);
+ 
+     if (operands && this._findCommand(operands[0])) {
+-      return this._dispatchSubcommand(operands[0], operands.slice(1), unknown);
++      return this._callPreSubcommandHooks(this._findCommand(operands[0]), operands.slice(1), unknown);
+     }
+     if (this._hasImplicitHelpCommand() && operands[0] === this._helpCommandName) {
+       if (operands.length === 1) {
+diff --git a/tests/command.hook.test.js b/tests/command.hook.test.js
+index 9303310..655e672 100644
+--- a/tests/command.hook.test.js
++++ b/tests/command.hook.test.js
+@@ -223,6 +223,118 @@ describe('action hooks context', () => {
+   });
+ });
+ 
++describe('preSubcommand hooks', () => {
++  test('when hook preSubcommand then hook called before subcommand action', () => {
++    const calls = [];
++    const program = new commander.Command();
++    program
++      .hook('preSubcommand', () => calls.push('before'))
++      .command('sub')
++      .action(() => calls.push('action'));
++    program.parse(['sub'], { from: 'user' });
++    expect(calls).toEqual(['before', 'action']);
++  });
++
++  test('when hook preSubcommand twice then hooks called FIFO', () => {
++    const calls = [];
++    const program = new commander.Command();
++    program
++      .hook('preSubcommand', () => calls.push('1'))
++      .hook('preSubcommand', () => calls.push('2'))
++      .command('sub')
++      .action(() => calls.push('action'));
++    program.parse(['sub'], { from: 'user' });
++    expect(calls).toEqual(['1', '2', 'action']);
++  });
++
++  test('when hook preSubcommand at program and sub then hooks called program then sub', () => {
++    const calls = [];
++    const program = new commander.Command();
++    program
++      .hook('preSubcommand', () => calls.push('program'));
++    program.command('sub')
++      .hook('preSubcommand', () => calls.push('sub'))
++      .action(() => calls.push('action'));
++    program.parse(['sub'], { from: 'user' });
++    expect(calls).toEqual(['program', 'sub', 'action']);
++  });
++
++  test('when hook preSubcommand then hook called before preAction', () => {
++    const calls = [];
++    const program = new commander.Command();
++    program
++      .hook('preSubcommand', () => calls.push('preSubcommand'))
++      .command('sub')
++      .hook('preAction', () => calls.push('preAction'))
++      .action(() => calls.push('action'));
++    program.parse(['sub'], { from: 'user' });
++    expect(calls).toEqual(['preSubcommand', 'preAction', 'action']);
++  });
++
++  test('when hook on program and call sub then passed program/sub', () => {
++    const hook = jest.fn();
++    const program = new commander.Command();
++    program
++      .hook('preSubcommand', hook);
++    const sub = program.command('sub')
++      .action(() => {});
++    program.parse(['sub'], { from: 'user' });
++    expect(hook).toHaveBeenCalledWith(program, sub);
++  });
++
++  test('when hook on sub and call sub then passed sub/sub', () => {
++    const hook = jest.fn();
++    const program = new commander.Command();
++    const sub = program.command('sub')
++      .hook('preSubcommand', hook)
++      .action(() => {});
++    program.parse(['sub'], { from: 'user' });
++    expect(hook).toHaveBeenCalledWith(sub, sub);
++  });
++
++  test('when hook program on preSubcommand then thisCommand has options set', () => {
++    expect.assertions(1);
++    const program = new commander.Command();
++    program
++      .option('--debug')
++      .hook('preSubcommand', (thisCommand) => {
++        expect(thisCommand.opts().debug).toEqual(true);
++      });
++    program.command('sub')
++      .action(() => {});
++    program.parse(['--debug', 'sub'], { from: 'user' });
++  });
++
++  test('when hook program on preSubcommand and call sub then thisCommand has program args set', () => {
++    expect.assertions(1);
++    const program = new commander.Command();
++    program
++      .hook('preSubcommand', (thisCommand) => {
++        expect(thisCommand.args).toEqual(['sub', 'value']);
++      });
++    program.command('sub')
++      .argument('[arg]')
++      .action(() => {});
++    program.parse(['sub', 'value'], { from: 'user' });
++  });
++
++  test('when async preSubcommand then async from preSubcommand', async() => {
++    const calls = [];
++    const program = new commander.Command();
++    program
++      .hook('preSubcommand', async() => {
++        await 0;
++        calls.push('before');
++      })
++      .command('sub')
++      .action(() => calls.push('action'));
++    const result = program.parseAsync(['sub'], { from: 'user' });
++    expect(calls).toEqual([]);
++    await result;
++    expect(calls).toEqual(['before', 'action']);
++  });
++});
++
+ describe('action hooks async', () => {
+   test('when async preAction then async from preAction', async() => {
+     const calls = [];
+diff --git a/typings/index.d.ts b/typings/index.d.ts
+index 6aa791b..dbe7c57 100644
+--- a/typings/index.d.ts
++++ b/typings/index.d.ts
+@@ -265,7 +265,7 @@ export interface OutputConfiguration {
+ }
+ 
+ export type AddHelpTextPosition = 'beforeAll' | 'before' | 'after' | 'afterAll';
+-export type HookEvent = 'preAction' | 'postAction';
++export type HookEvent = 'preSubcommand' | 'preAction' | 'postAction';
+ export type OptionValueSource = 'default' | 'env' | 'config' | 'cli';
+ 
+ export interface OptionValues {
+diff --git a/typings/index.test-d.ts b/typings/index.test-d.ts
+index a908a1a..1a42b88 100644
+--- a/typings/index.test-d.ts
++++ b/typings/index.test-d.ts
+@@ -82,6 +82,8 @@ expectType<never>(program.error('Goodbye', { exitCode: 2 }));
+ expectType<never>(program.error('Goodbye', { code: 'my.error', exitCode: 2 }));
+ 
+ // hook
++expectType<commander.Command>(program.hook('preSubcommand', () => {}));
++expectType<commander.Command>(program.hook('preSubcommand', async() => {}));
+ expectType<commander.Command>(program.hook('preAction', () => {}));
+ expectType<commander.Command>(program.hook('postAction', () => {}));
+ expectType<commander.Command>(program.hook('preAction', async() => {}));

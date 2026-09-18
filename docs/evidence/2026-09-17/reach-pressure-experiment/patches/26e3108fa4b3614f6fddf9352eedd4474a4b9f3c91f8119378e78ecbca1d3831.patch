@@ -1,0 +1,78 @@
+diff --git a/probe-tmp.js b/probe-tmp.js
+new file mode 100644
+index 0000000..602f92e
+--- /dev/null
++++ b/probe-tmp.js
+@@ -0,0 +1,14 @@
++const dayjs = require('./src/index.js')
++const timezone = require('./src/plugin/timezone/index.js')
++const utc = require('./src/plugin/utc/index.js')
++dayjs.extend(utc)
++dayjs.extend(timezone)
++const NY = 'America/New_York'
++const invalid = dayjs('invalid')
++console.log('proto.tz invalid:', invalid.tz(NY).isValid())
++console.log('d.tz invalid string:', dayjs.tz('invalid', NY).isValid())
++console.log('d.tz invalid date:', dayjs.tz(new Date(NaN), NY).isValid())
++console.log('d.tz invalid dayjs:', dayjs.tz(dayjs('invalid'), NY).isValid())
++console.log('d.tz invalid number:', dayjs.tz(NaN, NY).isValid())
++console.log('d.tz invalid string no tz:', dayjs.tz('invalid').isValid())
++console.log('d.tz valid:', dayjs.tz('2014-06-01 12:00', NY).format())
+diff --git a/src/plugin/timezone/index.js b/src/plugin/timezone/index.js
+index 44e78c1..6c26917 100644
+--- a/src/plugin/timezone/index.js
++++ b/src/plugin/timezone/index.js
+@@ -93,6 +93,9 @@ export default (o, c, d) => {
+   const proto = c.prototype
+ 
+   proto.tz = function (timezone = defaultTimezone, keepLocalTime) {
++    if (!this.isValid()) {
++      return this
++    }
+     const oldOffset = this.utcOffset()
+     const date = this.toDate()
+     const target = date.toLocaleString('en-US', { timeZone: timezone })
+@@ -134,12 +137,15 @@ export default (o, c, d) => {
+   d.tz = function (input, arg1, arg2) {
+     const parseFormat = arg2 && arg1
+     const timezone = arg2 || arg1 || defaultTimezone
+-    const previousOffset = tzOffset(+d(), timezone)
+     if (typeof input !== 'string') {
+       // timestamp number || js Date || Day.js
+       return d(input).tz(timezone)
+     }
+     const localTs = d.utc(input, parseFormat).valueOf()
++    if (Number.isNaN(localTs)) {
++      return d(input)
++    }
++    const previousOffset = tzOffset(+d(), timezone)
+     const [targetTs, targetOffset] = fixOffset(localTs, previousOffset, timezone)
+     const ins = d(targetTs).utcOffset(targetOffset)
+     ins.$x.$timezone = timezone
+diff --git a/test/plugin/timezone.test.js b/test/plugin/timezone.test.js
+index e5a406e..0a1f8c6 100644
+--- a/test/plugin/timezone.test.js
++++ b/test/plugin/timezone.test.js
+@@ -38,6 +38,22 @@ describe('Guess', () => {
+   })
+ })
+ 
++describe('Invalid input', () => {
++  it('proto.tz returns an invalid instance instead of throwing', () => {
++    const invalid = dayjs('invalid')
++    expect(() => invalid.tz(NY)).not.toThrow()
++    expect(invalid.tz(NY).isValid()).toBe(false)
++    expect(dayjs(new Date(NaN)).tz(NY).isValid()).toBe(false)
++  })
++
++  it('d.tz returns an invalid instance instead of throwing', () => {
++    expect(() => dayjs.tz('invalid', NY)).not.toThrow()
++    expect(dayjs.tz('invalid', NY).isValid()).toBe(false)
++    expect(dayjs.tz(new Date(NaN), NY).isValid()).toBe(false)
++    expect(dayjs.tz(dayjs('invalid'), NY).isValid()).toBe(false)
++  })
++})
++
+ 
+ describe('Parse', () => {
+   it('parse target time string', () => {

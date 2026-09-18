@@ -1,0 +1,77 @@
+diff --git a/__tests__/request/whatwg-url.test.js b/__tests__/request/whatwg-url.test.js
+index 05f5ffa..93e3871 100644
+--- a/__tests__/request/whatwg-url.test.js
++++ b/__tests__/request/whatwg-url.test.js
+@@ -22,4 +22,54 @@ describe('req.URL', () => {
+     req.header.host = 'invalid host'
+     assert.deepStrictEqual(req.URL, Object.create(null))
+   })
++
++  it('should parse an absolute-form http target', () => {
++    const req = request({ url: 'http://example.com/foo', headers: { host: 'example.com' } })
++    const url = req.URL
++    assert.strictEqual(url.protocol, 'http:')
++    assert.strictEqual(url.host, 'example.com')
++    assert.strictEqual(url.pathname, '/foo')
++  })
++
++  it('should parse an absolute-form https target', () => {
++    const req = request({ url: 'https://example.com/foo', headers: { host: 'example.com' } })
++    const url = req.URL
++    assert.strictEqual(url.protocol, 'https:')
++    assert.strictEqual(url.host, 'example.com')
++    assert.strictEqual(url.pathname, '/foo')
++  })
++
++  it('should parse an absolute-form target with an uppercase scheme', () => {
++    const req = request({ url: 'HTTP://example.com/foo', headers: { host: 'example.com' } })
++    const url = req.URL
++    assert.strictEqual(url.protocol, 'http:')
++    assert.strictEqual(url.host, 'example.com')
++    assert.strictEqual(url.pathname, '/foo')
++  })
++
++  it('should parse an absolute-form target with a port', () => {
++    const req = request({ url: 'http://example.com:8080/foo', headers: { host: 'example.com:8080' } })
++    const url = req.URL
++    assert.strictEqual(url.protocol, 'http:')
++    assert.strictEqual(url.host, 'example.com:8080')
++    assert.strictEqual(url.port, '8080')
++    assert.strictEqual(url.pathname, '/foo')
++  })
++
++  it('should parse an absolute-form target when the Host header matches', () => {
++    const req = request({ url: 'http://example.com/foo', headers: { host: 'example.com' } })
++    assert.strictEqual(req.URL.href, 'http://example.com/foo')
++  })
++
++  it('should parse an absolute-form target when the Host header is empty', () => {
++    const req = request({ url: 'http://example.com/foo' })
++    assert.strictEqual(req.URL.href, 'http://example.com/foo')
++  })
++
++  it('should follow originalUrl after a path rewrite', () => {
++    const req = request({ url: 'http://example.com/foo', headers: { host: 'example.com' } })
++    req.path = '/bar'
++    assert.strictEqual(req.URL.pathname, '/foo')
++    assert.strictEqual(req.URL.href, 'http://example.com/foo')
++  })
+ })
+diff --git a/lib/request.js b/lib/request.js
+index 2304501..bf21415 100644
+--- a/lib/request.js
++++ b/lib/request.js
+@@ -298,7 +298,12 @@ module.exports = {
+     if (!this.memoizedURL) {
+       const originalUrl = this.originalUrl || '' // avoid undefined in template string
+       try {
+-        this.memoizedURL = new URL(`${this.protocol}://${this.host}${originalUrl}`)
++        // support: `GET http://example.com/foo`
++        if (/^https?:\/\//i.test(originalUrl)) {
++          this.memoizedURL = new URL(originalUrl)
++        } else {
++          this.memoizedURL = new URL(`${this.protocol}://${this.host}${originalUrl}`)
++        }
+       } catch (err) {
+         this.memoizedURL = Object.create(null)
+       }

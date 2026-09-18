@@ -1,0 +1,167 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 420ac3f..606008a 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
+ <!-- markdownlint-disable MD024 -->
+ <!-- markdownlint-disable MD004 -->
+ 
++## [Unreleased]
++
++### Added
++
++- `.summary()` for a short summary to use instead of description when listing subcommands in help
++
+ ## [9.2.0] (2022-04-15)
+ 
+ ### Added
+diff --git a/lib/command.js b/lib/command.js
+index 4c5089a..8705661 100644
+--- a/lib/command.js
++++ b/lib/command.js
+@@ -48,6 +48,7 @@ class Command extends EventEmitter {
+     this._aliases = [];
+     this._combineFlagAndOptionalValue = true;
+     this._description = '';
++    this._summary = '';
+     this._argsDescription = undefined; // legacy
+     this._enablePositionalOptions = false;
+     this._passThroughOptions = false;
+@@ -1782,6 +1783,18 @@ Expecting one of '${allowedValues.join("', '")}'`);
+     return this;
+   }
+ 
++  /**
++   * Set the summary to `str`.
++   *
++   * @param {string} [str]
++   * @return {string|Command}
++   */
++  summary(str) {
++    if (str === undefined) return this._summary;
++    this._summary = str;
++    return this;
++  }
++
+   /**
+    * Set an alias for the command.
+    *
+diff --git a/lib/help.js b/lib/help.js
+index 17a2bf8..1579a89 100644
+--- a/lib/help.js
++++ b/lib/help.js
+@@ -223,7 +223,7 @@ class Help {
+ 
+   subcommandDescription(cmd) {
+     // @ts-ignore: overloaded return type
+-    return cmd.description();
++    return cmd.summary() || cmd.description();
+   }
+ 
+   /**
+diff --git a/tests/command.summary.test.js b/tests/command.summary.test.js
+new file mode 100644
+index 0000000..0b95ac8
+--- /dev/null
++++ b/tests/command.summary.test.js
+@@ -0,0 +1,44 @@
++const commander = require('../');
++
++test('when set summary then get summary', () => {
++  const program = new commander.Command();
++  const summary = 'abcdef';
++  program.summary(summary);
++  expect(program.summary()).toEqual(summary);
++});
++
++test('when no summary then empty string', () => {
++  const program = new commander.Command();
++  expect(program.summary()).toEqual('');
++});
++
++test('when set summary then used in subcommand listing', () => {
++  const program = new commander.Command();
++  program
++    .command('sub')
++    .description('long description')
++    .summary('short summary');
++  const commandHelp = program.helpInformation();
++  expect(commandHelp).toMatch(/Commands:\n +sub +short summary\n/);
++  expect(commandHelp).not.toMatch(/long description/);
++});
++
++test('when no summary then description used in subcommand listing', () => {
++  const program = new commander.Command();
++  program
++    .command('sub')
++    .description('long description');
++  const commandHelp = program.helpInformation();
++  expect(commandHelp).toMatch(/Commands:\n +sub +long description\n/);
++});
++
++test('when set summary then description still used in subcommand help', () => {
++  const program = new commander.Command();
++  const sub = program
++    .command('sub')
++    .description('long description')
++    .summary('short summary');
++  const subHelp = sub.helpInformation();
++  expect(subHelp).toMatch(/long description/);
++  expect(subHelp).not.toMatch(/short summary/);
++});
+diff --git a/tests/help.commandDescription.test.js b/tests/help.commandDescription.test.js
+index 49eb797..0b9d4d4 100644
+--- a/tests/help.commandDescription.test.js
++++ b/tests/help.commandDescription.test.js
+@@ -17,4 +17,14 @@ describe('subcommandDescription', () => {
+     const helper = new commander.Help();
+     expect(helper.subcommandDescription(program)).toEqual(description);
+   });
++
++  test('when program has summary then return summary', () => {
++    const description = 'description';
++    const summary = 'summary';
++    const program = new commander.Command();
++    program.description(description);
++    program.summary(summary);
++    const helper = new commander.Help();
++    expect(helper.subcommandDescription(program)).toEqual(summary);
++  });
+ });
+diff --git a/typings/index.d.ts b/typings/index.d.ts
+index e1b80e3..f4667fd 100644
+--- a/typings/index.d.ts
++++ b/typings/index.d.ts
+@@ -718,6 +718,17 @@ export class Command {
+    */
+   description(): string;
+ 
++  /**
++   * Set the summary.
++   *
++   * @returns `this` command for chaining
++   */
++  summary(str: string): this;
++  /**
++   * Get the summary.
++   */
++  summary(): string;
++
+   /**
+    * Set an alias for the command.
+    *
+diff --git a/typings/index.test-d.ts b/typings/index.test-d.ts
+index 5e8b839..a908a1a 100644
+--- a/typings/index.test-d.ts
++++ b/typings/index.test-d.ts
+@@ -239,6 +239,10 @@ expectType<commander.Command>(program.description('my description'));
+ expectType<string>(program.description());
+ expectType<commander.Command>(program.description('my description of command with arg foo', { foo: 'foo description' })); // deprecated
+ 
++// summary
++expectType<commander.Command>(program.summary('my summary'));
++expectType<string>(program.summary());
++
+ // alias
+ expectType<commander.Command>(program.alias('my alias'));
+ expectType<string>(program.alias());

@@ -1,0 +1,141 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 9224605..672c278 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
+ <!-- markdownlint-disable MD024 -->
+ <!-- markdownlint-disable MD004 -->
+ 
++## [Unreleased]
++
++### Added
++
++- `.getOptionValueSourceWithGlobals()` ([#1713])
++
+ ## [9.4.1] (2022-09-30)
+ 
+ ### Fixed
+@@ -1101,6 +1107,7 @@ program
+ [#1710]: https://github.com/tj/commander.js/pull/1710
+ [#1718]: https://github.com/tj/commander.js/pull/1718
+ [#1721]: https://github.com/tj/commander.js/pull/1721
++[#1713]: https://github.com/tj/commander.js/pull/1713
+ [#1724]: https://github.com/tj/commander.js/pull/1724
+ [#1726]: https://github.com/tj/commander.js/pull/1726
+ [#1727]: https://github.com/tj/commander.js/pull/1727
+diff --git a/lib/command.js b/lib/command.js
+index 9284ec3..f4e03f2 100644
+--- a/lib/command.js
++++ b/lib/command.js
+@@ -814,6 +814,21 @@ Expecting one of '${allowedValues.join("', '")}'`);
+     return this._optionValueSources[key];
+   }
+ 
++  /**
++   * Get source of option value, including global options.
++   * Expected values are default | config | env | cli | implied
++   *
++   * @param {string} key
++   * @return {string}
++   */
++
++  getOptionValueSourceWithGlobals(key) {
++    return getCommandAndParents(this).reduce(
++      (source, cmd) => cmd.getOptionValueSource(key) ?? source,
++      undefined
++    );
++  }
++
+   /**
+    * Get user arguments from implied or explicit arguments.
+    * Side-effects: set _scriptPath if args included script. Used for default program name, and subcommand searches.
+diff --git a/tests/options.getset.test.js b/tests/options.getset.test.js
+index d283ab8..a6bbaba 100644
+--- a/tests/options.getset.test.js
++++ b/tests/options.getset.test.js
+@@ -66,3 +66,55 @@ test('when setOptionValue then clears previous source', () => {
+   program.setOptionValue('foo', 'bar');
+   expect(program.getOptionValueSource('foo')).toBeUndefined();
+ });
++
++test('when option source set on program then source returned by getOptionValueSourceWithGlobals in sub', () => {
++  const program = new commander.Command();
++  let source;
++  program
++    .option('-g, --global <value>')
++    .command('sub')
++    .action((options, cmd) => {
++      source = cmd.getOptionValueSourceWithGlobals('global');
++    });
++
++  program.parse(['-g', 'GGG', 'sub'], { from: 'user' });
++  expect(source).toBe('cli');
++});
++
++test('when option source set on sub then source returned by getOptionValueSourceWithGlobals in sub', () => {
++  const program = new commander.Command();
++  let source;
++  program
++    .command('sub')
++    .option('-l, --local <value)')
++    .action((options, cmd) => {
++      source = cmd.getOptionValueSourceWithGlobals('local');
++    });
++
++  program.parse(['sub', '-l', 'LLL'], { from: 'user' });
++  expect(source).toBe('cli');
++});
++
++test('when same named option in sub and program then getOptionValueSourceWithGlobals returns local source', () => {
++  const program = new commander.Command();
++  let source;
++  program
++    .option('-c, --common <value>')
++    .enablePositionalOptions();
++  program
++    .command('sub')
++    .option('-c, --common <value)')
++    .action((options, cmd) => {
++      source = cmd.getOptionValueSourceWithGlobals('common');
++    });
++
++  program.parse(['-c', 'GGG', 'sub', '-c', 'LLL'], { from: 'user' });
++  expect(source).toBe('cli');
++});
++
++test('when option not set then getOptionValueSourceWithGlobals returns undefined', () => {
++  const program = new commander.Command();
++  program
++    .option('-g, --global <value>');
++  expect(program.getOptionValueSourceWithGlobals('global')).toBeUndefined();
++});
+diff --git a/typings/index.d.ts b/typings/index.d.ts
+index 7c76805..51e47e0 100644
+--- a/typings/index.d.ts
++++ b/typings/index.d.ts
+@@ -604,6 +604,11 @@ export class Command {
+    */
+   getOptionValueSource(key: string): OptionValueSource | undefined;
+ 
++  /**
++   * Retrieve option value source, including global options.
++   */
++  getOptionValueSourceWithGlobals(key: string): OptionValueSource | undefined;
++
+   /**
+    * Alter parsing of short flags with optional values.
+    *
+diff --git a/typings/index.test-d.ts b/typings/index.test-d.ts
+index 7df4cc9..95b171b 100644
+--- a/typings/index.test-d.ts
++++ b/typings/index.test-d.ts
+@@ -174,6 +174,9 @@ expectType<commander.Command>(program.setOptionValueWithSource('example', [], 'c
+ // getOptionValueSource
+ expectType<commander.OptionValueSource | undefined>(program.getOptionValueSource('example'));
+ 
++// getOptionValueSourceWithGlobals
++expectType<commander.OptionValueSource | undefined>(program.getOptionValueSourceWithGlobals('example'));
++
+ // combineFlagAndOptionalValue
+ expectType<commander.Command>(program.combineFlagAndOptionalValue());
+ expectType<commander.Command>(program.combineFlagAndOptionalValue(false));

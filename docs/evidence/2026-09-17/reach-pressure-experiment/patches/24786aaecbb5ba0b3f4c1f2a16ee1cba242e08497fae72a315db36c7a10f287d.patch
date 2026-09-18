@@ -1,0 +1,168 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 1ded04a..0d17580 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
+ - Option.preset() allows specifying value/arg for option when used without option-argument (especially optional, but also boolean option) ([#1652])
+ - `.executableDir()` for custom search for subcommands ([#1571])
+ - throw with helpful message if pass `Option` to `.option()` or `.requiredOption()` ([#1655])
++- `.optsWithGlobals()` to return merged local and global options ([#1671])
+ 
+ ### Changed
+ 
+diff --git a/Readme.md b/Readme.md
+index 2851b4e..8f46595 100644
+--- a/Readme.md
++++ b/Readme.md
+@@ -359,6 +359,27 @@ Remaining arguments:  [ 'operand' ]
+ 
+ For information about possible ambiguous cases, see [options taking varying arguments](./docs/options-taking-varying-arguments.md).
+ 
++### Merged option values
++
++The `.optsWithGlobals()` method returns an object containing merged local and global option values as key-value pairs.
++Local option values take precedence over global option values.
++
++```js
++program
++  .option('-f, --foo', 'add some foo')
++  .option('-b, --bar', 'add some bar');
++
++const sub = program.command('sub');
++sub
++  .option('-b, --bar', 'add some bar')
++  .option('-c, --cheese', 'add some cheese');
++
++program.parse(['node', 'test', '--foo', 'sub', '--bar', 'sub', '--cheese']);
++
++console.log(sub.optsWithGlobals());
++// { foo: true, bar: 'sub', cheese: true }
++```
++
+ ### Version option
+ 
+ The optional `version` method adds handling for displaying the command version. The default option flags are `-V` and `--version`, and when present the command prints the version number and exits.
+diff --git a/lib/command.js b/lib/command.js
+index 12e7bb7..9251720 100644
+--- a/lib/command.js
++++ b/lib/command.js
+@@ -1461,6 +1461,21 @@ Expecting one of '${allowedValues.join("', '")}'`);
+     return this._optionValues;
+   }
+ 
++  /**
++   * Return an object containing merged local and global option values as key-value pairs.
++   * Local option values take precedence over global option values.
++   *
++   * @return {Object}
++   */
++  optsWithGlobals() {
++    if (this.parent == null) {
++      return this.opts();
++    }
++
++    const mergedOptions = this.parent.optsWithGlobals();
++    return { ...mergedOptions, ...this.opts() };
++  }
++
+   /**
+    * Internal bottleneck for handling of parsing errors.
+    *
+diff --git a/tests/command.optsWithGlobals.test.js b/tests/command.optsWithGlobals.test.js
+new file mode 100644
+index 0000000..9cd2484
+--- /dev/null
++++ b/tests/command.optsWithGlobals.test.js
+@@ -0,0 +1,54 @@
++const commander = require('../');
++
++test('when no globals then same as opts', () => {
++  const program = new commander.Command();
++  program
++    .option('-f, --foo', 'add some foo')
++    .option('-b, --bar', 'add some bar');
++  program.parse(['node', 'test', '--foo']);
++  expect(program.optsWithGlobals()).toEqual(program.opts());
++});
++
++test('when globals then merged with local taking precedence', () => {
++  const program = new commander.Command();
++  program
++    .option('-f, --foo', 'add some foo')
++    .option('-b, --bar', 'add some bar');
++  const sub = program.command('sub');
++  sub
++    .option('-b, --bar', 'add some bar')
++    .option('-c, --cheese', 'add some cheese');
++  program.parse(['node', 'test', '--foo', 'sub', '--bar', 'sub', '--cheese']);
++  expect(sub.optsWithGlobals()).toEqual({ foo: true, bar: 'sub', cheese: true });
++});
++
++test('when globals then merged with local taking precedence (nested)', () => {
++  const program = new commander.Command();
++  program
++    .option('-f, --foo', 'add some foo')
++    .option('-b, --bar', 'add some bar');
++  const sub = program.command('sub');
++  sub
++    .option('-b, --bar', 'add some bar')
++    .option('-c, --cheese', 'add some cheese');
++  const subsub = sub.command('subsub');
++  subsub
++    .option('-c, --cheese', 'add some cheese')
++    .option('-d, --debug', 'add some debug');
++  program.parse(['node', 'test', '--foo', 'sub', '--bar', 'sub', '--cheese', 'sub', 'subsub', '--cheese', 'subsub', '--debug']);
++  expect(subsub.optsWithGlobals()).toEqual({ foo: true, bar: 'sub', cheese: 'subsub', debug: true });
++});
++
++test('when globals then merged with local taking precedence (action handler)', () => {
++  const program = new commander.Command();
++  program
++    .option('-f, --foo', 'add some foo')
++    .option('-b, --bar', 'add some bar');
++  const sub = program.command('sub');
++  sub
++    .option('-b, --bar', 'add some bar')
++    .action(function() {
++      expect(this.optsWithGlobals()).toEqual({ foo: true, bar: 'sub' });
++    });
++  program.parse(['node', 'test', '--foo', 'sub', '--bar', 'sub']);
++});
+diff --git a/typings/index.d.ts b/typings/index.d.ts
+index b2a7005..ea9c7d5 100644
+--- a/typings/index.d.ts
++++ b/typings/index.d.ts
+@@ -663,6 +663,12 @@ export class Command {
+    */
+   opts<T extends OptionValues>(): T;
+ 
++  /**
++   * Return an object containing merged local and global option values as key-value pairs.
++   * Local option values take precedence over global option values.
++   */
++  optsWithGlobals<T extends OptionValues>(): T;
++
+   /**
+    * Set the description.
+    *
+diff --git a/typings/index.test-d.ts b/typings/index.test-d.ts
+index 09d1c08..c833694 100644
+--- a/typings/index.test-d.ts
++++ b/typings/index.test-d.ts
+@@ -213,6 +213,16 @@ interface MyCheeseOption {
+ }
+ const myCheeseOption = program.opts<MyCheeseOption>();
+ expectType<string>(myCheeseOption.cheese);
++
++// optsWithGlobals
++const optsWithGlobals = program.optsWithGlobals();
++expectType<commander.OptionValues>(optsWithGlobals);
++expectType(optsWithGlobals.foo);
++expectType(optsWithGlobals.bar);
++
++// optsWithGlobals with generics
++const myCheeseOptionWithGlobals = program.optsWithGlobals<MyCheeseOption>();
++expectType<string>(myCheeseOptionWithGlobals.cheese);
+ // @ts-expect-error Check that options strongly typed and does not allow arbitrary properties
+ expectType(myCheeseOption.foo);
+ 

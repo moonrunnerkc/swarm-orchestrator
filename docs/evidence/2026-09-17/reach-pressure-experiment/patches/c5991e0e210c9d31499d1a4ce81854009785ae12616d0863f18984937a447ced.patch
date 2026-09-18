@@ -1,0 +1,48 @@
+diff --git a/lib/winston/container.js b/lib/winston/container.js
+index 1c6f114..6ad6567 100644
+--- a/lib/winston/container.js
++++ b/lib/winston/container.js
+@@ -39,8 +39,15 @@ module.exports = class Container {
+       const existing = options.transports || this.options.transports;
+ 
+       // Remark: Make sure if we have an array of transports we slice it to
+-      // make copies of those references.
+-      options.transports = existing ? existing.slice() : [];
++      // make copies of those references. A single transport instance is
++      // wrapped in an array.
++      if (Array.isArray(existing)) {
++        options.transports = existing.slice();
++      } else if (existing) {
++        options.transports = [existing];
++      } else {
++        options.transports = [];
++      }
+ 
+       const logger = createLogger(options);
+       logger.on('close', () => this._delete(id));
+diff --git a/test/unit/winston/container.test.js b/test/unit/winston/container.test.js
+index ab587d7..adf9a5e 100644
+--- a/test/unit/winston/container.test.js
++++ b/test/unit/winston/container.test.js
+@@ -66,4 +66,21 @@ describe('Container', function () {
+       assume(all.someOtherLogger._readableState.pipes).equals(all.someLogger._readableState.pipes);
+     });
+   });
++
++  describe('single transport', function () {
++    var transport = new winston.transports.Http({ port: 9412 });
++    var container = new winston.Container({ transports: transport });
++
++    it('.get(some-logger)', function () {
++      var logger = container.get('some-logger');
++      assume(logger._readableState.pipes).instanceOf(winston.transports.Http);
++      assume(logger._readableState.pipes).equals(transport);
++    });
++
++    it('.get(some-other-logger)', function () {
++      var logger = container.get('some-other-logger');
++      assume(logger._readableState.pipes).instanceOf(winston.transports.Http);
++      assume(logger._readableState.pipes).equals(transport);
++    });
++  });
+ });

@@ -1,0 +1,194 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 1fdd9fe..9d85476 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
+ <!-- markdownlint-disable MD024 -->
+ <!-- markdownlint-disable MD004 -->
+ 
++## [Unreleased]
++
++### Added
++
++- `.getOptionValueSource()` and `.setOptionValueWithSource()`, where source is one of 'default', 'env', 'config', 'cli' ([#1613])
++
+ ## [8.2.0] (2021-09-10)
+ 
+ ### Added
+@@ -397,6 +403,7 @@ program
+ [#1570]: https://github.com/tj/commander.js/pull/1570
+ [#1587]: https://github.com/tj/commander.js/pull/1587
+ [#1590]: https://github.com/tj/commander.js/pull/1590
++[#1613]: https://github.com/tj/commander.js/pull/1613
+ 
+ [Unreleased]: https://github.com/tj/commander.js/compare/master...develop
+ [8.2.0]: https://github.com/tj/commander.js/compare/v8.1.0...v8.2.0
+diff --git a/lib/command.js b/lib/command.js
+index 184bc0b..ffc5ab5 100644
+--- a/lib/command.js
++++ b/lib/command.js
+@@ -527,7 +527,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
+       }
+       // preassign only if we have a default
+       if (defaultValue !== undefined) {
+-        this._setOptionValueWithSource(name, defaultValue, 'default');
++        this.setOptionValueWithSource(name, defaultValue, 'default');
+       }
+     }
+ 
+@@ -558,13 +558,13 @@ Expecting one of '${allowedValues.join("', '")}'`);
+       if (typeof oldValue === 'boolean' || typeof oldValue === 'undefined') {
+         // if no value, negate false, and we have a default, then use it!
+         if (val == null) {
+-          this._setOptionValueWithSource(name, option.negate ? false : defaultValue || true, valueSource);
++          this.setOptionValueWithSource(name, option.negate ? false : defaultValue || true, valueSource);
+         } else {
+-          this._setOptionValueWithSource(name, val, valueSource);
++          this.setOptionValueWithSource(name, val, valueSource);
+         }
+       } else if (val !== null) {
+         // reassign
+-        this._setOptionValueWithSource(name, option.negate ? false : val, valueSource);
++        this.setOptionValueWithSource(name, option.negate ? false : val, valueSource);
+       }
+     };
+ 
+@@ -793,12 +793,28 @@ Expecting one of '${allowedValues.join("', '")}'`);
+   };
+ 
+   /**
+-   * @api private
++   * Store option value.
++   *
++   * @param {string} key
++   * @param {Object} value
++   * @param {string} source - should be 'default' or 'env' or 'config' or 'cli'
++   * @return {Command} `this` command for chaining
+    */
+-  _setOptionValueWithSource(key, value, source) {
++  setOptionValueWithSource(key, value, source) {
+     this.setOptionValue(key, value);
+     this._optionValueSources[key] = source;
+-  }
++    return this;
++  };
++
++  /**
++   * Retrieve option value source.
++   *
++   * @param {string} key
++   * @return {Object}
++   */
++  getOptionValueSource(key) {
++    return this._optionValueSources[key];
++  };
+ 
+   /**
+    * Get user arguments implied or explicit arguments.
+diff --git a/tests/options.getset.test.js b/tests/options.getset.test.js
+index adb15e6..a59a001 100644
+--- a/tests/options.getset.test.js
++++ b/tests/options.getset.test.js
+@@ -21,4 +21,51 @@ describe.each([true, false])('storeOptionsAsProperties is %s', (storeOptionsAsPr
+       .setOptionValue('cheese', cheeseType);
+     expect(program.opts().cheese).toBe(cheeseType);
+   });
++
++  test('when setOptionValueWithSource then value returned by getOptionValue', () => {
++    const program = new commander.Command();
++    const cheeseType = 'blue';
++    program
++      .storeOptionsAsProperties(storeOptionsAsProperties)
++      .option('--cheese [type]', 'cheese type')
++      .setOptionValueWithSource('cheese', cheeseType, 'config');
++    expect(program.getOptionValue('cheese')).toBe(cheeseType);
++  });
++
++  test('when setOptionValueWithSource then source returned by getOptionValueSource', () => {
++    const program = new commander.Command();
++    const cheeseType = 'blue';
++    program
++      .storeOptionsAsProperties(storeOptionsAsProperties)
++      .option('--cheese [type]', 'cheese type')
++      .setOptionValueWithSource('cheese', cheeseType, 'config');
++    expect(program.getOptionValueSource('cheese')).toBe('config');
++  });
++
++  test('when option specified on CLI then source returned by getOptionValueSource is cli', () => {
++    const program = new commander.Command();
++    program
++      .storeOptionsAsProperties(storeOptionsAsProperties)
++      .option('--cheese [type]', 'cheese type');
++    program.parse(['node', 'test', '--cheese', 'blue']);
++    expect(program.getOptionValueSource('cheese')).toBe('cli');
++  });
++
++  test('when option has default then source returned by getOptionValueSource is default', () => {
++    const program = new commander.Command();
++    program
++      .storeOptionsAsProperties(storeOptionsAsProperties)
++      .option('--cheese [type]', 'cheese type', 'default');
++    program.parse(['node', 'test']);
++    expect(program.getOptionValueSource('cheese')).toBe('default');
++  });
++
++  test('when option has no value then source returned by getOptionValueSource is undefined', () => {
++    const program = new commander.Command();
++    program
++      .storeOptionsAsProperties(storeOptionsAsProperties)
++      .option('--cheese [type]', 'cheese type');
++    program.parse(['node', 'test']);
++    expect(program.getOptionValueSource('cheese')).toBeUndefined();
++  });
+ });
+diff --git a/typings/index.d.ts b/typings/index.d.ts
+index cba74f6..4b08020 100644
+--- a/typings/index.d.ts
++++ b/typings/index.d.ts
+@@ -216,6 +216,7 @@ export interface OutputConfiguration {
+ 
+ type AddHelpTextPosition = 'beforeAll' | 'before' | 'after' | 'afterAll';
+ type HookEvent = 'preAction' | 'postAction';
++type OptionValueSource = 'default' | 'env' | 'config' | 'cli';
+ 
+ export interface OptionValues {
+   [key: string]: any;
+@@ -531,6 +532,18 @@ export class Command {
+    */
+   setOptionValue(key: string, value: unknown): this;
+ 
++  /**
++   * Store option value.
++   *
++   * @param source - should be 'default' or 'env' or 'config' or 'cli'
++   */
++  setOptionValueWithSource(key: string, value: unknown, source: OptionValueSource): this;
++
++  /**
++   * Retrieve option value source.
++   */
++  getOptionValueSource(key: string): OptionValueSource;
++
+   /**
+    * Alter parsing of short flags with optional values.
+    *
+diff --git a/typings/index.test-d.ts b/typings/index.test-d.ts
+index 7ef3417..4af5655 100644
+--- a/typings/index.test-d.ts
++++ b/typings/index.test-d.ts
+@@ -155,6 +155,15 @@ void program.getOptionValue('example');
+ expectType<commander.Command>(program.setOptionValue('example', 'value'));
+ expectType<commander.Command>(program.setOptionValue('example', true));
+ 
++// setOptionValueWithSource
++expectType<commander.Command>(program.setOptionValueWithSource('example', 'value', 'default'));
++expectType<commander.Command>(program.setOptionValueWithSource('example', 'value', 'env'));
++expectType<commander.Command>(program.setOptionValueWithSource('example', 'value', 'config'));
++expectType<commander.Command>(program.setOptionValueWithSource('example', 'value', 'cli'));
++
++// getOptionValueSource
++void program.getOptionValueSource('example');
++
+ // combineFlagAndOptionalValue
+ expectType<commander.Command>(program.combineFlagAndOptionalValue());
+ expectType<commander.Command>(program.combineFlagAndOptionalValue(false));
