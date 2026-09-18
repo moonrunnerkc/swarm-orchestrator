@@ -180,6 +180,13 @@ export function renderReport(input: ReportInput): string {
           `${orUnknown(hidden.control)} / ${orUnknown(hidden.reach)} | ${bond.control} / ${bond.reach} |`,
       );
     }
+    const noted = summary.triggered
+      .map((one) => ({ id: String(one.taskId), note: pairNotes[String(one.taskId)] }))
+      .filter((one): one is { id: string; note: string } => one.note !== undefined);
+    if (noted.length > 0) {
+      lines.push("", "What each repair did, as diff facts:", "");
+      for (const one of noted) lines.push(`- **${one.id}**: ${one.note}`);
+    }
     const direction = secondary.repairDirection as Record<string, Record<string, number>>;
     lines.push(
       "",
