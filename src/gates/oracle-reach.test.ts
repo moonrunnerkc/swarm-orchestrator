@@ -117,6 +117,23 @@ describe("the patch's own tests", () => {
     expect(reach.reached).toBe(true);
   });
 
+  /**
+   * tsd's type tests are read by the type checker and executed by nothing, so a coverage report
+   * can never name them. Six of nine reach refusals in the reach-pressure experiment were
+   * commander's `typings/index.test-d.ts`, four of them with nothing else named.
+   */
+  it("does not count a tsd type-test file, which no runner executes", () => {
+    const reach = oracleReachedTheChange({
+      changed: [
+        { path: "lib/command.js", addedLines: numbered([530]) },
+        { path: "typings/index.test-d.ts", addedLines: numbered([47, 48]) },
+      ],
+      measured: { "lib/command.js": { 530: 1 } },
+    });
+
+    expect(reach.reached).toBe(true);
+  });
+
   /** The catch this exists for survives the change: source lines still have to run. */
   it("still refuses a source file whose added lines never ran", () => {
     const reach = oracleReachedTheChange({

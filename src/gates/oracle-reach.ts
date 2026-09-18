@@ -56,9 +56,13 @@ export function aRunnerCouldLoadIt(path: string): boolean {
 export function namesATestFile(path: string): boolean {
   const segments = path.split("/");
   const basename = segments.at(-1) ?? "";
+  // `.test-d.ts` is tsd's spelling of a type test: assertions the type checker reads and no runner
+  // executes. Measured: six of the nine reach refusals in the reach-pressure experiment named
+  // commander's `typings/index.test-d.ts`, four of them nothing else, and each told the model that
+  // lines nothing could ever execute went unexecuted.
   return (
     segments.slice(0, -1).some((segment) => /^(__tests__|__test__|tests?|specs?)$/.test(segment)) ||
-    /\.(test|spec)\.[^.]+$/.test(basename)
+    /\.(test|spec)(-d)?\.[^.]+$/.test(basename)
   );
 }
 
