@@ -88,8 +88,20 @@ async function trajectoryOf(
           ledgerRecords: 9,
           usage:
             at === 0
-              ? { modelCalls: 4, inputTokens: 1_000, outputTokens: 100, status: "reported" }
-              : { modelCalls: 2, inputTokens: null, outputTokens: null, status: "unknown" },
+              ? {
+                  modelCalls: 4,
+                  failedCalls: 0,
+                  inputTokens: 1_000,
+                  outputTokens: 100,
+                  status: "reported",
+                }
+              : {
+                  modelCalls: 2,
+                  failedCalls: 0,
+                  inputTokens: null,
+                  outputTokens: null,
+                  status: "unknown",
+                },
         };
       },
       snapshot: async () => {

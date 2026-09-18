@@ -380,7 +380,10 @@ async function run({ synthetic }) {
     const limit = Number(flag("--limit", "100000"));
 
     if (scriptedAgent === null) {
-      const health = await lib.endpointAnswers(parameters.endpoint);
+      const health = await lib.endpointGenerates(
+        parameters.endpoint,
+        parameters.model.replace(/^local:/, ""),
+      );
       if (!health.answered) {
         throw new Error(
           `the model endpoint is not answering, so nothing was run: ${health.detail}`,
@@ -541,9 +544,11 @@ async function oneTask({
   const patchPathOf = (digest) => join(patchRoot, `${digest.slice(7)}.patch`);
   const effects = {
     now: () => Date.now(),
+    // Asked to generate, not merely to list models: a wedged server does the second and not the
+    // first. The model name is the spec's id after its provider prefix.
     endpointAnswers: () =>
       scriptedAgent === null
-        ? lib.endpointAnswers(parameters.endpoint)
+        ? lib.endpointGenerates(parameters.endpoint, parameters.model.replace(/^local:/, ""))
         : Promise.resolve({ answered: true, detail: "" }),
     invokeAgent: async (prompt) => {
       const started = Date.now();
@@ -626,7 +631,13 @@ async function sessionOf(lib, stdout, sessionRoot) {
     runId: null,
     ledgerDigest: null,
     ledgerRecords: null,
-    usage: { modelCalls: null, inputTokens: null, outputTokens: null, status: "unknown" },
+    usage: {
+      modelCalls: null,
+      failedCalls: null,
+      inputTokens: null,
+      outputTokens: null,
+      status: "unknown",
+    },
   };
   let named = null;
   for (const line of stdout.split("\n").reverse()) {
