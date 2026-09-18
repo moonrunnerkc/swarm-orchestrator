@@ -381,6 +381,7 @@ describe("the page is a function of the summary", () => {
       parameters: { model: "local:m", endpoint: "http://127.0.0.1:8000/v1" },
       environment: null,
       pairNotes: { "lib/a#1": "The repair deleted the `value > high` branch." },
+      postscript: "## Written after the run\n\nNothing more.",
       digests: {
         driverAtAnalysis: identity.driverDigest,
         results: digest("r"),
@@ -399,6 +400,9 @@ describe("the page is a function of the summary", () => {
     expect(page).toContain("mcnemar-exact-binomial-two-sided");
     expect(page).toContain("newcombe-paired-score-95");
     expect(page).toContain("## Limitations");
+    expect(page.indexOf("## Written after the run")).toBeGreaterThan(
+      page.indexOf("## Limitations"),
+    );
     expect(page).not.toContain(String.fromCodePoint(0x2014));
     expect(renderReport(input)).toBe(page);
   });
