@@ -1,3 +1,4 @@
+import { digestOfJson } from "../evidence/canonical-json.ts";
 import {
   carriesCode,
   namesATestFile,
@@ -5,6 +6,7 @@ import {
   pathSetAside,
 } from "../gates/oracle-reach.ts";
 import { parseUnifiedDiff } from "../gates/unified-diff.ts";
+import type { PatchFile } from "./repair-progress.ts";
 
 /**
  * The size of a patch, in the terms the reach check itself reads a patch in.
@@ -69,4 +71,31 @@ export function metricsDelta(first: PatchMetrics, second: PatchMetrics): PatchMe
     delta[key] = second[key] - first[key];
   }
   return delta;
+}
+
+/**
+ * The files of a patch, each with a digest of its own changes, so two patches compare by file.
+ *
+ * Digested from the parsed change and not from the section's bytes: git's index line carries blob
+ * abbreviations whose length depends on the repository, and a file that did not change between
+ * two patches has to read as one that did not.
+ */
+export function patchFiles(patch: string): PatchFile[] {
+  return parseUnifiedDiff(patch)
+    .map((file) => ({
+      path: file.path,
+      change: file.kind,
+      diffDigest: digestOfJson({
+        kind: file.kind,
+        added: file.addedLines.map((one) => [one.line, one.text]),
+        removed: [...file.removedLines],
+      }),
+    }))
+    .sort((left, right) => (left.path < right.path ? -1 : 1));
+}
+
+/** The trimmed text of one added line, which is what a finding about it is named by. */
+export function addedLineText(patch: string, path: string, line: number): string | null {
+  const file = parseUnifiedDiff(patch).find((one) => one.path === path);
+  return file?.addedLines.find((one) => one.line === line)?.text.trim() ?? null;
 }
