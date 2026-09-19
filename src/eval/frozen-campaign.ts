@@ -25,11 +25,18 @@ export async function runFrozenCampaign(options: {
   executors: readonly CampaignArmExecutor[];
   now: () => number;
   signal: AbortSignal;
+  /**
+   * Observed before and after every launch. Where the arm calls a model, `healthy` has to come
+   * from a bounded completion (`endpointGenerates`): a wedged server lists its models, keeps its
+   * process and completes nothing, and a launch under it is not the arm's outcome.
+   */
   health: () => Promise<{
     healthy: boolean;
     processes: number;
     memoryBytes: number;
     endpoint: "available" | "unavailable" | "not-required";
+    /** Why the endpoint is unavailable, recorded with the observation. */
+    detail?: string;
   }>;
   exportEvidence: () => Promise<void>;
 }) {

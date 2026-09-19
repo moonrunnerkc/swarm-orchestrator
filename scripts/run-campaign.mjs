@@ -30,6 +30,7 @@ import {
   judgeByHiddenOracle,
   seedWorkspace,
 } from "../dist/eval/campaign-run.js";
+import { attributeInvocation, endpointGenerates } from "../dist/eval/endpoint-health.js";
 import { mcNemar, wilsonInterval } from "../dist/eval/statistics.js";
 
 const run = promisify(execFile);
@@ -221,6 +222,24 @@ for (const planned of plan.runs) {
     detail = (cause.stderr ?? cause.message ?? "").split("\n").slice(-2).join(" ").slice(0, 300);
   }
   const latencyMs = Date.now() - startedAt;
+
+  // Asked of every run before it is judged. A wedged server lets the CLI run to its own wall
+  // budget and exit cleanly with nothing written, which the rule above counts as a completed run
+  // the arm lost. The attempt is kept beside the results and not in them: results are what a
+  // resume skips and what every rate is computed over, and this run is neither.
+  const attribution = attributeInvocation({
+    probe: await endpointGenerates(endpoint, model.replace(/^local:/, "")),
+  });
+  if (attribution.to === "infrastructure") {
+    appendFileSync(
+      `${resultsPath}.infrastructure-failures`,
+      `${JSON.stringify({ ...planned, status: "infrastructure-failure", reason: attribution.reason, detail: attribution.detail, latencyMs, model, at: new Date().toISOString() })}\n`,
+    );
+    rmSync(workspace, { recursive: true, force: true });
+    console.log(`stopping, nothing judged for ${planned.caseId}: ${attribution.detail}`);
+    process.exitCode = 1;
+    break;
+  }
 
   const judged = await judgeByHiddenOracle(workspace, one);
   // The four cells, named for the proposition they actually compare. The harness ran without an

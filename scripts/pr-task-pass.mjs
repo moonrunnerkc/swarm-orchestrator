@@ -21,8 +21,8 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { readArmDriver } from "../dist/eval/arm-dispatch.js";
 import { readAnEmptyPatch } from "../dist/eval/empty-patch-attribution.js";
+import { attributeInvocation, endpointGenerates } from "../dist/eval/endpoint-health.js";
 import {
-  endpointAnswers as endpointAnswersAt,
   halfJudgeFor,
   judgeAgainstBothHalves,
   runCommand,
@@ -179,7 +179,10 @@ function promptFor(task, storedTestSource) {
   );
 }
 
-const endpointAnswers = () => endpointAnswersAt(endpoint);
+// A bounded completion from the model the pass was told to use. Listing models is not asked
+// anywhere here: a wedged server does that and completes nothing, and every decision below is
+// about whether the model could have answered.
+const modelGenerates = () => endpointGenerates(endpoint, model.replace(/^local:/, ""));
 
 const named = (one) => `${one.repository}#${one.pull}`;
 /**
@@ -206,13 +209,13 @@ const wanted = (
 ).slice(0, limit);
 console.log(`scoring ${wanted.length} mined task(s) against a held-back oracle\n`);
 
-// A dead endpoint costs one second here and a whole wall budget per task if it is found later.
-// Only where a model will actually be called: `--rejudge` re-derives verdicts from recorded
-// patches and never asks a model anything.
+// A dead or wedged endpoint costs one probe here and a whole wall budget per task if it is found
+// later. Only where a model will actually be called: `--rejudge` re-derives verdicts from
+// recorded patches and never asks a model anything.
 if (!rejudge && wanted.length > 0) {
-  const health = await endpointAnswers();
-  if (!health.answered) {
-    console.log(`the model endpoint is not answering: ${health.detail}`);
+  const health = await modelGenerates();
+  if (!health.generates) {
+    console.log(`the model endpoint is not generating (${health.failure}): ${health.detail}`);
     console.log("nothing was run, because an empty patch from a dead endpoint is not a result.");
     process.exit(1);
   }
@@ -416,23 +419,20 @@ for (const task of wanted) {
   const patchPath = join(patchRoot, `${task.repository.replace("/", "__")}-${task.pull}.patch`);
   writeFileSync(patchPath, diff.stdout);
 
-  // An empty patch is the agent having written nothing, and it must not be recorded the same way
-  // as the harness having failed to measure. Both produced `regression: unmeasured` before, which
-  // is how six tasks scored inside a path the policy guard denies were read as the model failing
-  // for six hours. Nothing to measure and could not measure are different findings.
-  if (diff.stdout.trim().length === 0) {
-    // A failed endpoint is retained as infrastructure failure and stops further dispatch. An MLX
-    // server ran out of GPU memory mid-batch and every task after it came back with a zero-byte
-    // patch, each one written down as the model failing: the same misattribution as the twelve
-    // rows above, running the other way. Asked only here, because this is the one verdict whose
-    // meaning depends on the endpoint having been alive.
-    const health = await endpointAnswers();
-    const reading = readAnEmptyPatch({
-      endpointAnswered: health.answered,
-      endpointDetail: health.detail,
-    });
-    if (!reading.attributable) {
-      scored.runs.push({
+  // Asked after every invocation and before anything is judged, whatever the workspace holds. An
+  // MLX server ran out of GPU memory mid-batch and every task after it came back with a zero-byte
+  // patch, each one written down as the model failing; a server that dies partway through leaves
+  // a partial patch instead, and judging that would charge the model with work it never got to
+  // finish. It used to be asked only of an empty patch, and with a probe that listed models, which
+  // a wedged server answers.
+  const attribution = attributeInvocation({ probe: await modelGenerates() });
+  if (attribution.to === "infrastructure") {
+    // Kept, and kept apart from `runs`: every reader of this file computes over `runs`, a resume
+    // skips what is in it, and `--rejudge` re-judges what is in it. An attempt that says nothing
+    // about the model belongs to none of those, and the task runs again once the endpoint does.
+    scored.infrastructureFailures = [
+      ...(scored.infrastructureFailures ?? []),
+      {
         repository: task.repository,
         pull: task.pull,
         baseCommit: task.baseCommit,
@@ -440,23 +440,26 @@ for (const task of wanted) {
         implementationDigest: armDriver?.implementationDigest ?? null,
         agentExit: agent.code,
         status: "infrastructure-failure",
-        regression: "unmeasured",
-        sealedOracle: "unjudged",
-        heldBackOracle: "unjudged",
-        oracleReach: "unmeasured",
-        oracleBond: "not-bonded",
-        verified: false,
-        corner: "unjudgeable",
+        reason: attribution.reason,
+        detail: attribution.detail,
+        patchBytesLeftUnjudged: Buffer.byteLength(diff.stdout),
         latencyMs,
         harness: harnessCommit,
-        detail: reading.detail,
         ...(attack ? { prompt: "sealed-oracle-shown" } : {}),
-      });
-      writeFileSync(scoredPath, `${JSON.stringify(scored, null, 2)}\n`);
-      console.log(`  ${label.padEnd(42)} ${reading.detail}`);
-      console.log("stopping: every task after an endpoint failure would record the same thing.");
-      break;
-    }
+      },
+    ];
+    writeFileSync(scoredPath, `${JSON.stringify(scored, null, 2)}\n`);
+    console.log(`  ${label.padEnd(42)} ${attribution.detail}`);
+    console.log("stopping: every task after an endpoint failure would record the same thing.");
+    break;
+  }
+
+  // An empty patch is the agent having written nothing, and it must not be recorded the same way
+  // as the harness having failed to measure. Both produced `regression: unmeasured` before, which
+  // is how six tasks scored inside a path the policy guard denies were read as the model failing
+  // for six hours. Nothing to measure and could not measure are different findings.
+  if (diff.stdout.trim().length === 0) {
+    const reading = readAnEmptyPatch(attribution);
     scored.runs.push({
       repository: task.repository,
       pull: task.pull,

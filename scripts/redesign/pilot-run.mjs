@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { z } from "zod";
 import { createSystemClock } from "../../src/cli-runtime-inputs.ts";
 import { openCampaign } from "../../src/eval/campaign-record.ts";
+import { endpointGenerates } from "../../src/eval/endpoint-health.ts";
 import { runFrozenCampaign } from "../../src/eval/frozen-campaign.ts";
 import { goalCampaignProtocolSchema } from "../../src/eval/goal-protocol.ts";
 import { bundleSourceFromRecorder, exportBundle } from "../../src/evidence/bundle.ts";
@@ -409,7 +410,18 @@ export async function runPilot(root, resume) {
         ).stdout
           .trim()
           .split("\n").length;
-        return { healthy: true, processes, memoryBytes: freemem(), endpoint: "available" };
+        // The inventory above says the weights are local and pinned, which is provenance. Whether
+        // the daemon still completes anything is a different question and the only one that
+        // decides attribution: `healthy` was the literal `true` here, so the campaign's one rule
+        // for an infrastructure failure could not fire while the daemon's process existed.
+        const probe = await endpointGenerates(settings.endpoint, settings.model);
+        return {
+          healthy: probe.generates,
+          processes,
+          memoryBytes: freemem(),
+          endpoint: probe.generates ? "available" : "unavailable",
+          ...(probe.generates ? {} : { detail: `${probe.failure}: ${probe.detail}` }),
+        };
       },
       executors: protocol.arms.map((arm) => ({
         id: arm.id,
