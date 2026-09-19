@@ -891,6 +891,10 @@ async function analyze({ synthetic }) {
     acquisition: bound,
     components,
     driverSourcesDigest: driverAtAnalysis,
+    derivedAt: {
+      harness: git(["rev-parse", "HEAD"]),
+      uncommittedSourceEdits: sourceIdentity().includes("uncommitted"),
+    },
     resultsDigest,
     hiddenScoresDigest,
     summary: JSON.parse(summaryText),
