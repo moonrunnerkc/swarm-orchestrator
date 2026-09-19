@@ -73,8 +73,12 @@ export function blindingReferences(input: {
       let at = text.indexOf(root);
       while (at !== -1) {
         const rest = text.slice(at);
-        const end = rest.search(/["'`\s)\]}<>,;]|\\n|\\"/);
-        const reference = end === -1 ? rest : rest.slice(0, end);
+        // A path ends at the first character a path here cannot hold. The payloads are JSON
+        // text, where every escape begins with a backslash: a colourised tool output ends a path
+        // with `\u001b[39m`, and reading through it made the agent's own workspace look like
+        // somewhere else. A full stop or comma after a path in prose is not part of it either.
+        const end = rest.search(/[^A-Za-z0-9._~@+%=/-]/);
+        const reference = (end === -1 ? rest : rest.slice(0, end)).replace(/[.,]+$/, "");
         const own = input.ownPaths.some(
           (path) => reference === path || reference.startsWith(`${path}/`),
         );
