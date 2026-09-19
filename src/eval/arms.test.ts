@@ -87,4 +87,41 @@ describe("the arms a campaign compares", () => {
     expect(rendered).toContain("2 launched");
     expect(rendered).toMatch(/1 crashed/);
   });
+
+  it("gives no cost per accepted patch where a run's cost is unknown, and says how many", () => {
+    const scored = scoreArms([
+      {
+        armId: "single-gates",
+        runs: [
+          { launched: true, completed: true, accepted: true, costUsd: 0.4, latencyMs: 10 },
+          // A crashed run spent something before it died, and nothing saw how much.
+          { launched: true, completed: false, accepted: false, costUsd: null, latencyMs: 0 },
+        ],
+      },
+    ]);
+
+    expect(scored[0]?.costPerAccepted).toBeNull();
+    expect(scored[0]?.costAccounting).toEqual({
+      complete: false,
+      runsWithUnknownCost: 1,
+      knownSubtotalUsd: 0.4,
+    });
+    const rendered = describeArmReport(scored);
+    expect(rendered).toContain("cost unknown: 1 run(s) did not report what they spent");
+    expect(rendered).not.toContain("$0.400");
+  });
+
+  it("still prices an arm whose every run reported, a free local run included", () => {
+    const scored = scoreArms([
+      {
+        armId: "single-gates",
+        runs: [
+          { launched: true, completed: true, accepted: true, costUsd: 0, latencyMs: 10 },
+          { launched: true, completed: true, accepted: true, costUsd: 0.5, latencyMs: 10 },
+        ],
+      },
+    ]);
+    expect(scored[0]?.costPerAccepted).toBe(0.25);
+    expect(scored[0]?.costAccounting.complete).toBe(true);
+  });
 });
