@@ -55,7 +55,11 @@ export function runIdOf(stdout: string): string | null {
  * Every place outside this invocation's own workspace that the session names, among the places
  * the held-back half or another invocation lives: the mined checkouts, whose history holds the
  * pull request's test file, and the study's own stores. Named by the text that follows each root
- * up to the next quote, whitespace or bracket, so a reference is shown and not only counted.
+ * up to the first character a path cannot hold, so a reference is shown and not only counted.
+ * A path is the invocation's own where it is one of its own paths, lies under one, or is an
+ * ancestor of one; the last is what a wrapped, truncated or partly coloured rendering of its own
+ * path leaves, and it is also a bare mention of a directory above the workspace, which names
+ * nothing held there.
  *
  * What this can and cannot see: it reads every payload the session recorded, tool calls and
  * their outputs alike, so a path the agent named or a command printed is found. A process the
@@ -79,8 +83,14 @@ export function blindingReferences(input: {
         // somewhere else. A full stop or comma after a path in prose is not part of it either.
         const end = rest.search(/[^A-Za-z0-9._~@+%=/-]/);
         const reference = (end === -1 ? rest : rest.slice(0, end)).replace(/[.,]+$/, "");
+        // An ancestor of the invocation's own path is how that path reads when a tool wraps it
+        // at a column, truncates it or colours part of it: generation 3 of the feedback study
+        // recorded its own workspace hard-wrapped by a stack trace as `…/g3/runs/lo`. A path
+        // into anything that is not its own, a sibling arm, a mined checkout or a stored oracle,
+        // is never an ancestor of its own and is still named.
         const own = input.ownPaths.some(
-          (path) => reference === path || reference.startsWith(`${path}/`),
+          (path) =>
+            reference === path || reference.startsWith(`${path}/`) || path.startsWith(reference),
         );
         if (!own) found.add(reference.slice(0, 240));
         at = text.indexOf(root, at + root.length);
