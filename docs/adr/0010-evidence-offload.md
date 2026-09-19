@@ -164,3 +164,17 @@ every claim stays checkable, one step further away. It does not reduce the histo
 downloads. And it moves a trust boundary that has to be named: the archive repository's
 integrity rests on the digest index committed here, not on the archive. A reader who trusts
 this tree and restores from the archive gets bytes this tree named or gets a refusal.
+
+## Addendum, 2026-09-18: derived artifacts are packed in the tree
+
+This decision is still a proposal and nothing above has been built. What landed instead is the
+part that needed no second repository. The tree reached 99.8 MB with the reach-pressure run, and
+78 run transcripts and 12 rendered review pages, which no verifier and no check reads, were
+10.2 MB of it. `scripts/evidence-pack.mjs` packs tracked derived artifacts losslessly into the
+`utf8-file-map-brotli` format this repository already uses, with a digest per original, and
+`npm run checks` verifies every pack. That took the tree to about 90.5 MB with every cited bundle
+still verifying from a clone, and `scripts/check-repo-weight.mjs` now requires 6 MB of headroom.
+
+It changes one row of the table above: `review.html` no longer needs to move, because it no longer
+weighs anything. Ledgers, DAGs and payloads are what is left, they are what a bundle is, and
+moving them is still what this document proposes.

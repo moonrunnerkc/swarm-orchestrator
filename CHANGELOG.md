@@ -34,9 +34,60 @@
   closure and the build refuses to emit a crossing. A test verifies a committed bundle through
   both binaries and compares the bytes. Version 0.1.0, not yet published; the packaged check
   packs it, installs it beside the full CLI, and runs the tamper demo through it.
+- **An agent can record a file as temporary, and is held to removing it.** `declare_file_set`
+  and `amend_file_set` take `temporary`: paths created only to investigate, such as a probe
+  script. The blocking `file-set` gate fails while one is still in the change and names it. An
+  amendment can keep one on purpose with `retain`, and its reason then shows on the ledger, in the
+  reviewer's claim and in the gate's output on every pass. Nothing is deleted behind the model's
+  back and nothing reads a filename. Two repairs in the reach-pressure run left a scratch script
+  in their final patch, and membership alone had passed both.
+- **Derived evidence packs losslessly inside the tree.** `scripts/evidence-pack.mjs` packs tracked
+  review pages and run transcripts under a root into one `utf8-file-map-brotli` archive with a
+  digest for every original, removes originals only after the written archive has been unpacked
+  and compared, and `npm run checks` verifies every committed pack. Ledgers, DAGs, manifests and
+  verifiers can never be packed. The tracked tree went from 99.8 MB to about 90.5 MB with every
+  cited bundle still verifying, and the weight check now also requires 6 MB of headroom so the next
+  experiment's evidence has somewhere to go.
+- **A repair is read as what it did to the verifier's findings.** Experiment rows record, per
+  invocation, one of `patch-unchanged`, `findings-identical`, `findings-moved`, `findings-shrank`,
+  `findings-grew` or `satisfied`, with both finding sets, both patch digests and the files that
+  entered or left the patch, plus the same from the fork to the final patch. No score is computed.
+  Generation 3's nine "repairs exhausted" split into six unchanged patches, two that grew the
+  findings by leaving a scratch file, and one that changed bytes and no finding.
 
 ### Fixed
 
+- **Reach reports `unmeasured`, not `reached`, for a change it could not measure at all.** A
+  change made only of documentation, types and its own tests skipped every file, left nothing
+  unreached and read as a measurement. Certification treats the two alike; a reader does not.
+  The verdict now carries every file reach set aside with its reason (`setAsideByReach`) and
+  `swarm ci` prints them. One path rule serves reach, the mutant planner, the patch metrics and
+  the PR miner, which had each spelled it separately: the miner still read a tsd type test as
+  source. tsd's `test-d/` directory and the `_test` suffix are recognized, and scratch scripts and
+  JavaScript tool configuration stay judged.
+- **Three campaign runners asked whether the model lists, not whether it generates.** A wedged
+  local server answers `/models` and completes nothing. `pr-task-pass` probed `/models`, and only
+  when a patch was empty, so a partial patch left by a server that died was judged as the model's;
+  the pilot campaign's health effect returned the literal `healthy: true`; `run-campaign` had no
+  probe. All three ask the configured model for a bounded completion after every invocation. The
+  probes are `endpointListsModels` and `endpointGenerates` in a module of their own, the second
+  names why it failed, and `pr-task-pass` keeps an infrastructure attempt apart from `runs`, where
+  it used to mark its task done and get re-judged.
+- **A failed model call records whether the harness cancelled it.** A call cut off at the wall
+  budget and a provider that raised were both `call-failed`. Every unknown-usage invocation of the
+  reach-pressure run was the first kind, and nothing on the ledger said so.
+- **Unknown usage is no longer added in as zero.** The experiment analysis summed a null model-call
+  count as 0; arm scoring priced a crashed run at $0 and printed dollars per accepted patch off the
+  sum; calibration divided all tokens by all time, so a model with one call cut off measured
+  slower than it is. A total is a number only where every part was measured, and the known part
+  is kept under its own name. The core loop's token total is unchanged and now travels with
+  `callsWithUnknownUsage`.
+- **The experiment analyzer cannot overwrite what a run published.** `analyze` wrote its summary
+  and page in place. It now refuses where the bytes differ and writes to `--out` with a
+  `derivation.json` naming the acquisition identity, the identities it was derived with, and every
+  value changed, added or removed. `run` and `score` refuse to write beside rows of another
+  protocol identity, which only `analyze` had checked, and identity is read before a row is
+  parsed. Generation 3's published summary re-derives with no value changed.
 - **The router considers every model the table has measured, not only the last sweep's pair.**
   The calibration pick's candidates were the models the last sweep ran together, so a model with
   the best evidence of all on a class was never in the running when a later sweep happened not
@@ -88,7 +139,9 @@
   implementation, two left scratch files behind. Six of the nine refusals named a tsd type-test
   file no runner executes. The protocol, rows, patches and a report that re-derives from the rows
   are in [`docs/evidence/2026-09-17/reach-pressure-experiment/`](docs/evidence/2026-09-17/reach-pressure-experiment/report.md).
-  Two earlier generations were stopped on instrument defects and are kept beside it.
+  Two earlier generations were stopped on instrument defects and are kept beside it. The instrument
+  defects it exposed, and what closed each without touching a row, are in
+  [`docs/evidence/2026-09-18/reach-pressure-hardening/`](docs/evidence/2026-09-18/reach-pressure-hardening/README.md).
 
 ### Changed
 

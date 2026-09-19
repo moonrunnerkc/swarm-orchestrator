@@ -487,6 +487,12 @@ model writing nothing, which is a model failure in the corpus. Two rows were dro
 attribution is now checked rather than assumed, in `src/eval/empty-patch-attribution.ts`: an empty
 patch is charged to the model only where the endpoint answers afterwards.
 
+**Corrected 2026-09-18: "answers" meant `/models`, which this failure passes.** The server in that
+state lists its models and completes nothing, so the probe that was added would not have caught
+the outage it was added for. It asks the configured model for a bounded completion now
+(`endpointGenerates` in `src/eval/endpoint-health.ts`), after every invocation and not only an
+empty one, and an infrastructure attempt is kept apart from `runs` so the task can be run again.
+
 So the leak does reach the measurements, by way of the machine rather than by way of a lock, and
 that closes the question of whether it is worth fixing. Two things it also changes about the shape
 of a fix. A PPID walk at kill time cannot find these, because their parent had already exited; the
