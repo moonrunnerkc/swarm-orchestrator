@@ -1,4 +1,9 @@
-import { aRunnerCouldLoadIt, carriesCode, namesATestFile } from "../gates/oracle-reach.ts";
+import {
+  carriesCode,
+  namesATestFile,
+  namesATypeTest,
+  pathSetAside,
+} from "../gates/oracle-reach.ts";
 import { parseUnifiedDiff } from "../gates/unified-diff.ts";
 
 /**
@@ -32,8 +37,8 @@ export function patchMetrics(patch: string): PatchMetrics {
   let sourceFilesChanged = 0;
   let testFilesChanged = 0;
   for (const file of files) {
-    const test = namesATestFile(file.path);
-    const source = !test && aRunnerCouldLoadIt(file.path);
+    const test = namesATestFile(file.path) || namesATypeTest(file.path);
+    const source = pathSetAside(file.path) === null;
     if (test) testFilesChanged += 1;
     if (source) sourceFilesChanged += 1;
     addedLines += file.addedLines.length;

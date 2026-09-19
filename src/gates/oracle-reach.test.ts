@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { lineHitsByWorkspacePath, oracleReachedTheChange } from "./oracle-reach.ts";
+import {
+  lineHitsByWorkspacePath,
+  oracleReachedTheChange,
+  pathSetAside,
+  reachSetsAside,
+  whyReachSetsAside,
+} from "./oracle-reach.ts";
 
 /**
  * Lines with a body on them, for the cases that only care about the numbers. Reach reads what is
@@ -336,5 +342,124 @@ describe("lineHitsByWorkspacePath", () => {
     );
 
     expect(Object.keys(measured)).toEqual([]);
+  });
+});
+
+describe("why reach sets a changed file aside", () => {
+  const added = (path: string, text = "  return value + 1;") => ({
+    path,
+    addedLines: [{ line: 3, text }],
+  });
+
+  // One row per supported class, each a path the mined corpus or the experiment really holds.
+  it.each([
+    ["typings/index.d.ts", "type-declaration"],
+    ["index.d.mts", "type-declaration"],
+    ["lib/legacy.d.cts", "type-declaration"],
+    // Under a test directory and still named as the narrower fact.
+    ["tests/types/index.d.ts", "type-declaration"],
+    ["typings/index.test-d.ts", "type-test"],
+    ["typings/react.test-d.tsx", "type-test"],
+    ["types/api.spec-d.mts", "type-test"],
+    ["test-d/options.ts", "type-test"],
+    ["tests/command.parse.test.js", "candidate-test"],
+    ["src/data-structures/deque/__test__/Deque.test.js", "candidate-test"],
+    ["source/helpers/rgh-links.test.ts", "candidate-test"],
+    ["test/Shell_test.mjs", "candidate-test"],
+    ["src/adapters/Shell_test.mjs", "candidate-test"],
+    ["CHANGELOG.md", "no-runner-loads-it"],
+    ["docs/scripting.md", "no-runner-loads-it"],
+    ["src/algorithms/ml/knn/README.md", "no-runner-loads-it"],
+    ["package.json", "no-runner-loads-it"],
+    ["swarm.toml", "no-runner-loads-it"],
+    [".github/workflows/ci.yml", "no-runner-loads-it"],
+    ["fixtures/cities.json", "no-runner-loads-it"],
+    ["fixtures/index", "no-runner-loads-it"],
+    ["src/__snapshots__/render.js.snap", "no-runner-loads-it"],
+    ["typings/index.d.ts.map", "no-runner-loads-it"],
+  ] as const)("%s is %s", (path, reason) => {
+    expect(reachSetsAside(added(path))).toBe(reason);
+    expect(whyReachSetsAside[reason].length).toBeGreaterThan(40);
+  });
+
+  // Near misses. Each of these an interpreter can load, so hiding one hides added behaviour.
+  it.each([
+    "lib/command.js",
+    "src/latest.ts",
+    "src/contest.js",
+    "src/testing-helpers.ts",
+    "src/test-data.ts",
+    "src/latest-d.ts",
+    "src/attested.mjs",
+    "src/spectest.js",
+    "src/d.ts",
+    "src/index.d.js",
+    "lib/changelog.js",
+    "src/config.ts",
+    "jest.config.js",
+    "fixtures/server.js",
+    // The two scratch files the experiment's repairs left behind are source, and reach naming
+    // them unexecuted was the accurate half of those refusals.
+    "probe-tmp.js",
+    "tsd-check.tmp.js",
+  ])("%s stays judged", (path) => {
+    expect(reachSetsAside(added(path))).toBeNull();
+    expect(pathSetAside(path)).toBeNull();
+  });
+
+  it("sets aside a source file whose added lines carry no code, and says that", () => {
+    expect(reachSetsAside(added("lib/command.js", "  });"))).toBe("no-code-on-added-lines");
+  });
+
+  it("names every file it did not judge, so no exclusion is silent", () => {
+    const reach = oracleReachedTheChange({
+      changed: [
+        added("lib/command.js"),
+        added("typings/index.test-d.ts"),
+        added("CHANGELOG.md"),
+        added("tests/command.test.js"),
+      ],
+      measured: { "lib/command.js": { 3: 2 } },
+    });
+    expect(reach).toEqual({
+      reached: true,
+      unreached: [],
+      judgedFiles: 1,
+      setAside: [
+        { path: "typings/index.test-d.ts", reason: "type-test" },
+        { path: "CHANGELOG.md", reason: "no-runner-loads-it" },
+        { path: "tests/command.test.js", reason: "candidate-test" },
+      ],
+    });
+  });
+
+  it("reports zero judged files where nothing in the change could be measured", () => {
+    const reach = oracleReachedTheChange({
+      changed: [added("typings/index.d.ts"), added("Readme.md")],
+      measured: {},
+    });
+    expect(reach.judgedFiles).toBe(0);
+    expect(reach.unreached).toEqual([]);
+  });
+
+  it("refuses commander#1557 no longer, and commander#1613 on its library lines only", () => {
+    // The two shapes the experiment recorded: a refusal naming the type test alone, and one
+    // naming it beside real source.
+    const typeTest = {
+      path: "typings/index.test-d.ts",
+      addedLines: [
+        { line: 47, text: "expectType<commander.Command>(program.hook('preAction', () => {}));" },
+        { line: 48, text: "expectType<commander.Command>(program.hook('postAction', () => {}));" },
+      ],
+    };
+    expect(oracleReachedTheChange({ changed: [typeTest], measured: {} }).unreached).toEqual([]);
+    const mixed = oracleReachedTheChange({
+      changed: [
+        typeTest,
+        { path: "lib/command.js", addedLines: [{ line: 530, text: "    this._hook = fn;" }] },
+      ],
+      measured: { "lib/command.js": { 530: 0 } },
+    });
+    expect(mixed.unreached).toEqual([{ path: "lib/command.js", lines: [530] }]);
   });
 });

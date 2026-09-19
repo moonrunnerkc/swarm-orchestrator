@@ -50,20 +50,93 @@ export function aRunnerCouldLoadIt(path: string): boolean {
   // A declaration file is types and nothing else, erased before anything runs, so it matches the
   // extension and can still never appear in a report. The miner excludes it from source files for
   // the same reason.
-  return /\.[cm]?[jt]sx?$/.test(path) && !/\.d\.[cm]?ts$/.test(path);
+  return /\.[cm]?[jt]sx?$/.test(path) && !namesATypeDeclaration(path);
 }
 
 export function namesATestFile(path: string): boolean {
   const segments = path.split("/");
   const basename = segments.at(-1) ?? "";
-  // `.test-d.ts` is tsd's spelling of a type test: assertions the type checker reads and no runner
-  // executes. Measured: six of the nine reach refusals in the reach-pressure experiment named
-  // commander's `typings/index.test-d.ts`, four of them nothing else, and each told the model that
-  // lines nothing could ever execute went unexecuted.
+  // `_test` is the spelling hubot, Deno and Go-shaped projects use: the corpus holds
+  // `test/Shell_test.mjs`. The separator is required, so `latest.ts` and `contest.js` stay source.
   return (
     segments.slice(0, -1).some((segment) => /^(__tests__|__test__|tests?|specs?)$/.test(segment)) ||
-    /\.(test|spec)(-d)?\.[^.]+$/.test(basename)
+    /(\.|_)(test|spec)\.[^.]+$/.test(basename)
   );
+}
+
+/**
+ * Whether a path is a type test: assertions the type checker reads and no runner executes.
+ *
+ * tsd's two spellings, a `.test-d.ts` file and anything under a `test-d` directory. Measured: six
+ * of the nine reach refusals in the reach-pressure experiment named commander's
+ * `typings/index.test-d.ts`, four of them nothing else, and each told the model that lines nothing
+ * could ever execute went unexecuted. `test-data.ts` and `latest-d.ts` are not this.
+ */
+export function namesATypeTest(path: string): boolean {
+  const segments = path.split("/");
+  return (
+    segments.slice(0, -1).includes("test-d") ||
+    /\.(test|spec)-d\.[cm]?tsx?$/.test(segments.at(-1) ?? "")
+  );
+}
+
+/** Types and nothing else, erased before anything runs. Generated or written by hand alike. */
+export function namesATypeDeclaration(path: string): boolean {
+  return /\.d\.[cm]?ts$/.test(path);
+}
+
+/**
+ * Why reach has no question to ask of a changed file, or null where it must be judged.
+ *
+ * Every reason is a statement about what a runtime coverage report can contain, never about how
+ * a name looks. A file is set aside only where no report from any runner could name one of its
+ * lines, or where the acceptance oracle by construction runs a different file. Anything that an
+ * interpreter could load stays judged, a scratch script and a JavaScript tool configuration
+ * included: they are executable, V8 names them where a process loads them, and hiding one would
+ * hide exactly the added behaviour reach exists to notice.
+ *
+ * Order matters only for the wording: a declaration file under a test directory reads as the
+ * narrower fact.
+ */
+export type ReachSetAside =
+  | "type-declaration"
+  | "type-test"
+  | "candidate-test"
+  | "no-runner-loads-it"
+  | "no-code-on-added-lines";
+
+export const whyReachSetsAside: Readonly<Record<ReachSetAside, string>> = {
+  "type-declaration":
+    "a declaration file is types only, erased before anything runs, so no coverage report can name a line of it",
+  "type-test":
+    "a type test is read by the type checker and executed by no runner, so no coverage report can name a line of it",
+  "candidate-test":
+    "the acceptance oracle runs its own test file and never the change's, so the change's tests are absent from its coverage by construction",
+  "no-runner-loads-it":
+    "no JavaScript runner loads a file of this kind, so it has no executable line for a coverage report to name",
+  "no-code-on-added-lines":
+    "no added line carries code: blank lines, comments closed on punctuation and closing braces execute nothing of their own",
+};
+
+/**
+ * The part of the rule a path alone decides. Reach, the mutant planner and the patch metrics all
+ * read this one function: two spellings of "is this source" would let reach skip a file the bond
+ * then built a mutant of, or a report count as executable what reach never judged.
+ */
+export function pathSetAside(
+  path: string,
+): Exclude<ReachSetAside, "no-code-on-added-lines"> | null {
+  if (namesATypeDeclaration(path)) return "type-declaration";
+  if (namesATypeTest(path)) return "type-test";
+  if (namesATestFile(path)) return "candidate-test";
+  if (!aRunnerCouldLoadIt(path)) return "no-runner-loads-it";
+  return null;
+}
+
+export function reachSetsAside(file: ChangedLines): ReachSetAside | null {
+  const byPath = pathSetAside(file.path);
+  if (byPath !== null) return byPath;
+  return file.addedLines.some((added) => carriesCode(added.text)) ? null : "no-code-on-added-lines";
 }
 
 /**
@@ -124,6 +197,14 @@ export interface OracleReach {
   readonly reached: boolean;
   /** Added lines the oracle never executed, per file, in the order the patch names them. */
   readonly unreached: readonly { readonly path: string; readonly lines: readonly number[] }[];
+  /**
+   * How many changed files reach had a question to ask of. Zero is not reach holding: a change
+   * that adds only documentation, types and its own tests was not measured and found complete, it
+   * was not measurable, and the caller reports it as that.
+   */
+  readonly judgedFiles: number;
+  /** Every changed file reach did not judge, with the reason, so an exclusion is never silent. */
+  readonly setAside: readonly { readonly path: string; readonly reason: ReachSetAside }[];
 }
 
 export function oracleReachedTheChange(input: {
@@ -141,12 +222,17 @@ export function oracleReachedTheChange(input: {
   measured: Readonly<Record<string, Readonly<Record<number, number>>>>;
 }): OracleReach {
   const unreached: { path: string; lines: number[] }[] = [];
+  const setAside: { path: string; reason: ReachSetAside }[] = [];
+  let judgedFiles = 0;
 
   for (const file of input.changed) {
-    const judgeable = file.addedLines.filter((added) => carriesCode(added.text));
-    if (judgeable.length === 0 || namesATestFile(file.path) || !aRunnerCouldLoadIt(file.path)) {
+    const reason = reachSetsAside(file);
+    if (reason !== null) {
+      setAside.push({ path: file.path, reason });
       continue;
     }
+    judgedFiles += 1;
+    const judgeable = file.addedLines.filter((added) => carriesCode(added.text));
     // A file the report does not mention was not measured, and not measured is not covered.
     // Treating a missing entry as full reach would let an oracle that ran nothing look thorough.
     const hits = input.measured[file.path];
@@ -159,5 +245,5 @@ export function oracleReachedTheChange(input: {
     }
   }
 
-  return { reached: unreached.length === 0, unreached };
+  return { reached: unreached.length === 0, unreached, judgedFiles, setAside };
 }
