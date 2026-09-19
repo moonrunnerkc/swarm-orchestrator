@@ -1,13 +1,17 @@
 #!/usr/bin/env node
 /**
- * A four-task cohort for exercising the reach-pressure experiment end to end.
+ * A five-task cohort for exercising the reach-pressure experiment and the feedback study end to
+ * end.
  *
  * None of it is evidence about anything. It exists so the driver, the verifier, the held-back
  * scoring and the report can all be run for real before the confirmatory cohort, without reading
  * a held-back verdict from a task the estimate is made over. One task is shaped so that an honest
  * implementation adds a branch the visible cases never take, which is the situation the
  * experiment is about, and a second asks for a switch so that a real model is likely to write
- * one too; one is fully exercised by its visible cases; one is simply there to be failed.
+ * one too; one is fully exercised by its visible cases; one is simply there to be failed. The
+ * fifth checks only that each answer is a string, so an honest implementation both leaves a
+ * branch unexecuted and has a comparison the visible cases accept either way round, while the
+ * lines that comparison guards run or not with it, which is what a coverage witness can see.
  *
  *   node scripts/reach-pressure/synthetic-cohort.mjs <corpus-root> <source.json>
  */
@@ -46,6 +50,7 @@ write("lib/clamp.js", "export function clamp(value) {\n  return value;\n}\n");
 write("lib/initials.js", "export function initials(name) {\n  return name;\n}\n");
 write("lib/duration.js", "export function parseDuration(text) {\n  return Number(text);\n}\n");
 write("lib/words.js", "export function reverseWords(text) {\n  return text;\n}\n");
+write("lib/sign.js", "export function sign(value) {\n  return value;\n}\n");
 write(
   "test/existing.test.js",
   'import assert from "node:assert/strict";\nimport test from "node:test";\nimport { clamp } from "../lib/clamp.js";\n\ntest("clamp is a function", () => {\n  assert.equal(typeof clamp, "function");\n});\n',
@@ -111,6 +116,21 @@ const specifications = [
     heldBack: [
       ["reads hours", 'assert.equal(parseDuration("2h"), 7200);'],
       ["reads days", 'assert.equal(parseDuration("3d"), 259200);'],
+    ],
+  },
+  {
+    pull: 5,
+    testFile: "test/sign.test.js",
+    taskText:
+      'Make sign(value) in lib/sign.js return the string "negative" for a number below zero, "zero" for zero and "positive" for a number above zero.',
+    source: header("sign", "sign"),
+    visible: [
+      ["answers a negative number with a string", 'assert.equal(typeof sign(-4), "string");'],
+      ["answers a positive number with a string", 'assert.equal(typeof sign(7), "string");'],
+    ],
+    heldBack: [
+      ["names zero", 'assert.equal(sign(0), "zero");'],
+      ["names a negative number", 'assert.equal(sign(-4), "negative");'],
     ],
   },
 ];
