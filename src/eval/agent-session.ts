@@ -13,8 +13,10 @@ import {
 /**
  * One agent invocation's session, read after it ended and moved out of the home it ran under.
  *
- * Every invocation of the study runs under a home of its own, and its session is copied out and
- * the home removed as soon as the invocation ends. A home shared between invocations holds every
+ * Every invocation of the study runs under a home and a scratch directory of its own, and its
+ * session is copied out and both removed as soon as the invocation ends. The scratch directory is
+ * not a detail: the agent gives every command it runs a home under its own scratch directory, so a
+ * private home with a shared scratch directory still put every tool process in the shared home. A home shared between invocations holds every
  * earlier session, prompts included, and an interpreter the tool policy allows can read a file
  * the lexical guard does not name: the neutral arm could read the prompt the reach arm of the same
  * pair was given. With one home per invocation there is nothing of another invocation to read.
@@ -107,6 +109,8 @@ function stopReasonOf(
 export async function takeAgentSession(input: {
   readonly stdout: string;
   readonly home: string;
+  /** The invocation's own scratch directory, under which its tools' home lives. Removed too. */
+  readonly scratch?: string;
   readonly keptRoot: string;
   readonly forbiddenRoots: readonly string[];
   readonly ownWorkspace: string;
@@ -150,7 +154,11 @@ export async function takeAgentSession(input: {
         references: blindingReferences({
           texts: entries.map((entry) => JSON.stringify(entry.payload ?? null)),
           forbiddenRoots: input.forbiddenRoots,
-          ownPaths: [input.ownWorkspace, input.home],
+          ownPaths: [
+            input.ownWorkspace,
+            input.home,
+            ...(input.scratch === undefined ? [] : [input.scratch]),
+          ],
         }),
       },
     };
@@ -158,5 +166,6 @@ export async function takeAgentSession(input: {
     return unread;
   } finally {
     await rm(input.home, { recursive: true, force: true });
+    if (input.scratch !== undefined) await rm(input.scratch, { recursive: true, force: true });
   }
 }

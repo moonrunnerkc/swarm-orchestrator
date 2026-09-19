@@ -1,9 +1,13 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   type HalfJudge,
   type HalfVerdict,
   type JudgedTask,
   judgeAgainstBothHalves,
+  runCommand,
   runnerKind,
   scoreHeldBack,
   settleHeldBack,
@@ -147,5 +151,37 @@ describe("the one held-back scoring rule", () => {
       hidden: "unjudgeable",
       basis: "swarm ci was killed at its deadline: x",
     });
+  });
+});
+
+describe("a command run with a home and a scratch directory of its own", () => {
+  it("builds the agent's tools a home inside that scratch, and not in the shared child home", async () => {
+    // The agent gives every command it runs `defaultChildHome()`, which sits under its own
+    // scratch directory. A private home with the shared scratch directory put every tool process
+    // in the shared child home, beside the judge's evidence and earlier runs' sessions.
+    const home = await mkdtemp(join(tmpdir(), "judge-home-"));
+    const scratch = await mkdtemp(join(tmpdir(), "judge-scratch-"));
+    try {
+      const childEnvironment = resolve(import.meta.dirname, "../exec/child-environment.ts");
+      const ran = await runCommand(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          `import { defaultChildHome } from ${JSON.stringify(childEnvironment)};
+           import { tmpdir } from "node:os";
+           console.log(JSON.stringify({ home: process.env.HOME, scratch: tmpdir(), tools: defaultChildHome() }));`,
+        ],
+        { homeDir: home, tmpDir: scratch },
+      );
+      expect(ran.code).toBe(0);
+      const seen = JSON.parse(ran.stdout.trim()) as Record<string, string>;
+      expect(seen.home).toBe(home);
+      expect(seen.scratch).toBe(scratch);
+      expect(seen.tools).toBe(join(scratch, "swarm-child-home"));
+    } finally {
+      await rm(home, { recursive: true, force: true });
+      await rm(scratch, { recursive: true, force: true });
+    }
   });
 });

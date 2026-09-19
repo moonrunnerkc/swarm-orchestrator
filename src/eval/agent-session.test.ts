@@ -130,6 +130,38 @@ describe("taking an invocation's session out of the home it ran under", () => {
     expect(existsSync(invocationHome)).toBe(false);
   });
 
+  it("allows the invocation's own scratch directory and removes it with the home", async () => {
+    const invocationHome = join(scratch, "home");
+    const invocationScratch = join(scratch, "scratch");
+    await mkdir(join(invocationScratch, "swarm-child-home", ".npm", "_logs"), { recursive: true });
+    const session = await openEvidenceSession({
+      root: join(invocationHome, ".swarm", "sessions"),
+      sessionId: "20260919T000000-cccccc",
+      clock,
+    });
+    await session.record({
+      type: "tool-call",
+      actor: "harness",
+      provenance: ["tool-output"],
+      payload: {
+        output: `npm error A complete log of this run can be found in: ${invocationScratch}/swarm-child-home/.npm/_logs/debug-0.log`,
+      },
+    });
+    const kept = join(scratch, "kept");
+    await mkdir(kept);
+    const taken = await takeAgentSession({
+      stdout: '{"runId":"20260919T000000-cccccc"}',
+      home: invocationHome,
+      scratch: invocationScratch,
+      keptRoot: kept,
+      forbiddenRoots: [scratch],
+      ownWorkspace: workspace,
+    });
+    expect(taken.blinding).toEqual({ checked: true, references: [] });
+    expect(existsSync(invocationHome)).toBe(false);
+    expect(existsSync(invocationScratch)).toBe(false);
+  });
+
   it("reads a session it cannot find as unknown and unchecked, and still removes the home", async () => {
     const invocationHome = join(scratch, "home");
     await mkdir(invocationHome);
