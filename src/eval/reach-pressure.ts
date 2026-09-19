@@ -1,11 +1,13 @@
 import { z } from "zod";
 import { digestOfBytes, digestOfJson, digestPattern } from "../evidence/canonical-json.ts";
 import { type RefusalReason, reasonsToRefuse } from "../gates/certification.ts";
+import { replayFileSet } from "../gates/file-set.ts";
 import { attributeInvocation, type GenerationProbe } from "./endpoint-health.ts";
 import type { PatchMetrics } from "./patch-metrics.ts";
 import { type HalfVerdict, whyNothingWasJudged } from "./pr-task-judge.ts";
 import {
   type Finding,
+  type PatchFile,
   patchFileSchema,
   repairProgress,
   repairProgressSchema,
@@ -249,6 +251,15 @@ const usageSchema = z.object({
 });
 export type InvocationUsage = z.infer<typeof usageSchema>;
 
+/** What the invocation's own ledger declared, read after it ended. Null where it could not be read. */
+const invocationFileSetSchema = z.object({
+  declared: z.boolean(),
+  allowed: z.array(z.string()),
+  temporary: z.array(z.string()),
+  retained: z.array(z.object({ path: z.string(), reason: z.string() })),
+});
+export type InvocationFileSet = z.infer<typeof invocationFileSetSchema>;
+
 const invocationSchema = z.object({
   exitCode: z.number().int(),
   wallMs: z.number().nonnegative(),
@@ -258,6 +269,7 @@ const invocationSchema = z.object({
   ledgerDigest: z.string().regex(digestPattern).nullable(),
   ledgerRecords: z.number().int().nonnegative().nullable(),
   usage: usageSchema,
+  fileSet: invocationFileSetSchema.nullable().optional(),
 });
 export type AgentInvocation = z.infer<typeof invocationSchema>;
 
@@ -311,6 +323,20 @@ const stepSchema = z.object({
     .optional(),
   /** What this invocation did to the findings of the one before it. Never on a first invocation. */
   repairProgress: repairProgressSchema.optional(),
+  /**
+   * The files this invocation brought into the patch, held against what its own ledger declared.
+   * A scratch script shows up here by what the agent recorded about it and never by its name:
+   * `undeclared` it never authorized, `temporaryLeft` it said it would delete and did not,
+   * `retained` it said it was keeping, with its reason. Absent where either side is unknown.
+   */
+  scope: z
+    .object({
+      entered: z.array(z.string()),
+      undeclared: z.array(z.string()),
+      temporaryLeft: z.array(z.string()),
+      retained: z.array(z.object({ path: z.string(), reason: z.string() })),
+    })
+    .optional(),
 });
 export type TrajectoryStep = z.infer<typeof stepSchema>;
 
@@ -481,6 +507,7 @@ export async function runTrajectory(input: {
       },
       judgeWallMs: effects.now() - judgeStarted,
       attribution,
+      ...scopeOf(invocation.fileSet, snapshot.files, earlier?.snapshot.files),
       ...(compared === null || earlier === null
         ? {}
         : {
@@ -604,6 +631,45 @@ export async function runTrajectory(input: {
       progress: sinceTheFork(fork),
     },
   });
+}
+
+/** The file set a finished session's ledger holds, or null where the ledger does not replay. */
+export function fileSetOfSession(
+  evidence: Parameters<typeof replayFileSet>[0],
+): InvocationFileSet | null {
+  try {
+    const state = replayFileSet(evidence);
+    return {
+      declared: state.wasDeclared,
+      allowed: [...state.allowed].sort(),
+      temporary: [...(state.temporary ?? [])].sort(),
+      retained: (state.retained ?? []).map((one) => ({ path: one.path, reason: one.reason })),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function scopeOf(
+  fileSet: InvocationFileSet | null | undefined,
+  files: readonly PatchFile[] | undefined,
+  earlierFiles: readonly PatchFile[] | undefined,
+): { scope?: NonNullable<TrajectoryStep["scope"]> } {
+  if (fileSet === null || fileSet === undefined || files === undefined) return {};
+  const before = new Set((earlierFiles ?? []).map((file) => file.path));
+  const present = new Set(files.map((file) => file.path));
+  // Only what this invocation added is held against its declaration. Files an earlier
+  // invocation left are in the patch too, and a later session never declared those.
+  const entered = files.map((file) => file.path).filter((path) => !before.has(path));
+  const allowed = new Set(fileSet.allowed);
+  return {
+    scope: {
+      entered,
+      undeclared: entered.filter((path) => !allowed.has(path)),
+      temporaryLeft: fileSet.temporary.filter((path) => present.has(path)),
+      retained: fileSet.retained.filter((one) => present.has(one.path)),
+    },
+  };
 }
 
 /**

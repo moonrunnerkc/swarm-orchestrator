@@ -182,8 +182,8 @@ function repairProgressLines(summary: ReachPressureSummary): string[] {
       ([relation, tasks]) => `| ${relation} | ${relationReadings[relation] ?? ""} | ${tasks} |`,
     ),
     "",
-    "| task | fork to final | each repair | files that entered the patch | findings named by |",
-    "| --- | --- | --- | --- | --- |",
+    "| task | fork to final | each repair | files that entered the patch | of those, by the repair's own ledger | findings named by |",
+    "| --- | --- | --- | --- | --- | --- |",
   ];
   for (const one of summary.triggered) {
     const outcome = one.repairOutcome as {
@@ -193,9 +193,26 @@ function repairProgressLines(summary: ReachPressureSummary): string[] {
       paths: { enteredThePatch: readonly string[] } | null;
     } | null;
     const steps = (one.repairProgress ?? []) as readonly { relation: string }[];
+    const scopes = (one.repairScope ?? []) as readonly {
+      undeclared: readonly string[];
+      temporaryLeft: readonly string[];
+      retained: readonly { path: string; reason: string }[];
+    }[];
+    const ledgerSays =
+      scopes.length === 0
+        ? "not recorded"
+        : [
+            ...new Set(
+              scopes.flatMap((scope) => [
+                ...scope.undeclared.map((path) => `${path}: never declared`),
+                ...scope.temporaryLeft.map((path) => `${path}: declared temporary and left`),
+                ...scope.retained.map((kept) => `${kept.path}: retained (${kept.reason})`),
+              ]),
+            ),
+          ].join("; ") || "all declared, none temporary";
     lines.push(
       `| ${one.taskId} | ${outcome?.relation ?? "not comparable"} | ${steps.map((step) => step.relation).join(", ") || "none"} | ` +
-        `${outcome?.paths == null ? "not recorded" : outcome.paths.enteredThePatch.join(", ") || "none"} | ` +
+        `${outcome?.paths == null ? "not recorded" : outcome.paths.enteredThePatch.join(", ") || "none"} | ${ledgerSays} | ` +
         `${outcome === null ? "" : `${outcome.findingIdentity}${outcome.derivedAtAnalysis ? ", derived at analysis" : ""}`} |`,
     );
   }

@@ -38,6 +38,7 @@ export const identitySources = {
     "src/eval/repair-progress.ts",
     "src/eval/sealed-workspace.ts",
     "src/gates/certification.ts",
+    "src/gates/file-set.ts",
     "src/gates/oracle-reach.ts",
   ],
   scoring: [

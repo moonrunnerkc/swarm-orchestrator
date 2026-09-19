@@ -458,6 +458,13 @@ export function summarize(input: {
         overhead: totalsOf(phaseSteps(trajectory, "reach-repair")),
         repairProgress: repairs,
         repairOutcome: outcome,
+        // What each repair session's own ledger said about the files it added. Empty for rows
+        // written before sessions were read for it.
+        repairScope: trajectory.steps.flatMap((step, at) =>
+          step.phase === "reach-repair" && step.scope !== undefined
+            ? [{ step: at, ...step.scope }]
+            : [],
+        ),
       });
     }
     if (trajectory.visibleAcceptedAt !== null) {

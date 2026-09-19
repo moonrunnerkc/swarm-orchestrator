@@ -9,6 +9,7 @@ import {
   enforcedRefusals,
   experimentPolicyDigest,
   experimentPolicyNamed,
+  fileSetOfSession,
   mayStop,
   refusalFeedback,
   runTrajectory,
@@ -869,5 +870,142 @@ describe("what the repair budget bought, fork to final patch", () => {
     const world = scripted([{ patch: "first", verdict: accepted }]);
     const ended = await runTrajectory({ task, limits, effects: world.effects });
     expect(ended.reach?.progress).toBeUndefined();
+  });
+});
+
+describe("the files an invocation added, held against what its own ledger declared", () => {
+  const section = (path: string, line: string) =>
+    [
+      `diff --git a/${path} b/${path}`,
+      "new file mode 100644",
+      "--- /dev/null",
+      `+++ b/${path}`,
+      "@@ -0,0 +1 @@",
+      `+${line}`,
+      "",
+    ].join("\n");
+  const implementation = section("lib/store.js", "export const store = (own) => own ?? shared;");
+  const withProbe = implementation + section("probe-tmp.js", "console.log(store());");
+
+  async function twoInvocations(fileSets: readonly AgentInvocation["fileSet"][]) {
+    const patches = [implementation, withProbe, withProbe];
+    const world = scripted(patches.map((patch) => ({ patch, verdict: unreached })));
+    let at = -1;
+    return runTrajectory({
+      task,
+      limits,
+      effects: {
+        ...world.effects,
+        invokeAgent: async (prompt) => {
+          at += 1;
+          await world.effects.invokeAgent(prompt);
+          return { ...invocation, fileSet: fileSets[at] ?? null };
+        },
+        snapshot: async () => {
+          const patch = patches[at] ?? "";
+          return {
+            digest: digestOfBytes(patch),
+            metrics: patchMetrics(patch),
+            files: patchFiles(patch),
+          };
+        },
+      },
+    });
+  }
+  const declaredOnly = (allowed: readonly string[]): NonNullable<AgentInvocation["fileSet"]> => ({
+    declared: true,
+    allowed: [...allowed],
+    temporary: [],
+    retained: [],
+  });
+
+  it("names a scratch file the repair never declared", async () => {
+    const ended = await twoInvocations([
+      declaredOnly(["lib/store.js"]),
+      declaredOnly(["lib/store.js"]),
+    ]);
+    expect(ended.steps[0]?.scope).toEqual({
+      entered: ["lib/store.js"],
+      undeclared: [],
+      temporaryLeft: [],
+      retained: [],
+    });
+    expect(ended.steps[1]?.scope).toMatchObject({
+      entered: ["probe-tmp.js"],
+      undeclared: ["probe-tmp.js"],
+    });
+  });
+
+  it("names one the repair declared temporary and left, without calling it undeclared", async () => {
+    const ended = await twoInvocations([
+      declaredOnly(["lib/store.js"]),
+      { ...declaredOnly(["lib/store.js", "probe-tmp.js"]), temporary: ["probe-tmp.js"] },
+    ]);
+    expect(ended.steps[1]?.scope).toMatchObject({
+      undeclared: [],
+      temporaryLeft: ["probe-tmp.js"],
+    });
+  });
+
+  it("carries the reason where the repair retained it on purpose", async () => {
+    const kept = { path: "probe-tmp.js", reason: "the issue asked for a reproduction script" };
+    const ended = await twoInvocations([
+      declaredOnly(["lib/store.js"]),
+      { ...declaredOnly(["lib/store.js", "probe-tmp.js"]), retained: [kept] },
+    ]);
+    expect(ended.steps[1]?.scope).toMatchObject({ temporaryLeft: [], retained: [kept] });
+  });
+
+  it("does not hold an earlier invocation's files against a later session's declaration", async () => {
+    // The second session declared only the probe. The store file was the first session's.
+    const ended = await twoInvocations([
+      declaredOnly(["lib/store.js"]),
+      declaredOnly(["probe-tmp.js"]),
+      declaredOnly(["lib/other.js"]),
+    ]);
+    expect(ended.steps[1]?.scope?.undeclared).toEqual([]);
+    expect(ended.steps[2]?.scope?.entered).toEqual([]);
+  });
+
+  it("records nothing where the session's ledger could not be read", async () => {
+    const ended = await twoInvocations([null, null]);
+    expect(ended.steps[1]?.scope).toBeUndefined();
+  });
+
+  it("reads a session's file set off its ledger, and gives null for one that does not replay", () => {
+    const records = [
+      { type: "file-set-declared", payloadDigest: "sha256:d" },
+      { type: "file-set-amended", payloadDigest: "sha256:a" },
+    ];
+    const payloads = new Map<string, unknown>([
+      [
+        "sha256:d",
+        { files: ["lib/store.js", "probe-tmp.js"], fileCount: 2, temporary: ["probe-tmp.js"] },
+      ],
+      [
+        "sha256:a",
+        {
+          files: ["probe-tmp.js"],
+          added: [],
+          addedCount: 0,
+          reason: "kept as the reproduction",
+          amendment: true,
+          fileCountAfter: 2,
+          retain: ["probe-tmp.js"],
+        },
+      ],
+    ]);
+    const evidence = { records: () => records, payloads: () => payloads } as never;
+    expect(fileSetOfSession(evidence)).toEqual({
+      declared: true,
+      allowed: ["lib/store.js", "probe-tmp.js"],
+      temporary: [],
+      retained: [{ path: "probe-tmp.js", reason: "kept as the reproduction" }],
+    });
+
+    const broken = new Map(payloads).set("sha256:d", { files: ["a.js"], fileCount: 7 });
+    expect(
+      fileSetOfSession({ records: () => records, payloads: () => broken } as never),
+    ).toBeNull();
   });
 });
