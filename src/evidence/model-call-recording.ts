@@ -72,6 +72,9 @@ export function createRecordingModelClient(
             usageStatus: "unknown",
             inputTokens: 0,
             outputTokens: 0,
+            // Whether the harness ended this call itself. A call cut off at the wall budget and
+            // a provider that raised are both `call-failed`, and only one is about the endpoint.
+            cancelled: request.abortSignal.aborted,
             content: { ...callFailedTurn },
           },
           promptDigest,

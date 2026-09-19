@@ -177,5 +177,23 @@ it("records an aborted unresponsive call before returning, with unknown usage ex
   expect(evidence.payloads().get(record?.payloadDigest ?? "")).toMatchObject({
     usageStatus: "unknown",
     response: { failed: true },
+    cancelled: true,
+  });
+});
+
+it("records a provider that raised as a failure nobody cancelled", async () => {
+  const evidence = await openSession();
+  const model = createRecordingModelClient(
+    {
+      modelId: "out-of-memory",
+      generate: () => Promise.reject(new Error("[METAL] Insufficient Memory")),
+    },
+    evidence,
+  );
+  await expect(model.generate(request("work"))).rejects.toThrow("Insufficient Memory");
+  const record = evidence.records().find((entry) => entry.type === "model-call");
+  expect(evidence.payloads().get(record?.payloadDigest ?? "")).toMatchObject({
+    content: { reason: "call-failed" },
+    cancelled: false,
   });
 });
