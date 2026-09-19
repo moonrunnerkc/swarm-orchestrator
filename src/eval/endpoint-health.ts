@@ -78,6 +78,11 @@ export async function endpointGenerates(
         model,
         messages: [{ role: "user", content: "Say ok." }],
         max_tokens: 4,
+        // Thinking off in both spellings the agent's own requests use, since each server honours
+        // one: MLX and vLLM read the template flag, Ollama reads the effort and ignores the flag.
+        // A server that reasons by default spends four tokens on reasoning and answers with
+        // nothing, which read as a server that does not generate.
+        reasoning_effort: "none",
         chat_template_kwargs: { enable_thinking: false },
       }),
       signal,
