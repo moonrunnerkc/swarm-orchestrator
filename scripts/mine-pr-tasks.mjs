@@ -12,7 +12,7 @@
  * This phase is API only and cheap. It proposes candidates; it does not establish that any of
  * them work, which is what check-pr-task-viability.mjs does by running them.
  *
- *   node scripts/mine-pr-tasks.mjs [--repos <n>] [--per-repo <n>] [--out <file>]
+ *   node scripts/mine-pr-tasks.mjs [--repos <n>] [--per-repo <n>] [--out <file>] [--pool <file>]
  */
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -107,10 +107,20 @@ function addedLines(patch) {
     .join("\n");
 }
 
+// The campaign's sealed selection unless a wider pool is named, which
+// `pr-task-repository-pool.mjs` walks by the same rule and records beside its decisions.
+const poolAt = argv.indexOf("--pool");
 const selection = JSON.parse(
-  readFileSync(join(repositoryRoot, "campaign/selection/repos.json"), "utf8"),
+  readFileSync(
+    poolAt === -1
+      ? join(repositoryRoot, "campaign/selection/repos.json")
+      : join(repositoryRoot, argv[poolAt + 1]),
+    "utf8",
+  ),
 );
-const repositories = (Array.isArray(selection) ? selection : Object.values(selection)[0])
+const repositories = (
+  Array.isArray(selection) ? selection : (selection.accepted ?? Object.values(selection)[0])
+)
   .filter((one) => one.accepted !== false && /JavaScript|TypeScript/.test(one.language ?? ""))
   .slice(0, numeric("--repos", 12));
 
