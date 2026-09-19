@@ -1,3 +1,5 @@
+import type { InvocationAttribution } from "./endpoint-health.ts";
+
 /**
  * Whether an empty patch says anything about the model.
  *
@@ -23,13 +25,13 @@ export interface EmptyPatchReading {
   readonly detail: string;
 }
 
-export function readAnEmptyPatch(input: {
-  /** Whether the model endpoint answered a trivial request after the run finished. */
-  readonly endpointAnswered: boolean;
-  /** What came back instead, where it did not answer. */
-  readonly endpointDetail: string;
-}): EmptyPatchReading {
-  if (input.endpointAnswered) {
+/**
+ * Reads the one attribution every invocation gets. The probe behind it generates: it used to list
+ * models, which a wedged server does while completing nothing, so the outage this file describes
+ * would have passed it.
+ */
+export function readAnEmptyPatch(attribution: InvocationAttribution): EmptyPatchReading {
+  if (attribution.to === "agent") {
     return {
       attributable: true,
       detail: "the agent wrote nothing, so there is no patch to judge",
@@ -38,8 +40,7 @@ export function readAnEmptyPatch(input: {
   return {
     attributable: false,
     detail:
-      `the model endpoint did not answer after the run, so an empty patch says nothing about ` +
-      `the model: ${input.endpointDetail}. Nothing is recorded for this task. Fix the endpoint ` +
-      `and run it again.`,
+      `${attribution.detail}, so an empty patch says nothing about the model. It is kept as an ` +
+      "infrastructure failure and not scored. Fix the endpoint and run the task again.",
   };
 }
