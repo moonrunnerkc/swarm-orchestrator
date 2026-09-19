@@ -23,13 +23,17 @@
  *
  * What a task has to satisfy is untouched. This decides which repositories are looked at.
  *
- *   node scripts/pr-task-repository-pool.mjs [--per-language <n>] [--out <file>]
+ *   node scripts/pr-task-repository-pool.mjs [--per-language <n>] [--out <file>] [--after <pool.json>]
+ *
+ * `--after` continues an earlier walk: every repository that walk decided, accepted or rejected,
+ * is passed over, and the walk goes on down the same order under the same rules. Its accepted
+ * repositories are also skipped by the miner's already-mined rule, so nothing is mined twice.
  */
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { gzipSync } from "node:zlib";
@@ -57,6 +61,22 @@ export function alreadyMined(selection) {
       .filter((one) => one.accepted !== false && poolLanguages.includes(one.language ?? ""))
       .map((one) => one.fullName),
   );
+}
+
+/** Every repository earlier walks decided, and those they accepted, for a walk that continues them. */
+export function earlierWalks(pools) {
+  const decided = new Set();
+  const accepted = new Set();
+  for (const pool of pools) {
+    for (const one of pool.decisions ?? []) decided.add(one.fullName);
+    for (const one of pool.accepted ?? []) accepted.add(one.fullName);
+  }
+  return { decided, accepted };
+}
+
+/** The walk order with every repository an earlier walk already decided taken out of it. */
+export function continuing(candidates, decided) {
+  return candidates.filter((candidate) => !decided.has(candidate.fullName));
 }
 
 /**
@@ -106,7 +126,14 @@ async function main() {
   const now = () => new Date().toISOString();
 
   const selectionPath = join(repositoryRoot, "campaign/selection/repos.json");
-  const mined = alreadyMined(JSON.parse(readFileSync(selectionPath, "utf8")));
+  const earlier = argv
+    .flatMap((word, at) => (word === "--after" ? [argv[at + 1]] : []))
+    .map((path) => resolve(repositoryRoot, path));
+  const prior = earlierWalks(earlier.map((path) => JSON.parse(readFileSync(path, "utf8"))));
+  const mined = new Set([
+    ...alreadyMined(JSON.parse(readFileSync(selectionPath, "utf8"))),
+    ...prior.accepted,
+  ]);
 
   // Thirty search requests a minute is GitHub's limit for an authenticated caller.
   const fetched = [];
@@ -131,7 +158,10 @@ async function main() {
   const byLanguage = Object.fromEntries(
     poolLanguages.map((language) => [
       language,
-      orderCandidates(fetched.filter((item) => item.language === language).map(candidateFrom)),
+      continuing(
+        orderCandidates(fetched.filter((item) => item.language === language).map(candidateFrom)),
+        prior.decided,
+      ),
     ]),
   );
 
@@ -183,7 +213,8 @@ async function main() {
         schema: "swarm.pr-task.repository-pool.v1",
         rule:
           "the campaign selection's search, order, search rules and checkout rules " +
-          "(campaign/criteria.md), skipping repositories already in campaign/selection/repos.json, " +
+          "(campaign/criteria.md), skipping repositories already in campaign/selection/repos.json " +
+          "and every repository an earlier walk named here decided, " +
           `requiring ${minedTaskLockfile}, and not running the container suite`,
         queriedAt: fetched[0]?.fetchedAt ?? now(),
         searchResults: {
@@ -192,6 +223,7 @@ async function main() {
           keptAt: "~/.cache/swarm-pr-tasks/pool/search-results.jsonl.gz, outside the repository",
         },
         perLanguage,
+        continues: earlier.map((path) => relative(repositoryRoot, path)),
         shortfalls: walked.shortfalls,
         decisions: walked.decisions,
         accepted: walked.accepted,

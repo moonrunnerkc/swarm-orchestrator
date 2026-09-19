@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { alreadyMined, judgeForPool, minedTaskLockfile } from "./pr-task-repository-pool.mjs";
+import {
+  alreadyMined,
+  continuing,
+  earlierWalks,
+  judgeForPool,
+  minedTaskLockfile,
+} from "./pr-task-repository-pool.mjs";
 
 const candidate = (overrides = {}) => ({
   fullName: "someone/thing",
@@ -103,5 +109,27 @@ describe("which repositories the miner is given next", () => {
       inspect: async () => ({ failure: "checkout unreadable: timed out" }),
     });
     expect(verdict).toEqual({ accepted: false, reason: "checkout unreadable: timed out" });
+  });
+});
+
+describe("continuing an earlier walk", () => {
+  it("passes over everything an earlier walk decided and keeps the order of the rest", () => {
+    const prior = earlierWalks([
+      {
+        decisions: [
+          { fullName: "a/accepted", accepted: true },
+          { fullName: "b/rejected", accepted: false, reason: "fork" },
+        ],
+        accepted: [{ fullName: "a/accepted" }],
+      },
+    ]);
+    const order = ["a/accepted", "c/next", "b/rejected", "d/after"].map((fullName) => ({
+      fullName,
+    }));
+    expect(continuing(order, prior.decided).map((one) => one.fullName)).toEqual([
+      "c/next",
+      "d/after",
+    ]);
+    expect([...prior.accepted]).toEqual(["a/accepted"]);
   });
 });
