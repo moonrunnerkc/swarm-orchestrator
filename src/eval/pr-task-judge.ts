@@ -45,11 +45,15 @@ export async function runCommand(
     readonly cwd?: string;
     readonly env?: NodeJS.ProcessEnv;
     readonly timeoutMs?: number;
+    /** A home of the caller's own. The shared child home by default. */
+    readonly homeDir?: string;
   } = {},
 ): Promise<CommandOutcome> {
   const ran = await runProcessGroup(file, args, {
     cwd: options.cwd ?? process.cwd(),
-    env: childEnvironment(options.env ?? process.env, { homeDir: defaultChildHome() }).variables,
+    env: childEnvironment(options.env ?? process.env, {
+      homeDir: options.homeDir ?? defaultChildHome(),
+    }).variables,
     timeoutMs: options.timeoutMs ?? 10 * 60_000,
     maxOutputBytes: 64 * 1024 * 1024,
   });
