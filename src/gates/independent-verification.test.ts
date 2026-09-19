@@ -497,6 +497,109 @@ describe("a failure the base already had", () => {
   });
 });
 
+describe("an oracle that leaves its own files in the checkout", () => {
+  /**
+   * A mined task's oracle copies the pull request's whole test file into the checkout and runs one
+   * half of it by title. The file stays. Anything that runs the repository's own suite afterwards
+   * runs both halves: the held-back cases fail on the base by construction, and they fail on a
+   * mutant the visible half accepted. Neither is the repository speaking.
+   */
+  let stored = "";
+  beforeEach(async () => {
+    stored = await mkdtemp(join(tmpdir(), "swarm-stored-oracle-"));
+  });
+  afterEach(async () => {
+    await rm(stored, { recursive: true, force: true });
+  });
+
+  const oracleCopying = async (file: string, title: string) => {
+    const path = join(stored, "pr.test.mjs");
+    await writeFile(path, file);
+    return `mkdir -p hidden && cp '${path}' hidden/pr.test.mjs && node --test --test-name-pattern='${title}' hidden/pr.test.mjs`;
+  };
+
+  it("still calls a regression the patch caused a regression, whatever the oracle left behind", async () => {
+    const command = await oracleCopying(
+      [
+        "import { test } from 'node:test';",
+        "import assert from 'node:assert/strict';",
+        "import { clamp } from '../clamp.mjs';",
+        "test('visible floors a negative', () => assert.equal(clamp(-1), 0));",
+        "",
+      ].join("\n"),
+      "visible",
+    );
+    const patch = [
+      "diff --git a/clamp.mjs b/clamp.mjs",
+      "--- a/clamp.mjs",
+      "+++ b/clamp.mjs",
+      "@@ -1 +1 @@",
+      "-export const clamp = (v) => v;",
+      "+export const clamp = (v) => 999;",
+      "",
+    ].join("\n");
+
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch,
+      commands: commands(),
+      clock,
+      taskOracle: { command },
+    });
+
+    // The copied file fails on the base too; measured beside it, the base looked as broken as
+    // the patch and the regression read as inherited.
+    const tests = result.checks.find((check) => check.id === "tests");
+    expect(tests?.status).toBe("failed");
+    expect(tests?.inheritedFromBase).toBe(false);
+    expect(result.regression).toBe("fail");
+  });
+
+  it("does not let the held-back cases witness a mutant the repository's suite cannot see", async () => {
+    const command = await oracleCopying(
+      [
+        "import { test } from 'node:test';",
+        "import assert from 'node:assert/strict';",
+        "import { floor0 } from '../clamp.mjs';",
+        "test('visible does not throw', () => assert.doesNotThrow(() => floor0(-5)));",
+        "test('held back floors a negative', () => assert.equal(floor0(-5), 0));",
+        "",
+      ].join("\n"),
+      "visible",
+    );
+    const patch = [
+      "diff --git a/clamp.mjs b/clamp.mjs",
+      "--- a/clamp.mjs",
+      "+++ b/clamp.mjs",
+      "@@ -1 +1,5 @@",
+      " export const clamp = (v) => v;",
+      "+export function floor0(v) {",
+      "+  const floored = Math.max(0, v);",
+      "+  return floored;",
+      "+}",
+      "",
+    ].join("\n");
+
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch,
+      commands: commands(),
+      clock,
+      taskOracle: { command },
+    });
+
+    expect(result.task).toBe("accepted");
+    expect(result.regression).toBe("pass");
+    const assigned = result.bondedMutants.find((one) => one.operator === "replace-assigned-value");
+    // The visible half ran the line and accepted the mutant. Coverage saw the same lines run, and
+    // the repository's own suite, clamp.test.mjs, never calls floor0: nothing but the held-back
+    // case could have noticed, so nothing witnessed it.
+    expect(assigned).toMatchObject({ line: 3, verdict: "vacuous", witness: "none" });
+  });
+});
+
 describe("an oracle that cannot fail", () => {
   /**
    * `swarm ci` runs the oracle it is handed and reports what it said, never asking whether it was

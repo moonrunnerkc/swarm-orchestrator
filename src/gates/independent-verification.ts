@@ -642,6 +642,8 @@ async function bondTheOracle(
     addedLines: file.addedLines,
   }));
 
+  // What the loop last wrote into the checkout: the mutant under adjudication, while one is.
+  let written: { readonly path: string; readonly text: string } | null = null;
   return bondOracleWithMutants({
     mutants: mutantsOfChangedLines({ changed }),
     measured,
@@ -650,7 +652,10 @@ async function bondTheOracle(
     // arithmetic over its record cannot disagree about which regime produced it.
     runner: {
       read: (path) => readFile(join(checkout, path), "utf8").catch(() => null),
-      write: (path, text) => writeFile(join(checkout, path), text),
+      write: async (path, text) => {
+        written = { path, text };
+        await writeFile(join(checkout, path), text);
+      },
       parses: nodeSyntaxCheck(options.commands, { cwd: checkout, timeoutMs }),
       runOracle: async () => {
         const ran = await options.commands.run(oracle, { cwd: checkout, timeoutMs });
@@ -674,7 +679,17 @@ async function bondTheOracle(
           await rm(destination, { recursive: true, force: true });
         }
       },
-      runRepositoryChecks: () => runChecks(checkout, options, timeoutMs),
+      // The suite the mutant is compared against ran before any oracle did, on the base and the
+      // patch alone. An oracle leaves what it wrote in the checkout: a mined task's oracle copies
+      // the pull request's whole test file, held-back cases included, and a suite run over that
+      // file is the held-back half noticing the mutant, not the repository. So the checkout is put
+      // back to the base and the patch, the mutant written again, and only then is the suite run.
+      // A checkout that cannot be put back reports no check, which witnesses nothing.
+      runRepositoryChecks: async () => {
+        if (!(await restorePatch(checkout, options, timeoutMs))) return [];
+        if (written !== null) await writeFile(join(checkout, written.path), written.text);
+        return runChecks(checkout, options, timeoutMs);
+      },
     },
   });
 }
@@ -799,11 +814,10 @@ async function attributeFailures(
   options: IndependentVerificationOptions,
   timeoutMs: number,
 ): Promise<readonly IndependentCheck[]> {
-  const reverted = await options.commands.runVouched(
-    ["git", "-C", ".", "checkout", "--force", "--detach", options.baseCommit],
-    { cwd: checkout, timeoutMs },
-  );
-  if (reverted.exitCode !== 0) {
+  // Cleaned as well as checked out: the base is measured as the base, and not beside whatever an
+  // oracle copied into the checkout. A mined task's pull-request test file fails on the base by
+  // construction, and left in place it read every regression the patch caused as inherited.
+  if (!(await resetToBase(checkout, options, timeoutMs))) {
     return withPatch;
   }
   const atBase = await runChecks(checkout, options, timeoutMs);
