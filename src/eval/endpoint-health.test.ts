@@ -90,6 +90,35 @@ describe("the generation probe", () => {
     expect(seen[0]?.body).toMatchObject({ model, max_tokens: 4 });
   });
 
+  it("asks with thinking off in both spellings the agent's own requests use", async () => {
+    // Measured on Ollama serving gemma4: the template flag alone left thinking on, the four
+    // tokens went to reasoning, and a server that generates read as one that does not.
+    const seen: Record<string, unknown>[] = [];
+    await endpointGenerates(endpoint, model, {
+      fetch: async (_url, init) => {
+        seen.push(JSON.parse(String(init?.body)));
+        return json({ choices: [{ message: { content: "ok" } }] });
+      },
+    });
+    expect(seen[0]).toMatchObject({
+      reasoning_effort: "none",
+      chat_template_kwargs: { enable_thinking: false },
+    });
+  });
+
+  it("reads reasoning with no answer as no usable choice", async () => {
+    const probe = await endpointGenerates(endpoint, model, {
+      fetch: server({
+        models: listing,
+        completions: async () =>
+          json({
+            choices: [{ message: { content: "", reasoning: "The" }, finish_reason: "length" }],
+          }),
+      }),
+    });
+    expect(probe).toMatchObject({ generates: false, failure: "no-usable-choice" });
+  });
+
   it("fails where metadata answers and the completion errors", async () => {
     const probe = await endpointGenerates(endpoint, model, {
       fetch: server({
