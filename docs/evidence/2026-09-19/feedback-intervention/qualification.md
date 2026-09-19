@@ -142,3 +142,25 @@ patch and kept the same findings, and one whose findings grew. Qwen's first pref
 
 `gemma4:31b` was tried and not enrolled; see the panel. No task of the confirmatory cohort was run
 and no held-back verdict of it was looked at while any of this was built.
+
+## Addendum, 2026-09-19: a defect generation 1 exposed
+
+Everything above was written for generation 1 and is left as it was. Item 7 claimed that each
+invocation ran under a home of its own. It did, and its tool processes did not: the agent gives
+every command it runs a home under its own scratch directory, `defaultChildHome()`, and the driver
+gave the agent a private home and the shared scratch directory. So the agent's shell commands ran
+with `HOME` in the shared child home, which holds the visible judge's evidence and the sessions of
+every earlier run, generation 3 of the reach-pressure experiment included.
+
+The session audit caught it on the first cohort unit: an npm debug log path under the shared child
+home in the agent's own tool output. Nothing in that session read a held-back place. The
+generation was stopped during its second unit, and its rows are kept under
+[`generation-1/`](generation-1/results.jsonl).
+
+The fix (`4f6d42b2a`) gives every invocation a scratch directory of its own beside its home, removed
+with it, so the home the agent gives its tools is inside it. A test starts a process the way the
+driver starts the agent and checks that the home it would give its tools is inside that scratch
+directory. On the live preflights that followed, every session's own temporary files sit under its
+private scratch directory, and no session names the shared child home.
+
+Both preflights were run again under generation 2's acquisition identity; the protocol lists them.

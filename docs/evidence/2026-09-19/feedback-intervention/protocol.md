@@ -1,8 +1,10 @@
-# Verification feedback after visible acceptance: protocol, generation 1
+# Verification feedback after visible acceptance: protocol, generation 2
 
-Written and committed before any task of the confirmatory cohort was run under this study. Every
-row the run writes carries the SHA-256 of this file, so an edit after the fact is a different
-protocol and the analysis refuses to mix the two.
+Written and committed before any task of the confirmatory cohort was run under this generation.
+Generation 1 ran one unit before it was stopped on an instrument defect, named under "Changes after
+registration"; its rows are kept apart and are part of no estimate. Every row the run writes
+carries the SHA-256 of this file, so an edit after the fact is a different protocol and the
+analysis refuses to mix the two.
 
 ## Question
 
@@ -20,11 +22,11 @@ The driver reads this block and nothing else from this file.
 ```json
 {
   "schema": "swarm.feedback-study.protocol.v1",
-  "generation": 1,
+  "generation": 2,
   "cohort": "mined-pr-viable-154",
   "manifestDigest": "sha256:5b37f0b14cec6107a1ce095e5bcf2ddc942bbc671170cd62941750536e42867d",
   "identities": {
-    "acquisition": "sha256:c047329b78820b2f14af0e5e020a12600035f27f47eb89ed2445665fd79a06a6",
+    "acquisition": "sha256:973c9a3287624fc63d28b8db01d266f3e86baf6b3446217d8eabd0e951c5e95f",
     "analysis": "sha256:929853deba804df477f95bb653636690bc269be53031ad4222084d015ec4c8cf",
     "renderer": "sha256:1fa31b192e3198fa9c106881854fa884569833b138d9ca289ae4e8aaffde7230"
   },
@@ -347,8 +349,10 @@ less code or more, mentions a score, or encourages deleting a line or editing a 
   `swarm ci`'s own fresh checkout at judging time, and to disk at all only while a judge runs.
 - The code that builds prompts is handed the task id and text and the visible verdict, never the
   held-back cases.
-- Every agent invocation runs under a home of its own, created for it and removed once its
-  session is copied out, so no invocation can read another's prompt or transcript.
+- Every agent invocation runs under a home and a scratch directory of its own, created for it and
+  removed once its session is copied out. The agent gives every command it runs a home inside its
+  scratch directory, so the invocation and its tool processes alike see nothing of another
+  invocation, of the visible judge's evidence, or of earlier runs' sessions.
 - Every session's payloads, tool calls and their outputs alike, are searched for any path under
   the mined checkouts, the study's stores or another invocation's workspace or home, and every
   row carries what was found. A session that could not be read is an unchecked audit.
@@ -475,6 +479,30 @@ the generation stops, its rows are kept unchanged under `generation-N/` as withd
 the defect is written down here under a new heading, and a new generation is registered and run
 from the start.
 
+### Generation 1 stopped: the agent's tools ran in the shared child home
+
+Generation 1 was registered at `21e53c808` (acquisition `sha256:c047329b…`) and ran from
+2026-09-18 23:30 local. Its first unit, the prefix of `JedWatson/classnames#170` under
+`local:mlx-community/glm-4.7-flash-abliterated-8bit`, settled visibly accepted with reach
+findings, and the session audit of its first invocation named a path under the shared child home:
+an npm debug log in the agent's own tool output. That contradicted this protocol's claim that each
+invocation runs isolated. The driver gave each invocation a home of its own and left its scratch
+directory shared; the agent gives every command it runs a home under its scratch directory, so
+every tool process still ran in the shared child home, which holds the visible judge's evidence
+and every earlier run's sessions, generation 3 of the reach-pressure experiment included. No
+held-back verdict existed and the audit shows no read of a held-back place; the defect is that
+the isolation this protocol states was not in force.
+
+The collection was stopped during the first arm of that pair. The three rows it wrote, a launch
+and a prefix of that task and the launch of its `combined` arm, are kept unchanged under
+[`generation-1/`](generation-1/results.jsonl) with the driver's log, and are part of no estimate.
+The fix, which is the whole of the instrument change between the generations: every agent
+invocation gets a scratch directory of its own beside its home, removed with it, so its tools'
+home is inside it (`4f6d42b2a`, with a test that starts a process as the driver starts the
+agent and checks where its tools' home is). Nothing about the cohort, the panel, the treatment,
+the outcomes or the statistics changed. The acquisition identity changed because the fix is in
+digested sources.
+
 ## What was exercised beforehand
 
 Unit tests cover the arms' prompts word for word, the absence of any finding from the prefix and
@@ -492,17 +520,21 @@ archive (byte-identical), and `score` refused once packed.
 | preflight | commit | acquisition | rows | infrastructure failures | invocations | stopped by the agent itself | sessions audited clean |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | scripted stand-in, no model | `d39975674` | | 24 | 0 | 16 | n/a | n/a |
-| `local:mlx-community/glm-4.7-flash-abliterated-8bit` | `4629e62cb` | `sha256:c047329b7882…` | 28 | 0 | 23 | 23 of 23 `completed` | 23 of 23 |
-| `local:malekoo/Qwen3.8-27B-MLX-8bit` | `b0a7f17b1` | `sha256:c047329b7882…` | 22 | 0 | 17 | 17 of 17 `completed` | 17 of 17 |
+| `local:mlx-community/glm-4.7-flash-abliterated-8bit` | `4f6d42b2a` | `sha256:973c9a328762…` | 28 | 0 | 23 | 23 of 23 `completed` | 23 of 23 |
+| `local:malekoo/Qwen3.8-27B-MLX-8bit` | `4f6d42b2a` | `sha256:973c9a328762…` | 22 | 0 | 17 | 17 of 17 `completed` | 17 of 17 |
 
-Both model preflights ran under the acquisition identity this protocol registers. Between them
-they produced reach findings (Qwen on the switch-statement task, GLM on three tasks), a witnessed
-mutation finding (Qwen on the sign task), repairs that changed nothing, repairs that changed the
-patch and kept the same findings, and one whose findings grew. Qwen's first preflight, at
-`23703b189` before the ledger packing and the probe fix, produced the same terminal classes.
+Both model preflights ran under the acquisition identity this protocol registers, after the fix
+generation 1 prompted; no session names the shared child home, and each session's own temporary
+files sit in its private scratch directory. Between them they produced reach findings (Qwen on the
+switch-statement task, GLM on three tasks), a witnessed mutation finding (Qwen on the sign task),
+repairs that changed nothing, repairs that changed the patch and kept the same findings, and one
+whose findings grew. Earlier preflights of both models, under generation 1's acquisition
+(`c047329b…`, at `4629e62cb` and `b0a7f17b1`) and before the ledger packing and the probe fix
+(Qwen at `23703b189`), passed the same way.
 
-`gemma4:31b` was tried and not enrolled; see the panel. No task of the confirmatory cohort was run
-and no held-back verdict of it was looked at while any of this was built.
+`gemma4:31b` was tried and not enrolled; see the panel. Apart from generation 1's one unit, no
+task of the confirmatory cohort has been run under this study, and no held-back verdict of any
+task of it exists.
 
 ## Artifacts
 
@@ -513,11 +545,12 @@ and no held-back verdict of it was looked at while any of this was built.
 | `qualification.md` | the instrument audit that preceded this registration |
 | `environment.json` | the machine and what each endpoint served, at its first unit |
 | `results.jsonl` | launch, prefix and arm rows, append-only, canonical JSON (packed into `ledgers/` once settled) |
+| `generation-1/` | the stopped generation's rows, environment and log, unchanged and part of no estimate |
 | `hidden-scores.jsonl` | one row per model, task and patch (packed with it) |
 | `summary.json`, `classifications.json`, `report.md`, `derivation.json` | derived by `analyze` |
 | `patches/` | every patch any row names, one content-addressed archive |
 
 Workspaces, sessions (every model call and tool call) and the stored patches stay outside the
-repository under `~/.cache/swarm-pr-tasks/feedback-study/g1/`. Each step carries its session
+repository under `~/.cache/swarm-pr-tasks/feedback-study/g2/`. Each step carries its session
 id, the SHA-256 of its ledger and its record count.
 
