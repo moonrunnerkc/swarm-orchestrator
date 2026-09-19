@@ -10,12 +10,7 @@ import {
   trajectorySchema,
 } from "./reach-pressure.ts";
 import { type RepairProgress, type RepairRelation, repairProgress } from "./repair-progress.ts";
-import {
-  type ExactMcNemarResult,
-  type Interval,
-  mcNemarExact,
-  pairedDifferenceInterval,
-} from "./statistics.ts";
+import { type ExactMcNemarResult, type Interval, pairedComparison } from "./statistics.ts";
 
 /**
  * The arithmetic of the reach-pressure experiment, over saved rows and nothing else.
@@ -133,18 +128,20 @@ interface Pair {
 }
 
 function pairedTable(denominator: string, pairs: readonly Pair[]): PairedTableReport {
-  const count = (control: boolean, reach: boolean) =>
-    pairs.filter((one) => one.control === control && one.reach === reach).length;
+  // Control first and reach second, so `onlyFirst` is the harm count and `onlySecond` the help.
+  const compared = pairedComparison(
+    pairs.map((one) => ({ id: one.taskId, first: one.control, second: one.reach })),
+  );
   const cells = {
-    passPass: count(true, true),
-    failPass: count(false, true),
-    passFail: count(true, false),
-    failFail: count(false, false),
+    passPass: compared.cells.bothPass,
+    failPass: compared.cells.onlySecond,
+    passFail: compared.cells.onlyFirst,
+    failFail: compared.cells.bothFail,
   };
   const share = (value: number) => (pairs.length === 0 ? 0 : (100 * value) / pairs.length);
   return {
     denominator,
-    pairs: pairs.length,
+    pairs: compared.pairs,
     cells,
     percentages: {
       passPass: share(cells.passPass),
@@ -152,18 +149,12 @@ function pairedTable(denominator: string, pairs: readonly Pair[]): PairedTableRe
       passFail: share(cells.passFail),
       failFail: share(cells.failFail),
     },
-    help: pairs.filter((one) => !one.control && one.reach).map((one) => one.taskId),
-    harm: pairs.filter((one) => one.control && !one.reach).map((one) => one.taskId),
-    controlPassRate: pairs.length === 0 ? null : (cells.passPass + cells.passFail) / pairs.length,
-    reachPassRate: pairs.length === 0 ? null : (cells.passPass + cells.failPass) / pairs.length,
-    // First is control, so `onlyFirst` is the harm count and `onlySecond` the help count.
-    mcnemar: mcNemarExact({ onlyFirst: cells.passFail, onlySecond: cells.failPass }),
-    difference: pairedDifferenceInterval({
-      bothPass: cells.passPass,
-      onlyFirst: cells.passFail,
-      onlySecond: cells.failPass,
-      bothFail: cells.failFail,
-    }),
+    help: compared.onlySecondIds,
+    harm: compared.onlyFirstIds,
+    controlPassRate: compared.firstPassRate,
+    reachPassRate: compared.secondPassRate,
+    mcnemar: compared.mcnemar,
+    difference: compared.difference,
   };
 }
 

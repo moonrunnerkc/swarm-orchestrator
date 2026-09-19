@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { bootstrapInterval, intentionToTreat, mcNemar, wilsonInterval } from "./statistics.ts";
+import {
+  bootstrapInterval,
+  clusteredDifferenceInterval,
+  holmAdjusted,
+  intentionToTreat,
+  mcNemar,
+  mcNemarExact,
+  pairedComparison,
+  pairedDifferenceInterval,
+  wilsonInterval,
+} from "./statistics.ts";
 
 /**
  * The arithmetic an evaluation is read through. Written here rather than in a notebook because
@@ -218,5 +228,90 @@ describe("the difference between two pass rates on the same tasks", () => {
     expect(extreme.point).toBe(-1);
     expect(extreme.lower).toBeGreaterThanOrEqual(-1);
     expect(extreme.upper).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("one paired comparison, counted in one place", () => {
+  it("counts the four cells and names the discordant pairs", () => {
+    const compared = pairedComparison([
+      { id: "a", first: true, second: true },
+      { id: "b", first: false, second: true },
+      { id: "c", first: false, second: true },
+      { id: "d", first: true, second: false },
+      { id: "e", first: false, second: false },
+    ]);
+    expect(compared.cells).toEqual({ bothPass: 1, onlyFirst: 1, onlySecond: 2, bothFail: 1 });
+    expect(compared.onlyFirstIds).toEqual(["d"]);
+    expect(compared.onlySecondIds).toEqual(["b", "c"]);
+    expect(compared.firstPassRate).toBeCloseTo(0.4, 12);
+    expect(compared.secondPassRate).toBeCloseTo(0.6, 12);
+    expect(compared.mcnemar).toEqual(mcNemarExact({ onlyFirst: 1, onlySecond: 2 }));
+    expect(compared.difference).toEqual(
+      pairedDifferenceInterval({ bothPass: 1, onlyFirst: 1, onlySecond: 2, bothFail: 1 }),
+    );
+  });
+
+  it("reads no pairs as no rate, not as a zero rate", () => {
+    const compared = pairedComparison([]);
+    expect(compared.firstPassRate).toBeNull();
+    expect(compared.mcnemar.pValue).toBe(1);
+  });
+});
+
+describe("Holm's adjustment of a family of tests", () => {
+  it("reproduces the step-down worked by hand, in the order given", () => {
+    const adjusted = holmAdjusted([0.01, 0.04, 0.03, 0.005]);
+    expect(adjusted.map((value) => Number(value.toFixed(10)))).toEqual([0.03, 0.06, 0.06, 0.02]);
+  });
+
+  it("never passes 1 and never lowers a p-value", () => {
+    const raw = [0.5, 0.9, 1, 0.2];
+    const adjusted = holmAdjusted(raw);
+    adjusted.forEach((value, at) => {
+      expect(value).toBeLessThanOrEqual(1);
+      expect(value).toBeGreaterThanOrEqual(raw[at] ?? 0);
+    });
+  });
+
+  it("refuses something that is not a p-value", () => {
+    expect(() => holmAdjusted([0.2, 1.5])).toThrow(/lies in \[0, 1\]/);
+  });
+});
+
+describe("a pooled difference over several models on the same tasks", () => {
+  const tasks = ["t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10"];
+  const outcome = (at: number) => ({ first: at % 3 === 0, second: at % 2 === 0 });
+
+  it("is the mean paired difference, and the same interval every time for one seed", () => {
+    const rows = tasks.map((cluster, at) => ({ cluster, ...outcome(at) }));
+    const once = clusteredDifferenceInterval(rows, { resamples: 2000, seed: 7 });
+    expect(clusteredDifferenceInterval(rows, { resamples: 2000, seed: 7 })).toEqual(once);
+    const mean =
+      rows.reduce((total, row) => total + Number(row.second) - Number(row.first), 0) / rows.length;
+    expect(once.point).toBeCloseTo(mean, 12);
+    expect(once.lower).toBeLessThanOrEqual(once.point);
+    expect(once.upper).toBeGreaterThanOrEqual(once.point);
+    expect(once).toMatchObject({ rows: 10, clusters: 10 });
+  });
+
+  it("does not narrow because two models agreed on every task", () => {
+    const single = tasks.map((cluster, at) => ({ cluster, ...outcome(at) }));
+    const twice = tasks.flatMap((cluster, at) => [
+      { cluster, ...outcome(at) },
+      { cluster, ...outcome(at) },
+    ]);
+    const one = clusteredDifferenceInterval(single, { resamples: 2000, seed: 11 });
+    const two = clusteredDifferenceInterval(twice, { resamples: 2000, seed: 11 });
+    expect([two.lower, two.point, two.upper]).toEqual([one.lower, one.point, one.upper]);
+    expect(two).toMatchObject({ rows: 20, clusters: 10 });
+  });
+
+  it("says nothing from no rows", () => {
+    expect(clusteredDifferenceInterval([], { resamples: 100, seed: 1 })).toMatchObject({
+      point: 0,
+      lower: -1,
+      upper: 1,
+      clusters: 0,
+    });
   });
 });
