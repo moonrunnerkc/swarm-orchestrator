@@ -252,6 +252,31 @@ describe("what each arm is told", () => {
     expect(mutation).not.toMatch(/score|kill|should (write|return|use)/i);
   });
 
+  it("names a deleted statement as deleted, not as a change into nothing", () => {
+    const deleted = reviewFeedback({
+      policy: "feedback-study-v1",
+      arm: "mutation",
+      observation: atFork,
+      signals: {
+        measured: true,
+        reach: [],
+        mutation: [
+          {
+            path: "lib/store.js",
+            line: 4,
+            operator: "delete-statement",
+            before: "  cache.clear();",
+            after: "",
+            witness: "repository-suite",
+          },
+        ],
+      },
+    });
+    expect(deleted).toContain(
+      "  lib/store.js line 4 (delete-statement): `cache.clear();` was deleted",
+    );
+  });
+
   it("gives combined both, each under its own heading", () => {
     const combined = feedbackFor("combined");
     const text = feedbackStudyPolicies["feedback-study-v1"];

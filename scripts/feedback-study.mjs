@@ -15,6 +15,7 @@
  *   node scripts/feedback-study.mjs run --model <id>        # one model's units; resumable
  *   node scripts/feedback-study.mjs score                   # held-back scores; resumable
  *   node scripts/feedback-study.mjs analyze [--out <dir>]   # summary, classifications, report
+ *   node scripts/feedback-study.mjs pack-ledgers            # once settled: the ledgers, losslessly
  *
  * `--synthetic --evidence <dir>` runs the same phases over the synthetic cohort, which is how the
  * plumbing is exercised without looking at an outcome of the cohort the estimate is made over.
@@ -36,8 +37,9 @@ import {
   writeFileSync,
 } from "node:fs";
 import { arch, cpus, homedir, platform, release, tmpdir, totalmem } from "node:os";
-import { dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { brotliCompressSync, constants as zlibConstants } from "node:zlib";
+import { unpackArchive } from "./local-campaign/archive.mjs";
 
 const repositoryRoot = resolve(new URL("..", import.meta.url).pathname);
 const argv = process.argv.slice(3);
@@ -148,12 +150,57 @@ const paths = {
   patches: join(evidenceRoot, "patches"),
 };
 
+/**
+ * The two ledgers are appended to as plain JSONL while the study runs. Once it has settled they
+ * may be packed into one lossless archive in the format `scripts/local-campaign/archive.mjs`
+ * unpacks, because together they are larger than the room the tree keeps for evidence. Packing
+ * closes collection: `run` and `score` refuse, and `analyze` reads the same bytes back.
+ */
+const ledgerDirectory = join(evidenceRoot, "ledgers");
+let packedLedgers = null;
+
+async function loadPackedLedgers() {
+  if (!existsSync(join(ledgerDirectory, "archive-manifest.json"))) return null;
+  const unpacked = await unpackArchive(ledgerDirectory);
+  try {
+    return Object.fromEntries(
+      ["results.jsonl", "hidden-scores.jsonl"].map((name) => {
+        const path = join(unpacked.directory, name);
+        return [name, existsSync(path) ? readFileSync(path, "utf8") : null];
+      }),
+    );
+  } finally {
+    await unpacked.dispose();
+  }
+}
+
+function ledgerText(path) {
+  const packed = packedLedgers?.[basename(path)] ?? null;
+  if (existsSync(path)) {
+    if (packed !== null)
+      throw new Error(
+        `${path} exists beside its packed copy, so which one is the ledger is unclear`,
+      );
+    return readFileSync(path, "utf8");
+  }
+  return packed;
+}
+
 function readJsonLines(path) {
-  if (!existsSync(path)) return [];
-  return readFileSync(path, "utf8")
+  const text = ledgerText(path);
+  if (text === null) return [];
+  return text
     .split("\n")
     .filter((line) => line.trim().length > 0)
     .map((line) => JSON.parse(line));
+}
+
+function requireOpenCollection() {
+  if (packedLedgers !== null) {
+    throw new Error(
+      "the ledgers are packed, which closes collection: nothing more is run or scored under this generation",
+    );
+  }
 }
 
 /** The frozen parameters: the first JSON block of the protocol document, and nothing else. */
@@ -876,6 +923,7 @@ function parsedRows(lib) {
 }
 
 async function run() {
+  requireOpenCollection();
   await underTheLock(async (lib) => {
     const { identity, manifest, parameters, panel, policy } = studyIdentity(lib, {
       bindToCommit: !synthetic,
@@ -1069,6 +1117,7 @@ async function run() {
 // score
 
 async function score() {
+  requireOpenCollection();
   await underTheLock(async (lib) => {
     const { identity, manifest, parameters, panel } = studyIdentity(lib, {
       bindToCommit: !synthetic,
@@ -1184,6 +1233,12 @@ function packPatches(lib, rows, workingRoot) {
       throw new Error(`patch ${digest} does not digest to its name`);
     files[`${digest.slice(7)}.patch`] = text;
   }
+  writeArchive(lib, paths.patches, files);
+  return Object.keys(files).length;
+}
+
+/** One file map, compressed, beside the manifest the unpacker checks it against. */
+function writeArchive(lib, directory, files) {
   const expanded = Buffer.from(JSON.stringify(files), "utf8");
   const compressed = brotliCompressSync(expanded, {
     params: {
@@ -1191,13 +1246,69 @@ function packPatches(lib, rows, workingRoot) {
       [zlibConstants.BROTLI_PARAM_SIZE_HINT]: expanded.length,
     },
   });
-  mkdirSync(paths.patches, { recursive: true });
-  writeFileSync(join(paths.patches, "archive.json.br"), compressed);
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(join(directory, "archive.json.br"), compressed);
   writeFileSync(
-    join(paths.patches, "archive-manifest.json"),
-    `${JSON.stringify({ version: 1, format: "utf8-file-map-brotli", digest: lib.digestOfBytes(compressed), bytes: compressed.length, expandedBytes: expanded.length, files: Object.keys(files).length }, null, 2)}\n`,
+    join(directory, "archive-manifest.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        format: "utf8-file-map-brotli",
+        digest: lib.digestOfBytes(compressed),
+        bytes: compressed.length,
+        expandedBytes: expanded.length,
+        files: Object.keys(files).length,
+      },
+      null,
+      2,
+    )}\n`,
   );
-  return Object.keys(files).length;
+}
+
+/**
+ * Packs the two ledgers once the study has settled and its analysis is published. The raw files
+ * are removed only after the archive has been unpacked again and every byte compared, and the
+ * inventory keeps each ledger's own digest, which is the digest the derivation already cites.
+ */
+async function packLedgers() {
+  requireFreshDist();
+  const lib = await modules();
+  requireOpenCollection();
+  const files = {};
+  for (const path of [paths.results, paths.hiddenScores]) {
+    if (existsSync(path)) files[basename(path)] = readFileSync(path, "utf8");
+  }
+  if (files["results.jsonl"] === undefined) throw new Error("there is no results ledger to pack");
+  writeArchive(lib, ledgerDirectory, files);
+  writeFileSync(
+    join(ledgerDirectory, "inventory.json"),
+    `${JSON.stringify(
+      Object.fromEntries(
+        Object.entries(files).map(([name, text]) => [
+          name,
+          { bytes: Buffer.byteLength(text, "utf8"), digest: lib.digestOfBytes(text) },
+        ]),
+      ),
+      null,
+      2,
+    )}\n`,
+  );
+  const unpacked = await unpackArchive(ledgerDirectory);
+  try {
+    for (const [name, text] of Object.entries(files)) {
+      if (readFileSync(join(unpacked.directory, name), "utf8") !== text) {
+        throw new Error(
+          `${name} does not unpack to the bytes that were packed; nothing was removed`,
+        );
+      }
+    }
+  } finally {
+    await unpacked.dispose();
+  }
+  for (const name of Object.keys(files)) rmSync(join(evidenceRoot, name));
+  console.log(
+    `packed ${Object.keys(files).join(" and ")} into ${relative(repositoryRoot, ledgerDirectory)}`,
+  );
 }
 
 async function analyze() {
@@ -1260,10 +1371,11 @@ async function analyze() {
       uncommittedSourceEdits: sourceIdentity().includes("uncommitted"),
     },
     observations: {
-      results: lib.digestOfBytes(readFileSync(paths.results, "utf8")),
-      hiddenScores: existsSync(paths.hiddenScores)
-        ? lib.digestOfBytes(readFileSync(paths.hiddenScores, "utf8"))
-        : null,
+      results: lib.digestOfBytes(ledgerText(paths.results) ?? ""),
+      hiddenScores:
+        ledgerText(paths.hiddenScores) === null
+          ? null
+          : lib.digestOfBytes(ledgerText(paths.hiddenScores)),
     },
     summaryDigest: lib.digestOfBytes(summaryText),
     classificationsDigest: lib.digestOfBytes(classificationsText),
@@ -1312,14 +1424,16 @@ async function analyze() {
 }
 
 async function main() {
+  packedLedgers = await loadPackedLedgers();
   if (command === "build") return underTheLock(async () => console.log("dist built"));
   if (command === "freeze") return freeze();
   if (command === "identities") return identities();
   if (command === "run") return run();
   if (command === "score") return score();
   if (command === "analyze") return analyze();
+  if (command === "pack-ledgers") return packLedgers();
   throw new Error(
-    "usage: feedback-study.mjs build | freeze | identities | run --model <id> | score | analyze [--out <dir>] [--synthetic]",
+    "usage: feedback-study.mjs build | freeze | identities | run --model <id> | score | analyze [--out <dir>] | pack-ledgers [--synthetic]",
   );
 }
 
