@@ -48,6 +48,25 @@ describe("where an invocation's session says it went", () => {
     expect(audit([`{"path":"${workspace}-other/x"}`])).toEqual([`${workspace}-other/x`]);
   });
 
+  it("reads its own workspace as its own however a tool output ends the path", () => {
+    // Measured on the feedback study's generation 2: a colourised test runner ended the agent's
+    // own workspace path with an escape, and the audit read `…/prefix\u001b[39m` as elsewhere.
+    const payloads = [
+      { output: `\u001b[2m${workspace}\u001b[39m` },
+      { output: `wrote ${workspace}.` },
+      { output: `${workspace}/lib/x.js:12:3 error` },
+      { output: `cwd ${workspace}\nnext line` },
+    ].map((payload) => JSON.stringify(payload));
+    expect(audit(payloads)).toEqual([]);
+  });
+
+  it("still names a foreign path a colourised output prints, without the escape", () => {
+    const sibling = `${cache}/feedback-study/g1/runs/local__qwen/a__b-7-p1/neutral-a1`;
+    expect(audit([JSON.stringify({ output: `\u001b[36m${sibling}\u001b[39m` })])).toEqual([
+      sibling,
+    ]);
+  });
+
   it("reads the run id the CLI printed last", () => {
     expect(runIdOf('noise\n{"runId":"20260918T010203-abc123","ok":true}\n')).toBe(
       "20260918T010203-abc123",
