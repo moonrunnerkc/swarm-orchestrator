@@ -272,3 +272,137 @@ export function pairedDifferenceInterval(
     method: "newcombe-paired-score-95",
   };
 }
+
+export interface PairedOutcome {
+  /** What the pair is, for listing the discordant ones by name. */
+  readonly id: string;
+  readonly first: boolean;
+  readonly second: boolean;
+}
+
+export interface PairedComparison {
+  readonly pairs: number;
+  readonly cells: PairedTable;
+  /** The pairs where only the first passed, and where only the second did, by name. */
+  readonly onlyFirstIds: readonly string[];
+  readonly onlySecondIds: readonly string[];
+  readonly firstPassRate: number | null;
+  readonly secondPassRate: number | null;
+  readonly mcnemar: ExactMcNemarResult;
+  /** Second minus first. */
+  readonly difference: ReturnType<typeof pairedDifferenceInterval>;
+}
+
+/**
+ * One paired comparison, whole: the table, the exact test and the interval, from the pairs and
+ * nothing else. The one place a paired table is counted, so two experiments reading pass and fail
+ * off the same tasks cannot count a cell two ways.
+ */
+export function pairedComparison(pairs: readonly PairedOutcome[]): PairedComparison {
+  const cells: PairedTable = {
+    bothPass: pairs.filter((one) => one.first && one.second).length,
+    onlyFirst: pairs.filter((one) => one.first && !one.second).length,
+    onlySecond: pairs.filter((one) => !one.first && one.second).length,
+    bothFail: pairs.filter((one) => !one.first && !one.second).length,
+  };
+  return {
+    pairs: pairs.length,
+    cells,
+    onlyFirstIds: pairs.filter((one) => one.first && !one.second).map((one) => one.id),
+    onlySecondIds: pairs.filter((one) => !one.first && one.second).map((one) => one.id),
+    firstPassRate: pairs.length === 0 ? null : (cells.bothPass + cells.onlyFirst) / pairs.length,
+    secondPassRate: pairs.length === 0 ? null : (cells.bothPass + cells.onlySecond) / pairs.length,
+    mcnemar: mcNemarExact({ onlyFirst: cells.onlyFirst, onlySecond: cells.onlySecond }),
+    difference: pairedDifferenceInterval(cells),
+  };
+}
+
+/**
+ * Holm's step-down adjustment of a family of p-values, returned in the order given.
+ *
+ * A study that tests several treatments against one control, under several models, makes several
+ * claims at once, and one of six tests at 5% comes out below it by chance about a quarter of the
+ * time. Holm keeps the chance of any false claim in the family at 5% without assuming the tests
+ * are independent, which the arms of one pair are not.
+ */
+export function holmAdjusted(pValues: readonly number[]): number[] {
+  for (const value of pValues) {
+    if (!(value >= 0 && value <= 1))
+      throw new Error(`a p-value lies in [0, 1], and ${value} does not`);
+  }
+  const order = pValues
+    .map((value, at) => ({ value, at }))
+    .sort((one, other) => one.value - other.value || one.at - other.at);
+  const adjusted = new Array<number>(pValues.length).fill(1);
+  let running = 0;
+  order.forEach((entry, rank) => {
+    running = Math.max(running, Math.min(1, (pValues.length - rank) * entry.value));
+    adjusted[entry.at] = running;
+  });
+  return adjusted;
+}
+
+export interface ClusteredRow {
+  /** The unit rows are resampled by: a task, whose rows under several models are not independent. */
+  readonly cluster: string;
+  readonly first: boolean;
+  readonly second: boolean;
+}
+
+/**
+ * A pooled paired difference, second minus first, with a percentile interval from resampling
+ * whole clusters.
+ *
+ * Two models on one task are two rows about one task, and treating them as independent draws
+ * narrows the interval by the correlation it ignores. So each resample draws tasks with
+ * replacement and keeps every row of a drawn task together. Seeded, with the generator
+ * `bootstrapInterval` uses, so the interval is re-derivable from the rows.
+ */
+export function clusteredDifferenceInterval(
+  rows: readonly ClusteredRow[],
+  options: { readonly resamples: number; readonly seed: number },
+): Interval & {
+  readonly rows: number;
+  readonly clusters: number;
+  readonly method: "task-clustered-bootstrap-percentile-95";
+} {
+  const byCluster = new Map<string, number[]>();
+  for (const row of rows) {
+    byCluster.set(row.cluster, [
+      ...(byCluster.get(row.cluster) ?? []),
+      Number(row.second) - Number(row.first),
+    ]);
+  }
+  const clusters = [...byCluster.keys()].sort();
+  const method = "task-clustered-bootstrap-percentile-95" as const;
+  if (clusters.length === 0) {
+    return { point: 0, lower: -1, upper: 1, rows: 0, clusters: 0, method };
+  }
+  const meanOf = (differences: readonly number[]) =>
+    differences.reduce((total, value) => total + value, 0) / differences.length;
+  let state = options.seed >>> 0 || 1;
+  const next = () => {
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    return (state >>> 0) / 0x1_0000_0000;
+  };
+  const estimates: number[] = [];
+  for (let resample = 0; resample < options.resamples; resample += 1) {
+    const drawn: number[] = [];
+    for (let index = 0; index < clusters.length; index += 1) {
+      const cluster = clusters[Math.floor(next() * clusters.length)] ?? "";
+      drawn.push(...(byCluster.get(cluster) ?? []));
+    }
+    estimates.push(meanOf(drawn));
+  }
+  estimates.sort((left, right) => left - right);
+  return {
+    point: meanOf([...byCluster.values()].flat()),
+    lower: estimates[Math.floor(0.025 * estimates.length)] ?? -1,
+    upper: estimates[Math.min(estimates.length - 1, Math.floor(0.975 * estimates.length))] ?? 1,
+    rows: rows.length,
+    clusters: clusters.length,
+    method,
+  };
+}
