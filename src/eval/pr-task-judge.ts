@@ -104,6 +104,7 @@ export interface HalfVerdict {
     readonly path: string;
     readonly lines: readonly number[];
   }[];
+  readonly setAsideByReach?: readonly { readonly path: string; readonly reason: string }[];
   readonly oracleBond?: "held" | "vacuous" | "unshown" | "not-bonded";
   readonly bondedMutants?: readonly { readonly id: string; readonly verdict: string }[];
   readonly applied?: boolean;
@@ -281,66 +282,6 @@ export function whyNothingWasJudged(verdict: HalfVerdict): string | null {
   return verdict.advice
     ? `nothing judged: ${verdict.advice}`
     : "nothing judged, and no reason given";
-}
-
-/**
- * Whether the model endpoint answers a trivial request, asked of the endpoint a pass was told to
- * use rather than of the model's own reachability in general.
- */
-export async function endpointAnswers(
-  endpoint: string,
-): Promise<{ readonly answered: boolean; readonly detail: string }> {
-  try {
-    const asked = await fetch(`${endpoint.replace(/\/+$/, "")}/models`, {
-      signal: AbortSignal.timeout(15_000),
-    });
-    return asked.ok
-      ? { answered: true, detail: "" }
-      : { answered: false, detail: `HTTP ${asked.status} from ${endpoint}` };
-  } catch (cause) {
-    return {
-      answered: false,
-      detail: `${cause instanceof Error ? cause.message : String(cause)} (${endpoint})`,
-    };
-  }
-}
-
-/**
- * Whether the endpoint still generates, asked with the smallest completion it can be asked for.
- *
- * `endpointAnswers` is not enough. An MLX server that has wedged keeps answering `/models` while
- * every completion hangs until the caller's deadline, and seven mined tasks in a row were recorded
- * as the model writing nothing before anyone looked. A probe that does not generate does not
- * measure the thing the agent needs.
- */
-export async function endpointGenerates(
-  endpoint: string,
-  model: string,
-  timeoutMs = 120_000,
-): Promise<{ readonly answered: boolean; readonly detail: string }> {
-  try {
-    const asked = await fetch(`${endpoint.replace(/\/+$/, "")}/chat/completions`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        model,
-        messages: [{ role: "user", content: "Say ok." }],
-        max_tokens: 4,
-        chat_template_kwargs: { enable_thinking: false },
-      }),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (!asked.ok) return { answered: false, detail: `HTTP ${asked.status} from ${endpoint}` };
-    const body = (await asked.json()) as { choices?: { message?: { content?: unknown } }[] };
-    return Array.isArray(body.choices) && body.choices.length > 0
-      ? { answered: true, detail: "" }
-      : { answered: false, detail: `a completion from ${endpoint} carried no choices` };
-  } catch (cause) {
-    return {
-      answered: false,
-      detail: `no completion within ${timeoutMs} ms: ${cause instanceof Error ? cause.message : String(cause)} (${endpoint})`,
-    };
-  }
 }
 
 /** Where a task's files live under a working root, named the one way every pass names them. */
