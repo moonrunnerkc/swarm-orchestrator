@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { digestOfBytes } from "../evidence/canonical-json.ts";
+import type { GenerationProbe } from "./endpoint-health.ts";
+import { knownTotal } from "./known-total.ts";
 import { patchMetrics } from "./patch-metrics.ts";
 import type { HalfVerdict } from "./pr-task-judge.ts";
-import { emptyPatchDigest, runTrajectory, type Trajectory } from "./reach-pressure.ts";
+import {
+  type AgentInvocation,
+  emptyPatchDigest,
+  runTrajectory,
+  type Trajectory,
+} from "./reach-pressure.ts";
 import {
   type ExperimentIdentity,
   type HiddenScore,
@@ -17,6 +24,13 @@ import {
   summarize,
 } from "./reach-pressure-analysis.ts";
 import { renderReport } from "./reach-pressure-report.ts";
+
+const generating: GenerationProbe = { generates: true, failure: null, detail: "" };
+const refused: GenerationProbe = {
+  generates: false,
+  failure: "unreachable",
+  detail: "connection refused",
+};
 
 const digest = digestOfBytes;
 const identity: ExperimentIdentity = {
@@ -109,7 +123,7 @@ async function trajectoryOf(
         return { digest: digest(patch), metrics: patchMetrics(patch) };
       },
       judgeVisible: async () => script[at]?.verdict ?? rejected,
-      endpointAnswers: async () => ({ answered: alive, detail: alive ? "" : "connection refused" }),
+      endpointGenerates: async () => (alive ? generating : refused),
       now: () => 0,
     },
   });
@@ -247,7 +261,8 @@ describe("the whole cohort, every task accounted for", () => {
     expect(summary.primary.pairs).toBe(0);
     expect(summary.excluded[0]).toEqual({
       taskId: "lib/a#1",
-      reason: "infrastructure-failure: the model endpoint stopped answering: connection refused",
+      reason:
+        "infrastructure-failure: the model endpoint stopped generating (unreachable): connection refused",
     });
   });
 
@@ -405,5 +420,147 @@ describe("the page is a function of the summary", () => {
     );
     expect(page).not.toContain(String.fromCodePoint(0x2014));
     expect(renderReport(input)).toBe(page);
+  });
+});
+
+describe("totals over usage that was only partly reported", () => {
+  it("is a number only where every part is known", () => {
+    expect(knownTotal([3, 4])).toEqual({ total: 7, knownSubtotal: 7, unknownParts: 0 });
+    expect(knownTotal([])).toEqual({ total: 0, knownSubtotal: 0, unknownParts: 0 });
+  });
+
+  it("never adds an unknown in as zero, and keeps the known part under its own name", () => {
+    expect(knownTotal([3, null, 4, undefined])).toEqual({
+      total: null,
+      knownSubtotal: 7,
+      unknownParts: 2,
+    });
+  });
+
+  it("reads a real zero as known", () => {
+    expect(knownTotal([0, 0])).toEqual({ total: 0, knownSubtotal: 0, unknownParts: 0 });
+  });
+
+  /** One task whose two invocations carry the usage given, the second a reach repair. */
+  async function summaryWith(usages: readonly AgentInvocation["usage"][]) {
+    let at = -1;
+    const script = [
+      { patch: wide, verdict: unreached },
+      { patch: narrow, verdict: accepted },
+    ];
+    const trajectory = await runTrajectory({
+      task: { id: "any", taskText: "do the thing" },
+      limits: { prefixInvocations: 2, reachRepairInvocations: 2 },
+      effects: {
+        invokeAgent: async () => {
+          at += 1;
+          return {
+            exitCode: 0,
+            wallMs: 60_000,
+            timedOut: false,
+            runId: null,
+            ledgerDigest: null,
+            ledgerRecords: null,
+            usage: usages[at] ?? reported(1),
+          };
+        },
+        snapshot: async () => {
+          const patch = script[at]?.patch ?? "";
+          return { digest: digest(patch), metrics: patchMetrics(patch) };
+        },
+        judgeVisible: async () => script[at]?.verdict ?? rejected,
+        endpointGenerates: async () => generating,
+        now: () => 0,
+      },
+    });
+    const one = manifestSchema.parse({ ...manifest, tasks: manifest.tasks.slice(0, 1) });
+    return summarize({
+      manifest: one,
+      identity,
+      results: [row("lib/a#1", trajectory)],
+      hiddenScores: [score("lib/a#1", wide, "pass"), score("lib/a#1", narrow, "pass")],
+    });
+  }
+  const reported = (calls: number): AgentInvocation["usage"] => ({
+    modelCalls: calls,
+    failedCalls: 0,
+    inputTokens: calls * 100,
+    outputTokens: calls * 10,
+    status: "reported",
+  });
+  // What the driver writes where a session could not be read at all.
+  const unreadable: AgentInvocation["usage"] = {
+    modelCalls: null,
+    failedCalls: null,
+    inputTokens: null,
+    outputTokens: null,
+    status: "unknown",
+  };
+
+  it("says accounting is complete where every invocation reported", async () => {
+    const summary = await summaryWith([reported(4), reported(2)]);
+    expect(summary.accounting.usage).toMatchObject({
+      modelCalls: 6,
+      inputTokens: 600,
+      outputTokens: 60,
+      accounting: { complete: true, invocationsWithUnknownTokens: 0 },
+    });
+  });
+
+  it("gives no model-call total where one session could not be read, where it used to give 4", async () => {
+    const summary = await summaryWith([reported(4), unreadable]);
+    expect(summary.accounting.usage).toMatchObject({
+      modelCalls: null,
+      inputTokens: null,
+      outputTokens: null,
+      accounting: {
+        complete: false,
+        invocationsWithUnknownModelCalls: 1,
+        invocationsWithUnknownTokens: 1,
+        knownSubtotals: { modelCalls: 4, inputTokens: 400, outputTokens: 40 },
+      },
+    });
+    const overhead = summary.secondary.overhead as {
+      prefix: Record<string, unknown>;
+      reachRepair: Record<string, unknown>;
+    };
+    // The phase that was fully reported keeps its totals; the other has none.
+    expect(overhead.prefix).toMatchObject({ modelCalls: 4, inputTokens: 400 });
+    expect(overhead.reachRepair).toMatchObject({ modelCalls: null, inputTokens: null });
+    // Wall time is the driver's own clock and stays known.
+    expect(overhead.reachRepair.agentWallMs).toBe(60_000);
+  });
+
+  it("keeps a known call count beside unknown tokens, as generation 3's aborted calls have it", async () => {
+    const summary = await summaryWith([
+      reported(4),
+      { ...reported(35), failedCalls: 1, inputTokens: null, outputTokens: null, status: "unknown" },
+    ]);
+    expect(summary.accounting.usage).toMatchObject({
+      modelCalls: 39,
+      inputTokens: null,
+      accounting: { complete: false, invocationsWithUnknownModelCalls: 0 },
+    });
+  });
+
+  it("prints unknown, and that accounting is incomplete, never the partial sum as a total", async () => {
+    const summary = await summaryWith([reported(4), unreadable]);
+    const page = renderReport({
+      summary,
+      parameters: {},
+      environment: null,
+      pairNotes: {},
+      postscript: null,
+      digests: {
+        driverAtAnalysis: identity.driverDigest,
+        results: digest("results"),
+        hiddenScores: null,
+        summary: digest("summary"),
+      },
+    });
+    expect(page).toContain("unknown model call(s)");
+    expect(page).toContain("Usage accounting is incomplete");
+    expect(page).toContain("1 of 2 invocation(s) did not report tokens");
+    expect(page).not.toMatch(/\b4 model call\(s\), unknown input/);
   });
 });

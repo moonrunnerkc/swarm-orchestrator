@@ -1,8 +1,15 @@
 import { z } from "zod";
 import { digestOfBytes, digestOfJson, digestPattern } from "../evidence/canonical-json.ts";
 import { type RefusalReason, reasonsToRefuse } from "../gates/certification.ts";
+import { attributeInvocation, type GenerationProbe } from "./endpoint-health.ts";
 import type { PatchMetrics } from "./patch-metrics.ts";
 import { type HalfVerdict, whyNothingWasJudged } from "./pr-task-judge.ts";
+import {
+  type Finding,
+  patchFileSchema,
+  repairProgress,
+  repairProgressSchema,
+} from "./repair-progress.ts";
 
 /**
  * Whether making an agent satisfy changed-line reach before it may stop changes what a held-back
@@ -19,27 +26,69 @@ import { type HalfVerdict, whyNothingWasJudged } from "./pr-task-judge.ts";
  * certification is untouched: this reads `reasonsToRefuse` and keeps a named subset per
  * condition, so the one definition of each refusal stays where it was.
  */
-export const experimentPolicy = {
-  id: "reach-pressure-v1",
-  enforced: {
-    control: ["regression-not-pass", "task-not-accepted"],
-    reach: ["regression-not-pass", "task-not-accepted", "oracle-did-not-reach-the-change"],
-  },
-} as const satisfies {
-  readonly id: string;
-  readonly enforced: Readonly<Record<string, readonly RefusalReason[]>>;
-};
+const enforcedByCondition = {
+  control: ["regression-not-pass", "task-not-accepted"],
+  reach: ["regression-not-pass", "task-not-accepted", "oracle-did-not-reach-the-change"],
+} as const satisfies Readonly<Record<string, readonly RefusalReason[]>>;
 
-export type ExperimentArm = keyof typeof experimentPolicy.enforced;
+/**
+ * Every treatment this harness has ever applied, each under the identity its rows carry.
+ *
+ * A protocol names one and freezes its digest. The feedback wording is part of the treatment, so
+ * a change to it is a new entry and never an edit: `reach-pressure-v1` is what generation 3 was
+ * told, word for word, and stays here so its rows keep describing something that exists.
+ */
+export const experimentPolicies = {
+  "reach-pressure-v1": { id: "reach-pressure-v1", enforced: enforcedByCondition },
+  "reach-pressure-v2": {
+    id: "reach-pressure-v2",
+    enforced: enforcedByCondition,
+    reachFeedback: "reach-feedback-v2",
+  },
+} as const;
+export type ExperimentPolicyId = keyof typeof experimentPolicies;
+
+export const experimentPolicy = experimentPolicies["reach-pressure-v1"];
+
+export type ExperimentArm = keyof typeof enforcedByCondition;
 
 export const experimentPolicyDigest: string = digestOfJson(experimentPolicy);
+
+export class UnknownExperimentPolicy extends Error {
+  constructor(id: string) {
+    super(
+      `no experiment policy is named ${id}; this harness knows ${Object.keys(experimentPolicies).join(", ")}`,
+    );
+    this.name = "UnknownExperimentPolicy";
+  }
+}
+
+/** The policy a protocol names. One that names none is generation 3's, which predates the field. */
+export function experimentPolicyNamed(id: string | undefined): {
+  readonly id: ExperimentPolicyId;
+  readonly digest: string;
+} {
+  const named = id ?? "reach-pressure-v1";
+  if (!Object.hasOwn(experimentPolicies, named)) throw new UnknownExperimentPolicy(named);
+  const policyId = named as ExperimentPolicyId;
+  return { id: policyId, digest: digestOfJson(experimentPolicies[policyId]) };
+}
+
+/** The verdict fields a stop decision reads, as a live verdict and a recorded one both carry them. */
+export interface RefusalFields {
+  readonly regression: HalfVerdict["regression"];
+  readonly task: HalfVerdict["task"];
+  readonly oracleReach?: HalfVerdict["oracleReach"] | undefined;
+  readonly oracleBond?: HalfVerdict["oracleBond"] | undefined;
+  readonly unreachedByOracle?: HalfVerdict["unreachedByOracle"] | undefined;
+}
 
 /** The refusals one condition enforces, out of everything the verdict's record holds. */
 export function enforcedRefusals(
   arm: ExperimentArm,
-  verdict: HalfVerdict,
+  verdict: RefusalFields,
 ): readonly RefusalReason[] {
-  const enforced: readonly RefusalReason[] = experimentPolicy.enforced[arm];
+  const enforced: readonly RefusalReason[] = enforcedByCondition[arm];
   return reasonsToRefuse({
     regression: verdict.regression,
     task: verdict.task,
@@ -63,11 +112,24 @@ export function mayStop(arm: ExperimentArm, observation: VisibleObservation): bo
  * Both oracle halves are one file under different title filters, and a runner's own output can
  * name the cases it skipped, which are the held-back ones. So nothing a runner printed travels:
  * the agent reads which named dimension refused, and for reach the paths and line numbers of its
- * own added lines. The sentences say what was observed and what certification requires. They do
- * not say how to get there, because removing the lines and making them run are both answers and
- * which one a model picks is the measurement.
+ * own added lines.
+ *
+ * Two wordings of the reach refusal exist and the policy picks one. `reach-pressure-v1` says what
+ * was observed and what certification requires and stops there. Generation 3 showed what that
+ * leaves open: across eighteen repair invocations six patches never changed, two gained a scratch
+ * script and one edited the agent's own examples, none of which can change what the acceptance
+ * check executes. `reach-pressure-v2` closes those exits by naming them, and says the two honest
+ * answers a named line admits: the implementation is where the repair belongs, or the line is
+ * not executable behaviour and the agent may say why.
+ *
+ * Neither wording says what to write, and neither asks for less code or for more. Removing a line
+ * and making it run are both answers, and which one a model picks is the measurement.
  */
-export function refusalFeedback(arm: ExperimentArm, observation: VisibleObservation): string {
+export function refusalFeedback(
+  arm: ExperimentArm,
+  observation: VisibleObservation,
+  policy: ExperimentPolicyId = "reach-pressure-v1",
+): string {
   if (observation.kind === "no-change") {
     return (
       "An independent verifier looked at this workspace and found no change against the base " +
@@ -91,17 +153,34 @@ export function refusalFeedback(arm: ExperimentArm, observation: VisibleObservat
     lines.push("The acceptance check for the task fails with the change applied.");
   }
   if (refusals.includes("oracle-did-not-reach-the-change")) {
-    lines.push(
-      "The acceptance check passes and the repository's own checks pass. The acceptance check " +
-        "never executed these lines the change added, so it did not judge them:",
+    const unreached = (verdict.unreachedByOracle ?? []).map(
+      (file) => `  ${file.path}: ${file.lines.join(", ")}`,
     );
-    for (const file of verdict.unreachedByOracle ?? []) {
-      lines.push(`  ${file.path}: ${file.lines.join(", ")}`);
+    if (policy === "reach-pressure-v1") {
+      lines.push(
+        "The acceptance check passes and the repository's own checks pass. The acceptance check " +
+          "never executed these lines the change added, so it did not judge them:",
+        ...unreached,
+        "The verifier certifies a change only where its acceptance check executes every line the " +
+          "change adds.",
+      );
+    } else {
+      lines.push(
+        "The acceptance check passes and the repository's own checks pass, and both still have to " +
+          "after any revision. The acceptance check never executed these executable lines the " +
+          "change added, so it did not judge them:",
+        ...unreached,
+        "The verifier certifies a change only where its acceptance check executes every executable " +
+          "line the change adds. The acceptance check exercises the behaviour the task describes, " +
+          "through the code the task is about, so the place to address this is that implementation. " +
+          "If a named line is not executable behaviour at all, leave it and say in your final " +
+          "message which line and why.",
+        "The acceptance check never runs tests, examples or documentation in this workspace, and " +
+          "a new executable file it does not load is one more file it did not execute. Changing " +
+          "those cannot alter what it executed and is not a repair. A file you create only to " +
+          "investigate is not part of the change: do not leave it in the workspace.",
+      );
     }
-    lines.push(
-      "The verifier certifies a change only where its acceptance check executes every line the " +
-        "change adds.",
-    );
   }
   lines.push(
     "The change is already in this workspace. Revise it so that the verifier can certify it.",
@@ -136,8 +215,19 @@ const patchMetricsSchema = z.object({
 const patchSnapshotSchema = z.object({
   digest: z.string().regex(digestPattern),
   metrics: patchMetricsSchema,
+  /** Absent on rows written before repairs were compared file by file. */
+  files: z.array(patchFileSchema).optional(),
 });
 export type PatchSnapshot = z.infer<typeof patchSnapshotSchema>;
+
+/**
+ * A snapshot as the driver hands it over: the recorded part, and a way to read a line of it.
+ * The reader is never stored. It lets a finding be named by what its line says, so a repair that
+ * renumbers an unreached line is not read as having resolved it.
+ */
+export type TakenSnapshot = PatchSnapshot & {
+  readonly lineText?: (path: string, line: number) => string | null;
+};
 
 export const emptyPatchDigest: string = digestOfBytes("");
 
@@ -149,6 +239,13 @@ const usageSchema = z.object({
   outputTokens: z.number().int().nonnegative().nullable(),
   /** `unknown` where any call did not report usage or the session could not be read. */
   status: z.enum(["reported", "unknown"]),
+  /** Failed calls the harness cancelled itself, at a budget or a stop. Absent on earlier rows. */
+  cancelledCalls: z.number().int().nonnegative().nullable().optional(),
+  /**
+   * Whether the last model call raised without the harness having cancelled it, so the
+   * invocation ended because the provider failed and not because the agent stopped.
+   */
+  endedOnProviderFailure: z.boolean().nullable().optional(),
 });
 export type InvocationUsage = z.infer<typeof usageSchema>;
 
@@ -171,6 +268,7 @@ const verdictSchema = z.object({
   unreachedByOracle: z
     .array(z.object({ path: z.string(), lines: z.array(z.number().int()) }))
     .optional(),
+  setAsideByReach: z.array(z.object({ path: z.string(), reason: z.string() })).optional(),
   oracleBond: z.enum(["held", "vacuous", "unshown", "not-bonded"]).optional(),
   bondedMutants: z
     .array(z.object({ id: z.string(), verdict: z.string(), witness: z.string().optional() }))
@@ -197,6 +295,22 @@ const stepSchema = z.object({
   observation: observationSchema,
   refusals: z.object({ control: z.array(z.string()), reach: z.array(z.string()) }),
   judgeWallMs: z.number().nonnegative(),
+  /**
+   * Whether what this invocation left may be read as the agent's. Absent on rows written before
+   * it was recorded per step; there the trajectory's status and detail carry it.
+   */
+  attribution: z
+    .discriminatedUnion("to", [
+      z.object({ to: z.literal("agent") }),
+      z.object({
+        to: z.literal("infrastructure"),
+        reason: z.enum(["endpoint-not-generating", "no-model-call-answered"]),
+        detail: z.string(),
+      }),
+    ])
+    .optional(),
+  /** What this invocation did to the findings of the one before it. Never on a first invocation. */
+  repairProgress: repairProgressSchema.optional(),
 });
 export type TrajectoryStep = z.infer<typeof stepSchema>;
 
@@ -228,6 +342,12 @@ export const trajectorySchema = z.object({
       repairs: z.number().int().nonnegative(),
       /** Whether the final patch is one the reach condition would let the run stop on. */
       satisfied: z.boolean(),
+      /**
+       * The final observation against the one at the fork, for a triggered task. `repairs`
+       * exhausted says the budget ran out; this says what the budget bought. Absent on rows
+       * written before it was recorded, where the analysis derives it from line numbers.
+       */
+      progress: repairProgressSchema.optional(),
     })
     .nullable(),
 });
@@ -247,10 +367,14 @@ export interface AgentVisibleTask {
 export interface TrajectoryEffects {
   readonly invokeAgent: (prompt: string) => Promise<AgentInvocation>;
   /** The workspace's whole diff against the base, stored by content address. */
-  readonly snapshot: () => Promise<PatchSnapshot>;
+  readonly snapshot: () => Promise<TakenSnapshot>;
   /** The visible oracle and the repository's own checks over one stored patch. */
   readonly judgeVisible: (patch: PatchSnapshot) => Promise<HalfVerdict>;
-  readonly endpointAnswers: () => Promise<{ readonly answered: boolean; readonly detail: string }>;
+  /**
+   * A bounded completion from the configured model. Named for what it must measure: a probe that
+   * only lists models passes on a server that has stopped completing.
+   */
+  readonly endpointGenerates: () => Promise<GenerationProbe>;
   readonly now: () => number;
 }
 
@@ -260,6 +384,7 @@ function recorded(verdict: HalfVerdict): z.infer<typeof verdictSchema> {
     task: verdict.task,
     oracleReach: verdict.oracleReach,
     unreachedByOracle: verdict.unreachedByOracle,
+    setAsideByReach: verdict.setAsideByReach,
     oracleBond: verdict.oracleBond,
     bondedMutants: verdict.bondedMutants?.map((one) => ({
       id: one.id,
@@ -284,8 +409,11 @@ export async function runTrajectory(input: {
   readonly task: AgentVisibleTask;
   readonly limits: ExperimentLimits;
   readonly effects: TrajectoryEffects;
+  /** The treatment the protocol names. Generation 3's where none is named. */
+  readonly policy?: ExperimentPolicyId;
 }): Promise<Trajectory> {
   const { task, limits, effects } = input;
+  const policy = input.policy ?? "reach-pressure-v1";
   const steps: TrajectoryStep[] = [];
   const ended = (
     status: TerminalStatus,
@@ -295,37 +423,50 @@ export async function runTrajectory(input: {
   const nothing = { visibleAcceptedAt: null, control: null, reach: null };
 
   let feedback: string | null = null;
+  // The last invocation that may be read as the agent's, which is what a repair is compared with.
+  let earlier: {
+    readonly step: number;
+    readonly snapshot: TakenSnapshot;
+    readonly observation: VisibleObservation;
+  } | null = null;
   const attempt = async (
     phase: TrajectoryStep["phase"],
     ordinal: number,
   ): Promise<{ observation: VisibleObservation; stopped: string | null }> => {
     const prompt = feedback === null ? task.taskText : repairPrompt(task.taskText, feedback);
     const invocation = await effects.invokeAgent(prompt);
-    const patch = await effects.snapshot();
+    const snapshot = await effects.snapshot();
     let observation: VisibleObservation = { kind: "no-change" };
     const judgeStarted = effects.now();
     // Asked after every invocation, not only an empty one. A server that died halfway through a
     // repair leaves the earlier patch in place, and judging that as the model's answer to the
     // feedback would record a dead endpoint as a model that declined to change anything.
-    const health = await effects.endpointAnswers();
-    const { usage } = invocation;
-    const everyCallFailed =
-      usage.modelCalls !== null && usage.modelCalls > 0 && usage.failedCalls === usage.modelCalls;
-    const stopped = !health.answered
-      ? `the model endpoint stopped answering: ${health.detail}`
-      : everyCallFailed
-        ? `every one of the invocation's ${usage.modelCalls} model call(s) failed before an answer arrived`
-        : null;
-    if (stopped === null && patch.digest !== emptyPatchDigest) {
-      observation = { kind: "judged", verdict: await effects.judgeVisible(patch) };
+    const attribution = attributeInvocation({
+      probe: await effects.endpointGenerates(),
+      calls: invocation.usage,
+    });
+    const stopped = attribution.to === "infrastructure" ? attribution.detail : null;
+    if (stopped === null && snapshot.digest !== emptyPatchDigest) {
+      observation = { kind: "judged", verdict: await effects.judgeVisible(snapshot) };
     }
+    // The condition whose refusals the agent was just told about is the one a repair is read
+    // against, for the observation before it as much as the one after.
+    const arm: ExperimentArm = phase === "reach-repair" ? "reach" : "control";
+    const compared =
+      stopped === null && earlier !== null
+        ? comparedFindings(arm, earlier, { snapshot, observation })
+        : null;
     steps.push({
       phase,
       ordinal,
       promptDigest: digestOfBytes(prompt),
       feedbackDigest: feedback === null ? null : digestOfBytes(feedback),
       invocation,
-      patch,
+      patch: {
+        digest: snapshot.digest,
+        metrics: snapshot.metrics,
+        ...(snapshot.files === undefined ? {} : { files: snapshot.files }),
+      },
       observation:
         observation.kind === "judged"
           ? { kind: "judged", verdict: recorded(observation.verdict) }
@@ -339,8 +480,46 @@ export async function runTrajectory(input: {
           observation.kind === "judged" ? [...enforcedRefusals("reach", observation.verdict)] : [],
       },
       judgeWallMs: effects.now() - judgeStarted,
+      attribution,
+      ...(compared === null || earlier === null
+        ? {}
+        : {
+            repairProgress: repairProgress({
+              comparedWithStep: earlier.step,
+              findingIdentity: compared.identity,
+              before: {
+                patchDigest: earlier.snapshot.digest,
+                findings: compared.before,
+                files: earlier.snapshot.files,
+              },
+              after: {
+                patchDigest: snapshot.digest,
+                findings: compared.after,
+                files: snapshot.files,
+              },
+            }),
+          }),
     });
+    if (stopped === null) earlier = { step: steps.length - 1, snapshot, observation };
     return { observation, stopped };
+  };
+  const sinceTheFork = (fork: NonNullable<typeof earlier>) => {
+    const latest = earlier ?? fork;
+    const compared = comparedFindings("reach", fork, latest);
+    return repairProgress({
+      comparedWithStep: fork.step,
+      findingIdentity: compared.identity,
+      before: {
+        patchDigest: fork.snapshot.digest,
+        findings: compared.before,
+        files: fork.snapshot.files,
+      },
+      after: {
+        patchDigest: latest.snapshot.digest,
+        findings: compared.after,
+        files: latest.snapshot.files,
+      },
+    });
   };
   // An oracle that gave no verdict, or that accepts the base as well, judged nothing. That is a
   // finding about the instrument, so the task ends there instead of the model being told to repair.
@@ -361,7 +540,7 @@ export async function runTrajectory(input: {
       accepted = observation;
       break;
     }
-    feedback = refusalFeedback("control", observation);
+    feedback = refusalFeedback("control", observation, policy);
   }
 
   const last = steps.length - 1;
@@ -384,7 +563,11 @@ export async function runTrajectory(input: {
     });
   }
 
-  feedback = refusalFeedback("reach", accepted);
+  // Narrowed by the acceptance above: the accepted invocation is the last one read as the agent's.
+  const fork = earlier as NonNullable<typeof earlier> | null;
+  if (fork === null)
+    throw new Error("a visible acceptance was recorded with no invocation behind it");
+  feedback = refusalFeedback("reach", accepted, policy);
   for (let ordinal = 1; ordinal <= limits.reachRepairInvocations; ordinal += 1) {
     const { observation, stopped } = await attempt("reach-repair", ordinal);
     if (stopped !== null) return ended("infrastructure-failure", stopped, nothing);
@@ -396,10 +579,17 @@ export async function runTrajectory(input: {
       return ended("reach-repaired", null, {
         visibleAcceptedAt: last,
         control,
-        reach: { patchDigest, step: at, triggered: true, repairs: ordinal, satisfied: true },
+        reach: {
+          patchDigest,
+          step: at,
+          triggered: true,
+          repairs: ordinal,
+          satisfied: true,
+          progress: sinceTheFork(fork),
+        },
       });
     }
-    feedback = refusalFeedback("reach", observation);
+    feedback = refusalFeedback("reach", observation, policy);
   }
   const at = steps.length - 1;
   return ended("reach-repair-exhausted", null, {
@@ -411,8 +601,89 @@ export async function runTrajectory(input: {
       triggered: true,
       repairs: limits.reachRepairInvocations,
       satisfied: false,
+      progress: sinceTheFork(fork),
     },
   });
+}
+
+/**
+ * The blocking findings one condition holds against an observation, as things a set can compare.
+ *
+ * A refusal other than reach is one finding. A reach refusal is one finding per unreached line,
+ * since a repair that makes two of five lines run has done something and the refusal alone would
+ * not say so.
+ */
+export function blockingFindings(
+  arm: ExperimentArm,
+  observation:
+    | { readonly kind: "no-change" }
+    | { readonly kind: "judged"; readonly verdict: RefusalFields },
+  nameOf: (path: string, line: number) => string,
+): readonly Finding[] {
+  if (observation.kind === "no-change") return [{ id: "no-change", kind: "no-change" }];
+  const findings: Finding[] = [];
+  for (const reason of enforcedRefusals(arm, observation.verdict)) {
+    const unreached =
+      reason === "oracle-did-not-reach-the-change"
+        ? (observation.verdict.unreachedByOracle ?? [])
+        : [];
+    if (unreached.length === 0) {
+      findings.push({ id: `refusal:${reason}`, kind: "refusal" });
+      continue;
+    }
+    for (const file of unreached) {
+      for (const line of file.lines) {
+        findings.push({
+          id: `unreached:${file.path}:${nameOf(file.path, line)}`,
+          kind: "unreached-line",
+          path: file.path,
+          line,
+        });
+      }
+    }
+  }
+  return findings;
+}
+
+/**
+ * Both sides of one comparison under one naming, chosen by what both snapshots can supply.
+ *
+ * Naming one side by text and the other by number would make every finding look replaced.
+ */
+function comparedFindings(
+  arm: ExperimentArm,
+  before: { readonly snapshot: TakenSnapshot; readonly observation: VisibleObservation },
+  after: { readonly snapshot: TakenSnapshot; readonly observation: VisibleObservation },
+): {
+  readonly identity: "line-text" | "line-number";
+  readonly before: readonly Finding[];
+  readonly after: readonly Finding[];
+} {
+  const byNumber = (_path: string, line: number) => `L${line}`;
+  const sides = [before, after] as const;
+  const readable = sides.every((side) =>
+    blockingFindings(arm, side.observation, byNumber).every(
+      (finding) =>
+        finding.kind !== "unreached-line" ||
+        (side.snapshot.lineText?.(finding.path ?? "", finding.line ?? 0) ?? null) !== null,
+    ),
+  );
+  const named = sides.map((side) => {
+    if (!readable) return blockingFindings(arm, side.observation, byNumber);
+    // Two unreached lines of one file can say the same thing, so each is numbered among its twins.
+    const seen = new Map<string, number>();
+    return blockingFindings(arm, side.observation, (path, line) => {
+      const text = digestOfBytes(side.snapshot.lineText?.(path, line) ?? "").slice(7, 23);
+      const nth = (seen.get(`${path} ${text}`) ?? 0) + 1;
+      seen.set(`${path} ${text}`, nth);
+      return `${text}#${nth}`;
+    });
+  });
+  return {
+    identity: readable ? "line-text" : "line-number",
+    before: named[0] ?? [],
+    after: named[1] ?? [],
+  };
 }
 
 /** Tokens and calls for one invocation, from its model-call payloads. Unknown stays unknown. */
@@ -421,9 +692,14 @@ export function usageOfModelCalls(
 ): InvocationUsage {
   let modelCalls = 0;
   let failedCalls = 0;
+  let cancelledCalls = 0;
+  let cancellationRecorded = true;
   let inputTokens = 0;
   let outputTokens = 0;
   let unknown = false;
+  // Null until a failed call says whether it was cancelled: ledgers written before that was
+  // recorded cannot answer, and "not cancelled" would be an answer.
+  let endedOnProviderFailure: boolean | null = false;
   for (const entry of payloads) {
     if (entry.type !== "model-call") continue;
     modelCalls += 1;
@@ -433,8 +709,17 @@ export function usageOfModelCalls(
       outputTokens?: unknown;
       providerAttempts?: readonly { usage?: string }[];
       content?: { reason?: string };
+      cancelled?: unknown;
     };
-    if (payload.content?.reason === "call-failed") failedCalls += 1;
+    const failed = payload.content?.reason === "call-failed";
+    if (failed) failedCalls += 1;
+    if (failed && payload.cancelled === true) cancelledCalls += 1;
+    if (failed && typeof payload.cancelled !== "boolean") cancellationRecorded = false;
+    endedOnProviderFailure = !failed
+      ? false
+      : typeof payload.cancelled === "boolean"
+        ? !payload.cancelled
+        : null;
     unknown ||=
       payload.usageStatus !== "reported" ||
       payload.providerAttempts?.some((one) => one.usage === "unknown") === true ||
@@ -443,7 +728,13 @@ export function usageOfModelCalls(
     inputTokens += typeof payload.inputTokens === "number" ? payload.inputTokens : 0;
     outputTokens += typeof payload.outputTokens === "number" ? payload.outputTokens : 0;
   }
+  const calls = {
+    modelCalls,
+    failedCalls,
+    cancelledCalls: cancellationRecorded ? cancelledCalls : null,
+    endedOnProviderFailure,
+  };
   return unknown
-    ? { modelCalls, failedCalls, inputTokens: null, outputTokens: null, status: "unknown" }
-    : { modelCalls, failedCalls, inputTokens, outputTokens, status: "reported" };
+    ? { ...calls, inputTokens: null, outputTokens: null, status: "unknown" }
+    : { ...calls, inputTokens, outputTokens, status: "reported" };
 }
