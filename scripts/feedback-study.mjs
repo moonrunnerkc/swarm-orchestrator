@@ -600,6 +600,11 @@ function effectsFor({
     invokeAgent: async (prompt) => {
       const started = Date.now();
       const home = mkdtempSync(join(homesRoot, "inv-"));
+      // A scratch directory of its own as well: the agent puts its tools' home under its own
+      // scratch directory, so a private home beside the shared one sent every command it ran to
+      // the shared child home, where the judge's evidence and earlier runs' sessions live. Kept
+      // short, since a test's socket path under it has to fit the platform's limit.
+      const scratch = mkdtempSync(join(tmpdir(), "fsi-"));
       const agentArgv =
         scriptedAgent !== null
           ? [process.execPath, resolve(repositoryRoot, scriptedAgent), workspace, prompt]
@@ -626,14 +631,19 @@ function effectsFor({
         cwd: workspace,
         timeoutMs: (parameters.agent.maxWallMinutes + 4) * 60_000,
         homeDir: home,
+        tmpDir: scratch,
       });
       // A scripted stand-in calls no model and leaves no session to read.
-      if (scriptedAgent !== null) rmSync(home, { recursive: true, force: true });
+      if (scriptedAgent !== null) {
+        rmSync(home, { recursive: true, force: true });
+        rmSync(scratch, { recursive: true, force: true });
+      }
       const session =
         scriptedAgent === null
           ? await lib.takeAgentSession({
               stdout: agent.stdout,
               home,
+              scratch,
               keptRoot: sessionRoot,
               forbiddenRoots,
               ownWorkspace: workspace,

@@ -47,12 +47,19 @@ export async function runCommand(
     readonly timeoutMs?: number;
     /** A home of the caller's own. The shared child home by default. */
     readonly homeDir?: string;
+    /**
+     * A scratch directory of the caller's own. The agent builds its tools' home under its own
+     * scratch directory, so a caller that gives the agent a home of its own and not this hands
+     * every command the agent runs the shared child home all the same.
+     */
+    readonly tmpDir?: string;
   } = {},
 ): Promise<CommandOutcome> {
   const ran = await runProcessGroup(file, args, {
     cwd: options.cwd ?? process.cwd(),
     env: childEnvironment(options.env ?? process.env, {
       homeDir: options.homeDir ?? defaultChildHome(),
+      ...(options.tmpDir === undefined ? {} : { tmpDir: options.tmpDir }),
     }).variables,
     timeoutMs: options.timeoutMs ?? 10 * 60_000,
     maxOutputBytes: 64 * 1024 * 1024,
