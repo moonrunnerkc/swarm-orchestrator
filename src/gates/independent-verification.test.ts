@@ -739,6 +739,77 @@ describe("reach read from the coverage the run itself wrote", () => {
       await rm(script, { force: true });
     }
   });
+
+  it("names a type test it set aside beside a verdict of reached", async () => {
+    const withTypeTest = `${patch}${[
+      "diff --git a/typings/index.test-d.ts b/typings/index.test-d.ts",
+      "new file mode 100644",
+      "--- /dev/null",
+      "+++ b/typings/index.test-d.ts",
+      "@@ -0,0 +1 @@",
+      "+expectType<number>(clamp('3'));",
+      "",
+    ].join("\n")}`;
+    const script = await oracleScript(
+      "import assert from 'node:assert/strict';\n" +
+        "import { clamp } from './clamp.mjs';\n" +
+        "assert.strictEqual(clamp('3'), 3);\n" +
+        "assert.strictEqual(clamp(-2), 0);\n",
+    );
+    try {
+      const result = await verifyIndependently({
+        repositoryRoot: repository,
+        baseCommit: baseCommit(),
+        patch: withTypeTest,
+        commands: commands(),
+        clock,
+        taskOracle: { command: `cp '${script}' oracle.mjs && node oracle.mjs` },
+      });
+
+      expect(result.oracleReach).toBe("reached");
+      expect(result.unreachedByOracle).toEqual([]);
+      expect(result.setAsideByReach).toEqual([
+        { path: "typings/index.test-d.ts", reason: "type-test" },
+      ]);
+    } finally {
+      await rm(script, { force: true });
+    }
+  });
+
+  it("abstains, and does not read reached, where no changed file could be measured", async () => {
+    const notesOnly = [
+      "diff --git a/NOTES.md b/NOTES.md",
+      "new file mode 100644",
+      "--- /dev/null",
+      "+++ b/NOTES.md",
+      "@@ -0,0 +1 @@",
+      "+clamp coerces strings",
+      "",
+    ].join("\n");
+    const script = await oracleScript(
+      "import assert from 'node:assert/strict';\n" +
+        "import { readFileSync } from 'node:fs';\n" +
+        "assert.match(readFileSync('NOTES.md', 'utf8'), /coerces/);\n",
+    );
+    try {
+      const result = await verifyIndependently({
+        repositoryRoot: repository,
+        baseCommit: baseCommit(),
+        patch: notesOnly,
+        commands: commands(),
+        clock,
+        taskOracle: { command: `cp '${script}' oracle.mjs && node oracle.mjs` },
+      });
+
+      expect(result.task).toBe("accepted");
+      expect(result.oracleReach).toBe("unmeasured");
+      expect(result.setAsideByReach).toEqual([{ path: "NOTES.md", reason: "no-runner-loads-it" }]);
+      // Not a refusal: an unknown measurement is unknown, and certification reads it as that.
+      expect(result.verified).toBe(true);
+    } finally {
+      await rm(script, { force: true });
+    }
+  });
 });
 
 describe("an oracle that never ran the lines the patch added", () => {
