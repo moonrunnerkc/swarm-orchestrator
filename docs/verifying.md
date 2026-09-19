@@ -122,6 +122,24 @@ names offsets past 218,000. An offset past the end of the file abstains the whol
 than dropping the file, because a file missing from a reading reads as one the oracle skipped, and
 that would refuse the patch instead of declining to judge it.
 
+**What reach does not judge, and says so.** Some changed files can never appear in a runtime
+coverage report, and refusing a patch over one tells its author that lines nothing can execute
+went unexecuted. Six of nine refusals in the reach-pressure experiment did exactly that, over a
+tsd type test. Reach sets a file aside only for a reason about what a coverage report can contain,
+and every verdict names what it set aside under `setAsideByReach`:
+
+| reason | files | why |
+| --- | --- | --- |
+| `type-declaration` | `.d.ts`, `.d.mts`, `.d.cts` | types only, erased before anything runs |
+| `type-test` | `.test-d.ts`, anything under `test-d/` | read by the type checker, executed by no runner |
+| `candidate-test` | test directories, `.test.*`, `.spec.*`, `_test.*` | the oracle runs its own test file, never the change's |
+| `no-runner-loads-it` | docs, changelogs, JSON, snapshots, YAML and TOML | no JavaScript runner loads it |
+| `no-code-on-added-lines` | any | blank lines and bare punctuation execute nothing |
+
+Nothing is set aside for how its name looks. A scratch script, a JavaScript tool configuration
+and a file called `latest.ts` are all executable and all judged. A change in which no file could
+be judged reads `unmeasured`, not `reached`: it was not measured and found complete.
+
 **Named honestly:** the last two arms read a report the workspace's own processes wrote, and
 nothing here detects a forged one. That is deliberate and it is not the hole it sounds like. The
 bar the ratchet uses, an invocation the harness assembled with no shell in between, exists because
