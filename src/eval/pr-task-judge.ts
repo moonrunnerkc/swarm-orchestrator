@@ -106,7 +106,20 @@ export interface HalfVerdict {
   }[];
   readonly setAsideByReach?: readonly { readonly path: string; readonly reason: string }[];
   readonly oracleBond?: "held" | "vacuous" | "unshown" | "not-bonded";
-  readonly bondedMutants?: readonly { readonly id: string; readonly verdict: string }[];
+  /**
+   * Every mutant `swarm ci` built, as it printed them. The optional fields are always present in
+   * its output; they are optional here because a verdict recorded before they were read lacks them.
+   */
+  readonly bondedMutants?: readonly {
+    readonly id: string;
+    readonly verdict: string;
+    readonly path?: string;
+    readonly line?: number;
+    readonly operator?: string;
+    readonly before?: string;
+    readonly after?: string;
+    readonly witness?: string;
+  }[];
   readonly applied?: boolean;
   readonly refusal?: string | null;
   readonly advice?: string;
