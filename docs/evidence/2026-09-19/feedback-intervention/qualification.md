@@ -179,3 +179,20 @@ A reference now ends at the first character a path cannot hold, and a trailing f
 is dropped (`9c4104e78`). The new tests fail on the previous tokenizer. Re-run over generation 2's
 seventeen real sessions, with each session's own workspace and home read from its own records, the
 corrected audit names nothing.
+
+## Addendum, 2026-09-19: the audit's rule, settled on generation 3
+
+Generation 3 showed a second shape of the same misreading: a stack trace hard-wrapped the agent's
+own workspace path at 80 columns, and each fragment was read as a separate place. Rather than
+answer one rendering at a time, the rule now says what every rendering leaves behind: a wrapped,
+truncated or partly coloured path leaves a fragment that is an ancestor of the path it was. A
+reference counts as the invocation's own where it is one of its own paths, lies under one, or is an
+ancestor of one (`ea6a04740`). Every path into something that is not its own, a sibling arm, a
+mined checkout, a stored oracle or another invocation's home, still counts, since none is an
+ancestor of its own. What this gives up is a bare mention of a directory above the workspace,
+which names nothing held there.
+
+Re-run over every real session so far, 195 across generations 1 to 3 and every model preflight,
+with each session's own workspace, home and scratch directory read from its own records, the audit
+names exactly one reference: generation 1's npm log in the shared child home, the true finding
+that stopped it.
