@@ -321,14 +321,21 @@ export class MixedProtocolGenerations extends Error {
   }
 }
 
-export function summarize(input: {
-  readonly manifest: Manifest;
-  readonly identity: ExperimentIdentity;
-  readonly results: readonly ResultRow[];
-  readonly hiddenScores: readonly HiddenScore[];
-}): ReachPressureSummary {
-  const { manifest, identity } = input;
-  const identityKeys = [
+/**
+ * Every row already in an evidence directory, held to the identity about to write beside it.
+ *
+ * `analyze` has always refused mixed rows. `run` and `score` did not look: a results file left in
+ * place across a protocol change would have had its settled tasks skipped as settled and its
+ * open ones continued under the new generation, and the mix would surface only at analysis, after
+ * the cohort had been spent. Generations 1 and 2 were kept apart by moving files by hand.
+ */
+export function assertOneAcquisition(
+  identity: ExperimentIdentity,
+  rawRows: readonly unknown[],
+): void {
+  // Identity first and nothing else: an older generation's row need not parse as today's.
+  const rows = rawRows.map((row) => identifiedRowSchema.parse(row));
+  const keys = [
     "generation",
     "protocolDigest",
     "manifestDigest",
@@ -336,14 +343,30 @@ export function summarize(input: {
     "policyDigest",
     "harness",
   ] as const;
-  const foreign = [...input.results, ...input.hiddenScores].filter((row) =>
-    identityKeys.some((key) => row[key] !== identity[key]),
-  );
-  if (foreign.length > 0) {
-    throw new MixedProtocolGenerations([
-      ...new Set(foreign.map((row) => `${row.taskId} generation ${row.generation} ${row.harness}`)),
-    ]);
-  }
+  const foreign = rows.filter((row) => keys.some((key) => row[key] !== identity[key]));
+  if (foreign.length === 0) return;
+  throw new MixedProtocolGenerations([
+    ...new Set(
+      foreign.map(
+        (row) =>
+          `${row.taskId} generation ${row.generation} ${row.harness} (differs in ${keys
+            .filter((key) => row[key] !== identity[key])
+            .join(", ")})`,
+      ),
+    ),
+  ]);
+}
+
+export function summarize(input: {
+  readonly manifest: Manifest;
+  readonly identity: ExperimentIdentity;
+  readonly results: readonly ResultRow[];
+  readonly hiddenScores: readonly HiddenScore[];
+}): ReachPressureSummary {
+  const { manifest, identity } = input;
+  // The one identity rule, which `run` and `score` apply before they write and `analyze` applies
+  // before it parses. Two copies of it is how the fresh pass and the re-judge once disagreed.
+  assertOneAcquisition(identity, [...input.results, ...input.hiddenScores]);
   const known = new Set(manifest.tasks.map((one) => one.id));
   const stray = input.results.find((row) => !known.has(row.taskId));
   if (stray !== undefined) throw new Error(`${stray.taskId} is not in the frozen cohort`);

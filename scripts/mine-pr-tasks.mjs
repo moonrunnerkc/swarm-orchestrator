@@ -21,6 +21,7 @@ import { promisify } from "node:util";
 
 import { prTaskEvidenceRoot } from "../dist/eval/pr-task-paths.js";
 import { splitTestCases } from "../dist/eval/test-case-split.js";
+import { aRunnerCouldLoadIt, namesATestFile, pathSetAside } from "../dist/gates/oracle-reach.js";
 
 const run = promisify(execFile);
 const repositoryRoot = new URL("..", import.meta.url).pathname;
@@ -34,10 +35,12 @@ const outAt = argv.indexOf("--out");
 const outPath =
   outAt === -1 ? join(prTaskEvidenceRoot(repositoryRoot), "candidates.json") : argv[outAt + 1];
 
-const isTestPath = (path) =>
-  /(^|\/)(__tests__|tests?|spec)\//.test(path) || /\.(test|spec)\.[cm]?[jt]sx?$/.test(path);
-const isSourcePath = (path) =>
-  /\.[cm]?[jt]sx?$/.test(path) && !isTestPath(path) && !/\.d\.ts$/.test(path);
+// Reach's own rules and not a third spelling of them. This file had one, and it still read a tsd
+// type test as source after reach had learned otherwise: a pull request touching its tests and
+// `index.test-d.ts` would have been admitted as one that changed source. A task is mined to be
+// judged by reach, so what counts as source here is what reach will judge.
+const isTestPath = (path) => namesATestFile(path) && aRunnerCouldLoadIt(path);
+const isSourcePath = (path) => pathSetAside(path) === null;
 
 async function gh(path, parameters = {}) {
   const query = Object.entries(parameters)
