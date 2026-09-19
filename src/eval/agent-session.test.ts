@@ -60,6 +60,30 @@ describe("where an invocation's session says it went", () => {
     expect(audit(payloads)).toEqual([]);
   });
 
+  it("reads its own workspace as its own where a tool wrapped, truncated or split it", () => {
+    // Measured on the feedback study's generation 3: a stack trace hard-wrapped at 80 columns
+    // printed `…/g3/runs/lo\ncal__…` and `…/feedback-study\n/g3/…`.
+    const cut = (at: number) =>
+      `${workspace.slice(0, at)}\n${workspace.slice(at)}/node_modules/x.js`;
+    const payloads = [
+      { output: cut(48) },
+      { output: cut(30) },
+      { output: `${workspace.slice(0, 40)}…` },
+      { output: `\u001b[2m${workspace.slice(0, 35)}\u001b[22m${workspace.slice(35)}` },
+    ].map((payload) => JSON.stringify(payload));
+    expect(audit(payloads)).toEqual([]);
+  });
+
+  it("names a sibling arm's workspace even though it shares the pair's directory", () => {
+    const pairRoot = workspace.slice(0, workspace.lastIndexOf("/"));
+    expect(audit([JSON.stringify({ output: `ls ${pairRoot}/neutral-a1/lib` })])).toEqual([
+      `${pairRoot}/neutral-a1/lib`,
+    ]);
+    expect(audit([JSON.stringify({ output: `cat ${cache}/work/a__b/test/x.test.js` })])).toEqual([
+      `${cache}/work/a__b/test/x.test.js`,
+    ]);
+  });
+
   it("still names a foreign path a colourised output prints, without the escape", () => {
     const sibling = `${cache}/feedback-study/g1/runs/local__qwen/a__b-7-p1/neutral-a1`;
     expect(audit([JSON.stringify({ output: `\u001b[36m${sibling}\u001b[39m` })])).toEqual([
