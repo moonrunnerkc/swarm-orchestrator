@@ -83,6 +83,7 @@ describe("generation 3, re-derived by the analysis as it stands today", () => {
       "/triggered/N/overhead/accounting",
       "/triggered/N/repairOutcome",
       "/triggered/N/repairProgress",
+      "/triggered/N/repairScope",
     ]);
   });
 

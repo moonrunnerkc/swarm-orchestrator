@@ -734,6 +734,10 @@ async function sessionOf(lib, stdout, sessionRoot) {
       runId: named.runId,
       ledgerDigest: lib.digestOfBytes(readFileSync(join(kept, "ledger.jsonl"), "utf8")),
       ledgerRecords: evidence.records.length,
+      fileSet: lib.fileSetOfSession({
+        records: () => evidence.records,
+        payloads: () => evidence.payloads,
+      }),
       usage: lib.usageOfModelCalls(
         evidence.records.map((record) => ({
           type: record.type,
