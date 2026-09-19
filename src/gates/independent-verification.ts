@@ -27,7 +27,11 @@ import type { BondedMutant, OracleBond, OracleBondVerdict } from "./oracle-bond.
 import { bondOracleWithMutants } from "./oracle-bond-run.ts";
 import { type OracleCoveragePlan, oracleCoveragePlan } from "./oracle-instrumentation.ts";
 import { mutantsOfChangedLines } from "./oracle-mutants.ts";
-import { lineHitsByWorkspacePath, oracleReachedTheChange } from "./oracle-reach.ts";
+import {
+  lineHitsByWorkspacePath,
+  oracleReachedTheChange,
+  type ReachSetAside,
+} from "./oracle-reach.ts";
 import { parseLineHits } from "./parsers.ts";
 import { pathsInPatch } from "./patch-paths.ts";
 import { parseUnifiedDiff } from "./unified-diff.ts";
@@ -104,6 +108,16 @@ export interface IndependentVerification {
   readonly unreachedByOracle: readonly {
     readonly path: string;
     readonly lines: readonly number[];
+  }[];
+  /**
+   * Every changed file reach did not judge, with the reason. Absent on a verdict reached before
+   * reach was asked. A reader of `reached` is owed what it was reached over: commander's type
+   * test was once judged where it should have been set aside, and nothing in the output said
+   * which files a verdict covered.
+   */
+  readonly setAsideByReach?: readonly {
+    readonly path: string;
+    readonly reason: ReachSetAside;
   }[];
   /**
    * Whether the oracle refused a change to the lines the patch added. Reach asks whether the
@@ -371,7 +385,7 @@ export async function verifyIndependently(
     const reach =
       task === "accepted" && restored
         ? await measureOracleReach(checkout, options, timeoutMs)
-        : { verdict: "unmeasured" as const, unreached: [], measured: null };
+        : { verdict: "unmeasured" as const, unreached: [], measured: null, setAside: undefined };
     const oracleReach = reach.verdict;
     // Asked wherever the oracle accepted, and independently of what reach said. Gating it on
     // reach tied two checks that answer different questions together and cost the answer that
@@ -438,6 +452,7 @@ export async function verifyIndependently(
       checks,
       oracleReach,
       unreachedByOracle: reach.unreached,
+      ...(reach.setAside === undefined ? {} : { setAsideByReach: reach.setAside }),
       oracleBond: bond.verdict,
       bondedMutants: bond.mutants,
       refusal: null,
@@ -546,8 +561,15 @@ async function measureOracleReach(
    * the oracle ran is a line a mutant of it was demonstrably seen on.
    */
   measured: Readonly<Record<string, Readonly<Record<number, number>>>> | null;
+  /** Undefined where the change was never classified, because nothing was asked at all. */
+  setAside: readonly { readonly path: string; readonly reason: ReachSetAside }[] | undefined;
 }> {
-  const nothingMeasured = { verdict: "unmeasured" as const, unreached: [], measured: null };
+  const nothingMeasured = {
+    verdict: "unmeasured" as const,
+    unreached: [],
+    measured: null,
+    setAside: undefined,
+  };
   const oracle = options.taskOracle?.command;
   if (oracle === undefined) {
     return nothingMeasured;
@@ -570,15 +592,18 @@ async function measureOracleReach(
     if (plan.setup.length > 0) {
       await options.commands.run(plan.setup, { cwd: checkout, timeoutMs });
     }
-    const measured = await lineHitsUnder(plan, checkout, changed, options, timeoutMs);
+    const measured = await lineHitsUnder(plan, checkout, changed, options.commands, timeoutMs);
     if (measured === null) {
       return nothingMeasured;
     }
     const reach = oracleReachedTheChange({ changed, measured });
     return {
-      verdict: reach.reached ? "reached" : "unreached",
+      // A change with no file reach can judge was not measured and found complete. The hits stay,
+      // because the bond reads them for its own question.
+      verdict: reach.judgedFiles === 0 ? "unmeasured" : reach.reached ? "reached" : "unreached",
       unreached: reach.unreached,
       measured,
+      setAside: reach.setAside,
     };
   } finally {
     await rm(destination, { recursive: true, force: true });
@@ -644,7 +669,7 @@ async function bondTheOracle(
           if (plan.setup.length > 0) {
             await options.commands.run(plan.setup, { cwd: checkout, timeoutMs });
           }
-          return await lineHitsUnder(plan, checkout, changed, options, timeoutMs);
+          return await lineHitsUnder(plan, checkout, changed, options.commands, timeoutMs);
         } finally {
           await rm(destination, { recursive: true, force: true });
         }
@@ -661,16 +686,16 @@ async function bondTheOracle(
  * asked, so an instrumented run that fails is the instrumentation having changed the outcome, and
  * a coverage report from a run that did something else is not about the run that was judged.
  */
-async function lineHitsUnder(
+export async function lineHitsUnder(
   plan: OracleCoveragePlan,
   checkout: string,
   changed: readonly { readonly path: string }[],
-  options: IndependentVerificationOptions,
+  commands: Pick<GateCommandRunner, "run" | "runVouched">,
   timeoutMs: number,
 ): Promise<Record<string, Record<number, number>> | null> {
   if (plan.kind === "node-lcov") {
-    const observed = await options.commands.runVouched(plan.argv, { cwd: checkout, timeoutMs });
-    if (observed.exitCode !== 0) {
+    const observed = await commands.runVouched(plan.argv, { cwd: checkout, timeoutMs });
+    if (observed.unavailable !== null || observed.exitCode !== 0) {
       return null;
     }
     const sections = parseLineHits(observed.stderr);
@@ -678,12 +703,12 @@ async function lineHitsUnder(
   }
 
   if (plan.kind === "v8") {
-    const observed = await options.commands.run(plan.command, {
+    const observed = await commands.run(plan.command, {
       cwd: checkout,
       timeoutMs,
       environment: { NODE_V8_COVERAGE: plan.destination },
     });
-    if (observed.exitCode !== 0) {
+    if (observed.unavailable !== null || observed.exitCode !== 0) {
       return null;
     }
     const read = readV8Coverage({
@@ -694,8 +719,8 @@ async function lineHitsUnder(
     return read.unusable === null ? { ...read.hits } : null;
   }
 
-  const observed = await options.commands.run(plan.command, { cwd: checkout, timeoutMs });
-  if (observed.exitCode !== 0) {
+  const observed = await commands.run(plan.command, { cwd: checkout, timeoutMs });
+  if (observed.unavailable !== null || observed.exitCode !== 0) {
     return null;
   }
   const written = await readFile(plan.file, "utf8").catch(() => null);

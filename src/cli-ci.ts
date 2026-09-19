@@ -200,7 +200,8 @@ async function verifyPatchUnderCancellation(
   }
   process.stdout.write(
     `\nregression: ${result.regression}   task: ${result.task}   ` +
-      `oracle reach: ${result.oracleReach}${describeUnreached(result.unreachedByOracle)}\n` +
+      `oracle reach: ${result.oracleReach}${describeUnreached(result.unreachedByOracle)}` +
+      `${describeSetAside(result.setAsideByReach)}\n` +
       `oracle bond: ${result.oracleBond}${describeOracleBond(result)}\n` +
       (result.verified
         ? result.acceptance === undefined
@@ -225,6 +226,17 @@ function describeUnreached(
     )
     .join("; ");
   return ` (${named})`;
+}
+
+/** What reach did not judge and why, so `reached` never reads as wider than it was. */
+function describeSetAside(
+  setAside: readonly { readonly path: string; readonly reason: string }[] | undefined,
+): string {
+  if (setAside === undefined || setAside.length === 0) {
+    return "";
+  }
+  const named = setAside.slice(0, 6).map((file) => `${file.path} (${file.reason})`);
+  return `\n  reach set aside: ${named.join(", ")}${setAside.length > 6 ? ", ..." : ""}`;
 }
 
 function readAgentStream(text: string, format: "generic" | "claude-code") {
