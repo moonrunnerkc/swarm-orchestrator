@@ -489,10 +489,14 @@ function reachLines(findings: readonly ReachFinding[]): string[] {
 }
 
 function mutantLines(findings: readonly MutantFinding[]): string[] {
-  return findings.map(
-    (finding) =>
-      `  ${finding.path} line ${finding.line} (${finding.operator}): \`${finding.before.trim()}\` became \`${finding.after.trim()}\``,
-  );
+  return findings.map((finding) => {
+    // A deleted statement is blanked rather than removed, so its after-text is empty.
+    const change =
+      finding.after.trim().length === 0
+        ? `\`${finding.before.trim()}\` was deleted`
+        : `\`${finding.before.trim()}\` became \`${finding.after.trim()}\``;
+    return `  ${finding.path} line ${finding.line} (${finding.operator}): ${change}`;
+  });
 }
 
 /**

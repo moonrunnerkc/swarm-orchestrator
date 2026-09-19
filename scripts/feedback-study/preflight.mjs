@@ -158,7 +158,31 @@ for (const name of ["summary.json", "classifications.json", "report.md", "deriva
     process.exit(1);
   }
 }
-const rows = readFileSync(join(evidence, "results.jsonl"), "utf8")
+// Packed, the ledgers must derive the same bytes, and collection must be closed.
+process.stdout.write(node([driver, "pack-ledgers", ...shared]));
+process.stdout.write(node([driver, "analyze", ...shared, "--out", join(scratch, "again-3")]));
+for (const name of ["summary.json", "classifications.json", "report.md", "derivation.json"]) {
+  if (
+    readFileSync(join(scratch, "again-1", name), "utf8") !==
+    readFileSync(join(scratch, "again-3", name), "utf8")
+  ) {
+    console.error(`${name} differs once the ledgers are packed; the preflight fails`);
+    process.exit(1);
+  }
+}
+let refused = false;
+try {
+  node([driver, "score", ...shared]);
+} catch {
+  refused = true;
+}
+if (!refused) {
+  console.error("score ran after the ledgers were packed; the preflight fails");
+  process.exit(1);
+}
+const { unpackArchive } = await import(join(repositoryRoot, "scripts/local-campaign/archive.mjs"));
+const unpacked = await unpackArchive(join(evidence, "ledgers"));
+const rows = readFileSync(join(unpacked.directory, "results.jsonl"), "utf8")
   .trim()
   .split("\n")
   .map((line) => JSON.parse(line));
@@ -167,6 +191,7 @@ const infrastructure = rows.filter(
     row.prefix?.status === "infrastructure-failure" ||
     row.record?.status === "infrastructure-failure",
 );
+await unpacked.dispose();
 console.log(`\n${rows.length} row(s), ${infrastructure.length} infrastructure failure(s)`);
 console.log(`two derivations are byte-identical; evidence in ${evidence}`);
 if (!scripted && infrastructure.length > 0) process.exit(1);
