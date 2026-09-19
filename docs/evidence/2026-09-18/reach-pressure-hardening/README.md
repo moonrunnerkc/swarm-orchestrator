@@ -55,10 +55,10 @@ about what a runtime coverage report can contain, never about how a name looks:
 | `no-runner-loads-it` (docs, changelogs, JSON and extensionless fixtures, snapshots, YAML and TOML configuration, source maps) | no JavaScript runner loads it, so it has no executable line |
 | `no-code-on-added-lines` | blank lines and bare punctuation execute nothing of their own |
 
-Deliberately still judged, with tests holding each: `src/latest.ts`, `src/contest.js`,
-`src/testing-helpers.ts`, `src/test-data.ts`, `src/latest-d.ts`, `src/d.ts`, `lib/changelog.js`,
-`src/config.ts`, `jest.config.js`, `fixtures/server.js`, and the experiment's own `probe-tmp.js`
-and `tsd-check.tmp.js`. A scratch script is executable and was never executed, so reach naming it
+Deliberately still judged, with tests holding each, as names in some mined project's tree:
+`latest.ts`, `contest.js`, `testing-helpers.ts`, `test-data.ts`, `latest-d.ts`, `d.ts`,
+`changelog.js`, `config.ts`, `jest.config.js`, a `server.js` under `fixtures`, and the
+experiment's own `probe-tmp.js` and `tsd-check.tmp.js`. A scratch script is executable and was never executed, so reach naming it
 was the accurate half of those two refusals. JavaScript tool configuration stays judged for the
 same reason: an interpreter loads it, V8 names it where a process does, and hiding it would hide
 added behaviour. The verdict carries `setAsideByReach` and `swarm ci` prints it.
