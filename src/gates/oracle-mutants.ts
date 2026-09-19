@@ -1,9 +1,4 @@
-import {
-  aRunnerCouldLoadIt,
-  type ChangedLines,
-  carriesCode,
-  namesATestFile,
-} from "./oracle-reach.ts";
+import { type ChangedLines, carriesCode, pathSetAside } from "./oracle-reach.ts";
 
 /**
  * Changes to the lines a patch added that an oracle worth anything has to refuse.
@@ -670,7 +665,7 @@ export function mutantsOfChangedLines(plan: MutantPlan): readonly Mutant[] {
     // The same two exclusions reach applies, for the same reasons: an acceptance oracle runs its
     // own test file and never the candidate's, and a file no runner loads has no behaviour to
     // change. A mutant in either could only be refused for a reason that is not about the patch.
-    if (namesATestFile(file.path) || !aRunnerCouldLoadIt(file.path)) {
+    if (pathSetAside(file.path) !== null) {
       continue;
     }
     for (const added of file.addedLines) {
