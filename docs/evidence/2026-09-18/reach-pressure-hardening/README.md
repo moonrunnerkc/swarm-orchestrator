@@ -15,7 +15,7 @@ affect is how much the treatment could have shown, not what was observed: a reac
 names a file nothing can execute is a weaker treatment than the protocol intended, which is a
 reason a new experiment is worth running and not a reason to discard this one.
 
-Commits `47c23aaab` through the head of this change. `npm run gates` output is at the end.
+Commits `47c23aaab` through the head of this change. What was run to validate it is at the end.
 
 ## Summary
 
@@ -335,3 +335,37 @@ end to end over the synthetic cohort with the scripted agent after these changes
 analyze, an idempotent second analyze, a resume that dispatched nothing and added no row, and a
 foreign row refused by all three phases. Design questions the experiment itself raised are outside
 this work: one model, one trajectory per task, and thirteen visible acceptances in seventy-nine.
+
+## Validation
+
+Run on 2026-09-18 with Node v24.15.0 at `ec91342e8`, tree clean. The commit that adds this section
+changes this file and nothing else.
+
+```text
+npm run gates
+  historical falsification corpus is reachable at v12-final
+  both agent instruction files match the canonical engineering policy
+  zero misses, 3 known and named, 26 generated
+  tracked working tree: 90.6 MB across 17187 file(s)
+  under the 100.0 MB ceiling with 9.4 MB of headroom (6.0 MB required)
+  all 2 derived-artifact pack(s) restore their inventories
+  all 14 cited bundles verify from this checkout
+  gate 3a: zero. 138 recorded verdict(s) re-derive to what the tool claimed
+  typecheck and lint: no error
+  Test Files  351 passed (351)
+       Tests  3431 passed (3431)
+  exit 0
+npm run build            exit 0
+npm run check:packaged   exit 0
+npm run fuzz:build       exit 0
+```
+
+Before this work the same suite was 344 files and 3235 tests, so 7 files and 196 tests were added
+and none was removed or skipped.
+
+`node scripts/reach-pressure-experiment.mjs analyze --out <dir>` run twice over the committed
+generation 3 rows wrote byte-identical `summary.json`, `report.md` and `derivation.json`, and the
+summary equals the one under [`rederivation/`](rederivation/). Run without `--out` it exits 1 and
+writes nothing. `git diff 34f9f1d2f HEAD -- docs/evidence/2026-09-17` is empty, and the published
+summary still digests to `sha256:7604c90d0121b5fd3e4a318f7b1e91eac4b214967ded5e170a74870f4e066fbc`,
+the value its own page prints.
