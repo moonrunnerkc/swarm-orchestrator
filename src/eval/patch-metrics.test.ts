@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { metricsDelta, patchMetrics } from "./patch-metrics.ts";
+import { addedLineText, metricsDelta, patchFiles, patchMetrics } from "./patch-metrics.ts";
 
 const patch = [
   "diff --git a/lib/clamp.js b/lib/clamp.js",
@@ -55,5 +55,43 @@ describe("the size of a patch, counted the way reach reads it", () => {
     expect(delta.filesChanged).toBe(-2);
     expect(delta.executableAddedLines).toBe(0);
     expect(delta.testAddedLines).toBe(-1);
+  });
+});
+
+describe("the files of a patch, compared one by one", () => {
+  const section = (path: string, index: string, lines: readonly string[]) =>
+    [
+      `diff --git a/${path} b/${path}`,
+      "new file mode 100644",
+      `index 0000000..${index}`,
+      "--- /dev/null",
+      `+++ b/${path}`,
+      `@@ -0,0 +1,${lines.length} @@`,
+      ...lines.map((line) => `+${line}`),
+      "",
+    ].join("\n");
+
+  it("gives an unchanged file the same digest whatever git abbreviated its blob to", () => {
+    const before = patchFiles(section("lib/a.js", "1a2b3c4", ["const a = 1;"]));
+    const after = patchFiles(
+      section("lib/a.js", "1a2b3c4d5e", ["const a = 1;"]) +
+        section("probe-tmp.js", "9f8e7d6", ["console.log(1);"]),
+    );
+    expect(after.map((file) => file.path)).toEqual(["lib/a.js", "probe-tmp.js"]);
+    expect(after[0]?.diffDigest).toBe(before[0]?.diffDigest);
+    expect(after[1]).toMatchObject({ path: "probe-tmp.js", change: "added" });
+  });
+
+  it("gives a file whose added lines differ a different digest", () => {
+    const one = patchFiles(section("lib/a.js", "1a2b3c4", ["const a = 1;"]))[0];
+    const other = patchFiles(section("lib/a.js", "1a2b3c4", ["const a = 2;"]))[0];
+    expect(one?.diffDigest).not.toBe(other?.diffDigest);
+  });
+
+  it("reads one added line's text by path and number, trimmed, or nothing", () => {
+    const patch = section("lib/a.js", "1a2b3c4", ["function a() {", "  return 1;", "}"]);
+    expect(addedLineText(patch, "lib/a.js", 2)).toBe("return 1;");
+    expect(addedLineText(patch, "lib/a.js", 9)).toBeNull();
+    expect(addedLineText(patch, "lib/b.js", 1)).toBeNull();
   });
 });
