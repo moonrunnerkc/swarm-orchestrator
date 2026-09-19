@@ -38,6 +38,8 @@ export const conciseWorkerPrompt = [
   "Keep implementation and meaningful tests together and preserve existing behavior.",
   "Declare intended files with declare_file_set before edits. Amend with a recorded reason",
   "when necessary. Neither declaration nor amendment can expand a controller contract.",
+  "Name a file created only to investigate under `temporary` and delete it before finishing:",
+  "whatever is left in the workspace is the change that gets judged.",
   "If authorized scope is insufficient, request a controller revision through coordination",
   "when available and stop with the exact blocker. Do not keep retrying a denied operation.",
   "Use the project's test harness and language. Tests run unattended and must exit.",
