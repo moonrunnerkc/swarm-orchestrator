@@ -1,3 +1,4 @@
+import { knownTotal } from "./known-total.ts";
 import {
   bootstrapInterval,
   type Interval,
@@ -101,7 +102,8 @@ export function budgetMatched(
 }
 
 export interface ArmRun extends LaunchedRun {
-  readonly costUsd: number;
+  /** Null where what the run spent is not known, which a crashed run's never is. */
+  readonly costUsd: number | null;
   readonly latencyMs: number;
 }
 
@@ -110,8 +112,17 @@ export interface ArmScore {
   readonly launched: number;
   readonly crashed: number;
   readonly accepted: Interval;
-  /** Null where nothing was accepted: a cost per accepted patch of infinity is not a number. */
+  /**
+   * Null where nothing was accepted, since a cost per accepted patch of infinity is not a number,
+   * and null where any run's cost is unknown, since a sum missing a part is not the arm's cost.
+   */
   readonly costPerAccepted: number | null;
+  readonly costAccounting: {
+    readonly complete: boolean;
+    readonly runsWithUnknownCost: number;
+    /** What the runs that did report spent: a lower bound, never printed as the total. */
+    readonly knownSubtotalUsd: number;
+  };
   readonly latency: Interval;
 }
 
@@ -120,13 +131,19 @@ export function scoreArms(
 ): readonly ArmScore[] {
   return arms.map((arm) => {
     const counted = intentionToTreat(arm.runs);
-    const totalCost = arm.runs.reduce((total, run) => total + run.costUsd, 0);
+    const cost = knownTotal(arm.runs.map((run) => run.costUsd));
     return {
       armId: arm.armId,
       launched: counted.launched,
       crashed: counted.crashed,
       accepted: counted.rate,
-      costPerAccepted: counted.accepted === 0 ? null : totalCost / counted.accepted,
+      costPerAccepted:
+        counted.accepted === 0 || cost.total === null ? null : cost.total / counted.accepted,
+      costAccounting: {
+        complete: cost.unknownParts === 0,
+        runsWithUnknownCost: cost.unknownParts,
+        knownSubtotalUsd: cost.knownSubtotal,
+      },
       latency: bootstrapInterval(
         arm.runs.map((run) => run.latencyMs),
         { resamples: 1_000, seed: 20_260_905 },
@@ -139,8 +156,9 @@ export function describeArmReport(scores: readonly ArmScore[]): string {
   return scores
     .map((score) => {
       const rate = `${(score.accepted.point * 100).toFixed(1)}% [${(score.accepted.lower * 100).toFixed(1)}, ${(score.accepted.upper * 100).toFixed(1)}]`;
-      const cost =
-        score.costPerAccepted === null
+      const cost = !score.costAccounting.complete
+        ? `cost unknown: ${score.costAccounting.runsWithUnknownCost} run(s) did not report what they spent`
+        : score.costPerAccepted === null
           ? "no accepted patch, so no cost per accepted patch"
           : `$${score.costPerAccepted.toFixed(3)} per accepted patch`;
       return (

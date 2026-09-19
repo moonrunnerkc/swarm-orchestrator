@@ -154,7 +154,8 @@ export async function judgeByHiddenOracle(
 export interface ArmOutcome {
   readonly accepted: boolean;
   readonly completed: boolean;
-  readonly costUsd: number;
+  /** Null where unknown. A run that never launched spent nothing; a crashed one spent something. */
+  readonly costUsd: number | null;
   readonly latencyMs: number;
   readonly detail: string;
 }
@@ -208,7 +209,8 @@ export async function runCampaign(input: {
       outcome = {
         accepted: false,
         completed: false,
-        costUsd: 0,
+        // It ran until it threw, and nothing here saw what it spent before that.
+        costUsd: null,
         latencyMs: 0,
         detail: cause instanceof Error ? cause.message : String(cause),
       };
