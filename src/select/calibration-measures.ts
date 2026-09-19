@@ -84,11 +84,18 @@ export interface ModelCallTally {
   /** Turns it recorded as carrying neither, by the reason it recorded. */
   readonly emptyTurns: number;
   readonly emptyTurnReasons: Readonly<Record<string, number>>;
+  /** Summed over the calls that reported usage. A lower bound where `callsWithUnknownUsage` is not zero. */
   readonly outputTokens: number;
   readonly responseTimeMs: number;
+  /** Calls whose provider reported no usage, a failed call included. They add no tokens above. */
+  readonly callsWithUnknownUsage: number;
   /** Mean over the calls that observed one, null when none did. */
   readonly firstTokenMs: number | null;
-  /** Output tokens over the whole repeat's response time, null when no time was measured. */
+  /**
+   * Output tokens over response time, across the calls that reported both, null when none did.
+   * A call with unknown usage is left out of both sides: its time with zero tokens against it
+   * would read as a slower model, and selection compares this number between models.
+   */
   readonly tokensPerSecond: number | null;
 }
 
@@ -104,6 +111,9 @@ export function tallyModelCalls(entries: readonly RecordedPayload[]): ModelCallT
   const emptyTurnReasons: Record<string, number> = {};
   let outputTokens = 0;
   let responseTimeMs = 0;
+  let callsWithUnknownUsage = 0;
+  let ratedTokens = 0;
+  let ratedTimeMs = 0;
   const firstTokens: number[] = [];
 
   for (const entry of entries) {
@@ -121,10 +131,20 @@ export function tallyModelCalls(entries: readonly RecordedPayload[]): ModelCallT
       const reason = stringAt(content, "reason") ?? "unrecorded";
       emptyTurnReasons[reason] = (emptyTurnReasons[reason] ?? 0) + 1;
     }
-    outputTokens += numberAt(entry.payload, "outputTokens") ?? 0;
+    const reportedTokens =
+      stringAt(entry.payload, "usageStatus") === "unknown"
+        ? null
+        : numberAt(entry.payload, "outputTokens");
+    if (reportedTokens === null) callsWithUnknownUsage += 1;
+    outputTokens += reportedTokens ?? 0;
 
     const performance = valueAt(entry.payload, "performance");
-    responseTimeMs += numberAt(performance, "responseTimeMs") ?? 0;
+    const callTimeMs = numberAt(performance, "responseTimeMs");
+    responseTimeMs += callTimeMs ?? 0;
+    if (reportedTokens !== null && callTimeMs !== null) {
+      ratedTokens += reportedTokens;
+      ratedTimeMs += callTimeMs;
+    }
     const firstToken = numberAt(performance, "firstTokenMs");
     if (firstToken !== null) {
       firstTokens.push(firstToken);
@@ -142,7 +162,8 @@ export function tallyModelCalls(entries: readonly RecordedPayload[]): ModelCallT
       firstTokens.length === 0
         ? null
         : firstTokens.reduce((sum, value) => sum + value, 0) / firstTokens.length,
-    tokensPerSecond: responseTimeMs === 0 ? null : outputTokens / (responseTimeMs / 1000),
+    callsWithUnknownUsage,
+    tokensPerSecond: ratedTimeMs === 0 ? null : ratedTokens / (ratedTimeMs / 1000),
   };
 }
 

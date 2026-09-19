@@ -63,6 +63,11 @@ export interface AgentLoopOutcome {
   /** Steps whose response carried something: text, a tool call, or both. */
   readonly answeredSteps: number;
   readonly tokensUsed: number;
+  /**
+   * Answered calls whose provider reported no usage. `tokensUsed` counts those as nothing, so
+   * where this is above zero it is a lower bound and not the total.
+   */
+  readonly callsWithUnknownUsage: number;
   /** The plan the model stated on its first turn, as unverified prose. */
   readonly plan: string;
   /** The model's account of finishing. Unverified here: gates decide, not the model (invariant 1). */
@@ -86,11 +91,21 @@ export async function runAgentLoop(
   let steps = 0;
   let answeredSteps = 0;
   let tokensUsed = 0;
+  let callsWithUnknownUsage = 0;
   let plan = "";
 
   const finish = (stopReason: StopReason, completionClaim: string): AgentLoopOutcome => {
     deps.emit({ type: "stopped", reason: stopReason, steps, tokensUsed });
-    return { stopReason, steps, answeredSteps, tokensUsed, plan, completionClaim, messages };
+    return {
+      stopReason,
+      steps,
+      answeredSteps,
+      tokensUsed,
+      callsWithUnknownUsage,
+      plan,
+      completionClaim,
+      messages,
+    };
   };
 
   for (;;) {
@@ -141,6 +156,7 @@ export async function runAgentLoop(
         deadline,
         (response) => {
           tokensUsed += response.inputTokens + response.outputTokens;
+          if (response.usageStatus === "unknown") callsWithUnknownUsage += 1;
         },
         () => deps.budget.maxTokens - tokensUsed,
       );

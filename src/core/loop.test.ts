@@ -122,6 +122,45 @@ describe("runAgentLoop", () => {
     expect(outcome.completionClaim).toBe("");
   });
 
+  it("counts the answered calls whose usage the provider did not report", async () => {
+    const reported = createFixtureModelClient({
+      modelId: "fixture:loop",
+      turns: [
+        respondWithToolCalls("looking", [{ callId: "a", toolName: "list", input: {} }], {
+          input: 60,
+          output: 60,
+        }),
+        respondWithText("done"),
+      ],
+    });
+    let call = 0;
+    const harness = createHarness([], {
+      model: {
+        modelId: reported.modelId,
+        // The second answer arrives with no usage, the way a local server's stream can end.
+        generate: async (request) => {
+          call += 1;
+          const response = await reported.generate(request);
+          return call === 2
+            ? { ...response, inputTokens: 0, outputTokens: 0, usageStatus: "unknown" }
+            : response;
+        },
+      },
+    });
+
+    const outcome = await runAgentLoop("two calls", harness.deps);
+
+    // The total is what was reported and no more, and the count says it is a lower bound.
+    expect(outcome.tokensUsed).toBe(120);
+    expect(outcome.callsWithUnknownUsage).toBe(1);
+  });
+
+  it("reports no unknown usage where every call reported", async () => {
+    const harness = createHarness([respondWithText("done", { input: 5, output: 5 })]);
+    const outcome = await runAgentLoop("one call", harness.deps);
+    expect(outcome.callsWithUnknownUsage).toBe(0);
+  });
+
   it("stops on max-tokens once the spend crosses the budget", async () => {
     const harness = createHarness(
       [

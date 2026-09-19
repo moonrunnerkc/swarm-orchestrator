@@ -31,6 +31,7 @@ function observation(
       validTurns: 2,
       emptyTurns: 0,
       emptyTurnReasons: {},
+      callsWithUnknownUsage: 0,
       outputTokens: 100,
       responseTimeMs: 2_000,
       firstTokenMs: 200,
