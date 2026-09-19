@@ -39,7 +39,8 @@ export type RepairRelation = (typeof repairRelations)[number];
  */
 export interface Finding {
   readonly id: string;
-  readonly kind: "refusal" | "unreached-line" | "no-change";
+  /** `accepted-mutant` is a line whose witnessed mutant the oracle ran and still accepted. */
+  readonly kind: "refusal" | "unreached-line" | "accepted-mutant" | "no-change";
   readonly path?: string;
   readonly line?: number;
 }

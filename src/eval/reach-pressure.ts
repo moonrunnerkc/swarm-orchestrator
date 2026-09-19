@@ -214,7 +214,7 @@ const patchMetricsSchema = z.object({
   diffBytes: z.number().int(),
 }) satisfies z.ZodType<PatchMetrics>;
 
-const patchSnapshotSchema = z.object({
+export const patchSnapshotSchema = z.object({
   digest: z.string().regex(digestPattern),
   metrics: patchMetricsSchema,
   /** Absent on rows written before repairs were compared file by file. */
@@ -260,7 +260,7 @@ const invocationFileSetSchema = z.object({
 });
 export type InvocationFileSet = z.infer<typeof invocationFileSetSchema>;
 
-const invocationSchema = z.object({
+export const invocationSchema = z.object({
   exitCode: z.number().int(),
   wallMs: z.number().nonnegative(),
   timedOut: z.boolean(),
@@ -270,6 +270,12 @@ const invocationSchema = z.object({
   ledgerRecords: z.number().int().nonnegative().nullable(),
   usage: usageSchema,
   fileSet: invocationFileSetSchema.nullable().optional(),
+  /**
+   * Why the session's own loop stopped, from its ledger: `completed`, `max-steps`, `max-tokens`,
+   * `max-wall-time` and so on. Absent on rows written before it was read, null where no session
+   * could be read.
+   */
+  stopReason: z.string().nullable().optional(),
 });
 export type AgentInvocation = z.infer<typeof invocationSchema>;
 
@@ -296,6 +302,13 @@ const observationSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("no-change") }),
   z.object({ kind: z.literal("judged"), verdict: verdictSchema }),
 ]);
+
+export const stepScopeSchema = z.object({
+  entered: z.array(z.string()),
+  undeclared: z.array(z.string()),
+  temporaryLeft: z.array(z.string()),
+  retained: z.array(z.object({ path: z.string(), reason: z.string() })),
+});
 
 const stepSchema = z.object({
   phase: z.enum(["prefix", "reach-repair"]),
@@ -334,14 +347,7 @@ const stepSchema = z.object({
    * `undeclared` it never authorized, `temporaryLeft` it said it would delete and did not,
    * `retained` it said it was keeping, with its reason. Absent where either side is unknown.
    */
-  scope: z
-    .object({
-      entered: z.array(z.string()),
-      undeclared: z.array(z.string()),
-      temporaryLeft: z.array(z.string()),
-      retained: z.array(z.object({ path: z.string(), reason: z.string() })),
-    })
-    .optional(),
+  scope: stepScopeSchema.optional(),
 });
 export type TrajectoryStep = z.infer<typeof stepSchema>;
 
@@ -655,11 +661,11 @@ export function fileSetOfSession(
   }
 }
 
-function scopeOf(
+export function scopeOf(
   fileSet: InvocationFileSet | null | undefined,
   files: readonly PatchFile[] | undefined,
   earlierFiles: readonly PatchFile[] | undefined,
-): { scope?: NonNullable<TrajectoryStep["scope"]> } {
+): { scope?: z.infer<typeof stepScopeSchema> } {
   if (fileSet === null || fileSet === undefined || files === undefined) return {};
   const before = new Set((earlierFiles ?? []).map((file) => file.path));
   const present = new Set(files.map((file) => file.path));
