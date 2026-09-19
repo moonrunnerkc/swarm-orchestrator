@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   type HalfJudge,
   type HalfVerdict,
+  type JudgedTask,
   judgeAgainstBothHalves,
   runnerKind,
+  scoreHeldBack,
   settleHeldBack,
   taskSlug,
   whyNothingWasJudged,
@@ -82,5 +84,68 @@ describe("the small readings a pass is built from", () => {
     expect(runnerKind("npx jest --ci a.test.js")).toBe("jest");
     expect(runnerKind("node --test a.test.js")).toBe("node");
     expect(taskSlug(task)).toBe("winstonjs__winston-2256");
+  });
+});
+
+describe("the one held-back scoring rule", () => {
+  const task: JudgedTask = {
+    repository: "a/b",
+    pull: 7,
+    baseCommit: "b".repeat(40),
+    testFile: "test/x.test.js",
+    runner: "node --test test/x.test.js",
+    sealedCases: ["visible case"],
+    heldBackCases: ["held-back case"],
+  };
+  const judging = (
+    answers: Record<string, HalfJudge extends (...args: never) => Promise<infer V> ? V : never>,
+  ) => {
+    const asked: { titles: readonly string[]; oracleOnly: boolean }[] = [];
+    const judge: HalfJudge = async (titles, options) => {
+      asked.push({ titles, oracleOnly: options?.oracleOnly === true });
+      const answer = answers[titles.join("|")];
+      if (answer === undefined) throw new Error(`no answer for ${titles.join("|")}`);
+      return answer;
+    };
+    return { judge, asked };
+  };
+
+  it("reads the held-back half alone, oracle only", async () => {
+    const { judge, asked } = judging({
+      "held-back case": { task: "accepted", regression: "unmeasured" },
+    });
+    expect(await scoreHeldBack(judge, task, "accepted")).toEqual({
+      hidden: "pass",
+      basis: "the held-back half's own verdict on this patch",
+      heldBackVerdict: "accepted",
+      orderDependent: false,
+      heldBackBond: null,
+    });
+    expect(asked).toEqual([{ titles: ["held-back case"], oracleOnly: true }]);
+  });
+
+  it("reads a refusal that disappears beside the visible half as order dependence", async () => {
+    const { judge } = judging({
+      "held-back case": { task: "rejected", regression: "unmeasured" },
+      "visible case|held-back case": { task: "accepted", regression: "unmeasured" },
+    });
+    expect(await scoreHeldBack(judge, task, "accepted")).toMatchObject({
+      hidden: "pass",
+      orderDependent: true,
+    });
+  });
+
+  it("names why a verdict judged nothing, and never converts it", async () => {
+    const { judge } = judging({
+      "held-back case": {
+        task: "unjudged",
+        regression: "unmeasured",
+        judgeFailure: "swarm ci was killed at its deadline: x",
+      },
+    });
+    expect(await scoreHeldBack(judge, task, "accepted")).toMatchObject({
+      hidden: "unjudgeable",
+      basis: "swarm ci was killed at its deadline: x",
+    });
   });
 });

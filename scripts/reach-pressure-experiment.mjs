@@ -834,23 +834,9 @@ async function heldBackScore({
     isolation: parameters.agent.isolation,
   });
   // The repository's own checks were measured when the visible oracle judged this same patch.
-  const settled = await lib.settleHeldBack(judge, judgedTaskOf(task), visibleTask, {
-    oracleOnly: true,
-  });
-  const hidden = lib.hiddenOutcome(settled.heldBackVerdict);
   return {
     patchDigest,
-    hidden,
-    basis:
-      hidden === "unjudgeable"
-        ? (lib.whyNothingWasJudged(settled.heldBack) ??
-          `the held-back oracle read ${settled.heldBackVerdict}`)
-        : settled.orderDependent
-          ? "the held-back half refused alone and accepted beside the visible half, which is order dependence and not a refusal"
-          : "the held-back half's own verdict on this patch",
-    heldBackVerdict: settled.heldBackVerdict,
-    orderDependent: settled.orderDependent,
-    heldBackBond: settled.heldBack.oracleBond ?? null,
+    ...(await lib.scoreHeldBack(judge, judgedTaskOf(task), visibleTask)),
   };
 }
 

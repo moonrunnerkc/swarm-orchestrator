@@ -95,12 +95,8 @@ export const hiddenScoreSchema = identitySchema.extend({
 });
 export type HiddenScore = z.infer<typeof hiddenScoreSchema>;
 
-/** The held-back verdict as the primary outcome reads it. Only a verdict about the patch counts. */
-export function hiddenOutcome(heldBackVerdict: string): HiddenScore["hidden"] {
-  if (heldBackVerdict === "accepted") return "pass";
-  if (heldBackVerdict === "rejected") return "fail";
-  return "unjudgeable";
-}
+/** Re-exported from where the one scoring rule lives, for the driver that reads it from here. */
+export { hiddenOutcome } from "./pr-task-judge.ts";
 
 export interface PairedTableReport {
   readonly denominator: string;
