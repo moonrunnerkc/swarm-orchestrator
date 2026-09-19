@@ -258,6 +258,50 @@ export async function settleHeldBack(
   return { heldBack, heldBackVerdict: heldBack.task, orderDependent: false };
 }
 
+/** The held-back verdict as a primary outcome reads it. Only a verdict about the patch counts. */
+export function hiddenOutcome(heldBackVerdict: string): "pass" | "fail" | "unjudgeable" {
+  if (heldBackVerdict === "accepted") return "pass";
+  if (heldBackVerdict === "rejected") return "fail";
+  return "unjudgeable";
+}
+
+export interface HeldBackScore {
+  readonly hidden: "pass" | "fail" | "unjudgeable";
+  /** Which rule produced `hidden`, in words, so an unjudgeable score names its reason. */
+  readonly basis: string;
+  readonly heldBackVerdict: OracleVerdict;
+  readonly orderDependent: boolean;
+  readonly heldBackBond: "held" | "vacuous" | "unshown" | "not-bonded" | null;
+}
+
+/**
+ * One patch's held-back score: the held-back half alone, settled against order dependence where
+ * the visible half accepted it, and only the oracle, since the repository's own checks were
+ * measured when the visible half judged the same patch. The one scoring rule both experiments
+ * over the mined corpus read.
+ */
+export async function scoreHeldBack(
+  judge: HalfJudge,
+  task: JudgedTask,
+  visibleTask: OracleVerdict,
+): Promise<HeldBackScore> {
+  const settled = await settleHeldBack(judge, task, visibleTask, { oracleOnly: true });
+  const hidden = hiddenOutcome(settled.heldBackVerdict);
+  return {
+    hidden,
+    basis:
+      hidden === "unjudgeable"
+        ? (whyNothingWasJudged(settled.heldBack) ??
+          `the held-back oracle read ${settled.heldBackVerdict}`)
+        : settled.orderDependent
+          ? "the held-back half refused alone and accepted beside the visible half, which is order dependence and not a refusal"
+          : "the held-back half's own verdict on this patch",
+    heldBackVerdict: settled.heldBackVerdict,
+    orderDependent: settled.orderDependent,
+    heldBackBond: settled.heldBack.oracleBond ?? null,
+  };
+}
+
 /** The verdicts one task produces, given a judge that runs one half of its cases. */
 export async function judgeAgainstBothHalves(judge: HalfJudge, task: JudgedTask) {
   const sealed = await judge(task.sealedCases);
