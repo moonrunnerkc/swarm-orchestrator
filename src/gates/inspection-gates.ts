@@ -210,13 +210,22 @@ export const fileSetGate: GateDefinition = {
       }
 
       const late = verdict.editedBeforeAuthorized;
-      const failed = verdict.outside.length > 0 || late.length > 0;
+      const leftBehind = verdict.temporaryStillPresent;
+      const failed = verdict.outside.length > 0 || late.length > 0 || leftBehind.length > 0;
+      // Said on a pass as well as a failure: a diagnostic file that stays in the change stays
+      // there on the record, with the reason the agent gave for keeping it.
+      const kept =
+        verdict.retainedInChange.length === 0
+          ? ""
+          : ` Kept on purpose after being recorded as temporary: ${verdict.retainedInChange
+              .map((one) => `${one.path} (${one.reason})`)
+              .join("; ")}`;
 
       return observationFromJson(
         {
           detail: !failed
             ? `all ${verdict.changedCount} changed file(s) are inside the declared set of ${verdict.declaredCount}, ` +
-              "and every one of them was declared before it was edited"
+              `and every one of them was declared before it was edited${kept === "" ? "" : `.${kept}`}`
             : [
                 verdict.outside.length === 0
                   ? ""
@@ -225,17 +234,31 @@ export const fileSetGate: GateDefinition = {
                   ? ""
                   : `${late.length} file(s) were edited before anything declared them: ${late.join(", ")}. ` +
                     "A declaration written after the edit describes what was done, not what was intended.",
-                "Record an amendment to widen the set, which puts the widening in front of a reviewer.",
+                verdict.outside.length === 0 && late.length === 0
+                  ? ""
+                  : "Record an amendment to widen the set, which puts the widening in front of a reviewer.",
+                leftBehind.length === 0
+                  ? ""
+                  : `${leftBehind.length} file(s) recorded as temporary are still in the change: ${leftBehind.join(", ")}. ` +
+                    "Delete each one, or call amend_file_set with `retain` naming it and the reason it belongs in the change.",
+                kept.trim(),
               ]
                 .filter((part) => part.length > 0)
                 .join(" "),
           outside: verdict.outside,
           editedBeforeAuthorized: late,
+          temporaryStillPresent: leftBehind,
+          retainedTemporary: verdict.retainedInChange.map((one) => ({
+            path: one.path,
+            reason: one.reason,
+            record: one.record,
+          })),
           declared: [...context.fileSet.allowed].sort(),
           amendments: context.fileSet.amendments.length,
           measures: {
             filesOutsideDeclaredSet: verdict.outside.length,
             filesEditedBeforeDeclared: late.length,
+            temporaryFilesLeftBehind: leftBehind.length,
             filesDeclared: verdict.declaredCount,
             fileSetAmendments: context.fileSet.amendments.length,
           },

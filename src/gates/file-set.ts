@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { JsonValue } from "../evidence/canonical-json.ts";
+import { asJsonValue, type JsonValue } from "../evidence/canonical-json.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 
 /**
@@ -23,7 +23,24 @@ interface FileSetAmendment {
   readonly record: string;
 }
 
+/** A path once recorded as temporary that the agent then chose to keep, with the reason it gave. */
+interface RetainedTemporary {
+  readonly path: string;
+  readonly reason: string;
+  readonly record: string;
+}
+
 export interface FileSetState {
+  /**
+   * Paths the agent recorded as created only to investigate: a probe script, a scratch check.
+   * Two repairs in the reach-pressure run left such a file in the final patch, and nothing in
+   * either record said it was not meant to be there. What makes a file temporary is the agent
+   * having said so on the ledger, never what it is called: `tmp` in a name decides nothing, and
+   * plenty of repositories ship a file with it.
+   */
+  readonly temporary?: ReadonlySet<string>;
+  /** Temporary paths deliberately kept by a recorded amendment. No longer in `temporary`. */
+  readonly retained?: readonly RetainedTemporary[];
   readonly declared: readonly string[];
   readonly amendments: readonly FileSetAmendment[];
   readonly allowed: ReadonlySet<string>;
@@ -37,6 +54,8 @@ export interface FileSetState {
 }
 
 export const emptyFileSet: FileSetState = {
+  temporary: new Set(),
+  retained: [],
   declared: [],
   amendments: [],
   allowed: new Set(),
@@ -47,6 +66,8 @@ export const emptyFileSet: FileSetState = {
 const fileSetDeclarationSchema = z.object({
   files: z.array(z.string().min(1)).min(1),
   fileCount: z.number().int().positive(),
+  /** Of `files`, the ones that must be gone by the end. Absent on every earlier ledger. */
+  temporary: z.array(z.string().min(1)).optional(),
 });
 
 const fileSetAmendmentSchema = z.object({
@@ -62,7 +83,21 @@ const fileSetAmendmentSchema = z.object({
   reason: z.string().min(1),
   amendment: z.literal(true),
   fileCountAfter: z.number().int().nonnegative(),
+  /** Of `files`, the ones this amendment records as temporary. */
+  temporary: z.array(z.string().min(1)).optional(),
+  /** Temporary paths this amendment keeps on purpose. The amendment's reason is the reason. */
+  retain: z.array(z.string().min(1)).optional(),
 });
+
+export class NothingTemporaryToRetainError extends Error {
+  constructor(paths: readonly string[]) {
+    super(
+      `${paths.join(", ")} was never recorded as temporary, so there is nothing to retain. ` +
+        "A file that belongs in the change needs only to be in the declared set.",
+    );
+    this.name = "NothingTemporaryToRetainError";
+  }
+}
 
 export class FileSetAlreadyDeclaredError extends Error {
   constructor() {
@@ -74,10 +109,22 @@ export class FileSetAlreadyDeclaredError extends Error {
   }
 }
 
+export interface FileSetMarks {
+  /** Paths created only to investigate. Authorized like any other, and owed a removal. */
+  readonly temporary?: readonly string[];
+  /** Amendment only: temporary paths to keep after all, for the amendment's stated reason. */
+  readonly retain?: readonly string[];
+}
+
 export interface FileSetRegistry {
   state(): FileSetState;
-  declare(files: readonly string[], actor: string): Promise<FileSetState>;
-  amend(files: readonly string[], reason: string, actor: string): Promise<FileSetState>;
+  declare(files: readonly string[], actor: string, marks?: FileSetMarks): Promise<FileSetState>;
+  amend(
+    files: readonly string[],
+    reason: string,
+    actor: string,
+    marks?: FileSetMarks,
+  ): Promise<FileSetState>;
 }
 
 /** Workspace-relative, slash-separated, no leading "./", so two spellings cannot both pass. */
@@ -113,6 +160,10 @@ export function writeRefusal(state: FileSetState, path: string): string | null {
 }
 
 interface FileSetVerdict {
+  /** Recorded as temporary and still in the change. */
+  readonly temporaryStillPresent: readonly string[];
+  /** Once temporary, kept by amendment, and in the change: named so the evidence says so. */
+  readonly retainedInChange: readonly RetainedTemporary[];
   readonly outside: readonly string[];
   /** Of the changed files, the ones whose edit the ledger records before its authorization. */
   readonly editedBeforeAuthorized: readonly string[];
@@ -125,6 +176,8 @@ export function checkFileSet(state: FileSetState, changedFiles: readonly string[
   const changed = changedFiles.map(normalizePath);
   const touched = new Set(changed);
   return {
+    temporaryStillPresent: changed.filter((path) => state.temporary?.has(path) === true).sort(),
+    retainedInChange: (state.retained ?? []).filter((kept) => touched.has(kept.path)),
     outside: changed.filter((path) => !state.allowed.has(path)).sort(),
     editedBeforeAuthorized: state.editedBeforeAuthorized.filter((path) => touched.has(path)),
     declaredCount: state.allowed.size,
@@ -138,7 +191,14 @@ export function checkFileSet(state: FileSetState, changedFiles: readonly string[
  * submits a harness claim citing its own record, which is what puts the widening on the
  * review page instead of leaving it for someone to notice in a diff.
  */
-export function createFileSetRegistry(evidence: EvidenceRecorder): FileSetRegistry {
+/**
+ * The file set a ledger holds, read off its records. The registry starts from this, and a reader
+ * of a finished session uses it alone: what a run declared, marked temporary and retained is a
+ * fact about its ledger and needs no live session to ask.
+ */
+export function replayFileSet(
+  evidence: Pick<EvidenceRecorder, "records" | "payloads">,
+): FileSetState {
   let current: FileSetState = emptyFileSet;
   for (const record of evidence.records()) {
     if (record.type === "file-set-declared") {
@@ -149,7 +209,13 @@ export function createFileSetRegistry(evidence: EvidenceRecorder): FileSetRegist
       const declared = unique(declaration.files);
       if (declared.length !== declaration.fileCount)
         throw new Error("file-set declaration count does not match its files");
-      current = { ...emptyFileSet, declared, allowed: new Set(declared), wasDeclared: true };
+      current = {
+        ...emptyFileSet,
+        declared,
+        allowed: new Set(declared),
+        wasDeclared: true,
+        temporary: new Set(unique(declaration.temporary ?? [])),
+      };
     }
     if (record.type === "file-set-amended") {
       const amendment = fileSetAmendmentSchema.parse(evidence.payloads().get(record.payloadDigest));
@@ -164,6 +230,7 @@ export function createFileSetRegistry(evidence: EvidenceRecorder): FileSetRegist
       current = {
         ...current,
         allowed,
+        ...marked(current, amendment, record.payloadDigest),
         amendments: [
           ...current.amendments,
           { files: amendment.files, added, reason: amendment.reason, record: record.payloadDigest },
@@ -171,7 +238,11 @@ export function createFileSetRegistry(evidence: EvidenceRecorder): FileSetRegist
       };
     }
   }
-  current = { ...current, editedBeforeAuthorized: writesBeforeAuthorization(evidence, current) };
+  return { ...current, editedBeforeAuthorized: writesBeforeAuthorization(evidence, current) };
+}
+
+export function createFileSetRegistry(evidence: EvidenceRecorder): FileSetRegistry {
+  let current: FileSetState = replayFileSet(evidence);
 
   /**
    * Recomputed from the chain rather than tracked alongside it. The ledger is the record of
@@ -186,22 +257,31 @@ export function createFileSetRegistry(evidence: EvidenceRecorder): FileSetRegist
   return {
     state: () => current,
 
-    async declare(files: readonly string[], actor: string): Promise<FileSetState> {
+    async declare(
+      files: readonly string[],
+      actor: string,
+      marks: FileSetMarks = {},
+    ): Promise<FileSetState> {
       if (current.wasDeclared) {
         throw new FileSetAlreadyDeclaredError();
       }
-      const declared = unique(files);
+      const temporary = unique(marks.temporary ?? []);
+      // Naming a path temporary authorizes it: it is about to be written like any other.
+      const declared = unique([...files, ...temporary]);
       const payload = fileSetDeclarationSchema.parse({
         files: declared,
         fileCount: declared.length,
+        ...(temporary.length === 0 ? {} : { temporary }),
       });
       await evidence.record({
         type: "file-set-declared",
         actor,
         provenance: ["model"],
-        payload,
+        payload: asJsonValue(payload),
       });
       current = withLedgerOrder({
+        temporary: new Set(temporary),
+        retained: [],
         declared,
         amendments: [],
         allowed: new Set(declared),
@@ -211,8 +291,17 @@ export function createFileSetRegistry(evidence: EvidenceRecorder): FileSetRegist
       return current;
     },
 
-    async amend(files: readonly string[], reason: string, actor: string): Promise<FileSetState> {
-      const named = unique(files);
+    async amend(
+      files: readonly string[],
+      reason: string,
+      actor: string,
+      marks: FileSetMarks = {},
+    ): Promise<FileSetState> {
+      const temporary = unique(marks.temporary ?? []);
+      const retain = unique(marks.retain ?? []);
+      const neverTemporary = retain.filter((path) => current.temporary?.has(path) !== true);
+      if (neverTemporary.length > 0) throw new NothingTemporaryToRetainError(neverTemporary);
+      const named = unique([...files, ...temporary, ...retain]);
       const added = named.filter((path) => !current.allowed.has(path));
       const allowed = new Set([...current.allowed, ...added]);
       const payload = fileSetAmendmentSchema.parse({
@@ -222,12 +311,14 @@ export function createFileSetRegistry(evidence: EvidenceRecorder): FileSetRegist
         reason,
         amendment: true,
         fileCountAfter: allowed.size,
+        ...(temporary.length === 0 ? {} : { temporary }),
+        ...(retain.length === 0 ? {} : { retain }),
       });
       const recorded = await evidence.record({
         type: "file-set-amended",
         actor,
         provenance: ["model"],
-        payload,
+        payload: asJsonValue(payload),
       });
       await evidence.submitClaim(
         {
@@ -235,13 +326,17 @@ export function createFileSetRegistry(evidence: EvidenceRecorder): FileSetRegist
           record: recorded.record.payloadDigest,
           recordKind: "file-set-amended",
           narrative:
-            added.length === 0
+            (added.length === 0
               ? `An amendment was recorded for ${named.join(", ")}, which the set already allowed. Stated reason: ${reason}`
-              : `The declared file set was widened to cover ${added.join(", ")}. Stated reason: ${reason}`,
+              : `The declared file set was widened to cover ${added.join(", ")}. Stated reason: ${reason}`) +
+            (retain.length === 0
+              ? ""
+              : ` It keeps ${retain.join(", ")}, recorded earlier as temporary, in the change.`),
         },
         actor,
       );
       current = withLedgerOrder({
+        ...marked(current, payload, recorded.record.payloadDigest),
         declared: current.declared,
         amendments: [
           ...current.amendments,
@@ -256,6 +351,34 @@ export function createFileSetRegistry(evidence: EvidenceRecorder): FileSetRegist
   };
 }
 
+/**
+ * The temporary and retained sets after one amendment, by the one rule replay and a live
+ * amendment share. Retaining wins over marking where an amendment names a path under both: the
+ * agent has said, in the same breath, that it is keeping it.
+ */
+function marked(
+  state: FileSetState,
+  amendment: {
+    readonly temporary?: readonly string[] | undefined;
+    readonly retain?: readonly string[] | undefined;
+    readonly reason: string;
+  },
+  record: string,
+): Required<Pick<FileSetState, "temporary" | "retained">> {
+  const retain = unique(amendment.retain ?? []).filter(
+    (path) => state.temporary?.has(path) === true,
+  );
+  const temporary = new Set([...(state.temporary ?? []), ...unique(amendment.temporary ?? [])]);
+  for (const path of retain) temporary.delete(path);
+  return {
+    temporary,
+    retained: [
+      ...(state.retained ?? []),
+      ...retain.map((path) => ({ path, reason: amendment.reason, record })),
+    ],
+  };
+}
+
 function unique(files: readonly string[]): readonly string[] {
   return [...new Set(files.map(normalizePath).filter((path) => path.length > 0))].sort();
 }
@@ -267,7 +390,7 @@ function unique(files: readonly string[]): readonly string[] {
  * visible admission that the set moved, which is the whole remedy invariant 12 asks for.
  */
 function writesBeforeAuthorization(
-  evidence: EvidenceRecorder,
+  evidence: Pick<EvidenceRecorder, "records" | "payloads">,
   state: FileSetState,
 ): readonly string[] {
   const amended = new Set(state.amendments.flatMap((amendment) => amendment.files));
