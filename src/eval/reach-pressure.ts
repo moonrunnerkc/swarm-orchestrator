@@ -316,7 +316,12 @@ const stepSchema = z.object({
       z.object({ to: z.literal("agent") }),
       z.object({
         to: z.literal("infrastructure"),
-        reason: z.enum(["endpoint-not-generating", "no-model-call-answered"]),
+        reason: z.enum([
+          "endpoint-not-generating",
+          "no-model-call-answered",
+          "invocation-killed-at-deadline",
+          "no-session-recorded",
+        ]),
         detail: z.string(),
       }),
     ])

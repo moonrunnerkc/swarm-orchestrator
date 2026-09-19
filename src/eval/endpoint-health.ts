@@ -155,19 +155,53 @@ export type InvocationAttribution =
   | { readonly to: "agent" }
   | {
       readonly to: "infrastructure";
-      readonly reason: "endpoint-not-generating" | "no-model-call-answered";
+      readonly reason:
+        | "endpoint-not-generating"
+        | "no-model-call-answered"
+        | "invocation-killed-at-deadline"
+        | "no-session-recorded";
       readonly detail: string;
     };
+
+/**
+ * What the driver saw of the agent process itself, for a caller that runs a real agent.
+ *
+ * The agent keeps its own wall budget and stops itself at it, cancelling the call in flight; that
+ * is an agent out of time and stays the agent's. A process the driver had to kill at its own,
+ * later deadline did not stop itself, so what it left is whatever was on disk when it was killed.
+ * A process that left no session to read was never shown to have asked the model anything. Neither
+ * is a model's answer to its prompt.
+ */
+export interface AgentProcessOutcome {
+  readonly timedOut: boolean;
+  readonly runId: string | null;
+}
 
 export function attributeInvocation(input: {
   readonly probe: GenerationProbe;
   readonly calls?: ModelCallOutcomes;
+  readonly process?: AgentProcessOutcome;
 }): InvocationAttribution {
   if (!input.probe.generates) {
     return {
       to: "infrastructure",
       reason: "endpoint-not-generating",
       detail: `the model endpoint stopped generating (${input.probe.failure}): ${input.probe.detail}`,
+    };
+  }
+  if (input.process?.timedOut === true) {
+    return {
+      to: "infrastructure",
+      reason: "invocation-killed-at-deadline",
+      detail:
+        "the agent process outlived its own wall budget and was killed at the driver's deadline",
+    };
+  }
+  if (input.process !== undefined && input.process.runId === null) {
+    return {
+      to: "infrastructure",
+      reason: "no-session-recorded",
+      detail: "the agent process left no session to read, so no model call of it is on record",
     };
   }
   const calls = input.calls;

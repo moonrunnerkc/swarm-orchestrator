@@ -182,4 +182,51 @@ describe("whether an invocation may be read as the agent's", () => {
       attributeInvocation({ probe: generating, calls: { modelCalls: 0, failedCalls: 0 } }),
     ).toEqual({ to: "agent" });
   });
+
+  it("is infrastructure where the driver had to kill the agent at its own deadline", () => {
+    // The agent answered calls and the endpoint still generates, which alone would read as the
+    // agent's. A process that outlived its own wall budget did not stop itself.
+    expect(
+      attributeInvocation({
+        probe: generating,
+        calls: { modelCalls: 30, failedCalls: 0 },
+        process: { timedOut: true, runId: "20260918T000000-abcdef" },
+      }),
+    ).toMatchObject({ to: "infrastructure", reason: "invocation-killed-at-deadline" });
+  });
+
+  it("is infrastructure where the agent process left no session to read", () => {
+    expect(
+      attributeInvocation({
+        probe: generating,
+        calls: { modelCalls: null, failedCalls: null },
+        process: { timedOut: false, runId: null },
+      }),
+    ).toMatchObject({ to: "infrastructure", reason: "no-session-recorded" });
+  });
+
+  it("keeps an agent that stopped itself at its own wall budget the agent's", () => {
+    // Every unknown-usage invocation of the reach-pressure run was this: one call cancelled by the
+    // agent's own budget after dozens answered, on an endpoint that generated throughout.
+    expect(
+      attributeInvocation({
+        probe: generating,
+        calls: { modelCalls: 31, failedCalls: 1 },
+        process: { timedOut: false, runId: "20260918T000000-abcdef" },
+      }),
+    ).toEqual({ to: "agent" });
+  });
+
+  it("names the endpoint first where it has stopped generating, whatever the process did", () => {
+    expect(
+      attributeInvocation({
+        probe: {
+          generates: false,
+          failure: "timeout",
+          detail: "no completion within 120000 ms",
+        },
+        process: { timedOut: true, runId: null },
+      }),
+    ).toMatchObject({ to: "infrastructure", reason: "endpoint-not-generating" });
+  });
 });
