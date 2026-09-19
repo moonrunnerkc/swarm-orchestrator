@@ -19,9 +19,9 @@ import {
   MixedStudyIdentities,
   type ModelIdentity,
   type PrefixRow,
-  patchesToScore,
   type StudyIdentity,
   type StudyManifest,
+  studyPatchesToScore,
   summarizeStudy,
   unitSchedules,
   unsettledUnits,
@@ -35,7 +35,6 @@ const identity: StudyIdentity = {
   protocolDigest: digestOfBytes("protocol"),
   manifestDigest: digestOfBytes("manifest"),
   acquisitionDigest: digestOfBytes("acquisition"),
-  scoringDigest: digestOfBytes("scoring"),
   policyDigest: digestOfBytes("policy"),
   harness: "a".repeat(40),
 };
@@ -371,7 +370,7 @@ describe("what runs next, from the rows alone", () => {
       reach: patchOf(["open();", "x();"]),
       combined: patchOf(["open();", "x();"]),
     });
-    expect(patchesToScore(prefixRow, arms)).toEqual([
+    expect(studyPatchesToScore(prefixRow, arms)).toEqual([
       digestOfBytes(forkPatch),
       digestOfBytes(patchOf(["open();", "x();"])),
     ]);

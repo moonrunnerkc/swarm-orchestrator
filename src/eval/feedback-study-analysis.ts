@@ -68,10 +68,11 @@ export const studyIdentitySchema = z.object({
   generation: z.number().int().positive(),
   protocolDigest: digest,
   manifestDigest: digest,
-  /** Every source that ran a task, applied a treatment or recorded an observation. */
+  /**
+   * Every source that ran a task, applied a treatment, recorded an observation or turned a stored
+   * patch into a held-back pass or fail: the agent, the verifier and the judge run from one tree.
+   */
   acquisitionDigest: digest,
-  /** Every source that turned a stored patch into a held-back pass or fail. */
-  scoringDigest: digest,
   /** The treatment wording, all four arms and the prefix's feedback rule together. */
   policyDigest: digest,
   harness: sha1,
@@ -168,7 +169,6 @@ export function assertOneStudyAcquisition(
     "protocolDigest",
     "manifestDigest",
     "acquisitionDigest",
-    "scoringDigest",
     "policyDigest",
     "harness",
   ] as const;
@@ -303,7 +303,7 @@ function settledArm(arms: readonly ArmRow[], prefix: PrefixRow, arm: StudyArm): 
  * Which patches the held-back half scores for one settled prefix: the accepted prefix patch and
  * every arm's final patch, each digest once.
  */
-export function patchesToScore(prefix: PrefixRow, arms: readonly ArmRow[]): readonly string[] {
+export function studyPatchesToScore(prefix: PrefixRow, arms: readonly ArmRow[]): readonly string[] {
   if (prefix.prefix.frozen === null) return [];
   const patches = [prefix.prefix.frozen.patchDigest];
   for (const arm of prefix.prefix.eligibility.arms) {
@@ -934,14 +934,14 @@ export function summarizeStudy(input: {
       },
       byModel,
       primaryFamily: {
-        method: "exact two-sided McNemar per model and treatment, Holm-adjusted across the family",
+        method: "Exact two-sided McNemar per model and treatment, Holm-adjusted across the family",
         tests: family.length,
         fewestDiscordantForAClaim: fewestDiscordantForAClaim(family.length),
         family,
       },
       pooled: {
         method:
-          "paired risk difference over every model's primary pairs, interval by resampling tasks",
+          "Paired risk difference over every model's primary pairs, interval by resampling tasks",
         bootstrap: input.options.bootstrap,
         byTreatment: pooled,
       },
