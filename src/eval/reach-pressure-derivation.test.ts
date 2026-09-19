@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { digestOfBytes } from "../evidence/canonical-json.ts";
 import {
+  assertOneAcquisition,
   type ExperimentIdentity,
   hiddenScoreSchema,
   MixedProtocolGenerations,
@@ -12,7 +13,6 @@ import {
   summarize,
 } from "./reach-pressure-analysis.ts";
 import {
-  assertOneAcquisition,
   derivationDestination,
   derivationRecord,
   identitySources,

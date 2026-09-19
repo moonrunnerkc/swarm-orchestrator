@@ -1,10 +1,6 @@
 import { z } from "zod";
 import { digestPattern } from "../evidence/canonical-json.ts";
-import {
-  type ExperimentIdentity,
-  identifiedRowSchema,
-  MixedProtocolGenerations,
-} from "./reach-pressure-analysis.ts";
+import type { ExperimentIdentity } from "./reach-pressure-analysis.ts";
 
 /**
  * Keeping what a run observed apart from what a later checkout concluded from it.
@@ -216,42 +212,6 @@ export function derivationDestination(input: {
   const against = input.record.againstPublished;
   if (against !== null && !against.identical) throw new PublishedSummaryWouldChange(input.record);
   return input.evidenceRoot;
-}
-
-/**
- * Every row already in an evidence directory, held to the identity about to write beside it.
- *
- * `analyze` has always refused mixed rows. `run` and `score` did not look: a results file left in
- * place across a protocol change would have had its settled tasks skipped as settled and its
- * open ones continued under the new generation, and the mix would surface only at analysis, after
- * the cohort had been spent. Generations 1 and 2 were kept apart by moving files by hand.
- */
-export function assertOneAcquisition(
-  identity: ExperimentIdentity,
-  rawRows: readonly unknown[],
-): void {
-  // Identity first and nothing else: an older generation's row need not parse as today's.
-  const rows = rawRows.map((row) => identifiedRowSchema.parse(row));
-  const keys = [
-    "generation",
-    "protocolDigest",
-    "manifestDigest",
-    "driverDigest",
-    "policyDigest",
-    "harness",
-  ] as const;
-  const foreign = rows.filter((row) => keys.some((key) => row[key] !== identity[key]));
-  if (foreign.length === 0) return;
-  throw new MixedProtocolGenerations([
-    ...new Set(
-      foreign.map(
-        (row) =>
-          `${row.taskId} generation ${row.generation} ${row.harness} (differs in ${keys
-            .filter((key) => row[key] !== identity[key])
-            .join(", ")})`,
-      ),
-    ),
-  ]);
 }
 
 /**
