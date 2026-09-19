@@ -21,7 +21,12 @@
  *
  * The protocol document beside the evidence carries the frozen parameters as a JSON block, and
  * every row carries that document's digest. Rows under two protocol identities never make one
- * estimate: `analyze` refuses them.
+ * estimate: `run` and `score` refuse to write beside rows of another identity, and `analyze`
+ * refuses to read them.
+ *
+ * `analyze` never overwrites a published summary with different bytes. Where a later checkout
+ * derives something else it writes to `--out <directory>`, beside a `derivation.json` that names
+ * the acquisition identity, the identities it was derived with and every value that moved.
  */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -45,7 +50,12 @@ const flag = (name, fallback) => {
   return at === -1 ? fallback : argv[at + 1];
 };
 
-/** The sources whose bytes decide what this experiment does, digested together as its driver. */
+/**
+ * The ten sources generation 3's protocol registered as one driver digest. Frozen as a list: it is
+ * the formula that protocol's `driverDigest` was computed by, and changing it would make every
+ * checkout disagree with the registration for a reason that is not a change to the experiment.
+ * A protocol of schema v2 registers the component identities in `identitySources` instead.
+ */
 const driverSources = [
   "scripts/reach-pressure-experiment.mjs",
   "scripts/reach-pressure/scripted-agent.mjs",
@@ -105,7 +115,9 @@ async function modules() {
     ...(await from("eval/patch-metrics.js")),
     ...(await from("eval/reach-pressure.js")),
     ...(await from("eval/reach-pressure-analysis.js")),
+    ...(await from("eval/reach-pressure-derivation.js")),
     ...(await from("eval/reach-pressure-report.js")),
+    ...(await from("eval/endpoint-health.js")),
     ...(await from("eval/sealed-workspace.js")),
     ...(await from("eval/task-identity.js")),
     ...(await from("durable/session-evidence.js")),
@@ -150,6 +162,26 @@ function driverDigestOf(lib) {
   );
 }
 
+/** One digest per identity component, over the sources `identitySources` names for it. */
+function componentDigestsOf(lib) {
+  return Object.fromEntries(
+    Object.entries(lib.identitySources).map(([component, sources]) => [
+      component,
+      lib.digestOfJson(
+        Object.fromEntries(
+          sources.map((path) => [
+            path,
+            lib.digestOfBytes(readFileSync(join(repositoryRoot, path), "utf8")),
+          ]),
+        ),
+      ),
+    ]),
+  );
+}
+
+const usesComponentIdentities = (parameters) =>
+  parameters.schema === "swarm.reach-pressure.protocol.v2";
+
 function readJsonLines(path) {
   if (!existsSync(path)) return [];
   return readFileSync(path, "utf8")
@@ -167,12 +199,18 @@ function experimentIdentity(lib, { bindToCommit, enforceDriver = true }) {
   const protocol = readProtocol(lib);
   const manifestText = readFileSync(paths.manifest, "utf8");
   const manifest = lib.manifestSchema.parse(JSON.parse(manifestText));
+  const components = componentDigestsOf(lib);
+  const policy = lib.experimentPolicyNamed(protocol.parameters.policy);
   const identity = {
     generation: protocol.parameters.generation,
     protocolDigest: protocol.digest,
     manifestDigest: lib.digestOfJson(JSON.parse(manifestText)),
-    driverDigest: driverDigestOf(lib),
-    policyDigest: lib.experimentPolicyDigest,
+    // What stamps a row is what wrote it: under a v2 protocol the acquisition identity, under
+    // generation 3's the ten-source digest it registered.
+    driverDigest: usesComponentIdentities(protocol.parameters)
+      ? components.acquisition
+      : driverDigestOf(lib),
+    policyDigest: policy.digest,
     harness: git(["rev-parse", "HEAD"]),
   };
   if (protocol.parameters.cohort !== manifest.cohort) {
@@ -195,6 +233,17 @@ function experimentIdentity(lib, { bindToCommit, enforceDriver = true }) {
       );
     }
   }
+  // Scoring decides a held-back pass or fail, so it is held to the registration wherever the
+  // driver is. Analysis and rendering are not: they may be corrected later, and say so.
+  if (
+    enforceDriver &&
+    usesComponentIdentities(protocol.parameters) &&
+    protocol.parameters.identities?.scoring !== components.scoring
+  ) {
+    throw new Error(
+      `the protocol froze the scoring identity ${protocol.parameters.identities?.scoring} and this checkout has ${components.scoring}`,
+    );
+  }
   if (bindToCommit) {
     // Untrimmed: the first column of a porcelain line is a status letter or a space.
     const outside = execFileSync("git", ["status", "--porcelain"], {
@@ -215,7 +264,7 @@ function experimentIdentity(lib, { bindToCommit, enforceDriver = true }) {
       );
     }
   }
-  return { identity, manifest, parameters: protocol.parameters };
+  return { identity, manifest, parameters: protocol.parameters, components, policy };
 }
 
 function workingRootOf(lib, parameters, synthetic) {
@@ -308,8 +357,15 @@ async function freeze() {
   writeFileSync(paths.manifest, `${JSON.stringify(manifest, null, 2)}\n`);
   console.log(`froze ${tasks.length} task(s): ${paths.manifest}`);
   console.log(`manifestDigest ${lib.digestOfJson(manifest)}`);
-  console.log(`driverDigest   ${driverDigestOf(lib)}`);
-  console.log(`policyDigest   ${lib.experimentPolicyDigest}`);
+  const components = componentDigestsOf(lib);
+  const policy = lib.experimentPolicyNamed(flag("--policy", "reach-pressure-v2"));
+  console.log("a protocol of schema swarm.reach-pressure.protocol.v2 registers:");
+  console.log(`  driverDigest          ${components.acquisition}  (the acquisition identity)`);
+  console.log(`  identities.scoring    ${components.scoring}`);
+  console.log(`  policy                ${policy.id}`);
+  console.log(`  policyDigest          ${policy.digest}`);
+  console.log(`analysis ${components.analysis} and renderer ${components.renderer} are recorded`);
+  console.log("by each derivation and are not registered, so a later correction stays visible.");
 }
 
 /** The task text is read from the viability record and checked against the frozen digest. */
@@ -368,9 +424,12 @@ function recordEnvironment(parameters, served) {
 
 async function run({ synthetic }) {
   await underTheCampaignLock(async (lib) => {
-    const { identity, manifest, parameters } = experimentIdentity(lib, {
+    const { identity, manifest, parameters, policy } = experimentIdentity(lib, {
       bindToCommit: !synthetic,
     });
+    // Before a task is spent: rows already here belong to this identity or nothing runs.
+    lib.assertOneAcquisition(identity, readJsonLines(paths.results));
+    if (!synthetic) requireEvidenceHeadroom();
     const workingRoot = workingRootOf(lib, parameters, synthetic);
     const textOf = taskTextsOf(lib, manifest);
     const scriptedAgent = flag("--agent-command", null);
@@ -385,9 +444,9 @@ async function run({ synthetic }) {
         parameters.endpoint,
         parameters.model.replace(/^local:/, ""),
       );
-      if (!health.answered) {
+      if (!health.generates) {
         throw new Error(
-          `the model endpoint is not answering, so nothing was run: ${health.detail}`,
+          `the model endpoint is not generating (${health.failure}), so nothing was run: ${health.detail}`,
         );
       }
       const served = await (await fetch(`${parameters.endpoint}/models`)).json();
@@ -406,17 +465,20 @@ async function run({ synthetic }) {
 
     let ran = 0;
     for (const task of manifest.tasks) {
-      const settled = resultsOf(task.id);
-      const launched = launchesOf(task.id);
+      const schedule = lib.scheduleOf({
+        launches: launchesOf(task.id),
+        results: resultsOf(task.id),
+        attemptsPerTask: parameters.limits.attemptsPerTask,
+      });
       // A launch with no result is a driver that stopped mid-task. The attempt is kept, as the
       // infrastructure failure it was, and the task is scheduled again under the same protocol.
-      if (launched.length > settled.length) {
+      if (schedule.closeDangling !== null) {
         append({
           ...identity,
           schema: "swarm.reach-pressure.result.v1",
           taskId: task.id,
-          attempt: launched.length,
-          startedAt: launched.at(-1).startedAt,
+          attempt: schedule.closeDangling.attempt,
+          startedAt: schedule.closeDangling.startedAt,
           wallMs: 0,
           trajectory: {
             status: "infrastructure-failure",
@@ -428,15 +490,11 @@ async function run({ synthetic }) {
           },
         });
       }
-      const last = resultsOf(task.id).at(-1);
-      if (last !== undefined && last.trajectory.status !== "infrastructure-failure") continue;
-      // A task that keeps taking the server down stays an infrastructure failure by name rather
-      // than being scheduled until it happens to survive.
-      if (resultsOf(task.id).length >= parameters.limits.attemptsPerTask) continue;
+      if (schedule.action !== "dispatch") continue;
       if (ran >= limit) break;
       ran += 1;
 
-      const attempt = resultsOf(task.id).length + 1;
+      const attempt = schedule.attempt;
       const startedAt = new Date().toISOString();
       const started = Date.now();
       append({
@@ -456,6 +514,7 @@ async function run({ synthetic }) {
         corpusRoot,
         attempt,
         scriptedAgent,
+        policy: policy.id,
       });
       append({
         ...identity,
@@ -503,6 +562,7 @@ async function oneTask({
   corpusRoot,
   attempt,
   scriptedAgent,
+  policy,
 }) {
   const slug = `${lib.taskSlug(task)}-a${attempt}`;
   const checkout = lib.taskCheckout(corpusRoot, task);
@@ -553,11 +613,12 @@ async function oneTask({
   const effects = {
     now: () => Date.now(),
     // Asked to generate, not merely to list models: a wedged server does the second and not the
-    // first. The model name is the spec's id after its provider prefix.
-    endpointAnswers: () =>
+    // first. The model name is the spec's id after its provider prefix. A scripted agent calls no
+    // model, so there is no endpoint whose health could bear on what it left.
+    endpointGenerates: () =>
       scriptedAgent === null
         ? lib.endpointGenerates(parameters.endpoint, parameters.model.replace(/^local:/, ""))
-        : Promise.resolve({ answered: true, detail: "" }),
+        : Promise.resolve({ generates: true, failure: null, detail: "" }),
     invokeAgent: async (prompt) => {
       const started = Date.now();
       const agentArgv =
@@ -604,7 +665,12 @@ async function oneTask({
       if (diff.code !== 0) throw new Error(`the workspace diff could not be read: ${diff.stderr}`);
       const digest = lib.digestOfBytes(diff.stdout);
       if (!existsSync(patchPathOf(digest))) writeFileSync(patchPathOf(digest), diff.stdout);
-      return { digest, metrics: lib.patchMetrics(diff.stdout) };
+      return {
+        digest,
+        metrics: lib.patchMetrics(diff.stdout),
+        files: lib.patchFiles(diff.stdout),
+        lineText: (path, line) => lib.addedLineText(diff.stdout, path, line),
+      };
     },
     judgeVisible: async (patch) => {
       // A judge per patch, so the repository's own checks run for every patch that is judged.
@@ -624,6 +690,7 @@ async function oneTask({
       task: { id: task.id, taskText },
       limits: parameters.limits,
       effects,
+      policy,
     });
   } catch (cause) {
     return failed(`the trajectory could not be completed: ${cause?.message ?? cause}`);
@@ -686,6 +753,10 @@ async function score({ synthetic }) {
     });
     const workingRoot = workingRootOf(lib, parameters, synthetic);
     const corpusRoot = corpusRootOf(lib);
+    lib.assertOneAcquisition(identity, [
+      ...readJsonLines(paths.results),
+      ...readJsonLines(paths.hiddenScores),
+    ]);
     const results = readJsonLines(paths.results).filter((row) => row.schema.endsWith("result.v1"));
     const lastOf = (id) => results.filter((row) => row.taskId === id).at(-1);
     const open = manifest.tasks.filter((task) => {
@@ -783,31 +854,61 @@ async function analyze({ synthetic }) {
   requireFreshDist();
   const lib = await modules();
   // Rows are held to the driver the protocol registered. The checkout that re-derives the report
-  // may be a later one, and where its sources differ the page says so instead of refusing.
-  const { identity, manifest, parameters } = experimentIdentity(lib, {
+  // may be a later one, and where its sources differ the derivation record says so.
+  const { identity, manifest, parameters, components } = experimentIdentity(lib, {
     bindToCommit: false,
     enforceDriver: false,
   });
   const driverAtAnalysis = identity.driverDigest;
   identity.driverDigest = parameters.driverDigest;
   const rows = readJsonLines(paths.results);
+  const scoreRows = readJsonLines(paths.hiddenScores);
   // The rows name the commit that produced them, and the analysis may run at a later one: the
   // report and the evidence are committed after the run. Every other identity field must match.
   const harnesses = [...new Set(rows.map((row) => row.harness))];
   if (harnesses.length > 1) throw new lib.MixedProtocolGenerations(harnesses);
   const bound = { ...identity, harness: harnesses[0] ?? identity.harness };
+  // Whose rows these are is settled before any of them is parsed: a stray row of an earlier
+  // generation is refused as that, and not as a row today's schema cannot read.
+  lib.assertOneAcquisition(bound, [...rows, ...scoreRows]);
   const results = rows
     .filter((row) => row.schema.endsWith("result.v1"))
     .map((row) => lib.resultRowSchema.parse(row));
-  const hiddenScores = readJsonLines(paths.hiddenScores).map((row) =>
-    lib.hiddenScoreSchema.parse(row),
-  );
+  const hiddenScores = scoreRows.map((row) => lib.hiddenScoreSchema.parse(row));
   const summary = lib.summarize({ manifest, identity: bound, results, hiddenScores });
+  const summaryText = `${JSON.stringify(summary, null, 2)}\n`;
+
+  const publishedText = existsSync(paths.summary) ? readFileSync(paths.summary, "utf8") : null;
+  const resultsDigest = lib.digestOfBytes(readFileSync(paths.results, "utf8"));
+  const hiddenScoresDigest = existsSync(paths.hiddenScores)
+    ? lib.digestOfBytes(readFileSync(paths.hiddenScores, "utf8"))
+    : null;
+  const record = lib.derivationRecord({
+    acquisition: bound,
+    components,
+    driverSourcesDigest: driverAtAnalysis,
+    resultsDigest,
+    hiddenScoresDigest,
+    summary: JSON.parse(summaryText),
+    summaryDigest: lib.digestOfBytes(summaryText),
+    published:
+      publishedText === null
+        ? null
+        : { summary: JSON.parse(publishedText), digest: lib.digestOfBytes(publishedText) },
+  });
+  const requestedOut = flag("--out", null);
+  const destination = lib.derivationDestination({
+    record,
+    evidenceRoot,
+    requestedOut: requestedOut === null ? null : resolve(repositoryRoot, requestedOut),
+  });
+  const inPlace = destination === evidenceRoot;
 
   const workingRoot = workingRootOf(lib, parameters, synthetic);
   // Both patches of every task where reach triggered, committed so each pair can be read. Where
-  // the repair changed nothing they are one file.
-  for (const one of summary.triggered) {
+  // the repair changed nothing they are one file. They are observations, so they are only ever
+  // added beside the rows and never into a separate derivation.
+  for (const one of inPlace ? summary.triggered : []) {
     mkdirSync(paths.patches, { recursive: true });
     for (const digest of [one.controlPatch, one.reachPatch]) {
       const kept = join(paths.patches, `${digest.slice(7)}.patch`);
@@ -815,8 +916,6 @@ async function analyze({ synthetic }) {
       if (!existsSync(kept) && existsSync(source)) cpSync(source, kept);
     }
   }
-  const summaryText = `${JSON.stringify(summary, null, 2)}\n`;
-  writeFileSync(paths.summary, summaryText);
   const environment = existsSync(paths.environment)
     ? JSON.parse(readFileSync(paths.environment, "utf8"))
     : null;
@@ -829,20 +928,65 @@ async function analyze({ synthetic }) {
     environment,
     pairNotes,
     postscript: existsSync(paths.postscript) ? readFileSync(paths.postscript, "utf8") : null,
+    patchesHref: inPlace ? "patches" : relative(destination, paths.patches),
+    // A page written in place is the first publication and says so, on every run that reproduces
+    // it. Only a derivation written beside a published one has something to be compared with.
+    derivation: {
+      components: record.derivation.components,
+      againstPublished: inPlace ? null : record.againstPublished,
+    },
     digests: {
       driverAtAnalysis,
-      results: lib.digestOfBytes(readFileSync(paths.results, "utf8")),
-      hiddenScores: existsSync(paths.hiddenScores)
-        ? lib.digestOfBytes(readFileSync(paths.hiddenScores, "utf8"))
-        : null,
+      results: resultsDigest,
+      hiddenScores: hiddenScoresDigest,
       summary: lib.digestOfBytes(summaryText),
     },
   });
-  writeFileSync(paths.report, report);
-  console.log(`written: ${paths.summary}`);
-  console.log(`written: ${paths.report}`);
+  // The page is held to the same rule as the summary: a renderer corrected later produces a
+  // different page from the same numbers, and that page goes beside the published one.
+  if (inPlace && existsSync(paths.report) && readFileSync(paths.report, "utf8") !== report) {
+    throw new Error(
+      "a report is already published for these rows and this checkout renders different bytes. " +
+        "A published page is not overwritten: write this one beside it with --out <directory>.",
+    );
+  }
+  mkdirSync(destination, { recursive: true });
+  const written = {
+    summary: join(destination, "summary.json"),
+    report: join(destination, "report.md"),
+    derivation: join(destination, "derivation.json"),
+  };
+  writeFileSync(written.summary, summaryText);
+  writeFileSync(written.report, report);
+  if (!inPlace || publishedText === null) {
+    writeFileSync(written.derivation, `${JSON.stringify(record, null, 2)}\n`);
+  }
+  for (const path of Object.values(written)) {
+    if (existsSync(path)) console.log(`written: ${path}`);
+  }
   console.log(`summary digest ${lib.digestOfBytes(summaryText)}`);
   console.log(`report digest  ${lib.digestOfBytes(report)}`);
+  const against = record.againstPublished;
+  if (against !== null) {
+    console.log(
+      against.identical
+        ? "the published summary is reproduced byte for byte"
+        : `against the published summary: ${against.changed.length} value(s) changed, ` +
+            `${against.added.length} field(s) added, ${against.removed.length} removed; ` +
+            `result ${against.resultChanged ? "CHANGED" : "unchanged"}`,
+    );
+  }
+}
+
+/**
+ * A confirmatory run commits its evidence, so it does not start in a tree that has no room for
+ * it. Asked before the first task and not after the last, which is when it was found out last time.
+ */
+function requireEvidenceHeadroom() {
+  execFileSync(process.execPath, [join(repositoryRoot, "scripts/check-repo-weight.mjs")], {
+    cwd: repositoryRoot,
+    stdio: ["ignore", "ignore", "inherit"],
+  });
 }
 
 async function main() {
@@ -853,7 +997,7 @@ async function main() {
   if (command === "score") return score({ synthetic });
   if (command === "analyze") return analyze({ synthetic });
   throw new Error(
-    "usage: reach-pressure-experiment.mjs freeze | run | score | analyze [--synthetic]",
+    "usage: reach-pressure-experiment.mjs build | freeze | run | score | analyze [--out <dir>] [--synthetic]",
   );
 }
 
