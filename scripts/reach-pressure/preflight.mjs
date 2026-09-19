@@ -54,9 +54,10 @@ const frozen = node([
   "synthetic-preflight",
 ]);
 const digestOf = (name) => new RegExp(`${name}\\s+(sha256:[0-9a-f]{64})`).exec(frozen)?.[1];
+const policy = /\bpolicy\s+(reach-pressure-v\d+)/.exec(frozen)?.[1];
 
-// The confirmatory protocol's own parameters, so the preflight exercises the budgets it will run
-// under. Only the cohort and the three digests differ.
+// The confirmatory protocol's own budgets, under the registration a new protocol uses: component
+// identities and a named treatment. Only the cohort and the registered digests differ.
 const confirmatory = /```json\n([\s\S]*?)\n```/.exec(
   readFileSync(
     join(repositoryRoot, "docs/evidence/2026-09-17/reach-pressure-experiment/protocol.md"),
@@ -65,9 +66,12 @@ const confirmatory = /```json\n([\s\S]*?)\n```/.exec(
 );
 const parameters = {
   ...JSON.parse(confirmatory[1]),
+  schema: "swarm.reach-pressure.protocol.v2",
   cohort: "synthetic-preflight",
   manifestDigest: digestOf("manifestDigest"),
   driverDigest: digestOf("driverDigest"),
+  identities: { scoring: digestOf("identities\\.scoring") },
+  policy,
   policyDigest: digestOf("policyDigest"),
 };
 writeFileSync(
