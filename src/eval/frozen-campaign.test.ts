@@ -101,3 +101,73 @@ it("records every unlaunched pilot execution when an endpoint is unavailable", a
     await rm(root, { recursive: true, force: true });
   }
 });
+
+it("settles a launch the model server died under as infrastructure, and dispatches nothing after it", async () => {
+  const root = await mkdtemp(join(tmpdir(), "swarm-campaign-server-death-"));
+  try {
+    const protocol = campaignProtocolFixture();
+    const evidence = await openEvidenceSession({
+      root,
+      sessionId: "campaign",
+      clock: { now: () => 0, sleep: async () => {} },
+    });
+    const dispatched: string[] = [];
+    let observations = 0;
+    const report = await runFrozenCampaign({
+      protocol,
+      evidence,
+      now: () => 0,
+      signal: new AbortController().signal,
+      // Generating before the first launch, wedged by the time it ends: the models still list and
+      // the process is still there, which is what the probe behind `healthy` must not be fooled by.
+      health: async () => {
+        observations += 1;
+        return observations === 1
+          ? { healthy: true, processes: 1, memoryBytes: 1024, endpoint: "available" as const }
+          : {
+              healthy: false,
+              processes: 1,
+              memoryBytes: 1024,
+              endpoint: "unavailable" as const,
+              detail: "timeout: no completion within 120000 ms",
+            };
+      },
+      exportEvidence: async () => {},
+      executors: protocol.arms.map((arm) => ({
+        id: arm.id,
+        implementationDigest: arm.implementationDigest,
+        run: async () => {
+          dispatched.push(arm.id);
+          // What an arm looks like from outside when its model stopped answering: it finished,
+          // certified nothing, and nothing about that is the arm's doing.
+          return {
+            status: "completed" as const,
+            certified: false,
+            heldBackAccepted: false,
+            costUsd: 0,
+            latencyMs: 1,
+            evidenceDigest: protocol.verifierDigest,
+            cleanup: "confirmed" as const,
+          };
+        },
+      })),
+    });
+
+    expect(dispatched).toEqual(["baseline"]);
+    expect(report).toMatchObject({ launched: 1, completed: 0 });
+    const payloads = evidence.payloads();
+    const recorded = evidence
+      .records()
+      .map((record) => payloads.get(record.payloadDigest) as Record<string, unknown>);
+    expect(recorded).toContainEqual(
+      expect.objectContaining({
+        phase: "health-after",
+        healthy: false,
+        detail: "timeout: no completion within 120000 ms",
+      }),
+    );
+    expect(JSON.stringify(recorded)).toContain("infrastructure-failure");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
