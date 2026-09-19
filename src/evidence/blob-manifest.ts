@@ -157,6 +157,11 @@ const derivedNames: readonly RegExp[] = [
   /^candidates\.json$/,
 ];
 
+/** The one spelling of "derived", read by the offload here and by the in-tree evidence packer. */
+export function namesADerivedArtifact(name: string): boolean {
+  return derivedNames.some((pattern) => pattern.test(name));
+}
+
 const neverOffloaded: ReadonlySet<string> = new Set([
   "ledger.jsonl",
   "dag.json",
@@ -191,7 +196,7 @@ export async function offloadDerivedArtifacts(
     if (!entry.isFile() || neverOffloaded.has(entry.name)) {
       continue;
     }
-    if (!derivedNames.some((pattern) => pattern.test(entry.name))) {
+    if (!namesADerivedArtifact(entry.name)) {
       continue;
     }
     if (options.keepUntracked?.(entry.name) === true) {
