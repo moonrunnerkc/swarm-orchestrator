@@ -98,6 +98,30 @@ describe("tallyModelCalls", () => {
     expect(tally.tokensPerSecond).toBe(60);
   });
 
+  it("leaves a call with unknown usage out of the speed, where it used to halve it", () => {
+    // Two seconds each. The second reported nothing, the way a call cut off at a deadline does.
+    const tally = tallyModelCalls([
+      modelCall({ outputTokens: 120 }),
+      modelCall({ outputTokens: 0, usageStatus: "unknown" }),
+    ]);
+
+    expect(tally.callsWithUnknownUsage).toBe(1);
+    expect(tally.outputTokens).toBe(120);
+    expect(tally.responseTimeMs).toBe(4_000);
+    // 120 tokens over the 2 seconds that produced them, not over all 4.
+    expect(tally.tokensPerSecond).toBe(60);
+  });
+
+  it("gives no speed at all where no call reported usage", () => {
+    const tally = tallyModelCalls([modelCall({ outputTokens: 0, usageStatus: "unknown" })]);
+    expect(tally).toMatchObject({ callsWithUnknownUsage: 1, tokensPerSecond: null });
+  });
+
+  it("reads a reported zero as known", () => {
+    const tally = tallyModelCalls([modelCall({ outputTokens: 0 })]);
+    expect(tally).toMatchObject({ callsWithUnknownUsage: 0, tokensPerSecond: 0 });
+  });
+
   it("takes the mean of the first-token times that were observed", () => {
     const tally = tallyModelCalls([
       modelCall(),

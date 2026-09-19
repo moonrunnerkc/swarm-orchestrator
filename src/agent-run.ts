@@ -530,6 +530,7 @@ async function executeAgentTask(
   let completionClaim = loop.completionClaim;
   let messages = loop.messages;
   remainingTokens -= loop.tokensUsed;
+  let callsWithUnknownUsage = loop.callsWithUnknownUsage;
   await options.evidence.record({
     type: "session-stopped",
     actor: "harness",
@@ -583,6 +584,7 @@ async function executeAgentTask(
         },
       });
       remainingTokens -= repair.tokensUsed;
+      callsWithUnknownUsage += repair.callsWithUnknownUsage;
       finalStopReason = repair.stopReason;
       totalSteps += repair.steps;
       completionClaim = repair.completionClaim;
@@ -627,6 +629,7 @@ async function executeAgentTask(
     stopReason: finalStopReason,
     steps: totalSteps,
     tokensUsed: loopDependencies.budget.maxTokens - remainingTokens,
+    callsWithUnknownUsage,
     completionClaim,
     messages,
   };
@@ -638,6 +641,8 @@ async function executeAgentTask(
       phase: "settled",
       steps: finalLoop.steps,
       tokensUsed: finalLoop.tokensUsed,
+      // Beside the total it qualifies: above zero, `tokensUsed` is a lower bound.
+      callsWithUnknownUsage: finalLoop.callsWithUnknownUsage,
       stopReason: finalLoop.stopReason,
     },
   });
