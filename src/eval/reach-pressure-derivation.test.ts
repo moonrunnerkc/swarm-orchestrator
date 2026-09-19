@@ -50,6 +50,7 @@ const digests = {
     analysis: digestOfBytes("analysis"),
     renderer: digestOfBytes("renderer"),
   },
+  derivedAt: { harness: "d".repeat(40), uncommittedSourceEdits: false },
   resultsDigest: digestOfBytes("results"),
   hiddenScoresDigest: digestOfBytes("scores"),
 };

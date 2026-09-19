@@ -113,6 +113,9 @@ export const derivationRecordSchema = z.object({
     /** The registered protocol's own digest formula over the sources as they stand now. */
     driverSourcesDigest: z.string().regex(digestPattern),
     matchesRegisteredDriver: z.boolean(),
+    /** The commit this derivation ran at, and whether its sources had edits no commit holds. */
+    harness: z.string().regex(/^[0-9a-f]{40}$/),
+    uncommittedSourceEdits: z.boolean(),
   }),
   /** The observations, by digest. A derivation reads them and writes none of them. */
   historicalObservations: z.object({
@@ -141,6 +144,7 @@ export function derivationRecord(input: {
   readonly acquisition: ExperimentIdentity;
   readonly components: ComponentDigests;
   readonly driverSourcesDigest: string;
+  readonly derivedAt: { readonly harness: string; readonly uncommittedSourceEdits: boolean };
   readonly resultsDigest: string;
   readonly hiddenScoresDigest: string | null;
   readonly summary: Readonly<Record<string, unknown>>;
@@ -156,6 +160,7 @@ export function derivationRecord(input: {
       components: input.components,
       driverSourcesDigest: input.driverSourcesDigest,
       matchesRegisteredDriver: input.driverSourcesDigest === input.acquisition.driverDigest,
+      ...input.derivedAt,
     },
     historicalObservations: {
       unchangedByThisDerivation: [
