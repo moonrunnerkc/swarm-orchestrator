@@ -23,6 +23,53 @@ export interface ReportInput {
     readonly hiddenScores: string | null;
     readonly summary: string;
   };
+  /** Where the committed patches are, relative to where this page is written. */
+  readonly patchesHref?: string;
+  /** What this page was derived with, and how its summary stands against a published one. */
+  readonly derivation?: {
+    readonly components: Readonly<Record<string, string>>;
+    readonly againstPublished: {
+      readonly summaryDigest: string;
+      readonly identical: boolean;
+      readonly resultChanged: boolean;
+      readonly changed: readonly string[];
+      readonly added: readonly string[];
+      readonly removed: readonly string[];
+    } | null;
+  };
+}
+
+/**
+ * The rows are the run's; everything else on the page is this derivation's. Said on the page so
+ * that a later analysis can never read as what the run itself reported.
+ */
+function derivationLines(derivation: ReportInput["derivation"]): string[] {
+  if (derivation === undefined) return [];
+  const { components, againstPublished: against } = derivation;
+  const lines = [
+    `- Derivation identities: analysis \`${components.analysis}\`, renderer \`${components.renderer}\`, ` +
+      `scoring \`${components.scoring}\`, acquisition sources as they stand \`${components.acquisition}\`. ` +
+      "The rows and held-back scores are historical observations and are not re-derived; every number below is derived from them",
+  ];
+  if (against === null)
+    return [...lines, "- No summary had been published for these rows before this one"];
+  if (against.identical) {
+    return [
+      ...lines,
+      `- This derivation reproduces the published summary \`${against.summaryDigest}\` byte for byte`,
+    ];
+  }
+  const named = (pointers: readonly string[]) =>
+    pointers.length === 0 ? "none" : pointers.map((pointer) => `\`${pointer}\``).join(", ");
+  return [
+    ...lines,
+    `- Against the published summary \`${against.summaryDigest}\`: ` +
+      (against.resultChanged
+        ? "the result CHANGED. "
+        : "no value the published summary carries changed. ") +
+      `Values changed: ${named(against.changed)}. Fields removed: ${named(against.removed)}. ` +
+      `Fields added: ${against.added.length}. The published summary and page stand beside this one, unmodified`,
+  ];
 }
 
 const percent = (value: number) => `${value.toFixed(1)}%`;
@@ -81,6 +128,80 @@ function readingOf(summary: ReachPressureSummary): string[] {
   return [direction, few, instances].filter((line) => line.length > 0);
 }
 
+interface UsageTotals {
+  readonly invocations: number;
+  readonly modelCalls: number | null;
+  readonly inputTokens: number | null;
+  readonly outputTokens: number | null;
+  readonly accounting: {
+    readonly complete: boolean;
+    readonly invocationsWithUnknownModelCalls: number;
+    readonly invocationsWithUnknownTokens: number;
+    readonly knownSubtotals: Readonly<Record<string, number>>;
+  };
+}
+
+/** Totals over the whole run, with incompleteness stated before any number that depends on it. */
+function usageLines(usage: UsageTotals | undefined): string[] {
+  if (usage === undefined) return [];
+  const { accounting: kept } = usage;
+  const totals =
+    `${orUnknown(usage.modelCalls)} model call(s), ${orUnknown(usage.inputTokens)} input and ` +
+    `${orUnknown(usage.outputTokens)} output tokens`;
+  if (kept.complete) return [`- Usage over all invocations, every one reported: ${totals}`];
+  return [
+    `- Usage accounting is incomplete: ${kept.invocationsWithUnknownTokens} of ${usage.invocations} invocation(s) did not report tokens ` +
+      `and ${kept.invocationsWithUnknownModelCalls} did not report a model-call count. Totals: ${totals}. ` +
+      `The invocations that did report sum to ${kept.knownSubtotals.modelCalls} model call(s), ${kept.knownSubtotals.inputTokens} input and ` +
+      `${kept.knownSubtotals.outputTokens} output tokens, which is a lower bound and not the total`,
+  ];
+}
+
+const relationReadings: Readonly<Record<string, string>> = {
+  "patch-unchanged": "the stored patch is byte-identical",
+  "findings-identical": "the patch changed and the verifier names the same findings",
+  "findings-moved": "the patch changed and the findings are different ones",
+  "findings-shrank": "some findings are gone and none is new",
+  "findings-grew": "every earlier finding remains and at least one is new",
+  satisfied: "no blocking finding remains",
+};
+
+/** What the repair budget bought per task, as set relations and never as a judgement of the code. */
+function repairProgressLines(summary: ReachPressureSummary): string[] {
+  const outcomes = (summary.secondary.repairOutcomes ?? {}) as Record<string, number>;
+  if (Object.keys(outcomes).length === 0) return [];
+  const lines = [
+    "### What the repairs did to the findings",
+    "",
+    "The final observation against the one at the fork. Each reading is a relation between two",
+    "sets of blocking findings and two stored patches; none is a judgement of the code.",
+    "",
+    "| relation | reading | tasks |",
+    "| --- | --- | --- |",
+    ...Object.entries(outcomes).map(
+      ([relation, tasks]) => `| ${relation} | ${relationReadings[relation] ?? ""} | ${tasks} |`,
+    ),
+    "",
+    "| task | fork to final | each repair | files that entered the patch | findings named by |",
+    "| --- | --- | --- | --- | --- |",
+  ];
+  for (const one of summary.triggered) {
+    const outcome = one.repairOutcome as {
+      relation: string;
+      findingIdentity: string;
+      derivedAtAnalysis: boolean;
+      paths: { enteredThePatch: readonly string[] } | null;
+    } | null;
+    const steps = (one.repairProgress ?? []) as readonly { relation: string }[];
+    lines.push(
+      `| ${one.taskId} | ${outcome?.relation ?? "not comparable"} | ${steps.map((step) => step.relation).join(", ") || "none"} | ` +
+        `${outcome?.paths == null ? "not recorded" : outcome.paths.enteredThePatch.join(", ") || "none"} | ` +
+        `${outcome === null ? "" : `${outcome.findingIdentity}${outcome.derivedAtAnalysis ? ", derived at analysis" : ""}`} |`,
+    );
+  }
+  return [...lines, ""];
+}
+
 export function renderReport(input: ReportInput): string {
   const { summary, parameters, environment, pairNotes, digests } = input;
   const { identity, cohort, accounting, primary, subsets, secondary } = summary;
@@ -98,7 +219,7 @@ export function renderReport(input: ReportInput): string {
   const minutes = (ms: number | null | undefined) =>
     ms === null || ms === undefined ? "unknown" : (ms / 60_000).toFixed(1);
   const patchLink = (digest: unknown) =>
-    `[\`${String(digest).slice(7, 19)}\`](patches/${String(digest).slice(7)}.patch)`;
+    `[\`${String(digest).slice(7, 19)}\`](${input.patchesHref ?? "patches"}/${String(digest).slice(7)}.patch)`;
 
   const lines: string[] = [
     "# Reach pressure: does enforcing changed-line reach change held-back correctness?",
@@ -111,6 +232,7 @@ export function renderReport(input: ReportInput): string {
     digests.driverAtAnalysis === identity.driverDigest
       ? "- This page was derived with the driver sources the protocol registered"
       : `- This page was derived with driver sources \`${digests.driverAtAnalysis}\`, which differ from the registered ones. The rows were written under the registered driver`,
+    ...derivationLines(input.derivation),
     `- Harness commit \`${identity.harness}\``,
     `- Model \`${orUnknown(parameters.model)}\` at \`${orUnknown(parameters.endpoint)}\`; no sampling parameters are sent, so the server's defaults decide decoding (see the protocol)`,
     `- Agent budget per invocation: ${orUnknown(agent?.maxWallMinutes)} wall minutes, ${orUnknown(agent?.maxTokens)} tokens; ` +
@@ -130,6 +252,7 @@ export function renderReport(input: ReportInput): string {
     `- Tasks where reach triggered (accepted, and the visible oracle never ran an added line): ${orUnknown(accounting.reachTriggered)}; ` +
       `repaired to satisfy reach: ${orUnknown(accounting.reachRepaired)}; repair budget exhausted: ${orUnknown(accounting.reachRepairExhausted)}`,
     `- Agent invocations: ${orUnknown(accounting.agentInvocations)}, of which ${orUnknown(accounting.invocationsWithUnknownUsage)} did not report usage`,
+    ...usageLines(accounting.usage as UsageTotals | undefined),
     "",
     "## Primary outcome",
     "",
@@ -212,8 +335,9 @@ export function renderReport(input: ReportInput): string {
         `${orUnknown(overhead.reachRepair.inputTokens)} input and ${orUnknown(overhead.reachRepair.outputTokens)} output tokens. ` +
         `The shared prefix of the same tasks took ${orUnknown(overhead.prefix.invocations)} invocation(s), ${minutes(overhead.prefix.agentWallMs)} agent minutes, ` +
         `${orUnknown(overhead.prefix.modelCalls)} model call(s), ${orUnknown(overhead.prefix.inputTokens)} input and ${orUnknown(overhead.prefix.outputTokens)} output tokens. ` +
-        "A token total reads unknown where any invocation in it did not report usage.",
+        "A total reads unknown where any invocation in it did not report that quantity: an unknown is never added in as zero.",
       "",
+      ...repairProgressLines(summary),
     );
   }
   const bondStates = secondary.bondAtVisibleAcceptedTasks as Record<string, Record<string, number>>;
@@ -269,7 +393,9 @@ export function renderReport(input: ReportInput): string {
     "",
     "    node scripts/reach-pressure-experiment.mjs analyze",
     "",
-    "reads the committed rows, calls no model and no judge, and writes this file and `summary.json` again.",
+    "reads the committed rows, calls no model and no judge, and derives this file and `summary.json` again. Where",
+    "the bytes differ from a published derivation it refuses to overwrite it and writes beside it with `--out`,",
+    "with a `derivation.json` naming what was derived with what and which values moved.",
     "",
   );
   return lines.join("\n");

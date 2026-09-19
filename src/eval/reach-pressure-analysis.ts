@@ -1,7 +1,15 @@
 import { z } from "zod";
 import { digestPattern } from "../evidence/canonical-json.ts";
+import { knownTotal } from "./known-total.ts";
 import { metricsDelta, type PatchMetrics } from "./patch-metrics.ts";
-import { emptyPatchDigest, type Trajectory, trajectorySchema } from "./reach-pressure.ts";
+import {
+  blockingFindings,
+  emptyPatchDigest,
+  type Trajectory,
+  type TrajectoryStep,
+  trajectorySchema,
+} from "./reach-pressure.ts";
+import { type RepairProgress, type RepairRelation, repairProgress } from "./repair-progress.ts";
 import {
   type ExactMcNemarResult,
   type Interval,
@@ -59,6 +67,14 @@ const identitySchema = z.object({
   harness: z.string().regex(/^[0-9a-f]{40}$/),
 });
 export type ExperimentIdentity = z.infer<typeof identitySchema>;
+
+/**
+ * A row read for its identity alone. Whose row it is has to be answerable before its contents are
+ * parsed: generation 1's rows predate fields today's row schema requires, and a stray one should
+ * be refused as another generation's and not as malformed.
+ */
+export const identifiedRowSchema = identitySchema.extend({ taskId: z.string().min(1) });
+export type IdentifiedRow = z.infer<typeof identifiedRowSchema>;
 
 export const resultRowSchema = identitySchema.extend({
   schema: z.literal("swarm.reach-pressure.result.v1"),
@@ -164,32 +180,104 @@ export function populationReading(
   return table.cells.passFail > table.cells.failPass ? "supports-harm" : "supports-help";
 }
 
-type Usage = { modelCalls: number; inputTokens: number | null; outputTokens: number | null };
+/** Token counts of one invocation. A call that did not report makes the whole invocation unknown. */
+function tokensOf(step: TrajectoryStep, field: "inputTokens" | "outputTokens"): number | null {
+  const { usage } = step.invocation;
+  return usage.status === "unknown" ? null : usage[field];
+}
 
-function phaseTotals(trajectory: Trajectory, phase: "prefix" | "reach-repair") {
-  const steps = trajectory.steps.filter((one) => one.phase === phase);
-  const usage = steps.reduce<Usage>(
-    (total, step) => {
-      const { usage: one } = step.invocation;
-      const unknown = one.status === "unknown";
-      return {
-        modelCalls: total.modelCalls + (one.modelCalls ?? 0),
-        inputTokens:
-          total.inputTokens === null || unknown ? null : total.inputTokens + (one.inputTokens ?? 0),
-        outputTokens:
-          total.outputTokens === null || unknown
-            ? null
-            : total.outputTokens + (one.outputTokens ?? 0),
-      };
-    },
-    { modelCalls: 0, inputTokens: 0, outputTokens: 0 },
-  );
+function totalsOf(steps: readonly TrajectoryStep[]) {
+  const modelCalls = knownTotal(steps.map((step) => step.invocation.usage.modelCalls));
+  const inputTokens = knownTotal(steps.map((step) => tokensOf(step, "inputTokens")));
+  const outputTokens = knownTotal(steps.map((step) => tokensOf(step, "outputTokens")));
   return {
     invocations: steps.length,
+    // Wall time is the driver's own clock around the invocation and the judge, so it is always known.
     agentWallMs: steps.reduce((total, step) => total + step.invocation.wallMs, 0),
     judgeWallMs: steps.reduce((total, step) => total + step.judgeWallMs, 0),
-    ...usage,
+    modelCalls: modelCalls.total,
+    inputTokens: inputTokens.total,
+    outputTokens: outputTokens.total,
+    accounting: {
+      complete:
+        modelCalls.unknownParts === 0 &&
+        inputTokens.unknownParts === 0 &&
+        outputTokens.unknownParts === 0,
+      invocationsWithUnknownModelCalls: modelCalls.unknownParts,
+      invocationsWithUnknownTokens: Math.max(inputTokens.unknownParts, outputTokens.unknownParts),
+      knownSubtotals: {
+        modelCalls: modelCalls.knownSubtotal,
+        inputTokens: inputTokens.knownSubtotal,
+        outputTokens: outputTokens.knownSubtotal,
+      },
+    },
   };
+}
+
+function phaseSteps(trajectory: Trajectory, phase: "prefix" | "reach-repair") {
+  return trajectory.steps.filter((one) => one.phase === phase);
+}
+
+/**
+ * What each repair invocation did to the findings before it.
+ *
+ * A row written since repairs were compared carries the record, made with the patch text in hand.
+ * An earlier row does not, and the comparison is made here from what the row does hold: patch
+ * digests and the verdict's line numbers. That is a re-derivation and is marked as one, with
+ * findings named by line number because no text was kept, so a renumbered line reads as moved.
+ */
+export function repairProgressOf(
+  trajectory: Trajectory,
+): readonly (RepairProgress & { readonly step: number; readonly derivedAtAnalysis: boolean })[] {
+  const progress: (RepairProgress & { step: number; derivedAtAnalysis: boolean })[] = [];
+  let earlier: number | null = null;
+  trajectory.steps.forEach((step, at) => {
+    const infrastructure = step.attribution?.to === "infrastructure";
+    if (step.repairProgress !== undefined) {
+      progress.push({ ...step.repairProgress, step: at, derivedAtAnalysis: false });
+    } else if (earlier !== null && !infrastructure) {
+      const derived = progressBetween(trajectory, earlier, at);
+      if (derived !== null) progress.push({ ...derived, step: at, derivedAtAnalysis: true });
+    }
+    if (!infrastructure) earlier = at;
+  });
+  return progress;
+}
+
+/** What the repair budget bought: the final observation against the one at the fork. */
+export function repairOutcomeOf(
+  trajectory: Trajectory,
+): (RepairProgress & { readonly derivedAtAnalysis: boolean }) | null {
+  if (trajectory.control === null || trajectory.reach === null || !trajectory.reach.triggered) {
+    return null;
+  }
+  if (trajectory.reach.progress !== undefined) {
+    return { ...trajectory.reach.progress, derivedAtAnalysis: false };
+  }
+  const derived = progressBetween(trajectory, trajectory.control.step, trajectory.reach.step);
+  return derived === null ? null : { ...derived, derivedAtAnalysis: true };
+}
+
+function progressBetween(trajectory: Trajectory, from: number, to: number): RepairProgress | null {
+  const before = trajectory.steps[from];
+  const after = trajectory.steps[to];
+  if (before === undefined || after === undefined) return null;
+  const arm = after.phase === "reach-repair" ? "reach" : "control";
+  const byNumber = (_path: string, line: number) => `L${line}`;
+  return repairProgress({
+    comparedWithStep: from,
+    findingIdentity: "line-number",
+    before: {
+      patchDigest: before.patch.digest,
+      findings: blockingFindings(arm, before.observation, byNumber),
+      files: before.patch.files,
+    },
+    after: {
+      patchDigest: after.patch.digest,
+      findings: blockingFindings(arm, after.observation, byNumber),
+      files: after.patch.files,
+    },
+  });
 }
 
 function visibleOf(trajectory: Trajectory, step: number) {
@@ -202,7 +290,7 @@ function metricsOf(trajectory: Trajectory, step: number): PatchMetrics | null {
 }
 
 export interface ReachPressureSummary {
-  readonly schema: "swarm.reach-pressure.summary.v1";
+  readonly schema: "swarm.reach-pressure.summary.v2";
   readonly identity: ExperimentIdentity;
   readonly cohort: {
     readonly name: string;
@@ -279,7 +367,10 @@ export function summarize(input: {
     control: {},
     reach: {},
   };
-  const overhead = { triggeredTasks: 0, prefix: emptyTotals(), reachRepair: emptyTotals() };
+  const overheadSteps = { prefix: [] as TrajectoryStep[], reachRepair: [] as TrajectoryStep[] };
+  let triggeredTasks = 0;
+  const allSteps: TrajectoryStep[] = [];
+  const relations: Partial<Record<RepairRelation, number>> = {};
 
   for (const task of manifest.tasks) {
     const attempts = input.results
@@ -297,6 +388,7 @@ export function summarize(input: {
     byStatus[trajectory.status] = (byStatus[trajectory.status] ?? 0) + 1;
     for (const step of trajectory.steps) {
       invocations += 1;
+      allSteps.push(step);
       if (step.invocation.usage.status === "unknown") unknownUsageInvocations += 1;
     }
     if (trajectory.control === null || trajectory.reach === null) {
@@ -328,9 +420,14 @@ export function summarize(input: {
           : [],
     );
     if (trajectory.reach.triggered) {
-      overhead.triggeredTasks += 1;
-      addTotals(overhead.prefix, phaseTotals(trajectory, "prefix"));
-      addTotals(overhead.reachRepair, phaseTotals(trajectory, "reach-repair"));
+      triggeredTasks += 1;
+      overheadSteps.prefix.push(...phaseSteps(trajectory, "prefix"));
+      overheadSteps.reachRepair.push(...phaseSteps(trajectory, "reach-repair"));
+      const repairs = repairProgressOf(trajectory).filter(
+        (one) => trajectory.steps[one.step]?.phase === "reach-repair",
+      );
+      const outcome = repairOutcomeOf(trajectory);
+      if (outcome !== null) relations[outcome.relation] = (relations[outcome.relation] ?? 0) + 1;
       const before = metricsOf(trajectory, trajectory.control.step);
       const after = metricsOf(trajectory, trajectory.reach.step);
       triggered.push({
@@ -358,7 +455,9 @@ export function summarize(input: {
           reach: reachVisible?.oracleBond ?? "not-bonded",
         },
         hidden: { control: controlScore?.hidden ?? null, reach: reachScore?.hidden ?? null },
-        overhead: phaseTotals(trajectory, "reach-repair"),
+        overhead: totalsOf(phaseSteps(trajectory, "reach-repair")),
+        repairProgress: repairs,
+        repairOutcome: outcome,
       });
     }
     if (trajectory.visibleAcceptedAt !== null) {
@@ -402,7 +501,7 @@ export function summarize(input: {
     return signs;
   };
   return {
-    schema: "swarm.reach-pressure.summary.v1",
+    schema: "swarm.reach-pressure.summary.v2",
     identity,
     cohort: {
       name: manifest.cohort,
@@ -434,6 +533,14 @@ export function summarize(input: {
       reachRepairExhausted: byStatus["reach-repair-exhausted"] ?? 0,
       agentInvocations: invocations,
       invocationsWithUnknownUsage: unknownUsageInvocations,
+      usage: totalsOf(allSteps),
+      // Null where a ledger predates the field: whether a call was cancelled was not recorded.
+      invocationsEndedOnProviderFailure: knownTotal(
+        allSteps.map((step) => {
+          const ended = step.invocation.usage.endedOnProviderFailure;
+          return ended === null || ended === undefined ? null : ended ? 1 : 0;
+        }),
+      ),
     },
     primary,
     populationReading: populationReading(primary),
@@ -464,37 +571,16 @@ export function summarize(input: {
         control: sorted(bondStates.control),
         reach: sorted(bondStates.reach),
       },
-      overhead,
+      overhead: {
+        triggeredTasks,
+        prefix: totalsOf(overheadSteps.prefix),
+        reachRepair: totalsOf(overheadSteps.reachRepair),
+      },
+      repairOutcomes: sorted(relations as Record<string, number>),
     },
     triggered,
     excluded,
   };
-}
-
-function emptyTotals() {
-  return {
-    invocations: 0,
-    agentWallMs: 0,
-    judgeWallMs: 0,
-    modelCalls: 0,
-    inputTokens: 0 as number | null,
-    outputTokens: 0 as number | null,
-  };
-}
-
-function addTotals(into: ReturnType<typeof emptyTotals>, one: ReturnType<typeof phaseTotals>) {
-  into.invocations += one.invocations;
-  into.agentWallMs += one.agentWallMs;
-  into.judgeWallMs += one.judgeWallMs;
-  into.modelCalls += one.modelCalls;
-  into.inputTokens =
-    into.inputTokens === null || one.inputTokens === null
-      ? null
-      : into.inputTokens + one.inputTokens;
-  into.outputTokens =
-    into.outputTokens === null || one.outputTokens === null
-      ? null
-      : into.outputTokens + one.outputTokens;
 }
 
 function count(byStatus: Record<string, number>, statuses: readonly string[]): number {
