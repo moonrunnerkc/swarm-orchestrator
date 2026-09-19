@@ -164,3 +164,18 @@ directory. On the live preflights that followed, every session's own temporary f
 private scratch directory, and no session names the shared child home.
 
 Both preflights were run again under generation 2's acquisition identity; the protocol lists them.
+
+## Addendum, 2026-09-19: a defect generation 2 exposed
+
+The session audit reads each payload as JSON text and takes a reference from a forbidden root to
+the first character that ends it. It stopped at quotes, whitespace and brackets and not at a
+backslash, and every escape in JSON text begins with one. A colourised test runner in generation 2
+ended the agent's own workspace path with `\u001b[39m`, the reference read on through the escape,
+and the agent's own workspace no longer matched itself, so the audit recorded it as a place the
+invocation should not have named. Nothing reads the audit during a run, so no prompt, verdict or
+outcome depended on it; what it would have corrupted is the reported count.
+
+A reference now ends at the first character a path cannot hold, and a trailing full stop or comma
+is dropped (`9c4104e78`). The new tests fail on the previous tokenizer. Re-run over generation 2's
+seventeen real sessions, with each session's own workspace and home read from its own records, the
+corrected audit names nothing.

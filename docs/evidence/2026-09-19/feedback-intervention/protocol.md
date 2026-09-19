@@ -1,8 +1,8 @@
-# Verification feedback after visible acceptance: protocol, generation 2
+# Verification feedback after visible acceptance: protocol, generation 3
 
 Written and committed before any task of the confirmatory cohort was run under this generation.
-Generation 1 ran one unit before it was stopped on an instrument defect, named under "Changes after
-registration"; its rows are kept apart and are part of no estimate. Every row the run writes
+Generations 1 and 2 were stopped on instrument defects after one and nine units, named under
+"Changes after registration"; their rows are kept apart and are part of no estimate. Every row the run writes
 carries the SHA-256 of this file, so an edit after the fact is a different protocol and the
 analysis refuses to mix the two.
 
@@ -22,11 +22,11 @@ The driver reads this block and nothing else from this file.
 ```json
 {
   "schema": "swarm.feedback-study.protocol.v1",
-  "generation": 2,
+  "generation": 3,
   "cohort": "mined-pr-viable-154",
   "manifestDigest": "sha256:5b37f0b14cec6107a1ce095e5bcf2ddc942bbc671170cd62941750536e42867d",
   "identities": {
-    "acquisition": "sha256:973c9a3287624fc63d28b8db01d266f3e86baf6b3446217d8eabd0e951c5e95f",
+    "acquisition": "sha256:e8d4544f6de87e3a1b0114579a5e207d417676113f339a4cadc319d7e3e05367",
     "analysis": "sha256:929853deba804df477f95bb653636690bc269be53031ad4222084d015ec4c8cf",
     "renderer": "sha256:1fa31b192e3198fa9c106881854fa884569833b138d9ca289ae4e8aaffde7230"
   },
@@ -503,6 +503,26 @@ agent and checks where its tools' home is). Nothing about the cohort, the panel,
 the outcomes or the statistics changed. The acquisition identity changed because the fix is in
 digested sources.
 
+### Generation 2 stopped: the session audit misread the agent's own workspace
+
+Generation 2 was registered at `e0137e297` (acquisition `sha256:973c9a32…`) and ran from
+2026-09-19 00:11 local. On its sixth unit, the prefix of `cheeriojs/cheerio#5380`, the session
+audit reported a reference to the invocation's own workspace: a colourised test runner had ended
+the path with an escape, `…/prefix\u001b[39m` in the JSON text the audit reads, and the audit's
+tokenizer read through the escape, so the path no longer matched the workspace it was. The audit
+decides nothing during a run, so no prompt, verdict or outcome was affected; the defect is that a
+reported safety measure would have counted the agent's own workspace as a place it should not
+have named.
+
+The collection was stopped during its tenth unit. Its rows (nine settled units: one eligible pair
+with its three arms and five prefixes that did not reach visible acceptance), its environment and
+log are kept unchanged under [`generation-2/`](generation-2/results.jsonl) and are part of no
+estimate; no held-back verdict existed. The fix (`9c4104e78`): a reference ends at the first
+character a path cannot hold, and trailing punctuation is dropped, with tests that fail on the
+previous tokenizer. Re-run over generation 2's seventeen real sessions, the corrected audit names
+nothing. Nothing about the cohort, the panel, the treatment, the outcomes or the statistics
+changed.
+
 ## What was exercised beforehand
 
 Unit tests cover the arms' prompts word for word, the absence of any finding from the prefix and
@@ -520,21 +540,22 @@ archive (byte-identical), and `score` refused once packed.
 | preflight | commit | acquisition | rows | infrastructure failures | invocations | stopped by the agent itself | sessions audited clean |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | scripted stand-in, no model | `d39975674` | | 24 | 0 | 16 | n/a | n/a |
-| `local:mlx-community/glm-4.7-flash-abliterated-8bit` | `4f6d42b2a` | `sha256:973c9a328762…` | 28 | 0 | 23 | 23 of 23 `completed` | 23 of 23 |
-| `local:malekoo/Qwen3.8-27B-MLX-8bit` | `4f6d42b2a` | `sha256:973c9a328762…` | 22 | 0 | 17 | 17 of 17 `completed` | 17 of 17 |
+| `local:mlx-community/glm-4.7-flash-abliterated-8bit` | `9c4104e78` | `sha256:e8d4544f6de8…` | 28 | 0 | 23 | 22 `completed`, 1 `max-steps` | 23 of 23 |
+| `local:malekoo/Qwen3.8-27B-MLX-8bit` | `9c4104e78` | `sha256:e8d4544f6de8…` | 22 | 0 | 17 | 17 of 17 `completed` | 17 of 17 |
 
-Both model preflights ran under the acquisition identity this protocol registers, after the fix
-generation 1 prompted; no session names the shared child home, and each session's own temporary
-files sit in its private scratch directory. Between them they produced reach findings (Qwen on the
+Both model preflights ran under the acquisition identity this protocol registers, after the fixes
+generations 1 and 2 prompted; no session names the shared child home or any other place outside
+its own workspace, home and scratch directory, and each session's own temporary files sit in its
+private scratch directory. Between them they produced reach findings (Qwen on the
 switch-statement task, GLM on three tasks), a witnessed mutation finding (Qwen on the sign task),
 repairs that changed nothing, repairs that changed the patch and kept the same findings, and one
-whose findings grew. Earlier preflights of both models, under generation 1's acquisition
-(`c047329b…`, at `4629e62cb` and `b0a7f17b1`) and before the ledger packing and the probe fix
-(Qwen at `23703b189`), passed the same way.
+whose findings grew. Earlier preflights of both models passed the same way under generation 2's
+acquisition (`973c9a32…`, at `4f6d42b2a`), under generation 1's (`c047329b…`, at `4629e62cb`
+and `b0a7f17b1`), and, for Qwen, before the ledger packing and the probe fix (at `23703b189`).
 
-`gemma4:31b` was tried and not enrolled; see the panel. Apart from generation 1's one unit, no
-task of the confirmatory cohort has been run under this study, and no held-back verdict of any
-task of it exists.
+`gemma4:31b` was tried and not enrolled; see the panel. Apart from the ten units of generations 1
+and 2, no task of the confirmatory cohort has been run under this study, and no held-back verdict of
+any task of it exists.
 
 ## Artifacts
 
@@ -545,12 +566,12 @@ task of it exists.
 | `qualification.md` | the instrument audit that preceded this registration |
 | `environment.json` | the machine and what each endpoint served, at its first unit |
 | `results.jsonl` | launch, prefix and arm rows, append-only, canonical JSON (packed into `ledgers/` once settled) |
-| `generation-1/` | the stopped generation's rows, environment and log, unchanged and part of no estimate |
+| `generation-1/`, `generation-2/` | the stopped generations' rows, environments and logs, unchanged and part of no estimate |
 | `hidden-scores.jsonl` | one row per model, task and patch (packed with it) |
 | `summary.json`, `classifications.json`, `report.md`, `derivation.json` | derived by `analyze` |
 | `patches/` | every patch any row names, one content-addressed archive |
 
 Workspaces, sessions (every model call and tool call) and the stored patches stay outside the
-repository under `~/.cache/swarm-pr-tasks/feedback-study/g2/`. Each step carries its session
+repository under `~/.cache/swarm-pr-tasks/feedback-study/g3/`. Each step carries its session
 id, the SHA-256 of its ledger and its record count.
 
