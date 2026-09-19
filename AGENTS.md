@@ -19,7 +19,7 @@ product revisions and their reasons are in `docs/adr/0009-adaptive-goal-controll
 - `npm run typecheck`: strict TypeScript, no emit.
 - `npm run lint`: Biome checks. `npm run format` writes formatting.
 - `npm test`: the complete Vitest suite.
-- `npm run checks`: corpus history, policy drift, documentation paths, weight, cited bundles and CI verdicts.
+- `npm run checks`: corpus history, policy drift, documentation paths, weight and required headroom, packed derived evidence, cited bundles and CI verdicts.
 - `npm run gates`: checks, typecheck, lint and the full test suite, in sequence. This defines green.
 - `npm run build`, `npm run check:packaged`, `npm run fuzz:build`: release and CI checks.
 - `npm run dev`: CLI from source in a scratch workspace.
