@@ -100,7 +100,21 @@ describe.skipIf(!docker)("an authorized pnpm install where the image carries no 
       join(repo, "odd.test.mjs"),
       'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { odd } from "./odd.mjs";\ntest("odd", () => assert.equal(odd(3), true));\n',
     );
-    await run("pnpm", ["install", "--lockfile-only", "--ignore-scripts"], { cwd: repo });
+    // The fixture's lockfile comes from the same declared pnpm the install under test fetches,
+    // so the host needs no pnpm of its own (the publish runner carries none).
+    await run(
+      "npx",
+      [
+        "--yes",
+        "--package",
+        "pnpm@9.15.0",
+        "pnpm",
+        "install",
+        "--lockfile-only",
+        "--ignore-scripts",
+      ],
+      { cwd: repo },
+    );
     await gitIn(["add", "-A"]);
     await gitIn(["commit", "-qm", "base"]);
     const pnpmBase = (await gitIn(["rev-parse", "HEAD"])).stdout.trim();
