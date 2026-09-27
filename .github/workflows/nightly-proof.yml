@@ -35,6 +35,10 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Prepare immutable browser acceptance runtime
+        if: runner.os == 'Linux'
+        run: docker build -t swarm-upgrade-browser:20260927 -f scripts/fixtures/browser.Dockerfile .
       - run: npm run build
       - run: npm run gates
       - run: npm run fuzz:build
@@ -69,7 +73,6 @@ jobs:
           fi
           gh issue create \
             --title "nightly proof failed, $(date -u +%Y-%m-%d)" \
-            --label ci \
             --body "$(printf '%s\n' \
               "The scheduled verification proof did not pass." \
               "" \

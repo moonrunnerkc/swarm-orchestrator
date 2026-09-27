@@ -27,6 +27,9 @@ jobs:
           registry-url: https://registry.npmjs.org
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      - name: Prepare immutable browser acceptance runtime
+        if: runner.os == 'Linux'
+        run: docker build -t swarm-upgrade-browser:20260927 -f scripts/fixtures/browser.Dockerfile .
 
       # The tag names a version and package.json names a version, and nothing has been making
       # them agree. A release run tagged v13.1.0 on a tree still saying 13.0.0, and without
