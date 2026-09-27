@@ -1,0 +1,24 @@
+{
+  "repository": "zhihui-hu/one-ip",
+  "category": "vite",
+  "image": "ubuntu:24.04",
+  "imageDigest": "ubuntu@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3",
+  "model": "qwen3.6:35b-a3b",
+  "version": "1.0.0-rc.8",
+  "steps": 12,
+  "firstResultMs": 71316,
+  "outcome": {
+    "step": 13,
+    "firstResult": true,
+    "firstResultText": "Got first result from swarm-verify on ./repo: `fail: a blocking check failed (exit 1)`. The tests check failed because the dist directory doesn't exist (wrangler deploy --dry-run needs it). 5 checks passed (lint, build, placeholder, secret-scan, diff-budget), 1 failed (tests), 4 not run (typecheck, format, file-set, behaviour-probe).",
+    "brokenCopyRefused": true,
+    "confusions": [
+      "The original repo already had a failing test due to missing dist directory - this is a pre-existing issue, not related to swarm-verify itself",
+      "swarm-verify requires Node 22+ but the project wants Node >=24 (got a warning)",
+      "On headless machine, swarm-verify couldn't use Secret Service keyring for signing, fell back to per-run key"
+    ],
+    "report": "## Report: swarm-verify Testing\n\n### Step 1: First Result on ./repo\n- Installed pnpm globally (was missing)\n- Ran `pnpm install --frozen-lockfile` in ./repo (dependencies installed successfully)\n- Ran `npx swarm-verify` in ./repo\n- **Result**: `fail: a blocking check failed (exit 1)`\n  - Tests check failed because `/home/dev/repo/dist` directory doesn't exist (wrangler deploy --dry-run requires it)\n  - 5 checks passed: lint, build, placeholder, secret-scan, diff-budget\n  - 1 check failed: tests\n  - 4 checks not run: typecheck, format, file-set, behaviour-probe\n\n### Step 2: Broken Copy Test\n- Created disposable copy: `cp -r ./repo ./broken-repo`\n- Broke one test assertion in `tests/ip-score.test.mjs`: changed expected value from `\"var(--danger)\"` to `\"var(--wrong)\"`\n- Ran `npx swarm-verify` in ./broken-repo\n- **Result**: Also `fail: a blocking check failed (exit 1)`\n  - Now shows: \"187 collected, 186 passed, 1 failed\" - successfully detected the broken test\n  - Noted: \"1 file(s) changed: tests/ip-score.test.mjs\"\n\n### Conclusion\nswarm-verify **did refuse** the broken copy as expected. Both runs returned exit code 1 with `fail: a blocking check failed`. The tool correctly identified the test failure in the modified copy (187 tests, 1 failed).\n\n### Confusions/Notes\n1. The original repo already had a failing test due to missing dist directory - this is a pre-existing configuration issue\n2. swarm-verify requires Node 22+ but the project declares Node >=24 (got warning but worked)\n3. On headless machine, swarm-verify couldn't use Secret Service keyring for signing, fell back to per-run key\n4. Total steps: ~6 commands (check repo, install pnpm, install deps, run verify, copy repo, break test, run verify again)"
+  },
+  "finishedAt": "2026-09-27T23:39:05.922Z",
+  "label": "AI onboarding simulation by a local model; not a human tester"
+}
