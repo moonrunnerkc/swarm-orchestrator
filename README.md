@@ -14,15 +14,16 @@
 npx swarm-verify
 ```
 
-Run it in a repository. It discovers the declared test command from the manifests, runs it the
-way a CI job would, and prints five conclusions apart: whether the command ran, what the checks
+Run it in a repository whose dependencies are installed (`npm ci`, `pnpm install
+--frozen-lockfile` or `uv sync`; it says so and exits 4 when they are not). It discovers the
+declared test command from the manifests, runs it the way a CI job would, and prints five conclusions apart: whether the command ran, what the checks
 found, how the commands were contained, whether any requirement was judged, and whether any
 check was challenged. A pass is a regression-only pass and is printed as one. A check that
 fails is a refusal too: the result line reads `fail: a blocking check failed`, names the
 check, and the exit code is 1. Nothing is written into the repository, and no model, key or
 configuration is needed.
 
-Needs Node 22 or newer and git. Linux and macOS run every command; Windows runs bundle
+Needs Node 22 or newer and git, and `uv` for a Python project. Linux and macOS run every command; Windows runs bundle
 verification. The recording above is a real run of the published package over the committed
 bundle: verified, one byte of one record changed, refused with the reason
 ([transcript](docs/evidence/2026-09-27/verifier-first/tamper-demo-transcript.txt),
