@@ -91,7 +91,7 @@ export const commandDefinitions: readonly CommandDefinition[] = [
   },
   {
     name: "ci",
-    syntax: "ci --patch <file> [--base <ref>] [--json]",
+    syntax: "ci --patch <file> | --branch <ref> | --pr <PR> [--base <ref>] [--json]",
     description: "verify a patch independently",
     smoke: { args: ["--patch", "absent.diff"], exits: [1], output: "absent\\.diff" },
     model: "none",

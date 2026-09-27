@@ -22,3 +22,31 @@ Every bundle also carries its own dependency-free verifier, `verify.mjs`, which 
 the signature and every payload with nothing installed at all. This package adds the installed
 verifier's re-derivation of every recorded verdict, the signer judgement, the patch verification
 and the gates.
+
+Build and install from source until registry publication is independently verified:
+
+```sh
+npm ci
+npm run build:verify
+npm pack --workspace swarm-verify --pack-destination /tmp
+npm install --prefix /tmp/swarm-verifier-install /tmp/swarm-verify-0.1.0.tgz
+/tmp/swarm-verifier-install/node_modules/.bin/swarm-verify --help
+```
+
+`ci` accepts exactly one of `--patch FILE`, `--branch REF`, or
+`--pr OWNER/REPO#NUMBER` (also a github.com pull request URL). Branch comparisons
+use the merge base with `HEAD` by default. Supplying `--base REF` requests an exact
+base comparison. PR comparisons use the resolved target base and head snapshot;
+`--base` explicitly overrides that comparison. Source IDs and patch digests appear
+in JSON and evidence. PR metadata needs authenticated `gh`; immutable object fetching
+currently uses credential-free HTTPS and refuses inaccessible private objects.
+
+`--summary FILE` writes a bounded Markdown assessment projection; `--json` retains
+`swarm.ci.v1` with additive `sourceIdentity` and `assessmentDigest` fields.
+Symlink/submodule changes and quoted or whitespace-bearing patch paths are explicitly
+unsupported. Binary patches, deletions and renames represented as deletion/addition
+are retained. No checkout changes are applied to the user's working tree.
+
+Publication is separate from source delivery. Only a `swarm-verify-vVERSION` tag
+matching this package's version starts its publishing workflow, with gates, packed
+content validation and npm provenance. Branch pushes do not publish either package.

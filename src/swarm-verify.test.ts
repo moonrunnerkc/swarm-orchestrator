@@ -160,7 +160,7 @@ describe("swarm-verify beside swarm", () => {
     const standalone = await invoke("swarm-verify", ["ci"]);
 
     expect(standalone.code).toBe(through.code);
-    expect(through.stderr).toContain("ci needs --patch <file>");
-    expect(standalone.stderr).toContain("ci needs --patch <file>");
+    expect(through.stderr).toContain("ci needs exactly one of --patch <file>");
+    expect(standalone.stderr).toContain("ci needs exactly one of --patch <file>");
   });
 });
