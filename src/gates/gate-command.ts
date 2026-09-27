@@ -64,12 +64,18 @@ export function unavailableGate(
   title: string,
   severity: GateSeverity,
   reason: string,
+  optionalAbsence = false,
 ): GateDefinition {
   return {
     id,
     title,
     severity,
-    source: { kind: "inspection", inspect: async () => unavailableObservation(reason) },
+    source: {
+      kind: "inspection",
+      unavailableReason: reason,
+      optionalAbsence,
+      inspect: async () => unavailableObservation(reason),
+    },
     parse: parserFor(id),
     parserName: parserNameFor(id),
   };

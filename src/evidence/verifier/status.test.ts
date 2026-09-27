@@ -56,3 +56,31 @@ it("retains aggregate-only historical semantics and accepts complete captured re
   expect(capturedRegression([passed])).toBe("pass");
   expect(capturedRegression([passed, { ...unmeasured, severity: "advisory" }])).toBe("pass");
 });
+
+it("retains optional unconfigured tooling without waiving configured missing checks", () => {
+  const absent = {
+    id: "format:package",
+    severity: "blocking",
+    parser: "exit-code",
+    optionalAbsence: true,
+    status: "not-applicable",
+    observation: { exitCode: 0, stdout: "", stderr: "", unavailable: "no formatter configured" },
+  };
+  expect(capturedRegression([passed, absent])).toBe("pass");
+  expect(capturedRegression([absent])).toBe("unmeasured");
+  expect(capturedRegression([passed, { ...absent, optionalAbsence: undefined }])).toBe(
+    "unmeasured",
+  );
+  expect(
+    capturedRegression([
+      passed,
+      { ...absent, observation: { ...absent.observation, exitCode: 127 } },
+    ]),
+  ).toBeNull();
+  expect(
+    capturedRegression([
+      passed,
+      { ...absent, observation: { ...absent.observation, stdout: '{"optionalAbsence":true}' } },
+    ]),
+  ).toBeNull();
+});

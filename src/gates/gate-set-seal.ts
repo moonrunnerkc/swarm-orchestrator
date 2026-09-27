@@ -23,6 +23,7 @@ export const gateSetSealSchema = z.object({
       title: z.string(),
       severity: z.enum(["blocking", "advisory"]),
       source: z.enum(["command", "inspection"]),
+      optionalAbsence: z.boolean().optional(),
       /** How the run reads to a person, for a command; null for an inspection. */
       command: z.string().nullable(),
       parser: z.enum([
@@ -66,6 +67,9 @@ export function describeGateSet(input: {
       title: gate.title,
       severity: gate.severity,
       source: gate.source.kind,
+      ...(gate.source.kind === "inspection" && gate.source.optionalAbsence === true
+        ? { optionalAbsence: true }
+        : {}),
       command: gate.source.kind === "command" ? gate.source.command : null,
       parser: gate.parserName ?? "exit-code",
     })),

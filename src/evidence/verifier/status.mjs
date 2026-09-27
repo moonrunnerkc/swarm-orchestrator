@@ -124,6 +124,13 @@ export function capturedRegression(checks) {
       checks.some(
         (check) =>
           !check.observation ||
+          (check.optionalAbsence !== undefined &&
+            (check.optionalAbsence !== true ||
+              check.status !== "not-applicable" ||
+              typeof check.observation.unavailable !== "string" ||
+              check.observation.exitCode !== 0 ||
+              check.observation.stdout !== "" ||
+              check.observation.stderr !== "")) ||
           !["blocking", "advisory"].includes(check.severity) ||
           readStatus(check.parser, check.observation) !== check.status ||
           (check.inheritedFromBase === true &&
@@ -134,7 +141,14 @@ export function capturedRegression(checks) {
       return null;
     if (checks.some((check) => check.status === "failed" && check.inheritedFromBase !== true))
       return "fail";
-    if (checks.some((check) => check.severity === "blocking" && check.status !== "passed"))
+    if (
+      checks.some(
+        (check) =>
+          check.severity === "blocking" &&
+          check.status !== "passed" &&
+          check.optionalAbsence !== true,
+      )
+    )
       return "unmeasured";
     return checks.some((check) => check.status === "passed") ? "pass" : "unmeasured";
   } catch {
