@@ -1,7 +1,9 @@
 # Broad-use upgrade completion ledger
 
-Status: implementation, final local validation and installed integration complete; remote delivery
-in progress. No default-branch delivery, required remote CI success or package publication is claimed.
+Status: complete. All five workflows are implemented, documented, locally validated and delivered
+to `origin/v13-main`. Delivery `800cac0b783fdb663ac758bd9c5640d3cd0504f4` passed exact-commit
+remote gates and real good/bad Action controls. This reporting-only follow-up records those facts;
+its remote SHA and CI are checked again at handoff. No package publication is claimed.
 
 All five workflows share the existing engine. Start with [the broad-use guide](broad-use.md).
 [Evidence report](evidence/2026-09-27/broad-use/report.md) records exact commands and source
@@ -11,27 +13,27 @@ preserve the edit sets, amendments and intermediate failures.
 
 | UG | Production path | Meaningful verification | Status |
 | --- | --- | --- | --- |
-| 01 | Existing seals, ratchets, append-only records and independent verifier; captured blocking-check derivation | Full gates, historical bundles, status and upgrade adversarial tests | Locally verified |
-| 02 | Shared-source standalone prepack; tag/version interlock and provenance workflow | Clean installed tarballs; boundary and packaged checks | Locally verified |
-| 03 | Shared immutable patch/branch/PR source resolver; exact/merge-base identities | Real Git and PR 73 parity; hostile/moving inputs; dirty workspace preserved | Locally verified |
-| 04 | Pinned trusted composite Action; isolated candidate execution; bounded retained outputs | Local retention controls; remote good/bad workflow required before delivery | Remote pending |
-| 05 | Versioned JSON and escaped, truncation-marked Markdown assessment projection | Presentation injection tests; installed summaries and evidence digests | Locally verified |
-| 06 | npm/pnpm and uv/existing-venv detection, initialization and preflight | Real locked preparation, configured runners, idempotent init and missing-tool controls | Locally verified |
-| 07 | Repeated repository-relative package selection; qualified checks and scope refusal | Mixed pnpm/Vitest and uv/pytest fixture; shared/outside changes refused | Locally verified |
-| 08 | Native runner plus structured Vitest/pytest outcomes with limited authority | Real collected good/bad tests; malformed, zero, duplicate, truncated and spoofed controls | Locally verified |
-| 09 | Typed behavior instruments in sealed goal contracts, existing final acceptance | Pinned artifacts, provenance, final-tree and independent bundle tests | Locally verified |
-| 10 | Controlled argv/stdin CLI adapter; bounded stream assertions | Real success/wrong output/exit, missing executable, timeout, cancellation and cleanup | Locally verified |
-| 11 | Owned local HTTP service; separate readiness and finite response assertions | Packed good/bad API responses, redirect refusal and freed ports | Locally verified |
-| 12 | Optional project Playwright adapter; individual structured results and bounded diagnostics | Both packed CLIs run real isolated Chromium good/bad interactions; startup/missing/zero/timeout controls | Locally verified |
-| 13 | Deterministic setup/infrastructure/implementation/permission classification | Repair policy, no-progress and ordinary worker behavior-repair tests | Locally verified |
-| 14 | One explicit alternate model, original budget and verification reserve | Fake-provider controller tests; actual local e2b to 31b escalation recorded once | Locally verified |
-| 15 | Owned effect intent/observation records; original recovery contract and reconciliation | Interrupted effects, escalation count/budget recovery and process ownership tests | Locally verified |
-| 16 | Bugfix reproducer fails on base output and passes on final candidate | Both packed CLIs clamp reproducer; wrong-behavior candidate rejected | Locally verified |
-| 17 | Refactor pinned obligations checked on base and candidate | Mixed packages, CLI, HTTP and browser preserved/changed behavior controls | Locally verified |
-| 18 | Exact dependency-field/lock authorization; installed-version and behavior checks | Real npm/pnpm/uv upgrade matrix and manifest tampering; ordinary worker npm upgrade | Locally verified |
-| 19 | Real subprocess/toolchain/isolated browser and installed-package matrix | Final local commands and matrix recorded in evidence report; exact remote CI required | Remote pending |
-| 20 | Updated guides, package README, changelog, matrix and executable walkthroughs | Installed commands compared with documentation; documentation path checks | Locally verified |
-| 21 | Coherent local source commits; authorized default-branch delivery | Final push, matching remote SHA and exact-commit required CI pending | Remote pending |
+| UG-01 | Existing seals, ratchets, append-only records and independent verifier; captured blocking-check derivation | Full gates, historical bundles, status and upgrade adversarial tests | Complete |
+| UG-02 | Shared-source standalone prepack; tag/version interlock and provenance workflow | Clean installed tarballs; boundary and packaged checks | Complete |
+| UG-03 | Shared immutable patch/branch/PR source resolver; exact/merge-base identities | Real Git and PR 73 parity; hostile/moving inputs; dirty workspace preserved | Complete |
+| UG-04 | Pinned trusted composite Action; isolated candidate execution; bounded retained outputs | Local retention tests and real post-push good/bad controls; downloaded bundles independently verified | Complete |
+| UG-05 | Versioned JSON and escaped, truncation-marked Markdown assessment projection | Presentation injection tests; installed summaries and evidence digests | Complete |
+| UG-06 | npm/pnpm and uv/existing-venv detection, initialization and preflight | Real locked preparation, configured runners, idempotent init and missing-tool controls | Complete |
+| UG-07 | Repeated repository-relative package selection; qualified checks and scope refusal | Mixed pnpm/Vitest and uv/pytest fixture; shared/outside changes refused | Complete |
+| UG-08 | Native runner plus structured Vitest/pytest outcomes with limited authority | Real collected good/bad tests; malformed, zero, duplicate, truncated and spoofed controls | Complete |
+| UG-09 | Typed behavior instruments in sealed goal contracts, existing final acceptance | Pinned artifacts, provenance, final-tree and independent bundle tests | Complete |
+| UG-10 | Controlled argv/stdin CLI adapter; bounded stream assertions | Real success/wrong output/exit, missing executable, timeout, cancellation and cleanup | Complete |
+| UG-11 | Owned local HTTP service; separate readiness and finite response assertions | Packed good/bad API responses, redirect refusal and freed ports | Complete |
+| UG-12 | Optional project Playwright adapter; individual structured results and bounded diagnostics | Both packed CLIs run real isolated Chromium good/bad interactions; startup/missing/zero/timeout controls | Complete |
+| UG-13 | Deterministic setup/infrastructure/implementation/permission classification | Repair policy, no-progress and ordinary worker behavior-repair tests | Complete |
+| UG-14 | One explicit alternate model, original budget and verification reserve | Fake-provider controller tests; actual local e2b to 31b escalation recorded once | Complete |
+| UG-15 | Owned effect intent/observation records; original recovery contract and reconciliation | Interrupted effects, escalation count/budget recovery and process ownership tests | Complete |
+| UG-16 | Bugfix reproducer fails on base output and passes on final candidate | Both packed CLIs clamp reproducer; wrong-behavior candidate rejected | Complete |
+| UG-17 | Refactor pinned obligations checked on base and candidate | Mixed packages, CLI, HTTP and browser preserved/changed behavior controls | Complete |
+| UG-18 | Exact dependency-field/lock authorization; installed-version and behavior checks | Real npm/pnpm/uv upgrade matrix and manifest tampering; ordinary worker npm upgrade | Complete |
+| UG-19 | Real subprocess/toolchain/isolated browser and installed-package matrix | Full local gates and packed matrix; exact-commit Ubuntu/macOS and Node 22/24 CI passed | Complete |
+| UG-20 | Updated guides, package README, changelog, matrix and executable walkthroughs | Installed commands compared with documentation; documentation path checks | Complete |
+| UG-21 | Coherent local source commits; authorized default-branch delivery | Default-branch push, matching remote SHA and exact-commit required CI verified | Complete |
 
 Production entry points and shared modules:
 

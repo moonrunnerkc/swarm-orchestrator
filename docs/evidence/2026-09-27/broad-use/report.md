@@ -1,7 +1,7 @@
 # Broad-use upgrade evidence
 
-Local implementation, required gates and installed-package validation are complete. Remote
-default-branch delivery and the real GitHub Action controls remain pending until observed below.
+Implementation, required local gates, installed-package validation and default-branch delivery
+are complete. Exact-commit remote CI and the real GitHub Action controls passed.
 No package publication or release tag is claimed.
 
 ## Source and environment
@@ -139,3 +139,47 @@ refused. Existing-venv verification refuses unsafe editable path injection. Pip-
 cannot assert a reproducible dependency upgrade. Browser tooling is optional and installed
 explicitly. Fixtures are neither a new-user study nor a population false-green estimate; prior
 research campaigns and their open evidence bars remain unchanged.
+
+## Default-branch delivery
+
+Source was delivered to `origin/v13-main` at `800cac0b783fdb663ac758bd9c5640d3cd0504f4`, and
+`git ls-remote` confirmed that exact default-branch SHA. The delivery commit separately passed
+local full gates: 375 files and 3613 tests, 148.74s, no skipped tests. Source, command and full-log
+digests are in the manifest. The implementation tarball matrix remains bound to its recorded
+`e9f680a7b72e48bef57551099c1ffe6db4269273` source; intervening delivery changes were documentation.
+
+- [Gates workflow](https://github.com/moonrunnerkc/swarm-orchestrator/actions/runs/36301722988):
+  Ubuntu and macOS full gates/fuzz builds passed; Node 22 and Node 24 installed-package jobs passed.
+- [Action controls](https://github.com/moonrunnerkc/swarm-orchestrator/actions/runs/36301723063):
+  both trusted controls passed. The good candidate returned verifier status 0/task accepted; the
+  bad candidate returned status 1/task rejected while its regression still passed. Both measured
+  isolated execution and retained complete summary, JSON and signed-bundle artifacts. Downloaded
+  bundles independently verified with exit 0; report and summary digests are in the manifest.
+- [Pages workflow](https://github.com/moonrunnerkc/swarm-orchestrator/actions/runs/36301723017) passed.
+
+The exact remote test outputs were:
+
+```text
+Ubuntu: Test Files 375 passed (375); Tests 3613 passed (3613); Duration 245.33s
+macOS:  Test Files 373 passed | 2 skipped (375)
+        Tests 3596 passed | 17 skipped (3613); Duration 535.35s
+```
+
+The macOS skips were the existing Docker-capability conditions: nine container-backend tests,
+three isolated-shell tests, three isolated-gates tests, one independent-verification test and
+one new checkout-restoration integration test. Docker was unavailable on that runner. These
+cases executed in the Docker-equipped local and Ubuntu runs; the isolated Python, HTTP and
+browser matrices also executed locally. The macOS skip count is not reported as a passing
+isolation measurement. GitHub also emitted nonblocking action-runtime deprecation annotations.
+A targeted Biome invocation on the evidence JSON processed no files because evidence is excluded
+by the existing configuration; the full configured lint passed and the JSON was parsed normally.
+
+GitHub accepted the ordinary fast-forward push through the repository's existing owner-role
+exception and printed `Bypassed rule violations: Cannot update this protected ref`. The ruleset
+was not changed, and no force push or admin merge override was invoked. This platform message is
+preserved explicitly rather than described as an unprotected push.
+
+This is a reporting-only follow-up to those observed results. The final handoff checks the
+reporting commit's remote SHA and CI again; it does not pretend that a later commit ran earlier.
+Package publication remains unperformed. The original checkout's two untracked artifacts remain
+untouched. No historical research evidence or agent policy was rewritten.
