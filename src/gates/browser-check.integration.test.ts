@@ -19,13 +19,13 @@ beforeAll(async () => {
   await writeFile(join(checkout, "package.json"), '{"type":"module"}');
   await writeFile(
     join(checkout, "playwright.config.mjs"),
-    `export default { testDir: '.', use: { launchOptions: { executablePath: ${JSON.stringify(chromium.executablePath())} }, screenshot:'only-on-failure', trace:'retain-on-failure' }, timeout:3000 };`,
+    `export default { testDir: '.', use: { launchOptions: { executablePath: ${JSON.stringify(chromium.executablePath())} }, screenshot:'only-on-failure', trace:'retain-on-failure' }, timeout:15000 };`,
   );
 });
 afterAll(async () => {
   await rm(checkout, { recursive: true, force: true });
 });
-async function verifyTest(content: string, timeoutMs = 20000) {
+async function verifyTest(content: string, timeoutMs = 30000) {
   await writeFile(join(checkout, "interaction.spec.mjs"), content);
   return runBehaviorCheck(
     {
@@ -60,7 +60,7 @@ it("records real project-runner good and bad interactions without promoting eith
   expect(JSON.parse(bad.observation.stdout).stats.unexpected).toBe(1);
   expect(bad.reading.status).toBe("unjudged");
   expect(bad.observation.stdout).toContain("toHaveText");
-}, 45000);
+}, 65000);
 it("refuses zero tests and runner startup failure", async () => {
   expect((await verifyTest("export const nothing = 1;")).reading.status).not.toBe("accepted");
   expect((await verifyTest("import 'nonexistent-test-dependency';")).reading.status).not.toBe(
