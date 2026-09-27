@@ -121,6 +121,9 @@ assertion process. A preloaded module boundary rejects imports outside the seale
 and immutable dependency tree, including imports from candidate files. `SWARM_SUBJECT_DIRECTORY` names the candidate directory for reading
 application data, as the fixture reads JavaScript bytes into a browser page. This does not
 establish the sufficiency of the authored tests or the integrity of the execution machine.
+This mode supports client-side subjects and trusted static-fixture setup. Starting candidate
+executables inside the assertion container is unsupported because they would share its process
+boundary. Use project-runner mode with an unjudged outcome when this boundary is unavailable.
 Zero, skipped, flaky, duplicate, malformed or truncated reports cannot pass. Screenshots and
 traces are bounded diagnostics, never correctness verdicts. The isolated
 [browser fixture](../scripts/validate-browser-container.mjs) executes the same sealed click
