@@ -79,7 +79,11 @@ export function nodeGates(
   detection: ProjectDetection,
   nodeVersion: string,
 ): readonly GateDefinition[] {
-  const manager = detection.nodeManager ?? "npm";
+  // Scripts run through npm whichever manager installed the lockfile: the script is the same
+  // shell text under either, node_modules/.bin is on its PATH either way, and npm is present
+  // wherever node is, while pnpm is fetched for the install command alone and is not in a
+  // trusted image (every pnpm project's typecheck, lint and build read "not installed" there).
+  const manager = "npm";
   const scripts = new Set(detection.nodeScripts);
   const pick = (id: string): string | null =>
     (nodeScriptCandidates[id] ?? []).find((name) => scripts.has(name)) ?? null;
