@@ -148,11 +148,24 @@ export function validatePatchForms(patch: string): void {
     throw new Error(
       "symlink and submodule patches are unsupported; verify an ordinary-file change",
     );
+  let paths: string[] = [];
+  let inHunk = false;
   for (const line of patch.split("\n")) {
+    if (line.startsWith("@@")) inHunk = true;
+    if (!inHunk && /^(?:--- |\+\+\+ |rename from |rename to )/.test(line)) {
+      const old = line.startsWith("--- ") || line.startsWith("rename from ");
+      const path = line.replace(/^(?:--- |\+\+\+ |rename from |rename to )/, "");
+      const expected = paths[old ? 0 : 1];
+      const prefix = line.startsWith("rename ") ? "" : old ? "a/" : "b/";
+      if (path !== "/dev/null" && path !== `${prefix}${expected}`)
+        throw new Error("patch path headers disagree; refusing ambiguous scope");
+    }
     if (!line.startsWith("diff --git ")) continue;
     const match = /^diff --git a\/(\S+) b\/(\S+)$/.exec(line);
     if (match === null) throw new Error("quoted or whitespace-bearing patch paths are unsupported");
-    for (const path of match.slice(1)) {
+    paths = match.slice(1);
+    inHunk = false;
+    for (const path of paths) {
       if (
         path.startsWith("/") ||
         path.includes("\\") ||

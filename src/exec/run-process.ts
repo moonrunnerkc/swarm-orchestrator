@@ -11,6 +11,7 @@ import { StringDecoder } from "node:string_decoder";
  * to the group.
  */
 export interface ProcessRunOptions {
+  readonly stdin?: string;
   readonly cwd: string;
   /** Built rather than inherited. Nothing here reads `process.env`. */
   readonly env: Record<string, string>;
@@ -60,9 +61,13 @@ export function runProcessGroup(
       env: options.env,
       // Its own process group, so one signal reaches everything it started.
       detached: true,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: [options.stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"],
     });
 
+    if (child.stdin) {
+      child.stdin.on("error", () => {});
+      child.stdin.end(options.stdin ?? "");
+    }
     let stdout = "";
     let stderr = "";
     let truncated = false;

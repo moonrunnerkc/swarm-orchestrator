@@ -58,6 +58,10 @@ export function createNodeCommandRunner(
     options: CommandOptions,
   ): Promise<GateObservation> => {
     const startedAt = clock.now();
+    if (options.readOnlyFiles?.length && backend?.protectsReadOnlyFiles !== true)
+      return unavailableObservation(
+        "pinned acceptance files need a backend with read-only file mounts; use the container backend",
+      );
     let variables = environment.variables;
     if (options.environment !== undefined) {
       // A backend runs the command somewhere this process does not build the environment, so an
@@ -81,7 +85,8 @@ export function createNodeCommandRunner(
         ? await runProcessGroup(file, args, {
             cwd: options.cwd,
             timeoutMs: options.timeoutMs,
-            maxOutputBytes: 16_000_000,
+            maxOutputBytes: options.maxOutputBytes ?? 16_000_000,
+            ...(options.stdin === undefined ? {} : { stdin: options.stdin }),
             env: variables,
             signal: cancellation,
           })
@@ -89,6 +94,13 @@ export function createNodeCommandRunner(
             cwd: options.cwd,
             timeoutMs: options.timeoutMs,
             signal: cancellation,
+            ...(options.readOnlyFiles === undefined
+              ? {}
+              : { readOnlyFiles: options.readOnlyFiles }),
+            ...(options.stdin === undefined ? {} : { stdin: options.stdin }),
+            ...(options.maxOutputBytes === undefined
+              ? {}
+              : { maxOutputBytes: options.maxOutputBytes }),
           });
     const durationMs = clock.now() - startedAt;
 

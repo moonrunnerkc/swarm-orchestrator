@@ -4,12 +4,15 @@ import { asJsonValue } from "../evidence/canonical-json.ts";
 import { freezeGoalContract, type GoalContract } from "../evidence/goal-contract.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import { createPolicyGuard } from "../tools/policy-guard.ts";
+import { retainBehaviorArtifacts } from "./behavior-artifacts.ts";
+import { runBehaviorCheck } from "./behavior-check.ts";
 import type { GateCommandRunner } from "./gate-definition.ts";
 import {
   goalArtifactUnchanged,
   prepareGoalArtifact,
   snapshotGoalCheckout,
 } from "./goal-checkout.ts";
+import { assertGoalEffectsSettled, GoalEffectReconciliationError } from "./goal-effects.ts";
 
 export interface GoalVerification {
   readonly policy: "goal-obligations-v1";
@@ -20,6 +23,8 @@ export interface GoalVerification {
     status: "accepted" | "rejected" | "unjudged";
     checks: readonly string[];
   }[];
+  readonly purpose?: "base-control" | "candidate";
+  readonly presetControl?: { kind: "bugfix" | "refactor"; baseTree: string; accepted: boolean };
   readonly accepted: boolean;
 }
 
@@ -32,7 +37,11 @@ export async function verifyGoal(options: {
   commands: GateCommandRunner;
   timeoutMs: number;
   signal?: AbortSignal;
+  purpose?: "base-control" | "candidate";
+  presetControl?: GoalVerification["presetControl"];
 }): Promise<GoalVerification> {
+  assertGoalEffectsSettled(options.evidence.records(), options.evidence.payloads());
+  let pending = false;
   const { contract, digest } = freezeGoalContract(options.contract);
   const run = (argv: readonly string[]) =>
     options.commands.runVouched(argv, { cwd: options.checkout, timeoutMs: options.timeoutMs });
@@ -65,10 +74,37 @@ export async function verifyGoal(options: {
           const path = await prepareGoalArtifact(options.checkout, artifact.path);
           await writeFile(path, artifact.content, { flag: "wx", mode: 0o400 });
         }
-        const observation = await options.commands.run(check.command, {
-          cwd: options.checkout,
-          timeoutMs: options.timeoutMs,
+        await options.evidence.record({
+          type: "goal-check",
+          actor: "harness",
+          provenance: ["user"],
+          payload: asJsonValue({
+            phase: "intent",
+            contractDigest: digest,
+            checkId: check.id,
+            tree: options.tree,
+          }),
         });
+        pending = true;
+        const behavior =
+          check.behavior === undefined
+            ? undefined
+            : await runBehaviorCheck(check.behavior, {
+                ...options,
+                readOnlyFiles: check.artifacts.map((artifact) =>
+                  join(options.checkout, artifact.path),
+                ),
+              });
+        const observation =
+          behavior?.observation ??
+          (await options.commands.run(check.command, {
+            cwd: options.checkout,
+            timeoutMs: options.timeoutMs,
+          }));
+        const artifactDigests =
+          check.behavior?.kind === "browser"
+            ? await retainBehaviorArtifacts(observation.stdout, options.checkout, options.evidence)
+            : [];
         const unchanged = await run(["git", "diff", "--exit-code", options.tree, "--"]);
         const artifactsUnchanged = (
           await Promise.all(
@@ -78,9 +114,15 @@ export async function verifyGoal(options: {
           )
         ).every(Boolean);
         const status =
-          observation.unavailable !== null
+          observation.unavailable !== null ||
+          observation.outputTruncated ||
+          behavior?.reading.status === "unjudged"
             ? "unjudged"
-            : observation.exitCode === 0 && unchanged.exitCode === 0 && artifactsUnchanged
+            : (behavior === undefined
+                  ? observation.exitCode === 0
+                  : behavior.reading.status === "accepted") &&
+                unchanged.exitCode === 0 &&
+                artifactsUnchanged
               ? "accepted"
               : "rejected";
         const recorded = await options.evidence.record({
@@ -88,6 +130,7 @@ export async function verifyGoal(options: {
           actor: "harness",
           provenance: ["tool-output"],
           payload: asJsonValue({
+            phase: "completed",
             contractDigest: digest,
             checkId: check.id,
             tree: options.tree,
@@ -95,21 +138,33 @@ export async function verifyGoal(options: {
             exposure: check.exposure,
             command: check.command,
             observation,
+            artifactDigests,
+            ...(behavior === undefined
+              ? {}
+              : { behavior: check.behavior, behaviorReading: behavior.reading }),
             unchanged: unchanged.exitCode === 0 && artifactsUnchanged,
             status,
           }),
         });
+        pending = false;
         checks.set(check.id, { status, record: recorded.record.payloadDigest });
       } finally {
-        await snapshot.restore();
+        if (!pending) await snapshot.restore();
       }
     }
+  } catch (cause) {
+    if (pending)
+      throw new GoalEffectReconciliationError(
+        `${options.checkout}: ${cause instanceof Error ? cause.message : String(cause)}`,
+      );
+    throw cause;
   } finally {
-    await snapshot.dispose();
+    if (!pending) await snapshot.dispose();
   }
   const obligations = contract.requirements.map((requirement) => ({
     id: requirement.id,
     status:
+      options.presetControl?.accepted === false ||
       requirement.checks.length === 0 ||
       requirement.checks.some((id) => checks.get(id)?.status === "unjudged")
         ? ("unjudged" as const)
@@ -120,6 +175,8 @@ export async function verifyGoal(options: {
   }));
   const verification: GoalVerification = {
     policy: "goal-obligations-v1",
+    ...(contract.preset === undefined ? {} : { purpose: options.purpose ?? "candidate" }),
+    ...(options.presetControl === undefined ? {} : { presetControl: options.presetControl }),
     contractDigest: digest,
     tree: options.tree,
     obligations,

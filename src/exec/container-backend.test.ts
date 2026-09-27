@@ -266,3 +266,27 @@ await backend.run(['node','-e',"setInterval(()=>require('node:fs').appendFileSyn
   },
   30000,
 );
+
+it.skipIf(!available)(
+  "protects pinned acceptance files against writes and replacement",
+  async () => {
+    const file = join(workspace, "pinned.mjs");
+    await writeFile(file, "original");
+    const backend = createContainerBackend({
+      runtime: "docker",
+      image: "node:24-bookworm",
+      workspaceRoot: workspace,
+      user: `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`,
+    });
+    const result = await backend.run(
+      [
+        "node",
+        "-e",
+        "const fs=require('node:fs');let denied=0;for(const action of [()=>fs.writeFileSync('pinned.mjs','forged'),()=>fs.unlinkSync('pinned.mjs'),()=>fs.chmodSync('pinned.mjs',0o777)]){try{action()}catch{denied++}}if(denied!==3||fs.readFileSync('pinned.mjs','utf8')!=='original')process.exit(1)",
+      ],
+      { cwd: workspace, timeoutMs: 30000, readOnlyFiles: [file] },
+    );
+    expect(result.exitCode, result.stderr).toBe(0);
+  },
+  45000,
+);
