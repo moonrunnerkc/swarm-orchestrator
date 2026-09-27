@@ -2,7 +2,7 @@ import { asJsonValue, digestOfBytes } from "../evidence/canonical-json.ts";
 import type { GoalContract } from "../evidence/goal-contract.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import type { GoalVerification } from "./goal-acceptance.ts";
-import { mustBeShownToParse, type ParseCheckReading, readParseCheck } from "./mutant-parse.ts";
+import { mustBeShownToParseFor, type ParseCheckReading, readParseCheck } from "./mutant-parse.ts";
 import { suiteWitnessesADifference } from "./mutant-witness.ts";
 import type { CheckStatus } from "./oracle-bond-run.ts";
 import { type Mutant, mutantsOfChangedLines } from "./oracle-mutants.ts";
@@ -350,7 +350,7 @@ export async function challengeGoal(input: ChallengeInput): Promise<ChallengeRep
     if (original === null) continue;
     const lines = original.split("\n");
     if (lines[mutant.line - 1] !== mutant.before) continue;
-    const checkTheParse = mustBeShownToParse(mutant.operator);
+    const checkTheParse = mustBeShownToParseFor(mutant.path, mutant.operator);
     const originalParses = checkTheParse ? await runner.parses(mutant.path) : true;
     await record(evidence, "challenge-run-v1", {
       phase: "intent",

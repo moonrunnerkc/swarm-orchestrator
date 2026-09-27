@@ -15,6 +15,10 @@
   the repository suite, sealed fixtures the contract declares, and names missing obligations.
   Records `challenge-plan-v1`, `challenge-run-v1` and `challenge-verdict-v1`; the bundle's own
   verifier re-derives every verdict independently. `required` refuses with `challenges-unmet`.
+- **Python changes are challenged too**: the mutation set reads Python's statement forms
+  (comparison inversion, condition negation, operand swap, `return None`, `= None`), masks
+  literals and comments, sets test files aside, and every Python mutant is shown to parse with
+  Python's own parser before it runs.
 - **The GitHub Action as a client of the installed verifier**: `swarm-verify action
   verify|comment|retain`. The verdict document is signed as a GitHub artifact attestation, the
   pull request comment is one per PR, updated in place, bound to the head, escaped and
