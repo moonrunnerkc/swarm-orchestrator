@@ -18,7 +18,13 @@ with tempfile.TemporaryDirectory(prefix="swarm-pytest-") as d:
 /** Recognize complete supported commands; anything else retains its existing measurement limits. */
 export function structuredRunner(body: string | undefined): readonly string[] | null {
   if (body === "vitest" || body === "vitest run")
-    return ["node", "node_modules/vitest/vitest.mjs", "run", "--reporter=json"];
+    return [
+      "node",
+      "--input-type=module",
+      "-e",
+      "import {createRequire} from 'node:module';import {pathToFileURL} from 'node:url';import {dirname,join} from 'node:path';const require=createRequire(process.cwd()+'/package.json');const entry=join(dirname(require.resolve('vitest/package.json')),'vitest.mjs');process.argv=[process.argv[0],entry,'run','--reporter=json'];await import(pathToFileURL(entry).href);",
+    ];
+
   if (body === "uv run --locked --no-sync python -m pytest -q")
     return ["uv", "run", "--locked", "--no-sync", "python", "-c", pytest];
   if (body === ".venv/bin/python -m pytest -q") return [".venv/bin/python", "-c", pytest];

@@ -36,10 +36,15 @@ describe("planning gates from package.json scripts", () => {
     expect(plan.every((gate) => gate.reason === null)).toBe(true);
   });
 
-  it("reads vitest's summary with the test-output rule", async () => {
+  it("pins Vitest structured reporting in generated configuration", async () => {
     const [tests] = planGates(await detected({ test: "vitest run" }));
 
-    expect(tests).toMatchObject({ parser: "test-output", severity: "blocking", reason: null });
+    expect(tests).toMatchObject({
+      parser: "structured-test-output",
+      severity: "blocking",
+      reason: null,
+    });
+    expect(tests?.command).toContain("--reporter=json");
   });
 
   it("writes a test script whose runner it has no parser for as advisory, and says why", async () => {

@@ -128,12 +128,9 @@ describe("assembling the default gate set", () => {
       ),
     );
 
-    expect(argvOf(gates, "tests")).toEqual([
-      "node",
-      "node_modules/vitest/vitest.mjs",
-      "run",
-      "--reporter=json",
-    ]);
+    expect(argvOf(gates, "tests")?.[0]).toBe("node");
+    expect(argvOf(gates, "tests")?.join(" ")).toContain("require.resolve('vitest/package.json')");
+    expect(argvOf(gates, "tests")?.join(" ")).toContain("--reporter=json");
     expect(commandOf(gates, "lint")).toBe("npm run --silent lint");
     expect(commandOf(gates, "format")).toBe("npm run --silent format:check");
     // No typecheck script, so there is no command to run and the gate says so.

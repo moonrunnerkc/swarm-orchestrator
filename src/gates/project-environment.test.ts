@@ -25,7 +25,7 @@ it("plans configured Python tools in the uv environment without installing anyth
   );
   const planned = planGates(project);
   expect(planned.map((gate) => gate.command)).toEqual([
-    "uv run --locked --no-sync python -m pytest -q",
+    expect.stringContaining("--junitxml="),
     "uv run --locked --no-sync python -m ruff check --no-fix .",
   ]);
   expect(planned.some((gate) => gate.command.includes("mypy"))).toBe(false);
@@ -36,7 +36,7 @@ it("uses an existing venv and refuses an unprepared Python environment", async (
     planGates(
       await detectProject(reader({ ...configured, ".venv/pyvenv.cfg": "home = /usr/bin" })),
     )[0]?.command,
-  ).toBe(".venv/bin/python -m pytest -q");
+  ).toContain("'.venv/bin/python' '-c'");
   expect(() =>
     planGates({
       types: ["python"],

@@ -4,6 +4,7 @@ import type { GateSeverity, OverrideParserName } from "../gates/gate-definition.
 import { harnessReportingCommand } from "../gates/harness-reporting.ts";
 import { packageSelection } from "../gates/package-scope.ts";
 import { detectProject, type ProjectDetection } from "../gates/project-type.ts";
+import { renderRunnerArgv, structuredRunner } from "../gates/structured-runner.ts";
 import { swarmTomlFileName } from "./swarm-toml.ts";
 
 /**
@@ -47,6 +48,8 @@ function testRunnerRule(body: string): {
   if (harnessReportingCommand(body) !== null) {
     return { parser: "test-output", severity: "blocking", reason: null };
   }
+  if (structuredRunner(body) !== null)
+    return { parser: "structured-test-output", severity: "blocking", reason: null };
   const program = body.trim().split(/\s+/)[0] ?? "";
   if (program === "vitest") {
     return { parser: "test-output", severity: "blocking", reason: null };
@@ -76,12 +79,14 @@ export function planGates(detection: ProjectDetection): readonly PlannedGate[] {
     ]) {
       if (id === undefined || tool === undefined || args === undefined) continue;
       if (!detection.pythonTools.includes(tool)) continue;
+      const command = `${prefix} ${tool} ${args}`.trim();
+      const structured = structuredRunner(command);
       planned.push({
         id,
         script: `tool.${tool}`,
         body: `${tool} ${args}`,
-        command: `${prefix} ${tool} ${args}`.trim(),
-        parser: id === "tests" ? "test-output" : "exit-code",
+        command: structured === null ? command : renderRunnerArgv(structured),
+        parser: structured === null ? "exit-code" : "structured-test-output",
         severity: "blocking",
         reason: null,
       });
@@ -101,7 +106,10 @@ export function planGates(detection: ProjectDetection): readonly PlannedGate[] {
       id,
       script,
       body,
-      command: `${detection.nodeManager ?? "npm"} run --silent ${script}`,
+      command:
+        structuredRunner(body) === null
+          ? `${detection.nodeManager ?? "npm"} run --silent ${script}`
+          : renderRunnerArgv(structuredRunner(body) ?? []),
       ...rule,
     });
   }
