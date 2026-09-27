@@ -58,6 +58,11 @@ describe("planning a check from a project's files", () => {
     const plan = await planCheck({ workspace: root, path: await toolPath() });
     expect(plan.project.nodeManager).toBe("pnpm");
     expect(plan.prerequisites[0]?.remedy).toContain("pnpm install --frozen-lockfile");
+    // The scripts run through npm: pnpm installs the lockfile but is not in a trusted image,
+    // which left every pnpm project's typecheck, lint and build "not installed" in a container.
+    expect(plan.declaredChecks.find((check) => check.id === "tests")?.command).toBe(
+      "npm run --silent test",
+    );
   });
 
   it("reads a watch-mode script as interactive by declaration", async () => {

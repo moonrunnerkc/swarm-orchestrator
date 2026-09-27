@@ -227,14 +227,17 @@ function declaredChecksOf(
 ): readonly DeclaredCheck[] {
   const checks: DeclaredCheck[] = [];
   if (detection.types.includes("node")) {
-    const manager = detection.nodeManager ?? "npm";
+    // Scripts run through npm whichever manager installed the lockfile: a script is the same
+    // shell text under either, node_modules/.bin is on its PATH either way, and npm is present
+    // wherever node is, while pnpm is fetched for the install command alone and is not in a
+    // trusted image. A script that itself calls pnpm still needs pnpm, and says so when it fails.
     for (const id of ["tests", "typecheck", "lint", "format", "build"]) {
       const script =
         (nodeScriptCandidates[id] ?? []).find((name) => detection.nodeScripts.includes(name)) ??
         null;
       checks.push({
         id: detection.types.length > 1 ? `${id}:node` : id,
-        command: script === null ? null : `${manager} run --silent ${script}`,
+        command: script === null ? null : `npm run --silent ${script}`,
         unavailable:
           script === null
             ? id === "tests"
