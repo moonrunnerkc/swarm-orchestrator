@@ -1,5 +1,17 @@
-import { cp, lstat, mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { createReadStream, createWriteStream } from "node:fs";
+import {
+  chmod,
+  cp,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  readlink,
+  rm,
+} from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { pipeline } from "node:stream/promises";
 
 /** Preserve the verifier's setup, including installed dependencies, between candidate checks. */
 export async function snapshotGoalCheckout(checkout: string, signal?: AbortSignal) {
@@ -30,12 +42,43 @@ export async function snapshotGoalCheckout(checkout: string, signal?: AbortSigna
         throw new Error(
           "goal check replaced its checkout root; preserve the remaining verifier files",
         );
-      for (const name of await readdir(checkout))
-        await rm(join(checkout, name), { recursive: true, force: true });
-      await copy(snapshot, checkout);
+      await restoreDirectory(snapshot, checkout);
     },
     dispose,
   };
+}
+
+/** Keep directory identities stable for mounted filesystems while removing candidate additions. */
+async function restoreDirectory(source: string, destination: string): Promise<void> {
+  const names = await readdir(source);
+  const expected = new Set(names);
+  for (const name of await readdir(destination))
+    if (!expected.has(name)) await rm(join(destination, name), { recursive: true, force: true });
+  for (const name of names) {
+    const from = join(source, name);
+    const to = join(destination, name);
+    const original = await lstat(from);
+    const current = await lstat(to).catch((cause: NodeJS.ErrnoException) => {
+      if (cause.code === "ENOENT") return null;
+      throw cause;
+    });
+    if (original.isDirectory() && current?.isDirectory() && !current.isSymbolicLink()) {
+      await chmod(to, original.mode);
+      await restoreDirectory(from, to);
+    } else if (original.isFile() && current?.isFile()) {
+      await chmod(to, original.mode | 0o200);
+      await pipeline(createReadStream(from), createWriteStream(to, { flags: "w" }));
+      await chmod(to, original.mode);
+    } else if (
+      original.isSymbolicLink() &&
+      current?.isSymbolicLink() &&
+      (await readlink(from)) === (await readlink(to))
+    ) {
+    } else {
+      if (current !== null) await rm(to, { recursive: true, force: true });
+      await cp(from, to, { recursive: true, dereference: false, verbatimSymlinks: true });
+    }
+  }
 }
 
 /** A candidate may contain links; harness-authored artifacts must never traverse them. */
