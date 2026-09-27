@@ -160,7 +160,7 @@ it.each([false, true])(
           });
         },
       });
-      expect(calls.slice(0, 2).sort()).toEqual([
+      expect(calls.slice(0, 2).sort(), JSON.stringify(completed)).toEqual([
         "complete-goal-attempt-1",
         "complete-goal-attempt-2",
       ]);

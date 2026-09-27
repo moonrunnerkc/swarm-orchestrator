@@ -993,6 +993,9 @@ async function resolveWithModel(
   options: AgentTaskOptions,
   loopDependencies: Parameters<typeof runAgentLoop>[1],
 ): Promise<AgentLoopOutcome> {
+  const candidateDigest = digestOfBytes(
+    await diffAgainstBase({ workspaceRoot: options.workspace, baseRef: options.baseRef }),
+  );
   const brief = [
     `The task was: ${taskBrief(options.task, options.contract)}`,
     "",
@@ -1001,8 +1004,12 @@ async function resolveWithModel(
     "skip marker, or lowering coverage of the lines you changed will have the attempt rejected",
     "and will still cost you the attempt.",
     "",
-    `Base source: ${options.baseRef}. Immutable requirements: ${JSON.stringify(options.contract?.immutablePaths ?? [])}.`,
-    request.gateOutput.slice(0, 16000),
+    `Base source: ${options.baseRef}. Candidate patch: ${candidateDigest}.`,
+    `Prior checked attempt: ${request.cycle.attempt}. Remaining model allowance: ${loopDependencies.budget.maxTokens} tokens and ${loopDependencies.budget.maxWallTimeMs} ms.`,
+    `Immutable requirements: ${JSON.stringify(options.contract?.immutablePaths ?? [])}.`,
+    request.gateOutput.length > 16000
+      ? `${request.gateOutput.slice(0, 16000)}\n[diagnostic excerpt truncated; consult the cited evidence records]`
+      : request.gateOutput,
   ].join("\n");
 
   return runAgentLoop(brief, loopDependencies);
