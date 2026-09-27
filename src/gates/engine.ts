@@ -118,14 +118,31 @@ export async function assembleGateSet(
     baseRef: input.criteriaRef,
   });
   if (input.gateOptions?.packages?.length)
-    return assemblePackageGates(
-      async (manifest) => (await probe.readBase(manifest)) ?? (await probe.readCurrent(manifest)),
+    return withAcceptance(
+      await assemblePackageGates(
+        async (manifest) => (await probe.readBase(manifest)) ?? (await probe.readCurrent(manifest)),
+        input.gateOptions,
+      ),
       input.gateOptions,
     );
   const detection = await detectProject(
     async (manifest) => (await probe.readBase(manifest)) ?? (await probe.readCurrent(manifest)),
   );
-  return { detection, gates: assembleGates(detection, { ...(input.gateOptions ?? {}) }) };
+  return withAcceptance(
+    { detection, gates: assembleGates(detection, { ...(input.gateOptions ?? {}) }) },
+    input.gateOptions,
+  );
+}
+
+function withAcceptance(
+  assembled: { detection: ProjectDetection; gates: readonly GateDefinition[] },
+  options?: GateSetOptions,
+) {
+  const acceptance = options?.acceptanceGate;
+  if (acceptance === undefined) return assembled;
+  if (assembled.gates.some((gate) => gate.id === acceptance.id))
+    throw new Error(`acceptance gate identity collides with configured gate: ${acceptance.id}`);
+  return { ...assembled, gates: [...assembled.gates, acceptance] };
 }
 
 /**

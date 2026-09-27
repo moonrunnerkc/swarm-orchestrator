@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type AgentTaskOptions, runAgentTask, systemPrompt } from "./agent-run.ts";
 import { createSystemClock } from "./cli-runtime-inputs.ts";
+import { taskGoalGate } from "./cli-task-goal.ts";
 import type { Clock } from "./core/clock.ts";
 import type { ModelClient, ModelRequest } from "./core/model-client.ts";
 import { createFixedRandom, createTestClock } from "./core/test-doubles.ts";
@@ -721,3 +722,64 @@ it.each(["hello", "wrong"])(
   },
   30000,
 );
+
+it("repairs failed pinned behavior through the existing loop even when regression passes", async () => {
+  await write("package.json", JSON.stringify({ type: "module", scripts: { test: "node --test" } }));
+  await git("add", "package.json");
+  await git("commit", "-qm", "declare native test runner");
+  const baseCommit = (await run("git", ["rev-parse", "HEAD"], { cwd: workspace })).stdout.trim();
+  const contract = await declareGoalContract(evidence, {
+    version: 1,
+    goal: "Expose shout as one",
+    requirements: [{ id: "shout", description: "shout is one", checks: ["shout"] }],
+    checks: [
+      {
+        id: "shout",
+        command: "pinned output",
+        author: "user",
+        exposure: "withheld",
+        artifacts: [],
+        behavior: {
+          kind: "cli",
+          cwd: ".",
+          timeoutMs: 3000,
+          maxOutputBytes: 4000,
+          toolchain: "Node",
+          network: "inherit",
+          argv: [
+            "node",
+            "--input-type=module",
+            "-e",
+            "import * as m from './src/greet.js';console.log(m.shout)",
+          ],
+          exitCode: 0,
+          stdout: [{ kind: "equals", value: "1\n" }],
+          stderr: [],
+        },
+      },
+    ],
+    immutablePaths: ["src/greet.test.js"],
+  });
+  const result = await task([respondWithText("done"), ...goodTurns(stillGreen)], {
+    attempts: 1,
+    baseRef: baseCommit,
+    gateOptions: {
+      commandOverrides: gateOverrides,
+      acceptanceGate: taskGoalGate({
+        contract,
+        workspace,
+        baseCommit,
+        evidence,
+        clock,
+        signal: new AbortController().signal,
+        isolation: null,
+        install: false,
+      }),
+    },
+  });
+  expect(result.gates.outcome.firstCycle.statuses.tests).toBe("passed");
+  expect(result.gates.outcome.firstCycle.statuses["task-acceptance"]).toBe("failed");
+  expect(result.gates.outcome.attempts).toHaveLength(1);
+  expect(result.gates.outcome.finalCycle.statuses["task-acceptance"]).toBe("passed");
+  expect(result.green).toBe(true);
+}, 60000);

@@ -21,8 +21,8 @@ export interface CommandDefinition {
 export const commandDefinitions: readonly CommandDefinition[] = [
   {
     name: "init",
-    syntax: "init [--workspace <dir>]",
-    description: "write swarm.toml from the project's scripts",
+    syntax: "init [--workspace <dir>] [--package <dir>] [--list-packages]",
+    description: "configure declared Node/Python checks without installing dependencies",
     smoke: { args: [], exits: [0], output: "swarm\\.toml|already exists" },
   },
   {

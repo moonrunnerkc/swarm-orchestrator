@@ -56,6 +56,13 @@ export async function detectProject(read: ManifestReader): Promise<ProjectDetect
     }
   }
 
+  if (types.includes("python")) {
+    for (const file of ["pytest.ini", "tox.ini"]) {
+      const text = await read(file);
+      if (text !== null && /^\s*\[pytest\]\s*$/m.test(text))
+        pythonTools = [...new Set([...pythonTools, "pytest"])].sort();
+    }
+  }
   return {
     ...(await detectEnvironment(read)),
     types,
@@ -108,6 +115,32 @@ function readPythonTools(text: string): readonly string[] {
     }
   }
   if (/^\s*\[mypy\]\s*$/m.test(text)) tools.add("mypy");
+  if (/^\s*\[tool:pytest\]\s*$/m.test(text)) tools.add("pytest");
+  try {
+    const data = z
+      .object({
+        project: z
+          .object({
+            dependencies: z.array(z.string()).optional(),
+            "optional-dependencies": z.record(z.string(), z.array(z.string())).optional(),
+          })
+          .optional(),
+        "dependency-groups": z.record(z.string(), z.array(z.unknown())).optional(),
+      })
+      .parse(parse(text));
+    const dependencies = [
+      ...(data.project?.dependencies ?? []),
+      ...Object.values(data.project?.["optional-dependencies"] ?? {}).flat(),
+      ...Object.values(data["dependency-groups"] ?? {}).flat(),
+    ];
+    for (const dependency of dependencies) {
+      if (typeof dependency !== "string") continue;
+      const name = /^(pytest|ruff|mypy)(?=[\s[<>=!~;]|$)/i.exec(dependency)?.[1]?.toLowerCase();
+      if (name !== undefined) tools.add(name);
+    }
+  } catch {
+    /* INI configuration is read by its section names above. */
+  }
   return [...tools].sort();
 }
 

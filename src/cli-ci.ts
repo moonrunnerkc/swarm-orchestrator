@@ -20,6 +20,7 @@ import { resolveChangeSource } from "./gates/change-source.ts";
 import { resolveGithubPullRequest } from "./gates/github-source.ts";
 import { verifyIndependently } from "./gates/independent-verification.ts";
 import { createNodeCommandRunner } from "./gates/node-command-runner.ts";
+import { pathsInPatch } from "./gates/patch-paths.ts";
 import { exitCodes } from "./machine-output.ts";
 export async function verifyPatch(options: CiCommand): Promise<number> {
   const clock = createSystemClock();
@@ -151,6 +152,7 @@ async function verifyPatchUnderCancellation(
     provenance: ["user"],
     payload: { task: "independent verification", baseCommit, repository: options.workspace },
   });
+  const changedPaths = pathsInPatch(patch);
   let assessmentDigest = "";
   let result: Awaited<ReturnType<typeof verifyIndependently>>;
   try {
@@ -177,7 +179,9 @@ async function verifyPatchUnderCancellation(
       type: "independent-verification",
       actor: "harness",
       provenance: ["tool-output"],
-      payload: JSON.parse(JSON.stringify({ ...result, executionTrust, sourceIdentity })),
+      payload: JSON.parse(
+        JSON.stringify({ ...result, executionTrust, sourceIdentity, changedPaths }),
+      ),
     });
     assessmentDigest = assessment.record.payloadDigest;
   } catch (cause) {
@@ -204,12 +208,13 @@ async function verifyPatchUnderCancellation(
         executionTrust,
         bundleDirectory,
         assessmentDigest,
+        changedPaths,
       }),
       { mode: 0o600 },
     );
   if (options.json) {
     process.stdout.write(
-      `${scrubText(JSON.stringify({ schema: "swarm.ci.v1", assessmentDigest, sourceIdentity, baseCommit, executionTrust, bundleDirectory, ...result })).value}\n`,
+      `${scrubText(JSON.stringify({ schema: "swarm.ci.v1", changedPaths, assessmentDigest, sourceIdentity, baseCommit, executionTrust, bundleDirectory, ...result })).value}\n`,
     );
     return result.verified ? exitCodes.acceptable : exitCodes.notAcceptable;
   }
@@ -247,7 +252,7 @@ async function verifyPatchUnderCancellation(
       `${describeSetAside(result.setAsideByReach)}\n` +
       `oracle bond: ${result.oracleBond}${describeOracleBond(result)}\n` +
       (result.verified
-        ? result.acceptance === undefined
+        ? result.acceptance === undefined && result.goalAcceptance === undefined
           ? "verified: no regression, and the oracle says the task was done.\n"
           : "verified: regression passed and every applicable required obligation was accepted.\n"
         : `not verified. ${result.advice}\n`),

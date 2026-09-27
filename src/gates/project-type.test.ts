@@ -60,7 +60,7 @@ describe("project type detection", () => {
     );
     expect(detection.types).toEqual(["python"]);
     expect(detection.manifests).toEqual(["setup.cfg", "setup.py"]);
-    expect(detection.pythonTools).toEqual(["mypy"]);
+    expect(detection.pythonTools).toEqual(["mypy", "pytest"]);
     expect(commandOf(assembleGates(detection), "tests")).toBe("pytest -q");
     expect(commandOf(assembleGates(detection), "typecheck")).toBe("mypy .");
     const modern = await detectProject(
@@ -249,7 +249,7 @@ describe("assembling the default gate set", () => {
 
     const bare = assembleGates(await detectProject(reader({ "pyproject.toml": "[project]\n" })));
     expect(commandOf(bare, "lint")).toBeNull();
-    expect(commandOf(bare, "tests")).toBe("pytest -q");
+    expect(commandOf(bare, "tests")).toBeNull();
   });
   it("preserves explicit mypy target selection instead of checking unrelated untyped tests", async () => {
     for (const manifests of [
@@ -290,4 +290,19 @@ describe("assembling the default gate set", () => {
 
     expect(commandOf(gates, "tests")).toBe("go test -race ./...");
   });
+});
+
+it("recognizes explicit Python tool dependencies and standalone pytest configuration", async () => {
+  for (const manifests of [
+    {
+      "pyproject.toml":
+        '[project]\nname="unit"\n[dependency-groups]\ndev=["pytest==9.0.2", "ruff>=0.15", "not-mypy"]\n',
+    },
+    { "pyproject.toml": '[project]\nname="unit"\n', "pytest.ini": "[pytest]\ntestpaths=tests\n" },
+  ]) {
+    const detected = await detectProject(reader(manifests));
+    expect(detected.pythonTools).toContain("pytest");
+    expect(detected.pythonTools).not.toContain("mypy");
+    expect(commandOf(assembleGates(detected), "tests")).toBe("pytest -q");
+  }
 });

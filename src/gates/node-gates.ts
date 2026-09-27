@@ -1,0 +1,117 @@
+import { isolatedCoverageShortfall } from "../node-floor.ts";
+import { commandGate, type GateSpec, unavailableGate } from "./gate-command.ts";
+import type { GateDefinition } from "./gate-definition.ts";
+import { harnessReportingCommand } from "./harness-reporting.ts";
+import type { ProjectDetection } from "./project-type.ts";
+import { readRunnerResult } from "./runner-results.ts";
+import { renderRunnerArgv, structuredRunner } from "./structured-runner.ts";
+
+export const nodeScriptCandidates: Readonly<Record<string, readonly string[]>> = {
+  typecheck: ["typecheck", "type-check", "tsc"],
+  lint: ["lint", "lint:check"],
+  // A formatter gate must check, never write: a gate that edits the tree is not a gate.
+  format: ["format:check", "fmt:check", "format:ci", "lint:format"],
+  tests: ["test", "tests"],
+  build: ["build"],
+};
+
+/**
+ * The ratchet's changed-line-coverage arm can only compare what a run measured, so a test
+ * command that leaves no report behind keeps that arm permanently abstaining, which reads as
+ * a pass. Where the declared runner is node's own, the gate runs a vector the harness built
+ * itself, which writes the runner's own report to a path under the session store, and the
+ * harness reads that file rather than anything the run printed. Every other runner reports
+ * coverage in a shape this harness does not read, and asking for it can fail outright, so
+ * those runs are recorded as not measured instead of guessed at.
+ *
+ * The gate then carries both: the vector, which is what runs, and its rendering, which is what
+ * the ledger and the screen show. They are not the same thing and the difference matters, since
+ * nothing re-reads the rendering.
+ *
+ * One rule, applied to whatever command the gate ends up running: the script a manifest
+ * declares here, and an override from swarm.toml where there is one.
+ *
+ * The vector carries `--test-isolation=process`, which the runtime has to accept: below that
+ * floor the project's own command runs instead, and the gate says why no report was asked for,
+ * so the arm abstains with the reason named rather than spawning a runner that exits on a bad
+ * option and reading that as a failed suite.
+ */
+export function askedForHarnessReports(
+  spec: GateSpec,
+  body: string | undefined,
+  nodeVersion: string,
+): GateSpec {
+  const structured = structuredRunner(body);
+  if (structured !== null)
+    return {
+      ...spec,
+      argv: structured,
+      parse: readRunnerResult,
+      parserName: "structured-test-output",
+      command: renderRunnerArgv(structured),
+      coverageUnmeasured:
+        "runner-reported results grant no controlled coverage or base-control attribution",
+    };
+  const argv = harnessReportingCommand(body);
+  if (argv === null) {
+    return spec;
+  }
+  const shortfall = isolatedCoverageShortfall(nodeVersion);
+  if (shortfall !== null) {
+    return { ...spec, coverageUnmeasured: shortfall };
+  }
+  const rendered = argv.join(" ");
+  return {
+    ...spec,
+    title: `${spec.id} (${rendered})`,
+    command: rendered,
+    argv,
+  };
+}
+
+/** Assemble Node checks from declared scripts and the selected manager. */
+export function nodeGates(
+  detection: ProjectDetection,
+  nodeVersion: string,
+): readonly GateDefinition[] {
+  const manager = detection.nodeManager ?? "npm";
+  const scripts = new Set(detection.nodeScripts);
+  const pick = (id: string): string | null =>
+    (nodeScriptCandidates[id] ?? []).find((name) => scripts.has(name)) ?? null;
+
+  return (
+    [
+      "typecheck",
+      "lint",
+      "format",
+      "tests",
+      ...(scripts.has("build") ? ["build" as const] : []),
+    ] as const
+  ).map((id) => {
+    if (detection.setupProblem) return unavailableGate(id, id, "blocking", detection.setupProblem);
+    const script = pick(id);
+    if (script === null) {
+      return unavailableGate(
+        id,
+        `${id} (node)`,
+        "blocking",
+        id === "format"
+          ? "package.json declares no check-only format script, and running a writing formatter " +
+              "as a gate would edit the tree it is judging"
+          : `package.json declares no ${id} script`,
+      );
+    }
+    return commandGate(
+      askedForHarnessReports(
+        {
+          id,
+          title: `${id} (${manager} run ${script})`,
+          severity: "blocking",
+          command: `${manager} run --silent ${script}`,
+        },
+        detection.nodeScriptCommands[script],
+        nodeVersion,
+      ),
+    );
+  });
+}

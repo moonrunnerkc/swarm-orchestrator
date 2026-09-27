@@ -1,5 +1,5 @@
 import { nearestName } from "../edit-distance.ts";
-import { isolatedCoverageShortfall } from "../node-floor.ts";
+import { commandGate, noOutputParser, parserNameFor } from "./gate-command.ts";
 import {
   type GateContext,
   type GateDefinition,
@@ -8,292 +8,23 @@ import {
   type GateParser,
   type GateSeverity,
   type OverrideParserName,
-  type ParserName,
   unavailableObservation,
 } from "./gate-definition.ts";
-import { harnessReportingCommand } from "./harness-reporting.ts";
+import { askedForHarnessReports, nodeGates } from "./node-gates.ts";
+import { pythonGates } from "./python-gates.ts";
+
+export { nodeScriptCandidates } from "./node-gates.ts";
+
 import { inspectionGates } from "./inspection-gates.ts";
 import { exitCodeParser, testOutputParser } from "./parsers.ts";
 import type { ProjectDetection, ProjectType } from "./project-type.ts";
 import { readRunnerResult } from "./runner-results.ts";
-import { renderRunnerArgv, structuredRunner } from "./structured-runner.ts";
 
 /**
  * The default gate set, assembled from what the manifests declare. Everything here is a
  * value: no branch in the engine knows that "tests" is special, and swapping a command or
  * a parser is an edit to this table (invariant 6).
  */
-
-interface GateSpec {
-  readonly id: string;
-  readonly title: string;
-  readonly severity: GateSeverity;
-  readonly command: string;
-  /** Set where the harness built the invocation itself and spawns it with no shell. */
-  readonly argv?: readonly string[];
-  /** Set where the harness could have built that invocation and the runtime cannot run it. */
-  readonly coverageUnmeasured?: string;
-  readonly parse?: GateParser;
-  /** Named beside `parse` where a parser is supplied, so the record says which rule read it. */
-  readonly parserName?: ParserName;
-}
-
-function commandGate(spec: GateSpec): GateDefinition {
-  return {
-    id: spec.id,
-    title: spec.title,
-    severity: spec.severity,
-    source: {
-      kind: "command",
-      command: spec.command,
-      ...(spec.argv === undefined ? {} : { argv: spec.argv }),
-      ...(spec.coverageUnmeasured === undefined
-        ? {}
-        : { coverageUnmeasured: spec.coverageUnmeasured }),
-    },
-    parse: spec.parse ?? parserFor(spec.id),
-    parserName: spec.parserName ?? parserNameFor(spec.id),
-  };
-}
-
-/**
- * Which parser reads which gate, by id. A parser belongs to the kind of output a gate
- * produces, not to whether the project happened to declare a way to run it, so an
- * unavailable gate and an overridden command both keep the right reader.
- */
-const parsersById: Readonly<Record<string, GateParser>> = { tests: testOutputParser };
-const parserNamesById: Readonly<Record<string, OverrideParserName>> = { tests: "test-output" };
-
-function parserFor(id: string): GateParser {
-  return parsersById[id] ?? exitCodeParser;
-}
-
-function parserNameFor(id: string): OverrideParserName {
-  return parserNamesById[id] ?? "exit-code";
-}
-
-/** A gate the project declared no way to run. Recorded, never silently dropped. */
-function unavailableGate(
-  id: string,
-  title: string,
-  severity: GateSeverity,
-  reason: string,
-): GateDefinition {
-  return {
-    id,
-    title,
-    severity,
-    source: { kind: "inspection", inspect: async () => unavailableObservation(reason) },
-    parse: parserFor(id),
-    parserName: parserNameFor(id),
-  };
-}
-
-/** gofmt and friends pass by printing nothing, so the exit code alone would call it green. */
-const noOutputParser: GateParser = (observation) => {
-  const offenders = observation.stdout.trim();
-  if (observation.exitCode !== 0) {
-    return {
-      status: "failed",
-      detail: `the command exited ${observation.exitCode}`,
-      measures: {},
-    };
-  }
-  return offenders.length === 0
-    ? { status: "passed", detail: "the command listed no offending file", measures: {} }
-    : {
-        status: "failed",
-        detail: `the command listed ${offenders.split("\n").length} offending file(s)`,
-        measures: {},
-      };
-};
-
-export const nodeScriptCandidates: Readonly<Record<string, readonly string[]>> = {
-  typecheck: ["typecheck", "type-check", "tsc"],
-  lint: ["lint", "lint:check"],
-  // A formatter gate must check, never write: a gate that edits the tree is not a gate.
-  format: ["format:check", "fmt:check", "format:ci", "lint:format"],
-  tests: ["test", "tests"],
-};
-
-/**
- * The ratchet's changed-line-coverage arm can only compare what a run measured, so a test
- * command that leaves no report behind keeps that arm permanently abstaining, which reads as
- * a pass. Where the declared runner is node's own, the gate runs a vector the harness built
- * itself, which writes the runner's own report to a path under the session store, and the
- * harness reads that file rather than anything the run printed. Every other runner reports
- * coverage in a shape this harness does not read, and asking for it can fail outright, so
- * those runs are recorded as not measured instead of guessed at.
- *
- * The gate then carries both: the vector, which is what runs, and its rendering, which is what
- * the ledger and the screen show. They are not the same thing and the difference matters, since
- * nothing re-reads the rendering.
- *
- * One rule, applied to whatever command the gate ends up running: the script a manifest
- * declares here, and an override from swarm.toml where there is one.
- *
- * The vector carries `--test-isolation=process`, which the runtime has to accept: below that
- * floor the project's own command runs instead, and the gate says why no report was asked for,
- * so the arm abstains with the reason named rather than spawning a runner that exits on a bad
- * option and reading that as a failed suite.
- */
-function askedForHarnessReports(
-  spec: GateSpec,
-  body: string | undefined,
-  nodeVersion: string,
-): GateSpec {
-  const structured = structuredRunner(body);
-  if (structured !== null)
-    return {
-      ...spec,
-      argv: structured,
-      parse: readRunnerResult,
-      parserName: "structured-test-output",
-      command: renderRunnerArgv(structured),
-      coverageUnmeasured:
-        "runner-reported results grant no controlled coverage or base-control attribution",
-    };
-  const argv = harnessReportingCommand(body);
-  if (argv === null) {
-    return spec;
-  }
-  const shortfall = isolatedCoverageShortfall(nodeVersion);
-  if (shortfall !== null) {
-    return { ...spec, coverageUnmeasured: shortfall };
-  }
-  const rendered = argv.join(" ");
-  return {
-    ...spec,
-    title: `${spec.id} (${rendered})`,
-    command: rendered,
-    argv,
-  };
-}
-
-function nodeGates(detection: ProjectDetection, nodeVersion: string): readonly GateDefinition[] {
-  const manager = detection.nodeManager ?? "npm";
-  const scripts = new Set(detection.nodeScripts);
-  const pick = (id: string): string | null =>
-    (nodeScriptCandidates[id] ?? []).find((name) => scripts.has(name)) ?? null;
-
-  return (["typecheck", "lint", "format", "tests"] as const).map((id) => {
-    if (detection.setupProblem) return unavailableGate(id, id, "blocking", detection.setupProblem);
-    const script = pick(id);
-    if (script === null) {
-      return unavailableGate(
-        id,
-        `${id} (node)`,
-        "blocking",
-        id === "format"
-          ? "package.json declares no check-only format script, and running a writing formatter " +
-              "as a gate would edit the tree it is judging"
-          : `package.json declares no ${id} script`,
-      );
-    }
-    return commandGate(
-      askedForHarnessReports(
-        {
-          id,
-          title: `${id} (${manager} run ${script})`,
-          severity: "blocking",
-          command: `${manager} run --silent ${script}`,
-        },
-        detection.nodeScriptCommands[script],
-        nodeVersion,
-      ),
-    );
-  });
-}
-
-function pythonGates(detection: ProjectDetection): readonly GateDefinition[] {
-  const tools = new Set(detection.pythonTools);
-  const gates: GateDefinition[] = [];
-
-  gates.push(
-    tools.has("mypy")
-      ? commandGate({
-          id: "typecheck",
-          title: "typecheck (mypy)",
-          severity: "blocking",
-          command: detection.pythonMypyTargetsConfigured ? "mypy" : "mypy .",
-        })
-      : unavailableGate(
-          "typecheck",
-          "typecheck (python)",
-          "blocking",
-          "pyproject.toml configures no type checker",
-        ),
-  );
-  gates.push(
-    tools.has("ruff")
-      ? commandGate({
-          id: "lint",
-          title: "lint (ruff)",
-          severity: "blocking",
-          command: "ruff check --no-fix .",
-        })
-      : unavailableGate("lint", "lint (python)", "blocking", "pyproject.toml configures no linter"),
-  );
-  gates.push(
-    tools.has("ruff")
-      ? commandGate({
-          id: "format",
-          title: "format (ruff format --check)",
-          severity: "blocking",
-          command: "ruff format --check .",
-        })
-      : unavailableGate(
-          "format",
-          "format (python)",
-          "blocking",
-          "pyproject.toml configures no formatter",
-        ),
-  );
-  gates.push(
-    commandGate({
-      id: "tests",
-      title: "tests (pytest)",
-      severity: "blocking",
-      command: "pytest -q",
-    }),
-  );
-
-  if (detection.setupProblem)
-    return gates.map((gate) =>
-      unavailableGate(gate.id, gate.title, gate.severity, detection.setupProblem as string),
-    );
-  if (detection.pythonCommand)
-    return gates.map((gate) =>
-      gate.source.kind === "command"
-        ? {
-            ...gate,
-            ...(structuredRunner(`${detection.pythonCommand} ${gate.source.command}`) === null
-              ? {}
-              : { parse: readRunnerResult, parserName: "structured-test-output" as const }),
-            source: {
-              ...gate.source,
-              command: renderRunnerArgv(
-                structuredRunner(`${detection.pythonCommand} ${gate.source.command}`) ?? [
-                  "/bin/sh",
-                  "-c",
-                  `${detection.pythonCommand} ${gate.source.command}`,
-                ],
-              ),
-              ...(structuredRunner(`${detection.pythonCommand} ${gate.source.command}`) === null
-                ? {}
-                : {
-                    argv: structuredRunner(
-                      `${detection.pythonCommand} ${gate.source.command}`,
-                    ) as readonly string[],
-                    coverageUnmeasured:
-                      "pytest runner-reported outcomes do not grant ratchet measurement authority",
-                  }),
-            },
-          }
-        : gate,
-    );
-  return gates;
-}
 
 const rustGates: readonly GateDefinition[] = [
   commandGate({
@@ -409,6 +140,8 @@ const undetectedGates: readonly GateDefinition[] = (
 }));
 
 export interface GateSetOptions {
+  /** A controller-supplied sealed acceptance instrument, never repository configuration. */
+  readonly acceptanceGate?: GateDefinition;
   readonly packages?: readonly string[];
   /**
    * Replaces the assembled gate for one id, from swarm.toml or a flag, or adds a gate under an

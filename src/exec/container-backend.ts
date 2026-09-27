@@ -77,7 +77,15 @@ export function createContainerBackend(options: ContainerBackendOptions): Isolat
       )
         throw new Error("container backend does not support the requested environment overlay");
       const variables = overlaidEnvironment(
-        { PATH: "/usr/local/bin:/usr/bin:/bin", HOME: "/tmp", TMPDIR: "/tmp" },
+        {
+          PATH: "/usr/local/bin:/usr/bin:/bin",
+          HOME: "/tmp",
+          TMPDIR: "/tmp",
+          COREPACK_ENABLE_NETWORK: "0",
+          COREPACK_ENABLE_DOWNLOAD_PROMPT: "0",
+          COREPACK_ENABLE_AUTO_PIN: "0",
+          UV_PYTHON_DOWNLOADS: "never",
+        },
         overlay,
       );
       const readOnlyMounts: string[] = [];
