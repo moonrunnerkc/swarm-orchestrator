@@ -1,50 +1,109 @@
-name: Swarm verification
-description: Verify a pinned source snapshot with the standalone engine in disposable containers.
+name: swarm-verify
+description: Independently verify a pull request's head in an isolated container, sign the verdict, and post one bound comment.
 inputs:
-  workspace:
-    description: Candidate repository checkout with full history and no persisted credentials.
-    required: true
-  branch:
-    description: Candidate immutable head or branch in that repository.
-    required: true
-  base:
-    description: Exact immutable comparison base.
-    required: true
-  oracle:
-    description: Trusted acceptance command. Absence leaves task acceptance unjudged.
-    default: ""
-  goal-contract:
-    description: Trusted goal contract path outside the candidate checkout.
-    default: ""
+  target:
+    description: What to verify. `head` is the pull request head; `merge` is GitHub's test merge of it onto the base.
+    default: head
+  isolation:
+    description: '`docker` runs candidate commands in a measured container; `host` is explicit and recorded as such.'
+    default: docker
   image:
-    description: Prebuilt trusted test image, preferably pinned by digest. No implicit dependency installation.
+    description: Prebuilt trusted test image for docker isolation, preferably pinned by digest. Nothing is installed into it.
     default: node:24-bookworm
+  goal-contract:
+    description: Trusted requirement contract path in the base checkout. Absent leaves task correctness unmeasured.
+    default: ""
+  oracle:
+    description: Trusted acceptance command. Absent leaves task acceptance unjudged.
+    default: ""
+  packages:
+    description: Repository-relative package directories to check by name, comma or newline separated.
+    default: ""
+  install:
+    description: Install the candidate's dependencies from its lockfile, with install scripts off, before checking.
+    default: "false"
+  require-task:
+    description: Treat a regression-only pass (no requirement contract) as a failure rather than a pass with limited scope.
+    default: "false"
+  comment:
+    description: Post and update one comment on the pull request.
+    default: "true"
+  attest:
+    description: Sign the verdict with a GitHub artifact attestation (needs id-token, attestations and artifact-metadata write).
+    default: "true"
+  github-token:
+    description: Token used to fetch a private repository's objects and to publish the comment.
+    default: ${{ github.token }}
+  workspace:
+    description: A prepared checkout holding the objects, instead of fetching one. Needs head and base.
+    default: ""
+  head:
+    description: Commit to verify when the event carries no pull request.
+    default: ""
+  base:
+    description: Base commit when the event carries no pull request.
+    default: ""
+  source-url:
+    description: Where to fetch objects from. Defaults to the event repository on this server.
+    default: ""
+  allow-self-hosted:
+    description: State knowingly that a self-hosted runner is acceptable.
+    default: "false"
 outputs:
+  status:
+    description: What the Action returns (0 verified or regression-only, 1 not verified, 4 incomplete or refused). The verifier's own status is in the verdict.
+    value: ${{ steps.verify.outputs.status }}
+  result:
+    description: verified, not-verified, incomplete, head-changed or refused.
+    value: ${{ steps.verify.outputs.result }}
+  head:
+    description: The commit that was verified.
+    value: ${{ steps.verify.outputs.head }}
+  base:
+    description: The base it was verified against.
+    value: ${{ steps.verify.outputs.base }}
+  tree:
+    description: The tree of the verified commit.
+    value: ${{ steps.verify.outputs.tree }}
+  report:
+    description: JSON report path (swarm.ci.v1).
+    value: ${{ steps.verify.outputs.report }}
+  summary:
+    description: Markdown assessment path.
+    value: ${{ steps.verify.outputs.summary }}
+  verdict:
+    description: Canonical verdict document path, the signed subject.
+    value: ${{ steps.verify.outputs.verdict }}
+  verdict-digest:
+    description: sha256 of the verdict document.
+    value: ${{ steps.verify.outputs.verdict-digest }}
+  evidence:
+    description: Evidence directory.
+    value: ${{ steps.verify.outputs.evidence }}
   artifact:
     description: Uploaded artifact name for this invocation.
     value: ${{ steps.verify.outputs.artifact }}
-  summary:
-    description: Markdown summary path.
-    value: ${{ steps.verify.outputs.summary }}
+  attestation:
+    description: signed, unavailable or skipped. Separate from the verification status.
+    value: ${{ steps.publish.outputs.attestation }}
+  comment:
+    description: created, updated, stale-head, unavailable or skipped. Separate from the verification status.
+    value: ${{ steps.publish.outputs.comment }}
+  comment-url:
+    description: The comment, where one was created or updated.
+    value: ${{ steps.publish.outputs.comment-url }}
   retention:
     description: Whether bounded evidence retention was complete.
-    value: ${{ steps.verify.outputs.retention }}
-  status:
-    description: Original verifier exit status.
-    value: ${{ steps.verify.outputs.status }}
-  report:
-    description: JSON report path.
-    value: ${{ steps.verify.outputs.report }}
-  evidence:
-    description: Evidence artifact directory.
-    value: ${{ steps.verify.outputs.evidence }}
+    value: ${{ steps.retain.outputs.retention }}
 runs:
   using: composite
   steps:
-    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
       with:
-        node-version: '24'
-    - name: Build trusted verifier
+        node-version: "24"
+    # SOURCE-BUILD-BEGIN: the canonical repository builds the verifier from its own source; the
+    # distribution repository replaces this step with an install of the published package.
+    - name: Build the verifier from source
       shell: bash
       env:
         SWARM_ACTION_ROOT: ${{ github.action_path }}
@@ -52,35 +111,79 @@ runs:
         cd "$SWARM_ACTION_ROOT"
         npm ci --ignore-scripts
         npm run build:verify
-    - name: Verify pinned candidate
+        echo "SWARM_VERIFY_ENTRY=$SWARM_ACTION_ROOT/packages/swarm-verify/dist/swarm-verify.js" >> "$GITHUB_ENV"
+    # SOURCE-BUILD-END
+    - name: Verify the identified source
       id: verify
       shell: bash
       env:
-        SWARM_ACTION_ROOT: ${{ github.action_path }}
-        SWARM_INPUT_WORKSPACE: ${{ inputs.workspace }}
-        SWARM_INPUT_BRANCH: ${{ inputs.branch }}
-        SWARM_INPUT_BASE: ${{ inputs.base }}
-        SWARM_INPUT_ORACLE: ${{ inputs.oracle }}
-        SWARM_INPUT_GOAL: ${{ inputs.goal-contract }}
+        SWARM_INPUT_TARGET: ${{ inputs.target }}
+        SWARM_INPUT_ISOLATION: ${{ inputs.isolation }}
         SWARM_INPUT_IMAGE: ${{ inputs.image }}
-      run: node "$SWARM_ACTION_ROOT/scripts/action-verify.mjs"
-    - name: Retain verification evidence
+        SWARM_INPUT_GOAL_CONTRACT: ${{ inputs.goal-contract }}
+        SWARM_INPUT_ORACLE: ${{ inputs.oracle }}
+        SWARM_INPUT_PACKAGES: ${{ inputs.packages }}
+        SWARM_INPUT_INSTALL: ${{ inputs.install }}
+        SWARM_INPUT_REQUIRE_TASK: ${{ inputs.require-task }}
+        SWARM_INPUT_COMMENT: ${{ inputs.comment }}
+        SWARM_INPUT_TOKEN: ${{ inputs.github-token }}
+        SWARM_INPUT_WORKSPACE: ${{ inputs.workspace }}
+        SWARM_INPUT_HEAD: ${{ inputs.head }}
+        SWARM_INPUT_BASE: ${{ inputs.base }}
+        SWARM_INPUT_SOURCE_URL: ${{ inputs.source-url }}
+        SWARM_INPUT_ALLOW_SELF_HOSTED: ${{ inputs.allow-self-hosted }}
+      run: node "$SWARM_VERIFY_ENTRY" action verify
+    - name: Sign the verdict
+      id: attest
+      if: inputs.attest == 'true' && steps.verify.outputs.verdict != ''
+      continue-on-error: true
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+      with:
+        subject-path: ${{ steps.verify.outputs.verdict }}
+        predicate-type: https://github.com/moonrunnerkc/swarm-verify/verdict/v1
+        predicate-path: ${{ steps.verify.outputs.verdict }}
+        show-summary: false
+    - name: Publish the comment
+      id: publish
+      if: always() && steps.verify.outputs.verdict != ''
+      shell: bash
+      env:
+        SWARM_INPUT_TARGET: ${{ inputs.target }}
+        SWARM_INPUT_ISOLATION: ${{ inputs.isolation }}
+        SWARM_INPUT_COMMENT: ${{ inputs.comment }}
+        SWARM_INPUT_TOKEN: ${{ inputs.github-token }}
+        SWARM_INPUT_ALLOW_SELF_HOSTED: ${{ inputs.allow-self-hosted }}
+        SWARM_EVIDENCE: ${{ steps.verify.outputs.evidence }}
+        SWARM_ARTIFACT: ${{ steps.verify.outputs.artifact }}
+        SWARM_ATTESTATION_OUTCOME: ${{ inputs.attest == 'true' && steps.attest.outcome || 'skipped' }}
+        SWARM_ATTESTATION_REASON: ${{ inputs.attest == 'true' && 'the attest step failed; a fork pull request has no id-token permission, so use the trusted workflow route' || 'attest was set to false' }}
+        SWARM_ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        SWARM_ATTESTATION_URL: ${{ steps.attest.outputs.attestation-url }}
+      run: node "$SWARM_VERIFY_ENTRY" action comment
+    - name: Retain the evidence
+      id: retain
       if: always() && steps.verify.outputs.evidence != ''
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      shell: bash
+      env:
+        SWARM_EVIDENCE: ${{ steps.verify.outputs.evidence }}
+      run: node "$SWARM_VERIFY_ENTRY" action retain
+    - name: Upload the evidence
+      if: always() && steps.retain.outputs.retained != ''
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
         name: ${{ steps.verify.outputs.artifact }}
-        path: ${{ steps.verify.outputs.retained }}
+        path: ${{ steps.retain.outputs.retained }}
         retention-days: 7
         if-no-files-found: error
-    - name: Preserve verifier outcome
+    - name: Return the verifier's own status
       if: always()
       shell: bash
       env:
-        SWARM_RETENTION_STATUS: ${{ steps.verify.outputs.retention }}
         SWARM_VERIFY_STATUS: ${{ steps.verify.outputs.status }}
+        SWARM_RETENTION_STATUS: ${{ steps.retain.outputs.retention }}
       run: |
         case "$SWARM_VERIFY_STATUS" in
           0) test "$SWARM_RETENTION_STATUS" = complete ;;
-          1|2|3) exit "$SWARM_VERIFY_STATUS" ;;
+          1|2|3|4|5) exit "$SWARM_VERIFY_STATUS" ;;
           *) echo 'Verification did not complete.' >&2; exit 1 ;;
         esac

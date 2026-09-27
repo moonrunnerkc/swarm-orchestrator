@@ -91,11 +91,14 @@ const invocations: Readonly<
   ci: () => swarm(["ci", "--patch", patch, "--workspace", workspace]),
   gates: () => swarm(["gates", "--workspace", workspace]),
   check: () => swarm(["check", "--workspace", workspace]),
+  // Outside a GitHub Actions job the step refuses by name; that refusal is the run.
+  action: () => swarm(["action", "verify"]),
 };
 
 describe("the commands declared to need no model", () => {
-  it("are the four the verify-only page walks through", () => {
+  it("are the five the verify-only page walks through", () => {
     expect(modelFree.map((command) => command.name).sort()).toEqual([
+      "action",
       "check",
       "ci",
       "gates",

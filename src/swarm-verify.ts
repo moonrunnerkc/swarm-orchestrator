@@ -2,6 +2,7 @@
 // Check the runtime before loading the command composition.
 import "./node-floor-check.ts";
 
+import { action } from "./cli-action.ts";
 import { check } from "./cli-check.ts";
 import { commandDefinitions } from "./cli-command-definitions.ts";
 import { gates } from "./cli-gates.ts";
@@ -61,6 +62,9 @@ async function main(): Promise<number> {
   }
   if (parsed.command === "check") {
     return check(parsed);
+  }
+  if (parsed.command === "action") {
+    return action(parsed);
   }
   return (await import("./cli-ci.ts")).verifyPatch(parsed);
 }

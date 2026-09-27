@@ -1,0 +1,25 @@
+# The trusted route for pull requests from forks and from Dependabot, whose `pull_request`
+# runs hold a read-only token and no id-token. This workflow definition is read from the base
+# branch, so a pull request cannot change it. The Action fetches the pull request's objects by
+# commit id into a checkout it owns, and candidate commands run only inside a network-disabled
+# container with no token in their environment; signing and the comment happen afterwards, on
+# the runner, from what the container produced. Nothing checks the pull request's tree out onto
+# the runner itself, and nothing runs code the pull request supplied with this job's token.
+name: swarm-verify (forks)
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+jobs:
+  verify:
+    if: github.event.pull_request.head.repo.fork || github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: moonrunnerkc/swarm-verify@v1
+        with:
+          isolation: docker

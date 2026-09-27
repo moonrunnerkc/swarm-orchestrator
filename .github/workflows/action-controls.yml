@@ -5,6 +5,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  id-token: write
+  attestations: write
+  artifact-metadata: write
 jobs:
   controls:
     runs-on: ubuntu-latest
@@ -29,7 +32,7 @@ jobs:
         continue-on-error: true
         with:
           workspace: ${{ steps.fixture.outputs.workspace }}
-          branch: ${{ steps.fixture.outputs.head }}
+          head: ${{ steps.fixture.outputs.head }}
           base: ${{ steps.fixture.outputs.base }}
           goal-contract: ${{ steps.fixture.outputs.contract }}
       - name: Assert the original verifier outcome
@@ -40,4 +43,8 @@ jobs:
           SWARM_OUTCOME: ${{ steps.verify.outcome }}
           SWARM_EVIDENCE: ${{ steps.verify.outputs.evidence }}
           SWARM_HEAD: ${{ steps.fixture.outputs.head }}
+          SWARM_RESULT: ${{ steps.verify.outputs.result }}
+          SWARM_ATTESTATION: ${{ steps.verify.outputs.attestation }}
+          SWARM_VERDICT: ${{ steps.verify.outputs.verdict }}
+          SWARM_COMMENT: ${{ steps.verify.outputs.comment }}
         run: node trusted/scripts/action-fixture.mjs assert '${{ matrix.candidate }}'

@@ -679,6 +679,9 @@ async function main(): Promise<number> {
   if (options.command === "check") {
     return (await import("./cli-check.ts")).check(options);
   }
+  if (options.command === "action") {
+    return (await import("./cli-action.ts")).action(options);
+  }
   return options.command === "gates" ? gates(options) : run(options);
 }
 

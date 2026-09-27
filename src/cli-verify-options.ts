@@ -105,7 +105,18 @@ export interface CheckCommand {
   readonly json: boolean;
 }
 
-export type VerifyOnlyCommand = VerifyCommand | CiCommand | GatesCommand | CheckCommand;
+/** One step of the GitHub Action, driven by the runner's environment rather than by flags. */
+export interface ActionCommand {
+  readonly command: "action";
+  readonly step: "verify" | "comment" | "retain";
+}
+
+export type VerifyOnlyCommand =
+  | VerifyCommand
+  | CiCommand
+  | GatesCommand
+  | CheckCommand
+  | ActionCommand;
 
 export class InvalidCommandLineError extends Error {
   constructor(problem: string, usageText: string) {
@@ -278,6 +289,13 @@ export function parseVerifyOnlyCommand(
       explain: flags.has("explain"),
       json: flags.has("json"),
     };
+  }
+
+  if (words[0] === "action") {
+    const step = words[1];
+    if (step !== "verify" && step !== "comment" && step !== "retain")
+      throw invalid("action needs one of verify, comment, or retain");
+    return { command: "action", step };
   }
 
   if (words[0] === "gates") {
