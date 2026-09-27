@@ -19,6 +19,7 @@ import {
   type CommandLine,
   type DoctorCommand,
   type GcCommand,
+  InvalidCommandLineError,
   parseCommandLine,
   type ReplayCommand,
   type ReviewCommand,
@@ -675,6 +676,9 @@ async function main(): Promise<number> {
   if (options.command === "init") {
     return (await import("./cli-init.ts")).init(options);
   }
+  if (options.command === "check") {
+    return (await import("./cli-check.ts")).check(options);
+  }
   return options.command === "gates" ? gates(options) : run(options);
 }
 
@@ -684,7 +688,9 @@ main().then(
   },
   (error: unknown) => {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-    process.exitCode = 1;
+    // A command line this build cannot read is an invalid request (2), not work that failed (1).
+    process.exitCode =
+      error instanceof InvalidCommandLineError ? exitCodes.invalidRequest : exitCodes.notAcceptable;
   },
 );
 

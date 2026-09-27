@@ -163,6 +163,10 @@ not isolated.
 ## Verifying
 
 ```
+swarm check                      # discover the declared checks, run them unattended, report
+  --explain                      # print the plan and run nothing
+  --package <dir>                # repeat for the workspace units to check by name
+  --json                         # one swarm.check.v1 object
 swarm ci --patch <file>          # exactly one of patch, branch, or PR
 swarm ci --branch <ref>
 swarm ci --pr <owner/repo#number>
@@ -245,5 +249,8 @@ so the deadline costs that one tool call and the run carries on.
 
 ## Exit codes
 
-A taxonomy rather than zero-or-not: acceptable, not acceptable, invalid request, cancelled,
-unavailable, internal error.
+A taxonomy rather than zero-or-not: 0 acceptable, 1 not acceptable, 2 invalid request,
+3 cancelled, 4 unavailable or incomplete, 5 internal error. `swarm check` uses all of the first
+five: a regression-only pass is 0, a failed blocking check is 1, a command line the binary
+cannot read is 2, an interrupted run is 3, and a missing prerequisite, an ambiguous scope, a
+watch-mode script, a directory with no manifest or a suite that collected nothing is 4.

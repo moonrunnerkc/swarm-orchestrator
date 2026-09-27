@@ -99,6 +99,12 @@ export function childEnvironment(
   }
 
   const variables: Record<string, string> = {
+    // Every runner this harness spawns is run the way a CI job runs it: Vitest, Jest, Mocha and
+    // Create React App's test script read this name as "run once and exit", and a child with
+    // no terminal on stdin has nobody to wait for anyway. Set here rather than per gate so a
+    // command a model runs through the shell tool reads the same way as the gate that measures
+    // it. The inherited value, whatever it was, is replaced rather than carried.
+    CI: "true",
     COREPACK_ENABLE_NETWORK: "0",
     COREPACK_ENABLE_DOWNLOAD_PROMPT: "0",
     COREPACK_ENABLE_AUTO_PIN: "0",

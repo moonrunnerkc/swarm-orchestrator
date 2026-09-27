@@ -26,6 +26,13 @@ export const commandDefinitions: readonly CommandDefinition[] = [
     smoke: { args: [], exits: [0], output: "swarm\\.toml|already exists" },
   },
   {
+    name: "check",
+    syntax: "check [--workspace <dir>] [--package <dir>] [--explain] [--json]",
+    description: "discover the declared checks, run them unattended, report what that establishes",
+    smoke: { args: ["--explain"], exits: [0], output: "workspace|scope|command|result" },
+    model: "none",
+  },
+  {
     name: "gates",
     syntax: "gates [--workspace <dir>] [--base <ref>]",
     description: "run the gates without a model",
@@ -44,7 +51,7 @@ export const commandDefinitions: readonly CommandDefinition[] = [
     description: "measure models on the golden set",
     smoke: {
       args: ["--repeats", "0"],
-      exits: [1],
+      exits: [2],
       output: "--repeats.*(?:positive|at least|integer|1)|repeats",
     },
   },

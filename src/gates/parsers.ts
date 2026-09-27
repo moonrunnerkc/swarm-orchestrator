@@ -149,6 +149,46 @@ export const vitestTestParser: GateParser = (observation) => {
 };
 
 /**
+ * Jest's default reporter ends with `Tests: 1 failed, 2 passed, 3 total`. The counts are read
+ * from that one line and the status from the exit code and the failed count, as for vitest.
+ */
+export const jestTestParser: GateParser = (observation) => {
+  const unavailable = notApplicable(observation);
+  if (unavailable !== null) {
+    return unavailable;
+  }
+  const text = combinedOutput(observation);
+  const summary = /^\s*Tests:\s+(.+?)\s*$/m.exec(text)?.[1] ?? "";
+  const measures: Record<string, number> = {};
+  const total = /(\d+)\s+total/.exec(summary)?.[1];
+  if (total !== undefined) {
+    measures[measureNames.testsCollected] = Number(total);
+  }
+  for (const [key, word] of [
+    [measureNames.testsPassed, "passed"],
+    [measureNames.testsFailed, "failed"],
+    [measureNames.testsSkipped, "skipped"],
+  ] as const) {
+    const count = new RegExp(`(\\d+)\\s+${word}`).exec(summary)?.[1];
+    if (count !== undefined) {
+      measures[key] = Number(count);
+    }
+  }
+  if (total !== undefined && measures[measureNames.testsFailed] === undefined) {
+    measures[measureNames.testsFailed] = 0;
+  }
+  const failed = observation.exitCode !== 0 || (measures[measureNames.testsFailed] ?? 0) > 0;
+  return {
+    status: failed ? "failed" : "passed",
+    detail:
+      summary.length > 0
+        ? `the runner reported: ${summary}`
+        : `the runner exited ${observation.exitCode} and printed no summary line`,
+    measures,
+  };
+};
+
+/**
  * Tries the shapes a test command is likely to print, in order, and falls back to the exit
  * code with no numbers rather than guessing at a count.
  */
@@ -164,6 +204,9 @@ export const testOutputParser: GateParser = (observation) => {
   }
   if (/^\s*Tests\s+.*\(\d+\)/m.test(text)) {
     return vitestTestParser(observation);
+  }
+  if (/^\s*Tests:\s+.*\b\d+\s+total\b/m.test(text)) {
+    return jestTestParser(observation);
   }
   return exitCodeParser(observation);
 };

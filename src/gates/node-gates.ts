@@ -2,6 +2,7 @@ import { isolatedCoverageShortfall } from "../node-floor.ts";
 import { commandGate, type GateSpec, unavailableGate } from "./gate-command.ts";
 import type { GateDefinition } from "./gate-definition.ts";
 import { harnessReportingCommand } from "./harness-reporting.ts";
+import { readNoninteractive } from "./noninteractive-runner.ts";
 import type { ProjectDetection } from "./project-type.ts";
 import { readRunnerResult } from "./runner-results.ts";
 import { renderRunnerArgv, structuredRunner } from "./structured-runner.ts";
@@ -90,6 +91,22 @@ export function nodeGates(
   ).map((id) => {
     if (detection.setupProblem) return unavailableGate(id, id, "blocking", detection.setupProblem);
     const script = pick(id);
+    // A test script that asks for watch mode by name would wait for changes until the gate's
+    // timeout killed it, and a kill reads as a failed suite. It is recorded as a check the
+    // project declared no unattended way to run, with the override named, rather than run
+    // under a flag the project did not declare.
+    const interactive =
+      id === "tests" && script !== null
+        ? readNoninteractive(detection.nodeScriptCommands[script]).interactive
+        : null;
+    if (interactive !== null) {
+      return unavailableGate(
+        id,
+        `${id} (${manager} run ${script})`,
+        "blocking",
+        `${interactive}. Declare a script that runs once, or name the command to run with --command`,
+      );
+    }
     if (script === null) {
       return unavailableGate(
         id,

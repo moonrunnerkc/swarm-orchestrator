@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { commandDefinitions, commandHelpLines } from "./cli-command-definitions.ts";
 import {
+  type CheckCommand,
   type CiCommand,
   defaultBaseRef,
   type GatesCommand,
@@ -14,7 +15,7 @@ import type { InterfaceFlags } from "./config/interface-settings.ts";
 import { nearestName } from "./edit-distance.ts";
 import { bundledShortlistKeyword } from "./select/shortlist-source.ts";
 
-export type { CiCommand, GatesCommand, VerifyCommand };
+export type { CheckCommand, CiCommand, GatesCommand, VerifyCommand };
 export { InvalidCommandLineError };
 
 /**
@@ -270,6 +271,7 @@ export type CommandLine =
   | RepairCommand
   | ReviewCommand
   | GatesCommand
+  | CheckCommand
   | SelectCommand
   | CalibrateCommand
   | AddCaseCommand
