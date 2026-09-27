@@ -16,7 +16,7 @@ is appended to an older pilot.
 | G0 repaired foundation | reliability fixes confirmed; execution and evidence boundaries work | in progress | [baseline.md](baseline.md) |
 | G1 verifier release | R1 to R6 and R9 implemented, installed, published, exercised; package, CI and security checks clean | not started | |
 | G2 public evidence and launch | R7 study complete; R8 permitted posts published; 48-hour response period elapsed; R10 loop active | not started | |
-| G3 comparative advantage | Comparisons A and B and the ablations complete under the frozen decision rule | not started | |
+| G3 comparative advantage | Comparisons A and B and the ablations complete under the frozen decision rule | protocol and decision rule registered ([comparison-protocol.md](comparison-protocol.md)); prior art tabulated without measured claims ([prior-art.md](prior-art.md)); no comparison row produced yet | |
 
 Completing G1 is not completing the assignment. G3 stays in this table until it is either
 established or explicitly handed off with its remaining manifest.
@@ -53,9 +53,9 @@ established or explicitly handed off with its remaining manifest.
 | --- | --- | --- |
 | Independent evaluation boundary and reviewer records | not started | |
 | Frozen campaign protocol with content digest | not started | |
-| Comparison A: identical-patch verifier decisions | not started | |
-| Comparison B: complete coding workflows | not started | |
-| Ablations S0, S1, S2 | not started | |
+| Comparison A: identical-patch verifier decisions | registered in [comparison-protocol.md](comparison-protocol.md) with the frozen decision rule: A0 plain CI, A1 regression-only, A2 with the held-back check as oracle, over the study's fifty rows against the adjudication arm's truth; runs on the stable release | registered, not run |
+| Comparison B: complete coding workflows | registered: B0/B1/B2 over the frozen `mined-pr-viable-79` cohort with one local model; runs after Comparison A reports | registered, not run |
+| Ablations S0, S1, S2 | registered: the suite alone; plus base control and refusals; plus coverage, mutation witnesses and challenges; read off the Comparison A rows | registered, not run |
 | Prior-art and differentiation table | not started | |
 | Effectiveness hypothesis verdict | untested | |
 
