@@ -1,6 +1,6 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { Clock } from "../core/clock.ts";
 import { freezeAcceptanceContract } from "../evidence/acceptance-contract.ts";
 import { asJsonValue } from "../evidence/canonical-json.ts";
@@ -20,6 +20,8 @@ import {
 import { normalizePath } from "./file-set.ts";
 import { defaultGateTimeoutMs, type GateCommandRunner } from "./gate-definition.ts";
 import { type GoalVerification, verifyGoal } from "./goal-acceptance.ts";
+import { createChallengeRunner } from "./goal-challenge-runner.ts";
+import { type ChallengePolicy, type ChallengeReport, challengeGoal } from "./goal-challenges.ts";
 import { GoalEffectReconciliationError } from "./goal-effects.ts";
 import { runChecks } from "./independent-checks.ts";
 import { nodeSyntaxCheck } from "./mutant-parse.ts";
@@ -143,6 +145,8 @@ export interface IndependentVerification {
   readonly oracleBond: OracleBondVerdict;
   /** Every mutant that was built and run, with what the oracle did with it. */
   readonly bondedMutants: readonly BondedMutant[];
+  /** What challenging the requirement checks established, where a policy asked for it. */
+  readonly challenges?: ChallengeReport;
   /** Both: no regression, and an oracle that says the task was done. */
   readonly verified: boolean;
   /**
@@ -165,6 +169,8 @@ export interface IndependentVerificationOptions {
     readonly contract: GoalContract;
     readonly evidence: EvidenceRecorder;
     readonly tree: string;
+    /** Whether and how the requirement checks are challenged. Absent is `off`. */
+    readonly challengePolicy?: ChallengePolicy;
   };
   readonly repositoryRoot: string;
   /** A harness-owned root shared with the selected runtime, outside the producing workspace. */
@@ -466,6 +472,10 @@ export async function verifyIndependently(
             execute: (requirement, target) => evaluator.execute(requirement, target, checkout),
           });
     let presetControl: GoalVerification["presetControl"];
+    // The base-control verification, kept for the challenge reading of family one: whether the
+    // requirement checks reject the tree before the work.
+    let baseVerification: GoalVerification | null = null;
+    const challengePolicy: ChallengePolicy = options.goal?.challengePolicy ?? "off";
     const preset = options.goal?.contract.preset;
     if (options.goal !== undefined && (preset?.kind === "bugfix" || preset?.kind === "refactor")) {
       if (!(await resetToBase(checkout, options, timeoutMs)))
@@ -485,6 +495,7 @@ export async function verifyIndependently(
         commands: options.commands,
         timeoutMs,
       });
+      baseVerification = baseResult;
       presetControl = {
         kind: preset.kind,
         baseTree,
@@ -493,6 +504,33 @@ export async function verifyIndependently(
             ? baseResult.accepted
             : reproducedBug(options.goal.contract, options.goal.evidence, baseTree),
       };
+      restored = await restorePatch(checkout, options, timeoutMs);
+    }
+    // A contract without a preset has no base control of its own; challenging it needs one, and
+    // it runs before the candidate's verification so the final goal record stays the last.
+    if (
+      options.goal !== undefined &&
+      challengePolicy !== "off" &&
+      baseVerification === null &&
+      restored
+    ) {
+      if (!(await resetToBase(checkout, options, timeoutMs)))
+        throw new Error("cannot prepare the challenge base control");
+      const baseTreeRun = await options.commands.runVouched(["git", "rev-parse", "HEAD^{tree}"], {
+        cwd: checkout,
+        timeoutMs,
+      });
+      const baseTree = baseTreeRun.stdout.trim();
+      if (baseTreeRun.exitCode !== 0 || !/^[a-f0-9]{40,64}$/.test(baseTree))
+        throw new Error("challenge base tree unavailable");
+      baseVerification = await verifyGoal({
+        ...options.goal,
+        tree: baseTree,
+        purpose: "base-control",
+        checkout,
+        commands: options.commands,
+        timeoutMs,
+      });
       restored = await restorePatch(checkout, options, timeoutMs);
     }
     let goalTree = options.goal?.tree ?? "";
@@ -539,6 +577,41 @@ export async function verifyIndependently(
         : goalAcceptance.obligations.some((entry) => entry.status === "unjudged")
           ? "unjudged"
           : "rejected";
+    // Only after the candidate has been judged, over the same checkout, put back afterwards:
+    // every challenge writes into a tree that is restored before anything else reads it.
+    let challenges: ChallengeReport | undefined;
+    if (
+      options.goal !== undefined &&
+      goalAcceptance !== undefined &&
+      challengePolicy !== "off" &&
+      restored
+    ) {
+      const goalOptions = options.goal;
+      challenges = await challengeGoal({
+        contract: goalOptions.contract,
+        contractDigest: goalAcceptance.contractDigest,
+        policy: challengePolicy,
+        evidence: goalOptions.evidence,
+        changed: parseUnifiedDiff(options.patch).map((file) => ({
+          path: file.path,
+          addedLines: file.addedLines,
+        })),
+        candidate: goalAcceptance,
+        baseControl: baseVerification,
+        checksWithPatch: withPatch,
+        runner: createChallengeRunner({
+          contract: goalOptions.contract,
+          checkout,
+          commands: options.commands,
+          timeoutMs,
+          scratchDirectory: dirname(checkout),
+          restoreCandidate: () => restorePatch(checkout, options, timeoutMs),
+          runRepositoryChecks: () => runChecks(checkout, options, timeoutMs),
+          ...(options.signal === undefined ? {} : { signal: options.signal }),
+        }),
+      });
+      restored = await restorePatch(checkout, options, timeoutMs);
+    }
     const checks = withPatch.some((check) => check.status === "failed")
       ? await attributeFailures(withPatch, checkout, options, timeoutMs)
       : withPatch;
@@ -574,6 +647,7 @@ export async function verifyIndependently(
             ? "oracle-v3"
             : "required-obligations-v1",
       ...(goalAcceptance === undefined ? {} : { goalAcceptance }),
+      ...(challenges === undefined ? {} : { challenges }),
       ...(acceptance === undefined ? {} : { acceptance }),
       checks,
       oracleReach,
@@ -594,6 +668,9 @@ export async function verifyIndependently(
         ...(options.goal === undefined
           ? {}
           : { certificationPolicy: "goal-obligations-v1", goalAcceptance }),
+        ...(challenges === undefined
+          ? {}
+          : { challenges: { policy: challenges.policy, satisfied: challenges.satisfied } }),
         regression,
         task,
         oracleReach,

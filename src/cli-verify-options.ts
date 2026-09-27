@@ -32,6 +32,8 @@ export interface CiCommand {
   readonly isolation?: string | null;
   readonly acceptanceContract?: string;
   readonly goalContract?: string;
+  /** Whether the requirement checks are challenged: off (the default), report, or required. */
+  readonly challenges?: "off" | "report" | "required";
   readonly summaryFile?: string;
   readonly requireIsolation?: boolean;
   readonly bundleDirectory?: string;
@@ -220,6 +222,11 @@ export function parseVerifyOnlyCommand(
     }
     if (flags.has("contract") && flags.has("goal-contract"))
       throw invalid("select strict --contract or ordinary --goal-contract, not both");
+    const challenges = flags.get("challenges");
+    if (challenges !== undefined && !["off", "report", "required"].includes(challenges))
+      throw invalid("--challenges must be off, report, or required");
+    if (challenges !== undefined && !flags.has("goal-contract"))
+      throw invalid("--challenges needs --goal-contract: challenges are of requirement checks");
     const streamPath = flags.get("agent-stream");
     const streamFormat = flags.get("agent-format") ?? "generic";
     if (streamFormat !== "generic" && streamFormat !== "claude-code") {
@@ -244,6 +251,9 @@ export function parseVerifyOnlyCommand(
       ...(flags.has("goal-contract")
         ? { goalContract: resolve(context.currentDirectory, flags.get("goal-contract") as string) }
         : {}),
+      ...(challenges === undefined
+        ? {}
+        : { challenges: challenges as "off" | "report" | "required" }),
       installDependencies: flags.has("install"),
       oracleOnly: flags.has("oracle-only"),
       ...(flags.has("require-isolation") ? { requireIsolation: true } : {}),
@@ -292,7 +302,8 @@ export function parseVerifyOnlyCommand(
   }
 
   if (words[0] === "action") {
-    const step = words[1];
+    // The bare form is the producer step, which is the one a person would run by hand.
+    const step = words[1] ?? "verify";
     if (step !== "verify" && step !== "comment" && step !== "retain")
       throw invalid("action needs one of verify, comment, or retain");
     return { command: "action", step };

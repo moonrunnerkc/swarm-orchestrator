@@ -228,12 +228,13 @@ function stripPayloads(dag: EvidenceDag): unknown {
 }
 
 async function readVerifierScript(): Promise<string> {
-  const [verifier, controller, behavior, upgrade, status] = await Promise.all([
+  const [verifier, controller, behavior, upgrade, status, challenges] = await Promise.all([
     readFile(new URL("./verifier/verify.mjs", import.meta.url), "utf8"),
     readFile(new URL("./verifier/controller.mjs", import.meta.url), "utf8"),
     readFile(new URL("./verifier/behavior.mjs", import.meta.url), "utf8"),
     readFile(new URL("./verifier/upgrade.mjs", import.meta.url), "utf8"),
     readFile(new URL("./verifier/status.mjs", import.meta.url), "utf8"),
+    readFile(new URL("./verifier/challenges.mjs", import.meta.url), "utf8"),
   ]);
   const controllerImport = 'import { readControllerHistory } from "./controller.mjs";';
   const cryptoImport = 'import { createHash } from "node:crypto";';
@@ -249,7 +250,13 @@ async function readVerifierScript(): Promise<string> {
     .replace(cryptoImport, "")
     .replace("export function upgradeControlPasses", "function upgradeControlPasses");
   const embeddedStatus = status.replaceAll("export function ", "function ");
+  const embeddedChallenges = challenges.replaceAll("export function ", "function ");
   return verifier
+    .replace(
+      'import { challengeVerdictsAgree } from "./challenges.mjs";',
+      () =>
+        `const challengeVerdictsAgree = (() => {${embeddedChallenges}\nreturn challengeVerdictsAgree;})();`,
+    )
     .replace(
       'import { capturedRegression } from "./status.mjs";',
       () => `const capturedRegression = (() => {${embeddedStatus}\nreturn capturedRegression;})();`,

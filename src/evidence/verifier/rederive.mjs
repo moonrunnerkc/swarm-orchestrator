@@ -146,12 +146,30 @@ export function rederiveCiVerdict(verdict) {
         reasons: [],
         verified: null,
       };
+    const challenges = verdict.challenges;
+    if (
+      challenges !== undefined &&
+      (!["off", "report", "required"].includes(challenges.policy) ||
+        typeof challenges.satisfied !== "boolean")
+    )
+      return { rederived: false, missing: ["challenges"], reasons: [], verified: null };
+    const challengesUnmet = challenges?.policy === "required" && challenges.satisfied !== true;
     const verified =
-      verdict.regression === "pass" && obligations.every((entry) => entry.status === "accepted");
+      verdict.regression === "pass" &&
+      obligations.every((entry) => entry.status === "accepted") &&
+      !challengesUnmet;
     return {
       rederived: true,
       missing: [],
-      reasons: verified ? [] : ["goal-obligations-or-regression-refused"],
+      reasons: verified
+        ? []
+        : [
+            ...(challengesUnmet ? ["challenges-unmet"] : []),
+            ...(verdict.regression === "pass" &&
+            obligations.every((entry) => entry.status === "accepted")
+              ? []
+              : ["goal-obligations-or-regression-refused"]),
+          ],
       verified,
     };
   }

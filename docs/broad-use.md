@@ -134,6 +134,72 @@ Absent optional static tools remain named unmeasured observations; they are not 
 A configured tool that cannot run, a setup failure or missing tests in a selected package leaves
 regression unmeasured even when another package passes.
 
+## Challenging the checks
+
+A contract's checks are evidence about the requirement only if they can tell the work from
+wrong work. `--challenges` asks that question of every requirement and records the answer
+beside the ordinary acceptance. Four families, each answered from an execution:
+
+1. **Original defect.** The checks run on the base tree as well as the candidate. A requirement
+   whose checks reject the base and accept the candidate `discriminates`; one whose checks
+   accept both is `vacuous`, a gap, because they would have accepted a patch that does nothing.
+   Under a refactor preset the base is expected to pass and reads `preserved`. Bugfix and
+   refactor presets already record this base control; a contract without a preset gets one.
+2. **Incorrect alternative.** Mechanical mutations of the lines the patch added (the same eight
+   operators the oracle bond uses, in their declared order, at most six) are written into the
+   checkout one at a time and every check is run over the mutated tree. A rejected mutation is
+   `caught`. One every requirement accepts is a demonstrated `gap` only with a witness that it
+   changed the program: the repository's own suite refusing it, spent at most twice per
+   verification. A survivor with no witness is `unwitnessed`, which is uncertainty and never a
+   defect. A contract may also seal **fixtures**: patches the author declares to violate one
+   named requirement, which that requirement's checks must reject. A fixture that fails to
+   apply is invalid evidence, not a caught alternative.
+3. **Evidence and instrument.** Each challenge runs under the sealed contract over a tree whose
+   identity is recorded in the run record, with artifacts written immutable and the tree held
+   unchanged during the check, as the goal verifier does.
+4. **Missing obligation.** A requirement with no check is a `gap` with a remedy; one whose check
+   could not execute is `invalid-evidence`.
+
+Per requirement the reading is `detected`, `gap`, `invalid-evidence`, `unjudged` or
+`inapplicable`. The verification's JSON carries the whole report under `challenges`, the text
+output one line per requirement, and the bundle three record rules: `challenge-plan-v1`,
+written before anything runs with the selection and its seed, `challenge-run-v1` intent and
+completed pairs per alternative, and `challenge-verdict-v1`. The bundle's own verifier
+re-derives every verdict from those records with an implementation of its own
+(`src/evidence/verifier/challenges.mjs`), held to the producer's by a parity test.
+
+Three policies, all explicit:
+
+```sh
+swarm-verify ci --workspace ./project --branch feature --goal-contract /trusted/goal.json
+swarm-verify ci ... --goal-contract /trusted/goal.json --challenges report
+swarm-verify ci ... --goal-contract /trusted/goal.json --challenges required
+```
+
+`off` (the default for `ci`) runs no challenge and changes nothing about existing behaviour.
+`report` runs them and records the findings; a gap does not refuse. `required` refuses unless
+every requirement reads `detected`, with the reason `challenges-unmet` named in the
+certification: a contract with no executable challenge does not pass required mode vacuously.
+The Action's `challenges` input defaults to `report`. Nothing here calls a model; the
+challenges are mechanical, and a fixture is authored.
+
+To seal a fixture, add to the contract:
+
+```json
+"challenges": {
+  "version": 1,
+  "mutations": "auto",
+  "fixtures": [
+    { "id": "returns-input", "requirement": "negative-input",
+      "description": "returns the input unchanged", "patch": "diff --git a/clamp.mjs ..." }
+  ]
+}
+```
+
+Python projects have no automatic mutation today; a Python contract is challenged through its
+sealed fixtures and its base control, and that limitation is what an `unjudged` requirement
+with no alternatives says.
+
 ## Presets on the ordinary worker path
 
 ```sh

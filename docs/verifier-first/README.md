@@ -25,7 +25,7 @@ established or explicitly handed off with its remaining manifest.
 
 | Req | What it asks | Implementation | Tests | Executed evidence | Status |
 | --- | --- | --- | --- | --- | --- |
-| R1 | `moonrunnerkc/swarm-verify@v1` Action with a signed, idempotent PR comment and an independent verification command | | | | not started |
+| R1 | `moonrunnerkc/swarm-verify@v1` Action with a signed, idempotent PR comment and an independent verification command | `src/action/*`, `action.yml`, `swarm-verify action verify\|comment\|retain`; `scripts/build-action-distribution.mjs` | `src/action/*.test.ts` (real producer runs, comment head binding, escaping) | remote action-controls run 36344708065 on 93ce4f140: good and bad candidates, verdicts signed as GitHub attestations 50593328 and 50593327 | source variant working; distribution repository, PR comment on a real PR and fork route still to exercise |
 | R2 | `npx swarm-verify` useful with zero configuration: deterministic discovery, noninteractive run, scoped result, stable exit codes | `src/cli-check.ts`, `src/gates/check-plan.ts`, `src/gates/noninteractive-runner.ts`; no subcommand runs `check` | `src/cli-check.test.ts` (ten real invocations), `src/gates/check-plan.test.ts`, `src/gates/noninteractive-runner.test.ts` | local gates 24ef849f0: 382 files, 3654 tests; public-package run pending R5 | implemented, not yet published |
 | R3 | README-only stranger simulations on three independently maintained repositories from fresh VMs | | | | not started |
 | R4 | Dogfood across owned repositories, including the Aftermath site repository | [dogfood-manifest.md](dogfood-manifest.md) | | | inventory recorded |
@@ -40,11 +40,11 @@ established or explicitly handed off with its remaining manifest.
 
 | Item | Implementation | Tests | Executed evidence | Status |
 | --- | --- | --- | --- | --- |
-| Requirement-level check challenges, four families | | | | not started |
-| Precise evidence and adequacy decisions, offline re-derivation | | | | not started |
+| Requirement-level check challenges, four families | `src/gates/goal-challenges.ts`, `src/gates/goal-challenge-runner.ts`; base control, mutations, sealed fixtures, missing obligations; Python by fixture only | `src/gates/goal-challenges.test.ts`, `src/gates/goal-challenges.integration.test.ts` (real ci runs: detected, gap, report, off) | local runs in the integration test | implemented for Node; Python mutations open |
+| Precise evidence and adequacy decisions, offline re-derivation | `challenge-plan-v1`, `challenge-run-v1`, `challenge-verdict-v1` records; `src/evidence/verifier/challenges.mjs` embedded in every bundle | `src/evidence/verifier/challenges.test.ts` (parity over 270 cases), integration test reads the bundle's own verifier | bundle re-derivation in the integration test | implemented |
 | Twelve attack families with clean counterparts | | | | not started |
 | Bounded check strengthening and implementation repair | | | | not started |
-| Three policies: disabled, report-only, required | | | | not started |
+| Three policies: disabled, report-only, required | `--challenges off\|report\|required` on `ci`; Action input `challenges` (default `report`); `challenges-unmet` refusal in `src/gates/certification.ts` mirrored in `rederive.mjs` | integration test covers all three | | implemented |
 | Readable report agreeing across JSON, terminal, CI summary and bundle | | | | not started |
 
 ## Research scope (sections 8 to 15)

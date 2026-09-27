@@ -70,6 +70,8 @@ describe("what the dist build has to carry beyond compiled JavaScript", () => {
     expect(await assetsUnder(src)).toEqual([
       "evidence/verifier/behavior.d.mts",
       "evidence/verifier/behavior.mjs",
+      "evidence/verifier/challenges.d.mts",
+      "evidence/verifier/challenges.mjs",
       "evidence/verifier/controller.d.mts",
       "evidence/verifier/controller.mjs",
       "evidence/verifier/rederive.d.mts",
