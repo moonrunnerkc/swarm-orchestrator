@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { createTestClock } from "../core/test-doubles.ts";
 import { digestOfJson } from "../evidence/canonical-json.ts";
+import { declareGoalContract, freezeGoalContract } from "../evidence/goal-contract.ts";
 import { sealRunSpec } from "../evidence/run-spec.ts";
 import { openEvidenceSession } from "../evidence/session.ts";
 import { recoveryContext } from "./recovery-context.ts";
@@ -151,4 +152,57 @@ it("blocks an interrupted escalation instead of resetting its allowance", async 
     },
   });
   await expect(recoveryContext(root, "one", 101)).rejects.toThrow("no completed effect");
+});
+
+it("restores sealed preset criteria and install permission without renewing the deadline", async () => {
+  const { root, evidence } = await fixture();
+  const contract = await declareGoalContract(evidence, {
+    version: 1,
+    goal: "Preserve behavior",
+    preset: { kind: "refactor" },
+    requirements: [{ id: "behavior", description: "Observed behavior", checks: ["check"] }],
+    checks: [
+      {
+        id: "check",
+        command: "node check.mjs",
+        author: "user",
+        exposure: "withheld",
+        artifacts: [],
+      },
+    ],
+    immutablePaths: [],
+  });
+  await expect(recoveryContext(root, "one", 101)).rejects.toThrow("goal settings");
+  await evidence.record({
+    type: "verification-command",
+    actor: "harness",
+    provenance: ["user"],
+    payload: {
+      rule: "goal-run-settings-v1",
+      contractDigest: freezeGoalContract(contract).digest,
+      install: true,
+      deadline: 2100,
+      sourceBase: "a".repeat(40),
+    },
+  });
+  const restored = await recoveryContext(root, "one", 1100);
+  expect(restored.goal).toEqual({ contract, install: true });
+  expect(restored.remainingWallMs).toBe(1000);
+  expect(restored.deadline).toBe(2100);
+  await expect(recoveryContext(root, "one", 2100)).rejects.toThrow("original goal deadline");
+});
+it("refuses interrupted prepared-environment staging", async () => {
+  const { root, evidence } = await fixture();
+  await evidence.record({
+    type: "verification-command",
+    actor: "harness",
+    provenance: ["file"],
+    payload: {
+      rule: "prepared-python-v1",
+      phase: "intent",
+      unit: ".",
+      environmentDigest: "sha256:copy",
+    },
+  });
+  await expect(recoveryContext(root, "one", 101)).rejects.toThrow("staging is interrupted");
 });

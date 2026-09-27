@@ -1,7 +1,5 @@
 #!/usr/bin/env node
-import { digestOfBytes } from "./evidence/canonical-json.ts";
 // Check the runtime before loading the command composition.
-import { recordGoalAssessment } from "./evidence/run-assessment.ts";
 import "./node-floor-check.ts";
 
 import { spawn } from "node:child_process";
@@ -43,6 +41,7 @@ import { diffBudgetFrom, gateOptionsFrom, settingsFor } from "./cli-run-settings
 import { createSystemClock, createSystemRandom } from "./cli-runtime-inputs.ts";
 import { chooseModel, select } from "./cli-select.ts";
 import { logReward, priceTask } from "./cli-task-cost.ts";
+import { finalizeTaskGoal, preflightTaskGoal } from "./cli-task-goal.ts";
 import { startInterface } from "./cli-terminal.ts";
 import { verifyBundle } from "./cli-verify.ts";
 import type { StopReason } from "./core/termination.ts";
@@ -57,15 +56,11 @@ import { createRecordingModelClient } from "./evidence/model-call-recording.ts";
 import { replayBundle } from "./evidence/replay.ts";
 import { collectSessions, describeCollection, olderThanMs } from "./evidence/retention.ts";
 import { createSessionId, defaultSessionRoot, openEvidenceSession } from "./evidence/session.ts";
-import { harnessChildEnvironment } from "./exec/child-environment.ts";
 import { parseIsolationOption } from "./exec/isolation-option.ts";
 import { recordedContainerBackend } from "./exec/runtime-resource.ts";
 import { createFileSetRegistry } from "./gates/file-set.ts";
 import { requireBaseCommit } from "./gates/git-workspace.ts";
-import { verifyIndependently } from "./gates/independent-verification.ts";
-import { createNodeCommandRunner } from "./gates/node-command-runner.ts";
 import { summarizeRatchet } from "./gates/ratchet-summary.ts";
-import { diffAgainstBase } from "./gates/scratch-index.ts";
 import { diagnose, remediesFor, runtimeFinding } from "./install/health.ts";
 import { inspectInstall } from "./install/inspect.ts";
 import { describeInstall } from "./install/report.ts";
@@ -234,9 +229,10 @@ async function run(options: RunCommand): Promise<number> {
   await offerInit(options.workspace);
   await offerApprovalMode(approvalOfferOnDisk(options.workspace));
   const presetGoal =
-    options.goalContract === undefined
+    options.recovery?.goal?.contract ??
+    (options.goalContract === undefined
       ? undefined
-      : freezeGoalContract(JSON.parse(await readFile(options.goalContract, "utf8"))).contract;
+      : freezeGoalContract(JSON.parse(await readFile(options.goalContract, "utf8"))).contract);
   if (options.preset !== undefined && presetGoal?.preset?.kind !== options.preset)
     throw new Error("preset selection must match the sealed goal contract");
   const settings = await settingsFor(options.workspace, {
@@ -361,6 +357,31 @@ async function run(options: RunCommand): Promise<number> {
   // Both routes reach the same abort, and neither is the one that leaves the view.
   void ui.cancelled().then(onInterrupt);
   const startedAt = clock.now();
+  const deadline =
+    options.recovery?.deadline ??
+    (presetGoal === undefined && settings.maxWallMinutes === null
+      ? null
+      : startedAt + (settings.maxWallMinutes ?? 30) * 60_000);
+  const deadlineTimer =
+    deadline === null
+      ? null
+      : setTimeout(
+          () => interruption.abort("original task deadline reached"),
+          Math.max(0, deadline - clock.now()),
+        );
+  const goalContext =
+    presetGoal === undefined
+      ? undefined
+      : {
+          contract: presetGoal,
+          workspace: options.workspace,
+          baseCommit,
+          evidence,
+          clock,
+          signal: interruption.signal,
+          isolation,
+          install: options.recovery?.goal?.install ?? options.installDependencies === true,
+        };
   const gateOptions = gateOptionsFrom(settings);
   const diffBudget = diffBudgetFrom(settings);
   // Off unless a destination is named. A telemetry pipeline that is on by default is a place
@@ -369,7 +390,26 @@ async function run(options: RunCommand): Promise<number> {
 
   let exporting = false;
   try {
-    if (presetGoal !== undefined) await declareGoalContract(evidence, presetGoal);
+    if (presetGoal !== undefined) {
+      await declareGoalContract(evidence, presetGoal);
+      await evidence.record({
+        type: "verification-command",
+        actor: "harness",
+        provenance: ["user"],
+        payload: {
+          rule: "goal-run-settings-v1",
+          contractDigest: freezeGoalContract(presetGoal).digest,
+          install: goalContext?.install ?? false,
+          deadline,
+          sourceBase: baseCommit,
+        },
+      });
+    }
+    if (goalContext !== undefined) await preflightTaskGoal(goalContext);
+    if (goalContext !== undefined && deadline !== null && deadline - clock.now() <= 30_000)
+      throw new Error(
+        "preset preflight exhausted implementation allowance; final verification time stays reserved",
+      );
     const taskRun = await runAgentTask({
       task: options.task,
       ...(options.escalationModel === undefined
@@ -410,7 +450,14 @@ async function run(options: RunCommand): Promise<number> {
               taskId: "preset",
               objective: options.task,
               dependsOn: [],
-              allowedPaths: ["**"],
+              allowedPaths:
+                presetGoal.preset?.kind === "upgrade"
+                  ? [
+                      presetGoal.preset.manifest,
+                      presetGoal.preset.lockfile,
+                      ...presetGoal.preset.sourcePaths,
+                    ]
+                  : ["**"],
               immutablePaths: [...goalImmutablePaths(presetGoal)],
               allowedTools: ["read", "write", "edit", "list", "search", "shell"] as (
                 | "read"
@@ -436,11 +483,14 @@ async function run(options: RunCommand): Promise<number> {
       baseRef: baseCommit,
       maxSteps: settings.maxSteps,
       attempts: settings.attempts,
-      ...(options.recovery !== undefined
-        ? { maxWallTimeMs: Math.max(0, options.recovery.deadline - clock.now()) }
-        : settings.maxWallMinutes === null
-          ? {}
-          : { maxWallTimeMs: settings.maxWallMinutes * 60_000 }),
+      ...(deadline === null
+        ? {}
+        : {
+            maxWallTimeMs: Math.max(
+              0,
+              deadline - clock.now() - (goalContext === undefined ? 0 : 30_000),
+            ),
+          }),
       model,
       evidence,
       fileSet,
@@ -463,49 +513,8 @@ async function run(options: RunCommand): Promise<number> {
 
     const { loop, gates } = taskRun;
     let { green, verdict } = taskRun;
-    if (presetGoal !== undefined) {
-      const commands = createNodeCommandRunner(
-        clock,
-        harnessChildEnvironment(),
-        undefined,
-        interruption.signal,
-      );
-      const finalPatch = await diffAgainstBase({
-        workspaceRoot: options.workspace,
-        baseRef: baseCommit,
-      });
-      const checked = await verifyIndependently({
-        repositoryRoot: options.workspace,
-        checkoutRoot: evidence.directory,
-        baseCommit,
-        patch: finalPatch,
-        commands,
-        clock,
-        goal: { contract: presetGoal, evidence, tree: "" },
-        installDependencies: options.installDependencies === true,
-        commandsForCheckout: async (checkout) =>
-          createNodeCommandRunner(
-            clock,
-            harnessChildEnvironment(),
-            isolation === null
-              ? undefined
-              : recordedContainerBackend({ ...isolation, workspaceRoot: checkout }, evidence),
-            interruption.signal,
-          ),
-      });
-      const finalVerification = await evidence.record({
-        type: "independent-verification",
-        actor: "harness",
-        provenance: ["tool-output"],
-        payload: JSON.parse(
-          JSON.stringify({
-            ...checked,
-            sourcePatchDigest: digestOfBytes(finalPatch),
-            sourceBase: baseCommit,
-          }),
-        ),
-      });
-      verdict = await recordGoalAssessment(evidence, finalVerification.record.payloadDigest);
+    if (goalContext !== undefined) {
+      verdict = await finalizeTaskGoal(goalContext);
       green = verdict.acceptable;
     }
     reportGates(gates.outcome, evidence, ui.note);
@@ -575,6 +584,7 @@ async function run(options: RunCommand): Promise<number> {
     }
     throw cause;
   } finally {
+    if (deadlineTimer !== null) clearTimeout(deadlineTimer);
     await ui.stop();
     process.off("SIGINT", onInterrupt);
     process.off("SIGTERM", onInterrupt);
@@ -732,6 +742,7 @@ async function resumeExecution(
   return run({
     ...parsed,
     recovery: {
+      ...(context.goal === undefined ? {} : { goal: context.goal }),
       history: context.history,
       escalationCount: context.escalationCount,
       remainingTokens: context.remainingTokens,
