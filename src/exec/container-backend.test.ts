@@ -185,6 +185,24 @@ describe("an image that is not present on the machine", () => {
     expect(captured[1]).toEqual(["pull", "--quiet", "test-image"]);
   });
 
+  it("leaves the command its whole allowance when the pull takes longer than that allowance", async () => {
+    let startTimeout = null;
+    const backend = createContainerBackend({
+      runtime: "test-runtime",
+      image: "test-image",
+      workspaceRoot: workspace,
+      user: "1000:1000",
+      runProcess: async (_program, args, options) => {
+        if (args[0] === "pull") await new Promise((resolve) => setTimeout(resolve, 120));
+        if (args[0] === "start") startTimeout = options.timeoutMs;
+        return observed(args[0] === "image" ? 1 : 0);
+      },
+    });
+    const ran = await backend.run(["node", "parent.mjs"], { cwd: workspace, timeoutMs: 100 });
+    expect(ran.timedOut).toBe(false);
+    expect(startTimeout).toBeGreaterThan(50);
+  });
+
   it("names the image and the runtime's last line when the pull fails, and creates nothing", async () => {
     const captured: string[][] = [];
     const backend = createContainerBackend({
