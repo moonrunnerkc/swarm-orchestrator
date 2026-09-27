@@ -44,3 +44,36 @@ it("does not let malformed structured reports fall back to textual success", () 
   expect(readRunnerResult(observation).status).toBe("not-applicable");
   expect(readStatus("structured-test-output", observation)).toBe("not-applicable");
 });
+
+/**
+ * depose, in the rollout: two `it` blocks in one file share a title, vitest accepts them, and
+ * the whole suite of 383 tests read as "malformed" for it. The second is named by occurrence.
+ */
+it("keeps a suite whose file repeats a test title, naming the repeat by occurrence", () => {
+  const report = {
+    numTotalTests: 3,
+    numPassedTests: 2,
+    numFailedTests: 1,
+    numPendingTests: 0,
+    testResults: [
+      {
+        name: "/workspace/a.test.ts",
+        assertionResults: [
+          { fullName: "derives the identifier", status: "passed" },
+          { fullName: "derives the identifier", status: "failed" },
+          { fullName: "rejects a short key", status: "passed" },
+        ],
+      },
+    ],
+  };
+  const reading = readRunnerResult({
+    exitCode: 1,
+    stdout: JSON.stringify(report),
+    stderr: "",
+    outputTruncated: false,
+    unavailable: null,
+    durationMs: 1,
+  });
+  expect(reading.status).toBe("failed");
+  expect(reading.detail).toContain("3 runner-reported tests, 3 executed");
+});
