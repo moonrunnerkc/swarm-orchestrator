@@ -109,6 +109,10 @@ established or explicitly handed off with its remaining manifest.
   [script that produced it](../evidence/2026-09-27/verifier-first/tamper-demo.sh), over the committed
   `docs/evidence/2026-08-18/live-frontier` bundle: verified (exit 0), one byte of record 28's
   timestamp flipped, refused with the broken link named (exit 1).
+- Known nondeterministic test, not in the verifier: `src/workers/acceptance.test.ts` ("two tasks
+  that collide") failed once in a full gate run on 2026-09-28 (`rejected.reason` undefined) and
+  passed on the rerun and on five runs alone; it belongs to the beta agent's worker coordination
+  and is not on the verifier's path. Left open and named here rather than retried into silence.
 - Local development environment: Node 24.15.0 (`node@22` 22.22.3 is installed beside it),
   npm 11.12.1, pnpm 9.15.0, uv 0.11.13, Python 3.14.7, Docker 29.5.2, gh 2.92.0 with
   `attestation verify`, Claude Code 2.1.283, Ollama serving local models. The local npm
