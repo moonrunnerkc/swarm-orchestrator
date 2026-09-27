@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { GateCapability } from "../gates/gate-capability.ts";
 import type { GateCycle } from "../gates/gate-runner.ts";
 import type { SignerVerdict } from "./signer-trust.ts";
@@ -42,6 +43,21 @@ export interface RunVerdict {
    */
   readonly acceptable: boolean;
 }
+
+export const runVerdictSchema = z.strictObject({
+  version: z.literal(1),
+  integrity: z.enum(["valid", "invalid", "unverified"]),
+  signer: z.enum(["trusted", "untrusted", "invalid", "unverified"]),
+  executionTrust: z.enum(["isolated", "restricted", "unsafe", "unknown"]),
+  policy: z.enum(["pass", "fail", "unmeasured"]),
+  mechanical: z.enum(["pass", "fail", "unmeasured"]),
+  behavioral: z.enum(["pass", "fail", "unmeasured"]),
+  semantic: z.enum(["pass", "fail", "unmeasured"]),
+  task: z.enum(["accepted", "rejected", "unjudged"]),
+  humanApproval: z.enum(["approved", "rejected", "required", "not-required"]),
+  reasons: z.record(z.string(), z.string()),
+  acceptable: z.boolean(),
+});
 
 interface VerdictInput {
   readonly cycle: GateCycle;

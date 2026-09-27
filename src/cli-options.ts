@@ -23,6 +23,9 @@ export { InvalidCommandLineError };
  * resolution lives in src/config/settings.ts rather than here.
  */
 export interface RunCommand {
+  readonly preset?: "bugfix" | "refactor" | "upgrade";
+  readonly goalContract?: string;
+  readonly installDependencies?: boolean;
   readonly escalationModel?: string;
   readonly maxTokens?: number;
   readonly recovery?: {
@@ -546,10 +549,24 @@ export function parseCommandLine(
     );
   }
 
+  const preset = flags.get("preset");
+  if (preset !== undefined && !["bugfix", "refactor", "upgrade"].includes(preset))
+    throw invalid("--preset must be bugfix, refactor, or upgrade");
+  if (preset !== undefined && !flags.has("goal-contract"))
+    throw invalid("--preset requires --goal-contract with pinned behavior obligations");
+  if (preset === "upgrade" && !flags.has("install"))
+    throw invalid("upgrade requires --install authorization for locked dependency preparation");
   if (flags.has("escalate-effort"))
     throw invalid("effort escalation is unsupported; name an explicit --escalate-model instead");
   return {
     command: "run",
+    ...(preset === undefined
+      ? {}
+      : {
+          preset: preset as "bugfix" | "refactor" | "upgrade",
+          goalContract: resolve(context.currentDirectory, flags.get("goal-contract") as string),
+          installDependencies: flags.has("install"),
+        }),
     ...(flags.has("escalate-model")
       ? { escalationModel: flags.get("escalate-model") as string }
       : {}),
