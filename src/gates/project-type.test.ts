@@ -306,3 +306,27 @@ it("recognizes explicit Python tool dependencies and standalone pytest configura
     expect(commandOf(assembleGates(detected), "tests")).toBe("pytest -q");
   }
 });
+
+describe("what the project's own environment holds", () => {
+  /**
+   * tavern, in the README-only python simulation: pyproject.toml configures mypy, the synced
+   * environment holds no mypy, and `python -m mypy` exited 1 with "No module named mypy",
+   * which read as the typecheck failing on a clean checkout. Presence is a file in the
+   * environment, read without running anything.
+   */
+  it("reads which configured tools are installed in .venv, and claims nothing without one", async () => {
+    const files = {
+      "pyproject.toml":
+        "[tool.mypy]\nstrict = true\n[tool.ruff]\nline-length = 100\n[tool.pytest.ini_options]\nminversion = '8'\n",
+      ".venv/pyvenv.cfg": "home = /usr/bin\n",
+      ".venv/lib/python3.12/site-packages/ruff/__init__.py": "",
+      ".venv/lib/python3.12/site-packages/pytest/__init__.py": "",
+    };
+    const synced = await detectProject(reader(files));
+    expect(synced.pythonTools).toEqual(["mypy", "pytest", "ruff"]);
+    expect(synced.pythonToolsInstalled).toEqual(["pytest", "ruff"]);
+
+    const unsynced = await detectProject(reader({ "pyproject.toml": files["pyproject.toml"] }));
+    expect(unsynced.pythonToolsInstalled).toBeUndefined();
+  });
+});

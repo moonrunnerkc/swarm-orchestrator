@@ -15,6 +15,11 @@ export interface ProjectDetection extends ProjectEnvironment {
   /** Tool sections found in Python manifests, so gates are assembled only when configured. */
   readonly pythonTools: readonly string[];
   readonly pythonMypyTargetsConfigured?: boolean;
+  /**
+   * Which configured tools the project's own environment holds, read from `.venv` without
+   * running anything. Absent when there is no `.venv` to read, and then nothing is claimed.
+   */
+  readonly pythonToolsInstalled?: readonly string[];
 }
 
 const manifestsByType: Readonly<Record<ProjectType, readonly string[]>> = {
@@ -56,11 +61,27 @@ export async function detectProject(read: ManifestReader): Promise<ProjectDetect
     }
   }
 
+  let pythonToolsInstalled: readonly string[] | undefined;
   if (types.includes("python")) {
     for (const file of ["pytest.ini", "tox.ini"]) {
       const text = await read(file);
       if (text !== null && /^\s*\[pytest\]\s*$/m.test(text))
         pythonTools = [...new Set([...pythonTools, "pytest"])].sort();
+    }
+    // A configured tool the environment does not hold makes `python -m tool` exit 1 with
+    // "No module named", which read as the check failing. Its presence is a file in the
+    // environment's site-packages, read here like any manifest; the interpreter's minor
+    // version is whichever directory exists.
+    if ((await read(".venv/pyvenv.cfg")) !== null) {
+      const installed: string[] = [];
+      for (const tool of pythonTools) {
+        let present = false;
+        for (let minor = 8; minor <= 15 && !present; minor += 1)
+          present =
+            (await read(`.venv/lib/python3.${minor}/site-packages/${tool}/__init__.py`)) !== null;
+        if (present) installed.push(tool);
+      }
+      pythonToolsInstalled = installed;
     }
   }
   return {
@@ -71,6 +92,7 @@ export async function detectProject(read: ManifestReader): Promise<ProjectDetect
     nodeScriptCommands,
     pythonTools,
     ...(pythonMypyTargetsConfigured ? { pythonMypyTargetsConfigured: true } : {}),
+    ...(pythonToolsInstalled === undefined ? {} : { pythonToolsInstalled }),
   };
 }
 
