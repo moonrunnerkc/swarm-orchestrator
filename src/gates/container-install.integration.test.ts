@@ -42,6 +42,7 @@ beforeAll(async () => {
   if (!docker) return;
   // Under the repository rather than the system temp directory: Docker Desktop shares the
   // former with containers and not the latter.
+  await mkdir(resolve(".swarm"), { recursive: true });
   scratch = await mkdtemp(join(resolve(".swarm"), "container-install-"));
   workspace = join(scratch, "repo");
   await mkdir(workspace);
