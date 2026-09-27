@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { escalationEventSchema } from "../agent-escalation.ts";
 import type { ConversationMessage } from "../core/model-client.ts";
+import { freezeGoalContract } from "../evidence/goal-contract.ts";
 import { hashOfRecord } from "../evidence/ledger-record.ts";
 import { parseRunSpec } from "../evidence/run-spec.ts";
 import { reconstructTranscript } from "../evidence/transcript.ts";
@@ -31,6 +32,55 @@ export async function recoveryContext(sessionRoot: string, runId: string, now = 
   assertGoalEffectsSettled(parsed.records, payloads);
   const seal = parsed.records.find((record) => record.type === "run-spec-sealed");
   const spec = parseRunSpec(payloads.get(seal?.payloadDigest ?? "")?.spec);
+  const goals = parsed.records.filter((record) => record.type === "goal-contract");
+  if (goals.length > 1) throw new Error("goal contract changed; reconcile before resuming");
+  let goalDeadline: number | undefined;
+  let goal:
+    | { contract: ReturnType<typeof freezeGoalContract>["contract"]; install: boolean }
+    | undefined;
+  if (goals[0] !== undefined) {
+    const frozen = freezeGoalContract(payloads.get(goals[0].payloadDigest)?.contract);
+    const settings = parsed.records.filter(
+      (record) =>
+        record.type === "verification-command" &&
+        payloads.get(record.payloadDigest)?.rule === "goal-run-settings-v1",
+    );
+    if (settings.length !== 1)
+      throw new Error("sealed goal settings are missing or changed; reconcile before resuming");
+    const value = z
+      .object({
+        contractDigest: z.string(),
+        install: z.boolean(),
+        sourceBase: z.string(),
+        deadline: z.number(),
+      })
+      .parse(payloads.get(settings[0]?.payloadDigest ?? ""));
+    if (value.contractDigest !== frozen.digest || value.sourceBase !== spec.repository.baseCommit)
+      throw new Error("goal contract or source changed; reconcile before resuming");
+    if (value.deadline <= now) throw new Error("the original goal deadline has elapsed");
+    goalDeadline = value.deadline;
+    goal = { contract: frozen.contract, install: value.install };
+  }
+  const staging = new Set<string>();
+  for (const record of parsed.records) {
+    const value = payloads.get(record.payloadDigest);
+    if (record.type !== "verification-command" || value?.rule !== "prepared-python-v1") continue;
+    const effect = z
+      .object({
+        phase: z.enum(["intent", "completed"]),
+        unit: z.string(),
+        environmentDigest: z.string(),
+      })
+      .parse(value);
+    const id = `${effect.unit}:${effect.environmentDigest}`;
+    if (effect.phase === "intent") staging.add(id);
+    else if (!staging.delete(id))
+      throw new Error("environment staging completion has no intent; reconcile before resuming");
+  }
+  if (staging.size)
+    throw new Error(
+      "environment staging is interrupted; reconcile its owned checkout before resuming",
+    );
   const criteriaRecord = parsed.records.find((record) => record.type === "gate-set-sealed");
   const criteria = gateSetSealSchema.parse(payloads.get(criteriaRecord?.payloadDigest ?? ""));
   let escalationCount = spec.escalationsUsed ?? 0;
@@ -123,11 +173,18 @@ export async function recoveryContext(sessionRoot: string, runId: string, now = 
     started === undefined || lastTimestamp === undefined
       ? spec.budgets.maxWallMs
       : Math.max(0, lastTimestamp - started, now - started);
-  const remainingWallMs = Math.max(0, spec.budgets.maxWallMs - elapsed);
+  const remainingWallMs = Math.max(
+    0,
+    Math.min(
+      spec.budgets.maxWallMs - elapsed,
+      goalDeadline === undefined ? Number.POSITIVE_INFINITY : goalDeadline - now,
+    ),
+  );
   const remainingSteps = Math.max(0, spec.budgets.maxSteps - calls.length);
   if (remainingWallMs <= 0 || remainingSteps <= 0 || tokensUsed >= spec.budgets.maxTokens)
     throw new Error("the sealed run has no execution budget left; start a new run explicitly");
   return {
+    ...(goal === undefined ? {} : { goal }),
     spec,
     criteria,
     source: {

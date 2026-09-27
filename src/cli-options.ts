@@ -29,6 +29,10 @@ export interface RunCommand {
   readonly escalationModel?: string;
   readonly maxTokens?: number;
   readonly recovery?: {
+    readonly goal?: {
+      readonly contract: import("./evidence/goal-contract.ts").GoalContract;
+      readonly install: boolean;
+    };
     readonly history: readonly import("./core/model-client.ts").ConversationMessage[];
     readonly escalationCount?: number;
     readonly remainingTokens: number;
