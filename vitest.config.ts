@@ -62,7 +62,7 @@ const notThisProjectsSuite = [
   // The scratch directory `npm run dev` and local fixtures use. Whatever sits there is a
   // workspace under test or a throwaway repository, never this suite; a fixture with a test
   // file of its own failed the whole gate run in somebody else's import.
-  ".swarm/**",
+  ".swarm/**", "scratchpad/**",
 ];
 
 const profile = process.env.SWARM_TEST_PROFILE;
