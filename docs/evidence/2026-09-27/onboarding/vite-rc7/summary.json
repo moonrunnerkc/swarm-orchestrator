@@ -1,0 +1,23 @@
+{
+  "repository": "zhihui-hu/one-ip",
+  "category": "vite",
+  "image": "ubuntu:24.04",
+  "imageDigest": "ubuntu@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3",
+  "model": "qwen3.6:35b-a3b",
+  "version": "1.0.0-rc.7",
+  "steps": 14,
+  "firstResultMs": 321119,
+  "outcome": {
+    "step": 15,
+    "firstResult": true,
+    "firstResultText": "Got a first result from swarm-verify on ./repo. It reported: \"fail: a blocking check failed (exit 1)\". The test command exited with code 1. Details showed: 5 checks passed (lint, build, placeholder, secret-scan, diff-budget), 1 failed (tests), 4 not run (typecheck, format, file-set, behaviour-probe). Requirements were unmeasured (no contract supplied). Exit code was 1.",
+    "brokenCopyRefused": true,
+    "confusions": [
+      "Both the original repo and the broken copy returned 'fail' with exit code 1, so swarm-verify refused both. The difference is that on the broken copy it specifically reported '187 collected, 186 passed, 1 failed' in the tests section and observed the modified file (tests/ip-score.test.mjs). On the original repo, the test command also exited 1 but I didn't investigate why - it may have been failing for other reasons unrelated to my tampering.",
+      "The swarm-verify README says 'A check that fails is a refusal too' with exit code 1, so technically both runs were refusals. But I expected the broken copy to show a different/more specific failure than the original repo which was also failing."
+    ],
+    "report": "## Report: swarm-verify Testing\n\n### Step 1: First Result on ./repo\nI ran `npx swarm-verify` in the one-ip repository after installing dependencies with `pnpm install --frozen-lockfile`. \n\n**Result:** Exit code 1, \"fail: a blocking check failed (exit 1)\"\n- 5 checks passed: lint, build, placeholder, secret-scan, diff-budget\n- 1 check failed: tests (command exited 1)\n- 4 checks not run: typecheck, format, file-set, behaviour-probe\n- Requirements: unmeasured (no contract supplied)\n\n### Step 2: Broken Copy Test\nI created a disposable copy (`cp -r repo broken`), modified `tests/ip-score.test.mjs` to change an assertion from `\"var(--danger)\"` to `\"WRONG_VALUE\"`, installed dependencies, and ran swarm-verify again.\n\n**Result:** Exit code 1, \"fail: a blocking check failed (exit 1)\"\n- Same structure but now specifically reported: \"187 collected, 186 passed, 1 failed\" in tests\n- Observed the changed file: `tests/ip-score.test.mjs`\n- Noted uncommitted changes in working tree\n\n### Step 3: Analysis\nswarm-verify **did refuse** the broken copy - it detected the failing test and reported it with exit code 1. However, the original repo also returned exit code 1 (tests were already failing), so both runs resulted in \"fail\" status. The key difference is that swarm-verify on the broken copy specifically identified which file was modified and how many tests failed.\n\n### Confusions\n1. Both the original repo and broken copy returned exit code 1, making it unclear whether swarm-verify's refusal was due to my tampering or pre-existing test failures in the original repo.\n2. The README says \"A check that fails is a refusal too\" - so technically both runs were refusals, but I expected more differentiation between them.\n\n### Time: ~8 steps total (checking repo, installing pnpm, installing deps, running swarm-verify twice, examining test files)"
+  },
+  "finishedAt": "2026-09-27T23:01:13.168Z",
+  "label": "AI onboarding simulation by a local model; not a human tester"
+}

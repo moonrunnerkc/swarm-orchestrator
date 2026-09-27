@@ -1,0 +1,24 @@
+{
+  "repository": "hoangsonww/Claude-Code-Agent-Monitor",
+  "category": "express",
+  "image": "ubuntu:24.04",
+  "imageDigest": "ubuntu@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3",
+  "model": "qwen3.6:35b-a3b",
+  "version": "1.0.0-rc.7",
+  "steps": 18,
+  "firstResultMs": 132958,
+  "outcome": {
+    "step": 19,
+    "firstResult": true,
+    "firstResultText": "Got a first result from swarm-verify on ./repo. The output showed:\n\n**First Result (clean repo):**\n- **workspace**: /home/dev/repo (fc4d1cbf2e4a, clean)\n- **project**: node, npm, package-lock.json\n- **command**: npm run --silent test ran successfully in 25.6s: 1349 collected, 1347 passed, 0 failed, 2 skipped (exit 0)\n- **checks**: passed 6 (format, tests, build, placeholder, secret-scan, diff-budget), failed 0, not run 4 (typecheck, lint, file-set, behaviour-probe)\n- **execution**: restricted: commands ran on this host with a built environment and no credentials\n- **requirements**: unmeasured: no requirement contract was supplied\n- **challenges**: none: no check was challenged\n- **result**: regression-only pass: the declared checks passed on this tree; task correctness is unmeasured (exit 0)\n- **evidence**: bundle exported to /root/.swarm/sessions/20260927T230220-1852c7/bundle\n\nThe tool exited with code 0, indicating a pass.",
+    "brokenCopyRefused": true,
+    "confusions": [
+      "The swarm-verify README mentions it 'exits 4 when [dependencies] are not' installed, but I didn't encounter this - dependencies were properly installed before running.",
+      "The output mentions 'file-set: no scope was authorised: this run had no planner to declare one' which is a bit confusing - it seems related to agent/planner context that wasn't present in my manual run.",
+      "The signing message about 'Secret Service keyring would not take a new key' suggests some desktop integration features aren't available in this headless environment, but the tool still worked."
+    ],
+    "report": "## Report: swarm-verify Testing on hoangsonww/Claude-Code-Agent-Monitor\n\n### Step 1: First Result (Clean Repository)\n\nI successfully ran `npx swarm-verify` on the clean ./repo directory after installing dependencies with `npm ci`. The tool:\n\n1. **Discovered the project**: Identified it as a Node.js/npm project with package-lock.json\n2. **Found and ran the test command**: `npm run --silent test` which executes `node --test server/__tests__/*.test.js && cd client && npm test`\n3. **Reported results**:\n   - Tests: 1349 collected, 1347 passed, 0 failed, 2 skipped (exit 0)\n   - Checks passed: 6 (format, tests, build, placeholder, secret-scan, diff-budget)\n   - Checks not run: 4 (typecheck, lint, file-set, behaviour-probe)\n   - **Result**: `regression-only pass` (exit 0)\n\nThe tool correctly reported that the repository's own checks passed on this tree, but noted that \"task correctness is unmeasured\" since no requirement contract was supplied.\n\n### Step 2: Broken Copy Test\n\nI created a disposable copy (`cp -r repo broken`) and intentionally broke one test by modifying an assertion in `server/__tests__/env-path.test.js` (changed the expected regex from `/^CLAUDE_HOME=\\\\/second$/m` to `/^CLAUDE_HOME=\\\\wrong$/m`).\n\nAfter installing dependencies in the broken copy, I ran swarm-verify again. The tool:\n\n1. **Detected uncommitted changes**: Workspace showed \"working tree has uncommitted changes\"\n2. **Ran tests and detected failure**: 1349 collected, 1346 passed, **1 failed**, 2 skipped (exit 1)\n3. **Identified the failing check**: `tests: 1349 collected, 1346 passed, 1 failed, 2 skipped (exit 1)`\n4. **Refused with exit code 1**: Result line read `fail: a blocking check failed (exit 1)`\n\n**The broken copy was successfully refused.** The tool correctly identified that a blocking test check failed and exited with code 1.\n\n### Summary\n\n- ✅ Got a first result from swarm-verify on ./repo (regression-only pass, exit 0)\n- ✅ Broken copy was refused (fail: a blocking check failed, exit 1)\n- ⚠️ Some confusion around \"file-set\" scope authorization and signing keyring messages, but these don't affect core functionality\n\n### Time Taken\n\nApproximately 6 steps:\n1. Check directory structure\n2. Examine package.json\n3. Verify Node.js and git prerequisites\n4. Install dependencies (npm ci)\n5. Run swarm-verify on clean repo\n6. Create broken copy, modify test, install deps, run swarm-verify\n\nTotal wall time was roughly 2-3 minutes including dependency installation and test execution."
+  },
+  "finishedAt": "2026-09-27T23:07:27.647Z",
+  "label": "AI onboarding simulation by a local model; not a human tester"
+}
