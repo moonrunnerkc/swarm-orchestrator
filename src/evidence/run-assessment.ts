@@ -2,9 +2,10 @@ import { z } from "zod";
 import type { AgentLoopOutcome } from "../core/loop.ts";
 import type { GatesEngineRun } from "../gates/engine.ts";
 import type { JsonValue } from "./canonical-json.ts";
+import { asJsonValue } from "./canonical-json.ts";
 import type { EvidenceRecorder } from "./session.ts";
 import type { TaskContract } from "./task-contract.ts";
-import { type RunVerdict, runVerdict } from "./verdict.ts";
+import { type RunVerdict, runVerdict, runVerdictSchema } from "./verdict.ts";
 
 export const assessmentInputsSchema = z.object({
   policy: z.enum(["run-acceptance-v1", "run-acceptance-v2"]),
@@ -79,6 +80,80 @@ export async function recordRunAssessment(
     actor: "harness",
     provenance: ["tool-output"],
     payload: { inputs, verdict: { ...verdict } } as JsonValue,
+  });
+  return verdict;
+}
+
+/** Project final goal acceptance onto the recorded worker verdict without replacing its assurances. */
+export async function recordGoalAssessment(
+  evidence: EvidenceRecorder,
+  verificationDigest: string,
+): Promise<RunVerdict> {
+  const prior = evidence.records().findLast((record) => record.type === "run-assessment");
+  if (prior === undefined)
+    throw new Error("final goal assessment requires a recorded worker assessment");
+  const base = z
+    .object({ inputs: assessmentInputsSchema, verdict: runVerdictSchema })
+    .parse(evidence.payloads().get(prior.payloadDigest));
+  const captured = evidence
+    .records()
+    .find(
+      (record) =>
+        record.type === "independent-verification" &&
+        record.payloadDigest === verificationDigest &&
+        record.sequence > prior.sequence,
+    );
+  if (captured === undefined)
+    throw new Error("final goal assessment needs a subsequent independent verification record");
+  const independent = z
+    .object({
+      certificationPolicy: z.literal("goal-obligations-v1"),
+      verified: z.boolean(),
+      task: z.enum(["accepted", "rejected", "unjudged", "vacuous"]),
+      advice: z.string(),
+      sourcePatchDigest: z.string(),
+      sourceBase: z.string(),
+    })
+    .parse(evidence.payloads().get(verificationDigest));
+  const diffRecord = evidence
+    .records()
+    .findLast((record) => record.type === "workspace-diff" && record.sequence < prior.sequence);
+  const diff = z
+    .object({ rawPatchDigest: z.string() })
+    .parse(evidence.payloads().get(diffRecord?.payloadDigest ?? ""));
+  const seal = evidence.records().find((record) => record.type === "run-spec-sealed");
+  const spec = z
+    .object({ spec: z.object({ repository: z.object({ baseCommit: z.string() }) }) })
+    .parse(evidence.payloads().get(seal?.payloadDigest ?? ""));
+  if (
+    diff.rawPatchDigest !== independent.sourcePatchDigest ||
+    spec.spec.repository.baseCommit !== independent.sourceBase
+  )
+    throw new Error(
+      "final independent verification does not describe the worker's assessed source",
+    );
+  const verdict: RunVerdict = {
+    ...base.verdict,
+    task: independent.task === "vacuous" ? "unjudged" : independent.task,
+    acceptable: base.verdict.acceptable && independent.verified,
+    reasons: {
+      ...base.verdict.reasons,
+      task: independent.advice || `pinned goal checks: ${independent.task}`,
+    },
+  };
+  await evidence.record({
+    type: "run-assessment",
+    actor: "harness",
+    provenance: ["tool-output"],
+    payload: asJsonValue({
+      inputs: {
+        policy: "run-acceptance-v3",
+        previousAssessment: prior.payloadDigest,
+        independentRecord: verificationDigest,
+        sourceRecord: diffRecord?.payloadDigest,
+      },
+      verdict,
+    }),
   });
   return verdict;
 }

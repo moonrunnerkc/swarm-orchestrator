@@ -1,5 +1,7 @@
 #!/usr/bin/env node
+import { digestOfBytes } from "./evidence/canonical-json.ts";
 // Check the runtime before loading the command composition.
+import { recordGoalAssessment } from "./evidence/run-assessment.ts";
 import "./node-floor-check.ts";
 
 import { spawn } from "node:child_process";
@@ -46,15 +48,24 @@ import { verifyBundle } from "./cli-verify.ts";
 import type { StopReason } from "./core/termination.ts";
 import { readBundle } from "./evidence/bundle.ts";
 import { buildEvidenceDag } from "./evidence/dag.ts";
+import {
+  declareGoalContract,
+  freezeGoalContract,
+  goalImmutablePaths,
+} from "./evidence/goal-contract.ts";
 import { createRecordingModelClient } from "./evidence/model-call-recording.ts";
 import { replayBundle } from "./evidence/replay.ts";
 import { collectSessions, describeCollection, olderThanMs } from "./evidence/retention.ts";
 import { createSessionId, defaultSessionRoot, openEvidenceSession } from "./evidence/session.ts";
+import { harnessChildEnvironment } from "./exec/child-environment.ts";
 import { parseIsolationOption } from "./exec/isolation-option.ts";
 import { recordedContainerBackend } from "./exec/runtime-resource.ts";
 import { createFileSetRegistry } from "./gates/file-set.ts";
 import { requireBaseCommit } from "./gates/git-workspace.ts";
+import { verifyIndependently } from "./gates/independent-verification.ts";
+import { createNodeCommandRunner } from "./gates/node-command-runner.ts";
 import { summarizeRatchet } from "./gates/ratchet-summary.ts";
+import { diffAgainstBase } from "./gates/scratch-index.ts";
 import { diagnose, remediesFor, runtimeFinding } from "./install/health.ts";
 import { inspectInstall } from "./install/inspect.ts";
 import { describeInstall } from "./install/report.ts";
@@ -222,6 +233,12 @@ async function run(options: RunCommand): Promise<number> {
 
   await offerInit(options.workspace);
   await offerApprovalMode(approvalOfferOnDisk(options.workspace));
+  const presetGoal =
+    options.goalContract === undefined
+      ? undefined
+      : freezeGoalContract(JSON.parse(await readFile(options.goalContract, "utf8"))).contract;
+  if (options.preset !== undefined && presetGoal?.preset?.kind !== options.preset)
+    throw new Error("preset selection must match the sealed goal contract");
   const settings = await settingsFor(options.workspace, {
     model: options.modelSpec,
     maxSteps: options.maxSteps,
@@ -352,8 +369,28 @@ async function run(options: RunCommand): Promise<number> {
 
   let exporting = false;
   try {
-    const { loop, gates, green, verdict } = await runAgentTask({
+    if (presetGoal !== undefined) await declareGoalContract(evidence, presetGoal);
+    const taskRun = await runAgentTask({
       task: options.task,
+      ...(options.escalationModel === undefined
+        ? {}
+        : {
+            escalation: {
+              settings: {
+                target: options.escalationModel,
+                trigger: "repeated-failure" as const,
+                maximum: 1 as const,
+                reservedTokens: 4096,
+                reserveMs: 30000,
+              },
+              target: createRecordingModelClient(
+                registry.create(parseModelSpec(options.escalationModel)),
+                evidence,
+                { transcript: "components" },
+              ),
+              previousCount: options.recovery?.escalationCount ?? 0,
+            },
+          }),
       ...(options.recovery === undefined
         ? options.maxTokens === undefined
           ? {}
@@ -363,6 +400,35 @@ async function run(options: RunCommand): Promise<number> {
             maxTokens: options.recovery.remainingTokens,
             previousSpec: options.recovery.previousSpec,
             previousCriteria: options.recovery.previousCriteria,
+          }),
+      ...(presetGoal === undefined
+        ? {}
+        : {
+            contract: {
+              version: 3 as const,
+              scopeKind: "workspace" as const,
+              taskId: "preset",
+              objective: options.task,
+              dependsOn: [],
+              allowedPaths: ["**"],
+              immutablePaths: [...goalImmutablePaths(presetGoal)],
+              allowedTools: ["read", "write", "edit", "list", "search", "shell"] as (
+                | "read"
+                | "write"
+                | "edit"
+                | "list"
+                | "search"
+                | "shell"
+              )[],
+              network: isolation === null ? ("unrestricted" as const) : ("denied" as const),
+              requiredChecks: [],
+              budget: {
+                maxSteps: settings.maxSteps,
+                maxWallMs: (settings.maxWallMinutes ?? 30) * 60000,
+              },
+              riskTier: "medium" as const,
+              scopeAuthority: "human" as const,
+            },
           }),
       workspace: options.workspace,
       runStorePath: runStorePath(),
@@ -395,6 +461,53 @@ async function run(options: RunCommand): Promise<number> {
       ...(diffBudget === undefined ? {} : { diffBudget }),
     });
 
+    const { loop, gates } = taskRun;
+    let { green, verdict } = taskRun;
+    if (presetGoal !== undefined) {
+      const commands = createNodeCommandRunner(
+        clock,
+        harnessChildEnvironment(),
+        undefined,
+        interruption.signal,
+      );
+      const finalPatch = await diffAgainstBase({
+        workspaceRoot: options.workspace,
+        baseRef: baseCommit,
+      });
+      const checked = await verifyIndependently({
+        repositoryRoot: options.workspace,
+        checkoutRoot: evidence.directory,
+        baseCommit,
+        patch: finalPatch,
+        commands,
+        clock,
+        goal: { contract: presetGoal, evidence, tree: "" },
+        installDependencies: options.installDependencies === true,
+        commandsForCheckout: async (checkout) =>
+          createNodeCommandRunner(
+            clock,
+            harnessChildEnvironment(),
+            isolation === null
+              ? undefined
+              : recordedContainerBackend({ ...isolation, workspaceRoot: checkout }, evidence),
+            interruption.signal,
+          ),
+      });
+      const finalVerification = await evidence.record({
+        type: "independent-verification",
+        actor: "harness",
+        provenance: ["tool-output"],
+        payload: JSON.parse(
+          JSON.stringify({
+            ...checked,
+            sourcePatchDigest: digestOfBytes(finalPatch),
+            sourceBase: baseCommit,
+          }),
+        ),
+      });
+      verdict = await recordGoalAssessment(evidence, finalVerification.record.payloadDigest);
+      green = verdict.acceptable;
+    }
     reportGates(gates.outcome, evidence, ui.note);
 
     // Every finished run is one more sample the router learns from, and the ratchet numerics
@@ -601,6 +714,9 @@ async function resumeExecution(
       "--isolation",
       context.spec.isolation.backend === "host" ? "none" : context.spec.isolation.backend,
       ...(context.spec.taskOracle === null ? [] : ["--oracle", context.spec.taskOracle.command]),
+      ...(context.spec.escalation === undefined
+        ? []
+        : ["--escalate-model", context.spec.escalation.target]),
       "--attempts",
       String(context.remainingAttempts),
       "--max-steps",
@@ -617,6 +733,7 @@ async function resumeExecution(
     ...parsed,
     recovery: {
       history: context.history,
+      escalationCount: context.escalationCount,
       remainingTokens: context.remainingTokens,
       remainingWallMs: context.remainingWallMs,
       deadline: context.deadline,

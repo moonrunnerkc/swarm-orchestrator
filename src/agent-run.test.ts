@@ -9,10 +9,18 @@ import { createSystemClock } from "./cli-runtime-inputs.ts";
 import type { Clock } from "./core/clock.ts";
 import type { ModelClient, ModelRequest } from "./core/model-client.ts";
 import { createFixedRandom, createTestClock } from "./core/test-doubles.ts";
-import type { JsonValue } from "./evidence/canonical-json.ts";
+import { buildAttestation, signAttestation } from "./evidence/attestation.ts";
+import { bundleSourceFromRecorder, exportBundle } from "./evidence/bundle.ts";
+import { asJsonValue, digestOfBytes, type JsonValue } from "./evidence/canonical-json.ts";
+import { declareGoalContract } from "./evidence/goal-contract.ts";
 import { createRecordingModelClient } from "./evidence/model-call-recording.ts";
+import { recordGoalAssessment } from "./evidence/run-assessment.ts";
 import { type EvidenceRecorder, openEvidenceSession } from "./evidence/session.ts";
+import { createEphemeralSigningKey } from "./evidence/signing.ts";
+import { harnessChildEnvironment } from "./exec/child-environment.ts";
 import { createFileSetRegistry } from "./gates/file-set.ts";
+import { verifyIndependently } from "./gates/independent-verification.ts";
+import { createNodeCommandRunner } from "./gates/node-command-runner.ts";
 import {
   createFixtureModelClient,
   type FixtureTurn,
@@ -620,3 +628,96 @@ it("dispatches one explicit alternate after repeated observed failure and stops 
   ).toHaveLength(1);
   expect(result.green).toBe(false);
 }, 30000);
+
+it.each(["hello", "wrong"])(
+  "binds final goal %s to the recorded worker verdict and attestation",
+  async (expected) => {
+    const baseCommit = (await run("git", ["rev-parse", "HEAD"], { cwd: workspace })).stdout.trim();
+    const contract = await declareGoalContract(evidence, {
+      version: 1,
+      goal: "Preserve greeting",
+      requirements: [
+        { id: "greeting", description: "The greeting is checked", checks: ["greeting"] },
+      ],
+      checks: [
+        {
+          id: "greeting",
+          command: "pinned greeting",
+          author: "user",
+          exposure: "withheld",
+          artifacts: [],
+          behavior: {
+            kind: "cli",
+            cwd: ".",
+            timeoutMs: 3000,
+            maxOutputBytes: 4000,
+            toolchain: "node",
+            network: "inherit",
+            argv: [
+              "node",
+              "--input-type=module",
+              "-e",
+              "import {greet} from './src/greet.js';console.log(greet())",
+            ],
+            stdin: "",
+            exitCode: 0,
+            stdout: [{ kind: "equals", value: `${expected}\n` }],
+            stderr: [],
+          },
+        },
+      ],
+      immutablePaths: ["src/greet.test.js"],
+    });
+    const worker = await task([respondWithText("done")], { baseRef: baseCommit });
+    const independent = await verifyIndependently({
+      repositoryRoot: workspace,
+      baseCommit,
+      patch: "",
+      clock,
+      commands: createNodeCommandRunner(clock, harnessChildEnvironment()),
+      gateOptions: { commandOverrides: gateOverrides },
+      goal: { contract, evidence, tree: "" },
+    });
+    const observed = await evidence.record({
+      type: "independent-verification",
+      actor: "harness",
+      provenance: ["tool-output"],
+      payload: asJsonValue({
+        ...independent,
+        sourcePatchDigest: digestOfBytes(""),
+        sourceBase: baseCommit,
+      }),
+    });
+    const verdict = await recordGoalAssessment(evidence, observed.record.payloadDigest);
+    expect(verdict.acceptable).toBe(worker.green && expected === "hello");
+    expect(verdict.task).toBe(expected === "hello" ? "accepted" : "rejected");
+    const key = createEphemeralSigningKey();
+    const spec = evidence.records().find((record) => record.type === "run-spec-sealed");
+    if (!spec) throw Error("missing run seal");
+    const attestation = signAttestation(
+      buildAttestation({
+        runId: evidence.sessionId,
+        specDigest: spec.payloadDigest,
+        sourceCommit: baseCommit,
+        patchDigest: digestOfBytes(""),
+        chainHead: evidence.head().hash,
+        toolVersion: "test",
+        executionMode: verdict.executionTrust,
+        verdict: { ...verdict },
+      }),
+      key,
+    );
+    const destination = join(scratch, "goal-bundle");
+    await exportBundle({
+      source: bundleSourceFromRecorder(evidence),
+      destination,
+      signingKey: key,
+      clock,
+      attestation,
+    });
+    const verified = await run(process.execPath, [join(destination, "verify.mjs"), destination]);
+    expect(verified.stdout).toContain("bundle verified");
+    expect(verified.stdout).toContain("attestation bound to this bundle");
+  },
+  30000,
+);

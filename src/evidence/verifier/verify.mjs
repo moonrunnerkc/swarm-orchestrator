@@ -1201,6 +1201,51 @@ function collectChecks(directory) {
     const assessment = payloads.get(entry.payloadDigest);
     const inputs = assessment?.inputs;
     const verdict = assessment?.verdict;
+    if (inputs?.policy === "run-acceptance-v3") {
+      const prior = records.filter((candidate) => candidate.sequence < entry.sequence);
+      const previous = prior.filter((candidate) => candidate.type === "run-assessment").at(-1);
+      const verification = prior.find(
+        (candidate) =>
+          candidate.type === "independent-verification" &&
+          candidate.payloadDigest === inputs.independentRecord &&
+          candidate.sequence > (previous?.sequence ?? -1),
+      );
+      const source = prior.find(
+        (candidate) =>
+          candidate.type === "workspace-diff" &&
+          candidate.payloadDigest === inputs.sourceRecord &&
+          candidate.sequence < (previous?.sequence ?? -1),
+      );
+      const base = payloads.get(previous?.payloadDigest);
+      const observed = payloads.get(verification?.payloadDigest);
+      const diff = payloads.get(source?.payloadDigest);
+      const sealed = payloads.get(
+        prior.find((candidate) => candidate.type === "run-spec-sealed")?.payloadDigest,
+      );
+      const task = observed?.task === "vacuous" ? "unjudged" : observed?.task;
+      const expected = {
+        ...base?.verdict,
+        task,
+        acceptable: base?.verdict?.acceptable === true && observed?.verified === true,
+        reasons: {
+          ...base?.verdict?.reasons,
+          task: observed?.advice || `pinned goal checks: ${observed?.task}`,
+        },
+      };
+      record(
+        `run assessment ${entry.sequence} re-derived`,
+        previous?.payloadDigest === inputs.previousAssessment &&
+          ["run-acceptance-v1", "run-acceptance-v2"].includes(base?.inputs?.policy) &&
+          verification !== undefined &&
+          source !== undefined &&
+          observed?.certificationPolicy === "goal-obligations-v1" &&
+          diff?.rawPatchDigest === observed?.sourcePatchDigest &&
+          sealed?.spec?.repository?.baseCommit === observed?.sourceBase &&
+          canonicalJson(verdict) === canonicalJson(expected),
+        "final pinned goal verdict is conjoined with the worker assessment at the same source",
+      );
+      continue;
+    }
     let consistent =
       ["run-acceptance-v1", "run-acceptance-v2"].includes(inputs?.policy) &&
       typeof verdict?.acceptable === "boolean";
