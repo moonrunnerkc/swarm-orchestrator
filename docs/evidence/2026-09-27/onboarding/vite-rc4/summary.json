@@ -1,0 +1,24 @@
+{
+  "repository": "zhihui-hu/one-ip",
+  "category": "vite",
+  "image": "ubuntu:24.04",
+  "imageDigest": "ubuntu@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3",
+  "model": "qwen3.6:35b-a3b",
+  "version": "1.0.0-rc.4",
+  "steps": 16,
+  "firstResultMs": 19967,
+  "outcome": {
+    "step": 17,
+    "firstResult": true,
+    "firstResultText": "Got a first result from swarm-verify on ./repo. The output showed: workspace at /home/dev/repo, project type node/pnpm, scope root manifest. The test command (wrangler deploy --dry-run + node test) ran but exited 1. Results: 5 checks passed (lint, build, placeholder, secret-scan, diff-budget), 1 failed (tests), 4 not run (typecheck, format, file-set, behaviour-probe). Result was \"fail: a blocking check failed (exit 1)\". Evidence bundle exported to /root/.swarm/sessions/... Requirements were unmeasured (no contract supplied).",
+    "brokenCopyRefused": false,
+    "confusions": [
+      "swarm-verify did not 'refuse' the broken copy in the sense of refusing to run - it ran and reported the test failure. The README shows a demo where changing one byte of a record causes refusal, but that's about bundle integrity tampering, not test failures. When I broke a test file, swarm-verify still executed and reported 'result: fail' with details about which test failed (186 passed, 1 failed). It detected the uncommitted changes ('working tree has uncommitted changes') and listed the changed file, but didn't refuse to run.",
+      "The distinction between 'refusing' (integrity check failure) vs 'failing' (test assertion failure) is unclear from the README. The tool seems designed to report what happened rather than block execution.",
+      "I expected swarm-verify to detect the broken test and somehow 'refuse' it, but it just ran normally and reported the failure like any CI would."
+    ],
+    "report": "## Report: swarm-verify First Experience\n\n### Step 1: First Result on ./repo\n**Completed.** Ran `npx swarm-verify` in ./repo after installing pnpm and dependencies.\n\n**Result:** Exit code 4 initially (incomplete - pnpm not on PATH), then exit code 1 (fail) after fixing PATH.\n\nThe tool discovered:\n- Workspace: /home/dev/repo (clean tree)\n- Project type: node, pnpm\n- Test command: `wrangler deploy --dry-run && node --test tests/*.test.mjs`\n- The test command ran but exited 1\n- **5 checks passed:** lint, build, placeholder, secret-scan, diff-budget\n- **1 check failed:** tests (the command exited 1)\n- **4 checks not run:** typecheck, format, file-set, behaviour-probe\n- Requirements: unmeasured (no contract supplied)\n- Result: \"fail: a blocking check failed (exit 1)\"\n\n### Step 2: Broken Copy Test\n**Completed but did not get refusal.** Created disposable copy `broken/`, modified `tests/ip-score.test.mjs` to expect wrong value (`var(--success)` instead of `var(--danger)` for scores 0 and 44).\n\nRan swarm-verify on broken copy. Output showed:\n- Detected uncommitted changes (\"working tree has uncommitted changes\")\n- Listed changed file: `tests/ip-score.test.mjs`\n- Tests ran: 187 collected, 186 passed, **1 failed**\n- Result: \"fail: a blocking check failed (exit 1)\"\n\n**swarm-verify did NOT refuse the broken copy.** It still executed and reported the test failure normally. The README's demo shows refusal when \"one byte of one record changed\" in the bundle itself (integrity tampering), not when tests are broken.\n\n### Confusions\n1. **Refusal vs Failure:** swarm-verify distinguishes between integrity verification failures (refusal) and test assertion failures (reporting). The README's demo GIF shows refusal for bundle tampering, but breaking a test just gets reported as a failure.\n2. **No requirement contract:** Without `--goal-contract`, requirements are \"unmeasured\" - the tool can't judge if passing tests mean the work was done correctly.\n3. **pnpm PATH issue:** Required manual intervention to get pnpm on PATH for child processes.\n\n### Time: ~8 steps total\n1. Check directory and Node version\n2. First swarm-verify run (failed - no pnpm)\n3. Install pnpm globally\n4. Find npm prefix\n5. Add pnpm to PATH\n6. Install dependencies with pnpm\n7. Second swarm-verify run (got result)\n8. Examine package.json scripts\n9. List test files\n10. Create broken copy and examine test file\n11. Break the test\n12. Run swarm-verify on broken copy\n"
+  },
+  "finishedAt": "2026-09-27T21:34:01.565Z",
+  "label": "AI onboarding simulation by a local model; not a human tester"
+}
