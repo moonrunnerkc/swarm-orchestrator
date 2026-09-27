@@ -125,3 +125,17 @@ study of a convenience population selected by the rule above.
   and is not used. The script now waits for the budget between accounts, retries a failed
   search, and stops rather than record a silent zero; the frame was drawn again with it on
   the same day. Nothing above this line changed.
+- **2026-09-27, adjudication procedure, fixed before any selected pull request was
+  adjudicated.** The reviewer role is a local model (recorded per row with its prompt digest)
+  that is handed the title, body, linked issues and changed file names, may list and read the
+  repository at the head, and is refused every test file the pull request changed. It writes
+  one check and one command, or says the requirement is not executable. The check is written
+  once into the clone and executed in a network-disabled container on the head and on the
+  base; a check that does not fail on the base, or that could not run on either commit (a
+  missing file, a command that could not start), leaves the row unjudged. A failure on the
+  head is a violated requirement only when a second, code-blind call quotes, verbatim from the
+  requirement text, the sentence each failing assertion comes from; the harness checks that
+  every quote is really in the text. A failing assertion the reviewer added beyond the text
+  leaves the row unjudged, since the protocol counts only a demonstrated violated requirement.
+  Implementation: `scripts/ai-pr-study/adjudicate.mjs`; the verifier arm never reads this
+  arm's result and this arm never reads the verifier's verdict.
