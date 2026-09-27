@@ -19,6 +19,10 @@ execution restrictions and signer trust remain separate. A signature does not es
 tests or a trustworthy execution machine. [The source-upgrade guide](broad-use.md) documents
 CLI, local HTTP and Playwright instruments, presets, package scope and their limits.
 
+Browser acceptance requires a sealed `instrument` and an immutable Playwright container runtime.
+Project `argv` reports remain unjudged. Unavailable package checks remain visible; missing
+required checks prevent complete verification. See the linked broad-use guide for migration.
+
 ## A pass is a claim until it is shown able to fail
 
 Real output, the bond section of `swarm gates` over the three-test project in

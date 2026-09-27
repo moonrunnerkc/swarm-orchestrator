@@ -23,6 +23,10 @@ repeated `--package`, and `--summary`. These operations need no model credential
 [broad-use guide](broad-use.md) gives exact comparison defaults, support limits and examples;
 the [completion ledger](upgrade-completion.md) binds installed-package observations to source.
 
+Browser acceptance requires a sealed `instrument` and an immutable Playwright container runtime.
+Project `argv` reports remain unjudged. Unavailable package checks remain visible; missing
+required checks prevent complete verification. See the linked broad-use guide for migration.
+
 Every `swarm verify`, `swarm ci` and `swarm gates` below reads the same as `swarm-verify verify`,
 `swarm-verify ci` and `swarm-verify gates`, and `src/swarm-verify.test.ts` holds the two binaries
 to printing the same bytes over the same committed bundle. The package carries no provider,

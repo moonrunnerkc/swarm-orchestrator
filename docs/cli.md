@@ -187,6 +187,10 @@ swarm replay <bundle>            # read a bundle back
 Full explanation in [verifying.md](verifying.md). Source defaults, supported runners and
 preset/adapter walkthroughs are in [broad-use.md](broad-use.md).
 
+Browser acceptance requires a sealed `instrument` and an immutable Playwright container runtime.
+Project `argv` reports remain unjudged. Unavailable package checks remain visible; missing
+required checks prevent complete verification. See the linked broad-use guide for migration.
+
 ## Interrupted runs
 
 ```

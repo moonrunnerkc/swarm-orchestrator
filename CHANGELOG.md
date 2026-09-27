@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Fixed
+
+- Rejected acceptance authority for candidate-controlled Playwright JSON. Sealed browser
+  instruments use harness configuration, immutable image dependencies and exact test identities.
+- Retained unavailable package checks through sealing, final assessment and reviewer reports,
+  separating absent optional tools from unavailable required checks.
+- Provisioned Chromium and the isolated browser runtime in clean Linux gate workflows;
+  nightly failure notifications no longer require an optional repository label.
+- Reopened the prior completion claim after the independent audit. Corrective delivery and
+  release status are tracked in [audit corrections](docs/upgrade-audit-corrections.md).
+
 ### Added
 
 - Shared model-free branch/PR snapshot verification, reviewer Markdown and versioned JSON source
