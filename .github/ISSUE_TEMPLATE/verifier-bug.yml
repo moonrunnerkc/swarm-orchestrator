@@ -1,0 +1,68 @@
+name: swarm-verify bug
+description: The verifier did something wrong, refused something it should not have, or accepted something it should not have.
+labels: ["verifier", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks. A minimal reproduction and the scrubbed evidence bundle turn a report into a fix. Never paste keys, tokens or private code; the bundle's `manifest.json` and `summary.md` are usually enough.
+  - type: input
+    id: version
+    attributes:
+      label: swarm-verify version
+      description: Output of `npx swarm-verify --version`, or the Action commit or tag.
+      placeholder: 1.0.0
+    validations:
+      required: true
+  - type: dropdown
+    id: route
+    attributes:
+      label: Route
+      options:
+        - npx swarm-verify (check)
+        - swarm-verify ci
+        - GitHub Action
+        - Claude Code hook
+        - MCP server
+        - pre-commit hook
+        - verify or verdict
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: Source scope
+      description: Repository, commit or PR, and package scope if any (a public link where possible).
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: The exact commands, in order, from a fresh checkout.
+      render: sh
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual
+      description: Exit code and the verifier's output.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Scrubbed evidence
+      description: The bundle's `manifest.json`, `summary.md` or the JSON report, with anything sensitive removed.
+      render: json
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: Node 22.22, macOS 15, docker 29.5

@@ -1,0 +1,46 @@
+name: triage
+
+# The response promise in SUPPORT.md is 24 hours to a meaningful first response. This runs
+# hourly, and any open issue with no comment by a maintainer after 24 hours is labelled
+# overdue, so an unanswered report shows as unanswered rather than waiting quietly. The label
+# is removed once a maintainer has commented. It never closes anything and never answers.
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+  issues:
+    types: [opened, reopened]
+
+permissions:
+  issues: write
+
+jobs:
+  overdue:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const maintainers = new Set(["moonrunnerkc"]);
+            const hours = 24;
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner, repo: context.repo.repo, state: "open", per_page: 100,
+            });
+            for (const issue of issues) {
+              if (issue.pull_request) continue;
+              if (maintainers.has(issue.user.login)) continue;
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner: context.repo.owner, repo: context.repo.repo, issue_number: issue.number, per_page: 100,
+              });
+              const answered = comments.some((comment) => maintainers.has(comment.user.login));
+              const ageHours = (Date.now() - new Date(issue.created_at).getTime()) / 3_600_000;
+              const labels = issue.labels.map((label) => (typeof label === "string" ? label : label.name));
+              const overdue = !answered && ageHours > hours;
+              if (overdue && !labels.includes("overdue")) {
+                await github.rest.issues.addLabels({ owner: context.repo.owner, repo: context.repo.repo, issue_number: issue.number, labels: ["overdue"] });
+                core.notice(`#${issue.number} is ${Math.floor(ageHours)}h old with no maintainer response`);
+              }
+              if (answered && labels.includes("overdue")) {
+                await github.rest.issues.removeLabel({ owner: context.repo.owner, repo: context.repo.repo, issue_number: issue.number, name: "overdue" }).catch(() => {});
+              }
+            }
