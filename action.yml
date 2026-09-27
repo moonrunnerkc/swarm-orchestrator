@@ -25,6 +25,9 @@ inputs:
   require-task:
     description: Treat a regression-only pass (no requirement contract) as a failure rather than a pass with limited scope.
     default: "false"
+  challenges:
+    description: With a goal contract, whether its requirement checks are challenged. `off`, `report` (record findings) or `required` (refuse on a gap).
+    default: report
   comment:
     description: Post and update one comment on the pull request.
     default: "true"
@@ -125,6 +128,7 @@ runs:
         SWARM_INPUT_PACKAGES: ${{ inputs.packages }}
         SWARM_INPUT_INSTALL: ${{ inputs.install }}
         SWARM_INPUT_REQUIRE_TASK: ${{ inputs.require-task }}
+        SWARM_INPUT_CHALLENGES: ${{ inputs.challenges }}
         SWARM_INPUT_COMMENT: ${{ inputs.comment }}
         SWARM_INPUT_TOKEN: ${{ inputs.github-token }}
         SWARM_INPUT_WORKSPACE: ${{ inputs.workspace }}

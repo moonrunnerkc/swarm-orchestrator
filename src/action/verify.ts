@@ -208,6 +208,10 @@ interface CiReport {
   readonly bundleDirectory?: string;
   readonly checks?: readonly { readonly id: string; readonly status: string }[];
   readonly sourceIdentity?: { readonly comparisonBase?: string; readonly patchDigest?: string };
+  readonly challenges?: {
+    readonly satisfied?: boolean;
+    readonly requirements?: readonly { readonly id: string; readonly outcome: string }[];
+  };
 }
 
 /** Run the verification and write everything a later step reads. */
@@ -274,6 +278,7 @@ export function runActionVerify(
       packages: [...context.inputs.packages],
       install: context.inputs.install,
       requireTask: context.inputs.requireTask,
+      challenges: context.inputs.challenges,
     },
     execution: {
       eventName: context.eventName,
@@ -312,6 +317,7 @@ export function runActionVerify(
         task: null,
         unmeasured: [],
         reason: reason.slice(0, 2000),
+        challenges: null,
       },
     });
   }
@@ -330,6 +336,7 @@ export function runActionVerify(
         task: null,
         unmeasured: [],
         reason: `the pull request head moved from ${source.eventHead} to ${source.headChanged} before the test merge was read; rerun on the current head`,
+        challenges: null,
       },
     });
   }
@@ -361,8 +368,10 @@ export function runActionVerify(
   ];
   if (context.inputs.isolation === "docker")
     args.push("--isolation", `docker:${context.inputs.image}`, "--require-isolation");
-  if (context.inputs.goalContract !== null)
+  if (context.inputs.goalContract !== null) {
     args.push("--goal-contract", resolve(context.inputs.goalContract));
+    args.push("--challenges", context.inputs.challenges);
+  }
   if (context.inputs.oracle !== null) args.push("--oracle", context.inputs.oracle);
   for (const unit of context.inputs.packages) args.push("--package", unit);
   if (context.inputs.install) args.push("--install");
@@ -459,8 +468,31 @@ export function runActionVerify(
         parsed === null
           ? `the verifier exited ${ran.status} without a report; see diagnostic.txt in the evidence artifact`
           : (parsed.refusal ?? (parsed.verified ? null : (parsed.advice ?? null))),
+      challenges: challengesOf(parsed),
     },
   });
+}
+
+const challengeOutcomes = [
+  "detected",
+  "gap",
+  "invalid-evidence",
+  "unjudged",
+  "inapplicable",
+] as const;
+
+function challengesOf(parsed: CiReport | null): Verdict["decision"]["challenges"] {
+  const requirements = parsed?.challenges?.requirements;
+  if (requirements === undefined) return null;
+  return {
+    satisfied: parsed?.challenges?.satisfied === true,
+    requirements: requirements.map((entry) => ({
+      id: entry.id,
+      outcome: (challengeOutcomes as readonly string[]).includes(entry.outcome)
+        ? (entry.outcome as (typeof challengeOutcomes)[number])
+        : "unjudged",
+    })),
+  };
 }
 
 /** Write the step's outputs and its summary the way the runner reads them. */

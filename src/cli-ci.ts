@@ -18,7 +18,10 @@ import { recordedContainerBackend } from "./exec/runtime-resource.ts";
 import { acceptancePackageExecutor } from "./gates/acceptance-package.ts";
 import { resolveChangeSource } from "./gates/change-source.ts";
 import { resolveGithubPullRequest } from "./gates/github-source.ts";
-import { verifyIndependently } from "./gates/independent-verification.ts";
+import {
+  type IndependentVerification,
+  verifyIndependently,
+} from "./gates/independent-verification.ts";
 import { createNodeCommandRunner } from "./gates/node-command-runner.ts";
 import { pathsInPatch } from "./gates/patch-paths.ts";
 import { exitCodes } from "./machine-output.ts";
@@ -165,7 +168,14 @@ async function verifyPatchUnderCancellation(
       ...(acceptance === undefined ? {} : { acceptance }),
       ...(goalContract === undefined
         ? {}
-        : { goal: { contract: goalContract, evidence, tree: "" } }),
+        : {
+            goal: {
+              contract: goalContract,
+              evidence,
+              tree: "",
+              challengePolicy: options.challenges ?? "off",
+            },
+          }),
       commandsForCheckout: commands,
       immutablePaths: options.immutablePaths,
       installDependencies: options.installDependencies,
@@ -251,6 +261,7 @@ async function verifyPatchUnderCancellation(
       `oracle reach: ${result.oracleReach}${describeUnreached(result.unreachedByOracle)}` +
       `${describeSetAside(result.setAsideByReach)}\n` +
       `oracle bond: ${result.oracleBond}${describeOracleBond(result)}\n` +
+      describeChallenges(result.challenges) +
       (result.verified
         ? result.acceptance === undefined && result.goalAcceptance === undefined
           ? "verified: no regression, and the oracle says the task was done.\n"
@@ -289,4 +300,18 @@ function describeSetAside(
 
 function readAgentStream(text: string, format: "generic" | "claude-code") {
   return format === "claude-code" ? eventsFromClaudeCodeStream(text) : eventsFromGenericJsonl(text);
+}
+
+/** One line per requirement: what challenging its checks established, and the policy applied. */
+function describeChallenges(challenges: IndependentVerification["challenges"]): string {
+  if (challenges === undefined) return "";
+  const lines = [
+    `challenges (${challenges.policy}): ${challenges.satisfied ? "every requirement demonstrated detection" : "not every requirement demonstrated detection"}`,
+    ...challenges.requirements.map(
+      (requirement) =>
+        `  ${requirement.outcome.padEnd(16)} ${requirement.id}: base ${requirement.baseControl}; ` +
+        `${requirement.caught.length} caught, ${requirement.gaps.length} gap(s), ${requirement.unwitnessed.length} unwitnessed, ${requirement.invalid.length} invalid. ${requirement.detail}`,
+    ),
+  ];
+  return `${lines.join("\n")}\n`;
 }

@@ -35,6 +35,30 @@ export const goalContractSchema = z.strictObject({
     .max(128),
   immutablePaths: z.array(z.string().min(1)),
   selection: z.enum(["cost", "change-size", "stable"]).default("stable"),
+  /**
+   * How the requirement checks themselves are to be challenged. Additive: a contract without it
+   * digests as before. Mutations are generated from the candidate's changed lines; a fixture is a
+   * sealed patch the author declares to violate one named requirement, which the checks for that
+   * requirement must reject. Both are bounded, and a fixture that fails to apply or to parse is
+   * invalid evidence rather than a caught alternative.
+   */
+  challenges: z
+    .strictObject({
+      version: z.literal(1),
+      mutations: z.enum(["auto", "none"]).default("auto"),
+      fixtures: z
+        .array(
+          z.strictObject({
+            id,
+            requirement: id,
+            description: z.string().min(1).max(2000),
+            patch: z.string().min(1).max(1_000_000),
+          }),
+        )
+        .max(32)
+        .default([]),
+    })
+    .optional(),
 });
 export type GoalContract = z.infer<typeof goalContractSchema>;
 
@@ -76,6 +100,15 @@ export function freezeGoalContract(value: unknown): { contract: GoalContract; di
       requirement.checks.some((name) => !contract.checks.some((check) => check.id === name))
     )
       throw new Error(`requirement ${requirement.id} names duplicate or undefined checks`);
+  }
+  const fixtures = contract.challenges?.fixtures ?? [];
+  if (new Set(fixtures.map((fixture) => fixture.id)).size !== fixtures.length)
+    throw new Error("duplicate challenge fixture identity in goal contract");
+  for (const fixture of fixtures) {
+    if (!contract.requirements.some((requirement) => requirement.id === fixture.requirement))
+      throw new Error(
+        `challenge fixture ${fixture.id} names undefined requirement ${fixture.requirement}`,
+      );
   }
   return { contract, digest: digestOfJson(asJsonValue(contract)) };
 }

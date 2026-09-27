@@ -26,6 +26,7 @@ function verdict(overrides: Partial<Verdict["decision"]> = {}): Verdict {
       packages: [],
       install: false,
       requireTask: false,
+      challenges: "report",
     },
     execution: {
       eventName: "pull_request",
@@ -49,6 +50,7 @@ function verdict(overrides: Partial<Verdict["decision"]> = {}): Verdict {
       task: "unjudged",
       unmeasured: ["task"],
       reason: null,
+      challenges: null,
       ...overrides,
     },
   };

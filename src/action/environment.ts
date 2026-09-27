@@ -46,6 +46,8 @@ export interface ActionInputs {
   readonly install: boolean;
   /** A regression-only pass exits 1 rather than 0, for a consumer that requires a contract. */
   readonly requireTask: boolean;
+  /** How requirement checks are challenged when a contract is supplied. */
+  readonly challenges: "off" | "report" | "required";
   readonly comment: boolean;
   readonly token: string | null;
   /** Explicit head and base, for events that carry no pull request. */
@@ -122,6 +124,11 @@ export async function readActionContext(
   const isolation = optional(env, "SWARM_INPUT_ISOLATION") ?? "docker";
   if (isolation !== "docker" && isolation !== "host")
     throw new Error(`isolation must be docker or host, got ${JSON.stringify(isolation)}`);
+  const challenges = optional(env, "SWARM_INPUT_CHALLENGES") ?? "report";
+  if (challenges !== "off" && challenges !== "report" && challenges !== "required")
+    throw new Error(
+      `challenges must be off, report or required, got ${JSON.stringify(challenges)}`,
+    );
   const packages = (optional(env, "SWARM_INPUT_PACKAGES") ?? "")
     .split(/[\n,]/)
     .map((entry) => entry.trim())
@@ -149,6 +156,7 @@ export async function readActionContext(
       packages,
       install: flag(env, "SWARM_INPUT_INSTALL", false),
       requireTask: flag(env, "SWARM_INPUT_REQUIRE_TASK", false),
+      challenges,
       comment: flag(env, "SWARM_INPUT_COMMENT", true),
       token: optional(env, "SWARM_INPUT_TOKEN"),
       head: optional(env, "SWARM_INPUT_HEAD"),

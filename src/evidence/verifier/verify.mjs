@@ -16,6 +16,7 @@ import { readdirSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { behaviorStatus } from "./behavior.mjs";
+import { challengeVerdictsAgree } from "./challenges.mjs";
 import { readControllerHistory } from "./controller.mjs";
 import { capturedRegression } from "./status.mjs";
 import { upgradeControlPasses } from "./upgrade.mjs";
@@ -1108,6 +1109,13 @@ function collectChecks(directory) {
       "final goal policy binds independent regression and goal observations",
     );
   }
+  for (const finding of challengeVerdictsAgree(records, payloads))
+    record(
+      `challenge verdict ${finding.sequence} re-derived`,
+      finding.agrees,
+      finding.problems.join("; ") ||
+        "every requirement's challenge outcome follows from its plan, its runs and the goal verifications",
+    );
   for (const assessment of goalSelectionConformance(records, payloads))
     record(
       `goal alternatives ${assessment.sequence} re-derived`,

@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **`swarm-verify` with no subcommand is `check`**: discover the declared checks from the
+  manifests, run them unattended (no terminal on stdin, `CI=true` in the child environment),
+  and report five conclusions apart: whether the command ran, what the checks found, how
+  commands were contained, whether any requirement was judged, whether any check was
+  challenged. Exit codes: 0 regression-only pass, 1 a failed check, 2 an unreadable command
+  line, 3 cancelled, 4 incomplete. `--explain` previews, `--json` emits `swarm.check.v1`.
+- **Requirement-level challenges** for goal contracts: `ci --challenges off|report|required`
+  runs a base control per requirement, mechanical mutations of the changed lines witnessed by
+  the repository suite, sealed fixtures the contract declares, and names missing obligations.
+  Records `challenge-plan-v1`, `challenge-run-v1` and `challenge-verdict-v1`; the bundle's own
+  verifier re-derives every verdict independently. `required` refuses with `challenges-unmet`.
+- **The GitHub Action as a client of the installed verifier**: `swarm-verify action
+  verify|comment|retain`. The verdict document is signed as a GitHub artifact attestation, the
+  pull request comment is one per PR, updated in place, bound to the head, escaped and
+  mention-free, and a delayed run for an older head posts nothing.
+- **Coverage on Node 22.8 and newer**: the coverage arm names process isolation in the spelling
+  the running Node takes; the floor moves from 24 to 22.8.
+- A verifier platform matrix workflow installs the packed package on Linux, macOS and Windows
+  under Node 22.0.0, 22 and 24.
+
+### Changed
+
+- Both binaries exit 2 for a command line they cannot read, as the exit code taxonomy said.
+
 ## 14.2.0 - 2026-09-27
 
 ### Fixed

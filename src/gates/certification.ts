@@ -29,9 +29,18 @@ export interface RecordedVerdict {
   readonly task: "accepted" | "rejected" | "unjudged" | "vacuous";
   readonly oracleReach: "reached" | "unreached" | "unmeasured";
   readonly oracleBond: OracleBondVerdict;
+  /**
+   * What challenging the requirement checks established, where it was asked for. Only the
+   * `required` policy refuses on it; `report` records the same findings and refuses nothing.
+   */
+  readonly challenges?: {
+    readonly policy: "off" | "report" | "required";
+    readonly satisfied: boolean;
+  };
 }
 
 export type RefusalReason =
+  | "challenges-unmet"
   | "required-obligations-not-accepted"
   | "regression-not-pass"
   | "task-not-accepted"
@@ -58,6 +67,10 @@ export function reasonsToRefuse(verdict: RecordedVerdict): readonly RefusalReaso
       !obligations.every((entry) => entry.status === "accepted")
     )
       reasons.push("required-obligations-not-accepted");
+    // A requirement whose checks were never shown to detect wrong work is not accepted under
+    // the required policy, whatever those checks said about this candidate.
+    if (verdict.challenges?.policy === "required" && !verdict.challenges.satisfied)
+      reasons.push("challenges-unmet");
     return reasons;
   }
   if (verdict.certificationPolicy === "required-obligations-v1") {

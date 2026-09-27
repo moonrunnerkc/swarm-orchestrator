@@ -22,6 +22,7 @@ const sample: Verdict = {
     packages: [],
     install: false,
     requireTask: false,
+    challenges: "report",
   },
   execution: {
     eventName: "pull_request",
@@ -45,6 +46,7 @@ const sample: Verdict = {
     task: "accepted",
     unmeasured: [],
     reason: null,
+    challenges: null,
   },
 };
 

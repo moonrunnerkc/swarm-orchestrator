@@ -174,6 +174,7 @@ swarm ci --branch <ref>
 swarm ci --pr <owner/repo#number>
   --base <ref>                   # explicit exact base; branch default is merge-base with HEAD
   --goal-contract <file>         # requirement-bound CLI/HTTP/browser acceptance
+  --challenges off|report|required  # challenge the contract's checks; off is the default
   --package <dir>                # repeat for selected repository-relative units
   --summary <file>               # concise escaped Markdown
   --require-isolation            # refuse unless the selected backend measures isolated

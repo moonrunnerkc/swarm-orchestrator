@@ -50,6 +50,7 @@ export const verdictSchema = z.strictObject({
     install: z.boolean(),
     /** Whether a regression-only pass counts as a failure for this consumer. */
     requireTask: z.boolean(),
+    challenges: z.enum(["off", "report", "required"]),
   }),
   execution: z.strictObject({
     eventName: z.string(),
@@ -82,6 +83,18 @@ export const verdictSchema = z.strictObject({
     task: z.string().nullable(),
     unmeasured: z.array(z.string()),
     reason: z.string().nullable(),
+    /** Per requirement, what challenging its checks established; null where none ran. */
+    challenges: z
+      .strictObject({
+        satisfied: z.boolean(),
+        requirements: z.array(
+          z.strictObject({
+            id: z.string(),
+            outcome: z.enum(["detected", "gap", "invalid-evidence", "unjudged", "inapplicable"]),
+          }),
+        ),
+      })
+      .nullable(),
   }),
 });
 
