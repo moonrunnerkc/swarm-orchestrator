@@ -59,9 +59,7 @@ describe("the verdict document", () => {
       evidence: { ...sample.evidence },
     });
     expect(reordered.bytes).toBe(one.bytes);
-    expect(one.digest).toBe(
-      `sha256:${createHash("sha256").update(one.bytes.trimEnd()).digest("hex")}`,
-    );
+    expect(one.digest).toBe(`sha256:${createHash("sha256").update(one.bytes).digest("hex")}`);
     expect(JSON.parse(one.bytes)).toEqual(sample);
   });
 

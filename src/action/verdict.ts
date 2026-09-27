@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { asJsonValue, canonicalJson, digestOfJson } from "../evidence/canonical-json.ts";
+import { asJsonValue, canonicalJson, digestOfBytes } from "../evidence/canonical-json.ts";
 
 /**
  * The one document the Action signs. It binds the repository, the pull request, the exact
@@ -105,7 +105,9 @@ export function canonicalVerdict(verdict: Verdict): {
   readonly bytes: string;
   readonly digest: string;
 } {
+  // The digest is over the file bytes as written, newline included: that is the subject an
+  // attestation binds and the number a reader recomputes with sha256sum.
   const parsed = verdictSchema.parse(verdict);
-  const value = asJsonValue(parsed);
-  return { bytes: `${canonicalJson(value)}\n`, digest: digestOfJson(value) };
+  const bytes = `${canonicalJson(asJsonValue(parsed))}\n`;
+  return { bytes, digest: digestOfBytes(bytes) };
 }

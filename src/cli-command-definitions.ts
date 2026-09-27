@@ -33,6 +33,13 @@ export const commandDefinitions: readonly CommandDefinition[] = [
     model: "none",
   },
   {
+    name: "verdict",
+    syntax: "verdict <verdict.json> [--repo <owner/repo>] [--signer-workflow <ref>]",
+    description: "check a signed verdict against its evidence and an expected signer",
+    smoke: { args: ["absent-verdict.json"], exits: [2], output: "verdict:.*unverified" },
+    model: "none",
+  },
+  {
     name: "action",
     syntax: "action verify | comment | retain",
     description: "one step of the GitHub Action, read from the runner's environment",

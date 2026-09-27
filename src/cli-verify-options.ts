@@ -107,6 +107,15 @@ export interface CheckCommand {
   readonly json: boolean;
 }
 
+/** Checks a signed verdict document against the evidence beside it and an expected signer. */
+export interface VerdictCommand {
+  readonly command: "verdict";
+  readonly verdictPath: string;
+  readonly evidenceDirectory: string | null;
+  readonly repository: string | null;
+  readonly signerWorkflow: string | null;
+}
+
 /** One step of the GitHub Action, driven by the runner's environment rather than by flags. */
 export interface ActionCommand {
   readonly command: "action";
@@ -118,6 +127,7 @@ export type VerifyOnlyCommand =
   | CiCommand
   | GatesCommand
   | CheckCommand
+  | VerdictCommand
   | ActionCommand;
 
 export class InvalidCommandLineError extends Error {
@@ -298,6 +308,23 @@ export function parseVerifyOnlyCommand(
         bundleFlag === undefined ? null : resolve(context.currentDirectory, bundleFlag),
       explain: flags.has("explain"),
       json: flags.has("json"),
+    };
+  }
+
+  if (words[0] === "verdict") {
+    // The bare form reads the document the Action names, in the directory the reader is in.
+    const target = words.slice(1).join(" ").trim() || "verdict.json";
+    const repository = flags.get("repo") ?? null;
+    if (repository !== null && !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository))
+      throw invalid("--repo must be OWNER/REPO");
+    return {
+      command: "verdict",
+      verdictPath: resolve(context.currentDirectory, target),
+      evidenceDirectory: flags.has("evidence")
+        ? resolve(context.currentDirectory, flags.get("evidence") as string)
+        : null,
+      repository,
+      signerWorkflow: flags.get("signer-workflow") ?? null,
     };
   }
 
