@@ -194,3 +194,8 @@ pending. GitHub's latest release is currently `v14.1.0`. The user separately aut
 "GitHub release and npm publication." After source delivery and remote validation, the existing
 version-tag workflows will publish both packages with provenance; the root release will be
 marked latest. No tag, release or package publication is claimed by this pre-delivery report.
+
+Amendment 8, before release preparation: update the already-declared `CHANGELOG.md`
+to date the authorized 14.2.0 source release and correct the standalone version in its entry.
+Later reporting updates will record actual remote CI and publication without rewriting
+prior campaign evidence. User authorization now includes both npm packages and latest GitHub release.

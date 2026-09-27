@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 14.2.0 - 2026-09-27
 
 ### Fixed
 
@@ -55,7 +55,7 @@
   parsed by the same parser, so an invocation reads the same through either. It carries no
   provider, worker or screen module and none of the agent's run assembly: a test walks its import
   closure and the build refuses to emit a crossing. A test verifies a committed bundle through
-  both binaries and compares the bytes. Version 0.1.0, not yet published; the packaged check
+  both binaries and compares the bytes. Version 0.2.0 has a separate release workflow; the packaged check
   packs it, installs it beside the full CLI, and runs the tamper demo through it.
 - **An agent can record a file as temporary, and is held to removing it.** `declare_file_set`
   and `amend_file_set` take `temporary`: paths created only to investigate, such as a probe
