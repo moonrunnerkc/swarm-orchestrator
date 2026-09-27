@@ -232,7 +232,13 @@ async function runProbe(
       id: probe.id,
       attempted: probe.attempted,
       contained: null,
-      observed: `the probe could not start (${ran.startFailure}), so nothing was shown`,
+      observed: `the probe ${
+        ran.timedOut
+          ? "timed out before it finished"
+          : ran.cancelled
+            ? "was cancelled"
+            : `could not start (${ran.startFailure})`
+      }, so nothing was shown`,
     };
   }
   if (probe.landedOnHost !== undefined) {

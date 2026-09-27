@@ -129,6 +129,9 @@ export function createContainerBackend(options: ContainerBackendOptions): Isolat
           throw new Error("read-only acceptance file must be an ordinary file inside the checkout");
         readOnlyMounts.push(`--volume=${file}:${workspaceMountPoint}/${path}:ro`);
       }
+      // The image is made present before the command's deadline starts, so a pull that takes
+      // longer than a probe's allowance leaves the probe its whole allowance.
+      await ensureImage(execute, options.workspaceRoot);
       const deadline = Date.now() + runOptions.timeoutMs;
       const identity = `swarm-${randomUUID()}`;
       const runtimeOptions = {
@@ -137,7 +140,6 @@ export function createContainerBackend(options: ContainerBackendOptions): Isolat
         timeoutMs: 15_000,
         maxOutputBytes: 4_000_000,
       };
-      await ensureImage(execute, options.workspaceRoot);
       await options.observeLifecycle?.({ identity, phase: "create-intent" });
       let ran: Awaited<ReturnType<typeof runProcessGroup>>;
       let cleanupFailure: Error | null = null;
