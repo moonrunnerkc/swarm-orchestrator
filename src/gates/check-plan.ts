@@ -345,6 +345,16 @@ async function prerequisitesOf(
     else if (detection.pythonCommand.startsWith("uv ") && !(await onPath("uv", path)))
       missing.push({ what: "uv is not on PATH", remedy: "install uv, then run again" });
     else if (
+      detection.pythonCommand.startsWith("uv ") &&
+      !(await exists(join(root, ".venv", "pyvenv.cfg")))
+    )
+      // `uv run --no-sync` never creates the environment, so without one every check exits
+      // in no time with uv's own error, which is not a finding about the project.
+      missing.push({
+        what: "dependencies are not installed (no .venv directory for the uv.lock)",
+        remedy: "run `uv sync --locked` in the workspace, then run again",
+      });
+    else if (
       detection.pythonCommand.startsWith(".venv") &&
       !(await exists(join(root, ".venv", "bin", "python")))
     )

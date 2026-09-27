@@ -103,7 +103,15 @@ describe("planning a check from a project's files", () => {
     await write("uv.lock", "");
     const locked = await planCheck({ workspace: root, path: await toolPath() });
     expect(locked.project.pythonCommand).toBe("uv run --locked --no-sync python -m");
-    expect(locked.prerequisites).toEqual([]);
+    expect(locked.prerequisites).toEqual([
+      {
+        what: "dependencies are not installed (no .venv directory for the uv.lock)",
+        remedy: "run `uv sync --locked` in the workspace, then run again",
+      },
+    ]);
+    await write(".venv/pyvenv.cfg", "home = /usr/bin\n");
+    const synced = await planCheck({ workspace: root, path: await toolPath() });
+    expect(synced.prerequisites).toEqual([]);
   });
 
   it("reports a directory with no manifest as no scope at all", async () => {
