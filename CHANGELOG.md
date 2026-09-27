@@ -32,9 +32,22 @@
   working tree (`pre-commit`, `pre-commit install`, `uninstall`). Documented in
   `docs/integrations.md`, each with real positive and negative runs in its tests.
 
+- An authorized lockfile install inside a container reaches the registry for that one
+  command, with lifecycle scripts off, recorded with `network: registry`; the checks that
+  follow run with the network off. Where the image carries no pnpm and the manifest pins
+  `packageManager: pnpm@X`, that exact pnpm is fetched through npm for the install command.
+  The install record is written whether or not a goal contract was supplied.
+- The twelve attack families of the verifier-first assignment are bound to executed controls
+  in `docs/verifier-first/attack-controls.md`, with four new ones: an outside-package change
+  refused by name, a mismatched goal tree refused before any record, an unfinished challenge
+  intent refusing the next challenge, and a revised contract deriving a fresh verdict.
+- The stable 1.x contract is written down in `docs/verifier-first/contract.md`.
+
 ### Changed
 
 - Both binaries exit 2 for a command line they cannot read, as the exit code taxonomy said.
+- The container's scratch mount is executable, so a fetched package manager can run from it.
+- The README leads with the verifier; the coding agent's page is `docs/agent.md`.
 
 ## 14.2.0 - 2026-09-27
 

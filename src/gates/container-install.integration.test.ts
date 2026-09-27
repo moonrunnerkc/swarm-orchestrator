@@ -79,6 +79,82 @@ afterAll(async () => {
   if (scratch.length > 0) await rm(scratch, { recursive: true, force: true });
 });
 
+describe.skipIf(!docker)("an authorized pnpm install where the image carries no pnpm", () => {
+  it("fetches the declared pnpm through npm for the install command only, and records that vector", async () => {
+    const repo = join(scratch, "pnpm-repo");
+    await mkdir(repo);
+    const gitIn = (args: readonly string[]) =>
+      run("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", ...args], { cwd: repo });
+    await gitIn(["init", "-q", "-b", "main"]);
+    await writeFile(
+      join(repo, "package.json"),
+      '{ "name": "p", "version": "1.0.0", "type": "module", "packageManager": "pnpm@9.15.0", "scripts": { "test": "node --test" }, "dependencies": { "is-odd": "3.0.1" } }\n',
+    );
+    await writeFile(join(repo, ".gitignore"), "node_modules\n");
+    await writeFile(
+      join(repo, "odd.mjs"),
+      'import isOdd from "is-odd";\nexport const odd = (n) => isOdd(n);\n',
+    );
+    await writeFile(
+      join(repo, "odd.test.mjs"),
+      'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { odd } from "./odd.mjs";\ntest("odd", () => assert.equal(odd(3), true));\n',
+    );
+    await run("pnpm", ["install", "--lockfile-only", "--ignore-scripts"], { cwd: repo });
+    await gitIn(["add", "-A"]);
+    await gitIn(["commit", "-qm", "base"]);
+    const pnpmBase = (await gitIn(["rev-parse", "HEAD"])).stdout.trim();
+    await writeFile(
+      join(repo, "odd.mjs"),
+      'import isOdd from "is-odd";\nexport const odd = (n) => Boolean(isOdd(n));\n',
+    );
+    await gitIn(["commit", "-qam", "change"]);
+    const pnpmHead = (await gitIn(["rev-parse", "HEAD"])).stdout.trim();
+    const ran = await run(
+      process.execPath,
+      [
+        resolve("src/swarm-verify.ts"),
+        "ci",
+        "--workspace",
+        repo,
+        "--branch",
+        pnpmHead,
+        "--base",
+        pnpmBase,
+        "--isolation",
+        "docker:node:24-bookworm",
+        "--require-isolation",
+        "--install",
+        "--json",
+      ],
+      {
+        env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", NO_COLOR: "1" },
+        timeout: 600_000,
+        maxBuffer: 16_000_000,
+      },
+    ).catch((cause: { stdout?: string; stderr?: string; code?: number }) => ({
+      stdout: cause.stdout ?? "",
+      stderr: cause.stderr ?? "",
+      code: cause.code,
+    }));
+    const report = JSON.parse(
+      ran.stdout
+        .trim()
+        .split("\n")
+        .findLast((line) => line.startsWith("{")) ?? "{}",
+    ) as {
+      regression: string;
+      install: { succeeded: boolean; command: string; detail: string } | null;
+    };
+    expect(report.install?.succeeded, `${ran.stdout}\n${"stderr" in ran ? ran.stderr : ""}`).toBe(
+      true,
+    );
+    expect(report.install?.command).toBe(
+      "npx --yes --package pnpm@9.15.0 pnpm install --frozen-lockfile --ignore-scripts",
+    );
+    expect(report.regression).toBe("pass");
+  }, 600_000);
+});
+
 describe.skipIf(!docker)("an authorized install inside the container", () => {
   it("reaches the registry for the lockfile install only, then checks with the network off", async () => {
     const ran = await run(

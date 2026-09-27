@@ -85,11 +85,12 @@ export async function installFromLockfile(options: {
     }
     if (!lock.isFile()) throw new Error(`${candidate.file} must be a regular lockfile, not a link`);
     const before = await sourceFingerprint(workspace, options.signal);
+    const argv = await installerArgv(candidate, workspace, options);
     const identity = {
       version: 1 as const,
       id: `install-${evidence?.records().length ?? 0}`,
       workspace,
-      argv: [...candidate.argv],
+      argv,
       network: "registry" as const,
       lockDigest: digestOfBytes(await readFile(join(workspace, candidate.file))),
       sourceDigest: before,
@@ -106,7 +107,7 @@ export async function installFromLockfile(options: {
     let observed: GateObservation;
     let after: string;
     try {
-      observed = await options.commands.runVouched(candidate.argv, {
+      observed = await options.commands.runVouched(argv, {
         cwd: workspace,
         timeoutMs: Math.max(1, options.timeoutMs),
         network: "registry",
@@ -131,7 +132,7 @@ export async function installFromLockfile(options: {
       exitCode: observed.exitCode,
       unavailable: observed.unavailable,
     });
-    return { attempted: true, succeeded, command: candidate.argv.join(" "), detail };
+    return { attempted: true, succeeded, command: argv.join(" "), detail };
   }
   return {
     attempted: true,
@@ -140,6 +141,49 @@ export async function installFromLockfile(options: {
     detail:
       "no supported lockfile: provide package-lock.json, pnpm-lock.yaml, yarn.lock or uv.lock, or omit --install and supply a prepared runtime",
   };
+}
+
+/**
+ * The installer vector for a lockfile. pnpm is rarely present where the checks run (the default
+ * container image carries npm alone), so where the manifest pins `packageManager: pnpm@X` and
+ * no pnpm answers, that exact version is fetched from the registry by npm for the install
+ * command only, under the same registry access the install already has. The version is the
+ * project's own declaration, never a guess at latest; a manifest that declares none keeps the
+ * plain command and reports pnpm's absence as the setup failure it is.
+ */
+async function installerArgv(
+  candidate: (typeof lockfiles)[number],
+  workspace: string,
+  options: { commands: GateCommandRunner; timeoutMs: number },
+): Promise<string[]> {
+  if (candidate.file !== "pnpm-lock.yaml") return [...candidate.argv];
+  const probe = await options.commands.runVouched(["pnpm", "--version"], {
+    cwd: workspace,
+    timeoutMs: Math.max(1, Math.min(60_000, options.timeoutMs)),
+  });
+  if (probe.unavailable === null && probe.exitCode === 0) return [...candidate.argv];
+  let declared: string | undefined;
+  try {
+    const manifest = JSON.parse(await readFile(join(workspace, "package.json"), "utf8")) as {
+      packageManager?: unknown;
+    };
+    declared = /^pnpm@([0-9][^\s+]*)/.exec(
+      typeof manifest.packageManager === "string" ? manifest.packageManager : "",
+    )?.[1];
+  } catch {
+    declared = undefined;
+  }
+  if (declared === undefined) return [...candidate.argv];
+  return [
+    "npx",
+    "--yes",
+    "--package",
+    `pnpm@${declared}`,
+    "pnpm",
+    "install",
+    "--frozen-lockfile",
+    "--ignore-scripts",
+  ];
 }
 
 async function sourceFingerprint(workspace: string, signal?: AbortSignal): Promise<string> {
