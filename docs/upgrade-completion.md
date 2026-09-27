@@ -1,7 +1,7 @@
 # Broad-use upgrade completion ledger
 
-Status: implementation and local integration complete; final validation and remote delivery in
-progress. No default-branch delivery, required remote CI success or package publication is claimed.
+Status: implementation, final local validation and installed integration complete; remote delivery
+in progress. No default-branch delivery, required remote CI success or package publication is claimed.
 
 All five workflows share the existing engine. Start with [the broad-use guide](broad-use.md).
 [Evidence report](evidence/2026-09-27/broad-use/report.md) records exact commands and source

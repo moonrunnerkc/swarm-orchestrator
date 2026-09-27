@@ -161,6 +161,7 @@ Python 3.14.7 on the host and 3.11.2 in the isolated uv fixture, Playwright 1.63
 not population-level false-green rates, a new-user study, or commercial-model superiority.
 
 Official command and workflow references: [uv locking/syncing](https://docs.astral.sh/uv/concepts/projects/sync/),
+[pytest reports](https://docs.pytest.org/en/stable/how-to/output.html),
 [Playwright reporters](https://playwright.dev/docs/test-reporters), and
 [GitHub secure use](https://docs.github.com/en/actions/reference/security/secure-use).
 
