@@ -20,6 +20,7 @@ import {
 } from "./measure-snapshot.ts";
 import { isTestFile } from "./measures.ts";
 import { judgeRatchet, type RatchetDecision, ratchetPayload } from "./ratchet.ts";
+import { classifyRepair } from "./repair-policy.ts";
 import {
   type BaseControlRunner,
   clearedTests,
@@ -128,6 +129,20 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
   const attempts: AutoResolveAttempt[] = [];
 
   while (!isGreen(cycle) && attempts.length < deps.cap && deps.abortSignal?.aborted !== true) {
+    const classification = classifyRepair(cycle);
+    if (classification.kind === "setup" || classification.kind === "infrastructure") {
+      await deps.evidence.record({
+        type: "session-stopped",
+        actor: "harness",
+        provenance: ["tool-output"],
+        payload: {
+          stopReason: "repair-unavailable",
+          classification: classification.kind,
+          remedy: classification.remedy,
+        },
+      });
+      break;
+    }
     const attempt = attempts.length + 1;
     deps.emit({ type: "attempt", attempt, cap: deps.cap });
 
@@ -145,6 +160,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
       // free retry.
       await deps.checkpoint.restore(before);
       attempts.push(await recordFailedAttempt(deps, attempt, cycle, baseline, failure));
+      if (failure.includes("repair stopped:")) break;
       continue;
     }
 

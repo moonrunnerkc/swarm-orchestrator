@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { createEscalationController } from "./agent-escalation.ts";
 import { type WorkerPromptProfile, workerPrompt } from "./agent-prompt.ts";
 import { buildVersion } from "./build-version.ts";
 import type { ApprovalMode } from "./config/approval-mode.ts";
@@ -42,6 +43,7 @@ import { createGitWorkspaceProbe } from "./gates/git-workspace.ts";
 import { captureInheritedChanges, type InheritedChanges } from "./gates/inherited-changes.ts";
 import { createNodeCommandRunner } from "./gates/node-command-runner.ts";
 import { detectProject } from "./gates/project-type.ts";
+import type { EscalationSettings } from "./gates/repair-policy.ts";
 import { diffAgainstBase } from "./gates/scratch-index.ts";
 import { taskBrief } from "./task-brief.ts";
 import { type ConfirmationPrompt, createToolChokepoint } from "./tools/chokepoint.ts";
@@ -99,6 +101,11 @@ const trailInstruction = [
 ].join(" ");
 
 export interface AgentTaskOptions {
+  readonly escalation?: {
+    settings: EscalationSettings;
+    target: ModelClient;
+    previousCount?: number;
+  };
   readonly installDependencies?: boolean;
   readonly promptProfile?: WorkerPromptProfile;
   readonly commandPool?: ResourcePool | undefined;
@@ -559,6 +566,14 @@ async function executeAgentTask(
       },
     });
   }
+  const escalation =
+    options.escalation === undefined
+      ? undefined
+      : createEscalationController({
+          ...options.escalation,
+          evidence: options.evidence,
+          baseCommit: options.baseRef,
+        });
   const gates = await runGatesEngine({
     commandPool: options.commandPool,
     workspaceRoot: options.workspace,
@@ -575,14 +590,29 @@ async function executeAgentTask(
     criteriaSealed,
     criteriaRef: criteriaRefOf(options),
     resolve: async (request) => {
+      const alternate = await escalation?.select(request.cycle, {
+        remainingTokens,
+        remainingMs: wall.loopBudgetMs(),
+        unknownUsage: callsWithUnknownUsage > 0,
+      });
       const repair = await resolveWithModel(request, options, {
         ...loopDependencies,
+        ...(alternate == null ? {} : { model: alternate }),
         budget: {
           ...loopDependencies.budget,
-          maxTokens: Math.max(0, remainingTokens),
-          maxWallTimeMs: wall.loopBudgetMs(),
+          maxTokens: Math.max(
+            0,
+            remainingTokens -
+              (alternate == null ? 0 : (options.escalation?.settings.reservedTokens ?? 0)),
+          ),
+          maxWallTimeMs: Math.max(
+            0,
+            wall.loopBudgetMs() -
+              (alternate == null ? 0 : (options.escalation?.settings.reserveMs ?? 0)),
+          ),
         },
       });
+      if (alternate != null) await escalation?.complete(repair.callsWithUnknownUsage > 0);
       remainingTokens -= repair.tokensUsed;
       callsWithUnknownUsage += repair.callsWithUnknownUsage;
       finalStopReason = repair.stopReason;
@@ -703,6 +733,12 @@ async function sealSpecForRun(
       task: options.task,
       architecture: "single-agent",
       model: { spec: options.model.modelId, pinned: true },
+      ...(options.escalation === undefined
+        ? {}
+        : {
+            escalation: options.escalation.settings,
+            escalationsUsed: options.escalation.previousCount ?? 0,
+          }),
       tools: options.contract?.allowedTools ?? ["read", "write", "edit", "list", "search", "shell"],
       network: envelope.network === "denied" ? "denied" : "unrestricted",
       paths: {
@@ -937,7 +973,8 @@ async function resolveWithModel(
     "skip marker, or lowering coverage of the lines you changed will have the attempt rejected",
     "and will still cost you the attempt.",
     "",
-    request.gateOutput,
+    `Base source: ${options.baseRef}. Immutable requirements: ${JSON.stringify(options.contract?.immutablePaths ?? [])}.`,
+    request.gateOutput.slice(0, 16000),
   ].join("\n");
 
   return runAgentLoop(brief, loopDependencies);

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type AgentTaskOptions, runAgentTask, systemPrompt } from "./agent-run.ts";
+import { createSystemClock } from "./cli-runtime-inputs.ts";
 import type { Clock } from "./core/clock.ts";
 import type { ModelClient, ModelRequest } from "./core/model-client.ts";
 import { createFixedRandom, createTestClock } from "./core/test-doubles.ts";
@@ -547,3 +548,75 @@ it("records repair feedback as tool output and applies the execution derivation 
     evidence.records().find((record) => record.type === "session-started")?.provenance,
   ).toContain("tool-output");
 });
+
+it("dispatches one explicit alternate after repeated observed failure and stops at its cap", async () => {
+  const alternate = createRecordingModelClient(
+    createFixtureModelClient({
+      modelId: "fixture:alternate",
+      turns: [respondWithText("No repair found.")],
+    }),
+    evidence,
+  );
+  const result = await task(
+    [
+      respondWithToolCalls("declare", [
+        { callId: "declare", toolName: "declare_file_set", input: { files: ["src/greet.js"] } },
+      ]),
+      respondWithToolCalls("change", [
+        {
+          callId: "break",
+          toolName: "write",
+          input: { path: "src/greet.js", content: "export function greet() { return 'wrong'; }\n" },
+        },
+      ]),
+      respondWithText("done"),
+      respondWithText("No repair found."),
+    ],
+    {
+      attempts: 4,
+      maxTokens: 50000,
+      clock: createSystemClock(),
+      maxWallTimeMs: 60000,
+      escalation: {
+        settings: {
+          target: "fixture:alternate",
+          trigger: "repeated-failure",
+          maximum: 1,
+          reservedTokens: 1024,
+          reserveMs: 1000,
+        },
+        target: alternate,
+      },
+    },
+  );
+  const entries = evidence
+    .records()
+    .map((record) => evidence.payloads().get(record.payloadDigest))
+    .filter(
+      (value) =>
+        value !== null &&
+        typeof value === "object" &&
+        !Array.isArray(value) &&
+        Reflect.get(value, "rule") === "capability-escalation-v1",
+    );
+  expect(
+    entries,
+    JSON.stringify({
+      outcome: result.gates.outcome,
+      stops: evidence
+        .records()
+        .filter((record) => record.type === "session-stopped")
+        .map((record) => evidence.payloads().get(record.payloadDigest)),
+    }),
+  ).toHaveLength(2);
+  expect(entries).toMatchObject([
+    { phase: "intent", count: 1, effectiveModel: "fixture:alternate" },
+    { phase: "completed", count: 1, unknownUsage: false },
+  ]);
+  expect(
+    evidence
+      .records()
+      .filter((record) => record.type === "model-call" && record.actor === "fixture:alternate"),
+  ).toHaveLength(1);
+  expect(result.green).toBe(false);
+}, 30000);
