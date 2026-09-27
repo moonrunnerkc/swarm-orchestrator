@@ -138,3 +138,20 @@ it("refuses contradictory file headers before they can escape the declared scope
     validatePatchForms("diff --git a/old b/new\nrename from other\nrename to new\n"),
   ).toThrow("headers disagree");
 });
+
+it("retains the PR target when an explicit comparison base overrides it", async () => {
+  const result = await resolveChangeSource(
+    { workspace: root, pr: "owner/repo#1", baseRef: head, exactBase: true },
+    {
+      ...commands,
+      runVouched: async (argv, options) =>
+        argv.includes("fetch")
+          ? { exitCode: 0, stdout: "", stderr: "", durationMs: 0, unavailable: null }
+          : commands.runVouched(argv, options),
+    },
+    async () => ({ repository: "owner/repo", number: 1, base, head }),
+  );
+  expect(result.identity.targetBase).toBe(base);
+  expect(result.identity.comparisonBase).toBe(head);
+  expect(result.patch).toBe("");
+});

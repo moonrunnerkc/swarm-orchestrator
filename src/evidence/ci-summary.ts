@@ -4,8 +4,9 @@ import { scrubText } from "./scrub.ts";
 
 /** Render untrusted text as bounded literal Markdown without links, HTML, or commands. */
 export function reviewerText(value: string): string {
-  return scrubText(value)
-    .value.slice(0, 2000)
+  const scrubbed = scrubText(value).value;
+  const bounded = scrubbed.length > 2000 ? `${scrubbed.slice(0, 1988)} [truncated]` : scrubbed;
+  return bounded
     .replaceAll(/\p{Cc}/gu, " ")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
@@ -70,7 +71,7 @@ export function renderCiSummary(options: {
       `Requirement ${text(obligation.id)}: ${obligation.status}; checks ${obligation.checks.map(text).join(", ")} (${evidenceLink}).`,
     );
   for (const obligation of result.acceptance?.obligations ?? []) {
-    lines.push(`Requirement: ${text(JSON.stringify(obligation))}`);
+    lines.push(`Requirement: ${text(JSON.stringify(obligation))} (${evidenceLink}).`);
   }
   return `${lines.join("\n")}\n`;
 }
