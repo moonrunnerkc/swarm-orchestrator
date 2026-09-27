@@ -9,6 +9,16 @@ each of those does in practice, and what none of them establishes.
 
 [A pass is a claim](#a-pass-is-a-claim-until-it-is-shown-able-to-fail) | [Two answers](#two-answers-not-one) | [The oracle](#the-oracle-is-judged-too) | [Nine answers](#what-a-run-reports) | [Without this tool](#checking-a-bundle-without-this-tool) | [Not claimed](#what-is-not-claimed)
 
+## Branches, pull requests and observable requirements
+
+`swarm ci` and `swarm-verify ci` accept exactly one patch, branch or GitHub PR input. They pin
+immutable source identities and verify in an owned checkout, preserving the user's working tree.
+`--summary` projects the recorded assessment into Markdown; `--json` exposes `swarm.ci.v1` with
+source identities, changed paths and evidence references. Requirement results, missing measurements,
+execution restrictions and signer trust remain separate. A signature does not establish adequate
+tests or a trustworthy execution machine. [The source-upgrade guide](broad-use.md) documents
+CLI, local HTTP and Playwright instruments, presets, package scope and their limits.
+
 ## A pass is a claim until it is shown able to fail
 
 Real output, the bond section of `swarm gates` over the three-test project in

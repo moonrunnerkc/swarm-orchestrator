@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "goal": "Clamp negative inputs",
+  "preset": {
+    "kind": "bugfix",
+    "reproducer": "negative"
+  },
+  "requirements": [
+    {
+      "id": "negative-input",
+      "description": "negative inputs return zero",
+      "checks": [
+        "negative"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "negative",
+      "command": "pinned CLI output check",
+      "author": "model",
+      "exposure": "withheld",
+      "artifacts": [],
+      "behavior": {
+        "kind": "cli",
+        "cwd": ".",
+        "timeoutMs": 3000,
+        "maxOutputBytes": 4000,
+        "toolchain": "node24",
+        "network": "inherit",
+        "argv": [
+          "node",
+          "--input-type=module",
+          "-e",
+          "import {clamp} from './clamp.mjs'; console.log(clamp(-1))"
+        ],
+        "stdin": "",
+        "exitCode": 0,
+        "stdout": [
+          {
+            "kind": "equals",
+            "value": "0\n"
+          }
+        ],
+        "stderr": []
+      }
+    }
+  ],
+  "immutablePaths": [
+    "clamp.test.mjs"
+  ]
+}

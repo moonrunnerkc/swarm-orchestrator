@@ -627,3 +627,19 @@ A control with no proving test is listed as unproven rather than as a control.
 - **The three residuals of invariant 9 stand** as the build guide states them: a credential in
   fields nobody named as a credential, one written across the lines of a payload that is not
   JSON, and a name spelled out of a script the lookalike list does not carry.
+
+## Broad-use execution boundaries
+
+The source upgrade preserves the historical findings above. Its Action runs trusted pinned
+implementation separately from candidate checkouts, refuses `pull_request_target`, requires a
+disposable GitHub-hosted runner and measures container isolation. Candidate containers receive
+neither retrieval credentials nor the Docker control socket. The host manages owned containers;
+read-only acceptance mounts protect pinned browser instruments. Host CLI execution remains
+restricted and cannot claim containment of arbitrary detached daemons.
+
+Reviewer Markdown escapes candidate-controlled text and uses the existing known-pattern scrubber.
+Artifacts have explicit bounds and retain digests; missing or truncated material cannot establish
+complete verification. Known-pattern scrubbing is not secret removal: unnamed credential fields,
+multiline genuinely non-JSON values and scripts outside the established lookalike list remain
+accepted residuals. Signatures, execution trust, regression and task acceptance are separate.
+[Current capability evidence](upgrade-completion.md) does not extend historical assurance claims.

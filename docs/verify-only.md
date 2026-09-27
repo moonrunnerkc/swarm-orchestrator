@@ -8,15 +8,20 @@ command it sits under, run with an environment holding nothing but `PATH` and `H
 ## Install only the verifier
 
 If all you do is check other people's patches and bundles, the recommended install is
-`swarm-verify`: the same three commands, the same code, none of the agent. It is version 0.1.0
+`swarm-verify`: the same three commands, the same code, none of the agent. It is version 0.2.0
 and not yet on the registry, so build and pack it from a checkout:
 
 ```sh
 git clone https://github.com/moonrunnerkc/swarm-orchestrator && cd swarm-orchestrator
 npm ci && npm run build:verify
 cd packages/swarm-verify && npm pack
-npm install -g ./swarm-verify-0.1.0.tgz
+npm install -g ./swarm-verify-0.2.0.tgz
 ```
+
+The shared implementation supports `ci --patch`, `ci --branch`, `ci --pr`, `--goal-contract`,
+repeated `--package`, and `--summary`. These operations need no model credentials. The
+[broad-use guide](broad-use.md) gives exact comparison defaults, support limits and examples;
+the [completion ledger](upgrade-completion.md) binds installed-package observations to source.
 
 Every `swarm verify`, `swarm ci` and `swarm gates` below reads the same as `swarm-verify verify`,
 `swarm-verify ci` and `swarm-verify gates`, and `src/swarm-verify.test.ts` holds the two binaries
