@@ -12,7 +12,7 @@ const roots: string[] = [];
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
-async function fixture(toolName = "read") {
+async function fixture(toolName = "read", escalationsUsed?: number) {
   const root = await mkdtemp(join(tmpdir(), "swarm-recovery-context-"));
   roots.push(root);
   const evidence = await openEvidenceSession({
@@ -25,6 +25,18 @@ async function fixture(toolName = "read") {
     repository: { root: "/repo", baseCommit: "a".repeat(40) },
     task: "fix",
     architecture: "single-agent",
+    ...(escalationsUsed === undefined
+      ? {}
+      : {
+          escalationsUsed,
+          escalation: {
+            target: "fixture:alternate",
+            trigger: "repeated-failure" as const,
+            maximum: 1 as const,
+            reservedTokens: 1024,
+            reserveMs: 1000,
+          },
+        }),
     model: { spec: "fixture:one", pinned: true },
     tools: ["read", "write"],
     network: "denied",
@@ -113,4 +125,30 @@ it("uses the recorded terminal outcome without dispatching an already completed 
     payload: { callId: "c1", decision: "allowed", output: "written" },
   });
   expect((await recoveryContext(root, "one", 101)).pending).toEqual([]);
+});
+
+it("retains an already-used escalation across another resumed session", async () => {
+  const { root } = await fixture("read", 1);
+  expect((await recoveryContext(root, "one", 101)).escalationCount).toBe(1);
+});
+it("blocks an interrupted escalation instead of resetting its allowance", async () => {
+  const { root, evidence } = await fixture("read", 0);
+  await evidence.record({
+    type: "session-budget",
+    actor: "harness",
+    provenance: ["tool-output"],
+    payload: {
+      rule: "capability-escalation-v1",
+      phase: "intent",
+      requestedModel: "fixture:alternate",
+      effectiveModel: "fixture:alternate",
+      count: 1,
+      baseCommit: "a".repeat(40),
+      remainingAllowance: 800,
+      remainingMs: 9000,
+      signature: "failure",
+      unknownUsage: false,
+    },
+  });
+  await expect(recoveryContext(root, "one", 101)).rejects.toThrow("no completed effect");
 });

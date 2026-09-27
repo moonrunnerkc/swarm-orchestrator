@@ -1,9 +1,11 @@
 import { z } from "zod";
+import { escalationEventSchema } from "../agent-escalation.ts";
 import type { ConversationMessage } from "../core/model-client.ts";
 import { hashOfRecord } from "../evidence/ledger-record.ts";
 import { parseRunSpec } from "../evidence/run-spec.ts";
 import { reconstructTranscript } from "../evidence/transcript.ts";
 import { gateSetSealSchema } from "../gates/gate-set-seal.ts";
+import { assertGoalEffectsSettled } from "../gates/goal-effects.ts";
 import { readSessionEvidence } from "./session-evidence.ts";
 
 const callSchema = z.object({ callId: z.string(), toolName: z.string(), input: z.unknown() });
@@ -26,10 +28,33 @@ const messageSchema = z.discriminatedUnion("role", [
 export async function recoveryContext(sessionRoot: string, runId: string, now = Date.now()) {
   const parsed = await readSessionEvidence(sessionRoot, runId);
   const payloads = parsed.payloads;
+  assertGoalEffectsSettled(parsed.records, payloads);
   const seal = parsed.records.find((record) => record.type === "run-spec-sealed");
   const spec = parseRunSpec(payloads.get(seal?.payloadDigest ?? "")?.spec);
   const criteriaRecord = parsed.records.find((record) => record.type === "gate-set-sealed");
   const criteria = gateSetSealSchema.parse(payloads.get(criteriaRecord?.payloadDigest ?? ""));
+  let escalationCount = spec.escalationsUsed ?? 0;
+  let pendingEscalation = false;
+  for (const entry of parsed.records.filter((record) => record.type === "session-budget")) {
+    const payload = payloads.get(entry.payloadDigest);
+    if (payload?.rule !== "capability-escalation-v1") continue;
+    const event = escalationEventSchema.parse(payload);
+    if (event.requestedModel !== spec.escalation?.target)
+      throw new Error("escalation contract changed; reconcile before resuming");
+    if (event.phase === "intent") {
+      if (escalationCount !== 0) throw new Error("duplicate escalation; reconcile before resuming");
+      escalationCount = 1;
+      pendingEscalation = true;
+    } else {
+      if (!pendingEscalation || event.unknownUsage)
+        throw new Error("ambiguous escalation usage; reconcile before resuming");
+      pendingEscalation = false;
+    }
+  }
+  if (pendingEscalation)
+    throw new Error(
+      "escalation has no completed effect; reconcile billing and source before resuming",
+    );
   const calls = parsed.records.filter((record) => record.type === "model-call");
   const unfinished = parsed.records
     .filter((record) => record.type === "model-call-started")
@@ -122,6 +147,7 @@ export async function recoveryContext(sessionRoot: string, runId: string, now = 
     ),
     remainingSteps,
     history,
+    escalationCount,
     remainingTokens: Math.max(0, spec.budgets.maxTokens - tokensUsed),
     pending,
   };

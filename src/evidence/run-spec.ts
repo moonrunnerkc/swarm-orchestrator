@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { canonicalJson, digestOfJson } from "./canonical-json.ts";
+import { escalationSettingsSchema } from "../gates/repair-policy.ts";
+import { asJsonValue, canonicalJson, digestOfJson } from "./canonical-json.ts";
 import type { EvidenceRecorder } from "./session.ts";
 
 /**
@@ -36,6 +37,8 @@ const runSpecSchema = z.strictObject({
   }),
   task: nonEmpty,
   architecture: z.enum(["single-agent", "fixed-graph", "planned-graph", "redundant"]),
+  escalation: escalationSettingsSchema.optional(),
+  escalationsUsed: z.number().int().min(0).max(1).optional(),
   model: z.strictObject({ spec: nonEmpty, pinned: z.boolean() }),
   tools: z.array(z.enum(toolNames)).min(1),
   network: z.enum(["denied", "mediated", "unrestricted"]),
@@ -126,7 +129,7 @@ function valueAt(value: unknown, path: readonly PropertyKey[]): unknown {
  * same however their fields were ordered, and any change to a bound field changes it.
  */
 export function runSpecDigest(spec: RunSpec): string {
-  return digestOfJson(JSON.parse(canonicalJson(spec)));
+  return digestOfJson(JSON.parse(canonicalJson(asJsonValue(spec))));
 }
 
 export interface SealedRunSpec {
@@ -150,7 +153,7 @@ export async function sealRunSpec(
     type: "run-spec-sealed",
     actor: "harness",
     provenance: ["user"],
-    payload: { digest, spec: JSON.parse(canonicalJson(spec)) },
+    payload: { digest, spec: JSON.parse(canonicalJson(asJsonValue(spec))) },
   });
   return { spec, digest };
 }
