@@ -92,6 +92,9 @@
   run with no declared file set no longer speaks of "no planner" and "no agent"; it says no
   file set was declared and what changed. The per-run signing key notice says what a per-run
   key means and that it is ordinary on a headless machine.
+- **A vitest file that repeats a test title no longer makes the whole suite unmeasured.**
+  The second occurrence is named by its position; the runner accepted the title and so does
+  the reading. Found on depose, where one repeated `it` hid 383 tests.
 - **A Python checkout whose ignored caches exist no longer fails to stage.** The scratch
   index named `__pycache__`, `.pytest_cache`, `.mypy_cache` and `.ruff_cache` as exclude
   pathspecs on `git add -A`, which git refuses with "paths are ignored" (exit 1) as soon as one
