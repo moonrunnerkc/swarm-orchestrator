@@ -40,6 +40,33 @@ const environmentNames = ["LANG", "TZ", "PLAYWRIGHT_BROWSERS_PATH"] as const;
 
 export function createContainerBackend(options: ContainerBackendOptions): IsolationBackend {
   containerImageSchema.parse(options.image);
+  // The image is made present once per backend, before the first container is created. A
+  // `create` against an absent image pulls it inside the command's own deadline, and a probe's
+  // deadline is seconds, so on a fresh machine every container would time out while the image
+  // downloaded and the run would stop without saying why.
+  let imageReady: Promise<void> | null = null;
+  const ensureImage = (execute: typeof runProcessGroup, cwd: string): Promise<void> => {
+    imageReady ??= (async () => {
+      const runtimeOptions = { cwd, env: containerClientEnvironment(), maxOutputBytes: 1_000_000 };
+      const present = await execute(
+        options.runtime,
+        ["image", "inspect", "--format", "{{.Id}}", options.image],
+        { ...runtimeOptions, timeoutMs: 15_000 },
+      );
+      if (present.exitCode === 0) return;
+      const pulled = await execute(options.runtime, ["pull", "--quiet", options.image], {
+        ...runtimeOptions,
+        timeoutMs: 600_000,
+      });
+      if (pulled.exitCode !== 0) {
+        imageReady = null;
+        throw new Error(
+          `image ${options.image} is not present and could not be pulled${pulled.timedOut ? " within ten minutes" : ""}: ${(pulled.stderr || pulled.startFailure || "").trim().split("\n").at(-1) ?? ""}`,
+        );
+      }
+    })();
+    return imageReady;
+  };
   return {
     name: `${options.runtime}:${options.image}`,
     nodeProgram: "node",
@@ -110,10 +137,13 @@ export function createContainerBackend(options: ContainerBackendOptions): Isolat
         timeoutMs: 15_000,
         maxOutputBytes: 4_000_000,
       };
+      await ensureImage(execute, options.workspaceRoot);
       await options.observeLifecycle?.({ identity, phase: "create-intent" });
       let ran: Awaited<ReturnType<typeof runProcessGroup>>;
       let cleanupFailure: Error | null = null;
       let creationUncertain = false;
+      let createdTimedOut = false;
+      let createdStderr = "";
       try {
         const created = await execute(
           options.runtime,
@@ -153,6 +183,8 @@ export function createContainerBackend(options: ContainerBackendOptions): Isolat
           { ...runtimeOptions, timeoutMs: runOptions.timeoutMs },
         );
         creationUncertain = created.timedOut || created.startFailure !== null;
+        createdTimedOut = created.timedOut;
+        createdStderr = (created.startFailure ?? created.stderr).trim().split("\n").at(-1) ?? "";
         if (created.exitCode === 0)
           await options.observeLifecycle?.({ identity, phase: "created" });
         ran =
@@ -187,10 +219,16 @@ export function createContainerBackend(options: ContainerBackendOptions): Isolat
           identity,
           phase: removed ? "removed" : "cleanup-failed",
         });
-        if (!removed)
+        if (!removed) {
+          // Name what creation observed, so a create that timed out or failed to start is not
+          // reported only as a cleanup that could not be confirmed.
+          const creation = creationUncertain
+            ? ` (creation ${createdTimedOut ? "timed out" : "did not start"}${createdStderr ? `: ${createdStderr}` : ""})`
+            : "";
           cleanupFailure = new Error(
-            `container ${identity} cleanup could not be confirmed; stop dispatch and repair this runtime resource`,
+            `container ${identity} cleanup could not be confirmed${creation}; stop dispatch and repair this runtime resource`,
           );
+        }
       }
       if (cleanupFailure !== null) throw cleanupFailure;
       return ran;

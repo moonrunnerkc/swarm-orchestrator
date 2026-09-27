@@ -47,6 +47,16 @@
   intent refusing the next challenge, and a revised contract deriving a fresh verdict.
 - The stable 1.x contract is written down in `docs/verifier-first/contract.md`.
 
+### Fixed
+
+- **A container image that is not on the machine is pulled once, before the first container.**
+  `docker create` against an absent image pulled it inside the command's own deadline, and a
+  probe's deadline is seconds, so on a fresh machine (a GitHub runner with the Action) every
+  container timed out while the image downloaded and the run stopped as "cleanup could not be
+  confirmed" without saying why. The backend now inspects the image, pulls it with its own
+  ten-minute allowance, names a pull that fails, and a creation that timed out or did not start
+  is named in the cleanup message with the runtime's last line.
+
 ### Changed
 
 - Both binaries exit 2 for a command line they cannot read, as the exit code taxonomy said.
