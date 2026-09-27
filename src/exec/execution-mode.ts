@@ -40,6 +40,8 @@ export interface IsolationBackend {
       readonly timeoutMs: number;
       readonly signal?: AbortSignal | undefined;
       readonly environment?: Record<string, string> | undefined;
+      /** Registry access for this one command, which only the authorized install asks for. */
+      readonly network?: "none" | "registry" | undefined;
     },
   ): Promise<ProcessRunResult>;
 }

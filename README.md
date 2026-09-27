@@ -2,222 +2,92 @@
 
 <div align="center">
 
-<h1>swarm-orchestrator</h1>
+<h1>swarm-verify</h1>
 
-<p><strong>A coding agent for the terminal that leaves a signed, offline-checkable record of what it ran and what passed.</strong></p>
-
-<p>
-The model can say whatever it likes.<br />
-It cannot make a check pass, mark a claim verified, or change a record after the fact.
-</p>
-
-<p>
-  <a href="docs/README.md"><strong>Explore the docs »</strong></a>
-  ·
-  <a href="docs/evidence/2026-08-18/live-tasks.md">See a real run</a>
-  ·
-  <a href="https://github.com/moonrunnerkc/swarm-orchestrator/issues/new?labels=bug">Report a bug</a>
-</p>
-
-[![gates](https://img.shields.io/github/actions/workflow/status/moonrunnerkc/swarm-orchestrator/gates.yml?branch=v13-main&style=for-the-badge&label=gates)](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/gates.yml)
-[![npm](https://img.shields.io/npm/v/swarm-orchestrator?style=for-the-badge&label=npm&color=CB3837)](https://www.npmjs.com/package/swarm-orchestrator)
-[![node](https://img.shields.io/badge/node-%E2%89%A522-5FA04E?style=for-the-badge)](package.json)
-[![license](https://img.shields.io/badge/license-ISC-blue?style=for-the-badge)](LICENSE)
+<p><strong>Independently check what an AI-written change actually ran, whether the checks it passed could have caught wrong work, and what stays unverified.</strong></p>
 
 </div>
 
----
-
-## What it is
-
-`swarm` takes a task and a git repository, makes a bounded change, runs your project's checks
-over it, and writes a record of every command it ran and every check that passed or failed.
-The record is a hash-chained ledger, exported as a signed bundle that carries its own
-dependency-free verifier, so anyone can check it later with nothing but Node and without
-trusting the machine that produced it.
-
-It is for two kinds of people. Engineers who want an agent to make a change and want to review
-what it did from evidence rather than from the agent's own summary. And reviewers who are handed
-somebody else's patch or bundle and need to check it without installing the agent or believing
-its author.
-
-**Upgrading from 12.x?** That was a pull-request auditor; 13 and later are a coding agent under
-the same package name, with no migration path. Stay on the `v12-final` tag, or pin the major.
-
-## Source upgrade workflows
-
-The [broad-use source guide](docs/broad-use.md) covers model-free patch, branch and PR verification;
-Node/Python initialization and selected packages; CLI, local HTTP and optional Playwright checks;
-one explicit escalation; and bugfix, refactor and dependency-upgrade presets. The full and
-standalone CLIs share the verifier. [Delivery evidence](docs/upgrade-completion.md) distinguishes
-implemented source, exact-source validation and remote delivery. These additions are not an
-npm publication; use the documented source tarball installation until a release is verified.
-
-Browser acceptance requires a sealed `instrument` and an immutable Playwright container runtime.
-Project `argv` reports remain unjudged. Unavailable package checks remain visible; missing
-required checks prevent complete verification. See the linked broad-use guide for migration.
-
-## Install
+![A bundle verifies, one byte is changed, and the verifier refuses it with the broken link named](docs/evidence/2026-09-27/verifier-first/tamper-demo.gif)
 
 ```sh
-npm install -g swarm-orchestrator
+npx swarm-verify
 ```
 
-That is **14.2.0**. It runs on Node 22 or newer, and every measurement runs on Node 22.8 or
-newer: the changed-line coverage measurement spawns node's test runner with process isolation
-named on the command line, in the spelling the running Node takes. On 22.0 to 22.7 that one
-measurement reports unmeasured and never counts as a pass. `swarm doctor` says which Node it
-found and what owns the `swarm` command, and `--fix` repairs an install that an older build is
-shadowing.
+Run it in a repository. It discovers the declared test command from the manifests, runs it the
+way a CI job would, and prints five conclusions apart: whether the command ran, what the checks
+found, how the commands were contained, whether any requirement was judged, and whether any
+check was challenged. A pass is a regression-only pass and is printed as one. Nothing is
+written into the repository, and no model, key or configuration is needed.
 
-## Try it
+Needs Node 22 or newer and git. Linux and macOS run every command; Windows runs bundle
+verification. The recording above is a real run of the published package over the committed
+bundle: verified, one byte of one record changed, refused with the reason
+([transcript](docs/evidence/2026-09-27/verifier-first/tamper-demo-transcript.txt),
+[script](docs/evidence/2026-09-27/verifier-first/tamper-demo.sh)).
 
-```sh
-export ANTHROPIC_API_KEY=...       # or OPENAI_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY,
-                                   # or start Ollama and pass --model local:<id>
-cd your-repository
-swarm "make slugify collapse whitespace and strip punctuation"
+[![gates](https://img.shields.io/github/actions/workflow/status/moonrunnerkc/swarm-orchestrator/gates.yml?branch=v13-main&style=for-the-badge&label=gates)](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/gates.yml)
+[![verifier matrix](https://img.shields.io/github/actions/workflow/status/moonrunnerkc/swarm-orchestrator/verifier-matrix.yml?branch=v13-main&style=for-the-badge&label=node%2022%20%7C%2024)](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/verifier-matrix.yml)
+[![npm](https://img.shields.io/npm/v/swarm-verify?style=for-the-badge&label=swarm-verify&color=CB3837)](https://www.npmjs.com/package/swarm-verify)
+[![license](https://img.shields.io/badge/license-ISC-blue?style=for-the-badge)](LICENSE)
+
+## In CI
+
+One job, one Action, the permissions a signed comment needs
+([the complete workflow](docs/examples/swarm-verification.yml)):
+
+```yaml
+name: swarm-verify
+on:
+  pull_request:
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: moonrunnerkc/swarm-verify@v1
 ```
 
-Keys come from the environment or your OS keychain, never from `swarm.toml`: that file is
-committed and cloned, so a key in it has already been shared with everyone holding the
-repository. Every command and flag is in [docs/cli.md](docs/cli.md).
+The Action fetches the pull request's head and base by commit id into a checkout it owns, runs
+the verification with candidate commands in a network-disabled container, signs the verdict as
+a GitHub artifact attestation, and posts one comment bound to the head that says what was
+measured and what was not. Forks and Dependabot have
+[a documented trusted route](docs/examples/swarm-verification-forks.yml). Inputs, outputs and
+how to verify a signed verdict from outside the run are in
+[the broad-use guide](docs/broad-use.md#github-action).
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+## What it says, and what it does not
 
-## How it verifies
+`regression: pass` means the repository's own checks passed on that exact tree. It does not
+mean the work was done. Only a requirement contract can say that, and with one, `swarm-verify
+ci --goal-contract` judges each requirement by its own check and, with `--challenges`, asks
+whether that check could have caught wrong work: does it reject the tree before the change,
+does it reject mechanical mutations of the change that the repository's own suite refuses,
+does it reject a fixture sealed as a violation. A requirement whose check cannot be shown to
+detect anything is reported as a gap, never as a pass.
 
-Every tool call and every check goes through one recording chokepoint, and the record is an
-append-only, hash-chained ledger that lives outside the workspace. When a run ends it is
-exported as a signed bundle carrying a dependency-free verifier, so the bundle can be checked
-anywhere with plain Node.
+Every run exports a bundle carrying its own dependency-free verifier. Integrity, signer
+identity, execution trust, regression, task acceptance and challenge coverage are reported as
+separate answers, and `unmeasured` is one of them.
 
-Five words carry most of the weight. A **gate** is a check declared as data: a command, a
-parser, and whether it blocks. The **ratchet** is the rule that a retry may not trade away
-tests, assertions or coverage to turn a gate green. A **bond** is one file a passing gate is
-handed that it must refuse, so a pass that cannot fail is caught. An **oracle** is the check
-you supply that says the task was done, as distinct from nothing broke. **Reach** is whether
-that oracle executed the lines a patch added. And **unmeasured** is a verdict of its own:
-nobody checked is not the same as checked and passed, and it never renders green.
+## Where to go next
 
-The mechanics, the nine-answer report and worked examples are in
-[docs/verifying.md](docs/verifying.md). Retries under the ratchet, sessions and several workers
-at once are in [docs/using.md](docs/using.md).
+| You want to | Read |
+| --- | --- |
+| verify a patch, branch or pull request from any author, with a contract or without | [docs/verify-only.md](docs/verify-only.md), [docs/broad-use.md](docs/broad-use.md) |
+| check what a bundle establishes, and who signed it | [docs/verify-only.md](docs/verify-only.md#swarm-verify-a-bundle-and-who-signed-it) |
+| route an agent's test command through the ledger, from Claude Code, an MCP client or a git hook | [docs/integrations.md](docs/integrations.md) |
+| every command, flag and exit code | [docs/cli.md](docs/cli.md) |
+| every public claim and the artifact behind it, and what may not be said | [docs/claims.md](docs/claims.md) |
+| the coding agent this verifier was built for, an advanced beta mode | [docs/agent.md](docs/agent.md) |
+| the verifier-first campaign, its baseline, evidence and open items | [docs/verifier-first/README.md](docs/verifier-first/README.md) |
 
-## Use it without a model
-
-Three commands need no model, no API key and no local backend. `swarm gates` measures a
-workspace, `swarm ci --patch <file>` verifies a patch in a fresh checkout of its base, and
-`swarm verify <bundle>` checks a bundle and who signed it. They also ship on their own as the
-`swarm-verify` package under [packages/swarm-verify](packages/swarm-verify), the same code with
-none of the agent. The walkthrough, over the committed tamper demo, and the install for the
-standalone package are in [docs/verify-only.md](docs/verify-only.md).
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-## Measured
-
-Every number here links to the committed artifact of the thing happening. The full table, and
-the list of things that may not be said, is [docs/claims.md](docs/claims.md).
-
-- **One changed byte breaks verification.** The same bundle verified and then tampered with in
-  a single byte, exit 0 and exit 1 side by side, with a script to reproduce it:
-  [tamper demo](docs/evidence/2026-08-18/tamper-demo).
-- **A bundle verifies on a machine that has never seen this repository.** Run in a `node:24`
-  container with no network and no mount of this repository:
-  [clean-container-verification.md](docs/evidence/2026-08-23/clean-container-verification.md).
-- **A green verdict is computed by the harness, and the model cannot produce one.** In a real
-  run the model asserted a predicate the language does not parse; the harness rendered it
-  `UNVERIFIED` and carried on, twice: [shakedown results](docs/evidence/2026-08-18/shakedown/results.md).
-- **A suite passing is not the task being done.** Four of eighteen real-repository patches
-  passed their project's whole suite and failed a hidden acceptance test, which is why `swarm ci`
-  reports `regression` and `task` as two answers: [docs/verifying.md](docs/verifying.md).
-- **The oracle is judged too.** Certified tasks turned out to rest on oracles that could not
-  fail. The last false green standing, `commander#1671`, was certified by an oracle that runs
-  every line the patch adds and never tests the precedence those lines decide; it is refused now
-  because that oracle accepted a change to a line it had run:
-  [docs/verifying.md](docs/verifying.md#the-oracle-is-judged-too).
-- **The September 6 mined-corpus false-green rate was 0 in 15**, 0.0%, 95% CI [0.0, 20.4], with
-  two oracles per task, one handed to the tool and one held back:
-  [mined-corpus](docs/evidence/2026-09-06/mined-corpus/README.md). The denominator moved when
-  the tool did: four patches both oracles accept are refused because the tool's own oracle never
-  ran part of what they changed, five because the sealed half rejects work the held-back half
-  accepts, and one because its oracle accepted a change to a line it had run.
-- **Twelve tasks reported as unjudgeable were the agent having written nothing at all**, which
-  is a model failure and is recorded as one. An earlier 0-of-18 was withdrawn rather than
-  corrected quietly: the same test was handed to the tool and then used as the ground truth it
-  was scored against, so it agreed with itself:
-  [false-green-measurement.md](docs/evidence/2026-09-05/false-green-measurement.md).
-- **Of the gates this project agreed not to call itself production-ready without**, the
-  historical assessment records eight passing, two partial, two unproven, and two reported
-  rather than barred: [docs/beta-gates.md](docs/beta-gates.md).
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-## What is not claimed
-
-The five that matter most. The full list is in
-[docs/verifying.md](docs/verifying.md#what-is-not-claimed).
-
-- **It is not production-ready.** The counts above describe the linked campaigns, not a fresh
-  measurement of every gate on this checkout. Each row and what would settle it:
-  [docs/beta-gates.md](docs/beta-gates.md).
-- **Not "fully secure".** The secret detector does known-pattern scrubbing, not secret removal.
-  Zero crashes at a fuzz budget is evidence, not proof.
-- **The default execution mode is `restricted`, not `isolated`.** A lexical path and program
-  policy in front of interpreters unless you pass `--isolation`. Reported before the run starts
-  and recorded on the chain rather than quietly assumed, but it is not containment.
-- **0 in 15 says "under 20%", not "zero".** That upper bound is the honest half of the rate,
-  and it is a rate for that corpus and that build, not for this one.
-- **Shown its oracle, a model still gets past this.** A patch written to satisfy a visible test
-  has its added lines tested by that test, so the oracle refuses every mutant of them and is
-  right to. Bonding asks whether the oracle judged what the patch added. It cannot ask what the
-  patch left out, and that is what an adversarial patch does.
-
-Gates prove mechanical quality, not design quality. What a bundle buys you is that reviewing the
-change is fast and its claims are checkable, not that review is unnecessary.
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-## Roadmap
-
-The implementation is ahead of the evidence needed to call this production-ready. The audit
-repairs are recorded in [the implementation record](docs/audit-implementation-2026-09-11.md);
-the local campaign and every excluded case are in
-[the September 11 report](docs/evidence/2026-09-11/local-campaign/report.md).
-
-- [x] Connect verification, displayed acceptance, cancellation, budgets and recovery to the
-      records that establish them. Use standard DSSE signing bytes and literal replacement text.
-- [x] Build the campaign machinery: separate case author, checker and solver models; admission
-      controls before grading; frozen schedules; actual baseline dispatch; every failed launch
-      retained; raw evidence that can be checked from the checkout.
-- [x] Run the available Docker security and cleanup matrix. Fourteen declared observations
-      passed, with working attack controls and a separate check that ordinary work still runs.
-      Repair after abrupt harness death was exercised too.
-- [ ] A false-green interval that supports a population claim. The historical 0 in 15 has a
-      20.4% upper bound. The new synthetic pilot admits one evaluation case and cannot narrow
-      that bound for real work. Freeze an independent population and a sufficient sample first.
-- [ ] A denominator the tool did not choose. The new admission pass checks references and
-      predetermined counterexamples, but model authorship alone does not establish independence
-      or complete requirements. Independent admission and review are still needed.
-- [ ] An adversarial verification corpus that covers omitted requirements. Separate local
-      models supplied fresh checks and attacks. Mutation of added lines still cannot establish
-      that a patch implemented something it left out; the report keeps those outcomes visible.
-- [ ] Task success non-inferior to the strongest alternative. The two local baseline arms now
-      execute, with matched tasks and budgets. This pilot is too small to establish which tool
-      is strongest or to support a non-inferiority claim.
-- [ ] Security evidence for every supported backend. Docker was measured here; Podman and
-      nerdctl were unavailable. Independent attacks and those runtime matrices remain open.
-- [ ] No surviving daemons across the supported runtime boundaries. Docker cleanup passed the
-      declared lifecycle cases. Restricted host execution still cannot own a descendant that
-      leaves its process group; abrupt harness death requires supervision or later repair.
-- [ ] A new user productive in under ten minutes. The fixture and observer procedure are ready.
-      No new users were observed, so setup checks cannot close this item.
-
-Each broader claim stays open until its own evidence meets the bar in
-[docs/beta-gates.md](docs/beta-gates.md).
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+The full documentation index is [docs/README.md](docs/README.md).
 
 ## Contributing
 
@@ -231,18 +101,5 @@ does not establish.
 4. Commit (`git commit -m 'Add an amazing feature'`)
 5. Push (`git push origin feature/amazing-feature`)
 6. Open a pull request
-
-New dependencies need a one-line justification; the standard library is preferred.
-[docs/build-guide.md](docs/build-guide.md) is worth reading before structural work.
-
-## License
-
-Distributed under the ISC License. See [LICENSE](LICENSE).
-
-## Contact
-
-Brad Kinnard, [@KChackerman](https://x.com/KChackerman), bradkinnard@proton.me
-
-Project link: [github.com/moonrunnerkc/swarm-orchestrator](https://github.com/moonrunnerkc/swarm-orchestrator)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>

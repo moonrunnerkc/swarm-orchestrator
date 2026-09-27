@@ -1,0 +1,14 @@
+$ npx swarm-verify@1.0.0-rc.1 verify bundle --signer sha256:db270183c40c65843cacd2b3dcf20ee249d146d98c56699b2f3512ebeb84a52a
+integrity:  valid (installed verifier checked the ledger, payloads and recorded verdicts)
+  PASS  hash chain intact: 42 links
+bundle verified: every check passed
+signer:     trusted
+exit 0
+$ node flip-one-byte.mjs bundle tampered    # one byte of record 28's timestamp
+record 28: one byte, 9 -> 8, in its timestamp
+now run: node tampered/verify.mjs tampered
+$ npx swarm-verify@1.0.0-rc.1 verify tampered --signer sha256:db270183c40c65843cacd2b3dcf20ee249d146d98c56699b2f3512ebeb84a52a
+integrity:  invalid (installed verifier checked the ledger, payloads and recorded verdicts)
+  FAIL  hash chain intact: record 28 carries previousHash sha256:82a471cc7bca02de8c4020cbdb55bcb7d8dc9ad16c73ffede431f
+bundle FAILED: 1 check(s) did not pass
+exit 1

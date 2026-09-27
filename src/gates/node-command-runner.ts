@@ -102,6 +102,7 @@ export function createNodeCommandRunner(
             timeoutMs: options.timeoutMs,
             signal: cancellation,
             ...(options.environment === undefined ? {} : { environment: options.environment }),
+            ...(options.network === undefined ? {} : { network: options.network }),
             ...(options.readOnlyFiles === undefined
               ? {}
               : { readOnlyFiles: options.readOnlyFiles }),

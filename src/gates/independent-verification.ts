@@ -173,6 +173,11 @@ export interface IndependentVerificationOptions {
     readonly challengePolicy?: ChallengePolicy;
   };
   readonly repositoryRoot: string;
+  /**
+   * Where the verification's own effects are recorded: an authorized install is an effect with
+   * registry access and belongs on the chain whether or not a goal contract was supplied.
+   */
+  readonly evidence?: EvidenceRecorder;
   /** A harness-owned root shared with the selected runtime, outside the producing workspace. */
   readonly checkoutRoot?: string;
   readonly baseCommit: string;
@@ -387,7 +392,9 @@ export async function verifyIndependently(
             commands: options.commands,
             timeoutMs,
             ...(options.signal === undefined ? {} : { signal: options.signal }),
-            ...(options.goal === undefined ? {} : { evidence: options.goal.evidence }),
+            ...((options.evidence ?? options.goal?.evidence) === undefined
+              ? {}
+              : { evidence: (options.evidence ?? options.goal?.evidence) as EvidenceRecorder }),
           })
         : null;
 

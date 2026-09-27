@@ -58,8 +58,11 @@ injection is refused. Nothing writes back to the user's environment.
 
 Dependency preparation is separate and requires `--install`. npm uses `ci --ignore-scripts`,
 pnpm uses `install --frozen-lockfile --ignore-scripts`, and uv uses `sync --locked
---no-install-project`. Network restrictions still apply. A network-disabled container needs a
-suitable prepared runtime; installation authorization does not silently loosen its boundary.
+--no-install-project`. Inside a container, that one authorized command runs with registry
+access, with lifecycle scripts off, and is recorded with `network: registry` on its
+`dependency-install` record; every check that follows runs with the network off, and the
+containment self-test still measures `isolated`. Without `--install` a network-disabled
+container needs a prepared runtime, and nothing loosens its boundary.
 Before model spending, the worker prints the planned checks and measures installed manager,
 interpreter and configured runner versions. A declared manager-version mismatch stops with a
 setup remedy. Implicit Corepack and Python downloads are disabled.
@@ -388,7 +391,9 @@ verification and the artifact still happen. The supported route for them is
 `pull_request_target` workflow whose definition comes from the base branch, under which the
 Action refuses to run candidate code anywhere but inside docker isolation. Candidate code
 never sees the job's token, the runner's socket or the evidence directory; it sees a
-network-disabled container with the owned checkout mounted.
+network-disabled container with the owned checkout mounted. With `install: true` the lockfile
+install runs first inside the container with registry access and lifecycle scripts off, and
+is recorded as such; the checks then run with the network off.
 
 Inputs beyond the defaults: `target` (`head` or `merge`), `image`, `isolation` (`host` is
 explicit and recorded), `goal-contract`, `oracle`, `packages`, `install`, `require-task`,
