@@ -59,6 +59,31 @@
   that fails, and a creation that timed out or did not start is named in the cleanup message
   with the runtime's last line. A probe that timed out is named as such rather than as one
   that "could not start (null)".
+- **The vitest runner reports to a file and prints only that file.** Four of sixteen rollout
+  repositories had their whole suite read as "malformed runner output" because their tests
+  logged, or their test script printed its own verdicts, into the stdout the JSON reporter
+  used. Stdout is muted while the suite runs; the report's bytes are all that is printed.
+- **Manifest scripts run through npm whichever manager installed the lockfile.** pnpm is
+  fetched for the install command alone and is not in a trusted image, so every pnpm
+  project's typecheck, lint and build read "the command is not installed" in a container. A
+  script that itself calls pnpm still needs pnpm and says so.
+- **Containment probes are shell scripts.** An image built for a Python project carries no
+  node, so every probe "could not start" and the run refused with isolation unknown. The read
+  and write probes use `cat` and `printf`; the network probe attempts the connection with node,
+  else python3, else bash's `/dev/tcp`, and an image with none of them is recorded as
+  unmeasured, never as contained.
+- **The verdict's advice names what happened.** A failed or unmeasured required check was
+  advised as "the repository's own suite passed"; it now names the check that failed on the
+  patch and passed at the base, or the required check that measured nothing.
+- **A Python checkout whose ignored caches exist no longer fails to stage.** The scratch
+  index named `__pycache__`, `.pytest_cache`, `.mypy_cache` and `.ruff_cache` as exclude
+  pathspecs on `git add -A`, which git refuses with "paths are ignored" (exit 1) as soon as one
+  of them exists and is gitignored, the ordinary state after one test run; the verifier then
+  told the reader the repository "is not a git working tree". Everything is staged and the
+  caches are removed from the index afterwards. Found by the README-only python simulation.
+- **A git failure inside a repository quotes git's own last line** rather than the command
+  line, and no longer sends the reader to `git init` unless git said the directory is not a
+  repository.
 - **A uv project without a synced environment is a missing prerequisite, not four failed
   checks.** `uv run --no-sync` exits at once without a `.venv`; `check` now names
   `uv sync --locked` as the remedy and exits 4, as it does for a missing `node_modules`.
