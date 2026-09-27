@@ -11,6 +11,13 @@ const instrument = await mkdtemp(join(tmpdir(), "swarm-playwright-"));
 try {
   if ((await realpath(modules)) !== modules)
     throw Error("trusted Playwright modules must not be redirected");
+  const browserPath = process.env.PLAYWRIGHT_BROWSERS_PATH;
+  try {
+    if ((await realpath(browserPath)) !== browserPath)
+      throw Error("trusted Playwright modules and browsers must not be redirected");
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
   const output = await mkdtemp(join(subject, "swarm-browser-artifacts-"));
   await mkdir(instrument, { recursive: true, mode: 0o700 });
   await symlink(modules, join(instrument, "node_modules"));

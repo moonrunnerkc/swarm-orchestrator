@@ -81,6 +81,17 @@ export const behaviorCheckSchema = z
         code: "custom",
         message: "browser requires exactly one of project argv or a sealed instrument",
       });
+    const browserPath = check.environment.PLAYWRIGHT_BROWSERS_PATH;
+    if (
+      check.instrument &&
+      browserPath !== undefined &&
+      !["/ms-playwright", "/opt/swarm-browser/browsers"].includes(browserPath)
+    )
+      context.addIssue({
+        code: "custom",
+        message:
+          "sealed browser binaries must be installed in the immutable image at /ms-playwright or /opt/swarm-browser/browsers",
+      });
     if (check.instrument && check.instrument.titles.length !== check.expectedTests)
       context.addIssue({
         code: "custom",

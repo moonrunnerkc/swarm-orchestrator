@@ -22,7 +22,10 @@ export async function runBrowserInstrument(
       cwd: join(checkout, check.cwd),
       timeoutMs: check.timeoutMs,
       maxOutputBytes: check.maxOutputBytes,
-      environment: check.environment,
+      environment: {
+        ...check.environment,
+        PLAYWRIGHT_BROWSERS_PATH: check.environment.PLAYWRIGHT_BROWSERS_PATH ?? "/ms-playwright",
+      },
       requiresImmutableRuntime: true,
     },
   );
