@@ -53,9 +53,15 @@
   `docker create` against an absent image pulled it inside the command's own deadline, and a
   probe's deadline is seconds, so on a fresh machine (a GitHub runner with the Action) every
   container timed out while the image downloaded and the run stopped as "cleanup could not be
-  confirmed" without saying why. The backend now inspects the image, pulls it with its own
-  ten-minute allowance, names a pull that fails, and a creation that timed out or did not start
-  is named in the cleanup message with the runtime's last line.
+  confirmed" without saying why. The backend now inspects the image and pulls it with its own
+  ten-minute allowance before the command's deadline starts (a pull inside the deadline left a
+  containment probe no time at all and the run refused as "isolation unknown"), names a pull
+  that fails, and a creation that timed out or did not start is named in the cleanup message
+  with the runtime's last line. A probe that timed out is named as such rather than as one
+  that "could not start (null)".
+- **A uv project without a synced environment is a missing prerequisite, not four failed
+  checks.** `uv run --no-sync` exits at once without a `.venv`; `check` now names
+  `uv sync --locked` as the remedy and exits 4, as it does for a missing `node_modules`.
 
 ### Changed
 
