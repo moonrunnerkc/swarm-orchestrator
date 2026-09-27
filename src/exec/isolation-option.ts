@@ -1,4 +1,5 @@
 import { type ContainerBackendOptions, containerRuntimeAvailable } from "./container-backend.ts";
+import { containerImageSchema } from "./container-image.ts";
 
 /**
  * `--isolation docker`, `--isolation podman:python:3.12-bookworm`, or `none`.
@@ -29,6 +30,9 @@ export function parseIsolationOption(
         `("docker:python:3.12-bookworm"), or "none" to run on the host.`,
     );
   }
+  const image = containerImageSchema.parse(
+    imageParts.length === 0 ? defaultImage : imageParts.join(":"),
+  );
   if (!isAvailable(runtime)) {
     throw new Error(
       `--isolation "${value}" needs ${runtime}, which is not installed or is not answering. ` +
@@ -38,7 +42,7 @@ export function parseIsolationOption(
 
   return {
     runtime,
-    image: imageParts.length === 0 ? defaultImage : imageParts.join(":"),
+    image,
     workspaceRoot,
     // The person who started the run, so files the command writes belong to them rather than
     // to root, which is what a container writes as by default and what leaves a workspace the

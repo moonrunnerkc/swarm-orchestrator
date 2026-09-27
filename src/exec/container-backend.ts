@@ -2,6 +2,8 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { lstat, realpath } from "node:fs/promises";
 import { isAbsolute, relative } from "node:path";
+import { overlaidEnvironment } from "./child-environment.ts";
+import { containerImageSchema } from "./container-image.ts";
 import type { IsolationBackend } from "./execution-mode.ts";
 import { runProcessGroup } from "./run-process.ts";
 
@@ -34,12 +36,15 @@ export interface ContainerBackendOptions {
 }
 
 const workspaceMountPoint = "/workspace";
+const environmentNames = ["LANG", "TZ", "PLAYWRIGHT_BROWSERS_PATH"] as const;
 
 export function createContainerBackend(options: ContainerBackendOptions): IsolationBackend {
+  containerImageSchema.parse(options.image);
   return {
     name: `${options.runtime}:${options.image}`,
     nodeProgram: "node",
     protectsReadOnlyFiles: true,
+    environmentNames,
     run: async (argv, runOptions) => {
       const execute = options.runProcess ?? runProcessGroup;
       const subdirectory = relative(options.workspaceRoot, runOptions.cwd);
@@ -66,6 +71,15 @@ export function createContainerBackend(options: ContainerBackendOptions): Isolat
           startFailure: null,
         };
       }
+      const overlay = runOptions.environment ?? {};
+      if (
+        Object.keys(overlay).some((name) => !(environmentNames as readonly string[]).includes(name))
+      )
+        throw new Error("container backend does not support the requested environment overlay");
+      const variables = overlaidEnvironment(
+        { PATH: "/usr/local/bin:/usr/bin:/bin", HOME: "/tmp", TMPDIR: "/tmp" },
+        overlay,
+      );
       const readOnlyMounts: string[] = [];
       for (const file of runOptions.readOnlyFiles ?? []) {
         const path = relative(options.workspaceRoot, file);
@@ -117,9 +131,7 @@ export function createContainerBackend(options: ContainerBackendOptions): Isolat
             "/usr/bin/env",
             options.image,
             "-i",
-            "PATH=/usr/local/bin:/usr/bin:/bin",
-            "HOME=/tmp",
-            "TMPDIR=/tmp",
+            ...Object.entries(variables).map(([name, value]) => `${name}=${value}`),
             ...argv.map((argument, index) =>
               index === 0 && argument === process.execPath ? "node" : argument,
             ),
