@@ -129,8 +129,9 @@ No cloud purchase or implicit local-to-cloud routing occurred.
 
 Root 14.2.0 and standalone 0.2.0 are built, packed and installation-tested source packages.
 Branch publication and a mismatched verifier tag were both refused by the release validator
-(exit 1 as expected). Publishing workflows require their matching release tags and support
-provenance. No npm publication, tag or Marketplace listing was performed.
+(exit 1 as expected). The standalone workflow requires its matching release tag; the existing root workflow also
+permits explicit manual dispatch and checks version agreement on tagged runs. Both support
+provenance. Branch pushes do not publish. No npm publication, tag or Marketplace listing was performed.
 
 The support matrix is in [the guide](../../../broad-use.md). Host execution is restricted, not
 isolated. Private PR object fetching currently requires a separately authorized local checkout;
