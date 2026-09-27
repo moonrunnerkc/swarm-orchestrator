@@ -31,6 +31,8 @@ const observationSchema = z.strictObject({
   id: z.string(),
   workspace: z.string(),
   argv: z.array(z.string()),
+  /** The one command that may reach the registry, recorded as such. */
+  network: z.literal("registry").optional(),
   lockDigest: z.string(),
   sourceDigest: z.string(),
   succeeded: z.boolean().optional(),
@@ -88,6 +90,7 @@ export async function installFromLockfile(options: {
       id: `install-${evidence?.records().length ?? 0}`,
       workspace,
       argv: [...candidate.argv],
+      network: "registry" as const,
       lockDigest: digestOfBytes(await readFile(join(workspace, candidate.file))),
       sourceDigest: before,
     };
@@ -106,6 +109,7 @@ export async function installFromLockfile(options: {
       observed = await options.commands.runVouched(candidate.argv, {
         cwd: workspace,
         timeoutMs: Math.max(1, options.timeoutMs),
+        network: "registry",
       });
       after = await sourceFingerprint(workspace, options.signal);
     } catch (cause) {

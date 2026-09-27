@@ -125,7 +125,9 @@ export function createContainerBackend(options: ContainerBackendOptions): Isolat
             ...(options.sessionId === undefined
               ? []
               : [`--label=dev.swarm.session=${options.sessionId}`]),
-            `--network=${options.network ?? "none"}`,
+            // A command that asked for the registry gets the bridge for its own run only; the
+            // backend's default stays none, and nothing reads a previous command's setting.
+            `--network=${runOptions.network === "registry" ? "bridge" : (options.network ?? "none")}`,
             "--read-only",
             `--volume=${options.workspaceRoot}:${workspaceMountPoint}:rw`,
             ...readOnlyMounts,

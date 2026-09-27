@@ -161,6 +161,7 @@ async function verifyPatchUnderCancellation(
   try {
     result = await verifyIndependently({
       repositoryRoot: options.workspace,
+      evidence,
       checkoutRoot: evidence.directory,
       baseCommit,
       patch,

@@ -165,6 +165,12 @@ export interface GateDefinition {
 
 export interface CommandOptions {
   readonly requiresImmutableRuntime?: boolean;
+  /**
+   * Whether this one command may reach the package registry. Absent is none. Only the
+   * authorized lockfile install asks for it, with lifecycle scripts off, and it is recorded on
+   * the install's own record; every check that follows runs with the network off as before.
+   */
+  readonly network?: "none" | "registry";
   readonly readOnlyFiles?: readonly string[];
   readonly stdin?: string;
   readonly maxOutputBytes?: number;

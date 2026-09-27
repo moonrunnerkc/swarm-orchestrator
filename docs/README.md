@@ -8,6 +8,7 @@
 | [`verifying.md`](verifying.md) | bonds, `swarm ci`, the oracle and its reach, the nine answers, and what is not claimed |
 | [`verify-only.md`](verify-only.md) | `swarm check`, `swarm verify`, `swarm ci` and `swarm gates` with no model, walked through on committed artifacts |
 | [`broad-use.md`](broad-use.md) | source inputs, package scope, acceptance instruments, challenges and the GitHub Action |
+| [`agent.md`](agent.md) | the coding agent, an advanced beta mode: install, first run, how it verifies, what is measured and what is not |
 | [`integrations.md`](integrations.md) | the Claude Code hook, the MCP server and the pre-commit hook, each a client of the same verifier |
 | [`verifier-first/`](verifier-first/README.md) | the verifier-first campaign: the completion index, baseline, Node 22 record and dogfood manifest |
 | [`claims.md`](claims.md) | every public claim and the committed artifact behind it, and what may not be said |
