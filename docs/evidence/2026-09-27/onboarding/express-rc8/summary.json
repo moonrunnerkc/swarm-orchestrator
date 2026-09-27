@@ -1,0 +1,24 @@
+{
+  "repository": "hoangsonww/Claude-Code-Agent-Monitor",
+  "category": "express",
+  "image": "ubuntu:24.04",
+  "imageDigest": "ubuntu@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3",
+  "model": "qwen3.6:35b-a3b",
+  "version": "1.0.0-rc.8",
+  "steps": 14,
+  "firstResultMs": 138015,
+  "outcome": {
+    "step": 15,
+    "firstResult": true,
+    "firstResultText": "Got first result from swarm-verify on ./repo: \"regression-only pass: the declared checks passed on this tree; task correctness is unmeasured (exit 0)\". The tool ran the test command (npm run --silent test), which collected 1349 tests with 1347 passed, 0 failed, 2 skipped. It reported 6 checks passed (format, tests, build, placeholder, secret-scan, diff-budget) and 4 not run (typecheck, lint, file-set, behaviour-probe). Requirements were unmeasured because no requirement contract was supplied.",
+    "brokenCopyRefused": true,
+    "confusions": [
+      "The swarm-verify README mentions it 'exits 4 when [dependencies] are not' installed, but I didn't encounter this - dependencies were already installed via npm ci before running.",
+      "The tool detected uncommitted changes in the broken copy ('working tree has uncommitted changes') which is expected since I modified a file without committing.",
+      "No requirement contract was supplied in either run, so task correctness was never judged - only regression testing (did existing tests pass?) was performed."
+    ],
+    "report": "## Report: swarm-verify Testing on hoangsonww/Claude-Code-Agent-Monitor\n\n### Step 1: First Result on ./repo\nI successfully ran `npx swarm-verify` in the ./repo directory after installing dependencies with `npm ci`. The result was:\n\n**Result: regression-only pass (exit 0)**\n\nKey findings:\n- **Command**: npm run --silent test [node --test server/__tests__/*.test.js && cd client && npm test]\n- **Test execution**: exited 0 in 40.1s: 1349 collected, 1347 passed, 0 failed, 2 skipped\n- **Checks**: passed 6 (format, tests, build, placeholder, secret-scan, diff-budget), failed 0, not run 4 (typecheck, lint, file-set, behaviour-probe)\n- **Requirements**: unmeasured - no requirement contract was supplied\n- **Challenges**: none - no check was challenged\n- **Execution**: restricted - commands ran on host with built environment and no credentials\n\nThe tool exported a bundle to `/root/.swarm/sessions/20260927T234916-b9a29e/bundle` for verification.\n\n### Step 2: Broken Copy Test\nI created a disposable copy (`cp -r repo broken`), modified one test file (`broken/server/__tests__/env-path.test.js`) by changing an assertion pattern to `^THIS_PATTERN_WILL_NEVER_MATCH$`, installed dependencies, and ran swarm-verify again.\n\n**Result: fail: a blocking check failed (exit 1)**\n\nThe tool correctly detected the failure:\n- **Tests**: 1349 collected, 1346 passed, 1 failed, 2 skipped (exit 1)\n- **Checks**: passed 5, failed 1 (tests), not run 4\n- The \"tests\" check explicitly showed the failure with duration and test count details\n- Exit code was 1, indicating refusal\n\n### Step 3: Observations and Confusions\n\n**What worked well:**\n1. swarm-verify correctly identified the repository as a Node.js/npm project\n2. It discovered and ran the test command from package.json\n3. It provided detailed check results (6 passed, 4 not run)\n4. It properly refused when a test failed in the broken copy\n5. The output is comprehensive and machine-parseable\n\n**Confusions:**\n1. The README mentions exiting with code 4 when dependencies aren't installed, but I didn't encounter this scenario\n2. No requirement contract was supplied in either run, so \"task correctness\" was never judged - only regression testing was performed\n3. The tool detected uncommitted changes in the broken copy (\"working tree has uncommitted changes\") which is expected behavior\n\n**Time taken:** Approximately 5 steps (check directory structure, install deps, run swarm-verify on clean repo, create broken copy, modify test, install deps in broken copy, run swarm-verify on broken copy)"
+  },
+  "finishedAt": "2026-09-27T23:52:14.345Z",
+  "label": "AI onboarding simulation by a local model; not a human tester"
+}

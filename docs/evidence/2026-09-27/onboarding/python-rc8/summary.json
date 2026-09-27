@@ -1,0 +1,24 @@
+{
+  "repository": "taverntesting/tavern",
+  "category": "python",
+  "image": "ubuntu:24.04",
+  "imageDigest": "ubuntu@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3",
+  "model": "qwen3.6:35b-a3b",
+  "version": "1.0.0-rc.8",
+  "steps": 17,
+  "firstResultMs": 53310,
+  "outcome": {
+    "step": 18,
+    "firstResult": true,
+    "firstResultText": "I successfully ran swarm-verify on the tavern repository (./repo). The result was: `fail: a blocking check failed (exit 1)` due to a `format` check failure (4 files would be reformatted). The test command (`uv run --locked --no-sync python -m pytest -q`) actually passed (exited 0 with 539 executed tests), but the format check blocked the result. The tool discovered checks from pyproject.toml, ran them, and exported a bundle to `/root/.swarm/sessions/.../bundle`.",
+    "brokenCopyRefused": true,
+    "confusions": [
+      "The format check failed in both the clean and broken copies, which is a pre-existing issue in the repository unrelated to my test breakage. This might confuse users about whether failures are due to their changes or pre-existing state.",
+      "The output mentions 'Ratchet counts, changed-line coverage and base-control attribution unmeasured' without explaining what these mean.",
+      "The signing message about 'Secret Service keyring would not take a new key' is expected on headless machines but might be alarming to users unfamiliar with this context."
+    ],
+    "report": "## Report: swarm-verify Testing\n\n### Step 1: First Result on Clean Repository\nI ran `npx swarm-verify` in the `./repo` directory (taverntesting/tavern). \n\n**Result**: `fail: a blocking check failed (exit 1)`\n\nThe tool:\n- Discovered it's a Python project with `uv.lock`\n- Ran the test command: `uv run --locked --no-sync python -m pytest -q`\n- Tests passed (exited 0, 539 executed)\n- But a `format` check failed (4 files would be reformatted)\n- Reported checks: passed 5 (lint, tests, placeholder, secret-scan, diff-budget), failed 1 (format), not run 3 (typecheck, file-set, behaviour-probe)\n- Exported a bundle to `/root/.swarm/sessions/20260927T235252-b1b5db/bundle`\n\n### Step 2: Broken Copy Test\nI created a disposable copy (`cp -r repo broken`), modified `tests/unit/test_strict_util.py` to break an assertion (`assert as_bool is True` → `assert as_bool is False`), installed dependencies, and ran swarm-verify again.\n\n**Result**: `fail: a blocking check failed (exit 1)`\n\nThe tool correctly detected:\n- The `tests` check failed (546 runner-reported tests, 539 executed; outcome failed)\n- It noted the changed file: `tests/unit/test_strict_util.py`\n- Exit code was 1 (refused)\n\n### Step 3: Observations and Confusions\n- **swarm-verify works as expected**: It detected the broken test and refused with exit code 1.\n- **Pre-existing format failure**: The format check failed in both runs, which is a repository issue unrelated to my changes. This could confuse users about whether failures are due to their work or pre-existing state.\n- **Unexplained metrics**: Terms like \"Ratchet counts\" and \"base-control attribution\" appear without explanation.\n- **Signing message**: The Secret Service keyring error is expected on headless machines but might be alarming.\n\n### Time Taken\nApproximately 5 steps:\n1. Check directory structure\n2. Install uv\n3. Install dependencies\n4. Run swarm-verify on clean repo\n5. Create broken copy, modify test, install deps, run swarm-verify on broken copy"
+  },
+  "finishedAt": "2026-09-27T23:53:51.111Z",
+  "label": "AI onboarding simulation by a local model; not a human tester"
+}
