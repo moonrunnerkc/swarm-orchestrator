@@ -9,7 +9,8 @@ command it sits under, run with an environment holding nothing but `PATH` and `H
 
 If all you do is check other people's patches and bundles, the recommended install is
 `swarm-verify`: the same three commands, the same code, none of the agent. It is version 0.2.0
-and not yet on the registry, so build and pack it from a checkout:
+with a separate publication workflow. Check the [release evidence](https://github.com/moonrunnerkc/swarm-orchestrator/releases)
+for registry availability. The reproducible source installation path is:
 
 ```sh
 git clone https://github.com/moonrunnerkc/swarm-orchestrator && cd swarm-orchestrator

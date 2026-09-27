@@ -1,16 +1,13 @@
 # Broad-use upgrade completion ledger
 
-Status: local audit corrections verified; authorized default-branch delivery, remote CI and
-publication pending. The independent September 27 audit of
-`a6a83eeb9201957d505824b135f0bc9c83ee9944` established browser report forgery, omitted
-unavailable package gates and failed nightly proof. These invalidate the prior blanket
-completion claim.
-The earlier passing runs remain historical observations, not evidence that these defects
-were covered. Final executable source `981f7ff0e612a2caf1434b46a14c7659885d86c5` passed local
-gates and installed controls. See [audit corrections](upgrade-audit-corrections.md) and the
-[current observation index](evidence/2026-09-27/upgrade-audit-observations.json).
-Unaffected rows below retain their prior implementation evidence; they are not a claim of
-completed corrective delivery or new exact-commit remote CI.
+Status: audit corrections implemented and delivered, with local gates, exact-source remote CI,
+Action controls and nightly proof passing on `95891957987ec758f58a81ebb800933439f252de`.
+The subsequent report and consumer-pin update are documentation-only. Their exact commit checks
+and independent publication results are recorded with the [GitHub release](https://github.com/moonrunnerkc/swarm-orchestrator/releases).
+The September 27 audit invalidated the earlier blanket completion claim; its reproduced failures
+and failed corrective attempts remain in [audit corrections](upgrade-audit-corrections.md) and
+the [current observation index](evidence/2026-09-27/upgrade-audit-observations.json).
+Unaffected rows retain their original implementation evidence, not an invented new study.
 
 All five workflows share the existing engine. Start with [the broad-use guide](broad-use.md).
 [Prior evidence report, superseded for completion status](evidence/2026-09-27/broad-use/report.md) records exact commands and source
@@ -20,27 +17,27 @@ preserve the edit sets, amendments and intermediate failures.
 
 | UG | Production path | Meaningful verification | Status |
 | --- | --- | --- | --- |
-| UG-01 | Existing seals, ratchets, append-only records and independent verifier; captured blocking-check derivation | Full gates, historical bundles, status and upgrade adversarial tests | Corrected locally; remote proof pending |
+| UG-01 | Existing seals, ratchets, append-only records and independent verifier; captured blocking-check derivation | Full gates, historical bundles, status and upgrade adversarial tests | Corrected and verified |
 | UG-02 | Shared-source standalone prepack; tag/version interlock and provenance workflow | Clean installed tarballs; boundary and packaged checks | Complete |
 | UG-03 | Shared immutable patch/branch/PR source resolver; exact/merge-base identities | Real Git and PR 73 parity; hostile/moving inputs; dirty workspace preserved | Complete |
-| UG-04 | Pinned trusted composite Action; isolated candidate execution; bounded retained outputs | Prior post-push good/bad controls; local retention tests pass; corrective post-push controls pending | Local checks pass; remote proof pending |
-| UG-05 | Versioned JSON and escaped, truncation-marked Markdown assessment projection | Presentation injection tests; installed summaries and evidence digests | Corrected locally; remote proof pending |
+| UG-04 | Pinned trusted composite Action; isolated candidate execution; bounded retained outputs | Corrective post-push good/bad controls; recorded rejection, summary and failure evidence retained | Verified |
+| UG-05 | Versioned JSON and escaped, truncation-marked Markdown assessment projection | Presentation injection tests; installed summaries and evidence digests | Corrected and verified |
 | UG-06 | npm/pnpm and uv/existing-venv detection, initialization and preflight | Real locked preparation, configured runners, idempotent init and missing-tool controls | Complete |
-| UG-07 | Repeated repository-relative package selection; qualified checks and scope refusal | Mixed pnpm/Vitest and uv/pytest fixture; shared/outside changes refused | Corrected locally; remote proof pending |
+| UG-07 | Repeated repository-relative package selection; qualified checks and scope refusal | Mixed pnpm/Vitest and uv/pytest fixture; shared/outside changes refused | Corrected and verified |
 | UG-08 | Native runner plus structured Vitest/pytest outcomes with limited authority | Real collected good/bad tests; malformed, zero, duplicate, truncated and spoofed controls | Complete |
-| UG-09 | Typed behavior instruments in sealed goal contracts, existing final acceptance | Pinned artifacts, provenance, final-tree and independent bundle tests | Corrected locally; remote proof pending |
+| UG-09 | Typed behavior instruments in sealed goal contracts, existing final acceptance | Pinned artifacts, provenance, final-tree and independent bundle tests | Corrected and verified |
 | UG-10 | Controlled argv/stdin CLI adapter; bounded stream assertions | Real success/wrong output/exit, missing executable, timeout, cancellation and cleanup | Complete |
 | UG-11 | Owned local HTTP service; separate readiness and finite response assertions | Packed good/bad API responses, redirect refusal and freed ports | Complete |
-| UG-12 | Sealed Playwright instruments with immutable runtime and independent provenance checks; project reports unjudged | Both packed CLIs: real isolated Chromium good/bad, exact forged-report refusal, missing/zero/timeout/import controls | Corrected locally; remote proof pending |
+| UG-12 | Sealed Playwright instruments with immutable runtime and independent provenance checks; project reports unjudged | Both packed CLIs: real isolated Chromium good/bad, exact forged-report refusal, missing/zero/timeout/import controls | Corrected and verified |
 | UG-13 | Deterministic setup/infrastructure/implementation/permission classification | Repair policy, no-progress and ordinary worker behavior-repair tests | Complete |
 | UG-14 | One explicit alternate model, original budget and verification reserve | Fake-provider controller tests; actual local e2b to 31b escalation recorded once | Complete |
 | UG-15 | Owned effect intent/observation records; original recovery contract and reconciliation | Interrupted effects, escalation count/budget recovery and process ownership tests | Complete |
 | UG-16 | Bugfix reproducer fails on base output and passes on final candidate | Both packed CLIs clamp reproducer; wrong-behavior candidate rejected | Complete |
-| UG-17 | Refactor pinned obligations checked on base and candidate | Mixed packages, CLI, HTTP and browser preserved/changed behavior controls | Corrected locally; remote proof pending |
+| UG-17 | Refactor pinned obligations checked on base and candidate | Mixed packages, CLI, HTTP and browser preserved/changed behavior controls | Corrected and verified |
 | UG-18 | Exact dependency-field/lock authorization; installed-version and behavior checks | Real npm/pnpm/uv upgrade matrix and manifest tampering; ordinary worker npm upgrade | Complete |
-| UG-19 | Real subprocess/toolchain/isolated browser and installed-package matrix | Final local gates: 379 files, 3625 tests; installed matrices passed; corrective remote CI/nightly not run | Final remote proof pending |
-| UG-20 | Updated guides, package README, changelog, matrix and audit correction report | Installed controls, documentation checks and retained failed attempts | Updated locally; delivery pending |
-| UG-21 | Coherent local correction commits; user explicitly authorized owner-bypass delivery | Local source tested; corrective default-branch push and exact-commit CI pending | Delivery pending |
+| UG-19 | Real subprocess/toolchain/isolated browser and installed-package matrix | Local and Linux: 379 files, 3625 tests; macOS: 3607 passed, 18 capability skips; packaged Node 22/24, Action controls and corrected nightly passed | Verified |
+| UG-20 | Updated guides, package README, changelog, matrix and audit correction report | Installed controls, documentation checks and retained failed attempts | Verified |
+| UG-21 | Coherent local correction commits; user explicitly authorized owner-bypass delivery | Matching remote source SHA, successful corrective CI and nightly; report-only followup checked separately | Verified |
 
 Production entry points and shared modules:
 
@@ -61,5 +58,6 @@ coverage or deletion-exemption authority. Browser artifacts are diagnostic. Sign
 execution restrictions, regression and task acceptance remain separate. See the capability
 matrix and private-PR/special-file limitations in the guide.
 
-Source packages: root 14.2.0, standalone 0.2.0. Built tarballs are the installation path;
-registry publication and release tags are separate, unperformed actions.
+Source packages: root 14.2.0, standalone 0.2.0. Built tarballs are installation-tested.
+Their independently authorized publication, provenance and registry-install evidence are
+recorded with the GitHub release; a source push alone never establishes registry availability.

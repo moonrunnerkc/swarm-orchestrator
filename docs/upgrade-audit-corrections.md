@@ -1,7 +1,8 @@
 # September 27 upgrade audit corrections
 
 Baseline: `a6a83eeb9201957d505824b135f0bc9c83ee9944`.
-Status: local corrections verified; authorized delivery and publication in progress.
+Status: corrective source delivered and remote checks passed. Publication is independently
+recorded with the GitHub release; source delivery alone does not establish publication.
 The user audit is `/Users/brad/Downloads/Swarm_Orchestrator_Upgrade_Audit.md`.
 No previous campaign or evidence bytes are rewritten.
 
@@ -95,21 +96,21 @@ partially checked change. Ambiguous package overrides of repository inspections 
 
 Nightly proof provisions Chromium before gates. Linux gate and publishing workflows build the
 pinned browser fixture image. Failure notification no longer depends on the optional `ci` label.
-These workflow changes have static regression coverage; the corrected remote nightly has not
-run yet. Publication triggers were not broadened.
+These workflow changes have static regression coverage and the corrected remote nightly
+completed gates, fuzz and both proof arms. Publication triggers were not broadened.
 
-## Verification of final executable source
+## Initial clean-source validation
 
 Tested source: `981f7ff0e612a2caf1434b46a14c7659885d86c5`, clean worktree at execution.
-Subsequent changes to this report, the ledger, capability clarification and observation index
-are reporting-only. They do not claim a later executable commit was already tested.
+This is the first complete local correction run. The later CI fixture timing correction and
+its separate source-bound validation are recorded below.
 The [observation index](evidence/2026-09-27/upgrade-audit-observations.json) records exact
 commands, exit statuses, environment, source identity, tarball digests and retained log digests.
 Raw logs and the two additional installed-CLI reproduction scripts are owner-only under
 `~/.swarm/upgrade-validation/audit-evidence-qwjsubo4/`; fixture evidence stays under the recorded
 owned validation directories. Historical campaign bytes are unchanged.
 
-Final full gate output, verbatim:
+Full gate output for that source, verbatim:
 
 ```text
  Test Files  379 passed (379)
@@ -132,7 +133,7 @@ Each following command separately exited 0:
 The historical reference bundle returned 0; its one-byte-tampered copy returned 1, naming the
 broken link. Neither historical bundle nor experiment evidence was rewritten.
 
-Final tarballs were installed in clean directories without model credentials. Each validation
+Tarballs from that source were installed in clean directories without model credentials. Each validation
 script exited 0 after checking the expected positive and negative command statuses:
 
 | Installed validation | Observations | Evidence directory suffix |
@@ -185,15 +186,18 @@ if needed." This permits the corrective push through that existing route. No rul
 is needed or intended. This authorization does not retroactively authorize the prior delivery.
 The original workspace and its two unrelated untracked evidence files remain preserved.
 
-The local branch is `fix/upgrade-audit`. Corrective remote CI, the real post-push Action controls
-and the corrected nightly exercise are pending. UG-19 and UG-21 remain open until those actual
-results are recorded; the 21-requirement upgrade is not yet declared complete.
+The local branch is `fix/upgrade-audit`. Corrective source
+`95891957987ec758f58a81ebb800933439f252de` was pushed to `origin/v13-main` through the
+explicitly authorized owner bypass. The ruleset was unchanged. Its complete remote results
+are recorded below. Later edits to this report, the consumer Action pin and the publication
+wording are documentation-only; their own commit checks remain visible in GitHub.
 
-Root 14.2.0 and standalone 0.2.0 are built, packed and installation-tested. Publication is
-pending. GitHub's latest release is currently `v14.1.0`. The user separately authorized
-"GitHub release and npm publication." After source delivery and remote validation, the existing
-version-tag workflows will publish both packages with provenance; the root release will be
-marked latest. No tag, release or package publication is claimed by this pre-delivery report.
+Root 14.2.0 and standalone 0.2.0 are built, packed and installation-tested. The user separately
+authorized "GitHub release and npm publication." Publication uses the existing version-tag
+workflows with provenance. The [GitHub releases](https://github.com/moonrunnerkc/swarm-orchestrator/releases)
+record the actual tag, registry-install results and final delivery identity separately from
+this source validation record. At the pre-tag observation, latest was `v14.1.0` and the standalone
+registry query returned E404. Those observations are historical, not a continuing availability claim.
 
 Amendment 8, before release preparation: update the already-declared `CHANGELOG.md`
 to date the authorized 14.2.0 source release and correct the standalone version in its entry.
@@ -207,3 +211,53 @@ the prior identical executable source passed. Use a 15-second fixture test budge
 30-second process deadline, retaining the 300 ms wrong-output assertion and 500 ms hang control.
 The paired integration case receives 65 seconds for its two bounded processes. No production
 check timeout, assertion, skip or retry policy changes. Preserve the failed run and rerun gates.
+
+Amendment 10, before final documentation edits: add `docs/examples/swarm-verification.yml`
+to the declared set and update its Action pin, together with `docs/broad-use.md`, to the
+corrected source `95891957987ec758f58a81ebb800933439f252de`. Keep the source installation
+path in the already-declared verify-only guide and make publication status refer to release
+evidence, rather than leaving an unqualified pre-publication assertion in released docs.
+
+## Final source correction and remote proof
+
+Release preparation run [36333966390](https://github.com/moonrunnerkc/swarm-orchestrator/actions/runs/36333966390)
+failed on macOS: one test failed, 3606 passed and 18 were skipped. The known-good browser fixture
+exceeded its three-second Playwright test budget. The preceding identical production source
+passed. This failure was retained, then the fixture received a bounded 15-second allowance and
+30-second process deadline. Its 300 ms wrong-output assertion and 500 ms hanging-command control
+remain unchanged. No production timeout, assertion, retry or skip policy was weakened.
+
+The corrective commit is `95891957987ec758f58a81ebb800933439f252de`. On this exact clean source,
+the targeted real-browser suite passed three tests, then each of `npm run gates`, `npm run build`,
+`npm run build:verify`, `npm run check:packaged` and `npm run fuzz:build` exited 0. The full gate
+output for this separate run was:
+
+```text
+ Test Files  379 passed (379)
+      Tests  3625 passed (3625)
+   Start at  10:50:00
+   Duration  148.06s (transform 11.38s, setup 0ms, import 28.56s, tests 1139.47s, environment 19ms)
+```
+
+A byte comparison found all 767 rebuilt full-package distribution files and all 308 standalone
+files identical to the installed tarballs used for the earlier integration matrix. The later
+change is fixture timing, not runtime behavior. The index records both source identities rather
+than relabeling the earlier matrix as a new execution.
+
+Exact-commit remote outcomes:
+
+| Run | Result |
+| --- | --- |
+| [Gates 36334859453](https://github.com/moonrunnerkc/swarm-orchestrator/actions/runs/36334859453) | Ubuntu: 379 files, 3625 tests passed. macOS: 376 files, 3607 tests passed; 3 files and 18 tests skipped for unavailable container capability. Node 22 and 24 packaged jobs passed. Both platform fuzz steps passed. |
+| [Action controls 36334859477](https://github.com/moonrunnerkc/swarm-orchestrator/actions/runs/36334859477) | Trusted good control confirmed exit 0; trusted bad control confirmed exit 1 and behavioral rejection. Failure evidence retained. |
+| [Nightly proof 36334859662](https://github.com/moonrunnerkc/swarm-orchestrator/actions/runs/36334859662) | 379 files, 3625 tests passed; fuzz passed; reference verifier exited 0 and one-byte tamper exited 1 naming the broken chain; transcript uploaded. |
+
+Linux and local Docker execution measured the capabilities skipped on hosted macOS. A skip is
+not a pass. The downloaded earlier corrective Action bundles also independently re-derived
+the accepted and rejected outcomes. Installed `verify` returned 1 for both because their
+self-generated ephemeral signers remain untrusted, while integrity was valid. An initial review
+script incorrectly expected zero; that expectation was corrected, with no signer-policy change.
+
+Source completion and package publication remain distinct facts. The final release evidence
+binds its tag, default-branch commit, exact-commit checks, package provenance and registry
+installation results. This report does not infer publication from a source push or a green test.
