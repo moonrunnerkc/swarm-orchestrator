@@ -84,7 +84,11 @@ export function readRunnerResult(observation: GateObservation): GateReading {
           : failed
             ? "failed"
             : "passed",
-      detail: `${tests.length} runner-reported tests, ${executed.length} executed; outcome ${failed ? "failed" : "passed"}. Ratchet counts, changed-line coverage and base-control attribution unmeasured for this report.`,
+      // What this reading is and is not: the runner's own counts, with the outcome. Whether the
+      // changed lines were executed, and whether a failure is the patch's or the base's, are
+      // measured elsewhere in the run and reported there; a reader met the old wording
+      // ("ratchet counts", "base-control attribution") without knowing what it meant.
+      detail: `${tests.length} runner-reported tests, ${executed.length} executed; outcome ${failed ? "failed" : "passed"}. Counts are the runner's own; whether the changed lines ran, and whether a failure is inherited from the base, are reported apart where measured.`,
       measures: {},
     };
   } catch {
