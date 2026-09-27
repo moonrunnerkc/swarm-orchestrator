@@ -1,4 +1,5 @@
 import { type ChangedLines, carriesCode, pathSetAside } from "./oracle-reach.ts";
+import { pythonMutantOfLine, pythonOperatorRank, pythonPathSetAside } from "./python-mutants.ts";
 
 /**
  * Changes to the lines a patch added that an oracle worth anything has to refuse.
@@ -655,6 +656,11 @@ export interface MutantPlan {
   readonly perOperatorLimit?: number;
 }
 
+/** Whether a path takes the Python operator set rather than the JavaScript one. */
+function isPython(path: string): boolean {
+  return path.endsWith(".py");
+}
+
 export function mutantsOfChangedLines(plan: MutantPlan): readonly Mutant[] {
   const limit = plan.limit ?? 6;
   const perOperatorLimit = plan.perOperatorLimit ?? 2;
@@ -665,16 +671,21 @@ export function mutantsOfChangedLines(plan: MutantPlan): readonly Mutant[] {
     // The same two exclusions reach applies, for the same reasons: an acceptance oracle runs its
     // own test file and never the candidate's, and a file no runner loads has no behaviour to
     // change. A mutant in either could only be refused for a reason that is not about the patch.
-    if (pathSetAside(file.path) !== null) {
+    const python = isPython(file.path);
+    if (python ? pythonPathSetAside(file.path) : pathSetAside(file.path) !== null) {
       continue;
     }
     for (const added of file.addedLines) {
-      const mutant = mutantOfLine(file.path, added.line, added.text);
+      const mutant = python
+        ? pythonMutantOfLine(file.path, added.line, added.text)
+        : mutantOfLine(file.path, added.line, added.text);
       if (mutant === null) {
         continue;
       }
       candidates.push({
-        rank: operatorsByEquivalenceRisk.indexOf(mutant.operator),
+        rank: python
+          ? pythonOperatorRank(mutant.operator)
+          : operatorsByEquivalenceRisk.indexOf(mutant.operator),
         order: fileAt * 1_000_000 + added.line,
         mutant,
       });

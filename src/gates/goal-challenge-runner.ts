@@ -9,7 +9,7 @@ import {
   prepareGoalArtifact,
   snapshotGoalCheckout,
 } from "./goal-checkout.ts";
-import { nodeSyntaxCheck } from "./mutant-parse.ts";
+import { syntaxCheck } from "./mutant-parse.ts";
 import type { CheckStatus } from "./oracle-bond-run.ts";
 
 /**
@@ -35,7 +35,7 @@ export function createChallengeRunner(options: {
   return {
     read: (path) => readFile(join(checkout, path), "utf8").catch(() => null),
     write: (path, text) => writeFile(join(checkout, path), text),
-    parses: nodeSyntaxCheck(commands, { cwd: checkout, timeoutMs }),
+    parses: syntaxCheck(commands, { cwd: checkout, timeoutMs }),
     runRepositoryChecks: options.runRepositoryChecks,
     restore: options.restoreCandidate,
     async applyFixture(patch) {

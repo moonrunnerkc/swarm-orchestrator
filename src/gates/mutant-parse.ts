@@ -19,6 +19,11 @@ export type ParseCheckReading = "usable" | "syntax-error" | "dialect-unreadable"
  * statement on one line can be the middle of an expression the line above it opened, and no
  * lexical reading of a single line settles that.
  */
+/** Python mutants are always shown to parse; see `syntaxCheck`. */
+export function mustBeShownToParseFor(path: string, operator: MutantOperator): boolean {
+  return path.endsWith(".py") || mustBeShownToParse(operator);
+}
+
 export function mustBeShownToParse(operator: MutantOperator): boolean {
   return operator === "delete-statement";
 }
@@ -52,6 +57,31 @@ export function readParseCheck(input: {
  * The program is named rather than pathed, for the reason `IsolationBackend` names it: the host's
  * own binary path means nothing where a container runs the command.
  */
+/**
+ * Whether a file parses, by the language its name declares: node for JavaScript and
+ * TypeScript, Python's own parser for `.py`. A Python mutant is always checked, since an
+ * indentation-sensitive grammar can be broken by any rewrite, not only a deletion.
+ */
+export function syntaxCheck(
+  commands: GateCommandRunner,
+  options: Pick<CommandOptions, "cwd" | "timeoutMs">,
+): (file: string) => Promise<boolean> {
+  const node = nodeSyntaxCheck(commands, options);
+  return async (file: string): Promise<boolean> => {
+    if (!file.endsWith(".py")) return node(file);
+    const observed = await commands.runVouched(
+      [
+        "python3",
+        "-c",
+        "import ast,sys; ast.parse(open(sys.argv[1], encoding='utf-8').read())",
+        file,
+      ],
+      { cwd: options.cwd, timeoutMs: options.timeoutMs },
+    );
+    return observed.exitCode === 0;
+  };
+}
+
 export function nodeSyntaxCheck(
   commands: GateCommandRunner,
   options: Pick<CommandOptions, "cwd" | "timeoutMs">,
