@@ -30,9 +30,14 @@ export interface GatesCommand {
 export interface CiCommand {
   readonly isolation?: string | null;
   readonly acceptanceContract?: string;
+  readonly summaryFile?: string;
+  readonly requireIsolation?: boolean;
   readonly bundleDirectory?: string;
   readonly command: "ci";
-  readonly patchFile: string;
+  readonly patchFile?: string;
+  readonly branch?: string;
+  readonly pr?: string;
+  readonly exactBase?: boolean;
   /**
    * Install the fresh checkout's dependencies from its lockfile before checking. Off by default:
    * installing runs whatever scripts the registry serves, which is a decision rather than a
@@ -102,6 +107,7 @@ const switchFlags = new Set([
   "remove",
   "install",
   "oracle-only",
+  "require-isolation",
   "fix",
   "offline",
   "no-tui",
@@ -173,9 +179,12 @@ export function parseVerifyOnlyCommand(
 
   if (words[0] === "ci") {
     const patchFile = flags.get("patch");
-    if (patchFile === undefined || patchFile.trim().length === 0) {
+    const branch = flags.get("branch");
+    const pr = flags.get("pr");
+    const inputs = [patchFile, branch, pr].filter((value) => value !== undefined);
+    if (inputs.length !== 1 || inputs.some((value) => value.trim().length === 0)) {
       throw invalid(
-        "ci needs --patch <file>: the change to verify against a fresh checkout of the base",
+        "ci needs exactly one of --patch <file>, --branch <ref>, or --pr <OWNER/REPO#NUMBER>",
       );
     }
     const streamPath = flags.get("agent-stream");
@@ -195,14 +204,23 @@ export function parseVerifyOnlyCommand(
       ...(flags.has("bundle")
         ? { bundleDirectory: resolve(context.currentDirectory, flags.get("bundle") as string) }
         : {}),
+      ...(flags.has("summary")
+        ? { summaryFile: resolve(context.currentDirectory, flags.get("summary") as string) }
+        : {}),
       installDependencies: flags.has("install"),
       oracleOnly: flags.has("oracle-only"),
+      ...(flags.has("require-isolation") ? { requireIsolation: true } : {}),
       taskOracle: flags.get("oracle") ?? null,
       agentStream:
         streamPath === undefined || streamPath.trim().length === 0
           ? null
           : { path: resolve(context.currentDirectory, streamPath.trim()), format: streamFormat },
-      patchFile: resolve(context.currentDirectory, patchFile.trim()),
+      ...(patchFile === undefined
+        ? {}
+        : { patchFile: resolve(context.currentDirectory, patchFile.trim()) }),
+      ...(branch === undefined ? {} : { branch }),
+      ...(pr === undefined ? {} : { pr }),
+      ...(flags.has("base") ? { exactBase: true } : {}),
       workspace: resolve(context.currentDirectory, flags.get("workspace") ?? "."),
       baseRef: flags.get("base") ?? defaultBaseRef,
       immutablePaths: commaList(flags.get("immutable")),

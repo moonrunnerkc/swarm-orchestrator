@@ -7,6 +7,8 @@ import { createSystemClock, createSystemRandom } from "./cli-runtime-inputs.ts";
 import type { CiCommand } from "./cli-verify-options.ts";
 import type { Clock } from "./core/clock.ts";
 import { bundleSourceFromRecorder, exportBundle } from "./evidence/bundle.ts";
+import { renderCiSummary } from "./evidence/ci-summary.ts";
+import { scrubText } from "./evidence/scrub.ts";
 import { createSessionId, defaultSessionRoot, openEvidenceSession } from "./evidence/session.ts";
 import { createKeychainSecretStore, resolveSigningKey } from "./evidence/signing.ts";
 import { harnessChildEnvironment } from "./exec/child-environment.ts";
@@ -15,7 +17,8 @@ import { parseIsolationOption } from "./exec/isolation-option.ts";
 import { createRunCancellation } from "./exec/run-cancellation.ts";
 import { recordedContainerBackend } from "./exec/runtime-resource.ts";
 import { acceptancePackageExecutor } from "./gates/acceptance-package.ts";
-import { resolveBaseCommit } from "./gates/git-workspace.ts";
+import { resolveChangeSource } from "./gates/change-source.ts";
+import { resolveGithubPullRequest } from "./gates/github-source.ts";
 import { verifyIndependently } from "./gates/independent-verification.ts";
 import { createNodeCommandRunner } from "./gates/node-command-runner.ts";
 import { exitCodes } from "./machine-output.ts";
@@ -44,7 +47,6 @@ async function verifyPatchUnderCancellation(
   clock: Clock,
   stopping: AbortSignal,
 ): Promise<number> {
-  const baseCommit = await resolveBaseCommit(options.workspace, options.baseRef);
   // What the producer said it did, where it said anything. Read strictly: a line this build
   // does not recognize refuses the whole stream rather than being skipped, because a skipped
   // line is evidence that quietly went unread.
@@ -64,6 +66,8 @@ async function verifyPatchUnderCancellation(
     clock,
   });
   const isolation = parseIsolationOption(options.isolation ?? null, options.workspace);
+  if (options.requireIsolation && isolation === null)
+    throw new Error("required isolation needs --isolation docker (or another supported runtime)");
   let executionTrust: ExecutionMode = isolation === null ? "restricted" : "unknown";
   let measuredEnvelope = false;
   const preparationCommands = createNodeCommandRunner(
@@ -95,9 +99,24 @@ async function verifyPatchUnderCancellation(
       provenance: ["tool-output"],
       payload: JSON.parse(JSON.stringify(envelope)),
     });
+    if (options.requireIsolation && envelope.mode !== "isolated")
+      throw new Error(
+        `required isolation unavailable: measured ${envelope.mode}; provide a backend that passes containment probes`,
+      );
     return createNodeCommandRunner(clock, harnessChildEnvironment(), backend, stopping);
   };
-  const patch = await readFile(options.patchFile, "utf8");
+  const { patch, identity: sourceIdentity } = await resolveChangeSource(
+    options,
+    preparationCommands,
+    resolveGithubPullRequest,
+  );
+  const baseCommit = sourceIdentity.comparisonBase;
+  await evidence.record({
+    type: "verification-command",
+    actor: "harness",
+    provenance: ["tool-output"],
+    payload: JSON.parse(JSON.stringify(sourceIdentity)),
+  });
   const acceptance =
     options.acceptanceContract === undefined
       ? undefined
@@ -117,6 +136,7 @@ async function verifyPatchUnderCancellation(
     payload: { task: "independent verification", baseCommit, repository: options.workspace },
   });
   let bundleDirectory = options.bundleDirectory ?? join(evidence.directory, "bundle");
+  let assessmentDigest = "";
   let result: Awaited<ReturnType<typeof verifyIndependently>>;
   try {
     result = await verifyIndependently({
@@ -134,12 +154,13 @@ async function verifyPatchUnderCancellation(
       clock,
     });
 
-    await evidence.record({
+    const assessment = await evidence.record({
       type: "independent-verification",
       actor: "harness",
       provenance: ["tool-output"],
-      payload: JSON.parse(JSON.stringify({ ...result, executionTrust })),
+      payload: JSON.parse(JSON.stringify({ ...result, executionTrust, sourceIdentity })),
     });
+    assessmentDigest = assessment.record.payloadDigest;
   } catch (cause) {
     await evidence.record({
       type: "session-stopped",
@@ -164,9 +185,21 @@ async function verifyPatchUnderCancellation(
     process.stderr.write(`verification evidence: ${bundleDirectory}\n`);
   }
 
+  if (options.summaryFile !== undefined)
+    await writeFile(
+      options.summaryFile,
+      renderCiSummary({
+        result,
+        source: sourceIdentity,
+        executionTrust,
+        bundleDirectory,
+        assessmentDigest,
+      }),
+      { mode: 0o600 },
+    );
   if (options.json) {
     process.stdout.write(
-      `${JSON.stringify({ schema: "swarm.ci.v1", baseCommit, executionTrust, bundleDirectory, ...result })}\n`,
+      `${scrubText(JSON.stringify({ schema: "swarm.ci.v1", assessmentDigest, sourceIdentity, baseCommit, executionTrust, bundleDirectory, ...result })).value}\n`,
     );
     return result.verified ? exitCodes.acceptable : exitCodes.notAcceptable;
   }
