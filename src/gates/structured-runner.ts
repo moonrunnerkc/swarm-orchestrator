@@ -17,7 +17,10 @@ const vitest = [
   "const report=join(dir,'report.json');",
   "const write=process.stdout.write.bind(process.stdout);",
   "process.stdout.write=()=>true;",
-  "process.on('exit',()=>{process.stdout.write=write;let bytes;try{bytes=readFileSync(report)}catch(cause){bytes=Buffer.from(JSON.stringify({unavailable:'vitest wrote no report: '+String(cause)}))}writeSync(1,bytes);try{rmSync(dir,{recursive:true,force:true})}catch{}});",
+  // The whole report, however large: a synchronous write to a pipe at exit is partial past
+  // the pipe's buffer (64 KiB), so the loop resumes at the bytes written and waits out EAGAIN
+  // while the reader drains. A report cut at 64 KiB read as malformed on every large suite.
+  "process.on('exit',()=>{process.stdout.write=write;let bytes;try{bytes=readFileSync(report)}catch(cause){bytes=Buffer.from(JSON.stringify({unavailable:'vitest wrote no report: '+String(cause)}))}let at=0;while(at<bytes.length){try{at+=writeSync(1,bytes,at,bytes.length-at)}catch(cause){if(cause.code!=='EAGAIN')throw cause}}try{rmSync(dir,{recursive:true,force:true})}catch{}});",
   "process.argv=[process.argv[0],entry,'run','--reporter=json','--outputFile='+report];",
   "await import(pathToFileURL(entry).href);",
 ].join("");

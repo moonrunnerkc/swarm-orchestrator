@@ -51,6 +51,34 @@ describe("the vitest runner", () => {
     expect(ran.stdout).not.toContain("NOISE");
   });
 
+  /**
+   * The rollout's second finding: a report over 64 KiB arrived cut at exactly the pipe's
+   * buffer, because the exit-time write was partial, and every large suite read as malformed.
+   */
+  it("prints a report larger than a pipe buffer whole", async () => {
+    const cases = Array.from(
+      { length: 700 },
+      (_, index) =>
+        `it("case number ${index} with a title long enough to fill the report", () => { expect(${index}).toBe(${index}); });`,
+    ).join("\n");
+    await writeFile(
+      join(fixture, "large.test.mjs"),
+      `import { it, expect } from "vitest";\n${cases}\n`,
+    );
+    const argv = structuredRunner("vitest run");
+    const ran = spawnSync(argv?.[0] ?? "", argv?.slice(1) ?? [], {
+      cwd: fixture,
+      encoding: "utf8",
+      maxBuffer: 64_000_000,
+    });
+
+    expect(ran.status).toBe(0);
+    expect(ran.stdout.length).toBeGreaterThan(65_536);
+    const report = JSON.parse(ran.stdout) as { numTotalTests: number; numPassedTests: number };
+    expect(report.numTotalTests).toBe(700);
+    expect(report.numPassedTests).toBe(700);
+  });
+
   it("says so, as JSON, when vitest leaves no report", async () => {
     // No test files: vitest exits without writing a report the parser could read.
     const argv = structuredRunner("vitest");
