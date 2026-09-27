@@ -62,11 +62,17 @@
 - **The vitest runner reports to a file and prints only that file.** Four of sixteen rollout
   repositories had their whole suite read as "malformed runner output" because their tests
   logged, or their test script printed its own verdicts, into the stdout the JSON reporter
-  used. Stdout is muted while the suite runs; the report's bytes are all that is printed.
+  used. Stdout is muted while the suite runs; the report's bytes are all that is printed,
+  whole: the first cut of this wrote at exit and lost everything past the pipe's 64 KiB
+  buffer, so every large suite read as malformed instead.
 - **Manifest scripts run through npm whichever manager installed the lockfile.** pnpm is
   fetched for the install command alone and is not in a trusted image, so every pnpm
   project's typecheck, lint and build read "the command is not installed" in a container. A
-  script that itself calls pnpm still needs pnpm and says so.
+  script that itself calls pnpm still needs pnpm and says so. Both the `check` plan and the
+  `ci` gate set compose the scripts this way.
+- **When every check stood down, the advice lists why each did**, and distinguishes a runner
+  that is not installed (install the dependencies) from a toolchain the verifier does not
+  drive (unmeasured, not a pass) and from a manifest that declares no check.
 - **Containment probes are shell scripts.** An image built for a Python project carries no
   node, so every probe "could not start" and the run refused with isolation unknown. The read
   and write probes use `cat` and `printf`; the network probe attempts the connection with node,
@@ -75,6 +81,17 @@
 - **The verdict's advice names what happened.** A failed or unmeasured required check was
   advised as "the repository's own suite passed"; it now names the check that failed on the
   patch and passed at the base, or the required check that measured nothing.
+- **A configured Python tool the environment does not hold is an unavailable check, not a
+  failed one.** tavern configures mypy, its synced environment holds none, and `python -m
+  mypy` exited 1 with "No module named mypy", read as the typecheck failing on a clean
+  checkout. Presence is read from `.venv`'s site-packages without running anything; the
+  check then says which tool to add and sync. Without a `.venv` nothing is claimed.
+- **A failed check shows the last lines the command printed**, in `check`'s report and its
+  JSON (`output`), so "the command exited 1" comes with what a terminal would have shown.
+- **Two messages a stranger met on a first run say what they mean.** The file-set check in a
+  run with no declared file set no longer speaks of "no planner" and "no agent"; it says no
+  file set was declared and what changed. The per-run signing key notice says what a per-run
+  key means and that it is ordinary on a headless machine.
 - **A Python checkout whose ignored caches exist no longer fails to stage.** The scratch
   index named `__pycache__`, `.pytest_cache`, `.mypy_cache` and `.ruff_cache` as exclude
   pathspecs on `git add -A`, which git refuses with "paths are ignored" (exit 1) as soon as one
