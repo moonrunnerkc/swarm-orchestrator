@@ -5,8 +5,8 @@ import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { readActionContext } from "./environment.ts";
-import { defaultDependencies, publishOutputs, runActionVerify } from "./verify.ts";
 import { verdictSchema } from "./verdict.ts";
+import { defaultDependencies, publishOutputs, runActionVerify } from "./verify.ts";
 
 const run = promisify(execFile);
 
