@@ -725,12 +725,30 @@ export async function verifyIndependently(
                       "usually means the fresh checkout has no installed dependencies, so its test runner " +
                       "is not present. Pass --install to authorize lockfile setup with lifecycle scripts disabled, " +
                       "or provide a prepared runtime. Required execution restrictions still apply."
-                    : task === "unjudged"
-                      ? "the repository's own suite passed, which says nothing broke. It does not say the " +
-                        "task was done: a suite tests the behaviour a project already had, and a task adds " +
-                        "behaviour it did not. Pass --oracle <command> with a check that says whether the " +
-                        "task was done."
-                      : "",
+                    : checks.some(causedByThePatch)
+                      ? `a check failed on this patch and passed at the base commit: ${checks
+                          .filter(causedByThePatch)
+                          .map((check) => check.id)
+                          .join(
+                            ", ",
+                          )}. Read its finding above; if the suite is nondeterministic, ` +
+                        "that is what the base control cannot tell apart from a regression."
+                      : incompleteRequired
+                        ? `a required check measured nothing: ${checks
+                            .filter(
+                              (check) =>
+                                check.severity === "blocking" &&
+                                check.status !== "passed" &&
+                                check.optionalAbsence !== true,
+                            )
+                            .map((check) => `${check.id} (${check.detail})`)
+                            .join("; ")}. Nothing here says the suite passed.`
+                        : task === "unjudged"
+                          ? "the repository's own suite passed, which says nothing broke. It does not say the " +
+                            "task was done: a suite tests the behaviour a project already had, and a task adds " +
+                            "behaviour it did not. Pass --oracle <command> with a check that says whether the " +
+                            "task was done."
+                          : "",
       install,
       checkoutPath: checkout,
     };
