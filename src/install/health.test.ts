@@ -137,10 +137,10 @@ describe("the report it prints", () => {
 
 describe("the Node it found", () => {
   it("says what a Node below the coverage floor disables, and that everything else runs", () => {
-    const finding = runtimeFinding("v22.22.3");
+    const finding = runtimeFinding("v22.7.0");
 
     expect(finding.severity).toBe("worth-knowing");
-    expect(finding.summary).toContain("v22.22.3");
+    expect(finding.summary).toContain("v22.7.0");
     expect(finding.detail).toContain("node version below the floor for isolated coverage");
     expect(finding.detail).toContain("unmeasured");
     expect(finding.remedy).toEqual([]);

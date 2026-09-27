@@ -14,7 +14,7 @@
  * it rather than describing it.
  */
 
-import { isolatedCoverageNodeMajor, isolatedCoverageShortfall } from "../node-floor.ts";
+import { isolatedCoverageFloor, isolatedCoverageShortfall } from "../node-floor.ts";
 
 export interface GlobalEntry {
   readonly path: string;
@@ -65,8 +65,8 @@ export function runtimeFinding(nodeVersion: string): Finding {
       severity: "healthy",
       summary: `Node ${nodeVersion} runs every measurement`,
       detail:
-        `the changed-line coverage arm spawns node's test runner with --test-isolation=process, ` +
-        `which needs Node ${isolatedCoverageNodeMajor} or newer, and this one is.`,
+        `the changed-line coverage arm spawns node's test runner with process isolation named ` +
+        `on the command line, which needs Node ${isolatedCoverageFloor.major}.${isolatedCoverageFloor.minor} or newer, and this one is.`,
       remedy: [],
     };
   }

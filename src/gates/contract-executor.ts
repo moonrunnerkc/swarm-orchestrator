@@ -5,7 +5,11 @@ import { digestOfBytes } from "../evidence/canonical-json.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import type { RequirementObservation } from "./contract-verification.ts";
 import type { GateCommandRunner } from "./gate-definition.ts";
-import { harnessControlledNodeTest, processIsolation, shellQuoted } from "./node-test-command.ts";
+import {
+  harnessControlledNodeTest,
+  processIsolationFlag,
+  shellQuoted,
+} from "./node-test-command.ts";
 import { parseTapOutcomes, parseTapTotals } from "./parsers.ts";
 
 /** Each control and candidate gets a fresh checkout of the exact named patch. */
@@ -29,16 +33,20 @@ export function createContractExecutor(options: {
           : requirement.violatingControlDigest;
     const path = `.swarm-acceptance/${requirement.id}.test.mjs`;
     const words = requirement.argv.map(shellQuoted);
-    const argv = words.some((word) => word === null)
-      ? null
-      : harnessControlledNodeTest(words.join(" "), [
-          processIsolation,
-          "--test-reporter=tap",
-          "--test-reporter-destination=stdout",
-        ]);
+    const isolation = processIsolationFlag(process.version);
+    const argv =
+      words.some((word) => word === null) || isolation === null
+        ? null
+        : harnessControlledNodeTest(words.join(" "), [
+            isolation,
+            "--test-reporter=tap",
+            "--test-reporter-destination=stdout",
+          ]);
     if (argv === null || requirement.argv.at(-1) !== path)
       throw new Error(
-        `requirement ${requirement.id} needs a controlled node test invocation ending in ${path}`,
+        isolation === null
+          ? `requirement ${requirement.id} needs process isolation named on the command line, which Node ${process.version} cannot take; the strict contract path needs Node 22.8 or newer`
+          : `requirement ${requirement.id} needs a controlled node test invocation ending in ${path}`,
       );
     const artifact = await options.artifact(requirement.artifactDigest);
     if (digestOfBytes(artifact) !== requirement.artifactDigest)

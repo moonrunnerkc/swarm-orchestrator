@@ -178,8 +178,8 @@ retains the original contract, escalation count, remaining budget and deadline.
 
 | Runner | Outcomes and collected count | Changed-line coverage | Base-control attribution | Evidence authority |
 | --- | --- | --- | --- | --- |
-| Node native, recognized command, Node 24 | Harness-selected structured reporting | Strict complete external LCOV arm when available | Existing controlled per-file path | Existing ratchet rules and bonds |
-| Node native, Node 22 | Existing outcomes | Unmeasured: process-isolated coverage arm unsupported | Capability dependent | Never promote unavailable measurements |
+| Node native, recognized command, Node 22.8 or newer | Harness-selected structured reporting | Strict complete external LCOV arm when available | Existing controlled per-file path | Existing ratchet rules and bonds |
+| Node native, Node 22.0 to 22.7 | Existing outcomes | Unmeasured: process isolation cannot be named on the command line | Capability dependent | Never promote unavailable measurements |
 | Vitest 4.1.11 | Validated JSON individual outcomes and totals | Unmeasured | Unmeasured | Runner-reported outcomes, no numeric ratchet authority |
 | pytest 9.0.2 | Bounded JUnit-derived individual outcomes | Unmeasured | Unmeasured | Runner-reported outcomes, no assertion/deletion exemption |
 | Playwright 1.63.0, sealed instrument | Named executed tests and agreeing totals in immutable image | Unmeasured | Pinned behavior controls only | Authored instrument and runtime trust required; artifacts diagnostic |

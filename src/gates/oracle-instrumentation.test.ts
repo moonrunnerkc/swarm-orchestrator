@@ -133,7 +133,7 @@ describe("how an oracle can be asked for coverage", () => {
    */
   it("asks V8 rather than node's reporter on a Node below the isolated coverage floor", () => {
     const below = oracleCoveragePlan(`${setup} && node --test 'a.test.js'`, destination, {
-      nodeVersion: "v22.22.3",
+      nodeVersion: "v22.7.0",
     });
     const at = oracleCoveragePlan(`${setup} && node --test 'a.test.js'`, destination, {
       nodeVersion: "v24.15.0",

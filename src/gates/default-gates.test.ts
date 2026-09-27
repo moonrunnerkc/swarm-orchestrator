@@ -6,7 +6,7 @@ import { createTestClock } from "../core/test-doubles.ts";
 import { openEvidenceSession } from "../evidence/session.ts";
 import { assembleGates } from "./default-gates.ts";
 import { runGateCycle } from "./gate-runner.ts";
-import { processIsolation } from "./node-test-command.ts";
+import { experimentalProcessIsolation, processIsolation } from "./node-test-command.ts";
 import type { ProjectDetection } from "./project-type.ts";
 import { createMemoryWorkspace, createStubCommandRunner } from "./test-doubles.ts";
 
@@ -39,24 +39,32 @@ describe("the tests gate on a Node that accepts process isolation", () => {
     expect(source.argv).toContain(processIsolation);
     expect(source.coverageUnmeasured).toBeUndefined();
   });
+
+  it("asks with the spelling Node 22.8 through 23 take, and measures the same way", () => {
+    const source = testsGate("v22.22.3");
+
+    expect(source.argv).toContain(experimentalProcessIsolation);
+    expect(source.argv).not.toContain(processIsolation);
+    expect(source.coverageUnmeasured).toBeUndefined();
+  });
 });
 
 describe("the tests gate on a Node below the isolated coverage floor", () => {
   it("keeps the project's own command and names why coverage is unmeasured", () => {
-    const source = testsGate("v22.22.3");
+    const source = testsGate("v22.7.0");
 
     expect(source.argv).toBeUndefined();
     expect(source.command).toBe("npm run --silent test");
     expect(source.coverageUnmeasured).toContain(
       "node version below the floor for isolated coverage",
     );
-    expect(source.coverageUnmeasured).toContain("v22.22.3");
+    expect(source.coverageUnmeasured).toContain("v22.7.0");
   });
 
   it("names the limited authority of structured Vitest outcomes on Node 22", () => {
     const source = assembleGates(
       { ...nodeProject, nodeScriptCommands: { test: "vitest run" } },
-      { nodeVersion: "v22.22.3" },
+      { nodeVersion: "v22.7.0" },
     ).find((one) => one.id === "tests")?.source;
 
     expect(source?.kind === "command" ? source.coverageUnmeasured : null).toContain(
@@ -86,7 +94,7 @@ describe("what a cycle carries about unmeasured coverage", () => {
       sessionId: "coverage-floor",
       clock: createTestClock(1),
     });
-    const gates = assembleGates(nodeProject, { nodeVersion: "v22.22.3" }).filter(
+    const gates = assembleGates(nodeProject, { nodeVersion: "v22.7.0" }).filter(
       (gate) => gate.id === "tests",
     );
 

@@ -39,8 +39,30 @@
  * harness cannot confirm is not one.
  */
 
-/** Set by the harness on every run it measures, and confirmed on the way out. */
-export const processIsolation = "--test-isolation=process";
+import {
+  experimentalProcessIsolation,
+  processIsolationFlag,
+  stableProcessIsolation,
+} from "../node-floor.ts";
+
+/**
+ * Set by the harness on every run it measures, and confirmed on the way out. This is the stable
+ * spelling; `processIsolationFlag` picks the one the running Node takes, and `confirms` below
+ * accepts either, so long as it is the one the harness itself supplied.
+ */
+export const processIsolation = stableProcessIsolation;
+
+export { experimentalProcessIsolation, processIsolationFlag };
+
+const isolationFlagNames: ReadonlySet<string> = new Set([
+  "--test-isolation",
+  "--experimental-test-isolation",
+]);
+
+const acceptedIsolation: ReadonlySet<string> = new Set([
+  stableProcessIsolation,
+  experimentalProcessIsolation,
+]);
 
 /** What the harness spawns: the program and its arguments, with no shell in between. */
 export type VouchedArgv = readonly string[];
@@ -244,7 +266,7 @@ function confirms(argv: VouchedArgv, harnessFlags: readonly string[]): boolean {
     if (!argument.startsWith("-")) {
       continue;
     }
-    if (flagName(argument) === "--test-isolation") {
+    if (isolationFlagNames.has(flagName(argument))) {
       isolation.push(argument);
     }
     if (supplied.has(argument)) {
@@ -255,7 +277,13 @@ function confirms(argv: VouchedArgv, harnessFlags: readonly string[]): boolean {
     }
   }
 
-  return isolation.length === 1 && isolation[0] === processIsolation;
+  const [only] = isolation;
+  return (
+    isolation.length === 1 &&
+    only !== undefined &&
+    acceptedIsolation.has(only) &&
+    supplied.has(only)
+  );
 }
 
 /**

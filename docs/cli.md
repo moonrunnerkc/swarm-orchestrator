@@ -58,13 +58,15 @@ named and spends nothing. For any other language, add the manifest and commit it
 same rule stops a run before the session in a directory that is not a repository or whose
 `--base` does not resolve.
 
-**Node 22 or newer runs every command. Node 24 or newer is recommended**, because the
-changed-line coverage measurement spawns node's test runner with `--test-isolation=process`,
-which Node 22 rejects as a bad option. Below 24 the tests gate runs the project's own test
-command instead, the coverage arm reports `unmeasured` with the reason named (node version below
-the floor for isolated coverage), and the ratchet cannot compare it. That is not a pass: a
-change touching covered lines fails the ratchet on unmeasured coverage, which is the correct
-outcome on a runtime that cannot take the measurement.
+**Node 22.8 or newer runs every measurement; Node 22.0 to 22.7 run every command.** The
+changed-line coverage measurement spawns node's test runner with process isolation named on
+the command line: `--test-isolation=process` on Node 24 and newer, and the spelling Node 22.8
+through 23 take, `--experimental-test-isolation=process`, under which process isolation is also
+those releases' default. Below 22.8 there is no spelling, so the tests gate runs the project's
+own test command instead, the coverage arm reports `unmeasured` with the reason named (node
+version below the floor for isolated coverage), and the ratchet cannot compare it. That is not
+a pass: a change touching covered lines fails the ratchet on unmeasured coverage, which is the
+correct outcome on a runtime that cannot take the measurement.
 
 ## Approval
 

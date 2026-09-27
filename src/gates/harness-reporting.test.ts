@@ -73,6 +73,14 @@ describe("the invocation a runner is asked to write a report with", () => {
    * the arm no longer corrects a command it did not fully recognize. It abstains, and the
    * ratchet renders the abstention as not measured. Same commit, same reason, every spelling.
    */
+  it("spells isolation for the Node it is told about, and abstains below the floor", () => {
+    expect(harnessReportingCommand("node --test", "v24.15.0")).toContain(processIsolation);
+    expect(harnessReportingCommand("node --test", "v22.22.3")).toContain(
+      "--experimental-test-isolation=process",
+    );
+    expect(harnessReportingCommand("node --test", "v22.7.0")).toBeNull();
+  });
+
   it("abstains on a command that declares an isolation setting of its own", () => {
     const controlled = harnessReportingCommand("node --test");
 

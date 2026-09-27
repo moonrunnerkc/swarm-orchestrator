@@ -1,6 +1,6 @@
 import {
   harnessControlledNodeTest,
-  processIsolation,
+  processIsolationFlag,
   type VouchedArgv,
 } from "./node-test-command.ts";
 
@@ -60,10 +60,17 @@ import {
  * is left unmeasured, because the correction would have to predict what a shell makes of the
  * text it is correcting.
  */
-export function harnessReportingCommand(body: string | undefined): VouchedArgv | null {
+export function harnessReportingCommand(
+  body: string | undefined,
+  nodeVersion: string = process.version,
+): VouchedArgv | null {
+  const isolation = processIsolationFlag(nodeVersion);
+  if (isolation === null) {
+    return null;
+  }
   return harnessControlledNodeTest(body, [
     "--experimental-test-coverage",
-    processIsolation,
+    isolation,
     "--test-reporter=tap",
     "--test-reporter-destination=stdout",
     "--test-reporter=lcov",
