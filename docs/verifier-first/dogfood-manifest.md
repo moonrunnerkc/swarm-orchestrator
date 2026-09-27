@@ -67,5 +67,21 @@ has no primary language and is inspected for a check before it is called inappli
 
 ## Rollout state
 
-Nothing has been rolled out yet. Rows move to `green`, `red control exercised` or a named
-blocker with links to the executed workflow run and the signed verdict as the Action ships.
+Sixteen pull requests were opened on 2026-09-27 by `scripts/rollout-action.mjs`, each adding
+the workflow pinned to the distribution commit of a prerelease; each run signed its verdict as
+a GitHub attestation and posted one comment bound to the head. What the candidate `1.0.0-rc.6`
+(distribution `635e14a2a`) measured, and what it exposed:
+
+| Pull request | rc.6 verdict | What it exposed |
+| --- | --- | --- |
+| [quantproof#1](https://github.com/moonrunnerkc/quantproof/pull/1) | not verified, inherited: 30 tests fail at base and head | `better-sqlite3` needs its install script; the policy installs with scripts off, and the comment names exactly that. Honest red, a repository property |
+| [crossfire#1](https://github.com/moonrunnerkc/crossfire/pull/1) | regression-only pass | nothing |
+| [claimcheck#1](https://github.com/moonrunnerkc/claimcheck/pull/1), [pubprep#1](https://github.com/moonrunnerkc/pubprep/pull/1), [dumpscan#1](https://github.com/moonrunnerkc/dumpscan/pull/1), [counterfactual-court#1](https://github.com/moonrunnerkc/counterfactual-court/pull/1) | incomplete: tests "malformed runner output" | the suites log to stdout, or the test script prints its own verdicts, into the JSON reporter's stream. Fixed: the runner reports to a file and prints only that file |
+| [ruleprobe#3](https://github.com/moonrunnerkc/ruleprobe/pull/3) | not verified: two CLI tests fail on the head and pass at the base | a nondeterministic suite (`tests/cli/semantic-flags.test.ts` expects CLI output that arrived empty), which a base control cannot tell apart from a regression; the advice now says so. Not fixed in the verifier: it reports what it observed |
+| [cronproof#2](https://github.com/moonrunnerkc/cronproof/pull/2) | incomplete: every check "not installed" | `pnpm run` in an image that carries no pnpm (the lockfile installs through a fetched pnpm, the checks did not). Fixed: scripts run through npm. dumpscan's typecheck, lint and build failed the same way |
+| [depose#4](https://github.com/Aftermath-Technologies-Ltd/depose/pull/4) | not verified, inherited | the same two defects as cronproof and claimcheck: `pnpm run` in an image without pnpm, and a suite whose stdout is not the report alone |
+| [tracemantle#16](https://github.com/moonrunnerkc/tracemantle/pull/16), [rlfusion-orchestrator#2](https://github.com/moonrunnerkc/rlfusion-orchestrator/pull/2), [nborder#2](https://github.com/moonrunnerkc/nborder/pull/2), [ironroot#1](https://github.com/Aftermath-Technologies-Ltd/ironroot/pull/1) | incomplete: isolation unknown | the uv image carries no node, and the containment probes were node scripts. Fixed: probes are shell scripts with node, python3 and bash fallbacks for the network attempt. These repositories also carry no `uv.lock`, which the verifier will name next |
+| [gemma-witness#50](https://github.com/moonrunnerkc/gemma-witness/pull/50), [nondet#1](https://github.com/moonrunnerkc/nondet/pull/1), [swarm-orchestrator-rules#1](https://github.com/moonrunnerkc/swarm-orchestrator-rules/pull/1) | incomplete: every check stood down | Rust, Java and no toolchain: unsupported, recorded as unmeasured and not as a pass. The advice wrongly suggested missing dependencies; it now names the check that measured nothing |
+
+The pull requests are re-pinned to each later candidate by `scripts/rollout-repin.mjs`; the
+rows above are replaced by the stable release's results when it ships. A person merges.
