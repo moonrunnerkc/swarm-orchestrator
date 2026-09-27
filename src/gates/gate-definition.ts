@@ -114,7 +114,12 @@ type GateSource =
  * Which rule the parser applies, by name, so a reader of the record can apply the same rule
  * to the recorded bytes without this package. Every parser in the tree is one of these.
  */
-export type ParserName = "exit-code" | "no-output" | "test-output" | "inspection";
+export type ParserName =
+  | "exit-code"
+  | "no-output"
+  | "test-output"
+  | "structured-test-output"
+  | "inspection";
 
 /** The rules an override may name: every one the tree has apart from the inspection gates' own. */
 export type OverrideParserName = Exclude<ParserName, "inspection">;
@@ -149,6 +154,9 @@ export interface GateDefinition {
 }
 
 export interface CommandOptions {
+  readonly readOnlyFiles?: readonly string[];
+  readonly stdin?: string;
+  readonly maxOutputBytes?: number;
   readonly cwd: string;
   readonly timeoutMs: number;
   /**

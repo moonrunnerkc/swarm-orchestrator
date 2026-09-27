@@ -1,5 +1,6 @@
 import { normalize, resolve } from "node:path";
 import type { GateObservation, GateParser, GateReading } from "./gate-definition.ts";
+import { readRunnerResult } from "./runner-results.ts";
 
 /**
  * Parsers read the bytes a gate produced and nothing else. A measure that the output does
@@ -152,6 +153,7 @@ export const vitestTestParser: GateParser = (observation) => {
  * code with no numbers rather than guessing at a count.
  */
 export const testOutputParser: GateParser = (observation) => {
+  if (observation.stdout.trimStart().startsWith("{")) return readRunnerResult(observation);
   const unavailable = notApplicable(observation);
   if (unavailable !== null) {
     return unavailable;

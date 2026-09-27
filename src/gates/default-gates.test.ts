@@ -53,13 +53,15 @@ describe("the tests gate on a Node below the isolated coverage floor", () => {
     expect(source.coverageUnmeasured).toContain("v22.22.3");
   });
 
-  it("says nothing about coverage for a runner the harness could not have asked anyway", () => {
+  it("names the limited authority of structured Vitest outcomes on Node 22", () => {
     const source = assembleGates(
       { ...nodeProject, nodeScriptCommands: { test: "vitest run" } },
       { nodeVersion: "v22.22.3" },
     ).find((one) => one.id === "tests")?.source;
 
-    expect(source?.kind === "command" ? source.coverageUnmeasured : null).toBeUndefined();
+    expect(source?.kind === "command" ? source.coverageUnmeasured : null).toContain(
+      "no controlled coverage",
+    );
   });
 });
 

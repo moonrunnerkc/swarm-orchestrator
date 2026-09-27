@@ -219,7 +219,10 @@ export function readStatus(parser, observation) {
         return "failed";
       }
       return observation.exitCode === 0 ? "passed" : "failed";
+    case "structured-test-output":
+      return structuredTestStatus(observation);
     case "test-output": {
+      if (stdout.trimStart().startsWith("{")) return structuredTestStatus(observation);
       const text = `${stdout}\n${stderr}`;
       if (/^TAP version \d+/m.test(text) || counter(text, "tests") !== null) {
         const plan = /^\s*1\.\.(\d+)\s*$/m.exec(text)?.[1];
@@ -579,4 +582,59 @@ const entry =
   process.argv[1] === undefined ? null : pathToFileURL(realpathSync(process.argv[1])).href;
 if (entry === import.meta.url) {
   process.exitCode = rederiveBundle(process.argv[2] ?? ".");
+}
+
+/** Structured results carry outcomes, never extra ratchet authority. */
+function structuredTestStatus(observation) {
+  if (observation.outputTruncated || observation.stdout.length > 4000000) return "not-applicable";
+  try {
+    const report = JSON.parse(observation.stdout);
+    let tests;
+    if (report.schema === "swarm.pytest.v1") {
+      if (!Array.isArray(report.tests) || report.tests.length > 100000)
+        throw new Error("tests absent");
+      tests = report.tests;
+    } else {
+      for (const field of ["numTotalTests", "numPassedTests", "numFailedTests", "numPendingTests"])
+        if (!Number.isInteger(report[field]) || report[field] < 0) throw new Error("invalid total");
+      tests = report.testResults.flatMap((file) => {
+        if (typeof file.name !== "string") throw new Error("file absent");
+        return file.assertionResults.map((test) => {
+          if (
+            typeof test.fullName !== "string" ||
+            !["passed", "failed", "pending", "skipped", "todo"].includes(test.status)
+          )
+            throw new Error("invalid point");
+          return {
+            id: `${file.name}:${test.fullName}`,
+            status: ["passed", "failed"].includes(test.status) ? test.status : "skipped",
+          };
+        });
+      });
+      if (
+        report.numTotalTests !== tests.length ||
+        report.numPassedTests !== tests.filter((test) => test.status === "passed").length ||
+        report.numFailedTests !== tests.filter((test) => test.status === "failed").length ||
+        report.numPendingTests !== tests.filter((test) => test.status === "skipped").length
+      )
+        throw new Error("totals disagree");
+    }
+    if (
+      tests.some(
+        (test) =>
+          typeof test.id !== "string" ||
+          !test.id ||
+          !["passed", "failed", "skipped", "error"].includes(test.status),
+      ) ||
+      new Set(tests.map((test) => test.id)).size !== tests.length
+    )
+      throw new Error("invalid test identity");
+    const executed = tests.filter((test) => test.status !== "skipped");
+    if (!executed.length) return "not-applicable";
+    return observation.exitCode !== 0 || executed.some((test) => test.status !== "passed")
+      ? "failed"
+      : "passed";
+  } catch {
+    return observation.exitCode === 0 ? "not-applicable" : "failed";
+  }
 }

@@ -40,7 +40,7 @@ const gateRunSchema = z.object({
   /** Why no coverage report was asked of a runner the harness could otherwise have vouched for. */
   coverageUnmeasured: z.string().nullable(),
   /** The rule that read the bytes below into the status above, by name, so a reader can apply it. */
-  parser: z.enum(["exit-code", "no-output", "test-output", "inspection"]),
+  parser: z.enum(["exit-code", "no-output", "test-output", "structured-test-output", "inspection"]),
   stdout: z.string(),
   stderr: z.string(),
   outputTruncated: z.boolean(),
