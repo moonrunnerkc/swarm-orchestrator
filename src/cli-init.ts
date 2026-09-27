@@ -8,6 +8,7 @@ import { askOnTerminal } from "./cli-terminal.ts";
 import { type ApprovalMode, withToolsApproval } from "./config/approval-mode.ts";
 import { initializeSwarmToml, initWouldHelp, type PlannedGate } from "./config/init.ts";
 import { hasAnyManifest, nodeHarnessFiles } from "./config/node-harness.ts";
+import { discoverPackages } from "./config/package-discovery.ts";
 import { parseSwarmToml, swarmTomlFileName } from "./config/swarm-toml.ts";
 
 const runProcess = promisify(execFile);
@@ -43,7 +44,17 @@ export async function init(options: InitCommand): Promise<number> {
       `workspace ${options.workspace} is not a directory. Create it, or pass --workspace.`,
     );
   }
-  const outcome = await initializeSwarmToml(initOnDisk(options.workspace));
+  if (options.listPackages) {
+    writeOut(
+      (await discoverPackages(options.workspace)).join("\n") ||
+        "No declared Node workspace packages; Python directories can be selected explicitly with --package.",
+    );
+    return 0;
+  }
+  const outcome = await initializeSwarmToml({
+    ...initOnDisk(options.workspace),
+    ...(options.packages ? { packages: options.packages } : {}),
+  });
   writeOut(`wrote ${outcome.path}`);
   for (const gate of outcome.gates) {
     writeOut(describePlannedGate(gate));

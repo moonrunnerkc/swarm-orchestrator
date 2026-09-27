@@ -23,9 +23,11 @@ export { InvalidCommandLineError };
  * resolution lives in src/config/settings.ts rather than here.
  */
 export interface RunCommand {
+  readonly escalationModel?: string;
   readonly maxTokens?: number;
   readonly recovery?: {
     readonly history: readonly import("./core/model-client.ts").ConversationMessage[];
+    readonly escalationCount?: number;
     readonly remainingTokens: number;
     readonly remainingWallMs: number;
     readonly deadline: number;
@@ -109,6 +111,8 @@ export interface DoctorCommand {
 
 /** Writes a swarm.toml with the gates read off package.json, where there is none yet. */
 export interface InitCommand {
+  readonly packages?: readonly string[];
+  readonly listPackages?: boolean;
   readonly command: "init";
   readonly workspace: string;
 }
@@ -499,7 +503,12 @@ export function parseCommandLine(
   }
 
   if (words[0] === "init") {
-    return { command: "init", workspace };
+    return {
+      command: "init",
+      workspace,
+      ...(flags.has("package") ? { packages: flags.get("package")?.split("\0") ?? [] } : {}),
+      ...(flags.has("list-packages") ? { listPackages: true } : {}),
+    };
   }
 
   const shared = {
@@ -537,8 +546,13 @@ export function parseCommandLine(
     );
   }
 
+  if (flags.has("escalate-effort"))
+    throw invalid("effort escalation is unsupported; name an explicit --escalate-model instead");
   return {
     command: "run",
+    ...(flags.has("escalate-model")
+      ? { escalationModel: flags.get("escalate-model") as string }
+      : {}),
     task,
     ...shared,
     ...(flags.has("max-tokens")

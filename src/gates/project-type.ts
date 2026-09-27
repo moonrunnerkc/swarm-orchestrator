@@ -1,6 +1,7 @@
+import { detectEnvironment, type ProjectEnvironment } from "./project-environment.ts";
 export type ProjectType = "node" | "python" | "rust" | "go";
 
-export interface ProjectDetection {
+export interface ProjectDetection extends ProjectEnvironment {
   /** Every type whose manifest is present. A repo may honestly be more than one. */
   readonly types: readonly ProjectType[];
   readonly manifests: readonly string[];
@@ -56,6 +57,7 @@ export async function detectProject(read: ManifestReader): Promise<ProjectDetect
   }
 
   return {
+    ...(await detectEnvironment(read)),
     types,
     manifests,
     nodeScripts: Object.keys(nodeScriptCommands).sort(),

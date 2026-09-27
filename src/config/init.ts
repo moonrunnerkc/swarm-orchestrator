@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { nodeScriptCandidates } from "../gates/default-gates.ts";
 import type { GateSeverity, OverrideParserName } from "../gates/gate-definition.ts";
 import { harnessReportingCommand } from "../gates/harness-reporting.ts";
+import { packageSelection } from "../gates/package-scope.ts";
 import { detectProject, type ProjectDetection } from "../gates/project-type.ts";
 import { swarmTomlFileName } from "./swarm-toml.ts";
 
@@ -61,6 +62,31 @@ function testRunnerRule(body: string): {
 
 export function planGates(detection: ProjectDetection): readonly PlannedGate[] {
   const planned: PlannedGate[] = [];
+  if (detection.setupProblem) throw new Error(detection.setupProblem);
+  if (detection.types.includes("python")) {
+    const prefix = detection.pythonCommand;
+    if (prefix === undefined)
+      throw new Error(
+        "Python initialization needs uv.lock or an existing .venv/pyvenv.cfg; prepare the declared environment first",
+      );
+    for (const [id, tool, args] of [
+      ["tests", "pytest", "-q"],
+      ["lint", "ruff", "check --no-fix ."],
+      ["typecheck", "mypy", detection.pythonMypyTargetsConfigured ? "" : "."],
+    ]) {
+      if (id === undefined || tool === undefined || args === undefined) continue;
+      if (!detection.pythonTools.includes(tool)) continue;
+      planned.push({
+        id,
+        script: `tool.${tool}`,
+        body: `${tool} ${args}`,
+        command: `${prefix} ${tool} ${args}`.trim(),
+        parser: id === "tests" ? "test-output" : "exit-code",
+        severity: "blocking",
+        reason: null,
+      });
+    }
+  }
   for (const [id, candidates] of initScriptCandidates) {
     const script = candidates.find((name) => detection.nodeScripts.includes(name));
     if (script === undefined) {
@@ -71,7 +97,13 @@ export function planGates(detection: ProjectDetection): readonly PlannedGate[] {
       id === "tests"
         ? testRunnerRule(body)
         : { parser: "exit-code" as const, severity: "blocking" as const, reason: null };
-    planned.push({ id, script, body, command: `npm run --silent ${script}`, ...rule });
+    planned.push({
+      id,
+      script,
+      body,
+      command: `${detection.nodeManager ?? "npm"} run --silent ${script}`,
+      ...rule,
+    });
   }
   return planned;
 }
@@ -87,7 +119,7 @@ export function renderSwarmToml(plan: readonly PlannedGate[], detection: Project
     "# own from package.json; delete a line to fall back to that. Flags win over this file.",
     "",
   ];
-  if (!detection.manifests.includes("package.json")) {
+  if (!detection.manifests.includes("package.json") && !detection.types.includes("python")) {
     lines.push(
       commentLine(
         "no package.json in this directory: gates are assembled at run time from whatever manifests are present",
@@ -98,7 +130,11 @@ export function renderSwarmToml(plan: readonly PlannedGate[], detection: Project
   }
   lines.push("[gates]");
   for (const gate of plan) {
-    lines.push(commentLine(`from package.json scripts.${gate.script}: ${gate.body}`));
+    lines.push(
+      commentLine(
+        `from ${gate.script.startsWith("tool.") ? "Python" : "package.json scripts."}${gate.script.startsWith("tool.") ? " " : ""}${gate.script}: ${gate.body}`,
+      ),
+    );
     if (gate.reason !== null) {
       lines.push(commentLine(gate.reason));
     }
@@ -123,14 +159,15 @@ export function renderSwarmToml(plan: readonly PlannedGate[], detection: Project
 export class SwarmTomlExistsError extends Error {
   constructor(path: string) {
     super(
-      `${path} already exists. swarm init writes a new file and never edits one: delete it, or` +
-        " edit it by hand.",
+      `${path} already exists. swarm init writes a new file and never edits one: delete it only when replacing it deliberately; the existing file is unchanged.` +
+        " Edit it by hand.",
     );
     this.name = "SwarmTomlExistsError";
   }
 }
 
 export interface InitDependencies {
+  readonly packages?: readonly string[];
   readonly workspace: string;
   readonly exists: (path: string) => Promise<boolean>;
   /** The file's text, or null where it does not exist. */
@@ -148,6 +185,35 @@ export async function initializeSwarmToml(deps: InitDependencies): Promise<InitO
   const path = join(deps.workspace, swarmTomlFileName);
   if (await deps.exists(path)) {
     throw new SwarmTomlExistsError(path);
+  }
+  if (deps.packages?.length) {
+    const selected = packageSelection(deps.packages);
+    const gates: PlannedGate[] = [];
+    for (const unit of selected) {
+      const detection = await detectProject((manifest) =>
+        deps.readFile(join(deps.workspace, unit, manifest)),
+      );
+      if (!detection.types.length)
+        throw new Error(`selected unit ${unit} has no supported manifest`);
+      gates.push(
+        ...planGates(detection).map((gate) => ({
+          ...gate,
+          id: `${gate.id}:${unit}`,
+          command: `cd '${unit}' && ${gate.command}`,
+        })),
+      );
+    }
+    const content = [
+      "# Explicit selected units; use the same --package flags when verifying.",
+      "[gates]",
+      ...gates.map(
+        (gate) =>
+          `${JSON.stringify(gate.id)} = { command = ${JSON.stringify(gate.command)}, parser = ${JSON.stringify(gate.parser)} }`,
+      ),
+      "",
+    ].join("\n");
+    await deps.writeFile(path, content);
+    return { path, gates };
   }
   const detection = await detectProject((manifest) =>
     deps.readFile(join(deps.workspace, manifest)),

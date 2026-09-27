@@ -82,7 +82,10 @@ async function gatesUnderCancellation(options: GatesCommand, signal: AbortSignal
     payload: JSON.parse(JSON.stringify(envelope)),
   });
 
-  const gateOptions = gateOptionsFrom(settings);
+  const gateOptions = {
+    ...gateOptionsFrom(settings),
+    ...(options.packages ? { packages: options.packages } : {}),
+  };
   const diffBudget = diffBudgetFrom(settings);
   // Sealed before anything runs, exactly as a task run seals its criteria before the loop, so
   // a gates-only bundle is held to the same conformance check by the verifier.

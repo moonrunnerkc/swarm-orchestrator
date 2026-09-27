@@ -34,6 +34,7 @@ import {
 } from "./git-workspace.ts";
 import { changesTheRunMade, type InheritedChanges } from "./inherited-changes.ts";
 import { createNodeCommandRunner } from "./node-command-runner.ts";
+import { assemblePackageGates } from "./package-scope.ts";
 import { detectProject, type ProjectDetection } from "./project-type.ts";
 
 /** Deliberately generous. The budget is advisory, and a budget nobody can meet is noise. */
@@ -116,6 +117,11 @@ export async function assembleGateSet(
     workspaceRoot: input.workspaceRoot,
     baseRef: input.criteriaRef,
   });
+  if (input.gateOptions?.packages?.length)
+    return assemblePackageGates(
+      async (manifest) => (await probe.readBase(manifest)) ?? (await probe.readCurrent(manifest)),
+      input.gateOptions,
+    );
   const detection = await detectProject(
     async (manifest) => (await probe.readBase(manifest)) ?? (await probe.readCurrent(manifest)),
   );
