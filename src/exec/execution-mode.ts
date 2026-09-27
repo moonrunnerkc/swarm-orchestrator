@@ -1,6 +1,11 @@
 import { readFileSync } from "node:fs";
 import { childEnvironment, defaultChildHome } from "./child-environment.ts";
-import { controlledNetworkTarget } from "./controlled-network.ts";
+import {
+  controlledNetworkTarget,
+  noProbeProgramExit,
+  noProbeProgramReason,
+  shellQuoted,
+} from "./controlled-network.ts";
 import { type ProcessRunResult, runProcessGroup } from "./run-process.ts";
 
 /**
@@ -123,12 +128,12 @@ export async function selfTestContainment(
     runProbe(backend, options, timeoutMs, {
       id: "host-file-read",
       attempted: `reading ${options.hostFileOutsideWorkspace}, which is outside the workspace`,
-      script: `process.stdout.write(require("node:fs").readFileSync(${JSON.stringify(options.hostFileOutsideWorkspace)}, "utf8"))`,
+      script: `cat ${shellQuoted(options.hostFileOutsideWorkspace)}`,
     }),
     runProbe(backend, options, timeoutMs, {
       id: "host-file-write",
       attempted: `writing ${writeTarget}, which is outside the workspace`,
-      script: `require("node:fs").writeFileSync(${JSON.stringify(writeTarget)},"reached");process.stdout.write("wrote")`,
+      script: `printf reached > ${shellQuoted(writeTarget)} && printf wrote`,
       // Checked on the host, not by the exit code. A container with a tmpfs over the path the
       // probe aimed at reports a successful write that never reached the host, and reading the
       // exit code called that an escape: the probe wrote somewhere, and somewhere is not here.
@@ -183,11 +188,9 @@ async function canReachWorkspace(
 ): Promise<boolean> {
   const ran = await backend.run(
     [
-      backend.nodeProgram,
-      "-e",
-      'const fs=require("node:fs");fs.writeFileSync(".swarm-reachability-probe","reached");' +
-        'process.stdout.write(fs.readFileSync(".swarm-reachability-probe","utf8"));' +
-        'fs.unlinkSync(".swarm-reachability-probe")',
+      "sh",
+      "-c",
+      "printf reached > .swarm-reachability-probe && cat .swarm-reachability-probe && rm -f .swarm-reachability-probe",
     ],
     { cwd: options.workspaceRoot, timeoutMs },
   );
@@ -220,10 +223,20 @@ async function runProbe(
     readonly landedOnHost?: () => boolean;
   },
 ): Promise<ContainmentProbe> {
-  const ran = await backend.run([backend.nodeProgram, "-e", probe.script], {
+  // Probes are shell scripts: every image carries /bin/sh, and an image built for a Python
+  // project carries no node at all. The network attempt falls back through what is present.
+  const ran = await backend.run(["sh", "-c", probe.script], {
     cwd: options.workspaceRoot,
     timeoutMs,
   });
+  if (ran.exitCode === noProbeProgramExit && ran.stderr.includes(noProbeProgramReason)) {
+    return {
+      id: probe.id,
+      attempted: probe.attempted,
+      contained: null,
+      observed: `${noProbeProgramReason}, so nothing was shown`,
+    };
+  }
   // Contained means the attempt ran and did not succeed. A probe that could not start is not
   // evidence of containment: it is a probe that measured nothing, and reading it as
   // containment is how a backend comes to look isolated because its node was missing.
@@ -329,7 +342,7 @@ async function networkProbe(
     return await runProbe(backend, options, timeoutMs, {
       id: "network-egress",
       attempted: "connecting to the same controlled endpoint reached by the host control",
-      script: target.script,
+      script: target.shellScript,
     });
   } finally {
     await target.close();

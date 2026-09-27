@@ -56,7 +56,41 @@ const backendThatHidesEverything = {
   run: () => Promise.resolve(refused),
 };
 
+/**
+ * An image with neither node, python3 nor bash: the network probe cannot even be attempted.
+ * Its named exit is read as nothing measured, never as a refused connection.
+ */
+const backendWithNoProbeProgram = {
+  name: "fake-bare-image",
+  nodeProgram: "node",
+  run: (argv: readonly string[]) =>
+    Promise.resolve(
+      argv.join(" ").includes("swarm-reachability-probe")
+        ? { ...refused, stdout: "reached", stderr: "", exitCode: 0 }
+        : argv.join(" ").includes("command -v node")
+          ? {
+              ...refused,
+              stderr: "no program in this image can attempt the connection\n",
+              exitCode: 78,
+            }
+          : refused,
+    ),
+};
+
 describe("what the harness may claim about how a command is contained", () => {
+  it("is unknown, not isolated, where the image has no program to attempt the network probe", async () => {
+    const result = await selfTestContainment(backendWithNoProbeProgram, {
+      workspaceRoot: workspace,
+      hostFileOutsideWorkspace: hostSecret,
+    });
+
+    const network = result.probes.find((probe) => probe.id === "network-egress");
+    if (network?.observed.includes("no matched reachable host control")) return;
+    expect(network?.contained).toBeNull();
+    expect(network?.observed).toContain("no program in this image can attempt the connection");
+    expect(result.mode).toBe("unknown");
+  });
+
   it("reports restricted, not isolated, when nothing kernel-enforced is in front of the command", async () => {
     const result = await selfTestContainment(hostExecutionBackend, {
       workspaceRoot: workspace,
