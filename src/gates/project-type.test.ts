@@ -268,7 +268,8 @@ describe("assembling the default gate set", () => {
     const malformed = await detectProject(
       reader({ "pyproject.toml": "[tool.mypy]\nfiles = [not valid TOML" }),
     );
-    expect(commandOf(assembleGates(malformed), "typecheck")).toBe("mypy .");
+    expect(commandOf(assembleGates(malformed), "typecheck")).toBeNull();
+    expect(malformed.setupProblem).toContain("malformed");
   });
 
   it("keeps a polyglot repo's gates distinguishable by naming the type in the id", async () => {

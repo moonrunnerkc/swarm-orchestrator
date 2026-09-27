@@ -158,11 +158,13 @@ function askedForHarnessReports(
 }
 
 function nodeGates(detection: ProjectDetection, nodeVersion: string): readonly GateDefinition[] {
+  const manager = detection.nodeManager ?? "npm";
   const scripts = new Set(detection.nodeScripts);
   const pick = (id: string): string | null =>
     (nodeScriptCandidates[id] ?? []).find((name) => scripts.has(name)) ?? null;
 
   return (["typecheck", "lint", "format", "tests"] as const).map((id) => {
+    if (detection.setupProblem) return unavailableGate(id, id, "blocking", detection.setupProblem);
     const script = pick(id);
     if (script === null) {
       return unavailableGate(
@@ -179,9 +181,9 @@ function nodeGates(detection: ProjectDetection, nodeVersion: string): readonly G
       askedForHarnessReports(
         {
           id,
-          title: `${id} (npm run ${script})`,
+          title: `${id} (${manager} run ${script})`,
           severity: "blocking",
-          command: `npm run --silent ${script}`,
+          command: `${manager} run --silent ${script}`,
         },
         detection.nodeScriptCommands[script],
         nodeVersion,
@@ -243,6 +245,22 @@ function pythonGates(detection: ProjectDetection): readonly GateDefinition[] {
     }),
   );
 
+  if (detection.setupProblem)
+    return gates.map((gate) =>
+      unavailableGate(gate.id, gate.title, gate.severity, detection.setupProblem as string),
+    );
+  if (detection.pythonCommand)
+    return gates.map((gate) =>
+      gate.source.kind === "command"
+        ? {
+            ...gate,
+            source: {
+              ...gate.source,
+              command: `${detection.pythonCommand} ${gate.source.command}`,
+            },
+          }
+        : gate,
+    );
   return gates;
 }
 
@@ -360,6 +378,7 @@ const undetectedGates: readonly GateDefinition[] = (
 }));
 
 export interface GateSetOptions {
+  readonly packages?: readonly string[];
   /**
    * Replaces the assembled gate for one id, from swarm.toml or a flag, or adds a gate under an
    * id the assembled set has no slot for, such as `build`.

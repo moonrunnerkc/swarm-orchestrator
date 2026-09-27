@@ -71,3 +71,41 @@ is deterministic and is not evidence of a remote GitHub run.
 Reporting: `src/evidence/ci-summary.ts`, `--summary`, additive JSON source/evidence IDs.
 Standalone distribution: prepack builds the shared-source closure; verifier publication
 has a separate matching-tag interlock. No packages were published.
+
+Amendment 3 (before edits): `src/gates/project-type.ts`, `src/gates/project-environment.ts`
+and adjacent tests; `src/config/init.ts`, `src/cli-init.ts`, `src/cli-options.ts`,
+`src/gates/default-gates.ts`, `src/gates/dependency-install.ts` and adjacent tests for
+manager/interpreter selection and lock-preserving setup. Package scope integration will
+amend the gate assembly separately. First source increment: `a05080011`; targeted run
+`source-tests-5.log`: 5 files, 100 tests passed, exit 0.
+
+Amendment 4 (before edits): package selection in `src/gates/package-scope.ts` and
+adjacent tests, `src/gates/engine.ts`, `src/gates/independent-verification.ts`,
+`src/cli-gates.ts`, and the shared CLI parser. Selection remains repository-relative;
+`--workspace` continues to identify the repository. Scoped coverage without a controlled
+runner stays explicitly unmeasured.
+
+Amendment 5: `src/config/package-discovery.ts` and its tests for bounded workspace
+manifest discovery, plus package selection in `src/config/init.ts` and `src/cli-init.ts`.
+
+Amendment 6 (before edits): typed behavior checks in `src/evidence/behavior-check.ts`,
+`src/gates/behavior-check.ts`, adjacent tests, `src/evidence/goal-contract.ts`,
+`src/gates/goal-acceptance.ts`, and the independent bundled verifier rules. Finite stdin
+and output bounds flow through `src/gates/gate-definition.ts`,
+`src/gates/node-command-runner.ts`, `src/exec/run-process.ts`,
+`src/exec/execution-mode.ts`, and `src/exec/container-backend.ts`.
+
+Amendment 7: `src/evidence/bundle.ts` embeds the additional independent behavior rule
+in the existing dependency-free verifier; `src/cli-ci.ts` and the shared parser expose
+ordinary sealed goal contracts to verification-only callers. Historical bundles remain
+unchanged. Browser instruments still require real integration and adversarial validation.
+
+Amendment 8 (before dependency installation): root `package.json` and `package-lock.json`
+add pinned development-only Playwright for real browser acceptance fixtures. This dependency
+is necessary to test the advertised browser adapter; it remains outside the standalone
+runtime package closure and does not install browsers for consumers automatically.
+
+Amendment 9 (before edits): `src/gates/repair-policy.ts`, `src/agent-escalation.ts`,
+adjacent tests, `src/agent-run.ts`, `src/gates/auto-resolve.ts`, `src/evidence/run-spec.ts`,
+`src/durable/recovery-context.ts`, `src/cli.ts`, and `src/cli-options.ts` for explicit,
+once-per-task escalation under the original budget and recoverable intent records.

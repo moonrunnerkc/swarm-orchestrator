@@ -43,6 +43,7 @@ const lockfiles = [
   { file: "package-lock.json", argv: ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"] },
   { file: "pnpm-lock.yaml", argv: ["pnpm", "install", "--frozen-lockfile", "--ignore-scripts"] },
   { file: "yarn.lock", argv: ["yarn", "install", "--frozen-lockfile", "--ignore-scripts"] },
+  { file: "uv.lock", argv: ["uv", "sync", "--locked", "--no-install-project"] },
 ] as const;
 
 /** Setup is an authorized harness effect, under the same runner, cancellation and resource pool. */
@@ -56,6 +57,22 @@ export async function installFromLockfile(options: {
   const { workspace, evidence } = options;
   options.signal?.throwIfAborted();
   if (evidence !== undefined) assertDependencyEffectsSettled(evidence);
+  const present = await Promise.all(
+    lockfiles.map(async (candidate) => ({
+      candidate,
+      exists: await lstat(join(workspace, candidate.file)).then(
+        () => true,
+        () => false,
+      ),
+    })),
+  );
+  if (present.filter((entry) => entry.exists).length > 1)
+    return {
+      attempted: false,
+      succeeded: false,
+      command: "",
+      detail: "multiple lockfiles require explicit package selection; no dependency setup ran",
+    };
   for (const candidate of lockfiles) {
     let lock: Awaited<ReturnType<typeof lstat>>;
     try {
@@ -101,7 +118,7 @@ export async function installFromLockfile(options: {
       before !== after
         ? "dependency setup changed source files; preserve the checkout and inspect the changes"
         : succeeded
-          ? `installed from ${candidate.file} with lifecycle scripts disabled`
+          ? `installed from ${candidate.file} using the declared locked preparation command`
           : `dependency setup failed (exit ${observed.exitCode}): ${observed.unavailable ?? (observed.stderr || observed.stdout).trim().slice(-2000)}`;
     await record("completed", {
       succeeded,
@@ -117,7 +134,7 @@ export async function installFromLockfile(options: {
     succeeded: false,
     command: "",
     detail:
-      "no supported lockfile: provide package-lock.json, pnpm-lock.yaml or yarn.lock, or omit --install and supply a prepared runtime",
+      "no supported lockfile: provide package-lock.json, pnpm-lock.yaml, yarn.lock or uv.lock, or omit --install and supply a prepared runtime",
   };
 }
 

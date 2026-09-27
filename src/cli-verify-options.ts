@@ -10,6 +10,7 @@ import { resolve } from "node:path";
 /** Runs the gates over a workspace and reports, with no model and no retries. */
 export interface GatesCommand {
   readonly isolation?: string | null;
+  readonly packages?: readonly string[];
   readonly command: "gates";
   readonly workspace: string;
   readonly baseRef: string;
@@ -30,9 +31,11 @@ export interface GatesCommand {
 export interface CiCommand {
   readonly isolation?: string | null;
   readonly acceptanceContract?: string;
+  readonly goalContract?: string;
   readonly summaryFile?: string;
   readonly requireIsolation?: boolean;
   readonly bundleDirectory?: string;
+  readonly packages?: readonly string[];
   readonly command: "ci";
   readonly patchFile?: string;
   readonly branch?: string;
@@ -108,6 +111,7 @@ const switchFlags = new Set([
   "install",
   "oracle-only",
   "require-isolation",
+  "list-packages",
   "fix",
   "offline",
   "no-tui",
@@ -156,7 +160,7 @@ export function tokenizeCommandLine(
     if (value === undefined || value.startsWith("--")) {
       throw new InvalidCommandLineError(`${argument} needs a value`, context.usage);
     }
-    flags.set(name, value);
+    flags.set(name, name === "package" && flags.has(name) ? `${flags.get(name)}\0${value}` : value);
     index += 1;
   }
   return { words, flags };
@@ -187,6 +191,8 @@ export function parseVerifyOnlyCommand(
         "ci needs exactly one of --patch <file>, --branch <ref>, or --pr <OWNER/REPO#NUMBER>",
       );
     }
+    if (flags.has("contract") && flags.has("goal-contract"))
+      throw invalid("select strict --contract or ordinary --goal-contract, not both");
     const streamPath = flags.get("agent-stream");
     const streamFormat = flags.get("agent-format") ?? "generic";
     if (streamFormat !== "generic" && streamFormat !== "claude-code") {
@@ -197,6 +203,7 @@ export function parseVerifyOnlyCommand(
     }
     return {
       command: "ci",
+      ...(flags.has("package") ? { packages: flags.get("package")?.split("\0") ?? [] } : {}),
       ...(flags.has("isolation") ? { isolation: flags.get("isolation") ?? null } : {}),
       ...(flags.has("contract")
         ? { acceptanceContract: resolve(context.currentDirectory, flags.get("contract") as string) }
@@ -206,6 +213,9 @@ export function parseVerifyOnlyCommand(
         : {}),
       ...(flags.has("summary")
         ? { summaryFile: resolve(context.currentDirectory, flags.get("summary") as string) }
+        : {}),
+      ...(flags.has("goal-contract")
+        ? { goalContract: resolve(context.currentDirectory, flags.get("goal-contract") as string) }
         : {}),
       installDependencies: flags.has("install"),
       oracleOnly: flags.has("oracle-only"),
@@ -245,6 +255,7 @@ export function parseVerifyOnlyCommand(
     const allowed = flags.get("allowed-files");
     return {
       command: "gates",
+      ...(flags.has("package") ? { packages: flags.get("package")?.split("\0") ?? [] } : {}),
       ...(flags.has("isolation") ? { isolation: flags.get("isolation") ?? null } : {}),
       // Resolved against the injected directory, not the ambient cwd, so a relative
       // --workspace lands where the caller says it does.
