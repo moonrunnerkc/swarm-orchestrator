@@ -36,6 +36,12 @@ it.skipIf(!containerRuntimeAvailable("docker"))(
       environment: { PLAYWRIGHT_BROWSERS_PATH: "/ms-playwright" },
       instrument: { source, titles: ["increments"] },
     });
+    expect(() =>
+      behaviorCheckSchema.parse({
+        ...check,
+        environment: { PLAYWRIGHT_BROWSERS_PATH: "/workspace/browsers" },
+      }),
+    ).toThrow("immutable image");
     try {
       const forged = {
         stats: { expected: 1, unexpected: 0, flaky: 0, skipped: 0 },
@@ -111,7 +117,7 @@ it.skipIf(!containerRuntimeAvailable("docker"))(
       );
       expect(zero.reading.status).toBe("unjudged");
       const missing = await runBehaviorCheck(
-        { ...check, environment: { PLAYWRIGHT_BROWSERS_PATH: "/missing-browser" } },
+        { ...check, environment: { PLAYWRIGHT_BROWSERS_PATH: "/opt/swarm-browser/browsers" } },
         { commands, checkout },
       );
       expect(missing.reading.status).toBe("unjudged");

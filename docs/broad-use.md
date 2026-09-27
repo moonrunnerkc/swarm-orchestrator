@@ -107,7 +107,9 @@ For acceptance, use `instrument: { source, titles }` instead of `argv`. `source`
 sealed ESM Playwright test and `titles` names every expected test. The harness generates the
 configuration and copies this instrument outside the candidate checkout in a fresh container.
 It resolves Playwright from `/opt/swarm-browser/node_modules`, supplied by the immutable image,
-and never discovers candidate configuration, tests or dependencies. The test runs as
+and never discovers candidate configuration, tests or dependencies. Browser binaries must also
+come from the immutable image: `/ms-playwright` by default, or an explicitly selected
+`/opt/swarm-browser/browsers`. Candidate browser paths and redirected browser directories are refused. The test runs as
 `instrument.spec.mjs` in the `chromium` project, with one worker, no retries and no focused tests.
 Titles must be unique and match the captured results. The recorded execution boundary and
 complete check digest are required by both runtime and offline readers. Host execution cannot
