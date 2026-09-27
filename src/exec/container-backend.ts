@@ -131,7 +131,10 @@ export function createContainerBackend(options: ContainerBackendOptions): Isolat
             "--read-only",
             `--volume=${options.workspaceRoot}:${workspaceMountPoint}:rw`,
             ...readOnlyMounts,
-            "--tmpfs=/tmp:rw,size=256m",
+            // Executable, because a lockfile install that fetches the declared package manager
+            // through npm unpacks it under the scratch directory and runs it from there; the
+            // workspace mount is executable already, so this widens nothing a candidate holds.
+            "--tmpfs=/tmp:rw,exec,size=256m",
             `--workdir=${workspaceMountPoint}${subdirectory ? `/${subdirectory}` : ""}`,
             `--user=${options.user}`,
             "--cap-drop=ALL",
