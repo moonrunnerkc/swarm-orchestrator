@@ -134,6 +134,90 @@ function readFile(root, path, forbidden) {
   }
 }
 
+/**
+ * A failure on the head counts only where each failing assertion is stated in the requirement.
+ * A second, code-blind call is handed the requirement text and the check's failing output and
+ * must quote the sentence each failure comes from; an assertion it cannot quote is the
+ * reviewer's own addition, and the row stays unjudged rather than call it a violation.
+ */
+async function traceFailure(requirement, failingOutput) {
+  const traceTools = [
+    {
+      type: "function",
+      function: {
+        name: "trace",
+        description: "Map each failing assertion to the requirement sentence it comes from.",
+        parameters: {
+          type: "object",
+          properties: {
+            traceable: {
+              type: "boolean",
+              description:
+                "true only when every failing assertion is stated in the requirement text",
+            },
+            mapping: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  assertion: { type: "string" },
+                  quote: {
+                    type: "string",
+                    description: "verbatim words from the requirement, or empty",
+                  },
+                },
+                required: ["assertion", "quote"],
+              },
+            },
+          },
+          required: ["traceable", "mapping"],
+        },
+      },
+    },
+  ];
+  const response = await fetch(`${endpoint}/v1/chat/completions`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      model,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You audit an acceptance check against a pull request's stated requirement. You see only the requirement text and the check's failing output. For each failing assertion, quote the exact words of the requirement that state it. If any failing assertion is not stated in the requirement (it is an inference, a style preference or a stricter reading than the text), set traceable to false. Call the trace tool once.",
+        },
+        {
+          role: "user",
+          content: `Requirement:\n${requirement}\n\nFailing output:\n${failingOutput}`,
+        },
+      ],
+      tools: traceTools,
+      tool_choice: { type: "function", function: { name: "trace" } },
+      temperature: 0,
+      stream: false,
+    }),
+  });
+  if (!response.ok) throw new Error(`model: ${response.status} ${await response.text()}`);
+  const completion = await response.json();
+  const call = completion.choices?.[0]?.message?.tool_calls?.[0];
+  try {
+    const parsed = JSON.parse(call?.function?.arguments ?? "{}");
+    const mapping = Array.isArray(parsed.mapping) ? parsed.mapping : [];
+    // The audit's own word is not enough: every quote must appear in the requirement text.
+    const quotesHold =
+      mapping.length > 0 &&
+      mapping.every(
+        (entry) =>
+          typeof entry.quote === "string" &&
+          entry.quote.trim().length > 0 &&
+          requirement.includes(entry.quote.trim()),
+      );
+    return { traceable: parsed.traceable === true && quotesHold, mapping };
+  } catch {
+    return { traceable: false, mapping: [] };
+  }
+}
+
 async function ask(messages) {
   const response = await fetch(`${endpoint}/v1/chat/completions`, {
     method: "POST",
@@ -154,17 +238,17 @@ async function ask(messages) {
   return choice;
 }
 
-/** Run the check inside a network-disabled container over the clone at one commit. */
+/**
+ * Run the check inside a network-disabled container over the clone at one commit. The check
+ * file is written once by the caller and stays across both commits: deleting and recreating a
+ * file between two container runs is exactly what a desktop mount's cache gets wrong.
+ */
 function executeCheck(clone, image, commit, check, lockfileChanged, manifest) {
   const checkedOut = run("git", ["checkout", "--quiet", "--force", "--detach", commit], {
     cwd: clone,
   });
   if (checkedOut.status !== 0)
     return { ran: false, detail: `checkout failed: ${checkedOut.stderr.slice(-300)}` };
-  run("git", ["clean", "-fdq", "-e", "node_modules", "-e", ".venv"], { cwd: clone });
-  const checkFile = join(clone, check.checkPath);
-  mkdirSync(join(checkFile, ".."), { recursive: true });
-  writeFileSync(checkFile, check.checkContents);
   const install =
     lockfileChanged && manifest === "package.json"
       ? "npm ci --ignore-scripts --no-audit --no-fund >/dev/null 2>&1; "
@@ -185,14 +269,16 @@ function executeCheck(clone, image, commit, check, lockfileChanged, manifest) {
       "/bin/sh",
       image,
       "-c",
-      `${install}${check.command}`,
+      `test -f ${JSON.stringify(check.checkPath)} || { echo "check file missing" >&2; exit 125; }; ${install}${check.command}`,
     ],
     { timeout: 900_000 },
   );
-  rmSync(checkFile, { force: true });
+  const exitCode = ran.status;
   return {
-    ran: ran.error === undefined,
-    exitCode: ran.status,
+    // 125 is the missing file, 126 and 127 are a command that could not run: none of these
+    // is the check's own verdict.
+    ran: ran.error === undefined && ran.signal !== "SIGTERM" && ![125, 126, 127].includes(exitCode),
+    exitCode,
     timedOut: ran.signal === "SIGTERM",
     stdout: (ran.stdout ?? "").slice(-4000),
     stderr: (ran.stderr ?? "").slice(-4000),
@@ -207,7 +293,7 @@ for (const name of readdirSync(rowsRoot)
   const rowPath = join(rowsRoot, name);
   const row = JSON.parse(readFileSync(rowPath, "utf8"));
   if (only !== null && !only.has(row.index)) continue;
-  if (row.outcome !== "executed" || row.adjudication) continue;
+  if (!["executed", "fetched"].includes(row.outcome) || row.adjudication) continue;
   done += 1;
   const clone = join(workingRoot, `${row.repository.replace("/", "__")}-${row.number}`);
   const transcriptPath = rowPath.replace(/\.json$/, ".adjudication.jsonl");
@@ -274,8 +360,18 @@ for (const name of readdirSync(rowsRoot)
           reads += 1;
           content = readFile(clone, String(callArgs.path ?? ""), forbidden);
         } else if (call.function.name === "finish") {
-          check = callArgs;
-          content = "recorded";
+          const path = typeof callArgs.checkPath === "string" ? callArgs.checkPath : "";
+          if (
+            callArgs.unjudged !== true &&
+            (forbidden.has(path) || (row.changedFiles ?? []).includes(path))
+          ) {
+            // The check would overwrite a file the pull request changed; that is the author's
+            // file, not the reviewer's. One more chance to name a fresh path, within the step cap.
+            content = `refused: ${path} is a file the pull request changed; write the check to a new path (for example a new file beside the tests) and call finish again`;
+          } else {
+            check = callArgs;
+            content = "recorded";
+          }
         } else content = "unknown tool";
         record({ kind: call.function.name, step, args: callArgs, result: content.slice(0, 2000) });
         messages.push({ role: "tool", tool_call_id: call.id, content });
@@ -298,28 +394,31 @@ for (const name of readdirSync(rowsRoot)
       });
       continue;
     }
-    if (forbidden.has(check.checkPath) || (row.changedFiles ?? []).includes(check.checkPath)) {
-      finish({
-        status: "unjudged",
-        reason: "the check would overwrite a file the pull request changed",
-        reads,
-      });
-      continue;
-    }
     const checkDigest = `sha256:${createHash("sha256").update(check.checkContents).digest("hex")}`;
     const manifest = row.execution?.manifest ?? null;
     const image = manifest === "pyproject.toml" ? pythonImage : nodeImage;
     const lockfileChanged = (row.changedFiles ?? []).some((path) =>
       /(^|\/)(package-lock\.json|pnpm-lock\.yaml|uv\.lock)$/.test(path),
     );
+    run("git", ["checkout", "--quiet", "--force", "--detach", row.head], { cwd: clone });
+    run("git", ["clean", "-fdq", "-e", "node_modules", "-e", ".venv"], { cwd: clone });
+    const checkFile = join(clone, check.checkPath);
+    mkdirSync(join(checkFile, ".."), { recursive: true });
+    writeFileSync(checkFile, check.checkContents);
     const onHead = executeCheck(clone, image, row.head, check, false, manifest);
     const onBase = executeCheck(clone, image, row.base, check, lockfileChanged, manifest);
+    rmSync(checkFile, { force: true });
     // Leave the clone at the head with its installed dependencies for any later replay.
     if (lockfileChanged)
       executeCheck(clone, image, row.head, { ...check, command: "true" }, true, manifest);
     else run("git", ["checkout", "--quiet", "--force", "--detach", row.head], { cwd: clone });
-    const baseFails = onBase.ran && !onBase.timedOut && onBase.exitCode !== 0;
-    const headPasses = onHead.ran && !onHead.timedOut && onHead.exitCode === 0;
+    const baseFails = onBase.ran && onBase.exitCode !== 0;
+    const headPasses = onHead.ran && onHead.exitCode === 0;
+    let trace = null;
+    if (onBase.ran && onHead.ran && baseFails && !headPasses) {
+      trace = await traceFailure(requirement, `${onHead.stdout}\n${onHead.stderr}`.trim());
+      record({ kind: "trace", ...trace });
+    }
     const status =
       !onBase.ran || !onHead.ran
         ? "unjudged"
@@ -327,15 +426,20 @@ for (const name of readdirSync(rowsRoot)
           ? "unjudged"
           : headPasses
             ? "requirement-met"
-            : "requirement-violated";
+            : trace?.traceable === true
+              ? "requirement-violated"
+              : "unjudged";
     finish({
       status,
       reason:
         status === "unjudged"
           ? !baseFails
             ? "the check does not fail on the base, so it does not test the requirement"
-            : "the check could not be executed"
+            : trace !== null
+              ? "the head fails an assertion that is not stated in the requirement, so the failure is the reviewer's addition"
+              : "the check could not be executed on both commits"
           : check.reason,
+      trace,
       requirement: check.requirement ?? null,
       check: {
         path: check.checkPath,

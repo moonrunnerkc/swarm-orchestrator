@@ -11,8 +11,11 @@
  *
  *   node scripts/ai-pr-study/run.mjs <frame.json> <output directory> <verifier version>
  *        [--limit <n>] [--only <index,index>] [--image <node image>] [--python-image <image>]
+ *        [--fetch-only]
  *
- * Resumable: a row whose result exists is skipped. A blocked row (the repository cannot be
+ * Resumable: a row whose verifier result exists is skipped. `--fetch-only` records the
+ * metadata, the clone and the diff without running the verifier, so the adjudication arm can
+ * start; a later run without it fills those rows in. A blocked row (the repository cannot be
  * fetched, the toolchain is unsupported, the run is refused) is a row with that reason.
  */
 import { execFileSync, spawnSync } from "node:child_process";
@@ -24,8 +27,10 @@ import { join, resolve } from "node:path";
 const args = process.argv.slice(2);
 const positional = [];
 const flags = new Map();
+const fetchOnly = args.includes("--fetch-only");
 for (let index = 0; index < args.length; index += 1) {
   const arg = args[index];
+  if (arg === "--fetch-only") continue;
   if (arg.startsWith("--")) {
     flags.set(arg.slice(2), args[index + 1]);
     index += 1;
@@ -93,10 +98,13 @@ for (const selected of frame.selected) {
   if (done >= limit) break;
   if (only !== null && !only.has(selected.index)) continue;
   const rowPath = join(outputRoot, `${String(selected.index).padStart(2, "0")}.json`);
-  if (existsSync(rowPath)) continue;
+  const existing = existsSync(rowPath) ? JSON.parse(readFileSync(rowPath, "utf8")) : null;
+  if (existing !== null && existing.outcome !== "fetched") continue;
+  if (existing !== null && fetchOnly) continue;
   done += 1;
   const startedAt = Date.now();
   const row = {
+    ...(existing ?? {}),
     index: selected.index,
     url: selected.url,
     repository: selected.repository,
@@ -143,12 +151,16 @@ for (const selected of frame.selected) {
     };
 
     // A fresh clone outside the repository, with the exact base and head fetched by SHA.
+    // Only the two commits the row names, shallow: a full clone of a large repository is
+    // gigabytes the study never reads, and both trees are complete at depth one.
     const clone = join(workingRoot, `${selected.repository.replace("/", "__")}-${selected.number}`);
     if (!existsSync(clone)) {
       const cloned = run("git", [
         "clone",
         "--quiet",
         "--no-tags",
+        "--no-checkout",
+        "--depth=1",
         `https://github.com/${selected.repository}.git`,
         clone,
       ]);
@@ -159,15 +171,7 @@ for (const selected of frame.selected) {
     }
     const fetched = run(
       "git",
-      [
-        "fetch",
-        "--quiet",
-        "--no-tags",
-        "origin",
-        row.base,
-        row.head,
-        `refs/pull/${selected.number}/head`,
-      ],
+      ["fetch", "--quiet", "--no-tags", "--depth=1", "origin", row.base, row.head],
       { cwd: clone },
     );
     if (fetched.status !== 0) {
@@ -193,9 +197,16 @@ for (const selected of frame.selected) {
     row.changedFiles = names;
     row.testChanges = names.filter(testPath);
     row.sourceChanges = names.filter((path) => !testPath(path));
+    // The diff is preserved outside the tree by digest; the row carries the digest.
     const diff = run("git", ["diff", `${row.base}..${row.head}`], { cwd: clone }).stdout;
-    writeFileSync(rowPath.replace(/\.json$/, ".diff"), diff);
-    row.diffDigest = `sha256:${createHash("sha256").update(diff).digest("hex")}`;
+    mkdirSync(join(workingRoot, "diffs"), { recursive: true });
+    const diffPath = join(workingRoot, "diffs", `${String(selected.index).padStart(2, "0")}.diff`);
+    writeFileSync(diffPath, diff);
+    row.diff = {
+      digest: `sha256:${createHash("sha256").update(diff).digest("hex")}`,
+      bytes: Buffer.byteLength(diff),
+      location: `${diffPath} (outside the repository)`,
+    };
 
     // The toolchain the frame recorded, and the image that carries it.
     const manifest = existsSync(join(clone, "package.json"))
@@ -205,6 +216,10 @@ for (const selected of frame.selected) {
         : null;
     const image = manifest === "pyproject.toml" ? pythonImage : nodeImage;
     row.execution = { isolation: `docker:${image}`, install: true, manifest };
+    if (fetchOnly) {
+      finish("fetched");
+      continue;
+    }
 
     // The frozen verifier, exactly as the Action invokes it, from the registry.
     const summary = rowPath.replace(/\.json$/, ".summary.md");
