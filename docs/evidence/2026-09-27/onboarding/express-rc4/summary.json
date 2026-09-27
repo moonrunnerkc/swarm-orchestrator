@@ -1,0 +1,25 @@
+{
+  "repository": "hoangsonww/Claude-Code-Agent-Monitor",
+  "category": "express",
+  "image": "ubuntu:24.04",
+  "imageDigest": "ubuntu@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3",
+  "model": "qwen3.6:35b-a3b",
+  "version": "1.0.0-rc.4",
+  "steps": 14,
+  "firstResultMs": 28889,
+  "outcome": {
+    "step": 15,
+    "firstResult": true,
+    "firstResultText": "Got a \"regression-only pass\" (exit 0). swarm-verify discovered the test command `npm run --silent test`, ran it successfully (1349 tests collected, 1347 passed, 0 failed in 26.8s), and reported 6 checks passed: format, tests, build, placeholder, secret-scan, diff-budget. It also noted typecheck and lint were unmeasured because package.json declares no such scripts.",
+    "brokenCopyRefused": true,
+    "confusions": [
+      "The swarm-verify README didn't explicitly mention needing to run `npm ci` first, though the tool itself suggested it when dependencies were missing (exit 4)",
+      "Some checks (typecheck, lint) were unmeasured because the repo doesn't declare those scripts in package.json",
+      "The 'file-set' and 'behaviour-probe' checks weren't run because no scope was authorized - the tool noted 'this run had no planner to declare one'",
+      "The signing warning about Secret Service keyring failing was unexpected but non-fatal"
+    ],
+    "report": "## swarm-verify Testing Report\n\n### Step 1: First Result on ./repo\nI ran `npx swarm-verify` in the cloned repository (hoangsonww/Claude-Code-Agent-Monitor). \n\n**Initial run (without dependencies):** Exit code 4, result \"incomplete\" - detected missing node_modules and suggested running `npm ci`.\n\nAfter installing dependencies with `npm ci`, I ran it again:\n- **Result:** regression-only pass (exit 0)\n- **Tests:** 1349 collected, 1347 passed, 0 failed, 2 skipped (ran in 26.8s)\n- **Checks passed:** format, tests, build, placeholder, secret-scan, diff-budget (6 total)\n- **Checks not run:** typecheck, lint (no scripts declared), file-set, behaviour-probe (no scope authorized)\n- **Requirements:** unmeasured (no requirement contract supplied)\n\n### Step 2: Broken Copy Test\nCreated disposable copy at `./broken`, broke one test by changing `assert.match` to `assert.doesNotMatch` in `server/__tests__/env-path.test.js`.\n\n**swarm-verify on broken copy:**\n- **Result:** fail (exit 1) - a blocking check failed\n- **Detected:** Working tree has uncommitted changes\n- **Tests:** 1349 collected, 1346 passed, **1 failed**, 2 skipped\n- **Checks:** passed 5, **failed 1 (tests)**, not run 4\n\nThe tool correctly refused the broken copy by detecting the test failure.\n\n### Step 3: Summary\nswarm-verify successfully:\n1. Discovered and ran the repository's test command\n2. Reported detailed check results (6 passed, 0 failed on clean repo)\n3. Detected and refused a broken copy with a failing test (exit 1)\n4. Exported evidence bundles for verification\n\n### Confusions/Notes\n- The README didn't explicitly mention needing `npm ci` first, though the tool suggested it\n- Several checks were unmeasured due to missing scripts or no authorized scope\n- Secret Service keyring signing failed (non-fatal warning)\n- Took approximately 6 steps: check environment, explore repo, run swarm-verify (incomplete), install deps, run swarm-verify (complete), create broken copy, break test, run swarm-verify on broken copy, verify original still passes"
+  },
+  "finishedAt": "2026-09-27T21:47:18.220Z",
+  "label": "AI onboarding simulation by a local model; not a human tester"
+}

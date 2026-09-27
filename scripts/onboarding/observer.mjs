@@ -191,6 +191,8 @@ try {
         args = {};
       }
       if (call.function.name === "finish") {
+        // A model sometimes hands the list as one string; the summary keeps it as a list.
+        if (typeof args.confusions === "string") args.confusions = [args.confusions];
         outcome = { step, ...args };
         record({ kind: "finish", step, ...args });
         break;
