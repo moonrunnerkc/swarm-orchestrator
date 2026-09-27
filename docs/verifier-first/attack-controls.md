@@ -91,9 +91,10 @@ Open: no real runner's passing report is cut by the byte ceiling in a test.
 | `src/cli-verdict.test.ts` "reports evidence that no longer matches the document" | a changed report beside the verdict is named inconsistent | real |
 | `src/action/comment.test.ts` "posts nothing when the pull request has moved past the verified head" | a stale head posts nothing | pure |
 
-Open: the guard "goal verifier checkout does not match the exact integrated tree" has no test
-handing it a mismatched tree, and no test presents a verdict made for one head as evidence for
-another. Both are next.
+| `src/gates/attack-controls.test.ts` "refuses to run the contract's checks over a checkout whose tree is not the one named" | a real clone handed a tree id it does not hold: refused before any check, no goal-check record written | real |
+
+Open: no test presents a verdict made for one head as evidence for another; the verdict
+command binds by digest, and that cross-head case is next.
 
 ## 7. Check bytes, a lockfile, toolchain or relevant environment change after the recorded pass
 
@@ -118,8 +119,7 @@ invalidation on drift is next.
 | `src/gates/package-assessment.integration.test.ts` | a selected package with no tests stays blocking and unmeasured | real |
 | `src/cli-check.test.ts`, `src/gates/check-plan.test.ts` | a root script over a workspace leaves the packages unmeasured by name; no root script is ambiguous | real |
 
-Open: the refusal "change outside selected packages is unverified" in the independent verifier
-has no test with a patch touching a file outside the selection. Next.
+| `src/gates/attack-controls.test.ts` "refuses a patch touching a file outside the selected packages, by name, before any check runs" | a real workspace of two packages; a patch touching the root is refused with the file named and no gate runs | real |
 
 ## 9. A candidate tries to write to the evidence/signing location or obtain verifier credentials
 
@@ -161,9 +161,10 @@ is not exercised; the check-level substitutions are.
 | `src/gates/dependency-install.test.ts` (ambiguous setup, cancelled setup) | stub runner | in-proc |
 | `src/gates/goal-effects.test.ts` "requires reconciliation of ambiguous effects" | an intent with no completion refuses the next verification | pure |
 
-Open: nothing interrupts `challengeGoal` mid-run and resumes; the challenge run records carry
-intent and completed phases for exactly that, and the control that cancels between them and
-shows the next verification refusing to proceed is next.
+| `src/gates/attack-controls.test.ts` "refuses to challenge over an intent that no completion answers, naming the challenge" | a challenge intent with no completion on the chain: the next challenge run refuses with `ChallengeReconciliationError`, executes nothing and writes no second plan | in-proc |
+
+Open: a real process killed mid-mutation, then resumed, is held by the same reconciliation
+rule the in-proc control exercises; the killed-process form is next.
 
 ## 12. A stale accepted result is replayed after integration or a check revision
 
@@ -175,6 +176,4 @@ shows the next verification refusing to proceed is next.
 | `src/evidence/ledger.test.ts` "resumes a valid chain and refuses a stale writer without forking history" | real files | real |
 | `src/evidence/redteam-adversarial.test.ts` "leaves the earlier verdict standing when a later record reuses the digest" | records | in-proc |
 
-Open: a goal-check or verdict accepted under one contract digest replayed after the checks are
-revised is not exercised. The challenge and goal records bind the contract digest, and the
-control that revises a check and shows the earlier acceptance refused is next.
+| `src/gates/attack-controls.test.ts` "derives a fresh verdict for a revised contract and never cites the earlier one" | the same patch verified under a weak contract (accepted, challenge gap) and then a revised strong contract: every record on the second chain carries the revised digest only, the verdict is derived fresh, and the weak contract's gap stands | real |

@@ -262,9 +262,39 @@ async function record(evidence: EvidenceRecorder, rule: string, payload: Record<
   return entry.record.payloadDigest;
 }
 
+/** An interrupted challenge left an intent with no completion; nothing may proceed over it. */
+export class ChallengeReconciliationError extends Error {
+  readonly unfinished: readonly string[];
+  constructor(unfinished: readonly string[]) {
+    super(
+      `challenge run(s) ${unfinished.join(", ")} recorded an intent and no completion: a cancelled or crashed challenge left the checkout in doubt, and the run must be reconciled before another challenge is executed`,
+    );
+    this.name = "ChallengeReconciliationError";
+    this.unfinished = unfinished;
+  }
+}
+
+/** Every challenge intent on the chain that no completion answers, in order. */
+export function unfinishedChallenges(evidence: EvidenceRecorder): readonly string[] {
+  const open = new Map<string, true>();
+  for (const entry of evidence.records()) {
+    if (entry.type !== "verification-command") continue;
+    const payload = evidence.payloads().get(entry.payloadDigest) as
+      | { rule?: string; phase?: string; id?: string; plan?: string }
+      | undefined;
+    if (payload?.rule !== "challenge-run-v1" || typeof payload.id !== "string") continue;
+    const key = `${payload.plan}:${payload.id}`;
+    if (payload.phase === "intent") open.set(key, true);
+    else if (payload.phase === "completed") open.delete(key);
+  }
+  return [...open.keys()].map((key) => key.slice(key.indexOf(":") + 1));
+}
+
 /** Run every planned challenge, recording each, and read the requirement outcomes. */
 export async function challengeGoal(input: ChallengeInput): Promise<ChallengeReport> {
   const { contract, evidence, runner } = input;
+  const unfinished = unfinishedChallenges(evidence);
+  if (unfinished.length > 0) throw new ChallengeReconciliationError(unfinished);
   const presetKind = contract.preset?.kind;
   const mutants =
     contract.challenges?.mutations === "none"
