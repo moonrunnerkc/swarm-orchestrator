@@ -36,8 +36,10 @@ import {
 import { outsidePackages } from "./package-scope.ts";
 import { parseLineHits } from "./parsers.ts";
 import { pathsInPatch } from "./patch-paths.ts";
+import { stagePreparedPython } from "./prepared-python.ts";
 import { enforceUpgrade, reproducedBug } from "./preset-verification.ts";
 import { parseUnifiedDiff } from "./unified-diff.ts";
+import { observeUpgradeResolution } from "./upgrade-resolution.ts";
 import { readV8Coverage } from "./v8-coverage.ts";
 
 /**
@@ -347,6 +349,15 @@ export async function verifyIndependently(
           "upgrade verification requires explicitly authorized --install from the candidate lockfile",
         );
     }
+    if (options.installDependencies !== true)
+      await stagePreparedPython({
+        repository: options.repositoryRoot,
+        checkout,
+        ...(options.gateOptions?.packages === undefined
+          ? {}
+          : { packages: options.gateOptions.packages }),
+        ...(options.goal === undefined ? {} : { evidence: options.goal.evidence }),
+      });
     const install =
       options.installDependencies === true
         ? await installFromLockfile({
@@ -375,6 +386,15 @@ export async function verifyIndependently(
         install,
         checkoutPath: checkout,
       };
+
+    if (options.goal?.contract.preset?.kind === "upgrade")
+      await observeUpgradeResolution({
+        preset: options.goal.contract.preset,
+        checkout,
+        commands: options.commands,
+        evidence: options.goal.evidence,
+        timeoutMs,
+      });
 
     const onlyTheOracle = options.repositoryChecks === "skip";
     const withPatch = onlyTheOracle ? [] : await runChecks(checkout, options, timeoutMs);

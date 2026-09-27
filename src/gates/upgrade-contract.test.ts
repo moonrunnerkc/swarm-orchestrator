@@ -46,3 +46,18 @@ it("refuses pip-only reproducible upgrades and an implicit latest target", () =>
     }).success,
   ).toBe(false);
 });
+
+it("rejects mismatched managers, lock roots and duplicate dependency authorizations", () => {
+  for (const changes of [
+    { manager: "uv" },
+    { manager: "pnpm" },
+    { lockfile: "nested/package-lock.json" },
+    {
+      dependencies: [
+        node.kind === "upgrade" && node.dependencies[0],
+        node.kind === "upgrade" && node.dependencies[0],
+      ],
+    },
+  ])
+    expect(taskPresetSchema.safeParse({ ...node, ...changes }).success).toBe(false);
+});
