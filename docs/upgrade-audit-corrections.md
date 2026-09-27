@@ -199,3 +199,11 @@ Amendment 8, before release preparation: update the already-declared `CHANGELOG.
 to date the authorized 14.2.0 source release and correct the standalone version in its entry.
 Later reporting updates will record actual remote CI and publication without rewriting
 prior campaign evidence. User authorization now includes both npm packages and latest GitHub release.
+
+Amendment 9, before CI corrective edits: the already-declared
+`src/gates/browser-check.integration.test.ts` needs a bounded browser startup allowance.
+macOS run 36333966390 rejected its good fixture after the three-second Playwright test budget;
+the prior identical executable source passed. Use a 15-second fixture test budget and a
+30-second process deadline, retaining the 300 ms wrong-output assertion and 500 ms hang control.
+The paired integration case receives 65 seconds for its two bounded processes. No production
+check timeout, assertion, skip or retry policy changes. Preserve the failed run and rerun gates.
