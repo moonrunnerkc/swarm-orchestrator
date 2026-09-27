@@ -46,17 +46,25 @@ export function readRunnerResult(observation: GateObservation): GateReading {
     if (parsedPython.success) tests = parsedPython.data.tests;
     else {
       const report = vitest.parse(value);
-      tests = report.testResults.flatMap((file) =>
-        file.assertionResults.map((test) => ({
-          id: `${file.name}:${test.fullName}`,
-          status:
-            test.status === "passed"
-              ? ("passed" as const)
-              : test.status === "failed"
-                ? ("failed" as const)
-                : ("skipped" as const),
-        })),
-      );
+      // Two tests in one file may carry the same title (a repeated `it`, or a parameterised
+      // case whose title has no parameter); the second is named by its occurrence, so a
+      // suite is not rejected whole for a name its own runner accepted.
+      tests = report.testResults.flatMap((file) => {
+        const seen = new Map<string, number>();
+        return file.assertionResults.map((test) => {
+          const count = (seen.get(test.fullName) ?? 0) + 1;
+          seen.set(test.fullName, count);
+          return {
+            id: `${file.name}:${test.fullName}${count === 1 ? "" : `#${count}`}`,
+            status:
+              test.status === "passed"
+                ? ("passed" as const)
+                : test.status === "failed"
+                  ? ("failed" as const)
+                  : ("skipped" as const),
+          };
+        });
+      });
       if (
         report.numTotalTests !== tests.length ||
         report.numPassedTests !== tests.filter((test) => test.status === "passed").length ||
