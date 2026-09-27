@@ -1,3 +1,27 @@
+/**
+ * Vitest, in process, reporting JSON to a file the script then prints as the whole of stdout.
+ * The JSON reporter on stdout is not enough: a suite that logs, or a project whose test
+ * script prints its own verdicts, mixes text into the stream and the report reads as
+ * malformed. Stdout is muted while the suite runs, the report file is read on exit (which is
+ * how vitest leaves), and its bytes are all that is written.
+ */
+const vitest = [
+  "import {createRequire} from 'node:module';",
+  "import {pathToFileURL} from 'node:url';",
+  "import {dirname,join} from 'node:path';",
+  "import {mkdtempSync,readFileSync,writeSync,rmSync} from 'node:fs';",
+  "import {tmpdir} from 'node:os';",
+  "const require=createRequire(process.cwd()+'/package.json');",
+  "const entry=join(dirname(require.resolve('vitest/package.json')),'vitest.mjs');",
+  "const dir=mkdtempSync(join(tmpdir(),'swarm-vitest-'));",
+  "const report=join(dir,'report.json');",
+  "const write=process.stdout.write.bind(process.stdout);",
+  "process.stdout.write=()=>true;",
+  "process.on('exit',()=>{process.stdout.write=write;let bytes;try{bytes=readFileSync(report)}catch(cause){bytes=Buffer.from(JSON.stringify({unavailable:'vitest wrote no report: '+String(cause)}))}writeSync(1,bytes);try{rmSync(dir,{recursive:true,force:true})}catch{}});",
+  "process.argv=[process.argv[0],entry,'run','--reporter=json','--outputFile='+report];",
+  "await import(pathToFileURL(entry).href);",
+].join("");
+
 const pytest = `import json,subprocess,sys,tempfile,xml.etree.ElementTree as ET
 with tempfile.TemporaryDirectory(prefix="swarm-pytest-") as d:
  p=d+"/results.xml"
@@ -18,12 +42,7 @@ with tempfile.TemporaryDirectory(prefix="swarm-pytest-") as d:
 /** Recognize complete supported commands; anything else retains its existing measurement limits. */
 export function structuredRunner(body: string | undefined): readonly string[] | null {
   if (body === "vitest" || body === "vitest run")
-    return [
-      "node",
-      "--input-type=module",
-      "-e",
-      "import {createRequire} from 'node:module';import {pathToFileURL} from 'node:url';import {dirname,join} from 'node:path';const require=createRequire(process.cwd()+'/package.json');const entry=join(dirname(require.resolve('vitest/package.json')),'vitest.mjs');process.argv=[process.argv[0],entry,'run','--reporter=json'];await import(pathToFileURL(entry).href);",
-    ];
+    return ["node", "--input-type=module", "-e", vitest];
 
   if (body === "uv run --locked --no-sync python -m pytest -q")
     return ["uv", "run", "--locked", "--no-sync", "python", "-c", pytest];
