@@ -284,7 +284,7 @@ project: node
   n/a      lint: package.json declares no lint script
   n/a      format: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging
   passed   tests: 3 collected, 3 passed, 0 failed, 0 skipped (exit 0)
-  n/a      file-set: no scope was authorised: this run had no planner to declare one. 1 file(s) were observed as changed: slugify.mjs. Observed scope is not authorised scope, so this gate checked nothing about intent. Pass --allowed-files to have it check membership.
+  n/a      file-set: no file set was declared for this run, so membership was not checked. 1 file(s) changed: slugify.mjs. These are observed changes, not an authorised file set, so this says nothing about intent; pass --allowed-files to have membership checked.
   passed   placeholder: no placeholder marker was introduced by this change
   passed   secret-scan: no known credential pattern appears in the added lines
   passed   behaviour-probe: 1 changed function(s) still answer to their inputs.

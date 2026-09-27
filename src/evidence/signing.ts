@@ -193,7 +193,9 @@ export async function resolveSigningKey(store: SecretStore | null): Promise<Reso
       key: createEphemeralSigningKey(),
       notice:
         `${store.description} would not take a new key (${describeCause(cause)}), ` +
-        "so the bundle is signed with a per-run key",
+        "so the bundle is signed with a per-run key: the signature still binds the bundle, " +
+        "but the signer is not a persistent identity. Ordinary on a headless machine or in CI; " +
+        "a desktop keychain keeps one key across runs",
     };
   }
 }

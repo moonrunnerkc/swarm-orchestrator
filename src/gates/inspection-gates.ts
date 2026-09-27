@@ -166,11 +166,11 @@ export const fileSetGate: GateDefinition = {
         // that checked and was satisfied.
         return unavailableObservation(
           changed.length === 0
-            ? "nothing changed, and no scope was authorised because no agent ran"
-            : "no scope was authorised: this run had no planner to declare one. " +
-                `${changed.length} file(s) were observed as changed: ${changed.join(", ")}. ` +
-                "Observed scope is not authorised scope, so this gate checked nothing about " +
-                "intent. Pass --allowed-files to have it check membership.",
+            ? "no file set was declared for this run and nothing changed, so there was no membership to check"
+            : "no file set was declared for this run, so membership was not checked. " +
+                `${changed.length} file(s) changed: ${changed.join(", ")}. ` +
+                "These are observed changes, not an authorised file set, so this says nothing " +
+                "about intent; pass --allowed-files to have membership checked.",
         );
       }
 
