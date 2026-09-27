@@ -67,7 +67,10 @@ export function createNodeCommandRunner(
       // A backend runs the command somewhere this process does not build the environment, so an
       // overlay it cannot carry is reported rather than silently left off: a measurement taken
       // without the name it asked for is not the measurement that was asked for.
-      if (backend !== undefined) {
+      if (
+        backend !== undefined &&
+        Object.keys(options.environment).some((name) => !backend.environmentNames?.includes(name))
+      ) {
         return unavailableObservation(
           "this command asked for environment names the isolation backend cannot carry, " +
             "so it was not run rather than run without them",
@@ -94,6 +97,7 @@ export function createNodeCommandRunner(
             cwd: options.cwd,
             timeoutMs: options.timeoutMs,
             signal: cancellation,
+            ...(options.environment === undefined ? {} : { environment: options.environment }),
             ...(options.readOnlyFiles === undefined
               ? {}
               : { readOnlyFiles: options.readOnlyFiles }),

@@ -37,3 +37,10 @@ describe("choosing where a run's commands execute", () => {
     expect(() => parseIsolationOption("docker", "/repo", () => false)).toThrow(/not installed/);
   });
 });
+
+it.each(["docker:--privileged", "docker:node --privileged", "docker:$(id)"])(
+  "refuses image option injection %s",
+  (value) => {
+    expect(() => parseIsolationOption(value, "/workspace", () => true)).toThrow();
+  },
+);

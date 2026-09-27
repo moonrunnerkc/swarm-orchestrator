@@ -14,6 +14,9 @@ const limits = {
   maxOutputBytes: z.number().int().min(256).max(1_000_000),
   toolchain: z.string().min(1).max(256),
   network: z.literal("inherit"),
+  environment: z
+    .partialRecord(z.enum(["LANG", "TZ", "PLAYWRIGHT_BROWSERS_PATH"]), z.string().max(1024))
+    .default({}),
 };
 const cli = z.strictObject({
   kind: z.literal("cli"),

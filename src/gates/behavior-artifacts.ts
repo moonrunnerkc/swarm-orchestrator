@@ -41,7 +41,10 @@ export async function retainBehaviorArtifacts(
   let remaining = 4_000_000;
   const records: string[] = [];
   for (const item of paths) {
-    const file = resolve(checkout, item.path);
+    const file = resolve(
+      checkout,
+      item.path.startsWith("/workspace/") ? item.path.slice("/workspace/".length) : item.path,
+    );
     let payload: Record<string, unknown>;
     try {
       const actual = await realpath(file);

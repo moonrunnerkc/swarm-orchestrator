@@ -107,6 +107,7 @@ export async function runBehaviorCheck(
     cwd: join(options.checkout, check.cwd),
     timeoutMs: check.timeoutMs,
     maxOutputBytes: check.maxOutputBytes,
+    ...(Object.keys(check.environment).length ? { environment: check.environment } : {}),
     ...(options.readOnlyFiles === undefined ? {} : { readOnlyFiles: options.readOnlyFiles }),
   };
   const argv =
