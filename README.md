@@ -63,11 +63,12 @@ required checks prevent complete verification. See the linked broad-use guide fo
 npm install -g swarm-orchestrator
 ```
 
-That is **14.1.0**. It runs on Node 22 or newer. Node 24 or newer is recommended, because the
-changed-line coverage measurement spawns node's test runner with `--test-isolation=process`,
-which Node 22 rejects; below 24 that one measurement reports unmeasured and never counts as a
-pass. `swarm doctor` says which Node it found and what owns the `swarm` command, and `--fix`
-repairs an install that an older build is shadowing.
+That is **14.2.0**. It runs on Node 22 or newer, and every measurement runs on Node 22.8 or
+newer: the changed-line coverage measurement spawns node's test runner with process isolation
+named on the command line, in the spelling the running Node takes. On 22.0 to 22.7 that one
+measurement reports unmeasured and never counts as a pass. `swarm doctor` says which Node it
+found and what owns the `swarm` command, and `--fix` repairs an install that an older build is
+shadowing.
 
 ## Try it
 

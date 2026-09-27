@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { harnessControlledNodeTest, processIsolation, shellQuoted } from "./node-test-command.ts";
+import {
+  experimentalProcessIsolation,
+  harnessControlledNodeTest,
+  processIsolation,
+  shellQuoted,
+} from "./node-test-command.ts";
 
 /**
  * The property under test is not "the isolation setting was removed". It is "the harness
@@ -166,6 +171,25 @@ describe("everything else the harness cannot stand behind", () => {
     expect(shellQuoted("/session/coverage/tests.lcov")).toBe("'/session/coverage/tests.lcov'");
     expect(shellQuoted("/session/it's/tests.lcov")).toBeNull();
     expect(shellQuoted("/session/$(id)/tests.lcov")).toBeNull();
+  });
+
+  it("confirms the experimental spelling only where the harness itself supplied it", () => {
+    // Node 22.8 through 23 take `--experimental-test-isolation=process`; the read-back has to
+    // accept that spelling from the harness and refuse it from the project all the same.
+    const reporters = ["--test-reporter=tap", "--test-reporter-destination=stdout"];
+    expect(
+      harnessControlledNodeTest("node --test", [experimentalProcessIsolation, ...reporters]),
+    ).toEqual(["node", "--test", experimentalProcessIsolation, ...reporters]);
+    expect(
+      harnessControlledNodeTest(`node --test ${experimentalProcessIsolation}`, reporters),
+    ).toBeNull();
+    expect(
+      harnessControlledNodeTest("node --test", [
+        experimentalProcessIsolation,
+        processIsolation,
+        ...reporters,
+      ]),
+    ).toBeNull();
   });
 
   it("abstains when the flags it was handed do not leave it holding the isolation setting", () => {

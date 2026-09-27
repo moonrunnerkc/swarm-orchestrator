@@ -119,10 +119,7 @@ export function oracleCoveragePlan(
   // The vouched vector carries `--test-isolation=process`, which a Node below the floor rejects
   // as a bad option; spawning it there reads that rejection as a run. Node's runner loads the
   // file as written, so the V8 arm below measures it instead on such a runtime.
-  const asNodeRunner =
-    isolatedCoverageShortfall(runtime.nodeVersion ?? process.version) === null
-      ? harnessReportingCommand(last)
-      : null;
+  const asNodeRunner = harnessReportingCommand(last, runtime.nodeVersion ?? process.version);
   if (asNodeRunner !== null) {
     return { kind: "node-lcov", setup, argv: asNodeRunner };
   }

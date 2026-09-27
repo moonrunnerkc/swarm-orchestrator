@@ -53,13 +53,17 @@ export function askedForHarnessReports(
       coverageUnmeasured:
         "runner-reported results grant no controlled coverage or base-control attribution",
     };
-  const argv = harnessReportingCommand(body);
-  if (argv === null) {
-    return spec;
-  }
   const shortfall = isolatedCoverageShortfall(nodeVersion);
   if (shortfall !== null) {
-    return { ...spec, coverageUnmeasured: shortfall };
+    // Only where the runner is one the harness could otherwise have vouched for: a body a
+    // shell decides is not measured for its own reason, and that reason is not the runtime.
+    return harnessReportingCommand(body, "v24.0.0") === null
+      ? spec
+      : { ...spec, coverageUnmeasured: shortfall };
+  }
+  const argv = harnessReportingCommand(body, nodeVersion);
+  if (argv === null) {
+    return spec;
   }
   const rendered = argv.join(" ");
   return {

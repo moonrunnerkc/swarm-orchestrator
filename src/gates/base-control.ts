@@ -3,7 +3,11 @@ import { basename, dirname, join } from "node:path";
 import { defaultGateTimeoutMs, type GateCommandRunner } from "./gate-definition.ts";
 import { type GitWorkspaceOptions, revertSourceToBase } from "./git-workspace.ts";
 import { isTestFile } from "./measures.ts";
-import { harnessControlledNodeTest, processIsolation, shellQuoted } from "./node-test-command.ts";
+import {
+  harnessControlledNodeTest,
+  processIsolationFlag,
+  shellQuoted,
+} from "./node-test-command.ts";
 import { parseTapOutcomes } from "./parsers.ts";
 import type { ProjectDetection } from "./project-type.ts";
 import { type BaseControlRunner, type ControlRun, indeterminate } from "./respecification.ts";
@@ -174,9 +178,13 @@ export function singleFileTestCommand(
  * prints reaches column zero, which is the only place a result point is read from.
  */
 function askedForOutcomes(body: string | undefined, testFile: string): TestFileInvocation | null {
+  // Below the isolation floor there is no vector to vouch for, so nothing is attributed: the
+  // runner is not spawned under a flag it rejects and read as a run.
+  const isolation = processIsolationFlag(process.version);
+  if (isolation === null) return null;
   const argv = harnessControlledNodeTest(
     body,
-    ["--test-reporter=tap", "--test-reporter-destination=stdout", processIsolation],
+    ["--test-reporter=tap", "--test-reporter-destination=stdout", isolation],
     [testFile],
   );
   return argv === null ? null : { kind: "argv", argv };

@@ -26,10 +26,10 @@ established or explicitly handed off with its remaining manifest.
 | Req | What it asks | Implementation | Tests | Executed evidence | Status |
 | --- | --- | --- | --- | --- | --- |
 | R1 | `moonrunnerkc/swarm-verify@v1` Action with a signed, idempotent PR comment and an independent verification command | | | | not started |
-| R2 | `npx swarm-verify` useful with zero configuration: deterministic discovery, noninteractive run, scoped result, stable exit codes | | | | not started |
+| R2 | `npx swarm-verify` useful with zero configuration: deterministic discovery, noninteractive run, scoped result, stable exit codes | `src/cli-check.ts`, `src/gates/check-plan.ts`, `src/gates/noninteractive-runner.ts`; no subcommand runs `check` | `src/cli-check.test.ts` (ten real invocations), `src/gates/check-plan.test.ts`, `src/gates/noninteractive-runner.test.ts` | local gates 24ef849f0: 382 files, 3654 tests; public-package run pending R5 | implemented, not yet published |
 | R3 | README-only stranger simulations on three independently maintained repositories from fresh VMs | | | | not started |
 | R4 | Dogfood across owned repositories, including the Aftermath site repository | [dogfood-manifest.md](dogfood-manifest.md) | | | inventory recorded |
-| R5 | Stable published `swarm-verify` on Node 22 with a frozen contract and platform matrix | | | | not started |
+| R5 | Stable published `swarm-verify` on Node 22 with a frozen contract and platform matrix | coverage arm on Node 22.8+ ([node-22.md](node-22.md)); contract, matrix and publication pending | `src/node-floor.test.ts`, `src/gates/node-test-command.test.ts`, `src/gates/default-gates.test.ts` | Node 22.22.3 run in node-22.md | in progress |
 | R6 | Verifier-first README with a real tamper GIF and tested commands | | | | not started |
 | R7 | Registered, reproducible study of 50 recent AI-authored PRs | | | | not started |
 | R8 | Launch posts where users discuss the problem, with a real 48-hour response log | | | | not started |
