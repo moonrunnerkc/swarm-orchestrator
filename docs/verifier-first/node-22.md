@@ -9,17 +9,23 @@ path exists there or the arm has to stay unmeasured. It exists from Node 22.8.
 
 Probed on 2026-09-27 by running node's test runner over a one-test fixture with each spelling
 of the isolation flag, in the official `node:<version>-bookworm-slim` images through Docker
-29.5.2, and on the Homebrew `node@22` build on the development machine. "bad option" is the
-runtime's own refusal, printed verbatim.
+29.5.2 with the fixture mounted read-only, and on the Homebrew `node@22` build on the
+development machine. "bad option" is the runtime's own refusal, printed verbatim; "1..1" is
+the TAP plan the runner printed after running the one test.
 
 | Runtime | `--test-isolation=process` | `--experimental-test-isolation=process` |
 | --- | --- | --- |
-| v22.0.0 | bad option | not probed (below 22.8, see next row) |
+| v22.0.0 | bad option | bad option |
 | v22.7.0 | bad option | bad option |
-| v22.8.0 | bad option | accepted |
-| v22.22.3 (Homebrew and image) | bad option | accepted |
-| v23.11.0 | accepted | accepted |
-| v24.21.0 (image), v24.15.0 (development) | accepted | accepted |
+| v22.8.0 | bad option | 1..1 |
+| v22.22.3 (Homebrew and image) | bad option | 1..1 |
+| v23.11.0 | 1..1 | 1..1 |
+| v24.21.0 (image), v24.15.0 (development) | 1..1 | 1..1 |
+
+The same fixture, installed from the packed 0.2.0-source tarball into an empty directory,
+passes all eighteen cases of `scripts/verifier-matrix-smoke.mjs` on Node 24.15.0 and 22.22.3
+(macOS) and on Node 22.0.0 (Linux container), the last with the coverage arm reporting
+unmeasured by name.
 
 Node 22.8 introduced `--experimental-test-isolation`; process isolation was already the only
 mode before it, so on 22.8 through 23 the flag names the default explicitly. Node 23.6 added
