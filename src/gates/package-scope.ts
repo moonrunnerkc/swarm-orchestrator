@@ -98,6 +98,10 @@ export async function assemblePackageGates(
     const overrides = Object.fromEntries(
       Object.entries(options.commandOverrides ?? {}).flatMap(([id, override]) => {
         if (!id.includes(":")) return [[id, override]];
+        if (id.endsWith(`:${unit}`) && repositoryIds.has(id.slice(0, -unit.length - 1)))
+          throw new Error(
+            `repository inspection ${id} must use an unqualified override; it runs once per repository`,
+          );
         return id.endsWith(`:${unit}`) ? [[id.slice(0, -unit.length - 1), override]] : [];
       }),
     );

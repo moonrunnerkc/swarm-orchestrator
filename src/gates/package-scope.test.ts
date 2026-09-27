@@ -56,3 +56,12 @@ it("retains repository-wide overrides exactly once alongside unavailable package
   expect(scans[0]?.source).toMatchObject({ kind: "command", command: "node scan.mjs" });
   expect(gates.find((gate) => gate.id === "tests:unit")).toBeDefined();
 });
+
+it("refuses a package-qualified repository inspection instead of silently dropping its override", async () => {
+  await expect(
+    assemblePackageGates(async (path) => (path === "unit/package.json" ? "{}" : null), {
+      packages: ["unit"],
+      commandOverrides: { "secret-scan:unit": "node scan.mjs" },
+    }),
+  ).rejects.toThrow("must use an unqualified override");
+});
