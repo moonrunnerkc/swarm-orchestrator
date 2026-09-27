@@ -1,0 +1,75 @@
+name: verifier matrix
+
+# The standalone verifier, built once on the development Node and then installed from its
+# tarball on every runtime and platform the package advertises. The build job may use a newer
+# Node than a consumer has; the installed jobs use only what a consumer has. Node 22.0.0 is the
+# declared floor and runs every command with the coverage arm reporting unmeasured; 22.8 and
+# newer run every measurement. Windows exercises bundle verification only, which is what the
+# contract advertises there.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build:verify
+      - run: npm pack --workspace swarm-verify --pack-destination "$RUNNER_TEMP/tarball"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: swarm-verify-tarball
+          path: ${{ runner.temp }}/tarball/*.tgz
+          if-no-files-found: error
+          retention-days: 7
+
+  installed:
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: ["22.0.0", "22", "24"]
+        include:
+          - os: windows-latest
+            node: "22"
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: swarm-verify-tarball
+          path: ${{ runner.temp }}/tarball
+      - name: Install the tarball into an empty directory
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/install"
+          cd "$RUNNER_TEMP/install"
+          echo '{"name":"consumer","private":true}' > package.json
+          npm install --no-audit --no-fund "$RUNNER_TEMP"/tarball/*.tgz
+          npm ls --depth=0
+      - name: Exercise the installed verifier
+        shell: bash
+        run: node scripts/verifier-matrix-smoke.mjs "$RUNNER_TEMP/install" .
+      - name: Uninstall leaves nothing behind
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP/install"
+          npm uninstall swarm-verify
+          test ! -e node_modules/swarm-verify
+          test ! -e node_modules/.bin/swarm-verify
