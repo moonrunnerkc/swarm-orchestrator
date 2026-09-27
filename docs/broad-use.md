@@ -98,12 +98,36 @@ headers, text equality/containment and scalar JSON paths. Readiness is separate 
 Redirects are refused, the runner never discovers production endpoints, and occupied ports refuse
 startup. See the actual server fixtures in [behavior-check tests](../src/gates/behavior-check.test.ts).
 
-Browser instruments run the project's pinned `node_modules/@playwright/test/cli.js test
---reporter=json` command, with an expected nonzero test count. Install Playwright and its browsers
-explicitly. Individual results and aggregate totals must agree; zero, skipped, flaky, duplicate,
-malformed or truncated reports cannot pass. PNG screenshots and ZIP traces are bounded diagnostic
-artifacts, never correctness verdicts. The isolated [browser fixture](../scripts/validate-browser-container.mjs)
-executes the same sealed click assertion on correct and broken application code.
+Browser `argv` checks execute the project runner as before, but their output is explicitly
+runner-reported and task acceptance is **unjudged**. Candidate configuration, reporters and
+Node dependencies can print fabricated success. A real Playwright executable alone does not
+make those results independent.
+
+For acceptance, use `instrument: { source, titles }` instead of `argv`. `source` contains the
+sealed ESM Playwright test and `titles` names every expected test. The harness generates the
+configuration and copies this instrument outside the candidate checkout in a fresh container.
+It resolves Playwright from `/opt/swarm-browser/node_modules`, supplied by the immutable image,
+and never discovers candidate configuration, tests or dependencies. The test runs as
+`instrument.spec.mjs` in the `chromium` project, with one worker, no retries and no focused tests.
+Titles must be unique and match the captured results. The recorded execution boundary and
+complete check digest are required by both runtime and offline readers. Host execution cannot
+provide this boundary and reports unavailable with a setup remedy.
+
+The instrument is trusted acceptance code whose author and exposure remain recorded. It must
+exercise candidate behavior through the browser, not evaluate candidate code in its Node
+assertion process. A preloaded module boundary rejects imports outside the sealed instrument
+and immutable dependency tree, including imports from candidate files. `SWARM_SUBJECT_DIRECTORY` names the candidate directory for reading
+application data, as the fixture reads JavaScript bytes into a browser page. This does not
+establish the sufficiency of the authored tests or the integrity of the execution machine.
+Zero, skipped, flaky, duplicate, malformed or truncated reports cannot pass. Screenshots and
+traces are bounded diagnostics, never correctness verdicts. The isolated
+[browser fixture](../scripts/validate-browser-container.mjs) executes the same sealed click
+assertion on correct and broken application code.
+
+Unavailable package checks retain their package-qualified identities in seals, JSON and Markdown.
+Absent optional static tools remain named unmeasured observations; they are not passing checks.
+A configured tool that cannot run, a setup failure or missing tests in a selected package leaves
+regression unmeasured even when another package passes.
 
 ## Presets on the ordinary worker path
 
@@ -153,7 +177,8 @@ retains the original contract, escalation count, remaining budget and deadline.
 | Node native, Node 22 | Existing outcomes | Unmeasured: process-isolated coverage arm unsupported | Capability dependent | Never promote unavailable measurements |
 | Vitest 4.1.11 | Validated JSON individual outcomes and totals | Unmeasured | Unmeasured | Runner-reported outcomes, no numeric ratchet authority |
 | pytest 9.0.2 | Bounded JUnit-derived individual outcomes | Unmeasured | Unmeasured | Runner-reported outcomes, no assertion/deletion exemption |
-| Playwright 1.63.0 | Individual expected tests and agreeing totals | Unmeasured | Pinned behavior controls only | Test outcomes; artifacts are diagnostic |
+| Playwright 1.63.0, sealed instrument | Named executed tests and agreeing totals in immutable image | Unmeasured | Pinned behavior controls only | Authored instrument and runtime trust required; artifacts diagnostic |
+| Playwright project argv | Runner-reported only | Unmeasured | Unmeasured | Task acceptance unjudged, including apparently passing JSON |
 | Selected packages | Package-qualified checks | Unmeasured | Unmeasured | Selected scope only |
 
 Observed development environment: Node 24.15.0, npm 11.12.1, pnpm 9.15.0, uv 0.11.13,
@@ -199,10 +224,11 @@ node scripts/validate-browser-cli.mjs
 
 That build installs Playwright and Chromium with network access because the operator requested
 it. Candidate verification runs with network disabled and read-only acceptance mounts. The
-prepared image supplies the pinned runner under `/opt/swarm-browser`; a project image can
-instead provide its matching installed runner. The [browser contract and test](../scripts/validate-browser-cli.mjs)
+prepared image supplies the pinned runner under `/opt/swarm-browser`; an explicitly prepared
+project image must provide that same immutable runner location. No runner is installed during verification. The [browser contract and test](../scripts/validate-browser-cli.mjs)
 click a real button and assert one increment, then reject a button that increments twice.
-Failure PNGs and traces remain diagnostic artifacts in the bounded bundle.
+Failure PNGs and traces remain diagnostic artifacts in the bounded bundle. Candidate configuration
+and candidate-installed runner files are ignored by the sealed instrument.
 
 The isolated Python fixture uses an explicitly prepared hash-verified dependency cache:
 

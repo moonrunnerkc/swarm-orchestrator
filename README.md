@@ -53,6 +53,10 @@ standalone CLIs share the verifier. [Delivery evidence](docs/upgrade-completion.
 implemented source, exact-source validation and remote delivery. These additions are not an
 npm publication; use the documented source tarball installation until a release is verified.
 
+Browser acceptance requires a sealed `instrument` and an immutable Playwright container runtime.
+Project `argv` reports remain unjudged. Unavailable package checks remain visible; missing
+required checks prevent complete verification. See the linked broad-use guide for migration.
+
 ## Install
 
 ```sh

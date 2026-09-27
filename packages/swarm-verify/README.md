@@ -51,6 +51,10 @@ Symlink/submodule changes and quoted or whitespace-bearing patch paths are expli
 unsupported. Binary patches, deletions and renames represented as deletion/addition
 are retained. No checkout changes are applied to the user's working tree.
 
+Browser acceptance requires a sealed `instrument` and an immutable Playwright container runtime.
+Project `argv` reports remain unjudged. Unavailable package checks remain visible; missing
+required checks prevent complete verification. See the linked broad-use guide for migration.
+
 Publication is separate from source delivery. Only a `swarm-verify-vVERSION` tag
 matching this package's version starts its publishing workflow, with gates, packed
 content validation and npm provenance. Branch pushes do not publish either package.

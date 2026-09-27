@@ -634,7 +634,12 @@ The source upgrade preserves the historical findings above. Its Action runs trus
 implementation separately from candidate checkouts, refuses `pull_request_target`, requires a
 disposable GitHub-hosted runner and measures container isolation. Candidate containers receive
 neither retrieval credentials nor the Docker control socket. The host manages owned containers;
-read-only acceptance mounts protect pinned browser instruments. Host CLI execution remains
+read-only acceptance mounts protect pinned acceptance artifacts. Browser acceptance additionally
+requires harness-created configuration and sealed test bytes outside the candidate checkout,
+with Playwright dependencies from the immutable image. Candidate-controlled project-runner JSON
+has no independent acceptance authority. A preloaded module boundary refuses candidate imports. Authored instruments must not evaluate
+candidate Node code in the assertion process; their adequacy and runtime image remain trust assumptions.
+Host CLI execution remains
 restricted and cannot claim containment of arbitrary detached daemons.
 
 Reviewer Markdown escapes candidate-controlled text and uses the existing known-pattern scrubber.

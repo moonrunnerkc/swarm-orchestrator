@@ -16,6 +16,10 @@ explicit base controls or narrow dependency authorization. Setup failures stop b
 spending. `--escalate-model` authorizes one alternate target within the original budget; a cloud
 credential alone grants no escalation permission. See the [walkthroughs and capability table](broad-use.md).
 
+Browser acceptance requires a sealed `instrument` and an immutable Playwright container runtime.
+Project `argv` reports remain unjudged. Unavailable package checks remain visible; missing
+required checks prevent complete verification. See the linked broad-use guide for migration.
+
 ## What a run does
 
 Give it a task and a git repository. It declares the files it intends to touch, edits through a

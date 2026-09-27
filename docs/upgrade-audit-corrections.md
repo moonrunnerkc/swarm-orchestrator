@@ -46,3 +46,26 @@ Amendment 2, before edits: `src/gates/browser-instrument.integration.test.ts`,
 `src/gates/package-assessment.integration.test.ts` checks package omissions through recorded
 seals and assessments. `src/gates/behavior-artifacts.ts` is included if diagnostic retention
 needs adjustment for protected instrument paths.
+
+Amendment 3, before edits: `src/gates/gate-command.ts` and
+`src/gates/independent-verification.ts`. The final verifier also discarded inspection-backed
+unavailable checks. Preserve their typed unavailable reason through final assessment,
+in addition to package assembly. Existing verdict rules remain unchanged.
+
+Amendment 4, before edits: `src/gates/node-gates.ts`, `src/gates/python-gates.ts`,
+`src/evidence/verifier/status.mjs`, `src/evidence/verifier/status.test.ts`.
+The first full run exposed an overbroad change: 45 tests failed because merely absent optional
+static tooling was newly treated as a required executable check. The documented existing
+policy (verify-only guide, mechanical unmeasured example) separates absent optional tools from
+configured checks that cannot run. Preserve that distinction as typed gate data; retain every
+unavailable observation in reports. Missing selected-package tests and setup failures remain
+required and unmeasured. Configured blocking checks keep their severity and verdict rules.
+
+Amendment 5, before edits: use the existing `src/evidence/verifier/status.test.ts` for
+captured-regression cases instead of creating a duplicate test module. Extract final check
+execution into `src/gates/independent-checks.ts` from the large independent verifier.
+`src/gates/gate-set-seal.ts` includes the optional-absence declaration in newly sealed criteria.
+
+Amendment 6, before edits: `README.md`, `docs/cli.md`, `docs/using.md`,
+`docs/verifying.md`, `docs/verify-only.md`, and `packages/swarm-verify/README.md` add
+concise links and migration notes for the corrected browser boundary and retained unknowns.
