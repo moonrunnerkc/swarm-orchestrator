@@ -36,15 +36,16 @@ pass never claims task correctness: without a requirement contract that line rea
 ## Install only the verifier
 
 If all you do is check other people's patches and bundles, the recommended install is
-`swarm-verify`: the same three commands, the same code, none of the agent. It is version 0.2.0
-with a separate publication workflow. Check the [release evidence](https://github.com/moonrunnerkc/swarm-orchestrator/releases)
-for registry availability. The reproducible source installation path is:
+`swarm-verify`: the same commands, the same code, none of the agent, with a separate
+publication workflow. `npx swarm-verify` runs the published package; the
+[release evidence](https://github.com/moonrunnerkc/swarm-orchestrator/releases) records each
+version's registry availability. The reproducible source installation path is:
 
 ```sh
 git clone https://github.com/moonrunnerkc/swarm-orchestrator && cd swarm-orchestrator
 npm ci && npm run build:verify
 cd packages/swarm-verify && npm pack
-npm install -g ./swarm-verify-0.2.0.tgz
+npm install -g ./swarm-verify-*.tgz
 ```
 
 The shared implementation supports `ci --patch`, `ci --branch`, `ci --pr`, `--goal-contract`,

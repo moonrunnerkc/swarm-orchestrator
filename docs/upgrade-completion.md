@@ -58,6 +58,6 @@ coverage or deletion-exemption authority. Browser artifacts are diagnostic. Sign
 execution restrictions, regression and task acceptance remain separate. See the capability
 matrix and private-PR/special-file limitations in the guide.
 
-Source packages: root 14.2.0, standalone 0.2.0. Built tarballs are installation-tested.
+Source packages at that delivery: root 14.2.0, standalone 0.2.0. Built tarballs are installation-tested.
 Their independently authorized publication, provenance and registry-install evidence are
 recorded with the GitHub release; a source push alone never establishes registry availability.

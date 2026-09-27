@@ -23,6 +23,16 @@ jobs:
       - name: Prepare immutable browser acceptance runtime
         if: runner.os == 'Linux'
         run: docker build -t swarm-upgrade-browser:20260927 -f scripts/fixtures/browser.Dockerfile .
-      - run: npm publish --workspace swarm-verify --provenance --access public
+      # A prerelease version publishes under the `next` dist-tag, so `latest` only ever moves to
+      # a validated stable version; the tag interlock in prepublishOnly still binds the version.
+      - name: Publish under the dist-tag the version calls for
+        run: |
+          VERSION="$(node -p "require('./packages/swarm-verify/package.json').version")"
+          case "$VERSION" in
+            *-*) TAG=next ;;
+            *) TAG=latest ;;
+          esac
+          echo "publishing swarm-verify@$VERSION as $TAG"
+          npm publish --workspace swarm-verify --provenance --access public --tag "$TAG"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
