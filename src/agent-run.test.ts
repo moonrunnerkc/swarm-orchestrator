@@ -627,6 +627,13 @@ it("dispatches one explicit alternate after repeated observed failure and stops 
       .records()
       .filter((record) => record.type === "model-call" && record.actor === "fixture:alternate"),
   ).toHaveLength(1);
+  const alternateCall = evidence
+    .records()
+    .find((record) => record.type === "model-call" && record.actor === "fixture:alternate");
+  const prompt = JSON.stringify(evidence.payloads().get(alternateCall?.payloadDigest ?? ""));
+  expect(prompt).toContain("Candidate patch: sha256:");
+  expect(prompt).toContain("Remaining model allowance:");
+  expect(prompt).toContain("Prior checked attempt:");
   expect(result.green).toBe(false);
 }, 30000);
 

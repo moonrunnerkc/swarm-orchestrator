@@ -437,3 +437,9 @@ Amendment 69 (before edits): `docs/evidence/2026-09-27/broad-use/execution.md` p
 this working log and every declaration. `report.md` and `observations.json` in that directory
 record bounded completion evidence, source identities, failed attempts and artifact digests.
 This ledger becomes the concise requirement index; no previous campaign evidence is rewritten.
+
+Amendment 70 (before edits): `src/agent-run.ts` and its adjacent integration test include
+the candidate patch digest, prior attempt and remaining token/time allowance in the bounded
+repair brief. `src/workers/goal-candidates.test.ts` adds outcome context to a failing assertion
+after full gates observed a missing worker dispatch; no expectation or timeout is weakened.
+Final run 1 at be7780a83 failed: 374 files passed, one failed; 3612 tests passed, one failed.
