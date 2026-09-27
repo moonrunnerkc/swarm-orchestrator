@@ -83,5 +83,18 @@ a GitHub attestation and posted one comment bound to the head. What the candidat
 | [tracemantle#16](https://github.com/moonrunnerkc/tracemantle/pull/16), [rlfusion-orchestrator#2](https://github.com/moonrunnerkc/rlfusion-orchestrator/pull/2), [nborder#2](https://github.com/moonrunnerkc/nborder/pull/2), [ironroot#1](https://github.com/Aftermath-Technologies-Ltd/ironroot/pull/1) | incomplete: isolation unknown | the uv image carries no node, and the containment probes were node scripts. Fixed: probes are shell scripts with node, python3 and bash fallbacks for the network attempt. These repositories also carry no `uv.lock`, which the verifier will name next |
 | [gemma-witness#50](https://github.com/moonrunnerkc/gemma-witness/pull/50), [nondet#1](https://github.com/moonrunnerkc/nondet/pull/1), [swarm-orchestrator-rules#1](https://github.com/moonrunnerkc/swarm-orchestrator-rules/pull/1) | incomplete: every check stood down | Rust, Java and no toolchain: unsupported, recorded as unmeasured and not as a pass. The advice wrongly suggested missing dependencies; it now names the check that measured nothing |
 
-The pull requests are re-pinned to each later candidate by `scripts/rollout-repin.mjs`; the
-rows above are replaced by the stable release's results when it ships. A person merges.
+The pull requests were re-pinned to `1.0.0-rc.7` and `1.0.0-rc.8` by `scripts/rollout-repin.mjs`
+(results in the run links each pull request's comment carries). Under rc.8, distribution
+`v1.0.0-rc.8`:
+
+| Pull request | rc.8 verdict | Reading |
+| --- | --- | --- |
+| crossfire#1, claimcheck#1, pubprep#1, dumpscan#1, counterfactual-court#1 | regression-only pass | the suite passed in the container with dependencies from the lockfile; task correctness unmeasured, as the comment says |
+| quantproof#1 | not verified, inherited | `better-sqlite3` needs its install script (30 tests fail at base and head) |
+| cronproof#2 | not verified, inherited | 31 of 418 tests fail at base and head in the container, under its own `vitest run --coverage --reporter=verbose` script run through npm |
+| depose#4 | not verified, inherited | its build runs `go build` and the image carries no Go (`go: not found`, inherited); its suite was read as malformed because one file repeats a test title, fixed for the next candidate (the repeat is named by occurrence) |
+| ruleprobe#3 | not verified: tests fail on the head and pass at the base | the nondeterministic CLI test, filed as ruleprobe#4; the advice now says a base control cannot tell this from a regression |
+| tracemantle#16, rlfusion-orchestrator#2, nborder#2, ironroot#1 | refused: no supported lockfile | honest: none carries a `uv.lock`; the comment names it and the remedy |
+| gemma-witness#50, nondet#1, swarm-orchestrator-rules#1 | incomplete: every check stood down | Rust, Java and no toolchain; the advice now lists why each check stood down and says an undriven toolchain is unmeasured, not a pass |
+
+The rows are replaced by the stable release's results when it ships. A person merges.
