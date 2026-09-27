@@ -7,6 +7,15 @@ after its integrated tree has been checked against the complete declared require
 
 [What a run does](#what-a-run-does) | [A session](#a-session-or-a-single-task) | [Several workers](#several-workers-at-once) | [The screen](#watching-it-work) | [Settings](#settings)
 
+## Existing repositories and bounded workflows
+
+Start with `swarm init`, which preserves existing configuration and installs nothing. Use repeated
+`--package` selections for Node/Python units; outside or shared-root changes stay unverified.
+`--preset bugfix|refactor|upgrade --goal-contract FILE` uses the ordinary worker engine with
+explicit base controls or narrow dependency authorization. Setup failures stop before model
+spending. `--escalate-model` authorizes one alternate target within the original budget; a cloud
+credential alone grants no escalation permission. See the [walkthroughs and capability table](broad-use.md).
+
 ## What a run does
 
 Give it a task and a git repository. It declares the files it intends to touch, edits through a

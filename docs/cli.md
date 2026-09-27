@@ -13,6 +13,10 @@ swarm --version                  # which build this is
 
 | flag | what it does |
 | --- | --- |
+| `--preset bugfix\|refactor\|upgrade` | select a policy on the ordinary worker path; requires a matching goal contract |
+| `--goal-contract <file>` | sealed requirement/check definitions outside solver write access |
+| `--escalate-model <provider:id>` | authorize at most one alternate model for repeated observed implementation failure |
+| `--max-tokens <n>` | bound model usage; unknown usage remains unknown |
 | `--model <provider:id>` | a specific model, e.g. `local:qwen3.6:35b-a3b` |
 | `--workspace <dir>` | a repository other than the current directory |
 | `--base <ref>` | what the diff and the ratchet measure against |
@@ -33,7 +37,9 @@ swarm --version                  # which build this is
 ```
 swarm doctor                     # what owns the swarm command
 swarm doctor --fix               # repair it
-swarm init                       # write swarm.toml from package.json's scripts
+swarm init                       # inspect declared Node/Python checks, preserve existing configuration
+swarm init --list-packages       # discover Node workspace units
+swarm init --package packages/web --package services/api
 ```
 
 `swarm doctor` exists because a development checkout linked into the global prefix with
@@ -157,7 +163,14 @@ not isolated.
 ## Verifying
 
 ```
-swarm ci --patch <file>          # verify a patch in a fresh checkout of the base
+swarm ci --patch <file>          # exactly one of patch, branch, or PR
+swarm ci --branch <ref>
+swarm ci --pr <owner/repo#number>
+  --base <ref>                   # explicit exact base; branch default is merge-base with HEAD
+  --goal-contract <file>         # requirement-bound CLI/HTTP/browser acceptance
+  --package <dir>                # repeat for selected repository-relative units
+  --summary <file>               # concise escaped Markdown
+  --require-isolation            # refuse unless the selected backend measures isolated
   --oracle <command>             # what says the task was done
   --install                      # install the checkout's dependencies from its lockfile
   --oracle-only                  # judge the oracle, skip the repository's own checks
@@ -171,7 +184,8 @@ swarm review <bundle>            # what a past run produced, and open it
 swarm replay <bundle>            # read a bundle back
 ```
 
-Full explanation in [verifying.md](verifying.md).
+Full explanation in [verifying.md](verifying.md). Source defaults, supported runners and
+preset/adapter walkthroughs are in [broad-use.md](broad-use.md).
 
 ## Interrupted runs
 

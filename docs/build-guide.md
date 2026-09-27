@@ -2,6 +2,14 @@
 
 Architecture and invariant rationale. The September 13 approved redesign makes a bounded adaptive goal controller the product direction, preserving one reusable worker loop and independent verification. The active implementation and evidence map is [redesign-implementation-2026-09-13.md](redesign-implementation-2026-09-13.md); [ADR 0009](adr/0009-adaptive-goal-controller.md) records the narrowly revised product constraints. The original phased implementation below remains historical context where superseded by that decision.
 
+The broad-use source upgrade retains these boundaries. `src/cli-ci.ts` is shared by both packages
+and the Action. Source resolution produces immutable identities before the independent controlled
+runner creates an owned checkout. Behavior adapters extend sealed goal contracts; presets reuse
+the worker and final verification paths. Preparation and capability escalation have explicit
+permissions and durable intent/observation records. See [broad-use.md](broad-use.md) and the
+[UG implementation/evidence ledger](upgrade-completion.md). No external-agent driver, new agent
+core, broker, service or learned routing authority is added.
+
 ---
 
 ## 1. Problem Statement

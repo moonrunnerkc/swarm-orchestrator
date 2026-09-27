@@ -29,7 +29,7 @@ Build and install from source until registry publication is independently verifi
 npm ci
 npm run build:verify
 npm pack --workspace swarm-verify --pack-destination /tmp
-npm install --prefix /tmp/swarm-verifier-install /tmp/swarm-verify-0.1.0.tgz
+npm install --prefix /tmp/swarm-verifier-install /tmp/swarm-verify-0.2.0.tgz
 /tmp/swarm-verifier-install/node_modules/.bin/swarm-verify --help
 ```
 
@@ -42,7 +42,11 @@ in JSON and evidence. PR metadata needs authenticated `gh`; immutable object fet
 currently uses credential-free HTTPS and refuses inaccessible private objects.
 
 `--summary FILE` writes a bounded Markdown assessment projection; `--json` retains
-`swarm.ci.v1` with additive `sourceIdentity` and `assessmentDigest` fields.
+`swarm.ci.v1` with additive `sourceIdentity`, `changedPaths` and `assessmentDigest` fields.
+`--goal-contract FILE` supplies sealed requirement checks; repeated `--package DIR` scopes
+Node/Python units. `--require-isolation --isolation docker` refuses an unavailable boundary.
+The [broad-use guide](https://github.com/moonrunnerkc/swarm-orchestrator/blob/v13-main/docs/broad-use.md)
+covers CLI, HTTP, optional browser checks and explicit measurement limits.
 Symlink/submodule changes and quoted or whitespace-bearing patch paths are explicitly
 unsupported. Binary patches, deletions and renames represented as deletion/addition
 are retained. No checkout changes are applied to the user's working tree.

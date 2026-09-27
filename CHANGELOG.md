@@ -4,6 +4,18 @@
 
 ### Added
 
+- Shared model-free branch/PR snapshot verification, reviewer Markdown and versioned JSON source
+  identities alongside patch mode. Standalone source tarballs build and install without providers.
+- Declared npm/pnpm and uv/existing-venv initialization, explicit package scopes, structured
+  Vitest/pytest outcomes, and sealed CLI, local HTTP and optional Playwright behavior checks.
+- Bugfix, refactor and dependency-upgrade presets on the existing engine, with base controls,
+  narrow manifest authorization, locked preparation and recorded installed versions.
+- One explicitly authorized capability escalation with deterministic failure classification,
+  original budget limits and recovery reconciliation. A configured cloud key grants no consent.
+- Trusted-source Action infrastructure and separate good/bad behavioral workflow controls.
+  Source delivery and package publication remain separate; exact validation is tracked in
+  [the upgrade ledger](docs/upgrade-completion.md).
+
 - **An approval mode, asked once per workspace.** The first terminal run asks whether commands
   off the shell allowlist may be approved automatically and writes the answer to `swarm.toml`
   as `[tools] approval`; `--approve ask|auto` and `SWARM_APPROVAL` override it. Under `auto` the

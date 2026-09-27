@@ -44,6 +44,15 @@ its author.
 **Upgrading from 12.x?** That was a pull-request auditor; 13 and later are a coding agent under
 the same package name, with no migration path. Stay on the `v12-final` tag, or pin the major.
 
+## Source upgrade workflows
+
+The [broad-use source guide](docs/broad-use.md) covers model-free patch, branch and PR verification;
+Node/Python initialization and selected packages; CLI, local HTTP and optional Playwright checks;
+one explicit escalation; and bugfix, refactor and dependency-upgrade presets. The full and
+standalone CLIs share the verifier. [Delivery evidence](docs/upgrade-completion.md) distinguishes
+implemented source, exact-source validation and remote delivery. These additions are not an
+npm publication; use the documented source tarball installation until a release is verified.
+
 ## Install
 
 ```sh
