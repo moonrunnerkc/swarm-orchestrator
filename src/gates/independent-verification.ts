@@ -721,10 +721,16 @@ export async function verifyIndependently(
                     "install scripts run whatever the registry serves, so a `prepare` step that generates " +
                     "what the tests import does not run."
                   : !measuredSomething
-                    ? "nothing here measured the patch: every check stood down, which on a real project " +
-                      "usually means the fresh checkout has no installed dependencies, so its test runner " +
-                      "is not present. Pass --install to authorize lockfile setup with lifecycle scripts disabled, " +
-                      "or provide a prepared runtime. Required execution restrictions still apply."
+                    ? `nothing here measured the patch: every check stood down (${checks
+                        .map((check) => `${check.id}: ${check.detail}`)
+                        .join("; ")}). ` +
+                      (checks.some((check) => /not installed/.test(check.detail))
+                        ? "A runner that is not installed on a fresh checkout usually means no installed " +
+                          "dependencies: pass --install to authorize lockfile setup with lifecycle scripts " +
+                          "disabled, or provide a prepared runtime. A toolchain the verifier does not drive " +
+                          "(Rust, Java, Go) stays unmeasured, which is not a pass."
+                        : "No declared check applies to this project as the verifier reads it; name the " +
+                          "command to run with --command, or add a test script to the manifest.")
                     : checks.some(causedByThePatch)
                       ? `a check failed on this patch and passed at the base commit: ${checks
                           .filter(causedByThePatch)

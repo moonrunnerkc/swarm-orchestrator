@@ -36,6 +36,8 @@ export interface CheckConclusions {
     readonly severity: "blocking" | "advisory";
     readonly detail: string;
     readonly measures: Readonly<Record<string, number>>;
+    /** The last lines the command printed, for a check that failed; absent otherwise. */
+    readonly output?: string;
   }[];
   readonly executionTrust: {
     readonly mode: string;
@@ -218,6 +220,11 @@ function reportOf(
     severity: run.severity,
     detail: run.detail,
     measures: run.measures,
+    // "the command exited 1" tells a reader nothing about why; the tail of what the command
+    // printed is what they would have read at a terminal. Bounded, and scrubbed with the rest.
+    ...(run.status === "failed" && run.kind === "command"
+      ? { output: lastLines(`${run.observation.stdout}\n${run.observation.stderr}`, 12, 1500) }
+      : {}),
   }));
   const commandRan =
     tests !== undefined && tests.observation.unavailable === null && tests.kind === "command";
@@ -264,6 +271,17 @@ function reportOf(
     exitCode,
     bundleDirectory: measured.bundleDirectory,
   };
+}
+
+/** The last non-empty lines of what a command printed, bounded in lines and in characters. */
+function lastLines(text: string, lines: number, characters: number): string {
+  const kept = text
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim().length > 0)
+    .slice(-lines)
+    .join("\n");
+  return kept.length > characters ? kept.slice(-characters) : kept;
 }
 
 function executionTrustDetail(mode: string): string {
@@ -319,7 +337,11 @@ export function renderReport(report: CheckReport): readonly string[] {
       `failed ${failed.length}${failed.length === 0 ? "" : ` (${failed.map((one) => one.id).join(", ")})`}, ` +
       `not run ${notRun.length}${notRun.length === 0 ? "" : ` (${notRun.map((one) => one.id).join(", ")})`}`,
   );
-  for (const one of failed) lines.push(`             ${one.id}: ${one.detail}`);
+  for (const one of failed) {
+    lines.push(`             ${one.id}: ${one.detail}`);
+    for (const printed of (one.output ?? "").split("\n").filter((line) => line.length > 0))
+      lines.push(`               | ${printed}`);
+  }
   for (const one of notRun) lines.push(`             ${one.id}: ${one.detail}`);
   lines.push(
     `execution    ${conclusions.executionTrust.mode}: ${conclusions.executionTrust.detail}`,
