@@ -9,6 +9,7 @@ import {
   InvalidCommandLineError,
   parseVerifyOnlyCommand,
   tokenizeCommandLine,
+  type VerdictCommand,
   type VerifyCommand,
 } from "./cli-verify-options.ts";
 import { type ApprovalMode, parseApprovalMode } from "./config/approval-mode.ts";
@@ -16,7 +17,7 @@ import type { InterfaceFlags } from "./config/interface-settings.ts";
 import { nearestName } from "./edit-distance.ts";
 import { bundledShortlistKeyword } from "./select/shortlist-source.ts";
 
-export type { ActionCommand, CheckCommand, CiCommand, GatesCommand, VerifyCommand };
+export type { ActionCommand, CheckCommand, CiCommand, GatesCommand, VerdictCommand, VerifyCommand };
 export { InvalidCommandLineError };
 
 /**
@@ -273,6 +274,7 @@ export type CommandLine =
   | ReviewCommand
   | GatesCommand
   | CheckCommand
+  | VerdictCommand
   | ActionCommand
   | SelectCommand
   | CalibrateCommand

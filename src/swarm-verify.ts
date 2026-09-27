@@ -6,6 +6,7 @@ import { action } from "./cli-action.ts";
 import { check } from "./cli-check.ts";
 import { commandDefinitions } from "./cli-command-definitions.ts";
 import { gates } from "./cli-gates.ts";
+import { verifyVerdict } from "./cli-verdict.ts";
 import { verifyBundle } from "./cli-verify.ts";
 import {
   InvalidCommandLineError,
@@ -65,6 +66,9 @@ async function main(): Promise<number> {
   }
   if (parsed.command === "action") {
     return action(parsed);
+  }
+  if (parsed.command === "verdict") {
+    return verifyVerdict(parsed);
   }
   return (await import("./cli-ci.ts")).verifyPatch(parsed);
 }

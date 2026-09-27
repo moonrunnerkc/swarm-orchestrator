@@ -682,6 +682,9 @@ async function main(): Promise<number> {
   if (options.command === "action") {
     return (await import("./cli-action.ts")).action(options);
   }
+  if (options.command === "verdict") {
+    return (await import("./cli-verdict.ts")).verifyVerdict(options);
+  }
   return options.command === "gates" ? gates(options) : run(options);
 }
 

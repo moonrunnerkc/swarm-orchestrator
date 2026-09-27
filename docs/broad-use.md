@@ -358,15 +358,28 @@ What one run does, in order:
    incomplete, refused or head-changed run. Attestation and comment status are separate
    outputs; a failed signature or publication is never reported as a delivered signed comment.
 
-Verify a signed verdict from outside the run, against Sigstore's public trust root rather
-than anything the run supplied:
+Verify a signed verdict from outside the run. `swarm-verify verdict` binds the document to the
+report, summary and bundle beside it by digest, then hands the signer question to GitHub's own
+attestation verifier against Sigstore's public trust root; it never reimplements that check,
+and without `gh` it prints the exact command and leaves the signer unverified:
+
+```sh
+swarm-verify verdict retained/verdict.json --repo OWNER/REPO \
+  --signer-workflow OWNER/REPO/.github/workflows/swarm-verify.yml
+```
+
+which runs, and reports the result of:
 
 ```sh
 gh attestation verify verdict.json --repo OWNER/REPO \
   --predicate-type https://github.com/moonrunnerkc/swarm-verify/verdict/v1 \
   --signer-workflow OWNER/REPO/.github/workflows/swarm-verify.yml
-sha256sum report.json   # must equal verdict.json's evidence.reportDigest
 ```
+
+Exit 0 needs both: evidence bound and signer trusted. The trust root is Sigstore's, fetched by
+`gh`, never a key the run supplied; the identity checked is the workflow file in the repository
+you name, which rotates with nothing to manage. A verdict signed by a workflow at another path
+or in another repository is refused by identity, whatever its contents say.
 
 Fork and Dependabot pull requests run under a read-only token with no OIDC identity, so on a
 plain `pull_request` run their comment and signature report `unavailable` while the
