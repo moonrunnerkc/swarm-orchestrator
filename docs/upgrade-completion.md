@@ -415,3 +415,20 @@ locked npm preparation, installed-version observation and acceptance execute as 
 Amendment 64 (before edits): the composite Action explicitly selects Node 24 using the
 already pinned setup action before building its trusted verifier. Its consumer example pins
 the completed Action commit and obtains candidate and acceptance material in separate paths.
+
+Amendment 65 (before edits): `docs/examples/swarm-verification.yml` and `clamp-goal.json`
+provide a SHA-pinned consumer workflow and the actual clamp acceptance instrument. The broad-use
+guide adds complete contract assembly, HTTP/browser walkthroughs and the Action's trust boundary.
+
+Amendment 66 (before edits): `scripts/fixtures/python.Dockerfile` and
+`scripts/validate-python-container.mjs` exercise locked uv/pytest verification with both installed
+CLIs in the measured network-disabled container backend. Dependencies are explicitly cached at
+image build time, and candidate preparation uses that cache with the declared project interpreter.
+
+Amendment 67 (before edits): `src/gates/change-source.ts` and its adjacent test preserve the
+resolved PR target base when an explicit exact comparison base is supplied. Both immutable
+identities must remain visible; the override must not relabel the PR target.
+
+Amendment 68 (before edits): `src/evidence/ci-summary.ts` and its adjacent test explicitly
+mark each clipped presentation field and link strict-contract obligation findings to the
+captured assessment. Full assessment content remains identified by its digest.

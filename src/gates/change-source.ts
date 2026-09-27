@@ -95,7 +95,6 @@ export async function resolveChangeSource(
     head = await commit(snapshot.head);
     if (targetBase !== snapshot.base || head !== snapshot.head)
       throw new Error("fetched PR objects disagree with the resolved snapshot; start a new run");
-    if (options.exactBase) targetBase = await commit(options.baseRef);
   } else {
     targetBase = await commit(options.baseRef);
     if (options.branch !== undefined) head = await commit(options.branch);
@@ -103,7 +102,9 @@ export async function resolveChangeSource(
   const comparison = head === null || options.exactBase ? "exact" : "merge-base";
   const comparisonBase =
     comparison === "exact" || head === null
-      ? targetBase
+      ? snapshot && options.exactBase
+        ? await commit(options.baseRef)
+        : targetBase
       : sha.parse((await git(["merge-base", targetBase, head])).trim());
   const patch =
     head === null

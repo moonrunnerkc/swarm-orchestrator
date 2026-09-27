@@ -7,7 +7,8 @@ it("renders untrusted presentation as literal bounded text", () => {
   expect(text).not.toContain("\n");
   expect(text).not.toContain("::error::");
   expect(text).toContain("\\[click\\]");
-  expect(reviewerText("x".repeat(10000)).length).toBe(2000);
+  expect(reviewerText("x".repeat(10000))).toContain("truncated");
+  expect(reviewerText("x".repeat(10000)).length).toBeLessThanOrEqual(2002);
 });
 it("uses the shared known-pattern scrubber", () => {
   expect(reviewerText('password="sensitive-value"')).not.toContain("sensitive-value");
