@@ -91,7 +91,7 @@ await evidence.record({
 });
 if (envelope.mode !== "isolated") throw Error(JSON.stringify(envelope));
 const instrument =
-  "import {test,expect} from '@playwright/test'; import {readFile} from 'node:fs/promises'; test('increments',async({page})=>{const app=await readFile('app.js','utf8');await page.setContent('<button>0</button><script>'+app+'<\\/script>');await page.getByRole('button').click();await expect(page.getByRole('button')).toHaveText('1',{timeout:300});});";
+  "import {test,expect} from '@playwright/test'; import {readFile} from 'node:fs/promises'; test('increments',async({page})=>{const app=await readFile(process.env.SWARM_SUBJECT_DIRECTORY+'/app.js','utf8');await page.setContent('<button>0</button><script>'+app+'<\\/script>');await page.getByRole('button').click();await expect(page.getByRole('button')).toHaveText('1',{timeout:300});});";
 const contract = await declareGoalContract(evidence, {
   version: 1,
   goal: "Increment once",
@@ -114,13 +114,7 @@ const contract = await declareGoalContract(evidence, {
         network: "inherit",
         environment: { PLAYWRIGHT_BROWSERS_PATH: "/ms-playwright" },
         expectedTests: 1,
-        argv: [
-          "node",
-          "node_modules/@playwright/test/cli.js",
-          "test",
-          "--reporter=json",
-          "--workers=1",
-        ],
+        instrument: { source: instrument, titles: ["increments"] },
       },
     },
   ],

@@ -48,13 +48,17 @@ async function verifyTest(content: string, timeoutMs = 20000) {
     { commands, checkout },
   );
 }
-it("accepts a real browser interaction and rejects the same interaction with broken behavior", async () => {
+it("records real project-runner good and bad interactions without promoting either to acceptance", async () => {
   const source = (script: string) =>
     `import {test,expect} from '@playwright/test'; test('increments',async({page})=>{await page.setContent('<button>0</button><script>document.querySelector("button").onclick=()=>{${script}}<\\/script>');await page.getByRole('button').click();await expect(page.getByRole('button')).toHaveText('1',{timeout:300});});`;
   const good = await verifyTest(source('document.querySelector("button").textContent="1"'));
-  expect(good.reading.status, good.observation.stderr + good.observation.stdout).toBe("accepted");
+  expect(good.observation.exitCode, good.observation.stderr + good.observation.stdout).toBe(0);
+  expect(JSON.parse(good.observation.stdout).stats.expected).toBe(1);
+  expect(good.reading.status).toBe("unjudged");
   const bad = await verifyTest(source('document.querySelector("button").textContent="2"'));
-  expect(bad.reading.status).toBe("rejected");
+  expect(bad.observation.exitCode).toBe(1);
+  expect(JSON.parse(bad.observation.stdout).stats.unexpected).toBe(1);
+  expect(bad.reading.status).toBe("unjudged");
   expect(bad.observation.stdout).toContain("toHaveText");
 }, 45000);
 it("refuses zero tests and runner startup failure", async () => {
@@ -77,7 +81,7 @@ it("names a missing browser as setup and bounds a hanging interaction", async ()
   expect(behaviorStatus({ kind: "browser", expectedTests: 1 }, missing.observation)).toBe(
     "unjudged",
   );
-  expect(missing.reading.detail).toContain("install");
+  expect(missing.reading.detail).toContain("runner-reported");
   await writeFile(
     join(checkout, "playwright.config.mjs"),
     "export default {testDir:'.',timeout:0};",
@@ -86,6 +90,7 @@ it("names a missing browser as setup and bounds a hanging interaction", async ()
     "import{test}from'@playwright/test';test('hang',async()=>{await new Promise(()=>{});});",
     500,
   );
-  expect(hanging.reading.status).toBe("rejected");
+  expect(hanging.observation.exitCode).toBe(128);
+  expect(hanging.reading.status).toBe("unjudged");
   expect(hanging.observation.stderr).toContain("killed after");
 }, 30000);

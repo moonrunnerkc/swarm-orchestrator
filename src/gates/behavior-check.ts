@@ -2,6 +2,8 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { type BehaviorCheck, behaviorCheckSchema } from "../evidence/behavior-check.ts";
+import { browserExecutionSchema, browserInstrumentDigest } from "../evidence/browser-execution.ts";
+import { runBrowserInstrument } from "./browser-instrument.ts";
 import { browserResultsPass } from "./browser-results.ts";
 import type { GateCommandRunner, GateObservation } from "./gate-definition.ts";
 
@@ -35,6 +37,19 @@ export function evaluateBehavior(
       status: "unjudged",
       detail: observation.unavailable ?? "output limit reached; no complete observation",
     };
+  if (check.kind === "browser") {
+    const execution = browserExecutionSchema.safeParse(observation.browserExecution);
+    if (
+      !check.instrument ||
+      !execution.success ||
+      execution.data.instrumentDigest !== browserInstrumentDigest(check)
+    )
+      return {
+        status: "unjudged",
+        detail:
+          "project-controlled Playwright output is runner-reported only; use a sealed browser instrument in an immutable container for acceptance",
+      };
+  }
   if (check.kind === "cli")
     return {
       status:
@@ -49,7 +64,7 @@ export function evaluateBehavior(
   if (
     check.kind === "browser" &&
     observation.exitCode !== 0 &&
-    /Executable doesn't exist|Cannot find (?:module|package)|MODULE_NOT_FOUND|ERR_MODULE_NOT_FOUND/i.test(
+    /Executable doesn't exist|Cannot find (?:module|package)|MODULE_NOT_FOUND|ERR_MODULE_NOT_FOUND|ENOENT.*swarm-browser\/node_modules|trusted Playwright modules|browser instrument refuses candidate modules/i.test(
       observation.stdout + observation.stderr,
     )
   )
@@ -58,6 +73,25 @@ export function evaluateBehavior(
       detail:
         "browser setup unavailable: install the project's pinned runner, dependencies and browser explicitly, then verify again",
     };
+  if (check.kind === "browser") {
+    try {
+      const report = JSON.parse(observation.stdout);
+      if (
+        report.stats &&
+        Object.values(report.stats).filter((value) => typeof value === "number").length &&
+        report.stats.expected === 0 &&
+        report.stats.unexpected === 0 &&
+        report.stats.flaky === 0 &&
+        report.stats.skipped === 0
+      )
+        return {
+          status: "unjudged",
+          detail: "browser runner collected no executable checks; repair test setup and selection",
+        };
+    } catch {
+      /* The bounded runner failure or structured reader below retains the result. */
+    }
+  }
   if (observation.exitCode !== 0)
     return { status: "rejected", detail: "behavior runner failed or timed out" };
   try {
@@ -94,11 +128,15 @@ export function evaluateBehavior(
         detail: "HTTP response assertions evaluated; readiness is separate",
       };
     }
-    const passed = browserResultsPass(JSON.parse(observation.stdout), check.expectedTests);
+    const passed = browserResultsPass(
+      JSON.parse(observation.stdout),
+      check.expectedTests,
+      check.instrument?.titles,
+    );
     return {
       status: passed ? "accepted" : "rejected",
       detail:
-        "Playwright structured outcome; coverage and independent assertion counts remain unmeasured",
+        "sealed Playwright test identities and structured outcomes; coverage and independent assertion counts remain unmeasured",
     };
   } catch {
     return { status: "unjudged", detail: "missing or malformed structured behavior result" };
@@ -115,6 +153,10 @@ export async function runBehaviorCheck(
   },
 ): Promise<{ observation: GateObservation; reading: BehaviorReading }> {
   const check = behaviorCheckSchema.parse(value);
+  if (check.kind === "browser" && check.instrument) {
+    const observation = await runBrowserInstrument(check, options.commands, options.checkout);
+    return { observation, reading: evaluateBehavior(check, observation) };
+  }
   const commandOptions = {
     cwd: join(options.checkout, check.cwd),
     timeoutMs: check.timeoutMs,
@@ -131,7 +173,7 @@ export async function runBehaviorCheck(
           await readFile(new URL("./http-check-runner.mjs", import.meta.url), "utf8"),
           JSON.stringify(check),
         ]
-      : check.argv;
+      : (check.argv ?? []);
   if (
     check.kind === "browser" &&
     (!argv.includes("--reporter=json") ||

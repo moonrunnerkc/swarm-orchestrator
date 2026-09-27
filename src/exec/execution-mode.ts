@@ -28,6 +28,7 @@ export interface IsolationBackend {
    */
   readonly nodeProgram: string;
   readonly protectsReadOnlyFiles?: boolean;
+  readonly immutableRuntime?: boolean;
   readonly environmentNames?: readonly string[];
   run(
     argv: readonly string[],
