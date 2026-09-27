@@ -15,6 +15,8 @@ import { harnessReportingCommand } from "./harness-reporting.ts";
 import { inspectionGates } from "./inspection-gates.ts";
 import { exitCodeParser, testOutputParser } from "./parsers.ts";
 import type { ProjectDetection, ProjectType } from "./project-type.ts";
+import { readRunnerResult } from "./runner-results.ts";
+import { renderRunnerArgv, structuredRunner } from "./structured-runner.ts";
 
 /**
  * The default gate set, assembled from what the manifests declare. Everything here is a
@@ -140,6 +142,17 @@ function askedForHarnessReports(
   body: string | undefined,
   nodeVersion: string,
 ): GateSpec {
+  const structured = structuredRunner(body);
+  if (structured !== null)
+    return {
+      ...spec,
+      argv: structured,
+      parse: readRunnerResult,
+      parserName: "structured-test-output",
+      command: renderRunnerArgv(structured),
+      coverageUnmeasured:
+        "runner-reported results grant no controlled coverage or base-control attribution",
+    };
   const argv = harnessReportingCommand(body);
   if (argv === null) {
     return spec;
@@ -254,9 +267,27 @@ function pythonGates(detection: ProjectDetection): readonly GateDefinition[] {
       gate.source.kind === "command"
         ? {
             ...gate,
+            ...(structuredRunner(`${detection.pythonCommand} ${gate.source.command}`) === null
+              ? {}
+              : { parse: readRunnerResult, parserName: "structured-test-output" as const }),
             source: {
               ...gate.source,
-              command: `${detection.pythonCommand} ${gate.source.command}`,
+              command: renderRunnerArgv(
+                structuredRunner(`${detection.pythonCommand} ${gate.source.command}`) ?? [
+                  "/bin/sh",
+                  "-c",
+                  `${detection.pythonCommand} ${gate.source.command}`,
+                ],
+              ),
+              ...(structuredRunner(`${detection.pythonCommand} ${gate.source.command}`) === null
+                ? {}
+                : {
+                    argv: structuredRunner(
+                      `${detection.pythonCommand} ${gate.source.command}`,
+                    ) as readonly string[],
+                    coverageUnmeasured:
+                      "pytest runner-reported outcomes do not grant ratchet measurement authority",
+                  }),
             },
           }
         : gate,
@@ -398,6 +429,7 @@ function runtimeNodeVersion(options: GateSetOptions): string {
 const parserByName: Readonly<Record<OverrideParserName, GateParser>> = {
   "exit-code": exitCodeParser,
   "test-output": testOutputParser,
+  "structured-test-output": readRunnerResult,
   "no-output": noOutputParser,
 };
 
@@ -410,8 +442,9 @@ const parserByName: Readonly<Record<OverrideParserName, GateParser>> = {
 export function scriptBodyBehind(command: string, detection: ProjectDetection): string | null {
   const trimmed = command.trim();
   const named =
-    /^npm\s+(?:run|run-script)\s+(?:--silent\s+|-s\s+)?([A-Za-z0-9:._-]+)$/.exec(trimmed)?.[1] ??
-    (/^npm\s+(?:test|t)$/.test(trimmed) ? "test" : null);
+    /^(?:npm|pnpm)\s+(?:run|run-script)\s+(?:--silent\s+|-s\s+)?([A-Za-z0-9:._-]+)$/.exec(
+      trimmed,
+    )?.[1] ?? (/^npm\s+(?:test|t)$/.test(trimmed) ? "test" : null);
   return named === null ? null : (detection.nodeScriptCommands[named] ?? null);
 }
 

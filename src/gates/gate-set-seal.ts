@@ -25,7 +25,13 @@ export const gateSetSealSchema = z.object({
       source: z.enum(["command", "inspection"]),
       /** How the run reads to a person, for a command; null for an inspection. */
       command: z.string().nullable(),
-      parser: z.enum(["exit-code", "no-output", "test-output", "inspection"]),
+      parser: z.enum([
+        "exit-code",
+        "no-output",
+        "test-output",
+        "structured-test-output",
+        "inspection",
+      ]),
     }),
   ),
   budgets: z.object({ maxChangedFiles: z.number(), maxAddedLines: z.number() }),

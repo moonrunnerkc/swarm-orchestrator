@@ -30,12 +30,12 @@ describe("an override written as a table", () => {
     expect(build?.source).toMatchObject({ kind: "command", command: "npm run --silent build" });
   });
 
-  it("keeps the id's own rule where the table names none", async () => {
+  it("uses the structured runner rule where the table names none", async () => {
     const gates = assembleGates(await detected({ test: "vitest run" }), {
       commandOverrides: { tests: { command: "npm run --silent test" } },
     });
 
-    expect(gates.find((gate) => gate.id === "tests")?.parserName).toBe("test-output");
+    expect(gates.find((gate) => gate.id === "tests")?.parserName).toBe("structured-test-output");
   });
 });
 

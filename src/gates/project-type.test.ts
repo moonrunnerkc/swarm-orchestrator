@@ -128,7 +128,12 @@ describe("assembling the default gate set", () => {
       ),
     );
 
-    expect(commandOf(gates, "tests")).toBe("npm run --silent test");
+    expect(argvOf(gates, "tests")).toEqual([
+      "node",
+      "node_modules/vitest/vitest.mjs",
+      "run",
+      "--reporter=json",
+    ]);
     expect(commandOf(gates, "lint")).toBe("npm run --silent lint");
     expect(commandOf(gates, "format")).toBe("npm run --silent format:check");
     // No typecheck script, so there is no command to run and the gate says so.
@@ -176,11 +181,12 @@ describe("assembling the default gate set", () => {
   });
 
   it("runs the declared script where the harness cannot build a vector for it", async () => {
-    // No path to configure any more, so what decides is whether the declared command is one
-    // node-test-command.ts recognizes completely. Vitest is not.
+    // Compound commands retain their declared behavior and do not gain measurement authority.
     const gates = assembleGates(
       await detectProject(
-        reader({ "package.json": JSON.stringify({ scripts: { test: "vitest run" } }) }),
+        reader({
+          "package.json": JSON.stringify({ scripts: { test: "vitest run && node extra.mjs" } }),
+        }),
       ),
     );
 
@@ -189,9 +195,8 @@ describe("assembling the default gate set", () => {
   });
 
   it("leaves a runner it cannot ask for a readable report alone", async () => {
-    // Vitest and pytest report coverage in shapes this harness does not parse, and asking
-    // for it can fail outright. Those runs are recorded as not measured, never guessed at.
-    for (const command of ["vitest run", "pytest -q && node --test", "jest"]) {
+    // Unrecognized runner configurations retain their commands and measurement limits.
+    for (const command of ["vitest run --config custom.ts", "pytest -q && node --test", "jest"]) {
       const gates = assembleGates(
         await detectProject(
           reader({ "package.json": JSON.stringify({ scripts: { test: command } }) }),

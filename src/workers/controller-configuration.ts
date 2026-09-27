@@ -46,7 +46,9 @@ export const controllerConfigurationSchema = z
             z.strictObject({
               command: z.string(),
               severity: z.enum(["blocking", "advisory"]).optional(),
-              parser: z.enum(["exit-code", "test-output", "no-output"]).optional(),
+              parser: z
+                .enum(["exit-code", "test-output", "structured-test-output", "no-output"])
+                .optional(),
             }),
           ]),
         )

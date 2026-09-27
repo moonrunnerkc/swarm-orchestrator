@@ -33,7 +33,9 @@ const rawFileSchema = z.strictObject({
         z.strictObject({
           command: nonEmptyString,
           severity: z.enum(["blocking", "advisory"]).optional(),
-          parser: z.enum(["exit-code", "test-output", "no-output"]).optional(),
+          parser: z
+            .enum(["exit-code", "test-output", "structured-test-output", "no-output"])
+            .optional(),
         }),
       ]),
     )
@@ -274,7 +276,7 @@ function describeBadValue(issue: z.core.$ZodIssue, value: unknown): string {
   const accepted =
     acceptedValueByKey[path.join(".")] ??
     (path[0] === "gates"
-      ? 'a command string, or a table with command and optionally severity ("blocking" or "advisory") and parser ("exit-code", "test-output" or "no-output")'
+      ? 'a command string, or a table with command and optionally severity ("blocking" or "advisory") and parser ("exit-code", "test-output", "structured-test-output" or "no-output")'
       : path[0] === "theme"
         ? "a colour name or a hex colour"
         : path[0] === "keys"
