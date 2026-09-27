@@ -1,0 +1,86 @@
+name: Swarm verification
+description: Verify a pinned source snapshot with the standalone engine in disposable containers.
+inputs:
+  workspace:
+    description: Candidate repository checkout with full history and no persisted credentials.
+    required: true
+  branch:
+    description: Candidate immutable head or branch in that repository.
+    required: true
+  base:
+    description: Exact immutable comparison base.
+    required: true
+  oracle:
+    description: Trusted acceptance command. Absence leaves task acceptance unjudged.
+    default: ""
+  goal-contract:
+    description: Trusted goal contract path outside the candidate checkout.
+    default: ""
+  image:
+    description: Prebuilt trusted test image, preferably pinned by digest. No implicit dependency installation.
+    default: node:24-bookworm
+outputs:
+  artifact:
+    description: Uploaded artifact name for this invocation.
+    value: ${{ steps.verify.outputs.artifact }}
+  summary:
+    description: Markdown summary path.
+    value: ${{ steps.verify.outputs.summary }}
+  retention:
+    description: Whether bounded evidence retention was complete.
+    value: ${{ steps.verify.outputs.retention }}
+  status:
+    description: Original verifier exit status.
+    value: ${{ steps.verify.outputs.status }}
+  report:
+    description: JSON report path.
+    value: ${{ steps.verify.outputs.report }}
+  evidence:
+    description: Evidence artifact directory.
+    value: ${{ steps.verify.outputs.evidence }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      with:
+        node-version: '24'
+    - name: Build trusted verifier
+      shell: bash
+      env:
+        SWARM_ACTION_ROOT: ${{ github.action_path }}
+      run: |
+        cd "$SWARM_ACTION_ROOT"
+        npm ci --ignore-scripts
+        npm run build:verify
+    - name: Verify pinned candidate
+      id: verify
+      shell: bash
+      env:
+        SWARM_ACTION_ROOT: ${{ github.action_path }}
+        SWARM_INPUT_WORKSPACE: ${{ inputs.workspace }}
+        SWARM_INPUT_BRANCH: ${{ inputs.branch }}
+        SWARM_INPUT_BASE: ${{ inputs.base }}
+        SWARM_INPUT_ORACLE: ${{ inputs.oracle }}
+        SWARM_INPUT_GOAL: ${{ inputs.goal-contract }}
+        SWARM_INPUT_IMAGE: ${{ inputs.image }}
+      run: node "$SWARM_ACTION_ROOT/scripts/action-verify.mjs"
+    - name: Retain verification evidence
+      if: always() && steps.verify.outputs.evidence != ''
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: ${{ steps.verify.outputs.artifact }}
+        path: ${{ steps.verify.outputs.retained }}
+        retention-days: 7
+        if-no-files-found: error
+    - name: Preserve verifier outcome
+      if: always()
+      shell: bash
+      env:
+        SWARM_RETENTION_STATUS: ${{ steps.verify.outputs.retention }}
+        SWARM_VERIFY_STATUS: ${{ steps.verify.outputs.status }}
+      run: |
+        case "$SWARM_VERIFY_STATUS" in
+          0) test "$SWARM_RETENTION_STATUS" = complete ;;
+          1|2|3) exit "$SWARM_VERIFY_STATUS" ;;
+          *) echo 'Verification did not complete.' >&2; exit 1 ;;
+        esac
