@@ -119,15 +119,25 @@ function listDirectory(root, path) {
   }
 }
 
-function readFile(root, path, forbidden) {
+// What the reviewer may read in one call and in one row. The model's context is finite and
+// the server drops a request that overflows it, which read as "fetch failed" on the rows
+// whose reviewer opened several large files; the bounds keep every row inside it.
+const readLimit = 16_000;
+const readBudget = 80_000;
+
+function readFile(root, path, forbidden, budget) {
   const target = resolve(root, path);
   if (!target.startsWith(root)) return "outside the repository";
   const relative = target.slice(root.length + 1);
   if (forbidden.has(relative)) return "refused: this is a test file the pull request changed";
+  if (budget.used >= readBudget)
+    return "refused: the read budget for this review is spent; finish with what you have read";
   try {
     const bytes = readFileSync(target, "utf8");
-    return bytes.length > 60_000
-      ? `${bytes.slice(0, 60_000)}\n[truncated at 60000 characters]`
+    const allowed = Math.min(readLimit, readBudget - budget.used);
+    budget.used += Math.min(bytes.length, allowed);
+    return bytes.length > allowed
+      ? `${bytes.slice(0, allowed)}\n[truncated at ${allowed} characters]`
       : bytes;
   } catch (cause) {
     return `cannot read: ${cause.message}`;
@@ -175,31 +185,25 @@ async function traceFailure(requirement, failingOutput) {
       },
     },
   ];
-  const response = await fetch(`${endpoint}/v1/chat/completions`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      model,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You audit an acceptance check against a pull request's stated requirement. You see only the requirement text and the check's failing output. For each failing assertion, quote the exact words of the requirement that state it. If any failing assertion is not stated in the requirement (it is an inference, a style preference or a stricter reading than the text), set traceable to false. Call the trace tool once.",
-        },
-        {
-          role: "user",
-          content: `Requirement:\n${requirement}\n\nFailing output:\n${failingOutput}`,
-        },
-      ],
-      tools: traceTools,
-      tool_choice: { type: "function", function: { name: "trace" } },
-      temperature: 0,
-      stream: false,
-    }),
+  const completed = await completion({
+    model,
+    messages: [
+      {
+        role: "system",
+        content:
+          "You audit an acceptance check against a pull request's stated requirement. You see only the requirement text and the check's failing output. For each failing assertion, quote the exact words of the requirement that state it. If any failing assertion is not stated in the requirement (it is an inference, a style preference or a stricter reading than the text), set traceable to false. Call the trace tool once.",
+      },
+      {
+        role: "user",
+        content: `Requirement:\n${requirement}\n\nFailing output:\n${failingOutput}`,
+      },
+    ],
+    tools: traceTools,
+    tool_choice: { type: "function", function: { name: "trace" } },
+    temperature: 0,
+    stream: false,
   });
-  if (!response.ok) throw new Error(`model: ${response.status} ${await response.text()}`);
-  const completion = await response.json();
-  const call = completion.choices?.[0]?.message?.tool_calls?.[0];
+  const call = completed.choices?.[0]?.message?.tool_calls?.[0];
   try {
     const parsed = JSON.parse(call?.function?.arguments ?? "{}");
     const mapping = Array.isArray(parsed.mapping) ? parsed.mapping : [];
@@ -218,22 +222,36 @@ async function traceFailure(requirement, failingOutput) {
   }
 }
 
+/** One model call, retried on a transport failure: a dropped connection is not a finding. */
+async function completion(body) {
+  let failure = null;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await fetch(`${endpoint}/v1/chat/completions`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) throw new Error(`model: ${response.status} ${await response.text()}`);
+      return await response.json();
+    } catch (cause) {
+      failure = cause;
+      await new Promise((resolve) => setTimeout(resolve, 20_000 * attempt));
+    }
+  }
+  throw failure;
+}
+
 async function ask(messages) {
-  const response = await fetch(`${endpoint}/v1/chat/completions`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      model,
-      messages,
-      tools,
-      tool_choice: "auto",
-      temperature: 0,
-      stream: false,
-    }),
+  const result = await completion({
+    model,
+    messages,
+    tools,
+    tool_choice: "auto",
+    temperature: 0,
+    stream: false,
   });
-  if (!response.ok) throw new Error(`model: ${response.status} ${await response.text()}`);
-  const completion = await response.json();
-  const choice = completion.choices?.[0]?.message;
+  const choice = result.choices?.[0]?.message;
   if (!choice) throw new Error("model answered with no message");
   return choice;
 }
@@ -337,6 +355,7 @@ for (const name of readdirSync(rowsRoot)
     ];
     let check = null;
     let reads = 0;
+    const budget = { used: 0 };
     for (let step = 1; step <= maxSteps && check === null; step += 1) {
       const choice = await ask(messages);
       messages.push(choice);
@@ -358,7 +377,7 @@ for (const name of readdirSync(rowsRoot)
           content = listDirectory(clone, String(callArgs.path ?? "."));
         else if (call.function.name === "read") {
           reads += 1;
-          content = readFile(clone, String(callArgs.path ?? ""), forbidden);
+          content = readFile(clone, String(callArgs.path ?? ""), forbidden, budget);
         } else if (call.function.name === "finish") {
           const path = typeof callArgs.checkPath === "string" ? callArgs.checkPath : "";
           if (
@@ -453,7 +472,11 @@ for (const name of readdirSync(rowsRoot)
       image,
     });
   } catch (cause) {
-    finish({ status: "unjudged", reason: `harness error: ${cause.message.split("\n")[0]}` });
+    const detail = cause?.cause?.code ?? cause?.cause?.message ?? "";
+    finish({
+      status: "unjudged",
+      reason: `harness error: ${cause.message.split("\n")[0]}${detail ? ` (${detail})` : ""}`,
+    });
   }
 }
 console.log(`${done} row(s) adjudicated; results in ${rowsRoot}`);
