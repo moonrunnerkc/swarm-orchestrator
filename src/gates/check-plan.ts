@@ -305,7 +305,13 @@ async function prerequisitesOf(
     if (!(await onPath("node", path)))
       missing.push({ what: "node is not on PATH", remedy: "install Node 22 or newer" });
     if (!(await onPath(manager, path)))
-      missing.push({ what: `${manager} is not on PATH`, remedy: `install ${manager}` });
+      missing.push({
+        what: `${manager} is not on PATH`,
+        remedy:
+          manager === "npm"
+            ? "install npm"
+            : `install ${manager}: \`npm install -g ${manager}\` (the version the manifest pins under packageManager, where it pins one), or \`corepack enable\``,
+      });
     if (lockfiles.includes("yarn.lock") || lockfiles.includes("bun.lockb"))
       missing.push({
         what: `the lockfile is ${lockfiles.includes("yarn.lock") ? "yarn.lock" : "bun.lockb"}, which this verifier does not drive`,
