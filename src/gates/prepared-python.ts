@@ -43,7 +43,7 @@ export async function stagePreparedPython(options: {
     const inspect = async (directory: string, relative: string, depth: number): Promise<void> => {
       if (depth > 32 || inventory.length > 50000)
         throw new Error("prepared Python environment exceeds file bound");
-      for (const name of await readdir(directory)) {
+      for (const name of (await readdir(directory)).sort()) {
         const file = join(directory, name);
         const path = relative ? `${relative}/${name}` : name;
         const stat = await lstat(file);

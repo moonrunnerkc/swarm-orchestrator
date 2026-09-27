@@ -17,6 +17,8 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { behaviorStatus } from "./behavior.mjs";
 import { readControllerHistory } from "./controller.mjs";
+import { capturedRegression } from "./status.mjs";
+import { upgradeControlPasses } from "./upgrade.mjs";
 
 export { readControllerHistory };
 
@@ -950,6 +952,31 @@ function collectChecks(directory) {
       new Set(requirements.map((requirement) => requirement.id)).size === requirements.length &&
       new Set(checks.map((check) => check.id)).size === checks.length;
     let presetAccepted = true;
+    if (contract?.preset?.kind === "upgrade") {
+      const source = records.find(
+        (candidate) =>
+          candidate.type === "verification-command" &&
+          candidate.sequence > declaration.sequence &&
+          candidate.sequence < entry.sequence &&
+          candidate.payloadDigest === reading.upgradeControl?.manifestRecord,
+      );
+      const installed = records.find(
+        (candidate) =>
+          candidate.type === "verification-command" &&
+          candidate.sequence > (source?.sequence ?? entry.sequence) &&
+          candidate.sequence < entry.sequence &&
+          candidate.payloadDigest === reading.upgradeControl?.resolution,
+      );
+      presetAccepted =
+        source !== undefined &&
+        installed !== undefined &&
+        upgradeControlPasses(
+          contract.preset,
+          payloads.get(source.payloadDigest),
+          payloads.get(installed.payloadDigest),
+        );
+      consistent &&= presetAccepted;
+    }
     const control = reading?.presetControl;
     if (["bugfix", "refactor"].includes(contract?.preset?.kind)) {
       consistent &&=
@@ -1057,6 +1084,13 @@ function collectChecks(directory) {
     (candidate) => candidate.type === "independent-verification",
   )) {
     const reading = payloads.get(entry.payloadDigest);
+    const regression = capturedRegression(reading?.checks);
+    if (regression !== undefined)
+      record(
+        `independent regression ${entry.sequence} re-derived`,
+        regression !== null && regression === reading.regression,
+        "configured checks derive from captured process observations",
+      );
     if (reading?.certificationPolicy !== "goal-obligations-v1") continue;
     const observed = records
       .filter(

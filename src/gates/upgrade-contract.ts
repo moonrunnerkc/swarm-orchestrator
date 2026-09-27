@@ -15,6 +15,8 @@ export function validateUpgradeManifest(
   try {
     const decode = (text: string) =>
       object.parse(preset.manager === "uv" ? parse(text) : JSON.parse(text));
+    let baseBytes = base;
+    let candidateBytes = candidate;
     const before = decode(base);
     const after = decode(candidate);
     for (const dependency of preset.dependencies) {
@@ -52,12 +54,31 @@ export function validateUpgradeManifest(
           if (found === undefined) return "dependency not found";
           if (isCandidate && found.entry !== `${dependency.name}==${dependency.version}`)
             return `pin ${dependency.name}==${dependency.version}`;
+          const source = isCandidate ? candidateBytes : baseBytes;
+          const literals = [JSON.stringify(found.entry), `'${found.entry}'`];
+          const occurrences = literals.flatMap((literal) =>
+            [
+              ...source.matchAll(new RegExp(literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")),
+            ].map((match) => ({ literal, index: match.index })),
+          );
+          if (occurrences.length !== 1)
+            return "uv upgrade needs one plain quoted literal per authorized dependency";
+          const occurrence = occurrences[0];
+          if (occurrence === undefined) return "uv dependency literal is unavailable";
+          const masked =
+            source.slice(0, occurrence.index) +
+            JSON.stringify(`<authorized ${dependency.name}>`) +
+            source.slice(occurrence.index + occurrence.literal.length);
+          if (isCandidate) candidateBytes = masked;
+          else baseBytes = masked;
           entries[found.index] = `<authorized ${dependency.name}>`;
           group[key] = entries;
           data[parent] = group;
         }
       }
     }
+    if (preset.manager === "uv" && baseBytes !== candidateBytes)
+      return "uv upgrade changes bytes outside the authorized dependency literals";
     return canonicalJson(asJsonValue(before)) === canonicalJson(asJsonValue(after))
       ? null
       : "upgrade changes scripts, verification policy, or unrelated manifest metadata";

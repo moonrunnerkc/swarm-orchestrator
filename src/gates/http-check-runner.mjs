@@ -72,7 +72,10 @@ try {
       chunks.push(Buffer.from(chunk));
     }
     observation = {
-      unavailable: null,
+      unavailable:
+        response.status >= 300 && response.status < 400
+          ? "redirect response refused; the destination was not contacted"
+          : null,
       status: response.status,
       headers: Object.fromEntries(
         Object.keys(check.headers).map((name) => [name, response.headers.get(name)]),

@@ -298,6 +298,18 @@ describe("verifying a repository whose tests need its dependencies", () => {
   it("installs from the lockfile when asked, so the checks can run", async () => {
     // node --test needs nothing installed, so this shows the phase runs and reports rather than
     // that a particular package manager works: installing is a decision, and it is recorded.
+    await writeFile(
+      join(repository, "package-lock.json"),
+      JSON.stringify({
+        name: "w",
+        version: "1.0.0",
+        lockfileVersion: 3,
+        requires: true,
+        packages: { "": { name: "w", version: "1.0.0" } },
+      }),
+    );
+    git(["add", "package-lock.json"], repository);
+    git(["commit", "-qm", "pin dependency-free environment"], repository);
     const result = await verifyIndependently({
       repositoryRoot: repository,
       baseCommit: baseCommit(),
@@ -1592,4 +1604,29 @@ it("runs an externally authored omission check even when the old suite passes", 
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+it("does not let a passing build certify a configured test runner with no usable results", async () => {
+  const result = await verifyIndependently({
+    repositoryRoot: repository,
+    baseCommit: baseCommit(),
+    patch: "",
+    commands: commands(),
+    clock,
+    gateOptions: {
+      commandOverrides: {
+        tests: {
+          command: "node -e \"console.log('{}')\"",
+          parser: "structured-test-output",
+          severity: "blocking",
+        },
+        build: { command: 'node -e "process.exit(0)"', parser: "exit-code", severity: "blocking" },
+      },
+    },
+  });
+  expect(result.checks.find((check) => check.id === "build")?.status).toBe("passed");
+  expect(result.checks.find((check) => check.id === "tests")?.status).toBe("not-applicable");
+  expect(result.regression).toBe("unmeasured");
+  expect(result.unmeasured).toBe(true);
+  expect(result.verified).toBe(false);
 });

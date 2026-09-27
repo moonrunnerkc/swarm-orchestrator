@@ -16,6 +16,14 @@ export function behaviorStatus(check, observed) {
       matches(observed.stderr, check.stderr)
       ? "accepted"
       : "rejected";
+  if (
+    check.kind === "browser" &&
+    observed.exitCode !== 0 &&
+    /Executable doesn't exist|Cannot find (?:module|package)|MODULE_NOT_FOUND|ERR_MODULE_NOT_FOUND/i.test(
+      observed.stdout + observed.stderr,
+    )
+  )
+    return "unjudged";
   if (observed.exitCode !== 0) return "rejected";
   try {
     const result = JSON.parse(observed.stdout);

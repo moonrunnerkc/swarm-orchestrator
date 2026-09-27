@@ -228,10 +228,12 @@ function stripPayloads(dag: EvidenceDag): unknown {
 }
 
 async function readVerifierScript(): Promise<string> {
-  const [verifier, controller, behavior] = await Promise.all([
+  const [verifier, controller, behavior, upgrade, status] = await Promise.all([
     readFile(new URL("./verifier/verify.mjs", import.meta.url), "utf8"),
     readFile(new URL("./verifier/controller.mjs", import.meta.url), "utf8"),
     readFile(new URL("./verifier/behavior.mjs", import.meta.url), "utf8"),
+    readFile(new URL("./verifier/upgrade.mjs", import.meta.url), "utf8"),
+    readFile(new URL("./verifier/status.mjs", import.meta.url), "utf8"),
   ]);
   const controllerImport = 'import { readControllerHistory } from "./controller.mjs";';
   const cryptoImport = 'import { createHash } from "node:crypto";';
@@ -243,18 +245,36 @@ async function readVerifierScript(): Promise<string> {
     .replace(cryptoImport, "")
     .replace("export function readControllerHistory", "function readControllerHistory");
   // The exported verifier remains one file importing only node builtins, as historical copies do.
+  const embeddedUpgrade = upgrade
+    .replace(cryptoImport, "")
+    .replace("export function upgradeControlPasses", "function upgradeControlPasses");
+  const embeddedStatus = status.replaceAll("export function ", "function ");
   return verifier
     .replace(
-      'import { behaviorStatus } from "./behavior.mjs";',
+      'import { capturedRegression } from "./status.mjs";',
+      () => `const capturedRegression = (() => {${embeddedStatus}\nreturn capturedRegression;})();`,
+    )
+    .replace(
+      'import { upgradeControlPasses } from "./upgrade.mjs";',
+      () =>
+        `const upgradeControlPasses = (() => {${embeddedUpgrade}\nreturn upgradeControlPasses;})();`,
+    )
+    .replace('import { behaviorStatus } from "./behavior.mjs";', () =>
       behavior.replace("export function behaviorStatus", "function behaviorStatus"),
     )
     .replace(
       controllerImport,
-      `const readControllerHistory = (() => {${embedded}\nreturn readControllerHistory;})();`,
+      () => `const readControllerHistory = (() => {${embedded}\nreturn readControllerHistory;})();`,
     );
 }
 
 /** Beside the verifier and importing it, so the two ship together and share one predicate reader. */
-function readRederiverScript(): Promise<string> {
-  return readFile(new URL("./verifier/rederive.mjs", import.meta.url), "utf8");
+async function readRederiverScript(): Promise<string> {
+  const [rederive, status] = await Promise.all([
+    readFile(new URL("./verifier/rederive.mjs", import.meta.url), "utf8"),
+    readFile(new URL("./verifier/status.mjs", import.meta.url), "utf8"),
+  ]);
+  return rederive.replace('import { capturedRegression, readStatus } from "./status.mjs";', () =>
+    status.replaceAll("export function ", "function "),
+  );
 }

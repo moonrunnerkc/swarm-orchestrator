@@ -45,7 +45,6 @@ export async function assemblePackageGates(
   gates: readonly GateDefinition[];
 }> {
   const units = packageSelection(options.packages ?? []);
-  const environment = await detectEnvironment(read);
   const detections: ProjectDetection[] = [];
   const gates: GateDefinition[] = [
     {
@@ -81,10 +80,7 @@ export async function assemblePackageGates(
     },
   ];
   for (const unit of units) {
-    const detection = {
-      ...environment,
-      ...(await detectProject((path) => read(`${unit}/${path}`))),
-    };
+    const detection = await detectSelectedProject(read, unit);
     if (detection.types.length === 0)
       throw new Error(`selected package ${unit} has no supported manifest`);
     if (detection.types.some((type) => type !== "node" && type !== "python"))
@@ -92,7 +88,13 @@ export async function assemblePackageGates(
         `explicit package selection supports Node and Python; ${unit} needs repository-wide Go/Rust verification`,
       );
     detections.push(detection);
-    for (const gate of assembleGates(detection, options)) {
+    const overrides = Object.fromEntries(
+      Object.entries(options.commandOverrides ?? {}).flatMap(([id, override]) => {
+        if (!id.includes(":")) return [[id, override]];
+        return id.endsWith(`:${unit}`) ? [[id.slice(0, -unit.length - 1), override]] : [];
+      }),
+    );
+    for (const gate of assembleGates(detection, { ...options, commandOverrides: overrides })) {
       if (gate.source.kind !== "command") continue;
       gates.push({
         ...gate,
@@ -119,4 +121,18 @@ export async function assemblePackageGates(
     },
     gates: [...gates, ...inspectionGates],
   };
+}
+
+/** Inherit workspace manager/interpreter declarations while keeping explicit unit declarations. */
+export async function detectSelectedProject(
+  read: ManifestReader,
+  unit: string,
+): Promise<ProjectDetection> {
+  packageSelection([unit]);
+  const root = await detectEnvironment(read);
+  const local = await detectProject((path) => read(`${unit}/${path}`));
+  const pythonCommand = root.pythonCommand?.startsWith(".venv/")
+    ? `${"../".repeat(unit.split("/").length)}${root.pythonCommand}`
+    : root.pythonCommand;
+  return { ...root, ...(pythonCommand === undefined ? {} : { pythonCommand }), ...local };
 }

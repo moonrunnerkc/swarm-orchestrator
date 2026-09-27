@@ -43,6 +43,15 @@ describe("what a passing gate establishes about changed code", () => {
     expect(isGreen(cycle)).toBe(false);
   });
 
+  it("does not let one passing unit hide another required unavailable command", () => {
+    const cycle = cycleWith([
+      { id: "tests", kind: "command", status: "passed" },
+      { id: "api/tests", kind: "command", status: "not-applicable" },
+    ]);
+    expect(executedTheChange(cycle)).toBe(true);
+    expect(isGreen(cycle)).toBe(false);
+  });
+
   it("reads a passing test run as having executed the change", () => {
     const cycle = cycleWith([
       { id: "lint", kind: "command", status: "passed" },

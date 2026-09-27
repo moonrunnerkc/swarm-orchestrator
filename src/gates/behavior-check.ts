@@ -46,6 +46,18 @@ export function evaluateBehavior(
       detail:
         "expected exit status and bounded stream assertions evaluated over captured process output",
     };
+  if (
+    check.kind === "browser" &&
+    observation.exitCode !== 0 &&
+    /Executable doesn't exist|Cannot find (?:module|package)|MODULE_NOT_FOUND|ERR_MODULE_NOT_FOUND/i.test(
+      observation.stdout + observation.stderr,
+    )
+  )
+    return {
+      status: "unjudged",
+      detail:
+        "browser setup unavailable: install the project's pinned runner, dependencies and browser explicitly, then verify again",
+    };
   if (observation.exitCode !== 0)
     return { status: "rejected", detail: "behavior runner failed or timed out" };
   try {

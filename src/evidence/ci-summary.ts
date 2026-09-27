@@ -20,15 +20,18 @@ export function renderCiSummary(options: {
   executionTrust: string;
   bundleDirectory: string;
   assessmentDigest: string;
+  changedPaths?: readonly string[];
 }): string {
   const { result, source } = options;
   const text = reviewerText;
+  const evidenceLink = `[assessment](bundle/blobs/${options.assessmentDigest.replace("sha256:", "")}.json)`;
   const lines = [
     "# Swarm verification",
     "",
     `Result: ${result.verified ? "verified" : "not verified"}. Regression: ${result.regression}. Task: ${result.task}.`,
     "",
     `Change: ${source.mode}; head ${source.head ?? "patch input"}; patch ${source.patchDigest}.`,
+    `Changed files: ${(options.changedPaths ?? []).slice(0, 50).map(text).join(", ") || "none"}.`,
     `Target base: ${source.targetBase}. Comparison base: ${source.comparisonBase} (${source.comparison}).`,
     "",
     `Execution: ${text(options.executionTrust)}. Integrity: exported signed bundle; independently verify it. Signer trust: not established by this run.`,
@@ -38,12 +41,17 @@ export function renderCiSummary(options: {
     "| --- | --- | --- |",
     ...result.checks
       .slice(0, 100)
-      .map((check) => `| ${text(check.id)} | ${check.status} | ${text(check.detail)} |`),
+      .map(
+        (check) =>
+          `| ${text(check.id)} | ${check.status} | ${text(check.detail)} (${evidenceLink}) |`,
+      ),
     "",
     `Unmeasured: ${result.unmeasured ? "regression unavailable" : "see individual checks"}; oracle reach ${result.oracleReach}; oracle bond ${result.oracleBond}.`,
     `Next action: ${text(
       result.refusal ??
-        (result.advice ||
+        (result.goalAcceptance?.checkResults?.find((check) => check.status === "unjudged")
+          ?.detail ||
+          result.advice ||
           (result.verified
             ? "Review the recorded scope, assurance dimensions and signer policy before accepting the change."
             : "Supply missing acceptance criteria or repair the failing checks, then verify again.")),
@@ -51,6 +59,16 @@ export function renderCiSummary(options: {
   ];
   if (result.checks.length > 100)
     lines.push("Summary truncated after 100 checks; consult the assessment digest in the bundle.");
+  if ((options.changedPaths?.length ?? 0) > 50)
+    lines.push(`Changed-file list truncated; consult ${evidenceLink}.`);
+  for (const check of result.goalAcceptance?.checkResults ?? [])
+    lines.push(
+      `Behavior ${text(check.id)}: ${check.status}; ${text(check.detail)} ([evidence](bundle/blobs/${check.record.replace("sha256:", "")}.json)).`,
+    );
+  for (const obligation of result.goalAcceptance?.obligations ?? [])
+    lines.push(
+      `Requirement ${text(obligation.id)}: ${obligation.status}; checks ${obligation.checks.map(text).join(", ")} (${evidenceLink}).`,
+    );
   for (const obligation of result.acceptance?.obligations ?? []) {
     lines.push(`Requirement: ${text(JSON.stringify(obligation))}`);
   }

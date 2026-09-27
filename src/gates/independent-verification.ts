@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Clock } from "../core/clock.ts";
 import { freezeAcceptanceContract } from "../evidence/acceptance-contract.ts";
+import { asJsonValue } from "../evidence/canonical-json.ts";
 import { type GoalContract, goalImmutablePaths } from "../evidence/goal-contract.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import { certifies } from "./certification.ts";
@@ -15,7 +16,6 @@ import type { GateSetOptions } from "./default-gates.ts";
 import {
   type DependencyInstall,
   DependencySetupReconciliationError,
-  installFromLockfile,
 } from "./dependency-install.ts";
 import { assembleGateSet } from "./engine.ts";
 import { normalizePath } from "./file-set.ts";
@@ -36,6 +36,7 @@ import {
 import { outsidePackages } from "./package-scope.ts";
 import { parseLineHits } from "./parsers.ts";
 import { pathsInPatch } from "./patch-paths.ts";
+import { prepareDependencies } from "./prepare-dependencies.ts";
 import { stagePreparedPython } from "./prepared-python.ts";
 import { enforceUpgrade, reproducedBug } from "./preset-verification.ts";
 import { parseUnifiedDiff } from "./unified-diff.ts";
@@ -59,6 +60,10 @@ export interface IndependentCheck {
   readonly id: string;
   readonly status: "passed" | "failed" | "not-applicable";
   readonly detail: string;
+  readonly severity?: "blocking" | "advisory";
+  readonly parser?: string;
+  readonly observation?: import("./gate-definition.ts").GateObservation;
+  readonly baseObservation?: import("./gate-definition.ts").GateObservation;
   /**
    * Whether this check fails at the base commit too, with the patch not applied. A failure the
    * base already had was not caused by the patch, and charging it to the patch is the collapse of
@@ -335,8 +340,11 @@ export async function verifyIndependently(
       };
     }
 
+    let upgradeAuthorization: string | undefined;
+    let upgradeResolution: string | undefined;
     if (options.goal?.contract.preset !== undefined) {
-      await enforceUpgrade({
+      upgradeAuthorization = await enforceUpgrade({
+        evidence: options.goal.evidence,
         preset: options.goal.contract.preset,
         patch: options.patch,
         checkout,
@@ -360,8 +368,14 @@ export async function verifyIndependently(
       });
     const install =
       options.installDependencies === true
-        ? await installFromLockfile({
-            workspace: checkout,
+        ? await prepareDependencies({
+            checkout,
+            ...(options.gateOptions?.packages === undefined
+              ? {}
+              : { packages: options.gateOptions.packages }),
+            ...(options.goal?.contract.preset?.kind === "upgrade"
+              ? { upgradeManifest: options.goal.contract.preset.manifest }
+              : {}),
             commands: options.commands,
             timeoutMs,
             ...(options.signal === undefined ? {} : { signal: options.signal }),
@@ -388,7 +402,7 @@ export async function verifyIndependently(
       };
 
     if (options.goal?.contract.preset?.kind === "upgrade")
-      await observeUpgradeResolution({
+      upgradeResolution = await observeUpgradeResolution({
         preset: options.goal.contract.preset,
         checkout,
         commands: options.commands,
@@ -503,6 +517,14 @@ export async function verifyIndependently(
         : await verifyGoal({
             ...options.goal,
             tree: goalTree,
+            ...(upgradeAuthorization === undefined || upgradeResolution === undefined
+              ? {}
+              : {
+                  upgradeControl: {
+                    manifestRecord: upgradeAuthorization,
+                    resolution: upgradeResolution,
+                  },
+                }),
             ...(presetControl === undefined ? {} : { presetControl }),
             checkout,
             commands: options.commands,
@@ -520,18 +542,23 @@ export async function verifyIndependently(
       : withPatch;
     // A run that was not asked to measure the suite reports that, rather than reporting the
     // absence of a failure as an absence of a problem.
+    const incompleteRequired = checks.some(
+      (check) => check.severity === "blocking" && check.status !== "passed",
+    );
     const measuredSomething = checks.some((check) => check.status !== "not-applicable");
     const causedByThePatch = (check: IndependentCheck) =>
       check.status === "failed" && check.inheritedFromBase !== true;
     const regression: IndependentVerification["regression"] = checks.some(causedByThePatch)
       ? "fail"
-      : checks.some((check) => check.status === "passed")
-        ? "pass"
-        : checks.some((check) => check.status === "failed")
-          ? // Everything that failed, the base failed identically, so this patch broke nothing and
-            // nothing here establishes that it did not either.
-            "unmeasured"
-          : "unmeasured";
+      : incompleteRequired
+        ? "unmeasured"
+        : checks.some((check) => check.status === "passed")
+          ? "pass"
+          : checks.some((check) => check.status === "failed")
+            ? // Everything that failed, the base failed identically, so this patch broke nothing and
+              // nothing here establishes that it did not either.
+              "unmeasured"
+            : "unmeasured";
 
     return {
       applied: true,
@@ -572,7 +599,8 @@ export async function verifyIndependently(
       }),
       // Not the same as a checkout where nothing could run: this one was asked for one thing and
       // did it, so the absence of checks is the request rather than a failure to measure.
-      unmeasured: !onlyTheOracle && !measuredSomething,
+      unmeasured:
+        !onlyTheOracle && (!measuredSomething || (incompleteRequired && regression !== "fail")),
       // Ordered by what decided the verdict, not by what is true of the checkout. An inherited
       // failure does not block and an unreached oracle does, so naming the inherited one first
       // sent a reader of the koa#1946 run to fix a dependency install that was not the finding.
@@ -865,13 +893,51 @@ async function resetToBase(
     { cwd: checkout, timeoutMs },
   );
   if (reverted.exitCode !== 0) {
+    await options.goal?.evidence.record({
+      type: "verification-command",
+      actor: "harness",
+      provenance: ["tool-output"],
+      payload: asJsonValue({
+        rule: "checkout-restore-failure-v1",
+        operation: "reset",
+        observation: reverted,
+      }),
+    });
     return false;
   }
   const cleaned = await options.commands.runVouched(["git", "-C", ".", "clean", "-fdq"], {
     cwd: checkout,
     timeoutMs,
   });
-  return cleaned.exitCode === 0;
+  if (cleaned.exitCode !== 0)
+    await options.goal?.evidence.record({
+      type: "verification-command",
+      actor: "harness",
+      provenance: ["tool-output"],
+      payload: asJsonValue({
+        rule: "checkout-restore-failure-v1",
+        operation: "clean",
+        observation: cleaned,
+      }),
+    });
+  if (cleaned.exitCode !== 0) return false;
+  // Snapshot restoration changes stat metadata across mounted filesystems. Refresh it without staging content.
+  const refreshed = await options.commands.runVouched(["git", "update-index", "--refresh"], {
+    cwd: checkout,
+    timeoutMs,
+  });
+  if (refreshed.exitCode !== 0)
+    await options.goal?.evidence.record({
+      type: "verification-command",
+      actor: "harness",
+      provenance: ["tool-output"],
+      payload: asJsonValue({
+        rule: "checkout-restore-failure-v1",
+        operation: "refresh",
+        observation: refreshed,
+      }),
+    });
+  return refreshed.exitCode === 0;
 }
 
 /** The patch again, on a checkout `resetToBase` emptied, reported rather than assumed. */
@@ -899,6 +965,17 @@ async function restorePatch(
     { cwd: checkout, timeoutMs },
   );
   await rm(patchPath, { force: true });
+  if (applied.exitCode !== 0)
+    await options.goal?.evidence.record({
+      type: "verification-command",
+      actor: "harness",
+      provenance: ["tool-output"],
+      payload: asJsonValue({
+        rule: "checkout-restore-failure-v1",
+        operation: "apply",
+        observation: applied,
+      }),
+    });
   return applied.exitCode === 0;
 }
 
@@ -922,7 +999,11 @@ async function attributeFailures(
   return withPatch.map((check) => {
     if (check.status !== "failed") return check;
     const same = atBase.find((one) => one.id === check.id);
-    return { ...check, inheritedFromBase: same?.status === "failed" };
+    return {
+      ...check,
+      inheritedFromBase: same?.status === "failed",
+      ...(same?.observation === undefined ? {} : { baseObservation: same.observation }),
+    };
   });
 }
 
@@ -971,7 +1052,14 @@ async function runChecks(
         ? await options.commands.run(gate.source.command, { cwd: checkout, timeoutMs })
         : await options.commands.runVouched(gate.source.argv, { cwd: checkout, timeoutMs });
     const reading = gate.parse(observed);
-    results.push({ id: gate.id, status: reading.status, detail: reading.detail });
+    results.push({
+      id: gate.id,
+      status: reading.status,
+      detail: reading.detail,
+      severity: gate.severity,
+      parser: gate.parserName ?? "exit-code",
+      observation: observed,
+    });
   }
   return results;
 }

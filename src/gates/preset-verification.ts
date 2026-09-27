@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { asJsonValue, digestOfBytes, digestOfJson } from "../evidence/canonical-json.ts";
 import type { GoalContract } from "../evidence/goal-contract.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import type { TaskPreset } from "../evidence/task-preset.ts";
@@ -15,7 +16,8 @@ export async function enforceUpgrade(options: {
   base: string;
   commands: GateCommandRunner;
   timeoutMs: number;
-}): Promise<void> {
+  evidence?: EvidenceRecorder;
+}): Promise<string | undefined> {
   const { preset } = options;
   if (preset.kind !== "upgrade") return;
   const allowed = new Set([preset.manifest, preset.lockfile, ...preset.sourcePaths]);
@@ -31,6 +33,25 @@ export async function enforceUpgrade(options: {
   const candidate = await readFile(join(options.checkout, preset.manifest), "utf8");
   const problem = validateUpgradeManifest(original.stdout, candidate, preset);
   if (problem) throw new Error(problem);
+  if (original.stdout.length + candidate.length > 1_000_000)
+    throw new Error("upgrade manifests exceed the evidence size bound");
+  const recorded = await options.evidence?.record({
+    type: "verification-command",
+    actor: "harness",
+    provenance: ["file"],
+    payload: asJsonValue({
+      rule: "upgrade-authorization-v1",
+      presetDigest: digestOfJson(asJsonValue(preset)),
+      base: original.stdout,
+      candidate,
+      manifest: preset.manifest,
+      lockfile: preset.lockfile,
+      touched: pathsInPatch(options.patch),
+      manifestDigest: digestOfBytes(candidate),
+      lockDigest: digestOfBytes(await readFile(join(options.checkout, preset.lockfile))),
+    }),
+  });
+  return recorded?.record.payloadDigest;
 }
 
 /** A bug reproduces only through a completed executable with wrong checked output, never a startup failure. */
