@@ -90,7 +90,22 @@ export interface VerifyCommand {
   readonly expectedSigners: readonly string[];
 }
 
-export type VerifyOnlyCommand = VerifyCommand | CiCommand | GatesCommand;
+/**
+ * The first-run command: discover what the project declares, run it unattended, and report
+ * what that establishes and what it leaves unmeasured. No configuration file, no model.
+ */
+export interface CheckCommand {
+  readonly command: "check";
+  readonly workspace: string;
+  readonly baseRef: string;
+  readonly packages?: readonly string[];
+  readonly bundleDirectory: string | null;
+  /** Print the plan and run nothing. */
+  readonly explain: boolean;
+  readonly json: boolean;
+}
+
+export type VerifyOnlyCommand = VerifyCommand | CiCommand | GatesCommand | CheckCommand;
 
 export class InvalidCommandLineError extends Error {
   constructor(problem: string, usageText: string) {
@@ -105,6 +120,7 @@ export class InvalidCommandLineError extends Error {
 /** The flags that are their own value. Everything else takes the word after it. */
 const switchFlags = new Set([
   "help",
+  "explain",
   "version",
   "json",
   "remove",
@@ -247,6 +263,20 @@ export function parseVerifyOnlyCommand(
       command: "verify",
       bundleDirectory: resolve(context.currentDirectory, target),
       expectedSigners: commaList(flags.get("signer")),
+    };
+  }
+
+  if (words[0] === "check") {
+    const bundleFlag = flags.get("bundle");
+    return {
+      command: "check",
+      ...(flags.has("package") ? { packages: flags.get("package")?.split("\0") ?? [] } : {}),
+      workspace: resolve(context.currentDirectory, flags.get("workspace") ?? "."),
+      baseRef: flags.get("base") ?? defaultBaseRef,
+      bundleDirectory:
+        bundleFlag === undefined ? null : resolve(context.currentDirectory, bundleFlag),
+      explain: flags.has("explain"),
+      json: flags.has("json"),
     };
   }
 

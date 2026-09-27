@@ -2,6 +2,7 @@
 // Check the runtime before loading the command composition.
 import "./node-floor-check.ts";
 
+import { check } from "./cli-check.ts";
 import { commandDefinitions } from "./cli-command-definitions.ts";
 import { gates } from "./cli-gates.ts";
 import { verifyBundle } from "./cli-verify.ts";
@@ -23,8 +24,9 @@ const verifyOnlyNames = new Set(
 );
 
 export const usage = [
-  "swarm-verify <command> [options]",
+  "swarm-verify [command] [options]",
   "",
+  "  swarm-verify                                             check the current directory (the same as `check`)",
   ...commandDefinitions
     .filter((command) => verifyOnlyNames.has(command.name))
     .map((command) => `  swarm-verify ${command.syntax.padEnd(42)} ${command.description}`),
@@ -35,11 +37,19 @@ export const usage = [
 async function main(): Promise<number> {
   const context = { currentDirectory: process.cwd(), usage };
   const line = tokenizeCommandLine(process.argv.slice(2), context);
-  if (line.flags.has("help") || line.words[0] === "help" || line.words.length === 0) {
+  if (line.flags.has("help") || line.words[0] === "help") {
     process.stdout.write(`${usage}\n`);
     return exitCodes.acceptable;
   }
-  const parsed: VerifyOnlyCommand | null = parseVerifyOnlyCommand(line, context);
+  if (line.flags.has("version")) {
+    process.stdout.write(`${(await import("./build-version.ts")).buildVersion}\n`);
+    return exitCodes.acceptable;
+  }
+  // No subcommand is the first-run interface: check the directory the reader is standing in.
+  const parsed: VerifyOnlyCommand | null = parseVerifyOnlyCommand(
+    line.words.length === 0 ? { words: ["check"], flags: line.flags } : line,
+    context,
+  );
   if (parsed === null) {
     throw new InvalidCommandLineError(`"${line.words[0]}" is not a command this binary has`, usage);
   }
@@ -48,6 +58,9 @@ async function main(): Promise<number> {
   }
   if (parsed.command === "gates") {
     return gates(parsed);
+  }
+  if (parsed.command === "check") {
+    return check(parsed);
   }
   return (await import("./cli-ci.ts")).verifyPatch(parsed);
 }
@@ -60,6 +73,8 @@ main().then(
   },
   (error: unknown) => {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-    process.exitCode = exitCodes.notAcceptable;
+    // A command line this binary cannot read is an invalid request, not work that failed.
+    process.exitCode =
+      error instanceof InvalidCommandLineError ? exitCodes.invalidRequest : exitCodes.notAcceptable;
   },
 );

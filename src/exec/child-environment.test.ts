@@ -36,6 +36,7 @@ describe("what a child process inherits", () => {
     );
 
     expect(Object.keys(built.variables).sort()).toEqual([
+      "CI",
       "COREPACK_ENABLE_AUTO_PIN",
       "COREPACK_ENABLE_DOWNLOAD_PROMPT",
       "COREPACK_ENABLE_NETWORK",

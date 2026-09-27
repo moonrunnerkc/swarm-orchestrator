@@ -136,21 +136,24 @@ describe("swarm-verify beside swarm", () => {
     expect(standalone.code).toBe(through.code);
   });
 
-  it("prints its own usage for no command and for --help", async () => {
-    const bare = await invoke("swarm-verify", []);
+  it("prints its own usage for --help, and checks the workspace for no command", async () => {
     const help = await invoke("swarm-verify", ["--help"]);
+    const bare = await invoke("swarm-verify", ["--workspace", workspace]);
 
+    expect(help.code).toBe(0);
+    expect(help.stdout).toContain("swarm-verify verify <bundle directory>");
+    expect(help.stdout).toContain("swarm-verify ci --patch <file>");
+    expect(help.stdout).toContain("swarm-verify gates");
+    expect(help.stdout).toContain("swarm-verify check");
+    // No subcommand is the first-run interface: the same as `check` over the workspace.
+    expect(bare.stdout).toContain("result       regression-only pass");
     expect(bare.code).toBe(0);
-    expect(bare.stdout).toContain("swarm-verify verify <bundle directory>");
-    expect(bare.stdout).toContain("swarm-verify ci --patch <file>");
-    expect(bare.stdout).toContain("swarm-verify gates");
-    expect(help.stdout).toBe(bare.stdout);
   });
 
   it("refuses a command the full CLI has and this binary does not, naming its own usage", async () => {
     const ran = await invoke("swarm-verify", ["parallel", "--goal", "x"]);
 
-    expect(ran.code).toBe(1);
+    expect(ran.code).toBe(2);
     expect(ran.stderr).toContain('"parallel" is not a command this binary has');
     expect(ran.stderr).toContain("swarm-verify verify");
   });

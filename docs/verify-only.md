@@ -1,9 +1,33 @@
 # Verifying without a model
 
-Three commands need no model, no API key and no local backend: `swarm verify` checks a bundle,
-`swarm ci` verifies a patch in a fresh checkout of its base, and `swarm gates` measures a
-workspace. This page walks through each one. Every transcript below was captured from the
-command it sits under, run with an environment holding nothing but `PATH` and `HOME`.
+Four commands need no model, no API key and no local backend: `swarm check` discovers what a
+project declares and runs it unattended, `swarm verify` checks a bundle, `swarm ci` verifies a
+patch in a fresh checkout of its base, and `swarm gates` measures a workspace. This page walks
+through each one. Every transcript below was captured from the command it sits under, run with
+an environment holding nothing but `PATH` and `HOME`.
+
+## swarm check: a first result with nothing configured
+
+`npx swarm-verify` with no arguments is `swarm-verify check` over the current directory. It
+reads the manifests, says which test command it will run and what scope that command can vouch
+for, runs it the way a CI job would (no terminal on stdin, `CI=true` in the child environment),
+and reports five conclusions apart: whether the command ran, what the checks found, how the
+commands were contained, whether any requirement was judged, and whether any check was
+challenged. It writes nothing into the workspace and creates no `swarm.toml`.
+
+```sh
+npx swarm-verify                    # check the current directory
+npx swarm-verify --explain          # print the plan, run nothing
+npx swarm-verify --json             # one swarm.check.v1 object on stdout
+npx swarm-verify --package packages/web --package services/api
+```
+
+Exit codes: 0 is a regression-only pass, and is printed as one; 1 is a blocking check that
+failed; 2 is a command line the binary cannot read; 3 is cancelled; 4 is incomplete, which is
+what a missing prerequisite, an ambiguous scope, a watch-mode test script, a directory with no
+manifest, or a suite that collected nothing all are. Incomplete never renders as a pass, and a
+pass never claims task correctness: without a requirement contract that line reads
+`unmeasured`.
 
 ## Install only the verifier
 

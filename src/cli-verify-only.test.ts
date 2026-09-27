@@ -90,11 +90,17 @@ const invocations: Readonly<
   verify: () => swarm(["verify", committedBundle, "--signer", committedSigner]),
   ci: () => swarm(["ci", "--patch", patch, "--workspace", workspace]),
   gates: () => swarm(["gates", "--workspace", workspace]),
+  check: () => swarm(["check", "--workspace", workspace]),
 };
 
 describe("the commands declared to need no model", () => {
-  it("are the three the verify-only page walks through", () => {
-    expect(modelFree.map((command) => command.name).sort()).toEqual(["ci", "gates", "verify"]);
+  it("are the four the verify-only page walks through", () => {
+    expect(modelFree.map((command) => command.name).sort()).toEqual([
+      "check",
+      "ci",
+      "gates",
+      "verify",
+    ]);
   });
 
   it("are each held to a real run here, so the datum cannot be added without one", () => {
