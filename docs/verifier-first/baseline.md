@@ -27,7 +27,7 @@ below and by the remote runs on the same commit.
 checkout's `node_modules` predated the fast-forward and lacked `@playwright/test`, which the
 lockfile now pins; that is a stale local environment, not a source defect. After `npm ci` the
 second run passed. Its full output is
-[gates-baseline-270811a44.log](../evidence/2026-09-27/verifier-first/gates-baseline-270811a44.log).
+[gates-baseline-270811a44.txt](../evidence/2026-09-27/verifier-first/gates-baseline-270811a44.txt).
 The closing lines, verbatim:
 
 ```text
