@@ -17,7 +17,7 @@
  * config: { image, imageDigest, repository, category, prerequisites: [{name, command}],
  *           verifierReadme, model, endpoint, maxSteps, version }
  */
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -155,22 +155,58 @@ try {
   ];
   let firstResultAt = null;
   let outcome = null;
+  // One model call, with the two failures a local server produces handled as what they are:
+  // a 5xx is the server refusing the model's own malformed tool call, so the observer is told
+  // and asked again; a transport failure (the server busy past the client's header timeout) is
+  // waited out. Neither is a finding about the product, and neither ends the session.
+  const complete = async () => {
+    let failure = null;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        const response = await fetch(`${config.endpoint}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: config.model,
+            messages,
+            tools,
+            tool_choice: "auto",
+            temperature: 0,
+            stream: false,
+            ...(config.extraBody ?? {}),
+          }),
+        });
+        if (response.status >= 500) {
+          const text = await response.text();
+          record({
+            kind: "model-error",
+            attempt,
+            status: response.status,
+            text: text.slice(0, 400),
+          });
+          messages.push({
+            role: "user",
+            content:
+              "Your previous tool call could not be parsed by the server. Call the tool again with well-formed arguments.",
+          });
+          continue;
+        }
+        if (!response.ok) throw new Error(`model: ${response.status} ${await response.text()}`);
+        return await response.json();
+      } catch (cause) {
+        failure = cause;
+        record({
+          kind: "model-transport-failure",
+          attempt,
+          detail: String(cause?.cause ?? cause).slice(0, 200),
+        });
+        await new Promise((resolve) => setTimeout(resolve, 30_000 * attempt));
+      }
+    }
+    throw failure ?? new Error("the model server refused three attempts");
+  };
   for (let step = 1; step <= config.maxSteps; step += 1) {
-    const response = await fetch(`${config.endpoint}/v1/chat/completions`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        model: config.model,
-        messages,
-        tools,
-        tool_choice: "auto",
-        temperature: 0,
-        stream: false,
-        ...(config.extraBody ?? {}),
-      }),
-    });
-    if (!response.ok) throw new Error(`model: ${response.status} ${await response.text()}`);
-    const completion = await response.json();
+    const completion = await complete();
     const choice = completion.choices?.[0]?.message;
     if (!choice) throw new Error("model answered with no message");
     messages.push(choice);
