@@ -137,9 +137,93 @@ it("owns cleanup after a successful parent exit", async () => {
     },
   });
   await backend.run(["node", "parent.mjs"], { cwd: workspace, timeoutMs: 1000 });
-  expect(captured.map((args) => args[0])).toEqual(["create", "start", "rm", "ps"]);
+  expect(captured.map((args) => args[0])).toEqual(["image", "create", "start", "rm", "ps"]);
   expect(phases).toEqual(["create-intent", "created", "removed"]);
-  expect(captured[0]?.some((arg) => arg.startsWith("--name=swarm-"))).toBe(true);
+  expect(captured[1]?.some((arg) => arg.startsWith("--name=swarm-"))).toBe(true);
+  await backend.run(["node", "parent.mjs"], { cwd: workspace, timeoutMs: 1000 });
+  expect(captured.filter((args) => args[0] === "image")).toHaveLength(1);
+});
+
+describe("an image that is not present on the machine", () => {
+  const observed = (exitCode: number, stderr = "") => ({
+    stdout: "",
+    stderr,
+    exitCode,
+    timedOut: false,
+    cancelled: false,
+    truncated: false,
+    startFailure: null,
+  });
+
+  it("is pulled once, before the first container is created, outside any command's deadline", async () => {
+    const captured: string[][] = [];
+    const backend = createContainerBackend({
+      runtime: "test-runtime",
+      image: "test-image",
+      workspaceRoot: workspace,
+      user: "1000:1000",
+      runProcess: async (_program, args, options) => {
+        captured.push([...args]);
+        if (args[0] === "pull") expect(options.timeoutMs).toBeGreaterThanOrEqual(600_000);
+        return observed(args[0] === "image" ? 1 : 0);
+      },
+    });
+    await backend.run(["node", "parent.mjs"], { cwd: workspace, timeoutMs: 1000 });
+    await backend.run(["node", "parent.mjs"], { cwd: workspace, timeoutMs: 1000 });
+    expect(captured.map((args) => args[0])).toEqual([
+      "image",
+      "pull",
+      "create",
+      "start",
+      "rm",
+      "ps",
+      "create",
+      "start",
+      "rm",
+      "ps",
+    ]);
+    expect(captured[1]).toEqual(["pull", "--quiet", "test-image"]);
+  });
+
+  it("names the image and the runtime's last line when the pull fails, and creates nothing", async () => {
+    const captured: string[][] = [];
+    const backend = createContainerBackend({
+      runtime: "test-runtime",
+      image: "test-image",
+      workspaceRoot: workspace,
+      user: "1000:1000",
+      runProcess: async (_program, args) => {
+        captured.push([...args]);
+        if (args[0] === "pull") return observed(1, "Error response from daemon: manifest unknown");
+        return observed(args[0] === "image" ? 1 : 0);
+      },
+    });
+    await expect(
+      backend.run(["node", "parent.mjs"], { cwd: workspace, timeoutMs: 1000 }),
+    ).rejects.toThrow(
+      "image test-image is not present and could not be pulled: Error response from daemon: manifest unknown",
+    );
+    expect(captured.map((args) => args[0])).toEqual(["image", "pull"]);
+  });
+
+  it("says that creation timed out when cleanup of the never-created container cannot be confirmed", async () => {
+    const backend = createContainerBackend({
+      runtime: "test-runtime",
+      image: "test-image",
+      workspaceRoot: workspace,
+      user: "1000:1000",
+      runProcess: async (_program, args) => {
+        if (args[0] === "create")
+          return { ...observed(124, "pulling from library/test-image"), timedOut: true };
+        return observed(0);
+      },
+    });
+    await expect(
+      backend.run(["node", "parent.mjs"], { cwd: workspace, timeoutMs: 1000 }),
+    ).rejects.toThrow(
+      /cleanup could not be confirmed \(creation timed out: pulling from library\/test-image\)/,
+    );
+  });
 });
 
 it.skipIf(!available)(
