@@ -46,6 +46,13 @@ export async function assemblePackageGates(
 }> {
   const units = packageSelection(options.packages ?? []);
   const detections: ProjectDetection[] = [];
+  const repositoryIds = new Set(inspectionGates.map((gate) => gate.id));
+  const repositoryGates = assembleGates(await detectProject(read), {
+    ...options,
+    commandOverrides: Object.fromEntries(
+      Object.entries(options.commandOverrides ?? {}).filter(([id]) => repositoryIds.has(id)),
+    ),
+  }).filter((gate) => repositoryIds.has(gate.id));
   const gates: GateDefinition[] = [
     {
       id: "package-scope",
@@ -95,17 +102,20 @@ export async function assemblePackageGates(
       }),
     );
     for (const gate of assembleGates(detection, { ...options, commandOverrides: overrides })) {
-      if (gate.source.kind !== "command") continue;
+      if (repositoryIds.has(gate.id)) continue;
       gates.push({
         ...gate,
         id: `${gate.id}:${unit}`,
         title: `${unit}: ${gate.title}`,
-        source: {
-          kind: "command",
-          command: `cd '${unit}' && ${gate.source.command}`,
-          coverageUnmeasured:
-            "package-scoped commands do not claim controlled changed-line coverage or base-control attribution",
-        },
+        source:
+          gate.source.kind === "inspection"
+            ? gate.source
+            : {
+                kind: "command",
+                command: `cd '${unit}' && ${gate.source.command}`,
+                coverageUnmeasured:
+                  "package-scoped commands do not claim controlled changed-line coverage or base-control attribution",
+              },
       });
     }
   }
@@ -119,7 +129,7 @@ export async function assemblePackageGates(
       nodeScriptCommands: {},
       pythonTools: [],
     },
-    gates: [...gates, ...inspectionGates],
+    gates: [...gates, ...repositoryGates],
   };
 }
 

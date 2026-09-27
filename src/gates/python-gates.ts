@@ -22,6 +22,7 @@ export function pythonGates(detection: ProjectDetection): readonly GateDefinitio
           "typecheck (python)",
           "blocking",
           "pyproject.toml configures no type checker",
+          true,
         ),
   );
   gates.push(
@@ -32,7 +33,13 @@ export function pythonGates(detection: ProjectDetection): readonly GateDefinitio
           severity: "blocking",
           command: "ruff check --no-fix .",
         })
-      : unavailableGate("lint", "lint (python)", "blocking", "pyproject.toml configures no linter"),
+      : unavailableGate(
+          "lint",
+          "lint (python)",
+          "blocking",
+          "pyproject.toml configures no linter",
+          true,
+        ),
   );
   gates.push(
     tools.has("ruff")
@@ -47,6 +54,7 @@ export function pythonGates(detection: ProjectDetection): readonly GateDefinitio
           "format (python)",
           "blocking",
           "pyproject.toml configures no formatter",
+          true,
         ),
   );
   gates.push(

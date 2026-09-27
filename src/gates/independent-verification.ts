@@ -17,11 +17,11 @@ import {
   type DependencyInstall,
   DependencySetupReconciliationError,
 } from "./dependency-install.ts";
-import { assembleGateSet } from "./engine.ts";
 import { normalizePath } from "./file-set.ts";
 import { defaultGateTimeoutMs, type GateCommandRunner } from "./gate-definition.ts";
 import { type GoalVerification, verifyGoal } from "./goal-acceptance.ts";
 import { GoalEffectReconciliationError } from "./goal-effects.ts";
+import { runChecks } from "./independent-checks.ts";
 import { nodeSyntaxCheck } from "./mutant-parse.ts";
 import type { LineHits } from "./mutant-witness.ts";
 import type { BondedMutant, OracleBond, OracleBondVerdict } from "./oracle-bond.ts";
@@ -57,6 +57,8 @@ import { readV8Coverage } from "./v8-coverage.ts";
  * worker travels except the patch.
  */
 export interface IndependentCheck {
+  /** No optional static tool was configured; absence is retained, never reported as a pass. */
+  readonly optionalAbsence?: boolean;
   readonly id: string;
   readonly status: "passed" | "failed" | "not-applicable";
   readonly detail: string;
@@ -543,7 +545,10 @@ export async function verifyIndependently(
     // A run that was not asked to measure the suite reports that, rather than reporting the
     // absence of a failure as an absence of a problem.
     const incompleteRequired = checks.some(
-      (check) => check.severity === "blocking" && check.status !== "passed",
+      (check) =>
+        check.severity === "blocking" &&
+        check.status !== "passed" &&
+        check.optionalAbsence !== true,
     );
     const measuredSomething = checks.some((check) => check.status !== "not-applicable");
     const causedByThePatch = (check: IndependentCheck) =>
@@ -1031,38 +1036,6 @@ async function judgeTask(
  * The gates assembled from the base commit's manifests, not the patched tree's. A patch that
  * rewrites the test script would otherwise choose the instrument that measures it.
  */
-async function runChecks(
-  checkout: string,
-  options: IndependentVerificationOptions,
-  timeoutMs: number,
-): Promise<readonly IndependentCheck[]> {
-  const { gates } = await assembleGateSet({
-    workspaceRoot: options.repositoryRoot,
-    criteriaRef: options.baseCommit,
-    ...(options.gateOptions === undefined ? {} : { gateOptions: options.gateOptions }),
-  });
-
-  const results: IndependentCheck[] = [];
-  for (const gate of gates) {
-    if (gate.source.kind !== "command") {
-      continue;
-    }
-    const observed =
-      gate.source.argv === undefined
-        ? await options.commands.run(gate.source.command, { cwd: checkout, timeoutMs })
-        : await options.commands.runVouched(gate.source.argv, { cwd: checkout, timeoutMs });
-    const reading = gate.parse(observed);
-    results.push({
-      id: gate.id,
-      status: reading.status,
-      detail: reading.detail,
-      severity: gate.severity,
-      parser: gate.parserName ?? "exit-code",
-      observation: observed,
-    });
-  }
-  return results;
-}
 
 function matchesAny(path: string, patterns: readonly string[]): boolean {
   const normalized = normalizePath(path);

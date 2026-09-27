@@ -99,6 +99,7 @@ export function nodeGates(
           ? "package.json declares no check-only format script, and running a writing formatter " +
               "as a gate would edit the tree it is judging"
           : `package.json declares no ${id} script`,
+        id !== "tests",
       );
     }
     return commandGate(
