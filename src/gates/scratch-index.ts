@@ -58,7 +58,7 @@ const interpreterCacheExclusions: readonly string[] = [
   ".pytest_cache",
   ".mypy_cache",
   ".ruff_cache",
-].flatMap((cache) => [`:(exclude,glob)${cache}/**`, `:(exclude,glob)**/${cache}/**`]);
+].flatMap((cache) => [`:(glob)${cache}/**`, `:(glob)**/${cache}/**`]);
 
 /**
  * Stages the whole tree against `baseRef` in a throwaway index and hands the caller a way to
@@ -76,7 +76,21 @@ export async function withScratchIndex<T>(
     // read-tree first: without it `add -A` has nothing to compare against and every path in
     // the tree reads as added, which would make the first measurement of a session enormous.
     await git(["read-tree", options.baseRef]);
-    await git(["add", "-A", "--", ".", ...interpreterCacheExclusions]);
+    // Stage everything, then drop the caches from the index. Naming a cache as an exclude
+    // pathspec on `add` is refused by git (exit 1, "paths are ignored") the moment that cache
+    // exists and is gitignored, which is the ordinary state of a Python checkout after one
+    // test run; removing from the index afterwards is quiet whether the cache was staged,
+    // ignored or absent.
+    await git(["add", "-A", "--", "."]);
+    await git([
+      "rm",
+      "-r",
+      "--cached",
+      "--quiet",
+      "--ignore-unmatch",
+      "--",
+      ...interpreterCacheExclusions,
+    ]);
     return await use(git);
   } finally {
     await rm(directory, { recursive: true, force: true });

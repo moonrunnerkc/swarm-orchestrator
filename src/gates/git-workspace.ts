@@ -22,7 +22,12 @@ const runProcess = promisify(execFile);
  * The reader mistyped nothing: they ran swarm in a directory that is not a repository.
  */
 export function firstGitDiagnostic(cause: unknown): string {
-  const raw = cause instanceof Error ? cause.message : String(cause);
+  const raw =
+    cause instanceof Error
+      ? cause.message
+      : typeof (cause as { message?: unknown })?.message === "string"
+        ? ((cause as { message: string }).message ?? "")
+        : String(cause);
   const lines = raw
     .split("\n")
     .map((line) => line.trim())
@@ -33,8 +38,19 @@ export function firstGitDiagnostic(cause: unknown): string {
   );
   if (diagnosis !== undefined) return diagnosis;
 
-  // No diagnosis line at all, so keep the first line and drop whatever usage followed it.
+  // No diagnosis line at all. A child-process failure reads "Command failed: <argv>" and then
+  // git's own stderr, so the last line is what git said; keep the first only when nothing
+  // followed it or what followed was usage text, and never let the command line stand in
+  // for the reason.
   const [first] = lines;
+  const last = lines.at(-1);
+  if (
+    first?.startsWith("Command failed:") === true &&
+    last !== undefined &&
+    last !== first &&
+    !last.startsWith("usage:")
+  )
+    return last;
   return first ?? "git produced no output";
 }
 
@@ -59,9 +75,22 @@ export function describeGitFailure(workspaceRoot: string, cause: unknown): strin
     );
   }
 
+  const diagnostic = firstGitDiagnostic(cause);
+  // What git says when the directory is not a repository or the base ref is not in it; both
+  // keep the original wording, which names the two remedies. Anything else git refused is a
+  // failure inside a repository and is quoted as such.
+  const missingRepositoryOrRef =
+    /not a git repository|not a git working tree|bad revision|ambiguous argument|unknown revision|not a valid object name|bad object|invalid reference|needed a single revision/i.test(
+      `${failure.message ?? ""}\n${diagnostic}`,
+    );
+  if (!missingRepositoryOrRef) {
+    // git ran in a repository and refused something else; say what, and do not send the reader
+    // to `git init` in a directory that already is one.
+    return `git could not read or stage the tree in ${workspaceRoot}: ${diagnostic}`;
+  }
   return (
     `${workspaceRoot} is not a git working tree, or git could not read it: ` +
-    `${firstGitDiagnostic(cause)}. ` +
+    `${diagnostic}. ` +
     "The gates measure a change against a base commit, so run swarm inside a repository " +
     "(git init, then commit something), or pass a base ref that exists."
   );

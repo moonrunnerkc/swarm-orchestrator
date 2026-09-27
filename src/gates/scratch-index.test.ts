@@ -138,4 +138,26 @@ describe("what running the tests leaves behind", () => {
 
     expect(changes.files.map((file) => file.path)).toEqual(["scraper.py"]);
   });
+
+  /**
+   * The state a Python checkout is in after one test run: the caches exist and the project
+   * ignores them. Naming them as exclude pathspecs made `git add` refuse the whole staging
+   * ("The following paths are ignored", exit 1), and the verifier then told a stranger that
+   * their repository was not a git working tree.
+   */
+  it("stages a tree whose ignored interpreter caches are present", async () => {
+    await writeFile(join(workspace, ".gitignore"), "__pycache__/\n.pytest_cache/\n");
+    await writeFile(join(workspace, "scraper.py"), "print('hi')\n");
+    await mkdir(join(workspace, "__pycache__"), { recursive: true });
+    await writeFile(join(workspace, "__pycache__", "scraper.cpython-314.pyc"), "bytecode");
+    await mkdir(join(workspace, ".pytest_cache", "v", "cache"), { recursive: true });
+    await writeFile(join(workspace, ".pytest_cache", "v", "cache", "nodeids"), "[]");
+
+    const changes = await createGitWorkspaceProbe({
+      workspaceRoot: workspace,
+      baseRef: "HEAD",
+    }).changes();
+
+    expect(changes.files.map((file) => file.path).sort()).toEqual([".gitignore", "scraper.py"]);
+  });
 });
