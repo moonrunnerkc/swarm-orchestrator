@@ -1,0 +1,43 @@
+name: action-controls
+on:
+  push:
+    branches: [v13-main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  controls:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        candidate: [good, bad]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.sha }}
+          path: trusted
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - run: docker pull node:24-bookworm
+      - id: fixture
+        run: node trusted/scripts/action-fixture.mjs '${{ matrix.candidate }}'
+      - uses: ./trusted
+        id: verify
+        continue-on-error: true
+        with:
+          workspace: ${{ steps.fixture.outputs.workspace }}
+          branch: ${{ steps.fixture.outputs.head }}
+          base: ${{ steps.fixture.outputs.base }}
+          goal-contract: ${{ steps.fixture.outputs.contract }}
+      - name: Assert the original verifier outcome
+        if: always()
+        env:
+          SWARM_REPORT: ${{ steps.verify.outputs.report }}
+          SWARM_STATUS: ${{ steps.verify.outputs.status }}
+          SWARM_OUTCOME: ${{ steps.verify.outcome }}
+          SWARM_EVIDENCE: ${{ steps.verify.outputs.evidence }}
+          SWARM_HEAD: ${{ steps.fixture.outputs.head }}
+        run: node trusted/scripts/action-fixture.mjs assert '${{ matrix.candidate }}'

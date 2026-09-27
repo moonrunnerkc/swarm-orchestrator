@@ -411,3 +411,7 @@ Amendment 63 (before edits): the language preamble describes pinned check comman
 of forbidding every manifest edit, so it agrees with narrowly authorized dependency upgrades.
 A real worker-loop upgrade test uses a deterministic provider only for edit selection; Git,
 locked npm preparation, installed-version observation and acceptance execute as real processes.
+
+Amendment 64 (before edits): the composite Action explicitly selects Node 24 using the
+already pinned setup action before building its trusted verifier. Its consumer example pins
+the completed Action commit and obtains candidate and acceptance material in separate paths.
