@@ -1,16 +1,15 @@
 import { readFile, writeFile } from "node:fs/promises";
-import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import { eventsFromClaudeCodeStream, eventsFromGenericJsonl } from "./adapters/external-agent.ts";
 import { describeOracleBond } from "./cli-bond-report.ts";
-import { createSystemClock, createSystemRandom } from "./cli-runtime-inputs.ts";
+import { createSystemClock } from "./cli-runtime-inputs.ts";
+import { withVerificationEvidence } from "./cli-verification-evidence.ts";
 import type { CiCommand } from "./cli-verify-options.ts";
 import type { Clock } from "./core/clock.ts";
-import { bundleSourceFromRecorder, exportBundle } from "./evidence/bundle.ts";
 import { renderCiSummary } from "./evidence/ci-summary.ts";
+import { declareGoalContract } from "./evidence/goal-contract.ts";
 import { scrubText } from "./evidence/scrub.ts";
-import { createSessionId, defaultSessionRoot, openEvidenceSession } from "./evidence/session.ts";
-import { createKeychainSecretStore, resolveSigningKey } from "./evidence/signing.ts";
+import type { EvidenceRecorder } from "./evidence/session.ts";
 import { harnessChildEnvironment } from "./exec/child-environment.ts";
 import { type ExecutionMode, selfTestContainment } from "./exec/execution-mode.ts";
 import { parseIsolationOption } from "./exec/isolation-option.ts";
@@ -34,7 +33,19 @@ export async function verifyPatch(options: CiCommand): Promise<number> {
   process.on("SIGINT", onInterrupt);
   process.on("SIGTERM", onTerminate);
   try {
-    return await verifyPatchUnderCancellation(options, clock, stopping.signal);
+    return await withVerificationEvidence(
+      clock,
+      options.bundleDirectory,
+      (evidence, bundleDirectory, exportEvidence) =>
+        verifyPatchUnderCancellation(
+          options,
+          clock,
+          stopping.signal,
+          evidence,
+          bundleDirectory,
+          exportEvidence,
+        ),
+    );
   } finally {
     process.off("SIGINT", onInterrupt);
     process.off("SIGTERM", onTerminate);
@@ -46,6 +57,9 @@ async function verifyPatchUnderCancellation(
   options: CiCommand,
   clock: Clock,
   stopping: AbortSignal,
+  evidence: EvidenceRecorder,
+  bundleDirectory: string,
+  exportEvidence: () => Promise<void>,
 ): Promise<number> {
   // What the producer said it did, where it said anything. Read strictly: a line this build
   // does not recognize refuses the whole stream rather than being skipped, because a skipped
@@ -60,11 +74,6 @@ async function verifyPatchUnderCancellation(
   if (replayed.length > 0) {
     process.stderr.write(`agent stream: ${replayed.length} event(s) read\n`);
   }
-  const evidence = await openEvidenceSession({
-    root: defaultSessionRoot(homedir()),
-    sessionId: createSessionId(clock, createSystemRandom()),
-    clock,
-  });
   const isolation = parseIsolationOption(options.isolation ?? null, options.workspace);
   if (options.requireIsolation && isolation === null)
     throw new Error("required isolation needs --isolation docker (or another supported runtime)");
@@ -117,6 +126,13 @@ async function verifyPatchUnderCancellation(
     provenance: ["tool-output"],
     payload: JSON.parse(JSON.stringify(sourceIdentity)),
   });
+  const goalContract =
+    options.goalContract === undefined
+      ? undefined
+      : await declareGoalContract(
+          evidence,
+          JSON.parse(await readFile(options.goalContract, "utf8")),
+        );
   const acceptance =
     options.acceptanceContract === undefined
       ? undefined
@@ -135,7 +151,6 @@ async function verifyPatchUnderCancellation(
     provenance: ["user"],
     payload: { task: "independent verification", baseCommit, repository: options.workspace },
   });
-  let bundleDirectory = options.bundleDirectory ?? join(evidence.directory, "bundle");
   let assessmentDigest = "";
   let result: Awaited<ReturnType<typeof verifyIndependently>>;
   try {
@@ -144,7 +159,11 @@ async function verifyPatchUnderCancellation(
       checkoutRoot: evidence.directory,
       baseCommit,
       patch,
+      ...(options.packages === undefined ? {} : { gateOptions: { packages: options.packages } }),
       ...(acceptance === undefined ? {} : { acceptance }),
+      ...(goalContract === undefined
+        ? {}
+        : { goal: { contract: goalContract, evidence, tree: "" } }),
       commandsForCheckout: commands,
       immutablePaths: options.immutablePaths,
       installDependencies: options.installDependencies,
@@ -173,16 +192,7 @@ async function verifyPatchUnderCancellation(
     });
     throw cause;
   } finally {
-    const signing = await resolveSigningKey(createKeychainSecretStore({ platform: platform() }));
-    if (signing.notice !== null) process.stderr.write(`[signing] ${signing.notice}\n`);
-    const bundle = await exportBundle({
-      source: bundleSourceFromRecorder(evidence),
-      destination: bundleDirectory,
-      signingKey: signing.key,
-      clock,
-    });
-    bundleDirectory = bundle.directory;
-    process.stderr.write(`verification evidence: ${bundleDirectory}\n`);
+    await exportEvidence();
   }
 
   if (options.summaryFile !== undefined)

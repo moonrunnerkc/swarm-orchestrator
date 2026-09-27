@@ -27,10 +27,14 @@ export interface IsolationBackend {
    * would have read as containment: a probe that cannot start is not evidence of anything.
    */
   readonly nodeProgram: string;
+  readonly protectsReadOnlyFiles?: boolean;
   run(
     argv: readonly string[],
     options: {
       readonly cwd: string;
+      readonly readOnlyFiles?: readonly string[];
+      readonly stdin?: string;
+      readonly maxOutputBytes?: number;
       readonly timeoutMs: number;
       readonly signal?: AbortSignal | undefined;
       readonly environment?: Record<string, string> | undefined;

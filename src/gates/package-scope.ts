@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { assembleGates, type GateSetOptions } from "./default-gates.ts";
 import type { GateDefinition } from "./gate-definition.ts";
+import { inspectionGates } from "./inspection-gates.ts";
+import { detectEnvironment } from "./project-environment.ts";
 import { detectProject, type ManifestReader, type ProjectDetection } from "./project-type.ts";
 
 const packagePath = z
@@ -43,6 +45,7 @@ export async function assemblePackageGates(
   gates: readonly GateDefinition[];
 }> {
   const units = packageSelection(options.packages ?? []);
+  const environment = await detectEnvironment(read);
   const detections: ProjectDetection[] = [];
   const gates: GateDefinition[] = [
     {
@@ -78,7 +81,10 @@ export async function assemblePackageGates(
     },
   ];
   for (const unit of units) {
-    const detection = await detectProject((path) => read(`${unit}/${path}`));
+    const detection = {
+      ...environment,
+      ...(await detectProject((path) => read(`${unit}/${path}`))),
+    };
     if (detection.types.length === 0)
       throw new Error(`selected package ${unit} has no supported manifest`);
     if (detection.types.some((type) => type !== "node" && type !== "python"))
@@ -111,6 +117,6 @@ export async function assemblePackageGates(
       nodeScriptCommands: {},
       pythonTools: [],
     },
-    gates,
+    gates: [...gates, ...inspectionGates],
   };
 }

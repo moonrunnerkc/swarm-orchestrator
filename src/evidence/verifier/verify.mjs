@@ -15,6 +15,7 @@ import { createHash, createPublicKey, verify as verifySignature } from "node:cry
 import { readdirSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { behaviorStatus } from "./behavior.mjs";
 import { readControllerHistory } from "./controller.mjs";
 
 export { readControllerHistory };
@@ -948,6 +949,56 @@ function collectChecks(directory) {
       requirements.length === obligations.length &&
       new Set(requirements.map((requirement) => requirement.id)).size === requirements.length &&
       new Set(checks.map((check) => check.id)).size === checks.length;
+    let presetAccepted = true;
+    const control = reading?.presetControl;
+    if (["bugfix", "refactor"].includes(contract?.preset?.kind)) {
+      consistent &&=
+        reading.purpose === "base-control"
+          ? control === undefined
+          : reading.purpose === "candidate" && control !== undefined;
+    }
+    if (control !== undefined) {
+      if (
+        contract.preset?.kind !== control.kind ||
+        !/^[a-f0-9]{40,64}$/.test(control.baseTree ?? "")
+      )
+        consistent = false;
+      const prior = records.filter(
+        (candidate) =>
+          candidate.sequence < entry.sequence && candidate.sequence > declaration.sequence,
+      );
+      if (control.kind === "refactor")
+        presetAccepted = prior.some((candidate) => {
+          const base = payloads.get(candidate.payloadDigest);
+          return (
+            candidate.type === "goal-verification" &&
+            base?.contractDigest === reading.contractDigest &&
+            base?.purpose === "base-control" &&
+            base?.tree === control.baseTree &&
+            base?.accepted === true
+          );
+        });
+      else if (control.kind === "bugfix") {
+        const reproducer = checks.find((check) => check.id === contract.preset.reproducer);
+        presetAccepted =
+          reproducer?.behavior?.kind === "cli" &&
+          reproducer.behavior.stdout.length + reproducer.behavior.stderr.length > 0 &&
+          prior.some((candidate) => {
+            const base = payloads.get(candidate.payloadDigest);
+            return (
+              candidate.type === "goal-check" &&
+              base?.checkId === reproducer.id &&
+              base?.tree === control.baseTree &&
+              base?.contractDigest === reading.contractDigest &&
+              base?.observation?.unavailable === null &&
+              !base?.observation?.outputTruncated &&
+              base?.observation?.exitCode === reproducer.behavior.exitCode &&
+              behaviorStatus(reproducer.behavior, base.observation) === "rejected"
+            );
+          });
+      } else presetAccepted = false;
+      consistent &&= control.accepted === presetAccepted;
+    }
     for (const [index, requirement] of requirements.entries()) {
       const obligation = obligations[index];
       consistent &&=
@@ -965,11 +1016,16 @@ function collectChecks(directory) {
         );
         const captured = payloads.get(capturedRecord?.payloadDigest);
         const status =
-          captured?.observation?.unavailable !== null
+          captured?.observation?.unavailable !== null ||
+          captured?.observation?.outputTruncated === true
             ? "unjudged"
-            : captured?.observation?.exitCode === 0 && captured?.unchanged === true
-              ? "accepted"
-              : "rejected";
+            : definition?.behavior !== undefined
+              ? captured?.unchanged === true
+                ? behaviorStatus(definition.behavior, captured.observation)
+                : "rejected"
+              : captured?.observation?.exitCode === 0 && captured?.unchanged === true
+                ? "accepted"
+                : "rejected";
         consistent &&=
           definition !== undefined &&
           capturedRecord !== undefined &&
@@ -983,7 +1039,7 @@ function collectChecks(directory) {
         statuses.push(status);
       }
       const status =
-        statuses.length === 0 || statuses.includes("unjudged")
+        !presetAccepted || statuses.length === 0 || statuses.includes("unjudged")
           ? "unjudged"
           : statuses.every((status) => status === "accepted")
             ? "accepted"

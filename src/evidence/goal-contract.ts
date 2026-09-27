@@ -1,12 +1,15 @@
 import { z } from "zod";
+import { behaviorCheckSchema } from "./behavior-check.ts";
 import { asJsonValue, digestOfJson } from "./canonical-json.ts";
 import type { EvidenceRecorder } from "./session.ts";
 import { contractPath } from "./task-contract.ts";
+import { taskPresetSchema } from "./task-preset.ts";
 
 const id = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
 export const goalContractSchema = z.strictObject({
   version: z.literal(1),
   goal: z.string().min(1),
+  preset: taskPresetSchema.optional(),
   requirements: z
     .array(z.strictObject({ id, description: z.string().min(1), checks: z.array(id) }))
     .min(1)
@@ -15,6 +18,7 @@ export const goalContractSchema = z.strictObject({
     .array(
       z.strictObject({
         id,
+        behavior: behaviorCheckSchema.optional(),
         command: z.string().min(1).max(8192),
         author: z.enum(["user", "model"]),
         exposure: z.enum(["shared", "withheld"]),
@@ -58,6 +62,14 @@ export function freezeGoalContract(value: unknown): { contract: GoalContract; di
     if (new Set(names).size !== names.length)
       throw new Error(`duplicate ${label} identity in goal contract`);
   }
+  const preset = contract.preset;
+  if (
+    preset?.kind === "bugfix" &&
+    !contract.checks.some(
+      (check) => check.id === preset.reproducer && check.behavior?.kind === "cli",
+    )
+  )
+    throw new Error("bugfix needs a named CLI reproducer with bounded output assertions");
   for (const requirement of contract.requirements) {
     if (
       new Set(requirement.checks).size !== requirement.checks.length ||

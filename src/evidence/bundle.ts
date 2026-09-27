@@ -228,9 +228,10 @@ function stripPayloads(dag: EvidenceDag): unknown {
 }
 
 async function readVerifierScript(): Promise<string> {
-  const [verifier, controller] = await Promise.all([
+  const [verifier, controller, behavior] = await Promise.all([
     readFile(new URL("./verifier/verify.mjs", import.meta.url), "utf8"),
     readFile(new URL("./verifier/controller.mjs", import.meta.url), "utf8"),
+    readFile(new URL("./verifier/behavior.mjs", import.meta.url), "utf8"),
   ]);
   const controllerImport = 'import { readControllerHistory } from "./controller.mjs";';
   const cryptoImport = 'import { createHash } from "node:crypto";';
@@ -242,10 +243,15 @@ async function readVerifierScript(): Promise<string> {
     .replace(cryptoImport, "")
     .replace("export function readControllerHistory", "function readControllerHistory");
   // The exported verifier remains one file importing only node builtins, as historical copies do.
-  return verifier.replace(
-    controllerImport,
-    `const readControllerHistory = (() => {${embedded}\nreturn readControllerHistory;})();`,
-  );
+  return verifier
+    .replace(
+      'import { behaviorStatus } from "./behavior.mjs";',
+      behavior.replace("export function behaviorStatus", "function behaviorStatus"),
+    )
+    .replace(
+      controllerImport,
+      `const readControllerHistory = (() => {${embedded}\nreturn readControllerHistory;})();`,
+    );
 }
 
 /** Beside the verifier and importing it, so the two ship together and share one predicate reader. */

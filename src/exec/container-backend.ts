@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { lstat, realpath } from "node:fs/promises";
 import { isAbsolute, relative } from "node:path";
 import type { IsolationBackend } from "./execution-mode.ts";
 import { runProcessGroup } from "./run-process.ts";
@@ -38,6 +39,7 @@ export function createContainerBackend(options: ContainerBackendOptions): Isolat
   return {
     name: `${options.runtime}:${options.image}`,
     nodeProgram: "node",
+    protectsReadOnlyFiles: true,
     run: async (argv, runOptions) => {
       const execute = options.runProcess ?? runProcessGroup;
       const subdirectory = relative(options.workspaceRoot, runOptions.cwd);
@@ -64,6 +66,19 @@ export function createContainerBackend(options: ContainerBackendOptions): Isolat
           startFailure: null,
         };
       }
+      const readOnlyMounts: string[] = [];
+      for (const file of runOptions.readOnlyFiles ?? []) {
+        const path = relative(options.workspaceRoot, file);
+        if (
+          path.startsWith("..") ||
+          isAbsolute(path) ||
+          /[:,\r\n]/.test(file) ||
+          !(await lstat(file)).isFile() ||
+          (await realpath(file)) !== file
+        )
+          throw new Error("read-only acceptance file must be an ordinary file inside the checkout");
+        readOnlyMounts.push(`--volume=${file}:${workspaceMountPoint}/${path}:ro`);
+      }
       const deadline = Date.now() + runOptions.timeoutMs;
       const identity = `swarm-${randomUUID()}`;
       const runtimeOptions = {
@@ -81,6 +96,7 @@ export function createContainerBackend(options: ContainerBackendOptions): Isolat
           options.runtime,
           [
             "create",
+            ...(runOptions.stdin === undefined ? [] : ["--interactive"]),
             `--name=${identity}`,
             "--label=dev.swarm.runtime=true",
             ...(options.sessionId === undefined
@@ -89,6 +105,7 @@ export function createContainerBackend(options: ContainerBackendOptions): Isolat
             `--network=${options.network ?? "none"}`,
             "--read-only",
             `--volume=${options.workspaceRoot}:${workspaceMountPoint}:rw`,
+            ...readOnlyMounts,
             "--tmpfs=/tmp:rw,size=256m",
             `--workdir=${workspaceMountPoint}${subdirectory ? `/${subdirectory}` : ""}`,
             `--user=${options.user}`,
@@ -114,11 +131,22 @@ export function createContainerBackend(options: ContainerBackendOptions): Isolat
           await options.observeLifecycle?.({ identity, phase: "created" });
         ran =
           created.exitCode === 0
-            ? await execute(options.runtime, ["start", "--attach", identity], {
-                ...runtimeOptions,
-                timeoutMs: Math.max(0, deadline - Date.now()),
-                signal: runOptions.signal,
-              })
+            ? await execute(
+                options.runtime,
+                [
+                  "start",
+                  "--attach",
+                  ...(runOptions.stdin === undefined ? [] : ["--interactive"]),
+                  identity,
+                ],
+                {
+                  ...runtimeOptions,
+                  timeoutMs: Math.max(0, deadline - Date.now()),
+                  signal: runOptions.signal,
+                  ...(runOptions.stdin === undefined ? {} : { stdin: runOptions.stdin }),
+                  maxOutputBytes: runOptions.maxOutputBytes ?? runtimeOptions.maxOutputBytes,
+                },
+              )
             : created;
       } finally {
         await execute(options.runtime, ["rm", "--force", identity], runtimeOptions);

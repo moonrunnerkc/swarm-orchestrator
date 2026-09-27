@@ -129,3 +129,12 @@ it("rejects ambiguous inputs before spawning Git", async () => {
 it("retains ancestry syntax for existing exact-base callers", () => {
   expect(validateSourceRef("HEAD~1")).toBe("HEAD~1");
 });
+
+it("refuses contradictory file headers before they can escape the declared scope", () => {
+  expect(() =>
+    validatePatchForms("diff --git a/safe b/safe\n--- a/safe\n+++ b/../outside\n"),
+  ).toThrow("headers disagree");
+  expect(() =>
+    validatePatchForms("diff --git a/old b/new\nrename from other\nrename to new\n"),
+  ).toThrow("headers disagree");
+});

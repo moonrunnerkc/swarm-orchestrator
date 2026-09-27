@@ -21,6 +21,7 @@ import { assembleGateSet } from "./engine.ts";
 import { normalizePath } from "./file-set.ts";
 import { defaultGateTimeoutMs, type GateCommandRunner } from "./gate-definition.ts";
 import { type GoalVerification, verifyGoal } from "./goal-acceptance.ts";
+import { GoalEffectReconciliationError } from "./goal-effects.ts";
 import { nodeSyntaxCheck } from "./mutant-parse.ts";
 import type { LineHits } from "./mutant-witness.ts";
 import type { BondedMutant, OracleBond, OracleBondVerdict } from "./oracle-bond.ts";
@@ -32,8 +33,10 @@ import {
   oracleReachedTheChange,
   type ReachSetAside,
 } from "./oracle-reach.ts";
+import { outsidePackages } from "./package-scope.ts";
 import { parseLineHits } from "./parsers.ts";
 import { pathsInPatch } from "./patch-paths.ts";
+import { enforceUpgrade, reproducedBug } from "./preset-verification.ts";
 import { parseUnifiedDiff } from "./unified-diff.ts";
 import { readV8Coverage } from "./v8-coverage.ts";
 
@@ -218,6 +221,13 @@ export async function verifyIndependently(
     ...(options.goal === undefined ? [] : goalImmutablePaths(options.goal.contract)),
   ];
   const touched = pathsInPatch(options.patch);
+  const outside = options.gateOptions?.packages?.length
+    ? outsidePackages(touched, options.gateOptions.packages)
+    : [];
+  if (outside.length > 0)
+    throw new Error(
+      `change outside selected packages is unverified: ${outside.join(", ")}; expand the declared package scope or verify the whole repository`,
+    );
   const forbidden = touched.filter((path) => matchesAny(path, immutable));
   if (forbidden.length > 0) {
     return {
@@ -323,6 +333,20 @@ export async function verifyIndependently(
       };
     }
 
+    if (options.goal?.contract.preset !== undefined) {
+      await enforceUpgrade({
+        preset: options.goal.contract.preset,
+        patch: options.patch,
+        checkout,
+        base: options.baseCommit,
+        commands: options.commands,
+        timeoutMs,
+      });
+      if (options.goal.contract.preset.kind === "upgrade" && options.installDependencies !== true)
+        throw new Error(
+          "upgrade verification requires explicitly authorized --install from the candidate lockfile",
+        );
+    }
     const install =
       options.installDependencies === true
         ? await installFromLockfile({
@@ -405,11 +429,61 @@ export async function verifyIndependently(
             evidence: evaluator.evidence,
             execute: (requirement, target) => evaluator.execute(requirement, target, checkout),
           });
+    let presetControl: GoalVerification["presetControl"];
+    const preset = options.goal?.contract.preset;
+    if (options.goal !== undefined && (preset?.kind === "bugfix" || preset?.kind === "refactor")) {
+      if (!(await resetToBase(checkout, options, timeoutMs)))
+        throw new Error("cannot prepare preset base control");
+      const baseTreeRun = await options.commands.runVouched(["git", "rev-parse", "HEAD^{tree}"], {
+        cwd: checkout,
+        timeoutMs,
+      });
+      const baseTree = baseTreeRun.stdout.trim();
+      if (baseTreeRun.exitCode !== 0 || !/^[a-f0-9]{40,64}$/.test(baseTree))
+        throw new Error("preset base tree unavailable");
+      const baseResult = await verifyGoal({
+        ...options.goal,
+        tree: baseTree,
+        purpose: "base-control",
+        checkout,
+        commands: options.commands,
+        timeoutMs,
+      });
+      presetControl = {
+        kind: preset.kind,
+        baseTree,
+        accepted:
+          preset.kind === "refactor"
+            ? baseResult.accepted
+            : reproducedBug(options.goal.contract, options.goal.evidence, baseTree),
+      };
+      restored = await restorePatch(checkout, options, timeoutMs);
+    }
+    let goalTree = options.goal?.tree ?? "";
+    if (options.goal !== undefined && goalTree === "" && restored) {
+      const staged = await options.commands.runVouched(["git", "add", "--all"], {
+        cwd: checkout,
+        timeoutMs,
+      });
+      const written = await options.commands.runVouched(["git", "write-tree"], {
+        cwd: checkout,
+        timeoutMs,
+      });
+      if (
+        staged.exitCode !== 0 ||
+        written.exitCode !== 0 ||
+        !/^[a-f0-9]{40,64}$/.test(written.stdout.trim())
+      )
+        throw new Error("cannot pin final candidate tree for goal checks");
+      goalTree = written.stdout.trim();
+    }
     const goalAcceptance =
       options.goal === undefined || !restored
         ? undefined
         : await verifyGoal({
             ...options.goal,
+            tree: goalTree,
+            ...(presetControl === undefined ? {} : { presetControl }),
             checkout,
             commands: options.commands,
             timeoutMs,
@@ -524,6 +598,10 @@ export async function verifyIndependently(
       checkoutPath: checkout,
     };
   } catch (cause) {
+    if (cause instanceof GoalEffectReconciliationError) {
+      preserveCheckout = true;
+      throw cause;
+    }
     if (cause instanceof DependencySetupReconciliationError) {
       preserveCheckout = true;
       throw new DependencySetupReconciliationError(`${checkout}: ${cause.message}`);
@@ -868,7 +946,10 @@ async function runChecks(
     if (gate.source.kind !== "command") {
       continue;
     }
-    const observed = await options.commands.run(gate.source.command, { cwd: checkout, timeoutMs });
+    const observed =
+      gate.source.argv === undefined
+        ? await options.commands.run(gate.source.command, { cwd: checkout, timeoutMs })
+        : await options.commands.runVouched(gate.source.argv, { cwd: checkout, timeoutMs });
     const reading = gate.parse(observed);
     results.push({ id: gate.id, status: reading.status, detail: reading.detail });
   }
