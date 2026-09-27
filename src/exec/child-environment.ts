@@ -99,6 +99,10 @@ export function childEnvironment(
   }
 
   const variables: Record<string, string> = {
+    COREPACK_ENABLE_NETWORK: "0",
+    COREPACK_ENABLE_DOWNLOAD_PROMPT: "0",
+    COREPACK_ENABLE_AUTO_PIN: "0",
+    UV_PYTHON_DOWNLOADS: "never",
     HOME: options.homeDir,
     // The system scratch directory, which exists and holds no credential. A TMPDIR naming a
     // directory that is not there does not fail loudly: node's test runner writes a zero-byte

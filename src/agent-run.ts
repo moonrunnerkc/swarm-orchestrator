@@ -27,7 +27,6 @@ import type { ResolveRequest } from "./gates/auto-resolve.ts";
 import type { SingleFileCommand } from "./gates/base-control.ts";
 import { restrictFileSet } from "./gates/contract-scope.ts";
 import type { GateSetOptions } from "./gates/default-gates.ts";
-import { installFromLockfile } from "./gates/dependency-install.ts";
 import {
   assembleGateSet,
   defaultDiffBudget,
@@ -35,6 +34,7 @@ import {
   runGatesEngine,
   sealAssembledCriteria,
 } from "./gates/engine.ts";
+import { preflightEnvironment } from "./gates/environment-preflight.ts";
 import { type FileSetRegistry, writeRefusal } from "./gates/file-set.ts";
 import { createAmendFileSetTool, createDeclareFileSetTool } from "./gates/file-set-tool.ts";
 import { capabilityOf } from "./gates/gate-capability.ts";
@@ -42,6 +42,7 @@ import type { DiffBudget } from "./gates/gate-definition.ts";
 import { createGitWorkspaceProbe } from "./gates/git-workspace.ts";
 import { captureInheritedChanges, type InheritedChanges } from "./gates/inherited-changes.ts";
 import { createNodeCommandRunner } from "./gates/node-command-runner.ts";
+import { prepareDependencies } from "./gates/prepare-dependencies.ts";
 import { detectProject } from "./gates/project-type.ts";
 import type { EscalationSettings } from "./gates/repair-policy.ts";
 import { diffAgainstBase } from "./gates/scratch-index.ts";
@@ -86,9 +87,9 @@ export function projectInstruction(types: readonly string[]): string {
   const named =
     types.length === 1 ? types[0] : `${types.slice(0, -1).join(", ")} and ${types.at(-1)}`;
   return (
-    ` The harness detects this as a ${named} project, so write the change in that language and` +
-    " leave its manifest alone: the command that measures you is read from the base commit, and" +
-    " editing it changes nothing except which files you are answerable for."
+    ` The harness detects this as a ${named} project, so write the change in that language.` +
+    " The check commands are pinned to the base commit. Manifest changes require explicit" +
+    " task authority and never change the checks that measure this run."
   );
 }
 
@@ -482,8 +483,11 @@ async function executeAgentTask(
   }
 
   if (options.installDependencies === true) {
-    const setup = await installFromLockfile({
-      workspace: options.workspace,
+    const setup = await prepareDependencies({
+      checkout: options.workspace,
+      ...(options.gateOptions?.packages === undefined
+        ? {}
+        : { packages: options.gateOptions.packages }),
       commands: createNodeCommandRunner(
         options.clock,
         harnessChildEnvironment(),
@@ -497,6 +501,30 @@ async function executeAgentTask(
     });
     if (!setup.succeeded) throw new Error(setup.detail);
   }
+
+  const environmentGates = await assembleGateSet({
+    workspaceRoot: options.workspace,
+    criteriaRef: criteriaRefOf(options),
+    ...(options.gateOptions === undefined ? {} : { gateOptions: options.gateOptions }),
+  });
+  await preflightEnvironment({
+    workspace: options.workspace,
+    ...(options.gateOptions?.packages === undefined
+      ? {}
+      : { packages: options.gateOptions.packages }),
+    gates: environmentGates.gates,
+    signal: options.abortSignal,
+    commands: createNodeCommandRunner(
+      options.clock,
+      harnessChildEnvironment(),
+      options.isolation,
+      options.abortSignal,
+      options.commandPool,
+    ),
+    evidence: options.evidence,
+    note: (text) => options.emit({ type: "plan", text }),
+    timeoutMs: wall.loopBudgetMs(),
+  });
 
   const loopDependencies = {
     model: options.model,

@@ -35,7 +35,17 @@ describe("what a child process inherits", () => {
       { homeDir: workerHome },
     );
 
-    expect(Object.keys(built.variables).sort()).toEqual(["HOME", "PATH", "TMPDIR"]);
+    expect(Object.keys(built.variables).sort()).toEqual([
+      "COREPACK_ENABLE_AUTO_PIN",
+      "COREPACK_ENABLE_DOWNLOAD_PROMPT",
+      "COREPACK_ENABLE_NETWORK",
+      "HOME",
+      "PATH",
+      "TMPDIR",
+      "UV_PYTHON_DOWNLOADS",
+    ]);
+    expect(built.variables.COREPACK_ENABLE_NETWORK).toBe("0");
+    expect(built.variables.UV_PYTHON_DOWNLOADS).toBe("never");
   });
 
   it("withholds an unrecognized name, because the floor is an allowlist and not a denylist", () => {
@@ -127,6 +137,10 @@ describe("what a child process inherits", () => {
     );
 
     expect(built.variables).toEqual({
+      COREPACK_ENABLE_AUTO_PIN: "0",
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0",
+      COREPACK_ENABLE_NETWORK: "0",
+      UV_PYTHON_DOWNLOADS: "never",
       PATH: "/usr/bin",
       CI: "true",
       HOME: workerHome,

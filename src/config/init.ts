@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { nodeScriptCandidates } from "../gates/default-gates.ts";
 import type { GateSeverity, OverrideParserName } from "../gates/gate-definition.ts";
 import { harnessReportingCommand } from "../gates/harness-reporting.ts";
-import { packageSelection } from "../gates/package-scope.ts";
+import { detectSelectedProject, packageSelection } from "../gates/package-scope.ts";
 import { detectProject, type ProjectDetection } from "../gates/project-type.ts";
 import { renderRunnerArgv, structuredRunner } from "../gates/structured-runner.ts";
 import { swarmTomlFileName } from "./swarm-toml.ts";
@@ -198,8 +198,9 @@ export async function initializeSwarmToml(deps: InitDependencies): Promise<InitO
     const selected = packageSelection(deps.packages);
     const gates: PlannedGate[] = [];
     for (const unit of selected) {
-      const detection = await detectProject((manifest) =>
-        deps.readFile(join(deps.workspace, unit, manifest)),
+      const detection = await detectSelectedProject(
+        (manifest) => deps.readFile(join(deps.workspace, manifest)),
+        unit,
       );
       if (!detection.types.length)
         throw new Error(`selected unit ${unit} has no supported manifest`);
@@ -207,7 +208,7 @@ export async function initializeSwarmToml(deps: InitDependencies): Promise<InitO
         ...planGates(detection).map((gate) => ({
           ...gate,
           id: `${gate.id}:${unit}`,
-          command: `cd '${unit}' && ${gate.command}`,
+          command: gate.command,
         })),
       );
     }
@@ -216,7 +217,7 @@ export async function initializeSwarmToml(deps: InitDependencies): Promise<InitO
       "[gates]",
       ...gates.map(
         (gate) =>
-          `${JSON.stringify(gate.id)} = { command = ${JSON.stringify(gate.command)}, parser = ${JSON.stringify(gate.parser)} }`,
+          `${JSON.stringify(gate.id)} = { command = ${JSON.stringify(gate.command)}, parser = ${JSON.stringify(gate.parser)}, severity = ${JSON.stringify(gate.severity)} }`,
       ),
       "",
     ].join("\n");

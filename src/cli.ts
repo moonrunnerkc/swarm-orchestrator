@@ -40,18 +40,15 @@ import { reportGates } from "./cli-run-report.ts";
 import { diffBudgetFrom, gateOptionsFrom, settingsFor } from "./cli-run-settings.ts";
 import { createSystemClock, createSystemRandom } from "./cli-runtime-inputs.ts";
 import { chooseModel, select } from "./cli-select.ts";
+import { presetTaskContract } from "./cli-task-contract.ts";
 import { logReward, priceTask } from "./cli-task-cost.ts";
-import { finalizeTaskGoal, preflightTaskGoal } from "./cli-task-goal.ts";
+import { finalizeTaskGoal, preflightTaskGoal, taskGoalGate } from "./cli-task-goal.ts";
 import { startInterface } from "./cli-terminal.ts";
 import { verifyBundle } from "./cli-verify.ts";
 import type { StopReason } from "./core/termination.ts";
 import { readBundle } from "./evidence/bundle.ts";
 import { buildEvidenceDag } from "./evidence/dag.ts";
-import {
-  declareGoalContract,
-  freezeGoalContract,
-  goalImmutablePaths,
-} from "./evidence/goal-contract.ts";
+import { declareGoalContract, freezeGoalContract } from "./evidence/goal-contract.ts";
 import { createRecordingModelClient } from "./evidence/model-call-recording.ts";
 import { replayBundle } from "./evidence/replay.ts";
 import { collectSessions, describeCollection, olderThanMs } from "./evidence/retention.ts";
@@ -382,7 +379,10 @@ async function run(options: RunCommand): Promise<number> {
           isolation,
           install: options.recovery?.goal?.install ?? options.installDependencies === true,
         };
-  const gateOptions = gateOptionsFrom(settings);
+  const gateOptions = {
+    ...gateOptionsFrom(settings),
+    ...(goalContext === undefined ? {} : { acceptanceGate: taskGoalGate(goalContext) }),
+  };
   const diffBudget = diffBudgetFrom(settings);
   // Off unless a destination is named. A telemetry pipeline that is on by default is a place
   // secrets end up somewhere nobody scrubs, and payload capture stays a second decision on top.
@@ -444,38 +444,16 @@ async function run(options: RunCommand): Promise<number> {
       ...(presetGoal === undefined
         ? {}
         : {
-            contract: {
-              version: 3 as const,
-              scopeKind: "workspace" as const,
-              taskId: "preset",
-              objective: options.task,
-              dependsOn: [],
-              allowedPaths:
-                presetGoal.preset?.kind === "upgrade"
-                  ? [
-                      presetGoal.preset.manifest,
-                      presetGoal.preset.lockfile,
-                      ...presetGoal.preset.sourcePaths,
-                    ]
-                  : ["**"],
-              immutablePaths: [...goalImmutablePaths(presetGoal)],
-              allowedTools: ["read", "write", "edit", "list", "search", "shell"] as (
-                | "read"
-                | "write"
-                | "edit"
-                | "list"
-                | "search"
-                | "shell"
-              )[],
-              network: isolation === null ? ("unrestricted" as const) : ("denied" as const),
-              requiredChecks: [],
-              budget: {
-                maxSteps: settings.maxSteps,
-                maxWallMs: (settings.maxWallMinutes ?? 30) * 60000,
-              },
-              riskTier: "medium" as const,
-              scopeAuthority: "human" as const,
-            },
+            contract: presetTaskContract({
+              goal: presetGoal,
+              task: options.task,
+              ...(options.recovery === undefined
+                ? {}
+                : { originalObjective: options.recovery.previousSpec.task }),
+              maxSteps: settings.maxSteps,
+              maxWallMs: (settings.maxWallMinutes ?? 30) * 60000,
+              network: isolation === null ? "unrestricted" : "denied",
+            }),
           }),
       workspace: options.workspace,
       runStorePath: runStorePath(),
