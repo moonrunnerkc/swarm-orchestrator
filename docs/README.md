@@ -6,7 +6,10 @@
 | [`cli.md`](cli.md) | every command and flag, with what each is for |
 | [`using.md`](using.md) | sessions, several workers, the screen, and `swarm.toml` |
 | [`verifying.md`](verifying.md) | bonds, `swarm ci`, the oracle and its reach, the nine answers, and what is not claimed |
-| [`verify-only.md`](verify-only.md) | `swarm verify`, `swarm ci` and `swarm gates` with no model, walked through on committed artifacts |
+| [`verify-only.md`](verify-only.md) | `swarm check`, `swarm verify`, `swarm ci` and `swarm gates` with no model, walked through on committed artifacts |
+| [`broad-use.md`](broad-use.md) | source inputs, package scope, acceptance instruments, challenges and the GitHub Action |
+| [`integrations.md`](integrations.md) | the Claude Code hook, the MCP server and the pre-commit hook, each a client of the same verifier |
+| [`verifier-first/`](verifier-first/README.md) | the verifier-first campaign: the completion index, baseline, Node 22 record and dogfood manifest |
 | [`claims.md`](claims.md) | every public claim and the committed artifact behind it, and what may not be said |
 | [`build-guide.md`](build-guide.md) | the design, the non-goals, and the residuals that ship open |
 | [`ratchet-inputs.md`](ratchet-inputs.md) | every input the ratchet reads, who can author it, and what was moved |

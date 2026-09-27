@@ -33,7 +33,7 @@ established or explicitly handed off with its remaining manifest.
 | R6 | Verifier-first README with a real tamper GIF and tested commands | | | | not started |
 | R7 | Registered, reproducible study of 50 recent AI-authored PRs | | | | not started |
 | R8 | Launch posts where users discuss the problem, with a real 48-hour response log | | | | not started |
-| R9 | Claude Code hook, MCP server and pre-commit hook over the released verifier | | | | not started |
+| R9 | Claude Code hook, MCP server and pre-commit hook over the released verifier | `src/integrations/claude-hook.ts`, `mcp-server.ts`, `pre-commit.ts`; `swarm-verify hook\|mcp\|pre-commit`; [integrations.md](../integrations.md) | `src/integrations/*.test.ts`: hook decisions and settings edits, a real MCP session over stdio (negotiation, check, evidence, refusals, cancellation), staged-tree runs including a real blocked commit | client sessions against the published package pending the prerelease | implemented against the local package |
 | R10 | Working issue-to-fix loop with a named owner and tested notifications | | | | not started |
 
 ## Technical scope (sections 3 to 7 and 16)

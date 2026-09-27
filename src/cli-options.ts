@@ -6,7 +6,10 @@ import {
   type CiCommand,
   defaultBaseRef,
   type GatesCommand,
+  type HookCommand,
   InvalidCommandLineError,
+  type McpCommand,
+  type PreCommitCommand,
   parseVerifyOnlyCommand,
   tokenizeCommandLine,
   type VerdictCommand,
@@ -17,7 +20,17 @@ import type { InterfaceFlags } from "./config/interface-settings.ts";
 import { nearestName } from "./edit-distance.ts";
 import { bundledShortlistKeyword } from "./select/shortlist-source.ts";
 
-export type { ActionCommand, CheckCommand, CiCommand, GatesCommand, VerdictCommand, VerifyCommand };
+export type {
+  ActionCommand,
+  CheckCommand,
+  CiCommand,
+  GatesCommand,
+  HookCommand,
+  McpCommand,
+  PreCommitCommand,
+  VerdictCommand,
+  VerifyCommand,
+};
 export { InvalidCommandLineError };
 
 /**
@@ -275,6 +288,9 @@ export type CommandLine =
   | GatesCommand
   | CheckCommand
   | VerdictCommand
+  | HookCommand
+  | McpCommand
+  | PreCommitCommand
   | ActionCommand
   | SelectCommand
   | CalibrateCommand
