@@ -1,5 +1,12 @@
 import { spawnSync } from "node:child_process";
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 
 if (process.argv[2] === "assert") {
@@ -21,6 +28,20 @@ if (process.argv[2] === "assert") {
     )
   )
     throw Error("Action summary omitted requirement results");
+  const verdict = JSON.parse(readFileSync(process.env.SWARM_VERDICT, "utf8"));
+  if (
+    process.env.SWARM_RESULT !== (good ? "verified" : "not-verified") ||
+    verdict.decision.result !== process.env.SWARM_RESULT ||
+    verdict.head !== process.env.SWARM_HEAD ||
+    verdict.policy.isolation !== "docker"
+  )
+    throw Error("verdict document disagrees with the verifier's result or the pinned head");
+  // A push event has no pull request, so no comment; the verdict is signed all the same.
+  if (process.env.SWARM_COMMENT !== "skipped") throw Error("a push run must not publish a comment");
+  if (process.env.SWARM_ATTESTATION !== "signed")
+    throw Error(`the verdict was not signed on this run (${process.env.SWARM_ATTESTATION})`);
+  if (!existsSync(join(process.env.SWARM_EVIDENCE, "attestation", "verdict.sigstore.json")))
+    throw Error("the signed attestation bundle was not retained beside the evidence");
   console.log(`Trusted ${expected} control confirmed verifier status ${process.env.SWARM_STATUS}.`);
 } else {
   const root = mkdtempSync(join(process.env.RUNNER_TEMP, "swarm-control-"));

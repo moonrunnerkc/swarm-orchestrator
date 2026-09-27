@@ -33,6 +33,13 @@ export const commandDefinitions: readonly CommandDefinition[] = [
     model: "none",
   },
   {
+    name: "action",
+    syntax: "action verify | comment | retain",
+    description: "one step of the GitHub Action, read from the runner's environment",
+    smoke: { args: ["verify"], exits: [1], output: "GITHUB_EVENT_NAME|GitHub Actions" },
+    model: "none",
+  },
+  {
     name: "gates",
     syntax: "gates [--workspace <dir>] [--base <ref>]",
     description: "run the gates without a model",

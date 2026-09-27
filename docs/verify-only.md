@@ -1,10 +1,13 @@
 # Verifying without a model
 
-Four commands need no model, no API key and no local backend: `swarm check` discovers what a
+Five commands need no model, no API key and no local backend: `swarm check` discovers what a
 project declares and runs it unattended, `swarm verify` checks a bundle, `swarm ci` verifies a
-patch in a fresh checkout of its base, and `swarm gates` measures a workspace. This page walks
-through each one. Every transcript below was captured from the command it sits under, run with
-an environment holding nothing but `PATH` and `HOME`.
+patch in a fresh checkout of its base, `swarm gates` measures a workspace, and `swarm action`
+is the GitHub Action's three steps (`verify`, `comment`, `retain`), which read the runner's
+environment and refuse by name anywhere else. This page walks through the first four; the
+Action is in [the broad-use guide](broad-use.md#github-action). Every transcript below was
+captured from the command it sits under, run with an environment holding nothing but `PATH`
+and `HOME`.
 
 ## swarm check: a first result with nothing configured
 

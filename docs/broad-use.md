@@ -256,25 +256,70 @@ the final tree. Generated checks never replace failed pinned criteria.
 
 ## GitHub Action
 
-Copy [the consumer workflow](examples/swarm-verification.yml) and the clamp contract into the
-fixture repository's base branch before proposing its clamp fix. For another project, author
-and review its own acceptance contract on the trusted base first. The example pins the Action:
+The Action is a thin client of the installed verifier: three steps of the same binary,
+`swarm-verify action verify`, `comment` and `retain`, with GitHub's own attestation action
+between them. The complete minimal workflow for a new user is
+[examples/swarm-verification.yml](examples/swarm-verification.yml): one job, one `uses`, and
+the permissions a signed comment needs. The consumer's own checkout is not used; the Action
+fetches the pull request's head and base by commit id into a checkout it owns.
 
 ```yaml
-uses: moonrunnerkc/swarm-orchestrator@95891957987ec758f58a81ebb800933439f252de
+      - uses: moonrunnerkc/swarm-verify@v1
 ```
 
-The Action downloads that implementation separately from candidate code, selects Node 24,
-builds its standalone verifier, and checks immutable head/base IDs in disposable containers on
-a GitHub-hosted runner. It refuses `pull_request_target` and self-hosted mode. Its permissions
-are read-only; neither checkout persists credentials. Candidate commands receive no retrieval
-credentials, release credentials, signing secret or Docker socket. Use a prepared trusted image
-for dependencies that the network-disabled candidate needs; the Action does not install them.
+What one run does, in order:
 
-The job summary names regression, individual requirements, unmeasured checks, execution limits
-and evidence digests. Outputs are `status`, `report`, `summary`, `evidence`, `artifact` and
-`retention`. Evidence is uploaded on rejection as well as success, retained seven days, and
-bounded to 32 MB total, 8 MB per file and 4096 files. Incomplete retention fails the Action while
-preserving the original verifier status. An ephemeral signature does not establish signer trust.
-The repository's [control workflow](../.github/workflows/action-controls.yml) asserts both the
-passing and the genuinely rejected candidate; a negative run cannot pass just by hiding errors.
+1. `verify` reads the event, fetches the exact head and base (or GitHub's test merge, under
+   `target: merge`) from the event repository, runs `swarm-verify ci --branch <head> --base
+   <base>` with candidate commands behind `--isolation docker:<image> --require-isolation`,
+   and writes `report.json` (`swarm.ci.v1`), `summary.md`, the evidence bundle with its own
+   verifier, and `verdict.json`: the canonical `swarm-verify.verdict.v1` document binding
+   repository, pull request, head, base, tree, patch digest, verifier version, policy, run
+   identity, the digests of the report and the bundle's chain head, and the decision.
+2. `actions/attest` signs the verdict document as a GitHub artifact attestation with predicate
+   type `https://github.com/moonrunnerkc/swarm-verify/verdict/v1`. That uses Sigstore through
+   the workflow's OIDC identity; no key is managed anywhere. It needs `id-token: write`,
+   `attestations: write` and `artifact-metadata: write`.
+3. `comment` posts one comment on the pull request and updates it in place on reruns. The
+   comment carries a marker bound to the pull request and the head it describes, and before
+   writing it reads the pull request's current head: a run for an older head finds a newer
+   one and posts nothing, reporting `stale-head`. Candidate-shaped text is escaped and mentions
+   are defused; the body is bounded below GitHub's limit. Needs `pull-requests: write`.
+4. `retain` copies the report, summary, verdict, attestation bundle and evidence bundle within
+   bounds (32 MB, 8 MB per file, 4096 files) and the whole is uploaded as one artifact.
+5. The final step returns the verification status: 0 for verified or a regression-only pass,
+   1 for not verified (or for a regression-only pass under `require-task: true`), 4 for an
+   incomplete, refused or head-changed run. Attestation and comment status are separate
+   outputs; a failed signature or publication is never reported as a delivered signed comment.
+
+Verify a signed verdict from outside the run, against Sigstore's public trust root rather
+than anything the run supplied:
+
+```sh
+gh attestation verify verdict.json --repo OWNER/REPO \
+  --predicate-type https://github.com/moonrunnerkc/swarm-verify/verdict/v1 \
+  --signer-workflow OWNER/REPO/.github/workflows/swarm-verify.yml
+sha256sum report.json   # must equal verdict.json's evidence.reportDigest
+```
+
+Fork and Dependabot pull requests run under a read-only token with no OIDC identity, so on a
+plain `pull_request` run their comment and signature report `unavailable` while the
+verification and the artifact still happen. The supported route for them is
+[examples/swarm-verification-forks.yml](examples/swarm-verification-forks.yml): a
+`pull_request_target` workflow whose definition comes from the base branch, under which the
+Action refuses to run candidate code anywhere but inside docker isolation. Candidate code
+never sees the job's token, the runner's socket or the evidence directory; it sees a
+network-disabled container with the owned checkout mounted.
+
+Inputs beyond the defaults: `target` (`head` or `merge`), `image`, `isolation` (`host` is
+explicit and recorded), `goal-contract`, `oracle`, `packages`, `install`, `require-task`,
+`comment`, `attest`, and for events without a pull request `head`, `base`, `workspace` and
+`source-url`. Self-hosted runners are refused unless `allow-self-hosted` says otherwise
+knowingly. The repository's [control workflow](../.github/workflows/action-controls.yml) runs
+the source-built Action over a good and a genuinely rejected candidate on every push, and
+asserts the verdict document, its signature and the absence of a comment on a push event.
+
+Pin the Action by full commit SHA where immutability matters:
+`uses: moonrunnerkc/swarm-verify@<sha> # v1.x.y`. The canonical implementation lives in this
+repository under `src/action/`; the distribution repository holds only the Action manifest and
+a lockfile naming the exact published `swarm-verify` version it installs.

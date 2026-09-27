@@ -87,6 +87,14 @@ const pathSuffixes = [
  */
 const documentedAsRemoved = new Map([
   ["redteam/leep/", "removed by the 08-18 run, which the documents naming it record"],
+  [
+    "scripts/action-artifacts.mjs",
+    "moved into src/action/artifacts.ts when the Action became a client of the installed verifier; the 2026-09-27 execution record names it as it was",
+  ],
+  [
+    "scripts/action-verify.mjs",
+    "moved into src/action/verify.ts when the Action became a client of the installed verifier",
+  ],
 ]);
 
 /**

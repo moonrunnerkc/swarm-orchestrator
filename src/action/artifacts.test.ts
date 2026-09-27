@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { retainActionArtifacts } from "./action-artifacts.mjs";
+import { retainActionArtifacts } from "./artifacts.ts";
 
 it("retains bounded diagnostics and names omitted evidence without changing the original", async () => {
   const root = await mkdtemp(join(tmpdir(), "swarm-action-retention-"));
