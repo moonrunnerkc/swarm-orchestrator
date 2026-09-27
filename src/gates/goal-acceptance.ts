@@ -1,5 +1,5 @@
 import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import { asJsonValue } from "../evidence/canonical-json.ts";
 import { freezeGoalContract, type GoalContract } from "../evidence/goal-contract.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
@@ -23,8 +23,15 @@ export interface GoalVerification {
     status: "accepted" | "rejected" | "unjudged";
     checks: readonly string[];
   }[];
+  readonly upgradeControl?: { manifestRecord: string; resolution: string };
   readonly purpose?: "base-control" | "candidate";
   readonly presetControl?: { kind: "bugfix" | "refactor"; baseTree: string; accepted: boolean };
+  readonly checkResults?: readonly {
+    id: string;
+    status: "accepted" | "rejected" | "unjudged";
+    detail: string;
+    record: string;
+  }[];
   readonly accepted: boolean;
 }
 
@@ -37,12 +44,17 @@ export async function verifyGoal(options: {
   commands: GateCommandRunner;
   timeoutMs: number;
   signal?: AbortSignal;
+  upgradeControl?: GoalVerification["upgradeControl"];
   purpose?: "base-control" | "candidate";
   presetControl?: GoalVerification["presetControl"];
 }): Promise<GoalVerification> {
   assertGoalEffectsSettled(options.evidence.records(), options.evidence.payloads());
   let pending = false;
   const { contract, digest } = freezeGoalContract(options.contract);
+  if (contract.preset?.kind === "upgrade" && options.upgradeControl === undefined)
+    throw new Error(
+      "upgrade acceptance requires recorded authorization and installed-version evidence",
+    );
   const run = (argv: readonly string[]) =>
     options.commands.runVouched(argv, { cwd: options.checkout, timeoutMs: options.timeoutMs });
   const staged = await run(["git", "add", "--all"]);
@@ -51,7 +63,7 @@ export async function verifyGoal(options: {
     throw new Error("goal verifier checkout does not match the exact integrated tree");
   const checks = new Map<
     string,
-    { status: "accepted" | "rejected" | "unjudged"; record: string }
+    { status: "accepted" | "rejected" | "unjudged"; record: string; detail: string }
   >();
   const snapshot = await snapshotGoalCheckout(options.checkout, options.signal);
   try {
@@ -65,7 +77,16 @@ export async function verifyGoal(options: {
           const policy = createPolicyGuard({
             workspaceRoot: options.checkout,
             homeDir: options.evidence.directory,
-            deniedRoots: [join(options.checkout, ".git"), options.evidence.directory],
+            deniedRoots: [
+              join(options.checkout, ".git"),
+              ...(() => {
+                const within = relative(options.checkout, options.evidence.directory);
+                return within === "" ||
+                  (!isAbsolute(within) && within !== ".." && !within.startsWith("../"))
+                  ? [options.evidence.directory]
+                  : [];
+              })(),
+            ],
             shellAllowlist: [],
           });
           const permission = policy.checkPath(artifact.path);
@@ -147,7 +168,14 @@ export async function verifyGoal(options: {
           }),
         });
         pending = false;
-        checks.set(check.id, { status, record: recorded.record.payloadDigest });
+        checks.set(check.id, {
+          status,
+          record: recorded.record.payloadDigest,
+          detail:
+            behavior?.reading.detail ??
+            observation.unavailable ??
+            `command exited ${observation.exitCode}`,
+        });
       } finally {
         if (!pending) await snapshot.restore();
       }
@@ -178,8 +206,10 @@ export async function verifyGoal(options: {
     ...(contract.preset === undefined ? {} : { purpose: options.purpose ?? "candidate" }),
     ...(options.presetControl === undefined ? {} : { presetControl: options.presetControl }),
     contractDigest: digest,
+    ...(options.upgradeControl === undefined ? {} : { upgradeControl: options.upgradeControl }),
     tree: options.tree,
     obligations,
+    checkResults: [...checks].map(([id, result]) => ({ id, ...result })),
     accepted: obligations.every((requirement) => requirement.status === "accepted"),
   };
   await options.evidence.record({

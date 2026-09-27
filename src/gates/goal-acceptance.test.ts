@@ -354,3 +354,34 @@ it("cleans a replaced artifact directory without following its link to another f
   expect(observed.goalAcceptance?.accepted).toBe(false);
   expect(await readFile(join(outside, "accept.mjs"), "utf8")).toBe("user file");
 });
+
+it("prepares trusted artifacts in an owned checkout nested beneath evidence storage", async () => {
+  const setup = await fixture();
+  const contract: GoalContract = {
+    ...goal,
+    checks: [
+      {
+        id: "feature",
+        author: "user",
+        exposure: "withheld",
+        command: "node checks/accept.mjs",
+        artifacts: [
+          {
+            path: "checks/accept.mjs",
+            content:
+              "import assert from 'node:assert/strict'; import {feature} from '../feature.js'; assert.equal(feature,1);\n",
+          },
+        ],
+      },
+    ],
+  };
+  await declareGoalContract(setup.evidence, contract);
+  const result = await verifyIndependently({
+    ...setup,
+    repositoryRoot: setup.repository,
+    checkoutRoot: setup.evidence.directory,
+    goal: { contract, evidence: setup.evidence, tree: setup.tree },
+  });
+  expect(result.task).toBe("accepted");
+  expect(result.verified).toBe(true);
+});

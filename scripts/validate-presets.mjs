@@ -175,8 +175,17 @@ try {
         cwd,
       ),
     );
+    if (
+      !python &&
+      !report.checks.some((check) => check.id === "build" && check.status === "passed")
+    )
+      throw Error("declared Node build was not checked");
     if (!report.verified || !report.install.succeeded)
       throw Error(`${manager} upgrade was not verified`);
+    run(
+      [process.execPath, join(report.bundleDirectory, "verify.mjs"), report.bundleDirectory],
+      cwd,
+    );
     writeManifest(version, true);
     git(["commit", "-qam", "tampered policy control"], cwd);
     run(
@@ -198,7 +207,11 @@ try {
       cwd,
       1,
     );
-    if (!observations.at(-1).stderr.includes("unrelated manifest"))
+    if (
+      !/unrelated manifest|outside the authorized dependency literals/.test(
+        observations.at(-1).stderr,
+      )
+    )
       throw Error("tampering failed for an unexpected reason");
   }
   console.log(JSON.stringify({ root, status: "passed", observations: observations.length }));

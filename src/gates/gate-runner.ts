@@ -133,7 +133,14 @@ export function executedTheChange(cycle: GateCycle): boolean {
 }
 
 export function isGreen(cycle: GateCycle): boolean {
-  return cycle.blockingFailures.length === 0 && executedTheChange(cycle);
+  return (
+    cycle.blockingFailures.length === 0 &&
+    executedTheChange(cycle) &&
+    !cycle.runs.some(
+      (run) =>
+        run.kind === "command" && run.severity === "blocking" && run.status === "not-applicable",
+    )
+  );
 }
 
 /**

@@ -21,6 +21,7 @@ export function classifyRepair(cycle: GateCycle): {
   const failures = cycle.blockingFailures;
   const unavailable = cycle.runs.filter(
     (run) =>
+      run.severity === "blocking" &&
       run.capability === "dynamic" &&
       run.kind === "command" &&
       run.observation.unavailable !== null,
@@ -35,10 +36,7 @@ export function classifyRepair(cycle: GateCycle): {
       signature,
       remedy: "resolve the recorded contract or scope violation before retrying",
     };
-  if (
-    unavailable.length &&
-    !cycle.runs.some((run) => run.capability === "dynamic" && run.status === "passed")
-  )
+  if (unavailable.length)
     return {
       kind: "setup",
       signature,
@@ -46,7 +44,7 @@ export function classifyRepair(cycle: GateCycle): {
     };
   if (
     failures.some((run) =>
-      /ENOENT|ModuleNotFoundError|Cannot find module|Executable doesn't exist/.test(
+      /setup unavailable:|ENOENT|ModuleNotFoundError|Cannot find module|Executable doesn't exist/.test(
         run.observation.stderr,
       ),
     )

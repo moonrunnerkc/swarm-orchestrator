@@ -53,7 +53,7 @@ describe("a change no command gate ran over", () => {
     expect(isGreen(cycleWith({ changedFiles: 3, testsStatus: "passed" }))).toBe(true);
   });
 
-  it("leaves a tree nothing touched alone, where there is nothing to run over", () => {
-    expect(isGreen(cycleWith({ changedFiles: 0, testsStatus: "not-applicable" }))).toBe(true);
+  it("does not certify an unusable required test command on an unchanged tree", () => {
+    expect(isGreen(cycleWith({ changedFiles: 0, testsStatus: "not-applicable" }))).toBe(false);
   });
 });

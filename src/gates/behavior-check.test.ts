@@ -128,6 +128,12 @@ it("checks actual HTTP behavior separately from readiness and refuses to follow 
       )
     ).reading.status,
   ).toBe("unjudged");
+  const redirect = await runBehaviorCheck(
+    { ...check, request: { ...check.request, path: "/redirect" }, status: 302, json: [] },
+    { checkout, commands },
+  );
+  expect(redirect.reading.status).toBe("unjudged");
+  expect(redirect.reading.detail).toContain("destination was not contacted");
   await expect(fetch(`http://127.0.0.1:${port}/ready`)).rejects.toThrow();
 });
 it("rejects ambient network grants and traversal in persisted definitions", () => {

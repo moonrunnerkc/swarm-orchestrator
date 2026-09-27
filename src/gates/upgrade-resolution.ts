@@ -13,7 +13,7 @@ export async function observeUpgradeResolution(options: {
   commands: GateCommandRunner;
   evidence: EvidenceRecorder;
   timeoutMs: number;
-}): Promise<void> {
+}): Promise<string> {
   const { preset, checkout } = options;
   const cwd = join(checkout, dirname(preset.manifest));
   const versions: Record<string, string> = {};
@@ -52,7 +52,7 @@ export async function observeUpgradeResolution(options: {
   const matched = preset.dependencies.every(
     (dependency) => versions[dependency.name] === dependency.version,
   );
-  await options.evidence.record({
+  const record = await options.evidence.record({
     type: "verification-command",
     actor: "harness",
     provenance: ["tool-output"],
@@ -67,4 +67,5 @@ export async function observeUpgradeResolution(options: {
   });
   if (!matched)
     throw new Error("installed dependency versions do not match the sealed upgrade targets");
+  return record.record.payloadDigest;
 }

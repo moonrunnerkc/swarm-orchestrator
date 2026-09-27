@@ -27,7 +27,8 @@ export function structuredRunner(body: string | undefined): readonly string[] | 
 
   if (body === "uv run --locked --no-sync python -m pytest -q")
     return ["uv", "run", "--locked", "--no-sync", "python", "-c", pytest];
-  if (body === ".venv/bin/python -m pytest -q") return [".venv/bin/python", "-c", pytest];
+  const interpreter = /^((?:\.\.\/){0,32}\.venv\/bin\/python) -m pytest -q$/.exec(body ?? "")?.[1];
+  if (interpreter !== undefined) return [interpreter, "-c", pytest];
   return null;
 }
 

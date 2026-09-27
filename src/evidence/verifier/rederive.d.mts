@@ -39,6 +39,7 @@ export declare function refusalsToCertify(verdict: {
  * where a field the policy reads is absent or carries a word the policy does not know.
  */
 export declare function rederiveCiVerdict(verdict: {
+  readonly checks?: unknown;
   readonly regression?: string;
   readonly task?: string;
   readonly oracleReach?: string;
