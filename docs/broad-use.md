@@ -261,7 +261,7 @@ fixture repository's base branch before proposing its clamp fix. For another pro
 and review its own acceptance contract on the trusted base first. The example pins the Action:
 
 ```yaml
-uses: moonrunnerkc/swarm-orchestrator@6162b7f3c694bf08c84a86a7e8f80c0183cf16ae
+uses: moonrunnerkc/swarm-orchestrator@95891957987ec758f58a81ebb800933439f252de
 ```
 
 The Action downloads that implementation separately from candidate code, selects Node 24,
