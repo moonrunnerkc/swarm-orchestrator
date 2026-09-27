@@ -59,8 +59,32 @@ const http = z.strictObject({
 const browser = z.strictObject({
   kind: z.literal("browser"),
   ...limits,
-  argv,
+  argv: argv.optional(),
+  instrument: z
+    .strictObject({
+      source: z.string().min(1).max(64_000),
+      titles: z
+        .array(z.string().min(1).max(256))
+        .min(1)
+        .max(1000)
+        .refine((titles) => new Set(titles).size === titles.length),
+    })
+    .optional(),
   expectedTests: z.number().int().positive().max(10_000),
 });
-export const behaviorCheckSchema = z.discriminatedUnion("kind", [cli, http, browser]);
+export const behaviorCheckSchema = z
+  .discriminatedUnion("kind", [cli, http, browser])
+  .superRefine((check, context) => {
+    if (check.kind !== "browser") return;
+    if ((check.argv === undefined) === (check.instrument === undefined))
+      context.addIssue({
+        code: "custom",
+        message: "browser requires exactly one of project argv or a sealed instrument",
+      });
+    if (check.instrument && check.instrument.titles.length !== check.expectedTests)
+      context.addIssue({
+        code: "custom",
+        message: "browser expectedTests must match sealed titles",
+      });
+  });
 export type BehaviorCheck = z.infer<typeof behaviorCheckSchema>;

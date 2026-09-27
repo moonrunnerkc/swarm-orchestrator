@@ -44,6 +44,7 @@ export function createContainerBackend(options: ContainerBackendOptions): Isolat
     name: `${options.runtime}:${options.image}`,
     nodeProgram: "node",
     protectsReadOnlyFiles: true,
+    immutableRuntime: true,
     environmentNames,
     run: async (argv, runOptions) => {
       const execute = options.runProcess ?? runProcessGroup;

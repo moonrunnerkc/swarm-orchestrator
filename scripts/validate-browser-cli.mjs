@@ -48,7 +48,7 @@ writeFileSync(
 );
 writeFileSync(
   join(workspace, "playwright.config.mjs"),
-  "export default {testDir:'.acceptance',timeout:5000,use:{screenshot:'only-on-failure',trace:'retain-on-failure'}};\n",
+  "throw new Error('candidate config must never execute');\n",
 );
 writeFileSync(
   join(workspace, "app.js"),
@@ -78,7 +78,7 @@ writeFileSync(
           {
             path: ".acceptance/interaction.spec.mjs",
             content:
-              "import {test,expect} from '/opt/swarm-browser/node_modules/@playwright/test/index.mjs';import {readFile} from 'node:fs/promises';test('increments',async({page})=>{const app=await readFile('app.js','utf8');await page.setContent('<button>0</button><script>'+app+'<\\/script>');await page.getByRole('button').click();await expect(page.getByRole('button')).toHaveText('1',{timeout:300});});",
+              "import {test,expect} from '/opt/swarm-browser/node_modules/@playwright/test/index.mjs';import {readFile} from 'node:fs/promises';test('increments',async({page})=>{const app=await readFile(process.env.SWARM_SUBJECT_DIRECTORY+'/app.js','utf8');await page.setContent('<button>0</button><script>'+app+'<\\/script>');await page.getByRole('button').click();await expect(page.getByRole('button')).toHaveText('1',{timeout:300});});",
           },
         ],
         behavior: {
@@ -90,13 +90,11 @@ writeFileSync(
           network: "inherit",
           environment: { PLAYWRIGHT_BROWSERS_PATH: "/ms-playwright" },
           expectedTests: 1,
-          argv: [
-            "node",
-            "/opt/swarm-browser/node_modules/@playwright/test/cli.js",
-            "test",
-            "--reporter=json",
-            "--workers=1",
-          ],
+          instrument: {
+            source:
+              "import {test,expect} from '/opt/swarm-browser/node_modules/@playwright/test/index.mjs';import {readFile} from 'node:fs/promises';test('increments',async({page})=>{const app=await readFile(process.env.SWARM_SUBJECT_DIRECTORY+'/app.js','utf8');await page.setContent('<button>0</button><script>'+app+'<\\/script>');await page.getByRole('button').click();await expect(page.getByRole('button')).toHaveText('1',{timeout:300});});",
+            titles: ["increments"],
+          },
         },
       },
     ],

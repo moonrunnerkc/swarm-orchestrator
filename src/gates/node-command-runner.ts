@@ -58,6 +58,10 @@ export function createNodeCommandRunner(
     options: CommandOptions,
   ): Promise<GateObservation> => {
     const startedAt = clock.now();
+    if (options.requiresImmutableRuntime && backend?.immutableRuntime !== true)
+      return unavailableObservation(
+        "sealed browser acceptance needs an immutable container runtime with Playwright installed at /opt/swarm-browser; project runner output alone is unjudged",
+      );
     if (options.readOnlyFiles?.length && backend?.protectsReadOnlyFiles !== true)
       return unavailableObservation(
         "pinned acceptance files need a backend with read-only file mounts; use the container backend",

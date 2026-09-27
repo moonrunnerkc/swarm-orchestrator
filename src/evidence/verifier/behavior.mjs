@@ -1,7 +1,31 @@
+import { createHash } from "node:crypto";
+
 /** Independent behavior assertion derivation from sealed definitions and raw observations. */
 export function behaviorStatus(check, observed) {
   if (!check || !observed || observed.unavailable !== null || observed.outputTruncated === true)
     return "unjudged";
+  if (check.kind === "browser") {
+    const encoded = JSON.stringify(check, (_key, value) =>
+      value && typeof value === "object" && !Array.isArray(value)
+        ? Object.fromEntries(
+            Object.keys(value)
+              .sort()
+              .map((key) => [key, value[key]]),
+          )
+        : value,
+    );
+    const identity = `sha256:${createHash("sha256").update(encoded).digest("hex")}`;
+    if (
+      !check.instrument ||
+      !Array.isArray(check.instrument.titles) ||
+      check.instrument.titles.length !== check.expectedTests ||
+      new Set(check.instrument.titles).size !== check.expectedTests ||
+      observed.browserExecution?.kind !== "sealed-playwright-v1" ||
+      observed.browserExecution?.runtime !== "immutable-container" ||
+      observed.browserExecution?.instrumentDigest !== identity
+    )
+      return "unjudged";
+  }
   const matches = (text, assertions) =>
     typeof text === "string" &&
     Array.isArray(assertions) &&
@@ -19,11 +43,23 @@ export function behaviorStatus(check, observed) {
   if (
     check.kind === "browser" &&
     observed.exitCode !== 0 &&
-    /Executable doesn't exist|Cannot find (?:module|package)|MODULE_NOT_FOUND|ERR_MODULE_NOT_FOUND/i.test(
+    /Executable doesn't exist|Cannot find (?:module|package)|MODULE_NOT_FOUND|ERR_MODULE_NOT_FOUND|ENOENT.*swarm-browser\/node_modules|trusted Playwright modules|browser instrument refuses candidate modules/i.test(
       observed.stdout + observed.stderr,
     )
   )
     return "unjudged";
+  if (check.kind === "browser") {
+    try {
+      const report = JSON.parse(observed.stdout);
+      if (
+        report.stats &&
+        ["expected", "unexpected", "flaky", "skipped"].every((key) => report.stats[key] === 0)
+      )
+        return "unjudged";
+    } catch {
+      /* Retain the process failure or malformed-result outcome below. */
+    }
+  }
   if (observed.exitCode !== 0) return "rejected";
   try {
     const result = JSON.parse(observed.stdout);
@@ -79,7 +115,12 @@ export function behaviorStatus(check, observed) {
               test.expectedStatus !== "passed"
             )
               throw Error("invalid test");
-            points.push({ id: `${spec.id}:${test.projectName}`, test });
+            points.push({
+              id: `${spec.id}:${test.projectName}`,
+              title: spec.title,
+              file: spec.file,
+              test,
+            });
           }
         }
         visit(group.suites ?? [], depth + 1);
@@ -96,6 +137,13 @@ export function behaviorStatus(check, observed) {
     ])
       if (result.stats[field] !== count(status)) return "unjudged";
     return points.length === check.expectedTests &&
+      new Set(points.map((point) => point.title)).size === check.expectedTests &&
+      points.every(
+        (point) =>
+          point.file === "instrument.spec.mjs" &&
+          point.test.projectName === "chromium" &&
+          check.instrument.titles.includes(point.title),
+      ) &&
       result.errors.length === 0 &&
       points.every(
         ({ test }) =>

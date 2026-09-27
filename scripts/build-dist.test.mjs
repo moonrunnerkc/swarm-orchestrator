@@ -80,6 +80,7 @@ describe("what the dist build has to carry beyond compiled JavaScript", () => {
       "evidence/verifier/upgrade.mjs",
       "evidence/verifier/verify.d.mts",
       "evidence/verifier/verify.mjs",
+      "gates/browser-instrument-runner.mjs",
       "gates/http-check-runner.mjs",
       "select/calibration-cases.v1.json",
       "select/coding-models.v1.json",

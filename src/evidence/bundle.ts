@@ -260,7 +260,9 @@ async function readVerifierScript(): Promise<string> {
         `const upgradeControlPasses = (() => {${embeddedUpgrade}\nreturn upgradeControlPasses;})();`,
     )
     .replace('import { behaviorStatus } from "./behavior.mjs";', () =>
-      behavior.replace("export function behaviorStatus", "function behaviorStatus"),
+      behavior
+        .replace(cryptoImport, "")
+        .replace("export function behaviorStatus", "function behaviorStatus"),
     )
     .replace(
       controllerImport,

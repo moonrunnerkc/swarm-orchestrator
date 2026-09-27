@@ -15,6 +15,11 @@ export type GateMeasures = Readonly<Record<string, number>>;
  * what keeps a gate result evidence rather than an assertion (invariant 1).
  */
 export interface GateObservation {
+  readonly browserExecution?: {
+    readonly kind: "sealed-playwright-v1";
+    readonly instrumentDigest: string;
+    readonly runtime: "immutable-container";
+  };
   readonly outputTruncated?: boolean;
   readonly exitCode: number;
   readonly stdout: string;
@@ -103,7 +108,12 @@ type GateSource =
       readonly coverageUnmeasured?: string;
       readonly timeoutMs?: number;
     }
-  | { readonly kind: "inspection"; readonly inspect: GateInspection };
+  | {
+      readonly kind: "inspection";
+      readonly inspect: GateInspection;
+      readonly unavailableReason?: string;
+      readonly optionalAbsence?: boolean;
+    };
 
 /**
  * A gate is data: what to run, how to read its output, and whether it blocks. The engine
@@ -154,6 +164,7 @@ export interface GateDefinition {
 }
 
 export interface CommandOptions {
+  readonly requiresImmutableRuntime?: boolean;
   readonly readOnlyFiles?: readonly string[];
   readonly stdin?: string;
   readonly maxOutputBytes?: number;

@@ -14,7 +14,12 @@ const test = z.object({
     .min(1)
     .max(100),
 });
-const spec = z.object({ id: z.string().min(1), tests: z.array(test).min(1) });
+const spec = z.object({
+  id: z.string().min(1),
+  title: z.string().optional(),
+  file: z.string().optional(),
+  tests: z.array(test).min(1),
+});
 interface Suite {
   specs: z.infer<typeof spec>[];
   suites?: Suite[] | undefined;
@@ -37,15 +42,29 @@ const report = z.object({
 });
 
 /** Require individual executed test results, unique identities and agreeing aggregate counts. */
-export function browserResultsPass(value: unknown, expectedTests: number): boolean {
+export function browserResultsPass(
+  value: unknown,
+  expectedTests: number,
+  expectedTitles?: readonly string[],
+): boolean {
   const parsed = report.parse(value);
-  const points: { id: string; test: z.infer<typeof test> }[] = [];
+  const points: {
+    id: string;
+    title: string | undefined;
+    file: string | undefined;
+    test: z.infer<typeof test>;
+  }[] = [];
   const visit = (suites: Suite[], depth: number): void => {
     if (depth > 32 || points.length > 100000) throw new Error("browser report exceeds bounds");
     for (const group of suites) {
       for (const entry of group.specs)
         for (const result of entry.tests)
-          points.push({ id: `${entry.id}:${result.projectName}`, test: result });
+          points.push({
+            id: `${entry.id}:${result.projectName}`,
+            title: entry.title,
+            file: entry.file,
+            test: result,
+          });
       visit(group.suites ?? [], depth + 1);
     }
   };
@@ -62,6 +81,15 @@ export function browserResultsPass(value: unknown, expectedTests: number): boole
     throw new Error("browser totals disagree with individual results");
   return (
     points.length === expectedTests &&
+    (expectedTitles === undefined ||
+      (new Set(points.map((point) => point.title)).size === expectedTitles.length &&
+        points.every(
+          (point) =>
+            point.file === "instrument.spec.mjs" &&
+            point.test.projectName === "chromium" &&
+            point.title !== undefined &&
+            expectedTitles.includes(point.title),
+        ))) &&
     parsed.errors.length === 0 &&
     points.every(
       ({ test: result }) =>
