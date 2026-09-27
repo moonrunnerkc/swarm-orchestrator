@@ -6,6 +6,7 @@ import { action } from "./cli-action.ts";
 import { check } from "./cli-check.ts";
 import { commandDefinitions } from "./cli-command-definitions.ts";
 import { gates } from "./cli-gates.ts";
+import { integration } from "./cli-integrations.ts";
 import { verifyVerdict } from "./cli-verdict.ts";
 import { verifyBundle } from "./cli-verify.ts";
 import {
@@ -69,6 +70,9 @@ async function main(): Promise<number> {
   }
   if (parsed.command === "verdict") {
     return verifyVerdict(parsed);
+  }
+  if (parsed.command === "hook" || parsed.command === "mcp" || parsed.command === "pre-commit") {
+    return integration(parsed);
   }
   return (await import("./cli-ci.ts")).verifyPatch(parsed);
 }

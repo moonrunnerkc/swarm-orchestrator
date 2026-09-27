@@ -116,6 +116,30 @@ export interface VerdictCommand {
   readonly signerWorkflow: string | null;
 }
 
+/** The Claude Code hook: install into or remove from a settings file, or run one event. */
+export interface HookCommand {
+  readonly command: "hook";
+  readonly step: "install" | "uninstall" | "run" | "help";
+  readonly settingsPath: string | null;
+  readonly scope: "project" | "user";
+  readonly workspace: string;
+}
+
+/** The local MCP server over stdio, confined to a root. */
+export interface McpCommand {
+  readonly command: "mcp";
+  readonly root: string;
+  readonly describe: boolean;
+}
+
+/** Verify the staged tree, or install or remove the git hook that does. */
+export interface PreCommitCommand {
+  readonly command: "pre-commit";
+  readonly step: "run" | "install" | "uninstall";
+  readonly workspace: string;
+  readonly json: boolean;
+}
+
 /** One step of the GitHub Action, driven by the runner's environment rather than by flags. */
 export interface ActionCommand {
   readonly command: "action";
@@ -128,6 +152,9 @@ export type VerifyOnlyCommand =
   | GatesCommand
   | CheckCommand
   | VerdictCommand
+  | HookCommand
+  | McpCommand
+  | PreCommitCommand
   | ActionCommand;
 
 export class InvalidCommandLineError extends Error {
@@ -144,6 +171,7 @@ export class InvalidCommandLineError extends Error {
 const switchFlags = new Set([
   "help",
   "explain",
+  "describe",
   "version",
   "json",
   "remove",
@@ -325,6 +353,43 @@ export function parseVerifyOnlyCommand(
         : null,
       repository,
       signerWorkflow: flags.get("signer-workflow") ?? null,
+    };
+  }
+
+  if (words[0] === "hook") {
+    const step = words[1] ?? "help";
+    if (step !== "install" && step !== "uninstall" && step !== "run" && step !== "help")
+      throw invalid("hook needs one of install, uninstall, or run");
+    const scope = flags.get("scope") ?? "project";
+    if (scope !== "project" && scope !== "user") throw invalid("--scope must be project or user");
+    return {
+      command: "hook",
+      step,
+      settingsPath: flags.has("settings")
+        ? resolve(context.currentDirectory, flags.get("settings") as string)
+        : null,
+      scope,
+      workspace: resolve(context.currentDirectory, flags.get("workspace") ?? "."),
+    };
+  }
+
+  if (words[0] === "mcp") {
+    return {
+      command: "mcp",
+      root: resolve(context.currentDirectory, flags.get("root") ?? "."),
+      describe: flags.has("describe"),
+    };
+  }
+
+  if (words[0] === "pre-commit") {
+    const step = words[1] ?? "run";
+    if (step !== "install" && step !== "uninstall" && step !== "run")
+      throw invalid("pre-commit takes install, uninstall, or nothing to verify the staged tree");
+    return {
+      command: "pre-commit",
+      step,
+      workspace: resolve(context.currentDirectory, flags.get("workspace") ?? "."),
+      json: flags.has("json"),
     };
   }
 

@@ -23,6 +23,14 @@
   the running Node takes; the floor moves from 24 to 22.8.
 - A verifier platform matrix workflow installs the packed package on Linux, macOS and Windows
   under Node 22.0.0, 22 and 24.
+- **`swarm-verify verdict`** binds a signed verdict document to the report, summary and bundle
+  beside it and hands the signer question to `gh attestation verify`.
+- **Three integrations, each a client of the installed verifier**: a Claude Code hook that
+  rewrites the agent's recognised test command to `swarm-verify check` (`hook install`,
+  `uninstall`, `run`); a local MCP server over stdio with three bounded tools (`mcp`); and a
+  pre-commit hook that verifies the staged tree in a detached worktree without touching the
+  working tree (`pre-commit`, `pre-commit install`, `uninstall`). Documented in
+  `docs/integrations.md`, each with real positive and negative runs in its tests.
 
 ### Changed
 

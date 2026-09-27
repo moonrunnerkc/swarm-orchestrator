@@ -126,6 +126,22 @@ A regression pass says nothing broke. Only a requirement contract can say the wo
 and the comment says which of the two it is reporting.
 `,
 );
+// The pre-commit framework installs this repository as a node package, which is the pinned
+// verifier and nothing else, and runs the staged-tree verification from it.
+writeFileSync(
+  join(destination, ".pre-commit-hooks.yaml"),
+  [
+    "- id: swarm-verify",
+    "  name: swarm-verify (staged tree)",
+    "  description: Verify the staged tree with swarm-verify before the commit; the working tree is never touched.",
+    "  entry: swarm-verify pre-commit",
+    "  language: node",
+    "  pass_filenames: false",
+    "  always_run: true",
+    "  stages: [pre-commit]",
+    "",
+  ].join("\n"),
+);
 writeFileSync(
   join(destination, "SOURCE.json"),
   `${JSON.stringify({ repository: "moonrunnerkc/swarm-orchestrator", commit: sourceCommit, package: "swarm-verify", version, integrity: pinned.integrity }, null, 2)}\n`,

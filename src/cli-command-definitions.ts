@@ -40,6 +40,27 @@ export const commandDefinitions: readonly CommandDefinition[] = [
     model: "none",
   },
   {
+    name: "hook",
+    syntax: "hook install | uninstall | run [--scope project|user] [--settings <file>]",
+    description: "route the agent's test command through the verifier from a Claude Code hook",
+    smoke: { args: [], exits: [0], output: "install|uninstall|run" },
+    model: "none",
+  },
+  {
+    name: "mcp",
+    syntax: "mcp [--root <dir>] [--describe]",
+    description: "serve three bounded verifier operations to an MCP client over stdio",
+    smoke: { args: ["--describe"], exits: [0], output: "swarm_verify_check" },
+    model: "none",
+  },
+  {
+    name: "pre-commit",
+    syntax: "pre-commit [install | uninstall] [--workspace <dir>]",
+    description: "verify the staged tree, or install the git hook that does",
+    smoke: { args: [], exits: [0], output: "nothing is staged|staged tree" },
+    model: "none",
+  },
+  {
     name: "action",
     syntax: "action verify | comment | retain",
     description: "one step of the GitHub Action, read from the runner's environment",
