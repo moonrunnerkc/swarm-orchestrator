@@ -16,6 +16,8 @@ beforeEach(async () => {
   await writeFile(join(bundle, "run-transcript.txt"), "line one\nline two\n");
   await writeFile(join(bundle, "ledger.jsonl"), '{"sequence":1}\n');
   await writeFile(join(bundle, "reviewer.html"), "a near miss that is not derived\n");
+  // A campaign result's transcript, named after its task rather than as run-transcript.txt.
+  await writeFile(join(bundle, "owner__repo.transcript.txt"), "the model's every turn\n");
 });
 
 afterEach(async () => {
@@ -32,6 +34,7 @@ const pack = (overrides = {}) =>
       "evidence/run/bundle/run-transcript.txt",
       "evidence/run/bundle/ledger.jsonl",
       "evidence/run/bundle/reviewer.html",
+      "evidence/run/bundle/owner__repo.transcript.txt",
     ],
     sourceCommit,
     ...overrides,
@@ -40,7 +43,7 @@ const pack = (overrides = {}) =>
 describe("packing derived evidence", () => {
   it("restores the exact bytes of what it removed and leaves the records alone", async () => {
     const packed = await pack();
-    expect(packed.files).toBe(2);
+    expect(packed.files).toBe(3);
 
     const bundle = join(repositoryRoot, "evidence/run/bundle");
     expect((await readdir(bundle)).sort()).toEqual(["ledger.jsonl", "reviewer.html"]);
@@ -58,7 +61,7 @@ describe("packing derived evidence", () => {
     }
     expect(await verifyDerivedPack(packed.destination, repositoryRoot)).toMatchObject({
       ok: true,
-      files: 2,
+      files: 3,
     });
   });
 

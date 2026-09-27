@@ -153,6 +153,7 @@ export function restoreVerification(blobsDirectory: string): string {
 const derivedNames: readonly RegExp[] = [
   /^review\.html$/,
   /^run-transcript\.txt$/,
+  /\.transcript\.txt$/,
   /\.jsonl\.gz$/,
   /^candidates\.json$/,
 ];
