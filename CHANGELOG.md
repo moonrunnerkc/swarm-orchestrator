@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.6 - 2026-09-28
 
 Two false passes reported against 1.0.5 and reproduced on it, and a third defect found while
 fixing them. Each is fixed at the root.
