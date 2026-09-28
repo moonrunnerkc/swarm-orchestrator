@@ -43,6 +43,21 @@ function notApplicable(observation: GateObservation): GateReading | null {
       measures: {},
     };
   }
+  // `python -m tool` where the environment holds no such module: the interpreter itself
+  // refuses to start, exits 1, and prints exactly one line naming the module. That line is the
+  // interpreter's, not a test's, and it is the whole of what was printed with nothing on
+  // stdout; a test that printed the same words beside its own output would not match. The
+  // check then measured nothing, which is what the reader is told, rather than "failed".
+  const absentModule = /^[^\n]*python[^\n]*: No module named ([\w.]+)\s*$/.exec(
+    observation.stderr.trim(),
+  );
+  if (observation.exitCode === 1 && observation.stdout.trim() === "" && absentModule !== null) {
+    return {
+      status: "not-applicable",
+      detail: `python module ${absentModule[1]} is not installed in the project's environment, so this gate measured nothing; add it to the project's development dependencies and sync`,
+      measures: {},
+    };
+  }
   return null;
 }
 

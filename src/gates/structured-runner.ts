@@ -25,7 +25,10 @@ const vitest = [
   "await import(pathToFileURL(entry).href);",
 ].join("");
 
-const pytest = `import json,subprocess,sys,tempfile,xml.etree.ElementTree as ET
+const pytest = `import importlib.util,json,subprocess,sys,tempfile,xml.etree.ElementTree as ET
+if importlib.util.find_spec("pytest") is None:
+ print(json.dumps({"unavailable":"pytest is not installed in the project's environment, so no test ran; add it to the project's development dependencies and sync"}))
+ sys.exit(127)
 with tempfile.TemporaryDirectory(prefix="swarm-pytest-") as d:
  p=d+"/results.xml"
  result=subprocess.run([sys.executable,"-m","pytest","-q","--junitxml="+p],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)

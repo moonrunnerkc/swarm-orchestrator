@@ -375,3 +375,33 @@ describe("parseTapTotals", () => {
     expect(parseTapTotals("Tests  4 passed (4)\n")).toBeNull();
   });
 });
+
+/**
+ * A configured Python tool the synced environment does not hold: the interpreter refuses to
+ * start the module with one line of its own. In the AI-authored pull request study this read
+ * as the typecheck and lint failing on a clean checkout of a project whose dev group was not
+ * synced. It measured nothing, and says so.
+ */
+it("reads the interpreter's own 'No module named' line as a check that measured nothing", () => {
+  const reading = exitCodeParser({
+    exitCode: 1,
+    stdout: "",
+    stderr: "/workspace/.venv/bin/python3: No module named mypy\n",
+    outputTruncated: false,
+    unavailable: null,
+    durationMs: 1,
+  });
+  expect(reading.status).toBe("not-applicable");
+  expect(reading.detail).toContain("python module mypy is not installed");
+
+  // The same words beside a test's own output are a test's words, and the exit code decides.
+  const failed = exitCodeParser({
+    exitCode: 1,
+    stdout: "FAIL: something\n",
+    stderr: "/workspace/.venv/bin/python3: No module named mypy\n",
+    outputTruncated: false,
+    unavailable: null,
+    durationMs: 1,
+  });
+  expect(failed.status).toBe("failed");
+});
