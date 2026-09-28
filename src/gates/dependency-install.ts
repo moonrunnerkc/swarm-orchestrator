@@ -173,17 +173,38 @@ async function installerArgv(
   } catch {
     declared = undefined;
   }
-  if (declared === undefined) return [...candidate.argv];
+  // A pnpm lockfile with no pin: the lockfile's own format decides the major that reads it
+  // (lockfileVersion 9.0 is written by pnpm 9 and 10, 6.0 by pnpm 8), and that major's latest
+  // is fetched, named in the command so the record says which pnpm ran.
+  const version = declared ?? (await pnpmMajorForLockfile(workspace));
   return [
     "npx",
     "--yes",
     "--package",
-    `pnpm@${declared}`,
+    `pnpm@${version}`,
     "pnpm",
     "install",
     "--frozen-lockfile",
     "--ignore-scripts",
   ];
+}
+
+async function pnpmMajorForLockfile(workspace: string): Promise<string> {
+  try {
+    return pnpmForLockfileText(await readFile(join(workspace, "pnpm-lock.yaml"), "utf8"));
+  } catch {
+    // No readable lockfile: the plain command reports its absence.
+    return "latest";
+  }
+}
+
+/** The pnpm to fetch for a lockfile that pins none: the major that writes its format. */
+export function pnpmForLockfileText(lock: string): string {
+  const version = /^lockfileVersion:\s*['"]?([0-9]+)/m.exec(lock)?.[1];
+  if (version === "9") return "10";
+  if (version === "6") return "8";
+  if (version === "5") return "7";
+  return "latest";
 }
 
 async function sourceFingerprint(workspace: string, signal?: AbortSignal): Promise<string> {

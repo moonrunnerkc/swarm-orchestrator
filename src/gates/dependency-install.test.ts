@@ -7,7 +7,7 @@ import { afterEach, beforeEach, expect, it } from "vitest";
 import { createSystemClock } from "../cli-runtime-inputs.ts";
 import { openEvidenceSession } from "../evidence/session.ts";
 import { harnessChildEnvironment } from "../exec/child-environment.ts";
-import { installFromLockfile } from "./dependency-install.ts";
+import { installFromLockfile, pnpmForLockfileText } from "./dependency-install.ts";
 import { verifyIndependently } from "./independent-verification.ts";
 import { createNodeCommandRunner } from "./node-command-runner.ts";
 
@@ -148,4 +148,16 @@ it("preserves an independent checkout when setup completion is unknown", async (
     "must survive reconciliation",
   );
   await expect(access(join(preserved, ".git"))).resolves.toBeUndefined();
+});
+
+/**
+ * thesvg, in the pull request study: a pnpm lockfile, no packageManager pin, and an image
+ * with no pnpm, so the plain `pnpm install` could not start. The lockfile's own format names
+ * the major that reads it; that major's latest is fetched and named in the command.
+ */
+it("chooses the pnpm major from an unpinned lockfile's format", () => {
+  expect(pnpmForLockfileText("lockfileVersion: '9.0'\n")).toBe("10");
+  expect(pnpmForLockfileText('lockfileVersion: "6.0"\n')).toBe("8");
+  expect(pnpmForLockfileText("lockfileVersion: 5.4\n")).toBe("7");
+  expect(pnpmForLockfileText("settings: {}\n")).toBe("latest");
 });
