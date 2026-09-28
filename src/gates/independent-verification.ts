@@ -629,12 +629,17 @@ export async function verifyIndependently(
       ? await attributeFailures(withPatch, checkout, options, timeoutMs)
       : withPatch;
     // A run that was not asked to measure the suite reports that, rather than reporting the
-    // absence of a failure as an absence of a problem.
+    // absence of a failure as an absence of a problem. A failure the base already had is
+    // measured: the base control ran the same check and found it failing there too, so it
+    // says nothing about this patch and does not leave the dimension unmeasured. Ten of
+    // twenty-two adjudicated-correct pull requests in the AI-authored study read as refused
+    // for a lint or format failure their base carried; they are named as inherited instead.
     const incompleteRequired = checks.some(
       (check) =>
         check.severity === "blocking" &&
         check.status !== "passed" &&
-        check.optionalAbsence !== true,
+        check.optionalAbsence !== true &&
+        !(check.status === "failed" && check.inheritedFromBase === true),
     );
     const measuredSomething = checks.some((check) => check.status !== "not-applicable");
     const causedByThePatch = (check: IndependentCheck) =>
@@ -645,11 +650,9 @@ export async function verifyIndependently(
         ? "unmeasured"
         : checks.some((check) => check.status === "passed")
           ? "pass"
-          : checks.some((check) => check.status === "failed")
-            ? // Everything that failed, the base failed identically, so this patch broke nothing and
-              // nothing here establishes that it did not either.
-              "unmeasured"
-            : "unmeasured";
+          : // Everything that failed, the base failed identically, and nothing passed: this patch
+            // broke nothing and nothing here establishes that it did not either.
+            "unmeasured";
 
     return {
       applied: true,

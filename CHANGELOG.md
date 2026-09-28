@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **A failure the base already had no longer leaves the regression dimension unmeasured.**
+  The base control ran the same check at the base commit and found it failing there, which
+  is a measurement about the base, not about the patch; with the patch's other checks
+  passing, the regression dimension now passes and the inherited failure is named beside it.
+  In the AI-authored pull request study, ten of twenty-two adjudicated-correct pull requests
+  had read as refused for a lint or format failure their base carried. A failure the base did
+  not have is still a regression, and a required check that measured nothing still leaves the
+  dimension unmeasured.
+
+### Fixed
+
+- **A uv project's every dependency group is installed** by the authorized lockfile install
+  (`uv sync --locked --all-groups --no-install-project`). Groups are development-only by
+  definition, and a project that keeps pytest in a `test` group rather than `dev` had no
+  runner after a default sync, so its suite read as not run. Extras stay uninstalled.
+
 ## 1.0.2 - 2026-09-28
 
 Two more findings from the study's run through 1.0.1, fixed at the root.
