@@ -267,6 +267,41 @@ describe("an image that is not present on the machine", () => {
     expect(captured.map((args) => args[0])).toEqual(["image", "pull", "pull", "pull"]);
   });
 
+  it("confirms a removal the runtime finished late, and refuses one that never finishes", async () => {
+    const run = async (listedFor: number) => {
+      const captured: string[] = [];
+      let listings = 0;
+      const backend = createContainerBackend({
+        runtime: "test-runtime",
+        image: "test-image",
+        workspaceRoot: workspace,
+        user: "1000:1000",
+        pullRetryPauseMs: 0,
+        cleanupRetryPauseMs: 0,
+        runProcess: async (_program, args) => {
+          captured.push(args[0] ?? "");
+          // Only the listings that follow a removal are the cleanup's own observations.
+          if (args[0] === "ps" && captured.includes("rm")) {
+            listings += 1;
+            return { ...observed(0), stdout: listings <= listedFor ? "abc123\n" : "" };
+          }
+          return observed(0);
+        },
+      });
+      const outcome = await backend
+        .run(["node", "parent.mjs"], { cwd: workspace, timeoutMs: 1000 })
+        .then(
+          () => "ran",
+          (error: Error) => error.message,
+        );
+      return { outcome, removals: captured.filter((command) => command === "rm").length };
+    };
+    expect(await run(2)).toEqual({ outcome: "ran", removals: 3 });
+    const never = await run(3);
+    expect(never.removals).toBe(3);
+    expect(never.outcome).toMatch(/cleanup could not be confirmed; stop dispatch/);
+  });
+
   it("says that creation timed out when cleanup of the never-created container cannot be confirmed", async () => {
     const backend = createContainerBackend({
       runtime: "test-runtime",
