@@ -77,3 +77,22 @@ it("keeps a suite whose file repeats a test title, naming the repeat by occurren
   expect(reading.status).toBe("failed");
   expect(reading.detail).toContain("3 runner-reported tests, 3 executed");
 });
+
+/**
+ * The Python runner script says so itself when pytest is not in the environment or no report
+ * was written; in the pull request study that read as "malformed" and then as an inherited
+ * failure on a clean checkout. It measured nothing, and the reason is the detail.
+ */
+it("reads the runner script's own unavailable word as a check that measured nothing", () => {
+  const reading = readRunnerResult({
+    exitCode: 127,
+    stdout:
+      '{"unavailable": "pytest is not installed in the project\'s environment, so no test ran"}\n',
+    stderr: "",
+    outputTruncated: false,
+    unavailable: null,
+    durationMs: 1,
+  });
+  expect(reading.status).toBe("not-applicable");
+  expect(reading.detail).toContain("pytest is not installed");
+});

@@ -41,6 +41,14 @@ export function readRunnerResult(observation: GateObservation): GateReading {
     };
   try {
     const value: unknown = JSON.parse(observation.stdout);
+    // The runner script's own word that nothing ran (pytest absent, no report written): a
+    // check that measured nothing, with the reason, never "malformed" and never a pass.
+    const unavailable = z
+      .object({ unavailable: z.string().min(1) })
+      .strict()
+      .safeParse(value);
+    if (unavailable.success)
+      return { status: "not-applicable", detail: unavailable.data.unavailable, measures: {} };
     const parsedPython = python.safeParse(value);
     let tests: z.infer<typeof point>[];
     if (parsedPython.success) tests = parsedPython.data.tests;
