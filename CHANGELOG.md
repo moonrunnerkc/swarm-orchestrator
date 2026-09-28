@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 1.0.5 - 2026-09-28
+
+What Comparison B and the study's replay on 1.0.4 found, fixed at the root: an oracle that ran
+outside the project environment and left no record of why it refused, a container removal
+judged on one sample, and two test-check details that named nothing to fix.
 
 ### Changed
 
