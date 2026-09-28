@@ -66,9 +66,31 @@ for (const name of readdirSync(rowsRoot)
     );
   };
   try {
+    // The verifier clones the workspace into its own checkout, and a clone carries no
+    // untracked file, so the check is committed on top of the head on a throwaway branch and
+    // that commit is what the verifier is given: the pull request's patch plus the one file it
+    // is judged by. The row records that the patch A2 saw includes the check.
     run("git", ["checkout", "--quiet", "--force", "--detach", row.head], { cwd: clone });
     mkdirSync(join(checkFile, ".."), { recursive: true });
     writeFileSync(checkFile, check.contents);
+    run("git", ["add", "--force", "--", check.path], { cwd: clone });
+    run(
+      "git",
+      [
+        "-c",
+        "user.name=study",
+        "-c",
+        "user.email=study@example.test",
+        "commit",
+        "-q",
+        "--no-verify",
+        "-m",
+        "study: the held-back check, for the A2 oracle run",
+      ],
+      { cwd: clone },
+    );
+    const withCheck = run("git", ["rev-parse", "HEAD"], { cwd: clone }).stdout.trim();
+    run("git", ["update-ref", "refs/heads/study-a2", withCheck], { cwd: clone });
     const image = row.execution?.isolation?.replace(/^docker:/, "") ?? "node:24-bookworm";
     const bundle = join(workingRoot, "bundles-a2", String(row.index).padStart(2, "0"));
     mkdirSync(join(workingRoot, "bundles-a2"), { recursive: true });
@@ -81,7 +103,7 @@ for (const name of readdirSync(rowsRoot)
         "--workspace",
         clone,
         "--branch",
-        row.head,
+        withCheck,
         "--base",
         row.base,
         "--json",
@@ -115,6 +137,8 @@ for (const name of readdirSync(rowsRoot)
     }
     finish({
       outcome: "executed",
+      patchIncludesCheck: true,
+      commitWithCheck: withCheck,
       verified: report.verified ?? null,
       refusal: report.refusal ?? null,
       task: report.task ?? null,
@@ -126,8 +150,8 @@ for (const name of readdirSync(rowsRoot)
   } catch (cause) {
     finish({ outcome: "blocked", reason: `harness error: ${cause.message.split("\n")[0]}` });
   } finally {
-    rmSync(checkFile, { force: true });
     run("git", ["checkout", "--quiet", "--force", "--detach", row.head], { cwd: clone });
+    rmSync(checkFile, { force: true });
   }
 }
 console.log(`${done} row(s) run through A2; results in ${rowsRoot}`);

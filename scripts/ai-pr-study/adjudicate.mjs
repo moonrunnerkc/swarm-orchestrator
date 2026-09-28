@@ -27,6 +27,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import http from "node:http";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -230,16 +231,50 @@ async function traceFailure(requirement, failingOutput) {
   }
 }
 
+/**
+ * A POST with no header timeout: a local model working through a long review context can take
+ * longer than the default client's five minutes to send its first byte, which read as
+ * "fetch failed (UND_ERR_HEADERS_TIMEOUT)" and cost the row. The response is read whole.
+ */
+function post(url, body) {
+  return new Promise((resolve, reject) => {
+    const target = new URL(url);
+    const request = http.request(
+      {
+        hostname: target.hostname,
+        port: target.port,
+        path: target.pathname,
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        timeout: 0,
+      },
+      (response) => {
+        let text = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk) => {
+          text += chunk;
+        });
+        response.on("end", () =>
+          resolve({
+            status: response.statusCode ?? 0,
+            ok: (response.statusCode ?? 0) >= 200 && (response.statusCode ?? 0) < 300,
+            text: async () => text,
+            json: async () => JSON.parse(text),
+          }),
+        );
+      },
+    );
+    request.on("error", reject);
+    request.end(JSON.stringify(body));
+  });
+}
+
 /** One model call, retried on a transport failure: a dropped connection is not a finding. */
 async function completion(body) {
   let failure = null;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
-      const response = await fetch(`${endpoint}/v1/chat/completions`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      const response = await post(`${endpoint}/v1/chat/completions`, body);
       if (response.status >= 500 && Array.isArray(body.messages)) {
         // The server refusing the model's own malformed tool call: at temperature 0 the same
         // request gives the same malformed call, so the reviewer is told and asked again.
