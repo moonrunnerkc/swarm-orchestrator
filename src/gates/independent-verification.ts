@@ -310,7 +310,13 @@ export async function verifyIndependently(
       return {
         applied: false,
         checks: [],
-        refusal: `the base commit ${options.baseCommit} is not in the checkout`,
+        // git's own last line, because "not in the checkout" was also what a base that exists
+        // but cannot be checked out read as: two paths differing only in case on a
+        // case-insensitive filesystem left the tree dirty and git refused to switch.
+        refusal: `the base commit ${options.baseCommit} could not be checked out: ${
+          (reset.stderr || reset.stdout).trim().split("\n").filter(Boolean).at(-1) ??
+          "git gave no reason"
+        }`,
         regression: "unmeasured",
         task: "unjudged",
         oracleReach: "unmeasured",
