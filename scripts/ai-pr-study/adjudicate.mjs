@@ -493,6 +493,10 @@ for (const name of readdirSync(rowsRoot)
             // The check would overwrite a file the pull request changed; that is the author's
             // file, not the reviewer's. One more chance to name a fresh path, within the step cap.
             content = `refused: ${path} is a file the pull request changed; write the check to a new path (for example a new file beside the tests) and call finish again`;
+          } else if (callArgs.unjudged !== true && !/^[\w.@+-]+(?:\/[\w.@+-]+)*$/.test(path)) {
+            // One file's path, not a list: thesvg#1159's reviewer named the three files its
+            // check greps, space-joined, and the check was then written under that one name.
+            content = `refused: ${JSON.stringify(path)} is not one plain repository-relative file path; name the single new file the check is written to (letters, digits, and . _ - @ + only, / between directories) and call finish again`;
           } else {
             check = callArgs;
             content = "recorded";

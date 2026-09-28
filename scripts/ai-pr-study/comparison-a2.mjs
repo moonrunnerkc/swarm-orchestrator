@@ -10,7 +10,7 @@
  *        [--only <index,index>] [--limit <n>]
  */
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -52,7 +52,6 @@ for (const name of readdirSync(rowsRoot)
   done += 1;
   const clone = join(workingRoot, `${row.repository.replace("/", "__")}-${row.number}`);
   const check = row.adjudication.check;
-  const checkFile = join(clone, check.path);
   const startedAt = Date.now();
   const finish = (result) => {
     row.comparisonA2 = {
@@ -66,31 +65,16 @@ for (const name of readdirSync(rowsRoot)
     );
   };
   try {
-    // The verifier clones the workspace into its own checkout, and a clone carries no
-    // untracked file, so the check is committed on top of the head on a throwaway branch and
-    // that commit is what the verifier is given: the pull request's patch plus the one file it
-    // is judged by. The row records that the patch A2 saw includes the check.
-    run("git", ["checkout", "--quiet", "--force", "--detach", row.head], { cwd: clone });
-    mkdirSync(join(checkFile, ".."), { recursive: true });
-    writeFileSync(checkFile, check.contents);
-    run("git", ["add", "--force", "--", check.path], { cwd: clone });
-    run(
-      "git",
-      [
-        "-c",
-        "user.name=study",
-        "-c",
-        "user.email=study@example.test",
-        "commit",
-        "-q",
-        "--no-verify",
-        "-m",
-        "study: the held-back check, for the A2 oracle run",
-      ],
-      { cwd: clone },
-    );
-    const withCheck = run("git", ["rev-parse", "HEAD"], { cwd: clone }).stdout.trim();
-    run("git", ["update-ref", "refs/heads/study-a2", withCheck], { cwd: clone });
+    // The check travels inside the oracle command and is decoded into place when the oracle
+    // runs, so the verifier judges exactly the pull request's patch, the one A0 and A1 judge.
+    // Committing it on top of the head (the previous design) put the reviewer's file in front of
+    // the repository's own lint and format checks, which then failed on the reviewer's style and
+    // read as a regression. base64 keeps the file's bytes out of the shell's quoting.
+    const quote = (text) => `'${text.replaceAll("'", "'\\''")}'`;
+    const directory = check.path.includes("/")
+      ? check.path.slice(0, check.path.lastIndexOf("/"))
+      : ".";
+    const oracle = `mkdir -p ${quote(directory)} && printf %s ${quote(Buffer.from(check.contents).toString("base64"))} | base64 -d > ${quote(check.path)} && ${check.command}`;
     const image = row.execution?.isolation?.replace(/^docker:/, "") ?? "node:24-bookworm";
     const bundle = join(workingRoot, "bundles-a2", version, String(row.index).padStart(2, "0"));
     mkdirSync(join(workingRoot, "bundles-a2", version), { recursive: true });
@@ -103,7 +87,7 @@ for (const name of readdirSync(rowsRoot)
         "--workspace",
         clone,
         "--branch",
-        withCheck,
+        row.head,
         "--base",
         row.base,
         "--json",
@@ -114,7 +98,7 @@ for (const name of readdirSync(rowsRoot)
         "--require-isolation",
         "--install",
         "--oracle",
-        check.command,
+        oracle,
       ],
       {
         cwd: workingRoot,
@@ -137,8 +121,9 @@ for (const name of readdirSync(rowsRoot)
     }
     finish({
       outcome: "executed",
-      patchIncludesCheck: true,
-      commitWithCheck: withCheck,
+      patchIncludesCheck: false,
+      checkDelivery: "decoded into place by the oracle command at run time",
+      oracleRuns: report.oracleRuns ?? null,
       verified: report.verified ?? null,
       refusal: report.refusal ?? null,
       task: report.task ?? null,
@@ -149,9 +134,6 @@ for (const name of readdirSync(rowsRoot)
     });
   } catch (cause) {
     finish({ outcome: "blocked", reason: `harness error: ${cause.message.split("\n")[0]}` });
-  } finally {
-    run("git", ["checkout", "--quiet", "--force", "--detach", row.head], { cwd: clone });
-    rmSync(checkFile, { force: true });
   }
 }
 console.log(`${done} row(s) run through A2; results in ${rowsRoot}`);
