@@ -165,5 +165,5 @@ established or explicitly handed off with its remaining manifest.
 - [baseline.md](baseline.md): G0 prerequisite checks and the gate transcript on the baseline.
 - [dogfood-manifest.md](dogfood-manifest.md): the owned-repository inventory and rollout state.
 - [node-22.md](node-22.md): the coverage arm on Node 22.8 and newer, with the probe per runtime.
-- [attack-controls.md](attack-controls.md): the twelve attack families bound to executed controls.
+- [attack-controls.md](attack-controls.md): the twelve attack families, and a thirteenth reported against 1.0.5, bound to executed controls.
 - [contract.md](contract.md): the stable 1.x contract of the package and the Action.
