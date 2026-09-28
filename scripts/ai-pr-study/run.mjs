@@ -187,6 +187,20 @@ for (const selected of frame.selected) {
     // carries branches and tags, not refs under any other name.
     run("git", ["update-ref", "refs/heads/study-base", row.base], { cwd: clone });
     run("git", ["update-ref", "refs/heads/study-head", row.head], { cwd: clone });
+    // Both objects must be here: a base the server did not hand over leaves the diff empty and
+    // the verifier refusing later, and neither is this row's finding.
+    for (const [name, sha] of [
+      ["base", row.base],
+      ["head", row.head],
+    ]) {
+      if (run("git", ["cat-file", "-e", `${sha}^{commit}`], { cwd: clone }).status !== 0) {
+        finish("blocked", {
+          reason: `the ${name} commit ${sha} could not be fetched from the repository`,
+        });
+      }
+    }
+    if (existsSync(rowPath) && JSON.parse(readFileSync(rowPath, "utf8")).outcome === "blocked")
+      continue;
     const checkedOut = run("git", ["checkout", "--quiet", "--force", "--detach", row.head], {
       cwd: clone,
     });
@@ -229,7 +243,12 @@ for (const selected of frame.selected) {
     }
 
     // The frozen verifier, exactly as the Action invokes it, from the registry.
-    const summary = rowPath.replace(/\.json$/, ".summary.md");
+    // The verifier's report, summary and stderr are kept outside the tree by digest (the
+    // report carries the suite's whole structured output); the row carries what it reads.
+    const reportsRoot = join(workingRoot, "reports");
+    mkdirSync(reportsRoot, { recursive: true });
+    const stem = join(reportsRoot, String(selected.index).padStart(2, "0"));
+    const summary = `${stem}.summary.md`;
     const bundle = join(workingRoot, "bundles", String(selected.index).padStart(2, "0"));
     mkdirSync(join(workingRoot, "bundles"), { recursive: true });
     const verifierArgs = [
@@ -262,26 +281,22 @@ for (const selected of frame.selected) {
     });
     row.verifier.exit = verified.status;
     row.verifier.timedOut = verified.signal === "SIGTERM";
-    writeFileSync(rowPath.replace(/\.json$/, ".stderr.txt"), verified.stderr ?? "");
+    writeFileSync(`${stem}.stderr.txt`, verified.stderr ?? "");
     let report = null;
     try {
       report = JSON.parse(verified.stdout.trim().split("\n").at(-1) ?? "");
     } catch {
       report = null;
     }
-    if (report !== null)
-      writeFileSync(
-        rowPath.replace(/\.json$/, ".report.json"),
-        `${JSON.stringify(report, null, 2)}\n`,
-      );
+    const reportBytes = report === null ? null : `${JSON.stringify(report, null, 2)}\n`;
+    if (reportBytes !== null) writeFileSync(`${stem}.report.json`, reportBytes);
     row.report =
-      report === null
+      reportBytes === null
         ? null
         : {
-            file: rowPath
-              .replace(/\.json$/, ".report.json")
-              .split("/")
-              .at(-1),
+            digest: `sha256:${createHash("sha256").update(reportBytes).digest("hex")}`,
+            bytes: Buffer.byteLength(reportBytes),
+            location: `${stem}.report.json (outside the repository)`,
           };
     row.bundle = existsSync(bundle)
       ? { location: `${bundle} (outside the repository)`, digest: digestOfTree(bundle) }
@@ -307,12 +322,16 @@ for (const selected of frame.selected) {
         checks: Object.fromEntries(checks.map((check) => [check.id, check.status])),
         // Green only when something blocking was measured and passed, and nothing was refused:
         // an empty check list, or a run refused before its checks, is not a green suite.
+        // The protocol's "original-suite green": the repository's declared test command
+        // passed in the fresh execution. Other declared checks are reported beside it.
         originalSuiteGreen:
           report.refusal === null &&
-          checks.some((check) => check.severity === "blocking" && check.status === "passed") &&
+          checks.some((check) => check.id.startsWith("tests") && check.status === "passed"),
+        inherited: Object.fromEntries(
           checks
-            .filter((check) => check.severity === "blocking")
-            .every((check) => check.status === "passed" || check.status === "not-applicable"),
+            .filter((check) => check.inheritedFromBase === true)
+            .map((check) => [check.id, true]),
+        ),
       },
     });
   } catch (cause) {
