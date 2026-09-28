@@ -4,6 +4,7 @@ import {
   exitCodeParser,
   fileLineHits,
   inspectionParser,
+  jestTestParser,
   parseLineHits,
   parseTapOutcomes,
   parseTapTotals,
@@ -47,6 +48,33 @@ describe("gate output parsers", () => {
     });
   });
 
+  /** koa#1904 in Comparison B: "2 failed" named nothing a repair could act on. */
+  it("names the TAP points that failed", () => {
+    const reading = testOutputParser(
+      observed({
+        exitCode: 1,
+        stdout: [
+          "TAP version 13",
+          "# Subtest: Load with esm",
+          "    not ok 1 - should default export koa",
+          "    not ok 2 - should match exports own property names",
+          "not ok 28 - Load with esm",
+          "ok 29 - keeps working # SKIP",
+          "1..29",
+          "# tests 29",
+          "# pass 26",
+          "# fail 2",
+          "# skipped 1",
+        ].join("\n"),
+      }),
+    );
+
+    expect(reading.status).toBe("failed");
+    expect(reading.detail).toBe(
+      '29 collected, 26 passed, 2 failed, 1 skipped (exit 1); failing: "should default export koa", "should match exports own property names", "Load with esm"',
+    );
+  });
+
   it("calls a TAP run failed when it reports a failure, whatever the exit code was", () => {
     const reading = testOutputParser(
       observed({ exitCode: 0, stdout: tapOutput.replace("# fail 0", "# fail 1") }),
@@ -63,6 +91,48 @@ describe("gate output parsers", () => {
 
     expect(reading.status).toBe("failed");
     expect(reading.measures).toEqual({ testsCollected: 196, testsPassed: 194, testsFailed: 2 });
+  });
+
+  /**
+   * commander.js#1671: a patch made one test file exit the process, jest could not run that
+   * suite, and the check read "the runner reported: 978 passed, 978 total" while failed.
+   */
+  it("names the suite that failed to run when every counted test passed", () => {
+    const reading = jestTestParser(
+      observed({
+        exitCode: 1,
+        stderr: [
+          "PASS tests/ts-imports.test.ts",
+          "FAIL tests/command.optsWithGlobals.test.js",
+          "  ● Test suite failed to run",
+          "Summary of all failing tests",
+          "FAIL tests/command.optsWithGlobals.test.js",
+          "Test Suites: 1 failed, 90 passed, 91 total",
+          "Tests:       978 passed, 978 total",
+        ].join("\n"),
+      }),
+    );
+
+    expect(reading.status).toBe("failed");
+    expect(reading.detail).toContain("test files: 1 failed, 90 passed, 91 total");
+    expect(reading.detail).toContain("failing file: tests/command.optsWithGlobals.test.js");
+  });
+
+  it("says the exit came from outside the counted tests when no file failed either", () => {
+    const reading = vitestTestParser(
+      observed({ exitCode: 2, stdout: " Test Files  3 passed (3)\n Tests  12 passed (12)\n" }),
+    );
+
+    expect(reading.status).toBe("failed");
+    expect(reading.detail).toContain("the non-zero exit came from outside the counted tests");
+  });
+
+  it("adds nothing to a failure the counts already explain", () => {
+    const reading = jestTestParser(
+      observed({ exitCode: 1, stdout: "Tests:       1 failed, 2 passed, 3 total\n" }),
+    );
+
+    expect(reading.detail).toBe("the runner reported: 1 failed, 2 passed, 3 total");
   });
 
   it("falls back to the exit code rather than inventing a count", () => {
