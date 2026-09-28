@@ -36,7 +36,7 @@ export function testPoints(observation: GateObservation): TestPoints | null {
     };
   }
   const text = `${observation.stdout}\n${observation.stderr}`;
-  if (!/^TAP version \d+/m.test(text)) return null;
+  if (!/^TAP version \d+/m.test(text)) return vitestTextFailures(text);
   const failed: string[] = [];
   const passed: string[] = [];
   for (const match of text.matchAll(/^(\s*)(not ok|ok)\s+\d+\s+-\s+(.+?)\s*$/gm)) {
@@ -46,6 +46,28 @@ export function testPoints(observation: GateObservation): TestPoints | null {
     (verdict === "ok" ? passed : failed).push(`${indent.length}:${title}`);
   }
   return { failed, passed };
+}
+
+/**
+ * Vitest's own reporters, when the project's script adds flags the structured runner does not
+ * take (`vitest run --coverage --reporter=verbose`): every failed test and every file that failed
+ * to load is printed as a `FAIL` line in the summary. Only failures are named, so this can prove
+ * an inheritance and a new failure, never a pass. Read only beside Vitest's own `Test Files`
+ * summary line, and null where the summary counts failures but no `FAIL` line names them.
+ */
+function vitestTextFailures(raw: string): TestPoints | null {
+  const text = raw.replace(colourCode, "");
+  const summary = /^\s*Test Files\s+(.+)$/m.exec(text)?.[1];
+  if (summary === undefined) return null;
+  const failed = [
+    ...new Set(
+      [...text.matchAll(/^\s*FAIL\s+(\S.*?)\s*$/gm)]
+        .map((match) => match[1] ?? "")
+        .filter((line) => line !== ""),
+    ),
+  ];
+  if (failed.length === 0 && /\d+\s+failed/.test(summary)) return null;
+  return { failed, passed: [] };
 }
 
 /** Terminal colour sequences: escape, "[", parameters, a final letter. */
