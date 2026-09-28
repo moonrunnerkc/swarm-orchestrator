@@ -78,6 +78,12 @@ async function execute(
 ) {
   const holdUntilDependent = controls.holdUntilDependent === true;
   let longWaiting = false;
+  // Started and not yet finished. It cannot finish before `releaseSecond`, because its model
+  // call waits on that release. "Waiting" alone was set only once worker-2 reached its first
+  // model call, so under load the dependent could start while worker-2 was still being set up
+  // and the test read an unrelated worker that was running as not running (issue #75).
+  let longStarted = false;
+  let secondReleased = false;
   let dependentStartedWhileWaiting = false;
   let releaseSecond = () => {};
   const secondReady = new Promise<void>((resolve) => {
@@ -93,6 +99,14 @@ async function execute(
     record: async (entry) => {
       const written = await rawCoordinator.record(entry);
       if (
+        entry.type === "worker-started" &&
+        typeof entry.payload === "object" &&
+        entry.payload !== null &&
+        "workerId" in entry.payload &&
+        entry.payload.workerId === "worker-2"
+      )
+        longStarted = true;
+      if (
         holdUntilDependent &&
         entry.type === "worker-started" &&
         typeof entry.payload === "object" &&
@@ -100,7 +114,8 @@ async function execute(
         "workerId" in entry.payload &&
         entry.payload.workerId === "worker-3"
       ) {
-        dependentStartedWhileWaiting = longWaiting;
+        dependentStartedWhileWaiting = longWaiting || (longStarted && !secondReleased);
+        secondReleased = true;
         releaseSecond();
       }
       if (
