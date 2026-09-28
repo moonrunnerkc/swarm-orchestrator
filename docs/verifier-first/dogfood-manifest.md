@@ -97,4 +97,16 @@ The pull requests were re-pinned to `1.0.0-rc.7` and `1.0.0-rc.8` by `scripts/ro
 | tracemantle#16, rlfusion-orchestrator#2, nborder#2, ironroot#1 | refused: no supported lockfile | honest: none carries a `uv.lock`; the comment names it and the remedy |
 | gemma-witness#50, nondet#1, swarm-orchestrator-rules#1 | incomplete: every check stood down | Rust, Java and no toolchain; the advice now lists why each check stood down and says an undriven toolchain is unmeasured, not a pass |
 
-The rows are replaced by the stable release's results when it ships. A person merges.
+Under the stable release, distribution `v1.0.0` and `v1` (`5dedd6d41`), every pull request
+re-pinned on 2026-09-28 and re-run (the run links are in each pull request's comment):
+
+| Pull request | 1.0.0 verdict | Reading |
+| --- | --- | --- |
+| crossfire#1, claimcheck#1, pubprep#1, dumpscan#1, counterfactual-court#1 | regression-only pass | the suite passed in the container; task correctness unmeasured, as the comment says |
+| quantproof#1, cronproof#2, depose#4 | not verified, inherited | a check fails at the base commit too: a native module's install script (quantproof), 31 environment-bound tests (cronproof), a Go build with no Go in the image (depose); each named in its comment as inherited, never as a regression |
+| ruleprobe#3 | not verified: tests fail on the head and pass at the base | the nondeterministic CLI test, ruleprobe#4 |
+| tracemantle#16, rlfusion-orchestrator#2, nborder#2, ironroot#1 | refused: no supported lockfile | none carries a `uv.lock`; the remedy is in the comment |
+| gemma-witness#50, nondet#1, swarm-orchestrator-rules#1 | incomplete: every check stood down, each reason listed | Rust, Java and no toolchain: unmeasured, not a pass |
+
+These are the rows the stable release stands on. A person merges each pull request; none is
+merged by this rollout.

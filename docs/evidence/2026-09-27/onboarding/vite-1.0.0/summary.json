@@ -1,0 +1,23 @@
+{
+  "repository": "zhihui-hu/one-ip",
+  "category": "vite",
+  "image": "ubuntu:24.04",
+  "imageDigest": "ubuntu@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3",
+  "model": "qwen3.6:35b-a3b",
+  "version": "1.0.0",
+  "steps": 7,
+  "firstResultMs": 25924,
+  "outcome": {
+    "step": 8,
+    "firstResult": true,
+    "firstResultText": "Initial run exited 4 due to missing pnpm and dependencies. After installing them per the tool's instructions, the second run exited 1 with `fail: a blocking check failed (exit 1)`. It discovered the test command, ran it, reported 5 passed checks (lint, build, placeholder, secret-scan, diff-budget), 1 failed check (`tests` due to missing `dist` directory), and noted unmeasured requirements/challenges. It also exported a signed evidence bundle for offline verification.",
+    "brokenCopyRefused": true,
+    "confusions": [
+      "The tool's signing step warned about Secret Service keyring failure, which is expected in a headless environment but initially unclear why it couldn't use a persistent signer.",
+      "swarm-verify treats any failing check as a refusal (exit 1), which aligns with its design but means the 'refusal' behavior is identical for both the original repo (missing build artifacts) and the broken copy (injected test failure)."
+    ],
+    "report": "## swarm-verify Trial Report\n\n### 1. First Result on `./repo`\n- **Prerequisites**: The tool initially exited with code 4, clearly stating that `pnpm` was missing from PATH and dependencies were not installed. Following its explicit instruction, I ran `npm install -g pnpm` followed by `pnpm install --frozen-lockfile`.\n- **Verification Run**: After satisfying prerequisites, running `npx swarm-verify` in the repository produced a comprehensive verdict:\n  - Discovered the project type (`node, pnpm`) and scope (`root`).\n  - Executed the declared test command (`wrangler deploy --dry-run ... && node --test tests/*.test.mjs`).\n  - Reported **5 passed checks** (lint, build, placeholder, secret-scan, diff-budget) and **1 failed check** (`tests`, exited 1 due to missing `dist` directory).\n  - Noted unmeasured areas: no requirement contract supplied, no typecheck/format scripts declared, no changed functions to probe.\n  - Result: `fail: a blocking check failed (exit 1)`.\n  - Exported a signed evidence bundle at `/root/.swarm/sessions/.../bundle` with instructions for offline verification via `verify.mjs`.\n\n### 2. Broken Copy Test\n- **Setup**: Created a disposable copy (`cp -r ./repo ./broken`) and intentionally broke a test by appending `throw new Error(\"intentional break\");` to `tests/home-egress.test.mjs`.\n- **Verification Run**: Running `npx swarm-verify` in the broken copy correctly detected the failure:\n  - Reported `188 collected, 187 passed, 1 failed, 0 skipped (exit 1)`.\n  - Explicitly named the modified file: `tests/home-egress.test.mjs` and flagged it as an uncommitted change.\n  - Result: `fail: a blocking check failed (exit 1)` — confirming swarm-verify refuses on broken checks as documented.\n\n### 3. Observations & Confusions\n- **Transparency**: The tool's output is highly structured and self-explanatory. Exit code 4 gracefully handles missing prerequisites with exact next steps.\n- **Refusal Behavior**: Both the original repo (due to its own pre-existing test failure) and the broken copy triggered exit code 1. This is expected per the README (\"A check that fails is a refusal too\"), but initially made it slightly ambiguous whether the tool was \"refusing\" the tampering or just reporting standard CI failures. The uncommitted file tracking in the broken copy run clarified its awareness of changes.\n- **Headless Signing**: The warning about `secret-tool store failed` was expected in this environment but worth noting for local desktop usage where a persistent signer key would be retained.\n- **Time/Steps**: Completed in 6 steps (prerequisite check, dependency installation, initial verify, repo copy, test breakage, broken verify). Total execution time ~15 seconds excluding network/install delays.\n\nswarm-verify successfully discovered the project's test suite, executed it, reported structured pass/fail metrics, and correctly refused on the intentionally broken copy. The workflow is straightforward and aligns closely with its documentation."
+  },
+  "finishedAt": "2026-09-28T00:35:12.031Z",
+  "label": "AI onboarding simulation by a local model; not a human tester"
+}

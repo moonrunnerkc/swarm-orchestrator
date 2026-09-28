@@ -1,0 +1,23 @@
+{
+  "repository": "taverntesting/tavern",
+  "category": "python",
+  "image": "ubuntu:24.04",
+  "imageDigest": "ubuntu@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3",
+  "model": "qwen3.6:35b-a3b",
+  "version": "1.0.0",
+  "steps": 11,
+  "firstResultMs": 27645,
+  "outcome": {
+    "step": 12,
+    "firstResult": true,
+    "firstResultText": "swarm-verify ran successfully on ./repo, discovered it as a Python/uv project, and executed `uv run --locked --no-sync python -m pytest -q`. The test suite itself passed (539 executed), but the tool exited with code 1 and reported `fail: a blocking check failed` because a formatting/lint check (`format`) failed on uncommitted changes in the repository. It also noted that without a requirement contract, task correctness was unmeasured.",
+    "brokenCopyRefused": true,
+    "confusions": [
+      "The tool initially exited with code 4 because `uv` was not on PATH; installing it resolved this immediately as documented.",
+      "Both runs failed due to a pre-existing formatting check failure in the repo, which slightly obscured the test pass/fail distinction, but the output clearly separated `format` (lint) from `tests` (regression suite)."
+    ],
+    "report": "## swarm-verify Testing Report\n\n### Step 1: First Result on ./repo\nI ran `npx swarm-verify` in the cloned `taverntesting/tavern` repository. \n- **Prerequisite Handling**: The tool correctly identified it as a Python project and exited with code 4, stating `uv is not on PATH`. I installed `uv` per standard documentation and ran `uv sync --all-extras --all-packages` to install dependencies.\n- **Execution**: On the second run, swarm-verify discovered the test command (`python -m pytest -q`), executed it in 8.8s, and reported 539 tests executed with an `outcome passed`.\n- **Verdict**: It exited with code 1 and printed `fail: a blocking check failed (exit 1)`. This was due to a `format` (linting) check failing on uncommitted whitespace changes in the repo, not the test suite itself. The tool correctly separated lint failures from regression pass/fail status and noted that task correctness was unmeasured without a requirement contract.\n\n### Step 2: Broken Copy Refusal\nI created a disposable copy (`cp -r repo broken`), intentionally broke a test by changing an assertion in `tests/unit/test_tinctures.py` (`assert call_mock.call_count == 1` to `== 2`), and ran swarm-verify again.\n- **Result**: The tool correctly detected the failure, reporting `tests: ... outcome failed`. It exited with code 1 and printed `fail: a blocking check failed (exit 1)`, explicitly naming the `tests` check as the blocker. This confirms swarm-verify properly refuses broken states.\n\n### Step 3: Observations & Confusions\n- **Behavior**: Matches the README exactly. It discovers manifests, runs checks in a CI-like manner, reports regression vs. task correctness separately, and exits 1 on any blocking failure.\n- **Confusion**: The pre-existing formatting failures in the base repo masked the clean \"pass\" signal for the test suite in both runs, though the output clearly distinguished `format` from `tests`. No other confusions arose; the tool's output is highly structured and self-explanatory.\n- **Time/Steps**: ~5 steps (install uv, sync deps, run verify x2). Took under 2 minutes total.\n\nswarm-verify functions as advertised: dependency-aware, manifest-driven, strictly refuses on failures, and provides clear, separate signals for regression passes vs. task verification gaps."
+  },
+  "finishedAt": "2026-09-28T00:39:48.572Z",
+  "label": "AI onboarding simulation by a local model; not a human tester"
+}
