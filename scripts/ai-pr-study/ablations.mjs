@@ -18,7 +18,15 @@ const failedChecks = (row) =>
   Object.entries(row.verdict?.checks ?? {})
     .filter(([, status]) => status === "failed")
     .map(([id]) => id);
-const inherited = (row) => new Set(Object.keys(row.verdict?.inherited ?? {}));
+
+/** The verifier's recorded regression-only decision, as Comparison A's A1 reads it. */
+const verifierDecision = (row) => {
+  if (row.outcome !== "executed") return "unmeasured";
+  if (row.verdict?.refusal) return "refuse";
+  if (row.verdict?.verified === true || row.verdict?.regression === "pass") return "accept";
+  if (failedChecks(row).length > 0) return "refuse";
+  return "unmeasured";
+};
 
 const rungs = {
   S0: (row) => {
@@ -26,16 +34,13 @@ const rungs = {
     const tests = row.verdict?.checks?.tests;
     return tests === "passed" ? "accept" : tests === "failed" ? "refuse" : "unmeasured";
   },
-  // The base control and the refusal paths, and nothing from coverage or mutation: a failure
-  // the base carried is inherited and not charged; a failure the base did not have refuses.
-  S1: (row) => {
-    if (row.outcome !== "executed") return "unmeasured";
-    if (row.verdict?.refusal) return "refuse";
-    const own = failedChecks(row).filter((id) => !inherited(row).has(id));
-    if (own.length > 0) return "refuse";
-    const passed = Object.values(row.verdict?.checks ?? {}).some((status) => status === "passed");
-    return passed ? "accept" : "unmeasured";
-  },
+  // The registered S1: the verifier's own regression-only decision (A1) with the coverage
+  // dimension masked. Without a contract, coverage and mutation feed the unmeasured and reach
+  // readings, never accept or refuse, so the masked decision is the recorded one. An earlier
+  // version re-derived the inherited-failure rule here instead and dropped the rule that a
+  // required check which stood down leaves regression unmeasured, which accepted a row the
+  // verifier itself left unmeasured (felixrieseberg/claude-coach#18).
+  S1: (row) => verifierDecision(row),
   S2: (row) => {
     const oracle = row.comparisonA2;
     if (oracle !== undefined && oracle.outcome === "executed")
@@ -44,11 +49,7 @@ const rungs = {
         : oracle.refusal || oracle.task === "rejected"
           ? "refuse"
           : "unmeasured";
-    if (row.outcome !== "executed") return "unmeasured";
-    if (row.verdict?.refusal) return "refuse";
-    if (row.verdict?.verified === true || row.verdict?.regression === "pass") return "accept";
-    if (failedChecks(row).length > 0) return "refuse";
-    return "unmeasured";
+    return verifierDecision(row);
   },
 };
 function wilson(k, n) {
@@ -90,7 +91,7 @@ ${[
   ["S0", "the repository's own test command, exit code only"],
   [
     "S1",
-    "the base control (an inherited failure is not charged to the patch) and the identity, isolation, install and output refusals",
+    "the base control and the identity, isolation, install and output refusals, as the verifier version in these rows applies them",
   ],
   [
     "S2",

@@ -95,3 +95,17 @@ digest are recorded beside the report.
   is judged by, which the row records (`patchIncludesCheck`). A0 and A1 judge the patch
   alone. The verifier version A2 ran with is recorded per row; a rerun on a later version is
   a replay and is labelled one.
+- **2026-09-28, S1 read as registered.** The first ablation script did not read S1 as the
+  verdict with coverage masked, as registered above. It re-derived the inherited-failure rule
+  from per-check statuses and dropped the verifier's rule that a required check which stood
+  down leaves regression unmeasured. On felixrieseberg/claude-coach#18, judged a violated
+  requirement, the build ran and then hit a missing command; the verifier left regression
+  unmeasured, while the script accepted the row. That false green belonged to the script, not
+  to any arm, and the S1 agreement it reported on 1.0.2 was overstated by the same rule. S1 is
+  now the verifier's recorded regression-only decision, which is A1 when no contract exists.
+  Both ablation pages were re-rendered from unchanged rows.
+- **2026-09-28, infrastructure reruns in a replay.** Three consecutive rows of the 1.0.3
+  replay (11, 12 and 13) were blocked because docker killed their containers and the verifier
+  refused when it could not confirm cleanup. Each was rerun once with docker otherwise idle.
+  The failed attempt stays on its row under `infrastructureAttempts`, and the report names every
+  such row. None of the three carries adjudicated truth.
