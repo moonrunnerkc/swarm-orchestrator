@@ -36,6 +36,8 @@ export interface ContainerBackendOptions {
   readonly runProcess?: typeof runProcessGroup;
   /** The pause before a second and third image pull; tests pass 0. */
   readonly pullRetryPauseMs?: number;
+  /** The pause before a second and third removal round; tests set it to 0. */
+  readonly cleanupRetryPauseMs?: number;
 }
 
 const workspaceMountPoint = "/workspace";
@@ -242,19 +244,32 @@ export function createContainerBackend(options: ContainerBackendOptions): Isolat
               )
             : created;
       } finally {
-        // The scratch directory goes whatever the runtime's removal did or threw.
+        // Removal is asked for and then observed, up to three times with a growing pause. One
+        // sample was too few: under load the runtime finished removals after its 15-second
+        // client deadline, so a container gone moments later refused twelve study rows in a
+        // row. A container still listed after the last round, or one whose creation was
+        // uncertain, is still an unconfirmed cleanup.
+        let removed = false;
         try {
-          await execute(options.runtime, ["rm", "--force", identity], runtimeOptions);
+          for (let round = 1; round <= 3 && !removed; round += 1) {
+            if (round > 1)
+              await new Promise((resolve) =>
+                setTimeout(resolve, (options.cleanupRetryPauseMs ?? 5_000) * (round - 1)),
+              );
+            await execute(options.runtime, ["rm", "--force", identity], runtimeOptions);
+            const inspected = await execute(
+              options.runtime,
+              ["ps", "--all", "--quiet", "--filter", `name=^/${identity}$`],
+              runtimeOptions,
+            );
+            removed = inspected.exitCode === 0 && inspected.stdout.trim() === "";
+            if (creationUncertain) break;
+          }
         } finally {
+          // The scratch directory goes whatever the runtime's removal did or threw.
           await rm(scratch, { recursive: true, force: true });
         }
-        const inspected = await execute(
-          options.runtime,
-          ["ps", "--all", "--quiet", "--filter", `name=^/${identity}$`],
-          runtimeOptions,
-        );
-        const removed =
-          !creationUncertain && inspected.exitCode === 0 && inspected.stdout.trim() === "";
+        removed = removed && !creationUncertain;
         await options.observeLifecycle?.({
           identity,
           phase: removed ? "removed" : "cleanup-failed",
