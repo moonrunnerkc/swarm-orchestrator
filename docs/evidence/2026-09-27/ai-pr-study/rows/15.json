@@ -1,0 +1,698 @@
+{
+  "index": 15,
+  "url": "https://github.com/github/gh-aw-firewall/pull/9077",
+  "repository": "github/gh-aw-firewall",
+  "number": 9077,
+  "title": "docs: add JSDoc to Logger and document why it logs to stderr",
+  "author": "copilot-swe-agent",
+  "verifier": {
+    "package": "swarm-verify",
+    "version": "1.0.2",
+    "argv": [
+      "npx",
+      "--yes",
+      "swarm-verify@1.0.2",
+      "ci",
+      "--workspace",
+      "/Users/brad/.cache/swarm-ai-pr-study/github__gh-aw-firewall-9077",
+      "--branch",
+      "7c3cdb4492a70329bd5c381aac23fce78f48b096",
+      "--base",
+      "f1032fc9247a9e69d3aa7e51c90fa1004acce423",
+      "--json",
+      "--summary",
+      "/Users/brad/.cache/swarm-ai-pr-study/reports/15.summary.md",
+      "--bundle",
+      "/Users/brad/.cache/swarm-ai-pr-study/bundles/15",
+      "--isolation",
+      "docker:node:24-bookworm",
+      "--require-isolation",
+      "--install"
+    ],
+    "exit": 1,
+    "timedOut": false
+  },
+  "startedAt": "2026-09-28T04:15:10.265Z",
+  "base": "f1032fc9247a9e69d3aa7e51c90fa1004acce423",
+  "head": "7c3cdb4492a70329bd5c381aac23fce78f48b096",
+  "mergeCommit": "b4f4a81122d80f5ca509587fe2a4bc3f8e707fca",
+  "mergedAt": "2026-09-27T17:42:05Z",
+  "body": "`src/logger.ts` had no JSDoc. The issue also asked why every level calls `console.error` instead of `console.info`, `console.warn` and `console.debug`. This PR adds JSDoc and keeps the `console.error` calls on purpose. It only adds comments; runtime behaviour is unchanged.\n\n### Changes\n- **JSDoc**: covers `LOG_LEVELS`, the `Logger` class and constructor, `setLevel`, the private `shouldLog`, every level method (prefix, colour, threshold) and the exported `logger` singleton.\n- **stderr rationale** (class-level doc): in Node, `console.info` and `console.debug` write to stdout. `awf` wraps a user command whose stdout is often piped or parsed, so logs must not mix into it. Sending every level to stderr keeps stdout clean.\n\n```ts\n/**\n * All messages are written to stderr via `console.error`, regardless of level.\n * This is intentional: in Node.js, `console.info` and `console.debug` write to\n * stdout, which would interleave log lines with the stdout of the command\n * wrapped by awf and break callers that parse or pipe that output.\n */\nclass Logger {\n```\n\n<!-- START COPILOT CODING AGENT SUFFIX -->\n\n- Fixes #9067",
+  "linkedIssues": [
+    {
+      "number": 9067
+    }
+  ],
+  "historicalChecks": [
+    {
+      "name": "pre_activation",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "pre_activation",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "pre_activation",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "pre_activation",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "pre_activation",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "pre_activation",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "pre_activation",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Build and Lint (Node 20)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "gate",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Test Chroot Language Support",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Analyze (javascript-typescript)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Audit Main Package",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Test Examples",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Check File Permission Patterns (Ubuntu Latest)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Domain Tests",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "ESLint",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "pr-title",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "pr-title",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "pr-title",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Compile + Syft/Grype/Grant",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Test Coverage Report",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Test Action (Latest Version)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "TypeScript Type Check",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Build and Lint (Node 22)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Analyze (actions)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Check File Permission Patterns (Ubuntu 24.04)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "agent",
+      "conclusion": "FAILURE"
+    },
+    {
+      "name": "agent",
+      "conclusion": "FAILURE"
+    },
+    {
+      "name": "agent",
+      "conclusion": "FAILURE"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Test Chroot Package Managers",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Audit Docs Site Package",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Network Tests",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Markdown Lint",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "check_security_relevance",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Test Action (Specific Version)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "Build workflow-attested NVX artifacts",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "Build workflow-attested NVX artifacts",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Test Chroot /proc Filesystem",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Protocol & Security Tests",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Test Action (With Image Pull)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Test Chroot Edge Cases",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Container & Ops Tests",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "verify_token_usage",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "verify_token_usage",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "verify_token_usage",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "verify_token_usage",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "verify_token_usage",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Test Action (Invalid Version - Should Fail)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "verify_build",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "verify_token_usage",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "verify_token_usage",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "API Proxy Tests",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "verify_build",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "CodeQL",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "npm audit",
+      "conclusion": "SUCCESS"
+    }
+  ],
+  "changed": {
+    "files": 1,
+    "additions": 58,
+    "deletions": 0
+  },
+  "changedFiles": [
+    "src/logger.ts"
+  ],
+  "testChanges": [],
+  "sourceChanges": [
+    "src/logger.ts"
+  ],
+  "diff": {
+    "digest": "sha256:0069c128ae05770a74f3d0df49091332cee4267502dc1b4089a8ed1f8434197e",
+    "bytes": 3723,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/diffs/15.diff (outside the repository)"
+  },
+  "execution": {
+    "isolation": "docker:node:24-bookworm",
+    "install": true,
+    "manifest": "package.json"
+  },
+  "outcome": "executed",
+  "adjudication": {
+    "reviewer": {
+      "model": "qwen3.6:35b-a3b",
+      "endpoint": "http://localhost:11434",
+      "promptDigest": "sha256:72303418cd7ae2a0003cf4c32e74c8a1b3e80d9e57eeb0496c6a8495c2ac4af7"
+    },
+    "startedAt": "2026-09-28T03:54:48.644Z",
+    "status": "requirement-met",
+    "trace": null,
+    "requirement": "docs: add JSDoc to Logger and document why it logs to stderr",
+    "check": {
+      "path": "check_jsdoc.sh",
+      "command": "bash check_jsdoc.sh",
+      "digest": "sha256:b5cdd4eccc1b02150dd37b704fefa3d2da7a933e3b73dc89de9fae03900ef77c",
+      "contents": "#!/bin/sh\n# Verify that src/logger.ts has JSDoc and documents the stderr rationale\nif grep -q '/\\*\\*' src/logger.ts && \\\n   grep -q 'class Logger' src/logger.ts && \\\n   grep -q 'All messages are written to stderr' src/logger.ts; then\n  echo \"PASS: JSDoc and stderr rationale are present\"\n  exit 0\nelse\n  echo \"FAIL: Missing JSDoc or stderr rationale in src/logger.ts\"\n  exit 1\nfi"
+    },
+    "reads": 1,
+    "base": {
+      "ran": true,
+      "exitCode": 1,
+      "timedOut": false,
+      "stdout": "FAIL: Missing JSDoc or stderr rationale in src/logger.ts\n",
+      "stderr": ""
+    },
+    "head": {
+      "ran": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "stdout": "PASS: JSDoc and stderr rationale are present\n",
+      "stderr": ""
+    },
+    "image": "node:24-bookworm",
+    "finishedAt": "2026-09-28T03:55:32.583Z"
+  },
+  "report": {
+    "digest": "sha256:92c7706d716da65400052903c2162158c9020fdcf6036d6b5d92e23fbcb6ed5f",
+    "bytes": 1811091,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/reports/15.report.json (outside the repository)"
+  },
+  "bundle": {
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/bundles/15 (outside the repository)",
+    "digest": "sha256:24d82cd9f502fa06dc4a0b4ee044ab907a42beb7238f623d32f69740571aaa77"
+  },
+  "verdict": {
+    "verified": false,
+    "regression": "unmeasured",
+    "refusal": null,
+    "task": "unjudged",
+    "executionTrust": "isolated",
+    "install": {
+      "attempted": true,
+      "succeeded": true,
+      "command": "npm ci --ignore-scripts --no-audit --no-fund",
+      "detail": ".: installed from package-lock.json using the declared locked preparation command"
+    },
+    "checks": {
+      "typecheck": "passed",
+      "lint": "passed",
+      "format": "not-applicable",
+      "tests": "failed",
+      "build": "passed"
+    },
+    "originalSuiteGreen": false,
+    "inherited": {
+      "tests": true
+    }
+  },
+  "wallMs": 172323,
+  "comparisonA2": {
+    "outcome": "executed",
+    "verified": false,
+    "refusal": null,
+    "task": "rejected",
+    "regression": "unmeasured",
+    "oracleReach": "unmeasured",
+    "oracleBond": "not-bonded",
+    "exit": 1,
+    "verifier": {
+      "package": "swarm-verify",
+      "version": "1.0.2"
+    },
+    "wallMs": 127285
+  }
+}

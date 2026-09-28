@@ -1,0 +1,352 @@
+{
+  "index": 29,
+  "url": "https://github.com/loopdive/js2/pull/6111",
+  "repository": "loopdive/js2",
+  "number": 6111,
+  "title": "fix(#6651): `ns instanceof Object` is false for a module namespace (+1 per lane), and three corrected root causes",
+  "author": "claude",
+  "verifier": {
+    "package": "swarm-verify",
+    "version": "1.0.2",
+    "argv": [
+      "npx",
+      "--yes",
+      "swarm-verify@1.0.2",
+      "ci",
+      "--workspace",
+      "/Users/brad/.cache/swarm-ai-pr-study/loopdive__js2-6111",
+      "--branch",
+      "6eb5fc38688948bb5f3160ea537cc16ace416d67",
+      "--base",
+      "0d8bf02a4ae5a21707ae3552c99fb09c50c95a57",
+      "--json",
+      "--summary",
+      "/Users/brad/.cache/swarm-ai-pr-study/reports/29.summary.md",
+      "--bundle",
+      "/Users/brad/.cache/swarm-ai-pr-study/bundles/29",
+      "--isolation",
+      "docker:node:24-bookworm",
+      "--require-isolation",
+      "--install"
+    ],
+    "exit": 1,
+    "timedOut": false
+  },
+  "startedAt": "2026-09-28T05:30:59.153Z",
+  "base": "0d8bf02a4ae5a21707ae3552c99fb09c50c95a57",
+  "head": "6eb5fc38688948bb5f3160ea537cc16ace416d67",
+  "mergeCommit": "543beeb51e9c14955aa2c0d343834ec6c11e2944",
+  "mergedAt": "2026-09-25T23:08:33Z",
+  "body": "## Description\n\nBefore: `import * as ns from './m.js'; ns instanceof Object` answered `true`. §10.4.6.1 pins a module namespace's `[[GetPrototypeOf]]` to `null`, so the §7.3.20 walk never reaches `%Object.prototype%` and the answer must be `false`.\n\nAfter: it answers `false`, on both lanes, without disturbing `instanceof Object` for anything else.\n\nThis is **two independent defects**, which matters — the plan file had recorded this row as standalone-only, and a lane fixing just the standalone predicate would have left the test red while believing it was done:\n\n1. **`tryStaticInstanceOf` (`src/codegen/expressions/identifiers.ts`), both lanes.** Arm 4 folds `<obj> instanceof Object` to a constant `true` for any LHS carrying the TypeScript `Object` type flag, and a module-namespace binding carries it. It now declines for that LHS and falls through to the runtime. The decline matches on the **declaration** (`ts.isSourceFile` / `ts.isNamespaceImport`), not on `SymbolFlags.Module`, so a TypeScript `namespace Foo {}` keeps its constant `true`.\n2. **`src/codegen/native-object-family-instanceof.ts`, standalone.** The predicate answers \"is this not a primitive?\", which is true of a null-prototype object. Its own header called this an accepted divergence that would need a runtime handle on `Object.prototype`. It does not: the runtime already marks an explicit null prototype with `OBJ_FLAG_NULL_PROTO`, which `object-proto-proto-accessor.ts` reads for exactly this reason. Subtracted deliberately **one rung** — `Object.create(Object.create(null))` is out of scope here.\n\n## Validation\n\nMeasured with `--isolate` and `JS2WASM_ROW_TIMEOUT_MS=420000`, per-**row** set diffs rather than count comparisons, and re-derived from the run logs rather than taken on trust:\n\n| lane | 210-row manifest | `namespace/internals` (36) | `expressions/instanceof` control (43) |\n|---|---|---|---|\n| host | 178 → 179, **+1 / −0** | 20 → 21 | 35 → 35, +0/−0 |\n| standalone | 193 → 194, **+1 / −0** | 21 → 22 | 42 → 42, +0/−0 |\n\nThe gained set is the same single row on both lanes and the lost set is empty on both, so this is not a count-neutral swap. **Zero `error` rows** in all four logs — nothing went unmeasured and got counted as a verdict.\n\n`tests/issue-6651-namespace-instanceof-object.test.ts`, 4 cases: **3 of 4 red on reverted base sources**, 4/4 green after. The 4th (host `Object.create(null)`) passes on base by design and is kept as the complement, so a predicate answering `false` everywhere could not pass this suite.\n\nAll gates run bare on the shipped sources: `check-loc-budget`, `check-func-budget`, `check-coercion-sites`, `check:oracle-ratchet`, `check:dead-exports`, `check-host-import-policy`, and `check-compiler-boundaries --mode inventory --base HEAD^1`. **`src/runtime.ts` is byte-identical to `main`** — this branch consumes none of the ceiling slack.\n\n### Measurement scope, stated plainly\n\nA wider 1,091-row two-lane sweep was started and **cut short with its base half still in flight; no numbers from it are reported here.** The 210-row sweep above ran to completion in all four cells. One earlier base pair was discarded unused because an edit landed mid-run and its rows straddled two source states.\n\n## Three recorded root causes corrected\n\nThe more valuable half of this work is negative, and it is in the plan file so the next lane does not start at the wrong code:\n\n- **`get-prototype-of` was never standalone-only** — JS-host fails the identical assertion on base.\n- **`own-property-keys-binding-types` is not a `namespaceFunctionExports` alias-resolution defect.** It fails 7-keys-vs-10 identically on both lanes, and a structurally identical `compileMulti` probe yields all ten keys in order on host. Start at `tests/test262-runner.ts::runOriginalHarnessVariant` / `scripts/test262-fixture-graph.mjs` instead. Side finding: on standalone that probe's `Object.getOwnPropertyNames(ns).join(\",\")` returns an **object**, not a string — a second, independent defect.\n- **`Reflect.defineProperty` is not a `src/runtime.ts` defect.** Host already returns `false` correctly. The throw is standalone codegen, via `emitDefinePropertyDescRuntime` to the native `__obj_define_from_desc`, whose step-2 preflight has **no failure channel** — so `Reflect` cannot return `false` for any refusal until one is added.\n\nAlso corrected: an earlier note in the plan file claiming this lane wedged and landed nothing. It did not; that was the integrating lane reading `git status src/` at a moment when the tree was deliberately reverted for the base half of an A/B, which is indistinguishable from idle by `git status` alone.\n\n## Left open, each precisely sited\n\n- **`get-nested-namespace-{dflt-skip,props-nrml}`** — `namespaceFunctionExports` has no arm for a `ts.NamespaceExport` declaration (`export * as ns2 from './x.js'`), so it hits the terminal decline and refuses the whole namespace object. Bounded fix, inside that function plus `emitNamespaceObject`.\n- **`define-own-property`** — the non-extensible throw is only assertion 1; host, which never throws, still fails later. Needs the §10.4.6 exotic object.\n- **`own-property-keys-sort`** — standalone `illegal cast in __module_init_chunk_3`, and **not reproducible outside the test runner**, so the trigger is the harness-linked assembly rather than the namespace shape. Next step is to dump the WAT of the runner-assembled module.\n\nIssue: [#6651](https://js2wasm.loopdive.com/dashboard/issue.html?slug=6651-es2015-standalone-100pct-execution-plan)\n\n## CLA\n\n- [x] I have read and agree to the CLA\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nhttps://claude.ai/code/session_0115B14mU1rJBZDdTU3EpTEr\n\n---\n_Generated by [Claude Code](https://claude.ai/code/session_0115B14mU1rJBZDdTU3EpTEr)_",
+  "linkedIssues": [],
+  "historicalChecks": [
+    {
+      "name": "arm",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "changes",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "cla-check",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Analyze (actions)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "cross-backend-parity",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "retarget",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "test262 PR stub — detect relevance",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "admit-measurement-baseline",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "smoke",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Analyze (python)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "release-pending",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "cheap gate (main-ancestor + lint)",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "quality",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "cheap gate (main-ancestor + lint)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "merge shard reports",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "issue-tests",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "detect test262-relevant changes",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "check for test262 regressions",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "probe merge_group baseline artifact",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "linear-tests",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "test262 native-first shard ${{ matrix.chunk }}",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "equivalence-shard (1)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "test262 PR stub — verdict published",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "equivalence-shard (2)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "equivalence-shard (3)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "equivalence-shard (4)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "equivalence-shard (5)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "equivalence-shard (6)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "equivalence-shard (7)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "equivalence-shard (8)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Cancel Test262 after quality failure",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "promote root baseline + cache per-SHA for queue merge (#3467/#3468)",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "build standalone runtime-eval provider (${{ (inputs.eval_engine || 'quickjs') }})",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "equivalence-gate",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "build compiled Temporal provider (#5353)",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "merge native-first evidence",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "test262 honest-audit shard ${{ matrix.chunk }}",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "test262 ${{ matrix.target.name }} shard ${{ matrix.chunk }}",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "test262 ${{ matrix.target_name }} shard ${{ matrix.chunk_label }}/${{ matrix.chunk_total }}",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "merge honest-audit evidence",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "merge shard reports",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "check for test262 regressions",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "promote merged report to main baseline",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "CodeQL",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "cla-check",
+      "conclusion": "SUCCESS"
+    }
+  ],
+  "changed": {
+    "files": 4,
+    "additions": 592,
+    "deletions": 0
+  },
+  "changedFiles": [
+    "CLAUDE.md",
+    "README.md",
+    "ROADMAP.md",
+    "benchmarks/results/npm-compat-history.json",
+    "benchmarks/results/npm-compat-perf.json",
+    "benchmarks/results/npm-compat.json",
+    "benchmarks/results/test262-current.json",
+    "benchmarks/results/test262-report.json",
+    "benchmarks/results/test262-standalone-current.json",
+    "benchmarks/results/test262-standalone-highwater.json",
+    "plan/goals/goal-graph.md",
+    "plan/issues/6651-es2015-standalone-100pct-execution-plan.md",
+    "public/benchmarks/results/test262-report.json",
+    "public/benchmarks/results/test262-standalone-report.json",
+    "scripts/loc-budget-baseline.json",
+    "src/codegen/expressions/identifiers.ts",
+    "src/codegen/native-object-family-instanceof.ts",
+    "tests/issue-6651-namespace-instanceof-object.test.ts",
+    "website/public/benchmarks/results/npm-compat-history.json",
+    "website/public/benchmarks/results/npm-compat-perf.json",
+    "website/public/benchmarks/results/npm-compat.json",
+    "website/public/benchmarks/results/test262-category-editions.json",
+    "website/public/benchmarks/results/test262-editions.json",
+    "website/public/benchmarks/results/test262-file-editions.json",
+    "website/public/benchmarks/results/test262-report.json",
+    "website/public/benchmarks/results/test262-standalone-editions.json",
+    "website/public/benchmarks/results/test262-standalone-report.json",
+    "website/public/feature-examples-standalone.json",
+    "website/public/feature-examples.json"
+  ],
+  "testChanges": [
+    "tests/issue-6651-namespace-instanceof-object.test.ts"
+  ],
+  "sourceChanges": [
+    "CLAUDE.md",
+    "README.md",
+    "ROADMAP.md",
+    "benchmarks/results/npm-compat-history.json",
+    "benchmarks/results/npm-compat-perf.json",
+    "benchmarks/results/npm-compat.json",
+    "benchmarks/results/test262-current.json",
+    "benchmarks/results/test262-report.json",
+    "benchmarks/results/test262-standalone-current.json",
+    "benchmarks/results/test262-standalone-highwater.json",
+    "plan/goals/goal-graph.md",
+    "plan/issues/6651-es2015-standalone-100pct-execution-plan.md",
+    "public/benchmarks/results/test262-report.json",
+    "public/benchmarks/results/test262-standalone-report.json",
+    "scripts/loc-budget-baseline.json",
+    "src/codegen/expressions/identifiers.ts",
+    "src/codegen/native-object-family-instanceof.ts",
+    "website/public/benchmarks/results/npm-compat-history.json",
+    "website/public/benchmarks/results/npm-compat-perf.json",
+    "website/public/benchmarks/results/npm-compat.json",
+    "website/public/benchmarks/results/test262-category-editions.json",
+    "website/public/benchmarks/results/test262-editions.json",
+    "website/public/benchmarks/results/test262-file-editions.json",
+    "website/public/benchmarks/results/test262-report.json",
+    "website/public/benchmarks/results/test262-standalone-editions.json",
+    "website/public/benchmarks/results/test262-standalone-report.json",
+    "website/public/feature-examples-standalone.json",
+    "website/public/feature-examples.json"
+  ],
+  "diff": {
+    "digest": "sha256:132cd118ac5ebaf8f9e85288fd0136d41c3e7fb38cf3ffbaef35b6cbaec3bf0b",
+    "bytes": 8259587,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/diffs/29.diff (outside the repository)"
+  },
+  "execution": {
+    "isolation": "docker:node:24-bookworm",
+    "install": true,
+    "manifest": "package.json"
+  },
+  "outcome": "executed",
+  "adjudication": {
+    "reviewer": {
+      "model": "qwen3.6:35b-a3b",
+      "endpoint": "http://localhost:11434",
+      "promptDigest": "sha256:72303418cd7ae2a0003cf4c32e74c8a1b3e80d9e57eeb0496c6a8495c2ac4af7"
+    },
+    "startedAt": "2026-09-28T03:57:53.367Z",
+    "status": "unjudged",
+    "reason": "the reviewer produced no check within 30 steps",
+    "reads": 29,
+    "finishedAt": "2026-09-28T04:02:43.539Z"
+  },
+  "report": {
+    "digest": "sha256:414a17d272d8e593c3abd0d942ac2b09c3501dd9705e9bca9d229104eedf0bd0",
+    "bytes": 7912,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/reports/29.report.json (outside the repository)"
+  },
+  "bundle": {
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/bundles/29 (outside the repository)",
+    "digest": "sha256:81688dfd8fdd6296d97f3a22ed4c0a10581d626972a5c494e9899621fc02d66f"
+  },
+  "verdict": {
+    "verified": false,
+    "regression": "unmeasured",
+    "refusal": null,
+    "task": "unjudged",
+    "executionTrust": "isolated",
+    "install": {
+      "attempted": true,
+      "succeeded": true,
+      "command": "npx --yes --package pnpm@10.30.2 pnpm install --frozen-lockfile --ignore-scripts",
+      "detail": ".: installed from pnpm-lock.yaml using the declared locked preparation command"
+    },
+    "checks": {
+      "typecheck": "failed",
+      "lint": "passed",
+      "format": "passed",
+      "tests": "failed",
+      "build": "failed"
+    },
+    "originalSuiteGreen": false,
+    "inherited": {
+      "typecheck": true,
+      "tests": true,
+      "build": true
+    }
+  },
+  "wallMs": 289230
+}

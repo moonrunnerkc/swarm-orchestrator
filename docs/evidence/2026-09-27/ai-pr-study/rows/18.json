@@ -1,0 +1,165 @@
+{
+  "index": 18,
+  "url": "https://github.com/felixrieseberg/claude-coach/pull/18",
+  "repository": "felixrieseberg/claude-coach",
+  "number": 18,
+  "title": "Fix Claude Code skill install instructions",
+  "author": "claude",
+  "verifier": {
+    "package": "swarm-verify",
+    "version": "1.0.2",
+    "argv": [
+      "npx",
+      "--yes",
+      "swarm-verify@1.0.2",
+      "ci",
+      "--workspace",
+      "/Users/brad/.cache/swarm-ai-pr-study/felixrieseberg__claude-coach-18",
+      "--branch",
+      "6430b7aa2681a26812b866c56be456d39f4a2837",
+      "--base",
+      "632b42b99396088ac864cfd142e057f293dbb915",
+      "--json",
+      "--summary",
+      "/Users/brad/.cache/swarm-ai-pr-study/reports/18.summary.md",
+      "--bundle",
+      "/Users/brad/.cache/swarm-ai-pr-study/bundles/18",
+      "--isolation",
+      "docker:node:24-bookworm",
+      "--require-isolation",
+      "--install"
+    ],
+    "exit": 1,
+    "timedOut": false
+  },
+  "startedAt": "2026-09-28T04:20:33.368Z",
+  "base": "632b42b99396088ac864cfd142e057f293dbb915",
+  "head": "6430b7aa2681a26812b866c56be456d39f4a2837",
+  "mergeCommit": "471cee52a103981e9190c414957c9e168dd9dfd7",
+  "mergedAt": "2026-09-25T18:21:39Z",
+  "body": "Claude Code doesn't have an `/install-skill` command, so the current Claude Code install step in the README (and the matching step on the website) can't be followed.\n\nThis replaces it with the documented way to add a skill: extract `coach-skill.zip` into `~/.claude/skills/coach/` (or a project's `.claude/skills/coach/`) so `SKILL.md` sits at the folder root, then start/restart Claude Code. The release zip already has `SKILL.md` at its root, so `unzip -o coach-skill.zip -d ~/.claude/skills/coach` produces the right layout (checked against a fresh `npm run build:skill`).\n\n- `README.md`: new Claude Code install paragraph + command, link to https://code.claude.com/docs/en/skills\n- `docs/index.html`: same fix in the \"Claude Code\" tab under Getting Started\n\nRefs #11 (leaving the issue for the maintainer to close)\n",
+  "linkedIssues": [],
+  "historicalChecks": [
+    {
+      "name": "Typecheck, format, test, build viewer",
+      "conclusion": "SUCCESS"
+    }
+  ],
+  "changed": {
+    "files": 2,
+    "additions": 16,
+    "deletions": 4
+  },
+  "changedFiles": [
+    "README.md",
+    "docs/index.html"
+  ],
+  "testChanges": [],
+  "sourceChanges": [
+    "README.md",
+    "docs/index.html"
+  ],
+  "diff": {
+    "digest": "sha256:eab85fea68da8a507b06bde02422a0a9bdac56def801b400f549b3244f02d910",
+    "bytes": 2154,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/diffs/18.diff (outside the repository)"
+  },
+  "execution": {
+    "isolation": "docker:node:24-bookworm",
+    "install": true,
+    "manifest": "package.json"
+  },
+  "outcome": "executed",
+  "report": {
+    "digest": "sha256:7904d1dd71184f711850bc53656119ecbf538974f65d413c1ee07eba7e0878c9",
+    "bytes": 112784,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/reports/18.report.json (outside the repository)"
+  },
+  "bundle": {
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/bundles/18 (outside the repository)",
+    "digest": "sha256:5c8dffc581224c34e853a1752e2d19c808e51f11a7be8bd22938bf2272d0de3d"
+  },
+  "verdict": {
+    "verified": false,
+    "regression": "unmeasured",
+    "refusal": null,
+    "task": "unjudged",
+    "executionTrust": "isolated",
+    "install": {
+      "attempted": true,
+      "succeeded": true,
+      "command": "npm ci --ignore-scripts --no-audit --no-fund",
+      "detail": ".: installed from package-lock.json using the declared locked preparation command"
+    },
+    "checks": {
+      "typecheck": "passed",
+      "lint": "not-applicable",
+      "format": "passed",
+      "tests": "failed",
+      "build": "not-applicable"
+    },
+    "originalSuiteGreen": false,
+    "inherited": {
+      "tests": true
+    }
+  },
+  "wallMs": 29500,
+  "adjudication": {
+    "reviewer": {
+      "model": "qwen3.6:35b-a3b",
+      "endpoint": "http://localhost:11434",
+      "promptDigest": "sha256:72303418cd7ae2a0003cf4c32e74c8a1b3e80d9e57eeb0496c6a8495c2ac4af7"
+    },
+    "startedAt": "2026-09-28T04:45:01.650Z",
+    "status": "requirement-violated",
+    "reason": "The PR fixes Claude Code skill install instructions in both README.md and docs/index.html. The check verifies: (1) README.md contains the correct installation path `~/.claude/skills/coach/`, (2) README.md links to the Claude Code skills documentation, (3) docs/index.html does NOT contain the broken `/install-skill` command, and (4) docs/index.html contains the proper unzip instruction. BEFORE the PR, the files would have had `/install-skill` which doesn't exist in Claude Code. AFTER the PR, they should have the correct unzip-based instructions.",
+    "trace": {
+      "traceable": true,
+      "mapping": [
+        {
+          "assertion": "docs/index.html does not link to https://code.claude.com/docs/en/skills",
+          "quote": "- `docs/index.html`: same fix in the \"Claude Code\" tab under Getting Started"
+        }
+      ]
+    },
+    "requirement": "The PR fixes Claude Code skill install instructions by replacing the non-existent `/install-skill` command with documented instructions to extract `coach-skill.zip` into `~/.claude/skills/coach/`, and adds a link to the Claude Code skills documentation.",
+    "check": {
+      "path": "check.sh",
+      "command": "bash check.sh",
+      "digest": "sha256:db56b811c495d41f62c8082d7fa10fdc34e56453157ca5328ae6b84c1719bad8",
+      "contents": "#!/bin/bash\n# Check that the PR correctly fixes Claude Code skill install instructions\n\nset -e\n\nERRORS=0\n\n# Check 1: README.md should contain the correct installation path ~/.claude/skills/coach/\nif ! grep -q '~/.claude/skills/coach' README.md; then\n    echo \"FAIL: README.md does not contain ~/.claude/skills/coach\"\n    ERRORS=$((ERRORS + 1))\nelse\n    echo \"PASS: README.md contains ~/.claude/skills/coach\"\nfi\n\n# Check 2: README.md should link to Claude Code skills documentation\nif ! grep -q 'code.claude.com/docs/en/skills' README.md; then\n    echo \"FAIL: README.md does not link to https://code.claude.com/docs/en/skills\"\n    ERRORS=$((ERRORS + 1))\nelse\n    echo \"PASS: README.md links to Claude Code skills documentation\"\nfi\n\n# Check 3: README.md should contain the unzip command for installing the skill\nif ! grep -q 'unzip.*coach-skill.zip' README.md; then\n    echo \"FAIL: README.md does not contain unzip instruction for coach-skill.zip\"\n    ERRORS=$((ERRORS + 1))\nelse\n    echo \"PASS: README.md contains unzip instruction\"\nfi\n\n# Check 4: docs/index.html should NOT contain the broken /install-skill command\nif grep -q '/install-skill' docs/index.html; then\n    echo \"FAIL: docs/index.html still contains the broken /install-skill command\"\n    ERRORS=$((ERRORS + 1))\nelse\n    echo \"PASS: docs/index.html does not contain /install-skill\"\nfi\n\n# Check 5: docs/index.html should contain the correct installation path\nif ! grep -q '~/.claude/skills/coach' docs/index.html; then\n    echo \"FAIL: docs/index.html does not contain ~/.claude/skills/coach\"\n    ERRORS=$((ERRORS + 1))\nelse\n    echo \"PASS: docs/index.html contains ~/.claude/skills/coach\"\nfi\n\n# Check 6: docs/index.html should link to Claude Code skills documentation\nif ! grep -q 'code.claude.com/docs/en/skills' docs/index.html; then\n    echo \"FAIL: docs/index.html does not link to https://code.claude.com/docs/en/skills\"\n    ERRORS=$((ERRORS + 1))\nelse\n    echo \"PASS: docs/index.html links to Claude Code skills documentation\"\nfi\n\nif [ $ERRORS -gt 0 ]; then\n    echo \"\"\n    echo \"FAILED: $ERRORS check(s) failed\"\n    exit 1\nelse\n    echo \"\"\n    echo \"ALL CHECKS PASSED\"\n    exit 0\nfi"
+    },
+    "reads": 22,
+    "base": {
+      "ran": true,
+      "exitCode": 1,
+      "timedOut": false,
+      "stdout": "FAIL: README.md does not contain ~/.claude/skills/coach\nFAIL: README.md does not link to https://code.claude.com/docs/en/skills\nFAIL: README.md does not contain unzip instruction for coach-skill.zip\nFAIL: docs/index.html still contains the broken /install-skill command\nFAIL: docs/index.html does not contain ~/.claude/skills/coach\nFAIL: docs/index.html does not link to https://code.claude.com/docs/en/skills\n\nFAILED: 6 check(s) failed\n",
+      "stderr": ""
+    },
+    "head": {
+      "ran": true,
+      "exitCode": 1,
+      "timedOut": false,
+      "stdout": "PASS: README.md contains ~/.claude/skills/coach\nPASS: README.md links to Claude Code skills documentation\nPASS: README.md contains unzip instruction\nPASS: docs/index.html does not contain /install-skill\nPASS: docs/index.html contains ~/.claude/skills/coach\nFAIL: docs/index.html does not link to https://code.claude.com/docs/en/skills\n\nFAILED: 1 check(s) failed\n",
+      "stderr": ""
+    },
+    "image": "node:24-bookworm",
+    "finishedAt": "2026-09-28T04:46:30.810Z"
+  },
+  "comparisonA2": {
+    "outcome": "executed",
+    "verified": false,
+    "refusal": null,
+    "task": "rejected",
+    "regression": "unmeasured",
+    "oracleReach": "unmeasured",
+    "oracleBond": "not-bonded",
+    "exit": 1,
+    "verifier": {
+      "package": "swarm-verify",
+      "version": "1.0.2"
+    },
+    "wallMs": 24703
+  }
+}

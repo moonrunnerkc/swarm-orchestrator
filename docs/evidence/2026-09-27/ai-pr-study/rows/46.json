@@ -1,0 +1,212 @@
+{
+  "index": 46,
+  "url": "https://github.com/YoungCan-Wang/WyckoffTradingAgent/pull/496",
+  "repository": "YoungCan-Wang/WyckoffTradingAgent",
+  "number": 496,
+  "title": "fix(shadow): pending no_open buys must reserve slots/codes",
+  "author": "cursor",
+  "verifier": {
+    "package": "swarm-verify",
+    "version": "1.0.2",
+    "argv": [
+      "npx",
+      "--yes",
+      "swarm-verify@1.0.2",
+      "ci",
+      "--workspace",
+      "/Users/brad/.cache/swarm-ai-pr-study/YoungCan-Wang__WyckoffTradingAgent-496",
+      "--branch",
+      "b2d75d11bbfef258858ae7cce9fb57326637acf3",
+      "--base",
+      "02fd4d97fa5c8cd7de5884fe274120e2822cd8d1",
+      "--json",
+      "--summary",
+      "/Users/brad/.cache/swarm-ai-pr-study/reports/46.summary.md",
+      "--bundle",
+      "/Users/brad/.cache/swarm-ai-pr-study/bundles/46",
+      "--isolation",
+      "docker:ghcr.io/astral-sh/uv:python3.12-bookworm",
+      "--require-isolation",
+      "--install"
+    ],
+    "exit": 1,
+    "timedOut": false
+  },
+  "startedAt": "2026-09-28T05:22:18.664Z",
+  "base": "02fd4d97fa5c8cd7de5884fe274120e2822cd8d1",
+  "head": "b2d75d11bbfef258858ae7cce9fb57326637acf3",
+  "mergeCommit": "dcd39709cd42155a655e640bc47833b87396c3b8",
+  "mergedAt": "2026-09-25T02:00:05Z",
+  "body": "## Summary\n\n`propose_buy_plans` only counted open positions. After the intentional `no_open` keep-planned fix, a day where some overnight buys lack bars while other symbols still have closes could write new plans into the freed slots. Those older planned rows stayed in `shadow_trade_plans`, so the next session filled the backlog together and broke `MAX_POSITIONS` (reproduced 5 open names) or doubled the same code when `open` was missing but `close` was present.\n\nFix: `run_shadow_session` passes unresolved planned buys into `propose_buy_plans`, which reserves both their codes and slot count before proposing.\n\nDoes not change #490 (`cash=0` → `INITIAL_CAPITAL`); that remains open.\n\n## Validation\n\n- `python3 -m pytest tests/core/test_shadow_ledger.py -q` (9 passed)\n- `ruff check` + `ruff format --check` on touched files\n- `scripts/quality_gate.py --check-functions`\n\n<div><a href=\"https://cursor.com/agents/bc-be56c878-f6b5-43e4-8e12-f407eba9006c?cursor_ref=pr_footer&cursor_cta=open_in_web\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/automations/2040ebe7-87ec-11f1-b532-320a589b8025\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/view-automation-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/view-automation-light.png\"><img alt=\"View Automation\" width=\"141\" height=\"28\" src=\"https://cursor.com/assets/images/view-automation-dark.png\"></picture></a>&nbsp;</div>\n\n",
+  "linkedIssues": [],
+  "historicalChecks": [
+    {
+      "name": "lint",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "release-metadata",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "quality-gate",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "test (ubuntu-latest)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "test (macos-latest)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "test (windows-latest)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "package-windows",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "workflow-hygiene",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "package-macos",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "dependency-hygiene",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "verify-artifact-roundtrip",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "pr-policy",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Publish free unsigned desktop release",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "test",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "web-check",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "smoke-dry-run",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Cloudflare Pages",
+      "conclusion": "SUCCESS"
+    }
+  ],
+  "changed": {
+    "files": 6,
+    "additions": 223,
+    "deletions": 19
+  },
+  "changedFiles": [
+    "core/shadow_ledger.py",
+    "docs/PUBLIC_MCP.md",
+    "integrations/public_mcp/backend.py",
+    "tests/core/test_shadow_ledger.py",
+    "tests/test_architecture_boundaries.py",
+    "tests/test_public_mcp_routing.py"
+  ],
+  "testChanges": [
+    "tests/core/test_shadow_ledger.py",
+    "tests/test_architecture_boundaries.py",
+    "tests/test_public_mcp_routing.py"
+  ],
+  "sourceChanges": [
+    "core/shadow_ledger.py",
+    "docs/PUBLIC_MCP.md",
+    "integrations/public_mcp/backend.py"
+  ],
+  "diff": {
+    "digest": "sha256:f0c42b2c2aacac7a23a24af168fd46a37edd9c0008f314c13cf3383755c7b3d3",
+    "bytes": 15069,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/diffs/46.diff (outside the repository)"
+  },
+  "execution": {
+    "isolation": "docker:ghcr.io/astral-sh/uv:python3.12-bookworm",
+    "install": true,
+    "manifest": "pyproject.toml"
+  },
+  "outcome": "executed",
+  "adjudication": {
+    "reviewer": {
+      "model": "qwen3.6:35b-a3b",
+      "endpoint": "http://localhost:11434",
+      "promptDigest": "sha256:72303418cd7ae2a0003cf4c32e74c8a1b3e80d9e57eeb0496c6a8495c2ac4af7"
+    },
+    "startedAt": "2026-09-28T04:37:35.669Z",
+    "status": "unjudged",
+    "reason": "the check fails the same way on the base and the head, so it did not discriminate between them",
+    "trace": null,
+    "requirement": "`propose_buy_plans` must reserve both codes and slot count for unresolved planned buy orders (pending plans with status \"planned\" and action \"buy\"), not just open positions. This prevents the bug where a day with some overnight buys lacking bars could write new plans into freed slots, causing MAX_POSITIONS to be exceeded or duplicate codes.",
+    "check": {
+      "path": "tests/core/test_shadow_ledger_pending_slots.py",
+      "command": "python3 /home/user/repos/WyckoffTradingAgent/tests/core/test_shadow_ledger_pending_slots.py",
+      "digest": "sha256:eb810a3c82b32b4643e6d6549d9d489665088b12c0a01904564c6d1eac19dfbd",
+      "contents": "\"\"\"Verify that propose_buy_plans reserves slots/codes for pending buy plans.\n\nRegression test for PR #496: before the fix, propose_buy_plans only counted\nopen positions when computing reserved codes and available slots. After the\nfix it also counts unresolved planned buys (pending_plans).\n\"\"\"\n\nimport sys\nfrom datetime import date\n\n# Ensure the repo root is on sys.path\nsys.path.insert(0, \"/home/user/repos/WyckoffTradingAgent\")\n\nfrom core.shadow_ledger import (\n    ShadowBook,\n    ShadowPlan,\n    ShadowPosition,\n    propose_buy_plans,\n    _pending_buy_plans,\n    BUY,\n    MAX_POSITIONS,\n)\n\n\ndef test_pending_plans_reserve_slots():\n    \"\"\"When there are pending buy plans, they should reduce available slots.\"\"\"\n    # Setup: 3 open positions + 1 pending buy plan = 4 reserved (MAX_POSITIONS=4)\n    book = ShadowBook(\n        cash=100_000.0,\n        initial_capital=100_000.0,\n        positions={\n            \"SH600000\": ShadowPosition(code=\"SH600000\", name=\"PingAn Bank\", shares=1000, avg_cost=10.0),\n            \"SH600036\": ShadowPosition(code=\"SH600036\", name=\"CMB\", shares=500, avg_cost=35.0),\n            \"SZ000001\": ShadowPosition(code=\"SZ000001\", name=\"PBC\", shares=2000, avg_cost=15.0),\n        },\n    )\n\n    # Create a pending buy plan for a code NOT yet in positions\n    as_of = date(2024, 1, 15)\n    pending_plans = [\n        ShadowPlan(\n            plan_key=f\"USER_SHADOW:e66942b7-be66-46fe-95ed-ebc7f3b47928:{as_of.isoformat()}:buy:SH600519\",\n            code=\"SH600519\",\n            name=\"Kweichow Moutai\",\n            action=BUY,\n            signal_date=as_of,\n            status=\"planned\",\n        ),\n    ]\n\n    # Create buy candidates that include the pending code and a new code\n    buy_candidates = [\n        {\"code\": \"SH600519\", \"name\": \"Kweichow Moutai\"},  # already in pending\n        {\"code\": \"SH601318\", \"name\": \"PingAn Insurance\"},   # new candidate\n    ]\n\n    # Empty bars dict (we only need close prices for propose_buy_plans)\n    import pandas as pd\n    bars = {}\n\n    # Call propose_buy_plans with pending_plans\n    plans = propose_buy_plans(\n        book,\n        buy_candidates,\n        bars,\n        as_of,\n        account_id=\"USER_SHADOW:e66942b7-be66-46fe-95ed-ebc7f3b47928\",\n        pending_plans=pending_plans,\n    )\n\n    # With 3 open positions + 1 pending = 4 reserved, MAX_POSITIONS=4, so 0 slots left\n    # No new plans should be created\n    assert len(plans) == 0, (\n        f\"Expected 0 new plans when all slots are taken by open+pending, got {len(plans)}: {[p.code for p in plans]}\"\n    )\n\n\ndef test_pending_plans_reserve_codes():\n    \"\"\"Pending buy plan codes should be excluded from new proposals.\"\"\"\n    book = ShadowBook(\n        cash=100_000.0,\n        initial_capital=100_000.0,\n        positions={},  # No open positions\n    )\n\n    as_of = date(2024, 1, 15)\n    pending_code = \"SH600519\"\n    pending_plans = [\n        ShadowPlan(\n            plan_key=f\"USER_SHADOW:e66942b7-be66-46fe-95ed-ebc7f3b47928:{as_of.isoformat()}:buy:{pending_code}\",\n            code=pending_code,\n            name=\"Kweichow Moutai\",\n            action=BUY,\n            signal_date=as_of,\n            status=\"planned\",\n        ),\n    ]\n\n    buy_candidates = [\n        {\"code\": pending_code, \"name\": \"Kweichow Moutai\"},  # should be excluded\n        {\"code\": \"SH601318\", \"name\": \"PingAn Insurance\"},   # should be allowed\n    ]\n\n    import pandas as pd\n    bars = {}\n\n    plans = propose_buy_plans(\n        book,\n        buy_candidates,\n        bars,\n        as_of,\n        account_id=\"USER_SHADOW:e66942b7-be66-46fe-95ed-ebc7f3b47928\",\n        pending_plans=pending_plans,\n    )\n\n    # The pending code should NOT appear in new plans\n    plan_codes = {p.code for p in plans}\n    assert pending_code not in plan_codes, (\n        f\"Pending code '{pending_code}' should be reserved and not proposed again, but got: {plan_codes}\"\n    )\n\n\ndef test_pending_buy_plans_helper():\n    \"\"\"_pending_buy_plans should return only unresolved planned buys.\"\"\"\n    as_of = date(2024, 1, 15)\n\n    planned = [\n        ShadowPlan(\n            plan_key=f\"USER_SHADOW:e66942b7-be66-46fe-95ed-ebc7f3b47928:{as_of.isoformat()}:buy:SH600000\",\n            code=\"SH600000\", name=\"PingAn Bank\", action=BUY, signal_date=as_of, status=\"planned\",\n        ),\n        ShadowPlan(\n            plan_key=f\"USER_SHADOW:e66942b7-be66-46fe-95ed-ebc7f3b47928:{as_of.isoformat()}:sell:SH600036\",\n            code=\"SH600036\", name=\"CMB\", action=\"sell\", signal_date=as_of, status=\"planned\",\n        ),\n        ShadowPlan(\n            plan_key=f\"USER_SHADOW:e66942b7-be66-46fe-95ed-ebc7f3b47928:{as_of.isoformat()}:buy:SH000001\",\n            code=\"SH000001\", name=\"Test\", action=BUY, signal_date=as_of, status=\"filled\",\n        ),\n    ]\n\n    fills = [\n        ShadowPlan(\n            plan_key=f\"USER_SHADOW:e66942b7-be66-46fe-95ed-ebc7f3b47928:{as_of.isoformat()}:buy:SH000001\",\n            code=\"SH000001\", name=\"Test\", action=BUY, signal_date=as_of, status=\"filled\",\n        ),\n    ]\n\n    pending = _pending_buy_plans(planned, fills)\n\n    # Only the first plan should be returned (unresolved planned buy)\n    assert len(pending) == 1, f\"Expected 1 pending buy plan, got {len(pending)}\"\n    assert pending[0].code == \"SH600000\", f\"Expected code SH600000, got {pending[0].code}\"\n\n\nif __name__ == \"__main__\":\n    test_pending_plans_reserve_slots()\n    print(\"PASS: test_pending_plans_reserve_slots\")\n\n    test_pending_plans_reserve_codes()\n    print(\"PASS: test_pending_plans_reserve_codes\")\n\n    test_pending_buy_plans_helper()\n    print(\"PASS: test_pending_buy_plans_helper\")\n\n    print(\"\\nAll tests passed!\")"
+    },
+    "reads": 4,
+    "base": {
+      "ran": true,
+      "exitCode": 2,
+      "timedOut": false,
+      "stdout": "",
+      "stderr": "python3: can't open file '/home/user/repos/WyckoffTradingAgent/tests/core/test_shadow_ledger_pending_slots.py': [Errno 2] No such file or directory\n"
+    },
+    "head": {
+      "ran": true,
+      "exitCode": 2,
+      "timedOut": false,
+      "stdout": "",
+      "stderr": "python3: can't open file '/home/user/repos/WyckoffTradingAgent/tests/core/test_shadow_ledger_pending_slots.py': [Errno 2] No such file or directory\n"
+    },
+    "image": "ghcr.io/astral-sh/uv:python3.12-bookworm",
+    "finishedAt": "2026-09-28T04:38:38.994Z"
+  },
+  "report": {
+    "digest": "sha256:0b5a90dffcdda7df12b9f3c882d7e2d28cab37475a2e5eaa724ac7a524cbf0a1",
+    "bytes": 4564,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/reports/46.report.json (outside the repository)"
+  },
+  "bundle": {
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/bundles/46 (outside the repository)",
+    "digest": "sha256:c39dc7437ad14c6aaa8f98ce6c76932f2eede99ec592470418579a19e5484b30"
+  },
+  "verdict": {
+    "verified": false,
+    "regression": "unmeasured",
+    "refusal": null,
+    "task": "unjudged",
+    "executionTrust": "isolated",
+    "install": {
+      "attempted": true,
+      "succeeded": true,
+      "command": "uv sync --locked --no-install-project",
+      "detail": ".: installed from uv.lock using the declared locked preparation command"
+    },
+    "checks": {
+      "typecheck": "not-applicable",
+      "lint": "not-applicable",
+      "format": "not-applicable",
+      "tests": "not-applicable"
+    },
+    "originalSuiteGreen": false,
+    "inherited": {}
+  },
+  "wallMs": 23908
+}

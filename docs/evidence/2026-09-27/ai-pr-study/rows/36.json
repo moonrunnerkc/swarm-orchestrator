@@ -1,0 +1,675 @@
+{
+  "index": 36,
+  "url": "https://github.com/github/gh-aw-firewall/pull/9075",
+  "repository": "github/gh-aw-firewall",
+  "number": 9075,
+  "title": "fix(api-proxy): skip Responses custom-tool translation on Chat Completions routes",
+  "author": "copilot-swe-agent",
+  "verifier": {
+    "package": "swarm-verify",
+    "version": "1.0.2",
+    "argv": [
+      "npx",
+      "--yes",
+      "swarm-verify@1.0.2",
+      "ci",
+      "--workspace",
+      "/Users/brad/.cache/swarm-ai-pr-study/github__gh-aw-firewall-9075",
+      "--branch",
+      "799835f22752e22524826077311c9b4b7a3149dd",
+      "--base",
+      "f1032fc9247a9e69d3aa7e51c90fa1004acce423",
+      "--json",
+      "--summary",
+      "/Users/brad/.cache/swarm-ai-pr-study/reports/36.summary.md",
+      "--bundle",
+      "/Users/brad/.cache/swarm-ai-pr-study/bundles/36",
+      "--isolation",
+      "docker:node:24-bookworm",
+      "--require-isolation",
+      "--install"
+    ],
+    "exit": 1,
+    "timedOut": false
+  },
+  "startedAt": "2026-09-28T04:40:40.010Z",
+  "base": "f1032fc9247a9e69d3aa7e51c90fa1004acce423",
+  "head": "799835f22752e22524826077311c9b4b7a3149dd",
+  "mergeCommit": "d38ea37863a0bbecf0451cf8bc143e57d53b9035",
+  "mergedAt": "2026-09-27T17:32:09Z",
+  "body": "`transformRequestBody()` ran `translateCodexCustomToolsForCopilot()` on every writable Copilot request, including `/chat/completions`. That translator handles the Responses custom-tool dialect. When it saw a Chat Completions custom tool (`{ type: 'custom', custom: { name } }`), it read the name as missing and rejected the request:\n\n```text\nUnsupported Responses custom tool '(unknown)'. Only 'apply_patch' is supported through the Copilot compatibility adapter.\n```\n\n### Changes\n\n- **Route guard (`containers/api-proxy/body-handler.js`)**\n  - New `isChatCompletionsRequest(url)` helper. It strips the query string, `#` fragment and trailing slashes, then matches on the `/chat/completions` suffix.\n  - Copilot requests on those routes now skip the Codex custom-tool translation. The body is forwarded unchanged and `codexCompatibility` stays `null`.\n  - Requests on other routes, including `/responses` and `/v1/responses`, behave as before: `apply_patch` is translated and any other custom tool is rejected.\n- **Regression tests (`containers/api-proxy/body-handler.test.js`)**\n  - Chat Completions custom tools pass through unchanged on `/chat/completions`, `/v1/chat/completions` and `/chat/completions/?x=1`.\n  - `apply_patch` on `/responses` is still translated to the function-tool form.\n  - An unsupported custom tool on `/v1/responses` still throws `CodexCompatibilityError`.\n\n### Review focus\n\nThe guard matches any path ending in `/chat/completions`, including prefixed forms like `/openai/v1/chat/completions`. This is intentionally broader than a fixed list of prefixes, and it follows the same suffix-matching approach as `isInferenceRequest` in `upstream-log.js`.\n\n<!-- START COPILOT CODING AGENT SUFFIX -->\n\n- Fixes #9057",
+  "linkedIssues": [
+    {
+      "number": 9057
+    }
+  ],
+  "historicalChecks": [
+    {
+      "name": "pre_activation",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "pre_activation",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "pre_activation",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "pre_activation",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "pre_activation",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "pre_activation",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "pre_activation",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Build and Lint (Node 20)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "gate",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Test Chroot Language Support",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Analyze (javascript-typescript)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Audit Main Package",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Test Examples",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Domain Tests",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "ESLint",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "pr-title",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "pr-title",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Compile + Syft/Grype/Grant",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Test Coverage Report",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Test Action (Latest Version)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "TypeScript Type Check",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Build and Lint (Node 22)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Analyze (actions)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "agent",
+      "conclusion": "FAILURE"
+    },
+    {
+      "name": "agent",
+      "conclusion": "FAILURE"
+    },
+    {
+      "name": "agent",
+      "conclusion": "FAILURE"
+    },
+    {
+      "name": "agent",
+      "conclusion": "FAILURE"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "activation",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Test Chroot Package Managers",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Audit Docs Site Package",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Network Tests",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Markdown Lint",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "check_security_relevance",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Test Action (Specific Version)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "Build workflow-attested NVX artifacts",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "Build workflow-attested NVX artifacts",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Test Chroot /proc Filesystem",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Protocol & Security Tests",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Test Action (With Image Pull)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "agent",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Test Chroot Edge Cases",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Container & Ops Tests",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "verify_token_usage",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "verify_token_usage",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "verify_token_usage",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "verify_token_usage",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "verify_token_usage",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Test Action (Invalid Version - Should Fail)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "FAILURE"
+    },
+    {
+      "name": "verify_build",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "verify_token_usage",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "verify_token_usage",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "safe_outputs",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "API Proxy Tests",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "verify_build",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "conclusion",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "CodeQL",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "npm audit",
+      "conclusion": "SUCCESS"
+    }
+  ],
+  "changed": {
+    "files": 2,
+    "additions": 64,
+    "deletions": 2
+  },
+  "changedFiles": [
+    "containers/api-proxy/body-handler.js",
+    "containers/api-proxy/body-handler.test.js"
+  ],
+  "testChanges": [
+    "containers/api-proxy/body-handler.test.js"
+  ],
+  "sourceChanges": [
+    "containers/api-proxy/body-handler.js"
+  ],
+  "diff": {
+    "digest": "sha256:dde7c17df7ade5c96b3f43a76dbecfa7efb24942eab7c0e30c29b6c1b13e6750",
+    "bytes": 3991,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/diffs/36.diff (outside the repository)"
+  },
+  "execution": {
+    "isolation": "docker:node:24-bookworm",
+    "install": true,
+    "manifest": "package.json"
+  },
+  "outcome": "executed",
+  "adjudication": {
+    "reviewer": {
+      "model": "qwen3.6:35b-a3b",
+      "endpoint": "http://localhost:11434",
+      "promptDigest": "sha256:72303418cd7ae2a0003cf4c32e74c8a1b3e80d9e57eeb0496c6a8495c2ac4af7"
+    },
+    "startedAt": "2026-09-28T04:27:14.480Z",
+    "status": "unjudged",
+    "reason": "the check fails the same way on the base and the head, so it did not discriminate between them",
+    "trace": null,
+    "requirement": "Chat Completions requests (URLs ending in /chat/completions) must skip the Codex custom-tool translation, passing the body through unchanged with codexCompatibility=null. Before this fix, translateCodexCustomToolsForCopilot was called on all writable Copilot requests including Chat Completions routes, causing it to reject valid Chat Completions custom tools with \"Unsupported Responses custom tool '(unknown)'\".",
+    "check": {
+      "path": "containers/api-proxy/test-chat-completions-skip.js",
+      "command": "cd containers/api-proxy && node test-chat-completions-skip.js",
+      "digest": "sha256:a78edfd28f5a909a86dc11d7eed2faf0ea8dc213376274493b0e3849cc53e2af",
+      "contents": "'use strict';\n\n/**\n * Acceptance test for PR #9075: Chat Completions requests must skip\n * Codex custom-tool translation.\n *\n * Before the fix, translateCodexCustomToolsForCopilot was called on every\n * writable Copilot request including /chat/completions routes. When it saw\n * a Chat Completions custom tool ({ type: 'custom', custom: { name } }),\n * it read the name as missing and threw:\n *   \"Unsupported Responses custom tool '(unknown)'...\"\n *\n * After the fix, isChatCompletionsRequest() guards the translation so that\n * Chat Completions requests pass through unchanged.\n */\n\nconst { createBodyHandler } = require('./body-handler');\n\n// Mock dependencies\nconst mockHandleError = () => {};\nconst mockOtel = {\n  endSpan: () => {},\n  endSpanError: () => {},\n};\n\nfunction makeMockRequest(url, method = 'POST') {\n  return {\n    method,\n    url,\n    awfRequestContext: null,\n    awfRouting: null,\n  };\n}\n\nfunction makeBody(customTools) {\n  const bodyObj = { model: 'gpt-4', messages: [{ role: 'user', content: 'hello' }] };\n  if (customTools && customTools.length > 0) {\n    bodyObj.tools = customTools;\n  }\n  return Buffer.from(JSON.stringify(bodyObj));\n}\n\nasync function runTest() {\n  const handler = createBodyHandler({ handleRequestError: mockHandleError, otel: mockOtel });\n\n  // Test case: Chat Completions URL with a custom tool that would fail translation\n  const chatCompletionsUrl = '/chat/completions';\n  const customToolBody = makeBody([\n    { type: 'custom', custom: { name: 'my_custom_tool' } }\n  ]);\n\n  let result;\n  try {\n    result = await handler.transformRequestBody(\n      customToolBody,\n      'copilot',\n      makeMockRequest(chatCompletionsUrl),\n      'test-request-id',\n      null\n    );\n  } catch (err) {\n    console.error('FAIL: transformRequestBody threw an error for Chat Completions URL');\n    console.error(err.message);\n    process.exit(1);\n  }\n\n  // Verify the body was NOT translated (should be unchanged)\n  const parsedResult = JSON.parse(result.body.toString('utf8'));\n  \n  // The tools should still be in their original custom format, not translated\n  if (!parsedResult.tools || !parsedResult.tools[0] || parsedResult.tools[0].type !== 'custom') {\n    console.error('FAIL: Body was incorrectly transformed for Chat Completions URL');\n    console.error('Expected tools to remain as custom type, got:', JSON.stringify(parsedResult.tools));\n    process.exit(1);\n  }\n\n  // codexCompatibility should be null (no translation happened)\n  if (result.codexCompatibility !== null) {\n    console.error('FAIL: codexCompatibility should be null for Chat Completions URL');\n    console.error('Got:', result.codexCompatibility);\n    process.exit(1);\n  }\n\n  // Also test /v1/chat/completions variant\n  const v1ChatCompletionsUrl = '/v1/chat/completions';\n  let result2;\n  try {\n    result2 = await handler.transformRequestBody(\n      customToolBody,\n      'copilot',\n      makeMockRequest(v1ChatCompletionsUrl),\n      'test-request-id-2',\n      null\n    );\n  } catch (err) {\n    console.error('FAIL: transformRequestBody threw an error for /v1/chat/completions URL');\n    console.error(err.message);\n    process.exit(1);\n  }\n\n  const parsedResult2 = JSON.parse(result2.body.toString('utf8'));\n  if (!parsedResult2.tools || !parsedResult2.tools[0] || parsedResult2.tools[0].type !== 'custom') {\n    console.error('FAIL: Body was incorrectly transformed for /v1/chat/completions URL');\n    process.exit(1);\n  }\n\n  if (result2.codexCompatibility !== null) {\n    console.error('FAIL: codexCompatibility should be null for /v1/chat/completions URL');\n    process.exit(1);\n  }\n\n  // Test with query string and trailing slash\n  const chatCompletionsWithQuery = '/chat/completions/?x=1';\n  let result3;\n  try {\n    result3 = await handler.transformRequestBody(\n      customToolBody,\n      'copilot',\n      makeMockRequest(chatCompletionsWithQuery),\n      'test-request-id-3',\n      null\n    );\n  } catch (err) {\n    console.error('FAIL: transformRequestBody threw an error for /chat/completions/?x=1 URL');\n    console.error(err.message);\n    process.exit(1);\n  }\n\n  const parsedResult3 = JSON.parse(result3.body.toString('utf8'));\n  if (!parsedResult3.tools || !parsedResult3.tools[0] || parsedResult3.tools[0].type !== 'custom') {\n    console.error('FAIL: Body was incorrectly transformed for /chat/completions/?x=1 URL');\n    process.exit(1);\n  }\n\n  if (result3.codexCompatibility !== null) {\n    console.error('FAIL: codexCompatibility should be null for /chat/completions/?x=1 URL');\n    process.exit(1);\n  }\n\n  // Verify that non-Chat-Completions routes still get translation applied\n  // (apply_patch should be translated to function tool)\n  const responsesUrl = '/responses';\n  const applyPatchBody = makeBody([\n    { type: 'custom', name: 'apply_patch' }\n  ]);\n\n  let result4;\n  try {\n    result4 = await handler.transformRequestBody(\n      applyPatchBody,\n      'copilot',\n      makeMockRequest(responsesUrl),\n      'test-request-id-4',\n      null\n    );\n  } catch (err) {\n    console.error('FAIL: transformRequestBody threw an error for /responses URL with apply_patch');\n    console.error(err.message);\n    process.exit(1);\n  }\n\n  const parsedResult4 = JSON.parse(result4.body.toString('utf8'));\n  \n  // For /responses, apply_patch should be translated to function type\n  if (!parsedResult4.tools || !parsedResult4.tools[0] || parsedResult4.tools[0].type !== 'function') {\n    console.error('FAIL: apply_patch on /responses should be translated to function tool');\n    console.error('Got:', JSON.stringify(parsedResult4.tools));\n    process.exit(1);\n  }\n\n  // codexCompatibility should NOT be null for /responses with apply_patch\n  if (result4.codexCompatibility === null) {\n    console.error('FAIL: codexCompatibility should NOT be null for /responses with apply_patch');\n    process.exit(1);\n  }\n\n  console.log('PASS: All Chat Completions requests correctly skip Codex custom-tool translation');\n  console.log('PASS: Non-Chat-Completions routes still get proper translation');\n}\n\nrunTest().catch(err => {\n  console.error('Unexpected error:', err);\n  process.exit(1);\n});"
+    },
+    "reads": 4,
+    "base": {
+      "ran": true,
+      "exitCode": 1,
+      "timedOut": false,
+      "stdout": "",
+      "stderr": "node:internal/modules/cjs/loader:1568\n  throw err;\n  ^\n\nError: Cannot find module 'https-proxy-agent'\nRequire stack:\n- /workspace/containers/api-proxy/http-client.js\n- /workspace/containers/api-proxy/model-discovery.js\n- /workspace/containers/api-proxy/model-fallback.js\n- /workspace/containers/api-proxy/model-resolver.js\n- /workspace/containers/api-proxy/model-body-rewriter.js\n- /workspace/containers/api-proxy/body-handler.js\n- /workspace/containers/api-proxy/test-chat-completions-skip.js\n    at Module._resolveFilename (node:internal/modules/cjs/loader:1564:15)\n    at wrapResolveFilename (node:internal/modules/cjs/loader:1118:27)\n    at defaultResolveImplForCJSLoading (node:internal/modules/cjs/loader:1142:10)\n    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1169:12)\n    at Module._load (node:internal/modules/cjs/loader:1341:5)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)\n    at Module.require (node:internal/modules/cjs/loader:1674:12)\n    at require (node:internal/modules/helpers:157:16)\n    at Object.<anonymous> (/workspace/containers/api-proxy/http-client.js:11:29)\n    at Module._compile (node:internal/modules/cjs/loader:1929:14) {\n  code: 'MODULE_NOT_FOUND',\n  requireStack: [\n    '/workspace/containers/api-proxy/http-client.js',\n    '/workspace/containers/api-proxy/model-discovery.js',\n    '/workspace/containers/api-proxy/model-fallback.js',\n    '/workspace/containers/api-proxy/model-resolver.js',\n    '/workspace/containers/api-proxy/model-body-rewriter.js',\n    '/workspace/containers/api-proxy/body-handler.js',\n    '/workspace/containers/api-proxy/test-chat-completions-skip.js'\n  ]\n}\n\nNode.js v24.20.0\n"
+    },
+    "head": {
+      "ran": true,
+      "exitCode": 1,
+      "timedOut": false,
+      "stdout": "",
+      "stderr": "node:internal/modules/cjs/loader:1568\n  throw err;\n  ^\n\nError: Cannot find module 'https-proxy-agent'\nRequire stack:\n- /workspace/containers/api-proxy/http-client.js\n- /workspace/containers/api-proxy/model-discovery.js\n- /workspace/containers/api-proxy/model-fallback.js\n- /workspace/containers/api-proxy/model-resolver.js\n- /workspace/containers/api-proxy/model-body-rewriter.js\n- /workspace/containers/api-proxy/body-handler.js\n- /workspace/containers/api-proxy/test-chat-completions-skip.js\n    at Module._resolveFilename (node:internal/modules/cjs/loader:1564:15)\n    at wrapResolveFilename (node:internal/modules/cjs/loader:1118:27)\n    at defaultResolveImplForCJSLoading (node:internal/modules/cjs/loader:1142:10)\n    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1169:12)\n    at Module._load (node:internal/modules/cjs/loader:1341:5)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)\n    at Module.require (node:internal/modules/cjs/loader:1674:12)\n    at require (node:internal/modules/helpers:157:16)\n    at Object.<anonymous> (/workspace/containers/api-proxy/http-client.js:11:29)\n    at Module._compile (node:internal/modules/cjs/loader:1929:14) {\n  code: 'MODULE_NOT_FOUND',\n  requireStack: [\n    '/workspace/containers/api-proxy/http-client.js',\n    '/workspace/containers/api-proxy/model-discovery.js',\n    '/workspace/containers/api-proxy/model-fallback.js',\n    '/workspace/containers/api-proxy/model-resolver.js',\n    '/workspace/containers/api-proxy/model-body-rewriter.js',\n    '/workspace/containers/api-proxy/body-handler.js',\n    '/workspace/containers/api-proxy/test-chat-completions-skip.js'\n  ]\n}\n\nNode.js v24.20.0\n"
+    },
+    "image": "node:24-bookworm",
+    "finishedAt": "2026-09-28T04:28:10.477Z"
+  },
+  "report": {
+    "digest": "sha256:862fbc8ddfda904eebfed2c9f9409bf0cf83212b343b3c4f51224c4e33cbcde6",
+    "bytes": 1809212,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/reports/36.report.json (outside the repository)"
+  },
+  "bundle": {
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/bundles/36 (outside the repository)",
+    "digest": "sha256:d4aafefe01a121c432c98c4b50969d79d0004b5747dd2d7c599780b1dea541a9"
+  },
+  "verdict": {
+    "verified": false,
+    "regression": "unmeasured",
+    "refusal": null,
+    "task": "unjudged",
+    "executionTrust": "isolated",
+    "install": {
+      "attempted": true,
+      "succeeded": true,
+      "command": "npm ci --ignore-scripts --no-audit --no-fund",
+      "detail": ".: installed from package-lock.json using the declared locked preparation command"
+    },
+    "checks": {
+      "typecheck": "passed",
+      "lint": "passed",
+      "format": "not-applicable",
+      "tests": "failed",
+      "build": "passed"
+    },
+    "originalSuiteGreen": false,
+    "inherited": {
+      "tests": true
+    }
+  },
+  "wallMs": 156917
+}

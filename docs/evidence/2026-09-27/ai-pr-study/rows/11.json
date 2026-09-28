@@ -1,0 +1,308 @@
+{
+  "index": 11,
+  "url": "https://github.com/loopdive/js2/pull/6115",
+  "repository": "loopdive/js2",
+  "number": 6115,
+  "title": "fix: array-literal args to pattern params, and flag-only defineProperty on host objects",
+  "author": "claude",
+  "verifier": {
+    "package": "swarm-verify",
+    "version": "1.0.2",
+    "argv": [
+      "npx",
+      "--yes",
+      "swarm-verify@1.0.2",
+      "ci",
+      "--workspace",
+      "/Users/brad/.cache/swarm-ai-pr-study/loopdive__js2-6115",
+      "--branch",
+      "c74e8e2c73acdd20d8617b4ebc94890749506151",
+      "--base",
+      "c43d546e6c453f6bf63189edfa9e3f663f642f0c",
+      "--json",
+      "--summary",
+      "/Users/brad/.cache/swarm-ai-pr-study/reports/11.summary.md",
+      "--bundle",
+      "/Users/brad/.cache/swarm-ai-pr-study/bundles/11",
+      "--isolation",
+      "docker:node:24-bookworm",
+      "--require-isolation",
+      "--install"
+    ],
+    "exit": 1,
+    "timedOut": false
+  },
+  "startedAt": "2026-09-28T04:10:01.429Z",
+  "base": "c43d546e6c453f6bf63189edfa9e3f663f642f0c",
+  "head": "c74e8e2c73acdd20d8617b4ebc94890749506151",
+  "mergeCommit": "1e216d8636a076bba8b9657ab8ce4c65cb2991a4",
+  "mergedAt": "2026-09-26T00:11:10Z",
+  "body": "Before: in JS-host mode, `function f([a, b = 9]) { return a + b; } f([1])` produced NaN (a standalone script threw `value is not iterable`). Separately, `Object.defineProperty(obj, \"b\", { enumerable: false })` on an object literal had no effect, so `Object.keys`, `values`, `entries` and `propertyIsEnumerable` still reported `b`. Both show up as failing files in PR #6044's harness sweep. Its CI requires every touched test file to pass in full, so these two bugs keep it from merging.\n\nAfter: `f([1])` returns 10, and a flag-only `defineProperty` hides the field from those enumeration APIs.\n\nHow:\n- **Param default ([#3643](https://js2wasm.loopdive.com/dashboard/issue.html?slug=3643-array-like-and-heterogeneous-vec-gaps)).** TypeScript types the argument `[1]` with the pattern's tuple type, so the host branch of `internal-call-argument.ts` built it as a tuple struct. The callee's destructuring only knows the vec representation, so it went looking for an iterator and failed. The literal is now built as a vec, which is what standalone mode already does. PR #6017 exposed this for nested function declarations, and bisection points at it. Top-level declarations were already affected.\n- **enumerable:false ([#6472](https://js2wasm.loopdive.com/dashboard/issue.html?slug=6472-jshost-defineproperty-enumerable-false-not-honored-by-object-keys)).** `emitExternDefinePropertyNoValue` picked its compile-time struct branch from the TS type. It did so even when the literal had been compiled to a host plain object, and that branch evaluated the descriptor and then dropped it. Host objects now go to `__defineProperty_value`. An existing literal field also starts as a normal data property, so a later redefine is not rejected. The runtime enumeration code already reads that descriptor store.\n\n`tests/issue-797-batch1.test.ts` gets the same one-line `setInstance` harness change that #6044 makes. The two edits are byte-identical, so the two PRs merge cleanly in either order.\n\n## Verification\n\n| file | before | after |\n| --- | --- | --- |\n| issue-797-batch1 (setInstance harness) | 6/11 | 11/11 |\n| new issue-3643-param-default | 0/4 | 4/4 |\n| issue-3643-array-dstr-getiterator with #6044's harness | 13/14 | 14/14 |\n\nRegression A/B, same HEAD, `JS2WASM_EVAL_ENGINE=interpreter`:\n- **Destructuring / param / tuple / call-arg files** (105 files): 577 → 582 passing.\n- **Array and equivalence files** (353 files): 2793 → 2794 passing.\n- **Enumeration / descriptor / defineProperty files plus every `issue-3520-*` forgery-defence test** (101 files): only issue-797-batch1 changed.\n\nNo test went from passing to failing in any of these runs.\n\nThese gates are green locally: loc-budget, func-budget, coercion-sites, oracle-ratchet, dead-exports and host-import-policy. `src/runtime.ts` is untouched.\n\nStill open:\n- A flag-only define on an object that stays a real struct remains compile-time only, so `for-in` over it still lists the field. This is noted in the 797 issue file.\n- `f([[1, 2], 3])` into `function f([[a, b], c])` still fails. It failed before this change too, and has a separate cause.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nhttps://claude.ai/code/session_012xKn22Zj5hTiqf9FWzptG2",
+  "linkedIssues": [],
+  "historicalChecks": [
+    {
+      "name": "arm",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "changes",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "cla-check",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "cla-check",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Analyze (actions)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "cross-backend-parity",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "retarget",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "test262 PR stub — detect relevance",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "admit-measurement-baseline",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "smoke",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Analyze (python)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "release-pending",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "cheap gate (main-ancestor + lint)",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "quality",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "cheap gate (main-ancestor + lint)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "merge shard reports",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "issue-tests",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "detect test262-relevant changes",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "check for test262 regressions",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "probe merge_group baseline artifact",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "linear-tests",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "test262 native-first shard ${{ matrix.chunk }}",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "equivalence-shard (1)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "test262 PR stub — verdict published",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "equivalence-shard (2)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "equivalence-shard (3)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "equivalence-shard (4)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "equivalence-shard (5)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "equivalence-shard (6)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "equivalence-shard (7)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "equivalence-shard (8)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Cancel Test262 after quality failure",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "promote root baseline + cache per-SHA for queue merge (#3467/#3468)",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "build standalone runtime-eval provider (${{ (inputs.eval_engine || 'quickjs') }})",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "equivalence-gate",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "build compiled Temporal provider (#5353)",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "merge native-first evidence",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "test262 honest-audit shard ${{ matrix.chunk }}",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "test262 ${{ matrix.target.name }} shard ${{ matrix.chunk }}",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "test262 ${{ matrix.target_name }} shard ${{ matrix.chunk_label }}/${{ matrix.chunk_total }}",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "merge honest-audit evidence",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "merge shard reports",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "check for test262 regressions",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "promote merged report to main baseline",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "CodeQL",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "cla-check",
+      "conclusion": "SUCCESS"
+    }
+  ],
+  "changed": {
+    "files": 5,
+    "additions": 122,
+    "deletions": 6
+  },
+  "changedFiles": [
+    "plan/issues/797-property-descriptor-subsystem-5-000.md",
+    "src/codegen/expressions/internal-call-argument.ts",
+    "src/codegen/object-ops.ts",
+    "tests/issue-3643-param-default.test.ts",
+    "tests/issue-797-batch1.test.ts"
+  ],
+  "testChanges": [
+    "tests/issue-3643-param-default.test.ts",
+    "tests/issue-797-batch1.test.ts"
+  ],
+  "sourceChanges": [
+    "plan/issues/797-property-descriptor-subsystem-5-000.md",
+    "src/codegen/expressions/internal-call-argument.ts",
+    "src/codegen/object-ops.ts"
+  ],
+  "diff": {
+    "digest": "sha256:dafcdd667114caa57a5acc6aa797b35df12dd1f3fa953d5346f4a2c01f3134a0",
+    "bytes": 9746,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/diffs/11.diff (outside the repository)"
+  },
+  "execution": {
+    "isolation": "docker:node:24-bookworm",
+    "install": true,
+    "manifest": "package.json"
+  },
+  "outcome": "executed",
+  "adjudication": {
+    "reviewer": {
+      "model": "qwen3.6:35b-a3b",
+      "endpoint": "http://localhost:11434",
+      "promptDigest": "sha256:72303418cd7ae2a0003cf4c32e74c8a1b3e80d9e57eeb0496c6a8495c2ac4af7"
+    },
+    "startedAt": "2026-09-28T03:48:57.437Z",
+    "status": "unjudged",
+    "reason": "the reviewer produced no check within 30 steps",
+    "reads": 28,
+    "finishedAt": "2026-09-28T03:52:12.785Z"
+  },
+  "report": {
+    "digest": "sha256:339ae182964c265e892fdfbbc7b1ebd61c9f54a4262ed003df0628befad7035e",
+    "bytes": 6489,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/reports/11.report.json (outside the repository)"
+  },
+  "bundle": {
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/bundles/11 (outside the repository)",
+    "digest": "sha256:b7a5c0e6f5a8aad297e8aac6eaecbf564526ace34d3ec267c302ca69cb396b68"
+  },
+  "verdict": {
+    "verified": false,
+    "regression": "unmeasured",
+    "refusal": null,
+    "task": "unjudged",
+    "executionTrust": "isolated",
+    "install": {
+      "attempted": true,
+      "succeeded": true,
+      "command": "npx --yes --package pnpm@10.30.2 pnpm install --frozen-lockfile --ignore-scripts",
+      "detail": ".: installed from pnpm-lock.yaml using the declared locked preparation command"
+    },
+    "checks": {
+      "typecheck": "failed",
+      "lint": "passed",
+      "format": "passed",
+      "tests": "failed",
+      "build": "failed"
+    },
+    "originalSuiteGreen": false,
+    "inherited": {
+      "typecheck": true,
+      "tests": true,
+      "build": true
+    }
+  },
+  "wallMs": 262901
+}

@@ -1,0 +1,166 @@
+{
+  "index": 1,
+  "url": "https://github.com/yukieiji/ExtremeRoles/pull/1061",
+  "repository": "yukieiji/ExtremeRoles",
+  "number": 1061,
+  "title": "Fix NullReferenceException in BakaryRoleTests",
+  "author": "google-labs-jules",
+  "verifier": {
+    "package": "swarm-verify",
+    "version": "1.0.2",
+    "argv": [
+      "npx",
+      "--yes",
+      "swarm-verify@1.0.2",
+      "ci",
+      "--workspace",
+      "/Users/brad/.cache/swarm-ai-pr-study/yukieiji__ExtremeRoles-1061",
+      "--branch",
+      "484b96d1bfd5bf800c6cc333e5ba0488aa2e7b5a",
+      "--base",
+      "2cced4ae28761d1e140fa00b8218206e5b0d4450",
+      "--json",
+      "--summary",
+      "/Users/brad/.cache/swarm-ai-pr-study/reports/01.summary.md",
+      "--bundle",
+      "/Users/brad/.cache/swarm-ai-pr-study/bundles/01",
+      "--isolation",
+      "docker:ghcr.io/astral-sh/uv:python3.12-bookworm",
+      "--require-isolation",
+      "--install"
+    ],
+    "exit": 1,
+    "timedOut": false
+  },
+  "startedAt": "2026-09-28T03:59:04.499Z",
+  "base": "2cced4ae28761d1e140fa00b8218206e5b0d4450",
+  "head": "484b96d1bfd5bf800c6cc333e5ba0488aa2e7b5a",
+  "mergeCommit": "99994d1d59cbcc22558eccf463a64ef49543736c",
+  "mergedAt": "2026-09-25T12:54:08Z",
+  "body": "Fix NullReferenceException in BakaryRoleTests by adding `MockSetupHelper.SetupGameOptionsManagerMock();` to the test class constructor.\n\n---\n*PR created automatically by Jules for task [13871188519410412109](https://jules.google.com/task/13871188519410412109) started by @yukieiji*",
+  "linkedIssues": [],
+  "historicalChecks": [
+    {
+      "name": "build_check",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "label",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "submit-nuget",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "CodeRabbit",
+      "conclusion": "SUCCESS"
+    }
+  ],
+  "changed": {
+    "files": 1,
+    "additions": 1,
+    "deletions": 0
+  },
+  "changedFiles": [
+    "ExtremeRoles.UnitTest/Roles/Solo/Crewmate/Bakary/BakaryRoleTests.cs"
+  ],
+  "testChanges": [],
+  "sourceChanges": [
+    "ExtremeRoles.UnitTest/Roles/Solo/Crewmate/Bakary/BakaryRoleTests.cs"
+  ],
+  "diff": {
+    "digest": "sha256:46d40df337da702dfd9be40ddbbb9d3a9b671d4677b9200157af99bac6047f4e",
+    "bytes": 631,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/diffs/01.diff (outside the repository)"
+  },
+  "execution": {
+    "isolation": "docker:ghcr.io/astral-sh/uv:python3.12-bookworm",
+    "install": true,
+    "manifest": "pyproject.toml"
+  },
+  "outcome": "executed",
+  "adjudication": {
+    "reviewer": {
+      "model": "qwen3.6:35b-a3b",
+      "endpoint": "http://localhost:11434",
+      "promptDigest": "sha256:72303418cd7ae2a0003cf4c32e74c8a1b3e80d9e57eeb0496c6a8495c2ac4af7"
+    },
+    "startedAt": "2026-09-28T03:13:14.165Z",
+    "status": "requirement-met",
+    "trace": null,
+    "requirement": "Fix NullReferenceException in BakaryRoleTests by adding `MockSetupHelper.SetupGameOptionsManagerMock();` to the test class constructor.",
+    "check": {
+      "path": "check_bakary_fix.sh",
+      "command": "bash check_bakary_fix.sh",
+      "digest": "sha256:423529ddf91f876eb8ad638a1c469be61d410e9517969351fff67b8c93f0607f",
+      "contents": "#!/bin/bash\n# Check that MockSetupHelper.SetupGameOptionsManagerMock() is called in BakaryRoleTests constructor\n# This fixes a NullReferenceException when the test tries to access game options\n\nTEST_FILE=\"ExtremeRoles.UnitTest/Roles/Solo/Crewmate/Bakary/BakaryRoleTests.cs\"\n\nif [ ! -f \"$TEST_FILE\" ]; then\n    echo \"FAIL: Test file not found at $TEST_FILE\"\n    exit 1\nfi\n\n# Check that SetupGameOptionsManagerMock is called in the constructor\nif grep -q 'MockSetupHelper\\.SetupGameOptionsManagerMock()' \"$TEST_FILE\"; then\n    echo \"PASS: MockSetupHelper.SetupGameOptionsManagerMock() call found in BakaryRoleTests\"\n    exit 0\nelse\n    echo \"FAIL: MockSetupHelper.SetupGameOptionsManagerMock() NOT found in BakaryRoleTests constructor\"\n    echo \"The NullReferenceException fix requires this line to be present.\"\n    exit 1\nfi"
+    },
+    "reads": 8,
+    "base": {
+      "ran": true,
+      "exitCode": 1,
+      "timedOut": false,
+      "stdout": "FAIL: MockSetupHelper.SetupGameOptionsManagerMock() NOT found in BakaryRoleTests constructor\nThe NullReferenceException fix requires this line to be present.\n",
+      "stderr": "grep: ExtremeRoles.UnitTest/Roles/Solo/Crewmate/Bakary/BakaryRoleTests.cs: No such file or directory\n"
+    },
+    "head": {
+      "ran": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "stdout": "PASS: MockSetupHelper.SetupGameOptionsManagerMock() call found in BakaryRoleTests\n",
+      "stderr": ""
+    },
+    "image": "ghcr.io/astral-sh/uv:python3.12-bookworm",
+    "finishedAt": "2026-09-28T03:14:45.928Z"
+  },
+  "report": {
+    "digest": "sha256:8db9c2e1098bf78a4da22d6424fc9a158c10d144d37b1a1c4aea9a6e1460a5d9",
+    "bytes": 12005,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/reports/01.report.json (outside the repository)"
+  },
+  "bundle": {
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/bundles/01 (outside the repository)",
+    "digest": "sha256:ee4f24c67c80de48def359c605872f9967276cf91e9f752da7c92c5b3264d398"
+  },
+  "verdict": {
+    "verified": false,
+    "regression": "unmeasured",
+    "refusal": null,
+    "task": "unjudged",
+    "executionTrust": "isolated",
+    "install": {
+      "attempted": true,
+      "succeeded": true,
+      "command": "uv sync --locked --no-install-project",
+      "detail": ".: installed from uv.lock using the declared locked preparation command"
+    },
+    "checks": {
+      "typecheck": "not-applicable",
+      "lint": "failed",
+      "format": "failed",
+      "tests": "passed"
+    },
+    "originalSuiteGreen": true,
+    "inherited": {
+      "lint": true,
+      "format": true
+    }
+  },
+  "wallMs": 10791,
+  "comparisonA2": {
+    "outcome": "executed",
+    "verified": false,
+    "refusal": null,
+    "task": "rejected",
+    "regression": "unmeasured",
+    "oracleReach": "unmeasured",
+    "oracleBond": "not-bonded",
+    "exit": 1,
+    "verifier": {
+      "package": "swarm-verify",
+      "version": "1.0.2"
+    },
+    "wallMs": 10505
+  }
+}

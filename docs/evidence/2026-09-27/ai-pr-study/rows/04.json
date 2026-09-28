@@ -1,0 +1,134 @@
+{
+  "index": 4,
+  "url": "https://github.com/yukieiji/ExtremeRoles/pull/1068",
+  "repository": "yukieiji/ExtremeRoles",
+  "number": 1068,
+  "title": "Fix NullReferenceException in BakaryRoleTests during mock initialization",
+  "author": "google-labs-jules",
+  "verifier": {
+    "package": "swarm-verify",
+    "version": "1.0.2",
+    "argv": [
+      "npx",
+      "--yes",
+      "swarm-verify@1.0.2",
+      "ci",
+      "--workspace",
+      "/Users/brad/.cache/swarm-ai-pr-study/yukieiji__ExtremeRoles-1068",
+      "--branch",
+      "d54e18c81e04ddca02b56747d19320db9b89a393",
+      "--base",
+      "4258d03ba0b4a27b4b8c44608903843e09c2005e",
+      "--json",
+      "--summary",
+      "/Users/brad/.cache/swarm-ai-pr-study/reports/04.summary.md",
+      "--bundle",
+      "/Users/brad/.cache/swarm-ai-pr-study/bundles/04",
+      "--isolation",
+      "docker:ghcr.io/astral-sh/uv:python3.12-bookworm",
+      "--require-isolation",
+      "--install"
+    ],
+    "exit": 1,
+    "timedOut": false
+  },
+  "startedAt": "2026-09-28T03:59:26.906Z",
+  "base": "4258d03ba0b4a27b4b8c44608903843e09c2005e",
+  "head": "d54e18c81e04ddca02b56747d19320db9b89a393",
+  "mergeCommit": "7993226e0ee8ab8104c58f4d053d66a0de6ea1a1",
+  "mergedAt": "2026-09-25T18:44:26Z",
+  "body": "Fixed NullReferenceException in BakaryRoleTests.Initialize_RegistersBakerySystemInExtremeSystemTypeManager by updating SetupGameOptionsManagerMock in MockSetupHelper to ensure GameOptionsManager.Instance and CurrentGameOptions are non-null when initialized. Consolidated duplicated mock setup in BaitRoleTests and ExorcistRoleTests.\n\n---\n*PR created automatically by Jules for task [496039958629684217](https://jules.google.com/task/496039958629684217) started by @yukieiji*",
+  "linkedIssues": [],
+  "historicalChecks": [
+    {
+      "name": "build_check",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "label",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "submit-nuget",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "CodeRabbit",
+      "conclusion": "SUCCESS"
+    }
+  ],
+  "changed": {
+    "files": 3,
+    "additions": 5,
+    "deletions": 31
+  },
+  "changedFiles": [
+    "ExtremeRoles.UnitTest/MockSetupHelper.cs",
+    "ExtremeRoles.UnitTest/Roles/Solo/Crewmate/Bait/BaitRoleTests.cs",
+    "ExtremeRoles.UnitTest/Roles/Solo/Crewmate/Exorcist/ExorcistRoleTests.cs"
+  ],
+  "testChanges": [],
+  "sourceChanges": [
+    "ExtremeRoles.UnitTest/MockSetupHelper.cs",
+    "ExtremeRoles.UnitTest/Roles/Solo/Crewmate/Bait/BaitRoleTests.cs",
+    "ExtremeRoles.UnitTest/Roles/Solo/Crewmate/Exorcist/ExorcistRoleTests.cs"
+  ],
+  "diff": {
+    "digest": "sha256:1278ae43b92b3c7ec2cf6253330a02533f9e952260a70fe198cf3f1d38e06a91",
+    "bytes": 4034,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/diffs/04.diff (outside the repository)"
+  },
+  "execution": {
+    "isolation": "docker:ghcr.io/astral-sh/uv:python3.12-bookworm",
+    "install": true,
+    "manifest": "pyproject.toml"
+  },
+  "outcome": "executed",
+  "adjudication": {
+    "reviewer": {
+      "model": "qwen3.6:35b-a3b",
+      "endpoint": "http://localhost:11434",
+      "promptDigest": "sha256:72303418cd7ae2a0003cf4c32e74c8a1b3e80d9e57eeb0496c6a8495c2ac4af7"
+    },
+    "startedAt": "2026-09-28T03:23:28.080Z",
+    "status": "unjudged",
+    "reason": "The PR fixes a NullReferenceException in BakaryRoleTests by updating SetupGameOptionsManagerMock in MockSetupHelper to ensure GameOptionsManager.Instance and CurrentGameOptions are non-null when initialized. However, the test suite requires downloading and building mocked assemblies from an external repository (TestableAmongUsModBuilder) via network access, which is not available in this environment. The build_with_mock.sh script attempts to fetch assets from GitHub API, and without network access or the TestableAmongUsAccess token, the tests cannot be built or run. Therefore, I cannot write an executable acceptance check that can verify whether the fix works correctly.",
+    "requirement": null,
+    "reads": 11,
+    "finishedAt": "2026-09-28T03:24:38.087Z"
+  },
+  "report": {
+    "digest": "sha256:d00ad352c4d23297d5184f8c2fd0d425f8461709dbeed0cfdc62e2a4e0decfa1",
+    "bytes": 12128,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/reports/04.report.json (outside the repository)"
+  },
+  "bundle": {
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/bundles/04 (outside the repository)",
+    "digest": "sha256:6304aa416f105f0730d06531dcd7ecd59f349fc691e2db81b6543e9c8ed4e93b"
+  },
+  "verdict": {
+    "verified": false,
+    "regression": "unmeasured",
+    "refusal": null,
+    "task": "unjudged",
+    "executionTrust": "isolated",
+    "install": {
+      "attempted": true,
+      "succeeded": true,
+      "command": "uv sync --locked --no-install-project",
+      "detail": ".: installed from uv.lock using the declared locked preparation command"
+    },
+    "checks": {
+      "typecheck": "not-applicable",
+      "lint": "failed",
+      "format": "failed",
+      "tests": "passed"
+    },
+    "originalSuiteGreen": true,
+    "inherited": {
+      "lint": true,
+      "format": true
+    }
+  },
+  "wallMs": 10337
+}

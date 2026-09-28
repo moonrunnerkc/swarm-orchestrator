@@ -1,0 +1,192 @@
+{
+  "index": 28,
+  "url": "https://github.com/BYK/loreai/pull/1947",
+  "repository": "BYK/loreai",
+  "number": 1947,
+  "title": "feat(ui): collapsible quick-search bar for in-session find",
+  "author": "devin-ai-integration",
+  "verifier": {
+    "package": "swarm-verify",
+    "version": "1.0.2",
+    "argv": [
+      "npx",
+      "--yes",
+      "swarm-verify@1.0.2",
+      "ci",
+      "--workspace",
+      "/Users/brad/.cache/swarm-ai-pr-study/BYK__loreai-1947",
+      "--branch",
+      "f5deaa0b4bd5ebbd5d2bb56c9efb187dec76ca8e",
+      "--base",
+      "d8d3ac5cc9054933a6f9dedeb9b250fd496c34fe",
+      "--json",
+      "--summary",
+      "/Users/brad/.cache/swarm-ai-pr-study/reports/28.summary.md",
+      "--bundle",
+      "/Users/brad/.cache/swarm-ai-pr-study/bundles/28",
+      "--isolation",
+      "docker:node:24-bookworm",
+      "--require-isolation",
+      "--install"
+    ],
+    "exit": 1,
+    "timedOut": false
+  },
+  "startedAt": "2026-09-28T04:35:42.417Z",
+  "base": "d8d3ac5cc9054933a6f9dedeb9b250fd496c34fe",
+  "head": "f5deaa0b4bd5ebbd5d2bb56c9efb187dec76ca8e",
+  "mergeCommit": "6ea8c345693f72dd3b61a40bcdef9eb2ce8037e5",
+  "mergedAt": "2026-09-27T15:49:04Z",
+  "body": "## Summary\n\nCloses #1922. Stacked on #1946 (targets its branch); retarget after it lands.\n\nThe always-visible search strip in the session reader becomes a compact, collapsible **quick-search bar** with browser-find ergonomics, on top of the existing client-side scan (`src/reader/search.ts`, loaded rows only) and the existing whole-session escalation.\n\n- `Ctrl/Cmd+F` anywhere inside the reader (`isFindShortcut`, `src/reader/quick-search.ts`) opens the bar and focuses/selects the input, remembering which reader element had focus. The shortcut is deliberately **not** handled when the input itself is the target, so a second press falls through to the browser's own find.\n- `Esc` (or `search-close`) clears the search, closes the bar and returns focus: remembered element → row for `focusKey` → `session-scroll` (now `tabIndex=-1`).\n- `Enter` / `Shift+Enter` cycle; `search-count` shows `n/m` (`0/m` before cycling, `…/m` while the scan is still running). The honest `search-summary` (\"… in loaded history\") and the coverage line (\"Searched the loaded history only · …\" + \"Search the whole session\") are unchanged; the coverage line additionally offers **Load older history** (`search-load-older`) while `hasOlder === true` — the active query re-scans when rows change, so the count grows.\n- Every match in a mounted row is now highlighted: `HighlightController.searchHits(blockId, partIndex)` feeds `RichText`, which wraps each non-current hit in `mark.passage-search-all` (current hit keeps `mark.passage-search`) through the existing `applyHighlights` text-node wrapper — inert DOM, no `innerHTML`. Capped at 200 spans per part.\n- Toolbar **Find** button (`search-open`) is the mobile entry point (visible on all sizes).\n- The form moved to `src/components/reader/QuickSearch.tsx`; SessionView keeps the state and escalation logic.\n\n## How tested\n\n```\npnpm run typecheck\npnpm run lint\npnpm run format:check\npnpm --filter @loreai/ui test                      # 576 passed (after rebase onto #1946's rebased tip)\npnpm --filter @loreai/ui build && pnpm --filter @loreai/gateway run bundle\nnode scripts/ui-deep-link-smoke.mjs\npnpm --filter @loreai/ui test:e2e                  # 119 passed, 5 skipped (desktop + mobile + dev fixture projects)\n```\n\nTest adaptations: existing search tests (jsdom + e2e) open the bar first via an `openQuickSearch()` / `openSearch()` helper; no assertions changed. Escape inside the input now closes the bar instead of clear-or-blur (no existing test relied on the old behaviour).\n\n## Definition of done\n\n- [x] `Ctrl/Cmd+F` with reader focus opens the bar; second press in the input falls through to browser find\n- [x] `Esc` closes and returns focus to the reader\n- [x] `Enter` / `Shift+Enter` cycle; `n/m` count\n- [x] All matches highlighted in virtualised rows via inert marks; debounced input (existing `SEARCH_DEBOUNCE_MS`)\n- [x] Loaded-only coverage stated explicitly; inline \"Search the whole session\" and \"Load older history\" escalations\n- [x] Mobile: toolbar search button\n- [x] jsdom tests for shortcut / focus / cycle / Escape; Playwright for highlights + cycling under virtualised load\n- [x] README updated\n\n## Screenshots\n\n| Light | Dark |\n|---|---|\n| ![desktop light](https://app.devin.ai/api/presigned_proxy?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvcmdfaWQiOiJvcmctODQ3Y2E3ZDFjOTIzNDZiMzhmOGM4NTZmZmYzZmY5MDUiLCJ1c2VyX2lkIjpudWxsLCJidWNrZXRfbmFtZSI6ImRldmluYXR0YWNobWVudHMiLCJidWNrZXRfa2V5IjoiYXR0YWNobWVudHNfcHJpdmF0ZS9vcmctODQ3Y2E3ZDFjOTIzNDZiMzhmOGM4NTZmZmYzZmY5MDUvMWRhODJjZDgtNzJhYS00MGFlLTg3OTctMDdhODcxZjJkMWM3IiwiaWF0IjoxNzkwNTIyNzQyLCJleHAiOjE3OTExMjc1NDIsImZpbGVuYW1lIjoiZGVza3RvcC1saWdodC1zZWFyY2gucG5nIn0.nJoSUFNXzsXEXtQjugfikOU9NLSy_7CpDTvMgwgDnTU) | ![desktop dark](https://app.devin.ai/api/presigned_proxy?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvcmdfaWQiOiJvcmctODQ3Y2E3ZDFjOTIzNDZiMzhmOGM4NTZmZmYzZmY5MDUiLCJ1c2VyX2lkIjpudWxsLCJidWNrZXRfbmFtZSI6ImRldmluYXR0YWNobWVudHMiLCJidWNrZXRfa2V5IjoiYXR0YWNobWVudHNfcHJpdmF0ZS9vcmctODQ3Y2E3ZDFjOTIzNDZiMzhmOGM4NTZmZmYzZmY5MDUvZTlhMTg2NmItMDAwMi00ODI2LTk4ODgtNWUwZjNhOThhODgwIiwiaWF0IjoxNzkwNTIyNzQyLCJleHAiOjE3OTExMjc1NDIsImZpbGVuYW1lIjoiZGVza3RvcC1kYXJrLXNlYXJjaC5wbmcifQ.0I1TUQKroRkZpCFh9L2TjnTYwkGtmmYs9VYQXApWkKI) |\n| ![mobile light](https://app.devin.ai/api/presigned_proxy?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvcmdfaWQiOiJvcmctODQ3Y2E3ZDFjOTIzNDZiMzhmOGM4NTZmZmYzZmY5MDUiLCJ1c2VyX2lkIjpudWxsLCJidWNrZXRfbmFtZSI6ImRldmluYXR0YWNobWVudHMiLCJidWNrZXRfa2V5IjoiYXR0YWNobWVudHNfcHJpdmF0ZS9vcmctODQ3Y2E3ZDFjOTIzNDZiMzhmOGM4NTZmZmYzZmY5MDUvZGU1YmYxMTUtMGJmYy00Njg3LWIxYWItYjJkYzAxZDYwYTVjIiwiaWF0IjoxNzkwNTIyNzQyLCJleHAiOjE3OTExMjc1NDIsImZpbGVuYW1lIjoibW9iaWxlLWxpZ2h0LXNlYXJjaC5wbmcifQ.1xARsF5aGWUk4PNgBZtvMDI3s9Y_BHjV1BE37Tpk5yQ) | ![mobile dark](https://app.devin.ai/api/presigned_proxy?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvcmdfaWQiOiJvcmctODQ3Y2E3ZDFjOTIzNDZiMzhmOGM4NTZmZmYzZmY5MDUiLCJ1c2VyX2lkIjpudWxsLCJidWNrZXRfbmFtZSI6ImRldmluYXR0YWNobWVudHMiLCJidWNrZXRfa2V5IjoiYXR0YWNobWVudHNfcHJpdmF0ZS9vcmctODQ3Y2E3ZDFjOTIzNDZiMzhmOGM4NTZmZmYzZmY5MDUvNjQ3MDliYWItNmQwOC00MmJlLWEyNzYtNjcyMzg1NTM0OGIyIiwiaWF0IjoxNzkwNTIyNzQyLCJleHAiOjE3OTExMjc1NDIsImZpbGVuYW1lIjoibW9iaWxlLWRhcmstc2VhcmNoLnBuZyJ9.hbtG2FHHSGSKqNxKInvkyKw_3_Qcj-NhWPn2SezX8DU) |\n\nBrowser-tested on the seeded gateway (desktop + Pixel 7 emulation, light/dark): first `Ctrl+F` opens the bar, a second one from the input opens Chrome's native find, `Enter`/`Shift+Enter` cycle with `n/m`, non-current hits carry the lighter tint, load-older grows `70 → 100` hits, whole-session reports `111` and \"go to the newest older match\" lands on it.\n\n## Notes / open questions\n\n- `Esc` returns focus to the exact row you came from only while that row is still mounted; after cycling far enough that the virtualiser unmounted it, focus goes to the row for `focusKey`, else the scroll container (`session-scroll`). Reader focus is always restored; restoring the original row would mean scrolling back to it, which the issue doesn't ask for.\n- Jumping to a match that sits near the top of the loaded window is an upward scroll and therefore triggers #1946's auto-load, so the `n/m` total can grow right after `Enter` (e.g. `1/70 → 31/100`). The current match stays selected. Say if you'd rather have search-driven scrolls exempt from auto-load.\n- On a narrow (412 px) toolbar the empty input shrinks enough to truncate its placeholder; typed queries and controls stay fully readable. Cosmetic; can widen if wanted.\n\nLink to Devin session: https://app.devin.ai/sessions/38e3eb62bf574dd6afeb9f59b18a4a3b\nOpen in Devin Desktop: https://app.devin.ai/desktop/session/38e3eb62bf574dd6afeb9f59b18a4a3b?variant=devin\nRequested by: @BYK",
+  "linkedIssues": [],
+  "historicalChecks": [
+    {
+      "name": "preview",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "preview",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "lint",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "lint",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Supabase Preview",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "Seer Code Review",
+      "conclusion": "SUCCESS"
+    }
+  ],
+  "changed": {
+    "files": 10,
+    "additions": 645,
+    "deletions": 142
+  },
+  "changedFiles": [
+    "packages/ui/README.md",
+    "packages/ui/e2e/busy-fixture.spec.ts",
+    "packages/ui/e2e/reader.spec.ts",
+    "packages/ui/src/components/reader/QuickSearch.tsx",
+    "packages/ui/src/components/reader/SessionBlock.tsx",
+    "packages/ui/src/components/reader/SessionView.tsx",
+    "packages/ui/src/reader/quick-search.ts",
+    "packages/ui/src/styles/app.css",
+    "packages/ui/test/quick-search.test.ts",
+    "packages/ui/test/session-view.test.tsx"
+  ],
+  "testChanges": [
+    "packages/ui/e2e/busy-fixture.spec.ts",
+    "packages/ui/e2e/reader.spec.ts",
+    "packages/ui/test/quick-search.test.ts",
+    "packages/ui/test/session-view.test.tsx"
+  ],
+  "sourceChanges": [
+    "packages/ui/README.md",
+    "packages/ui/src/components/reader/QuickSearch.tsx",
+    "packages/ui/src/components/reader/SessionBlock.tsx",
+    "packages/ui/src/components/reader/SessionView.tsx",
+    "packages/ui/src/reader/quick-search.ts",
+    "packages/ui/src/styles/app.css"
+  ],
+  "diff": {
+    "digest": "sha256:99bd4cec3a09d44d52821e48445cd87828527ade92fae374b0c2207a4acd6478",
+    "bytes": 41994,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/diffs/28.diff (outside the repository)"
+  },
+  "execution": {
+    "isolation": "docker:node:24-bookworm",
+    "install": true,
+    "manifest": "package.json"
+  },
+  "outcome": "executed",
+  "adjudication": {
+    "reviewer": {
+      "model": "qwen3.6:35b-a3b",
+      "endpoint": "http://localhost:11434",
+      "promptDigest": "sha256:72303418cd7ae2a0003cf4c32e74c8a1b3e80d9e57eeb0496c6a8495c2ac4af7"
+    },
+    "startedAt": "2026-09-28T03:56:01.048Z",
+    "status": "requirement-met",
+    "reason": "The PR adds a collapsible quick-search bar for in-session find. The key changes are: 1) A new `quick-search.ts` module with `isFindShortcut()` and `formatCount()` exports, 2) A new `QuickSearch.tsx` component exporting `QuickSearchBar`, 3) Integration in `SessionView.tsx`. My check verifies these modules exist and their public APIs work correctly.",
+    "trace": null,
+    "requirement": "The PR adds a collapsible quick-search bar for in-session find, including the `isFindShortcut` keyboard shortcut detection, `formatCount` helper for n/m display, and the `QuickSearchBar` component.",
+    "check": {
+      "path": "packages/ui/test/quick-search-acceptance.test.ts",
+      "command": "cd packages/ui && npx vitest run test/quick-search-acceptance.test.ts --reporter=verbose 2>&1",
+      "digest": "sha256:fc847698429a3376eb61d7502607987c7f0883c567623e6460dac24109e39622",
+      "contents": "/**\n * Acceptance check for PR #1947: collapsible quick-search bar for in-session find.\n * \n * Verifies the public API of the new quick-search feature:\n * - `isFindShortcut` correctly detects Ctrl/Cmd+F\n * - `formatCount` formats n/m counts correctly\n * - `QuickSearchBar` component exists and has the expected props interface\n */\n\nimport { describe, it, expect } from \"vitest\";\nimport { isFindShortcut, formatCount } from \"~/reader/quick-search\";\n\ndescribe(\"quick-search public API\", () => {\n  describe(\"isFindShortcut\", () => {\n    it(\"returns true for Ctrl+F\", () => {\n      const e = new KeyboardEvent(\"keydown\", { key: \"f\", ctrlKey: true });\n      expect(isFindShortcut(e)).toBe(true);\n    });\n\n    it(\"returns true for Cmd+F (meta)\", () => {\n      const e = new KeyboardEvent(\"keydown\", { key: \"F\", metaKey: true });\n      expect(isFindShortcut(e)).toBe(true);\n    });\n\n    it(\"returns false for plain F without modifier\", () => {\n      const e = new KeyboardEvent(\"keydown\", { key: \"f\" });\n      expect(isFindShortcut(e)).toBe(false);\n    });\n\n    it(\"returns false for Ctrl+Shift+F\", () => {\n      const e = new KeyboardEvent(\"keydown\", { key: \"f\", ctrlKey: true, shiftKey: true });\n      expect(isFindShortcut(e)).toBe(false);\n    });\n\n    it(\"returns false for Ctrl+Alt+F\", () => {\n      const e = new KeyboardEvent(\"keydown\", { key: \"f\", ctrlKey: true, altKey: true });\n      expect(isFindShortcut(e)).toBe(false);\n    });\n\n    it(\"returns false for non-f keys with Ctrl\", () => {\n      const e = new KeyboardEvent(\"keydown\", { key: \"a\", ctrlKey: true });\n      expect(isFindShortcut(e)).toBe(false);\n    });\n  });\n\n  describe(\"formatCount\", () => {\n    it(\"formats n/m when not scanning (1-based index)\", () => {\n      // index is 0-based internally, so index=0 means first hit = \"1\"\n      expect(formatCount(0, 10, false)).toBe(\"1/10\");\n      expect(formatCount(4, 10, false)).toBe(\"5/10\");\n    });\n\n    it(\"shows ellipsis when scanning\", () => {\n      expect(formatCount(0, 10, true)).toBe(\"…/10\");\n      expect(formatCount(99, 100, true)).toBe(\"…/100\");\n    });\n\n    it(\"handles zero total\", () => {\n      expect(formatCount(0, 0, false)).toBe(\"1/0\");\n    });\n  });\n});"
+    },
+    "reads": 15,
+    "base": {
+      "ran": true,
+      "exitCode": 1,
+      "timedOut": false,
+      "stdout": "\n\u001b[1m\u001b[30m\u001b[46m RUN \u001b[49m\u001b[39m\u001b[22m \u001b[36mv4.1.11 \u001b[39m\u001b[90m/workspace/packages/ui\u001b[39m\n\n\n\u001b[31m⎯⎯⎯⎯⎯⎯\u001b[39m\u001b[1m\u001b[41m Failed Suites 1 \u001b[49m\u001b[22m\u001b[31m⎯⎯⎯⎯⎯⎯⎯\u001b[39m\n\n\u001b[41m\u001b[1m FAIL \u001b[22m\u001b[49m \u001b[30m\u001b[45m ui \u001b[49m\u001b[39m test/quick-search-acceptance.test.ts\u001b[2m [ test/quick-search-acceptance.test.ts ]\u001b[22m\n\u001b[31m\u001b[1mError\u001b[22m: Failed to resolve import \"~/reader/quick-search\" from \"test/quick-search-acceptance.test.ts\". Does the file exist?\u001b[39m\n  Plugin: \u001b[35mvite:import-analysis\u001b[39m\n  File: \u001b[36m/workspace/packages/ui/test/quick-search-acceptance.test.ts\u001b[39m:11:44\n\u001b[33m  8  |  */\n  9  |  import { describe, it, expect } from \"vitest\";\n  10 |  import { isFindShortcut, formatCount } from \"~/reader/quick-search\";\n     |                                               ^\n  11 |  describe(\"quick-search public API\", () => {\n  12 |  \tdescribe(\"isFindShortcut\", () => {\u001b[39m\n\u001b[90m \u001b[2m❯\u001b[22m TransformPluginContext._formatLog ../../node_modules/.pnpm/vite@8.3.0_@types+node@24.13.1_esbuild@0.28.1_jiti@2.7.0_tsx@4.22.4_yaml@2.9.0/node_modules/vite/dist/node/chunks/node.js:\u001b[2m8393:39\u001b[22m\u001b[39m\n\u001b[90m \u001b[2m❯\u001b[22m TransformPluginContext.error ../../node_modules/.pnpm/vite@8.3.0_@types+node@24.13.1_esbuild@0.28.1_jiti@2.7.0_tsx@4.22.4_yaml@2.9.0/node_modules/vite/dist/node/chunks/node.js:\u001b[2m8390:14\u001b[22m\u001b[39m\n\u001b[90m \u001b[2m❯\u001b[22m normalizeUrl ../../node_modules/.pnpm/vite@8.3.0_@types+node@24.13.1_esbuild@0.28.1_jiti@2.7.0_tsx@4.22.4_yaml@2.9.0/node_modules/vite/dist/node/chunks/node.js:\u001b[2m26058:18\u001b[22m\u001b[39m\n\u001b[90m \u001b[2m❯\u001b[22m ../../node_modules/.pnpm/vite@8.3.0_@types+node@24.13.1_esbuild@0.28.1_jiti@2.7.0_tsx@4.22.4_yaml@2.9.0/node_modules/vite/dist/node/chunks/node.js:\u001b[2m26128:30\u001b[22m\u001b[39m\n\u001b[90m \u001b[2m❯\u001b[22m TransformPluginContext.transform ../../node_modules/.pnpm/vite@8.3.0_@types+node@24.13.1_esbuild@0.28.1_jiti@2.7.0_tsx@4.22.4_yaml@2.9.0/node_modules/vite/dist/node/chunks/node.js:\u001b[2m26094:4\u001b[22m\u001b[39m\n\u001b[90m \u001b[2m❯\u001b[22m EnvironmentPluginContainer.transform ../../node_modules/.pnpm/vite@8.3.0_@types+node@24.13.1_esbuild@0.28.1_jiti@2.7.0_tsx@4.22.4_yaml@2.9.0/node_modules/vite/dist/node/chunks/node.js:\u001b[2m8172:14\u001b[22m\u001b[39m\n\u001b[90m \u001b[2m❯\u001b[22m loadAndTransform ../../node_modules/.pnpm/vite@8.3.0_@types+node@24.13.1_esbuild@0.28.1_jiti@2.7.0_tsx@4.22.4_yaml@2.9.0/node_modules/vite/dist/node/chunks/node.js:\u001b[2m19634:26\u001b[22m\u001b[39m\n\n\u001b[31m\u001b[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯\u001b[22m\u001b[39m\n\n\n\u001b[2m Test Files \u001b[22m \u001b[1m\u001b[31m1 failed\u001b[39m\u001b[22m\u001b[90m (1)\u001b[39m\n\u001b[2m      Tests \u001b[22m \u001b[2mno tests\u001b[22m\n\u001b[2m   Start at \u001b[22m 03:57:52\n\u001b[2m   Duration \u001b[22m 762ms\u001b[2m (transform 22ms, setup 139ms, import 0ms, tests 0ms, environment 497ms)\u001b[22m\n\n",
+      "stderr": ""
+    },
+    "head": {
+      "ran": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "stdout": "\n\u001b[1m\u001b[30m\u001b[46m RUN \u001b[49m\u001b[39m\u001b[22m \u001b[36mv4.1.11 \u001b[39m\u001b[90m/workspace/packages/ui\u001b[39m\n\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[45m ui \u001b[49m\u001b[39m test/quick-search-acceptance.test.ts\u001b[2m > \u001b[22mquick-search public API\u001b[2m > \u001b[22misFindShortcut\u001b[2m > \u001b[22mreturns true for Ctrl+F\u001b[32m 1\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[45m ui \u001b[49m\u001b[39m test/quick-search-acceptance.test.ts\u001b[2m > \u001b[22mquick-search public API\u001b[2m > \u001b[22misFindShortcut\u001b[2m > \u001b[22mreturns true for Cmd+F (meta)\u001b[32m 0\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[45m ui \u001b[49m\u001b[39m test/quick-search-acceptance.test.ts\u001b[2m > \u001b[22mquick-search public API\u001b[2m > \u001b[22misFindShortcut\u001b[2m > \u001b[22mreturns false for plain F without modifier\u001b[32m 0\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[45m ui \u001b[49m\u001b[39m test/quick-search-acceptance.test.ts\u001b[2m > \u001b[22mquick-search public API\u001b[2m > \u001b[22misFindShortcut\u001b[2m > \u001b[22mreturns false for Ctrl+Shift+F\u001b[32m 0\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[45m ui \u001b[49m\u001b[39m test/quick-search-acceptance.test.ts\u001b[2m > \u001b[22mquick-search public API\u001b[2m > \u001b[22misFindShortcut\u001b[2m > \u001b[22mreturns false for Ctrl+Alt+F\u001b[32m 0\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[45m ui \u001b[49m\u001b[39m test/quick-search-acceptance.test.ts\u001b[2m > \u001b[22mquick-search public API\u001b[2m > \u001b[22misFindShortcut\u001b[2m > \u001b[22mreturns false for non-f keys with Ctrl\u001b[32m 0\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[45m ui \u001b[49m\u001b[39m test/quick-search-acceptance.test.ts\u001b[2m > \u001b[22mquick-search public API\u001b[2m > \u001b[22mformatCount\u001b[2m > \u001b[22mformats n/m when not scanning (1-based index)\u001b[32m 0\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[45m ui \u001b[49m\u001b[39m test/quick-search-acceptance.test.ts\u001b[2m > \u001b[22mquick-search public API\u001b[2m > \u001b[22mformatCount\u001b[2m > \u001b[22mshows ellipsis when scanning\u001b[32m 0\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m \u001b[30m\u001b[45m ui \u001b[49m\u001b[39m test/quick-search-acceptance.test.ts\u001b[2m > \u001b[22mquick-search public API\u001b[2m > \u001b[22mformatCount\u001b[2m > \u001b[22mhandles zero total\u001b[32m 0\u001b[2mms\u001b[22m\u001b[39m\n\n\u001b[2m Test Files \u001b[22m \u001b[1m\u001b[32m1 passed\u001b[39m\u001b[22m\u001b[90m (1)\u001b[39m\n\u001b[2m      Tests \u001b[22m \u001b[1m\u001b[32m9 passed\u001b[39m\u001b[22m\u001b[90m (9)\u001b[39m\n\u001b[2m   Start at \u001b[22m 03:57:46\n\u001b[2m   Duration \u001b[22m 986ms\u001b[2m (transform 29ms, setup 192ms, import 9ms, tests 2ms, environment 677ms)\u001b[22m\n\n",
+      "stderr": ""
+    },
+    "image": "node:24-bookworm",
+    "finishedAt": "2026-09-28T03:57:53.366Z"
+  },
+  "report": {
+    "digest": "sha256:fe496a257cc042a7c43d51722286fa63eb4fed101b2c1cfe8d3183a2b638409d",
+    "bytes": 430925,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/reports/28.report.json (outside the repository)"
+  },
+  "bundle": {
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/bundles/28 (outside the repository)",
+    "digest": "sha256:8e03b9c24a25735c02aa9b17dac559c9242f7fa67154c08a0f457c26e710ff7f"
+  },
+  "verdict": {
+    "verified": false,
+    "regression": "unmeasured",
+    "refusal": null,
+    "task": "unjudged",
+    "executionTrust": "isolated",
+    "install": {
+      "attempted": true,
+      "succeeded": true,
+      "command": "npx --yes --package pnpm@10.28.0 pnpm install --frozen-lockfile --ignore-scripts",
+      "detail": ".: installed from pnpm-lock.yaml using the declared locked preparation command"
+    },
+    "checks": {
+      "typecheck": "not-applicable",
+      "lint": "passed",
+      "format": "passed",
+      "tests": "not-applicable",
+      "build": "not-applicable"
+    },
+    "originalSuiteGreen": false,
+    "inherited": {}
+  },
+  "wallMs": 148749,
+  "comparisonA2": {
+    "outcome": "executed",
+    "verified": false,
+    "refusal": null,
+    "task": "rejected",
+    "regression": "fail",
+    "oracleReach": "unmeasured",
+    "oracleBond": "not-bonded",
+    "exit": 1,
+    "verifier": {
+      "package": "swarm-verify",
+      "version": "1.0.2"
+    },
+    "wallMs": 176858
+  }
+}

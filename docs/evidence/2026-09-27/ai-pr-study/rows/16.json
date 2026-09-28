@@ -1,0 +1,213 @@
+{
+  "index": 16,
+  "url": "https://github.com/glincker/thesvg/pull/1138",
+  "repository": "glincker/thesvg",
+  "number": 1138,
+  "title": "⚡ Bolt: Optimize icon search filter in Google 2026 landing component",
+  "author": "google-labs-jules",
+  "verifier": {
+    "package": "swarm-verify",
+    "version": "1.0.2",
+    "argv": [
+      "npx",
+      "--yes",
+      "swarm-verify@1.0.2",
+      "ci",
+      "--workspace",
+      "/Users/brad/.cache/swarm-ai-pr-study/glincker__thesvg-1138",
+      "--branch",
+      "63a2c15b641774071f4cf7e762dbb2f586403b31",
+      "--base",
+      "0abae5b4bdd28f924c957553d67959123fc0a216",
+      "--json",
+      "--summary",
+      "/Users/brad/.cache/swarm-ai-pr-study/reports/16.summary.md",
+      "--bundle",
+      "/Users/brad/.cache/swarm-ai-pr-study/bundles/16",
+      "--isolation",
+      "docker:node:24-bookworm",
+      "--require-isolation",
+      "--install"
+    ],
+    "exit": 1,
+    "timedOut": false
+  },
+  "startedAt": "2026-09-28T04:18:02.589Z",
+  "base": "0abae5b4bdd28f924c957553d67959123fc0a216",
+  "head": "63a2c15b641774071f4cf7e762dbb2f586403b31",
+  "mergeCommit": "ebde198695c67369da82ce9bae85316944e5013a",
+  "mergedAt": "2026-09-23T03:04:40Z",
+  "body": "💡 **What:** Optimized the icon filtering logic in `Google2026Landing`. Extracted string processing (`.toLowerCase()`, `.join()`) and math derivations (`colorBucket()`) into a standalone `useMemo` (`processedHeroIcons`) evaluated once per manifest update, instead of once per keystroke.\n🎯 **Why:** Creating string arrays and running `colorBucket` math on every character typed for thousands of items is a heavy bottleneck on the main JavaScript thread, causing visual stuttering while searching.\n📊 **Impact:** Reduces redundant memory allocations per keystroke, avoiding O(N) array formations (`.filter().map()`) and `N` string concatenation/math executions by caching the search payload.\n🔬 **Measurement:** Search typing in the Google 2026 landing page is noticeably faster and uses less CPU time. You can verify the improvement by utilizing a React profiler while typing quickly in the search input on the `/2026` route.\n\n---\n*PR created automatically by Jules for task [7904409556342666974](https://jules.google.com/task/7904409556342666974) started by @thegdsks*",
+  "linkedIssues": [],
+  "historicalChecks": [
+    {
+      "name": "auto-merge",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "auto-merge",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "auto-merge",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "Publish to npm",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "Apply path-based labels",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Lint & Build",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Analyze (javascript-typescript)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Analyze (python)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Analyze (ruby)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "CodeRabbit",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Greptile Review",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Socket Security: Project Report",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Socket Security: Pull Request Alerts",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "SonarCloud Code Analysis",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "security/snyk (thegdsks)",
+      "conclusion": "SUCCESS"
+    }
+  ],
+  "changed": {
+    "files": 2,
+    "additions": 37,
+    "deletions": 18
+  },
+  "changedFiles": [
+    ".jules/bolt.md",
+    "src/components/landing/google-2026-landing.tsx"
+  ],
+  "testChanges": [],
+  "sourceChanges": [
+    ".jules/bolt.md",
+    "src/components/landing/google-2026-landing.tsx"
+  ],
+  "diff": {
+    "digest": "sha256:32f33927bced0504e8360e23ca5d5358b2bfb9e5192ac5f4f224991be29a921e",
+    "bytes": 4078,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/diffs/16.diff (outside the repository)"
+  },
+  "execution": {
+    "isolation": "docker:node:24-bookworm",
+    "install": true,
+    "manifest": "package.json"
+  },
+  "outcome": "executed",
+  "report": {
+    "digest": "sha256:cb570d6691ce56817c3bb26f39a2a5a57ff9f306aa9f425d5c4fbafa196e9238",
+    "bytes": 34040,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/reports/16.report.json (outside the repository)"
+  },
+  "bundle": {
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/bundles/16 (outside the repository)",
+    "digest": "sha256:06792a1defa0f08e24b292880ec77db220ea893539ff94676646f8b9ecfd52a5"
+  },
+  "verdict": {
+    "verified": false,
+    "regression": "unmeasured",
+    "refusal": null,
+    "task": "unjudged",
+    "executionTrust": "isolated",
+    "install": {
+      "attempted": true,
+      "succeeded": true,
+      "command": "npx --yes --package pnpm@10 pnpm install --frozen-lockfile --ignore-scripts",
+      "detail": ".: installed from pnpm-lock.yaml using the declared locked preparation command"
+    },
+    "checks": {
+      "typecheck": "not-applicable",
+      "lint": "passed",
+      "format": "not-applicable",
+      "tests": "not-applicable",
+      "build": "failed"
+    },
+    "originalSuiteGreen": false,
+    "inherited": {
+      "build": true
+    }
+  },
+  "wallMs": 145406,
+  "adjudication": {
+    "reviewer": {
+      "model": "qwen3.6:35b-a3b",
+      "endpoint": "http://localhost:11434",
+      "promptDigest": "sha256:72303418cd7ae2a0003cf4c32e74c8a1b3e80d9e57eeb0496c6a8495c2ac4af7"
+    },
+    "startedAt": "2026-09-28T04:42:15.201Z",
+    "status": "requirement-met",
+    "reason": "The requirement is to verify that the icon search filter optimization was implemented: extracting string processing (.toLowerCase(), .join()) and colorBucket() math into a standalone useMemo called `processedHeroIcons` with dependency `[heroIcons]`, so it's evaluated once per manifest update instead of on every keystroke. The check verifies this by parsing the source file for the presence of `processedHeroIcons` useMemo with correct dependencies and that `filtered` uses it without redundant computations.",
+    "trace": null,
+    "requirement": null,
+    "check": {
+      "path": "scripts/check-optimization.mjs",
+      "command": "node scripts/check-optimization.mjs",
+      "digest": "sha256:b1d9440578dce2baa5e25c35ef102b7cfd377f4c3ec039d1745f8e2c86a812a0",
+      "contents": "import fs from 'fs';\n\nconst content = fs.readFileSync('src/components/landing/google-2026-landing.tsx', 'utf8');\n\n// Check 1: processedHeroIcons useMemo exists\nif (!content.includes('const processedHeroIcons = useMemo')) {\n  console.error('FAIL: processedHeroIcons useMemo not found');\n  process.exit(1);\n}\n\n// Check 2: processedHeroIcons has [heroIcons] dependency (not query/activeColors)\nconst processedMatch = content.match(/const processedHeroIcons = useMemo\\(\\s*\\(\\)\\s*=>\\s*\\{[\\s\\S]*?\\},\\s*\\[([^\\]]+)\\]\\)/);\nif (!processedMatch) {\n  console.error('FAIL: Could not parse processedHeroIcons useMemo dependencies');\n  process.exit(1);\n}\nconst deps = processedMatch[1].trim();\nif (deps !== 'heroIcons') {\n  console.error('FAIL: processedHeroIcons should depend only on [heroIcons], got [' + deps + ']');\n  process.exit(1);\n}\n\n// Check 3: processedHeroIcons contains the optimization patterns\nif (!content.includes('.join(\" \")')) {\n  console.error('FAIL: processedHeroIcons should contain .join(\" \") for string processing');\n  process.exit(1);\n}\nif (!content.includes('.toLowerCase()') || !content.match(/processedHeroIcons[\\s\\S]*\\.toLowerCase\\(\\)/)) {\n  console.error('FAIL: processedHeroIcons should contain .toLowerCase()');\n  process.exit(1);\n}\nif (!content.includes('colorBucket(i.hex)')) {\n  console.error('FAIL: processedHeroIcons should call colorBucket(i.hex)');\n  process.exit(1);\n}\n\n// Check 4: filtered useMemo uses processedHeroIcons (not recomputing string processing)\nconst filteredMatch = content.match(/const filtered = useMemo\\(\\s*\\(\\)\\s*=>\\s*\\{[\\s\\S]*?\\},\\s*\\[([^\\]]+)\\]\\)/);\nif (!filteredMatch) {\n  console.error('FAIL: Could not parse filtered useMemo dependencies');\n  process.exit(1);\n}\nconst filteredDeps = filteredMatch[1].trim();\nif (!filteredDeps.includes('processedHeroIcons')) {\n  console.error('FAIL: filtered should depend on processedHeroIcons');\n  process.exit(1);\n}\n\n// Check 5: filtered does NOT contain .join() or colorBucket calls (they should be in processedHeroIcons)\nconst filteredBody = content.match(/const filtered = useMemo\\(\\s*\\(\\)\\s*=>\\s*\\{([\\s\\S]*?)\\},\\s*\\[processedHeroIcons/);\nif (!filteredBody) {\n  console.error('FAIL: Could not extract filtered body');\n  process.exit(1);\n}\n// Check that filtered doesn't have .join() or colorBucket calls (those should only be in processedHeroIcons)\nconst hasJoinInFiltered = /\\.join\\(/.test(filteredBody[1]);\nconst hasColorBucketInFiltered = /colorBucket\\(/.test(filteredBody[1]);\nif (hasJoinInFiltered || hasColorBucketInFiltered) {\n  console.error('FAIL: filtered should not contain .join() or colorBucket calls - those belong in processedHeroIcons');\n  process.exit(1);\n}\n\nconsole.log('PASS: All optimization checks passed');\nconsole.log('- processedHeroIcons useMemo exists with [heroIcons] dependency');\nconsole.log('- processedHeroIcons contains .join(\" \"), .toLowerCase(), and colorBucket(i.hex)');\nconsole.log('- filtered depends on processedHeroIcons');\nconsole.log('- filtered does not contain redundant .join() or colorBucket calls');\n"
+    },
+    "reads": 3,
+    "base": {
+      "ran": true,
+      "exitCode": 1,
+      "timedOut": false,
+      "stdout": "",
+      "stderr": "FAIL: processedHeroIcons useMemo not found\n"
+    },
+    "head": {
+      "ran": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "stdout": "PASS: All optimization checks passed\n- processedHeroIcons useMemo exists with [heroIcons] dependency\n- processedHeroIcons contains .join(\" \"), .toLowerCase(), and colorBucket(i.hex)\n- filtered depends on processedHeroIcons\n- filtered does not contain redundant .join() or colorBucket calls\n",
+      "stderr": ""
+    },
+    "image": "node:24-bookworm",
+    "finishedAt": "2026-09-28T04:44:29.965Z"
+  },
+  "comparisonA2": {
+    "outcome": "executed",
+    "verified": false,
+    "refusal": null,
+    "task": "rejected",
+    "regression": "unmeasured",
+    "oracleReach": "unmeasured",
+    "oracleBond": "not-bonded",
+    "exit": 1,
+    "verifier": {
+      "package": "swarm-verify",
+      "version": "1.0.2"
+    },
+    "wallMs": 106798
+  }
+}

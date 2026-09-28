@@ -1,0 +1,237 @@
+{
+  "index": 42,
+  "url": "https://github.com/kentcdodds/kody/pull/2626",
+  "repository": "kentcdodds/kody",
+  "number": 2626,
+  "title": "docs: describe last-day usage metering surfaces as they are",
+  "author": "cursor",
+  "verifier": {
+    "package": "swarm-verify",
+    "version": "1.0.2",
+    "argv": [
+      "npx",
+      "--yes",
+      "swarm-verify@1.0.2",
+      "ci",
+      "--workspace",
+      "/Users/brad/.cache/swarm-ai-pr-study/kentcdodds__kody-2626",
+      "--branch",
+      "6722f080c8c145b4b8fe42ec9489dc1bec7e861d",
+      "--base",
+      "d6a84e8971b5b9380526d780fa8db019054f7b9f",
+      "--json",
+      "--summary",
+      "/Users/brad/.cache/swarm-ai-pr-study/reports/42.summary.md",
+      "--bundle",
+      "/Users/brad/.cache/swarm-ai-pr-study/bundles/42",
+      "--isolation",
+      "docker:node:24-bookworm",
+      "--require-isolation",
+      "--install"
+    ],
+    "exit": 1,
+    "timedOut": false
+  },
+  "startedAt": "2026-09-28T04:59:33.729Z",
+  "base": "d6a84e8971b5b9380526d780fa8db019054f7b9f",
+  "head": "6722f080c8c145b4b8fe42ec9489dc1bec7e861d",
+  "mergeCommit": "54432ee4f407b82f0c851880449ce40d05cb8b1e",
+  "mergedAt": "2026-09-27T09:11:39Z",
+  "body": "## Intent\n\nKeep durable docs in present tense after yesterday's usage-metering landings, and name the surfaces those landings actually shipped.\n\n## Why\n\n`#2621` and `#2622` added Cloudflare-measured Worker Loader CPU and Durable Object duration. The first-pass docs still read like a rollout (`yet`, `only today`, `still an estimate`, `a later duration rate`) and missed origin's `DynamicWorkerUsageTail` export.\n\n## Summary\n\n- Usage metering: drop changelog phrasing; say package-app isolates do not attach the CPU tail; RunLog is the only platform rows-read meter; duration is an estimate because of include/rounding/lag.\n- Architecture index: origin owns `DynamicWorkerUsageTail` (jobs run there), same as platform and runtime.\n- Entitlements: Durable Object duration is observed (Cloudflare-measured GB-s plus the StorageRunner RPC proxy) and is not billed.\n- Feature Map admin and privacy: name the admin duration readout and account-lifetime attribution rows.\n\n`docs:check-temporal`, `mermaid:check`, and `docs:check-decisions` passed. Left alone: ADRs; webhook docs already present-tense after `#2614`; user-state \"now that you're verified\"; the 15-commit deploy lookback notes from `#2613`.\n\n## Referenced issues and PRs\n\nRelated to #2621, #2622, #2620.\n\n## Testing\n\n- `npm run format`\n- `npm run docs:check-temporal`\n- `npm run mermaid:check`\n- `npm run docs:check-decisions`\n\nDocs-only. No preview user-data path.\n\n## System changes\n\n<!-- system-recap:start -->\n\n<details>\n<summary>System recap — <b>composes existing primitives</b> (low risk)</summary>\n\n**Mode:** recap · **Base:** `main` @ `d6a84e89` · **Head:** `6722f080`\n\n**Classification:** composes — documentation and Feature Map notes only; no primitive contracts or runtime code changed.\n\n### Primitives touched\n\nClassifier reported no `code` roots. The prose describes existing usage-metering and admin-usage surfaces.\n\n| Primitive | Group | Impact |\n| --------- | ----- | ------ |\n| _(none matched)_ | — | docs/Feature Map only |\n\n### Change flow\n\nThe sweep gardens last-day metering docs so agents read the current fleet and billing posture.\n\n```mermaid\nsequenceDiagram\n\tactor Sweep as docs sweep\n\tparticipant usageMetering as usage-metering.md\n\tparticipant fleetIndex as architecture/index.md\n\tparticipant entitlements as entitlements.md\n\tparticipant adminMap as Feature Map admin\n\tSweep->>usageMetering: drop yet, today, and still-an-estimate phrasing\n\tSweep->>fleetIndex: name origin DynamicWorkerUsageTail\n\tSweep->>entitlements: duration is observed and not billed\n\tSweep->>adminMap: name Cloudflare-measured DO duration\n```\n\n</details>\n\n<!-- system-recap:end -->\n\n<div><a href=\"https://cursor.com/agents/bc-afe2cd01-7d1e-4e3f-a08f-9ea5cdca1faa?cursor_ref=pr_footer&cursor_cta=open_in_web\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/automations/701aa80f-4384-4bc9-beba-e3bd7215762f\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/view-automation-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/view-automation-light.png\"><img alt=\"View Automation\" width=\"141\" height=\"28\" src=\"https://cursor.com/assets/images/view-automation-dark.png\"></picture></a>&nbsp;</div>\n\n<!-- CURSOR_SUMMARY -->\n---\n\n> [!NOTE]\n> **Low Risk**\n> Documentation and feature-map notes only; no runtime, billing, or API contract changes.\n> \n> **Overview**\n> **Docs-only sweep** so architecture, entitlements, admin, and privacy prose match the shipped usage-metering surfaces (#2621 / #2622) instead of rollout language.\n> \n> **Fleet & scheduling:** The architecture index now lists **`DynamicWorkerUsageTail` on origin** (`kody-production`) alongside platform/runtime, and `data-storage.md` names the **hourly Durable Object duration attribution** lane in the scheduled-lanes registry.\n> \n> **Metering & billing posture:** `usage-metering.md` is tightened to present tense—e.g. **`dynamic_worker_cpu`** rolls into admin usage/insights duration labels, the RPC **wall-clock proxy** vs Cloudflare-measured GB-s is spelled out, and the duration attribution section drops “still an estimate” hedging while keeping why totals are approximate (include, rounding, lag). **Entitlements** state that DO duration is **observed but not billed** (GB-s + StorageRunner RPC proxy).\n> \n> **Operator & user-facing docs:** Admin feature map notes **Cloudflare-measured DO GB-s** next to the RPC proxy on `/admin/users/:stableUserId`. **Privacy** adds retention for **DO duration attribution** until account deletion.\n> \n> <sup>Reviewed by [Cursor Bugbot](https://cursor.com/bugbot) for commit 6722f080c8c145b4b8fe42ec9489dc1bec7e861d. Bugbot is set up for automated code reviews on this repo. Configure [here](https://www.cursor.com/dashboard/bugbot).</sup>\n<!-- /CURSOR_SUMMARY -->",
+  "linkedIssues": [],
+  "historicalChecks": [
+    {
+      "name": "Report merge conflicts",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "Report merge conflicts",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "🧹 Static",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "🔎 Deploy Preview Resources",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "🔎 Deploy Preview Resources",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "Report merge conflicts",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Report merge conflicts",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "🧹 Static",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "✍️ CLA",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "🔎 Deploy Preview Resources",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "🧪 Node",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "📝 Record CLA",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "🧹 Cleanup Preview Resources",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "🧹 Cleanup Preview Resources",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "🧪 Node",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "🧹 Cleanup Preview Resources",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "☁️ Workers",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "☁️ Workers",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "🔌 MCP",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "🔌 MCP",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "🎭 E2E",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "🎭 E2E",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "✅ Validate",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "✅ Validate",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "CodeRabbit",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Cursor Bugbot",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Devin Review",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "🚧 Merge conflicts",
+      "conclusion": "SUCCESS"
+    }
+  ],
+  "changed": {
+    "files": 6,
+    "additions": 42,
+    "deletions": 39
+  },
+  "changedFiles": [
+    ".agents/skills/control-kody/references/features/admin.md",
+    "docs/contributing/architecture/data-storage.md",
+    "docs/contributing/architecture/entitlements.md",
+    "docs/contributing/architecture/index.md",
+    "docs/contributing/architecture/usage-metering.md",
+    "docs/use/privacy.md"
+  ],
+  "testChanges": [],
+  "sourceChanges": [
+    ".agents/skills/control-kody/references/features/admin.md",
+    "docs/contributing/architecture/data-storage.md",
+    "docs/contributing/architecture/entitlements.md",
+    "docs/contributing/architecture/index.md",
+    "docs/contributing/architecture/usage-metering.md",
+    "docs/use/privacy.md"
+  ],
+  "diff": {
+    "digest": "sha256:50e1d3a0d9c66ed5dcee50cc00640599bf561404974d13dde2ba42a6343ec44b",
+    "bytes": 40431,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/diffs/42.diff (outside the repository)"
+  },
+  "execution": {
+    "isolation": "docker:node:24-bookworm",
+    "install": true,
+    "manifest": "package.json"
+  },
+  "outcome": "executed",
+  "adjudication": {
+    "reviewer": {
+      "model": "qwen3.6:35b-a3b",
+      "endpoint": "http://localhost:11434",
+      "promptDigest": "sha256:72303418cd7ae2a0003cf4c32e74c8a1b3e80d9e57eeb0496c6a8495c2ac4af7"
+    },
+    "startedAt": "2026-09-28T04:33:01.409Z",
+    "status": "unjudged",
+    "reason": "This is a documentation-only PR that updates usage-metering docs to be in present tense and correctly name the surfaces that were shipped. The changes are purely textual/documentation updates across 6 files (admin.md, data-storage.md, entitlements.md, index.md, usage-metering.md, privacy.md). \n\nTo verify this PR's requirements would require checking for the absence of specific phrases (like 'yet', 'today', 'still an estimate') and presence of specific content (like 'DynamicWorkerUsageTail on origin', 'package-app isolates do not attach it', 'RunLog as the only platform rows-read meter', etc.). While I can read the files, creating a reliable automated check that verifies documentation phrasing changes is fragile and would require complex pattern matching against expected text.\n\nThe PR explicitly states it's docs-only with no runtime code changes, and the system recap confirms 'no primitive contracts or runtime code changed'. The verification of documentation accuracy against shipped surfaces requires human review of prose content rather than executable checks.",
+    "requirement": "Documentation updates to usage-metering surfaces should be in present tense (not rollout language), correctly name DynamicWorkerUsageTail on origin, state package-app isolates do not attach the CPU tail, name RunLog as the only platform rows-read meter, clarify duration is an estimate due to include/rounding/lag, state DO duration is observed but not billed, and name admin duration readout and account-lifetime attribution rows.",
+    "reads": 7,
+    "finishedAt": "2026-09-28T04:33:34.201Z"
+  },
+  "report": {
+    "digest": "sha256:dd6f8dcbd58e22fcd09076a9d2dea018d1ec30de432c5a2b58b613733a779d07",
+    "bytes": 740300,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/reports/42.report.json (outside the repository)"
+  },
+  "bundle": {
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/bundles/42 (outside the repository)",
+    "digest": "sha256:1459c689bb7c7dc6b5ef67bea41c45c05b5d39294b69a108ff2526c2de23ec8a"
+  },
+  "verdict": {
+    "verified": false,
+    "regression": "unmeasured",
+    "refusal": null,
+    "task": "unjudged",
+    "executionTrust": "isolated",
+    "install": {
+      "attempted": true,
+      "succeeded": true,
+      "command": "npm ci --ignore-scripts --no-audit --no-fund",
+      "detail": ".: installed from package-lock.json using the declared locked preparation command"
+    },
+    "checks": {
+      "typecheck": "failed",
+      "lint": "passed",
+      "format": "passed",
+      "tests": "failed",
+      "build": "passed"
+    },
+    "originalSuiteGreen": false,
+    "inherited": {
+      "typecheck": true,
+      "tests": true
+    }
+  },
+  "wallMs": 462713
+}

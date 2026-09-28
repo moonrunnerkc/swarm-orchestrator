@@ -1,0 +1,216 @@
+{
+  "index": 7,
+  "url": "https://github.com/glincker/thesvg/pull/1153",
+  "repository": "glincker/thesvg",
+  "number": 1153,
+  "title": "🎨 Palette: Add screen reader feedback for copy actions and toggle states in icon detail modal",
+  "author": "google-labs-jules",
+  "verifier": {
+    "package": "swarm-verify",
+    "version": "1.0.2",
+    "argv": [
+      "npx",
+      "--yes",
+      "swarm-verify@1.0.2",
+      "ci",
+      "--workspace",
+      "/Users/brad/.cache/swarm-ai-pr-study/glincker__thesvg-1153",
+      "--branch",
+      "e46ceef7c65044fc8899d58f3dc2fcba235f124c",
+      "--base",
+      "bc9209c0fd5e051871d724a9d8df0bdb413db67e",
+      "--json",
+      "--summary",
+      "/Users/brad/.cache/swarm-ai-pr-study/reports/07.summary.md",
+      "--bundle",
+      "/Users/brad/.cache/swarm-ai-pr-study/bundles/07",
+      "--isolation",
+      "docker:node:24-bookworm",
+      "--require-isolation",
+      "--install"
+    ],
+    "exit": 1,
+    "timedOut": false
+  },
+  "startedAt": "2026-09-28T03:59:53.882Z",
+  "base": "bc9209c0fd5e051871d724a9d8df0bdb413db67e",
+  "head": "e46ceef7c65044fc8899d58f3dc2fcba235f124c",
+  "mergeCommit": "2887dce27cc0ff900cae37f1eead9a7942a8815e",
+  "mergedAt": "2026-09-26T22:16:17Z",
+  "body": "💡 What: Added `aria-pressed` states to the \"Add to favorites\" button and the variant toggle pills, and introduced a visually hidden `aria-live=\"polite\"` region to announce when a code snippet (e.g., SVG, JSX, CLI command) is successfully copied from the modal.\n\n🎯 Why: The Icon Detail modal heavily relies on visual cues (icon swapping to a checkmark) to indicate a successful copy action, leaving screen reader users without confirmation. Furthermore, the favorite button and variant pills act as toggle controls but lacked the necessary `aria-pressed` attribute to communicate their active state to assistive technologies.\n\n📸 Before/After: Visuals remain unchanged (the live region uses Tailwind's `sr-only` utility).\n\n♿ Accessibility: \n- Toggle buttons (Favorites, Variants) now correctly report their \"Pressed\" or \"Not Pressed\" state.\n- Asynchronous clipboard copies are now actively announced via a `role=\"status\"` live region.\n\n---\n*PR created automatically by Jules for task [3531906640599122730](https://jules.google.com/task/3531906640599122730) started by @thegdsks*",
+  "linkedIssues": [],
+  "historicalChecks": [
+    {
+      "name": "auto-merge",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "auto-merge",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "auto-merge",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "Publish to npm",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "Apply path-based labels",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Lint & Build",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Analyze (javascript-typescript)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Welcome first-time contributors",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Analyze (python)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Analyze (ruby)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Mark and close stale PRs",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "CodeRabbit",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Greptile Review",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Socket Security: Project Report",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Socket Security: Pull Request Alerts",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "SonarCloud Code Analysis",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "security/snyk (thegdsks)",
+      "conclusion": "SUCCESS"
+    }
+  ],
+  "changed": {
+    "files": 1,
+    "additions": 7,
+    "deletions": 0
+  },
+  "changedFiles": [
+    "src/components/icons/icon-detail.tsx"
+  ],
+  "testChanges": [],
+  "sourceChanges": [
+    "src/components/icons/icon-detail.tsx"
+  ],
+  "diff": {
+    "digest": "sha256:9e5c59a1ab964271cdb3fbd7792fa33f84ad5bbd998737b59847e2d023ed67f1",
+    "bytes": 1504,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/diffs/07.diff (outside the repository)"
+  },
+  "execution": {
+    "isolation": "docker:node:24-bookworm",
+    "install": true,
+    "manifest": "package.json"
+  },
+  "outcome": "executed",
+  "adjudication": {
+    "reviewer": {
+      "model": "qwen3.6:35b-a3b",
+      "endpoint": "http://localhost:11434",
+      "promptDigest": "sha256:72303418cd7ae2a0003cf4c32e74c8a1b3e80d9e57eeb0496c6a8495c2ac4af7"
+    },
+    "startedAt": "2026-09-28T03:27:02.817Z",
+    "status": "requirement-met",
+    "trace": null,
+    "requirement": "The Icon Detail modal must have aria-pressed states on toggle buttons (Favorites button and variant pills) and a visually hidden aria-live region to announce copy actions.",
+    "check": {
+      "path": "check-accessibility.sh",
+      "command": "bash check-accessibility.sh",
+      "digest": "sha256:abefc6ef7d61776986ccdd01e41335eb90b40fcd2e9a48c05b94a37174f45887",
+      "contents": "#!/bin/bash\n# Check that the icon-detail.tsx file has the required accessibility attributes\n\nFILE=\"src/components/icons/icon-detail.tsx\"\n\n# Count occurrences of aria-pressed (should be at least 2: one for favorite button, one for variant pills)\naria_pressed_count=$(grep -c 'aria-pressed' \"$FILE\" 2>/dev/null || echo \"0\")\nif [ \"$aria_pressed_count\" -lt 2 ]; then\n  echo \"FAIL: Expected at least 2 aria-pressed attributes, found $aria_pressed_count\"\n  exit 1\nfi\n\n# Check for the live region with sr-only, role=\"status\", and aria-live=\"polite\"\nif ! grep -q 'sr-only' \"$FILE\"; then\n  echo \"FAIL: Missing sr-only class for visually hidden live region\"\n  exit 1\nfi\n\nif ! grep -q 'role=\"status\"' \"$FILE\"; then\n  echo \"FAIL: Missing role=status on live region\"\n  exit 1\nfi\n\nif ! grep -q 'aria-live=\"polite\"' \"$FILE\"; then\n  echo \"FAIL: Missing aria-live=polite on live region\"\n  exit 1\nfi\n\n# Verify the favorite button has aria-pressed with isFavorite binding\nif ! grep -q 'aria-pressed={isFavorite}' \"$FILE\"; then\n  echo \"FAIL: Favorite button missing aria-pressed={isFavorite}\"\n  exit 1\nfi\n\n# Verify variant pills have aria-pressed\nif ! grep -q 'aria-pressed={activeVariant === key}' \"$FILE\"; then\n  echo \"FAIL: Variant pills missing aria-pressed={activeVariant === key}\"\n  exit 1\nfi\n\necho \"PASS: All required accessibility attributes are present\"\nexit 0\n"
+    },
+    "reads": 2,
+    "base": {
+      "ran": true,
+      "exitCode": 1,
+      "timedOut": false,
+      "stdout": "FAIL: Expected at least 2 aria-pressed attributes, found 0\n",
+      "stderr": ""
+    },
+    "head": {
+      "ran": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "stdout": "PASS: All required accessibility attributes are present\n",
+      "stderr": ""
+    },
+    "image": "node:24-bookworm",
+    "finishedAt": "2026-09-28T03:28:00.283Z"
+  },
+  "report": {
+    "digest": "sha256:c9f53292fc846f7f8dc98287c6ac85c44baeeb14811ee4b3fe6ab9070d4dc86b",
+    "bytes": 30864,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/reports/07.report.json (outside the repository)"
+  },
+  "bundle": {
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/bundles/07 (outside the repository)",
+    "digest": "sha256:7703ffb2dfc21a80c3c2a72407875ed07297f26fd6ef21ce3d80f3a1a41b27b7"
+  },
+  "verdict": {
+    "verified": false,
+    "regression": "fail",
+    "refusal": null,
+    "task": "unjudged",
+    "executionTrust": "isolated",
+    "install": {
+      "attempted": true,
+      "succeeded": true,
+      "command": "npx --yes --package pnpm@10 pnpm install --frozen-lockfile --ignore-scripts",
+      "detail": ".: installed from pnpm-lock.yaml using the declared locked preparation command"
+    },
+    "checks": {
+      "typecheck": "not-applicable",
+      "lint": "passed",
+      "format": "not-applicable",
+      "tests": "not-applicable",
+      "build": "failed"
+    },
+    "originalSuiteGreen": false,
+    "inherited": {}
+  },
+  "wallMs": 214773,
+  "comparisonA2": {
+    "outcome": "executed",
+    "verified": false,
+    "refusal": null,
+    "task": "rejected",
+    "regression": "fail",
+    "oracleReach": "unmeasured",
+    "oracleBond": "not-bonded",
+    "exit": 1,
+    "verifier": {
+      "package": "swarm-verify",
+      "version": "1.0.2"
+    },
+    "wallMs": 91288
+  }
+}

@@ -1,0 +1,213 @@
+{
+  "index": 45,
+  "url": "https://github.com/glincker/thesvg/pull/1147",
+  "repository": "glincker/thesvg",
+  "number": 1147,
+  "title": "⚡ Bolt: O(1) icon lookup via Map in getIconBySlug",
+  "author": "google-labs-jules",
+  "verifier": {
+    "package": "swarm-verify",
+    "version": "1.0.2",
+    "argv": [
+      "npx",
+      "--yes",
+      "swarm-verify@1.0.2",
+      "ci",
+      "--workspace",
+      "/Users/brad/.cache/swarm-ai-pr-study/glincker__thesvg-1147",
+      "--branch",
+      "cbd9dc707a4a28af3678a5f9f1d101f7f64c5656",
+      "--base",
+      "20c10d8dd10bbce6de90101f50599d5686061cfa",
+      "--json",
+      "--summary",
+      "/Users/brad/.cache/swarm-ai-pr-study/reports/45.summary.md",
+      "--bundle",
+      "/Users/brad/.cache/swarm-ai-pr-study/bundles/45",
+      "--isolation",
+      "docker:node:24-bookworm",
+      "--require-isolation",
+      "--install"
+    ],
+    "exit": 1,
+    "timedOut": false
+  },
+  "startedAt": "2026-09-28T05:20:15.962Z",
+  "base": "20c10d8dd10bbce6de90101f50599d5686061cfa",
+  "head": "cbd9dc707a4a28af3678a5f9f1d101f7f64c5656",
+  "mergeCommit": "573a939e6a608b2d2098127114cda5c90e06a209",
+  "mergedAt": "2026-09-24T17:22:35Z",
+  "body": "💡 What: Replaced the O(N) `Array.prototype.find()` array traversal in `getIconBySlug` with an O(1) `Map` lookup. A new map `iconsBySlug` is pre-computed at the module level.\n🎯 Why: `getIconBySlug` is used in multiple places in the app (e.g., rendering single icon pages, looking up lineage and badge counterparts). With ~10,000 icons, an array traversal on every lookup causes unnecessary CPU overhead.\n📊 Impact: Reduces `getIconBySlug` execution time drastically. A benchmark of 10,000 lookups showed a reduction in execution time from ~2376ms to ~2.5ms (a roughly ~950x speedup).\n🔬 Measurement: Run a simple benchmark script repeatedly calling `getIconBySlug` before and after this change.\n\n---\n*PR created automatically by Jules for task [2341092471212367540](https://jules.google.com/task/2341092471212367540) started by @thegdsks*",
+  "linkedIssues": [],
+  "historicalChecks": [
+    {
+      "name": "auto-merge",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "auto-merge",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "auto-merge",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "Publish to npm",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "Apply path-based labels",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Lint & Build",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Analyze (javascript-typescript)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Welcome first-time contributors",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Analyze (python)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Analyze (ruby)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Mark and close stale PRs",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "CodeRabbit",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Greptile Review",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Socket Security: Project Report",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Socket Security: Pull Request Alerts",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "SonarCloud Code Analysis",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "security/snyk (thegdsks)",
+      "conclusion": "SUCCESS"
+    }
+  ],
+  "changed": {
+    "files": 1,
+    "additions": 4,
+    "deletions": 1
+  },
+  "changedFiles": [
+    "src/lib/icons.ts"
+  ],
+  "testChanges": [],
+  "sourceChanges": [
+    "src/lib/icons.ts"
+  ],
+  "diff": {
+    "digest": "sha256:b9a3cccc77f8925a0d16d8bd9464e606795e968440557bd87143381179da6237",
+    "bytes": 783,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/diffs/45.diff (outside the repository)"
+  },
+  "execution": {
+    "isolation": "docker:node:24-bookworm",
+    "install": true,
+    "manifest": "package.json"
+  },
+  "outcome": "executed",
+  "adjudication": {
+    "reviewer": {
+      "model": "qwen3.6:35b-a3b",
+      "endpoint": "http://localhost:11434",
+      "promptDigest": "sha256:72303418cd7ae2a0003cf4c32e74c8a1b3e80d9e57eeb0496c6a8495c2ac4af7"
+    },
+    "startedAt": "2026-09-28T04:35:46.239Z",
+    "status": "requirement-met",
+    "reason": "The PR optimizes getIconBySlug by replacing Array.prototype.find with a Map lookup. I will write a check script that verifies the source code contains the Map-based implementation and does not contain the array.find implementation for getIconBySlug.",
+    "trace": null,
+    "requirement": null,
+    "check": {
+      "path": "scripts/check-map-optimization.sh",
+      "command": "bash scripts/check-map-optimization.sh",
+      "digest": "sha256:ff0c76d8262800cb520ed70f4fec2a37534ef3fd5bbaf5fbbddca6edeee61685",
+      "contents": "#!/bin/bash\n# Check that getIconBySlug uses a Map lookup instead of Array.prototype.find\n\nSOURCE_FILE=\"src/lib/icons.ts\"\n\n# Check 1: Verify iconsBySlug Map is defined at module level\nif ! grep -q \"const iconsBySlug = new Map\" \"$SOURCE_FILE\"; then\n  echo \"FAIL: iconsBySlug Map not found in source\"\n  exit 1\nfi\n\n# Check 2: Verify getIconBySlug uses iconsBySlug.get() instead of icons.find()\n# Extract the getIconBySlug function body and check it\nFUNC_BODY=$(sed -n '/export function getIconBySlug/,/^}/p' \"$SOURCE_FILE\")\n\nif ! echo \"$FUNC_BODY\" | grep -q \"iconsBySlug.get\"; then\n  echo \"FAIL: getIconBySlug does not use iconsBySlug.get()\"\n  exit 1\nfi\n\nif echo \"$FUNC_BODY\" | grep -q \"\\.find(\"; then\n  echo \"FAIL: getIconBySlug still uses Array.prototype.find()\"\n  exit 1\nfi\n\n# Check 3: Verify the function signature is correct\nif ! echo \"$FUNC_BODY\" | grep -q \"getIconBySlug(slug: string)\"; then\n  echo \"FAIL: getIconBySlug signature changed unexpectedly\"\n  exit 1\nfi\n\necho \"PASS: getIconBySlug correctly uses O(1) Map lookup\"\nexit 0"
+    },
+    "reads": 2,
+    "base": {
+      "ran": true,
+      "exitCode": 1,
+      "timedOut": false,
+      "stdout": "FAIL: iconsBySlug Map not found in source\n",
+      "stderr": ""
+    },
+    "head": {
+      "ran": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "stdout": "PASS: getIconBySlug correctly uses O(1) Map lookup\n",
+      "stderr": ""
+    },
+    "image": "node:24-bookworm",
+    "finishedAt": "2026-09-28T04:37:35.668Z"
+  },
+  "report": {
+    "digest": "sha256:bd0eb57c98fd383b719ba9a47b5caed04bfd8d71ab060c8446f783c40e3bcf49",
+    "bytes": 34136,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/reports/45.report.json (outside the repository)"
+  },
+  "bundle": {
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/bundles/45 (outside the repository)",
+    "digest": "sha256:d50d6a923ba2ce3c9a065e5f1ba51e5b58245479257fe12c4bd1a419603e1c95"
+  },
+  "verdict": {
+    "verified": false,
+    "regression": "unmeasured",
+    "refusal": null,
+    "task": "unjudged",
+    "executionTrust": "isolated",
+    "install": {
+      "attempted": true,
+      "succeeded": true,
+      "command": "npx --yes --package pnpm@10 pnpm install --frozen-lockfile --ignore-scripts",
+      "detail": ".: installed from pnpm-lock.yaml using the declared locked preparation command"
+    },
+    "checks": {
+      "typecheck": "not-applicable",
+      "lint": "passed",
+      "format": "not-applicable",
+      "tests": "not-applicable",
+      "build": "failed"
+    },
+    "originalSuiteGreen": false,
+    "inherited": {
+      "build": true
+    }
+  },
+  "wallMs": 122701,
+  "comparisonA2": {
+    "outcome": "blocked",
+    "reason": "the verifier exited 1 without a report: container swarm-1d4ac0c3-c961-4357-9388-64c15dd65d7a cleanup could not be confirmed; stop dispatch and repair this runtime resource",
+    "verifier": {
+      "package": "swarm-verify",
+      "version": "1.0.2"
+    },
+    "wallMs": 32480
+  }
+}

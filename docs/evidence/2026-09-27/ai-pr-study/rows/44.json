@@ -1,0 +1,237 @@
+{
+  "index": 44,
+  "url": "https://github.com/kentcdodds/kody/pull/2611",
+  "repository": "kentcdodds/kody",
+  "number": 2611,
+  "title": "Garden last-day webhook and entitlement docs in the present tense",
+  "author": "cursor",
+  "verifier": {
+    "package": "swarm-verify",
+    "version": "1.0.2",
+    "argv": [
+      "npx",
+      "--yes",
+      "swarm-verify@1.0.2",
+      "ci",
+      "--workspace",
+      "/Users/brad/.cache/swarm-ai-pr-study/kentcdodds__kody-2611",
+      "--branch",
+      "d639a52591e17599bdad35091294e11910a350d2",
+      "--base",
+      "d8651ab148a65e4ce333e733c53675a40eb513f9",
+      "--json",
+      "--summary",
+      "/Users/brad/.cache/swarm-ai-pr-study/reports/44.summary.md",
+      "--bundle",
+      "/Users/brad/.cache/swarm-ai-pr-study/bundles/44",
+      "--isolation",
+      "docker:node:24-bookworm",
+      "--require-isolation",
+      "--install"
+    ],
+    "exit": 1,
+    "timedOut": false
+  },
+  "startedAt": "2026-09-28T05:13:48.406Z",
+  "base": "d8651ab148a65e4ce333e733c53675a40eb513f9",
+  "head": "d639a52591e17599bdad35091294e11910a350d2",
+  "mergeCommit": "436a2b02eb1153f20cf52edfcabc148849d9c906",
+  "mergedAt": "2026-09-26T09:12:12Z",
+  "body": "## Intent\n\nKeep durable docs describing how the product works today after yesterday's webhook apply/challenge and Pro/Max upgrade-CTA landings — no changelog leftovers, and no stale quoted denial strings.\n\n## Why\n\nDaily docs sweep. Last 24 hours shipped generic `http` `webhookUrlApply` with owner approval (`#2604`), subscription-challenge adapters (`#2605`), and plan-aware upgrade copy (`#2603`). The Feature Map catalog already listed `/connect/webhook-apply`, but the webhooks feature file did not. Entitlements architecture still quoted a Pro denial that includes a self-serve upgrade clause.\n\n## Summary\n\n- Quote current entitlement denial strings: Free/Standard keep the billing offer; Pro/Max are reduce-only. Document `hasHigherPublicPlan` and the usage **Limit reached** title.\n- Present-tense `webhookUrlApply` (github vs http + owner Allow) and name `challenge` on the triggers concept page.\n- Feature Map: `/connect/webhook-apply` plus `approve-apply.json`; billing notes the upgrade-link gate.\n- `docs:check-temporal` and `mermaid:check` passed. `oxfmt` ran before commit.\n\n## Testing\n\n- `npm run format`\n- `npm run docs:check-temporal`\n- `npm run mermaid:check`\n- Pre-commit oxfmt on the 6 docs-only paths. Typecheck/migrations skipped as docs-only.\n\nRisk: **low** (docs + Feature Map notes only).\n\n<!-- system-recap:start -->\n\n<details>\n<summary>System recap — <b>composes existing primitives</b> (low risk)</summary>\n\n**Mode:** recap · **Base:** `main` @ `d8651ab1` · **Head:** `d639a525`\n\n**Classification:** composes — no primitives added or changed; this PR gardens usage, architecture, and Feature Map copy for surfaces that already shipped.\n\n### Primitives touched\n\nNone. Classifier matched 0 of 6 paths (all `docs/` and `.agents/` Feature Map files).\n\n### Change flow\n\nThe last-day webhook and entitlement landings stay the source of truth; this PR only updates the pages that describe them.\n\n```mermaid\nsequenceDiagram\n\tactor Sweep as docs-sweep\n\tparticipant usageDocs as usage-docs\n\tparticipant archDocs as architecture-docs\n\tparticipant featureMap as feature-map\n\tSweep->>usageDocs: present-tense http apply and owner paste\n\tSweep->>usageDocs: name challenge on the triggers guide\n\tSweep->>archDocs: quote Standard upgrade and Pro reduce-only denials\n\tSweep->>featureMap: name /connect/webhook-apply and Limit reached\n```\n\n</details>\n\n<!-- system-recap:end -->\n\n\n<div><a href=\"https://cursor.com/agents/bc-da60b2cd-20d9-4696-aa40-251ab603948e?cursor_ref=pr_footer&cursor_cta=open_in_web\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/automations/701aa80f-4384-4bc9-beba-e3bd7215762f\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/view-automation-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/view-automation-light.png\"><img alt=\"View Automation\" width=\"141\" height=\"28\" src=\"https://cursor.com/assets/images/view-automation-dark.png\"></picture></a>&nbsp;</div>\n\n<!-- CURSOR_SUMMARY -->\n---\n\n> [!NOTE]\n> **Low Risk**\n> Documentation and Feature Map updates only; no application code or enforcement logic changes.\n> \n> **Overview**\n> This PR **refreshes docs and the control-kody Feature Map** so they match recently shipped webhook and entitlement behavior—no runtime changes.\n> \n> **Entitlements:** Architecture and billing notes now say upgrade hints and `/account/usage` only offer self-serve billing when `hasHigherPublicPlan` is true (Free/Standard); Pro/Max denials are reduce-only. The quoted Pro example drops the `/account/billing` CTA, and usage warnings use **Limit reached** at 100% on hard caps.\n> \n> **Webhooks:** User guides and the Feature Map document generic `http` `webhookUrlApply` with owner approval at `/connect/webhook-apply` (and `approve-apply.json`), contrasted with typed `github` apply. They also name manifest `challenge` for provider URL quizzes and add agent-testing gotchas for the approval page.\n> \n> <sup>Reviewed by [Cursor Bugbot](https://cursor.com/bugbot) for commit d639a52591e17599bdad35091294e11910a350d2. Bugbot is set up for automated code reviews on this repo. Configure [here](https://www.cursor.com/dashboard/bugbot).</sup>\n<!-- /CURSOR_SUMMARY -->",
+  "linkedIssues": [],
+  "historicalChecks": [
+    {
+      "name": "Report merge conflicts",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "Report merge conflicts",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "🧹 Static",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "🔎 Deploy Preview Resources",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "🔎 Deploy Preview Resources",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "Report merge conflicts",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Report merge conflicts",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "🧹 Static",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "✍️ CLA",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "🔎 Deploy Preview Resources",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "🧪 Node",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "📝 Record CLA",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "🧹 Cleanup Preview Resources",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "🧹 Cleanup Preview Resources",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "🧪 Node",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "🧹 Cleanup Preview Resources",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "☁️ Workers",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "☁️ Workers",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "🔌 MCP",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "🔌 MCP",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "🎭 E2E",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "🎭 E2E",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "✅ Validate",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "✅ Validate",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "CodeRabbit",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Cursor Bugbot",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Devin Review",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "🚧 Merge conflicts",
+      "conclusion": "SUCCESS"
+    }
+  ],
+  "changed": {
+    "files": 6,
+    "additions": 56,
+    "deletions": 18
+  },
+  "changedFiles": [
+    ".agents/skills/control-kody/references/features/README.md",
+    ".agents/skills/control-kody/references/features/billing.md",
+    ".agents/skills/control-kody/references/features/webhooks.md",
+    "docs/contributing/architecture/entitlements.md",
+    "docs/guides/triggers.md",
+    "docs/use/webhooks.md"
+  ],
+  "testChanges": [],
+  "sourceChanges": [
+    ".agents/skills/control-kody/references/features/README.md",
+    ".agents/skills/control-kody/references/features/billing.md",
+    ".agents/skills/control-kody/references/features/webhooks.md",
+    "docs/contributing/architecture/entitlements.md",
+    "docs/guides/triggers.md",
+    "docs/use/webhooks.md"
+  ],
+  "diff": {
+    "digest": "sha256:a1a85ff9e3b224c4529cda6179d320f0d4446226e58040755e684f6af60d4ad9",
+    "bytes": 10401,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/diffs/44.diff (outside the repository)"
+  },
+  "execution": {
+    "isolation": "docker:node:24-bookworm",
+    "install": true,
+    "manifest": "package.json"
+  },
+  "outcome": "executed",
+  "adjudication": {
+    "reviewer": {
+      "model": "qwen3.6:35b-a3b",
+      "endpoint": "http://localhost:11434",
+      "promptDigest": "sha256:72303418cd7ae2a0003cf4c32e74c8a1b3e80d9e57eeb0496c6a8495c2ac4af7"
+    },
+    "startedAt": "2026-09-28T04:35:08.782Z",
+    "status": "unjudged",
+    "reason": "This PR is a documentation-only change that updates existing docs to reflect recently shipped webhook and entitlement behavior. The changes are in 6 files: .agents/skills/control-kody/references/features/README.md, billing.md, webhooks.md, docs/contributing/architecture/entitlements.md, docs/guides/triggers.md, and docs/use/webhooks.md.\n\nThe PR body describes updating docs to use present tense for webhookUrlApply, document hasHigherPublicPlan and 'Limit reached' title, quote current entitlement denial strings (Free/Standard keep billing offer; Pro/Max reduce-only), name challenge on triggers guide, and add /connect/webhook-apply plus approve-apply.json to Feature Map.\n\nHowever, this is purely a documentation update with no executable behavior or code changes that can be verified through automated testing. The requirement cannot be stated as an executable check because:\n1. There are no runtime changes - only docs and Feature Map notes\n2. The changes are about content accuracy (present tense, quoted strings) which requires human review of text content\n3. No test files were changed and there's no observable behavior to verify programmatically\n\nThe PR explicitly states 'docs-only' and 'no application code or enforcement logic changes'.",
+    "requirement": null,
+    "reads": 8,
+    "finishedAt": "2026-09-28T04:35:46.238Z"
+  },
+  "report": {
+    "digest": "sha256:35bbba0dbf912162130f09ed52c8768b9ad2ce06290bd3bf8436de5af189a397",
+    "bytes": 735865,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/reports/44.report.json (outside the repository)"
+  },
+  "bundle": {
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/bundles/44 (outside the repository)",
+    "digest": "sha256:00605745cf3c61a1aa5b10158d4ff787bb6d6d93b689a9e76540ae214175d7ce"
+  },
+  "verdict": {
+    "verified": false,
+    "regression": "unmeasured",
+    "refusal": null,
+    "task": "unjudged",
+    "executionTrust": "isolated",
+    "install": {
+      "attempted": true,
+      "succeeded": true,
+      "command": "npm ci --ignore-scripts --no-audit --no-fund",
+      "detail": ".: installed from package-lock.json using the declared locked preparation command"
+    },
+    "checks": {
+      "typecheck": "failed",
+      "lint": "passed",
+      "format": "passed",
+      "tests": "failed",
+      "build": "passed"
+    },
+    "originalSuiteGreen": false,
+    "inherited": {
+      "typecheck": true,
+      "tests": true
+    }
+  },
+  "wallMs": 387556
+}

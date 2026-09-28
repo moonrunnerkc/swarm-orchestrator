@@ -1,0 +1,216 @@
+{
+  "index": 30,
+  "url": "https://github.com/YoungCan-Wang/WyckoffTradingAgent/pull/490",
+  "repository": "YoungCan-Wang/WyckoffTradingAgent",
+  "number": 490,
+  "title": "fix(shadow): cash=0 读回不再灌成 INITIAL_CAPITAL",
+  "author": "cursor",
+  "verifier": {
+    "package": "swarm-verify",
+    "version": "1.0.2",
+    "argv": [
+      "npx",
+      "--yes",
+      "swarm-verify@1.0.2",
+      "ci",
+      "--workspace",
+      "/Users/brad/.cache/swarm-ai-pr-study/YoungCan-Wang__WyckoffTradingAgent-490",
+      "--branch",
+      "6a99770e6f0176ae7c3a3136b837531471fbf774",
+      "--base",
+      "39fcce7b36711e93d670cf5b1f5a9c2c93acefdf",
+      "--json",
+      "--summary",
+      "/Users/brad/.cache/swarm-ai-pr-study/reports/30.summary.md",
+      "--bundle",
+      "/Users/brad/.cache/swarm-ai-pr-study/bundles/30",
+      "--isolation",
+      "docker:ghcr.io/astral-sh/uv:python3.12-bookworm",
+      "--require-isolation",
+      "--install"
+    ],
+    "exit": 1,
+    "timedOut": false
+  },
+  "startedAt": "2026-09-28T04:38:11.168Z",
+  "base": "39fcce7b36711e93d670cf5b1f5a9c2c93acefdf",
+  "head": "6a99770e6f0176ae7c3a3136b837531471fbf774",
+  "mergeCommit": "94d3d3642177106c38e246c3406df03d74e66838",
+  "mergedAt": "2026-09-25T02:00:41Z",
+  "body": "## Summary\n\n`load_shadow_book` used `cash or INITIAL_CAPITAL`, so a session that exhausts paper cash to exactly `0` (e.g. buy 100 @ 10 with ¥5 fee from ¥1005) persists `cash=0`, then the next funnel day reinflates cash to ¥100,000. That corrupts USER_SHADOW buying power, positions, and NAV. Shadow ledger is on by default (`SHADOW_LEDGER_ENABLED || '1'` in the funnel workflow).\n\nMinimal fix: treat only `None`/empty as missing; keep legitimate `0`.\n\n## Validation\n\n- `pytest tests/integrations/test_supabase_shadow_persist.py tests/core/test_shadow_ledger.py -q`\n- `ruff check` + `ruff format --check` on touched files\n- `scripts/quality_gate.py --check-functions`\n\n<div><a href=\"https://cursor.com/agents/bc-514f9b42-0fcc-4502-a5eb-21a23ac13bb9?cursor_ref=pr_footer&cursor_cta=open_in_web\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/automations/2040ebe7-87ec-11f1-b532-320a589b8025\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/view-automation-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/view-automation-light.png\"><img alt=\"View Automation\" width=\"141\" height=\"28\" src=\"https://cursor.com/assets/images/view-automation-dark.png\"></picture></a>&nbsp;</div>\n\n",
+  "linkedIssues": [],
+  "historicalChecks": [
+    {
+      "name": "lint",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "release-metadata",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "quality-gate",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "test (ubuntu-latest)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "test (macos-latest)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "test (windows-latest)",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "package-windows",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "workflow-hygiene",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "package-macos",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "dependency-hygiene",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "verify-artifact-roundtrip",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "pr-policy",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Publish free unsigned desktop release",
+      "conclusion": "SKIPPED"
+    },
+    {
+      "name": "test",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "web-check",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "smoke-dry-run",
+      "conclusion": "SUCCESS"
+    },
+    {
+      "name": "Cloudflare Pages",
+      "conclusion": "SUCCESS"
+    }
+  ],
+  "changed": {
+    "files": 2,
+    "additions": 60,
+    "deletions": 2
+  },
+  "changedFiles": [
+    "integrations/supabase_shadow.py",
+    "tests/integrations/test_supabase_shadow_persist.py"
+  ],
+  "testChanges": [
+    "tests/integrations/test_supabase_shadow_persist.py"
+  ],
+  "sourceChanges": [
+    "integrations/supabase_shadow.py"
+  ],
+  "diff": {
+    "digest": "sha256:f1f58a0bdbc16043fea4bf249fa0e4b03f239c3588c08ea329396adac3b1f084",
+    "bytes": 3616,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/diffs/30.diff (outside the repository)"
+  },
+  "execution": {
+    "isolation": "docker:ghcr.io/astral-sh/uv:python3.12-bookworm",
+    "install": true,
+    "manifest": "pyproject.toml"
+  },
+  "outcome": "executed",
+  "report": {
+    "digest": "sha256:070dbd74ca5d5f1420300975e7e6522a711a7bbc1b72f07e7276c8baa60108b6",
+    "bytes": 4439,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/reports/30.report.json (outside the repository)"
+  },
+  "bundle": {
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/bundles/30 (outside the repository)",
+    "digest": "sha256:5aa01796486389e5f2d4e129f48bfe24e946c3ac76c6030680646427fe248605"
+  },
+  "verdict": {
+    "verified": false,
+    "regression": "unmeasured",
+    "refusal": null,
+    "task": "unjudged",
+    "executionTrust": "isolated",
+    "install": {
+      "attempted": true,
+      "succeeded": true,
+      "command": "uv sync --locked --no-install-project",
+      "detail": ".: installed from uv.lock using the declared locked preparation command"
+    },
+    "checks": {
+      "typecheck": "not-applicable",
+      "lint": "not-applicable",
+      "format": "not-applicable",
+      "tests": "not-applicable"
+    },
+    "originalSuiteGreen": false,
+    "inherited": {}
+  },
+  "wallMs": 30451,
+  "adjudication": {
+    "reviewer": {
+      "model": "qwen3.6:35b-a3b",
+      "endpoint": "http://localhost:11434",
+      "promptDigest": "sha256:72303418cd7ae2a0003cf4c32e74c8a1b3e80d9e57eeb0496c6a8495c2ac4af7"
+    },
+    "startedAt": "2026-09-28T05:00:48.396Z",
+    "status": "unjudged",
+    "reason": "the head fails an assertion that is not stated in the requirement, so the failure is the reviewer's addition",
+    "trace": {
+      "traceable": false,
+      "mapping": [
+        {
+          "assertion": "load_shadow_book must return cash=0 when DB has cash=0.",
+          "quote": "keep legitimate 0"
+        },
+        {
+          "assertion": "load_shadow_book must execute without raising a PermissionError regarding server write context.",
+          "quote": ""
+        }
+      ]
+    },
+    "requirement": "The fix ensures that when `load_shadow_book` reads a shadow account with `cash=0`, it preserves the zero value instead of replacing it with `INITIAL_CAPITAL`. Before the PR, code used `cash or INITIAL_CAPITAL` which treated `0` as falsy and inflated it. After the PR, `_money_or_default` is used which only treats `None`/empty string as missing.",
+    "check": {
+      "path": "tests/integrations/test_cash_zero_preserved.py",
+      "command": "python -m pytest tests/integrations/test_cash_zero_preserved.py -v",
+      "digest": "sha256:6be40b2f8a9e366e4a1030aef74f150c649ae4577cc261c06020210da5fa7955",
+      "contents": "\"\"\"Verify that cash=0 in shadow account is preserved, not replaced with INITIAL_CAPITAL.\n\nThe PR fix added `_money_or_default` to `integrations.supabase_shadow` which treats\nonly None/empty as missing, keeping legitimate 0 values intact. Before the fix,\n`cash or INITIAL_CAPITAL` would replace cash=0 with INITIAL_CAPITAL.\n\"\"\"\n\nimport sys\nfrom unittest.mock import MagicMock, patch\n\n\ndef test_money_or_default_preserves_zero():\n    \"\"\"_money_or_default must return 0 when given 0, not the default.\"\"\"\n    from integrations.supabase_shadow import _money_or_default\n\n    # The key assertion: 0 should stay 0, not become INITIAL_CAPITAL\n    result = _money_or_default(0, 100_000.0)\n    assert result == 0.0, (\n        f\"_money_or_default(0, 100000.0) returned {result} instead of 0.0. \"\n        \"cash=0 is being incorrectly replaced with INITIAL_CAPITAL.\"\n    )\n\n\ndef test_money_or_default_handles_none():\n    \"\"\"_money_or_default must return default when given None.\"\"\"\n    from integrations.supabase_shadow import _money_or_default\n\n    result = _money_or_default(None, 100_000.0)\n    assert result == 100_000.0\n\n\ndef test_money_or_default_handles_empty_string():\n    \"\"\"_money_or_default must return default when given empty string.\"\"\"\n    from integrations.supabase_shadow import _money_or_default\n\n    result = _money_or_default(\"\", 100_000.0)\n    assert result == 100_000.0\n\n\ndef test_money_or_default_handles_normal_values():\n    \"\"\"_money_or_default must return the value for normal inputs.\"\"\"\n    from integrations.supabase_shadow import _money_or_default\n\n    assert _money_or_default(50000.0, 100_000.0) == 50000.0\n    assert _money_or_default(\"50000\", 100_000.0) == 50000.0\n\n\ndef test_load_shadow_book_preserves_cash_zero():\n    \"\"\"load_shadow_book must return cash=0 when DB has cash=0.\"\"\"\n    from integrations.supabase_shadow import load_shadow_book\n\n    mock_table = MagicMock()\n    mock_table.select.return_value.eq.return_value.limit.return_value.execute.return_value.data = [\n        {\"account_id\": \"USER_SHADOW:test\", \"cash\": 0, \"initial_capital\": 100_000.0}\n    ]\n    mock_table2 = MagicMock()\n    mock_table2.select.return_value.eq.return_value.execute.return_value.data = []\n\n    with patch(\"integrations.supabase_shadow._admin\") as mock_admin:\n        mock_admin.return_value.table.side_effect = lambda name: mock_table if \"account\" in name else mock_table2\n        with patch(\"integrations.supabase_shadow.assert_shadow_account\", return_value=\"USER_SHADOW:test\"):\n            book = load_shadow_book(\"USER_SHADOW:test\")\n\n    assert book.cash == 0.0, (\n        f\"load_shadow_book returned cash={book.cash} instead of 0.0 when DB had cash=0. \"\n        \"The shadow account's exhausted cash is being incorrectly inflated to INITIAL_CAPITAL.\"\n    )\n\n\nif __name__ == \"__main__\":\n    import pytest\n    sys.exit(pytest.main([__file__, \"-v\"]))\n"
+    },
+    "reads": 3,
+    "base": {
+      "ran": true,
+      "exitCode": 1,
+      "timedOut": false,
+      "stdout": "_shadow import _money_or_default\nE       ImportError: cannot import name '_money_or_default' from 'integrations.supabase_shadow' (/workspace/integrations/supabase_shadow.py)\n\ntests/integrations/test_cash_zero_preserved.py:26: ImportError\n__________________ test_money_or_default_handles_empty_string __________________\n\n    def test_money_or_default_handles_empty_string():\n        \"\"\"_money_or_default must return default when given empty string.\"\"\"\n>       from integrations.supabase_shadow import _money_or_default\nE       ImportError: cannot import name '_money_or_default' from 'integrations.supabase_shadow' (/workspace/integrations/supabase_shadow.py)\n\ntests/integrations/test_cash_zero_preserved.py:34: ImportError\n_________________ test_money_or_default_handles_normal_values __________________\n\n    def test_money_or_default_handles_normal_values():\n        \"\"\"_money_or_default must return the value for normal inputs.\"\"\"\n>       from integrations.supabase_shadow import _money_or_default\nE       ImportError: cannot import name '_money_or_default' from 'integrations.supabase_shadow' (/workspace/integrations/supabase_shadow.py)\n\ntests/integrations/test_cash_zero_preserved.py:42: ImportError\n__________________ test_load_shadow_book_preserves_cash_zero ___________________\n\n    def test_load_shadow_book_preserves_cash_zero():\n        \"\"\"load_shadow_book must return cash=0 when DB has cash=0.\"\"\"\n        from integrations.supabase_shadow import load_shadow_book\n    \n        mock_table = MagicMock()\n        mock_table.select.return_value.eq.return_value.limit.return_value.execute.return_value.data = [\n            {\"account_id\": \"USER_SHADOW:test\", \"cash\": 0, \"initial_capital\": 100_000.0}\n        ]\n        mock_table2 = MagicMock()\n        mock_table2.select.return_value.eq.return_value.execute.return_value.data = []\n    \n        with patch(\"integrations.supabase_shadow._admin\") as mock_admin:\n            mock_admin.return_value.table.side_effect = lambda name: mock_table if \"account\" in name else mock_table2\n            with patch(\"integrations.supabase_shadow.assert_shadow_account\", return_value=\"USER_SHADOW:test\"):\n>               book = load_shadow_book(\"USER_SHADOW:test\")\n                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n\ntests/integrations/test_cash_zero_preserved.py:62: \n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ \nintegrations/supabase_shadow.py:72: in load_shadow_book\n    acc = (_table(TABLE_SHADOW_ACCOUNT).select(\"*\").eq(\"account_id\", account_id).limit(1).execute().data or [{}])[0]\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nintegrations/supabase_shadow.py:47: in _table\n    require_server_write_context(f\"write {name}\")\n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ \n\noperation = 'write shadow_account'\n\n    def require_server_write_context(operation: str = \"Supabase shared write\") -> None:\n        \"\"\"共享生产表写入守卫。\n    \n        CLI 只有持仓写入可用用户 JWT；信号、推荐、策略等共享表必须由\n        GitHub Actions / server job 显式设置 ``WYCKOFF_WRITE_CONTEXT=server_job``。\n        \"\"\"\n        if not is_server_write_context():\n>           raise PermissionError(f\"{operation} requires {WRITE_CONTEXT_ENV}={SERVER_WRITE_CONTEXT}\")\nE           PermissionError: write shadow_account requires WYCKOFF_WRITE_CONTEXT=server_job\n\nintegrations/supabase_base.py:270: PermissionError\n=========================== short test summary info ============================\nFAILED tests/integrations/test_cash_zero_preserved.py::test_money_or_default_preserves_zero\nFAILED tests/integrations/test_cash_zero_preserved.py::test_money_or_default_handles_none\nFAILED tests/integrations/test_cash_zero_preserved.py::test_money_or_default_handles_empty_string\nFAILED tests/integrations/test_cash_zero_preserved.py::test_money_or_default_handles_normal_values\nFAILED tests/integrations/test_cash_zero_preserved.py::test_load_shadow_book_preserves_cash_zero\n============================== 5 failed in 0.46s ===============================\n",
+      "stderr": ""
+    },
+    "head": {
+      "ran": true,
+      "exitCode": 1,
+      "timedOut": false,
+      "stdout": "============================= test session starts ==============================\nplatform linux -- Python 3.11.2, pytest-9.0.3, pluggy-1.6.0 -- /workspace/.venv/bin/python\ncachedir: .pytest_cache\nrootdir: /workspace\nconfigfile: pyproject.toml\nplugins: anyio-4.14.2\ncollecting ... collected 5 items\n\ntests/integrations/test_cash_zero_preserved.py::test_money_or_default_preserves_zero PASSED [ 20%]\ntests/integrations/test_cash_zero_preserved.py::test_money_or_default_handles_none PASSED [ 40%]\ntests/integrations/test_cash_zero_preserved.py::test_money_or_default_handles_empty_string PASSED [ 60%]\ntests/integrations/test_cash_zero_preserved.py::test_money_or_default_handles_normal_values PASSED [ 80%]\ntests/integrations/test_cash_zero_preserved.py::test_load_shadow_book_preserves_cash_zero FAILED [100%]\n\n=================================== FAILURES ===================================\n__________________ test_load_shadow_book_preserves_cash_zero ___________________\n\n    def test_load_shadow_book_preserves_cash_zero():\n        \"\"\"load_shadow_book must return cash=0 when DB has cash=0.\"\"\"\n        from integrations.supabase_shadow import load_shadow_book\n    \n        mock_table = MagicMock()\n        mock_table.select.return_value.eq.return_value.limit.return_value.execute.return_value.data = [\n            {\"account_id\": \"USER_SHADOW:test\", \"cash\": 0, \"initial_capital\": 100_000.0}\n        ]\n        mock_table2 = MagicMock()\n        mock_table2.select.return_value.eq.return_value.execute.return_value.data = []\n    \n        with patch(\"integrations.supabase_shadow._admin\") as mock_admin:\n            mock_admin.return_value.table.side_effect = lambda name: mock_table if \"account\" in name else mock_table2\n            with patch(\"integrations.supabase_shadow.assert_shadow_account\", return_value=\"USER_SHADOW:test\"):\n>               book = load_shadow_book(\"USER_SHADOW:test\")\n                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n\ntests/integrations/test_cash_zero_preserved.py:62: \n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ \nintegrations/supabase_shadow.py:80: in load_shadow_book\n    acc = (_table(TABLE_SHADOW_ACCOUNT).select(\"*\").eq(\"account_id\", account_id).limit(1).execute().data or [{}])[0]\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nintegrations/supabase_shadow.py:47: in _table\n    require_server_write_context(f\"write {name}\")\n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ \n\noperation = 'write shadow_account'\n\n    def require_server_write_context(operation: str = \"Supabase shared write\") -> None:\n        \"\"\"共享生产表写入守卫。\n    \n        CLI 只有持仓写入可用用户 JWT；信号、推荐、策略等共享表必须由\n        GitHub Actions / server job 显式设置 ``WYCKOFF_WRITE_CONTEXT=server_job``。\n        \"\"\"\n        if not is_server_write_context():\n>           raise PermissionError(f\"{operation} requires {WRITE_CONTEXT_ENV}={SERVER_WRITE_CONTEXT}\")\nE           PermissionError: write shadow_account requires WYCKOFF_WRITE_CONTEXT=server_job\n\nintegrations/supabase_base.py:270: PermissionError\n=========================== short test summary info ============================\nFAILED tests/integrations/test_cash_zero_preserved.py::test_load_shadow_book_preserves_cash_zero\n========================= 1 failed, 4 passed in 1.64s ==========================\n",
+      "stderr": ""
+    },
+    "image": "ghcr.io/astral-sh/uv:python3.12-bookworm",
+    "finishedAt": "2026-09-28T05:02:31.149Z"
+  }
+}

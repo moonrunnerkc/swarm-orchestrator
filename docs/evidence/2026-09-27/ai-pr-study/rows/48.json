@@ -1,0 +1,116 @@
+{
+  "index": 48,
+  "url": "https://github.com/mscerts/hub/pull/59",
+  "repository": "mscerts/hub",
+  "number": 59,
+  "title": "Prevent broken `/wiki.md` link in docs action menu (fixes `check` workflow failure)",
+  "author": "copilot-swe-agent",
+  "verifier": {
+    "package": "swarm-verify",
+    "version": "1.0.2",
+    "argv": [
+      "npx",
+      "--yes",
+      "swarm-verify@1.0.2",
+      "ci",
+      "--workspace",
+      "/Users/brad/.cache/swarm-ai-pr-study/mscerts__hub-59",
+      "--branch",
+      "4bde33a058518fbfa1c1e6b9cc421c2ea593cac2",
+      "--base",
+      "f990abe7473eaedc25dd8b44d0c8f0cbc9877c33",
+      "--json",
+      "--summary",
+      "/Users/brad/.cache/swarm-ai-pr-study/reports/48.summary.md",
+      "--bundle",
+      "/Users/brad/.cache/swarm-ai-pr-study/bundles/48",
+      "--isolation",
+      "docker:node:24-bookworm",
+      "--require-isolation",
+      "--install"
+    ],
+    "exit": 1,
+    "timedOut": false
+  },
+  "startedAt": "2026-09-28T05:22:51.171Z",
+  "base": "f990abe7473eaedc25dd8b44d0c8f0cbc9877c33",
+  "head": "4bde33a058518fbfa1c1e6b9cc421c2ea593cac2",
+  "mergeCommit": "f251936af56afc63a1f3f403b9acbc92d6a5d708",
+  "mergedAt": "2026-09-27T18:45:44Z",
+  "body": "The `check` job failed in link checking due to a generated internal link to `/wiki.md` from `dist/wiki/index.html`. The `/wiki` landing route has no markdown endpoint, so the link was always invalid.\n\n- **Root cause**\n  - `DocsPageActions` appended `View as Markdown` for all pages except `/certs`, which incorrectly included `/wiki`.\n\n- **Change**\n  - Narrowed markdown-action eligibility to exclude `/wiki` root in addition to `/certs`.\n  - Scope is intentionally limited to action-link generation logic; no content or routing behavior outside this menu was modified.\n\n- **Code update**\n  ```astro\n  -if (currentPath !== \"/certs\") {\n  +if (currentPath !== \"/certs\" && currentPath !== \"/wiki\") {\n      aiActions.push({\n        label: \"View as Markdown\",\n        href: `${currentPath}.md`,\n        icon: \"markdown\",\n      });\n    }\n  ```",
+  "linkedIssues": [],
+  "historicalChecks": [
+    {
+      "name": "Cloudflare Pages: hub-staging",
+      "conclusion": "SUCCESS"
+    }
+  ],
+  "changed": {
+    "files": 1,
+    "additions": 1,
+    "deletions": 1
+  },
+  "changedFiles": [
+    "src/components/docs/DocsPageActions.astro"
+  ],
+  "testChanges": [],
+  "sourceChanges": [
+    "src/components/docs/DocsPageActions.astro"
+  ],
+  "diff": {
+    "digest": "sha256:8bafc7dbc4a9e945edb6c76fb14459df5e954e1b8b0dd48a5b2427085cd3023f",
+    "bytes": 462,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/diffs/48.diff (outside the repository)"
+  },
+  "execution": {
+    "isolation": "docker:node:24-bookworm",
+    "install": true,
+    "manifest": "package.json"
+  },
+  "outcome": "executed",
+  "adjudication": {
+    "reviewer": {
+      "model": "qwen3.6:35b-a3b",
+      "endpoint": "http://localhost:11434",
+      "promptDigest": "sha256:72303418cd7ae2a0003cf4c32e74c8a1b3e80d9e57eeb0496c6a8495c2ac4af7"
+    },
+    "startedAt": "2026-09-28T04:38:55.471Z",
+    "status": "unjudged",
+    "reason": "no executable check",
+    "requirement": "The DocsPageActions component must exclude both /certs and /wiki paths from getting the \"View as Markdown\" action, preventing a broken /wiki.md link.",
+    "reads": 1,
+    "finishedAt": "2026-09-28T04:39:02.895Z"
+  },
+  "report": {
+    "digest": "sha256:ed85fbae449868e71833784d38df18f3e25f67b4751c2bf6a818fffb88efe6ec",
+    "bytes": 63903,
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/reports/48.report.json (outside the repository)"
+  },
+  "bundle": {
+    "location": "/Users/brad/.cache/swarm-ai-pr-study/bundles/48 (outside the repository)",
+    "digest": "sha256:a9c0743281b89f2669df2b563e1645f52ef7d996ee44cf4619bcf0d767a18383"
+  },
+  "verdict": {
+    "verified": false,
+    "regression": "unmeasured",
+    "refusal": null,
+    "task": "unjudged",
+    "executionTrust": "isolated",
+    "install": {
+      "attempted": true,
+      "succeeded": true,
+      "command": "npx --yes --package pnpm@11.15.1 pnpm install --frozen-lockfile --ignore-scripts",
+      "detail": ".: installed from pnpm-lock.yaml using the declared locked preparation command"
+    },
+    "checks": {
+      "typecheck": "passed",
+      "lint": "not-applicable",
+      "format": "passed",
+      "tests": "not-applicable",
+      "build": "not-applicable"
+    },
+    "originalSuiteGreen": false,
+    "inherited": {}
+  },
+  "wallMs": 44258
+}
