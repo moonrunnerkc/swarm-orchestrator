@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -140,6 +141,13 @@ it("owns cleanup after a successful parent exit", async () => {
   expect(captured.map((args) => args[0])).toEqual(["image", "create", "start", "rm", "ps"]);
   expect(phases).toEqual(["create-intent", "created", "removed"]);
   expect(captured[1]?.some((arg) => arg.startsWith("--name=swarm-"))).toBe(true);
+  // Scratch on the host, mounted at /tmp, never a tmpfs: a tmpfs is charged to the memory
+  // limit and killed large installs; the directory is the run's own and is gone afterwards.
+  const scratchMount = captured[1]?.find((arg) => arg.endsWith(":/tmp:rw")) ?? "";
+  expect(scratchMount.startsWith("--volume=")).toBe(true);
+  expect(captured[1]?.some((arg) => arg.startsWith("--tmpfs"))).toBe(false);
+  const scratchDirectory = scratchMount.slice("--volume=".length, -":/tmp:rw".length);
+  expect(existsSync(scratchDirectory)).toBe(false);
   await backend.run(["node", "parent.mjs"], { cwd: workspace, timeoutMs: 1000 });
   expect(captured.filter((args) => args[0] === "image")).toHaveLength(1);
 });
