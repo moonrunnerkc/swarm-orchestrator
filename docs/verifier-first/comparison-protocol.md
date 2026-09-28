@@ -87,4 +87,11 @@ digest are recorded beside the report.
 
 ## Amendments
 
-None at registration.
+- **2026-09-28, how A2 carries the check.** The verifier clones the workspace into its own
+  checkout, and a clone carries no untracked file, so A2's first pass ran an oracle whose
+  file was absent and read every row as rejected; that pass is void. A2 now commits the
+  held-back check on top of the pull request's head on a throwaway branch and gives the
+  verifier that commit: the patch A2 judges is the pull request's patch plus the one file it
+  is judged by, which the row records (`patchIncludesCheck`). A0 and A1 judge the patch
+  alone. The verifier version A2 ran with is recorded per row; a rerun on a later version is
+  a replay and is labelled one.
