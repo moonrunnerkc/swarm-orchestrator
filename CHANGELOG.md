@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.0.1 - 2026-09-28
+
+Four gaps the AI-authored pull request study exposed on its first run through the stable
+release, each on real repositories, each fixed at the root.
+
+### Fixed
+
+- **The container's scratch space holds a real install.** HOME and TMPDIR inside the container
+  are the `/tmp` tmpfs, so npm's and uv's caches live there, and its 256 MB left a lockfile
+  with a native wheel or a large dependency tree failing with "no space left on device". It
+  is now 4 GB, of which only what is written is used.
+- **A pnpm lockfile with no `packageManager` pin installs.** The image carries no pnpm; the
+  lockfile's own format now names the major that reads it (9.0: pnpm 10, 6.0: pnpm 8, 5.x:
+  pnpm 7), that major's latest is fetched through npm for the install command, and the
+  command records which.
+- **A configured Python tool the environment does not hold reads as a check that measured
+  nothing.** `ci` assembles its checks before the install, so the environment could not be
+  read then; when the interpreter itself refuses to start a module, exits 1, and prints only
+  its one-line "No module named", the gate is not applicable with the module named. A test's
+  own output beside those words is a test's words, and the exit code decides as before.
+- **pytest absent from the environment is said as such.** The runner script says so and exits
+  127, and the reading is "measured nothing" with the reason, not "malformed runner output".
+
 ## 1.0.0 - 2026-09-28
 
 The first stable release of `swarm-verify`. Everything below shipped through nine prerelease
