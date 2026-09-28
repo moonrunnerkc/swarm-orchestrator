@@ -109,5 +109,6 @@ re-pinned on 2026-09-28 and re-run (the run links are in each pull request's com
 | gemma-witness#50, nondet#1, swarm-orchestrator-rules#1 | incomplete: every check stood down, each reason listed | Rust, Java and no toolchain: unmeasured, not a pass |
 
 These are the rows the stable release stands on; re-pinned to the `1.0.1` patch (distribution
-`60d9aa901`, `v1` moved there after validation) with the same sixteen verdicts. A person merges
+`60d9aa901`) and then to `1.0.2` (distribution `046c1750e`, `v1` moved there after validation),
+each time with the same sixteen verdicts. A person merges
 each pull request; none is merged by this rollout.
