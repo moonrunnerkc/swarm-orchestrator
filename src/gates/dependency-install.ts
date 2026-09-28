@@ -45,7 +45,10 @@ const lockfiles = [
   { file: "package-lock.json", argv: ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"] },
   { file: "pnpm-lock.yaml", argv: ["pnpm", "install", "--frozen-lockfile", "--ignore-scripts"] },
   { file: "yarn.lock", argv: ["yarn", "install", "--frozen-lockfile", "--ignore-scripts"] },
-  { file: "uv.lock", argv: ["uv", "sync", "--locked", "--no-install-project"] },
+  // Every dependency group: groups are development-only by definition (PEP 735), and a project
+  // that keeps pytest in a `test` group rather than `dev` had no runner after a default sync,
+  // which read as no test ran. Extras are runtime features and are not installed.
+  { file: "uv.lock", argv: ["uv", "sync", "--locked", "--all-groups", "--no-install-project"] },
 ] as const;
 
 /** Setup is an authorized harness effect, under the same runner, cancellation and resource pool. */
@@ -187,6 +190,11 @@ async function installerArgv(
     "--frozen-lockfile",
     "--ignore-scripts",
   ];
+}
+
+/** The declared locked preparation vector for a lockfile, as data. */
+export function lockfileInstallerArgv(file: string): readonly string[] | null {
+  return lockfiles.find((candidate) => candidate.file === file)?.argv ?? null;
 }
 
 async function pnpmMajorForLockfile(workspace: string): Promise<string> {

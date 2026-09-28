@@ -7,7 +7,11 @@ import { afterEach, beforeEach, expect, it } from "vitest";
 import { createSystemClock } from "../cli-runtime-inputs.ts";
 import { openEvidenceSession } from "../evidence/session.ts";
 import { harnessChildEnvironment } from "../exec/child-environment.ts";
-import { installFromLockfile, pnpmForLockfileText } from "./dependency-install.ts";
+import {
+  installFromLockfile,
+  lockfileInstallerArgv,
+  pnpmForLockfileText,
+} from "./dependency-install.ts";
 import { verifyIndependently } from "./independent-verification.ts";
 import { createNodeCommandRunner } from "./node-command-runner.ts";
 
@@ -160,4 +164,15 @@ it("chooses the pnpm major from an unpinned lockfile's format", () => {
   expect(pnpmForLockfileText('lockfileVersion: "6.0"\n')).toBe("8");
   expect(pnpmForLockfileText("lockfileVersion: 5.4\n")).toBe("7");
   expect(pnpmForLockfileText("settings: {}\n")).toBe("latest");
+});
+
+/** A project that keeps its test runner in a non-default dependency group is still run. */
+it("installs every dependency group of a uv project", () => {
+  expect(lockfileInstallerArgv("uv.lock")).toEqual([
+    "uv",
+    "sync",
+    "--locked",
+    "--all-groups",
+    "--no-install-project",
+  ]);
 });
