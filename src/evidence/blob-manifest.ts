@@ -156,6 +156,9 @@ const derivedNames: readonly RegExp[] = [
   /\.transcript\.txt$/,
   /^transcript\.jsonl$/,
   /\.adjudication\.jsonl$/,
+  // A terminal recording is a rendering of a run, restored byte for byte from its pack; the
+  // recording the README plays stays beside it, since a pack is not a link target.
+  /^(open-evidence|interface|live-task)\.cast$/,
   /\.jsonl\.gz$/,
   /^candidates\.json$/,
 ];
