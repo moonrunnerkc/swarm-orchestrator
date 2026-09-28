@@ -86,6 +86,10 @@ const pathSuffixes = [
  * the rules above until they stop showing up.
  */
 const documentedAsRemoved = new Map([
+  [
+    "../../2026-08-18/shakedown/bundles/task-05-retry-resolved/review.html.gz",
+    "packed losslessly as review.html into that bundle's packed-derived/review-page-2026-08-18; Python's gzip.compress(page, compresslevel=9, mtime=0) of the restored page reproduces the original file, sha256 9d6482763560f28aecec5d4cc77f693efc60cb0207256d8f5ed7299da6e60ba2",
+  ],
   ["redteam/leep/", "removed by the 08-18 run, which the documents naming it record"],
   [
     "docs/evidence/2026-08-23/live-task.cast",
