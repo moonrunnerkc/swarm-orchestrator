@@ -240,6 +240,17 @@ async function completion(body) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
       });
+      if (response.status >= 500 && Array.isArray(body.messages)) {
+        // The server refusing the model's own malformed tool call: at temperature 0 the same
+        // request gives the same malformed call, so the reviewer is told and asked again.
+        const text = await response.text();
+        body.messages.push({
+          role: "user",
+          content: `Your previous tool call could not be parsed by the server (${text.slice(0, 120)}). Call the tool again with well-formed arguments.`,
+        });
+        failure = new Error(`model: ${response.status} ${text}`);
+        continue;
+      }
       if (!response.ok) throw new Error(`model: ${response.status} ${await response.text()}`);
       return await response.json();
     } catch (cause) {
@@ -283,7 +294,9 @@ function installDependencies(clone, image, manifest) {
         ? "npx --yes --package pnpm@10 pnpm install --frozen-lockfile --ignore-scripts"
         : "npm ci --ignore-scripts --no-audit --no-fund"
       : manifest === "pyproject.toml"
-        ? "uv sync --locked"
+        ? // Every group and extra the lock knows: a reviewer's check may need a runner the
+          // project keeps in a non-default group (pytest under a `test` group, say).
+          "uv sync --locked --all-groups --all-extras"
         : null;
   if (command === null) return { ran: false, detail: "no supported manifest" };
   const ran = run(
