@@ -33,6 +33,8 @@ export interface ContainerBackendOptions {
     phase: "create-intent" | "created" | "removed" | "cleanup-failed";
   }) => Promise<void>;
   readonly runProcess?: typeof runProcessGroup;
+  /** The pause before a second and third image pull; tests pass 0. */
+  readonly pullRetryPauseMs?: number;
 }
 
 const workspaceMountPoint = "/workspace";
@@ -54,14 +56,30 @@ export function createContainerBackend(options: ContainerBackendOptions): Isolat
         { ...runtimeOptions, timeoutMs: 15_000 },
       );
       if (present.exitCode === 0) return;
-      const pulled = await execute(options.runtime, ["pull", "--quiet", options.image], {
+      // A registry drops connections now and then (a hosted runner saw "connection reset by
+      // peer" from Docker Hub); three attempts with a pause between them, and the last
+      // failure's own line is what the error names.
+      let pulled = await execute(options.runtime, ["pull", "--quiet", options.image], {
         ...runtimeOptions,
         timeoutMs: 600_000,
       });
+      for (
+        let attempt = 2;
+        attempt <= 3 && pulled.exitCode !== 0 && !pulled.timedOut;
+        attempt += 1
+      ) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, (options.pullRetryPauseMs ?? 15_000) * (attempt - 1)),
+        );
+        pulled = await execute(options.runtime, ["pull", "--quiet", options.image], {
+          ...runtimeOptions,
+          timeoutMs: 600_000,
+        });
+      }
       if (pulled.exitCode !== 0) {
         imageReady = null;
         throw new Error(
-          `image ${options.image} is not present and could not be pulled${pulled.timedOut ? " within ten minutes" : ""}: ${(pulled.stderr || pulled.startFailure || "").trim().split("\n").at(-1) ?? ""}`,
+          `image ${options.image} is not present and could not be pulled${pulled.timedOut ? " within ten minutes" : " in three attempts"}: ${(pulled.stderr || pulled.startFailure || "").trim().split("\n").at(-1) ?? ""}`,
         );
       }
     })();

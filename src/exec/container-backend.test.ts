@@ -162,6 +162,7 @@ describe("an image that is not present on the machine", () => {
       image: "test-image",
       workspaceRoot: workspace,
       user: "1000:1000",
+      pullRetryPauseMs: 0,
       runProcess: async (_program, args, options) => {
         captured.push([...args]);
         if (args[0] === "pull") expect(options.timeoutMs).toBeGreaterThanOrEqual(600_000);
@@ -192,6 +193,7 @@ describe("an image that is not present on the machine", () => {
       image: "test-image",
       workspaceRoot: workspace,
       user: "1000:1000",
+      pullRetryPauseMs: 0,
       runProcess: async (_program, args, options) => {
         if (args[0] === "pull") await new Promise((resolve) => setTimeout(resolve, 120));
         if (args[0] === "start") startTimeout = options.timeoutMs;
@@ -203,6 +205,38 @@ describe("an image that is not present on the machine", () => {
     expect(startTimeout).toBeGreaterThan(50);
   });
 
+  it("pulls again after a transient registry failure, and creates once it succeeded", async () => {
+    const captured: string[][] = [];
+    let pulls = 0;
+    const backend = createContainerBackend({
+      runtime: "test-runtime",
+      image: "test-image",
+      workspaceRoot: workspace,
+      user: "1000:1000",
+      pullRetryPauseMs: 0,
+      runProcess: async (_program, args) => {
+        captured.push([...args]);
+        if (args[0] === "pull") {
+          pulls += 1;
+          return pulls === 1
+            ? observed(1, "Error response from daemon: read: connection reset by peer")
+            : observed(0);
+        }
+        return observed(args[0] === "image" ? 1 : 0);
+      },
+    });
+    await backend.run(["node", "parent.mjs"], { cwd: workspace, timeoutMs: 1000 });
+    expect(captured.map((args) => args[0])).toEqual([
+      "image",
+      "pull",
+      "pull",
+      "create",
+      "start",
+      "rm",
+      "ps",
+    ]);
+  });
+
   it("names the image and the runtime's last line when the pull fails, and creates nothing", async () => {
     const captured: string[][] = [];
     const backend = createContainerBackend({
@@ -210,6 +244,7 @@ describe("an image that is not present on the machine", () => {
       image: "test-image",
       workspaceRoot: workspace,
       user: "1000:1000",
+      pullRetryPauseMs: 0,
       runProcess: async (_program, args) => {
         captured.push([...args]);
         if (args[0] === "pull") return observed(1, "Error response from daemon: manifest unknown");
@@ -219,9 +254,9 @@ describe("an image that is not present on the machine", () => {
     await expect(
       backend.run(["node", "parent.mjs"], { cwd: workspace, timeoutMs: 1000 }),
     ).rejects.toThrow(
-      "image test-image is not present and could not be pulled: Error response from daemon: manifest unknown",
+      "image test-image is not present and could not be pulled in three attempts: Error response from daemon: manifest unknown",
     );
-    expect(captured.map((args) => args[0])).toEqual(["image", "pull"]);
+    expect(captured.map((args) => args[0])).toEqual(["image", "pull", "pull", "pull"]);
   });
 
   it("says that creation timed out when cleanup of the never-created container cannot be confirmed", async () => {
@@ -230,6 +265,7 @@ describe("an image that is not present on the machine", () => {
       image: "test-image",
       workspaceRoot: workspace,
       user: "1000:1000",
+      pullRetryPauseMs: 0,
       runProcess: async (_program, args) => {
         if (args[0] === "create")
           return { ...observed(124, "pulling from library/test-image"), timedOut: true };
