@@ -129,7 +129,10 @@ export function decideResult(parsed: CiReport | null): Verdict["decision"]["resu
     parsed.regression === "fail" ||
     parsed.task === "rejected" ||
     (parsed.checks ?? []).some(
-      (check) => check.status === "failed" && check.inheritedFromBase !== true,
+      (check) =>
+        check.status === "failed" &&
+        check.inheritedFromBase !== true &&
+        check.attribution !== "unattributed",
     );
   return parsed.verified === true
     ? "verified"
@@ -235,6 +238,7 @@ interface CiReport {
     readonly id: string;
     readonly status: string;
     readonly inheritedFromBase?: boolean;
+    readonly attribution?: "inherited" | "new" | "unattributed";
   }[];
   readonly sourceIdentity?: { readonly comparisonBase?: string; readonly patchDigest?: string };
   readonly challenges?: {

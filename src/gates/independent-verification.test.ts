@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { capturedRegression } from "../evidence/verifier/status.mjs";
 import { harnessChildEnvironment } from "../exec/child-environment.ts";
 import { containerRuntimeAvailable, createContainerBackend } from "../exec/container-backend.ts";
 import { verifyIndependently } from "./independent-verification.ts";
@@ -516,6 +517,124 @@ describe("a failure the base already had", () => {
   });
 
   /**
+   * A check that fails both ways was read as inherited whatever else the patch broke inside it:
+   * a base with one failing test and a patch that broke a second read as a regression pass
+   * wherever another check passed. The tests the patched run fails are compared with the base's.
+   */
+  it("calls a newly broken test a regression even when the base already had a failing one", async () => {
+    await writeFile(
+      join(repository, "package.json"),
+      '{"name":"w","version":"1.0.0","type":"module","scripts":{"test":"node --test","lint":"node -e 0"}}\n',
+    );
+    await writeFile(
+      join(repository, "broken.test.mjs"),
+      "import { test } from 'node:test';\ntest('already broken', () => { throw new Error('base'); });\n",
+    );
+    git(["add", "-A"], repository);
+    git(["commit", "-qm", "a base that already fails, with a linter that passes"], repository);
+    const patch = [
+      "diff --git a/clamp.mjs b/clamp.mjs",
+      "--- a/clamp.mjs",
+      "+++ b/clamp.mjs",
+      "@@ -1 +1 @@",
+      "-export const clamp = (v) => v;",
+      "+export const clamp = (v) => 999;",
+      "",
+    ].join("\n");
+
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch,
+      commands: commands(),
+      clock,
+    });
+
+    const tests = result.checks.find((check) => check.id === "tests");
+    expect(tests?.attribution).toBe("new");
+    expect(tests?.inheritedFromBase).toBe(false);
+    expect(tests?.newFailures).toEqual(["0:identity"]);
+    expect(result.regression).toBe("fail");
+    // The offline verifier, a second implementation, reads the same regression from the record.
+    expect(capturedRegression(result.checks)).toBe(result.regression);
+    expect(result.advice).toContain("newly failing: 0:identity");
+  });
+
+  /**
+   * A check whose output names no tests is inherited only where it printed the same thing at
+   * the base. A linter that reports one problem at the base and two with the patch may hide a
+   * problem the patch introduced, so the dimension is unmeasured, never passed.
+   */
+  it("leaves the regression unmeasured where a failure changed in a way it cannot compare", async () => {
+    await writeFile(
+      join(repository, "package.json"),
+      '{"name":"w","version":"1.0.0","type":"module","scripts":{"test":"node --test","lint":"node lint.mjs"}}\n',
+    );
+    await writeFile(
+      join(repository, "lint.mjs"),
+      "import { readFileSync } from 'node:fs';\nconst n = (readFileSync('clamp.mjs', 'utf8').match(/=>/g) ?? []).length;\nconsole.log(`${n} problem(s)`);\nprocess.exit(1);\n",
+    );
+    git(["add", "-A"], repository);
+    git(["commit", "-qm", "a linter that already fails"], repository);
+    const patch = [
+      "diff --git a/clamp.mjs b/clamp.mjs",
+      "--- a/clamp.mjs",
+      "+++ b/clamp.mjs",
+      "@@ -1 +1 @@",
+      "-export const clamp = (v) => v;",
+      "+export const clamp = (v) => [3].map((x) => x)[0] + v - 3;",
+      "",
+    ].join("\n");
+
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch,
+      commands: commands(),
+      clock,
+    });
+
+    const lint = result.checks.find((check) => check.id === "lint");
+    expect(lint?.attribution).toBe("unattributed");
+    expect(lint?.inheritedFromBase).toBe(false);
+    expect(result.checks.find((check) => check.id === "tests")?.status).toBe("passed");
+    expect(result.regression).toBe("unmeasured");
+    // The offline verifier, a second implementation, reads the same regression from the record.
+    expect(capturedRegression(result.checks)).toBe(result.regression);
+  });
+
+  it("still inherits a failure the base printed identically", async () => {
+    await writeFile(
+      join(repository, "package.json"),
+      '{"name":"w","version":"1.0.0","type":"module","scripts":{"test":"node --test","lint":"node -e \\"console.log(\'1 problem (0.2s)\');process.exit(1)\\""}}\n',
+    );
+    git(["add", "-A"], repository);
+    git(["commit", "-qm", "a linter that always reports the same problem"], repository);
+    const patch = [
+      "diff --git a/clamp.mjs b/clamp.mjs",
+      "--- a/clamp.mjs",
+      "+++ b/clamp.mjs",
+      "@@ -1 +1 @@",
+      "-export const clamp = (v) => v;",
+      "+export const clamp = (v) => (v < 0 ? 0 : v);",
+      "",
+    ].join("\n");
+
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch,
+      commands: commands(),
+      clock,
+    });
+
+    expect(result.checks.find((check) => check.id === "lint")?.attribution).toBe("inherited");
+    expect(result.regression).toBe("pass");
+    // The offline verifier, a second implementation, reads the same regression from the record.
+    expect(capturedRegression(result.checks)).toBe(result.regression);
+  });
+
+  /**
    * Attribution reverts the patch to measure the base, so anything reading the tree afterwards
    * reads the base. The oracle must run before that or it judges the source the patch replaced,
    * rejects every patch, and reports it as the task not being done.
@@ -550,6 +669,109 @@ describe("a failure the base already had", () => {
 
     expect(result.checks.find((check) => check.id === "tests")?.inheritedFromBase).toBe(true);
     expect(result.task).toBe("accepted");
+  });
+});
+
+describe("a patch that changes the runner's configuration", () => {
+  /**
+   * The runner below loads a configuration file into its own process, as Vitest does, and a
+   * patch added one that printed a passing report and exited before any test ran. The command
+   * comes from the base; so does the rest of the instrument.
+   */
+  const runner = [
+    "import { existsSync } from 'node:fs';",
+    "import { spawnSync } from 'node:child_process';",
+    "if (existsSync('vitest.config.mjs')) await import(new URL('./vitest.config.mjs', import.meta.url));",
+    "const ran = spawnSync(process.execPath, ['--test', '--test-reporter=tap'], { stdio: 'inherit' });",
+    "process.exit(ran.status ?? 1);",
+    "",
+  ].join("\n");
+  beforeEach(async () => {
+    await writeFile(
+      join(repository, "package.json"),
+      '{"name":"w","version":"1.0.0","type":"module","scripts":{"test":"node runner.mjs"}}\n',
+    );
+    await writeFile(join(repository, "runner.mjs"), runner);
+    git(["add", "-A"], repository);
+    git(["commit", "-qm", "a runner that reads its configuration in process"], repository);
+  });
+  const added = (path: string, lines: readonly string[]) => [
+    `diff --git a/${path} b/${path}`,
+    "new file mode 100644",
+    "--- /dev/null",
+    `+++ b/${path}`,
+    `@@ -0,0 +1,${lines.length} @@`,
+    ...lines.map((line) => `+${line}`),
+  ];
+  const forged = added("vitest.config.mjs", [
+    "process.stdout.write('TAP version 13\\nok 1 - identity\\n1..1\\n# tests 1\\n# pass 1\\n# fail 0\\n');",
+    "process.exit(0);",
+  ]);
+  const broken = [
+    "diff --git a/clamp.mjs b/clamp.mjs",
+    "--- a/clamp.mjs",
+    "+++ b/clamp.mjs",
+    "@@ -1 +1 @@",
+    "-export const clamp = (v) => v;",
+    "+export const clamp = (v) => 999;",
+  ];
+
+  it("does not pass a forged report; the base's configuration shows the test it broke", async () => {
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch: [...broken, ...forged, ""].join("\n"),
+      commands: commands(),
+      clock,
+    });
+
+    const tests = result.checks.find((check) => check.id === "tests");
+    expect(tests?.configurationFiles).toEqual(["vitest.config.mjs"]);
+    expect(tests?.configurationStatus).toBe("failed");
+    expect(tests?.status).toBe("failed");
+    expect(tests?.regressedUnderBaseConfiguration).toEqual(["0:identity"]);
+    expect(result.regression).toBe("fail");
+    // The offline verifier, a second implementation, reads the same regression from the record.
+    expect(capturedRegression(result.checks)).toBe(result.regression);
+  });
+
+  it("measures nothing, rather than passing, where only a test the base lacks needs the new configuration", async () => {
+    const needsConfiguration = added("configured.test.mjs", [
+      "import { test } from 'node:test';",
+      "import assert from 'node:assert/strict';",
+      "test('configured', () => assert.equal(process.env.CONFIGURED, '1'));",
+    ]);
+    const configuration = added("vitest.config.mjs", ["process.env.CONFIGURED = '1';"]);
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch: [...needsConfiguration, ...configuration, ""].join("\n"),
+      commands: commands(),
+      clock,
+    });
+
+    const tests = result.checks.find((check) => check.id === "tests");
+    expect(tests?.configurationStatus).toBe("failed");
+    expect(tests?.status).toBe("not-applicable");
+    expect(result.regression).toBe("unmeasured");
+    // The offline verifier, a second implementation, reads the same regression from the record.
+    expect(capturedRegression(result.checks)).toBe(result.regression);
+  });
+
+  it("changes nothing where the base's configuration passes too", async () => {
+    const harmless = added("vitest.config.mjs", ["export default {};"]);
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch: [...harmless, ""].join("\n"),
+      commands: commands(),
+      clock,
+    });
+
+    expect(result.checks.find((check) => check.id === "tests")?.status).toBe("passed");
+    expect(result.regression).toBe("pass");
+    // The offline verifier, a second implementation, reads the same regression from the record.
+    expect(capturedRegression(result.checks)).toBe(result.regression);
   });
 });
 

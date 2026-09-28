@@ -27,6 +27,63 @@ const vitest = z.object({
   ),
 });
 
+export type RunnerPoint = z.infer<typeof point>;
+
+/**
+ * The per-test outcomes a structured report names, or null where the observation is not a
+ * complete, self-consistent report. Read by the verdict and by failure attribution alike, so the
+ * two cannot disagree about which tests a report says failed.
+ */
+export function runnerTestPoints(observation: GateObservation): readonly RunnerPoint[] | null {
+  if (
+    observation.unavailable !== null ||
+    observation.outputTruncated ||
+    observation.stdout.length > 4_000_000
+  )
+    return null;
+  try {
+    return pointsOf(JSON.parse(observation.stdout));
+  } catch {
+    return null;
+  }
+}
+
+/** Throws on anything but a complete report whose totals agree with its points. */
+function pointsOf(value: unknown): RunnerPoint[] {
+  const parsedPython = python.safeParse(value);
+  let tests: RunnerPoint[];
+  if (parsedPython.success) tests = parsedPython.data.tests;
+  else {
+    const report = vitest.parse(value);
+    tests = report.testResults.flatMap((file) => {
+      const seen = new Map<string, number>();
+      return file.assertionResults.map((test) => {
+        const count = (seen.get(test.fullName) ?? 0) + 1;
+        seen.set(test.fullName, count);
+        return {
+          id: `${file.name}:${test.fullName}${count === 1 ? "" : `#${count}`}`,
+          status:
+            test.status === "passed"
+              ? ("passed" as const)
+              : test.status === "failed"
+                ? ("failed" as const)
+                : ("skipped" as const),
+        };
+      });
+    });
+    if (
+      report.numTotalTests !== tests.length ||
+      report.numPassedTests !== tests.filter((test) => test.status === "passed").length ||
+      report.numFailedTests !== tests.filter((test) => test.status === "failed").length ||
+      report.numPendingTests !== tests.filter((test) => test.status === "skipped").length
+    )
+      throw new Error("inconsistent totals");
+  }
+  if (new Set(tests.map((test) => test.id)).size !== tests.length)
+    throw new Error("duplicate test identity");
+  return tests;
+}
+
 /** Runner-reported outcomes, explicitly not authoritative ratchet counts or coverage. */
 export function readRunnerResult(observation: GateObservation): GateReading {
   if (
@@ -49,40 +106,7 @@ export function readRunnerResult(observation: GateObservation): GateReading {
       .safeParse(value);
     if (unavailable.success)
       return { status: "not-applicable", detail: unavailable.data.unavailable, measures: {} };
-    const parsedPython = python.safeParse(value);
-    let tests: z.infer<typeof point>[];
-    if (parsedPython.success) tests = parsedPython.data.tests;
-    else {
-      const report = vitest.parse(value);
-      // Two tests in one file may carry the same title (a repeated `it`, or a parameterised
-      // case whose title has no parameter); the second is named by its occurrence, so a
-      // suite is not rejected whole for a name its own runner accepted.
-      tests = report.testResults.flatMap((file) => {
-        const seen = new Map<string, number>();
-        return file.assertionResults.map((test) => {
-          const count = (seen.get(test.fullName) ?? 0) + 1;
-          seen.set(test.fullName, count);
-          return {
-            id: `${file.name}:${test.fullName}${count === 1 ? "" : `#${count}`}`,
-            status:
-              test.status === "passed"
-                ? ("passed" as const)
-                : test.status === "failed"
-                  ? ("failed" as const)
-                  : ("skipped" as const),
-          };
-        });
-      });
-      if (
-        report.numTotalTests !== tests.length ||
-        report.numPassedTests !== tests.filter((test) => test.status === "passed").length ||
-        report.numFailedTests !== tests.filter((test) => test.status === "failed").length ||
-        report.numPendingTests !== tests.filter((test) => test.status === "skipped").length
-      )
-        throw new Error("inconsistent totals");
-    }
-    if (new Set(tests.map((test) => test.id)).size !== tests.length)
-      throw new Error("duplicate test identity");
+    const tests = pointsOf(value);
     const executed = tests.filter((test) => test.status !== "skipped");
     const failed = observation.exitCode !== 0 || executed.some((test) => test.status !== "passed");
     return {

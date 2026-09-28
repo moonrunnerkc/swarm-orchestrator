@@ -17,6 +17,11 @@ import {
   type DependencyInstall,
   DependencySetupReconciliationError,
 } from "./dependency-install.ts";
+import {
+  attributeFailure,
+  type FailureAttribution,
+  underBaseConfiguration,
+} from "./failure-attribution.ts";
 import { normalizePath } from "./file-set.ts";
 import { defaultGateTimeoutMs, type GateCommandRunner } from "./gate-definition.ts";
 import { type GoalVerification, verifyGoal } from "./goal-acceptance.ts";
@@ -41,6 +46,7 @@ import { pathsInPatch } from "./patch-paths.ts";
 import { prepareDependencies } from "./prepare-dependencies.ts";
 import { stagePreparedPython } from "./prepared-python.ts";
 import { enforceUpgrade, reproducedBug } from "./preset-verification.ts";
+import { runnerConfigurationChanged } from "./runner-configuration.ts";
 import { parseUnifiedDiff } from "./unified-diff.ts";
 import { observeUpgradeResolution } from "./upgrade-resolution.ts";
 import { readV8Coverage } from "./v8-coverage.ts";
@@ -73,9 +79,30 @@ export interface IndependentCheck {
    * base already had was not caused by the patch, and charging it to the patch is the collapse of
    * *unmeasured* into *failed* that the rest of this project refuses.
    *
-   * Undefined where nothing failed, since the base is only measured to explain a failure.
+   * Undefined where nothing failed, since the base is only measured to explain a failure. True
+   * only where `attribution` is `inherited`.
    */
   readonly inheritedFromBase?: boolean;
+  /**
+   * Why a failed check failed, proven from the two runs' observations: `inherited` where every
+   * failing test also failed at the base (or the outputs match once times are set aside), `new`
+   * where the base passed or the patch failed a test the base did not, `unattributed` where
+   * neither can be shown. Only `inherited` is left out of the regression dimension; `unattributed`
+   * leaves it unmeasured. Records before this field read inheritance from the base's status alone.
+   */
+  readonly attribution?: FailureAttribution;
+  /** The tests that failed with the patch and not at the base, where the runs name tests. */
+  readonly newFailures?: readonly string[];
+  /**
+   * The same check run with the base's runner configuration restored, where the patch changed
+   * any (`configurationFiles`). A check that passes only under the patch's configuration fails
+   * where the base's configuration fails a test the base passed (`regressedUnderBaseConfiguration`)
+   * and measures nothing otherwise.
+   */
+  readonly configurationObservation?: import("./gate-definition.ts").GateObservation;
+  readonly configurationStatus?: "passed" | "failed" | "not-applicable";
+  readonly configurationFiles?: readonly string[];
+  readonly regressedUnderBaseConfiguration?: readonly string[];
 }
 
 export type { DependencyInstall } from "./dependency-install.ts";
@@ -438,7 +465,14 @@ export async function verifyIndependently(
       });
 
     const onlyTheOracle = options.repositoryChecks === "skip";
-    const withPatch = onlyTheOracle ? [] : await runChecks(checkout, options, timeoutMs);
+    const withPatch = onlyTheOracle
+      ? []
+      : await readUnderBaseConfiguration(
+          await runChecks(checkout, options, timeoutMs),
+          checkout,
+          options,
+          timeoutMs,
+        );
     // The base is measured only to explain a failure, so a run where everything passed pays
     // nothing for this. Install is not repeated: the same checkout is reset to the base, so the
     // two runs differ in the patch and in nothing else, which is the whole point of the
@@ -634,7 +668,9 @@ export async function verifyIndependently(
       });
       restored = await restorePatch(checkout, options, timeoutMs);
     }
-    const checks = withPatch.some((check) => check.status === "failed")
+    const checks = withPatch.some(
+      (check) => check.status === "failed" || passedOnlyUnderThePatchConfiguration(check),
+    )
       ? await attributeFailures(withPatch, checkout, options, timeoutMs)
       : withPatch;
     // A run that was not asked to measure the suite reports that, rather than reporting the
@@ -651,8 +687,12 @@ export async function verifyIndependently(
         !(check.status === "failed" && check.inheritedFromBase === true),
     );
     const measuredSomething = checks.some((check) => check.status !== "not-applicable");
+    // `unattributed` is neither: the patch may have added a failure inside a check that already
+    // failed, and nothing shows it did not, so the dimension is unmeasured rather than passed.
     const causedByThePatch = (check: IndependentCheck) =>
-      check.status === "failed" && check.inheritedFromBase !== true;
+      check.status === "failed" &&
+      check.inheritedFromBase !== true &&
+      check.attribution !== "unattributed";
     const regression: IndependentVerification["regression"] = checks.some(causedByThePatch)
       ? "fail"
       : incompleteRequired
@@ -733,47 +773,72 @@ export async function verifyIndependently(
                   `line (${bond.mutants.find((one) => one.verdict === "vacuous")?.id}), so running ` +
                   "it established nothing about that line. Extend it to assert on the behaviour " +
                   "those lines decide, or leave them unjudged and say so."
-                : checks.some((check) => check.inheritedFromBase === true)
-                  ? "at least one check fails at the base commit too, with this patch not applied, so it " +
-                    "is reported as inherited rather than as a regression. A common cause is a project " +
-                    "that builds on install: dependencies are installed with --ignore-scripts, because " +
-                    "install scripts run whatever the registry serves, so a `prepare` step that generates " +
-                    "what the tests import does not run."
-                  : !measuredSomething
-                    ? `nothing here measured the patch: every check stood down (${checks
-                        .map((check) => `${check.id}: ${check.detail}`)
-                        .join("; ")}). ` +
-                      (checks.some((check) => /not installed/.test(check.detail))
-                        ? "A runner that is not installed on a fresh checkout usually means no installed " +
-                          "dependencies: pass --install to authorize lockfile setup with lifecycle scripts " +
-                          "disabled, or provide a prepared runtime. A toolchain the verifier does not drive " +
-                          "(Rust, Java, Go) stays unmeasured, which is not a pass."
-                        : "No declared check applies to this project as the verifier reads it; name the " +
-                          "command to run with --command, or add a test script to the manifest.")
-                    : checks.some(causedByThePatch)
-                      ? `a check failed on this patch and passed at the base commit: ${checks
-                          .filter(causedByThePatch)
-                          .map((check) => check.id)
-                          .join(
-                            ", ",
-                          )}. Read its finding above; if the suite is nondeterministic, ` +
-                        "that is what the base control cannot tell apart from a regression."
-                      : incompleteRequired
-                        ? `a required check measured nothing: ${checks
-                            .filter(
-                              (check) =>
-                                check.severity === "blocking" &&
-                                check.status !== "passed" &&
-                                check.optionalAbsence !== true,
-                            )
-                            .map((check) => `${check.id} (${check.detail})`)
-                            .join("; ")}. Nothing here says the suite passed.`
-                        : task === "unjudged"
-                          ? "the repository's own suite passed, which says nothing broke. It does not say the " +
-                            "task was done: a suite tests the behaviour a project already had, and a task adds " +
-                            "behaviour it did not. Pass --oracle <command> with a check that says whether the " +
-                            "task was done."
-                          : "",
+                : checks.some(causedByThePatch)
+                  ? `a check failed on this patch in a way it did not fail at the base commit: ${checks
+                      .filter(causedByThePatch)
+                      .map(
+                        (check) =>
+                          check.id +
+                          ((check.newFailures ?? []).length > 0
+                            ? ` (newly failing: ${(check.newFailures ?? []).slice(0, 5).join("; ")})`
+                            : (check.regressedUnderBaseConfiguration ?? []).length > 0
+                              ? ` (passes only under this patch's changes to ${(check.configurationFiles ?? []).join(", ")}; with the base's configuration these tests the base passed fail: ${(check.regressedUnderBaseConfiguration ?? []).slice(0, 5).join("; ")})`
+                              : ""),
+                      )
+                      .join(", ")}. Read its finding above; if the suite is nondeterministic, ` +
+                    "that is what the base control cannot tell apart from a regression."
+                  : checks.some((check) => check.attribution === "unattributed")
+                    ? `a check fails at the base commit too, but not in a way that shows this patch added nothing to it: ${checks
+                        .filter((check) => check.attribution === "unattributed")
+                        .map((check) => check.id)
+                        .join(
+                          ", ",
+                        )}. Its output names no tests to compare and differs from the base's, so a failure this patch introduced could be hidden inside it; the regression dimension is unmeasured, not passed. Fixing the base's failure makes the comparison exact.`
+                    : checks.some(
+                          (check) =>
+                            (check.configurationFiles ?? []).length > 0 &&
+                            check.status === "not-applicable" &&
+                            check.configurationObservation !== undefined,
+                        )
+                      ? `a check passes only with this patch's changes to the runner configuration (${[
+                          ...new Set(checks.flatMap((check) => check.configurationFiles ?? [])),
+                        ].join(
+                          ", ",
+                        )}); with the base's configuration restored it does not pass, so it measured nothing the base's instrument would stand behind. The instrument comes from the base commit, as the commands do.`
+                      : checks.some((check) => check.inheritedFromBase === true)
+                        ? "at least one check fails at the base commit too, with this patch not applied, and " +
+                          "every test it fails also failed there (or its output is the same), so it is reported " +
+                          "as inherited rather than as a regression. A common cause is a project that builds on " +
+                          "install: dependencies are installed with --ignore-scripts, because install scripts run " +
+                          "whatever the registry serves, so a `prepare` step that generates what the tests import " +
+                          "does not run."
+                        : !measuredSomething
+                          ? `nothing here measured the patch: every check stood down (${checks
+                              .map((check) => `${check.id}: ${check.detail}`)
+                              .join("; ")}). ` +
+                            (checks.some((check) => /not installed/.test(check.detail))
+                              ? "A runner that is not installed on a fresh checkout usually means no installed " +
+                                "dependencies: pass --install to authorize lockfile setup with lifecycle scripts " +
+                                "disabled, or provide a prepared runtime. A toolchain the verifier does not drive " +
+                                "(Rust, Java, Go) stays unmeasured, which is not a pass."
+                              : "No declared check applies to this project as the verifier reads it; name the " +
+                                "command to run with --command, or add a test script to the manifest.")
+                          : incompleteRequired
+                            ? `a required check measured nothing: ${checks
+                                .filter(
+                                  (check) =>
+                                    check.severity === "blocking" &&
+                                    check.status !== "passed" &&
+                                    check.optionalAbsence !== true,
+                                )
+                                .map((check) => `${check.id} (${check.detail})`)
+                                .join("; ")}. Nothing here says the suite passed.`
+                            : task === "unjudged"
+                              ? "the repository's own suite passed, which says nothing broke. It does not say the " +
+                                "task was done: a suite tests the behaviour a project already had, and a task adds " +
+                                "behaviour it did not. Pass --oracle <command> with a check that says whether the " +
+                                "task was done."
+                              : "",
       install,
       checkoutPath: checkout,
     };
@@ -1115,8 +1180,11 @@ async function restorePatch(
 }
 
 /**
- * Runs the same checks again with the patch reverted, so a failure can be attributed. A check that
- * fails both ways was not caused by the patch; one that only fails with the patch was.
+ * Runs the same checks again with the patch reverted, so a failure can be attributed. A check
+ * fails "both ways" is not enough to call it inherited: the patch may have broken a second test
+ * inside a check the base already failed. So the failure is attributed from the two runs' own
+ * observations (see failure-attribution.ts), and a check that passed only under the patch's
+ * runner configuration is decided here too, since that needs the base's passing tests.
  */
 async function attributeFailures(
   withPatch: readonly IndependentCheck[],
@@ -1128,18 +1196,119 @@ async function attributeFailures(
   // oracle copied into the checkout. A mined task's pull-request test file fails on the base by
   // construction, and left in place it read every regression the patch caused as inherited.
   if (!(await resetToBase(checkout, options, timeoutMs))) {
-    return withPatch;
+    return withPatch.map((check) =>
+      passedOnlyUnderThePatchConfiguration(check)
+        ? { ...check, status: "not-applicable" as const }
+        : check.status === "failed"
+          ? { ...check, attribution: "unattributed" as const, inheritedFromBase: false }
+          : check,
+    );
   }
   const atBase = await runChecks(checkout, options, timeoutMs);
   return withPatch.map((check) => {
-    if (check.status !== "failed") return check;
     const same = atBase.find((one) => one.id === check.id);
+    const baseObservation =
+      same?.observation === undefined ? {} : { baseObservation: same.observation };
+    let decided: IndependentCheck = check;
+    if (
+      passedOnlyUnderThePatchConfiguration(check) &&
+      check.configurationObservation !== undefined
+    ) {
+      const reading = underBaseConfiguration({
+        withPatchStatus: "passed",
+        baseConfigurationStatus: check.configurationStatus ?? "passed",
+        baseConfiguration: check.configurationObservation,
+        atBase: same?.observation,
+      });
+      decided = {
+        ...check,
+        status: reading.status as IndependentCheck["status"],
+        ...(reading.regressed.length === 0
+          ? {}
+          : { regressedUnderBaseConfiguration: reading.regressed }),
+        ...baseObservation,
+      };
+      if (decided.status !== "failed") return decided;
+    }
+    if (decided.status !== "failed") return decided;
+    // A check that failed only under the base's configuration is judged on that reading; the
+    // patch's own reading passed and is not the failure being attributed.
+    const failing =
+      decided.regressedUnderBaseConfiguration !== undefined && decided.configurationObservation
+        ? decided.configurationObservation
+        : decided.observation;
+    const attributed =
+      failing === undefined
+        ? { attribution: "unattributed" as const, newFailures: [] }
+        : attributeFailure({
+            withPatch: failing,
+            baseStatus: same?.status,
+            atBase: same?.observation,
+          });
     return {
-      ...check,
-      inheritedFromBase: same?.status === "failed",
-      ...(same?.observation === undefined ? {} : { baseObservation: same.observation }),
+      ...decided,
+      inheritedFromBase: attributed.attribution === "inherited",
+      attribution: attributed.attribution,
+      ...(attributed.newFailures.length === 0 ? {} : { newFailures: attributed.newFailures }),
+      ...baseObservation,
     };
   });
+}
+
+/** A check whose patched reading passed while the base's runner configuration did not. */
+function passedOnlyUnderThePatchConfiguration(check: IndependentCheck): boolean {
+  return (
+    check.configurationStatus !== undefined &&
+    check.status === "passed" &&
+    check.configurationStatus !== "passed"
+  );
+}
+
+/**
+ * The checks again, with the runner configuration the patch changed put back to the base's
+ * (restored where the base has it, removed where the patch added it), then the patch's versions
+ * written back. Only where the patch changed any: a patch that leaves the instrument alone pays
+ * nothing. The readings are kept on each check, and which one stands is decided with the base's
+ * own results in hand.
+ */
+async function readUnderBaseConfiguration(
+  withPatch: readonly IndependentCheck[],
+  checkout: string,
+  options: IndependentVerificationOptions,
+  timeoutMs: number,
+): Promise<readonly IndependentCheck[]> {
+  const files = runnerConfigurationChanged(options.patch);
+  if (files.length === 0 || withPatch.length === 0) return withPatch;
+  const patched = new Map<string, string | null>();
+  for (const path of files)
+    patched.set(path, await readFile(join(checkout, path), "utf8").catch(() => null));
+  try {
+    for (const path of files) {
+      const atBase = await options.commands.runVouched(
+        ["git", "-C", ".", "show", `${options.baseCommit}:${path}`],
+        { cwd: checkout, timeoutMs },
+      );
+      if (atBase.exitCode === 0) await writeFile(join(checkout, path), atBase.stdout);
+      else await rm(join(checkout, path), { force: true });
+    }
+    const underBase = await runChecks(checkout, options, timeoutMs);
+    return withPatch.map((check) => {
+      const reading = underBase.find((one) => one.id === check.id);
+      return reading?.observation === undefined
+        ? check
+        : {
+            ...check,
+            configurationObservation: reading.observation,
+            configurationStatus: reading.status,
+            configurationFiles: files,
+          };
+    });
+  } finally {
+    for (const [path, text] of patched) {
+      if (text === null) await rm(join(checkout, path), { force: true });
+      else await writeFile(join(checkout, path), text);
+    }
+  }
 }
 
 /**

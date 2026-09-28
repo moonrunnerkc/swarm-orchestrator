@@ -249,7 +249,21 @@ async function verifyPatchUnderCancellation(
   }
   for (const check of result.checks) {
     const label = check.status === "not-applicable" ? "n/a" : check.status;
-    process.stdout.write(`  ${label.padEnd(8)} ${check.id}: ${check.detail}\n`);
+    const attribution =
+      check.attribution === "inherited"
+        ? " [the base fails it the same way]"
+        : check.attribution === "unattributed"
+          ? " [the base fails it too, but not comparably: unmeasured]"
+          : (check.newFailures ?? []).length > 0
+            ? ` [newly failing: ${(check.newFailures ?? []).slice(0, 5).join("; ")}]`
+            : "";
+    const configuration =
+      check.configurationStatus === undefined
+        ? ""
+        : ` [with the base's ${(check.configurationFiles ?? []).join(", ")}: ${check.configurationStatus}]`;
+    process.stdout.write(
+      `  ${label.padEnd(8)} ${check.id}: ${check.detail}${attribution}${configuration}\n`,
+    );
   }
   if (result.unmeasured) {
     // Not the same finding as a refusal, and the difference is the whole point: a reader told
