@@ -245,12 +245,14 @@ for (const selected of frame.selected) {
     // The frozen verifier, exactly as the Action invokes it, from the registry.
     // The verifier's report, summary and stderr are kept outside the tree by digest (the
     // report carries the suite's whole structured output); the row carries what it reads.
-    const reportsRoot = join(workingRoot, "reports");
+    // Per verifier version, so a replay never overwrites the reports and bundles of the run it
+    // replays: the 1.0.3 replay wrote over the 1.0.2 files, whose digests the rows still hold.
+    const reportsRoot = join(workingRoot, "reports", version);
     mkdirSync(reportsRoot, { recursive: true });
     const stem = join(reportsRoot, String(selected.index).padStart(2, "0"));
     const summary = `${stem}.summary.md`;
-    const bundle = join(workingRoot, "bundles", String(selected.index).padStart(2, "0"));
-    mkdirSync(join(workingRoot, "bundles"), { recursive: true });
+    const bundle = join(workingRoot, "bundles", version, String(selected.index).padStart(2, "0"));
+    mkdirSync(join(workingRoot, "bundles", version), { recursive: true });
     const verifierArgs = [
       "--yes",
       `swarm-verify@${version}`,

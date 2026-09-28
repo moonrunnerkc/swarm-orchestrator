@@ -92,8 +92,8 @@ for (const name of readdirSync(rowsRoot)
     const withCheck = run("git", ["rev-parse", "HEAD"], { cwd: clone }).stdout.trim();
     run("git", ["update-ref", "refs/heads/study-a2", withCheck], { cwd: clone });
     const image = row.execution?.isolation?.replace(/^docker:/, "") ?? "node:24-bookworm";
-    const bundle = join(workingRoot, "bundles-a2", String(row.index).padStart(2, "0"));
-    mkdirSync(join(workingRoot, "bundles-a2"), { recursive: true });
+    const bundle = join(workingRoot, "bundles-a2", version, String(row.index).padStart(2, "0"));
+    mkdirSync(join(workingRoot, "bundles-a2", version), { recursive: true });
     const verified = run(
       "npx",
       [
