@@ -60,29 +60,34 @@ export function readStatus(parser, observation) {
   }
 }
 
-/** Structured results carry outcomes, never extra ratchet authority. */
-function structuredTestStatus(observation) {
-  if (observation.outputTruncated || observation.stdout.length > 4000000) return "not-applicable";
+/**
+ * The per-test outcomes of a structured report, or null where it is not a complete one. A title
+ * repeated in one file is named by its occurrence, as src/gates/runner-results.ts names it.
+ */
+function structuredPoints(observation) {
+  if (observation.outputTruncated || (observation.stdout ?? "").length > 4000000) return null;
   try {
     const report = JSON.parse(observation.stdout);
     let tests;
     if (report.schema === "swarm.pytest.v1") {
-      if (!Array.isArray(report.tests) || report.tests.length > 100000)
-        throw new Error("tests absent");
+      if (!Array.isArray(report.tests) || report.tests.length > 100000) return null;
       tests = report.tests;
     } else {
       for (const field of ["numTotalTests", "numPassedTests", "numFailedTests", "numPendingTests"])
-        if (!Number.isInteger(report[field]) || report[field] < 0) throw new Error("invalid total");
+        if (!Number.isInteger(report[field]) || report[field] < 0) return null;
       tests = report.testResults.flatMap((file) => {
         if (typeof file.name !== "string") throw new Error("file absent");
+        const seen = new Map();
         return file.assertionResults.map((test) => {
           if (
             typeof test.fullName !== "string" ||
             !["passed", "failed", "pending", "skipped", "todo"].includes(test.status)
           )
             throw new Error("invalid point");
+          const count = (seen.get(test.fullName) ?? 0) + 1;
+          seen.set(test.fullName, count);
           return {
-            id: `${file.name}:${test.fullName}`,
+            id: `${file.name}:${test.fullName}${count === 1 ? "" : `#${count}`}`,
             status: ["passed", "failed"].includes(test.status) ? test.status : "skipped",
           };
         });
@@ -93,7 +98,7 @@ function structuredTestStatus(observation) {
         report.numFailedTests !== tests.filter((test) => test.status === "failed").length ||
         report.numPendingTests !== tests.filter((test) => test.status === "skipped").length
       )
-        throw new Error("totals disagree");
+        return null;
     }
     if (
       tests.some(
@@ -104,49 +109,194 @@ function structuredTestStatus(observation) {
       ) ||
       new Set(tests.map((test) => test.id)).size !== tests.length
     )
-      throw new Error("invalid test identity");
-    const executed = tests.filter((test) => test.status !== "skipped");
-    if (!executed.length) return "not-applicable";
-    return observation.exitCode !== 0 || executed.some((test) => test.status !== "passed")
-      ? "failed"
-      : "passed";
+      return null;
+    return tests;
   } catch {
-    return observation.exitCode === 0 ? "not-applicable" : "failed";
+    return null;
   }
 }
 
-/** Derive new captured-check results; undefined preserves older aggregate-only records. */
+/** Structured results carry outcomes, never extra ratchet authority. */
+function structuredTestStatus(observation) {
+  const tests = structuredPoints(observation);
+  if (tests === null)
+    return observation.outputTruncated || (observation.stdout ?? "").length > 4000000
+      ? "not-applicable"
+      : observation.exitCode === 0
+        ? "not-applicable"
+        : "failed";
+  const executed = tests.filter((test) => test.status !== "skipped");
+  if (!executed.length) return "not-applicable";
+  return observation.exitCode !== 0 || executed.some((test) => test.status !== "passed")
+    ? "failed"
+    : "passed";
+}
+
+/**
+ * The tests a run names as failed and passed, from a structured report or TAP; null where it
+ * names none. Mirrors src/gates/failure-attribution.ts, written again here so a record is judged
+ * by a second implementation rather than by the code that produced it.
+ */
+function namedTests(observation) {
+  const stdout = observation.stdout ?? "";
+  if (stdout.trimStart().startsWith("{")) {
+    const points = structuredPoints(observation);
+    if (points === null) return null;
+    return {
+      failed: points.filter((p) => p.status === "failed" || p.status === "error").map((p) => p.id),
+      passed: points.filter((p) => p.status === "passed").map((p) => p.id),
+    };
+  }
+  const text = `${stdout}\n${observation.stderr ?? ""}`;
+  if (!/^TAP version \d+/m.test(text)) return null;
+  const failed = [];
+  const passed = [];
+  for (const line of text.split("\n")) {
+    const point = /^(\s*)(not ok|ok)\s+\d+\s+-\s+(.+?)\s*$/.exec(line);
+    if (point === null) continue;
+    if (/#\s*(TODO|SKIP)\b/i.test(point[3])) continue;
+    const id = `${point[1].length}:${point[3].replace(/\s+#.*$/, "")}`;
+    (point[2] === "ok" ? passed : failed).push(id);
+  }
+  return { failed, passed };
+}
+
+const escapeCharacter = String.fromCharCode(27);
+
+function comparableOutput(observation) {
+  return `${observation.exitCode}\n${observation.stdout ?? ""}\n${observation.stderr ?? ""}`
+    .split(escapeCharacter)
+    .map((part, index) => (index === 0 ? part : part.replace(/^\[[0-9;]*[A-Za-z]/, "")))
+    .join("")
+    .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?/g, "<timestamp>")
+    .replace(/\b\d{1,2}:\d{2}:\d{2}(?:\.\d+)?\b/g, "<clock>")
+    .replace(/\b\d+(?:\.\d+)?\s?(?:ms|s|sec|secs|seconds|m|min)\b/g, "<duration>")
+    .split("\n")
+    .map((line) => line.replace(/\s+$/, ""))
+    .join("\n");
+}
+
+/** Why a failed reading failed, from it and the base's reading of the same check. */
+function attribution(failing, parser, baseObservation) {
+  if (baseObservation === undefined || readStatus(parser, baseObservation) !== "failed")
+    return { attribution: "new", newFailures: [] };
+  const patched = namedTests(failing);
+  const base = namedTests(baseObservation);
+  if (patched !== null && base !== null && patched.failed.length > 0) {
+    const newFailures = patched.failed.filter((id) => !base.failed.includes(id));
+    return newFailures.length === 0
+      ? { attribution: "inherited", newFailures: [] }
+      : { attribution: "new", newFailures };
+  }
+  return comparableOutput(failing) === comparableOutput(baseObservation)
+    ? { attribution: "inherited", newFailures: [] }
+    : { attribution: "unattributed", newFailures: [] };
+}
+
+/** The status a check must carry given its own, base-configuration and base readings. */
+function expectedStatus(check) {
+  const own = readStatus(check.parser, check.observation);
+  if (check.configurationObservation === undefined) return { status: own, regressed: [] };
+  const underBase = readStatus(check.parser, check.configurationObservation);
+  if (underBase !== check.configurationStatus) return null;
+  if (own !== "passed" || underBase === "passed") return { status: own, regressed: [] };
+  const points = namedTests(check.configurationObservation);
+  const base = check.baseObservation === undefined ? null : namedTests(check.baseObservation);
+  const regressed =
+    points === null || base === null
+      ? []
+      : points.failed.filter((id) => base.passed.includes(id) && !base.failed.includes(id));
+  return {
+    status: underBase === "failed" && regressed.length > 0 ? "failed" : "not-applicable",
+    regressed,
+  };
+}
+
+const sameList = (a, b) => JSON.stringify([...(a ?? [])]) === JSON.stringify([...(b ?? [])]);
+
+/**
+ * Derive new captured-check results; undefined preserves older aggregate-only records.
+ *
+ * A record that carries `attribution` or a base-configuration reading is judged by the rule that
+ * wrote them: every failed check's attribution is recomputed from its readings and must match,
+ * a check the patch's runner configuration alone passed must carry the status the base's
+ * configuration decides, and only a proven inherited failure is left out of the dimension. A
+ * record without them is judged by the rule it was written under, which read any failure the base
+ * shared as inherited and left the dimension unmeasured. Records from 1.0.3 to 1.0.5 that read
+ * such a failure as a regression pass do not re-derive, and should not: that pass was not shown.
+ */
 export function capturedRegression(checks) {
   if (!Array.isArray(checks) || !checks.some((check) => check.observation !== undefined))
     return undefined;
   try {
+    const attributed = checks.some(
+      (check) => check.attribution !== undefined || check.configurationObservation !== undefined,
+    );
+    for (const check of checks) {
+      if (
+        check.observation === undefined ||
+        typeof check.id !== "string" ||
+        !["passed", "failed", "not-applicable"].includes(check.status) ||
+        (check.optionalAbsence !== undefined && typeof check.optionalAbsence !== "boolean") ||
+        (check.optionalAbsence === true &&
+          (check.status !== "not-applicable" ||
+            typeof check.observation.unavailable !== "string" ||
+            check.observation.exitCode !== 0 ||
+            check.observation.stdout !== "" ||
+            check.observation.stderr !== "")) ||
+        !["blocking", "advisory"].includes(check.severity)
+      )
+        return null;
+      const expected = expectedStatus(check);
+      if (expected === null || expected.status !== check.status) return null;
+      if (
+        check.configurationObservation !== undefined &&
+        !sameList(expected.regressed, check.regressedUnderBaseConfiguration ?? [])
+      )
+        return null;
+      if (!attributed) {
+        if (
+          check.inheritedFromBase === true &&
+          (!check.baseObservation || readStatus(check.parser, check.baseObservation) !== "failed")
+        )
+          return null;
+        continue;
+      }
+      if (check.status !== "failed") {
+        if (check.attribution !== undefined || check.inheritedFromBase === true) return null;
+        continue;
+      }
+      const failing =
+        (check.regressedUnderBaseConfiguration ?? []).length > 0
+          ? check.configurationObservation
+          : check.observation;
+      const derived = attribution(failing, check.parser, check.baseObservation);
+      if (
+        derived.attribution !== check.attribution ||
+        (check.inheritedFromBase === true) !== (derived.attribution === "inherited") ||
+        !sameList(derived.newFailures, check.newFailures ?? [])
+      )
+        return null;
+    }
+    const inherited = (check) =>
+      check.status === "failed" &&
+      (attributed ? check.attribution === "inherited" : check.inheritedFromBase === true);
     if (
       checks.some(
         (check) =>
-          !check.observation ||
-          (check.optionalAbsence !== undefined &&
-            (check.optionalAbsence !== true ||
-              check.status !== "not-applicable" ||
-              typeof check.observation.unavailable !== "string" ||
-              check.observation.exitCode !== 0 ||
-              check.observation.stdout !== "" ||
-              check.observation.stderr !== "")) ||
-          !["blocking", "advisory"].includes(check.severity) ||
-          readStatus(check.parser, check.observation) !== check.status ||
-          (check.inheritedFromBase === true &&
-            (!check.baseObservation ||
-              readStatus(check.parser, check.baseObservation) !== "failed")),
+          check.status === "failed" &&
+          !inherited(check) &&
+          !(attributed && check.attribution === "unattributed"),
       )
     )
-      return null;
-    if (checks.some((check) => check.status === "failed" && check.inheritedFromBase !== true))
       return "fail";
     if (
       checks.some(
         (check) =>
           check.severity === "blocking" &&
           check.status !== "passed" &&
-          check.optionalAbsence !== true,
+          check.optionalAbsence !== true &&
+          !(attributed && inherited(check)),
       )
     )
       return "unmeasured";

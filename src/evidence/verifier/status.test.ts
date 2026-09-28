@@ -84,3 +84,140 @@ it("retains optional unconfigured tooling without waiving configured missing che
     ]),
   ).toBeNull();
 });
+
+const tap = (points: readonly [string, boolean][], exitCode: number) => ({
+  exitCode,
+  stdout: [
+    "TAP version 13",
+    ...points.map(([name, ok], index) => `${ok ? "ok" : "not ok"} ${index + 1} - ${name}`),
+    `1..${points.length}`,
+    `# tests ${points.length}`,
+    `# pass ${points.filter(([, ok]) => ok).length}`,
+    `# fail ${points.filter(([, ok]) => !ok).length}`,
+  ].join("\n"),
+  stderr: "",
+  unavailable: null,
+});
+const tests = (observation: ReturnType<typeof tap>, extra: Record<string, unknown> = {}) => ({
+  id: "tests",
+  parser: "test-output",
+  severity: "blocking",
+  status: observation.exitCode === 0 ? "passed" : "failed",
+  observation,
+  ...extra,
+});
+const baseWithOldFailure = tap(
+  [
+    ["old", false],
+    ["sum", true],
+  ],
+  1,
+);
+
+it("re-derives a newly broken test behind an old failure as a regression, and refuses a record calling it inherited", () => {
+  const head = tap(
+    [
+      ["old", false],
+      ["sum", false],
+    ],
+    1,
+  );
+  const honest = tests(head, {
+    attribution: "new",
+    inheritedFromBase: false,
+    newFailures: ["0:sum"],
+    baseObservation: baseWithOldFailure,
+  });
+  expect(capturedRegression([passed, honest])).toBe("fail");
+  expect(
+    capturedRegression([
+      passed,
+      { ...honest, attribution: "inherited", inheritedFromBase: true, newFailures: undefined },
+    ]),
+  ).toBeNull();
+});
+
+it("passes only a proven inheritance, and leaves an incomparable one unmeasured", () => {
+  const same = tests(
+    tap(
+      [
+        ["old", false],
+        ["sum", true],
+      ],
+      1,
+    ),
+    {
+      attribution: "inherited",
+      inheritedFromBase: true,
+      baseObservation: baseWithOldFailure,
+    },
+  );
+  expect(capturedRegression([passed, same])).toBe("pass");
+  const lint = (stdout: string) => ({ exitCode: 1, stdout, stderr: "", unavailable: null });
+  const changed = {
+    ...passed,
+    id: "lint",
+    status: "failed",
+    observation: lint("2 problems"),
+    baseObservation: lint("1 problem"),
+    attribution: "unattributed",
+    inheritedFromBase: false,
+  };
+  expect(capturedRegression([passed, changed])).toBe("unmeasured");
+  expect(
+    capturedRegression([passed, { ...changed, attribution: "inherited", inheritedFromBase: true }]),
+  ).toBeNull();
+  const timed = {
+    ...changed,
+    observation: lint("1 problem (0.4s)"),
+    baseObservation: lint("1 problem (0.2s)"),
+    attribution: "inherited",
+    inheritedFromBase: true,
+  };
+  expect(capturedRegression([passed, timed])).toBe("pass");
+});
+
+it("re-derives a check that passed only under the patch's runner configuration", () => {
+  const forged = tap([["sum", true]], 0);
+  const underBase = tap([["sum", false]], 1);
+  const base = tap([["sum", true]], 0);
+  const decided = tests(forged, {
+    status: "failed",
+    configurationObservation: underBase,
+    configurationStatus: "failed",
+    configurationFiles: ["vitest.config.mjs"],
+    regressedUnderBaseConfiguration: ["0:sum"],
+    baseObservation: base,
+    attribution: "new",
+    inheritedFromBase: false,
+  });
+  expect(capturedRegression([decided])).toBe("fail");
+  expect(
+    capturedRegression([
+      {
+        ...decided,
+        status: "passed",
+        regressedUnderBaseConfiguration: undefined,
+        attribution: undefined,
+        inheritedFromBase: undefined,
+      },
+    ]),
+  ).toBeNull();
+});
+
+it("keeps the rule a record was written under where it carries no attribution", () => {
+  const legacy = tests(
+    tap(
+      [
+        ["old", false],
+        ["sum", false],
+      ],
+      1,
+    ),
+    {
+      inheritedFromBase: true,
+      baseObservation: baseWithOldFailure,
+    },
+  );
+  expect(capturedRegression([passed, legacy])).toBe("unmeasured");
+});
