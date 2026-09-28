@@ -442,8 +442,52 @@ describe("a failure the base already had", () => {
     const tests = result.checks.find((check) => check.id === "tests");
     expect(tests?.status).toBe("failed");
     expect(tests?.inheritedFromBase).toBe(true);
-    // The patch broke nothing, so the verification must not say it did.
-    expect(result.regression).not.toBe("fail");
+    // The patch broke nothing, so the verification must not say it did; and with nothing
+    // passing either, nothing here establishes that it did not.
+    expect(result.regression).toBe("unmeasured");
+  });
+
+  /**
+   * The base control measured the inherited failure at the base, which is a measurement about
+   * the base and not about the patch; with another check passing, the regression dimension
+   * passes and the inherited failure is named beside it. Ten of twenty-two adjudicated-correct
+   * pull requests in the AI-authored study read as refused for a lint or format failure their
+   * base carried before this.
+   */
+  it("passes the regression dimension when every failure is inherited and another check passed", async () => {
+    await writeFile(
+      join(repository, "package.json"),
+      '{"name":"w","version":"1.0.0","type":"module","scripts":{"test":"node --test","lint":"node -e 0"}}\n',
+    );
+    await writeFile(
+      join(repository, "broken.test.mjs"),
+      "import { test } from 'node:test';\ntest('already broken', () => { throw new Error('base'); });\n",
+    );
+    git(["add", "-A"], repository);
+    git(["commit", "-qm", "a base that already fails, with a linter that passes"], repository);
+
+    const patch = [
+      "diff --git a/clamp.mjs b/clamp.mjs",
+      "--- a/clamp.mjs",
+      "+++ b/clamp.mjs",
+      "@@ -1 +1 @@",
+      "-export const clamp = (v) => v;",
+      "+export const clamp = (v) => (v < 0 ? 0 : v);",
+      "",
+    ].join("\n");
+
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch,
+      commands: commands(),
+      clock,
+    });
+
+    expect(result.checks.find((check) => check.id === "tests")?.inheritedFromBase).toBe(true);
+    expect(result.checks.find((check) => check.id === "lint")?.status).toBe("passed");
+    expect(result.regression).toBe("pass");
+    expect(result.verified).toBe(false);
   });
 
   it("still calls a failure the patch caused a regression", async () => {
