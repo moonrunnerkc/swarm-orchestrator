@@ -1,5 +1,36 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **The oracle runs in the project environment the verifier prepared.** `.venv/bin` and
+  `node_modules/.bin` come first on PATH for the oracle, as `uv run` and `npm exec` would. The
+  repository's own checks already call those interpreters by path. An oracle written
+  `python -m pytest ...` otherwise reached the container image's interpreter, which has none of
+  the project's packages, and a patch read as rejected. A directory that does not exist changes
+  nothing.
+- **Every oracle run is kept in the verdict** (`oracleRuns`: the tree it ran on, the command,
+  its exit code, duration and the last 4000 characters of its output). The task dimension was
+  decided from runs whose output was not recorded anywhere.
+
+### Fixed
+
+- **A late container removal no longer refuses the run.** Removal is asked for and observed up
+  to three times with a growing pause before cleanup is called unconfirmed. Under load the
+  runtime finished removals after its 15-second client deadline, and a container gone moments
+  later refused twelve study rows in a row. A container still present after the last round, or
+  one whose creation was uncertain, still refuses.
+
+- **A failed TAP run names the tests that failed**, up to five, quoted as the runner printed
+  them, after the counts. "2 failed" alone named nothing a repair could act on: in Comparison B
+  the model changed nothing in six invocations fed that line for three koa patches.
+- **A failed test check says why when no counted test failed.** jest and vitest summaries count
+  tests, so a file that fails to load or exits the process, or a command the test script runs
+  after the runner, left a failed check reading "978 passed, 978 total". The detail now quotes
+  the runner's test-file line and names the files it marked FAIL, or says the exit came from
+  outside the counted tests. Found on commander.js#1671 in Comparison B.
+
 ## 1.0.4 - 2026-09-28
 
 Two findings from the 1.0.3 rollout and the study's replay on 1.0.3, fixed at the root: an
