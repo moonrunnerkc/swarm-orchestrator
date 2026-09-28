@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 1.0.4 - 2026-09-28
+
+Two findings from the 1.0.3 rollout and the study's replay on 1.0.3, fixed at the root: an
+Action headline that contradicted its own regression dimension, and one more install gap.
 
 ### Changed
 
