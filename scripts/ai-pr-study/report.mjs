@@ -1,15 +1,6 @@
 #!/usr/bin/env node
-/**
- * The study's report, derived from its rows and nothing else: every denominator the protocol
- * names, each count with its Wilson interval, per author account and per repository, and the
- * verifier's detection and acceptance against the adjudication arm. Reruns are idempotent:
- * the same rows give the same page, with the digest of the rows it was derived from.
- *
- *   node scripts/ai-pr-study/report.mjs <rows directory> <frame.json> <out.md>
- */
-import { createHash } from "node:crypto";
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, writeFileSync } from "node:fs";
+import { loadRows, rowsDigest as rowsDigestOf } from "./rows.mjs";
 
 const [rowsDirectory, framePath, out] = process.argv.slice(2);
 if (!rowsDirectory || !framePath || !out) {
@@ -17,13 +8,8 @@ if (!rowsDirectory || !framePath || !out) {
   process.exit(2);
 }
 const frame = JSON.parse(readFileSync(framePath, "utf8"));
-const files = readdirSync(rowsDirectory)
-  .filter((name) => /^\d+\.json$/.test(name))
-  .sort();
-const rows = files.map((name) => JSON.parse(readFileSync(join(rowsDirectory, name), "utf8")));
-const digest = createHash("sha256");
-for (const name of files) digest.update(readFileSync(join(rowsDirectory, name)));
-const rowsDigest = `sha256:${digest.digest("hex")}`;
+const rows = loadRows(rowsDirectory);
+const rowsDigest = rowsDigestOf(rowsDirectory);
 
 /** Wilson score interval, 95%, as percentages. */
 function wilson(k, n) {

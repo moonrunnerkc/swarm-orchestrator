@@ -1,28 +1,14 @@
 #!/usr/bin/env node
-/**
- * The ablation ladder S0, S1, S2 of docs/verifier-first/comparison-protocol.md, read off the
- * study rows under the frozen decision rule: S0 the suite alone (the A0 decision), S1 the
- * verifier with its base control and refusals but the coverage and mutation dimensions
- * masked, S2 the verifier in full and, where a row carries an A2 pass, with the held-back
- * check as oracle. Each rung reports the same decision counts against the adjudicated truth.
- *
- *   node scripts/ai-pr-study/ablations.mjs <rows directory> <out.md>
- */
-import { createHash } from "node:crypto";
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { writeFileSync } from "node:fs";
+import { loadRows, rowsDigest as rowsDigestOf } from "./rows.mjs";
 
 const [rowsDirectory, out] = process.argv.slice(2);
 if (!rowsDirectory || !out) {
   console.error("usage: ablations.mjs <rows directory> <out.md>");
   process.exit(2);
 }
-const files = readdirSync(rowsDirectory)
-  .filter((name) => /^\d+\.json$/.test(name))
-  .sort();
-const rows = files.map((name) => JSON.parse(readFileSync(join(rowsDirectory, name), "utf8")));
-const digest = createHash("sha256");
-for (const name of files) digest.update(readFileSync(join(rowsDirectory, name)));
+const rows = loadRows(rowsDirectory);
+const rowsDigest = rowsDigestOf(rowsDirectory);
 
 const truthOf = (row) => row.adjudication?.status;
 const judged = rows.filter((row) =>
@@ -94,7 +80,7 @@ function tally(rung) {
 }
 const page = `# Ablations S0, S1, S2
 
-Derived from ${rows.length} row(s) in \`${rowsDirectory}\` (digest sha256:${digest.digest("hex")}) under the
+Derived from ${rows.length} row(s) in \`${rowsDirectory}\` (digest ${rowsDigest}) under the
 frozen decision rule; ${judged.length} rows carry adjudicated truth and are the denominator of every
 count. Read as what each addition changed, never as a ranking.
 

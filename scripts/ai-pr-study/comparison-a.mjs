@@ -1,29 +1,14 @@
 #!/usr/bin/env node
-/**
- * Comparison A over the study rows, under the frozen decision rule of
- * docs/verifier-first/comparison-protocol.md: for each row with adjudicated truth, the decision
- * of A0 (the repository's own suite, exit code only), A1 (swarm-verify regression-only, its
- * verdict) and, where a row carries one, A2 (the held-back check as an oracle over the same
- * run). Agreement, false green, false red and unmeasured shares per arm with Wilson intervals,
- * and the paired difference in false greens with the count of discordant rows.
- *
- *   node scripts/ai-pr-study/comparison-a.mjs <rows directory> <out.md>
- */
-import { createHash } from "node:crypto";
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { writeFileSync } from "node:fs";
+import { loadRows, rowsDigest as rowsDigestOf } from "./rows.mjs";
 
 const [rowsDirectory, out] = process.argv.slice(2);
 if (!rowsDirectory || !out) {
   console.error("usage: comparison-a.mjs <rows directory> <out.md>");
   process.exit(2);
 }
-const files = readdirSync(rowsDirectory)
-  .filter((name) => /^\d+\.json$/.test(name))
-  .sort();
-const rows = files.map((name) => JSON.parse(readFileSync(join(rowsDirectory, name), "utf8")));
-const digest = createHash("sha256");
-for (const name of files) digest.update(readFileSync(join(rowsDirectory, name)));
+const rows = loadRows(rowsDirectory);
+const rowsDigest = rowsDigestOf(rowsDirectory);
 
 function wilson(k, n) {
   if (n === 0) return "";
@@ -93,7 +78,7 @@ const rule = (t) =>
 
 const page = `# Comparison A: identical-patch verifier decisions
 
-Derived from ${rows.length} row(s) in \`${rowsDirectory}\` (digest sha256:${digest.digest("hex")}) under the
+Derived from ${rows.length} row(s) in \`${rowsDirectory}\` (digest ${rowsDigest}) under the
 frozen decision rule of \`docs/verifier-first/comparison-protocol.md\`. Rows with adjudicated
 truth: ${judged.length} of ${rows.length}; every other row is outside every denominator here.
 ${judged.length < 10 ? "Fewer than ten judged rows: no difference below is called meaningful, as the rule requires.\n" : ""}

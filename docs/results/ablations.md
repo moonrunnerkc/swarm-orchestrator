@@ -1,6 +1,6 @@
 # Ablations S0, S1, S2
 
-Derived from 50 row(s) in `docs/evidence/2026-09-27/ai-pr-study/rows` (digest sha256:b3a62d2ee7804d2fab446c3085fcd9fbce848720eca54872cb2fcdffff9c4da6) under the
+Derived from 50 row(s) in `docs/evidence/2026-09-27/ai-pr-study/rows.json.br` (digest sha256:b3a62d2ee7804d2fab446c3085fcd9fbce848720eca54872cb2fcdffff9c4da6) under the
 frozen decision rule; 22 rows carry adjudicated truth and are the denominator of every
 count. Read as what each addition changed, never as a ranking.
 

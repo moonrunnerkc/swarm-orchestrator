@@ -1,6 +1,6 @@
 # AI-authored pull request study: report
 
-Derived from 50 row(s) in `docs/evidence/2026-09-27/ai-pr-study/rows` (digest sha256:b3a62d2ee7804d2fab446c3085fcd9fbce848720eca54872cb2fcdffff9c4da6) under the
+Derived from 50 row(s) in `docs/evidence/2026-09-27/ai-pr-study/rows.json.br` (digest sha256:b3a62d2ee7804d2fab446c3085fcd9fbce848720eca54872cb2fcdffff9c4da6) under the
 registered protocol `docs/verifier-first/ai-pr-study-protocol.md`, frame queried 2026-09-27T21:04:18.412Z, seed
 `verifier-first-2026-09-27`, window 2026-06-29 to 2026-09-27. Verifier version(s) in
 the executed rows: 1.0.2. Every rate carries its denominator and a Wilson 95%
