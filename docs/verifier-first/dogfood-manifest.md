@@ -115,8 +115,11 @@ each time with the same sixteen verdicts. Re-pinned to `1.0.3` (distribution `ea
 quantproof#1 and cronproof#2 the verdict now says `Regression: pass`, because the only failures
 are the base's own, while the headline still read "Not verified" and the job still failed: the
 Action's result was decided from any failed check, not from the regression dimension the verdict
-reports. That contradiction is fixed in the source (the result follows the regression dimension
-when every failed check is inherited) and waits on the next patch to reach the rollout. depose#4
-stays not verified with regression unmeasured, since the inherited Go build leaves no check that
-measured the patch. Run log: `scratchpad/rollout-results-103.log` at the time; the pull request
-comments carry the verdicts. A person merges each pull request; none is merged by this rollout.
+reports. That contradiction was fixed at the root for `1.0.4` (the result follows the regression
+dimension when every failed check is inherited). Re-pinned to `1.0.4` (distribution
+`42321e1c0`, `v1` moved there after validation): quantproof#1 and cronproof#2 are now
+regression-only passes that name their inherited failure, so seven of sixteen pass. depose#4
+now reads incomplete rather than not verified, which matches its unmeasured regression: the
+inherited Go build leaves no check that measured the patch. ruleprobe#3 is still not verified
+for its nondeterministic test; the other rows are unchanged. The pull request comments carry
+the verdicts. A person merges each pull request; none is merged by this rollout.
