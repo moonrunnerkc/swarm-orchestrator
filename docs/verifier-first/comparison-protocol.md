@@ -109,3 +109,22 @@ digest are recorded beside the report.
   refused when it could not confirm cleanup. Each was rerun once with docker otherwise idle.
   The failed attempt stays on its row under `infrastructureAttempts`, and the report names every
   such row. None of the three carries adjudicated truth.
+- **2026-09-28, Comparison B's shared prefix, fork and B1 rule, registered before any B run.**
+  The shared prefix of every task is the prefix the reach-pressure experiment's generation 3
+  already recorded over `mined-pr-viable-79` with this protocol's model and limits (Qwen3.8-27B
+  MLX 8-bit, greedy, thinking off, two prefix invocations), in
+  `docs/evidence/2026-09-17/reach-pressure-experiment/results.jsonl`. A prefix is shared by
+  definition, so reusing one recorded under the same model, cohort and limits changes no arm. The
+  fork is the first step whose visible oracle accepted the task, whatever its regression reading.
+  A task with no such step has no fork: every arm ends on the prefix's final patch, so its pair
+  is concordant by construction. B0 stops at the fork. B1 runs the released swarm-verify 1.0.4
+  regression-only verdict (`ci --patch --install`, no oracle, on the host as the prefix's judge
+  ran) on the fork patch. On `pass` or `unmeasured` it stops, because an unmeasured verdict names
+  no defect a repair could address. On `fail` it feeds the verdict's failed-check ids and
+  details back as attributed tool output and repairs, at most two invocations, as the reach
+  repairs were capped. It stops when regression passes and the visible oracle still accepts. Each
+  arm's final patch is scored on the held-back half with the prefix's scorer. No mined task
+  carries a requirement contract, so B2 has nothing to add and is reported as not applicable,
+  not as equal to B1. With 14 fork tasks of 79, this design cannot reach the ten discordant
+  pairs the frozen rule needs; it is run for the observed pairs, and that ceiling is stated with
+  the result.
