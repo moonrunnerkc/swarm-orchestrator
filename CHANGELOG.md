@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.2 - 2026-09-28
+
+Two more findings from the study's run through 1.0.1, fixed at the root.
+
+### Fixed
+
+- **The container's scratch space is a directory on the host, not a tmpfs.** A tmpfs is
+  charged to the container's memory limit, so with the cap at 2 GB every large lockfile
+  install was killed (exit 137) once its cache passed the cap; sizing the tmpfs in 1.0.1 could
+  not help. Each run now mounts its own directory under the person's `~/.swarm/scratch` at
+  `/tmp`, executable, removed when the run ends, and removed by runtime repair for a run that
+  died between creating and removing it.
+- **A base commit that exists but cannot be checked out is reported with git's own line.**
+  Two paths differing only in case, on a case-insensitive filesystem, leave the fresh checkout
+  dirty and git refuses to switch; the refusal read as "the base commit is not in the checkout",
+  which was false. The last line git printed is now the reason.
+
 ## 1.0.1 - 2026-09-28
 
 Four gaps the AI-authored pull request study exposed on its first run through the stable
