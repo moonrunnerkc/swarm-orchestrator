@@ -1,6 +1,6 @@
 # Comparison A: identical-patch verifier decisions
 
-Derived from 50 row(s) in `docs/evidence/2026-09-27/ai-pr-study/rows` (digest sha256:b3a62d2ee7804d2fab446c3085fcd9fbce848720eca54872cb2fcdffff9c4da6) under the
+Derived from 50 row(s) in `docs/evidence/2026-09-27/ai-pr-study/rows.json.br` (digest sha256:b3a62d2ee7804d2fab446c3085fcd9fbce848720eca54872cb2fcdffff9c4da6) under the
 frozen decision rule of `docs/verifier-first/comparison-protocol.md`. Rows with adjudicated
 truth: 22 of 50; every other row is outside every denominator here.
 

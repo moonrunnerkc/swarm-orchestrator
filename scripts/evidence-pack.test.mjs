@@ -20,6 +20,8 @@ beforeEach(async () => {
   await writeFile(join(bundle, "owner__repo.transcript.txt"), "the model's every turn\n");
   // An observer's transcript, one JSON record per line, as the onboarding simulations write it.
   await writeFile(join(bundle, "transcript.jsonl"), '{"kind":"belief"}\n');
+  // A study reviewer's transcript, one record per line, named by its row.
+  await writeFile(join(bundle, "07.adjudication.jsonl"), '{"kind":"read"}\n');
 });
 
 afterEach(async () => {
@@ -38,6 +40,7 @@ const pack = (overrides = {}) =>
       "evidence/run/bundle/reviewer.html",
       "evidence/run/bundle/owner__repo.transcript.txt",
       "evidence/run/bundle/transcript.jsonl",
+      "evidence/run/bundle/07.adjudication.jsonl",
     ],
     sourceCommit,
     ...overrides,
@@ -46,7 +49,7 @@ const pack = (overrides = {}) =>
 describe("packing derived evidence", () => {
   it("restores the exact bytes of what it removed and leaves the records alone", async () => {
     const packed = await pack();
-    expect(packed.files).toBe(4);
+    expect(packed.files).toBe(5);
 
     const bundle = join(repositoryRoot, "evidence/run/bundle");
     expect((await readdir(bundle)).sort()).toEqual(["ledger.jsonl", "reviewer.html"]);
@@ -64,7 +67,7 @@ describe("packing derived evidence", () => {
     }
     expect(await verifyDerivedPack(packed.destination, repositoryRoot)).toMatchObject({
       ok: true,
-      files: 4,
+      files: 5,
     });
   });
 

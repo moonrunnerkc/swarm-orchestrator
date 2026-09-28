@@ -155,6 +155,7 @@ const derivedNames: readonly RegExp[] = [
   /^run-transcript\.txt$/,
   /\.transcript\.txt$/,
   /^transcript\.jsonl$/,
+  /\.adjudication\.jsonl$/,
   /\.jsonl\.gz$/,
   /^candidates\.json$/,
 ];
