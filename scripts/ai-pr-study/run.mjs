@@ -180,6 +180,13 @@ for (const selected of frame.selected) {
       });
       continue;
     }
+    // Named refs for both commits: a fetched object with no ref is dropped by any clone or
+    // worktree the verifier makes of the workspace, and the base then reads as "not in the
+    // checkout"; a ref keeps it reachable.
+    // As branches: the verifier clones the workspace into its own checkout, and a clone
+    // carries branches and tags, not refs under any other name.
+    run("git", ["update-ref", "refs/heads/study-base", row.base], { cwd: clone });
+    run("git", ["update-ref", "refs/heads/study-head", row.head], { cwd: clone });
     const checkedOut = run("git", ["checkout", "--quiet", "--force", "--detach", row.head], {
       cwd: clone,
     });
@@ -246,8 +253,10 @@ for (const selected of frame.selected) {
       "--install",
     ];
     row.verifier.argv = ["npx", ...verifierArgs];
+    // From outside the clone: a repository's own .npmrc (a private registry, a scoped feed)
+    // must not decide where the verifier is fetched from.
     const verified = run("npx", verifierArgs, {
-      cwd: clone,
+      cwd: workingRoot,
       env: { PATH: process.env.PATH ?? "", HOME: homedir(), NO_COLOR: "1" },
       timeout: 3_600_000,
     });
@@ -296,9 +305,14 @@ for (const selected of frame.selected) {
         executionTrust: report.executionTrust ?? null,
         install: report.install ?? null,
         checks: Object.fromEntries(checks.map((check) => [check.id, check.status])),
-        originalSuiteGreen: checks
-          .filter((check) => check.severity === "blocking")
-          .every((check) => check.status === "passed" || check.status === "not-applicable"),
+        // Green only when something blocking was measured and passed, and nothing was refused:
+        // an empty check list, or a run refused before its checks, is not a green suite.
+        originalSuiteGreen:
+          report.refusal === null &&
+          checks.some((check) => check.severity === "blocking" && check.status === "passed") &&
+          checks
+            .filter((check) => check.severity === "blocking")
+            .every((check) => check.status === "passed" || check.status === "not-applicable"),
       },
     });
   } catch (cause) {
