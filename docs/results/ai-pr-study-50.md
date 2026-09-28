@@ -59,6 +59,8 @@ AI-written code in general and none about any tool that was not run.
 
 No blocked rows.
 
+No row was rerun after an infrastructure failure.
+
 ## Why rows stayed unjudged
 
 - 1: Check that the CI workflow file exists and contains all required elements

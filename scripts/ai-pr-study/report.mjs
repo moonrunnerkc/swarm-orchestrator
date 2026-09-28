@@ -33,6 +33,7 @@ const fetched = rows.filter((row) => row.outcome !== undefined);
 const executed = rows.filter((row) => row.outcome === "executed");
 const blocked = rows.filter((row) => row.outcome === "blocked");
 const pending = rows.filter((row) => row.outcome === "fetched");
+const rerun = rows.filter((row) => (row.infrastructureAttempts ?? []).length > 0);
 const green = executed.filter((row) => row.verdict?.originalSuiteGreen === true);
 // A check that only inspects text (grep, test -f, cat, diff) executes no behaviour; it is
 // reported apart and is not task truth under the protocol.
@@ -173,6 +174,17 @@ ${
         .sort()
         .map(([reason, count]) => `- ${count}: ${reason}`)
         .join("\n")
+}
+
+${
+  rerun.length === 0
+    ? "No row was rerun after an infrastructure failure."
+    : `Rerun after an infrastructure failure, each earlier attempt kept on its row under \`infrastructureAttempts\`: ${rerun
+        .map(
+          (row) =>
+            `row ${row.index} (${row.infrastructureAttempts.map((attempt) => attempt.classification).join("; ")})`,
+        )
+        .join(", ")}.`
 }
 
 ## Why rows stayed unjudged
