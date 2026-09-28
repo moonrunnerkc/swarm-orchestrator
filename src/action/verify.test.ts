@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { readActionContext } from "./environment.ts";
 import { verdictSchema } from "./verdict.ts";
-import { defaultDependencies, publishOutputs, runActionVerify } from "./verify.ts";
+import { decideResult, defaultDependencies, publishOutputs, runActionVerify } from "./verify.ts";
 
 const run = promisify(execFile);
 
@@ -183,5 +183,51 @@ describe("the Action's verify step", () => {
     await expect(
       readActionContext(runner.env).then((context) => runActionVerify(context, deps)),
     ).rejects.toThrow(/docker isolation/);
+  });
+});
+
+/**
+ * Three of sixteen dogfood repositories read "Not verified" while their verdict said
+ * "Regression: pass": their only failures were ones the base already had. The result follows
+ * the regression dimension; a failure the base did not have still refuses.
+ */
+describe("the Action's result from the verifier's report", () => {
+  it("is a regression-only pass when every failed check is inherited from the base", () => {
+    expect(
+      decideResult({
+        verified: false,
+        regression: "pass",
+        task: "unjudged",
+        refusal: null,
+        checks: [
+          { id: "tests", status: "failed", inheritedFromBase: true },
+          { id: "lint", status: "passed" },
+        ],
+      }),
+    ).toBe("regression-only");
+  });
+
+  it("is not verified when a failed check is the patch's own", () => {
+    expect(
+      decideResult({
+        verified: false,
+        regression: "fail",
+        task: "unjudged",
+        refusal: null,
+        checks: [{ id: "tests", status: "failed", inheritedFromBase: false }],
+      }),
+    ).toBe("not-verified");
+  });
+
+  it("is not verified when a check the base passed fails here even if regression reads pass", () => {
+    expect(
+      decideResult({
+        verified: false,
+        regression: "pass",
+        task: "unjudged",
+        refusal: null,
+        checks: [{ id: "lint", status: "failed" }],
+      }),
+    ).toBe("not-verified");
   });
 });
