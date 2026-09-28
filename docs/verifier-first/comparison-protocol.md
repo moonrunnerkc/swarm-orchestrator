@@ -128,3 +128,24 @@ digest are recorded beside the report.
   not as equal to B1. With 14 fork tasks of 79, the ten discordant pairs the frozen rule needs
   require ten of those fourteen to change held-back outcome under B1; the result states that
   ceiling beside the observed pairs.
+- **2026-09-28, the same rule for the 1.0.4 replay.** Rows 39 to 50 of the 1.0.4 replay, and
+  eight of its A2 runs, were refused while the host also ran Comparison B's verdicts: the
+  container runtime finished removals, or answered a containment probe, after the verifier's
+  15-second client deadline. Each was rerun once with the host otherwise idle and keeps its
+  failed attempt under `infrastructureAttempts`. A2 on row 14 (glincker/thesvg#1159) is refused
+  on 1.0.3 and 1.0.4 alike, and not for load: its held-back check is a text inspection whose
+  recorded path is the three files it greps joined by spaces, so A2 committed it under one file
+  name with spaces, and the verifier refuses a patch path git has to quote. The row stays refused
+  as recorded; the adjudication record is the instrument defect, and the refusal of quoted paths
+  is a verifier limitation, both named. The verifier source now retries removal and its confirmation three times
+  before refusing, which the next patch carries.
+- **2026-09-28, A2 judges the pull request's patch alone, registered before its next run.** The
+  1.0.4 replay showed the committed check (the 2026-09-28 amendment above) failing the
+  repository's own lint and format checks on the reviewer's style, which read as a regression of
+  the patch, and showed the verifier running the oracle outside the project environment, so a
+  `python -m pytest` check reached the image's interpreter and read as a rejection. From the
+  next A2 run the check is carried inside the oracle command and decoded into place when the
+  oracle runs (`patchIncludesCheck: false`), so A2 judges the same patch as A0 and A1. The
+  verifier fix (the oracle runs with the prepared `.venv/bin` and `node_modules/.bin` first on
+  PATH, and every oracle run is kept in the verdict) ships in the next patch; A2 rows measured
+  before it are superseded by a labelled replay on that patch and stay in their archives.
