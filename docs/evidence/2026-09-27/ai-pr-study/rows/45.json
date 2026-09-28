@@ -3,7 +3,7 @@
   "url": "https://github.com/glincker/thesvg/pull/1147",
   "repository": "glincker/thesvg",
   "number": 1147,
-  "title": "⚡ Bolt: O(1) icon lookup via Map in getIconBySlug",
+  "title": "\u26a1 Bolt: O(1) icon lookup via Map in getIconBySlug",
   "author": "google-labs-jules",
   "verifier": {
     "package": "swarm-verify",
@@ -37,7 +37,7 @@
   "head": "cbd9dc707a4a28af3678a5f9f1d101f7f64c5656",
   "mergeCommit": "573a939e6a608b2d2098127114cda5c90e06a209",
   "mergedAt": "2026-09-24T17:22:35Z",
-  "body": "💡 What: Replaced the O(N) `Array.prototype.find()` array traversal in `getIconBySlug` with an O(1) `Map` lookup. A new map `iconsBySlug` is pre-computed at the module level.\n🎯 Why: `getIconBySlug` is used in multiple places in the app (e.g., rendering single icon pages, looking up lineage and badge counterparts). With ~10,000 icons, an array traversal on every lookup causes unnecessary CPU overhead.\n📊 Impact: Reduces `getIconBySlug` execution time drastically. A benchmark of 10,000 lookups showed a reduction in execution time from ~2376ms to ~2.5ms (a roughly ~950x speedup).\n🔬 Measurement: Run a simple benchmark script repeatedly calling `getIconBySlug` before and after this change.\n\n---\n*PR created automatically by Jules for task [2341092471212367540](https://jules.google.com/task/2341092471212367540) started by @thegdsks*",
+  "body": "\ud83d\udca1 What: Replaced the O(N) `Array.prototype.find()` array traversal in `getIconBySlug` with an O(1) `Map` lookup. A new map `iconsBySlug` is pre-computed at the module level.\n\ud83c\udfaf Why: `getIconBySlug` is used in multiple places in the app (e.g., rendering single icon pages, looking up lineage and badge counterparts). With ~10,000 icons, an array traversal on every lookup causes unnecessary CPU overhead.\n\ud83d\udcca Impact: Reduces `getIconBySlug` execution time drastically. A benchmark of 10,000 lookups showed a reduction in execution time from ~2376ms to ~2.5ms (a roughly ~950x speedup).\n\ud83d\udd2c Measurement: Run a simple benchmark script repeatedly calling `getIconBySlug` before and after this change.\n\n---\n*PR created automatically by Jules for task [2341092471212367540](https://jules.google.com/task/2341092471212367540) started by @thegdsks*",
   "linkedIssues": [],
   "historicalChecks": [
     {
@@ -200,14 +200,5 @@
       "build": true
     }
   },
-  "wallMs": 122701,
-  "comparisonA2": {
-    "outcome": "blocked",
-    "reason": "the verifier exited 1 without a report: container swarm-1d4ac0c3-c961-4357-9388-64c15dd65d7a cleanup could not be confirmed; stop dispatch and repair this runtime resource",
-    "verifier": {
-      "package": "swarm-verify",
-      "version": "1.0.2"
-    },
-    "wallMs": 32480
-  }
+  "wallMs": 122701
 }

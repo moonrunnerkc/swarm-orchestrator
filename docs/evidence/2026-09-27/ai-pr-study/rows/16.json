@@ -3,7 +3,7 @@
   "url": "https://github.com/glincker/thesvg/pull/1138",
   "repository": "glincker/thesvg",
   "number": 1138,
-  "title": "⚡ Bolt: Optimize icon search filter in Google 2026 landing component",
+  "title": "\u26a1 Bolt: Optimize icon search filter in Google 2026 landing component",
   "author": "google-labs-jules",
   "verifier": {
     "package": "swarm-verify",
@@ -37,7 +37,7 @@
   "head": "63a2c15b641774071f4cf7e762dbb2f586403b31",
   "mergeCommit": "ebde198695c67369da82ce9bae85316944e5013a",
   "mergedAt": "2026-09-23T03:04:40Z",
-  "body": "💡 **What:** Optimized the icon filtering logic in `Google2026Landing`. Extracted string processing (`.toLowerCase()`, `.join()`) and math derivations (`colorBucket()`) into a standalone `useMemo` (`processedHeroIcons`) evaluated once per manifest update, instead of once per keystroke.\n🎯 **Why:** Creating string arrays and running `colorBucket` math on every character typed for thousands of items is a heavy bottleneck on the main JavaScript thread, causing visual stuttering while searching.\n📊 **Impact:** Reduces redundant memory allocations per keystroke, avoiding O(N) array formations (`.filter().map()`) and `N` string concatenation/math executions by caching the search payload.\n🔬 **Measurement:** Search typing in the Google 2026 landing page is noticeably faster and uses less CPU time. You can verify the improvement by utilizing a React profiler while typing quickly in the search input on the `/2026` route.\n\n---\n*PR created automatically by Jules for task [7904409556342666974](https://jules.google.com/task/7904409556342666974) started by @thegdsks*",
+  "body": "\ud83d\udca1 **What:** Optimized the icon filtering logic in `Google2026Landing`. Extracted string processing (`.toLowerCase()`, `.join()`) and math derivations (`colorBucket()`) into a standalone `useMemo` (`processedHeroIcons`) evaluated once per manifest update, instead of once per keystroke.\n\ud83c\udfaf **Why:** Creating string arrays and running `colorBucket` math on every character typed for thousands of items is a heavy bottleneck on the main JavaScript thread, causing visual stuttering while searching.\n\ud83d\udcca **Impact:** Reduces redundant memory allocations per keystroke, avoiding O(N) array formations (`.filter().map()`) and `N` string concatenation/math executions by caching the search payload.\n\ud83d\udd2c **Measurement:** Search typing in the Google 2026 landing page is noticeably faster and uses less CPU time. You can verify the improvement by utilizing a React profiler while typing quickly in the search input on the `/2026` route.\n\n---\n*PR created automatically by Jules for task [7904409556342666974](https://jules.google.com/task/7904409556342666974) started by @thegdsks*",
   "linkedIssues": [],
   "historicalChecks": [
     {
@@ -194,20 +194,5 @@
     },
     "image": "node:24-bookworm",
     "finishedAt": "2026-09-28T04:44:29.965Z"
-  },
-  "comparisonA2": {
-    "outcome": "executed",
-    "verified": false,
-    "refusal": null,
-    "task": "rejected",
-    "regression": "unmeasured",
-    "oracleReach": "unmeasured",
-    "oracleBond": "not-bonded",
-    "exit": 1,
-    "verifier": {
-      "package": "swarm-verify",
-      "version": "1.0.2"
-    },
-    "wallMs": 106798
   }
 }

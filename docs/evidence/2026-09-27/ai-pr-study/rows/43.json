@@ -37,7 +37,7 @@
   "head": "91a6c14f2655353820ae11fdc3f4ba0d7613234a",
   "mergeCommit": "cd4205d58c893b2a0ef30b2284ff46279264610d",
   "mergedAt": "2026-09-25T09:32:09Z",
-  "body": "## Intent\n\nKeep the test suites added after #2447 honest: every remaining assertion should have an independent oracle and could still fail if a live path regresses.\n\n## Why\n\nDaily leftover pass after #2557–#2595. Agents left instructional-copy pins, glob-constructor echo, husky file-content pins, and extra cases that only restate a path already covered. Those helped while verifying; they are not worth keeping.\n\n## Summary\n\n- DELETE `agent-guidance.node.test.ts` — catalog + docs-nav already cover the new guide; capability/instruction `toContain('guide:agent_guidance')` was instructional-copy pinning.\n- COMBINE webhookSyntheticDispatch request/params/reject-caller cases; keep secret-vs-redacted `url_secret` absence.\n- COMBINE synthetic dispatch request+params and reject paths; DELETE the extra “burns automation usage” case (same `dispatchWebhookInvocation` call as the happy path).\n- DELETE extra empty/`Mailchimp`/`grant/mailchimp` `PackageNameInputError` inventory cases (the class is already asserted on the live mismatch/invalid leaves).\n- DELETE startup-bundle name inventory and husky hook file-content pins; keep positive-integer budget + invalid-ceiling reject, and the real docs-vs-code hook workflows.\n- EDIT wrangler allowlist expects to live generated module names + no-wildcard/stray check instead of `expectedEsModuleGlobs()` echo; un-export the unused glob constructors.\n- DELETE control-kody usage-line pin and the extra 401-without-cookie-file case (stale-cookie refresh already flips that state).\n\nKEEP: KODY-82 D1_ERROR-prefixed DO reset drop/retry, KODY-83 PackageNameInputError off Sentry, control-kody POST-first login and public `/pricing` without `/auth`, git-hook docs-only skip + rename still typechecks, webhook minted/mode/owner/payload/persist-delivered oracles.\n\n## Testing\n\n- `npm run format` before commit; pre-commit oxfmt/oxlint + typecheck + migrations:check\n- Targeted: 8 node-unit files (28 tests)\n- `test:push` on push: node-unit 1070 files / 3506 tests; workers-unit 98 files / 378 tests\n\n## System changes\n\nTest-only plus un-export of unused glob helpers. No production behavior change. Risk: low.\n\n<!-- system-recap:start -->\n\n<details>\n<summary>System recap — <b>composes existing primitives</b> (low risk)</summary>\n\n**Mode:** recap · **Base:** `main` @ `bd31f2be` · **Head:** `91a6c14f`\n\n**Classification:** composes — no primitives added or changed; this PR only deletes or rewrites leftover tests.\n\n### Primitives touched\n\n| Primitive | Group | Impact |\n| --- | --- | --- |\n| `webhooks` | assistant | composes — combine synthetic dispatch workflows, drop extra usage-helper case |\n| `saved-packages` | assistant | composes — drop extra PackageNameInputError inventory cases |\n\n### Change flow\n\nLeftover tests from yesterday's main commits are deleted or rewritten so remaining asserts have an independent oracle.\n\n```mermaid\nsequenceDiagram\n\tactor Reviewer\n\tparticipant webhooks as webhooks\n\tparticipant savedPackages as saved-packages\n\tReviewer->>webhooks: drop extra usage-helper case and combine fixture/reject workflows\n\tReviewer->>savedPackages: drop extra PackageNameInputError inventory cases\n```\n\n</details>\n\n<!-- system-recap:end -->\n\n<div><a href=\"https://cursor.com/agents/bc-5d2e4258-5187-4818-85dd-c9cd74a12da5?cursor_ref=pr_footer&cursor_cta=open_in_web\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/automations/de8bf884-f2d6-414b-a44e-724112ee451e\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/view-automation-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/view-automation-light.png\"><img alt=\"View Automation\" width=\"141\" height=\"28\" src=\"https://cursor.com/assets/images/view-automation-dark.png\"></picture></a>&nbsp;</div>\n\n<!-- CURSOR_SUMMARY -->\n---\n\n> [!NOTE]\n> **Low Risk**\n> Test-only deletions and refactors with un-export of unused allowlist helpers; no runtime code paths change.\n> \n> **Overview**\n> This PR **trims leftover regression tests** so remaining assertions stand on their own rather than echoing copy, file contents, or paths already covered elsewhere. **No production behavior changes**—only test rewrites and removal of unused `expectedEsModuleGlobs` / `expectedCompiledWasmGlobs` helpers from `worker-additional-module-allowlist.ts`.\n> \n> **Worker / webhooks:** Deletes the `agent-guidance` catalog/docs-nav/instruction pinning file. Merges `webhookSyntheticDispatch` and `dispatchSyntheticWebhookForUser` cases into fewer tests while keeping oracles for synthetic metadata, `url`/`url_secret` redaction, fixture stamping, minted/mode/owner/payload rejection, and caller-context guards. Drops redundant package-name `PackageNameInputError` inventory cases.\n> \n> **Tooling tests:** Combines startup bundle budget checks (drops fixed worker-name list). Drops control-kody usage-string and duplicate 401-without-cookie coverage. Narrows `isDocsOnlyHookPath` examples and removes Husky hook file-content pins. Wrangler allowlist tests now assert each known generated module appears in globs and wildcards/stray modules are absent, instead of matching a constructed glob list exactly.\n> \n> <sup>Reviewed by [Cursor Bugbot](https://cursor.com/bugbot) for commit 91a6c14f2655353820ae11fdc3f4ba0d7613234a. Bugbot is set up for automated code reviews on this repo. Configure [here](https://www.cursor.com/dashboard/bugbot).</sup>\n<!-- /CURSOR_SUMMARY -->",
+  "body": "## Intent\n\nKeep the test suites added after #2447 honest: every remaining assertion should have an independent oracle and could still fail if a live path regresses.\n\n## Why\n\nDaily leftover pass after #2557\u2013#2595. Agents left instructional-copy pins, glob-constructor echo, husky file-content pins, and extra cases that only restate a path already covered. Those helped while verifying; they are not worth keeping.\n\n## Summary\n\n- DELETE `agent-guidance.node.test.ts` \u2014 catalog + docs-nav already cover the new guide; capability/instruction `toContain('guide:agent_guidance')` was instructional-copy pinning.\n- COMBINE webhookSyntheticDispatch request/params/reject-caller cases; keep secret-vs-redacted `url_secret` absence.\n- COMBINE synthetic dispatch request+params and reject paths; DELETE the extra \u201cburns automation usage\u201d case (same `dispatchWebhookInvocation` call as the happy path).\n- DELETE extra empty/`Mailchimp`/`grant/mailchimp` `PackageNameInputError` inventory cases (the class is already asserted on the live mismatch/invalid leaves).\n- DELETE startup-bundle name inventory and husky hook file-content pins; keep positive-integer budget + invalid-ceiling reject, and the real docs-vs-code hook workflows.\n- EDIT wrangler allowlist expects to live generated module names + no-wildcard/stray check instead of `expectedEsModuleGlobs()` echo; un-export the unused glob constructors.\n- DELETE control-kody usage-line pin and the extra 401-without-cookie-file case (stale-cookie refresh already flips that state).\n\nKEEP: KODY-82 D1_ERROR-prefixed DO reset drop/retry, KODY-83 PackageNameInputError off Sentry, control-kody POST-first login and public `/pricing` without `/auth`, git-hook docs-only skip + rename still typechecks, webhook minted/mode/owner/payload/persist-delivered oracles.\n\n## Testing\n\n- `npm run format` before commit; pre-commit oxfmt/oxlint + typecheck + migrations:check\n- Targeted: 8 node-unit files (28 tests)\n- `test:push` on push: node-unit 1070 files / 3506 tests; workers-unit 98 files / 378 tests\n\n## System changes\n\nTest-only plus un-export of unused glob helpers. No production behavior change. Risk: low.\n\n<!-- system-recap:start -->\n\n<details>\n<summary>System recap \u2014 <b>composes existing primitives</b> (low risk)</summary>\n\n**Mode:** recap \u00b7 **Base:** `main` @ `bd31f2be` \u00b7 **Head:** `91a6c14f`\n\n**Classification:** composes \u2014 no primitives added or changed; this PR only deletes or rewrites leftover tests.\n\n### Primitives touched\n\n| Primitive | Group | Impact |\n| --- | --- | --- |\n| `webhooks` | assistant | composes \u2014 combine synthetic dispatch workflows, drop extra usage-helper case |\n| `saved-packages` | assistant | composes \u2014 drop extra PackageNameInputError inventory cases |\n\n### Change flow\n\nLeftover tests from yesterday's main commits are deleted or rewritten so remaining asserts have an independent oracle.\n\n```mermaid\nsequenceDiagram\n\tactor Reviewer\n\tparticipant webhooks as webhooks\n\tparticipant savedPackages as saved-packages\n\tReviewer->>webhooks: drop extra usage-helper case and combine fixture/reject workflows\n\tReviewer->>savedPackages: drop extra PackageNameInputError inventory cases\n```\n\n</details>\n\n<!-- system-recap:end -->\n\n<div><a href=\"https://cursor.com/agents/bc-5d2e4258-5187-4818-85dd-c9cd74a12da5?cursor_ref=pr_footer&cursor_cta=open_in_web\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/automations/de8bf884-f2d6-414b-a44e-724112ee451e\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/view-automation-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/view-automation-light.png\"><img alt=\"View Automation\" width=\"141\" height=\"28\" src=\"https://cursor.com/assets/images/view-automation-dark.png\"></picture></a>&nbsp;</div>\n\n<!-- CURSOR_SUMMARY -->\n---\n\n> [!NOTE]\n> **Low Risk**\n> Test-only deletions and refactors with un-export of unused allowlist helpers; no runtime code paths change.\n> \n> **Overview**\n> This PR **trims leftover regression tests** so remaining assertions stand on their own rather than echoing copy, file contents, or paths already covered elsewhere. **No production behavior changes**\u2014only test rewrites and removal of unused `expectedEsModuleGlobs` / `expectedCompiledWasmGlobs` helpers from `worker-additional-module-allowlist.ts`.\n> \n> **Worker / webhooks:** Deletes the `agent-guidance` catalog/docs-nav/instruction pinning file. Merges `webhookSyntheticDispatch` and `dispatchSyntheticWebhookForUser` cases into fewer tests while keeping oracles for synthetic metadata, `url`/`url_secret` redaction, fixture stamping, minted/mode/owner/payload rejection, and caller-context guards. Drops redundant package-name `PackageNameInputError` inventory cases.\n> \n> **Tooling tests:** Combines startup bundle budget checks (drops fixed worker-name list). Drops control-kody usage-string and duplicate 401-without-cookie coverage. Narrows `isDocsOnlyHookPath` examples and removes Husky hook file-content pins. Wrangler allowlist tests now assert each known generated module appears in globs and wildcards/stray modules are absent, instead of matching a constructed glob list exactly.\n> \n> <sup>Reviewed by [Cursor Bugbot](https://cursor.com/bugbot) for commit 91a6c14f2655353820ae11fdc3f4ba0d7613234a. Bugbot is set up for automated code reviews on this repo. Configure [here](https://www.cursor.com/dashboard/bugbot).</sup>\n<!-- /CURSOR_SUMMARY -->",
   "linkedIssues": [],
   "historicalChecks": [
     {
@@ -49,15 +49,15 @@
       "conclusion": "SKIPPED"
     },
     {
-      "name": "🧹 Static",
+      "name": "\ud83e\uddf9 Static",
       "conclusion": "SKIPPED"
     },
     {
-      "name": "🔎 Deploy Preview Resources",
+      "name": "\ud83d\udd0e Deploy Preview Resources",
       "conclusion": "SKIPPED"
     },
     {
-      "name": "🔎 Deploy Preview Resources",
+      "name": "\ud83d\udd0e Deploy Preview Resources",
       "conclusion": "SKIPPED"
     },
     {
@@ -69,75 +69,75 @@
       "conclusion": "SUCCESS"
     },
     {
-      "name": "🧹 Static",
+      "name": "\ud83e\uddf9 Static",
       "conclusion": "SUCCESS"
     },
     {
-      "name": "✍️ CLA",
+      "name": "\u270d\ufe0f CLA",
       "conclusion": "SUCCESS"
     },
     {
-      "name": "🔎 Deploy Preview Resources",
+      "name": "\ud83d\udd0e Deploy Preview Resources",
       "conclusion": "SUCCESS"
     },
     {
-      "name": "🧪 Node",
+      "name": "\ud83e\uddea Node",
       "conclusion": "SKIPPED"
     },
     {
-      "name": "📝 Record CLA",
+      "name": "\ud83d\udcdd Record CLA",
       "conclusion": "SKIPPED"
     },
     {
-      "name": "🧹 Cleanup Preview Resources",
+      "name": "\ud83e\uddf9 Cleanup Preview Resources",
       "conclusion": "SKIPPED"
     },
     {
-      "name": "🧹 Cleanup Preview Resources",
+      "name": "\ud83e\uddf9 Cleanup Preview Resources",
       "conclusion": "SKIPPED"
     },
     {
-      "name": "🧪 Node",
+      "name": "\ud83e\uddea Node",
       "conclusion": "SUCCESS"
     },
     {
-      "name": "🧹 Cleanup Preview Resources",
+      "name": "\ud83e\uddf9 Cleanup Preview Resources",
       "conclusion": "SUCCESS"
     },
     {
-      "name": "☁️ Workers",
+      "name": "\u2601\ufe0f Workers",
       "conclusion": "SKIPPED"
     },
     {
-      "name": "☁️ Workers",
+      "name": "\u2601\ufe0f Workers",
       "conclusion": "SUCCESS"
     },
     {
-      "name": "🔌 MCP",
+      "name": "\ud83d\udd0c MCP",
       "conclusion": "SKIPPED"
     },
     {
-      "name": "🔌 MCP",
+      "name": "\ud83d\udd0c MCP",
       "conclusion": "SUCCESS"
     },
     {
-      "name": "🎭 E2E",
+      "name": "\ud83c\udfad E2E",
       "conclusion": "SKIPPED"
     },
     {
-      "name": "🎭 E2E",
+      "name": "\ud83c\udfad E2E",
       "conclusion": "SUCCESS"
     },
     {
-      "name": "✅ Validate",
+      "name": "\u2705 Validate",
       "conclusion": "SKIPPED"
     },
     {
-      "name": "✅ Validate",
+      "name": "\u2705 Validate",
       "conclusion": "SUCCESS"
     },
     {
-      "name": "🚧 Merge conflicts",
+      "name": "\ud83d\udea7 Merge conflicts",
       "conclusion": "FAILURE"
     },
     {
@@ -262,14 +262,5 @@
       "tests": true
     }
   },
-  "wallMs": 391962,
-  "comparisonA2": {
-    "outcome": "blocked",
-    "reason": "the verifier exited 1 without a report: container swarm-6ea2ac3e-b823-4dd4-bd8b-1a10751331a1 cleanup could not be confirmed; stop dispatch and repair this runtime resource",
-    "verifier": {
-      "package": "swarm-verify",
-      "version": "1.0.2"
-    },
-    "wallMs": 31524
-  }
+  "wallMs": 391962
 }

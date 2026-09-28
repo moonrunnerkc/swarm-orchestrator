@@ -37,7 +37,7 @@
   "head": "3808a39b0e26f527177b0a17de4cddebc92b2212",
   "mergeCommit": "6112306b90ce6c23741df79b815a2af5f54e3268",
   "mergedAt": "2026-09-25T19:10:01Z",
-  "body": "Adds the Punisher (パニッシャー) role to the Neutral faction with task-unlocked kill capability, kill cooldown modifiers, custom options, win conditions, localization, and unit tests.\n\n---\n*PR created automatically by Jules for task [6974800899265863175](https://jules.google.com/task/6974800899265863175) started by @yukieiji*",
+  "body": "Adds the Punisher (\u30d1\u30cb\u30c3\u30b7\u30e3\u30fc) role to the Neutral faction with task-unlocked kill capability, kill cooldown modifiers, custom options, win conditions, localization, and unit tests.\n\n---\n*PR created automatically by Jules for task [6974800899265863175](https://jules.google.com/task/6974800899265863175) started by @yukieiji*",
   "linkedIssues": [],
   "historicalChecks": [
     {
@@ -153,7 +153,7 @@
     "startedAt": "2026-09-28T04:49:04.621Z",
     "status": "requirement-met",
     "trace": null,
-    "requirement": "Adds the Punisher (パニッシャー) role to the Neutral faction with task-unlocked kill capability, kill cooldown modifiers, custom options, win conditions, localization, and unit tests.",
+    "requirement": "Adds the Punisher (\u30d1\u30cb\u30c3\u30b7\u30e3\u30fc) role to the Neutral faction with task-unlocked kill capability, kill cooldown modifiers, custom options, win conditions, localization, and unit tests.",
     "check": {
       "path": "check_pr_1067.sh",
       "command": "bash -c '\nset -e\n\n# 1. Verify Punisher role implementation exists and is Neutral\ngrep -q \"public sealed class Punisher\" ExtremeRoles/Roles/Solo/Neutral/Punisher.cs || { echo \"FAIL: Punisher class missing\"; exit 1; }\ngrep -q \"RoleArgs.BuildNeutral\" ExtremeRoles/Roles/Solo/Neutral/Punisher.cs || { echo \"FAIL: Not a Neutral role\"; exit 1; }\n\n# 2. Verify task-unlocked kill capability & cooldown modifiers\ngrep -q \"requiredTaskNum\" ExtremeRoles/Roles/Solo/Neutral/Punisher.cs || { echo \"FAIL: Task unlock logic missing\"; exit 1; }\ngrep -q \"taskKillCoolReduce\" ExtremeRoles/Roles/Solo/Neutral/Punisher.cs || grep -q \"nonImpostorKillCoolIncrease\" ExtremeRoles/Roles/Solo/Neutral/Punisher.cs || { echo \"FAIL: Cooldown modifiers missing\"; exit 1; }\n\n# 3. Verify custom options\ngrep -q \"CreateSpecificOption\" ExtremeRoles/Roles/Solo/Neutral/Punisher.cs || { echo \"FAIL: Custom options missing\"; exit 1; }\n\n# 4. Verify registration & win conditions in manager\ngrep -q \"ExtremeRoleId.Punisher\" ExtremeRoles/Roles/ExtremeRoleManager.cs || { echo \"FAIL: ID missing in manager\"; exit 1; }\ngrep -q \"new Punisher()\" ExtremeRoles/Roles/ExtremeRoleManager.cs || { echo \"FAIL: Instantiation missing\"; exit 1; }\ngrep -q \"PunisherKilledImpostor\" ExtremeRoles/Roles/ExtremeRoleManager.cs || { echo \"FAIL: Win reason enum missing\"; exit 1; }\n\n# 5. Verify win checker handles Punisher\ngrep -q \"Punisher.*PunisherKilledImpostor\" ExtremeRoles/Module/GameEnd/NeutralSpecialWinChecker.cs || { echo \"FAIL: Win checker missing\"; exit 1; }\n\n# 6. Verify localization across all required languages\nfor lang in \"\" \".en-US\" \".fr-FR\" \".zh-Hans\" \".zh-Hant\"; do\n  f=\"ExtremeRoles/Translation/resx/Neutral${lang}.resx\"\n  [ -f \"$f\" ] || { echo \"FAIL: $f missing\"; exit 1; }\n  grep -q \"Punisher\" \"$f\" || { echo \"FAIL: Translation missing in $f\"; exit 1; }\ndone\n\n# 7. Verify unit tests exist\n[ -f \"ExtremeRoles.UnitTest/Roles/Solo/Neutral/PunisherTests.cs\" ] || { echo \"FAIL: PunisherTests.cs missing\"; exit 1; }\n\necho \"PASS: All acceptance checks for PR #1067 passed.\"\n'",
@@ -177,20 +177,5 @@
     },
     "image": "ghcr.io/astral-sh/uv:python3.12-bookworm",
     "finishedAt": "2026-09-28T04:50:43.257Z"
-  },
-  "comparisonA2": {
-    "outcome": "executed",
-    "verified": false,
-    "refusal": null,
-    "task": "accepted",
-    "regression": "unmeasured",
-    "oracleReach": "unmeasured",
-    "oracleBond": "not-bonded",
-    "exit": 1,
-    "verifier": {
-      "package": "swarm-verify",
-      "version": "1.0.2"
-    },
-    "wallMs": 9792
   }
 }
