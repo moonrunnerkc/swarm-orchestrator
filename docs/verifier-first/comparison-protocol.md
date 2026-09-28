@@ -125,6 +125,6 @@ digest are recorded beside the report.
   repairs were capped. It stops when regression passes and the visible oracle still accepts. Each
   arm's final patch is scored on the held-back half with the prefix's scorer. No mined task
   carries a requirement contract, so B2 has nothing to add and is reported as not applicable,
-  not as equal to B1. With 14 fork tasks of 79, this design cannot reach the ten discordant
-  pairs the frozen rule needs; it is run for the observed pairs, and that ceiling is stated with
-  the result.
+  not as equal to B1. With 14 fork tasks of 79, the ten discordant pairs the frozen rule needs
+  require ten of those fourteen to change held-back outcome under B1; the result states that
+  ceiling beside the observed pairs.
