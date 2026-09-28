@@ -166,13 +166,17 @@ it("chooses the pnpm major from an unpinned lockfile's format", () => {
   expect(pnpmForLockfileText("settings: {}\n")).toBe("latest");
 });
 
-/** A project that keeps its test runner in a non-default dependency group is still run. */
-it("installs every dependency group of a uv project", () => {
+/**
+ * A project that keeps its test runner in a non-default dependency group, or in a `dev` extra as
+ * the older layout does, is still run.
+ */
+it("installs every dependency group and every extra of a uv project", () => {
   expect(lockfileInstallerArgv("uv.lock")).toEqual([
     "uv",
     "sync",
     "--locked",
     "--all-groups",
+    "--all-extras",
     "--no-install-project",
   ]);
 });

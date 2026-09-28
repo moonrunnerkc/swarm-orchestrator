@@ -11,6 +11,16 @@
   is inherited. A failure the base did not have still refuses. The verdict document's format is
   unchanged.
 
+### Fixed
+
+- **A uv project's extras are installed too** by the authorized lockfile install
+  (`uv sync --locked --all-groups --all-extras --no-install-project`). 1.0.3 left extras out on
+  the reasoning that they are runtime features. The study's replay on 1.0.3 showed that reasoning
+  wrong for the older layout that keeps pytest, ruff and mypy in a `dev` extra: every row from
+  those projects read "no test ran", and the held-back check was reported as failing on heads
+  where it passes once pytest is present. A lockfile declaring conflicting extras makes uv refuse,
+  and that is reported as a failed install.
+
 ## 1.0.3 - 2026-09-28
 
 What the AI-authored pull request study's first complete run through 1.0.2 established, fixed
