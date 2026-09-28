@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { lstat, realpath } from "node:fs/promises";
-import { isAbsolute, relative } from "node:path";
+import { lstat, mkdir, realpath, rm } from "node:fs/promises";
+import { homedir } from "node:os";
+import { isAbsolute, join, relative } from "node:path";
 import { overlaidEnvironment } from "./child-environment.ts";
 import { containerImageSchema } from "./container-image.ts";
 import type { IsolationBackend } from "./execution-mode.ts";
@@ -38,6 +39,15 @@ export interface ContainerBackendOptions {
 }
 
 const workspaceMountPoint = "/workspace";
+
+/**
+ * Where a run's scratch directory lives on the host: under the person's home, which a desktop
+ * container runtime shares with containers where the system temporary directory is not, and
+ * outside every workspace.
+ */
+export function scratchRoot(): string {
+  return join(homedir(), ".swarm", "scratch");
+}
 const environmentNames = ["LANG", "TZ", "PLAYWRIGHT_BROWSERS_PATH"] as const;
 
 export function createContainerBackend(options: ContainerBackendOptions): IsolationBackend {
@@ -152,6 +162,7 @@ export function createContainerBackend(options: ContainerBackendOptions): Isolat
       await ensureImage(execute, options.workspaceRoot);
       const deadline = Date.now() + runOptions.timeoutMs;
       const identity = `swarm-${randomUUID()}`;
+      const scratch = join(scratchRoot(), identity);
       const runtimeOptions = {
         cwd: options.workspaceRoot,
         env: containerClientEnvironment(),
@@ -165,6 +176,8 @@ export function createContainerBackend(options: ContainerBackendOptions): Isolat
       let createdTimedOut = false;
       let createdStderr = "";
       try {
+        // Created inside the try, so every exit from here passes the removal below.
+        await mkdir(scratch, { recursive: true, mode: 0o700 });
         const created = await execute(
           options.runtime,
           [
@@ -181,13 +194,12 @@ export function createContainerBackend(options: ContainerBackendOptions): Isolat
             "--read-only",
             `--volume=${options.workspaceRoot}:${workspaceMountPoint}:rw`,
             ...readOnlyMounts,
-            // Executable, because a lockfile install that fetches the declared package manager
-            // through npm unpacks it under the scratch directory and runs it from there; the
-            // workspace mount is executable already, so this widens nothing a candidate holds.
-            // Sized for a real install: HOME and TMPDIR are here, so npm's and uv's caches are
-            // too, and 256 MB left a lockfile with a native wheel or a large tree failing with
-            // "no space left on device". A tmpfs takes only what is written.
-            "--tmpfs=/tmp:rw,exec,size=4g",
+            // The scratch space is a directory on the host, mounted at /tmp, not a tmpfs: HOME
+            // and TMPDIR inside the container are here, so npm's and uv's caches are too, and
+            // a tmpfs is charged to the container's memory limit, which killed every large
+            // install (exit 137) once the cache passed the 2 GB cap. It is owned by this run,
+            // executable (a fetched package manager unpacks and runs here), and removed after.
+            `--volume=${scratch}:/tmp:rw`,
             `--workdir=${workspaceMountPoint}${subdirectory ? `/${subdirectory}` : ""}`,
             `--user=${options.user}`,
             "--cap-drop=ALL",
@@ -230,7 +242,12 @@ export function createContainerBackend(options: ContainerBackendOptions): Isolat
               )
             : created;
       } finally {
-        await execute(options.runtime, ["rm", "--force", identity], runtimeOptions);
+        // The scratch directory goes whatever the runtime's removal did or threw.
+        try {
+          await execute(options.runtime, ["rm", "--force", identity], runtimeOptions);
+        } finally {
+          await rm(scratch, { recursive: true, force: true });
+        }
         const inspected = await execute(
           options.runtime,
           ["ps", "--all", "--quiet", "--filter", `name=^/${identity}$`],

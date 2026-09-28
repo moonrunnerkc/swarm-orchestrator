@@ -1,3 +1,5 @@
+import { rm } from "node:fs/promises";
+import { join } from "node:path";
 import { z } from "zod";
 import { readSessionEvidence } from "../durable/session-evidence.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
@@ -7,6 +9,7 @@ import {
   type ContainerBackendOptions,
   containerClientEnvironment,
   createContainerBackend,
+  scratchRoot,
 } from "./container-backend.ts";
 import { runProcessGroup } from "./run-process.ts";
 
@@ -79,6 +82,9 @@ export async function repairRuntimeResources(
       throw new Error(`cannot inspect ${resource.identity}; runtime repair is incomplete`);
     if (present.stdout.trim() === "") {
       removed.push(resource.identity);
+      // The run's scratch directory on the host goes with its container: a harness that died
+      // between creating one and removing it left both behind.
+      await rm(join(scratchRoot(), resource.identity), { recursive: true, force: true });
       continue;
     }
     const labelled = await execute(
