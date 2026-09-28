@@ -184,7 +184,10 @@ export function createContainerBackend(options: ContainerBackendOptions): Isolat
             // Executable, because a lockfile install that fetches the declared package manager
             // through npm unpacks it under the scratch directory and runs it from there; the
             // workspace mount is executable already, so this widens nothing a candidate holds.
-            "--tmpfs=/tmp:rw,exec,size=256m",
+            // Sized for a real install: HOME and TMPDIR are here, so npm's and uv's caches are
+            // too, and 256 MB left a lockfile with a native wheel or a large tree failing with
+            // "no space left on device". A tmpfs takes only what is written.
+            "--tmpfs=/tmp:rw,exec,size=4g",
             `--workdir=${workspaceMountPoint}${subdirectory ? `/${subdirectory}` : ""}`,
             `--user=${options.user}`,
             "--cap-drop=ALL",
