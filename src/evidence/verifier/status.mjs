@@ -148,7 +148,22 @@ function namedTests(observation) {
     };
   }
   const text = `${stdout}\n${observation.stderr ?? ""}`;
-  if (!/^TAP version \d+/m.test(text)) return null;
+  if (!/^TAP version \d+/m.test(text)) {
+    // Vitest's text reporters name every failure on a FAIL line beside their Test Files summary.
+    const plain = text
+      .split(escapeCharacter)
+      .map((part, index) => (index === 0 ? part : part.replace(/^\[[0-9;]*[A-Za-z]/, "")))
+      .join("");
+    const summary = /^\s*Test Files\s+(.+)$/m.exec(plain)?.[1];
+    if (summary === undefined) return null;
+    const failed = [];
+    for (const line of plain.split("\n")) {
+      const named = /^\s*FAIL\s+(\S.*?)\s*$/.exec(line)?.[1];
+      if (named && !failed.includes(named)) failed.push(named);
+    }
+    if (failed.length === 0 && /\d+\s+failed/.test(summary)) return null;
+    return { failed, passed: [] };
+  }
   const failed = [];
   const passed = [];
   for (const line of text.split("\n")) {
