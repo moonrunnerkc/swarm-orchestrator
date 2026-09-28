@@ -431,10 +431,30 @@ for (const name of readdirSync(rowsRoot)
     if (lockfileChanged)
       executeCheck(clone, image, row.head, { ...check, command: "true" }, true, manifest);
     else run("git", ["checkout", "--quiet", "--force", "--detach", row.head], { cwd: clone });
-    const baseFails = onBase.ran && onBase.exitCode !== 0;
+    // A failure is the check's verdict only when the check itself ran: a runner the image
+    // does not hold, or a module the environment lacks, fails every commit the same way and
+    // establishes nothing. Likewise a check that fails identically on both commits (same exit
+    // status, same last line) did not discriminate between them.
+    const lastLine = (side) =>
+      `${side.stdout ?? ""}\n${side.stderr ?? ""}`.trim().split("\n").filter(Boolean).at(-1) ?? "";
+    const couldNotRun = (side) =>
+      /No module named|command not found|Cannot find module|not found\s*$|ModuleNotFoundError|ENOENT/.test(
+        `${side.stdout ?? ""}\n${side.stderr ?? ""}`,
+      );
+    const sameFailure =
+      onBase.ran &&
+      onHead.ran &&
+      onBase.exitCode !== 0 &&
+      onHead.exitCode !== 0 &&
+      onBase.exitCode === onHead.exitCode &&
+      lastLine(onBase) === lastLine(onHead);
+    const runnerMissing =
+      (onHead.ran && onHead.exitCode !== 0 && couldNotRun(onHead)) ||
+      (onBase.ran && onBase.exitCode !== 0 && couldNotRun(onBase));
+    const baseFails = onBase.ran && onBase.exitCode !== 0 && !sameFailure && !runnerMissing;
     const headPasses = onHead.ran && onHead.exitCode === 0;
     let trace = null;
-    if (onBase.ran && onHead.ran && baseFails && !headPasses) {
+    if (onBase.ran && onHead.ran && baseFails && !headPasses && !sameFailure && !runnerMissing) {
       trace = await traceFailure(requirement, `${onHead.stdout}\n${onHead.stderr}`.trim());
       record({ kind: "trace", ...trace });
     }
@@ -452,11 +472,15 @@ for (const name of readdirSync(rowsRoot)
       status,
       reason:
         status === "unjudged"
-          ? !baseFails
-            ? "the check does not fail on the base, so it does not test the requirement"
-            : trace !== null
-              ? "the head fails an assertion that is not stated in the requirement, so the failure is the reviewer's addition"
-              : "the check could not be executed on both commits"
+          ? runnerMissing
+            ? "the check could not run: its runner or a module is missing from the environment, so nothing about the requirement was shown"
+            : sameFailure
+              ? "the check fails the same way on the base and the head, so it did not discriminate between them"
+              : !baseFails
+                ? "the check does not fail on the base, so it does not test the requirement"
+                : trace !== null
+                  ? "the head fails an assertion that is not stated in the requirement, so the failure is the reviewer's addition"
+                  : "the check could not be executed on both commits"
           : check.reason,
       trace,
       requirement: check.requirement ?? null,

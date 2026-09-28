@@ -139,3 +139,12 @@ study of a convenience population selected by the rule above.
   leaves the row unjudged, since the protocol counts only a demonstrated violated requirement.
   Implementation: `scripts/ai-pr-study/adjudicate.mjs`; the verifier arm never reads this
   arm's result and this arm never reads the verifier's verdict.
+- **2026-09-28, adjudication order and two more refusals, before any selected pull request's
+  adjudication counted.** A first adjudication pass ran over clones whose dependencies had not
+  been installed, so a check needing the project's test runner failed identically on both
+  commits and the "fails on the base" rule was met by the missing runner rather than by the
+  requirement; three rows read as violated that way. That pass is void: its rows were cleared
+  and are not reported. Adjudication now runs only after the verifier arm has installed a
+  clone's dependencies from its lockfile, in that clone; a check that fails the same way on
+  both commits (same exit status and last line), or whose output names a missing runner or
+  module, leaves the row unjudged. The traceability audit stays as registered.
