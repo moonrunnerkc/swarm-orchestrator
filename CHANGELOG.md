@@ -1,5 +1,42 @@
 # Changelog
 
+## Unreleased
+
+Two false passes reported against 1.0.5 and reproduced on it, and a third defect found while
+fixing them. Each is fixed at the root.
+
+### Fixed
+
+- **A patch cannot pass its own suite by changing the runner's configuration.** A patch that
+  broke `sum.js` and added a `vitest.config.js` read the report path from `process.argv`, wrote a
+  passing report there and exited before any test ran, and 1.0.5 read a regression pass. The
+  commands already came from the base commit; the rest of the instrument now does too. Where a
+  patch changes runner configuration (Vitest, Jest, Mocha, Babel, ESLint, Prettier, Biome,
+  TypeScript, pytest and their setup files), every check runs a second time with the base's
+  configuration restored. A check that passes only under the patch's configuration fails where
+  the base's configuration fails a test the base itself passed, and measures nothing otherwise.
+  Both readings are kept on the check (`configurationObservation`, `configurationStatus`,
+  `configurationFiles`, `regressedUnderBaseConfiguration`). A configuration that imports a
+  helper module the patch changed, or a setup file named outside the listed patterns, is not
+  caught by this and is named as a residual.
+- **A newly broken test behind an old failure is a regression.** A check that failed both with
+  and without the patch was read as inherited whatever else failed inside it: a base with one
+  failing test and a patch that broke a second read as a regression pass wherever another check
+  passed. A failure is now inherited only where every test the patched run failed also failed at
+  the base (read from a structured report or TAP), or where both runs printed the same output
+  once times and durations are set aside. A patched run that fails a test the base did not is a
+  regression, and the new failures are named (`newFailures`). A failure that can be shown neither
+  way (`attribution: "unattributed"`) leaves the regression dimension unmeasured, never passed.
+- **The offline verifier re-derives these rules with its own implementation.** Since 1.0.3 the
+  live verdict read an inherited failure beside a passing check as a regression pass, while the
+  offline re-deriver still read it as unmeasured, so every such bundle failed its own
+  "independent regression re-derived" check. The re-deriver now recomputes each failed check's
+  attribution and each base-configuration reading from the recorded observations, requires them
+  to match, and applies the new rule to records that carry them. Records from 1.0.3 to 1.0.5 that
+  read an unproven inheritance as a pass still do not re-derive; that pass was not shown.
+- **Vitest test names are relative to the checkout**, so a test is named the same wherever the
+  checkout sits and a verdict posted publicly does not carry the machine's session path.
+
 ## 1.0.5 - 2026-09-28
 
 What Comparison B and the study's replay on 1.0.4 found, fixed at the root: an oracle that ran
