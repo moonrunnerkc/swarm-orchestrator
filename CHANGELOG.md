@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.7 - 2026-09-28
+
+### Fixed
+
+- **An inherited failure in Vitest's text reporters can be proven.** A project whose test
+  script adds flags the structured runner does not take (`vitest run --coverage
+  --reporter=verbose`) prints a coverage table that differs between the base and the patch
+  whenever the patch changes code, so 1.0.6 could never show its failures were inherited and left
+  the dimension unmeasured: cronproof#2, which 1.0.4 and 1.0.5 passed on an unproven inheritance.
+  Vitest names every failed test and every file that failed to load on a `FAIL` line beside its
+  `Test Files` summary; those lines are now the failure identities, in the verifier and in the
+  offline re-deriver alike. They name failures only, so they can prove an inheritance or a new
+  failure and never a pass. cronproof#2 now reads a proven inheritance and a regression pass.
+
 ## 1.0.6 - 2026-09-28
 
 Two false passes reported against 1.0.5 and reproduced on it, and a third defect found while
