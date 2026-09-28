@@ -117,6 +117,31 @@ function fetched(
   ]);
 }
 
+/**
+ * The Action's result from the verifier's report. A failed check the base already had is the
+ * base control's measurement about the base, not a failure of this patch: with the regression
+ * dimension passing it does not make the result "not verified", and the comment's reason names
+ * it as inherited. A failure the base did not have still does.
+ */
+export function decideResult(parsed: CiReport | null): Verdict["decision"]["result"] {
+  if (parsed === null) return "incomplete";
+  const failed =
+    parsed.regression === "fail" ||
+    parsed.task === "rejected" ||
+    (parsed.checks ?? []).some(
+      (check) => check.status === "failed" && check.inheritedFromBase !== true,
+    );
+  return parsed.verified === true
+    ? "verified"
+    : failed
+      ? "not-verified"
+      : parsed.refusal
+        ? "refused"
+        : parsed.regression === "pass" && parsed.task === "unjudged"
+          ? "regression-only"
+          : "incomplete";
+}
+
 /** Resolve what to verify, fetching it into an owned checkout where the caller supplied none. */
 function resolveSource(
   context: ActionContext,
@@ -206,7 +231,11 @@ interface CiReport {
   readonly executionTrust?: string;
   readonly assessmentDigest?: string;
   readonly bundleDirectory?: string;
-  readonly checks?: readonly { readonly id: string; readonly status: string }[];
+  readonly checks?: readonly {
+    readonly id: string;
+    readonly status: string;
+    readonly inheritedFromBase?: boolean;
+  }[];
   readonly sourceIdentity?: { readonly comparisonBase?: string; readonly patchDigest?: string };
   readonly challenges?: {
     readonly satisfied?: boolean;
@@ -419,23 +448,7 @@ export function runActionVerify(
       .map((check) => check.id),
     ...(parsed?.task === "unjudged" ? ["task"] : []),
   ];
-  const failed =
-    parsed !== null &&
-    (parsed.regression === "fail" ||
-      parsed.task === "rejected" ||
-      (parsed.checks ?? []).some((check) => check.status === "failed"));
-  const result: Verdict["decision"]["result"] =
-    parsed === null
-      ? "incomplete"
-      : parsed.verified === true
-        ? "verified"
-        : failed
-          ? "not-verified"
-          : parsed.refusal
-            ? "refused"
-            : parsed.regression === "pass" && parsed.task === "unjudged"
-              ? "regression-only"
-              : "incomplete";
+  const result = decideResult(parsed);
   const status =
     result === "verified" || (result === "regression-only" && !context.inputs.requireTask)
       ? 0

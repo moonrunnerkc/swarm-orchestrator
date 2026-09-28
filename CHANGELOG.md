@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **The Action's result follows the regression dimension when every failed check is
+  inherited.** Three of sixteen dogfood repositories read "Not verified" while their verdict
+  said "Regression: pass": their only failures were ones the base commit already had. Such a
+  run is now a regression-only pass with exit status 0; the reason line still says the failure
+  is inherited. A failure the base did not have still refuses. The verdict document's format is
+  unchanged.
+
 ## 1.0.3 - 2026-09-28
 
 What the AI-authored pull request study's first complete run through 1.0.2 established, fixed

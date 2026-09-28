@@ -32,7 +32,7 @@ function resultLine(verdict: Verdict): string {
     case "verified":
       return "**Verified**: the recorded checks passed and every declared requirement was accepted.";
     case "regression-only":
-      return "**Regression-only pass**: the repository's own checks passed. No requirement contract was supplied, so whether the work does what was asked is unmeasured.";
+      return "**Regression-only pass**: nothing this patch changed broke a check; a failure the base already had, if any, is named below as inherited. No requirement contract was supplied, so whether the work does what was asked is unmeasured.";
     case "not-verified":
       return "**Not verified**: a check failed or a requirement was rejected.";
     case "incomplete":
