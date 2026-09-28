@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 1.0.0 - 2026-09-28
+
+The first stable release of `swarm-verify`. Everything below shipped through nine prerelease
+candidates, each rolled out across sixteen owned repositories and three README-only onboarding
+simulations, with every defect they found fixed at its root and named here.
 
 ### Added
 
@@ -97,6 +101,8 @@
   the reading. Found on depose, where one repeated `it` hid 383 tests.
 - **The tests reading says what its counts are and are not** in words a first-time reader
   can follow, instead of "ratchet counts" and "base-control attribution".
+- **An image pull is attempted three times** before the run stops, since a hosted runner saw
+  Docker Hub reset the connection once; the last failure's own line is what the error names.
 - **A Python checkout whose ignored caches exist no longer fails to stage.** The scratch
   index named `__pycache__`, `.pytest_cache`, `.mypy_cache` and `.ruff_cache` as exclude
   pathspecs on `git add -A`, which git refuses with "paths are ignored" (exit 1) as soon as one
