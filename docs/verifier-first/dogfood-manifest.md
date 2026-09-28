@@ -122,5 +122,11 @@ regression-only passes that name their inherited failure, so seven of sixteen pa
 now reads incomplete rather than not verified, which matches its unmeasured regression: the
 inherited Go build leaves no check that measured the patch. ruleprobe#3 is still not verified
 for its nondeterministic test; the other rows are unchanged. Re-pinned to `1.0.5`
-(distribution `3a552d70f`, `v1` moved there after validation): the same sixteen results. The
-pull request comments carry the verdicts. A person merges each pull request; none is merged by this rollout.
+(distribution `3a552d70f`, `v1` moved there after validation): the same sixteen results.
+Re-pinned to `1.0.6`, which proves an inherited failure per test rather than assuming it:
+quantproof#1's inheritance was proven and it still passes; cronproof#2 read incomplete, because
+its `vitest run --coverage` output changes with the patch and named no tests 1.0.6 could compare.
+Re-pinned to `1.0.7` (distribution `9b7d32a2c`, `v1` moved there after validation), which reads
+Vitest's own FAIL lines: cronproof#2's failures are the base's, proven, and it passes again. Seven
+of sixteen pass as regression-only, now each on a shown inheritance. The pull request comments
+carry the verdicts. A person merges each pull request; none is merged by this rollout.
