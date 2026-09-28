@@ -1,7 +1,9 @@
-# Attack controls: the twelve families and what executes each
+# Attack controls: thirteen families and what executes each
 
 The verifier-first assignment names twelve ways a candidate, its configuration, its
-dependencies or a stale record can try to obtain an acceptance it has not earned. This table
+dependencies or a stale record can try to obtain an acceptance it has not earned; a thirteenth,
+a new failure hidden behind one the base already had, was reported against 1.0.5 and is added
+at the end. This table
 binds each to the executed controls in this tree, read from the tests themselves on
 2026-09-27 at `be1c5b50e` and the commits after it, with the honest grade of each: **real**
 means a real process, repository, runner or container is exercised; **in-proc** means real
@@ -36,13 +38,19 @@ reader, not by a run in which a real runner executes a skipped test.
 | `src/gates/browser-instrument.integration.test.ts` "isolates the sealed browser instrument from forged config, dependencies and test selection" | poisoned config and a substituted runner are never loaded by the sealed instrument | real, docker |
 | `src/gates/runner-results.test.ts` "refuses vacuous, duplicate, forged or inconsistent output" | shaped forgeries are not-applicable | pure |
 
-Open, and named as a trust-boundary residual rather than closed: for the Vitest and pytest
-structured runners, the project's own configuration runs inside the runner process, so a
-configuration that prints a complete, self-consistent report and exits 0 is read as the
-runner's report. Those readers carry no ratchet or coverage authority and decide only the
-tests gate's status; the sealed-instrument path exists only for browser checks today. The
-control that will hold this is a real vitest configuration that forges the report, asserting
-what the verifier records, until a sealed path for those runners exists.
+| `src/gates/vitest-forgery.integration.test.ts` "does not pass a Vitest configuration that forges the report and exits before any test runs" | the real Vitest this repository installs; a patch breaks `sum.js` and adds a `vitest.config.js` that writes a passing report to the path in `process.argv` and exits 0; the check is rerun with the base's configuration, fails on the test the base passed, and the regression reads fail, live and in the offline re-deriver | real |
+| `src/gates/independent-verification.test.ts` "a patch that changes the runner's configuration" (three cases) | a configuration loaded in the runner's process forges TAP and exits; a configuration only a new test needs; a harmless one | real |
+| `src/evidence/verifier/status.test.ts` "re-derives a check that passed only under the patch's runner configuration" | a record claiming the forged pass does not re-derive | pure |
+
+This was named here as an open residual until 1.0.6, and it reproduced on the published 1.0.5:
+the project's own configuration runs inside the Vitest or pytest process that writes the report
+the verdict reads. Since 1.0.6 the instrument comes from the base commit, as the command already
+did: where a patch changes runner configuration, every check runs again with the base's
+configuration restored, and a check that passes only under the patch's configuration does not
+pass. What stays open, and is named rather than claimed: a configuration file the base already
+has that imports a helper module the patch changed, a setup file named outside the listed
+patterns (`src/gates/runner-configuration.ts`), and a patch that substitutes the runner itself
+through the lockfile (family 3).
 
 ## 3. A runner executable, reporter or dependency is substituted
 
@@ -177,3 +185,19 @@ rule the in-proc control exercises; the killed-process form is next.
 | `src/evidence/redteam-adversarial.test.ts` "leaves the earlier verdict standing when a later record reuses the digest" | records | in-proc |
 
 | `src/gates/attack-controls.test.ts` "derives a fresh verdict for a revised contract and never cites the earlier one" | the same patch verified under a weak contract (accepted, challenge gap) and then a revised strong contract: every record on the second chain carries the revised digest only, the verdict is derived fresh, and the weak contract's gap stands | real |
+
+## 13. A new failure hides behind a failure the base already had
+
+| Control | Executes | Grade |
+| --- | --- | --- |
+| `src/gates/vitest-forgery.integration.test.ts` "calls a test the patch broke a regression although the base already failed another" | real Vitest; the base fails one test and passes lint; the patch breaks a second test; the failure is attributed `new`, the test is named, the regression reads fail | real |
+| `src/gates/independent-verification.test.ts` "calls a newly broken test a regression even when the base already had a failing one", "leaves the regression unmeasured where a failure changed in a way it cannot compare", "still inherits a failure the base printed identically" | the TAP identities, the incomparable output and the identical output cases | real |
+| `src/evidence/verifier/status.test.ts` "re-derives a newly broken test behind an old failure as a regression, and refuses a record calling it inherited", "passes only a proven inheritance, and leaves an incomparable one unmeasured" | a record claiming an inheritance its readings do not show does not re-derive | pure |
+
+Reproduced on the published 1.0.5, where a check that failed both with and without the patch was
+inherited whatever failed inside it, so a base with one failing test and a patch that broke a
+second read as a regression pass beside any passing check. Since 1.0.6 a failure is inherited
+only where every failing test also failed at the base, or where both runs printed the same thing
+once times are set aside; anything else is a regression or, where it cannot be shown either way,
+leaves the dimension unmeasured.
+
