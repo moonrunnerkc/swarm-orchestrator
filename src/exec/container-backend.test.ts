@@ -203,14 +203,16 @@ describe("an image that is not present on the machine", () => {
       user: "1000:1000",
       pullRetryPauseMs: 0,
       runProcess: async (_program, args, options) => {
-        if (args[0] === "pull") await new Promise((resolve) => setTimeout(resolve, 120));
+        if (args[0] === "pull") await new Promise((resolve) => setTimeout(resolve, 1_100));
         if (args[0] === "start") startTimeout = options.timeoutMs;
         return observed(args[0] === "image" ? 1 : 0);
       },
     });
-    const ran = await backend.run(["node", "parent.mjs"], { cwd: workspace, timeoutMs: 100 });
+    // A pull longer than the whole allowance, and a margin a loaded runner's scratch directory
+    // and create call cannot eat: at 100 ms, a publish run's own gates read 0 left.
+    const ran = await backend.run(["node", "parent.mjs"], { cwd: workspace, timeoutMs: 1_000 });
     expect(ran.timedOut).toBe(false);
-    expect(startTimeout).toBeGreaterThan(50);
+    expect(startTimeout).toBeGreaterThan(500);
   });
 
   it("pulls again after a transient registry failure, and creates once it succeeded", async () => {
