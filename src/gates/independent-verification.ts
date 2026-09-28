@@ -143,6 +143,12 @@ export interface IndependentVerification {
    * that held, and neither is ever read as one.
    */
   readonly oracleBond: OracleBondVerdict;
+  /**
+   * What the oracle printed and exited with on the patched tree, and on the base where it was
+   * asked there. The task dimension is decided from these runs, so they are kept: an A2 study run
+   * read `rejected` with nothing recorded to say why.
+   */
+  readonly oracleRuns?: readonly OracleRun[];
   /** Every mutant that was built and run, with what the oracle did with it. */
   readonly bondedMutants: readonly BondedMutant[];
   /** What challenging the requirement checks established, where a policy asked for it. */
@@ -439,7 +445,9 @@ export async function verifyIndependently(
     // comparison.
     // Before attribution, which reverts the patch to measure the base: the oracle judges the
     // patched tree or it judges nothing worth knowing.
-    let task = await judgeTask(checkout, options, timeoutMs);
+    const patchedRun = await judgeTask(checkout, options, timeoutMs);
+    const oracleRuns: OracleRun[] = patchedRun.run === null ? [] : [patchedRun.run];
+    let task = patchedRun.task;
     // An oracle is only evidence if it can refuse. One that accepts the unpatched base accepts a
     // patch that changes nothing, so its acceptance of this patch says nothing, and reporting that
     // as `accepted` is how four of fifteen certified tasks in the mined corpus were certified on
@@ -449,9 +457,10 @@ export async function verifyIndependently(
     if (task === "accepted") {
       const reverted = await resetToBase(checkout, options, timeoutMs);
       if (reverted) {
-        const onBase = await judgeTask(checkout, options, timeoutMs);
+        const onBase = await judgeTask(checkout, options, timeoutMs, "base");
+        if (onBase.run !== null) oracleRuns.push(onBase.run);
         restored = await restorePatch(checkout, options, timeoutMs);
-        if (onBase === "accepted") {
+        if (onBase.task === "accepted") {
           task = "vacuous";
         }
       }
@@ -671,6 +680,7 @@ export async function verifyIndependently(
       ...(reach.setAside === undefined ? {} : { setAsideByReach: reach.setAside }),
       oracleBond: bond.verdict,
       bondedMutants: bond.mutants,
+      ...(oracleRuns.length === 0 ? {} : { oracleRuns }),
       refusal: null,
       regression,
       task,
@@ -906,7 +916,10 @@ async function bondTheOracle(
       },
       parses: nodeSyntaxCheck(options.commands, { cwd: checkout, timeoutMs }),
       runOracle: async () => {
-        const ran = await options.commands.run(oracle, { cwd: checkout, timeoutMs });
+        const ran = await options.commands.run(inProjectEnvironment(oracle), {
+          cwd: checkout,
+          timeoutMs,
+        });
         return { accepted: ran.exitCode === 0 };
       },
       // A destination of its own per reading, outside the workspace. V8 writes one file per
@@ -1134,19 +1147,53 @@ async function attributeFailures(
  * is written by whoever set the task, before the run, and its absence is reported rather than
  * papered over with the suite's own verdict.
  */
+/** One run of the task oracle, as observed: enough to say why it accepted or refused. */
+export interface OracleRun {
+  readonly tree: "patched" | "base";
+  readonly command: string;
+  readonly exitCode: number;
+  readonly durationMs: number;
+  /** The last 4000 characters of what it wrote to stdout and stderr, in that order. */
+  readonly outputTail: string;
+}
+
+/**
+ * The oracle as the user wrote it, with the project environment the harness prepared first on
+ * PATH: `.venv/bin` for a Python project and `node_modules/.bin` for a Node one, as `uv run` and
+ * `npm exec` would. The repository's checks already call those interpreters by path; an oracle
+ * written `python -m pytest ...` otherwise reached the image's own interpreter, which has none of
+ * the project's packages, and was reported as rejecting a patch it accepts. Paths are relative
+ * to the checkout (`$PWD`), so the same text works on the host and inside a container, and a
+ * directory that does not exist changes nothing.
+ */
+export function inProjectEnvironment(command: string): string {
+  return `PATH="$PWD/.venv/bin:$PWD/node_modules/.bin:$PATH"; export PATH; ${command}`;
+}
+
 async function judgeTask(
   checkout: string,
   options: IndependentVerificationOptions,
   timeoutMs: number,
-): Promise<IndependentVerification["task"]> {
+  tree: OracleRun["tree"] = "patched",
+): Promise<{ readonly task: IndependentVerification["task"]; readonly run: OracleRun | null }> {
   if (options.taskOracle === undefined) {
-    return "unjudged";
+    return { task: "unjudged", run: null };
   }
-  const ran = await options.commands.run(options.taskOracle.command, {
+  const ran = await options.commands.run(inProjectEnvironment(options.taskOracle.command), {
     cwd: checkout,
     timeoutMs,
   });
-  return ran.exitCode === 0 ? "accepted" : "rejected";
+  const output = `${ran.stdout}${ran.stdout && ran.stderr ? "\n" : ""}${ran.stderr}`;
+  return {
+    task: ran.exitCode === 0 ? "accepted" : "rejected",
+    run: {
+      tree,
+      command: options.taskOracle.command,
+      exitCode: ran.exitCode,
+      durationMs: ran.durationMs,
+      outputTail: output.slice(-4000),
+    },
+  };
 }
 
 /**

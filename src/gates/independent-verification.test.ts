@@ -553,6 +553,60 @@ describe("a failure the base already had", () => {
   });
 });
 
+describe("the oracle's environment and its record", () => {
+  const patch = [
+    "diff --git a/clamp.mjs b/clamp.mjs",
+    "--- a/clamp.mjs",
+    "+++ b/clamp.mjs",
+    "@@ -1 +1 @@",
+    "-export const clamp = (v) => v;",
+    "+export const clamp = (v) => (v < 0 ? 0 : v);",
+    "",
+  ].join("\n");
+
+  /**
+   * An A2 study run wrote its oracle as `python -m pytest ...`; inside the uv image that reached
+   * the image's interpreter rather than the project's `.venv`, and the patch read as rejected.
+   */
+  it("finds a program the project environment provides, as `uv run` would", async () => {
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch,
+      commands: commands(),
+      clock,
+      taskOracle: {
+        command:
+          "mkdir -p .venv/bin && printf '#!/bin/sh\\necho from the project environment\\n' > .venv/bin/project-tool && chmod +x .venv/bin/project-tool && project-tool && grep -q 'v < 0' clamp.mjs",
+      },
+    });
+
+    expect(result.task).toBe("accepted");
+    expect(result.oracleRuns?.[0]?.outputTail).toContain("from the project environment");
+  });
+
+  it("keeps what a refusing oracle printed and exited with", async () => {
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch,
+      commands: commands(),
+      clock,
+      taskOracle: { command: "echo 'the expected floor is 1' >&2; exit 3" },
+    });
+
+    expect(result.task).toBe("rejected");
+    expect(result.oracleRuns).toEqual([
+      expect.objectContaining({
+        tree: "patched",
+        command: "echo 'the expected floor is 1' >&2; exit 3",
+        exitCode: 3,
+        outputTail: "the expected floor is 1\n",
+      }),
+    ]);
+  });
+});
+
 describe("an oracle that leaves its own files in the checkout", () => {
   /**
    * A mined task's oracle copies the pull request's whole test file into the checkout and runs one
