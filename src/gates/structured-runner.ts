@@ -8,7 +8,7 @@
 const vitest = [
   "import {createRequire} from 'node:module';",
   "import {pathToFileURL} from 'node:url';",
-  "import {dirname,join} from 'node:path';",
+  "import {dirname,join,relative} from 'node:path';",
   "import {mkdtempSync,readFileSync,writeSync,rmSync} from 'node:fs';",
   "import {tmpdir} from 'node:os';",
   "const require=createRequire(process.cwd()+'/package.json');",
@@ -20,7 +20,9 @@ const vitest = [
   // The whole report, however large: a synchronous write to a pipe at exit is partial past
   // the pipe's buffer (64 KiB), so the loop resumes at the bytes written and waits out EAGAIN
   // while the reader drains. A report cut at 64 KiB read as malformed on every large suite.
-  "process.on('exit',()=>{process.stdout.write=write;let bytes;try{bytes=readFileSync(report)}catch(cause){bytes=Buffer.from(JSON.stringify({unavailable:'vitest wrote no report: '+String(cause)}))}let at=0;while(at<bytes.length){try{at+=writeSync(1,bytes,at,bytes.length-at)}catch(cause){if(cause.code!=='EAGAIN')throw cause}}try{rmSync(dir,{recursive:true,force:true})}catch{}});",
+  // File names relative to the checkout, so a test is named the same wherever the checkout sits
+  // and a verdict posted publicly does not carry the machine's session path.
+  "process.on('exit',()=>{process.stdout.write=write;let bytes;try{bytes=readFileSync(report);try{const parsed=JSON.parse(bytes);if(Array.isArray(parsed.testResults)){for(const file of parsed.testResults)if(typeof file.name==='string')file.name=relative(process.cwd(),file.name);bytes=Buffer.from(JSON.stringify(parsed))}}catch{}}catch(cause){bytes=Buffer.from(JSON.stringify({unavailable:'vitest wrote no report: '+String(cause)}))}let at=0;while(at<bytes.length){try{at+=writeSync(1,bytes,at,bytes.length-at)}catch(cause){if(cause.code!=='EAGAIN')throw cause}}try{rmSync(dir,{recursive:true,force:true})}catch{}});",
   "process.argv=[process.argv[0],entry,'run','--reporter=json','--outputFile='+report];",
   "await import(pathToFileURL(entry).href);",
 ].join("");
