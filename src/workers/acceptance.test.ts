@@ -252,6 +252,11 @@ describe("two tasks that collide", () => {
     const landings = result.queue?.landings ?? [];
     expect(landings.filter((landing) => landing.landed)).toHaveLength(1);
 
+    // Both workers must have reached the queue before the second's rejection can be read.
+    // Under the full suite this once failed with `rejected` undefined: one landing only, so a
+    // worker's candidate never arrived. Name the workers' states so the next such run says why.
+    const states = result.workers.map((worker) => `${worker.workerId}: green=${worker.green}`);
+    expect(landings, `one landing only; workers: ${states.join("; ")}`).toHaveLength(2);
     const rejected = landings.find((landing) => !landing.landed);
     expect(rejected?.reason).toBe("merge-conflict");
     expect(rejected?.feedback).toMatch(/src\/alpha\.js/);
