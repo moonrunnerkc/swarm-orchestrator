@@ -148,3 +148,9 @@ study of a convenience population selected by the rule above.
   clone's dependencies from its lockfile, in that clone; a check that fails the same way on
   both commits (same exit status and last line), or whose output names a missing runner or
   module, leaves the row unjudged. The traceability audit stays as registered.
+- **2026-09-28, the project's environment on the check's path, and text-inspection checks
+  reported apart.** A check runs with the clone's own `.venv/bin` and `node_modules/.bin` first
+  on its PATH, so `python` and `pytest` in a reviewer's command mean the project's. A check
+  whose command and file run no test runner or interpreter, only text tools (`grep`, `test
+  -f`, `cat`), executes no behaviour; such rows are counted apart in the report and are not
+  task truth, since the protocol's truth is an executed acceptance check.

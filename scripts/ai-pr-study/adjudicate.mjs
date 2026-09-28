@@ -287,7 +287,10 @@ function executeCheck(clone, image, commit, check, lockfileChanged, manifest) {
       "/bin/sh",
       image,
       "-c",
-      `test -f ${JSON.stringify(check.checkPath)} || { echo "check file missing" >&2; exit 125; }; ${install}${check.command}`,
+      // The project's own environment first on PATH: the verifier arm installed it into the
+      // clone (node_modules/.bin, .venv/bin), and a check that says `python` or `pytest`
+      // means the project's, not the image's.
+      `export PATH=/workspace/.venv/bin:/workspace/node_modules/.bin:$PATH; test -f ${JSON.stringify(check.checkPath)} || { echo "check file missing" >&2; exit 125; }; ${install}${check.command}`,
     ],
     { timeout: 900_000 },
   );

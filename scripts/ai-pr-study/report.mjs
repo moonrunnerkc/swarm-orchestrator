@@ -48,8 +48,24 @@ const executed = rows.filter((row) => row.outcome === "executed");
 const blocked = rows.filter((row) => row.outcome === "blocked");
 const pending = rows.filter((row) => row.outcome === "fetched");
 const green = executed.filter((row) => row.verdict?.originalSuiteGreen === true);
-const adjudicated = rows.filter((row) =>
-  ["requirement-met", "requirement-violated"].includes(row.adjudication?.status),
+// A check that only inspects text (grep, test -f, cat, diff) executes no behaviour; it is
+// reported apart and is not task truth under the protocol.
+const textInspection = (row) => {
+  const command = row.adjudication?.check?.command ?? "";
+  const contents = row.adjudication?.check?.contents ?? "";
+  const runs =
+    /\b(pytest|vitest|jest|mocha|node\s|npm\s+(test|run)|pnpm\s+(test|run)|python[0-9.]*\s|uv\s+run|tsx\s|ts-node|deno\s|go\s+test|cargo\s+test|dotnet\s+test)\b/;
+  return command.length > 0 && !runs.test(command) && !runs.test(contents);
+};
+const inspected = rows.filter(
+  (row) =>
+    ["requirement-met", "requirement-violated"].includes(row.adjudication?.status) &&
+    textInspection(row),
+);
+const adjudicated = rows.filter(
+  (row) =>
+    ["requirement-met", "requirement-violated"].includes(row.adjudication?.status) &&
+    !textInspection(row),
 );
 const violated = adjudicated.filter((row) => row.adjudication.status === "requirement-violated");
 const met = adjudicated.filter((row) => row.adjudication.status === "requirement-met");
@@ -122,6 +138,7 @@ ${line("Blocked: the verifier could not execute, reason recorded", blocked.lengt
 ${line("Not yet run through the verifier", pending.length, selected)}
 ${line("Original-suite green among executed", green.length, executed.length)}
 ${line("Adjudicated: task truth established by an executed held-back check", adjudicated.length, selected)}
+${line("Text-inspection checks (grep, file presence): reported apart, not task truth", inspected.length, selected)}
 ${line("Unjudged: no executable check, or the check did not fail on the base, or an assertion beyond the requirement", unjudged.length, selected)}
 ${line("Not yet adjudicated", notAdjudicated.length, selected)}
 
@@ -190,7 +207,7 @@ ${
 ${rows
   .map(
     (row) =>
-      `| ${row.index} | [${row.repository}#${row.number}](${row.url}) | ${row.outcome ?? "none"}${row.outcome === "blocked" ? ` (${(row.reason ?? "").slice(0, 60)})` : ""} | ${row.verdict?.originalSuiteGreen === undefined ? "" : row.verdict.originalSuiteGreen ? "yes" : "no"} | ${row.adjudication?.status ?? ""} | ${row.outcome === "executed" ? decision(row) : ""} |`,
+      `| ${row.index} | [${row.repository}#${row.number}](${row.url}) | ${row.outcome ?? "none"}${row.outcome === "blocked" ? ` (${(row.reason ?? "").slice(0, 60)})` : ""} | ${row.verdict?.originalSuiteGreen === undefined ? "" : row.verdict.originalSuiteGreen ? "yes" : "no"} | ${row.adjudication?.status ?? ""}${inspected.includes(row) ? " (text inspection)" : ""} | ${row.outcome === "executed" ? decision(row) : ""} |`,
   )
   .join("\n")}
 `;
