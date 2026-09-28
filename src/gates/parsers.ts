@@ -119,10 +119,58 @@ const testCounterParser: GateParser = (observation) => {
   }
   return {
     status: failed ? "failed" : "passed",
-    detail: describeTestRun(counters, observation.exitCode),
+    detail: describeTestRun(counters, observation.exitCode) + failingTapPoints(text),
     measures,
   };
 };
+
+/**
+ * The names of the points a TAP run marked `not ok`, so a failure says which tests failed and
+ * not only how many. Comparison B fed "2 failed" back for three koa patches and the model changed
+ * nothing in six invocations; the failing tests were "should default export koa" and "should
+ * match exports own property names", which say what to fix. The names are the runner's output
+ * about this patch, quoted as printed, at most five.
+ */
+function failingTapPoints(text: string): string {
+  const names = [
+    ...new Set(
+      [...text.matchAll(/^\s*not ok\s+\d+\s+-\s+(.+?)\s*(?:#.*)?$/gm)]
+        .map((match) => match[1])
+        .filter((name): name is string => name !== undefined && name !== ""),
+    ),
+  ];
+  if (names.length === 0) return "";
+  return `; failing: ${names
+    .slice(0, 5)
+    .map((name) => JSON.stringify(name.slice(0, 120)))
+    .join(", ")}${names.length > 5 ? `, and ${names.length - 5} more` : ""}`;
+}
+
+/**
+ * Why a run failed when its test counts show no failure. A suite that cannot load (jest's "Test
+ * suite failed to run", a file that calls `process.exit`) has no test to count, and a command
+ * that runs more after the runner (`jest && tsd`) can exit non-zero with every test passed. The
+ * summary line alone then read "978 passed, 978 total" on a failed check, which named nothing to
+ * fix. The suite line and the files the runner marked FAIL are quoted as the runner printed them.
+ */
+function failureBesideTheCounts(text: string, failed: boolean, failedTests: number | undefined) {
+  if (!failed || (failedTests ?? 0) > 0) return "";
+  const suites =
+    /^\s*Test Suites:\s+(.+?)\s*$/m.exec(text)?.[1] ??
+    /^\s*Test Files\s+(.+?)\s*$/m.exec(text)?.[1] ??
+    null;
+  const files = [...new Set([...text.matchAll(/^\s*FAIL\s+(\S+)/gm)].map((match) => match[1]))];
+  if (files.length > 0 || (suites !== null && /\bfailed\b/.test(suites))) {
+    return (
+      `; no test failed, but ${suites === null ? "a test file failed" : `test files: ${suites}`}` +
+      (files.length === 0
+        ? ""
+        : `; failing ${files.length === 1 ? "file" : "files"}: ${files.slice(0, 5).join(", ")}${files.length > 5 ? `, and ${files.length - 5} more` : ""}`) +
+      " (a file that fails to load or exits the process has no test to count)"
+    );
+  }
+  return "; no test failed, so the non-zero exit came from outside the counted tests, such as a command the test script runs after the runner";
+}
 
 /** Vitest's default reporter, whose summary line is the only stable thing in it. */
 export const vitestTestParser: GateParser = (observation) => {
@@ -156,9 +204,10 @@ export const vitestTestParser: GateParser = (observation) => {
   return {
     status: failed ? "failed" : "passed",
     detail:
-      summary.length > 0
+      (summary.length > 0
         ? `the runner reported: ${summary}`
-        : `the runner exited ${observation.exitCode} and printed no summary line`,
+        : `the runner exited ${observation.exitCode} and printed no summary line`) +
+      failureBesideTheCounts(text, failed, measures[measureNames.testsFailed]),
     measures,
   };
 };
@@ -196,9 +245,10 @@ export const jestTestParser: GateParser = (observation) => {
   return {
     status: failed ? "failed" : "passed",
     detail:
-      summary.length > 0
+      (summary.length > 0
         ? `the runner reported: ${summary}`
-        : `the runner exited ${observation.exitCode} and printed no summary line`,
+        : `the runner exited ${observation.exitCode} and printed no summary line`) +
+      failureBesideTheCounts(text, failed, measures[measureNames.testsFailed]),
     measures,
   };
 };
