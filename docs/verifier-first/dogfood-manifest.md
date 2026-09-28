@@ -121,5 +121,6 @@ dimension when every failed check is inherited). Re-pinned to `1.0.4` (distribut
 regression-only passes that name their inherited failure, so seven of sixteen pass. depose#4
 now reads incomplete rather than not verified, which matches its unmeasured regression: the
 inherited Go build leaves no check that measured the patch. ruleprobe#3 is still not verified
-for its nondeterministic test; the other rows are unchanged. The pull request comments carry
-the verdicts. A person merges each pull request; none is merged by this rollout.
+for its nondeterministic test; the other rows are unchanged. Re-pinned to `1.0.5`
+(distribution `3a552d70f`, `v1` moved there after validation): the same sixteen results. The
+pull request comments carry the verdicts. A person merges each pull request; none is merged by this rollout.
