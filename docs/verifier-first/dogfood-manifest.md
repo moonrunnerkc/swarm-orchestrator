@@ -110,5 +110,13 @@ re-pinned on 2026-09-28 and re-run (the run links are in each pull request's com
 
 These are the rows the stable release stands on; re-pinned to the `1.0.1` patch (distribution
 `60d9aa901`) and then to `1.0.2` (distribution `046c1750e`, `v1` moved there after validation),
-each time with the same sixteen verdicts. A person merges
-each pull request; none is merged by this rollout.
+each time with the same sixteen verdicts. Re-pinned to `1.0.3` (distribution `ea35e0fa1`,
+`v1` moved there after validation): the same sixteen results, with one reading changed. On
+quantproof#1 and cronproof#2 the verdict now says `Regression: pass`, because the only failures
+are the base's own, while the headline still read "Not verified" and the job still failed: the
+Action's result was decided from any failed check, not from the regression dimension the verdict
+reports. That contradiction is fixed in the source (the result follows the regression dimension
+when every failed check is inherited) and waits on the next patch to reach the rollout. depose#4
+stays not verified with regression unmeasured, since the inherited Go build leaves no check that
+measured the patch. Run log: `scratchpad/rollout-results-103.log` at the time; the pull request
+comments carry the verdicts. A person merges each pull request; none is merged by this rollout.
