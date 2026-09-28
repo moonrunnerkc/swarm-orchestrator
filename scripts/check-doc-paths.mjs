@@ -88,6 +88,18 @@ const pathSuffixes = [
 const documentedAsRemoved = new Map([
   ["redteam/leep/", "removed by the 08-18 run, which the documents naming it record"],
   [
+    "docs/evidence/2026-08-23/live-task.cast",
+    "packed losslessly into docs/evidence/2026-08-23/packed-derived/terminal-recordings-2026-08; the record naming it stands",
+  ],
+  [
+    "docs/evidence/2026-08-23/open-evidence.cast",
+    "packed losslessly into docs/evidence/2026-08-23/packed-derived/terminal-recordings-2026-08; the record naming it stands",
+  ],
+  [
+    "docs/evidence/2026-08-23/interface.cast",
+    "packed losslessly into docs/evidence/2026-08-23/packed-derived/terminal-recordings-2026-08; the record naming it stands",
+  ],
+  [
     "scripts/action-artifacts.mjs",
     "moved into src/action/artifacts.ts when the Action became a client of the installed verifier; the 2026-09-27 execution record names it as it was",
   ],
