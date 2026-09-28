@@ -18,7 +18,15 @@
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -261,18 +269,65 @@ async function ask(messages) {
  * file is written once by the caller and stays across both commits: deleting and recreating a
  * file between two container runs is exactly what a desktop mount's cache gets wrong.
  */
-function executeCheck(clone, image, commit, check, lockfileChanged, manifest) {
+/**
+ * The clone's dependencies from its lockfile, install scripts off, in a container with the
+ * registry reachable for this one command; the check itself then runs with the network off.
+ * The verifier arm installs into its own fresh checkout, never into this clone, so the check's
+ * runner has to be put here the same way.
+ */
+function installDependencies(clone, image, manifest) {
+  const hasPnpm = existsSync(join(clone, "pnpm-lock.yaml"));
+  const command =
+    manifest === "package.json"
+      ? hasPnpm
+        ? "npx --yes --package pnpm@10 pnpm install --frozen-lockfile --ignore-scripts"
+        : "npm ci --ignore-scripts --no-audit --no-fund"
+      : manifest === "pyproject.toml"
+        ? "uv sync --locked"
+        : null;
+  if (command === null) return { ran: false, detail: "no supported manifest" };
+  const ran = run(
+    "docker",
+    [
+      "run",
+      "--rm",
+      "--network=bridge",
+      `--volume=${clone}:/workspace:rw`,
+      "--workdir=/workspace",
+      "--memory=4g",
+      "--entrypoint",
+      "/bin/sh",
+      image,
+      "-c",
+      `export HOME=/tmp TMPDIR=/tmp; ${command}`,
+    ],
+    { timeout: 900_000 },
+  );
+  return {
+    ran: ran.error === undefined,
+    exitCode: ran.status,
+    command,
+    stderr: (ran.stderr ?? "").slice(-600),
+  };
+}
+
+function executeCheck(clone, image, commit, check, manifest) {
   const checkedOut = run("git", ["checkout", "--quiet", "--force", "--detach", commit], {
     cwd: clone,
   });
   if (checkedOut.status !== 0)
     return { ran: false, detail: `checkout failed: ${checkedOut.stderr.slice(-300)}` };
-  const install =
-    lockfileChanged && manifest === "package.json"
-      ? "npm ci --ignore-scripts --no-audit --no-fund >/dev/null 2>&1; "
-      : lockfileChanged && manifest === "pyproject.toml"
-        ? "uv sync --locked >/dev/null 2>&1; "
-        : "";
+  const installed =
+    manifest === "package.json" || manifest === "pyproject.toml"
+      ? installDependencies(clone, image, manifest)
+      : { ran: false };
+  if (installed.ran && installed.exitCode !== 0)
+    return {
+      ran: false,
+      detail: `dependencies could not be installed at ${commit.slice(0, 9)}: ${installed.stderr.trim().split("\n").at(-1) ?? ""}`,
+      install: installed,
+    };
+  const install = "";
   const ran = run(
     "docker",
     [
@@ -427,12 +482,12 @@ for (const name of readdirSync(rowsRoot)
     const checkFile = join(clone, check.checkPath);
     mkdirSync(join(checkFile, ".."), { recursive: true });
     writeFileSync(checkFile, check.checkContents);
-    const onHead = executeCheck(clone, image, row.head, check, false, manifest);
-    const onBase = executeCheck(clone, image, row.base, check, lockfileChanged, manifest);
+    const onHead = executeCheck(clone, image, row.head, check, manifest);
+    const onBase = executeCheck(clone, image, row.base, check, manifest);
     rmSync(checkFile, { force: true });
     // Leave the clone at the head with its installed dependencies for any later replay.
     if (lockfileChanged)
-      executeCheck(clone, image, row.head, { ...check, command: "true" }, true, manifest);
+      executeCheck(clone, image, row.head, { ...check, command: "true" }, manifest);
     else run("git", ["checkout", "--quiet", "--force", "--detach", row.head], { cwd: clone });
     // A failure is the check's verdict only when the check itself ran: a runner the image
     // does not hold, or a module the environment lacks, fails every commit the same way and
@@ -440,8 +495,11 @@ for (const name of readdirSync(rowsRoot)
     // status, same last line) did not discriminate between them.
     const lastLine = (side) =>
       `${side.stdout ?? ""}\n${side.stderr ?? ""}`.trim().split("\n").filter(Boolean).at(-1) ?? "";
+    // Only the runner itself missing counts as "could not run": a project module that the
+    // patch adds is absent on the base by definition, and that ImportError is the failure a
+    // feature check is supposed to produce there.
     const couldNotRun = (side) =>
-      /No module named|command not found|Cannot find module|not found\s*$|ModuleNotFoundError|ENOENT/.test(
+      /No module named '?(pytest|_pytest|unittest|coverage)'?|\b(pytest|vitest|jest|mocha|node|npm|npx|uv|python3?|tsx|ts-node|bash|sh): (command )?not found|Cannot find module '(vitest|jest|mocha|tsx)/.test(
         `${side.stdout ?? ""}\n${side.stderr ?? ""}`,
       );
     const sameFailure =

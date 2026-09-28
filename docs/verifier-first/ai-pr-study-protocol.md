@@ -154,3 +154,10 @@ study of a convenience population selected by the rule above.
   whose command and file run no test runner or interpreter, only text tools (`grep`, `test
   -f`, `cat`), executes no behaviour; such rows are counted apart in the report and are not
   task truth, since the protocol's truth is an executed acceptance check.
+- **2026-09-28, the adjudication arm installs the dependencies it needs.** The verifier arm
+  installs into its own fresh checkout and never into the study's clone, so a check that needs
+  the project's test runner found none there. Before each commit's check the arm now installs
+  that commit's dependencies from its lockfile in a container with the registry reachable for
+  that one command and install scripts off (`npm ci --ignore-scripts`, pnpm through npm,
+  `uv sync --locked`), and the check itself still runs with the network off. An install that
+  fails leaves the row unjudged with the installer's last line.
