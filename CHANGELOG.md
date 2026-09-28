@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 1.0.3 - 2026-09-28
+
+What the AI-authored pull request study's first complete run through 1.0.2 established, fixed
+at the root: one change of verdict semantics, named as such, and one install gap.
 
 ### Changed
 
