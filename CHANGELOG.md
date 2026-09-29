@@ -75,6 +75,17 @@ or rule name changes meaning.
   `pnpm -r run typecheck` read `pnpm: not found` and the check was unmeasured. The same version
   is kept in the checkout's `node_modules` and put first on the checks' PATH through the built
   environment.
+- **The uv install no longer builds anything while the registry is reachable.** `uv sync
+  --no-install-project` still built every dependency that ships only a source archive (the
+  real `docopt==0.6.2` is one) and every workspace member, which runs that package's setup.py
+  or build backend with the network on: a fixture archive whose setup.py tries a connection got
+  through and wrote into the checkout. The install now runs with `--no-build` and leaves those
+  packages out by name; in the deferred offline phase a source archive's bytes are fetched and
+  checked against the lockfile's sha256 (`stage: source-archive`, nothing executed), unpacked
+  and built offline, and a workspace member or local directory is built offline from the
+  checkout, each step recorded. A setup.py that tries the network there is refused and its
+  output reported. A git source or an archive whose hash cannot be checked is left out of the
+  install with its reason named, so a check that needs it reads what it is rather than a pass.
 
 Each deferred step is its own intent and completion on the `dependency-install` record, naming
 its stage and its network (`none` with the probe's result for offline work), so a reader sees
