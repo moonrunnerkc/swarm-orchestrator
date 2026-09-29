@@ -100,9 +100,12 @@ export async function verifyStaged(options: {
         borrowed.push(directory);
       }
     }
+    // Measured against the commit the staged tree would follow: that commit's manifests decide
+    // the commands and its tree is the instrument's reference, so a staged configuration or
+    // script change is a change, not the reference it is compared with.
     const ran = await runVerifier(
       options.entry,
-      ["check", "--workspace", worktree, "--json"],
+      ["check", "--workspace", worktree, "--json", ...(head === null ? [] : ["--base", head])],
       options.home,
     );
     let report: CheckReport | null = null;
