@@ -78,7 +78,7 @@ fixture is six patches, which measures nothing about a population.
 
 VERA: https://github.com/Grevix/vera (release v1.0.0-rc.4; `cmd/vera/main.go`,
 `pkg/contracts/`, `pkg/orchestrator/runner.go`, `verabox/src/`). Ranex:
-https://github.com/anthonykewl20/ranex (release v0.1.006 and `main`; `docs/OPERATIONS.md`,
+https://github.com/anthonykewl20/ranex (release v0.1.006 and `main`; its operations guide,
 `src/ranex/cli/toolchain.py`, `src/ranex/cli/process_supervisor.py`,
 `src/ranex/foundation/dynamic_runtime.py`). Critique: https://www.critique.sh/docs and the npm
 package `@critiquedotsh/cli@0.3.0`, whose declared source repository returns 404.
