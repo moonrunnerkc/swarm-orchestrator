@@ -71,6 +71,28 @@ describe("packing derived evidence", () => {
     });
   });
 
+  it("packs a completed corpus whole, records and verifiers included, and restores every byte", async () => {
+    const packed = await pack({ completedCorpus: true });
+    expect(packed.files).toBe(7);
+    expect(await readdir(join(repositoryRoot, "evidence/run/bundle"))).toEqual([]);
+    const inventory = JSON.parse(
+      await readFile(join(packed.destination, "inventory.json"), "utf8"),
+    );
+    expect(inventory.kind).toBe("completed-corpus");
+    const unpacked = await unpackArchive(packed.destination);
+    try {
+      expect(await readFile(join(unpacked.directory, "run/bundle/ledger.jsonl"), "utf8")).toBe(
+        '{"sequence":1}\n',
+      );
+    } finally {
+      await unpacked.dispose();
+    }
+    expect(await verifyDerivedPack(packed.destination, repositoryRoot)).toMatchObject({
+      ok: true,
+      files: 7,
+    });
+  });
+
   it("never removes a file git has not seen", async () => {
     const packed = await pack({ trackedPaths: ["evidence/run/bundle/run-transcript.txt"] });
     expect(packed.files).toBe(1);

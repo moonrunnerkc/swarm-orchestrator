@@ -13,6 +13,8 @@
  * verifiers. `namesADerivedArtifact` is the one definition of what may, shared with the offload.
  *
  *   node scripts/evidence-pack.mjs pack <root> --name <pack>   # tracked derived artifacts under root
+ *   node scripts/evidence-pack.mjs pack <root> --name <pack> --completed-corpus
+ *                                        # every tracked file of a finished corpus whose payloads moved out
  *   node scripts/evidence-pack.mjs verify                      # every pack git tracks
  *   node scripts/evidence-pack.mjs restore <pack directory>    # exact bytes, to a temporary directory
  *
@@ -35,7 +37,13 @@ export const packDirectoryName = "packed-derived";
 
 const inventorySchema = z.object({
   version: z.literal(1),
-  kind: z.literal("derived-artifacts"),
+  /**
+   * `derived-artifacts`: views of or logs beside the records, chosen by name. `completed-corpus`:
+   * every tracked file of a finished campaign corpus whose bundle payloads already live outside
+   * the repository, packed whole so its many identical embedded verifiers stop costing their size
+   * once each; nothing about it is dropped, and `restore` gives back every bundle as it was.
+   */
+  kind: z.enum(["derived-artifacts", "completed-corpus"]),
   /** Repository-relative directory the source paths are relative to. */
   root: z.string().min(1),
   /** The commit whose tree still held the originals, which is the second place they live. */
@@ -74,11 +82,12 @@ export async function packDerivedArtifacts(input) {
   // Chosen from what git tracks and never from a walk of the disk: deleting is recoverable only
   // for a file history has seen, and a campaign directory holds gigabytes git never has.
   const inside = `${relative(input.repositoryRoot, root).split("\\").join("/")}/`;
+  const completedCorpus = input.completedCorpus === true;
   const chosen = input.trackedPaths
     .filter(
       (path) =>
         path.startsWith(inside) &&
-        namesADerivedArtifact(path.split("/").at(-1) ?? "") &&
+        (completedCorpus || namesADerivedArtifact(path.split("/").at(-1) ?? "")) &&
         !path.split("/").includes(packDirectoryName),
     )
     .sort()
@@ -100,7 +109,7 @@ export async function packDerivedArtifacts(input) {
   const inventory = `${JSON.stringify(
     inventorySchema.parse({
       version: 1,
-      kind: "derived-artifacts",
+      kind: completedCorpus ? "completed-corpus" : "derived-artifacts",
       root: relative(input.repositoryRoot, root).split("\\").join("/"),
       sourceCommit: input.sourceCommit,
       sources,
@@ -221,13 +230,28 @@ async function main(argv) {
     const at = rest.indexOf("--name");
     const name = at === -1 ? null : rest[at + 1];
     const root = rest.find((one, index) => !one.startsWith("--") && index !== at + 1);
+    // A corpus is packed whole only where its bundles' payloads were already moved out: a bundle
+    // still carrying its blobs is live evidence a reader verifies where it sits.
+    if (rest.includes("--completed-corpus")) {
+      const carrying = trackedPaths(repositoryRoot).filter(
+        (path) =>
+          path.startsWith(`${root.replace(/\/$/, "")}/`) && path.split("/").includes("blobs"),
+      );
+      if (carrying.length > 0)
+        throw new Error(
+          `${root} still tracks bundle payloads (${carrying[0]}); only a corpus whose payloads were moved out is packed whole`,
+        );
+    }
     if (!name || !root || !/^[a-z0-9][a-z0-9-]*$/.test(name)) {
-      throw new Error("usage: evidence-pack.mjs pack <root> --name <lowercase-pack-name>");
+      throw new Error(
+        "usage: evidence-pack.mjs pack <root> --name <lowercase-pack-name> [--completed-corpus]",
+      );
     }
     const packed = await packDerivedArtifacts({
       repositoryRoot,
       root,
       name,
+      completedCorpus: rest.includes("--completed-corpus"),
       trackedPaths: trackedPaths(repositoryRoot),
       sourceCommit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: repositoryRoot })
         .toString("utf8")
