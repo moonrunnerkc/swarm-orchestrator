@@ -86,6 +86,11 @@ interface GatesEngineOptions {
    * session names the commit it started from here instead, and every turn is measured by it.
    */
   readonly criteriaRef?: string;
+  /**
+   * Untracked Python virtual environments left out of the change, named by the standalone
+   * check of a person's working tree. A run whose files an agent wrote never passes any.
+   */
+  readonly excludedEnvironments?: readonly string[];
 }
 
 export interface GatesEngineRun {
@@ -182,7 +187,13 @@ export async function sealAssembledCriteria(
  * testable against doubles.
  */
 export async function runGatesEngine(options: GatesEngineOptions): Promise<GatesEngineRun> {
-  const workspace = { workspaceRoot: options.workspaceRoot, baseRef: options.baseRef };
+  const workspace = {
+    workspaceRoot: options.workspaceRoot,
+    baseRef: options.baseRef,
+    ...(options.excludedEnvironments === undefined
+      ? {}
+      : { excludedEnvironments: options.excludedEnvironments }),
+  };
   const probe = createGitWorkspaceProbe(workspace);
   const commands = createNodeCommandRunner(
     options.clock,

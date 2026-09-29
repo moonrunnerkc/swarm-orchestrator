@@ -57,8 +57,12 @@ table or a `ruff-format` pre-commit hook, `black --check .` for a `[tool.black]`
 hook. Ruff configuration alone configures its linter, so it selects `ruff check` and no format
 check. mypy runs as plain `mypy` where the configuration file mypy itself reads (the first of
 `mypy.ini`, `.mypy.ini`, `pyproject.toml` with `[tool.mypy]`, `setup.cfg` with `[mypy]`) names
-`files`, `packages` or `modules`, and as `mypy .` where it names none. An absent optional tool is
-different from a required command that cannot start. An existing Python environment is
+`files`, `packages` or `modules`, and as `mypy .` where it names none. `check` leaves an
+untracked directory whose root holds a `pyvenv.cfg` with a `home` key (a virtual environment, by
+PEP 405) out of the change it measures, and names it on an `excluded` line and in the evidence. A
+tracked or staged `pyvenv.cfg`, or a directory holding anything tracked, qualifies nothing, and
+`ci` never excludes a patch's files. An absent optional tool is different from a required command
+that cannot start. An existing Python environment is
 copied into the owned checkout, with bounded inventory verification; editable or executable path
 injection is refused. Nothing writes back to the user's environment.
 
