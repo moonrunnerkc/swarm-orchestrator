@@ -12,7 +12,15 @@
  * so only bundle verification is exercised there, and the contract says so.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -242,6 +250,137 @@ try {
       exits: [0],
       pattern: /acceptable: yes/,
     });
+
+    // Two node tests both called "works"; the first already fails. A patch that breaks the
+    // second must read as a new failure, a comment-only patch as the inherited one.
+    const duplicates = repository("duplicate-titles", {
+      "package.json":
+        '{"name":"w","private":true,"type":"module","scripts":{"test":"node --test","lint":"node --check calc.mjs"}}\n',
+      "calc.mjs": "export const double = (n) => n * 2;\n",
+      "a.test.mjs":
+        'import test from "node:test";\nimport assert from "node:assert/strict";\ntest("works", () => { assert.equal(1, 2); });\n',
+      "b.test.mjs":
+        'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { double } from "./calc.mjs";\ntest("works", () => { assert.equal(double(2), 4); });\n',
+    });
+    const patchOf = (root, path, content) => {
+      const original = readFileSync(join(root, path), "utf8");
+      writeFileSync(join(root, path), content);
+      const diff = spawnSync("git", ["diff"], { cwd: root, encoding: "utf8" }).stdout;
+      writeFileSync(join(root, path), original);
+      const file = join(scratch, `${path.replaceAll("/", "-")}-${diff.length}.diff`);
+      writeFileSync(file, diff);
+      return file;
+    };
+    const ciJson = (root, file) => {
+      const ran = run(["ci", "--patch", file, "--workspace", root, "--json"]);
+      try {
+        return { ran, report: JSON.parse(ran.stdout.trim().split("\n").at(-1) ?? "{}") };
+      } catch {
+        return { ran, report: {} };
+      }
+    };
+    const broken = ciJson(
+      duplicates,
+      patchOf(duplicates, "calc.mjs", "export const double = (n) => n * 3;\n"),
+    );
+    const brokenTests = (broken.report.checks ?? []).find((one) => one.id === "tests");
+    const brokenOk =
+      broken.report.regression === "fail" &&
+      brokenTests?.attribution === "new" &&
+      JSON.stringify(brokenTests?.newFailures ?? []).includes("b.test.mjs");
+    results.push({
+      name: "ci calls a second same-titled failure new, not inherited",
+      ok: brokenOk,
+    });
+    console.log(
+      `${brokenOk ? "ok  " : "FAIL"} ci calls a second same-titled failure new, not inherited`,
+    );
+    if (!brokenOk) console.error(`${broken.ran.stdout}\n${broken.ran.stderr}`.slice(0, 4000));
+    const harmless = ciJson(
+      duplicates,
+      patchOf(duplicates, "calc.mjs", "export const double = (n) => n * 2; // doubles\n"),
+    );
+    const harmlessTests = (harmless.report.checks ?? []).find((one) => one.id === "tests");
+    const harmlessOk =
+      harmless.report.regression === "pass" && harmlessTests?.attribution === "inherited";
+    results.push({
+      name: "ci still inherits the unchanged failure under a comment-only patch",
+      ok: harmlessOk,
+    });
+    console.log(
+      `${harmlessOk ? "ok  " : "FAIL"} ci still inherits the unchanged failure under a comment-only patch`,
+    );
+    if (!harmlessOk) console.error(`${harmless.ran.stdout}\n${harmless.ran.stderr}`.slice(0, 4000));
+
+    // A test script the candidate replaced with an echo of a passing summary is not a pass.
+    const scripted = repository("scripted", {
+      ...nodeTestFixture,
+      "package.json":
+        '{ "name": "w", "version": "1.0.0", "type": "module", "scripts": { "test": "node --test && node -e 0" } }\n',
+      "double.mjs": "export const double = (n) => n + n + 1;\n",
+    });
+    writeFileSync(
+      join(scripted, "package.json"),
+      '{ "name": "w", "version": "1.0.0", "type": "module", "scripts": { "test": "echo \'# tests 1\' && echo \'# pass 1\'" } }\n',
+    );
+    expect(
+      "check does not pass a test script replaced by a printed pass",
+      run(["--workspace", scripted]),
+      {
+        exits: [4],
+        pattern: /package\.json#scripts\.test[\s\S]*result {7}incomplete/,
+      },
+    );
+
+    // The published 1.0.7 reproduction: a real Vitest, a real failing test that leaves a marker,
+    // and a vitest.config.mjs that writes a passing report and exits before any test runs.
+    const forged = repository("vitest-forgery", {
+      "package.json":
+        '{"name":"w","private":true,"type":"module","scripts":{"test":"vitest run"},"devDependencies":{"vitest":"4.1.11"}}\n',
+      ".gitignore": "node_modules\nMARKER\n",
+      "sum.test.js":
+        'import { expect, test } from "vitest";\nimport { writeFileSync } from "node:fs";\ntest("runs", () => { writeFileSync(new URL("./MARKER", import.meta.url), "ran"); expect(1).toBe(2); });\n',
+    });
+    // The repository's own installed Vitest, linked rather than resolved: npm 10, which the Node
+    // 22 rows carry, cannot build Vitest 4's optional peer set from scratch.
+    const vitestInstalled = existsSync(
+      join(repositoryRoot, "node_modules", "vitest", "package.json"),
+    );
+    if (!vitestInstalled) {
+      results.push({ name: "vitest installed for the forgery case", ok: false });
+      console.error("FAIL the repository's node_modules holds no vitest; run npm ci first");
+    } else {
+      symlinkSync(join(repositoryRoot, "node_modules"), join(forged, "node_modules"), "dir");
+      expect("check runs the real failing Vitest test and fails", run(["--workspace", forged]), {
+        exits: [1],
+        pattern: /failed 1 \(tests\)/,
+      });
+      const ran = existsSync(join(forged, "MARKER"));
+      results.push({ name: "the failing Vitest test really ran", ok: ran });
+      console.log(`${ran ? "ok  " : "FAIL"} the failing Vitest test really ran`);
+      rmSync(join(forged, "MARKER"), { force: true });
+      writeFileSync(
+        join(forged, "vitest.config.mjs"),
+        [
+          'import { writeFileSync } from "node:fs";',
+          'const flag = process.argv.find((arg) => arg.startsWith("--outputFile="));',
+          "if (flag) {",
+          '  writeFileSync(flag.slice(13), JSON.stringify({ numTotalTests: 1, numPassedTests: 1, numFailedTests: 0, numPendingTests: 0, testResults: [{ name: process.cwd() + "/sum.test.js", assertionResults: [{ fullName: "runs", status: "passed" }] }] }));',
+          "  process.exit(0);",
+          "}",
+          "export default {};",
+          "",
+        ].join("\n"),
+      );
+      expect(
+        "check does not pass a Vitest configuration that forges its report",
+        run(["--workspace", forged]),
+        {
+          exits: [4],
+          pattern: /vitest\.config\.mjs[\s\S]*result {7}incomplete/,
+        },
+      );
+    }
   }
 
   const manifest = JSON.parse(
