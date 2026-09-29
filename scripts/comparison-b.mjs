@@ -20,6 +20,7 @@ import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { ContainmentError, childPath } from "./ai-pr-study/containment.mjs";
 
 const prefixEvidence = "docs/evidence/2026-09-17/reach-pressure-experiment";
 const prefixBulk = join(homedir(), ".cache/swarm-pr-tasks/reach-pressure/g3");
@@ -49,6 +50,8 @@ const readJsonl = (path) =>
     .filter((line) => line.trim() !== "")
     .map((line) => JSON.parse(line));
 const sha256 = (path) => `sha256:${createHash("sha256").update(readFileSync(path)).digest("hex")}`;
+/** A stored patch, named by its `sha256:` digest's hex, as one plain file under `directory`. */
+const patchFileOf = (directory, digest) => childPath(directory, `${digest.slice(7)}.patch`);
 const writeRows = (rows) => writeFileSync(rowsPath, `${JSON.stringify(rows, null, 2)}\n`);
 
 function derive() {
@@ -98,8 +101,19 @@ function verdict() {
   mkdirSync(reports, { recursive: true });
   for (const row of rows) {
     if (row.fork === null || row.b1Verdict?.version === version) continue;
-    const patch = join(prefixBulk, "patches", `${row.fork.patchDigest.slice(7)}.patch`);
-    const checkout = join(corpusRoot, "work", row.repository.replace("/", "__"));
+    // The row's digest and repository name a patch file and a checkout directory: each is held
+    // to one plain name under its root, so a malformed row cannot point either anywhere else.
+    let patch;
+    let checkout;
+    try {
+      patch = patchFileOf(join(prefixBulk, "patches"), row.fork.patchDigest);
+      checkout = childPath(join(corpusRoot, "work"), row.repository.replace("/", "__"));
+    } catch (cause) {
+      if (!(cause instanceof ContainmentError)) throw cause;
+      row.b1Verdict = { version, outcome: "blocked", reason: cause.message };
+      writeRows(rows);
+      continue;
+    }
     if (!existsSync(patch) || !existsSync(checkout)) {
       row.b1Verdict = { version, outcome: "blocked", reason: "patch or checkout absent" };
       writeRows(rows);
@@ -160,7 +174,7 @@ function regressionVerdict({ version, patch, checkout, row, reports, label }) {
       env: { ...process.env, NO_COLOR: "1", ...(zone === null ? {} : { TZ: zone }) },
     },
   );
-  const stem = join(reports, `${row.taskId.replace(/[/#]/g, "_")}.${label}`);
+  const stem = childPath(reports, `${row.taskId.replace(/[/#]/g, "_")}.${label}`);
   writeFileSync(`${stem}.report.json`, ran.stdout ?? "");
   writeFileSync(`${stem}.stderr.txt`, ran.stderr ?? "");
   let report = null;
@@ -230,8 +244,9 @@ async function repair() {
     );
     if (source === undefined || lib.digestOfBytes(source.taskText) !== task.taskTextDigest)
       throw new Error(`${task.id}: the task text no longer matches the frozen digest`);
-    const checkout = lib.taskCheckout(corpusRoot, task);
-    const storedTestFile = join(bRoot, "oracles", `${lib.taskSlug(task)}.test-file`);
+    // The harness's own taskCheckout naming (work/<owner>__<name>), held to one plain name.
+    const checkout = childPath(join(corpusRoot, "work"), task.repository.replace("/", "__"));
+    const storedTestFile = childPath(join(bRoot, "oracles"), `${lib.taskSlug(task)}.test-file`);
     const oracleBytes = execFileSync("git", ["show", `${task.mergeCommit}:${task.testFile}`], {
       cwd: checkout,
       maxBuffer: 64 * 1024 * 1024,
@@ -239,13 +254,13 @@ async function repair() {
     if (lib.digestOfBytes(oracleBytes) !== task.oracleFileDigest)
       throw new Error(`${task.id}: the oracle file no longer matches the frozen digest`);
     writeFileSync(storedTestFile, oracleBytes);
-    const patchPathOf = (digest) => join(bRoot, "patches", `${digest.slice(7)}.patch`);
+    const patchPathOf = (digest) => patchFileOf(join(bRoot, "patches"), digest);
     cpSync(
-      join(prefixBulk, "patches", `${row.fork.patchDigest.slice(7)}.patch`),
+      patchFileOf(join(prefixBulk, "patches"), row.fork.patchDigest),
       patchPathOf(row.fork.patchDigest),
     );
     // The fork state: the base, the sealed oracle kept out, and the fork patch applied.
-    const workspace = join(bRoot, "runs", lib.taskSlug(task));
+    const workspace = childPath(join(bRoot, "runs"), lib.taskSlug(task));
     await lib.prepareSealedWorkspace({
       checkout,
       workspace,
