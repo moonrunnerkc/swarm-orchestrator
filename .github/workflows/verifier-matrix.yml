@@ -66,9 +66,9 @@ jobs:
       - name: Install the real Vitest the forgery case runs
         if: runner.os != 'Windows'
         shell: bash
-        # npm 10.9.2 rather than the runtime's own: Node 22.0.0 bundles npm 10.5.1, whose optional-
-        # dependency bug (npm/cli#4828) leaves out the platform's native binding Vitest needs.
-        run: npx --yes npm@10.9.2 ci --ignore-scripts --no-audit --no-fund --prefix scripts/fixtures/vitest-runner
+        # On Node below 22.12 npm rightly leaves out Vitest 4's native binding (its engines need
+        # 22.12), so Vitest cannot start there and the smoke records its cases as unsupported.
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix scripts/fixtures/vitest-runner
       - name: Exercise the installed verifier
         shell: bash
         run: node scripts/verifier-matrix-smoke.mjs "$RUNNER_TEMP/install" .
