@@ -179,6 +179,36 @@ export function overlaidEnvironment(
   return overlaid;
 }
 
+/** Thrown where a tool directory could not be put on PATH as one plain absolute entry. */
+export class UnusableToolDirectory extends Error {
+  constructor(directory: string) {
+    super(
+      `${JSON.stringify(directory)} cannot be put on PATH: a tool directory must be an absolute path with no ':' or line break`,
+    );
+    this.name = "UnusableToolDirectory";
+  }
+}
+
+/**
+ * The built PATH with directories the harness itself prepared put first, such as the package
+ * manager an authorized install fetched. Only PATH changes, and only by entries the caller
+ * names here, so the rest of the build (its refusals and what it withheld) is untouched.
+ */
+export function withToolDirectories(
+  built: Readonly<Record<string, string>>,
+  directories: readonly string[],
+): Record<string, string> {
+  for (const directory of directories)
+    if (!directory.startsWith("/") || /[:\r\n]/.test(directory))
+      throw new UnusableToolDirectory(directory);
+  if (directories.length === 0) return { ...built };
+  const existing = built.PATH ?? "";
+  return {
+    ...built,
+    PATH: [...directories, ...(existing === "" ? [] : [existing])].join(":"),
+  };
+}
+
 /**
  * The environment for a child process the harness itself spawns: a gate command, the embedded
  * verifier, a merge-queue check. One place decides it, because a second copy is how one arm

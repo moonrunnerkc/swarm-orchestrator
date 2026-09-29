@@ -3,6 +3,8 @@ import {
   type ChildEnvironment,
   overlaidEnvironment,
   UnauthorizableEnvironmentName,
+  UnusableToolDirectory,
+  withToolDirectories,
 } from "../exec/child-environment.ts";
 import type { IsolationBackend } from "../exec/execution-mode.ts";
 import type { ResourcePool } from "../exec/resource-pool.ts";
@@ -67,6 +69,14 @@ export function createNodeCommandRunner(
         "pinned acceptance files need a backend with read-only file mounts; use the container backend",
       );
     let variables = environment.variables;
+    if (options.toolDirectories !== undefined && backend === undefined) {
+      try {
+        variables = withToolDirectories(variables, options.toolDirectories);
+      } catch (cause) {
+        if (!(cause instanceof UnusableToolDirectory)) throw cause;
+        return unavailableObservation(cause.message);
+      }
+    }
     if (options.environment !== undefined) {
       // A backend runs the command somewhere this process does not build the environment, so an
       // overlay it cannot carry is reported rather than silently left off: a measurement taken
@@ -81,7 +91,7 @@ export function createNodeCommandRunner(
         );
       }
       try {
-        variables = overlaidEnvironment(environment.variables, options.environment);
+        variables = overlaidEnvironment(variables, options.environment);
       } catch (cause) {
         if (!(cause instanceof UnauthorizableEnvironmentName)) throw cause;
         return unavailableObservation(cause.message);
@@ -103,6 +113,9 @@ export function createNodeCommandRunner(
             signal: cancellation,
             ...(options.environment === undefined ? {} : { environment: options.environment }),
             ...(options.network === undefined ? {} : { network: options.network }),
+            ...(options.toolDirectories === undefined
+              ? {}
+              : { toolDirectories: options.toolDirectories }),
             ...(options.readOnlyFiles === undefined
               ? {}
               : { readOnlyFiles: options.readOnlyFiles }),

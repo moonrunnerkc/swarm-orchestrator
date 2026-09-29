@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { childEnvironment, defaultChildHome } from "./child-environment.ts";
+import { childEnvironment, defaultChildHome, withToolDirectories } from "./child-environment.ts";
 import {
   controlledNetworkTarget,
   noProbeProgramExit,
@@ -47,6 +47,11 @@ export interface IsolationBackend {
       readonly environment?: Record<string, string> | undefined;
       /** Registry access for this one command, which only the authorized install asks for. */
       readonly network?: "none" | "registry" | undefined;
+      /**
+       * Host directories inside the workspace to put first on PATH, such as the package manager
+       * an authorized install fetched. A backend maps each to where it mounts the workspace.
+       */
+      readonly toolDirectories?: readonly string[] | undefined;
     },
   ): Promise<ProcessRunResult>;
 }
@@ -103,7 +108,10 @@ export const hostExecutionBackend: IsolationBackend = {
     }
     return runProcessGroup(program, args, {
       cwd: options.cwd,
-      env: childEnvironment(process.env, { homeDir: defaultChildHome() }).variables,
+      env: withToolDirectories(
+        childEnvironment(process.env, { homeDir: defaultChildHome() }).variables,
+        options.toolDirectories ?? [],
+      ),
       timeoutMs: options.timeoutMs,
       signal: options.signal,
       maxOutputBytes: 64_000,

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { lstat, mkdir, realpath, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
-import { overlaidEnvironment } from "./child-environment.ts";
+import { overlaidEnvironment, withToolDirectories } from "./child-environment.ts";
 import { containerImageSchema } from "./container-image.ts";
 import type { IsolationBackend } from "./execution-mode.ts";
 import { runProcessGroup } from "./run-process.ts";
@@ -134,16 +134,27 @@ export function createContainerBackend(options: ContainerBackendOptions): Isolat
         Object.keys(overlay).some((name) => !(environmentNames as readonly string[]).includes(name))
       )
         throw new Error("container backend does not support the requested environment overlay");
+      // A tool directory the harness prepared in the checkout is on PATH where the container
+      // mounts it. One outside the checkout does not exist in here and is refused, not dropped.
+      const toolDirectories = (runOptions.toolDirectories ?? []).map((directory) => {
+        const path = relative(options.workspaceRoot, directory);
+        if (path === "" || path.startsWith("..") || isAbsolute(path))
+          throw new Error("a tool directory must be inside the backend workspace");
+        return `${workspaceMountPoint}/${path}`;
+      });
       const variables = overlaidEnvironment(
-        {
-          PATH: "/usr/local/bin:/usr/bin:/bin",
-          HOME: "/tmp",
-          TMPDIR: "/tmp",
-          COREPACK_ENABLE_NETWORK: "0",
-          COREPACK_ENABLE_DOWNLOAD_PROMPT: "0",
-          COREPACK_ENABLE_AUTO_PIN: "0",
-          UV_PYTHON_DOWNLOADS: "never",
-        },
+        withToolDirectories(
+          {
+            PATH: "/usr/local/bin:/usr/bin:/bin",
+            HOME: "/tmp",
+            TMPDIR: "/tmp",
+            COREPACK_ENABLE_NETWORK: "0",
+            COREPACK_ENABLE_DOWNLOAD_PROMPT: "0",
+            COREPACK_ENABLE_AUTO_PIN: "0",
+            UV_PYTHON_DOWNLOADS: "never",
+          },
+          toolDirectories,
+        ),
         overlay,
       );
       const readOnlyMounts: string[] = [];

@@ -6,6 +6,8 @@ import {
   harnessChildEnvironment,
   overlaidEnvironment,
   UnauthorizableEnvironmentName,
+  UnusableToolDirectory,
+  withToolDirectories,
 } from "./child-environment.ts";
 
 const workerHome = "/tmp/worker-home";
@@ -213,5 +215,28 @@ describe("a command's own environment overlay", () => {
     overlaidEnvironment(base, { TZ: "America/New_York" });
 
     expect(base.TZ).toBeUndefined();
+  });
+});
+
+describe("a tool directory the harness prepared", () => {
+  it("goes first on the built PATH and changes nothing else", () => {
+    const built = { PATH: "/usr/bin:/bin", HOME: workerHome };
+    expect(
+      withToolDirectories(built, ["/work/node_modules/.swarm-pnpm/node_modules/.bin"]),
+    ).toEqual({
+      PATH: "/work/node_modules/.swarm-pnpm/node_modules/.bin:/usr/bin:/bin",
+      HOME: workerHome,
+    });
+    expect(built.PATH).toBe("/usr/bin:/bin");
+    expect(withToolDirectories(built, [])).toEqual(built);
+  });
+
+  it("is refused rather than put on PATH where it is relative or would split into two entries", () => {
+    expect(() => withToolDirectories({ PATH: "/bin" }, ["node_modules/.bin"])).toThrow(
+      UnusableToolDirectory,
+    );
+    expect(() => withToolDirectories({ PATH: "/bin" }, ["/work:/elsewhere"])).toThrow(
+      UnusableToolDirectory,
+    );
   });
 });
