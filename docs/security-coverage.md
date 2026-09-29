@@ -509,7 +509,9 @@ Two mechanisms, chosen by what the path is rather than by what is convenient.
 `docs/evidence/*/shakedown/logs/`, and nothing else of this tree. Both are data: a fuzz corpus
 for the secret scrubber, every file of which is a credential-shaped string by construction, and
 captured output of runs that demonstrated the scrub. Rewriting a captured log to quiet a scanner
-would falsify the record the log exists to be. That accounts for 12 of the 21.
+would falsify the record the log exists to be. That accounts for 12 of the 21. Since 2026-09-29
+the logs are packed losslessly under `docs/evidence/2026-08-18/shakedown/logs/packed-derived/`,
+restored byte for byte by `node scripts/evidence-pack.mjs restore`.
 
 Semgrep replaces its own default ignores as soon as that file exists, so the file restates them
 and includes `.gitignore`. Verified rather than assumed: the scanned file count moved from 6782
