@@ -1,5 +1,72 @@
 # Changelog
 
+## 1.1.0 - 2026-09-29
+
+Two false passes reported against the published 1.0.7, reproduced on it and fixed at the root,
+and four more found while building real controls for every attack family. Some verdicts change
+because of these repairs: each change is named below, a pass that was not shown now reads
+incomplete or unmeasured rather than passed, and none of them turns an old refusal into a pass.
+Additive record fields and one additive flag take the minor version; no field, exit code or rule
+name changes meaning, and records written before a rule keep re-deriving under the rule that
+wrote them.
+
+### Fixed
+
+- **A pass the candidate's own instrument reported is not a pass.** On 1.0.7 a
+  `vitest.config.mjs` that wrote a passing report to Vitest's `--outputFile` and exited before
+  any test ran read `result: pass` from `check`, and a `test` script replaced by an `echo` of a
+  passing summary read as a pass from `check` and as a regression pass from `ci`. The 1.0.6 fix
+  read a list of configuration file names; it could not see a configuration importing a changed
+  helper, a setup file named another way, the package scripts npm reads from the working tree,
+  or a runner substituted through the manifest, the lockfile or `node_modules/.bin`. Each
+  command check now observes its instrument (`instrument-identity-v1`): the scripts its command
+  reaches, each tool's configuration by the names the tool discovers, every file those import or
+  name, where the tool's packages come from, and the runner as installed, compared with the
+  reference commit before and after the run. A pass reported under an instrument the change
+  altered is withheld: `check` reads incomplete (exit 4) naming the altered files, and `ci`
+  reruns the check with the base's instrument restored, where only that reading can let the pass
+  stand. The observation is on the `gate-run` record and the offline verifier applies the same
+  rule. A registry release of a tool at another version is recorded and trusted; a tool from a
+  path, URL, git source or another package's name is not.
+- **Two failing tests with the same title are two failures.** On 1.0.7 two node tests both named
+  `works`, the first already failing at the base, collapsed to one TAP identity, so a patch that
+  broke the second read as the first's inherited failure: `inheritedFromBase: true`,
+  `regression: pass`, and the Action's `regression-only`. Under `failure-identity-v2` a node
+  failure is named by its TAP location, depth and title, a Vitest test by file and full name, a
+  pytest test by node id; failures are counted, compared with their cause, and never inherited
+  from a run that was cancelled, truncated, cut short of its plan, contradicts its own counters,
+  or repeats an identity. Checks carry `attributionRule`; a record without it re-derives under
+  the title-only rule that wrote it.
+- **A patch cannot pass `ci` by editing the test that would catch it.** A patch that broke the
+  code and marked the catching test `skip`, deleted its file or rewrote its assertion read as a
+  regression pass. Where a patch changes or deletes test files, the checks run again with the
+  base's versions of those files over the patch's source; a test the base passed that fails
+  there is named (`weakenedTests`) and the pass is withheld. A correct change that edits, renames
+  or adds tests still passes.
+- **A node suite whose every test was skipped measured nothing.** It read as passed.
+- **The pre-commit hook measured the staged commit against itself**, so the change read as empty
+  and a staged configuration was its own reference. It is now measured against `HEAD`.
+- **A workspace pattern from a checked repository's package.json is no longer compiled into a
+  regular expression**; a crafted pattern made discovery take exponential time. Patterns keep
+  `*` and `**`; any other shape is refused with the fix named.
+
+### Added
+
+- `verdict --head <sha>` refuses a verdict made for another head than the one being decided.
+- Quoted and space-bearing Git patch paths (`my file.js`, `café "x".js`, renames and copies
+  between them) are read instead of refused, with every unsafe path still refused after decoding.
+- The ci report and the Markdown summary name the failing tests beside every attribution, so a
+  failure excused as inherited stays in view.
+
+### Changed
+
+- The front door, package README and claims index say what the command runs and records and
+  what it does not judge, and correct three statements: `check` briefly writes its own
+  falsification-bond fixtures into the repository and removes them; `regression: pass` can include
+  a proven inherited failure; locally commands run on the host under a built environment, and
+  containers are the Action's default. The 1.0.0 release note's statement that the basic command
+  runs in a container when one is available was wrong and is corrected on that release.
+
 ## 1.0.7 - 2026-09-28
 
 ### Fixed
