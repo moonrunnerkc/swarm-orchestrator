@@ -11,7 +11,7 @@ import type { ChallengePolicy } from "./gates/goal-challenges.ts";
 import { verifyIndependently } from "./gates/independent-verification.ts";
 import { createNodeCommandRunner } from "./gates/node-command-runner.ts";
 import { inspectionParser } from "./gates/parsers.ts";
-import { patchAgainstBase } from "./gates/scratch-index.ts";
+import { diffAgainstBase, patchAgainstBase } from "./gates/scratch-index.ts";
 
 export interface TaskGoalContext {
   readonly contract: GoalContract;
@@ -110,7 +110,12 @@ export async function finalizeTaskGoal(context: TaskGoalContext) {
     provenance: ["tool-output"],
     payload: asJsonValue({
       ...result,
-      sourcePatchDigest: digestOfBytes(patch),
+      // The source as the worker's own diff record names it (zero-context), beside the digest of
+      // the full-context patch the fresh checkout applied: two readings of one working tree.
+      sourcePatchDigest: digestOfBytes(
+        await diffAgainstBase({ workspaceRoot: context.workspace, baseRef: context.baseCommit }),
+      ),
+      appliedPatchDigest: digestOfBytes(patch),
       sourceBase: context.baseCommit,
     }),
   });
@@ -134,7 +139,12 @@ export async function verifyCandidateUnder(
     provenance: ["tool-output"],
     payload: asJsonValue({
       ...result,
-      sourcePatchDigest: digestOfBytes(patch),
+      // The source as the worker's own diff record names it (zero-context), beside the digest of
+      // the full-context patch the fresh checkout applied: two readings of one working tree.
+      sourcePatchDigest: digestOfBytes(
+        await diffAgainstBase({ workspaceRoot: context.workspace, baseRef: context.baseCommit }),
+      ),
+      appliedPatchDigest: digestOfBytes(patch),
       sourceBase: context.baseCommit,
     }),
   });
@@ -178,7 +188,15 @@ export function taskGoalGate(context: TaskGoalContext): GateDefinition {
           provenance: ["tool-output"],
           payload: asJsonValue({
             ...result,
-            sourcePatchDigest: digestOfBytes(patch),
+            // The source as the worker's own diff record names it (zero-context), beside the digest of
+            // the full-context patch the fresh checkout applied: two readings of one working tree.
+            sourcePatchDigest: digestOfBytes(
+              await diffAgainstBase({
+                workspaceRoot: context.workspace,
+                baseRef: context.baseCommit,
+              }),
+            ),
+            appliedPatchDigest: digestOfBytes(patch),
             sourceBase: context.baseCommit,
           }),
         });
