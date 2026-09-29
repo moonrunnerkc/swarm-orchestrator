@@ -97,6 +97,7 @@ const unpinned = scripted
     );
 const entry = { ...unpinned, digest: digestOfJson(unpinned) };
 const printed = node([driver, "identities", ...shared]);
+// nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp - name is one of the four string literals this file passes below, over output this file's own driver printed.
 const digestOf = (name) => new RegExp(`${name}\\s+(sha256:[0-9a-f]{64})`).exec(printed)?.[1];
 const confirmatoryBudgets = {
   agent: { maxWallMinutes: 12, maxTokens: 1_000_000, isolation: null },

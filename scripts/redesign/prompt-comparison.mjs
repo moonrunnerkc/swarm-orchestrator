@@ -87,6 +87,7 @@ const git = async (cwd, ...args) =>
 const sourceCommit = await git(sourceRoot, "rev-parse", "HEAD");
 if ((await git(sourceRoot, "status", "--porcelain")).length)
   throw new Error("Commit the measured source first.");
+// nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request - loopback to the local Ollama server, which serves plain HTTP only; the request never leaves this host.
 const inventory = await (await fetch("http://127.0.0.1:11434/api/tags")).json();
 const installed = inventory.models.find((entry) => entry.name === modelId);
 if (!installed || installed.remote_host || installed.remote_model)

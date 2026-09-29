@@ -18,6 +18,7 @@ const inventorySchema = z.object({
 });
 try {
   const inventory = inventorySchema.parse(
+    // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request - loopback to the local Ollama server, which serves plain HTTP only; the request never leaves this host.
     await (await fetch("http://127.0.0.1:11434/api/tags")).json(),
   );
   const identities = Object.fromEntries(

@@ -168,6 +168,7 @@ export async function measureBatch({ batch, tasks, record, signal }) {
 }
 
 async function inventory() {
+  // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request - loopback to the local Ollama server, which serves plain HTTP only; the request never leaves this host.
   const response = await fetch("http://127.0.0.1:11434/api/tags", {
     signal: AbortSignal.timeout(10000),
   });

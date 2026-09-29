@@ -115,6 +115,7 @@ for (const selected of frame.selected) {
     startedAt: new Date(startedAt).toISOString(),
   };
   const finish = (outcome, extra = {}) => {
+    // nosemgrep: javascript.lang.security.insecure-object-assign.insecure-object-assign - every caller passes an object literal written in this file, and the row goes to a local JSON file, not a response.
     Object.assign(row, extra, { outcome, wallMs: Date.now() - startedAt });
     writeFileSync(rowPath, `${JSON.stringify(row, null, 2)}\n`);
     console.log(`${selected.index} ${selected.repository}#${selected.number}: ${outcome}`);

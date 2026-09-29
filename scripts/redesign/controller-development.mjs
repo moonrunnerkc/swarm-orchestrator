@@ -45,6 +45,7 @@ const git = async (cwd, ...argv) =>
 if (await git(sourceRoot, "status", "--porcelain"))
   throw new Error("Commit the measured source before freezing the development protocol.");
 const sourceCommit = await git(sourceRoot, "rev-parse", "HEAD");
+// nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request - loopback to the local Ollama server, which serves plain HTTP only; the request never leaves this host.
 const inventory = await (await fetch("http://127.0.0.1:11434/api/tags")).json();
 const model = inventory.models.find((candidate) => candidate.name === modelId);
 if (!model || model.remote_host || model.remote_model)

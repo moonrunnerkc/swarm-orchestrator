@@ -53,6 +53,7 @@ const frozen = node([
   "--cohort",
   "synthetic-preflight",
 ]);
+// nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp - name is one of the four string literals this file passes below, over output this file's own driver printed.
 const digestOf = (name) => new RegExp(`${name}\\s+(sha256:[0-9a-f]{64})`).exec(frozen)?.[1];
 const policy = /\bpolicy\s+(reach-pressure-v\d+)/.exec(frozen)?.[1];
 
