@@ -11,9 +11,12 @@ question and a fix.
 **Security**: privately, through [SECURITY.md](SECURITY.md).
 
 **Who answers**: the maintainer, Brad Kinnard (`@moonrunnerkc`). New issues notify the
-maintainer's GitHub inbox and email, and a scheduled workflow (`.github/workflows/triage.yml`)
-labels every issue without a maintainer response after 24 hours `overdue` and reopens the
-reminder daily until one is posted, so an unanswered report is visible as unanswered.
+maintainer's GitHub inbox and email. An hourly workflow (`.github/workflows/triage.yml`, applying
+`scripts/triage/policy.mjs`) labels an issue with no maintainer response after 24 hours `overdue`
+and mentions the maintainer in a reminder comment, again every 24 hours until one is posted; after
+72 hours it is also labelled `escalated` and assigned to the maintainer. The first maintainer
+comment removes both labels and ends the reminders, so an unanswered report is visible as
+unanswered and never goes quiet.
 
 **What to expect**: a meaningful first response within 24 calendar hours of a report, which
 may be a question, a reproduction, or a fix plan; a fix for a reproducible defect through the
