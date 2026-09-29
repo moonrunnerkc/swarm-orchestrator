@@ -119,7 +119,7 @@ for (const selected of frame.selected) {
           "--bundle",
           bundle,
           "--isolation",
-          `docker:${pr.execution.image}`,
+          `docker:${runRecord.images[pr.execution.imageKind].reference}`,
           "--require-isolation",
           "--install",
           "--oracle",

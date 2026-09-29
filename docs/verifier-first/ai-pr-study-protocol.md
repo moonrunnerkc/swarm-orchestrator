@@ -203,7 +203,11 @@ study of a convenience population selected by the rule above.
     preparation, while the registry is reachable, so the test command needs no network; a
     development row showed the earlier form (`npx --package pnpm` at test time) recording a
     suite as failed when no test had run. System commands the image lacks are recorded beside
-    a suite's status as `environmentGaps` without changing it.
+    a suite's status as `environmentGaps` without changing it. Each toolchain's image is
+    resolved once, when a run opens, to an immutable digest reference and the host platform,
+    recorded in the run's manifest, and every container of the run uses both: a development row
+    showed the shared daemon's `node:24-bookworm` tag moving between two containers of one row,
+    so dependencies installed for x64 under emulation were then run natively on arm64.
   - *One reviewer saw the candidate implementation.* The check author read the head checkout
     and wrote one check; nothing checked it. The author now reads the pull request's text, the
     changed file names and a checkout of the base commit only, and writes checks per stated

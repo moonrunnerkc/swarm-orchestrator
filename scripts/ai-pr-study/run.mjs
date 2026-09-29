@@ -21,7 +21,7 @@
  *
  *   node scripts/ai-pr-study/run.mjs <frame.json> <verifier version>
  *        [--dev | --resume <runId>] [--only <index,index>] [--limit <n>]
- *        [--arms fetch,suite,verifier] [--image <node image>] [--python-image <image>]
+ *        [--arms fetch,suite,verifier] [--image <node image>] [--python-image <image>] (new runs)
  *        [--max-attempts <n>] [--verifier-timeout-ms <ms>] [--install-timeout-ms <ms>]
  *        [--test-timeout-ms <ms>] [--working-root <dir>]
  *
@@ -65,8 +65,6 @@ const budgets = runRecord.budgets;
 const limit = Number(flags.get("limit") ?? "1000");
 const only = flags.has("only") ? new Set(String(flags.get("only")).split(",").map(Number)) : null;
 const armsWanted = new Set(String(flags.get("arms") ?? "fetch,suite,verifier").split(","));
-const nodeImage = flags.get("image") ?? "node:24-bookworm";
-const pythonImage = flags.get("python-image") ?? "ghcr.io/astral-sh/uv:python3.12-bookworm";
 
 const gh = (ghArgs) => {
   const ran = run("gh", ghArgs, { maxBuffer: 64_000_000 });
@@ -215,7 +213,8 @@ async function fetchArm(selected, attempt) {
       : null;
   pr.execution = {
     manifest,
-    image: manifest === "pyproject.toml" ? pythonImage : nodeImage,
+    imageKind: manifest === "pyproject.toml" ? "python" : "node",
+    image: runRecord.images[manifest === "pyproject.toml" ? "python" : "node"].tag,
     objectClone: clone,
   };
   return { pr, summary: `fetched ${names.length} changed file(s)` };
@@ -236,7 +235,7 @@ async function suiteArm(fetch, attempt) {
       fetch.pr[side],
     );
     const measured = plainSuite(checkout, {
-      image: fetch.pr.execution.image,
+      image: runRecord.images[fetch.pr.execution.imageKind],
       installTimeoutMs: budgets.installTimeoutMs,
       testTimeoutMs: budgets.testTimeoutMs,
     });
@@ -269,7 +268,7 @@ async function verifierArm(fetch, attempt) {
   const artifacts = attemptDirectory(runRecord.paths.artifacts, pr.index, "verifier", attempt);
   const summary = join(artifacts, "summary.md");
   const bundle = join(artifacts, "bundle");
-  const image = pr.execution.image;
+  const image = runRecord.images[pr.execution.imageKind].reference;
   const verifierArgs = [
     "--yes",
     `swarm-verify@${version}`,

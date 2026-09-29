@@ -38,7 +38,7 @@ import {
 } from "./model-client.mjs";
 import {
   detectProject,
-  imageIdentity,
+  environmentImage,
   prepareDependencies,
   checkPath as projectPath,
   runInContainer,
@@ -97,6 +97,14 @@ if (authorModel === secondModel) {
   process.exit(2);
 }
 const budgets = runRecord.budgets;
+if (runRecord.images === undefined) {
+  console.error(
+    `run ${runRecord.runId} pins no images; it predates image pinning and is not adjudicated`,
+  );
+  process.exit(2);
+}
+/** The run's pinned image for this row's toolchain. */
+const pinnedImage = (pr) => runRecord.images[pr.execution.imageKind];
 const frame = JSON.parse(readFileSync(runRecord.framePath, "utf8"));
 
 /** Ask a model for exactly one tool call and return its parsed arguments, or null. */
@@ -203,7 +211,7 @@ function executeSide(clone, commit, image, checks) {
   const setup = {
     install,
     environment: {
-      image: imageIdentity(image),
+      image: environmentImage(image),
       path: `${projectPath}:<image PATH>`,
       network: { install: "bridge (registry, this one command)", check: "none" },
     },
@@ -327,7 +335,7 @@ async function adjudicate(fetch, attempt) {
       const files = new Map(checks.map((check) => [check.path, check.contents]));
       const headCheckout = freshCheckout(pr.execution.objectClone, join(work, "head"), pr.head);
       for (const [path, contents] of files) writeFileInside(headCheckout, path, contents);
-      execution.head = executeSide(headCheckout, pr.head, pr.execution.image, checks);
+      execution.head = executeSide(headCheckout, pr.head, pinnedImage(pr), checks);
       // Classified at the head, where a module the pull request adds exists to be resolved.
       const resolver = checkoutModuleResolver(headCheckout);
       for (const check of checks)
@@ -335,7 +343,7 @@ async function adjudicate(fetch, attempt) {
           truthClass: classifyCheckExecution(check, { projectModule: resolver }),
         };
       for (const [path, contents] of files) writeFileInside(clone, path, contents);
-      execution.base = executeSide(clone, pr.base, pr.execution.image, checks);
+      execution.base = executeSide(clone, pr.base, pinnedImage(pr), checks);
       for (const path of files.keys()) {
         removeFileInside(headCheckout, path);
         removeFileInside(clone, path);

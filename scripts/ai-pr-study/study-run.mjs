@@ -20,6 +20,7 @@ import {
   standingAttempt,
 } from "./attempts.mjs";
 import { childPath } from "./containment.mjs";
+import { resolveImage } from "./plain-ci.mjs";
 
 export const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 export const defaultWorkingRoot = join(homedir(), ".cache", "swarm-ai-pr-study");
@@ -64,6 +65,8 @@ export function openStudyRun({ framePath, version, flags, workingRoot = defaultW
   for (const [flag, key] of Object.entries(budgetFlags))
     if (flags.has(flag)) budgets[key] = Number(flags.get(flag));
   const resume = flags.has("resume") ? String(flags.get("resume")) : undefined;
+  if (resume !== undefined && (flags.has("image") || flags.has("python-image")))
+    throw new Error("a resumed run keeps the images its manifest pinned; pass no image on resume");
   if (resume === undefined && !development && harness.dirty)
     throw new Error(
       "the study scripts differ from the harness commit; commit them, or pass --dev for a development run",
@@ -77,7 +80,20 @@ export function openStudyRun({ framePath, version, flags, workingRoot = defaultW
       harnessCommit: harness.commit,
     },
     budgets: resume === undefined ? budgets : Object.keys(budgets).length > 0 ? budgets : undefined,
-    extra: { harnessDirty: harness.dirty, framePath: resolve(framePath) },
+    extra: {
+      harnessDirty: harness.dirty,
+      framePath: resolve(framePath),
+      // Each toolchain's image, resolved once to an immutable reference and platform.
+      images:
+        resume === undefined
+          ? {
+              node: resolveImage(String(flags.get("image") ?? "node:24-bookworm")),
+              python: resolveImage(
+                String(flags.get("python-image") ?? "ghcr.io/astral-sh/uv:python3.12-bookworm"),
+              ),
+            }
+          : undefined,
+    },
   });
   return { ...opened, frame: JSON.parse(frameBytes.toString("utf8")), workingRoot };
 }

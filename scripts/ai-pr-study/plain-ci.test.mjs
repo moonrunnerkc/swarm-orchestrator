@@ -10,6 +10,7 @@ import {
   missingCommands,
   plainSuite,
   prepareDependencies,
+  resolveImage,
   suiteStatus,
 } from "./plain-ci.mjs";
 
@@ -249,6 +250,56 @@ describe("dependency preparation and the suite, over a recorded container runner
     );
     const missing = prepareDependencies(root, "node:24", detectProject(root), { timeoutMs: 1000 });
     expect(missing.status).toBe("failed");
+  });
+});
+
+describe("image pinning", () => {
+  it("resolves a tag once to a digest and the host platform, and every container uses both", () => {
+    const calls = [];
+    const run = (command, args) => {
+      calls.push([command, ...args].join(" "));
+      if (args[0] === "version") return { status: 0, stdout: "linux/arm64\n", stderr: "" };
+      if (args[0] === "image")
+        return { status: 0, stdout: 'sha256:aaa ["node@sha256:bbb"]', stderr: "" };
+      return { status: 0, stdout: "", stderr: "" };
+    };
+    const image = resolveImage("node:24-bookworm", run);
+    expect(image).toMatchObject({
+      tag: "node:24-bookworm",
+      reference: "node@sha256:bbb",
+      id: "sha256:aaa",
+      platform: "linux/arm64",
+    });
+    write(
+      "package.json",
+      JSON.stringify({ scripts: { test: "node --test" }, dependencies: { a: "1" } }),
+    );
+    write("package-lock.json", "{}");
+    prepareDependencies(root, image, detectProject(root), { timeoutMs: 1000, run });
+    const install = calls.find((call) => call.startsWith("docker run"));
+    expect(install).toContain("--platform=linux/arm64 node@sha256:bbb -c");
+    expect(install).not.toContain("node:24-bookworm");
+  });
+
+  it("pulls a missing image for the host platform before pinning it", () => {
+    const calls = [];
+    let pulled = false;
+    const run = (command, args) => {
+      calls.push([command, ...args].join(" "));
+      if (args[0] === "version") return { status: 0, stdout: "linux/amd64", stderr: "" };
+      if (args[0] === "pull") {
+        pulled = true;
+        return { status: 0, stdout: "", stderr: "" };
+      }
+      return pulled
+        ? { status: 0, stdout: 'sha256:ccc ["ghcr.io/astral-sh/uv@sha256:ddd"]', stderr: "" }
+        : { status: 1, stdout: "", stderr: "No such image" };
+    };
+    const image = resolveImage("ghcr.io/astral-sh/uv:python3.12-bookworm", run);
+    expect(calls).toContain(
+      "docker pull --quiet --platform linux/amd64 ghcr.io/astral-sh/uv:python3.12-bookworm",
+    );
+    expect(image.reference).toBe("ghcr.io/astral-sh/uv@sha256:ddd");
   });
 });
 

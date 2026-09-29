@@ -219,6 +219,53 @@ export function suiteStatus({ setupFailed, testCommand, exitCode, timedOut, coll
 
 const tail = (text, bytes = 4000) => String(text ?? "").slice(-bytes);
 
+/** The pinned image as recorded in `setup.environment`, confirmed against the daemon now. */
+export function environmentImage(image, run = spawnSync) {
+  if (typeof image === "string") return imageIdentity(image, run);
+  const now = imageIdentity(image.reference, run);
+  return { ...image, confirmedId: now.id, matches: now.id === image.id };
+}
+
+/**
+ * An image as the study runs it: a tag resolved once, when a run opens, to an immutable
+ * reference and the host's platform. A development row showed why a tag is not enough: the
+ * shared docker daemon's `node:24-bookworm` moved between two containers of one row (another
+ * process pulled it for linux/amd64), so dependencies installed under emulation for x64 and the
+ * check then ran natively on arm64 against them. Every container of a run uses the pinned
+ * reference with `--platform`.
+ */
+export function resolveImage(tag, run = spawnSync) {
+  const server = run("docker", ["version", "--format", "{{.Server.Os}}/{{.Server.Arch}}"], {
+    encoding: "utf8",
+  });
+  if (server.status !== 0)
+    throw new Error(`the container daemon did not answer: ${tail(server.stderr, 300)}`);
+  const platform = server.stdout.trim();
+  let identity = imageIdentity(tag, run);
+  if (identity.id === null) {
+    const pulled = run("docker", ["pull", "--quiet", "--platform", platform, tag], {
+      encoding: "utf8",
+    });
+    if (pulled.status !== 0)
+      throw new Error(`${tag} could not be pulled: ${tail(pulled.stderr, 300)}`);
+    identity = imageIdentity(tag, run);
+  }
+  const repository = tag.replace(/:[^/:]*$/, "");
+  const digest = identity.repoDigests.find((entry) => entry.startsWith(`${repository}@`));
+  return {
+    tag,
+    reference: digest ?? identity.id,
+    id: identity.id,
+    repoDigests: identity.repoDigests,
+    platform,
+  };
+}
+
+const imageArguments = (image) =>
+  typeof image === "string"
+    ? [image]
+    : [...(image.platform ? [`--platform=${image.platform}`] : []), image.reference];
+
 /** The image's id and repository digest, as docker reports them. */
 export function imageIdentity(image, run = spawnSync) {
   const inspected = run(
@@ -274,7 +321,7 @@ export function prepareDependencies(root, image, project, { timeoutMs, run = spa
       "--memory=4g",
       "--entrypoint",
       "/bin/sh",
-      image,
+      ...imageArguments(image),
       "-c",
       `export HOME=/tmp TMPDIR=/tmp; ${project.installCommand}`,
     ],
@@ -313,7 +360,7 @@ export function runInContainer(
       "--pids-limit=512",
       "--entrypoint",
       "/bin/sh",
-      image,
+      ...imageArguments(image),
       "-c",
       `export HOME=/tmp TMPDIR=/tmp PATH=${checkPath}:$PATH; ${command}`,
     ],
@@ -336,7 +383,7 @@ export function runInContainer(
 export function plainSuite(root, { image, installTimeoutMs, testTimeoutMs, run = spawnSync }) {
   const project = detectProject(root);
   const environment = {
-    image: imageIdentity(image, run),
+    image: environmentImage(image, run),
     path: `${checkPath}:<image PATH>`,
     network: { install: "bridge (registry, this one command)", test: "none" },
   };
