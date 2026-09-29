@@ -7,6 +7,7 @@ import {
   npmDeferredScripts,
   uvEditableProject,
   uvEnvironmentPython,
+  uvSourceBuilds,
 } from "./deferred-setup.ts";
 
 let workspace = "";
@@ -132,4 +133,45 @@ it("admits plain requirements and nothing that names a URL, a path or an option"
     "pkg==1 --hash=x",
   ])
     expect(isPlainRequirement(other), other).toBe(false);
+});
+
+describe("the uv packages installing would build", () => {
+  const hash = `sha256:${"a".repeat(64)}`;
+  it("names each archive-only release and local tree, and leaves out what cannot be built safely", async () => {
+    await writeFile(
+      join(workspace, "uv.lock"),
+      [
+        "version = 1",
+        '[[package]]\nname = "app"\nversion = "0.1.0"\nsource = { editable = "." }',
+        `[[package]]\nname = "docopt"\nversion = "0.6.2"\nsource = { registry = "https://pypi.org/simple" }\nsdist = { url = "https://files.example/docopt-0.6.2.tar.gz", hash = "${hash}" }`,
+        `[[package]]\nname = "wheeled"\nversion = "1.0.0"\nsource = { registry = "https://pypi.org/simple" }\nsdist = { url = "https://files.example/wheeled-1.0.0.tar.gz", hash = "${hash}" }\nwheels = [{ url = "https://files.example/wheeled-1.0.0-py3-none-any.whl", hash = "${hash}" }]`,
+        '[[package]]\nname = "member"\nversion = "0.1.0"\nsource = { editable = "packages/member" }',
+        '[[package]]\nname = "vendored"\nversion = "0.1.0"\nsource = { directory = "vendor/lib" }',
+        '[[package]]\nname = "virtual-member"\nversion = "0.1.0"\nsource = { virtual = "packages/docs" }',
+        '[[package]]\nname = "fromgit"\nversion = "1.0.0"\nsource = { git = "https://example.invalid/x?rev=a#a" }',
+        '[[package]]\nname = "outside"\nversion = "1.0.0"\nsource = { directory = "../elsewhere" }',
+        '[[package]]\nname = "unchecked"\nversion = "1.0.0"\nsource = { registry = "https://pypi.org/simple" }\nsdist = { url = "https://files.example/unchecked-1.0.0.tar.gz" }',
+        "",
+      ].join("\n\n"),
+    );
+    const plan = await uvSourceBuilds(workspace);
+    expect(plan.builds).toEqual([
+      {
+        kind: "archive",
+        name: "docopt",
+        version: "0.6.2",
+        url: "https://files.example/docopt-0.6.2.tar.gz",
+        hash,
+        file: "docopt-0.6.2.tar.gz",
+      },
+      { kind: "tree", name: "member", path: "packages/member", editable: true },
+      { kind: "tree", name: "vendored", path: "vendor/lib", editable: false },
+    ]);
+    expect(plan.leftOut.map((entry) => entry.name)).toEqual(["fromgit", "outside", "unchecked"]);
+    expect(plan.leftOut[0]?.reason).toContain("git source");
+  });
+
+  it("names nothing without a lockfile", async () => {
+    expect(await uvSourceBuilds(workspace)).toEqual({ builds: [], leftOut: [] });
+  });
 });

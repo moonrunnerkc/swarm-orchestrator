@@ -1,5 +1,9 @@
 import { execFile, execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { networkInterfaces } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -47,6 +51,7 @@ interface CiReport {
   } | null;
   checks: { id: string; status: string; detail: string }[];
   bundleDirectory: string;
+  checkoutPath: string | null;
 }
 
 async function repository(name: string): Promise<{
@@ -474,3 +479,221 @@ describe.skipIf(!docker)("a pnpm workspace whose scripts call pnpm", () => {
     expect(report.regression, output).toBe("fail");
   }, 900_000);
 });
+
+/** The host's own non-loopback address, which a container on the bridge network can reach. */
+const hostAddress = Object.values(networkInterfaces())
+  .flat()
+  .find((entry) => entry?.family === "IPv4" && !entry.internal)?.address;
+
+/**
+ * Packages uv would build: the real source-only docopt 0.6.2, a workspace member, and netsdist,
+ * a source archive served by a local index whose setup.py tries the network. Before this, the
+ * registry-reaching `uv sync --no-install-project` ran netsdist's setup.py and the member's
+ * build with the network on (measured: netsdist's attempt got through). Now nothing is built
+ * there; docopt and the member are built offline and the tests that import them are measured,
+ * and netsdist's attempt is refused and reported.
+ */
+describe.skipIf(!docker || hostAddress === undefined)(
+  "a uv project whose dependencies installing would build",
+  () => {
+    let workspace = "";
+    let base = "";
+    let head = "";
+    let broken = "";
+    let server: Server | null = null;
+    beforeAll(async () => {
+      const index = join(scratch, "index");
+      const tree = join(scratch, "netsdist-src", "netsdist-1.0.0");
+      await mkdir(join(tree, "netsdist"), { recursive: true });
+      await writeFile(
+        join(tree, "setup.py"),
+        [
+          "import socket, sys",
+          "from setuptools import setup",
+          "try:",
+          '    socket.create_connection(("pypi.org", 443), timeout=5).close()',
+          "except OSError as error:",
+          '    sys.exit("netsdist setup.py: network attempt refused: %s" % error)',
+          'with open("/workspace/NETSDIST_REACHED_THE_NETWORK", "w") as marker:',
+          '    marker.write("netsdist setup.py ran with the network on\\n")',
+          "setup()",
+          "",
+        ].join("\n"),
+      );
+      await writeFile(
+        join(tree, "pyproject.toml"),
+        '[project]\nname = "netsdist"\nversion = "1.0.0"\n\n[build-system]\nrequires = ["setuptools>=61"]\nbuild-backend = "setuptools.build_meta"\n',
+      );
+      await writeFile(
+        join(tree, "PKG-INFO"),
+        "Metadata-Version: 2.2\nName: netsdist\nVersion: 1.0.0\n",
+      );
+      await writeFile(join(tree, "netsdist", "__init__.py"), "VALUE = 1\n");
+      await mkdir(join(index, "netsdist"), { recursive: true });
+      const archive = join(index, "netsdist", "netsdist-1.0.0.tar.gz");
+      await run("tar", ["-czf", archive, "-C", join(scratch, "netsdist-src"), "netsdist-1.0.0"]);
+      const digest = createHash("sha256")
+        .update(await readFile(archive))
+        .digest("hex");
+      await writeFile(
+        join(index, "netsdist", "index.html"),
+        `<html><body><a href="netsdist-1.0.0.tar.gz#sha256=${digest}">netsdist-1.0.0.tar.gz</a></body></html>\n`,
+      );
+      server = createServer(async (request, response) => {
+        const path = (request.url ?? "/").replace(/^\/simple\//, "").replace(/\/$/, "/index.html");
+        try {
+          const body = await readFile(join(index, path));
+          response.setHeader(
+            "Content-Type",
+            path.endsWith(".html") ? "text/html" : "application/octet-stream",
+          );
+          response.end(body);
+        } catch {
+          response.statusCode = 404;
+          response.end();
+        }
+      });
+      await new Promise<void>((ready) => server?.listen(0, hostAddress, ready));
+      const port = (server.address() as AddressInfo).port;
+
+      const repo = await repository("uv-builds");
+      workspace = repo.path;
+      await mkdir(join(workspace, "src", "app"), { recursive: true });
+      await mkdir(join(workspace, "member", "src", "member"), { recursive: true });
+      await mkdir(join(workspace, "tests"));
+      await writeFile(
+        join(workspace, "pyproject.toml"),
+        [
+          "[project]",
+          'name = "app"',
+          'version = "0.1.0"',
+          'requires-python = ">=3.11"',
+          'dependencies = ["docopt==0.6.2", "member", "netsdist==1.0.0"]',
+          "",
+          "[dependency-groups]",
+          'dev = ["pytest>=8"]',
+          "",
+          "[tool.uv.workspace]",
+          'members = ["member"]',
+          "",
+          "[tool.uv.sources]",
+          "member = { workspace = true }",
+          'netsdist = { index = "local" }',
+          "",
+          "[[tool.uv.index]]",
+          'name = "local"',
+          `url = "http://${hostAddress}:${port}/simple"`,
+          "explicit = true",
+          "",
+          "[build-system]",
+          'requires = ["hatchling"]',
+          'build-backend = "hatchling.build"',
+          "",
+        ].join("\n"),
+      );
+      await writeFile(
+        join(workspace, "member", "pyproject.toml"),
+        '[project]\nname = "member"\nversion = "0.1.0"\nrequires-python = ">=3.11"\n\n[build-system]\nrequires = ["hatchling"]\nbuild-backend = "hatchling.build"\n',
+      );
+      await writeFile(join(workspace, "member", "src", "member", "__init__.py"), "OFFSET = 1\n");
+      await writeFile(
+        join(workspace, ".gitignore"),
+        ".venv/\n__pycache__/\n.pytest_cache/\n*.egg-info/\n",
+      );
+      await writeFile(
+        join(workspace, "src", "app", "__init__.py"),
+        "from docopt import docopt\nfrom member import OFFSET\n\n\ndef parse(argv):\n    return int(docopt('usage: app <n>', argv)['<n>']) + OFFSET\n",
+      );
+      await writeFile(
+        join(workspace, "tests", "test_app.py"),
+        "from app import parse\n\n\ndef test_parse():\n    assert parse(['41']) == 42\n",
+      );
+      await run(
+        "docker",
+        [
+          "run",
+          "--rm",
+          "--volume",
+          `${workspace}:/w`,
+          "--workdir",
+          "/w",
+          "--user",
+          `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`,
+          "--env",
+          "HOME=/tmp",
+          uvImage,
+          "uv",
+          "lock",
+        ],
+        { timeout: 300_000 },
+      );
+      // Locking reads netsdist's static metadata; if it had run setup.py with the network on, the
+      // marker says so and the fixture is not what this test claims.
+      await expect(
+        readFile(join(workspace, "NETSDIST_REACHED_THE_NETWORK"), "utf8"),
+      ).rejects.toThrow();
+      base = await commit(repo.git, "base");
+      await writeFile(
+        join(workspace, "src", "app", "__init__.py"),
+        "from docopt import docopt\nfrom member import OFFSET\n\n\ndef parse(argv):\n    arguments = docopt('usage: app <n>', argv)\n    return int(arguments['<n>']) + OFFSET\n",
+      );
+      head = await commit(repo.git, "name the parsed arguments");
+      await repo.git(["checkout", "-q", "-b", "broken", base]);
+      await writeFile(
+        join(workspace, "src", "app", "__init__.py"),
+        "from docopt import docopt\nfrom member import OFFSET\n\n\ndef parse(argv):\n    return int(docopt('usage: app <n>', argv)['<n>']) - OFFSET\n",
+      );
+      broken = await commit(repo.git, "subtract instead");
+    }, 600_000);
+
+    afterAll(async () => {
+      await new Promise<void>((closed) =>
+        server === null ? closed() : server.close(() => closed()),
+      );
+    });
+
+    it("builds nothing where the registry is reachable, and builds offline what the tests import", async () => {
+      const { report, output } = await ci(workspace, head, base, `docker:${uvImage}`);
+      expect(report.install?.succeeded, output).toBe(true);
+      expect(report.install?.command).toContain("--no-build");
+      expect(report.install?.detail).toContain(
+        "docopt 0.6.2 (a source archive only) built by setuptools.build_meta:__legacy__ and installed offline where the checks run (network measured off)",
+      );
+      expect(report.install?.detail).toContain(
+        "workspace member member built by hatchling.build and installed offline",
+      );
+      expect(report.install?.detail).toContain(
+        "the project's own editable install built by hatchling.build and installed offline",
+      );
+      // The archive whose setup.py tries the network: refused, reported, and never reached.
+      expect(report.install?.detail).toContain(
+        "netsdist 1.0.0 (a source archive only) did not complete",
+      );
+      expect(report.install?.detail).toContain("netsdist setup.py: network attempt refused");
+      await expect(
+        readFile(join(report.checkoutPath ?? "", "NETSDIST_REACHED_THE_NETWORK"), "utf8"),
+      ).rejects.toThrow();
+      expect(report.regression, output).toBe("pass");
+      expect(report.checks.find((check) => check.id === "tests")?.status).toBe("passed");
+      const records = await setupRecords(report.bundleDirectory);
+      const intents = records.filter((payload) => payload.phase === "intent");
+      expect(intents[0]).toMatchObject({
+        network: "registry",
+        argv: expect.arrayContaining(["--no-build", "--no-install-package", "docopt"]),
+      });
+      expect(intents.filter((payload) => payload.stage === "source-archive")).toHaveLength(2);
+      // Every command that runs a build backend or setup.py ran with the network off.
+      for (const payload of intents.filter((one) =>
+        (one.argv as string[]).some((argument) => argument.includes("build_")),
+      ))
+        expect(payload).toMatchObject({ network: "none", networkProbe: { contained: true } });
+    }, 900_000);
+
+    it("still fails a change that genuinely breaks the code", async () => {
+      const { report, output } = await ci(workspace, broken, base, `docker:${uvImage}`);
+      expect(report.install?.succeeded, output).toBe(true);
+      expect(report.regression, output).toBe("fail");
+      expect(report.checks.find((check) => check.id === "tests")?.status).toBe("failed");
+    }, 900_000);
+  },
+);

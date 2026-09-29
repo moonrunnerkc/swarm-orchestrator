@@ -6,6 +6,7 @@ import { z } from "zod";
 import { asJsonValue, digestOfBytes, digestOfJson } from "../evidence/canonical-json.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import { harnessChildEnvironment } from "../exec/child-environment.ts";
+import { uvSourceBuilds } from "./deferred-setup.ts";
 import type { GateCommandRunner, GateObservation } from "./gate-definition.ts";
 import {
   completeDeferredSetup,
@@ -49,7 +50,11 @@ const observationSchema = z.strictObject({
    */
   network: z.enum(["registry", "none"]).optional(),
   /** Absent for the lockfile install itself; otherwise which follow-up step this is. */
-  stage: z.enum(["package-manager", "build-requirements", "offline-lifecycle"]).optional(),
+  stage: z
+    .enum(["package-manager", "build-requirements", "source-archive", "offline-lifecycle"])
+    .optional(),
+  /** Where the command ran, relative to the unit, where that is not the unit itself. */
+  directory: z.string().optional(),
   /** For offline work: the measurement that showed a check-time command could not connect. */
   networkProbe: z.strictObject({ contained: z.literal(true), observed: z.string() }).optional(),
   /** For a fetched package manager: the directory put on the checks' PATH once it succeeds. */
@@ -74,7 +79,18 @@ const lockfiles = [
   // uv refuse, which is reported as a failed install, not worked around.
   {
     file: "uv.lock",
-    argv: ["uv", "sync", "--locked", "--all-groups", "--all-extras", "--no-install-project"],
+    // `--no-build`: installing never runs a build backend while the registry is reachable. A
+    // package that would need one is left out here by name and built in the deferred offline
+    // phase, or left out with its reason where that cannot be done safely.
+    argv: [
+      "uv",
+      "sync",
+      "--locked",
+      "--all-groups",
+      "--all-extras",
+      "--no-install-project",
+      "--no-build",
+    ],
   },
 ] as const;
 
@@ -135,7 +151,6 @@ export async function installFromLockfile(options: InstallOptions): Promise<Depe
       commands: options.commands,
       timeoutMs: options.timeoutMs,
       effect,
-      ...(options.signal === undefined ? {} : { signal: options.signal }),
       ...(options.probeNetwork === undefined ? {} : { probeNetwork: options.probeNetwork }),
     });
     return {
@@ -191,6 +206,7 @@ async function recordedEffect(
     ...(planned.stage === undefined ? {} : { stage: planned.stage }),
     ...(planned.networkProbe === undefined ? {} : { networkProbe: planned.networkProbe }),
     ...(planned.toolDirectory === undefined ? {} : { toolDirectory: planned.toolDirectory }),
+    ...(planned.directory === undefined ? {} : { directory: planned.directory }),
     lockDigest,
     sourceDigest: before,
   };
@@ -207,7 +223,7 @@ async function recordedEffect(
   let after: string;
   try {
     observed = await options.commands.runVouched(planned.argv, {
-      cwd: workspace,
+      cwd: planned.directory === undefined ? workspace : join(workspace, planned.directory),
       timeoutMs: Math.max(1, options.timeoutMs),
       ...(planned.network === "registry" ? { network: "registry" as const } : {}),
     });
@@ -245,6 +261,13 @@ async function installerArgv(
   workspace: string,
   options: { commands: GateCommandRunner; timeoutMs: number },
 ): Promise<string[]> {
+  if (candidate.file === "uv.lock") {
+    const plan = await uvSourceBuilds(workspace);
+    return [
+      ...candidate.argv,
+      ...[...plan.builds, ...plan.leftOut].flatMap((entry) => ["--no-install-package", entry.name]),
+    ];
+  }
   if (candidate.file !== "pnpm-lock.yaml") return [...candidate.argv];
   const probe = await options.commands.runVouched(["pnpm", "--version"], {
     cwd: workspace,

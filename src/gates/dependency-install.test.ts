@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createSystemClock } from "../cli-runtime-inputs.ts";
 import { openEvidenceSession } from "../evidence/session.ts";
 import { harnessChildEnvironment } from "../exec/child-environment.ts";
+import { archiveExtractScript, archiveFetchScript, pep517BuildScript } from "./deferred-setup.ts";
 import {
   installFromLockfile,
   lockfileInstallerArgv,
@@ -169,9 +171,11 @@ it("chooses the pnpm major from an unpinned lockfile's format", () => {
 
 /**
  * A project that keeps its test runner in a non-default dependency group, or in a `dev` extra as
- * the older layout does, is still run.
+ * the older layout does, is still run. `--no-build` keeps the registry-reaching install from
+ * running any build backend: a source archive's setup.py and a workspace member's build both ran
+ * there with the network on before.
  */
-it("installs every dependency group and every extra of a uv project", () => {
+it("installs every dependency group and every extra of a uv project, building nothing", () => {
   expect(lockfileInstallerArgv("uv.lock")).toEqual([
     "uv",
     "sync",
@@ -179,6 +183,7 @@ it("installs every dependency group and every extra of a uv project", () => {
     "--all-groups",
     "--all-extras",
     "--no-install-project",
+    "--no-build",
   ]);
 });
 
@@ -423,7 +428,7 @@ describe("deferred setup after the scripts-off install", () => {
       "install",
       "--system",
       "--target",
-      ".venv/.swarm-build/backend",
+      ".venv/.swarm-build/project/backend",
       "--only-binary",
       ":all:",
       "--python-version",
@@ -449,7 +454,7 @@ describe("deferred setup after the scripts-off install", () => {
       "--no-deps",
       "--python",
       ".venv/bin/python",
-      ".venv/.swarm-build/wheel/tinypkg-0.1.0-py3-none-any.whl",
+      ".venv/.swarm-build/project/wheel/tinypkg-0.1.0-py3-none-any.whl",
     ]);
     const stages = payloads(options.evidence)
       .filter((payload) => (payload as { phase: string }).phase === "intent")
@@ -489,5 +494,177 @@ describe("deferred setup after the scripts-off install", () => {
     expect(observed.succeeded).toBe(true);
     expect(observed.detail).toContain("not plain registry requirements");
     expect(calls).toHaveLength(3);
+  });
+
+  describe("uv packages that installing would build", () => {
+    const archiveBytes = "the source archive's bytes";
+    const archiveHash = `sha256:${createHash("sha256").update(archiveBytes).digest("hex")}`;
+    beforeEach(async () => {
+      await rm(join(workspace, "package-lock.json"));
+      await writeFile(
+        join(workspace, "uv.lock"),
+        [
+          "version = 1",
+          "",
+          "[[package]]",
+          'name = "app"',
+          'version = "0.1.0"',
+          'source = { virtual = "." }',
+          "",
+          "[[package]]",
+          'name = "netsdist"',
+          'version = "1.0.0"',
+          'source = { registry = "https://pypi.example/simple" }',
+          `sdist = { url = "https://files.example/netsdist-1.0.0.tar.gz", hash = "${archiveHash}" }`,
+          "",
+          "[[package]]",
+          'name = "member"',
+          'version = "0.1.0"',
+          'source = { editable = "member" }',
+          "",
+          "[[package]]",
+          'name = "fromgit"',
+          'version = "1.0.0"',
+          'source = { git = "https://example.invalid/fromgit?rev=abc#abc" }',
+          "",
+          "[[package]]",
+          'name = "wheeled"',
+          'version = "2.0.0"',
+          'source = { registry = "https://pypi.example/simple" }',
+          'sdist = { url = "https://files.example/wheeled-2.0.0.tar.gz", hash = "sha256:00" }',
+          'wheels = [{ url = "https://files.example/wheeled-2.0.0-py3-none-any.whl", hash = "sha256:11" }]',
+          "",
+        ].join("\n"),
+      );
+      await mkdir(join(workspace, "member"));
+      await writeFile(
+        join(workspace, "member", "pyproject.toml"),
+        '[build-system]\nrequires = ["hatchling"]\nbuild-backend = "hatchling.build"\n',
+      );
+      await mkdir(join(workspace, ".venv"));
+      await writeFile(join(workspace, ".venv", ".gitignore"), "*\n");
+      await writeFile(join(workspace, ".venv", "pyvenv.cfg"), "version_info = 3.12.12\n");
+    });
+
+    /** Answers as the image's interpreter, uv and the backends would, writing what they write. */
+    const toolchain = (archive: string) => async (argv: readonly string[]) => {
+      if (argv[4] === archiveFetchScript) {
+        await mkdir(join(workspace, argv[6] as string, ".."), { recursive: true });
+        await writeFile(join(workspace, argv[6] as string), archive);
+      }
+      if (argv[4] === archiveExtractScript) {
+        const tree = join(workspace, argv[6] as string, "netsdist-1.0.0");
+        await mkdir(tree, { recursive: true });
+        await writeFile(
+          join(tree, "pyproject.toml"),
+          '[build-system]\nrequires = ["setuptools>=61"]\nbuild-backend = "setuptools.build_meta"\n',
+        );
+      }
+      if (argv.includes("requires")) return ok("[]");
+      if (argv.includes("build"))
+        return ok(
+          argv.includes("editable")
+            ? "member-0.1.0-py3-none-any.whl"
+            : "netsdist-1.0.0-py3-none-any.whl",
+        );
+      return ok();
+    };
+
+    it("leaves every build out of the registry-reaching install and builds each offline, fetching only bytes", async () => {
+      const options = await settings();
+      const { calls, commands } = scripted(toolchain(archiveBytes));
+      const observed = await installFromLockfile({ ...options, commands, probeNetwork: refused });
+      expect(observed.succeeded, observed.detail).toBe(true);
+      expect(calls[0]?.argv).toEqual([
+        ...(lockfileInstallerArgv("uv.lock") ?? []),
+        "--no-install-package",
+        "netsdist",
+        "--no-install-package",
+        "member",
+        "--no-install-package",
+        "fromgit",
+      ]);
+      expect(observed.detail).toContain(
+        "netsdist 1.0.0 (a source archive only) built by setuptools.build_meta and installed offline where the checks run (network measured off)",
+      );
+      expect(observed.detail).toContain(
+        "workspace member member built by hatchling.build and installed offline where the checks run (network measured off)",
+      );
+      expect(observed.detail).toContain(
+        "fromgit was left out of the install: it comes from a git source",
+      );
+      const fetch = calls.find((call) => call.argv[4] === archiveFetchScript);
+      expect(fetch?.argv.slice(5)).toEqual([
+        "https://files.example/netsdist-1.0.0.tar.gz",
+        ".venv/.swarm-build/0/archive/netsdist-1.0.0.tar.gz",
+        archiveHash,
+      ]);
+      expect(fetch?.argv.slice(0, 4)).toEqual(["python3", "-I", "-S", "-c"]);
+      expect(fetch?.options.network).toBe("registry");
+      const hooks = calls.filter((call) => call.argv.includes(pep517BuildScript));
+      expect(hooks.map((call) => [call.argv[0], call.options.cwd, call.options.network])).toEqual([
+        [
+          "../../../../bin/python",
+          join(workspace, ".venv/.swarm-build/0/source/netsdist-1.0.0"),
+          undefined,
+        ],
+        [
+          "../../../../bin/python",
+          join(workspace, ".venv/.swarm-build/0/source/netsdist-1.0.0"),
+          undefined,
+        ],
+        ["../.venv/bin/python", join(workspace, "member"), undefined],
+        ["../.venv/bin/python", join(workspace, "member"), undefined],
+      ]);
+      const intents = payloads(options.evidence).filter(
+        (payload) => (payload as { phase: string }).phase === "intent",
+      ) as { stage?: string; network: string; directory?: string }[];
+      expect(intents.map((payload) => [payload.stage, payload.network])).toEqual([
+        [undefined, "registry"],
+        ["source-archive", "registry"],
+        ["offline-lifecycle", "none"],
+        ["build-requirements", "registry"],
+        ["offline-lifecycle", "none"],
+        ["offline-lifecycle", "none"],
+        ["offline-lifecycle", "none"],
+        ["build-requirements", "registry"],
+        ["offline-lifecycle", "none"],
+        ["offline-lifecycle", "none"],
+        ["offline-lifecycle", "none"],
+      ]);
+      expect(intents[4]?.directory).toBe(".venv/.swarm-build/0/source/netsdist-1.0.0");
+      expect(intents[8]?.directory).toBe("member");
+      // Nothing that executes a backend ever asked for the registry.
+      for (const call of calls.filter((one) => one.argv.includes(pep517BuildScript)))
+        expect(call.options.network).toBeUndefined();
+    });
+
+    it("builds nothing from an archive whose bytes are not the lockfile's", async () => {
+      const options = await settings();
+      const { calls, commands } = scripted(toolchain("other bytes"));
+      const observed = await installFromLockfile({ ...options, commands, probeNetwork: refused });
+      expect(observed.succeeded).toBe(true);
+      expect(observed.detail).toContain(
+        `netsdist 1.0.0 (a source archive only) did not complete: the fetched archive's digest`,
+      );
+      expect(observed.detail).toContain(`is not the lockfile's ${archiveHash}`);
+      expect(calls.some((call) => call.argv[4] === archiveExtractScript)).toBe(false);
+    });
+
+    it("builds nothing where the checks' network is reachable, and still installs the rest without building", async () => {
+      const options = await settings();
+      const { calls, commands } = scripted(toolchain(archiveBytes));
+      const observed = await installFromLockfile({
+        ...options,
+        commands,
+        probeNetwork: async () => ({ contained: false, observed: "reached" }),
+      });
+      expect(observed.succeeded).toBe(true);
+      expect(observed.detail).toContain(
+        "netsdist 1.0.0 (a source archive only), workspace member member did not run: a check-time command here reaches the network",
+      );
+      expect(calls.map((call) => call.argv.slice(0, 2).join(" "))).toEqual(["uv sync"]);
+      expect(calls[0]?.argv).toContain("--no-build");
+    });
   });
 });
