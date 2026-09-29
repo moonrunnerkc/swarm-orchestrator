@@ -98,17 +98,33 @@ function expect(name, ran, expected) {
   } else console.log(`ok   ${name}: exit ${ran.code}`);
 }
 
-/** Null where Vitest starts on this runtime, else the first line of why it does not. */
+/**
+ * Null where Vitest runs a one-test project on this runtime, else the first line of why not.
+ * `vitest --version` is not enough: it starts without the native binding a run needs.
+ */
 function vitestStarts(modules) {
-  const ran = spawnSync(process.execPath, [join(modules, "vitest", "vitest.mjs"), "--version"], {
-    encoding: "utf8",
-    timeout: 60_000,
-  });
-  if (ran.status === 0) return null;
-  return (
-    `${ran.stderr ?? ""}${ran.stdout ?? ""}`.split("\n").find((line) => line.trim().length > 0) ??
-    `exit ${ran.status}`
-  );
+  const probe = mkdtempSync(join(tmpdir(), "swarm-vitest-probe-"));
+  try {
+    writeFileSync(join(probe, "package.json"), '{"type":"module"}\n');
+    writeFileSync(
+      join(probe, "probe.test.js"),
+      'import { expect, test } from "vitest";\ntest("runs", () => expect(1).toBe(1));\n',
+    );
+    symlinkSync(modules, join(probe, "node_modules"), "dir");
+    const ran = spawnSync(process.execPath, [join(modules, "vitest", "vitest.mjs"), "run"], {
+      cwd: probe,
+      encoding: "utf8",
+      timeout: 120_000,
+      env: { PATH: process.env.PATH ?? "", HOME: home, CI: "true", NO_COLOR: "1" },
+    });
+    if (ran.status === 0) return null;
+    return (
+      `${ran.stderr ?? ""}${ran.stdout ?? ""}`.split("\n").find((line) => /Error/.test(line)) ??
+      `exit ${ran.status}`
+    ).trim();
+  } finally {
+    rmSync(probe, { recursive: true, force: true });
+  }
 }
 
 function unsupported(name, reason) {
