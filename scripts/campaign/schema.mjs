@@ -160,7 +160,24 @@ export const manifestSchema = z
     schema: z.literal("swarm-campaign.manifest.v1"),
     protocol: z.strictObject({ path: relativePath, digest }),
     goalsDigest: digest,
+    /** Every goal's frozen identity: its package files' digest and its sealed oracle's digest. */
+    goals: z.array(z.strictObject({ id: slug, set: z.enum(["final", "development"]), digest })),
     orderSeed: z.string().min(8),
+    /** Tool, model and source pins every launch runs under. */
+    pins: z.strictObject({
+      swarmRevision: z.string().regex(/^[0-9a-f]{40}$/),
+      swarmCli: z.string().min(1),
+      model: z.string().min(1),
+      endpoint: z.string().url(),
+      vera: z.string().min(1),
+    }),
+    budgets: z.strictObject({
+      launchWallMs: z.number().int().positive(),
+      finalVerificationReserveMs: z.number().int().positive(),
+      tokens: z.number().int().positive(),
+      verifierMs: z.number().int().positive(),
+      infrastructureReruns: z.number().int().min(0).max(3),
+    }),
     launches: z.array(launchSchema).min(1),
     unsupported: z.array(
       z.strictObject({
@@ -209,6 +226,8 @@ export const launchRecordSchema = z.strictObject({
   tokens: z.strictObject({
     input: z.number().int().nonnegative().nullable(),
     output: z.number().int().nonnegative().nullable(),
+    /** Where only a combined count is reported. Null is unmeasured, never zero. */
+    total: z.number().int().nonnegative().nullable(),
     basis: z.string().min(1),
   }),
   decision: z.enum(decisions),
