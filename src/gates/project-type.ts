@@ -16,10 +16,20 @@ export interface ProjectDetection extends ProjectEnvironment {
   readonly pythonTools: readonly string[];
   readonly pythonMypyTargetsConfigured?: boolean;
   /**
+   * The formatter the project declares, and the file that declares it. Absent where nothing
+   * declares one: ruff configuration alone configures its linter, not its formatter.
+   */
+  readonly pythonFormatter?: PythonFormatter;
+  /**
    * Which configured tools the project's own environment holds, read from `.venv` without
    * running anything. Absent when there is no `.venv` to read, and then nothing is claimed.
    */
   readonly pythonToolsInstalled?: readonly string[];
+}
+
+export interface PythonFormatter {
+  readonly tool: "ruff" | "black";
+  readonly declaredBy: "pyproject.toml" | ".pre-commit-config.yaml";
 }
 
 const manifestsByType: Readonly<Record<ProjectType, readonly string[]>> = {
@@ -62,7 +72,9 @@ export async function detectProject(read: ManifestReader): Promise<ProjectDetect
   }
 
   let pythonToolsInstalled: readonly string[] | undefined;
+  let pythonFormatter: PythonFormatter | undefined;
   if (types.includes("python")) {
+    pythonFormatter = await declaredFormatter(read);
     for (const file of ["pytest.ini", "tox.ini"]) {
       const text = await read(file);
       if (text !== null && /^\s*\[pytest\]\s*$/m.test(text))
@@ -74,7 +86,10 @@ export async function detectProject(read: ManifestReader): Promise<ProjectDetect
     // version is whichever directory exists.
     if ((await read(".venv/pyvenv.cfg")) !== null) {
       const installed: string[] = [];
-      for (const tool of pythonTools) {
+      const expected = [
+        ...new Set([...pythonTools, ...(pythonFormatter ? [pythonFormatter.tool] : [])]),
+      ];
+      for (const tool of expected.sort()) {
         let present = false;
         for (let minor = 8; minor <= 15 && !present; minor += 1)
           present =
@@ -93,7 +108,48 @@ export async function detectProject(read: ManifestReader): Promise<ProjectDetect
     pythonTools,
     ...(pythonMypyTargetsConfigured ? { pythonMypyTargetsConfigured: true } : {}),
     ...(pythonToolsInstalled === undefined ? {} : { pythonToolsInstalled }),
+    ...(pythonFormatter === undefined ? {} : { pythonFormatter }),
   };
+}
+
+const formatterTables = z.object({
+  tool: z
+    .object({
+      ruff: z.object({ format: z.record(z.string(), z.unknown()).optional() }).optional(),
+      black: z.record(z.string(), z.unknown()).optional(),
+    })
+    .optional(),
+});
+
+/**
+ * A formatter is checked only where the project says it formats with it: a `[tool.ruff.format]`
+ * or `[tool.black]` table, or a pre-commit hook that runs it. The gate set holds one format
+ * check, so where both are declared ruff's declaration is the one read, and the check's title
+ * names the formatter it runs.
+ */
+async function declaredFormatter(read: ManifestReader): Promise<PythonFormatter | undefined> {
+  let tables: z.infer<typeof formatterTables> = {};
+  const pyproject = await read("pyproject.toml");
+  if (pyproject !== null) {
+    try {
+      tables = formatterTables.parse(parse(pyproject));
+    } catch {
+      // A malformed pyproject.toml is a setup problem, reported by the environment reading.
+    }
+  }
+  const hooks = new Set<string>();
+  const preCommit = await read(".pre-commit-config.yaml");
+  for (const match of (preCommit ?? "").matchAll(
+    /^[ \t]*(?:-[ \t]+)?id:[ \t]*["']?([A-Za-z0-9_-]+)["']?[ \t]*(?:#.*)?$/gm,
+  ))
+    if (match[1] !== undefined) hooks.add(match[1]);
+  if (tables.tool?.ruff?.format !== undefined)
+    return { tool: "ruff", declaredBy: "pyproject.toml" };
+  if (hooks.has("ruff-format")) return { tool: "ruff", declaredBy: ".pre-commit-config.yaml" };
+  if (tables.tool?.black !== undefined) return { tool: "black", declaredBy: "pyproject.toml" };
+  if (hooks.has("black") || hooks.has("black-jupyter"))
+    return { tool: "black", declaredBy: ".pre-commit-config.yaml" };
+  return undefined;
 }
 
 const configuredMypyTargets = z.object({

@@ -1,8 +1,13 @@
 import { commandGate, unavailableGate } from "./gate-command.ts";
 import type { GateDefinition } from "./gate-definition.ts";
-import type { ProjectDetection } from "./project-type.ts";
+import type { ProjectDetection, PythonFormatter } from "./project-type.ts";
 import { readRunnerResult } from "./runner-results.ts";
 import { renderRunnerArgv, structuredRunner } from "./structured-runner.ts";
+
+/** The check-only invocation of the declared formatter, shared with the check plan. */
+export function pythonFormatCommand(formatter: PythonFormatter): string {
+  return formatter.tool === "black" ? "black --check ." : "ruff format --check .";
+}
 
 /** Assemble configured Python checks using the project interpreter. */
 export function pythonGates(detection: ProjectDetection): readonly GateDefinition[] {
@@ -13,12 +18,17 @@ export function pythonGates(detection: ProjectDetection): readonly GateDefinitio
   // configured; the plan's prerequisites name the missing environment first.
   const missing = (tool: string): boolean =>
     detection.pythonToolsInstalled !== undefined && !detection.pythonToolsInstalled.includes(tool);
-  const notInstalled = (tool: string, id: string, title: string): GateDefinition =>
+  const notInstalled = (
+    tool: string,
+    id: string,
+    title: string,
+    declaredBy = "pyproject.toml",
+  ): GateDefinition =>
     unavailableGate(
       id,
       title,
       "blocking",
-      `pyproject.toml configures ${tool}, but the project's environment does not hold it, so this check cannot run; add ${tool} to the project's development dependencies and sync`,
+      `${declaredBy} configures ${tool}, but the project's environment does not hold it, so this check cannot run; add ${tool} to the project's development dependencies and sync`,
       false,
     );
 
@@ -58,23 +68,26 @@ export function pythonGates(detection: ProjectDetection): readonly GateDefinitio
             true,
           ),
   );
+  const formatter = detection.pythonFormatter;
+  const formatTitle =
+    formatter?.tool === "black" ? "format (black --check)" : "format (ruff format --check)";
   gates.push(
-    tools.has("ruff") && missing("ruff")
-      ? notInstalled("ruff", "format", "format (ruff format --check)")
-      : tools.has("ruff")
-        ? commandGate({
+    formatter === undefined
+      ? unavailableGate(
+          "format",
+          "format (python)",
+          "blocking",
+          "the project declares no formatter: no [tool.ruff.format] or [tool.black] table and no ruff-format or black pre-commit hook, and ruff configuration alone configures its linter",
+          true,
+        )
+      : missing(formatter.tool)
+        ? notInstalled(formatter.tool, "format", formatTitle, formatter.declaredBy)
+        : commandGate({
             id: "format",
-            title: "format (ruff format --check)",
+            title: formatTitle,
             severity: "blocking",
-            command: "ruff format --check .",
-          })
-        : unavailableGate(
-            "format",
-            "format (python)",
-            "blocking",
-            "pyproject.toml configures no formatter",
-            true,
-          ),
+            command: pythonFormatCommand(formatter),
+          }),
   );
   gates.push(
     tools.has("pytest") && missing("pytest")

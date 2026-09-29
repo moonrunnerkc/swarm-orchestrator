@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -169,6 +169,46 @@ describe("swarm-verify with no subcommand", () => {
     expect(ran.stdout).toContain("CI=true, which vitest reads as run mode");
     expect(ran.stdout).toContain("1 runner-reported tests, 1 executed");
     expect(ran.code).toBe(0);
+  });
+
+  it("checks formatting only with a formatter the project declares", async () => {
+    // A project environment whose ruff lints clean and whose `ruff format --check` would
+    // reformat a file, as nborder's and tavern's did: they lint with ruff and never format with it.
+    const pythonProject = async (name: string, pyproject: string) => {
+      const root = await repository(name, {
+        ".gitignore": ".venv/\n",
+        "pyproject.toml": pyproject,
+        "app.py": "value = {'a':1}\n",
+        ".venv/pyvenv.cfg": "home = /usr/bin\n",
+        ".venv/lib/python3.12/site-packages/ruff/__init__.py": "",
+        ".venv/bin/python": [
+          "#!/bin/sh",
+          'if [ "$1 $2 $3" = "-m ruff format" ]; then echo "Would reformat: app.py"; exit 1; fi',
+          'if [ "$1 $2 $3" = "-m ruff check" ]; then echo "All checks passed!"; exit 0; fi',
+          'echo "unexpected: $*" >&2; exit 2',
+          "",
+        ].join("\n"),
+      });
+      await chmod(join(root, ".venv/bin/python"), 0o755);
+      const ran = await verifier(["--workspace", root, "--json"]);
+      const report = JSON.parse(ran.stdout.trim()) as {
+        conclusions: { checks: readonly { id: string; status: string; detail: string }[] };
+      };
+      return (id: string) => report.conclusions.checks.find((one) => one.id === id);
+    };
+
+    const linted = await pythonProject("ruff-lint-only", '[project]\nname = "p"\n[tool.ruff]\n');
+    expect(linted("lint")?.status).toBe("passed");
+    expect(linted("format")?.status).toBe("not-applicable");
+    expect(linted("format")?.detail).toContain("declares no formatter");
+
+    // The control: where the project does declare ruff as its formatter, the same unformatted
+    // file is still a blocking failure.
+    const formatted = await pythonProject(
+      "ruff-format-declared",
+      '[project]\nname = "p"\n[tool.ruff]\n[tool.ruff.format]\nquote-style = "double"\n',
+    );
+    expect(formatted("format")?.status).toBe("failed");
   });
 
   it("exits 4 without running a test script that asks for watch mode", async () => {
