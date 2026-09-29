@@ -57,6 +57,9 @@ path, or semgrep cannot list tracked files and scans untracked files too.
 | 18 | unknown-value-with-script-tag | `scripts/validate-browser-cli.mjs:63` | Justified inline |
 
 Line numbers are those of the scanned commit; the inline comments move them by one or more.
+Finding 9 no longer exists: on 2026-09-29 the study runner was rewritten so each attempt record is
+written once by `scripts/ai-pr-study/attempts.mjs`, and the merged `Object.assign` it justified
+is gone.
 Full rule ids are `javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp`,
 `javascript.lang.security.insecure-object-assign.insecure-object-assign`,
 `yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag`,
