@@ -1,46 +1,96 @@
 name: triage
 
-# The response promise in SUPPORT.md is 24 hours to a meaningful first response. This runs
-# hourly, and any open issue with no comment by a maintainer after 24 hours is labelled
-# overdue, so an unanswered report shows as unanswered rather than waiting quietly. The label
-# is removed once a maintainer has commented. It never closes anything and never answers.
+# The response promise in SUPPORT.md: a first maintainer response within 24 hours. Hourly, every
+# open issue opened by someone other than a maintainer is judged by scripts/triage/policy.mjs:
+# past 24 hours unanswered it is labelled `overdue` and the maintainer is mentioned in a reminder,
+# again every 24 hours; past 72 hours it is also labelled `escalated` and assigned to the
+# maintainer. The first maintainer comment removes both labels and stops the reminders. It never
+# answers and never closes anything.
+#
+# A manual dispatch can open a controlled exercise of this loop, as this workflow's own identity
+# (a maintainer-authored issue is excluded by design): labelled `controlled-exercise`, with
+# `short-windows` when the windows are shortened so the loop can be watched end to end.
 on:
   schedule:
     - cron: "17 * * * *"
   workflow_dispatch:
+    inputs:
+      exercise:
+        description: "open a controlled exercise issue: none, short-windows or real-windows"
+        default: none
+        type: choice
+        options: [none, short-windows, real-windows]
   issues:
     types: [opened, reopened]
 
 permissions:
+  contents: read
   issues: write
 
 jobs:
-  overdue:
+  exercise:
+    if: github.event_name == 'workflow_dispatch' && inputs.exercise != 'none'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
           script: |
-            const maintainers = new Set(["moonrunnerkc"]);
-            const hours = 24;
+            const short = "${{ inputs.exercise }}" === "short-windows";
+            const created = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[controlled exercise] support loop ${short ? "with shortened windows" : "on real windows"}`,
+              body: [
+                "This issue is a controlled exercise of the response promise in SUPPORT.md, opened by the triage workflow's own identity.",
+                "It is not an outside report and no outside person is waiting on it.",
+                short
+                  ? "It is judged with shortened windows (15 minutes to overdue, reminders every 15 minutes, escalation at 45 minutes) so the loop can be watched end to end."
+                  : "It is judged on the real windows (24 hours to overdue, reminders every 24 hours, escalation at 72 hours).",
+                "What it exercises: the overdue label, the reminder mention and its delivery, escalation and assignment, and that the first maintainer comment stops them.",
+              ].join("\n\n"),
+              labels: ["controlled-exercise", "needs-triage", ...(short ? ["short-windows"] : [])],
+            });
+            core.notice(`opened controlled exercise #${created.data.number}`);
+
+  overdue:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/triage
+      - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const { decide, policyFor } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/triage/policy.mjs`);
             const issues = await github.paginate(github.rest.issues.listForRepo, {
               owner: context.repo.owner, repo: context.repo.repo, state: "open", per_page: 100,
             });
             for (const issue of issues) {
               if (issue.pull_request) continue;
-              if (maintainers.has(issue.user.login)) continue;
               const comments = await github.paginate(github.rest.issues.listComments, {
                 owner: context.repo.owner, repo: context.repo.repo, issue_number: issue.number, per_page: 100,
               });
-              const answered = comments.some((comment) => maintainers.has(comment.user.login));
-              const ageHours = (Date.now() - new Date(issue.created_at).getTime()) / 3_600_000;
               const labels = issue.labels.map((label) => (typeof label === "string" ? label : label.name));
-              const overdue = !answered && ageHours > hours;
-              if (overdue && !labels.includes("overdue")) {
-                await github.rest.issues.addLabels({ owner: context.repo.owner, repo: context.repo.repo, issue_number: issue.number, labels: ["overdue"] });
-                core.notice(`#${issue.number} is ${Math.floor(ageHours)}h old with no maintainer response`);
-              }
-              if (answered && labels.includes("overdue")) {
-                await github.rest.issues.removeLabel({ owner: context.repo.owner, repo: context.repo.repo, issue_number: issue.number, name: "overdue" }).catch(() => {});
+              const actions = decide(
+                {
+                  number: issue.number,
+                  user: issue.user.login,
+                  createdAt: issue.created_at,
+                  labels,
+                  assignees: (issue.assignees ?? []).map((assignee) => assignee.login),
+                  pullRequest: false,
+                },
+                comments.map((comment) => ({ user: comment.user.login, createdAt: comment.created_at, body: comment.body ?? "" })),
+                Date.now(),
+                policyFor(labels),
+              );
+              const target = { owner: context.repo.owner, repo: context.repo.repo, issue_number: issue.number };
+              for (const action of actions) {
+                if (action.kind === "add-label") await github.rest.issues.addLabels({ ...target, labels: [action.label] });
+                if (action.kind === "remove-label") await github.rest.issues.removeLabel({ ...target, name: action.label }).catch(() => {});
+                if (action.kind === "assign") await github.rest.issues.addAssignees({ ...target, assignees: [action.user] });
+                if (action.kind === "comment") await github.rest.issues.createComment({ ...target, body: action.body });
+                core.notice(`#${issue.number}: ${action.kind} ${action.label ?? action.user ?? ""}`);
               }
             }
