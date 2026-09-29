@@ -341,16 +341,21 @@ try {
       "sum.test.js":
         'import { expect, test } from "vitest";\nimport { writeFileSync } from "node:fs";\ntest("runs", () => { writeFileSync(new URL("./MARKER", import.meta.url), "ran"); expect(1).toBe(2); });\n',
     });
-    // The repository's own installed Vitest, linked rather than resolved: npm 10, which the Node
-    // 22 rows carry, cannot build Vitest 4's optional peer set from scratch.
-    const vitestInstalled = existsSync(
-      join(repositoryRoot, "node_modules", "vitest", "package.json"),
+    // A real Vitest installed from a committed lockfile (`npm ci` in scripts/fixtures/vitest-runner),
+    // linked rather than resolved here: npm 10, which the Node 22 rows carry, cannot build Vitest
+    // 4's optional peer set from scratch, and a lockfile install does not ask it to.
+    const vitestModules = join(
+      repositoryRoot,
+      "scripts",
+      "fixtures",
+      "vitest-runner",
+      "node_modules",
     );
-    if (!vitestInstalled) {
+    if (!existsSync(join(vitestModules, "vitest", "package.json"))) {
       results.push({ name: "vitest installed for the forgery case", ok: false });
-      console.error("FAIL the repository's node_modules holds no vitest; run npm ci first");
+      console.error(`FAIL no vitest at ${vitestModules}; run npm ci there first`);
     } else {
-      symlinkSync(join(repositoryRoot, "node_modules"), join(forged, "node_modules"), "dir");
+      symlinkSync(vitestModules, join(forged, "node_modules"), "dir");
       expect("check runs the real failing Vitest test and fails", run(["--workspace", forged]), {
         exits: [1],
         pattern: /failed 1 \(tests\)/,
