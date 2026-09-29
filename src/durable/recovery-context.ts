@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { escalationEventSchema } from "../agent-escalation.ts";
 import type { ConversationMessage } from "../core/model-client.ts";
-import { freezeGoalContract } from "../evidence/goal-contract.ts";
+import { freezeGoalContract, isRootDeclaration } from "../evidence/goal-contract.ts";
 import { hashOfRecord } from "../evidence/ledger-record.ts";
 import { parseRunSpec } from "../evidence/run-spec.ts";
 import { reconstructTranscript } from "../evidence/transcript.ts";
@@ -32,7 +32,11 @@ export async function recoveryContext(sessionRoot: string, runId: string, now = 
   assertGoalEffectsSettled(parsed.records, payloads);
   const seal = parsed.records.find((record) => record.type === "run-spec-sealed");
   const spec = parseRunSpec(payloads.get(seal?.payloadDigest ?? "")?.spec);
-  const goals = parsed.records.filter((record) => record.type === "goal-contract");
+  // Probes and revisions name their parent and never replace the run's own declaration.
+  const goals = parsed.records.filter(
+    (record) =>
+      record.type === "goal-contract" && isRootDeclaration(payloads.get(record.payloadDigest)),
+  );
   if (goals.length > 1) throw new Error("goal contract changed; reconcile before resuming");
   let goalDeadline: number | undefined;
   let goal:
