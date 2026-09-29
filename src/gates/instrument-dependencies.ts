@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile, realpath } from "node:fs/promises";
+import { lstat, readFile, realpath } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import type { InstrumentTrees } from "./instrument-identity.ts";
 
@@ -320,5 +320,20 @@ export async function observeInstalled(
     }
     runners.push({ name, expected, found, linked });
   }
+  // `npm run` puts node_modules/.bin first on PATH, so a link there named like an interpreter
+  // replaces it for every script: a dependency, or an edit to node_modules, that ships `node` or
+  // `sh` runs instead of the real one. Recorded as an executable no tool package owns.
+  for (const shell of shadowedInterpreters) {
+    const found = await lstat(join(root, "node_modules", ".bin", shell)).catch(() => null);
+    if (found !== null)
+      runners.push({
+        name: `node_modules/.bin/${shell}`,
+        expected: null,
+        found: "present",
+        linked: false,
+      });
+  }
   return runners;
 }
+
+const shadowedInterpreters = ["node", "npm", "npx", "sh", "bash", "env", "python", "python3"];
