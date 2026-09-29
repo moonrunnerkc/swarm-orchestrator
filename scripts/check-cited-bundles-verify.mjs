@@ -13,6 +13,8 @@
  * evidence and gets an exit code of 1 has been told something false.
  */
 import { execFile } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
@@ -47,12 +49,30 @@ const cited = [
     "docs/evidence/2026-09-04/calibration/gemma4-mistral",
     "2026-09-04/calibration-report.md: verify with the verifier each carries, exit 0",
   ],
+  [
+    "docs/evidence/2026-09-29/strengthening-dev/bundle.tar.gz",
+    "broad-use.md: the strengthening development run's bundle verifies",
+  ],
 ];
+
+/**
+ * A bundle kept as a `.tar.gz` of its `bundle/` directory, for weight, is unpacked into a scratch
+ * directory and verified there exactly as a tracked one is.
+ */
+const scratches = [];
+async function bundleDirectory(bundle) {
+  const path = join(repositoryRoot, bundle);
+  if (!bundle.endsWith(".tar.gz")) return path;
+  const scratch = await mkdtemp(join(tmpdir(), "cited-bundle-"));
+  scratches.push(scratch);
+  await run("tar", ["-xzf", path, "-C", scratch]);
+  return join(scratch, "bundle");
+}
 
 let failed = 0;
 for (const [bundle, why] of cited) {
-  const directory = join(repositoryRoot, bundle);
   try {
+    const directory = await bundleDirectory(bundle);
     await run(process.execPath, ["verify.mjs"], { cwd: directory, maxBuffer: 32 * 1024 * 1024 });
     console.log(`  verified  ${bundle}`);
   } catch (cause) {
@@ -65,6 +85,7 @@ for (const [bundle, why] of cited) {
     console.log(`  FAILED    ${bundle}\n            cited by ${why}\n            ${said}`);
   }
 }
+for (const scratch of scratches) await rm(scratch, { recursive: true, force: true });
 
 if (failed > 0) {
   console.error(

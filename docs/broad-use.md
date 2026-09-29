@@ -241,6 +241,14 @@ The bundle carries the records `strengthening-plan-v1`, `check-admission-v1`,
 and revision offline (`src/evidence/verifier/strengthening.mjs`). The final verification judges
 the exact tree against every original and admitted check.
 
+A development run with a local model (`scripts/strengthen-dev/run.mjs`, record in
+[docs/evidence/2026-09-29/strengthening-dev/](evidence/2026-09-29/strengthening-dev/summary.json))
+shows the mechanism end to end: a check that only tested the middle of `clamp`'s range read
+vacuous, the model proposed an out-of-range check, the harness admitted it on its probe runs,
+the repair added the missing ceiling, the challenge then read `detected`, and the bundle
+(`bundle.tar.gz` beside the summary) verifies with its own verifier. It validates the mechanism
+on one fixture; it measures nothing about how often strengthening helps.
+
 ## Presets on the ordinary worker path
 
 ```sh
