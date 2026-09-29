@@ -210,3 +210,29 @@ describe("publishing the comment", () => {
     });
   });
 });
+
+describe("the challenge conclusions the comment states", () => {
+  it("names each requirement's outcome as the terminal and the summary do", async () => {
+    const { challengeLines } = await import("../evidence/challenge-lines.ts");
+    const challenges = {
+      satisfied: false,
+      requirements: [
+        { id: "clamp-bounds", outcome: "gap" as const },
+        { id: "clamp-type", outcome: "detected" as const },
+      ],
+    };
+    const body = renderComment({
+      verdict: verdict({ challenges }),
+      summary: null,
+      attestation: { status: "skipped", detail: "not requested", url: null },
+      runUrl: "https://github.com/owner/repo/actions/runs/1",
+      artifactName: "swarm-verify",
+    });
+    const { reviewerText } = await import("../evidence/ci-summary.ts");
+    for (const line of challengeLines(challenges).slice(1))
+      expect(body).toContain(`- ${reviewerText(line)}`);
+    expect(body).toContain(
+      `${reviewerText("Challenges: not every requirement's checks demonstrated detection")}.`,
+    );
+  });
+});
