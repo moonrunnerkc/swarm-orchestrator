@@ -1,9 +1,36 @@
 # Changelog
 
-## Unreleased
+## 1.2.0 - 2026-09-29
+
+Fixes found by running the published 1.1.0 where a stranger would: fresh virtual machines, the
+real pre-commit framework, hooks installed through `npx`, and a sixteen-repository rollout.
+The verdicts that change are named below. The minor version is for two additive outputs: an `excludedEnvironments` field in the
+`check` JSON report and an `excluded-environments-v1` record; no existing record field, exit code
+or rule name changes meaning.
 
 ### Fixed
 
+- **Build runs before tests.** Checks ran a Node project's `test` script before its `build`
+  script. A suite that reads build output (a Vite and Workers project whose test script reads the
+  built asset directory, found in a fresh-VM onboarding run) failed on a clean tree, where its own
+  CI, which builds first, passes. The build check now runs first. **Verdict change:** such a
+  project reads its real test result instead of a failure caused by the order.
+- **The pre-commit framework hook works.** The distribution declared a `node` language hook. The
+  framework installs that from git, which npm 11 refuses (`EALLOWGIT`), blocking every commit,
+  good or bad; under npm 10 the install linked no `swarm-verify` binary, so whichever binary was
+  on `PATH` answered. The hook now runs `npx --yes swarm-verify@<version> pre-commit`. Exercised
+  against the framework on npm 11.12.1 and 10.9.8: a bad staged change is refused and a good one
+  committed. Use `rev: v1.2.0` or later.
+- **Installed hooks survive npm clearing its npx cache.** Run as `npx swarm-verify hook install`
+  or `npx swarm-verify pre-commit install`, the installers wrote an absolute path inside the npx
+  cache. From there they now write the pinned `npx` invocation; a project or global install is
+  still called directly.
+- **The Claude Code hook routes a piped test command.** `npm test 2>&1 | tail -5` and the same
+  through `head` or `grep` with plain arguments are routed through `check` with the filters kept;
+  any other pipeline stage or shell syntax is still left alone.
+- **A bundle whose required challenge refused verifies.** The bundle's own verifier failed the
+  "independent goal bound" check of a `--challenges required` run that refused for
+  `challenges-unmet`, although the refusal was correct.
 - **A formatter check runs only where the project declares that formatter.** Any `[tool.ruff]`
   table used to add `ruff format --check .`, so projects that lint with ruff and format with black
   or not at all read `fail` on a clean checkout (four real repositories, 4 to 151 files each). The
@@ -53,6 +80,11 @@ Each deferred step is its own intent and completion on the `dependency-install` 
 its stage and its network (`none` with the probe's result for offline work), so a reader sees
 which scripts ran offline and which fetch reached the registry. A deferred step that fails is
 reported and the checks still run; one that changes source files fails setup.
+
+### Documentation
+
+- Every documented Action workflow shows `install: true`, without which a repository with
+  dependencies reads incomplete.
 
 ## 1.1.0 - 2026-09-29
 
