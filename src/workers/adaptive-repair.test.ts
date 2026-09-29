@@ -81,7 +81,10 @@ async function execute(
   // Started and not yet finished. It cannot finish before `releaseSecond`, because its model
   // call waits on that release. "Waiting" alone was set only once worker-2 reached its first
   // model call, so under load the dependent could start while worker-2 was still being set up
-  // and the test read an unrelated worker that was running as not running (issue #75).
+  // and the test read an unrelated worker that was running as not running (issue #75). Set
+  // when the controller asks for worker-2's session, which it does synchronously as it admits
+  // worker-2 in the same scheduling pass that admits worker-1, so it is strictly earlier than
+  // any dispatch that waits on worker-1 landing, however slow the rest of worker-2's setup is.
   let longStarted = false;
   let secondReleased = false;
   let dependentStartedWhileWaiting = false;
@@ -98,14 +101,6 @@ async function execute(
     ...rawCoordinator,
     record: async (entry) => {
       const written = await rawCoordinator.record(entry);
-      if (
-        entry.type === "worker-started" &&
-        typeof entry.payload === "object" &&
-        entry.payload !== null &&
-        "workerId" in entry.payload &&
-        entry.payload.workerId === "worker-2"
-      )
-        longStarted = true;
       if (
         holdUntilDependent &&
         entry.type === "worker-started" &&
@@ -144,8 +139,10 @@ async function execute(
     scratchRoot: join(scratch, "trees"),
     coordinator,
     ...(goal === undefined ? {} : { goalContract: freezeGoalContract(goal).contract }),
-    createWorkerSession: (workerId) =>
-      openEvidenceSession({ root: join(scratch, "sessions"), sessionId: workerId, clock }),
+    createWorkerSession: (workerId) => {
+      if (workerId === "worker-2") longStarted = true;
+      return openEvidenceSession({ root: join(scratch, "sessions"), sessionId: workerId, clock });
+    },
     createModel: (workerId) => {
       calls.push(workerId);
       const files = edits[workerId] ?? {};
