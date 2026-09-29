@@ -1111,7 +1111,10 @@ function collectChecks(directory) {
             reading.verified ===
               (reading.regression === "pass" &&
                 goal.accepted === true &&
-                !(reading.challenges?.policy === "required" && reading.challenges?.satisfied !== true)),
+                !(
+                  reading.challenges?.policy === "required" &&
+                  reading.challenges?.satisfied !== true
+                )),
       "final goal policy binds independent regression and goal observations",
     );
   }
