@@ -36,8 +36,8 @@ AI-written code in general and none about any tool that was not run.
 | --- | --- | --- |
 | Observed false greens the verifier refused (a held-back finding is not a verifier catch) | 0 / 0 | n/a |
 | Adjudicated-correct pull requests the verifier accepted | 9 / 13 | 69.2% [42.4, 87.3] |
-| Adjudicated-correct pull requests the verifier refused | 3 / 13 | 23.1% [8.2, 50.3] |
-| Adjudicated-correct pull requests the verifier left unmeasured | 1 / 13 | 7.7% [1.4, 33.3] |
+| Adjudicated-correct pull requests the verifier refused | 1 / 13 | 7.7% [1.4, 33.3] |
+| Adjudicated-correct pull requests the verifier left unmeasured | 3 / 13 | 23.1% [8.2, 50.3] |
 
 ## Practical cost
 
@@ -96,16 +96,16 @@ Rerun after an infrastructure failure, each earlier attempt kept on its row unde
 | 11 | [loopdive/js2#6115](https://github.com/loopdive/js2/pull/6115) | executed | no | unjudged | accept |
 | 12 | [Francis1998/agentic-career-search#199](https://github.com/Francis1998/agentic-career-search/pull/199) | executed | yes | unjudged | accept |
 | 13 | [yukieiji/ExtremeRoles#1079](https://github.com/yukieiji/ExtremeRoles/pull/1079) | executed | yes | unjudged | accept |
-| 14 | [glincker/thesvg#1159](https://github.com/glincker/thesvg/pull/1159) | executed | no | requirement-met | refuse |
+| 14 | [glincker/thesvg#1159](https://github.com/glincker/thesvg/pull/1159) | executed | no | requirement-met | unmeasured |
 | 15 | [github/gh-aw-firewall#9077](https://github.com/github/gh-aw-firewall/pull/9077) | executed | no | requirement-met (text inspection) | accept |
-| 16 | [glincker/thesvg#1138](https://github.com/glincker/thesvg/pull/1138) | executed | no | requirement-met | refuse |
+| 16 | [glincker/thesvg#1138](https://github.com/glincker/thesvg/pull/1138) | executed | no | requirement-met | unmeasured |
 | 17 | [Francis1998/nexus-llm-router#203](https://github.com/Francis1998/nexus-llm-router/pull/203) | executed | yes | requirement-met | accept |
-| 18 | [felixrieseberg/claude-coach#18](https://github.com/felixrieseberg/claude-coach/pull/18) | executed | no | requirement-violated (text inspection) | refuse |
+| 18 | [felixrieseberg/claude-coach#18](https://github.com/felixrieseberg/claude-coach/pull/18) | executed | no | requirement-violated (text inspection) | unmeasured |
 | 19 | [Francis1998/scholar-rag-agent#223](https://github.com/Francis1998/scholar-rag-agent/pull/223) | executed | no | unjudged | accept |
 | 20 | [Francis1998/nexus-llm-router#212](https://github.com/Francis1998/nexus-llm-router/pull/212) | executed | yes | requirement-met (text inspection) | accept |
 | 21 | [yukieiji/ExtremeRoles#1067](https://github.com/yukieiji/ExtremeRoles/pull/1067) | executed | yes | requirement-met (text inspection) | accept |
 | 22 | [loopdive/js2#6127](https://github.com/loopdive/js2/pull/6127) | executed | no | unjudged | accept |
-| 23 | [getsentry/sentry#125248](https://github.com/getsentry/sentry/pull/125248) | executed | no | unjudged | refuse |
+| 23 | [getsentry/sentry#125248](https://github.com/getsentry/sentry/pull/125248) | executed | no | unjudged | unmeasured |
 | 24 | [loopdive/js2#6129](https://github.com/loopdive/js2/pull/6129) | executed | no | unjudged | accept |
 | 25 | [Francis1998/nexus-llm-router#201](https://github.com/Francis1998/nexus-llm-router/pull/201) | executed | yes | requirement-met | accept |
 | 26 | [Francis1998/nexus-llm-router#218](https://github.com/Francis1998/nexus-llm-router/pull/218) | executed | yes | requirement-met (text inspection) | accept |
@@ -119,17 +119,17 @@ Rerun after an infrastructure failure, each earlier attempt kept on its row unde
 | 34 | [Francis1998/agentic-career-search#200](https://github.com/Francis1998/agentic-career-search/pull/200) | executed | yes | requirement-met | accept |
 | 35 | [Francis1998/scholar-rag-agent#229](https://github.com/Francis1998/scholar-rag-agent/pull/229) | executed | no | requirement-met | accept |
 | 36 | [github/gh-aw-firewall#9075](https://github.com/github/gh-aw-firewall/pull/9075) | executed | no | unjudged | accept |
-| 37 | [felixrieseberg/claude-coach#20](https://github.com/felixrieseberg/claude-coach/pull/20) | executed | no | unjudged | refuse |
-| 38 | [felixrieseberg/claude-coach#21](https://github.com/felixrieseberg/claude-coach/pull/21) | executed | no | unjudged | refuse |
+| 37 | [felixrieseberg/claude-coach#20](https://github.com/felixrieseberg/claude-coach/pull/20) | executed | no | unjudged | unmeasured |
+| 38 | [felixrieseberg/claude-coach#21](https://github.com/felixrieseberg/claude-coach/pull/21) | executed | no | unjudged | unmeasured |
 | 39 | [glincker/thesvg#1160](https://github.com/glincker/thesvg/pull/1160) | executed | no | requirement-met (text inspection) | refuse |
 | 40 | [kentcdodds/kody#2596](https://github.com/kentcdodds/kody/pull/2596) | executed | no | unjudged | accept |
 | 41 | [lidge-ai/ima2-gen#331](https://github.com/lidge-ai/ima2-gen/pull/331) | executed | no | unjudged | accept |
 | 42 | [kentcdodds/kody#2626](https://github.com/kentcdodds/kody/pull/2626) | executed | no | unjudged | accept |
 | 43 | [kentcdodds/kody#2597](https://github.com/kentcdodds/kody/pull/2597) | executed | no | requirement-met | accept |
 | 44 | [kentcdodds/kody#2611](https://github.com/kentcdodds/kody/pull/2611) | executed | no | unjudged | accept |
-| 45 | [glincker/thesvg#1147](https://github.com/glincker/thesvg/pull/1147) | executed | no | requirement-met (text inspection) | refuse |
+| 45 | [glincker/thesvg#1147](https://github.com/glincker/thesvg/pull/1147) | executed | no | requirement-met (text inspection) | unmeasured |
 | 46 | [YoungCan-Wang/WyckoffTradingAgent#496](https://github.com/YoungCan-Wang/WyckoffTradingAgent/pull/496) | executed | no | unjudged | accept |
 | 47 | [librespeed/speedtest#858](https://github.com/librespeed/speedtest/pull/858) | executed | yes | unjudged | accept |
 | 48 | [mscerts/hub#59](https://github.com/mscerts/hub/pull/59) | executed | no | unjudged | unmeasured |
-| 49 | [felixrieseberg/claude-coach#15](https://github.com/felixrieseberg/claude-coach/pull/15) | executed | no | unjudged | refuse |
+| 49 | [felixrieseberg/claude-coach#15](https://github.com/felixrieseberg/claude-coach/pull/15) | executed | no | unjudged | unmeasured |
 | 50 | [kentcdodds/kody#2447](https://github.com/kentcdodds/kody/pull/2447) | executed | no | requirement-met (text inspection) | accept |
