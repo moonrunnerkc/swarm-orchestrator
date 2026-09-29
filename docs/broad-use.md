@@ -203,6 +203,44 @@ Python projects have no automatic mutation today; a Python contract is challenge
 sealed fixtures and its base control, and that limitation is what an `unjudged` requirement
 with no alternatives says.
 
+## Strengthening the checks, then repairing
+
+On the coding agent's preset path, a challenge that finds a gap can be answered instead of only
+reported. `--strengthen` (with `--challenges report` or `required`) runs a bounded loop after the
+implementation run:
+
+```sh
+swarm 'Clamp to a range' --workspace ./project --preset bugfix \
+  --goal-contract /trusted/clamp.json --challenges required --strengthen
+```
+
+1. **The originals stay as they are.** A proposal may only add a check under a new id. One that
+   reuses a check id, names an unsafe path, or would write over a pinned acceptance file or a
+   file the change touches is refused before anything runs. (The model is asked to put its files
+   under `acceptance/strengthened/`; the refusal rule above is what is enforced.)
+2. **Admission needs an expected result the harness observes.** The proposed check runs alone
+   under a one-check probe contract. It is admitted only when it rejects the counterexample the
+   challenge witnessed (a mutant the repository's own suite refused, or the base when the base
+   control read vacuous and the goal is not a refactor) and accepts every sealed reference
+   patch. With no sealed reference there is no justified expected result, and nothing is
+   admitted. The candidate's own result is recorded, never required.
+3. **Admitted checks revise the contract.** The revision names its parent and appends; the
+   originals are never edited. The implementation is then repaired under the revised contract
+   with a bounded brief naming the admitted check.
+4. **Limits.** At most one admitted check per requirement and two rounds by default;
+   `--strengthen-rounds` and `--strengthen-per-requirement` can only lower them. The loop spends
+   the run's one token and wall-clock budget and asks nothing of the model before the gate
+   criteria are sealed.
+5. **Resume.** The plan, each admission's intent and its result are on the chain before and
+   after each effect. A run killed during an admission is resumed with that admission named once
+   as cut off (`strengthening-reconciliation-v1`), never rerun or admitted, and the recorded plan
+   governs the limits.
+
+The bundle carries the records `strengthening-plan-v1`, `check-admission-v1`,
+`strengthening-round-v1` and the contract lineage, and its verifier re-derives every admission
+and revision offline (`src/evidence/verifier/strengthening.mjs`). The final verification judges
+the exact tree against every original and admitted check.
+
 ## Presets on the ordinary worker path
 
 ```sh

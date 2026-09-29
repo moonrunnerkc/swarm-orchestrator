@@ -15,6 +15,10 @@ swarm --version                  # which build this is
 | --- | --- |
 | `--preset bugfix\|refactor\|upgrade` | select a policy on the ordinary worker path; requires a matching goal contract |
 | `--goal-contract <file>` | sealed requirement/check definitions outside solver write access |
+| `--challenges off\|report\|required` | challenge the goal contract's checks with witnessed mutants, fixtures and sealed references |
+| `--strengthen` | after a challenge finds a gap, ask the model for one additive check per gap, admit it only when the harness observes it reject the counterexample and accept every sealed reference, then repair the implementation under the revised contract |
+| `--strengthen-rounds <n>` | lower the default of two strengthening rounds; a higher value is ignored |
+| `--strengthen-per-requirement <n>` | lower the default of one admitted check per requirement |
 | `--escalate-model <provider:id>` | authorize at most one alternate model for repeated observed implementation failure |
 | `--max-tokens <n>` | bound model usage; unknown usage remains unknown |
 | `--model <provider:id>` | a specific model, e.g. `local:qwen3.6:35b-a3b` |
