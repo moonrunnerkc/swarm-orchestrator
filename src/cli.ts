@@ -548,6 +548,10 @@ async function run(options: RunCommand): Promise<number> {
                 const used = tokensSpent(evidence);
                 await runAgentTask({
                   ...implementation(contract, brief),
+                  // Measured under the criteria the implementation run sealed; a second seal
+                  // would be a second set of criteria, which the bundle's verifier refuses. The
+                  // acceptance gate keeps its identity and judges the recorded revision.
+                  criteriaSealed: true,
                   maxTokens: Math.max(
                     0,
                     (options.recovery?.remainingTokens ?? options.maxTokens ?? 1_000_000) -
