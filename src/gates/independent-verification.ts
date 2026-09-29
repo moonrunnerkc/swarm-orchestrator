@@ -47,6 +47,7 @@ import { parseLineHits } from "./parsers.ts";
 import { pathsInPatch } from "./patch-paths.ts";
 import { prepareDependencies } from "./prepare-dependencies.ts";
 import { stagePreparedPython } from "./prepared-python.ts";
+import { withPreparedTools } from "./prepared-tools.ts";
 import { enforceUpgrade, reproducedBug } from "./preset-verification.ts";
 import { parseUnifiedDiff } from "./unified-diff.ts";
 import { observeUpgradeResolution } from "./upgrade-resolution.ts";
@@ -461,6 +462,13 @@ export async function verifyIndependently(
           })
         : null;
 
+    // The package manager the install fetched and recorded stays on PATH for every command that
+    // follows, so a check whose script calls it measures the project rather than its absence.
+    if (install?.succeeded === true && install.toolDirectories !== undefined)
+      options = {
+        ...options,
+        commands: withPreparedTools(options.commands, install.toolDirectories),
+      };
     if (install !== null && !install.succeeded)
       return {
         applied: true,
