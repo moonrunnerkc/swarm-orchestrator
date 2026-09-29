@@ -23,6 +23,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { childPath } from "./containment.mjs";
 
 const args = process.argv.slice(2);
 const positional = [];
@@ -97,7 +98,9 @@ let done = 0;
 for (const selected of frame.selected) {
   if (done >= limit) break;
   if (only !== null && !only.has(selected.index)) continue;
-  const rowPath = join(outputRoot, `${String(selected.index).padStart(2, "0")}.json`);
+  // The frame's index and repository name files and directories: each is held to one plain
+  // name under its root, so a malformed frame entry cannot place a row, clone or report elsewhere.
+  const rowPath = childPath(outputRoot, `${String(selected.index).padStart(2, "0")}.json`);
   const existing = existsSync(rowPath) ? JSON.parse(readFileSync(rowPath, "utf8")) : null;
   if (existing !== null && existing.outcome !== "fetched") continue;
   if (existing !== null && fetchOnly) continue;
@@ -154,7 +157,10 @@ for (const selected of frame.selected) {
     // A fresh clone outside the repository, with the exact base and head fetched by SHA.
     // Only the two commits the row names, shallow: a full clone of a large repository is
     // gigabytes the study never reads, and both trees are complete at depth one.
-    const clone = join(workingRoot, `${selected.repository.replace("/", "__")}-${selected.number}`);
+    const clone = childPath(
+      workingRoot,
+      `${selected.repository.replace("/", "__")}-${selected.number}`,
+    );
     if (!existsSync(clone)) {
       const cloned = run("git", [
         "clone",
@@ -222,7 +228,10 @@ for (const selected of frame.selected) {
     // The diff is preserved outside the tree by digest; the row carries the digest.
     const diff = run("git", ["diff", `${row.base}..${row.head}`], { cwd: clone }).stdout;
     mkdirSync(join(workingRoot, "diffs"), { recursive: true });
-    const diffPath = join(workingRoot, "diffs", `${String(selected.index).padStart(2, "0")}.diff`);
+    const diffPath = childPath(
+      join(workingRoot, "diffs"),
+      `${String(selected.index).padStart(2, "0")}.diff`,
+    );
     writeFileSync(diffPath, diff);
     row.diff = {
       digest: `sha256:${createHash("sha256").update(diff).digest("hex")}`,
@@ -250,9 +259,12 @@ for (const selected of frame.selected) {
     // replays: the 1.0.3 replay wrote over the 1.0.2 files, whose digests the rows still hold.
     const reportsRoot = join(workingRoot, "reports", version);
     mkdirSync(reportsRoot, { recursive: true });
-    const stem = join(reportsRoot, String(selected.index).padStart(2, "0"));
+    const stem = childPath(reportsRoot, String(selected.index).padStart(2, "0"));
     const summary = `${stem}.summary.md`;
-    const bundle = join(workingRoot, "bundles", version, String(selected.index).padStart(2, "0"));
+    const bundle = childPath(
+      join(workingRoot, "bundles", version),
+      String(selected.index).padStart(2, "0"),
+    );
     mkdirSync(join(workingRoot, "bundles", version), { recursive: true });
     const verifierArgs = [
       "--yes",

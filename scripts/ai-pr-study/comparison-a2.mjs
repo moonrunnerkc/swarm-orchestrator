@@ -13,6 +13,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { childPath, resolveWriteTargetInside } from "./containment.mjs";
 
 const args = process.argv.slice(2);
 const positional = [];
@@ -50,7 +51,6 @@ for (const name of readdirSync(rowsRoot)
   if (!["requirement-met", "requirement-violated"].includes(truth) || row.comparisonA2) continue;
   if (row.outcome !== "executed") continue;
   done += 1;
-  const clone = join(workingRoot, `${row.repository.replace("/", "__")}-${row.number}`);
   const check = row.adjudication.check;
   const startedAt = Date.now();
   const finish = (result) => {
@@ -65,6 +65,12 @@ for (const name of readdirSync(rowsRoot)
     );
   };
   try {
+    const clone = childPath(workingRoot, `${row.repository.replace("/", "__")}-${row.number}`);
+    // The check's path is the reviewer model's. The oracle's shell writes it inside the
+    // verifier's own checkout of the head, so it is held here to what the clone at the head
+    // (where the adjudication left it) would contain: relative, no `..`, and no symlink on the
+    // way that leads out. Nothing is written into the clone.
+    resolveWriteTargetInside(clone, check.path);
     // The check travels inside the oracle command and is decoded into place when the oracle
     // runs, so the verifier judges exactly the pull request's patch, the one A0 and A1 judge.
     // Committing it on top of the head (the previous design) put the reviewer's file in front of
@@ -76,7 +82,10 @@ for (const name of readdirSync(rowsRoot)
       : ".";
     const oracle = `mkdir -p ${quote(directory)} && printf %s ${quote(Buffer.from(check.contents).toString("base64"))} | base64 -d > ${quote(check.path)} && ${check.command}`;
     const image = row.execution?.isolation?.replace(/^docker:/, "") ?? "node:24-bookworm";
-    const bundle = join(workingRoot, "bundles-a2", version, String(row.index).padStart(2, "0"));
+    const bundle = childPath(
+      join(workingRoot, "bundles-a2", version),
+      String(row.index).padStart(2, "0"),
+    );
     mkdirSync(join(workingRoot, "bundles-a2", version), { recursive: true });
     const verified = run(
       "npx",

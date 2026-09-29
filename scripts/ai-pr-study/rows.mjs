@@ -8,9 +8,10 @@
  *   node scripts/ai-pr-study/rows.mjs unpack <rows.json.br> <rows directory>
  */
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { brotliCompressSync, brotliDecompressSync } from "node:zlib";
+import { childPath, writeFileInside } from "./containment.mjs";
 
 /** Every row, from a directory of `NN.json` files or from a `.json.br` archive of them. */
 export function loadRows(source) {
@@ -57,8 +58,12 @@ if (import.meta.url === `file://${process.argv[1]}` && mode !== undefined) {
   } else if (mode === "unpack") {
     const archive = JSON.parse(brotliDecompressSync(readFileSync(from)).toString("utf8"));
     mkdirSync(to, { recursive: true });
-    for (const entry of archive.rows)
-      if (!existsSync(join(to, entry.name))) writeFileSync(join(to, entry.name), entry.bytes);
+    // Each name comes from the archive: one plain name in the directory, written without
+    // following a symlink and never over an existing row.
+    for (const entry of archive.rows) {
+      childPath(to, entry.name);
+      writeFileInside(to, entry.name, entry.bytes, { exclusive: true });
+    }
     console.log(`${archive.rows.length} row(s) unpacked to ${to}`);
   } else {
     console.error(
