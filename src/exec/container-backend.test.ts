@@ -152,6 +152,46 @@ it("owns cleanup after a successful parent exit", async () => {
   expect(captured.filter((args) => args[0] === "image")).toHaveLength(1);
 });
 
+it("puts a prepared tool directory first on PATH where the container mounts it, and refuses one outside", async () => {
+  const captured: string[][] = [];
+  const backend = createContainerBackend({
+    runtime: "test-runtime",
+    image: "test-image",
+    workspaceRoot: workspace,
+    user: "1000:1000",
+    runProcess: async (_program, args) => {
+      captured.push([...args]);
+      return {
+        stdout: "",
+        stderr: "",
+        exitCode: 0,
+        timedOut: false,
+        cancelled: false,
+        truncated: false,
+        startFailure: null,
+      };
+    },
+  });
+  await backend.run(["npm", "run", "typecheck"], {
+    cwd: workspace,
+    timeoutMs: 1000,
+    toolDirectories: [join(workspace, "node_modules", ".swarm-pnpm", "node_modules", ".bin")],
+  });
+  const create = captured.find((args) => args[0] === "create") ?? [];
+  expect(create).toContain(
+    "PATH=/workspace/node_modules/.swarm-pnpm/node_modules/.bin:/usr/local/bin:/usr/bin:/bin",
+  );
+  // The network stays the backend's own; a tool directory is not registry access.
+  expect(create).toContain("--network=none");
+  await expect(
+    backend.run(["pnpm", "--version"], {
+      cwd: workspace,
+      timeoutMs: 1000,
+      toolDirectories: [hostRoot],
+    }),
+  ).rejects.toThrow("inside the backend workspace");
+});
+
 describe("an image that is not present on the machine", () => {
   const observed = (exitCode: number, stderr = "") => ({
     stdout: "",

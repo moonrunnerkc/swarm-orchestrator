@@ -171,6 +171,12 @@ export interface CommandOptions {
    * the install's own record; every check that follows runs with the network off as before.
    */
   readonly network?: "none" | "registry";
+  /**
+   * Directories inside the checkout put first on PATH through the built environment. Only the
+   * authorized install names one, for the package manager it fetched and recorded, so a script
+   * that calls that manager finds the same one rather than whatever the image carries.
+   */
+  readonly toolDirectories?: readonly string[];
   readonly readOnlyFiles?: readonly string[];
   readonly stdin?: string;
   readonly maxOutputBytes?: number;
