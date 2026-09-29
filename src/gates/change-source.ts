@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { z } from "zod";
 import { digestOfBytes } from "../evidence/canonical-json.ts";
 import type { GateCommandRunner } from "./gate-definition.ts";
+import { readPatchFiles } from "./patch-paths.ts";
 
 const sha = z.string().regex(/^[a-f0-9]{40,64}$/);
 export const sourceIdentitySchema = z.strictObject({
@@ -149,36 +150,39 @@ export function validatePatchForms(patch: string): void {
     throw new Error(
       "symlink and submodule patches are unsupported; verify an ordinary-file change",
     );
-  let paths: string[] = [];
-  let inHunk = false;
-  for (const line of patch.split("\n")) {
-    if (line.startsWith("@@")) inHunk = true;
-    if (!inHunk && /^(?:--- |\+\+\+ |rename from |rename to )/.test(line)) {
-      const old = line.startsWith("--- ") || line.startsWith("rename from ");
-      const path = line.replace(/^(?:--- |\+\+\+ |rename from |rename to )/, "");
-      const expected = paths[old ? 0 : 1];
-      const prefix = line.startsWith("rename ") ? "" : old ? "a/" : "b/";
-      if (path !== "/dev/null" && path !== `${prefix}${expected}`)
-        throw new Error("patch path headers disagree; refusing ambiguous scope");
-    }
-    if (!line.startsWith("diff --git ")) continue;
-    const match = /^diff --git a\/(\S+) b\/(\S+)$/.exec(line);
-    if (match === null) throw new Error("quoted or whitespace-bearing patch paths are unsupported");
-    paths = match.slice(1);
-    inHunk = false;
-    for (const path of paths) {
-      if (
-        path.startsWith("/") ||
-        path.includes("\\") ||
-        path
-          .split("/")
-          .some(
-            (part) => part === ".." || part === "." || part.toLowerCase() === ".git" || part === "",
-          )
-      )
-        throw new Error("unsafe patch path refused");
-    }
-  }
   if (patch.trim() !== "" && !patch.startsWith("diff --git "))
     throw new Error("only complete Git patches beginning with diff --git are supported");
+  for (const file of readPatchFiles(patch)) {
+    // A bare `---`/`+++` pair after a hunk is a further file to `git apply`; a Git patch never
+    // writes one, so it can only be an attempt to name a file outside the Git headers.
+    if (file.header !== "git")
+      throw new Error("only complete Git patches beginning with diff --git are supported");
+    for (const path of [file.oldPath, file.newPath])
+      if (path !== null && unsafePatchPath(path)) throw new Error("unsafe patch path refused");
+  }
+}
+
+// Characters HFS+ ignores when comparing names, so `.g\u200cit` is `.git` on macOS.
+const hfsIgnorable = /[\u200c-\u200f\u202a-\u202e\u206a-\u206f\ufeff]/g;
+
+/**
+ * A decoded path that could leave the checkout or reach Git's own directory: absolute, holding
+ * NUL or a backslash, or with an empty, `.`, `..` or `.git` component. `.git` is compared the way
+ * case-folding macOS and Windows filesystems compare it, so `.GIT`, `.git.` and `git~1` count.
+ */
+function unsafePatchPath(path: string): boolean {
+  return (
+    path.startsWith("/") ||
+    path.includes("\0") ||
+    path.includes("\\") ||
+    path.split("/").some((part) => {
+      const folded = part
+        .replace(hfsIgnorable, "")
+        .toLowerCase()
+        .replace(/[. ]+$/, "");
+      return (
+        part === "" || part === "." || part === ".." || folded === ".git" || folded === "git~1"
+      );
+    })
+  );
 }

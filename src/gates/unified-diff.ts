@@ -1,3 +1,9 @@
+import {
+  diffGitHeaderPaths,
+  PatchPathError,
+  readFileLinePath,
+  readWholePath,
+} from "./patch-paths.ts";
 import type { AddedLine, ChangedFile, ChangeKind } from "./workspace-changes.ts";
 
 /**
@@ -54,8 +60,12 @@ export function parseUnifiedDiff(text: string): readonly ChangedFile[] {
   for (const line of lines) {
     if (line.startsWith("diff --git ")) {
       flush();
-      const paths = /^diff --git (?:"?a\/)?(.+?)"? (?:"?b\/)?(.+?)"?$/.exec(line);
-      path = paths?.[2] ?? paths?.[1] ?? null;
+      path = headerPath(line);
+      continue;
+    }
+
+    if (!inHunk && /^(?:rename|copy) to /.test(line)) {
+      path = targetPath(line) ?? path;
       continue;
     }
 
@@ -132,9 +142,9 @@ export function reconstructSides(
   let inHunk = false;
 
   for (const line of text.split("\n")) {
-    if (line.startsWith("diff --git ")) {
-      const paths = /^diff --git (?:"?a\/)?(.+?)"? (?:"?b\/)?(.+?)"?$/.exec(line);
-      path = paths?.[2] ?? null;
+    const header = line.startsWith("diff --git ");
+    if (header || (!inHunk && /^(?:rename|copy) to /.test(line))) {
+      path = header ? headerPath(line) : (targetPath(line) ?? path);
       inHunk = false;
       if (path !== null && !sides.has(path)) {
         sides.set(path, { base: [], head: [] });
@@ -205,13 +215,40 @@ function numberedOnce(
   return [...byLine.values()].sort((left, right) => left.line - right.line);
 }
 
+/**
+ * The new-side path of a `diff --git` line when the line settles it alone, read by the same
+ * rules as the scope checks. A bare header with spaces that splits more than one way is left to
+ * the `+++` or `rename to` line that follows it.
+ */
+function headerPath(line: string): string | null {
+  const pairs = unlessUnreadable(() => diffGitHeaderPaths(line.slice("diff --git ".length))) ?? [];
+  const settled = pairs.length > 1 ? pairs.filter((pair) => pair.old === pair.new) : pairs;
+  return settled.length === 1 ? (settled[0]?.new ?? null) : null;
+}
+
+function targetPath(line: string): string | null {
+  return unlessUnreadable(() => readWholePath(line.replace(/^(?:rename|copy) to /, "")));
+}
+
+/**
+ * Measurement parses git's own output and stored patches and never refuses one; a path it cannot
+ * read is no path, and the scope checks that do refuse read the same patch through `pathsInPatch`.
+ */
+function unlessUnreadable<T>(read: () => T): T | null {
+  try {
+    return read();
+  } catch (error) {
+    if (error instanceof PatchPathError) return null;
+    throw error;
+  }
+}
+
 function stripPrefix(raw: string): string | null {
-  const path = raw.split("\t")[0]?.trim() ?? "";
-  if (path === "/dev/null" || path.length === 0) {
+  const path = unlessUnreadable(() => readFileLinePath(raw));
+  if (path === null || path.length === 0) {
     return null;
   }
-  const unquoted = path.startsWith('"') && path.endsWith('"') ? path.slice(1, -1) : path;
-  const stripped = unquoted.replace(/^[ab]\//, "");
+  const stripped = path.replace(/^[ab]\//, "");
   // The emptiness check above runs before the prefix is stripped, so a bare `a/` survived it
   // and came back as the empty path: a changed file naming nothing, which the file-set check
   // can neither match nor report.
