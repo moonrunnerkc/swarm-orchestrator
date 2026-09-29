@@ -51,8 +51,11 @@ project choice. `--workspace` always names the repository; repeated `--package` 
 repository-relative Node or Python units. Go and Rust retain repository-wide behavior.
 
 Node uses declared npm or pnpm. Python uses `uv.lock` with its project interpreter, or an existing
-`.venv/bin/python`. Only configured pytest, Ruff and mypy checks are selected. An absent optional
-tool is different from a required command that cannot start. An existing Python environment is
+`.venv/bin/python`. Only configured pytest, Ruff and mypy checks are selected. A format check
+runs only with a formatter the project declares: `ruff format --check .` for a `[tool.ruff.format]`
+table or a `ruff-format` pre-commit hook, `black --check .` for a `[tool.black]` table or a `black`
+hook. Ruff configuration alone configures its linter, so it selects `ruff check` and no format
+check. An absent optional tool is different from a required command that cannot start. An existing Python environment is
 copied into the owned checkout, with bounded inventory verification; editable or executable path
 injection is refused. Nothing writes back to the user's environment.
 

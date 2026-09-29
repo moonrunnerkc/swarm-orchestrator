@@ -119,6 +119,25 @@ describe("planning a check from a project's files", () => {
     expect(synced.prerequisites).toEqual([]);
   });
 
+  it("plans the formatter the project declares, and none from ruff lint configuration", async () => {
+    await write("uv.lock", "");
+    await write("pyproject.toml", '[project]\nname="p"\n[tool.ruff]\nline-length = 100\n');
+    const linted = await planCheck({ workspace: root, path: await toolPath() });
+    expect(linted.declaredChecks.find((one) => one.id === "format")).toEqual({
+      id: "format",
+      command: null,
+      unavailable: "no formatter is declared; ruff configuration alone configures its linter",
+    });
+    expect(linted.declaredChecks.find((one) => one.id === "lint")?.command).toBe(
+      "uv run --locked --no-sync python -m ruff check --no-fix .",
+    );
+    await write("pyproject.toml", '[project]\nname="p"\n[tool.ruff]\n[tool.black]\n');
+    const black = await planCheck({ workspace: root, path: await toolPath() });
+    expect(black.declaredChecks.find((one) => one.id === "format")?.command).toBe(
+      "uv run --locked --no-sync python -m black --check .",
+    );
+  });
+
   it("reports a directory with no manifest as no scope at all", async () => {
     await write("README.md", "hello\n");
     const plan = await planCheck({ workspace: root, path: await toolPath() });

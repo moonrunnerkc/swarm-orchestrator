@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **A formatter check runs only where the project declares that formatter.** Any `[tool.ruff]`
+  table used to add `ruff format --check .`, so projects that lint with ruff and format with black
+  or not at all read `fail` on a clean checkout (four real repositories, 4 to 151 files each). The
+  format check now runs `ruff format --check .` only for a `[tool.ruff.format]` table or a
+  `ruff-format` pre-commit hook, and `black --check .` for a `[tool.black]` table or a `black`
+  hook, unavailable with the tool named when the project's environment does not hold it. Verdict
+  change: a project with ruff lint configuration and no declared formatter no longer fails `check`
+  on formatting; its format check reads not run, with the reason.
+
 ## 1.1.0 - 2026-09-29
 
 Two false passes reported against the published 1.0.7, reproduced on it and fixed at the root,

@@ -330,3 +330,93 @@ describe("what the project's own environment holds", () => {
     expect(unsynced.pythonToolsInstalled).toBeUndefined();
   });
 });
+
+describe("a formatter check runs only where the project declares that formatter", () => {
+  function unavailableReason(gates: readonly GateDefinition[], id: string): string | null {
+    const gate = gates.find((candidate) => candidate.id === id);
+    return gate?.source.kind === "inspection" ? (gate.source.unavailableReason ?? null) : null;
+  }
+
+  /**
+   * nborder, tracemantle, ironroot and tavern configure `[tool.ruff]` to lint. None of them
+   * formats with ruff (ironroot formats with black), and `ruff format --check .` failed each
+   * clean checkout on files the project never asked ruff to format.
+   */
+  it("does not invent a ruff format check from ruff lint configuration", async () => {
+    const gates = assembleGates(
+      await detectProject(
+        reader({
+          "pyproject.toml": '[tool.ruff]\nline-length = 100\n[tool.ruff.lint]\nselect = ["E"]\n',
+        }),
+      ),
+    );
+    expect(commandOf(gates, "lint")).toBe("ruff check --no-fix .");
+    expect(commandOf(gates, "format")).toBeNull();
+    expect(unavailableReason(gates, "format")).toContain("declares no formatter");
+  });
+
+  it("runs ruff format where a [tool.ruff.format] table or a ruff-format hook declares it", async () => {
+    for (const files of [
+      { "pyproject.toml": "[tool.ruff]\n[tool.ruff.format]\nquote-style = 'double'\n" },
+      { "pyproject.toml": "[tool.ruff]\nformat = { quote-style = 'single' }\n" },
+      {
+        "pyproject.toml": '[project]\nname = "p"\n',
+        ".pre-commit-config.yaml":
+          "repos:\n  - repo: https://github.com/astral-sh/ruff-pre-commit\n    rev: v0.15.0\n    hooks:\n      - id: ruff\n      - id: ruff-format\n",
+      },
+    ]) {
+      const gates = assembleGates(await detectProject(reader(files)));
+      expect({ files, format: commandOf(gates, "format") }).toEqual({
+        files,
+        format: "ruff format --check .",
+      });
+      expect(gates.find((gate) => gate.id === "format")?.severity).toBe("blocking");
+    }
+  });
+
+  it("runs black where the project declares black, and only when its environment holds it", async () => {
+    const pyproject = "[tool.black]\nline-length = 100\n[tool.ruff]\nline-length = 100\n";
+    const declared = assembleGates(await detectProject(reader({ "pyproject.toml": pyproject })));
+    expect(commandOf(declared, "format")).toBe("black --check .");
+    expect(declared.find((gate) => gate.id === "format")?.title).toBe("format (black --check)");
+
+    const environment = {
+      "pyproject.toml": pyproject,
+      ".venv/pyvenv.cfg": "home = /usr/bin\n",
+      ".venv/lib/python3.12/site-packages/ruff/__init__.py": "",
+    };
+    const absent = await detectProject(reader(environment));
+    expect(absent.pythonToolsInstalled).toEqual(["ruff"]);
+    expect(unavailableReason(assembleGates(absent), "format")).toContain(
+      "configures black, but the project's environment does not hold it",
+    );
+    const installed = await detectProject(
+      reader({ ...environment, ".venv/lib/python3.12/site-packages/black/__init__.py": "" }),
+    );
+    expect(commandOf(assembleGates(installed), "format")).toBe(
+      "'/bin/sh' '-c' '.venv/bin/python -m black --check .'",
+    );
+
+    const hook = await detectProject(
+      reader({
+        "pyproject.toml": '[project]\nname = "p"\n',
+        ".pre-commit-config.yaml":
+          "repos:\n  - repo: https://github.com/psf/black-pre-commit-mirror\n    rev: 25.1.0\n    hooks:\n      - id: black\n",
+      }),
+    );
+    expect(commandOf(assembleGates(hook), "format")).toBe("black --check .");
+  });
+
+  it("reads a pre-commit file that runs neither formatter as declaring none", async () => {
+    const gates = assembleGates(
+      await detectProject(
+        reader({
+          "pyproject.toml": "[tool.ruff]\n",
+          ".pre-commit-config.yaml":
+            "repos:\n  - repo: local\n    hooks:\n      - id: ruff\n      # - id: ruff-format\n",
+        }),
+      ),
+    );
+    expect(commandOf(gates, "format")).toBeNull();
+  });
+});

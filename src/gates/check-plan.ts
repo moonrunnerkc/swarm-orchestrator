@@ -5,6 +5,7 @@ import { nodeScriptCandidates } from "./node-gates.ts";
 import { readNoninteractive } from "./noninteractive-runner.ts";
 import { packageSelection } from "./package-scope.ts";
 import { detectProject, type ProjectDetection } from "./project-type.ts";
+import { pythonFormatCommand } from "./python-gates.ts";
 
 /**
  * What a first run would do before it does it: the project the metadata describes, the test
@@ -262,6 +263,17 @@ function declaredChecksOf(
         id: `lint${suffix}`,
         command: detection.pythonTools.includes("ruff") ? `${prefix}ruff check --no-fix .` : null,
         unavailable: detection.pythonTools.includes("ruff") ? null : "no linter is configured",
+      },
+      {
+        id: `format${suffix}`,
+        command:
+          detection.pythonFormatter === undefined
+            ? null
+            : `${prefix}${pythonFormatCommand(detection.pythonFormatter)}`,
+        unavailable:
+          detection.pythonFormatter === undefined
+            ? "no formatter is declared; ruff configuration alone configures its linter"
+            : null,
       },
       {
         id: `typecheck${suffix}`,
