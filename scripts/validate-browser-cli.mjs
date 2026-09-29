@@ -60,6 +60,7 @@ git("commit", "-qm", "base interaction");
 const base = git("rev-parse", "HEAD");
 const contract = join(root, "goal.json");
 writeFileSync(
+  // nosemgrep: javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag - contract is the goal.json path joined above; the <script> text is Playwright spec source written to disk, and nothing renders HTML from this value.
   contract,
   JSON.stringify({
     version: 1,

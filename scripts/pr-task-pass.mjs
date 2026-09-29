@@ -310,6 +310,7 @@ for (const task of wanted) {
       // one that accepts a mutant of a line it ran established nothing about that line.
       delete previous.bondedMutants;
       delete previous.heldBackBondedMutants;
+      // nosemgrep: javascript.lang.security.insecure-object-assign.insecure-object-assign - bondEvidence, defined in this file, returns only the fixed keys oracleBond, heldBackBond, bondedMutants and heldBackBondedMutants.
       Object.assign(previous, bondEvidence(sealedAgain, again.heldBack));
       // Which lines, not just that some were missed. "Extend the oracle" names nothing to extend
       // without them, and they are what separates a real gap from a defect in this measurement.
