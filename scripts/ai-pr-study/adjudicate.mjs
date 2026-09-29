@@ -18,18 +18,12 @@
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { childPath, removeFileInside, writeFileInside } from "./containment.mjs";
+import { checkPathRefusal, listDirectory, readFile } from "./reviewer-tools.mjs";
 
 const args = process.argv.slice(2);
 const positional = [];
@@ -114,44 +108,6 @@ const tools = [
     },
   },
 ];
-
-function listDirectory(root, path) {
-  const target = resolve(root, path);
-  if (!target.startsWith(root)) return "outside the repository";
-  try {
-    return readdirSync(target)
-      .filter((name) => name !== "node_modules" && name !== ".git" && name !== ".venv")
-      .map((name) => (statSync(join(target, name)).isDirectory() ? `${name}/` : name))
-      .join("\n");
-  } catch (cause) {
-    return `cannot list: ${cause.message}`;
-  }
-}
-
-// What the reviewer may read in one call and in one row. The model's context is finite and
-// the server drops a request that overflows it, which read as "fetch failed" on the rows
-// whose reviewer opened several large files; the bounds keep every row inside it.
-const readLimit = 16_000;
-const readBudget = 80_000;
-
-function readFile(root, path, forbidden, budget) {
-  const target = resolve(root, path);
-  if (!target.startsWith(root)) return "outside the repository";
-  const relative = target.slice(root.length + 1);
-  if (forbidden.has(relative)) return "refused: this is a test file the pull request changed";
-  if (budget.used >= readBudget)
-    return "refused: the read budget for this review is spent; finish with what you have read";
-  try {
-    const bytes = readFileSync(target, "utf8");
-    const allowed = Math.min(readLimit, readBudget - budget.used);
-    budget.used += Math.min(bytes.length, allowed);
-    return bytes.length > allowed
-      ? `${bytes.slice(0, allowed)}\n[truncated at ${allowed} characters]`
-      : bytes;
-  } catch (cause) {
-    return `cannot read: ${cause.message}`;
-  }
-}
 
 /**
  * A failure on the head counts only where each failing assertion is stated in the requirement.
@@ -419,7 +375,6 @@ for (const name of readdirSync(rowsRoot)
   if (only !== null && !only.has(row.index)) continue;
   if (!["executed", "fetched"].includes(row.outcome) || row.adjudication) continue;
   done += 1;
-  const clone = join(workingRoot, `${row.repository.replace("/", "__")}-${row.number}`);
   const transcriptPath = rowPath.replace(/\.json$/, ".adjudication.jsonl");
   const record = (entry) =>
     writeFileSync(transcriptPath, `${JSON.stringify(entry)}\n`, { flag: "a" });
@@ -454,6 +409,9 @@ for (const name of readdirSync(rowsRoot)
     console.log(`${row.index} ${row.repository}#${row.number}: ${result.status}`);
   };
   try {
+    // The row names the repository: one plain directory name under the working root, or the
+    // row is a harness error rather than a clone somewhere else.
+    const clone = childPath(workingRoot, `${row.repository.replace("/", "__")}-${row.number}`);
     run("git", ["checkout", "--quiet", "--force", "--detach", row.head], { cwd: clone });
     const messages = [
       { role: "system", content: reviewerSystem },
@@ -486,19 +444,14 @@ for (const name of readdirSync(rowsRoot)
           content = readFile(clone, String(callArgs.path ?? ""), forbidden, budget);
         } else if (call.function.name === "finish") {
           const path = typeof callArgs.checkPath === "string" ? callArgs.checkPath : "";
-          if (
-            callArgs.unjudged !== true &&
-            (forbidden.has(path) || (row.changedFiles ?? []).includes(path))
-          ) {
-            // The check would overwrite a file the pull request changed; that is the author's
-            // file, not the reviewer's. One more chance to name a fresh path, within the step cap.
-            content = `refused: ${path} is a file the pull request changed; write the check to a new path (for example a new file beside the tests) and call finish again`;
-          } else if (callArgs.unjudged !== true && !/^[\w.@+-]+(?:\/[\w.@+-]+)*$/.test(path)) {
-            // One file's path, not a list: thesvg#1159's reviewer named the three files its
-            // check greps, space-joined, and the check was then written under that one name.
-            content = `refused: ${JSON.stringify(path)} is not one plain repository-relative file path; name the single new file the check is written to (letters, digits, and . _ - @ + only, / between directories) and call finish again`;
-          } else {
-            check = callArgs;
+          const checked =
+            callArgs.unjudged === true
+              ? { refusal: null, path }
+              : checkPathRefusal(path, forbidden, row.changedFiles ?? []);
+          if (checked.refusal !== null) content = checked.refusal;
+          else {
+            check =
+              callArgs.unjudged === true ? callArgs : { ...callArgs, checkPath: checked.path };
             content = "recorded";
           }
         } else content = "unknown tool";
@@ -531,12 +484,12 @@ for (const name of readdirSync(rowsRoot)
     );
     run("git", ["checkout", "--quiet", "--force", "--detach", row.head], { cwd: clone });
     run("git", ["clean", "-fdq", "-e", "node_modules", "-e", ".venv"], { cwd: clone });
-    const checkFile = join(clone, check.checkPath);
-    mkdirSync(join(checkFile, ".."), { recursive: true });
-    writeFileSync(checkFile, check.checkContents);
+    // Written and removed through the containment helper: the path is the model's, and the
+    // base checkout between the two runs may turn a directory on it into a symlink.
+    writeFileInside(clone, check.checkPath, check.checkContents);
     const onHead = executeCheck(clone, image, row.head, check, manifest);
     const onBase = executeCheck(clone, image, row.base, check, manifest);
-    rmSync(checkFile, { force: true });
+    removeFileInside(clone, check.checkPath);
     // Leave the clone at the head with its installed dependencies for any later replay.
     if (lockfileChanged)
       executeCheck(clone, image, row.head, { ...check, command: "true" }, manifest);
