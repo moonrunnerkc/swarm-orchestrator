@@ -57,11 +57,13 @@ function childSource(): string {
 import { strengthenAndRepair, strengtheningLimits } from ${src("cli-strengthen.ts")};
 import { declareGoalContract } from ${src("evidence/goal-contract.ts")};
 import { openEvidenceSession } from ${src("evidence/session.ts")};
+import { defaultDiffBudget, sealAssembledCriteria } from ${src("gates/engine.ts")};
 const [root, repository, base, contractJson] = process.argv.slice(2);
 const contract = JSON.parse(contractJson);
 const clock = { now: () => Date.now(), sleep: () => Promise.resolve() };
 const evidence = await openEvidenceSession({ root, sessionId: "killed", clock });
 await declareGoalContract(evidence, contract);
+if (!(await sealAssembledCriteria({ workspaceRoot: repository, criteriaRef: base, evidence, budgets: defaultDiffBudget, attemptCap: 1 }))) throw new Error("criteria did not seal");
 const report = { policy: "required", contractDigest: "x", seed: "s", operators: "o", baseTree: "b", alternatives: [], requirements: [{ id: "r", baseControl: "vacuous", caught: [], gaps: [], unwitnessed: [], invalid: [], outcome: "gap", detail: "" }], satisfied: false, record: "x" };
 const proposal = { id: "added", command: "true", artifacts: [{ path: "acceptance/strengthened/a.txt", content: "a" }], rationale: "r" };
 await strengthenAndRepair({

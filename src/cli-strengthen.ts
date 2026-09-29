@@ -314,6 +314,10 @@ async function roundRecord(evidence: EvidenceRecorder, payload: Record<string, u
 export async function strengthenAndRepair(
   options: StrengtheningOptions,
 ): Promise<StrengtheningOutcome> {
+  // The criteria are sealed before any model is asked for anything (invariant 16); a caller that
+  // reached here without its implementation run's seal is refused before the first proposal.
+  if (!options.evidence.records().some((entry) => entry.type === "gate-set-sealed"))
+    throw new Error("seal the gate criteria before strengthening: a proposal is a model call");
   const initial = strengtheningState(options.evidence, options.root);
   const limits = initial.plan ?? options.limits;
   // An admission whose intent no completion answers was cut off (a killed process, a lost
