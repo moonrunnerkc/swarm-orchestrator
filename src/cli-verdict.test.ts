@@ -176,6 +176,20 @@ describe("swarm-verify verdict", () => {
     expect(ran.code).toBe(1);
   }, 60_000);
 
+  it("refuses a verdict made for another head than the one being decided, and binds the right one", async () => {
+    const document = JSON.parse(await readFile(verdictPath, "utf8")) as { head: string };
+    const other = "0".repeat(40);
+    const stale = await verdict([verdictPath, "--head", other]);
+    expect(stale.stdout).toContain("evidence:   inconsistent");
+    expect(stale.stdout).toContain(`not the expected ${other}`);
+    expect(stale.code).toBe(1);
+    const current = await verdict([verdictPath, "--head", document.head]);
+    expect(current.stdout).toContain("expected head");
+    expect(current.stdout).not.toContain("inconsistent");
+    const invalid = await verdict([verdictPath, "--head", "main"]);
+    expect(invalid.code).toBe(2);
+  }, 60_000);
+
   it("exits 2 for a document that is not there or not a verdict", async () => {
     const absent = await verdict([join(scratch, "absent.json")]);
     expect(absent.code).toBe(2);

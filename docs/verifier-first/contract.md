@@ -27,7 +27,7 @@ row above and runs the same eighteen cases through the installed entry.
 | `check [--workspace <dir>] [--package <dir>]* [--explain] [--json] [--bundle <dir>] [--base <ref>]` | discover, run unattended, five conclusions |
 | `ci --patch <file> \| --branch <ref> \| --pr <owner/repo#n>` with `--workspace`, `--base`, `--goal-contract`, `--challenges off\|report\|required`, `--package`*, `--install`, `--oracle`, `--oracle-only`, `--immutable`, `--isolation`, `--require-isolation`, `--summary`, `--bundle`, `--json` | verify a change in a fresh checkout of its base |
 | `verify <bundle> [--signer <fp>]*` | a bundle's integrity and its signer |
-| `verdict [<verdict.json>] [--evidence <dir>] [--repo <owner/repo>] [--signer-workflow <ref>]` | a signed verdict against its evidence and an expected signer |
+| `verdict [<verdict.json>] [--evidence <dir>] [--repo <owner/repo>] [--signer-workflow <ref>] [--head <sha>]` | a signed verdict against its evidence, an expected signer and, with `--head`, the head being decided (added in 1.1) |
 | `gates [--workspace <dir>] [--base <ref>] [--package <dir>]* [--allowed-files <a,b>] [--isolation <runtime[:image]>] [--bundle <dir>]` | the gates over a workspace |
 | `hook install\|uninstall\|run [--scope project\|user] [--settings <file>] [--workspace <dir>]` | the Claude Code hook |
 | `mcp [--root <dir>] [--describe]` | the local MCP server over stdio |

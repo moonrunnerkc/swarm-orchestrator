@@ -53,7 +53,7 @@ swarm-verify check [--explain] [--json]        # plan or run the declared checks
 swarm-verify ci --patch <file> | --branch <ref> | --pr <owner/repo#n>
                 [--goal-contract <file>] [--challenges off|report|required]
 swarm-verify verify <bundle> [--signer <fp>]   # check a bundle, and who signed it
-swarm-verify verdict <verdict.json> [--repo <owner/repo>] [--signer-workflow <ref>]
+swarm-verify verdict <verdict.json> [--repo <owner/repo>] [--signer-workflow <ref>] [--head <sha>]
 swarm-verify gates [--workspace <dir>]         # run a workspace's gates and bond each pass
 ```
 
