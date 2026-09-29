@@ -44,6 +44,13 @@ export interface RunCommand {
   readonly installDependencies?: boolean;
   readonly escalationModel?: string;
   readonly maxTokens?: number;
+  /** How the goal's requirement checks are challenged; absent is off. */
+  readonly challenges?: "off" | "report" | "required";
+  /**
+   * Additive check strengthening and implementation repair after a challenge, with the round
+   * limits a run may lower but never raise. Absent is off: challenging never invokes a model.
+   */
+  readonly strengthen?: { readonly rounds?: number; readonly perRequirement?: number };
   readonly recovery?: {
     readonly goal?: {
       readonly contract: import("./evidence/goal-contract.ts").GoalContract;
@@ -314,6 +321,9 @@ export const usage = [
   "    --concurrency <n>                              how many may hold a worktree at once",
   "    --preset bugfix|refactor|upgrade --goal-contract <file>   pinned behavior policy",
   "    --escalate-model <provider:id>                  authorize one bounded capability escalation",
+  "    --challenges off|report|required [--strengthen [--strengthen-rounds <n>]]",
+  "                                                   challenge the goal's checks; strengthen a gap",
+  "                                                   with an admitted check, then repair the code",
   "    --package <dir>                                repeat for explicitly selected units",
   "    --summary <file> --require-isolation            CI reviewer output and required boundary",
   "    --bootstrap node                               establish Node 24 checks on an empty Git base",
@@ -588,8 +598,44 @@ export function parseCommandLine(
     throw invalid("upgrade requires --install authorization for locked dependency preparation");
   if (flags.has("escalate-effort"))
     throw invalid("effort escalation is unsupported; name an explicit --escalate-model instead");
+  const challenges = flags.get("challenges");
+  if (challenges !== undefined && !["off", "report", "required"].includes(challenges))
+    throw invalid("--challenges must be off, report, or required");
+  if (challenges !== undefined && preset === undefined)
+    throw invalid("--challenges needs a --preset run with a --goal-contract to challenge");
+  const strengthen = flags.has("strengthen");
+  if (strengthen && (challenges === undefined || challenges === "off"))
+    throw invalid(
+      "--strengthen needs --challenges report or required: strengthening follows a challenge",
+    );
+  if (!strengthen && (flags.has("strengthen-rounds") || flags.has("strengthen-per-requirement")))
+    throw invalid("--strengthen-rounds and --strengthen-per-requirement need --strengthen");
   return {
     command: "run",
+    ...(challenges === undefined
+      ? {}
+      : { challenges: challenges as "off" | "report" | "required" }),
+    ...(strengthen
+      ? {
+          strengthen: {
+            ...(flags.has("strengthen-rounds")
+              ? {
+                  rounds:
+                    parseFlagCount(flags.get("strengthen-rounds"), "--strengthen-rounds") ?? 0,
+                }
+              : {}),
+            ...(flags.has("strengthen-per-requirement")
+              ? {
+                  perRequirement:
+                    parseFlagCount(
+                      flags.get("strengthen-per-requirement"),
+                      "--strengthen-per-requirement",
+                    ) ?? 0,
+                }
+              : {}),
+          },
+        }
+      : {}),
     ...(preset === undefined
       ? {}
       : {
