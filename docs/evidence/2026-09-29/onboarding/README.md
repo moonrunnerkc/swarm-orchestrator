@@ -7,8 +7,9 @@ published package README and the repository's front-door README, and asked to ge
 result, then break a disposable copy and see what the verifier reports. These are simulations
 by a model, not human testers and not customer validation. Configurations:
 `docs/evidence/2026-09-27/onboarding/config-{vite,express,python}-vm.json`; each directory here
-holds the filled configuration, every command with its output (`transcript.jsonl`) and the
-observer's report (`summary.json`).
+holds the filled configuration and the observer's report (`summary.json`); every command with
+its output (`transcript.jsonl`) is packed losslessly in `packed-derived/onboarding-transcripts`
+(`node scripts/evidence-pack.mjs restore <that directory>`).
 
 | repository | kind | first result | steps | ms to first result | broken copy |
 | --- | --- | --- | --- | --- | --- |
