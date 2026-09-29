@@ -205,9 +205,11 @@ describe("challenging a goal contract's checks through swarm-verify ci", () => {
     expect(read.challenges?.satisfied).toBe(false);
     expect(read.verified).toBe(false);
     expect(ran.code).toBe(1);
-    expect(await ownVerifier(read.bundleDirectory)).toMatch(
-      /PASS {2}challenge verdict \d+ re-derived/,
-    );
+    // The refusal is the policy's, and the bundle's own verifier must reach it too: through 1.1.0
+    // it expected a pass from any accepted goal and failed its own "independent goal" check here.
+    const verified = await ownVerifier(read.bundleDirectory);
+    expect(verified).toMatch(/PASS {2}challenge verdict \d+ re-derived/);
+    expect(verified).not.toMatch(/FAIL {2}(challenge verdict|goal obligations|independent goal)/);
   }, 240_000);
 
   it("records the same findings under report and still certifies", async () => {
