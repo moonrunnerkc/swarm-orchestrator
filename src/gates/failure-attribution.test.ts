@@ -238,3 +238,53 @@ it("keeps judging a record written before failure-identity v2 by the title-only 
     capturedRegression([{ ...legacy, attributionRule: "failure-identity-v2" }, lint]),
   ).toBeNull();
 });
+
+/** Node's spec reporter as Node 24 prints it for a project's own `node --test`. */
+function spec(failures: readonly (readonly [string, string, string])[], passes: readonly string[]) {
+  const lines = [
+    ...passes.map((title) => `✔ ${title} (0.5ms)`),
+    ...failures.map(([, title]) => `✖ ${title} (1.0ms)`),
+    `ℹ tests ${passes.length + failures.length}`,
+    "ℹ suites 0",
+    `ℹ pass ${passes.length}`,
+    `ℹ fail ${failures.length}`,
+    "ℹ cancelled 0",
+    "ℹ skipped 0",
+    "ℹ duration_ms 300.1",
+    "",
+    "✖ failing tests:",
+    "",
+    ...failures.flatMap(([location, title, error]) => [
+      `test at ${location}`,
+      `✖ ${title} (1.0ms)`,
+      `  AssertionError [ERR_ASSERTION]: ${error}`,
+      "      at TestContext.<anonymous> (file:///x.mjs:1:1)",
+      "",
+    ]),
+  ];
+  return {
+    exitCode: failures.length > 0 ? 1 : 0,
+    stdout: lines.join("\n"),
+    stderr: "",
+    durationMs: 1,
+    unavailable: null,
+  };
+}
+
+it("tells same-titled failures apart in Node's spec reporter, as in TAP", () => {
+  const base = spec([["a.test.mjs:3:1", "works", "1 !== 2"]], ["works"]);
+  const broken = spec(
+    [
+      ["a.test.mjs:3:1", "works", "1 !== 2"],
+      ["b.test.mjs:4:1", "works", "6 !== 4"],
+    ],
+    [],
+  );
+  expect(both(broken as never, base as never)).toEqual({
+    attribution: "new",
+    newFailures: ["b.test.mjs:4:1 › 0:works"],
+  });
+  expect(both(base as never, base as never).attribution).toBe("inherited");
+  const changed = spec([["a.test.mjs:3:1", "works", "3 !== 2"]], ["works"]);
+  expect(both(changed as never, base as never).attribution).toBe("unattributed");
+});

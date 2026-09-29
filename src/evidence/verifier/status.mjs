@@ -352,6 +352,50 @@ function tapTests(text, truncated, root) {
   return { failed, passed, causes, complete };
 }
 
+/** Node's spec reporter under failure-identity v2. Mirrors `specPoints` in failure-attribution.ts. */
+function specTests(raw, truncated) {
+  const lines = stripColour(raw).split("\n");
+  const passed = [];
+  const failed = [];
+  const causes = {};
+  const summary = lines.findIndex((line) => /^\u2716 failing tests:\s*$/.test(line));
+  for (let index = 0; index < lines.length; index++) {
+    if (summary !== -1 && index >= summary) break;
+    const pass = /^(\s*)\u2714 (.+?) \(\d+(?:\.\d+)?ms\)\s*$/.exec(lines[index]);
+    if (pass !== null) passed.push(`${pass[1].length}:${pass[2]}`);
+  }
+  if (summary !== -1)
+    for (let index = summary + 1; index < lines.length; index++) {
+      const location = /^test at (.+:\d+:\d+)\s*$/.exec(lines[index])?.[1];
+      const title = /^\s*\u2716 (.+?) \(\d+(?:\.\d+)?ms\)\s*$/.exec(lines[index + 1] ?? "")?.[1];
+      if (location === undefined || title === undefined) continue;
+      const kept = [];
+      for (let inner = index + 2; inner < lines.length; inner++) {
+        if (/^test at /.test(lines[inner])) break;
+        if (/^\s+at /.test(lines[inner]) || lines[inner].trim().length === 0) continue;
+        kept.push(lines[inner].trim());
+      }
+      const id = `${location} \u203a 0:${title}`;
+      failed.push(id);
+      causes[id] = cause(kept.join("\n"));
+    }
+  const count = (name) => {
+    for (const line of lines) {
+      const match = /^\u2139\s+(\w+)\s+(\d+)\s*$/.exec(line);
+      if (match !== null && match[1] === name) return Number(match[2]);
+    }
+    return null;
+  };
+  const fail = count("fail");
+  return {
+    failed,
+    passed,
+    causes,
+    complete:
+      !truncated && fail !== null && fail === failed.length && (count("cancelled") ?? 0) === 0,
+  };
+}
+
 /** A run's tests under failure-identity v2, or null where it names none. */
 function namedTestsV2(observation, sharedRoot) {
   const stdout = observation.stdout ?? "";
@@ -372,6 +416,8 @@ function namedTestsV2(observation, sharedRoot) {
   const text = `${stdout}\n${observation.stderr ?? ""}`;
   if (/^TAP version \d+/m.test(text))
     return tapTests(text, observation.outputTruncated === true, root);
+  if (/^\u2716 failing tests:\s*$/m.test(text) || /^\u2139\s+tests\s+\d+\s*$/m.test(text))
+    return specTests(text, observation.outputTruncated === true);
   const plain = stripColour(text);
   const summary = /^\s*Test Files\s+(.+)$/m.exec(plain)?.[1];
   if (summary === undefined) return null;

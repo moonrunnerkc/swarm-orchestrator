@@ -52,7 +52,10 @@ export function testPoints(observation: GateObservation): TestPoints | null {
     };
   }
   const text = `${observation.stdout}\n${observation.stderr}`;
-  if (!/^TAP version \d+/m.test(text)) return vitestTextFailures(text);
+  if (!/^TAP version \d+/m.test(text))
+    return /^\u2716 failing tests:\s*$/m.test(text) || /^\u2139\s+tests\s+\d+\s*$/m.test(text)
+      ? specPoints(text, observation.outputTruncated === true)
+      : vitestTextFailures(text);
   return tapPoints(text, observation.outputTruncated === true);
 }
 
@@ -184,6 +187,58 @@ function tapPoints(
       .map((point) => `${point.depth}:${point.title}`),
     causes,
     complete,
+  };
+}
+
+/**
+ * Node's spec reporter, the default of `node --test` from Node 23 on and what a project's own
+ * command prints wherever the harness does not run the runner itself. Its summary names each
+ * failure by the location of its test, which tells same-titled tests apart as TAP's does; passes
+ * are named by indentation and title. Complete where the counters are there, nothing was
+ * cancelled, and the summary names as many failures as the counter counts.
+ */
+function specPoints(text: string, truncated: boolean): TestPoints {
+  const lines = text.replace(colourCode, "").split("\n");
+  const passed: string[] = [];
+  const failed: string[] = [];
+  const causes: Record<string, string> = {};
+  const summary = lines.findIndex((line) => /^\u2716 failing tests:\s*$/.test(line));
+  for (const [index, line] of lines.entries()) {
+    if (summary !== -1 && index >= summary) break;
+    const pass = /^(\s*)\u2714 (.+?) \(\d+(?:\.\d+)?ms\)\s*$/.exec(line);
+    if (pass !== null) passed.push(`${pass[1]?.length ?? 0}:${pass[2]}`);
+  }
+  if (summary !== -1)
+    for (let index = summary + 1; index < lines.length; index++) {
+      const location = /^test at (.+:\d+:\d+)\s*$/.exec(lines[index] as string)?.[1];
+      const title = /^\s*\u2716 (.+?) \(\d+(?:\.\d+)?ms\)\s*$/.exec(lines[index + 1] ?? "")?.[1];
+      if (location === undefined || title === undefined) continue;
+      const kept: string[] = [];
+      for (let inner = index + 2; inner < lines.length; inner++) {
+        const next = lines[inner] as string;
+        if (/^test at /.test(next)) break;
+        if (/^\s+at /.test(next) || next.trim().length === 0) continue;
+        kept.push(next.trim());
+      }
+      const id = `${location} \u203a 0:${title}`;
+      failed.push(id);
+      causes[id] = normalizedCause(kept.join("\n"));
+    }
+  const counter = (name: string) => {
+    // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp - name is one of the fixed counter names below.
+    const found = new RegExp(`^\u2139\\s+${name}\\s+(\\d+)\\s*$`, "m").exec(text)?.[1];
+    return found === undefined ? null : Number(found);
+  };
+  const failCount = counter("fail");
+  return {
+    failed,
+    passed,
+    causes,
+    complete:
+      !truncated &&
+      failCount !== null &&
+      failCount === failed.length &&
+      (counter("cancelled") ?? 0) === 0,
   };
 }
 

@@ -98,6 +98,19 @@ function expect(name, ran, expected) {
   } else console.log(`ok   ${name}: exit ${ran.code}`);
 }
 
+/** Null where Vitest starts on this runtime, else the first line of why it does not. */
+function vitestStarts(modules) {
+  const ran = spawnSync(process.execPath, [join(modules, "vitest", "vitest.mjs"), "--version"], {
+    encoding: "utf8",
+    timeout: 60_000,
+  });
+  if (ran.status === 0) return null;
+  return (
+    `${ran.stderr ?? ""}${ran.stdout ?? ""}`.split("\n").find((line) => line.trim().length > 0) ??
+    `exit ${ran.status}`
+  );
+}
+
 function unsupported(name, reason) {
   results.push({ name, ok: true, unsupported: reason });
   console.log(`n/a  ${name}: ${reason}`);
@@ -354,6 +367,13 @@ try {
     if (!existsSync(join(vitestModules, "vitest", "package.json"))) {
       results.push({ name: "vitest installed for the forgery case", ok: false });
       console.error(`FAIL no vitest at ${vitestModules}; run npm ci there first`);
+    } else if (vitestStarts(vitestModules) !== null) {
+      // Vitest itself does not start on this runtime (its engines field claims it does), so the
+      // verifier's honest reading is that the tests wrote no report; nothing real can be forged.
+      unsupported(
+        "the Vitest forgery cases",
+        `Vitest does not start on node ${process.version}: ${vitestStarts(vitestModules)}`,
+      );
     } else {
       symlinkSync(vitestModules, join(forged, "node_modules"), "dir");
       expect("check runs the real failing Vitest test and fails", run(["--workspace", forged]), {
