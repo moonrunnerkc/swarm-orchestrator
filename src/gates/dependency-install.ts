@@ -7,12 +7,23 @@ import { asJsonValue, digestOfBytes, digestOfJson } from "../evidence/canonical-
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import { harnessChildEnvironment } from "../exec/child-environment.ts";
 import type { GateCommandRunner, GateObservation } from "./gate-definition.ts";
+import {
+  completeDeferredSetup,
+  type NetworkProbe,
+  type SetupEffect,
+  type SetupEffectOutcome,
+} from "./setup-follow-up.ts";
 
 export interface DependencyInstall {
   readonly attempted: boolean;
   readonly succeeded: boolean;
   readonly command: string;
   readonly detail: string;
+  /**
+   * Directories the install prepared for the checks' PATH, such as the pnpm it fetched for a
+   * project whose scripts call pnpm. Absent where it prepared none.
+   */
+  readonly toolDirectories?: readonly string[];
 }
 
 export class DependencySetupReconciliationError extends Error {
@@ -31,8 +42,18 @@ const observationSchema = z.strictObject({
   id: z.string(),
   workspace: z.string(),
   argv: z.array(z.string()),
-  /** The one command that may reach the registry, recorded as such. */
-  network: z.literal("registry").optional(),
+  /**
+   * `registry` for a command that may reach the registry (the lockfile install and a fetch that
+   * executes nothing); `none` for deferred work, which runs where the checks run with the
+   * network measured off. Records written before deferred work existed carry `registry` alone.
+   */
+  network: z.enum(["registry", "none"]).optional(),
+  /** Absent for the lockfile install itself; otherwise which follow-up step this is. */
+  stage: z.enum(["package-manager", "build-requirements", "offline-lifecycle"]).optional(),
+  /** For offline work: the measurement that showed a check-time command could not connect. */
+  networkProbe: z.strictObject({ contained: z.literal(true), observed: z.string() }).optional(),
+  /** For a fetched package manager: the directory put on the checks' PATH once it succeeds. */
+  toolDirectory: z.string().optional(),
   lockDigest: z.string(),
   sourceDigest: z.string(),
   succeeded: z.boolean().optional(),
@@ -58,13 +79,7 @@ const lockfiles = [
 ] as const;
 
 /** Setup is an authorized harness effect, under the same runner, cancellation and resource pool. */
-export async function installFromLockfile(options: {
-  workspace: string;
-  commands: GateCommandRunner;
-  timeoutMs: number;
-  evidence?: EvidenceRecorder;
-  signal?: AbortSignal;
-}): Promise<DependencyInstall> {
+export async function installFromLockfile(options: InstallOptions): Promise<DependencyInstall> {
   const { workspace, evidence } = options;
   options.signal?.throwIfAborted();
   if (evidence !== undefined) assertDependencyEffectsSettled(evidence);
@@ -95,53 +110,43 @@ export async function installFromLockfile(options: {
     if (!lock.isFile()) throw new Error(`${candidate.file} must be a regular lockfile, not a link`);
     const before = await sourceFingerprint(workspace, options.signal);
     const argv = await installerArgv(candidate, workspace, options);
-    const identity = {
-      version: 1 as const,
-      id: `install-${evidence?.records().length ?? 0}`,
-      workspace,
-      argv,
-      network: "registry" as const,
-      lockDigest: digestOfBytes(await readFile(join(workspace, candidate.file))),
-      sourceDigest: before,
-    };
-    const record = async (phase: "intent" | "completed", observed = {}) =>
-      evidence?.record({
-        type: "dependency-install",
-        actor: "harness",
-        provenance: ["user", "file", "tool-output"],
-        payload: asJsonValue(observationSchema.parse({ ...identity, phase, ...observed })),
-      });
-    await record("intent");
-    // A thrown runner call has ambiguous effects. Keep the intent unanswered for reconciliation.
-    let observed: GateObservation;
-    let after: string;
-    try {
-      observed = await options.commands.runVouched(argv, {
-        cwd: workspace,
-        timeoutMs: Math.max(1, options.timeoutMs),
+    const lockDigest = digestOfBytes(await readFile(join(workspace, candidate.file)));
+    const effect = (planned: SetupEffect, sourceDigest?: string) =>
+      recordedEffect(options, lockDigest, planned, sourceDigest);
+    const install = await effect(
+      {
+        argv,
         network: "registry",
-      });
-      after = await sourceFingerprint(workspace, options.signal);
-    } catch (cause) {
-      throw new DependencySetupReconciliationError(
-        cause instanceof Error ? cause.message : String(cause),
-      );
-    }
-    const succeeded = observed.exitCode === 0 && observed.unavailable === null && before === after;
-    const detail =
-      before !== after
-        ? "dependency setup changed source files; preserve the checkout and inspect the changes"
-        : succeeded
-          ? `installed from ${candidate.file} using the declared locked preparation command`
-          : `dependency setup failed (exit ${observed.exitCode}): ${observed.unavailable ?? (observed.stderr || observed.stdout).trim().slice(-2000)}`;
-    await record("completed", {
-      succeeded,
-      detail,
-      sourceAfter: after,
-      exitCode: observed.exitCode,
-      unavailable: observed.unavailable,
+        describe: ({ observed, succeeded }) =>
+          succeeded
+            ? `installed from ${candidate.file} using the declared locked preparation command`
+            : `dependency setup failed (exit ${observed.exitCode}): ${observed.unavailable ?? (observed.stderr || observed.stdout).trim().slice(-2000)}`,
+      },
+      before,
+    );
+    if (!install.succeeded)
+      return { attempted: true, succeeded: false, command: argv.join(" "), detail: install.detail };
+    // What the scripts-off install left undone, done where the checks run and never with the
+    // network the install had: a source change there fails setup the same way it does above.
+    const followUp = await completeDeferredSetup({
+      lockfile: candidate.file,
+      installArgv: argv,
+      workspace,
+      commands: options.commands,
+      timeoutMs: options.timeoutMs,
+      effect,
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+      ...(options.probeNetwork === undefined ? {} : { probeNetwork: options.probeNetwork }),
     });
-    return { attempted: true, succeeded, command: argv.join(" "), detail };
+    return {
+      attempted: true,
+      succeeded: !followUp.sourceChanged,
+      command: argv.join(" "),
+      detail: [install.detail, ...followUp.details].join("; "),
+      ...(followUp.toolDirectories.length === 0
+        ? {}
+        : { toolDirectories: followUp.toolDirectories }),
+    };
   }
   return {
     attempted: true,
@@ -150,6 +155,81 @@ export async function installFromLockfile(options: {
     detail:
       "no supported lockfile: provide package-lock.json, pnpm-lock.yaml, yarn.lock or uv.lock, or omit --install and supply a prepared runtime",
   };
+}
+
+interface InstallOptions {
+  workspace: string;
+  commands: GateCommandRunner;
+  timeoutMs: number;
+  evidence?: EvidenceRecorder;
+  signal?: AbortSignal;
+  /** How the checks' network is measured before deferred work; the real probe by default. */
+  probeNetwork?: NetworkProbe;
+}
+
+/**
+ * One setup command as a recorded effect: intent before it runs, completion after, with the
+ * source fingerprint on both sides. Every command that can execute or fetch registry-served
+ * code goes through here, the lockfile install and each deferred step alike, so the ledger
+ * names each one with the network it had.
+ */
+async function recordedEffect(
+  options: InstallOptions,
+  lockDigest: string,
+  planned: SetupEffect,
+  sourceDigest?: string,
+): Promise<SetupEffectOutcome> {
+  const { workspace, evidence } = options;
+  options.signal?.throwIfAborted();
+  const before = sourceDigest ?? (await sourceFingerprint(workspace, options.signal));
+  const identity = {
+    version: 1 as const,
+    id: `install-${evidence?.records().length ?? 0}`,
+    workspace,
+    argv: [...planned.argv],
+    network: planned.network,
+    ...(planned.stage === undefined ? {} : { stage: planned.stage }),
+    ...(planned.networkProbe === undefined ? {} : { networkProbe: planned.networkProbe }),
+    ...(planned.toolDirectory === undefined ? {} : { toolDirectory: planned.toolDirectory }),
+    lockDigest,
+    sourceDigest: before,
+  };
+  const record = async (phase: "intent" | "completed", observed = {}) =>
+    evidence?.record({
+      type: "dependency-install",
+      actor: "harness",
+      provenance: ["user", "file", "tool-output"],
+      payload: asJsonValue(observationSchema.parse({ ...identity, phase, ...observed })),
+    });
+  await record("intent");
+  // A thrown runner call has ambiguous effects. Keep the intent unanswered for reconciliation.
+  let observed: GateObservation;
+  let after: string;
+  try {
+    observed = await options.commands.runVouched(planned.argv, {
+      cwd: workspace,
+      timeoutMs: Math.max(1, options.timeoutMs),
+      ...(planned.network === "registry" ? { network: "registry" as const } : {}),
+    });
+    after = await sourceFingerprint(workspace, options.signal);
+  } catch (cause) {
+    throw new DependencySetupReconciliationError(
+      cause instanceof Error ? cause.message : String(cause),
+    );
+  }
+  const sourceChanged = before !== after;
+  const succeeded = observed.exitCode === 0 && observed.unavailable === null && !sourceChanged;
+  const detail = sourceChanged
+    ? "dependency setup changed source files; preserve the checkout and inspect the changes"
+    : planned.describe({ observed, succeeded });
+  await record("completed", {
+    succeeded,
+    detail,
+    sourceAfter: after,
+    exitCode: observed.exitCode,
+    unavailable: observed.unavailable,
+  });
+  return { observed, succeeded, sourceChanged, detail };
 }
 
 /**

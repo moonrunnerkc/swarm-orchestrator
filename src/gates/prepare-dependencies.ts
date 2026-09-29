@@ -40,6 +40,7 @@ export async function prepareDependencies(options: {
     results.push({ ...result, detail: `${unit}: ${result.detail}` });
     if (!result.succeeded) break;
   }
+  const toolDirectories = results.flatMap((entry) => entry.toolDirectories ?? []);
   return {
     attempted: results.some((entry) => entry.attempted),
     succeeded: results.length > 0 && results.every((entry) => entry.succeeded),
@@ -47,5 +48,6 @@ export async function prepareDependencies(options: {
     detail: results.length
       ? results.map((entry) => entry.detail).join("; ")
       : "no supported lockfile in the selected preparation scope; use an existing environment without --install",
+    ...(toolDirectories.length === 0 ? {} : { toolDirectories }),
   };
 }
