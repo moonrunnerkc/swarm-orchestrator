@@ -19,13 +19,14 @@ export function bootstrapCheckPassed(
       /^\d+\.\d+\.\d+$/.test(observation.stdout) &&
       Number(observation.stdout.split(".")[0]) >= 24
     );
+  const negative = check === "negative";
   return (
-    observation.exitCode === (check === "negative" ? 1 : 0) &&
-    new RegExp(`^${check === "negative" ? "not ok" : "ok"} 1 - bootstrap-${check}$`, "m").test(
+    observation.exitCode === (negative ? 1 : 0) &&
+    (negative ? /^not ok 1 - bootstrap-negative$/m : /^ok 1 - bootstrap-positive$/m).test(
       observation.stdout,
     ) &&
     /^# tests 1$/m.test(observation.stdout) &&
-    new RegExp(`^# fail ${check === "negative" ? 1 : 0}$`, "m").test(observation.stdout)
+    (negative ? /^# fail 1$/m : /^# fail 0$/m).test(observation.stdout)
   );
 }
 
