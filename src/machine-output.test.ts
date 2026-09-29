@@ -48,6 +48,29 @@ describe("the machine-readable stream", () => {
     expect(parsed.exitCode).toBe(exitCodes.notAcceptable);
   });
 
+  it("carries the strengthening outcome only where strengthening ran", () => {
+    const without = JSON.parse(
+      jsonResultLine({ runId: "a", verdict: null, bundleDirectory: null, exitCode: 1 }),
+    );
+    expect("strengthening" in without).toBe(false);
+    const withIt = JSON.parse(
+      jsonResultLine({
+        runId: "a",
+        verdict: null,
+        bundleDirectory: null,
+        exitCode: 0,
+        strengthening: {
+          rounds: 1,
+          admitted: ["clamp-range"],
+          stopped: "no requirement has a witnessed gap left to strengthen",
+          contractDigest: "sha256:abc",
+        },
+      }),
+    );
+    expect(withIt.strengthening.admitted).toEqual(["clamp-range"]);
+    expect(withIt.strengthening.contractDigest).toBe("sha256:abc");
+  });
+
   it("gives every exit code a distinct meaning a caller can branch on", () => {
     const values = Object.values(exitCodes);
 

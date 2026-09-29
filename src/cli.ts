@@ -69,7 +69,7 @@ import { summarizeRatchet } from "./gates/ratchet-summary.ts";
 import { diagnose, remediesFor, runtimeFinding } from "./install/health.ts";
 import { inspectInstall } from "./install/inspect.ts";
 import { describeInstall } from "./install/report.ts";
-import { exitCodes, jsonEventLine, jsonResultLine } from "./machine-output.ts";
+import { exitCodes, jsonEventLine, jsonResultLine, type MachineResult } from "./machine-output.ts";
 import { localEndpointRecord } from "./providers/endpoint-resolution.ts";
 import { parseModelSpec } from "./providers/model-spec.ts";
 import { createProviderRegistry } from "./providers/registry.ts";
@@ -515,6 +515,7 @@ async function run(options: RunCommand): Promise<number> {
 
     const { loop, gates } = taskRun;
     let { green, verdict } = taskRun;
+    let strengthening: MachineResult["strengthening"];
     if (goalContext !== undefined) {
       // Strengthening follows a challenge and only where asked; challenging alone never calls a model.
       const strengthened =
@@ -563,10 +564,17 @@ async function run(options: RunCommand): Promise<number> {
                 });
               },
             });
-      if (strengthened !== null)
+      if (strengthened !== null) {
+        strengthening = {
+          rounds: strengthened.rounds,
+          admitted: strengthened.admitted,
+          stopped: strengthened.stopped,
+          contractDigest: strengthened.digest,
+        };
         ui.note(
           `strengthening: ${strengthened.admitted.length} check(s) admitted over ${strengthened.rounds} round(s); stopped because ${strengthened.stopped}`,
         );
+      }
       verdict = await finalizeTaskGoal(
         strengthened === null ? goalContext : { ...goalContext, contract: strengthened.contract },
       );
@@ -620,6 +628,7 @@ async function run(options: RunCommand): Promise<number> {
           verdict,
           bundleDirectory: written.directory,
           exitCode: code,
+          ...(strengthening === undefined ? {} : { strengthening }),
         })}\n`,
       );
     }
