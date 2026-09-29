@@ -38,6 +38,7 @@ export async function detectEnvironment(read: ManifestReader): Promise<ProjectEn
         setupProblem: "both npm and pnpm lockfiles exist; declare packageManager explicitly",
       };
     if (match !== null)
+      // nosemgrep: javascript.lang.security.insecure-object-assign.insecure-object-assign - both keys are written here; the values are captures of the anchored npm|pnpm@version pattern above.
       Object.assign(found, { nodeManager: match[1], nodeManagerVersion: match[2] });
     else if (pnpm !== null) Object.assign(found, { nodeManager: "pnpm" });
   }
