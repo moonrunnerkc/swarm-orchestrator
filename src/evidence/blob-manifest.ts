@@ -161,6 +161,9 @@ const derivedNames: readonly RegExp[] = [
   /^(open-evidence|interface|live-task)\.cast$/,
   /\.jsonl\.gz$/,
   /^candidates\.json$/,
+  // A shakedown task's captured terminal log (`04-testfix-scrub-digit.txt`), which the bundle
+  // beside it records as evidence; the log is what the terminal showed of that run.
+  /^\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*\.txt$/,
 ];
 
 /** The one spelling of "derived", read by the offload here and by the in-tree evidence packer. */
