@@ -185,3 +185,28 @@ describe("installing the hook into a settings file", () => {
     );
   });
 });
+
+describe("a test command an agent pipes through an output filter", () => {
+  it("routes the test stage and keeps plain tail, head and grep filters", async () => {
+    const { filteredTestCommand } = await import("./claude-hook.ts");
+    expect(filteredTestCommand("npm test 2>&1 | tail -5")).toBe("tail -5");
+    expect(filteredTestCommand("npm test | tail -n 20 | grep -i fail")).toBe(
+      "tail -n 20 | grep -i fail",
+    );
+    expect(filteredTestCommand("npm test | head")).toBe("head");
+  });
+
+  it("leaves anything else in the pipeline alone", async () => {
+    const { filteredTestCommand } = await import("./claude-hook.ts");
+    for (const command of [
+      "npm test",
+      "npm test | sh",
+      "npm test | tail -5; rm -rf x",
+      "npm test | grep $(whoami)",
+      "npm test > out.txt | tail",
+      "npm run build | tail -5",
+      "npm test | tee log.txt",
+    ])
+      expect(filteredTestCommand(command)).toBeNull();
+  });
+});
