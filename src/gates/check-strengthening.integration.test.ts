@@ -14,6 +14,7 @@ import {
 import { openEvidenceSession } from "../evidence/session.ts";
 import { challengeVerdictsAgree } from "../evidence/verifier/challenges.mjs";
 import { strengtheningAgrees } from "../evidence/verifier/strengthening.mjs";
+import { defaultDiffBudget, sealAssembledCriteria } from "./engine.ts";
 
 /**
  * The strengthening and repair lifecycle on a real Node project, every check a real process in a
@@ -193,6 +194,15 @@ async function context(contract: GoalContract) {
     clock,
   });
   await declareGoalContract(evidence, contract);
+  // The implementation run seals its criteria before any model call; strengthening follows it.
+  const sealed = await sealAssembledCriteria({
+    workspaceRoot: repository,
+    criteriaRef: base,
+    evidence,
+    budgets: defaultDiffBudget,
+    attemptCap: 1,
+  });
+  expect(sealed).toBe(true);
   const goal: TaskGoalContext = {
     contract,
     workspace: repository,
@@ -208,6 +218,37 @@ async function context(contract: GoalContract) {
 }
 
 describe("check strengthening and repair", () => {
+  it("asks the model nothing until the criteria are sealed on the chain", async () => {
+    const contract = contractWith(true);
+    const evidence = await openEvidenceSession({
+      root: sessions,
+      sessionId: `unsealed-${Date.now()}`,
+      clock,
+    });
+    await declareGoalContract(evidence, contract);
+    const model = scriptedModel([JSON.stringify(rangeCheck)]);
+    await expect(
+      strengthenAndRepair({
+        evidence,
+        workspace: repository,
+        baseCommit: base,
+        root: contract,
+        policy: "required",
+        limits: strengtheningLimits({}),
+        model,
+        clock,
+        signal: new AbortController().signal,
+        deadline: null,
+        reserveMs: 0,
+        remainingTokens: () => 100_000,
+        verifyCandidate: () => Promise.reject(new Error("nothing runs before the seal")),
+        verifyProbe: () => Promise.reject(new Error("nothing runs before the seal")),
+        repair: () => Promise.reject(new Error("nothing runs before the seal")),
+      }),
+    ).rejects.toThrow(/seal the gate criteria/);
+    expect(model.calls).toBe(0);
+  });
+
   it("admits a check that catches the witnessed gap, repairs the candidate, and keeps the originals", async () => {
     const contract = contractWith(true);
     const goal = await context(contract);
