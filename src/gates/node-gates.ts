@@ -88,13 +88,16 @@ export function nodeGates(
   const pick = (id: string): string | null =>
     (nodeScriptCandidates[id] ?? []).find((name) => scripts.has(name)) ?? null;
 
+  // Build before tests, the order a project's own CI conventionally runs them in: a suite that
+  // exercises build output (a bundle, generated types, a worker's asset directory) fails against
+  // a tree that was never built, and that failure is the harness's order, not the change.
   return (
     [
       "typecheck",
       "lint",
       "format",
-      "tests",
       ...(scripts.has("build") ? ["build" as const] : []),
+      "tests",
     ] as const
   ).map((id) => {
     if (detection.setupProblem) return unavailableGate(id, id, "blocking", detection.setupProblem);

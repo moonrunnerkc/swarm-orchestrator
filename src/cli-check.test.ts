@@ -129,6 +129,28 @@ describe("swarm-verify with no subcommand", () => {
     expect(ran.code).toBe(1);
   });
 
+  it("builds before testing, as a project's own CI does, when the suite reads build output", async () => {
+    // Found by a fresh-VM onboarding run on a Vite and Workers project whose test script reads
+    // the built asset directory: the suite ran before the build and a clean tree read as failed.
+    const root = await repository("built", {
+      "package.json":
+        '{ "name": "b", "version": "1.0.0", "type": "module", "scripts": { "build": "node build.mjs", "test": "node --test" } }\n',
+      ".gitignore": "dist/\n",
+      "build.mjs":
+        'import { mkdirSync, writeFileSync } from "node:fs";\nmkdirSync("dist", { recursive: true });\nwriteFileSync("dist/double.mjs", "export const double = (n) => n * 2;\\n");\n',
+      "double.test.mjs": [
+        'import test from "node:test";',
+        'import assert from "node:assert/strict";',
+        'import { double } from "./dist/double.mjs";',
+        'test("doubles", () => assert.equal(double(2), 4));',
+        "",
+      ].join("\n"),
+    });
+    const ran = await verifier(["--workspace", root]);
+    expect(ran.stdout).toContain("result       regression-only pass");
+    expect(ran.code).toBe(0);
+  });
+
   it("runs a vitest project once under CI=true and reads its structured outcome", async () => {
     const root = await repository("vitest", {
       "package.json":
