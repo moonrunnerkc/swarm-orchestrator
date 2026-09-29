@@ -19,7 +19,7 @@ on:
         description: "open a controlled exercise issue: none, short-windows or real-windows"
         default: none
         type: choice
-        options: [none, short-windows, real-windows]
+        options: [none, short-windows, real-windows, defect-report]
   issues:
     types: [opened, reopened]
 
@@ -35,7 +35,29 @@ jobs:
       - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
           script: |
-            const short = "${{ inputs.exercise }}" === "short-windows";
+            const kind = "${{ inputs.exercise }}";
+            if (kind === "defect-report") {
+              // A real defect, reported through the exercise identity so the whole cycle from report
+              // to released fix can be followed on one issue; the defect was reproduced on the
+              // published 1.0.7 by the maintainer before this report existed.
+              const report = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: "[controlled exercise] ci reads a new failure as inherited when two node tests share a title",
+                body: [
+                  "Controlled exercise of the issue-to-released-fix loop, opened by the triage workflow's own identity; not an outside report.",
+                  "",
+                  "**Version**: swarm-verify 1.0.7",
+                  "**Reproduction**: `calc.mjs` exports `double(n)` returning `n * 2`; `a.test.mjs` declares `test('works')` failing an assertion; `b.test.mjs` also declares `test('works')` asserting `double(2) === 4`; `package.json` runs `node --test`. A patch changing `n * 2` to `n * 3` makes the second test fail too.",
+                  "**Observed**: `swarm-verify ci --patch` reports the tests check `attribution: inherited`, `regression: pass`; the Action decides `regression-only`.",
+                  "**Expected**: the second failure is new, and the regression dimension fails.",
+                ].join("\n"),
+                labels: ["controlled-exercise", "needs-triage", "verifier"],
+              });
+              core.notice(`opened controlled defect report #${report.data.number}`);
+              return;
+            }
+            const short = kind === "short-windows";
             const created = await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
