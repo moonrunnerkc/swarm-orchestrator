@@ -21,8 +21,12 @@ import { sha256 } from "./attempts.mjs";
 export const SUITE_STATUSES = ["passed", "failed", "not-collected", "setup-failed"];
 
 // The project's environment first: a command that says `pytest` or `vitest` means the
-// project's, installed into the checkout, not the image's.
-export const checkPath = "/workspace/.venv/bin:/workspace/node_modules/.bin";
+// project's, installed into the checkout, not the image's. The package manager a lockfile names
+// (pnpm, yarn) is installed beside it during preparation, while the registry is reachable, so
+// the test command itself needs no network: `npx --package pnpm` at test time fetched pnpm
+// from the registry and, with the network off, read as a failed suite.
+export const toolsDirectory = ".study-tools";
+export const checkPath = `/workspace/.venv/bin:/workspace/node_modules/.bin:/workspace/${toolsDirectory}/node_modules/.bin`;
 
 const lockfiles = [
   { file: "pnpm-lock.yaml", manager: "pnpm" },
@@ -33,8 +37,8 @@ const lockfiles = [
 
 const installCommands = {
   npm: "npm ci --ignore-scripts --no-audit --no-fund",
-  pnpm: "npx --yes --package pnpm@10 pnpm install --frozen-lockfile --ignore-scripts",
-  yarn: "npx --yes yarn@1 install --frozen-lockfile --ignore-scripts",
+  pnpm: `npm install --no-save --no-audit --no-fund --prefix ${toolsDirectory} pnpm@10 && ${toolsDirectory}/node_modules/.bin/pnpm install --frozen-lockfile --ignore-scripts`,
+  yarn: `npm install --no-save --no-audit --no-fund --prefix ${toolsDirectory} yarn@1 && ${toolsDirectory}/node_modules/.bin/yarn install --frozen-lockfile --ignore-scripts`,
   // Every group and extra: a test runner kept in a `test` group or `dev` extra is still the
   // project's declared runner.
   uv: "uv sync --locked --all-groups --all-extras",
@@ -98,12 +102,7 @@ export function detectProject(root) {
       manifest,
       lockfile: lock?.file ?? null,
       installCommand,
-      testCommand:
-        manager === "npm"
-          ? "npm test"
-          : manager === "pnpm"
-            ? "npx --yes --package pnpm@10 pnpm test"
-            : "npx --yes yarn@1 test",
+      testCommand: manager === "npm" ? "npm test" : manager === "pnpm" ? "pnpm test" : "yarn test",
       declaredBy: "package.json scripts.test",
       reason: null,
     };
@@ -131,6 +130,22 @@ export function detectProject(root) {
     declaredBy: "pytest in pyproject.toml",
     reason: null,
   };
+}
+
+const registryReach = /request to https?:\/\/registry\.\S+ failed|getaddrinfo \w+ registry\./;
+
+/**
+ * System commands the output reports missing (`sh: 1: sqlite3: not found`): gaps of the image,
+ * recorded beside the status so a failure they caused can be told apart. The status is not
+ * changed by them; the suite did run and did fail in this environment.
+ */
+export function missingCommands(output) {
+  const names = new Set();
+  for (const match of String(output ?? "").matchAll(
+    /(?:^|\s)(?:\/bin\/)?(?:sh|bash): (?:\d+: )?([\w.+-]+): (?:command )?not found/gm,
+  ))
+    names.add(match[1]);
+  return [...names].sort();
 }
 
 /** Whether a manifest declares any dependency an install would have to provide. */
@@ -348,6 +363,9 @@ export function plainSuite(root, { image, installTimeoutMs, testTimeoutMs, run =
   const ran = runInContainer(root, image, project.testCommand, { timeoutMs: testTimeoutMs, run });
   const output = `${ran.stdout}\n${ran.stderr}`;
   const collected = collectedCount(output);
+  // A test command that could not start without the registry never ran the suite: that is the
+  // environment's, not the project's outcome.
+  const neededRegistry = ran.exitCode !== 0 && collected === null && registryReach.test(output);
   return {
     setup,
     suite: {
@@ -356,14 +374,17 @@ export function plainSuite(root, { image, installTimeoutMs, testTimeoutMs, run =
       collected,
       exitCode: ran.exitCode,
       timedOut: ran.timedOut,
+      environmentGaps: missingCommands(output),
       status: suiteStatus({
-        setupFailed: false,
+        setupFailed: neededRegistry,
         testCommand: project.testCommand,
         exitCode: ran.exitCode,
         timedOut: ran.timedOut,
         collected,
       }),
-      reason: null,
+      reason: neededRegistry
+        ? "the test command reached for the package registry with the network off, so no test ran"
+        : null,
       durationMs: ran.durationMs,
       outputTail: tail(output),
     },

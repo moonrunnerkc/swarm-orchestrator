@@ -7,6 +7,7 @@ import {
   bundleEvidence,
   collectedCount,
   detectProject,
+  missingCommands,
   plainSuite,
   prepareDependencies,
   suiteStatus,
@@ -41,7 +42,13 @@ describe("detectProject", () => {
   it("uses pnpm for a pnpm lockfile and refuses to pick between two lockfiles", () => {
     write("package.json", JSON.stringify({ scripts: { test: "node --test" } }));
     write("pnpm-lock.yaml", "");
-    expect(detectProject(root).testCommand).toMatch(/pnpm test$/);
+    // pnpm is installed into the checkout while the registry is reachable; the test command
+    // then needs no network.
+    expect(detectProject(root)).toMatchObject({
+      testCommand: "pnpm test",
+      installCommand:
+        "npm install --no-save --no-audit --no-fund --prefix .study-tools pnpm@10 && .study-tools/node_modules/.bin/pnpm install --frozen-lockfile --ignore-scripts",
+    });
     write("package-lock.json", "{}");
     expect(detectProject(root)).toMatchObject({ testCommand: null, installCommand: null });
     expect(detectProject(root).reason).toMatch(/several lockfiles/);
@@ -148,6 +155,62 @@ describe("dependency preparation and the suite, over a recorded container runner
     expect(calls.some((call) => call.includes("--network=none"))).toBe(false);
   });
 
+  it("reads a test command that needed the registry as setup, not as a failed suite", () => {
+    write(
+      "package.json",
+      JSON.stringify({ scripts: { test: "vitest" }, dependencies: { a: "1" } }),
+    );
+    write("package-lock.json", "{}");
+    const { run } = recorder([
+      { status: 0, stdout: "added 1", stderr: "" },
+      {
+        status: 1,
+        stdout: "",
+        stderr:
+          "npm error request to https://registry.npmjs.org/pnpm failed, reason: getaddrinfo EAI_AGAIN registry.npmjs.org",
+      },
+    ]);
+    const measured = plainSuite(root, {
+      image: "node:24",
+      installTimeoutMs: 1000,
+      testTimeoutMs: 1000,
+      run,
+    });
+    expect(measured.suite.status).toBe("setup-failed");
+    expect(measured.suite.reason).toMatch(/network off/);
+  });
+
+  it("names system commands the image lacks without changing a real failure", () => {
+    write(
+      "package.json",
+      JSON.stringify({ scripts: { test: "vitest" }, dependencies: { a: "1" } }),
+    );
+    write("package-lock.json", "{}");
+    const { run } = recorder([
+      { status: 0, stdout: "added 1", stderr: "" },
+      {
+        status: 1,
+        stdout: "/bin/sh: 1: sqlite3: not found\n      Tests  5 failed | 154 passed (159)",
+        stderr: "",
+      },
+    ]);
+    const measured = plainSuite(root, {
+      image: "node:24",
+      installTimeoutMs: 1000,
+      testTimeoutMs: 1000,
+      run,
+    });
+    expect(measured.suite).toMatchObject({
+      status: "failed",
+      collected: 159,
+      environmentGaps: ["sqlite3"],
+    });
+    expect(missingCommands("bash: jq: command not found\nsh: 2: git: not found")).toEqual([
+      "git",
+      "jq",
+    ]);
+  });
+
   it("runs the declared command with the network off and the project's bin first", () => {
     write(
       "package.json",
@@ -172,7 +235,7 @@ describe("dependency preparation and the suite, over a recorded container runner
     });
     const testCall = calls.find((call) => call.includes("--network=none"));
     expect(testCall).toContain(
-      "PATH=/workspace/.venv/bin:/workspace/node_modules/.bin:$PATH; npm test",
+      "PATH=/workspace/.venv/bin:/workspace/node_modules/.bin:/workspace/.study-tools/node_modules/.bin:$PATH; npm test",
     );
   });
 
