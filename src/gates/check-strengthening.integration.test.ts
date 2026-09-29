@@ -249,6 +249,35 @@ describe("check strengthening and repair", () => {
     expect(model.calls).toBe(0);
   });
 
+  it("stops a cancelled run before its first proposal, and says it was cancelled", async () => {
+    const contract = contractWith(true);
+    const goal = await context(contract);
+    const model = scriptedModel([JSON.stringify(rangeCheck)]);
+    const cancelled = new AbortController();
+    cancelled.abort();
+    const outcome = await strengthenAndRepair({
+      evidence: goal.evidence,
+      workspace: repository,
+      baseCommit: base,
+      root: contract,
+      policy: "required",
+      limits: strengtheningLimits({}),
+      model,
+      clock,
+      signal: cancelled.signal,
+      deadline: null,
+      reserveMs: 0,
+      remainingTokens: () => 100_000,
+      verifyCandidate: () => Promise.reject(new Error("a cancelled run verifies nothing")),
+      verifyProbe: () => Promise.reject(new Error("a cancelled run admits nothing")),
+      repair: () => Promise.reject(new Error("a cancelled run repairs nothing")),
+    });
+    expect(outcome.stopped).toBe("the run was cancelled");
+    expect(outcome.rounds).toBe(0);
+    expect(outcome.admitted).toEqual([]);
+    expect(model.calls).toBe(0);
+  });
+
   it("admits a check that catches the witnessed gap, repairs the candidate, and keeps the originals", async () => {
     const contract = contractWith(true);
     const goal = await context(contract);
