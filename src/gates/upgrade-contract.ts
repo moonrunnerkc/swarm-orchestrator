@@ -58,6 +58,7 @@ export function validateUpgradeManifest(
           const literals = [JSON.stringify(found.entry), `'${found.entry}'`];
           const occurrences = literals.flatMap((literal) =>
             [
+              // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp - the replace on this line escapes every regex metacharacter, so the expression is a plain literal with no quantifier.
               ...source.matchAll(new RegExp(literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")),
             ].map((match) => ({ literal, index: match.index })),
           );

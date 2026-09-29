@@ -16,6 +16,7 @@ function maskPython(text, dependency, candidate) {
   const pattern = candidate
     ? `${regexLiteral(dependency.name)}==${regexLiteral(dependency.version)}`
     : `${regexLiteral(dependency.name)}[^'"\\r\\n]*`;
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp - every regex metacharacter in the name and version is escaped by regexLiteral, so the only quantifier is the fixed character class written here.
   const matches = [...text.matchAll(new RegExp(`(['"])${pattern}\\1`, "g"))];
   if (matches.length !== 1) throw Error("ambiguous dependency literal");
   const match = matches[0];
