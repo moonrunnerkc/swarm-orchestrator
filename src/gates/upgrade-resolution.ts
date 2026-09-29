@@ -35,7 +35,13 @@ export async function observeUpgradeResolution(options: {
       throw new Error(
         "installed Python dependency versions are unavailable; inspect the locked environment",
       );
-    Object.assign(versions, z.record(z.string(), z.string()).parse(JSON.parse(observed.stdout)));
+    // The report comes from the project's own environment, so only the declared names are
+    // taken from it, as the npm branch below does; an extra key is not a resolved dependency.
+    const reported = z.record(z.string(), z.string()).parse(JSON.parse(observed.stdout));
+    for (const { name } of preset.dependencies) {
+      const version = Object.hasOwn(reported, name) ? reported[name] : undefined;
+      if (version !== undefined) versions[name] = version;
+    }
   } else {
     for (const dependency of preset.dependencies) {
       const manifest = await realpath(join(cwd, "node_modules", dependency.name, "package.json"));
