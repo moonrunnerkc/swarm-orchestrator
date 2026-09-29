@@ -138,6 +138,20 @@ describe("planning a check from a project's files", () => {
     );
   });
 
+  it("plans the mypy invocation the typecheck gate runs", async () => {
+    await write("uv.lock", "");
+    await write("pyproject.toml", '[project]\nname="p"\n[tool.mypy]\nstrict = true\n');
+    const whole = await planCheck({ workspace: root, path: await toolPath() });
+    expect(whole.declaredChecks.find((one) => one.id === "typecheck")?.command).toBe(
+      "uv run --locked --no-sync python -m mypy .",
+    );
+    await write("mypy.ini", "[mypy]\nfiles = src\n");
+    const scoped = await planCheck({ workspace: root, path: await toolPath() });
+    expect(scoped.declaredChecks.find((one) => one.id === "typecheck")?.command).toBe(
+      "uv run --locked --no-sync python -m mypy",
+    );
+  });
+
   it("reports a directory with no manifest as no scope at all", async () => {
     await write("README.md", "hello\n");
     const plan = await planCheck({ workspace: root, path: await toolPath() });

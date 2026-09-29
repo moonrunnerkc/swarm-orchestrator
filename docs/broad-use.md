@@ -55,7 +55,10 @@ Node uses declared npm or pnpm. Python uses `uv.lock` with its project interpret
 runs only with a formatter the project declares: `ruff format --check .` for a `[tool.ruff.format]`
 table or a `ruff-format` pre-commit hook, `black --check .` for a `[tool.black]` table or a `black`
 hook. Ruff configuration alone configures its linter, so it selects `ruff check` and no format
-check. An absent optional tool is different from a required command that cannot start. An existing Python environment is
+check. mypy runs as plain `mypy` where the configuration file mypy itself reads (the first of
+`mypy.ini`, `.mypy.ini`, `pyproject.toml` with `[tool.mypy]`, `setup.cfg` with `[mypy]`) names
+`files`, `packages` or `modules`, and as `mypy .` where it names none. An absent optional tool is
+different from a required command that cannot start. An existing Python environment is
 copied into the owned checkout, with bounded inventory verification; editable or executable path
 injection is refused. Nothing writes back to the user's environment.
 

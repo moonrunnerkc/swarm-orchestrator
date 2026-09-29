@@ -12,6 +12,14 @@
   hook, unavailable with the tool named when the project's environment does not hold it. Verdict
   change: a project with ruff lint configuration and no declared formatter no longer fails `check`
   on formatting; its format check reads not run, with the reason.
+- **mypy keeps the scope the project's mypy configuration names.** Only `pyproject.toml` and
+  `setup.cfg` `files` were read, so a project scoping mypy in `mypy.ini` (`files = src`) was
+  checked with `mypy .` and failed on 180 errors in tests it never type-checks. Targets are now
+  read from `files`, `packages` or `modules` in the one file mypy itself reads, in its documented
+  order (`mypy.ini`, `.mypy.ini`, `pyproject.toml` with `[tool.mypy]`, `setup.cfg` with
+  `[mypy]`). Verdict change: such a project's typecheck runs plain `mypy` and can pass; a project
+  whose `pyproject.toml` names targets while a `mypy.ini` without them takes precedence now runs
+  `mypy .` instead of a bare `mypy` that exited asking for a target.
 
 ## 1.1.0 - 2026-09-29
 

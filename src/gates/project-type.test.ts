@@ -420,3 +420,81 @@ describe("a formatter check runs only where the project declares that formatter"
     expect(commandOf(gates, "format")).toBeNull();
   });
 });
+
+describe("mypy targets are read from the configuration file mypy itself reads", () => {
+  const withMypy = '[project]\nname = "p"\n[dependency-groups]\ndev = ["mypy>=1.10"]\n';
+  const typecheck = async (files: Readonly<Record<string, string>>) =>
+    commandOf(assembleGates(await detectProject(reader(files))), "typecheck");
+
+  /**
+   * ironroot scopes mypy in `mypy.ini` (`files = src`); `mypy .` replaced that scope with the
+   * whole tree and reported 180 errors in tests the project never type-checks.
+   */
+  it("runs plain mypy where mypy.ini or .mypy.ini names files, packages or modules", async () => {
+    for (const file of ["mypy.ini", ".mypy.ini"])
+      for (const targets of ["files = src", "packages = ironroot", "modules = ironroot.core"])
+        expect({
+          file,
+          targets,
+          command: await typecheck({
+            "pyproject.toml": withMypy,
+            [file]: `[mypy]\n${targets}\nstrict = True\n`,
+          }),
+        }).toEqual({ file, targets, command: "mypy" });
+  });
+
+  it("reads packages and modules as targets in pyproject.toml and setup.cfg as well", async () => {
+    expect(await typecheck({ "pyproject.toml": "[tool.mypy]\npackages = ['ironroot']\n" })).toBe(
+      "mypy",
+    );
+    expect(await typecheck({ "pyproject.toml": "[tool.mypy]\nmodules = 'ironroot.core'\n" })).toBe(
+      "mypy",
+    );
+    expect(await typecheck({ "setup.cfg": "[mypy]\npackages = ironroot\n" })).toBe("mypy");
+  });
+
+  it("follows mypy's precedence, so targets in a file mypy would not read select nothing", async () => {
+    // mypy reads mypy.ini, then .mypy.ini, then pyproject.toml with [tool.mypy], then setup.cfg
+    // with [mypy], and only the first it finds. Plain `mypy` with no targets in that one file
+    // exits with "Missing target module, package, files, or command".
+    expect(
+      await typecheck({
+        "pyproject.toml": "[tool.mypy]\nfiles = ['src']\n",
+        "mypy.ini": "[mypy]\nstrict = True\n",
+      }),
+    ).toBe("mypy .");
+    expect(
+      await typecheck({
+        "pyproject.toml": withMypy,
+        ".mypy.ini": "[mypy]\nstrict = True\n",
+        "setup.cfg": "[mypy]\nfiles = src\n",
+      }),
+    ).toBe("mypy .");
+    expect(
+      await typecheck({
+        "pyproject.toml": "[tool.mypy]\nstrict = true\n",
+        "setup.cfg": "[mypy]\nfiles = src\n",
+      }),
+    ).toBe("mypy .");
+    expect(
+      await typecheck({
+        "pyproject.toml": withMypy,
+        "mypy.ini": "[mypy]\nstrict = True\n[mypy-ironroot.*]\nfiles = src\n",
+      }),
+    ).toBe("mypy .");
+    // A pyproject.toml without [tool.mypy] and a setup.cfg without [mypy] are passed over.
+    expect(
+      await typecheck({
+        "pyproject.toml": withMypy,
+        "setup.cfg": "[metadata]\nname = p\n",
+        "mypy.ini": "[mypy]\nfiles = src\n",
+      }),
+    ).toBe("mypy");
+    expect(
+      await typecheck({
+        "pyproject.toml": '[project]\nname = "p"\n',
+        "setup.cfg": "[mypy]\nfiles = src\n",
+      }),
+    ).toBe("mypy");
+  });
+});
