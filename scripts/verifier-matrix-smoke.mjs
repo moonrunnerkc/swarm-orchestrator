@@ -119,8 +119,9 @@ function vitestStarts(modules) {
     });
     if (ran.status === 0) return null;
     return (
-      `${ran.stderr ?? ""}${ran.stdout ?? ""}`.split("\n").find((line) => /^\s*Error: /.test(line)) ??
-      `exit ${ran.status}`
+      `${ran.stderr ?? ""}${ran.stdout ?? ""}`
+        .split("\n")
+        .find((line) => /^\s*Error: /.test(line)) ?? `exit ${ran.status}`
     ).trim();
   } finally {
     rmSync(probe, { recursive: true, force: true });
