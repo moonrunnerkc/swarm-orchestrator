@@ -28,7 +28,10 @@ it.skipIf(!containerRuntimeAvailable("docker"))(
     const check = behaviorCheckSchema.parse({
       kind: "browser",
       cwd: ".",
-      timeoutMs: 10000,
+      // The budget covers starting the container and Chromium, not only the test: under a full
+      // parallel suite with other container work on the machine, starting alone passed 10 s and
+      // a correct instrument read as timed out. The hanging case below keeps its own short budget.
+      timeoutMs: 60000,
       maxOutputBytes: 256000,
       toolchain: "@playwright/test@1.63.0",
       network: "inherit",
