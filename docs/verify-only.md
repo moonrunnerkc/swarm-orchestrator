@@ -19,7 +19,11 @@ reads the manifests, says which test command it will run and what scope that com
 for, runs it the way a CI job would (no terminal on stdin, `CI=true` in the child environment),
 and reports five conclusions apart: whether the command ran, what the checks found, how the
 commands were contained, whether any requirement was judged, and whether any check was
-challenged. It writes nothing into the workspace and creates no `swarm.toml`.
+challenged. It creates no `swarm.toml` and keeps its evidence outside the workspace (under
+`~/.swarm/sessions` by default); while it runs it briefly adds, then removes, its own
+`swarm-falsification-bond.*` fixtures, and the project's own commands may write build output or
+caches. A pass reported by a configuration, script or runner the change itself edited is
+withheld and the result reads incomplete, with the altered files named.
 
 ```sh
 npx swarm-verify                    # check the current directory

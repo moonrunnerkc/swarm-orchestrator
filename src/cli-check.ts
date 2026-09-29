@@ -18,8 +18,9 @@ import { exitCodes } from "./machine-output.ts";
  * declares, says what it is about to run and what that can vouch for, runs it the way a CI job
  * would, and reports five conclusions separately: whether the command ran, what the checks
  * found, how the execution was contained, whether any requirement was judged, and whether any
- * check was challenged. A pass here is a regression-only pass and is printed as one. Nothing
- * writes to the workspace; the evidence goes to the session store and its bundle.
+ * check was challenged. A pass here is a regression-only pass and is printed as one. The evidence
+ * goes to the session store and its bundle; the only files this command puts in the workspace
+ * are the falsification bond's own fixtures, removed once each bond has run.
  */
 export const checkSchemaName = "swarm.check.v1";
 

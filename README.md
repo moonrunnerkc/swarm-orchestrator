@@ -2,32 +2,49 @@
 
 <div align="center">
 
-<h1>swarm-verify</h1>
+<h1>Swarm Verify</h1>
 
-<p><strong>Independently check what an AI-written change actually ran, whether the checks it passed could have caught wrong work, and what stays unverified.</strong></p>
+<p><strong>Swarm Verify runs a project's checks and records evidence showing what passed, what failed, and what remains unverified.</strong></p>
 
 </div>
 
+This is the main source repository for Swarm Verify, maintained under the swarm-orchestrator
+repository name. It also contains the optional beta coding agent. The separate
+[moonrunnerkc/swarm-verify](https://github.com/moonrunnerkc/swarm-verify) repository distributes
+the GitHub Action.
+
 ![A bundle verifies, one byte is changed, and the verifier refuses it with the broken link named](docs/evidence/2026-09-27/verifier-first/tamper-demo.gif)
+
+The recording is a real run of the published package over a committed evidence bundle: it
+verifies, one byte of one record is changed, and the altered bundle is refused with the broken
+link named. That is integrity. Who signed a bundle, and whether the tests it records measured
+the right thing, are separate questions the verifier answers separately
+([transcript](docs/evidence/2026-09-27/verifier-first/tamper-demo-transcript.txt),
+[script](docs/evidence/2026-09-27/verifier-first/tamper-demo.sh)).
 
 ```sh
 npx swarm-verify
 ```
 
-Run it in a repository whose dependencies are installed (`npm ci`, `pnpm install
---frozen-lockfile` or `uv sync`; it says so and exits 4 when they are not). It discovers the
-declared test command from the manifests, runs it the way a CI job would, and prints five conclusions apart: whether the command ran, what the checks
-found, how the commands were contained, whether any requirement was judged, and whether any
-check was challenged. A pass is a regression-only pass and is printed as one. A check that
-fails is a refusal too: the result line reads `fail: a blocking check failed`, names the
-check, and the exit code is 1. Nothing is written into the repository, and no model, key or
-configuration is needed.
+Run it in a git repository whose dependencies are installed (`npm ci`, `pnpm install
+--frozen-lockfile` or `uv sync`; it names the missing step and exits 4 when they are not). It
+reads the checks the project declares, runs them unattended the way a CI job would, and reports
+apart: whether the command ran, what each check found, how the commands were contained, and
+what it did not judge. By default it does not challenge the checks and does not judge whether
+the work is correct: a pass is a regression-only pass, and the result line says so. A failed
+check exits 1 and names the check; a check whose result cannot be trusted, such as a pass
+reported by a test configuration the change itself edited, exits 4 and says why.
 
-Needs Node 22 or newer and git, and `uv` for a Python project. Linux and macOS run every command; Windows runs bundle
-verification. The recording above is a real run of the published package over the committed
-bundle: verified, one byte of one record changed, refused with the reason
-([transcript](docs/evidence/2026-09-27/verifier-first/tamper-demo-transcript.txt),
-[script](docs/evidence/2026-09-27/verifier-first/tamper-demo.sh)).
+It creates no `swarm.toml` and keeps its evidence outside the repository, under
+`~/.swarm/sessions` by default. While it runs it briefly adds, then removes, its own
+`swarm-falsification-bond.*` fixtures to show each passing check can fail, and the project's
+own commands may write build output, caches or other files as they always do. No model, key
+or configuration is needed.
+
+Needs Node 22 or newer, git, and `uv` for a Python project. Linux and macOS run every command;
+Windows runs bundle and verdict verification only. Locally, commands run on the host with a
+built environment and no credentials, which is a policy and not a sandbox; the Action runs
+them in a network-disabled container.
 
 [![gates](https://img.shields.io/github/actions/workflow/status/moonrunnerkc/swarm-orchestrator/gates.yml?branch=v13-main&style=for-the-badge&label=gates)](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/gates.yml)
 [![verifier matrix](https://img.shields.io/github/actions/workflow/status/moonrunnerkc/swarm-orchestrator/verifier-matrix.yml?branch=v13-main&style=for-the-badge&label=node%2022%20%7C%2024)](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/verifier-matrix.yml)
@@ -57,22 +74,26 @@ jobs:
 ```
 
 The Action fetches the pull request's head and base by commit id into a checkout it owns, runs
-the verification with candidate commands in a network-disabled container, signs the verdict as
-a GitHub artifact attestation, and posts one comment bound to the head that says what was
-measured and what was not. Forks and Dependabot have
-[a documented trusted route](docs/examples/swarm-verification-forks.yml). Inputs, outputs and
-how to verify a signed verdict from outside the run are in
-[the broad-use guide](docs/broad-use.md#github-action).
+the project's checks in a network-disabled container, signs the verdict as a GitHub artifact
+attestation, and posts one comment bound to the head that says what was measured and what was
+not. A route for forks and Dependabot is [documented](docs/examples/swarm-verification-forks.yml);
+what has been exercised on a real fork is recorded in
+[the completion index](docs/verifier-first/README.md). Inputs, outputs and how to verify a
+signed verdict from outside the run are in [the broad-use guide](docs/broad-use.md#github-action).
 
 ## What it says, and what it does not
 
-`regression: pass` means the repository's own checks passed on that exact tree. It does not
-mean the work was done. Only a requirement contract can say that, and with one, `swarm-verify
-ci --goal-contract` judges each requirement by its own check and, with `--challenges`, asks
-whether that check could have caught wrong work: does it reject the tree before the change,
-does it reject mechanical mutations of the change that the repository's own suite refuses,
-does it reject a fixture sealed as a violation. A requirement whose check cannot be shown to
-detect anything is reported as a gap, never as a pass.
+`regression: pass` means no check failed because of the change. It does not mean every check
+passed: a failure the base commit already had, the same way and in the same tests, is shown as
+inherited and does not count against the change, and the report names those failing tests. It
+does not mean the work was done either.
+
+A requirement contract (`swarm-verify ci --goal-contract`) defines what the work must do, and
+the contract's checks are the evidence for each requirement. Neither the contract nor a
+signature proves the code is semantically correct. `--challenges report` asks whether each
+requirement's check could have caught wrong work (does it reject the tree before the change,
+mechanical mutations of the change, a fixture sealed as a violation) and reports gaps;
+`--challenges required` refuses on a gap; `off` asks nothing.
 
 Every run exports a bundle carrying its own dependency-free verifier. Integrity, signer
 identity, execution trust, regression, task acceptance and challenge coverage are reported as
