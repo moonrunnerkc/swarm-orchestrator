@@ -1,0 +1,46 @@
+{
+  "label": "development run of check strengthening and repair with a local model; validates the mechanism, measures no effect",
+  "model": "local:gemma4-31b-greedy-128k",
+  "repository": "/var/folders/1q/2_tt_q515bs98g0f5v17_sdc0000gn/T/swarm-strengthen-dev-I71ZPg",
+  "base": "2bb94dba3da70038597077d5920586d7e315bf3d",
+  "rounds": 2,
+  "admitted": [
+    "clamp-bounds-out-of-range"
+  ],
+  "stopped": "no requirement has a witnessed gap left to strengthen",
+  "finalContractChecks": [
+    "clamp-middle",
+    "clamp-bounds-out-of-range"
+  ],
+  "finalAccepted": true,
+  "finalRegression": "pass",
+  "finalChallenges": [
+    {
+      "id": "clamp-bounds",
+      "outcome": "detected"
+    }
+  ],
+  "finalClamp": "export function clamp(n, lo, hi) {\n  if (n < lo) return lo;\n  if (n > hi) return hi;\n  return n;\n}\n",
+  "tokens": {
+    "spent": 70795,
+    "unknown": false
+  },
+  "wallMs": 987239,
+  "bundle": "/Users/brad/.swarm/sessions/20260929T051102-4d1405/bundle",
+  "bundleVerify": {
+    "exit": 0,
+    "tail": [
+      "  PASS  check strengthening 33 re-derived: the admission follows from its probe runs, and the revision only appends admitted checks",
+      "  PASS  run assessment 174 re-derived: recorded true, evidence implies true",
+      "",
+      "bundle verified: every check passed"
+    ]
+  },
+  "strengtheningFindings": [
+    "  PASS  challenge verdict 13 re-derived: every requirement's challenge outcome follows from its plan, its runs and the goal verifications",
+    "  PASS  challenge verdict 192 re-derived: every requirement's challenge outcome follows from its plan, its runs and the goal verifications",
+    "  PASS  challenge verdict 210 re-derived: every requirement's challenge outcome follows from its plan, its runs and the goal verifications",
+    "  PASS  check strengthening 32 re-derived: the admission follows from its probe runs, and the revision only appends admitted checks",
+    "  PASS  check strengthening 33 re-derived: the admission follows from its probe runs, and the revision only appends admitted checks"
+  ]
+}
