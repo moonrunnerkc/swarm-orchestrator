@@ -105,7 +105,14 @@ const testCounterParser: GateParser = (observation) => {
   }
 
   const failed = observation.exitCode !== 0 || (counters.fail ?? 0) > 0;
-  if (!failed && counters.tests === 0) {
+  // A run whose every collected test was skipped or left to do executed none of them: the
+  // counters say so where the producer prints them, and "passed" would be a pass nothing earned.
+  const executed =
+    counters.pass ??
+    (counters.tests === null
+      ? null
+      : counters.tests - (counters.skipped ?? 0) - (counters.todo ?? 0));
+  if (!failed && (counters.tests === 0 || executed === 0)) {
     // A runner that collected nothing measured nothing, whatever it exited. A run wrote five
     // Python files into a workspace whose package.json declares `node --test`, so the command
     // found no test of its own to run, exited 0, and was read as the tests passing. Abstaining
@@ -320,6 +327,7 @@ interface TestCounters {
   readonly pass: number | null;
   readonly fail: number | null;
   readonly skipped: number | null;
+  readonly todo: number | null;
 }
 
 /** Both markers node uses for its end-of-run counters, plus plain TAP's. */
@@ -339,6 +347,7 @@ function readTestCounters(text: string): TestCounters {
     pass: counter("pass"),
     fail: counter("fail"),
     skipped: counter("skipped"),
+    todo: counter("todo"),
   };
 }
 

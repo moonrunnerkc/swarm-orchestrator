@@ -104,7 +104,13 @@ function readParsedStatus(parser, observation) {
         const tests = counter(text, "tests") ?? (plan === undefined ? null : Number(plan));
         const fail = counter(text, "fail");
         const failed = observation.exitCode !== 0 || (fail ?? 0) > 0;
-        if (!failed && tests === 0) return "not-applicable";
+        const pass = counter(text, "pass");
+        const executed =
+          pass ??
+          (tests === null
+            ? null
+            : tests - (counter(text, "skipped") ?? 0) - (counter(text, "todo") ?? 0));
+        if (!failed && (tests === 0 || executed === 0)) return "not-applicable";
         return failed ? "failed" : "passed";
       }
       const summary = /^\s*Tests\s+(.+?)\s*$/m.exec(text)?.[1] ?? "";
