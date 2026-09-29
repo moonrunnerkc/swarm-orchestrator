@@ -1,214 +1,179 @@
 #!/usr/bin/env node
+/**
+ * The study's report, from a run directory, a rows directory or a packed archive. Every count
+ * comes from truth.mjs, the one definition the comparisons and ablations read too, and every
+ * rate names its numerator's and denominator's sets.
+ *
+ *   node scripts/ai-pr-study/report.mjs <run | rows directory | rows.json.br> <frame.json> <out.md>
+ */
 import { readFileSync, writeFileSync } from "node:fs";
 import { loadRows, rowsDigest as rowsDigestOf } from "./rows.mjs";
+import {
+  evidenceOf,
+  plainCiDecision,
+  share,
+  studySets,
+  suiteOf,
+  verifierDecision,
+} from "./truth.mjs";
 
-const [rowsDirectory, framePath, out] = process.argv.slice(2);
-if (!rowsDirectory || !framePath || !out) {
-  console.error("usage: report.mjs <rows directory> <frame.json> <out.md>");
+const [rowsSource, framePath, out] = process.argv.slice(2);
+if (!rowsSource || !framePath || !out) {
+  console.error("usage: report.mjs <run | rows directory | rows.json.br> <frame.json> <out.md>");
   process.exit(2);
 }
 const frame = JSON.parse(readFileSync(framePath, "utf8"));
-const rows = loadRows(rowsDirectory);
-const rowsDigest = rowsDigestOf(rowsDirectory);
-
-/** Wilson score interval, 95%, as percentages. */
-function wilson(k, n) {
-  if (n === 0) return null;
-  const z = 1.959964;
-  const p = k / n;
-  const denominator = 1 + (z * z) / n;
-  const centre = (p + (z * z) / (2 * n)) / denominator;
-  const half = (z * Math.sqrt((p * (1 - p)) / n + (z * z) / (4 * n * n))) / denominator;
-  return { low: Math.max(0, centre - half) * 100, high: Math.min(1, centre + half) * 100 };
-}
-const pct = (k, n) => (n === 0 ? "n/a" : `${((100 * k) / n).toFixed(1)}%`);
-const interval = (k, n) => {
-  const w = wilson(k, n);
-  return w === null ? "" : ` [${w.low.toFixed(1)}, ${w.high.toFixed(1)}]`;
-};
-const line = (label, k, n) => `| ${label} | ${k} / ${n} | ${pct(k, n)}${interval(k, n)} |`;
+const rows = loadRows(rowsSource);
+const rowsDigest = rowsDigestOf(rowsSource);
+const sets = studySets(rows);
+const line = (label, k, n) => `| ${label} | ${share(k, n)} |`;
 
 const selected = frame.selected.length;
-const fetched = rows.filter((row) => row.outcome !== undefined);
-const executed = rows.filter((row) => row.outcome === "executed");
-const blocked = rows.filter((row) => row.outcome === "blocked");
-const pending = rows.filter((row) => row.outcome === "fetched");
-const rerun = rows.filter((row) => (row.infrastructureAttempts ?? []).length > 0);
-const green = executed.filter((row) => row.verdict?.originalSuiteGreen === true);
-// A check that only inspects text (grep, test -f, cat, diff) executes no behaviour; it is
-// reported apart and is not task truth under the protocol.
-const textInspection = (row) => {
-  const command = row.adjudication?.check?.command ?? "";
-  const contents = row.adjudication?.check?.contents ?? "";
-  const runs =
-    /\b(pytest|vitest|jest|mocha|node\s|npm\s+(test|run)|pnpm\s+(test|run)|python[0-9.]*\s|uv\s+run|tsx\s|ts-node|deno\s|go\s+test|cargo\s+test|dotnet\s+test)\b/;
-  return command.length > 0 && !runs.test(command) && !runs.test(contents);
-};
-const inspected = rows.filter(
-  (row) =>
-    ["requirement-met", "requirement-violated"].includes(row.adjudication?.status) &&
-    textInspection(row),
-);
-const adjudicated = rows.filter(
-  (row) =>
-    ["requirement-met", "requirement-violated"].includes(row.adjudication?.status) &&
-    !textInspection(row),
-);
-const violated = adjudicated.filter((row) => row.adjudication.status === "requirement-violated");
-const met = adjudicated.filter((row) => row.adjudication.status === "requirement-met");
-const unjudged = rows.filter((row) => row.adjudication?.status === "unjudged");
-const notAdjudicated = rows.filter((row) => row.adjudication === undefined);
-const greenAdjudicated = green.filter((row) => adjudicated.includes(row));
-const falseGreen = greenAdjudicated.filter((row) => violated.includes(row));
-// The verifier's own decision, as Comparison A's A1 reads it (see comparison-a.mjs).
-const decision = (row) =>
-  row.outcome !== "executed"
-    ? "unmeasured"
-    : row.verdict?.verified === true || row.verdict?.regression === "pass"
-      ? "accept"
-      : row.verdict?.regression === "fail"
-        ? "refuse"
-        : "unmeasured";
-const detected = falseGreen.filter((row) => decision(row) === "refuse");
-const goodAccepted = met.filter((row) => decision(row) === "accept");
-const goodRefused = met.filter((row) => decision(row) === "refuse");
-const goodUnmeasured = met.filter((row) => decision(row) === "unmeasured");
-const wall = executed.map((row) => row.wallMs ?? 0).filter((ms) => ms > 0);
+const detected = sets.falseGreen.filter((row) => verifierDecision(row) === "refuse");
+const goodAccepted = sets.met.filter((row) => verifierDecision(row) === "accept");
+const goodRefused = sets.met.filter((row) => verifierDecision(row) === "refuse");
+const goodUnmeasured = sets.met.filter((row) => verifierDecision(row) === "unmeasured");
+const greenEvidenceInvalid = sets.suiteGreen.filter((row) => evidenceOf(row).valid === false);
+const greenVerifierRefused = sets.suiteGreen.filter((row) => row.verdict?.refusal);
+const wall = sets.verifierExecuted.map((row) => row.wallMs ?? 0).filter((ms) => ms > 0);
 const median = (values) => {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 };
+const legacy = sets.legacyTruth.length > 0 || rows.some((row) => row.originalSuite === undefined);
 
 const byAuthor = {};
 for (const row of rows) {
   const key = row.author ?? "unknown";
-  byAuthor[key] ??= { rows: 0, executed: 0, green: 0, adjudicated: 0, violated: 0, falseGreen: 0 };
+  byAuthor[key] ??= { rows: 0, executed: 0, green: 0, truth: 0, violated: 0, falseGreen: 0 };
   byAuthor[key].rows += 1;
-  if (executed.includes(row)) byAuthor[key].executed += 1;
-  if (green.includes(row)) byAuthor[key].green += 1;
-  if (adjudicated.includes(row)) byAuthor[key].adjudicated += 1;
-  if (violated.includes(row)) byAuthor[key].violated += 1;
-  if (falseGreen.includes(row)) byAuthor[key].falseGreen += 1;
+  if (sets.verifierExecuted.includes(row)) byAuthor[key].executed += 1;
+  if (sets.suiteGreen.includes(row)) byAuthor[key].green += 1;
+  if (sets.behavioural.includes(row)) byAuthor[key].truth += 1;
+  if (sets.violated.includes(row)) byAuthor[key].violated += 1;
+  if (sets.falseGreen.includes(row)) byAuthor[key].falseGreen += 1;
 }
-const blockReasons = {};
-for (const row of blocked) {
-  const key = (row.reason ?? "").split(":")[0].slice(0, 80);
-  blockReasons[key] = (blockReasons[key] ?? 0) + 1;
-}
-const unjudgedReasons = {};
-for (const row of unjudged) {
-  const key = (row.adjudication.reason ?? "").split(":")[0].split(",")[0].slice(0, 90);
-  unjudgedReasons[key] = (unjudgedReasons[key] ?? 0) + 1;
-}
+const tallyReasons = (list, reasonOf) => {
+  const counts = {};
+  for (const row of list) {
+    const key = String(reasonOf(row) ?? "")
+      .split(":")[0]
+      .split(";")[0]
+      .slice(0, 90);
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+  return Object.entries(counts).sort();
+};
+const blockReasons = tallyReasons(sets.verifierBlocked, (row) => row.reason);
+const unscoredReasons = tallyReasons(sets.unscored, (row) => sets.truth.get(row).reason);
+const retried = rows.filter((row) =>
+  Object.values(row.attempts ?? {}).some((history) => (history ?? []).length > 1),
+);
 const verifierVersions =
-  [...new Set(executed.map((row) => row.verifier?.version))].join(", ") || "none yet";
+  [...new Set(sets.verifierExecuted.map((row) => row.verifier?.version))].join(", ") || "none yet";
+const rowIds = (list) => (list.length === 0 ? "none" : list.map((row) => row.index).join(", "));
 
 const page = `# AI-authored pull request study: report
 
-Derived from ${rows.length} row(s) in \`${rowsDirectory}\` (digest ${rowsDigest}) under the
+Derived from ${rows.length} row(s) in \`${rowsSource}\` (digest ${rowsDigest}) under the
 registered protocol \`${frame.protocol}\`, frame queried ${frame.queriedAt}, seed
 \`${frame.seed}\`, window ${frame.window.since} to ${frame.window.until}. Verifier version(s) in
-the executed rows: ${verifierVersions}. Every rate carries its denominator and a Wilson 95%
-interval. This is an observational study of a convenience population; it makes no claim about
-AI-written code in general and none about any tool that was not run.
-
+the executed rows: ${verifierVersions}. Every rate carries its numerator and denominator and a
+Wilson 95% interval. This is an observational study of a convenience population; it makes no
+claim about AI-written code in general and none about any tool that was not run.
+${
+  legacy
+    ? `
+These rows predate the 2026-09-29 amendment in part: rows without an independent plain-CI run
+have no original-suite status here (the verifier's own report is not read as one), and
+single-reviewer truth is classified by what its check executes and marked legacy.
+`
+    : ""
+}
 ## Denominators
 
-| Quantity | Count | Share |
-| --- | --- | --- |
-${line("Selected pull requests with a fetched row", fetched.length, selected)}
-${line("Executed: the verifier ran to a verdict on the exact head in a fresh container", executed.length, selected)}
-${line("Blocked: the verifier could not execute, reason recorded", blocked.length, selected)}
-${line("Not yet run through the verifier", pending.length, selected)}
-${line("Original-suite green among executed", green.length, executed.length)}
-${line("Adjudicated: task truth established by an executed held-back check", adjudicated.length, selected)}
-${line("Text-inspection checks (grep, file presence): reported apart, not task truth", inspected.length, selected)}
-${line("Unjudged: no executable check, or the check did not fail on the base, or an assertion beyond the requirement", unjudged.length, selected)}
-${line("Not yet adjudicated", notAdjudicated.length, selected)}
+| Quantity | Share |
+| --- | --- |
+${line("Selected pull requests with a fetched row", sets.fetched.length, selected)}
+${line("Independent plain-CI arm ran at the head", sets.suiteMeasured.length, selected)}
+${line("Verifier executed: it ran to a verdict on the exact head in a fresh container", sets.verifierExecuted.length, selected)}
+${line("Verifier blocked: it could not execute, reason recorded", sets.verifierBlocked.length, selected)}
+${line("Verifier evidence checked by the bundle's own verifier", sets.evidenceChecked.length, sets.verifierExecuted.length)}
+${line("Task truth: behavioural-executed, scored by both reviewers", sets.behavioural.length, selected)}
+${line("Text-inspected: checks only read files; reported apart, not task truth", sets.textInspected.length, selected)}
+${line("Unscored, each with its reason", sets.unscored.length, selected)}
+${line("Not yet adjudicated", sets.notAdjudicated.length, selected)}
+
+## Original suite (independent plain-CI arm, among rows where it ran)
+
+| Status | Share |
+| --- | --- |
+${["passed", "failed", "not-collected", "setup-failed"].map((status) => line(status, sets.suiteByStatus[status].length, sets.suiteMeasured.length)).join("\n")}
+
+Suite-green rows whose verifier evidence did not verify: ${share(greenEvidenceInvalid.length, sets.suiteGreen.length)}
+(rows ${rowIds(greenEvidenceInvalid)}); suite-green rows the verifier refused:
+${share(greenVerifierRefused.length, sets.suiteGreen.length)} (rows ${rowIds(greenVerifierRefused)}). Both stay
+in every suite-green denominator: the suite's status is the independent arm's, not the verifier's.
 
 ## Primary outcome
 
-| Quantity | Count | Share |
-| --- | --- | --- |
-${line("Original-suite green with adjudicated task truth (the false-green denominator)", greenAdjudicated.length, executed.length)}
-${line("Observed false green: suite green and the held-back check demonstrates a violated requirement", falseGreen.length, greenAdjudicated.length)}
-${line("Requirement violated among adjudicated", violated.length, adjudicated.length)}
-${line("Requirement met among adjudicated", met.length, adjudicated.length)}
+| Quantity | Share |
+| --- | --- |
+${line("Original-suite green rows that carry task truth, among original-suite green rows", sets.greenWithTruth.length, sets.suiteGreen.length)}
+${line("Observed false green: suite green and a violated requirement, among suite-green rows with task truth (the false-green fraction)", sets.falseGreen.length, sets.greenWithTruth.length)}
+${line("Requirement violated, among rows with task truth", sets.violated.length, sets.behavioural.length)}
+${line("Requirement met, among rows with task truth", sets.met.length, sets.behavioural.length)}
 
 ## Verifier detection and acceptance
 
-| Quantity | Count | Share |
-| --- | --- | --- |
-${line("Observed false greens the verifier refused (a held-back finding is not a verifier catch)", detected.length, falseGreen.length)}
-${line("Adjudicated-correct pull requests the verifier accepted", goodAccepted.length, met.length)}
-${line("Adjudicated-correct pull requests the verifier refused", goodRefused.length, met.length)}
-${line("Adjudicated-correct pull requests the verifier left unmeasured", goodUnmeasured.length, met.length)}
+| Quantity | Share |
+| --- | --- |
+${line("Observed false greens the verifier refused (a held-back finding is not a verifier catch)", detected.length, sets.falseGreen.length)}
+${line("Requirement-met rows the verifier accepted", goodAccepted.length, sets.met.length)}
+${line("Requirement-met rows the verifier refused", goodRefused.length, sets.met.length)}
+${line("Requirement-met rows the verifier left unmeasured", goodUnmeasured.length, sets.met.length)}
 
 ## Practical cost
 
-- Wall time per executed pull request (clone, fetch, install, checks, base control):
-  median ${median(wall) === null ? "n/a" : `${(median(wall) / 1000).toFixed(0)} s`}, over ${wall.length} row(s).
-- Manual interventions: none; every row was produced by the runner without a person acting.
+- Verifier wall time per executed pull request: median ${median(wall) === null ? "n/a" : `${(median(wall) / 1000).toFixed(0)} s`}, over ${wall.length} row(s).
+- Manual interventions: none; every attempt was produced by the harness without a person acting.
+- ${retried.length === 0 ? "No arm of any row needed a second attempt." : `Rows with more than one attempt of some arm, every attempt kept under the harness's written retry rule: ${rowIds(retried)}.`}
 
 ## Per author account
 
-| Account | Rows | Executed | Suite green | Adjudicated | Violated | False green |
+| Account | Rows | Verifier executed | Suite green | Task truth | Violated | False green |
 | --- | --- | --- | --- | --- | --- | --- |
 ${Object.entries(byAuthor)
   .sort()
   .map(
     ([author, c]) =>
-      `| ${author} | ${c.rows} | ${c.executed} | ${c.green} | ${c.adjudicated} | ${c.violated} | ${c.falseGreen} |`,
+      `| ${author} | ${c.rows} | ${c.executed} | ${c.green} | ${c.truth} | ${c.violated} | ${c.falseGreen} |`,
   )
   .join("\n")}
 
-## Why rows were blocked
+## Why the verifier was blocked
 
-${
-  Object.entries(blockReasons).length === 0
-    ? "No blocked rows."
-    : Object.entries(blockReasons)
-        .sort()
-        .map(([reason, count]) => `- ${count}: ${reason}`)
-        .join("\n")
-}
+${blockReasons.length === 0 ? "No blocked rows." : blockReasons.map(([reason, count]) => `- ${count}: ${reason}`).join("\n")}
 
-${
-  rerun.length === 0
-    ? "No row was rerun after an infrastructure failure."
-    : `Rerun after an infrastructure failure, each earlier attempt kept on its row under \`infrastructureAttempts\`: ${rerun
-        .map(
-          (row) =>
-            `row ${row.index} (${row.infrastructureAttempts.map((attempt) => attempt.classification).join("; ")})`,
-        )
-        .join(", ")}.`
-}
+## Why rows stayed unscored
 
-## Why rows stayed unjudged
-
-${
-  Object.entries(unjudgedReasons).length === 0
-    ? "No unjudged rows."
-    : Object.entries(unjudgedReasons)
-        .sort()
-        .map(([reason, count]) => `- ${count}: ${reason}`)
-        .join("\n")
-}
+${unscoredReasons.length === 0 ? "No unscored rows." : unscoredReasons.map(([reason, count]) => `- ${count}: ${reason}`).join("\n")}
 
 ## Rows
 
-| # | Pull request | Verifier | Suite green | Truth | Decision |
-| --- | --- | --- | --- | --- | --- |
+| # | Pull request | Suite (independent) | Verifier | Evidence | Truth class | Truth | A0 | A1 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
 ${rows
-  .map(
-    (row) =>
-      `| ${row.index} | [${row.repository}#${row.number}](${row.url}) | ${row.outcome ?? "none"}${row.outcome === "blocked" ? ` (${(row.reason ?? "").slice(0, 60)})` : ""} | ${row.verdict?.originalSuiteGreen === undefined ? "" : row.verdict.originalSuiteGreen ? "yes" : "no"} | ${row.adjudication?.status ?? ""}${inspected.includes(row) ? " (text inspection)" : ""} | ${row.outcome === "executed" ? decision(row) : ""} |`,
-  )
+  .map((row) => {
+    const truth = sets.truth.get(row);
+    const evidence = evidenceOf(row).valid;
+    return `| ${row.index} | [${row.repository}#${row.number}](${row.url}) | ${suiteOf(row).status ?? "none"} | ${row.outcome ?? "none"} | ${evidence === null ? "" : evidence ? "valid" : "invalid"} | ${truth.class}${truth.legacy ? " (legacy)" : ""} | ${truth.status ?? ""} | ${plainCiDecision(row)} | ${verifierDecision(row)} |`;
+  })
   .join("\n")}
 `;
 writeFileSync(out, page);
 console.log(
-  `report written to ${out}: ${rows.length} rows, ${executed.length} executed, ${adjudicated.length} adjudicated, ${falseGreen.length} false green`,
+  `report written to ${out}: ${rows.length} rows, ${sets.verifierExecuted.length} verifier-executed, ${sets.behavioural.length} with task truth, ${sets.falseGreen.length} false green`,
 );
