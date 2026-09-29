@@ -21,6 +21,7 @@ import {
   attributeFailure,
   attributionRule,
   type FailureAttribution,
+  testPoints,
   underBaseConfiguration,
 } from "./failure-attribution.ts";
 import { normalizePath } from "./file-set.ts";
@@ -114,6 +115,18 @@ export interface IndependentCheck {
   readonly instrument?: import("./instrument-identity.ts").InstrumentObservation;
   readonly configurationInstrument?: import("./instrument-identity.ts").InstrumentObservation;
   readonly reportedStatus?: "passed" | "failed" | "not-applicable";
+  /**
+   * The same check run with the base's versions of the test files the patch changed or deleted,
+   * over the patch's source (`baseTestsFiles`), where it changed any. A test the base wrote and
+   * passed that fails against the patch's source means the patch changed a check that would have
+   * caught it (`weakenedTests`): an intended behaviour change or a weakened check, which only a
+   * requirement contract can tell apart, so the check's pass is withheld.
+   */
+  readonly baseTestsObservation?: import("./gate-definition.ts").GateObservation;
+  readonly baseTestsStatus?: "passed" | "failed" | "not-applicable";
+  readonly baseTestsInstrument?: import("./instrument-identity.ts").InstrumentObservation;
+  readonly baseTestsFiles?: readonly string[];
+  readonly weakenedTests?: readonly string[];
 }
 
 export type { DependencyInstall } from "./dependency-install.ts";
@@ -478,8 +491,13 @@ export async function verifyIndependently(
     const onlyTheOracle = options.repositoryChecks === "skip";
     const withPatch = onlyTheOracle
       ? []
-      : await readUnderBaseConfiguration(
-          await runChecks(checkout, options, timeoutMs),
+      : await readUnderBaseTests(
+          await readUnderBaseConfiguration(
+            await runChecks(checkout, options, timeoutMs),
+            checkout,
+            options,
+            timeoutMs,
+          ),
           checkout,
           options,
           timeoutMs,
@@ -680,7 +698,10 @@ export async function verifyIndependently(
       restored = await restorePatch(checkout, options, timeoutMs);
     }
     const checks = withPatch.some(
-      (check) => check.status === "failed" || passedOnlyUnderThePatchConfiguration(check),
+      (check) =>
+        check.status === "failed" ||
+        passedOnlyUnderThePatchConfiguration(check) ||
+        check.baseTestsStatus === "failed",
     )
       ? await attributeFailures(withPatch, checkout, options, timeoutMs)
       : withPatch;
@@ -1208,8 +1229,13 @@ async function attributeFailures(
   // construction, and left in place it read every regression the patch caused as inherited.
   if (!(await resetToBase(checkout, options, timeoutMs))) {
     return withPatch.map((check) =>
-      passedOnlyUnderThePatchConfiguration(check)
-        ? { ...check, status: "not-applicable" as const }
+      passedOnlyUnderThePatchConfiguration(check) ||
+      (check.status === "passed" && check.baseTestsStatus === "failed")
+        ? {
+            ...check,
+            status: "not-applicable" as const,
+            ...(check.baseTestsStatus === "failed" ? { weakenedTests: [] } : {}),
+          }
         : check.status === "failed"
           ? { ...check, attribution: "unattributed" as const, inheritedFromBase: false }
           : check,
@@ -1241,6 +1267,8 @@ async function attributeFailures(
       };
       if (decided.status !== "failed") return decided;
     }
+    if (decided.status === "passed" && check.baseTestsStatus === "failed")
+      return weakenedUnderBaseTests({ ...decided, ...baseObservation }, same);
     if (decided.status !== "failed") return decided;
     // A check that failed only under the base's configuration is judged on that reading; the
     // patch's own reading passed and is not the failure being attributed.
@@ -1265,6 +1293,93 @@ async function attributeFailures(
       ...baseObservation,
     };
   });
+}
+
+/**
+ * A passing check whose base-written tests fail against the patch's source: the failures the base
+ * did not already have are the tests the patch's edits kept from failing, and the pass is withheld.
+ * Failures the base had, the same way, leave the pass standing.
+ */
+function weakenedUnderBaseTests(
+  check: IndependentCheck,
+  atBase: IndependentCheck | undefined,
+): IndependentCheck {
+  if (check.baseTestsObservation === undefined) return check;
+  const attributed = attributeFailure({
+    withPatch: check.baseTestsObservation,
+    baseStatus: atBase?.status,
+    atBase: atBase?.observation,
+  });
+  if (attributed.attribution === "inherited") return check;
+  // Where the base passed the whole check, every failure here is one the base did not have.
+  const named =
+    atBase?.status !== "failed"
+      ? [...new Set<string>(testPoints(check.baseTestsObservation)?.failed ?? [])].sort()
+      : attributed.newFailures;
+  return {
+    ...check,
+    status: "not-applicable",
+    weakenedTests: named,
+    detail:
+      `the patch changed ${(check.baseTestsFiles ?? []).join(", ")}, and the base's versions of ` +
+      `those tests fail against the patch's source${named.length === 0 ? "" : ` (${named.slice(0, 5).join("; ")})`}: ` +
+      "either an intended change of behaviour or a weakened check, which a requirement contract, " +
+      "not the suite, can tell apart",
+  };
+}
+
+/**
+ * The checks again with the base's versions of the test files the patch changed or deleted, over
+ * the patch's source, then the patch's versions written back. Only where the patch changed any.
+ */
+async function readUnderBaseTests(
+  withPatch: readonly IndependentCheck[],
+  checkout: string,
+  options: IndependentVerificationOptions,
+  timeoutMs: number,
+): Promise<readonly IndependentCheck[]> {
+  const files = parseUnifiedDiff(options.patch)
+    .filter((file) => file.kind !== "added" && isTestFile(file.path))
+    .map((file) => file.path)
+    .sort();
+  if (files.length === 0 || withPatch.length === 0) return withPatch;
+  const patched = new Map<string, string | null>();
+  for (const path of files)
+    patched.set(path, await readFile(join(checkout, path), "utf8").catch(() => null));
+  try {
+    for (const path of files) {
+      const atBase = await options.commands.runVouched(
+        ["git", "-C", ".", "show", `${options.baseCommit}:${path}`],
+        { cwd: checkout, timeoutMs },
+      );
+      if (atBase.exitCode !== 0) return withPatch;
+      await writeFile(join(checkout, path), atBase.stdout);
+    }
+    const underBase = await runChecks(checkout, options, timeoutMs);
+    return withPatch.map((check) => {
+      const reading = underBase.find((one) => one.id === check.id);
+      if (reading?.observation === undefined || check.observation === undefined) return check;
+      return {
+        ...check,
+        baseTestsObservation: reading.observation,
+        baseTestsStatus: reading.status,
+        baseTestsFiles: files,
+        ...(reading.instrument === undefined ? {} : { baseTestsInstrument: reading.instrument }),
+      };
+    });
+  } finally {
+    for (const [path, text] of patched) {
+      if (text === null) await rm(join(checkout, path), { force: true });
+      else await writeFile(join(checkout, path), text);
+    }
+  }
+}
+
+/** A file a runner collects as tests by its name, in any of the supported ecosystems. */
+export function isTestFile(path: string): boolean {
+  return /(^|\/)(__tests__|tests?)\/|(\.|_)(test|spec)\.[cm]?[jt]sx?$|(^|\/)test_[^/]*\.py$|_test\.py$/.test(
+    path,
+  );
 }
 
 /** A check whose patched reading passed while the base's runner configuration did not. */
