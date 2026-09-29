@@ -217,8 +217,13 @@ study of a convenience population selected by the rule above.
     rule (refactor or not, executable or not) or a requirement the checks do not cover leaves the
     row unscored with its reason. Both reviewers are AI models, not independent humans; neither
     authored the pull request, but they may share training biases with each other and with the
-    model that did. The checks are written only into the adjudication arm's own checkout and
-    into the row, never into a checkout the suite or verifier arm reads.
+    model that did. The checks are written only into the adjudication arm's own checkouts and
+    into the row, never into a checkout the suite or verifier arm reads. The base and the head
+    each run in their own checkout: a development row showed the desktop container mount still
+    reporting a file the head adds as present after one directory had been checked out back to
+    the base, so a base run read head state. The recorded adjudications above ran both commits
+    in one directory switched between them and may carry the same contamination; a check that
+    "passes on both" there is not evidence that the base already met the requirement.
   - *Rows were rewritten in place.* The runner, the adjudication and the A2 pass rewrote one
     `NN.json` per row, and the cache reused unversioned paths (`diffs/NN.diff`, top-level
     `reports/` and `bundles/`). Every attempt of every arm is now its own file, created

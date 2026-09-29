@@ -188,14 +188,12 @@ async function authorReview(clone, prText, pr, record) {
 
 /** Run every check at one commit of the arm's checkout, dependencies prepared first. */
 function executeSide(clone, commit, image, checks) {
-  const checkedOut = run("git", ["checkout", "--quiet", "--force", "--detach", commit], {
-    cwd: clone,
-  });
-  if (checkedOut.status !== 0)
+  const head = run("git", ["rev-parse", "HEAD"], { cwd: clone }).stdout.trim();
+  if (head !== commit)
     return {
       commit,
       ran: false,
-      notRunReason: `checkout failed: ${checkedOut.stderr.slice(-300)}`,
+      notRunReason: `the checkout is at ${head}, not ${commit}`,
       runs: {},
     };
   const project = detectProject(clone);
@@ -322,20 +320,26 @@ async function adjudicate(fetch, attempt) {
     const added = additionsOfDiff(readFileSync(pr.diff.path, "utf8"));
     const needs = author.needs[0];
     if (needs === undefined) {
-      run("git", ["checkout", "--quiet", "--force", "--detach", pr.head], { cwd: clone });
-      // Written once, at the head, and kept across both commits: every check path is new at
-      // the base and not a changed file, so neither checkout touches it.
+      // Each commit in its own checkout, never one directory switched between them: a
+      // development row showed a desktop container mount still reporting a file the head adds
+      // as present after the checkout moved to the base, so a base run read head state. The
+      // base checkout is the one the author read; the head gets a fresh one.
       const files = new Map(checks.map((check) => [check.path, check.contents]));
-      for (const [path, contents] of files) writeFileInside(clone, path, contents);
-      execution.head = executeSide(clone, pr.head, pr.execution.image, checks);
+      const headCheckout = freshCheckout(pr.execution.objectClone, join(work, "head"), pr.head);
+      for (const [path, contents] of files) writeFileInside(headCheckout, path, contents);
+      execution.head = executeSide(headCheckout, pr.head, pr.execution.image, checks);
       // Classified at the head, where a module the pull request adds exists to be resolved.
-      const resolver = checkoutModuleResolver(clone);
+      const resolver = checkoutModuleResolver(headCheckout);
       for (const check of checks)
         outcomes[check.id] = {
           truthClass: classifyCheckExecution(check, { projectModule: resolver }),
         };
+      for (const [path, contents] of files) writeFileInside(clone, path, contents);
       execution.base = executeSide(clone, pr.base, pr.execution.image, checks);
-      for (const path of files.keys()) removeFileInside(clone, path);
+      for (const path of files.keys()) {
+        removeFileInside(headCheckout, path);
+        removeFileInside(clone, path);
+      }
     }
     const checkPaths = [...new Set(checks.map((check) => check.path))];
     for (const requirement of author.requirements) {
