@@ -228,14 +228,16 @@ function stripPayloads(dag: EvidenceDag): unknown {
 }
 
 async function readVerifierScript(): Promise<string> {
-  const [verifier, controller, behavior, upgrade, status, challenges] = await Promise.all([
-    readFile(new URL("./verifier/verify.mjs", import.meta.url), "utf8"),
-    readFile(new URL("./verifier/controller.mjs", import.meta.url), "utf8"),
-    readFile(new URL("./verifier/behavior.mjs", import.meta.url), "utf8"),
-    readFile(new URL("./verifier/upgrade.mjs", import.meta.url), "utf8"),
-    readFile(new URL("./verifier/status.mjs", import.meta.url), "utf8"),
-    readFile(new URL("./verifier/challenges.mjs", import.meta.url), "utf8"),
-  ]);
+  const [verifier, controller, behavior, upgrade, status, challenges, strengthening] =
+    await Promise.all([
+      readFile(new URL("./verifier/verify.mjs", import.meta.url), "utf8"),
+      readFile(new URL("./verifier/controller.mjs", import.meta.url), "utf8"),
+      readFile(new URL("./verifier/behavior.mjs", import.meta.url), "utf8"),
+      readFile(new URL("./verifier/upgrade.mjs", import.meta.url), "utf8"),
+      readFile(new URL("./verifier/status.mjs", import.meta.url), "utf8"),
+      readFile(new URL("./verifier/challenges.mjs", import.meta.url), "utf8"),
+      readFile(new URL("./verifier/strengthening.mjs", import.meta.url), "utf8"),
+    ]);
   const controllerImport = 'import { readControllerHistory } from "./controller.mjs";';
   const cryptoImport = 'import { createHash } from "node:crypto";';
   if (!verifier.includes(controllerImport) || !controller.includes(cryptoImport))
@@ -256,11 +258,21 @@ async function readVerifierScript(): Promise<string> {
     .replace(cryptoImport, "")
     .replaceAll("export function ", "function ");
   const embeddedChallenges = challenges.replaceAll("export function ", "function ");
+  if (!strengthening.includes(cryptoImport))
+    throw new Error("embedded strengthening module layout changed; update its standalone assembly");
+  const embeddedStrengthening = strengthening
+    .replace(cryptoImport, "")
+    .replaceAll("export function ", "function ");
   return verifier
     .replace(
       'import { challengeVerdictsAgree } from "./challenges.mjs";',
       () =>
         `const challengeVerdictsAgree = (() => {${embeddedChallenges}\nreturn challengeVerdictsAgree;})();`,
+    )
+    .replace(
+      'import { strengtheningAgrees } from "./strengthening.mjs";',
+      () =>
+        `const strengtheningAgrees = (() => {${embeddedStrengthening}\nreturn strengtheningAgrees;})();`,
     )
     .replace(
       'import { capturedRegression } from "./status.mjs";',

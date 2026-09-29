@@ -19,6 +19,7 @@ import { behaviorStatus } from "./behavior.mjs";
 import { challengeVerdictsAgree } from "./challenges.mjs";
 import { readControllerHistory } from "./controller.mjs";
 import { capturedRegression } from "./status.mjs";
+import { strengtheningAgrees } from "./strengthening.mjs";
 import { upgradeControlPasses } from "./upgrade.mjs";
 
 export { readControllerHistory };
@@ -1115,6 +1116,13 @@ function collectChecks(directory) {
       finding.agrees,
       finding.problems.join("; ") ||
         "every requirement's challenge outcome follows from its plan, its runs and the goal verifications",
+    );
+  for (const finding of strengtheningAgrees(records, payloads))
+    record(
+      `check strengthening ${finding.sequence} re-derived`,
+      finding.agrees,
+      finding.problems.join("; ") ||
+        "the admission follows from its probe runs, and the revision only appends admitted checks",
     );
   for (const assessment of goalSelectionConformance(records, payloads))
     record(
