@@ -109,6 +109,28 @@ describe("verifying the staged tree", () => {
     expect(JSON.stringify(report.conclusions)).toContain("package.json#scripts.test");
   });
 
+  it("measures the staged tree while another process rewrites the working tree during the run", async () => {
+    await writeFile(
+      join(repository, "slow.test.mjs"),
+      'import test from "node:test";\ntest("waits", () => new Promise((settle) => setTimeout(settle, 1500)));\n',
+    );
+    await git(["add", "slow.test.mjs"]);
+    await git(["commit", "-qm", "a suite that takes a moment"]);
+    await writeFile(join(repository, "double.mjs"), "export const double = (n) => n * 2;\n");
+    await git(["add", "double.mjs"]);
+    const running = verifyStaged({ ...options(), json: true });
+    // A concurrent writer, as an editor or agent would be, while the staged tree is measured.
+    await new Promise((settle) => setTimeout(settle, 300));
+    await writeFile(join(repository, "double.mjs"), "export const double = (n) => n * 3;\n");
+    const outcome = await running;
+    const report = JSON.parse(outcome.lines.at(-1) ?? "{}");
+    expect(report.result).toBe("pass");
+    expect(outcome.exitCode).toBe(0);
+    expect(await readFile(join(repository, "double.mjs"), "utf8")).toBe(
+      "export const double = (n) => n * 3;\n",
+    );
+  });
+
   it("fails a staged change the suite refuses", async () => {
     await writeFile(join(repository, "double.mjs"), "export const double = (n) => n * 3;\n");
     await git(["add", "double.mjs"]);

@@ -177,8 +177,8 @@ could ask for as that user.
 | `src/gates/independent-verification.test.ts` "still holds the patch after judging the base" | the patch is put back before measuring | real |
 | `src/gates/goal-checkout.integration.test.ts` | git stays readable in the container after a snapshot restore | real, docker |
 
-Open: a substitution by a process running beside the check, between `write-tree` and the run,
-is not exercised; the check-level substitutions are.
+| `src/integrations/pre-commit.test.ts` "measures the staged tree while another process rewrites the working tree during the run" | a real pre-commit run over a good staged change while a concurrent writer puts broken code in the working tree: the staged tree is measured and passes, the working tree is left as the writer left it | real |
+| `src/gates/attack-families.integration.test.ts` "withholds a pass where a test rewrote the lockfile during the run" | the instrument observed after the run differs from the one before it | real |
 
 ## 11. Cancellation or a crash leaves a challenge/check repair unfinished before resume
 
@@ -191,8 +191,11 @@ is not exercised; the check-level substitutions are.
 
 | `src/gates/attack-controls.test.ts` "refuses to challenge over an intent that no completion answers, naming the challenge" | a challenge intent with no completion on the chain: the next challenge run refuses with `ChallengeReconciliationError`, executes nothing and writes no second plan | in-proc |
 
-Open: a real process killed mid-mutation, then resumed, is held by the same reconciliation
-rule the in-proc control exercises; the killed-process form is next.
+| `src/cli-strengthen.integration.test.ts` "names an admission cut off by SIGKILL once, never repeats it, and gives a resumed run no new rounds" | a real strengthening process killed with SIGKILL while an admission is in flight; the resumed session names the cut-off admission once (`strengthening-reconciliation-v1`), never runs or admits it, keeps the killed run's round limit and spends no model call | real |
+
+A `ci` run killed mid-challenge leaves its own session and fresh checkout, and a new run starts a
+new session, so there is nothing of it to resume; the resumable lifecycles are the controller's
+(the rows above) and the strengthening loop's.
 
 ## 12. A stale accepted result is replayed after integration or a check revision
 
