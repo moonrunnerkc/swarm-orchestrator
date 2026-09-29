@@ -2,571 +2,444 @@
 /**
  * The task-truth arm of the AI-authored pull request study, apart from the verifier arm.
  *
- * For each executed row, a reviewer role that never saw the verifier's verdict writes one
- * executable acceptance check from the pull request's stated requirement (title, body, linked
- * issues), reading the repository at the head as it needs to, but never the test files the
- * pull request itself changed, so the check is not a copy of the author's own tests. The check
- * is then executed in a network-disabled container on the base (where it must fail, or it does
- * not test the requirement) and on the head (judged). A requirement the reviewer cannot state
- * executably is recorded as unjudged, never guessed. The reviewer is a local model; its every
- * read, its check and both executions are the record.
+ * Per row with a standing fetch, as an immutable attempt of the run (see attempts.mjs):
  *
- *   node scripts/ai-pr-study/adjudicate.mjs <rows directory> [--only <index,index>] [--limit <n>]
- *        [--model <name>] [--endpoint <url>] [--image <node image>] [--python-image <image>]
+ * 1. The check author, a local model, reads the pull request's title, body, linked issues and
+ *    changed file names, and a fresh checkout of the BASE commit (never the candidate
+ *    implementation), states the requirements and writes checks per requirement.
+ * 2. A second reviewer, a different local model, states the requirements blind from the text,
+ *    then judges each of the author's requirements and checks (see reviewers.mjs).
+ * 3. The checks run in a network-disabled container on the head and on the base of a checkout
+ *    made only for this arm, after that commit's dependencies are prepared from its lockfile.
+ *    Each side is classified (side-outcome.mjs): only an assertion failure or a missing feature
+ *    on the base with a pass on the head establishes a met requirement, and a startup crash,
+ *    a broken check, an install failure or a timeout is never detection.
+ * 4. A violation candidate must pass the code-blind trace audit, quoting the pull request.
+ * 5. What each check executes decides its truth class (check-execution.mjs), and the two
+ *    reviewers' agreement decides what is scored (reviewers.mjs `scoreRow`).
  *
- * Resumable: a row with an adjudication is skipped.
+ * The hidden checks are written only into this arm's own checkout and into the row; never into
+ * a checkout the verifier or the suite arm reads, and never into any model's context but the
+ * second reviewer's judgement and the trace audit.
+ *
+ *   node scripts/ai-pr-study/adjudicate.mjs --run <runId> [--only <index,index>] [--limit <n>]
+ *        [--author-model <name>] [--second-model <name>] [--endpoint <url>] [--working-root <dir>]
  */
-import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import http from "node:http";
-import { homedir } from "node:os";
-import { join, resolve } from "node:path";
-import { childPath, removeFileInside, writeFileInside } from "./containment.mjs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { harnessIdentity, openRun, sha256 } from "./attempts.mjs";
+import { checkoutModuleResolver, classifyCheckExecution } from "./check-execution.mjs";
+import { removeFileInside, writeFileInside } from "./containment.mjs";
+import {
+  chatCompletion,
+  ModelTransportError,
+  modelIdentity,
+  toolArguments,
+} from "./model-client.mjs";
+import {
+  detectProject,
+  imageIdentity,
+  prepareDependencies,
+  checkPath as projectPath,
+  runInContainer,
+} from "./plain-ci.mjs";
 import { checkPathRefusal, listDirectory, readFile } from "./reviewer-tools.mjs";
+import {
+  authorSystem,
+  authorTools,
+  blindSystem,
+  blindTools,
+  judgeSystem,
+  judgeTools,
+  promptDigest,
+  pullRequestText,
+  reviewerDisclosure,
+  scoreRow,
+  traceHolds,
+  traceSystem,
+  traceTools,
+  validateAuthorFinish,
+} from "./reviewers.mjs";
+import { additionsOfDiff, classifySide, decideCheck } from "./side-outcome.mjs";
+import {
+  attemptDirectory,
+  defaultWorkingRoot,
+  freshCheckout,
+  parseArguments,
+  repositoryRoot,
+  run,
+  runArm,
+  standingFetch,
+} from "./study-run.mjs";
 
-const args = process.argv.slice(2);
-const positional = [];
-const flags = new Map();
-for (let index = 0; index < args.length; index += 1) {
-  const arg = args[index];
-  if (arg.startsWith("--")) {
-    flags.set(arg.slice(2), args[index + 1]);
-    index += 1;
-  } else positional.push(arg);
-}
-const [rowsDirectory] = positional;
-if (!rowsDirectory) {
+const { flags } = parseArguments(process.argv.slice(2));
+if (!flags.has("run")) {
   console.error(
-    "usage: adjudicate.mjs <rows directory> [--only <indexes>] [--limit <n>] [--model <name>] [--endpoint <url>]",
+    "usage: adjudicate.mjs --run <runId> [--only <indexes>] [--limit <n>] [--author-model <name>] [--second-model <name>] [--endpoint <url>]",
   );
   process.exit(2);
 }
-const rowsRoot = resolve(rowsDirectory);
+const workingRoot = flags.get("working-root") ?? defaultWorkingRoot;
+const runRecord = {
+  ...openRun(workingRoot, {
+    resume: String(flags.get("run")),
+    identity: { harnessCommit: harnessIdentity(repositoryRoot).commit },
+  }),
+  workingRoot,
+};
 const limit = Number(flags.get("limit") ?? "1000");
 const only = flags.has("only") ? new Set(String(flags.get("only")).split(",").map(Number)) : null;
-const model = flags.get("model") ?? "qwen3.6:35b-a3b";
+const authorModel = flags.get("author-model") ?? "qwen3.6:35b-a3b";
+const secondModel = flags.get("second-model") ?? "gemma4-31b-greedy-128k:latest";
 const endpoint = flags.get("endpoint") ?? "http://localhost:11434";
-const nodeImage = flags.get("image") ?? "node:24-bookworm";
-const pythonImage = flags.get("python-image") ?? "ghcr.io/astral-sh/uv:python3.12-bookworm";
-const maxSteps = 30;
-const workingRoot = join(homedir(), ".cache", "swarm-ai-pr-study");
+if (authorModel === secondModel) {
+  console.error("the second reviewer must be a different model from the check author");
+  process.exit(2);
+}
+const budgets = runRecord.budgets;
+const frame = JSON.parse(readFileSync(runRecord.framePath, "utf8"));
 
-const run = (command, commandArgs, options = {}) =>
-  spawnSync(command, commandArgs, { encoding: "utf8", maxBuffer: 64_000_000, ...options });
-
-const reviewerSystem = [
-  "You are a reviewer establishing whether a merged pull request did what it claims, independently of its own tests.",
-  "You are given the pull request's title, body and linked issues, the names of the files it changed, and tools to read the repository at the pull request's head. You may not read the test files the pull request changed, and the read tool refuses them; write your check from the stated requirement and the code's public interfaces.",
-  "Write ONE executable acceptance check that fails if the stated requirement is not met and passes if it is. It must be self-contained: one file, run by one command from the repository root, using only what the repository already installs (its test runner, or plain `node --test` / `python -m pytest`). It must not need the network.",
-  "Your check must fail on the code BEFORE the pull request and pass AFTER it; it will be run on both, and a check that passes on both tests nothing.",
-  "If the requirement cannot be stated as an executable check (it is a refactor with no observable behaviour, a documentation change, or its acceptance needs a service you cannot reach), call finish with unjudged=true and say why. Never guess.",
-  "Act by calling tools: `list` a directory, `read` a file, then `finish` with the check. Keep reads purposeful; you have at most 30 tool calls.",
-].join("\n");
-
-const tools = [
-  {
-    type: "function",
-    function: {
-      name: "list",
-      description: "List a directory of the repository at the head.",
-      parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "read",
-      description:
-        "Read a file of the repository at the head (refuses the test files the pull request changed).",
-      parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "finish",
-      description: "Hand over the acceptance check, or say the requirement is not executable.",
-      parameters: {
-        type: "object",
-        properties: {
-          unjudged: { type: "boolean", description: "true when no executable check can be stated" },
-          reason: {
-            type: "string",
-            description: "why it is unjudged, or what the check establishes",
-          },
-          requirement: { type: "string", description: "the requirement, in one or two sentences" },
-          checkPath: { type: "string", description: "repository-relative path for the check file" },
-          checkContents: { type: "string" },
-          command: {
-            type: "string",
-            description: "one shell command, run from the repository root, that runs the check",
-          },
-        },
-        required: ["unjudged", "reason"],
-      },
-    },
-  },
-];
-
-/**
- * A failure on the head counts only where each failing assertion is stated in the requirement.
- * A second, code-blind call is handed the requirement text and the check's failing output and
- * must quote the sentence each failure comes from; an assertion it cannot quote is the
- * reviewer's own addition, and the row stays unjudged rather than call it a violation.
- */
-async function traceFailure(requirement, failingOutput) {
-  const traceTools = [
-    {
-      type: "function",
-      function: {
-        name: "trace",
-        description: "Map each failing assertion to the requirement sentence it comes from.",
-        parameters: {
-          type: "object",
-          properties: {
-            traceable: {
-              type: "boolean",
-              description:
-                "true only when every failing assertion is stated in the requirement text",
-            },
-            mapping: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  assertion: { type: "string" },
-                  quote: {
-                    type: "string",
-                    description: "verbatim words from the requirement, or empty",
-                  },
-                },
-                required: ["assertion", "quote"],
-              },
-            },
-          },
-          required: ["traceable", "mapping"],
-        },
-      },
-    },
-  ];
-  const completed = await completion({
+/** Ask a model for exactly one tool call and return its parsed arguments, or null. */
+async function askOnce(model, system, user, tools, tool) {
+  const completed = await chatCompletion(endpoint, {
     model,
     messages: [
-      {
-        role: "system",
-        content:
-          "You audit an acceptance check against a pull request's stated requirement. You see only the requirement text and the check's failing output. For each failing assertion, quote the exact words of the requirement that state it. If any failing assertion is not stated in the requirement (it is an inference, a style preference or a stricter reading than the text), set traceable to false. Call the trace tool once.",
-      },
-      {
-        role: "user",
-        content: `Requirement:\n${requirement}\n\nFailing output:\n${failingOutput}`,
-      },
+      { role: "system", content: system },
+      { role: "user", content: user },
     ],
-    tools: traceTools,
-    tool_choice: { type: "function", function: { name: "trace" } },
+    tools,
+    tool_choice: { type: "function", function: { name: tool } },
     temperature: 0,
     stream: false,
   });
-  const call = completed.choices?.[0]?.message?.tool_calls?.[0];
-  try {
-    const parsed = JSON.parse(call?.function?.arguments ?? "{}");
-    const mapping = Array.isArray(parsed.mapping) ? parsed.mapping : [];
-    // The audit's own word is not enough: every quote must appear in the requirement text.
-    const quotesHold =
-      mapping.length > 0 &&
-      mapping.every(
-        (entry) =>
-          typeof entry.quote === "string" &&
-          entry.quote.trim().length > 0 &&
-          requirement.includes(entry.quote.trim()),
-      );
-    return { traceable: parsed.traceable === true && quotesHold, mapping };
-  } catch {
-    return { traceable: false, mapping: [] };
-  }
+  return toolArguments(completed, tool);
 }
 
-/**
- * A POST with no header timeout: a local model working through a long review context can take
- * longer than the default client's five minutes to send its first byte, which read as
- * "fetch failed (UND_ERR_HEADERS_TIMEOUT)" and cost the row. The response is read whole.
- */
-function post(url, body) {
-  return new Promise((resolve, reject) => {
-    const target = new URL(url);
-    const request = http.request(
-      {
-        hostname: target.hostname,
-        port: target.port,
-        path: target.pathname,
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        timeout: 0,
-      },
-      (response) => {
-        let text = "";
-        response.setEncoding("utf8");
-        response.on("data", (chunk) => {
-          text += chunk;
-        });
-        response.on("end", () =>
-          resolve({
-            status: response.statusCode ?? 0,
-            ok: (response.statusCode ?? 0) >= 200 && (response.statusCode ?? 0) < 300,
-            text: async () => text,
-            json: async () => JSON.parse(text),
-          }),
-        );
-      },
-    );
-    request.on("error", reject);
-    request.end(JSON.stringify(body));
-  });
-}
-
-/** One model call, retried on a transport failure: a dropped connection is not a finding. */
-async function completion(body) {
-  let failure = null;
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    try {
-      const response = await post(`${endpoint}/v1/chat/completions`, body);
-      if (response.status >= 500 && Array.isArray(body.messages)) {
-        // The server refusing the model's own malformed tool call: at temperature 0 the same
-        // request gives the same malformed call, so the reviewer is told and asked again.
-        const text = await response.text();
-        body.messages.push({
-          role: "user",
-          content: `Your previous tool call could not be parsed by the server (${text.slice(0, 120)}). Call the tool again with well-formed arguments.`,
-        });
-        failure = new Error(`model: ${response.status} ${text}`);
-        continue;
+/** The check author's tool loop over the base checkout. */
+async function authorReview(clone, prText, pr, record) {
+  const pathRefusal = (path) => {
+    const checked = checkPathRefusal(path, new Set(), pr.changedFiles ?? []);
+    if (checked.refusal !== null) return checked;
+    if (existsSync(join(clone, checked.path)))
+      return {
+        refusal: `refused: ${checked.path} exists in the repository; write each check to a new file`,
+      };
+    return checked;
+  };
+  const messages = [
+    { role: "system", content: authorSystem },
+    {
+      role: "user",
+      content: `${prText}\n\nFiles the pull request changed (their new contents are not shown): ${(pr.changedFiles ?? []).join(", ")}\n\nBegin: read what you need at the base, then finish.`,
+    },
+  ];
+  const reads = [];
+  const budget = { used: 0 };
+  for (let step = 1; step <= budgets.reviewerMaxSteps; step += 1) {
+    const completed = await chatCompletion(endpoint, {
+      model: authorModel,
+      messages,
+      tools: authorTools,
+      tool_choice: "auto",
+      temperature: 0,
+      stream: false,
+    });
+    const choice = completed.choices?.[0]?.message;
+    if (!choice) throw new ModelTransportError("the model answered with no message");
+    messages.push(choice);
+    const calls = choice.tool_calls ?? [];
+    if (calls.length === 0) {
+      record({ role: "author", kind: "text", step, text: choice.content ?? "" });
+      messages.push({ role: "user", content: "Use the tools: list, read, or finish." });
+      continue;
+    }
+    for (const call of calls) {
+      let args = {};
+      try {
+        args = JSON.parse(call.function.arguments || "{}");
+      } catch {
+        args = {};
       }
-      if (!response.ok) throw new Error(`model: ${response.status} ${await response.text()}`);
-      return await response.json();
-    } catch (cause) {
-      failure = cause;
-      await new Promise((resolve) => setTimeout(resolve, 20_000 * attempt));
+      let content;
+      if (call.function.name === "list") content = listDirectory(clone, String(args.path ?? "."));
+      else if (call.function.name === "read") {
+        reads.push(String(args.path ?? ""));
+        content = readFile(clone, String(args.path ?? ""), new Set(), budget);
+      } else if (call.function.name === "finish") {
+        const validated = validateAuthorFinish(args, pathRefusal);
+        record({ role: "author", kind: "finish", step, args, refusal: validated.refusal ?? null });
+        if (validated.accepted !== undefined)
+          return { accepted: validated.accepted, reads, steps: step };
+        content = validated.refusal;
+      } else content = "unknown tool";
+      if (call.function.name !== "finish")
+        record({
+          role: "author",
+          kind: call.function.name,
+          step,
+          args,
+          result: content.slice(0, 2000),
+        });
+      messages.push({ role: "tool", tool_call_id: call.id, content });
     }
   }
-  throw failure;
+  return { accepted: null, reads, steps: budgets.reviewerMaxSteps };
 }
 
-async function ask(messages) {
-  const result = await completion({
-    model,
-    messages,
-    tools,
-    tool_choice: "auto",
-    temperature: 0,
-    stream: false,
-  });
-  const choice = result.choices?.[0]?.message;
-  if (!choice) throw new Error("model answered with no message");
-  return choice;
-}
-
-/**
- * Run the check inside a network-disabled container over the clone at one commit. The check
- * file is written once by the caller and stays across both commits: deleting and recreating a
- * file between two container runs is exactly what a desktop mount's cache gets wrong.
- */
-/**
- * The clone's dependencies from its lockfile, install scripts off, in a container with the
- * registry reachable for this one command; the check itself then runs with the network off.
- * The verifier arm installs into its own fresh checkout, never into this clone, so the check's
- * runner has to be put here the same way.
- */
-function installDependencies(clone, image, manifest) {
-  const hasPnpm = existsSync(join(clone, "pnpm-lock.yaml"));
-  const command =
-    manifest === "package.json"
-      ? hasPnpm
-        ? "npx --yes --package pnpm@10 pnpm install --frozen-lockfile --ignore-scripts"
-        : "npm ci --ignore-scripts --no-audit --no-fund"
-      : manifest === "pyproject.toml"
-        ? // Every group and extra the lock knows: a reviewer's check may need a runner the
-          // project keeps in a non-default group (pytest under a `test` group, say).
-          "uv sync --locked --all-groups --all-extras"
-        : null;
-  if (command === null) return { ran: false, detail: "no supported manifest" };
-  const ran = run(
-    "docker",
-    [
-      "run",
-      "--rm",
-      "--network=bridge",
-      `--volume=${clone}:/workspace:rw`,
-      "--workdir=/workspace",
-      "--memory=4g",
-      "--entrypoint",
-      "/bin/sh",
-      image,
-      "-c",
-      `export HOME=/tmp TMPDIR=/tmp; ${command}`,
-    ],
-    { timeout: 900_000 },
-  );
-  return {
-    ran: ran.error === undefined,
-    exitCode: ran.status,
-    command,
-    stderr: (ran.stderr ?? "").slice(-600),
-  };
-}
-
-function executeCheck(clone, image, commit, check, manifest) {
+/** Run every check at one commit of the arm's checkout, dependencies prepared first. */
+function executeSide(clone, commit, image, checks) {
   const checkedOut = run("git", ["checkout", "--quiet", "--force", "--detach", commit], {
     cwd: clone,
   });
   if (checkedOut.status !== 0)
-    return { ran: false, detail: `checkout failed: ${checkedOut.stderr.slice(-300)}` };
-  const installed =
-    manifest === "package.json" || manifest === "pyproject.toml"
-      ? installDependencies(clone, image, manifest)
-      : { ran: false };
-  if (installed.ran && installed.exitCode !== 0)
     return {
+      commit,
       ran: false,
-      detail: `dependencies could not be installed at ${commit.slice(0, 9)}: ${installed.stderr.trim().split("\n").at(-1) ?? ""}`,
-      install: installed,
+      notRunReason: `checkout failed: ${checkedOut.stderr.slice(-300)}`,
+      runs: {},
     };
-  const install = "";
-  const ran = run(
-    "docker",
-    [
-      "run",
-      "--rm",
-      "--network=none",
-      `--volume=${clone}:/workspace:rw`,
-      "--workdir=/workspace",
-      "--memory=2g",
-      "--pids-limit=256",
-      "--entrypoint",
-      "/bin/sh",
+  const project = detectProject(clone);
+  const install = prepareDependencies(clone, image, project, {
+    timeoutMs: budgets.installTimeoutMs,
+  });
+  const setup = {
+    install,
+    environment: {
+      image: imageIdentity(image),
+      path: `${projectPath}:<image PATH>`,
+      network: { install: "bridge (registry, this one command)", check: "none" },
+    },
+  };
+  if (install.status === "failed")
+    return {
+      commit,
+      setup,
+      setupFailed: true,
+      notRunReason: `dependencies could not be prepared at ${commit.slice(0, 9)}: ${(install.outputTail ?? install.detail ?? "").trim().split("\n").at(-1) ?? ""}`,
+      runs: {},
+    };
+  const runs = {};
+  for (const check of checks) {
+    const ran = runInContainer(
+      clone,
       image,
-      "-c",
-      // The project's own environment first on PATH: the verifier arm installed it into the
-      // clone (node_modules/.bin, .venv/bin), and a check that says `python` or `pytest`
-      // means the project's, not the image's.
-      `export PATH=/workspace/.venv/bin:/workspace/node_modules/.bin:$PATH; test -f ${JSON.stringify(check.checkPath)} || { echo "check file missing" >&2; exit 125; }; ${install}${check.command}`,
-    ],
-    { timeout: 900_000 },
-  );
-  const exitCode = ran.status;
+      `test -f ${JSON.stringify(check.path)} || { echo "check file missing" >&2; exit 125; }; ${check.command}`,
+      { timeoutMs: budgets.checkTimeoutMs, memory: "2g" },
+    );
+    runs[check.id] = {
+      ran: ran.error === null || ran.timedOut,
+      exitCode: ran.exitCode,
+      timedOut: ran.timedOut,
+      durationMs: ran.durationMs,
+      stdout: ran.stdout.slice(-4000),
+      stderr: ran.stderr.slice(-4000),
+    };
+  }
+  return { commit, setup, runs };
+}
+
+async function adjudicate(fetch, attempt) {
+  const { pr } = fetch;
+  const work = attemptDirectory(runRecord.paths.work, pr.index, "adjudication", attempt);
+  const artifacts = attemptDirectory(runRecord.paths.artifacts, pr.index, "adjudication", attempt);
+  const transcriptPath = join(artifacts, "transcript.jsonl");
+  const record = (entry) =>
+    writeFileSync(transcriptPath, `${JSON.stringify(entry)}\n`, { flag: "a" });
+  const prText = pullRequestText(pr);
+  const identities = {
+    author: await modelIdentity(endpoint, authorModel),
+    second: await modelIdentity(endpoint, secondModel),
+  };
+  const reviewers = {
+    disclosure: reviewerDisclosure,
+    author: {
+      role: "check author",
+      ...identities.author,
+      promptDigest: promptDigest(authorSystem, authorTools),
+      exposure: {
+        pullRequestText: true,
+        changedFileNames: true,
+        baseCheckout: true,
+        headContents: false,
+        verifierVerdict: false,
+        executionResults: false,
+      },
+    },
+    second: {
+      role: "independent judge",
+      ...identities.second,
+      promptDigests: {
+        blind: promptDigest(blindSystem, blindTools),
+        judge: promptDigest(judgeSystem, judgeTools),
+        trace: promptDigest(traceSystem, traceTools),
+      },
+      exposure: {
+        pullRequestText: true,
+        changedFileNames: false,
+        baseCheckout: false,
+        headContents: false,
+        authorRequirementsAndChecks: "after its own blind statement",
+        executionResults: "only the head's failing output, in the trace audit",
+        verifierVerdict: false,
+      },
+    },
+  };
+  // This arm's own checkout, at the base for the author; no other arm reads it.
+  const clone = freshCheckout(pr.execution.objectClone, join(work, "checkout"), pr.base);
+  const authored = await authorReview(clone, prText, pr, record);
+  reviewers.author.reads = authored.reads;
+  reviewers.author.steps = authored.steps;
+  const blind = await askOnce(secondModel, blindSystem, prText, blindTools, "state");
+  record({ role: "second", kind: "blind", args: blind });
+  const author = authored.accepted;
+  let judge = null;
+  if (author !== null && author.unjudged !== true) {
+    const shown = author.requirements.map((requirement) => ({
+      id: requirement.id,
+      text: requirement.text,
+      quote: requirement.quote,
+      checks: requirement.checks.map((check) => ({
+        id: check.id,
+        path: check.path,
+        command: check.command,
+        asserts: check.asserts,
+        contents: check.contents,
+      })),
+    }));
+    judge = await askOnce(
+      secondModel,
+      judgeSystem,
+      `${prText}\n\nYour own earlier statement:\n${JSON.stringify(blind, null, 2)}\n\nThe other reviewer's task type: ${author.taskType}\n\nThe other reviewer's requirements and checks:\n${JSON.stringify(shown, null, 2)}`,
+      judgeTools,
+      "judge",
+    );
+    record({ role: "second", kind: "judge", args: judge });
+  }
+  const outcomes = {};
+  const execution = {};
+  if (author !== null && author.unjudged !== true) {
+    const checks = author.requirements.flatMap((requirement) => requirement.checks);
+    const added = additionsOfDiff(readFileSync(pr.diff.path, "utf8"));
+    const needs = author.needs[0];
+    if (needs === undefined) {
+      run("git", ["checkout", "--quiet", "--force", "--detach", pr.head], { cwd: clone });
+      // Written once, at the head, and kept across both commits: every check path is new at
+      // the base and not a changed file, so neither checkout touches it.
+      const files = new Map(checks.map((check) => [check.path, check.contents]));
+      for (const [path, contents] of files) writeFileInside(clone, path, contents);
+      execution.head = executeSide(clone, pr.head, pr.execution.image, checks);
+      // Classified at the head, where a module the pull request adds exists to be resolved.
+      const resolver = checkoutModuleResolver(clone);
+      for (const check of checks)
+        outcomes[check.id] = {
+          truthClass: classifyCheckExecution(check, { projectModule: resolver }),
+        };
+      execution.base = executeSide(clone, pr.base, pr.execution.image, checks);
+      for (const path of files.keys()) removeFileInside(clone, path);
+    }
+    const checkPaths = [...new Set(checks.map((check) => check.path))];
+    for (const requirement of author.requirements) {
+      for (const check of requirement.checks) {
+        const sideOf = (side) =>
+          side === undefined
+            ? { ran: false, notRunReason: "not executed" }
+            : side.setupFailed
+              ? { setupFailed: true, notRunReason: side.notRunReason }
+              : side.ran === false
+                ? side
+                : side.runs[check.id];
+        const base = classifySide(sideOf(execution.base), { checkPaths, added });
+        const head = classifySide(sideOf(execution.head), { checkPaths, added });
+        const decided = decideCheck({
+          taskType: author.taskType,
+          base,
+          head,
+          requirementText: prText,
+          needs,
+        });
+        let decision = decided.decision;
+        let reason = decided.reason;
+        let trace = null;
+        if (decision === "violated-candidate") {
+          const side = execution.head.runs[check.id];
+          const audit = await askOnce(
+            secondModel,
+            traceSystem,
+            `Requirement:\n${prText}\n\nFailing output:\n${`${side.stdout}\n${side.stderr}`.trim()}`,
+            traceTools,
+            "trace",
+          );
+          trace = traceHolds(audit, prText);
+          record({ role: "second", kind: "trace", check: check.id, ...trace });
+          decision = trace.traceable ? "violated" : "unjudged";
+          if (!trace.traceable)
+            reason =
+              "the head fails an assertion the trace audit could not quote from the pull request, so the failure is the check author's addition";
+        }
+        const truthClass = outcomes[check.id]?.truthClass ?? classifyCheckExecution(check);
+        outcomes[check.id] = {
+          decision,
+          reason,
+          base,
+          head,
+          trace,
+          truthClass: truthClass.class,
+          truthClassReason: truthClass.reason,
+        };
+      }
+    }
+  }
+  const truth = scoreRow({ author, blind, judge, outcomes });
   return {
-    // 125 is the missing file, 126 and 127 are a command that could not run: none of these
-    // is the check's own verdict.
-    ran: ran.error === undefined && ran.signal !== "SIGTERM" && ![125, 126, 127].includes(exitCode),
-    exitCode,
-    timedOut: ran.signal === "SIGTERM",
-    stdout: (ran.stdout ?? "").slice(-4000),
-    stderr: (ran.stderr ?? "").slice(-4000),
+    adjudication: {
+      procedure: "two-reviewer, base-only author (2026-09-29 amendment)",
+      reviewers,
+      pullRequestTextDigest: sha256(prText),
+      author,
+      blind,
+      judge,
+      execution,
+      outcomes,
+      truth: {
+        class: truth.class,
+        status: truth.status,
+        reason: truth.reason,
+        requirements: truth.requirements,
+        disagreements: truth.disagreements,
+        uncertainty: truth.uncertainty,
+      },
+      status: truth.status ?? "unscored",
+      transcript: `${transcriptPath} (outside the repository)`,
+    },
+    summary: `${truth.class} ${truth.status ?? "unscored"}: ${truth.reason}`,
   };
 }
 
 let done = 0;
-for (const name of readdirSync(rowsRoot)
-  .filter((file) => /^\d+\.json$/.test(file))
-  .sort()) {
+for (const selected of frame.selected) {
   if (done >= limit) break;
-  const rowPath = join(rowsRoot, name);
-  const row = JSON.parse(readFileSync(rowPath, "utf8"));
-  if (only !== null && !only.has(row.index)) continue;
-  if (!["executed", "fetched"].includes(row.outcome) || row.adjudication) continue;
+  if (only !== null && !only.has(selected.index)) continue;
+  const fetch = standingFetch(runRecord, selected.index);
+  if (fetch === null || fetch.failure) continue;
   done += 1;
-  const transcriptPath = rowPath.replace(/\.json$/, ".adjudication.jsonl");
-  const record = (entry) =>
-    writeFileSync(transcriptPath, `${JSON.stringify(entry)}\n`, { flag: "a" });
-  rmSync(transcriptPath, { force: true });
-  const forbidden = new Set(row.testChanges ?? []);
-  const requirement = [
-    `Repository: ${row.repository}`,
-    `Pull request #${row.number}: ${row.title}`,
-    "",
-    "Body:",
-    row.body || "(empty)",
-    ...(row.linkedIssues ?? []).flatMap((issue) => [
-      "",
-      `Linked issue #${issue.number}: ${issue.title}`,
-      issue.body || "(empty)",
-    ]),
-    "",
-    `Files the pull request changed: ${(row.changedFiles ?? []).join(", ")}`,
-    `Test files it changed (not readable): ${(row.testChanges ?? []).join(", ") || "none"}`,
-  ].join("\n");
-  const adjudication = {
-    reviewer: {
-      model,
-      endpoint,
-      promptDigest: `sha256:${createHash("sha256").update(reviewerSystem).digest("hex")}`,
+  const inputs = {
+    diff: fetch.pr.diff.digest,
+    fetchAttempt: fetch.attempt,
+    pullRequestText: sha256(pullRequestText(fetch.pr)),
+    prompts: {
+      author: promptDigest(authorSystem, authorTools),
+      judge: promptDigest(judgeSystem, judgeTools),
     },
-    startedAt: new Date().toISOString(),
+    models: { author: authorModel, second: secondModel },
   };
-  const finish = (result) => {
-    row.adjudication = { ...adjudication, ...result, finishedAt: new Date().toISOString() };
-    writeFileSync(rowPath, `${JSON.stringify(row, null, 2)}\n`);
-    console.log(`${row.index} ${row.repository}#${row.number}: ${result.status}`);
-  };
-  try {
-    // The row names the repository: one plain directory name under the working root, or the
-    // row is a harness error rather than a clone somewhere else.
-    const clone = childPath(workingRoot, `${row.repository.replace("/", "__")}-${row.number}`);
-    run("git", ["checkout", "--quiet", "--force", "--detach", row.head], { cwd: clone });
-    const messages = [
-      { role: "system", content: reviewerSystem },
-      { role: "user", content: `${requirement}\n\nBegin: read what you need, then finish.` },
-    ];
-    let check = null;
-    let reads = 0;
-    const budget = { used: 0 };
-    for (let step = 1; step <= maxSteps && check === null; step += 1) {
-      const choice = await ask(messages);
-      messages.push(choice);
-      const calls = choice.tool_calls ?? [];
-      if (calls.length === 0) {
-        record({ kind: "reviewer-text", step, text: choice.content ?? "" });
-        messages.push({ role: "user", content: "Use the tools: list, read, or finish." });
-        continue;
-      }
-      for (const call of calls) {
-        let callArgs = {};
-        try {
-          callArgs = JSON.parse(call.function.arguments || "{}");
-        } catch {
-          callArgs = {};
-        }
-        let content = "";
-        if (call.function.name === "list")
-          content = listDirectory(clone, String(callArgs.path ?? "."));
-        else if (call.function.name === "read") {
-          reads += 1;
-          content = readFile(clone, String(callArgs.path ?? ""), forbidden, budget);
-        } else if (call.function.name === "finish") {
-          const path = typeof callArgs.checkPath === "string" ? callArgs.checkPath : "";
-          const checked =
-            callArgs.unjudged === true
-              ? { refusal: null, path }
-              : checkPathRefusal(path, forbidden, row.changedFiles ?? []);
-          if (checked.refusal !== null) content = checked.refusal;
-          else {
-            check =
-              callArgs.unjudged === true ? callArgs : { ...callArgs, checkPath: checked.path };
-            content = "recorded";
-          }
-        } else content = "unknown tool";
-        record({ kind: call.function.name, step, args: callArgs, result: content.slice(0, 2000) });
-        messages.push({ role: "tool", tool_call_id: call.id, content });
-      }
+  await runArm(runRecord, selected.index, "adjudication", inputs, async (attempt) => {
+    try {
+      return await adjudicate(fetch, attempt);
+    } catch (cause) {
+      if (cause instanceof ModelTransportError)
+        return { failure: { kind: "infrastructure", reason: cause.message } };
+      throw cause;
     }
-    if (check === null) {
-      finish({
-        status: "unjudged",
-        reason: `the reviewer produced no check within ${maxSteps} steps`,
-        reads,
-      });
-      continue;
-    }
-    if (check.unjudged === true || !check.checkPath || !check.checkContents || !check.command) {
-      finish({
-        status: "unjudged",
-        reason: check.reason ?? "no executable check",
-        requirement: check.requirement ?? null,
-        reads,
-      });
-      continue;
-    }
-    const checkDigest = `sha256:${createHash("sha256").update(check.checkContents).digest("hex")}`;
-    const manifest = row.execution?.manifest ?? null;
-    const image = manifest === "pyproject.toml" ? pythonImage : nodeImage;
-    const lockfileChanged = (row.changedFiles ?? []).some((path) =>
-      /(^|\/)(package-lock\.json|pnpm-lock\.yaml|uv\.lock)$/.test(path),
-    );
-    run("git", ["checkout", "--quiet", "--force", "--detach", row.head], { cwd: clone });
-    run("git", ["clean", "-fdq", "-e", "node_modules", "-e", ".venv"], { cwd: clone });
-    // Written and removed through the containment helper: the path is the model's, and the
-    // base checkout between the two runs may turn a directory on it into a symlink.
-    writeFileInside(clone, check.checkPath, check.checkContents);
-    const onHead = executeCheck(clone, image, row.head, check, manifest);
-    const onBase = executeCheck(clone, image, row.base, check, manifest);
-    removeFileInside(clone, check.checkPath);
-    // Leave the clone at the head with its installed dependencies for any later replay.
-    if (lockfileChanged)
-      executeCheck(clone, image, row.head, { ...check, command: "true" }, manifest);
-    else run("git", ["checkout", "--quiet", "--force", "--detach", row.head], { cwd: clone });
-    // A failure is the check's verdict only when the check itself ran: a runner the image
-    // does not hold, or a module the environment lacks, fails every commit the same way and
-    // establishes nothing. Likewise a check that fails identically on both commits (same exit
-    // status, same last line) did not discriminate between them.
-    const lastLine = (side) =>
-      `${side.stdout ?? ""}\n${side.stderr ?? ""}`.trim().split("\n").filter(Boolean).at(-1) ?? "";
-    // Only the runner itself missing counts as "could not run": a project module that the
-    // patch adds is absent on the base by definition, and that ImportError is the failure a
-    // feature check is supposed to produce there.
-    const couldNotRun = (side) =>
-      /No module named '?(pytest|_pytest|unittest|coverage)'?|\b(pytest|vitest|jest|mocha|node|npm|npx|uv|python3?|tsx|ts-node|bash|sh): (command )?not found|Cannot find module '(vitest|jest|mocha|tsx)/.test(
-        `${side.stdout ?? ""}\n${side.stderr ?? ""}`,
-      );
-    const sameFailure =
-      onBase.ran &&
-      onHead.ran &&
-      onBase.exitCode !== 0 &&
-      onHead.exitCode !== 0 &&
-      onBase.exitCode === onHead.exitCode &&
-      lastLine(onBase) === lastLine(onHead);
-    const runnerMissing =
-      (onHead.ran && onHead.exitCode !== 0 && couldNotRun(onHead)) ||
-      (onBase.ran && onBase.exitCode !== 0 && couldNotRun(onBase));
-    const baseFails = onBase.ran && onBase.exitCode !== 0 && !sameFailure && !runnerMissing;
-    const headPasses = onHead.ran && onHead.exitCode === 0;
-    let trace = null;
-    if (onBase.ran && onHead.ran && baseFails && !headPasses && !sameFailure && !runnerMissing) {
-      trace = await traceFailure(requirement, `${onHead.stdout}\n${onHead.stderr}`.trim());
-      record({ kind: "trace", ...trace });
-    }
-    const status =
-      !onBase.ran || !onHead.ran
-        ? "unjudged"
-        : !baseFails
-          ? "unjudged"
-          : headPasses
-            ? "requirement-met"
-            : trace?.traceable === true
-              ? "requirement-violated"
-              : "unjudged";
-    finish({
-      status,
-      reason:
-        status === "unjudged"
-          ? runnerMissing
-            ? "the check could not run: its runner or a module is missing from the environment, so nothing about the requirement was shown"
-            : sameFailure
-              ? "the check fails the same way on the base and the head, so it did not discriminate between them"
-              : !baseFails
-                ? "the check does not fail on the base, so it does not test the requirement"
-                : trace !== null
-                  ? "the head fails an assertion that is not stated in the requirement, so the failure is the reviewer's addition"
-                  : "the check could not be executed on both commits"
-          : check.reason,
-      trace,
-      requirement: check.requirement ?? null,
-      check: {
-        path: check.checkPath,
-        command: check.command,
-        digest: checkDigest,
-        contents: check.checkContents,
-      },
-      reads,
-      base: onBase,
-      head: onHead,
-      image,
-    });
-  } catch (cause) {
-    const detail = cause?.cause?.code ?? cause?.cause?.message ?? "";
-    finish({
-      status: "unjudged",
-      reason: `harness error: ${cause.message.split("\n")[0]}${detail ? ` (${detail})` : ""}`,
-    });
-  }
+  });
 }
-console.log(`${done} row(s) adjudicated; results in ${rowsRoot}`);
+console.log(`${done} row(s) visited for adjudication in run ${runRecord.runId}`);

@@ -1,148 +1,173 @@
 #!/usr/bin/env node
 /**
  * Comparison A's third arm: swarm-verify over the identical patch with the adjudication arm's
- * held-back check as its oracle (`ci --oracle`), so the requirement-level decision is measured
- * by the verifier rather than only by the check run apart. Runs only over rows whose truth is
- * adjudicated, writes the check into the clone under the reviewer's path for the run and
- * removes it after, and records the verdict fields the frozen rule reads.
+ * held-back checks as its oracle (`ci --oracle`), so the requirement-level decision is measured
+ * by the verifier rather than only by the checks run apart. Runs only over rows whose truth is
+ * scored as behavioural, after the arms that must not see the checks (suite, verifier) have
+ * their standing results, and writes each run as an immutable attempt of the run's `a2` arm.
  *
- *   node scripts/ai-pr-study/comparison-a2.mjs <rows directory> <verifier version>
- *        [--only <index,index>] [--limit <n>]
+ * This arm hands the checks to the verifier by design; it is the only place they leave the
+ * adjudication arm, it never feeds anything back to a solver, and its checkout is its own.
+ *
+ *   node scripts/ai-pr-study/comparison-a2.mjs --run <runId> [--only <index,index>] [--limit <n>]
+ *        [--working-root <dir>]
  */
-import { spawnSync } from "node:child_process";
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
-import { childPath, resolveWriteTargetInside } from "./containment.mjs";
+import { join } from "node:path";
+import { harnessIdentity, listAttempts, openRun, standingAttempt } from "./attempts.mjs";
+import { resolveWriteTargetInside } from "./containment.mjs";
+import { bundleEvidence } from "./plain-ci.mjs";
+import {
+  attemptDirectory,
+  defaultWorkingRoot,
+  freshCheckout,
+  parseArguments,
+  repositoryRoot,
+  run,
+  runArm,
+  standingFetch,
+} from "./study-run.mjs";
 
-const args = process.argv.slice(2);
-const positional = [];
-const flags = new Map();
-for (let index = 0; index < args.length; index += 1) {
-  const arg = args[index];
-  if (arg.startsWith("--")) {
-    flags.set(arg.slice(2), args[index + 1]);
-    index += 1;
-  } else positional.push(arg);
-}
-const [rowsDirectory, version] = positional;
-if (!rowsDirectory || !version) {
-  console.error(
-    "usage: comparison-a2.mjs <rows directory> <verifier version> [--only <indexes>] [--limit <n>]",
-  );
+const { flags } = parseArguments(process.argv.slice(2));
+if (!flags.has("run")) {
+  console.error("usage: comparison-a2.mjs --run <runId> [--only <indexes>] [--limit <n>]");
   process.exit(2);
 }
-const rowsRoot = resolve(rowsDirectory);
+const workingRoot = flags.get("working-root") ?? defaultWorkingRoot;
+const runRecord = {
+  ...openRun(workingRoot, {
+    resume: String(flags.get("run")),
+    identity: { harnessCommit: harnessIdentity(repositoryRoot).commit },
+  }),
+  workingRoot,
+};
+const version = runRecord.verifierVersion;
 const only = flags.has("only") ? new Set(String(flags.get("only")).split(",").map(Number)) : null;
 const limit = Number(flags.get("limit") ?? "1000");
-const workingRoot = join(homedir(), ".cache", "swarm-ai-pr-study");
-const run = (command, commandArgs, options = {}) =>
-  spawnSync(command, commandArgs, { encoding: "utf8", maxBuffer: 64_000_000, ...options });
+const frame = JSON.parse(readFileSync(runRecord.framePath, "utf8"));
+const quote = (text) => `'${text.replaceAll("'", "'\\''")}'`;
+
+/** The checks that decided the row's behavioural truth: accepted by both reviewers and executed validly. */
+function scoredChecks(adjudication) {
+  const ids = new Set();
+  for (const requirement of adjudication.truth?.requirements ?? [])
+    for (const check of requirement.checks ?? [])
+      if (
+        check.valid === "valid" &&
+        check.decision !== "unjudged" &&
+        check.truthClass === "behavioural-executed"
+      )
+        ids.add(check.id);
+  return (adjudication.author?.requirements ?? [])
+    .flatMap((requirement) => requirement.checks)
+    .filter((check) => ids.has(check.id));
+}
 
 let done = 0;
-for (const name of readdirSync(rowsRoot)
-  .filter((file) => /^\d+\.json$/.test(file))
-  .sort()) {
+for (const selected of frame.selected) {
   if (done >= limit) break;
-  const rowPath = join(rowsRoot, name);
-  const row = JSON.parse(readFileSync(rowPath, "utf8"));
-  if (only !== null && !only.has(row.index)) continue;
-  const truth = row.adjudication?.status;
-  if (!["requirement-met", "requirement-violated"].includes(truth) || row.comparisonA2) continue;
-  if (row.outcome !== "executed") continue;
+  if (only !== null && !only.has(selected.index)) continue;
+  const fetch = standingFetch(runRecord, selected.index);
+  const adjudication = standingAttempt(
+    listAttempts(runRecord.paths.rows, selected.index, "adjudication"),
+  ).standing?.adjudication;
+  if (fetch === null || fetch.failure || adjudication === undefined) continue;
+  if (adjudication.truth?.class !== "behavioural-executed" || adjudication.truth.status === null)
+    continue;
+  const checks = scoredChecks(adjudication);
+  if (checks.length === 0) continue;
   done += 1;
-  const check = row.adjudication.check;
-  const startedAt = Date.now();
-  const finish = (result) => {
-    row.comparisonA2 = {
-      ...result,
-      verifier: { package: "swarm-verify", version },
-      wallMs: Date.now() - startedAt,
-    };
-    writeFileSync(rowPath, `${JSON.stringify(row, null, 2)}\n`);
-    console.log(
-      `${row.index} ${row.repository}#${row.number}: A2 ${result.outcome} ${result.verified === true ? "verified" : result.refusal ? "refused" : (result.task ?? "")}`,
-    );
-  };
-  try {
-    const clone = childPath(workingRoot, `${row.repository.replace("/", "__")}-${row.number}`);
-    // The check's path is the reviewer model's. The oracle's shell writes it inside the
-    // verifier's own checkout of the head, so it is held here to what the clone at the head
-    // (where the adjudication left it) would contain: relative, no `..`, and no symlink on the
-    // way that leads out. Nothing is written into the clone.
-    resolveWriteTargetInside(clone, check.path);
-    // The check travels inside the oracle command and is decoded into place when the oracle
-    // runs, so the verifier judges exactly the pull request's patch, the one A0 and A1 judge.
-    // Committing it on top of the head (the previous design) put the reviewer's file in front of
-    // the repository's own lint and format checks, which then failed on the reviewer's style and
-    // read as a regression. base64 keeps the file's bytes out of the shell's quoting.
-    const quote = (text) => `'${text.replaceAll("'", "'\\''")}'`;
-    const directory = check.path.includes("/")
-      ? check.path.slice(0, check.path.lastIndexOf("/"))
-      : ".";
-    const oracle = `mkdir -p ${quote(directory)} && printf %s ${quote(Buffer.from(check.contents).toString("base64"))} | base64 -d > ${quote(check.path)} && ${check.command}`;
-    const image = row.execution?.isolation?.replace(/^docker:/, "") ?? "node:24-bookworm";
-    const bundle = childPath(
-      join(workingRoot, "bundles-a2", version),
-      String(row.index).padStart(2, "0"),
-    );
-    mkdirSync(join(workingRoot, "bundles-a2", version), { recursive: true });
-    const verified = run(
-      "npx",
-      [
-        "--yes",
-        `swarm-verify@${version}`,
-        "ci",
-        "--workspace",
-        clone,
-        "--branch",
-        row.head,
-        "--base",
-        row.base,
-        "--json",
-        "--bundle",
-        bundle,
-        "--isolation",
-        `docker:${image}`,
-        "--require-isolation",
-        "--install",
-        "--oracle",
-        oracle,
-      ],
-      {
-        cwd: workingRoot,
-        env: { PATH: process.env.PATH ?? "", HOME: homedir(), NO_COLOR: "1" },
-        timeout: 3_600_000,
-      },
-    );
-    let report = null;
-    try {
-      report = JSON.parse(verified.stdout.trim().split("\n").at(-1) ?? "");
-    } catch {
-      report = null;
-    }
-    if (report === null) {
-      finish({
-        outcome: "blocked",
-        reason: `the verifier exited ${verified.status} without a report: ${(verified.stderr ?? "").trim().split("\n").at(-1) ?? ""}`,
-      });
-      continue;
-    }
-    finish({
-      outcome: "executed",
-      patchIncludesCheck: false,
-      checkDelivery: "decoded into place by the oracle command at run time",
-      oracleRuns: report.oracleRuns ?? null,
-      verified: report.verified ?? null,
-      refusal: report.refusal ?? null,
-      task: report.task ?? null,
-      regression: report.regression ?? null,
-      oracleReach: report.oracleReach ?? null,
-      oracleBond: report.oracleBond ?? null,
-      exit: verified.status,
-    });
-  } catch (cause) {
-    finish({ outcome: "blocked", reason: `harness error: ${cause.message.split("\n")[0]}` });
-  }
+  const { pr } = fetch;
+  await runArm(
+    runRecord,
+    selected.index,
+    "a2",
+    { diff: pr.diff.digest, checks: checks.map((check) => check.digest) },
+    async (attempt) => {
+      const startedAt = Date.now();
+      const work = attemptDirectory(runRecord.paths.work, pr.index, "a2", attempt);
+      const workspace = freshCheckout(pr.execution.objectClone, join(work, "workspace"), pr.head);
+      // Each path is the check author's: held to what the head checkout would contain before the
+      // oracle's shell writes it inside the verifier's own checkout. Nothing is written here.
+      const files = new Map(checks.map((check) => [check.path, check.contents]));
+      for (const path of files.keys()) resolveWriteTargetInside(workspace, path);
+      // Decoded into place when the oracle runs, so the verifier judges exactly the pull
+      // request's patch; base64 keeps the bytes out of the shell's quoting.
+      const oracle = [...files]
+        .map(([path, contents]) => {
+          const directory = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : ".";
+          return `mkdir -p ${quote(directory)} && printf %s ${quote(Buffer.from(contents).toString("base64"))} | base64 -d > ${quote(path)}`;
+        })
+        .concat(checks.map((check) => `(${check.command})`))
+        .join(" && ");
+      const artifacts = attemptDirectory(runRecord.paths.artifacts, pr.index, "a2", attempt);
+      const bundle = join(artifacts, "bundle");
+      const verified = run(
+        "npx",
+        [
+          "--yes",
+          `swarm-verify@${version}`,
+          "ci",
+          "--workspace",
+          workspace,
+          "--branch",
+          pr.head,
+          "--base",
+          pr.base,
+          "--json",
+          "--bundle",
+          bundle,
+          "--isolation",
+          `docker:${pr.execution.image}`,
+          "--require-isolation",
+          "--install",
+          "--oracle",
+          oracle,
+        ],
+        {
+          cwd: workingRoot,
+          env: { PATH: process.env.PATH ?? "", HOME: homedir(), NO_COLOR: "1" },
+          timeout: runRecord.budgets.verifierTimeoutMs,
+        },
+      );
+      let report = null;
+      try {
+        report = JSON.parse(verified.stdout.trim().split("\n").at(-1) ?? "");
+      } catch {
+        report = null;
+      }
+      const base = {
+        verifier: { package: "swarm-verify", version },
+        wallMs: Date.now() - startedAt,
+      };
+      if (report === null) {
+        const reason = `the verifier exited ${verified.status} without a report: ${(verified.stderr ?? "").trim().split("\n").at(-1) ?? ""}`;
+        return {
+          comparisonA2: { ...base, outcome: "blocked", reason },
+          failure: { kind: "product", reason },
+        };
+      }
+      return {
+        comparisonA2: {
+          ...base,
+          outcome: "executed",
+          checks: checks.map((check) => ({ id: check.id, path: check.path, digest: check.digest })),
+          patchIncludesCheck: false,
+          checkDelivery: "decoded into place by the oracle command at run time",
+          oracleRuns: report.oracleRuns ?? null,
+          verified: report.verified ?? null,
+          refusal: report.refusal ?? null,
+          task: report.task ?? null,
+          regression: report.regression ?? null,
+          oracleReach: report.oracleReach ?? null,
+          oracleBond: report.oracleBond ?? null,
+          evidence: bundleEvidence(existsSync(bundle) ? bundle : null),
+          exit: verified.status,
+        },
+        summary: `A2 ${report.verified === true ? "verified" : report.refusal ? "refused" : (report.task ?? "")}`,
+      };
+    },
+  );
 }
-console.log(`${done} row(s) run through A2; results in ${rowsRoot}`);
+console.log(`${done} row(s) visited for A2 in run ${runRecord.runId}`);
