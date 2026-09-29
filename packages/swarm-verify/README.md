@@ -48,6 +48,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: moonrunnerkc/swarm-verify@v1
+        with:
+          install: true # install from the lockfile, scripts off; omit for a project with no dependencies
 ```
 
 The Action fetches the pull request's head and base by commit id into a checkout it owns, runs

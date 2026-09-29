@@ -20,3 +20,7 @@ jobs:
       # Where immutability matters, pin the SHA: moonrunnerkc/swarm-verify@<sha> # v1.x.y
       # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag - a template for other repositories, never run here; `v1` is the documented release channel and the pinned form is named above.
       - uses: moonrunnerkc/swarm-verify@v1
+        with:
+          # Install from the lockfile inside the container, install scripts off; omit it for a
+          # project with no dependencies, whose checks then run as the checkout stands.
+          install: true
