@@ -20,6 +20,15 @@
   `[mypy]`). Verdict change: such a project's typecheck runs plain `mypy` and can pass; a project
   whose `pyproject.toml` names targets while a `mypy.ini` without them takes precedence now runs
   `mypy .` instead of a bare `mypy` that exited asking for a target.
+- **An untracked virtual environment is not the change `check` measures.** A `.venv` made by
+  `python3 -m venv` before Python 3.13 carries no `.gitignore`, and in a project that does not
+  ignore `.venv/` its every file counted as changed: a clean tavern checkout read 81 changed files
+  and failed the placeholder, secret and diff-budget checks on the environment's own files. An
+  untracked directory whose root holds a `pyvenv.cfg` with a `home` key is now left out of the
+  change and named (`excluded` in the output, `excludedEnvironments` in the JSON report, an
+  `excluded-environments-v1` record in the evidence). A tracked or staged `pyvenv.cfg`, a
+  directory holding anything tracked, and every file a `ci` patch adds are still checked. Verdict
+  change: such a tree no longer fails `check` on its environment's files.
 
 ## 1.1.0 - 2026-09-29
 

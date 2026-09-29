@@ -259,6 +259,89 @@ describe("swarm-verify with no subcommand", () => {
     expect(broken("typecheck")?.status).toBe("failed");
   });
 
+  describe("an untracked Python virtual environment beside the project", () => {
+    // The AWS documentation's example key id, which the secret scan blocks on.
+    const credential = 'AWS_ACCESS_KEY_ID = "AKIAIOSFODNN7EXAMPLE"\n';
+    const pyvenv = "home = /usr/bin\ninclude-system-site-packages = false\nversion = 3.12.3\n";
+    const place = async (root: string, files: Readonly<Record<string, string>>) => {
+      for (const [path, content] of Object.entries(files)) {
+        await mkdir(join(root, path, ".."), { recursive: true });
+        await writeFile(join(root, path), content);
+      }
+    };
+    const committer = (root: string) => (args: readonly string[]) =>
+      run("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", ...args], { cwd: root });
+
+    /**
+     * tavern on a fresh machine: `python3 -m venv .venv` (3.12, no `.gitignore` inside), a
+     * `.gitignore` naming `venv/` but not `.venv/`, and `check` on the clean tree measured 81
+     * changed files under `.venv/`, failing the placeholder, secret and diff-budget checks.
+     */
+    it("leaves it out of the change and names it, on an otherwise clean tree", async () => {
+      const root = await repository("venv-untracked", {
+        ...nodeTestFixture,
+        ".gitignore": "venv/\nenv/\n",
+      });
+      const environment: Record<string, string> = {
+        ".venv/pyvenv.cfg": pyvenv,
+        ".venv/lib/python3.12/site-packages/boto_stub/config.py": credential,
+        ".venv/lib/python3.12/site-packages/boto_stub/todo.py": "# TODO: vendored upstream\n",
+      };
+      for (let index = 0; index < 14; index += 1)
+        environment[`.venv/lib/python3.12/site-packages/dep${index}/__init__.py`] = "x = 1\n";
+      await place(root, environment);
+
+      const ran = await verifier(["--workspace", root]);
+      expect(ran.stdout).toContain(
+        "excluded     .venv/: an untracked directory holding pyvenv.cfg is a Python virtual environment",
+      );
+      expect(ran.stdout).not.toMatch(/failed [1-9]/);
+      expect(ran.stdout).toContain("result       regression-only pass");
+      expect(ran.code).toBe(0);
+    });
+
+    it("still checks a tracked directory that holds a pyvenv.cfg", async () => {
+      const root = await repository("venv-tracked", {
+        ...nodeTestFixture,
+        "env/pyvenv.cfg": pyvenv,
+        "env/settings.mjs": "export const region = 'us-east-1';\n",
+      });
+      await place(root, { "env/leak.mjs": credential });
+      const ran = await verifier(["--workspace", root]);
+      expect(ran.stdout).not.toContain("excluded ");
+      expect(ran.stdout).toMatch(/failed \d+ \([^)]*secret-scan/);
+      expect(ran.code).toBe(1);
+    });
+
+    it("still checks source beside a pyvenv.cfg the person staged", async () => {
+      const root = await repository("venv-staged", nodeTestFixture);
+      await place(root, { "lib/pyvenv.cfg": pyvenv, "lib/leak.mjs": credential });
+      await committer(root)(["add", "lib/pyvenv.cfg"]);
+      const ran = await verifier(["--workspace", root]);
+      expect(ran.stdout).not.toContain("excluded ");
+      expect(ran.stdout).toMatch(/failed \d+ \([^)]*secret-scan/);
+      expect(ran.code).toBe(1);
+    });
+
+    it("never hides a patch's source in ci, even where the patch adds a pyvenv.cfg beside it", async () => {
+      const root = await repository("venv-patch", nodeTestFixture);
+      await place(root, { "lib/pyvenv.cfg": pyvenv, "lib/leak.mjs": credential });
+      const git = committer(root);
+      await git(["add", "-A"]);
+      const patch = (await git(["diff", "--cached", "--binary", "HEAD"])).stdout;
+      await git(["reset", "-q", "--hard", "HEAD"]);
+      const patchFile = join(scratch, "venv-patch.diff");
+      await writeFile(patchFile, patch);
+
+      const ran = await verifier(["ci", "--patch", patchFile, "--workspace", root, "--json"]);
+      const report = JSON.parse(ran.stdout.trim().split("\n").at(-1) ?? "{}") as {
+        changedPaths?: readonly string[];
+      };
+      expect(report.changedPaths).toEqual(["lib/leak.mjs", "lib/pyvenv.cfg"]);
+      expect(ran.stdout).not.toContain("excluded-environments");
+    });
+  });
+
   it("exits 4 without running a test script that asks for watch mode", async () => {
     const root = await repository("watch", {
       "package.json": '{ "name": "w", "scripts": { "test": "vitest --watch" } }\n',

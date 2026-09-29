@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createGitWorkspaceProbe } from "./git-workspace.ts";
+import { untrackedEnvironments } from "./scratch-index.ts";
 import { recordTurnBaseline } from "./turn-baseline.ts";
 
 const run = promisify(execFile);
@@ -159,5 +160,82 @@ describe("what running the tests leaves behind", () => {
     }).changes();
 
     expect(changes.files.map((file) => file.path).sort()).toEqual([".gitignore", "scraper.py"]);
+  });
+});
+
+describe("an untracked Python virtual environment in a checked working tree", () => {
+  const pyvenv = "home = /usr/bin\ninclude-system-site-packages = false\nversion = 3.12.3\n";
+
+  async function place(files: Readonly<Record<string, string>>): Promise<void> {
+    for (const [path, content] of Object.entries(files)) {
+      await mkdir(join(workspace, path, ".."), { recursive: true });
+      await writeFile(join(workspace, path), content);
+    }
+  }
+
+  async function changedPaths(excludedEnvironments?: readonly string[]): Promise<string[]> {
+    const changes = await createGitWorkspaceProbe({
+      workspaceRoot: workspace,
+      baseRef: "HEAD",
+      ...(excludedEnvironments === undefined ? {} : { excludedEnvironments }),
+    }).changes();
+    return changes.files.map((file) => file.path).sort();
+  }
+
+  /**
+   * tavern on a fresh machine: `python3 -m venv .venv` writes no `.gitignore` inside it before
+   * Python 3.13, tavern ignores `venv/` but not `.venv/`, and `check` on the clean tree then
+   * measured 81 changed files, every one under `.venv/`.
+   */
+  it("names an untracked directory holding pyvenv.cfg, and the probe leaves it out when told", async () => {
+    await place({
+      ".venv/pyvenv.cfg": pyvenv,
+      ".venv/lib/python3.12/site-packages/tavern_dep/__init__.py": "# TODO: vendored\n",
+      "tools/env/pyvenv.cfg": pyvenv,
+      "tools/env/bin/activate": "export VIRTUAL_ENV=x\n",
+      "tools/helper.py": "print('mine')\n",
+    });
+    const environments = await untrackedEnvironments({ workspaceRoot: workspace, baseRef: "HEAD" });
+    expect(environments).toEqual([".venv", "tools/env"]);
+    expect(await changedPaths(environments)).toEqual(["tools/helper.py"]);
+  });
+
+  it("counts every file of that directory where the caller names no exclusion", async () => {
+    await place({ ".venv/pyvenv.cfg": pyvenv, ".venv/lib/mod.py": "x = 1\n" });
+    expect(await changedPaths()).toEqual([".venv/lib/mod.py", ".venv/pyvenv.cfg"]);
+  });
+
+  it("never excludes a directory that holds anything tracked or staged", async () => {
+    await place({ "vendor/pyvenv.cfg": pyvenv, "vendor/kept.py": "x = 1\n" });
+    await git("add", "-A");
+    await git("commit", "-q", "-m", "a tracked directory with a pyvenv.cfg");
+    await place({ "vendor/leak.py": "y = 2\n" });
+    await place({ "partly/tracked.py": "z = 3\n" });
+    await git("add", "partly/tracked.py");
+    await place({ "partly/pyvenv.cfg": pyvenv, "partly/new.py": "w = 4\n" });
+
+    expect(await untrackedEnvironments({ workspaceRoot: workspace, baseRef: "HEAD" })).toEqual([]);
+    expect(await changedPaths()).toEqual([
+      "partly/new.py",
+      "partly/pyvenv.cfg",
+      "partly/tracked.py",
+      "vendor/leak.py",
+    ]);
+  });
+
+  it("does not qualify a staged pyvenv.cfg, the workspace root, or a pyvenv.cfg without home", async () => {
+    await place({ "staged/pyvenv.cfg": pyvenv, "staged/source.py": "a = 1\n" });
+    await git("add", "staged/pyvenv.cfg");
+    await place({ "pyvenv.cfg": pyvenv, "root.py": "b = 2\n" });
+    await place({ "shaped/pyvenv.cfg": "version = 3.12\n", "shaped/source.py": "c = 3\n" });
+
+    expect(await untrackedEnvironments({ workspaceRoot: workspace, baseRef: "HEAD" })).toEqual([]);
+  });
+
+  it("refuses to exclude a directory the base commit tracks", async () => {
+    await place({ "tracked/pyvenv.cfg": pyvenv });
+    await git("add", "-A");
+    await git("commit", "-q", "-m", "tracked");
+    await expect(changedPaths(["tracked"])).rejects.toThrow(/tracked at the base/);
   });
 });

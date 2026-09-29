@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
-import { diffAgainstBase } from "./scratch-index.ts";
+import { diffAgainstBase, ExcludedEnvironmentTrackedError } from "./scratch-index.ts";
 import { parseUnifiedDiff } from "./unified-diff.ts";
 import type {
   CapturedWorkspace,
@@ -110,6 +110,8 @@ export interface GitWorkspaceOptions {
    * `resolveBaseCommit` before a run starts, rather than the name it was asked for.
    */
   readonly baseRef: string;
+  /** Untracked virtual environments the change leaves out; see `untrackedEnvironments`. */
+  readonly excludedEnvironments?: readonly string[];
 }
 
 /**
@@ -181,9 +183,18 @@ export function createGitWorkspaceProbe(options: GitWorkspaceOptions): Workspace
       try {
         return {
           baseRef,
-          files: parseUnifiedDiff(await diffAgainstBase({ workspaceRoot, baseRef })),
+          files: parseUnifiedDiff(
+            await diffAgainstBase({
+              workspaceRoot,
+              baseRef,
+              ...(options.excludedEnvironments === undefined
+                ? {}
+                : { excludedEnvironments: options.excludedEnvironments }),
+            }),
+          ),
         };
       } catch (cause) {
+        if (cause instanceof ExcludedEnvironmentTrackedError) throw cause;
         throw new GitUnavailableError(workspaceRoot, cause);
       }
     },

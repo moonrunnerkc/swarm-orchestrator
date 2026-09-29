@@ -79,6 +79,8 @@ export interface WorkspaceMeasurementOptions {
   /** Recorded on the chain before the criteria are sealed, where the caller planned first. */
   readonly beforeSealing?: (evidence: EvidenceRecorder) => Promise<void>;
   readonly note: (line: string) => void;
+  /** Untracked Python virtual environments the caller named and left out of the change. */
+  readonly excludedEnvironments?: readonly string[];
 }
 
 /**
@@ -165,6 +167,9 @@ export async function measureWorkspace(
     resolve: () => Promise.reject(new Error("swarm gates reports; it does not fix")),
     ...(gateOptions === undefined ? {} : { gateOptions }),
     ...(diffBudget === undefined ? {} : { budgets: diffBudget }),
+    ...(options.excludedEnvironments === undefined
+      ? {}
+      : { excludedEnvironments: options.excludedEnvironments }),
   });
 
   // The verdict rather than a boolean: a change nothing executed used to exit 0 here, because

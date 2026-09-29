@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -22,6 +22,26 @@ const runProcess = promisify(execFile);
 export interface ScratchIndexOptions {
   readonly workspaceRoot: string;
   readonly baseRef: string;
+  /**
+   * Untracked Python virtual environments to leave out of the change, as `untrackedEnvironments`
+   * named them. Only the standalone check of a person's own working tree passes any: a session
+   * or a patch writes its files untracked too, and nothing it writes may hide itself.
+   */
+  readonly excludedEnvironments?: readonly string[];
+}
+
+/** An exclusion the base commit contradicts: the directory holds tracked files. */
+export class ExcludedEnvironmentTrackedError extends Error {
+  readonly directory: string;
+
+  constructor(directory: string) {
+    super(
+      `${directory} was named as an untracked Python environment, but it is tracked at the base commit; ` +
+        "only untracked directories holding pyvenv.cfg can be left out of the change",
+    );
+    this.name = "ExcludedEnvironmentTrackedError";
+    this.directory = directory;
+  }
 }
 
 /** The environment is built rather than inherited: a stray GIT_INDEX_FILE or GIT_DIR would aim these at another tree. */
@@ -61,6 +81,66 @@ const interpreterCacheExclusions: readonly string[] = [
 ].flatMap((cache) => [`:(glob)${cache}/**`, `:(glob)**/${cache}/**`]);
 
 /**
+ * The untracked Python virtual environments in a person's working tree, as workspace-relative
+ * directories. A directory holding `pyvenv.cfg` with a `home` key at its root is a virtual
+ * environment by definition (PEP 405); uv and Python 3.13 mark one ignored by writing a
+ * `.gitignore` inside it, and an older `python -m venv` does not, so its interpreter and every
+ * installed package read as the change being checked.
+ *
+ * Only what nobody tracks qualifies: the `pyvenv.cfg` must be untracked and unstaged, and the
+ * directory that directly holds it must have nothing in the person's index, at `HEAD` or at
+ * the base. A git failure answers "tracked", so the directory stays in the change. The
+ * workspace root never qualifies.
+ */
+export async function untrackedEnvironments(
+  options: Pick<ScratchIndexOptions, "workspaceRoot" | "baseRef">,
+): Promise<readonly string[]> {
+  const environment = gitEnvironment({});
+  const listed = async (args: readonly string[]): Promise<readonly string[]> =>
+    (await runGit(options.workspaceRoot, args, environment))
+      .split("\0")
+      .filter((path) => path.length > 0);
+  const marker = "/pyvenv.cfg";
+  const candidates = (await listed(["ls-files", "-z", "--others", "--exclude-standard"]))
+    .filter((path) => path.endsWith(marker))
+    .map((path) => path.slice(0, -marker.length))
+    .sort();
+  const references = [...new Set(["HEAD", options.baseRef])];
+  const found: string[] = [];
+  for (const directory of candidates) {
+    if (found.some((outer) => directory.startsWith(`${outer}/`))) continue;
+    const configuration = await readFile(
+      join(options.workspaceRoot, directory, "pyvenv.cfg"),
+      "utf8",
+    ).catch(() => "");
+    if (!/^[ \t]*home[ \t]*=/m.test(configuration)) continue;
+    if (await trackedAnywhere(directory, references, listed)) continue;
+    found.push(directory);
+  }
+  return found;
+}
+
+async function trackedAnywhere(
+  directory: string,
+  references: readonly string[],
+  listed: (args: readonly string[]) => Promise<readonly string[]>,
+): Promise<boolean> {
+  try {
+    if ((await listed(["ls-files", "-z", "--cached", "--", `:(literal)${directory}`])).length > 0)
+      return true;
+    for (const reference of references)
+      if (
+        (await listed(["ls-tree", "-r", "-z", "--name-only", reference, "--", directory])).length >
+        0
+      )
+        return true;
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+/**
  * Stages the whole tree against `baseRef` in a throwaway index and hands the caller a way to
  * run git against it. The index is removed afterwards whatever happens.
  */
@@ -91,6 +171,26 @@ export async function withScratchIndex<T>(
       "--",
       ...interpreterCacheExclusions,
     ]);
+    const excluded = options.excludedEnvironments ?? [];
+    if (excluded.length > 0) {
+      // Checked again here rather than trusted: removing a tracked directory from this index
+      // would read its files as deleted, and would hide whatever changed inside it.
+      for (const directory of excluded)
+        if (
+          (await git(["ls-tree", "-r", "-z", "--name-only", options.baseRef, "--", directory])) !==
+          ""
+        )
+          throw new ExcludedEnvironmentTrackedError(directory);
+      await git([
+        "rm",
+        "-r",
+        "--cached",
+        "--quiet",
+        "--ignore-unmatch",
+        "--",
+        ...excluded.map((directory) => `:(literal)${directory}`),
+      ]);
+    }
     return await use(git);
   } finally {
     await rm(directory, { recursive: true, force: true });

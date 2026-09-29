@@ -11,6 +11,7 @@ import type { EvidenceRecorder } from "./evidence/session.ts";
 import { createRunCancellation } from "./exec/run-cancellation.ts";
 import { type CheckPlan, planCheck } from "./gates/check-plan.ts";
 import { requireBaseCommit } from "./gates/git-workspace.ts";
+import { untrackedEnvironments } from "./gates/scratch-index.ts";
 import { exitCodes } from "./machine-output.ts";
 
 /**
@@ -52,6 +53,11 @@ export interface CheckReport {
   readonly schema: typeof checkSchemaName;
   readonly plan: CheckPlan;
   readonly tree: { readonly commit: string; readonly dirty: boolean } | null;
+  /**
+   * Untracked Python virtual environments left out of the change, by directory. Present only
+   * where there was one; the report says so rather than dropping the files unmentioned.
+   */
+  readonly excludedEnvironments?: readonly string[];
   readonly conclusions: CheckConclusions | null;
   readonly result: CheckResult;
   readonly exitCode: number;
@@ -100,12 +106,20 @@ async function checkUnderCancellation(options: CheckCommand, signal: AbortSignal
   } catch {
     tree = null;
   }
+  // A virtual environment the person created in the tree and nobody tracks is not the change
+  // being checked. Named before anything runs, recorded on the chain, and printed.
+  const excludedEnvironments =
+    tree === null
+      ? []
+      : await untrackedEnvironments({ workspaceRoot: options.workspace, baseRef: tree.commit });
+  const excluded = excludedEnvironments.length === 0 ? {} : { excludedEnvironments };
 
   if (options.explain) {
     return emit({
       schema: checkSchemaName,
       plan,
       tree,
+      ...excluded,
       conclusions: null,
       result: "preview",
       exitCode: exitCodes.acceptable,
@@ -119,6 +133,7 @@ async function checkUnderCancellation(options: CheckCommand, signal: AbortSignal
       schema: checkSchemaName,
       plan,
       tree,
+      ...excluded,
       conclusions: {
         command: { status: "not-run", detail: blocked },
         checks: [],
@@ -141,12 +156,16 @@ async function checkUnderCancellation(options: CheckCommand, signal: AbortSignal
       bundleDirectory: options.bundleDirectory,
       allowedFiles: null,
       task: "check",
-      beforeSealing: (evidence) => recordPlan(evidence, plan),
+      beforeSealing: async (evidence) => {
+        await recordPlan(evidence, plan);
+        await recordExcludedEnvironments(evidence, excludedEnvironments);
+      },
       note: (line) => notes.push(line),
+      excludedEnvironments,
     },
     signal,
   );
-  const report = reportOf(plan, tree, measured, signal.aborted);
+  const report = { ...reportOf(plan, tree, measured, signal.aborted), ...excluded };
   const code = emit(report);
   if (!options.json) for (const line of notes) writeOut(line);
   return code;
@@ -160,6 +179,26 @@ async function recordPlan(evidence: EvidenceRecorder, plan: CheckPlan): Promise<
     payload: asJsonValue({ rule: "check-plan-v1", plan }),
   });
 }
+
+async function recordExcludedEnvironments(
+  evidence: EvidenceRecorder,
+  environments: readonly string[],
+): Promise<void> {
+  if (environments.length === 0) return;
+  await evidence.record({
+    type: "verification-command",
+    actor: "harness",
+    provenance: ["file"],
+    payload: asJsonValue({
+      rule: "excluded-environments-v1",
+      environments,
+      reason: excludedEnvironmentReason,
+    }),
+  });
+}
+
+const excludedEnvironmentReason =
+  "an untracked directory holding pyvenv.cfg is a Python virtual environment, not the change being checked";
 
 const runGit = promisify(execFile);
 
@@ -302,6 +341,8 @@ export function renderReport(report: CheckReport): readonly string[] {
       ? "not a git repository"
       : `${report.tree.commit.slice(0, 12)}${report.tree.dirty ? ", working tree has uncommitted changes" : ", clean"}`;
   lines.push(`workspace    ${plan.workspace} (${treeText})`);
+  for (const directory of report.excludedEnvironments ?? [])
+    lines.push(`excluded     ${directory}/: ${excludedEnvironmentReason}`);
   lines.push(
     `project      ${plan.project.types.length === 0 ? "no manifest" : plan.project.types.join(" + ")}` +
       `${plan.project.nodeManager === null ? "" : `, ${plan.project.nodeManager}`}` +
