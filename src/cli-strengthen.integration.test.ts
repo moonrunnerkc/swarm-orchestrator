@@ -93,7 +93,12 @@ it("names an admission cut off by SIGKILL once, never repeats it, and gives a re
     stderr += String(chunk);
   });
   let exited = false;
-  const exit = new Promise((settle) => running.once("exit", () => settle((exited = true))));
+  const exit = new Promise<void>((settle) =>
+    running.once("exit", () => {
+      exited = true;
+      settle();
+    }),
+  );
   // Watched through the blobs the child writes, never by opening its live session.
   const blobs = join(root, "sessions", "killed", "blobs");
   const deadline = Date.now() + 60_000;
