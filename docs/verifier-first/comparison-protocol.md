@@ -149,3 +149,21 @@ digest are recorded beside the report.
   verifier fix (the oracle runs with the prepared `.venv/bin` and `node_modules/.bin` first on
   PATH, and every oracle run is kept in the verdict) ships in the next patch; A2 rows measured
   before it are superseded by a labelled replay on that patch and stay in their archives.
+- **2026-09-28, A1 read as the verifier decides, amended after the data it changes.** The rule
+  above says swarm-verify decides `refuse` on a failed check and `unmeasured` on an incomplete run.
+  The analysis coded "failed check" as any check whose status is failed. Until 1.0.6 that matched
+  the verdict. Since 1.0.6 a check can fail both with and without the patch in a way the verdict
+  cannot attribute, and the verdict then reports its regression unmeasured and the Action reports
+  the run incomplete, not refused. On the 1.0.7 replay the first coding counted twelve such rows
+  as refusals of correct pull requests. A1 (and S1, and the study report's decision) now read the
+  verifier's own decision: a verified run or a regression pass accepts, a regression charged to the
+  patch refuses, anything else is unmeasured, including a run the verifier refused before
+  measuring, as the rule's text says. This amendment is written after seeing the 1.0.7 numbers it
+  changes, so both readings are published side by side on the Comparison A page, and every
+  earlier replay is re-rendered under both.
+- **2026-09-28, which infrastructure reruns are allowed.** A Docker Desktop hang on a large-tree
+  checkout stalls every container after it for about half an hour. A row whose own run hangs the
+  runtime twice stays blocked as recorded (A2 on row 14, glincker/thesvg#1159, on 1.0.7). A row
+  refused only because an earlier row had hung the runtime has not yet been measured, and it is
+  rerun once the runtime is measured healthy, however many times that has happened; every
+  attempt stays on the row under `infrastructureAttempts`.
