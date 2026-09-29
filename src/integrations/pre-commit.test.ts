@@ -16,6 +16,7 @@ const run = promisify(execFile);
 let scratch = "";
 let repository = "";
 const entry = resolve("src/swarm-verify.ts");
+const launcher = `${JSON.stringify(process.execPath)} ${JSON.stringify(entry)}`;
 
 async function git(args: readonly string[]): Promise<string> {
   const ran = await run("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", ...args], {
@@ -152,12 +153,12 @@ describe("verifying the staged tree", () => {
 
 describe("the git hook", () => {
   it("installs once, is idempotent, and is removed only where it is ours", async () => {
-    const first = await installPreCommit(repository, entry);
+    const first = await installPreCommit(repository, launcher);
     expect(first.state).toBe("installed");
     const content = await readFile(first.path, "utf8");
     expect(content).toContain(hookMarker);
     expect(content).toContain("pre-commit");
-    expect((await installPreCommit(repository, entry)).state).toBe("present");
+    expect((await installPreCommit(repository, launcher)).state).toBe("present");
     expect((await uninstallPreCommit(repository)).state).toBe("removed");
     expect((await uninstallPreCommit(repository)).state).toBe("absent");
   });
@@ -168,7 +169,7 @@ describe("the git hook", () => {
     await writeFile(join(repository, hooks, "pre-commit"), "#!/bin/sh\necho theirs\n", {
       mode: 0o755,
     });
-    const outcome = await installPreCommit(repository, entry);
+    const outcome = await installPreCommit(repository, launcher);
     expect(outcome.state).toBe("foreign");
     expect(outcome.line).toContain("pre-commit");
     expect(await readFile(join(repository, hooks, "pre-commit"), "utf8")).toBe(
@@ -178,7 +179,7 @@ describe("the git hook", () => {
   });
 
   it("runs on a real commit and blocks the bad one", async () => {
-    await installPreCommit(repository, entry);
+    await installPreCommit(repository, launcher);
     await writeFile(join(repository, "double.mjs"), "export const double = (n) => n * 3;\n");
     await git(["add", "double.mjs"]);
     await expect(git(["commit", "-qm", "bad"])).rejects.toThrow();
