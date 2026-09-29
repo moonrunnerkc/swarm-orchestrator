@@ -46,6 +46,17 @@ export interface MachineResult {
   readonly verdict: RunVerdict | null;
   readonly bundleDirectory: string | null;
   readonly exitCode: number;
+  /**
+   * Present only where check strengthening ran: the rounds it spent, the checks it admitted, why
+   * it stopped, and the digest of the contract the final verification judged. The same values the
+   * terminal line and the bundle's strengthening records carry.
+   */
+  readonly strengthening?: {
+    readonly rounds: number;
+    readonly admitted: readonly string[];
+    readonly stopped: string;
+    readonly contractDigest: string;
+  };
 }
 
 export function jsonResultLine(result: MachineResult): string {
@@ -55,5 +66,6 @@ export function jsonResultLine(result: MachineResult): string {
     verdict: result.verdict,
     bundleDirectory: result.bundleDirectory,
     exitCode: result.exitCode,
+    ...(result.strengthening === undefined ? {} : { strengthening: result.strengthening }),
   });
 }
