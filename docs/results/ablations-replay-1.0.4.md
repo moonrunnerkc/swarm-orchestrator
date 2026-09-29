@@ -7,8 +7,8 @@ count. Read as what each addition changed, never as a ranking.
 | Rung | What it adds | Agreement | False green | False red | Unmeasured |
 | --- | --- | --- | --- | --- | --- |
 | S0 | the repository's own test command, exit code only | 11 / 22 = 50.0% [30.7, 69.3] | 0 / 22 = 0.0% [0.0, 14.9] | 5 / 22 = 22.7% [10.1, 43.4] | 6 / 22 = 27.3% [13.2, 48.2] |
-| S1 | the base control and the identity, isolation, install and output refusals, as the verifier version in these rows applies them | 16 / 22 = 72.7% [51.8, 86.8] | 0 / 22 = 0.0% [0.0, 14.9] | 5 / 22 = 22.7% [10.1, 43.4] | 1 / 22 = 4.5% [0.8, 21.8] |
-| S2 | changed-line coverage and mutation witnesses, and the held-back check as oracle where an A2 pass exists | 5 / 22 = 22.7% [10.1, 43.4] | 0 / 22 = 0.0% [0.0, 14.9] | 6 / 22 = 27.3% [13.2, 48.2] | 11 / 22 = 50.0% [30.7, 69.3] |
+| S1 | the base control and the identity, isolation, install and output refusals, as the verifier version in these rows applies them | 15 / 22 = 68.2% [47.3, 83.6] | 0 / 22 = 0.0% [0.0, 14.9] | 2 / 22 = 9.1% [2.5, 27.8] | 5 / 22 = 22.7% [10.1, 43.4] |
+| S2 | changed-line coverage and mutation witnesses, and the held-back check as oracle where an A2 pass exists | 5 / 22 = 22.7% [10.1, 43.4] | 0 / 22 = 0.0% [0.0, 14.9] | 5 / 22 = 22.7% [10.1, 43.4] | 12 / 22 = 54.5% [34.7, 73.1] |
 
 S1 is read off the same rows as the verifier's verdict with the coverage and mutation
 dimensions masked, which on these rows changes no decision: those dimensions feed the
@@ -25,11 +25,11 @@ supplied. S2 differs from S1 only on rows with an A2 pass.
 | 5 | [Francis1998/agentic-career-search#205](https://github.com/Francis1998/agentic-career-search/pull/205) | requirement-met | accept | accept | refuse |
 | 7 | [glincker/thesvg#1153](https://github.com/glincker/thesvg/pull/1153) | requirement-met | unmeasured | refuse | unmeasured |
 | 10 | [Francis1998/scholar-rag-agent#221](https://github.com/Francis1998/scholar-rag-agent/pull/221) | requirement-met | refuse | accept | refuse |
-| 14 | [glincker/thesvg#1159](https://github.com/glincker/thesvg/pull/1159) | requirement-met | unmeasured | refuse | refuse |
+| 14 | [glincker/thesvg#1159](https://github.com/glincker/thesvg/pull/1159) | requirement-met | unmeasured | unmeasured | unmeasured |
 | 15 | [github/gh-aw-firewall#9077](https://github.com/github/gh-aw-firewall/pull/9077) | requirement-met | refuse | accept | accept |
-| 16 | [glincker/thesvg#1138](https://github.com/glincker/thesvg/pull/1138) | requirement-met | unmeasured | refuse | unmeasured |
+| 16 | [glincker/thesvg#1138](https://github.com/glincker/thesvg/pull/1138) | requirement-met | unmeasured | unmeasured | unmeasured |
 | 17 | [Francis1998/nexus-llm-router#203](https://github.com/Francis1998/nexus-llm-router/pull/203) | requirement-met | accept | accept | unmeasured |
-| 18 | [felixrieseberg/claude-coach#18](https://github.com/felixrieseberg/claude-coach/pull/18) | requirement-violated | refuse | refuse | refuse |
+| 18 | [felixrieseberg/claude-coach#18](https://github.com/felixrieseberg/claude-coach/pull/18) | requirement-violated | refuse | unmeasured | refuse |
 | 20 | [Francis1998/nexus-llm-router#212](https://github.com/Francis1998/nexus-llm-router/pull/212) | requirement-met | accept | accept | unmeasured |
 | 21 | [yukieiji/ExtremeRoles#1067](https://github.com/yukieiji/ExtremeRoles/pull/1067) | requirement-met | accept | accept | accept |
 | 25 | [Francis1998/nexus-llm-router#201](https://github.com/Francis1998/nexus-llm-router/pull/201) | requirement-met | accept | accept | unmeasured |
@@ -39,5 +39,5 @@ supplied. S2 differs from S1 only on rows with an A2 pass.
 | 35 | [Francis1998/scholar-rag-agent#229](https://github.com/Francis1998/scholar-rag-agent/pull/229) | requirement-met | refuse | accept | unmeasured |
 | 39 | [glincker/thesvg#1160](https://github.com/glincker/thesvg/pull/1160) | requirement-met | unmeasured | refuse | refuse |
 | 43 | [kentcdodds/kody#2597](https://github.com/kentcdodds/kody/pull/2597) | requirement-met | refuse | accept | unmeasured |
-| 45 | [glincker/thesvg#1147](https://github.com/glincker/thesvg/pull/1147) | requirement-met | unmeasured | refuse | unmeasured |
+| 45 | [glincker/thesvg#1147](https://github.com/glincker/thesvg/pull/1147) | requirement-met | unmeasured | unmeasured | unmeasured |
 | 50 | [kentcdodds/kody#2447](https://github.com/kentcdodds/kody/pull/2447) | requirement-met | refuse | accept | accept |
