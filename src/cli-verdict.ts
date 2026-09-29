@@ -102,6 +102,16 @@ export async function verifyVerdict(options: VerdictCommand): Promise<number> {
   }
   if (fileDigest !== canonicalDigest)
     problems.push("the document is not in its canonical rendering");
+  // A verdict is fresh for the head it names and for nothing else: one made for an earlier head of
+  // the same pull request says nothing about the head being decided.
+  if (options.expectedHead !== null) {
+    if (parsed.head === options.expectedHead || parsed.eventHead === options.expectedHead)
+      bound.push("expected head");
+    else
+      problems.push(
+        `the verdict describes head ${parsed.eventHead ?? parsed.head}, not the expected ${options.expectedHead}`,
+      );
+  }
   out(
     problems.length === 0
       ? `evidence:   bound (${bound.length === 0 ? "the verdict names no evidence" : bound.join(", ")})`

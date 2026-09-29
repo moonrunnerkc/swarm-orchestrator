@@ -34,7 +34,7 @@ export const commandDefinitions: readonly CommandDefinition[] = [
   },
   {
     name: "verdict",
-    syntax: "verdict <verdict.json> [--repo <owner/repo>] [--signer-workflow <ref>]",
+    syntax: "verdict <verdict.json> [--repo <owner/repo>] [--signer-workflow <ref>] [--head <sha>]",
     description: "check a signed verdict against its evidence and an expected signer",
     smoke: { args: ["absent-verdict.json"], exits: [2], output: "verdict:.*unverified" },
     model: "none",

@@ -114,6 +114,8 @@ export interface VerdictCommand {
   readonly evidenceDirectory: string | null;
   readonly repository: string | null;
   readonly signerWorkflow: string | null;
+  /** The head the reader is deciding about; a verdict made for another head is refused. */
+  readonly expectedHead: string | null;
 }
 
 /** The Claude Code hook: install into or remove from a settings file, or run one event. */
@@ -345,6 +347,9 @@ export function parseVerifyOnlyCommand(
     const repository = flags.get("repo") ?? null;
     if (repository !== null && !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository))
       throw invalid("--repo must be OWNER/REPO");
+    const expectedHead = flags.get("head") ?? null;
+    if (expectedHead !== null && !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(expectedHead))
+      throw invalid("--head must be a full commit id");
     return {
       command: "verdict",
       verdictPath: resolve(context.currentDirectory, target),
@@ -353,6 +358,7 @@ export function parseVerifyOnlyCommand(
         : null,
       repository,
       signerWorkflow: flags.get("signer-workflow") ?? null,
+      expectedHead,
     };
   }
 
