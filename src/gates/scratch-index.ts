@@ -107,3 +107,23 @@ export async function diffAgainstBase(options: ScratchIndexOptions): Promise<str
     git(["diff", "--no-color", "--no-ext-diff", "--unified=0", "--cached", options.baseRef, "--"]),
   );
 }
+
+/**
+ * The same change as a patch another checkout can apply: full context and binary content.
+ * `diffAgainstBase` is zero-context, which is what line measurement wants and what `git apply`
+ * refuses for any hunk that modifies an existing file.
+ */
+export async function patchAgainstBase(options: ScratchIndexOptions): Promise<string> {
+  return withScratchIndex(options, (git) =>
+    git([
+      "diff",
+      "--no-color",
+      "--no-ext-diff",
+      "--binary",
+      "--full-index",
+      "--cached",
+      options.baseRef,
+      "--",
+    ]),
+  );
+}
