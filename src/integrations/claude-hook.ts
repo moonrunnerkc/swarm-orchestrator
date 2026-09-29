@@ -1,7 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { z } from "zod";
-import { readNoninteractive } from "../gates/noninteractive-runner.ts";
 
 /**
  * The Claude Code hook: when the agent is about to run the project's own test command through
@@ -73,6 +72,22 @@ export interface HookOutcome {
   readonly exitCode: 0;
 }
 
+/**
+ * The output filters after a routed test command, where the command is one: `npm test 2>&1 |
+ * tail -5` is how an agent often asks for a test run, and leaving it alone ran the tests with no
+ * record. Only `tail`, `head` and `grep` with plain arguments count as filters; anything else in
+ * the pipeline, or any shell syntax beyond the pipe and `2>&1`, leaves the command untouched.
+ */
+export function filteredTestCommand(command: string): string | null {
+  if (/[;&`$<>()\\]/.test(command.replaceAll("2>&1", ""))) return null;
+  const [first, ...filters] = command.split("|").map((stage) => stage.trim());
+  if (first === undefined || filters.length === 0) return null;
+  if (!routedCommands.has(first.replace(/\s*2>&1$/, "").trim())) return null;
+  const filter =
+    /^(?:(?:tail|head)(?:\s+-n\s*\d+|\s+-\d+|\s+-n\d+)?|grep(?:\s+-[A-Za-z]+)*\s+(?:'[^']*'|"[^"]*"|[\w.:=-]+))$/;
+  return filters.every((stage) => filter.test(stage)) ? filters.join(" | ") : null;
+}
+
 /** Whether a command already goes through the verifier, so the hook must not touch it. */
 export function invokesTheVerifier(command: string): boolean {
   return (
@@ -91,12 +106,11 @@ export async function runHook(input: unknown, options: HookOptions): Promise<Hoo
     if (invokesTheVerifier(command))
       return { output: null, note: "already through swarm-verify", exitCode: 0 };
     const trimmed = command.trim();
-    const routed =
-      routedCommands.has(trimmed) ||
-      (readNoninteractive(trimmed).runner !== "other" && routedCommands.has(trimmed));
+    const piped = filteredTestCommand(trimmed);
+    const routed = routedCommands.has(trimmed) || piped !== null;
     if (!routed) return { output: null, note: null, exitCode: 0 };
     const workspace = pre.data.cwd;
-    const rewritten = `${options.verifierCommand} check${workspace === undefined ? "" : ` --workspace ${shellQuote(workspace)}`}`;
+    const rewritten = `${options.verifierCommand} check${workspace === undefined ? "" : ` --workspace ${shellQuote(workspace)}`}${piped === null ? "" : ` 2>&1 | ${piped}`}`;
     return {
       output: {
         hookSpecificOutput: {
