@@ -1,4 +1,5 @@
 import type { SourceIdentity } from "../gates/change-source.ts";
+import { describeAttribution } from "../gates/failure-attribution.ts";
 import type { IndependentVerification } from "../gates/independent-verification.ts";
 import { scrubText } from "./scrub.ts";
 
@@ -44,7 +45,7 @@ export function renderCiSummary(options: {
       .slice(0, 100)
       .map(
         (check) =>
-          `| ${text(check.id)} | ${check.status} | ${text(check.detail)} (${evidenceLink}) |`,
+          `| ${text(check.id)} | ${check.status} | ${text(check.detail)}${describeAttribution(check) === "" ? "" : ` ${text(describeAttribution(check))}`} (${evidenceLink}) |`,
       ),
     "",
     `Unmeasured: ${result.unmeasured ? "regression unavailable" : "see individual checks"}; oracle reach ${result.oracleReach}; oracle bond ${result.oracleBond}.`,
