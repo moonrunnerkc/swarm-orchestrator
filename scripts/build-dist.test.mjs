@@ -78,6 +78,8 @@ describe("what the dist build has to carry beyond compiled JavaScript", () => {
       "evidence/verifier/rederive.mjs",
       "evidence/verifier/status.d.mts",
       "evidence/verifier/status.mjs",
+      "evidence/verifier/strengthening.d.mts",
+      "evidence/verifier/strengthening.mjs",
       "evidence/verifier/upgrade.d.mts",
       "evidence/verifier/upgrade.mjs",
       "evidence/verifier/verify.d.mts",
