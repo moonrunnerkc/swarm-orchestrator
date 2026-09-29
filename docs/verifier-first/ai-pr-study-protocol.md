@@ -161,3 +161,101 @@ study of a convenience population selected by the rule above.
   that one command and install scripts off (`npm ci --ignore-scripts`, pnpm through npm,
   `uv sync --locked`), and the check itself still runs with the network off. An install that
   fails leaves the row unjudged with the installer's last line.
+- **2026-09-29, the study machinery repaired before any further final scoring.** An audit of
+  the scripts found six defects in how rows were measured and counted. None of the text above
+  changes; the machinery that applies it does, and the rows already recorded keep their bytes.
+  The final study runs on a later released verifier under these rules; development rows made
+  while repairing the machinery are labelled development and are not reported.
+  - *Original-suite green came from the product under study.* The runner read it off the
+    verifier's own report (no refusal and a passing `tests` check), so a refusal forced "not
+    green", no suite ran apart from the verifier, and Comparison A's A0 and ablation S0 read the
+    verifier's report too. A separate plain-CI arm now runs per row at the head and at the
+    base: a fresh checkout, its dependencies installed from its lockfile in a fresh container,
+    the project's own declared test command (`scripts.test`, or pytest where the project
+    declares it) with the network off. It records collection, command, exit, status (`passed`,
+    `failed`, `not-collected`, `setup-failed`), duration and an output tail as
+    `originalSuite`. Whether the verifier's exported evidence is valid is a separate dimension,
+    decided by running the bundle's own `verify.mjs` (and `rederive.mjs` where present). A
+    suite-green row whose verifier evidence is invalid, or whose run the verifier refused,
+    stays in every suite-green denominator. A0 and S0 read the independent arm; a row
+    without it is unmeasured for A0, never read from the verifier. This supersedes the
+    sentence in `comparison-protocol.md` that decided A0 from the verifier's check observations.
+    The report's "suite green with adjudicated truth" now divides by suite-green rows rather than
+    by executed rows.
+  - *Any non-zero exit on the base counted as detection.* A crash, a syntax error in the check,
+    a project that did not load, a missing fixture or a broken check all read as the check
+    detecting the requirement, and an install failure or timeout on the base read as "does not
+    fail on the base". Each side is now classified first: `passed`, `assertion-failure`,
+    `missing-feature` (the failure names a symbol, module, file or route the pull request's
+    added lines or paths contain), `startup-or-setup-failure`, `check-invalid`, `timeout` or
+    `not-run`. Only an assertion failure or a missing feature on the base with a pass on the
+    head establishes a met requirement; the same genuine unmet requirement on both sides is a
+    violation candidate subject to the trace audit (the earlier rule left it unjudged as "not
+    discriminating"); anything else is unjudged with that reason. The task type is recorded:
+    a refactor is judged by equivalence checks that must pass on both commits, a dependency
+    upgrade by a version or behaviour check, and a check that needs a network or browser is
+    unjudged with that reason.
+  - *Setup was not recorded as setup.* Each side of each arm now records its dependency
+    preparation (command, lockfile and its digest, exit, duration, output tail) and command
+    environment (image id and repository digests, PATH with the project's `.venv/bin` and
+    `node_modules/.bin` first, network) under `setup`; a setup failure is its own outcome.
+  - *One reviewer saw the candidate implementation.* The check author read the head checkout
+    and wrote one check; nothing checked it. The author now reads the pull request's text, the
+    changed file names and a checkout of the base commit only, and writes checks per stated
+    requirement, at least two where the requirement admits it, each recorded with the
+    requirement text and the pull request's words it comes from. A second reviewer, a different
+    local model, states the requirements blind from the text and then judges each of the
+    author's requirements and checks, with `uncertain` for abstention; the trace audit is its
+    call too. Each reviewer's model name and server digest, prompt digests and exposure are
+    recorded. A requirement is scored only where the second reviewer agrees it is stated and
+    the checks both accept executed validly and agree; a disagreement that changes the decision
+    rule (refactor or not, executable or not) or a requirement the checks do not cover leaves the
+    row unscored with its reason. Both reviewers are AI models, not independent humans; neither
+    authored the pull request, but they may share training biases with each other and with the
+    model that did. The checks are written only into the adjudication arm's own checkout and
+    into the row, never into a checkout the suite or verifier arm reads.
+  - *Rows were rewritten in place.* The runner, the adjudication and the A2 pass rewrote one
+    `NN.json` per row, and the cache reused unversioned paths (`diffs/NN.diff`, top-level
+    `reports/` and `bundles/`). Every attempt of every arm is now its own file, created
+    exclusively under `v2/runs/<runId>/`, where the run id names the verifier version, the frame
+    digest, the harness commit and the start time (`dev-` in front for a development run). Each
+    attempt records its run id, attempt number, verifier version, harness commit, frame digest,
+    input digests and start time; its intent is written before any effect. A resumed run keeps
+    its id, every earlier attempt and the budgets its manifest fixed, and counts an attempt that
+    never finished. Only a failure the harness classifies as infrastructure (the network, the
+    container daemon, the model endpoint, an interrupted attempt) is retried, up to the run's
+    attempt cap, and every attempt is kept. `inventory.mjs` lists what the working area holds,
+    the earlier unversioned files labelled legacy, and deletes nothing.
+  - *Behavioural and text-only truth were split by a regex, and the reports used different
+    denominators.* The report classified a check as behavioural when its command or file
+    matched a list of runner names, so bash scripts that grep `.tsx ` files and node scripts
+    that only read a source file counted as behavioural while `python -c` importing the project
+    counted as text-only; Comparison A and the ablations scored all judged rows while the report
+    scored the behavioural ones. A check's class is now decided from what it executes (the
+    command tokenised as a shell splits it, each program looked up, and the interpreter's code
+    read for the imports it makes, resolved against the checkout), recorded at adjudication time
+    as `behavioural-executed`, `text-inspected` or `unscored` with the reason, and one shared
+    function (`truth.mjs`) gives every report its truth classes and denominators; only
+    behavioural-executed truth is task truth anywhere.
+  - *Reconciliation of the 1.0.2 adjudications under the corrected classifier.* The 22 rows
+    judged met or violated were split 13 behavioural (rows 2, 3, 5, 7, 10, 14, 16, 17, 25, 28,
+    34, 35, 43) and 9 text-only (rows 1, 15, 18, 20, 21, 26, 39, 45, 50). Recomputed from what
+    each check executes, they are 11 behavioural-executed (rows 2, 3, 5, 10, 17, 20, 25, 26,
+    28, 34, 35) and 11 text-inspected (rows 1, 7, 14, 15, 16, 18, 21, 39, 43, 45, 50), none
+    unscored. Six rows moved: 7 (glincker/thesvg#1153), 14 (glincker/thesvg#1159), 16
+    (glincker/thesvg#1138) and 43 (kentcdodds/kody#2597) from behavioural to text-inspected, and
+    20 (Francis1998/nexus-llm-router#212) and 26 (Francis1998/nexus-llm-router#218) from
+    text-only to behavioural-executed. The 1.0.7 replay's rows carry the same adjudications and
+    reconcile identically. Reading those 22 rows' recorded base and head outputs with the
+    corrected side classifier changes no decision: each base failure is an assertion failure or
+    a missing feature the pull request adds, and none is a crash counted as detection. All 11
+    behavioural-executed rows are met by a missing feature (the module the pull request adds),
+    not by a behavioural assertion on existing code. Of the unjudged rows with both sides
+    executed, row 38 was left unjudged because its check failed the same way on both commits;
+    those are assertion failures, so under the corrected rule it is a violation candidate that
+    would need the trace audit, which was never run on it. Rows 22, 37 and 47 (pass on both),
+    36 (a module missing on both that the pull request does not add) and 46 (an unrecognised
+    exit on both) stay unjudged, and rows 19, 30, 32 and 40 stay unjudged by the trace audit
+    they already failed. These rows remain single-reviewer truth
+    from a reviewer who saw the head; the reports mark them legacy, and they are not
+    re-adjudicated under the new procedure here.
