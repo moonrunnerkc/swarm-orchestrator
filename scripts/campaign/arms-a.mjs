@@ -68,16 +68,31 @@ async function veraPrepared(context, directory) {
   return true;
 }
 
+/**
+ * One VERA command. `init` and `record` run on this host with the release's macOS build, as
+ * VERA's own documentation runs them: the Linux `verabox` in the release needs glibc 2.39, which
+ * the goal images do not have, and recording a `git apply` needs no project dependencies.
+ * `verify` runs the contracts, so it runs inside the goal's image beside the dependencies every
+ * other arm uses, with the release's Linux build. Both read the same `.vera` state and the same
+ * key directory (VERA keeps its HMAC key under HOME), which is the launch's own.
+ */
 function veraStep(context, directory, argv, home) {
   const { log, loaded } = context;
+  if (argv[0] !== "verify")
+    return log.run([join(veraTool, "darwin/vera"), ...argv], {
+      cwd: directory,
+      env: { ...process.env, HOME: home },
+      timeoutMs: context.budget.verifierMs,
+      ...context.kill,
+    });
   return log.run(
     containerArgv({
       image: imageFor(loaded.goal, loaded.contract),
       directory,
-      argv: ["/opt/vera/vera-linux-arm64", ...argv],
+      argv: ["/opt/vera/vera", ...argv],
       network: false,
-      env: { HOME: home },
-      extraMounts: [`${veraTool}:/opt/vera:ro`, `${context.scratch}:/scratch:ro`],
+      env: { HOME: "/vera-home" },
+      extraMounts: [`${veraTool}/linux:/opt/vera:ro`, `${home}:/vera-home`],
     }),
     { cwd: directory, timeoutMs: context.budget.verifierMs, ...context.kill },
   );
@@ -88,13 +103,14 @@ async function veraArm(context, patch, { replay = null } = {}) {
   const checkout = join(scratch, `vera-${Date.now()}`);
   if (!(await veraPrepared(context, checkout)))
     return { decision: "inconclusive", basis: "the install step failed before VERA ran" };
-  const home = `/scratch/vera-home-${Date.now()}`;
-  mkdirSync(join(scratch, home.slice("/scratch/".length)), { recursive: true });
+  const home = join(scratch, `vera-home-${Date.now()}`);
+  mkdirSync(home, { recursive: true });
   await veraStep(context, checkout, ["init"], home);
   writeFileSync(join(checkout, ".vera/goal.yaml"), veraGoalYaml(loaded.goal, loaded.contract));
   const submit = async (name, bytes) => {
-    writeFileSync(join(scratch, `${name}.patch`), bytes.endsWith("\n") ? bytes : `${bytes}\n`);
-    return veraStep(context, checkout, ["record", "git", "apply", `/scratch/${name}.patch`], home);
+    const path = join(scratch, `${name}.patch`);
+    writeFileSync(path, bytes.endsWith("\n") ? bytes : `${bytes}\n`);
+    return veraStep(context, checkout, ["record", "git", "apply", path], home);
   };
   if (replay !== null) {
     await submit("replayed", replay);

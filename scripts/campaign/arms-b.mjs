@@ -211,7 +211,7 @@ async function b5(context) {
   const home = join(scratch, "vera-home");
   mkdirSync(home, { recursive: true });
   const env = { ...process.env, HOME: home };
-  const vera = join(veraTool, "vera-darwin-arm64");
+  const vera = join(veraTool, "darwin/vera");
   await log.run([vera, "init"], { cwd: workspace, timeoutMs: 60_000, env });
   writeFileSync(join(workspace, ".vera/goal.yaml"), veraGoalYaml(loaded.goal, loaded.contract));
   appendFileSync(join(workspace, ".git/info/exclude"), ".vera/\n");
@@ -223,10 +223,10 @@ async function b5(context) {
       containerArgv({
         image: imageFor(loaded.goal, loaded.contract),
         directory: workspace,
-        argv: ["/opt/vera/vera-linux-arm64", "verify"],
+        argv: ["/opt/vera/vera", "verify"],
         network: false,
         env: { HOME: "/vera-home" },
-        extraMounts: [`${veraTool}:/opt/vera:ro`, `${home}:/vera-home`],
+        extraMounts: [`${veraTool}/linux:/opt/vera:ro`, `${home}:/vera-home`],
       }),
       { cwd: workspace, timeoutMs: context.budget.verifierMs },
     );

@@ -33,6 +33,14 @@ describe("registered decision readings", () => {
     expect(swarmCiDecision({ verified: false, regression: "unmeasured", task: "unjudged" })).toBe(
       "inconclusive",
     );
+    expect(
+      swarmCiDecision({
+        verified: false,
+        regression: "pass",
+        task: "accepted",
+        challenges: { policy: "required", satisfied: false },
+      }),
+    ).toBe("refuse");
     expect(swarmCiDecision(null)).toBe("inconclusive");
   });
 

@@ -7,7 +7,8 @@
 /**
  * swarm-verify `ci --json` (schema swarm.ci.v1) under a goal contract. Accept only a verified
  * run: task accepted and regression passing. Refuse a regression charged to the patch, a task
- * the contract rejected or found vacuous, and a required challenge that was not met. Anything
+ * the contract rejected or found vacuous, and a required challenge that was not met
+ * (`challenges.satisfied` false under `required`, the certification the product refuses). Anything
  * else, including a run refused before it measured, is inconclusive.
  */
 export function swarmCiDecision(report) {
@@ -18,6 +19,7 @@ export function swarmCiDecision(report) {
     report.regression === "fail" ||
     report.task === "rejected" ||
     report.task === "vacuous" ||
+    (report.challenges?.policy === "required" && report.challenges?.satisfied === false) ||
     /challenges-unmet/.test(certification) ||
     /challenges-unmet/.test(String(report.refusal ?? ""))
   )

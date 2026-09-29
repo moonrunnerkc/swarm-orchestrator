@@ -6,7 +6,8 @@
  * is listed under `unsupported` with its reason, never dropped and never counted as a result.
  *
  *   node scripts/campaign/manifest.mjs --out <manifest.json> --protocol <path> --pins <pins.json>
- *     [--set final|development|all] [--repetitions 3] [--seed <text>]
+ *     --unsupported-a <reasons.json> [--goals <id list>] [--set final|development|all]
+ *     [--repetitions 3] [--seed <text>]
  */
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -111,7 +112,16 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   };
   const set = flag("--set", "all");
   const goalsRoot = join(campaignRoot, "goals");
-  const loadedGoals = readdirSync(goalsRoot)
+  // The frozen goal list, one id per line; without it every goal package present is taken.
+  const listed = flag("--goals");
+  const ids =
+    listed === undefined
+      ? readdirSync(goalsRoot)
+      : readFileSync(listed, "utf8")
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean);
+  const loadedGoals = ids
     .sort()
     .map((id) => loadGoalPackage(join(goalsRoot, id), { sealedRoot: join(campaignRoot, "sealed") }))
     .filter((loaded) => set === "all" || loaded.goal.set === set)
