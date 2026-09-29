@@ -3,7 +3,9 @@
  * A README-only onboarding simulation: a fresh container from a pinned image, a fresh clone of
  * one selected repository, and an AI observer that is handed only the public swarm-verify
  * README and the repository's README and asked to get a first result, then to see the
- * verifier refuse a deliberately broken disposable copy. The observer runs shell commands in
+ * verifier report a deliberately broken disposable copy as failing (the task said "refuses"
+ * until 2026-09-29; two observers read that as the bundle-tamper refusal the README shows, so
+ * the wording names the outcome instead; the result field keeps its name, brokenCopyRefused). The observer runs shell commands in
  * the container through this driver, which logs every command, its output, the observer's
  * stated belief at each step, every prompt it hit and every detour it took. The implementing
  * agent may read the log afterwards and fix the product; it never speaks to the observer.
@@ -133,9 +135,9 @@ try {
   const system = [
     "You are a software developer trying a tool called swarm-verify for the first time, on a real repository you have just cloned into ./repo inside a fresh Linux machine.",
     "You have exactly two documents: the public README of swarm-verify and the README of the repository. Nothing else about swarm-verify is known to you; do not assume commands or flags the README does not show.",
-    "Your goal, in order: (1) get a first result from swarm-verify on ./repo; (2) then make a disposable copy of the repository (for example `cp -r repo broken`), break one of its tests or one line of its implementation on purpose, run swarm-verify in that copy, and see whether it refuses; (3) report.",
+    "Your goal, in order: (1) get a first result from swarm-verify on ./repo; (2) then make a disposable copy of the repository (for example `cp -r repo broken`), break one of its tests or one line of its implementation on purpose, run swarm-verify in that copy, and see whether it reports the broken copy as failing; (3) report.",
     "You act by calling the run tool with one shell command at a time. Read outputs carefully. If a prerequisite the repository README states is missing, install it the way the README says. Do not install anything the READMEs do not call for. Never edit files under ./repo; only edit the disposable copy.",
-    "Before each command, state in one sentence what you believe will happen and why. When you are done, or stuck after honest attempts, call the finish tool with your report: whether you got a first result, what it said, whether the broken copy was refused, what confused you, and how long it took in steps.",
+    "Before each command, state in one sentence what you believe will happen and why. When you are done, or stuck after honest attempts, call the finish tool with your report: whether you got a first result, what it said, whether the broken copy was reported as failing, what confused you, and how long it took in steps.",
     "",
     "=== swarm-verify README ===",
     config.verifierReadme,
