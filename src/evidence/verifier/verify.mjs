@@ -1106,7 +1106,12 @@ function collectChecks(directory) {
       goal === undefined
         ? reading.verified === false
         : canonicalJson(goal) === canonicalJson(reading.goalAcceptance) &&
-            reading.verified === (reading.regression === "pass" && goal.accepted === true),
+            // Mirrors reasonsToRefuse under goal-obligations-v1: a required challenge that was not
+            // satisfied refuses, whatever the checks said about this candidate.
+            reading.verified ===
+              (reading.regression === "pass" &&
+                goal.accepted === true &&
+                !(reading.challenges?.policy === "required" && reading.challenges?.satisfied !== true)),
       "final goal policy binds independent regression and goal observations",
     );
   }
