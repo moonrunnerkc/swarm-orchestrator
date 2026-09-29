@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -250,5 +250,70 @@ describe("sweeping up after a run", () => {
 
   it("sweeps nothing when the run created nothing", async () => {
     expect(await sweepRunBranches(repository, "run-that-never-ran")).toEqual([]);
+  });
+});
+
+describe("administering worktrees for workers dispatched together", () => {
+  /**
+   * A `git` ahead of the real one on PATH that holds each worktree-administering command open
+   * long enough for any second one to arrive, and writes down the second one if it does. Git's
+   * own window is between creating a registration's `commondir` and writing it, which is too
+   * short to hit on demand; this makes any overlap certain rather than likely.
+   */
+  async function observingGit(marks: string): Promise<string> {
+    const real = (await run("sh", ["-c", "command -v git"])).stdout.trim();
+    const bin = join(scratch, "bin");
+    await mkdir(bin);
+    await mkdir(marks);
+    const quoted = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
+    await writeFile(
+      join(bin, "git"),
+      [
+        "#!/bin/sh",
+        'case " $* " in',
+        '  *" worktree "*|*" branch -D "*)',
+        `    echo "$*" >> ${quoted(join(marks, "seen"))}`,
+        `    if mkdir ${quoted(join(marks, "running"))} 2>/dev/null; then`,
+        "      sleep 0.3",
+        `      ${quoted(real)} "$@"; status=$?`,
+        `      rmdir ${quoted(join(marks, "running"))}`,
+        "      exit $status",
+        "    fi",
+        `    echo "$*" >> ${quoted(join(marks, "overlapping"))} ;;`,
+        "esac",
+        `exec ${quoted(real)} "$@"`,
+        "",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+    return bin;
+  }
+
+  it("runs one at a time, so no add reads a registration another is still writing", async () => {
+    const marks = join(scratch, "marks");
+    const bin = await observingGit(marks);
+    const originalPath = process.env.PATH;
+    if (originalPath === undefined) throw new Error("this test needs PATH to find git");
+    process.env.PATH = `${bin}${delimiter}${originalPath}`;
+    try {
+      const worktrees = await Promise.all(["one", "two", "three"].map(worktreeAt));
+      await Promise.all([
+        ...worktrees.map((worktree) => worktree.remove()),
+        sweepRunBranches(repository, "run-that-never-ran"),
+      ]);
+    } finally {
+      process.env.PATH = originalPath;
+    }
+
+    const seen = (await readFile(join(marks, "seen"), "utf8")).trim().split("\n");
+    expect(seen.filter((line) => line.includes("worktree add"))).toHaveLength(3);
+    expect(seen.filter((line) => line.includes("worktree remove"))).toHaveLength(3);
+    const overlapping = await readFile(join(marks, "overlapping"), "utf8").catch(
+      (cause: NodeJS.ErrnoException) => {
+        if (cause.code === "ENOENT") return "";
+        throw cause;
+      },
+    );
+    expect(overlapping).toBe("");
   });
 });

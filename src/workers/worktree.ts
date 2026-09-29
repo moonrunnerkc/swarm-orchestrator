@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { realpath } from "node:fs/promises";
+import { resolve } from "node:path";
 import { promisify } from "node:util";
 import { harnessChildEnvironment } from "../exec/child-environment.ts";
 
@@ -66,6 +67,39 @@ class WorktreeError extends Error {
   }
 }
 
+/**
+ * The tail of each repository's queue of worktree administration, keyed by its resolved root.
+ *
+ * Git records every linked worktree under the repository's `.git/worktrees`, and its worktree
+ * commands read all of those records: `worktree add` resolves each registered worktree's HEAD
+ * before it registers its own, and `worktree remove`, `worktree list`, `worktree prune` and
+ * `branch -D` walk the same directory. Git does not serialize that directory between
+ * processes. Workers are dispatched together, so two `worktree add` calls ran at once, and one
+ * read the other's `commondir` between its creation and its write: "failed to read
+ * .git/worktrees/worker-2/commondir", after which that worker never reached the merge queue
+ * (issue #75). Every such command this process issues against one repository therefore runs
+ * alone. A second process administering the same repository is outside this queue.
+ */
+const administrationQueues = new Map<string, Promise<void>>();
+
+async function administer<T>(repositoryRoot: string, operation: () => Promise<T>): Promise<T> {
+  // Resolved, so two spellings of one repository share one queue. A root that cannot be
+  // resolved is queued as spelled and left for git to report.
+  const key = await realpath(repositoryRoot).catch(() => resolve(repositoryRoot));
+  const previous = administrationQueues.get(key) ?? Promise.resolve();
+  const turn = previous.then(operation);
+  const settled = turn.then(
+    () => undefined,
+    () => undefined,
+  );
+  administrationQueues.set(key, settled);
+  try {
+    return await turn;
+  } finally {
+    if (administrationQueues.get(key) === settled) administrationQueues.delete(key);
+  }
+}
+
 interface WorktreeOptions {
   readonly repositoryRoot: string;
   /** Where the working copy goes. Outside the repository, so it is never a change to it. */
@@ -88,15 +122,17 @@ export interface Worktree {
  * this costs a checkout rather than a clone, and two workers cannot see each other's edits.
  */
 export async function addWorktree(options: WorktreeOptions): Promise<Worktree> {
-  await gitOrThrow(options.repositoryRoot, [
-    "worktree",
-    "add",
-    "--quiet",
-    "-b",
-    options.branch,
-    options.path,
-    options.baseRef,
-  ]);
+  await administer(options.repositoryRoot, () =>
+    gitOrThrow(options.repositoryRoot, [
+      "worktree",
+      "add",
+      "--quiet",
+      "-b",
+      options.branch,
+      options.path,
+      options.baseRef,
+    ]),
+  );
 
   return worktreeHandle(options);
 }
@@ -114,13 +150,15 @@ export async function restoreWorktree(options: WorktreeOptions): Promise<Worktre
       "restore worktree",
       "branch changed since its recorded accepted commit; preserve and reconcile",
     );
-  await gitOrThrow(options.repositoryRoot, [
-    "worktree",
-    "add",
-    "--quiet",
-    options.path,
-    options.branch,
-  ]);
+  await administer(options.repositoryRoot, () =>
+    gitOrThrow(options.repositoryRoot, [
+      "worktree",
+      "add",
+      "--quiet",
+      options.path,
+      options.branch,
+    ]),
+  );
   return worktreeHandle(options);
 }
 
@@ -140,27 +178,39 @@ function worktreeHandle(options: WorktreeOptions): Worktree {
     },
 
     async remove(signal?: AbortSignal): Promise<void> {
-      await verifyWorktreeOwnership(options, signal);
-      const changed = await gitOrThrow(
-        options.path,
-        ["status", "--porcelain", "--untracked-files=all"],
-        signal,
-      );
-      if (changed.trim() !== "")
-        throw new WorktreeError(
-          "remove worktree",
-          `uncommitted files remain at ${options.path}; preserve them and reconcile before cleanup`,
+      // One turn from the ownership check through the removal, so no other registration
+      // changes between what was checked and what is removed.
+      await administer(options.repositoryRoot, async () => {
+        await checkWorktreeOwnership(options, signal);
+        const changed = await gitOrThrow(
+          options.path,
+          ["status", "--porcelain", "--untracked-files=all"],
+          signal,
         );
-      await gitOrThrow(
-        options.repositoryRoot,
-        ["worktree", "remove", "--force", options.path],
-        signal,
-      );
+        if (changed.trim() !== "")
+          throw new WorktreeError(
+            "remove worktree",
+            `uncommitted files remain at ${options.path}; preserve them and reconcile before cleanup`,
+          );
+        await gitOrThrow(
+          options.repositoryRoot,
+          ["worktree", "remove", "--force", options.path],
+          signal,
+        );
+      });
     },
   };
 }
 
 export async function verifyWorktreeOwnership(
+  options: WorktreeOptions,
+  signal?: AbortSignal,
+): Promise<void> {
+  await administer(options.repositoryRoot, () => checkWorktreeOwnership(options, signal));
+}
+
+/** Reads every registration, so it runs only inside an administration turn. */
+async function checkWorktreeOwnership(
   options: WorktreeOptions,
   signal?: AbortSignal,
 ): Promise<void> {
@@ -266,26 +316,29 @@ export async function sweepRunBranches(
   runId: string,
   owned?: readonly { branch: string; commit: string | null }[],
 ): Promise<readonly string[]> {
-  await git(repositoryRoot, ["worktree", "prune"]);
+  // Pruning and `branch -D` both read every registration, so the whole sweep is one turn.
+  return administer(repositoryRoot, async () => {
+    await git(repositoryRoot, ["worktree", "prune"]);
 
-  const listed = await git(repositoryRoot, ["branch", "--format=%(refname:short)"]);
-  const mine = listed.stdout
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((name) => name.startsWith(`swarm/${runId}/`) && !name.endsWith("/integration"));
+    const listed = await git(repositoryRoot, ["branch", "--format=%(refname:short)"]);
+    const mine = listed.stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((name) => name.startsWith(`swarm/${runId}/`) && !name.endsWith("/integration"));
 
-  const removed: string[] = [];
-  for (const branch of mine) {
-    if (owned !== undefined) {
-      const expected = owned.find((candidate) => candidate.branch === branch)?.commit;
-      if (expected === undefined || expected === null) continue;
-      const observed = await git(repositoryRoot, ["rev-parse", branch]);
-      if (observed.stdout.trim() !== expected) continue;
+    const removed: string[] = [];
+    for (const branch of mine) {
+      if (owned !== undefined) {
+        const expected = owned.find((candidate) => candidate.branch === branch)?.commit;
+        if (expected === undefined || expected === null) continue;
+        const observed = await git(repositoryRoot, ["rev-parse", branch]);
+        if (observed.stdout.trim() !== expected) continue;
+      }
+      const outcome = await git(repositoryRoot, ["branch", "-D", branch]);
+      if (outcome.code === 0) {
+        removed.push(branch);
+      }
     }
-    const outcome = await git(repositoryRoot, ["branch", "-D", branch]);
-    if (outcome.code === 0) {
-      removed.push(branch);
-    }
-  }
-  return removed;
+    return removed;
+  });
 }
