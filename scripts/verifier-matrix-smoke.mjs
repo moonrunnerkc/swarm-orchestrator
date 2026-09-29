@@ -119,7 +119,7 @@ function vitestStarts(modules) {
     });
     if (ran.status === 0) return null;
     return (
-      `${ran.stderr ?? ""}${ran.stdout ?? ""}`.split("\n").find((line) => /Error/.test(line)) ??
+      `${ran.stderr ?? ""}${ran.stdout ?? ""}`.split("\n").find((line) => /^\s*Error: /.test(line)) ??
       `exit ${ran.status}`
     ).trim();
   } finally {
