@@ -27,8 +27,14 @@ counted here.
 | `src/workers/adaptive-repair.test.ts` "refuses exported acceptance with an erased obligation, even when signed again" | an obligation removed from a re-signed bundle is refused | real |
 | `src/gates/ratchet.test.ts`, `src/gates/auto-resolve.test.ts`, `src/evidence/redteam-adversarial.test.ts` (deletion, skip marker, tautology, self-comparison) | the ratchet's rules | in-proc, pure |
 
-Open: a skipped test is refused by the ratchet's reading of the file and by the runner result
-reader, not by a run in which a real runner executes a skipped test.
+| `src/gates/attack-families.integration.test.ts` "does not pass a broken change behind a skipped test, and names the test", "... a deleted test file or a replaced assertion" | the real node runner through `ci`: a patch that breaks `calc.mjs` and skips, deletes or rewrites the test that catches it; the checks run again with the base's versions of the changed test files over the patch's source, the test is named and the pass withheld (regression unmeasured), live and offline | real |
+| same file, "keeps passing a correct change that also edits, renames or adds tests" | the valid counterpart: a correct change with edited, renamed and added tests still reads regression pass | real |
+
+Reproduced on 2026-09-28 against the source at `97a49b072` (the published 1.0.7): the skipped-test
+patch read `regression: pass` from `ci`. `check` already refused it through the base ratchet.
+Open: an assertion defeated from inside the source under test (a module that replaces
+`assert.equal` when imported) passes the base's own tests too; only a challenge, which mutates
+the change and asks whether any check notices, can expose it.
 
 ## 2. A project configuration prints well-formed passing runner JSON and exits before test execution
 
@@ -42,15 +48,21 @@ reader, not by a run in which a real runner executes a skipped test.
 | `src/gates/independent-verification.test.ts` "a patch that changes the runner's configuration" (three cases) | a configuration loaded in the runner's process forges TAP and exits; a configuration only a new test needs; a harmless one | real |
 | `src/evidence/verifier/status.test.ts` "re-derives a check that passed only under the patch's runner configuration" | a record claiming the forged pass does not re-derive | pure |
 
+| `src/gates/instrument-identity.integration.test.ts` (seven cases) | the real Vitest through the `check` process and `ci`: the configuration that forged its report on the published 1.0.7, an unchanged configuration importing a helper the change rewrote, a setup file under a name no list anticipates that makes every assertion pass, a test script replaced by an echo, a runner taken from a path, with a committed configuration and a real failure as counterparts | real |
+| `scripts/verifier-matrix-smoke.mjs` "check does not pass a Vitest configuration that forges its report" | the same reproduction through the installed tarball on every matrix row | real, installed |
+
 This was named here as an open residual until 1.0.6, and it reproduced on the published 1.0.5:
 the project's own configuration runs inside the Vitest or pytest process that writes the report
 the verdict reads. Since 1.0.6 the instrument comes from the base commit, as the command already
 did: where a patch changes runner configuration, every check runs again with the base's
 configuration restored, and a check that passes only under the patch's configuration does not
-pass. What stays open, and is named rather than claimed: a configuration file the base already
-has that imports a helper module the patch changed, a setup file named outside the listed
-patterns (`src/gates/runner-configuration.ts`), and a patch that substitutes the runner itself
-through the lockfile (family 3).
+pass. The 1.0.6 fix read a list of configuration file names, and on the published 1.0.7 the
+`check` command still passed the reported forgery. Since instrument-identity-v1
+(`src/gates/instrument-identity.ts`) the instrument is everything a check loads that is not the
+tests or the source: the scripts its command reaches, each tool's configuration by the names the
+tool discovers, every file those import or name, and where the tool's packages come from, compared
+with the reference before and after the run. Open: a reference configuration that loads files by
+computed names; its constructs are recorded as residuals on the observation, not followed.
 
 ## 3. A runner executable, reporter or dependency is substituted
 
@@ -62,8 +74,11 @@ through the lockfile (family 3).
 | `src/gates/harness-reporting.test.ts`, `src/gates/node-command-runner.test.ts`, `src/gates/base-control.test.ts` (`NODE_OPTIONS` hooks, forged tables) | inherited loader names are refused, forged tables ignored | real |
 | `src/gates/browser-instrument.integration.test.ts` | a substituted `@playwright/test/cli.js` is ignored | real, docker |
 
-Open: substituting a project-local `node` or `node_modules/.bin/vitest` on `PATH` is held only
-by the non-gating pass7 regression.
+| `src/gates/attack-families.integration.test.ts` "does not pass a vitest reached through a node_modules/.bin link the lockfile's package does not own", "does not pass a script run through an interpreter a node_modules/.bin link shadows" | a `.bin/vitest` printing a passing summary and a `.bin/node` shim, both withheld as substituted executables | real |
+| `src/gates/instrument-identity.test.ts` "where the runner comes from" | a runner dependency resolved outside the registry or renamed on the way, a pnpm tarball source, a uv path source, a manifest taking the runner from a path | in-proc |
+
+Open: the installed bytes of a runner package are compared by version and link, not byte for byte
+against the registry tarball; the Action installs from the lockfile in a fresh container.
 
 ## 4. Results omit a check, duplicate identities, contradict totals or contain only skipped tests
 
@@ -75,8 +90,12 @@ by the non-gating pass7 regression.
 | `src/gates/package-assessment.integration.test.ts` "preserves unavailable checks in seals and mixed-package reports" | a package with no tests stays a blocking unmeasured check | real |
 | `src/evidence/seal-conformance.test.ts` | a gate missing from the final cycle or dropped by a later turn is refused | pure |
 
-Open: no real runner emits duplicates or contradictory totals in a test; those readings are
-held by the readers' own cases.
+| `src/gates/duplicate-titles.integration.test.ts` | the real node runner with two tests both titled `works`: counted as two, told apart by file and line | real |
+| `src/gates/attack-families.integration.test.ts` "does not pass a patch that skips every test" | a real node suite whose every test is skipped reads as measuring nothing; through 1.0.7 it read passed | real |
+| `src/gates/failure-attribution.test.ts` (nested suites, reordered results, counted repeats, contradictory counters, a missing plan, cancellation) | the TAP readings, each held against the offline reader | pure |
+
+Open: contradictory totals from a real runner occur only under a forged reporter, which is
+family 2.
 
 ## 5. Output or an artifact is truncated while the visible prefix looks successful
 
@@ -87,7 +106,7 @@ held by the readers' own cases.
 | `src/evidence/redteam-adversarial.test.ts` "reads a truncated, header-only, or table artifact as not measured, never as 100%" | cut lcov reads null | pure |
 | `src/action/artifacts.test.ts` | an 8 MB file is left out and named in the inventory | real |
 
-Open: no real runner's passing report is cut by the byte ceiling in a test.
+| `src/gates/attack-families.integration.test.ts` "reads the exit status, not a successful-looking prefix, and never inherits across the cut" | a real node suite printing past the record's ceiling with a failure after the cut: failed, never inherited | real |
 
 ## 6. Evidence belongs to a different source tree or base
 
@@ -101,8 +120,7 @@ Open: no real runner's passing report is cut by the byte ceiling in a test.
 
 | `src/gates/attack-controls.test.ts` "refuses to run the contract's checks over a checkout whose tree is not the one named" | a real clone handed a tree id it does not hold: refused before any check, no goal-check record written | real |
 
-Open: no test presents a verdict made for one head as evidence for another; the verdict
-command binds by digest, and that cross-head case is next.
+| `src/cli-verdict.test.ts` "refuses a verdict made for another head than the one being decided, and binds the right one" | a verdict the Action's producer wrote, read with `--head` naming another commit: inconsistent, exit 1 | real |
 
 ## 7. Check bytes, a lockfile, toolchain or relevant environment change after the recorded pass
 
@@ -114,10 +132,11 @@ command binds by digest, and that cross-head case is next.
 | `src/gates/prepared-python.test.ts` | a `.pth` injection is refused at staging | real |
 | `src/gates/container-install.integration.test.ts` "reaches the registry for the lockfile install only, then checks with the network off" | a real container install is recorded with `network: registry` and the checks still measure isolated | real, docker |
 
-Open: every control fires at execution time; nothing re-checks a recorded pass after check
-bytes, a lockfile or the toolchain change afterwards. The pre-commit integration binds evidence
-to the staged tree and a later `git add` invalidates it by construction; a CI-side
-invalidation on drift is next.
+| `src/gates/attack-families.integration.test.ts` "withholds a pass where a test rewrote the lockfile during the run, and measures again from scratch next time" | a suite rewriting `.npmrc` while it runs: the instrument after the run differs from before, the pass is withheld; the next run re-executes and passes | real |
+
+No observation is reused across runs, so a later change to check bytes, a lockfile or the
+toolchain is measured by the next run; a verdict is bound to its head (family 6) and each gate-run
+record carries the instrument's digests, so a reader can see what a pass was measured under.
 
 ## 8. A correct but incomplete package subset is used to certify a larger change
 
@@ -141,12 +160,13 @@ invalidation on drift is next.
 | `src/action/verify.test.ts` "refuses to run candidate code on the host under pull_request_target" | refused before anything runs | real |
 | `src/evidence/resign-attack.test.ts`, `src/evidence/signer-trust.test.ts` | a re-signed bundle is refused against the expected signer | in-proc |
 
+| `src/gates/attack-families.integration.test.ts` "stops the run rather than export a chain the candidate appended to, and keeps what it wrote" | a real test that knows the store appends to the running session's ledger: the next harness append fails validation, the run stops without a result, and the line is kept for reconciliation | real |
+
 Open and stated in the product: in host mode candidate test code runs as the same user as the
 verifier, so it can read what that user can; `src/tools/isolated-shell.test.ts` documents that
 restricted is not contained. The Action runs candidates in a container by default, the session
 store is owner-only, and signing keys live in the OS keychain, which candidate code on the host
-could ask for as that user. A host-mode control that shows candidate code cannot alter a
-bundle after export, and the recorded consequence of it trying, is next.
+could ask for as that user.
 
 ## 10. A source or file substitution occurs between pinning, execution and result collection
 
