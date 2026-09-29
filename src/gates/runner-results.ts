@@ -4,6 +4,8 @@ import type { GateObservation, GateReading } from "./gate-definition.ts";
 const point = z.object({
   id: z.string().min(1),
   status: z.enum(["passed", "failed", "skipped", "error"]),
+  /** Why it failed, as the runner reported it; absent on records written before it was kept. */
+  message: z.string().max(100000).optional(),
 });
 const python = z.object({
   schema: z.literal("swarm.pytest.v1"),
@@ -21,13 +23,21 @@ const vitest = z.object({
         z.object({
           fullName: z.string(),
           status: z.enum(["passed", "failed", "pending", "skipped", "todo"]),
+          failureMessages: z.array(z.string()).optional(),
         }),
       ),
     }),
   ),
 });
 
-export type RunnerPoint = z.infer<typeof point>;
+export interface RunnerPoint {
+  /** Unique within the report: a title repeated in one file is named by its occurrence. */
+  readonly id: string;
+  readonly status: "passed" | "failed" | "skipped" | "error";
+  /** The identity without the occurrence, which repeats where the titles do. */
+  readonly identity: string;
+  readonly cause?: string;
+}
 
 /**
  * The per-test outcomes a structured report names, or null where the observation is not a
@@ -52,7 +62,13 @@ export function runnerTestPoints(observation: GateObservation): readonly RunnerP
 function pointsOf(value: unknown): RunnerPoint[] {
   const parsedPython = python.safeParse(value);
   let tests: RunnerPoint[];
-  if (parsedPython.success) tests = parsedPython.data.tests;
+  if (parsedPython.success)
+    tests = parsedPython.data.tests.map((test) => ({
+      id: test.id,
+      status: test.status,
+      identity: test.id,
+      ...(test.message === undefined ? {} : { cause: test.message }),
+    }));
   else {
     const report = vitest.parse(value);
     tests = report.testResults.flatMap((file) => {
@@ -62,6 +78,10 @@ function pointsOf(value: unknown): RunnerPoint[] {
         seen.set(test.fullName, count);
         return {
           id: `${file.name}:${test.fullName}${count === 1 ? "" : `#${count}`}`,
+          identity: `${file.name}:${test.fullName}`,
+          ...(test.failureMessages === undefined || test.failureMessages.length === 0
+            ? {}
+            : { cause: test.failureMessages.join("\n") }),
           status:
             test.status === "passed"
               ? ("passed" as const)

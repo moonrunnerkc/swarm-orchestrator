@@ -19,6 +19,7 @@ import {
 } from "./dependency-install.ts";
 import {
   attributeFailure,
+  attributionRule,
   type FailureAttribution,
   underBaseConfiguration,
 } from "./failure-attribution.ts";
@@ -46,7 +47,6 @@ import { pathsInPatch } from "./patch-paths.ts";
 import { prepareDependencies } from "./prepare-dependencies.ts";
 import { stagePreparedPython } from "./prepared-python.ts";
 import { enforceUpgrade, reproducedBug } from "./preset-verification.ts";
-import { runnerConfigurationChanged } from "./runner-configuration.ts";
 import { parseUnifiedDiff } from "./unified-diff.ts";
 import { observeUpgradeResolution } from "./upgrade-resolution.ts";
 import { readV8Coverage } from "./v8-coverage.ts";
@@ -91,6 +91,8 @@ export interface IndependentCheck {
    * leaves it unmeasured. Records before this field read inheritance from the base's status alone.
    */
   readonly attribution?: FailureAttribution;
+  /** The identity rule `attribution` was decided under; absent means failure-identity v1. */
+  readonly attributionRule?: typeof attributionRule;
   /** The tests that failed with the patch and not at the base, where the runs name tests. */
   readonly newFailures?: readonly string[];
   /**
@@ -103,6 +105,15 @@ export interface IndependentCheck {
   readonly configurationStatus?: "passed" | "failed" | "not-applicable";
   readonly configurationFiles?: readonly string[];
   readonly regressedUnderBaseConfiguration?: readonly string[];
+  /**
+   * The instrument the patched reading ran under, compared with the base's
+   * (instrument-identity-v1), and the same for the base-configuration reading. A pass reported
+   * under an altered instrument is withheld, with the runner's own reading kept as
+   * `reportedStatus`; only a reading under the base's instrument can let it stand.
+   */
+  readonly instrument?: import("./instrument-identity.ts").InstrumentObservation;
+  readonly configurationInstrument?: import("./instrument-identity.ts").InstrumentObservation;
+  readonly reportedStatus?: "passed" | "failed" | "not-applicable";
 }
 
 export type { DependencyInstall } from "./dependency-install.ts";
@@ -1249,6 +1260,7 @@ async function attributeFailures(
       ...decided,
       inheritedFromBase: attributed.attribution === "inherited",
       attribution: attributed.attribution,
+      attributionRule,
       ...(attributed.newFailures.length === 0 ? {} : { newFailures: attributed.newFailures }),
       ...baseObservation,
     };
@@ -1259,17 +1271,18 @@ async function attributeFailures(
 function passedOnlyUnderThePatchConfiguration(check: IndependentCheck): boolean {
   return (
     check.configurationStatus !== undefined &&
-    check.status === "passed" &&
+    (check.reportedStatus ?? check.status) === "passed" &&
     check.configurationStatus !== "passed"
   );
 }
 
 /**
- * The checks again, with the runner configuration the patch changed put back to the base's
- * (restored where the base has it, removed where the patch added it), then the patch's versions
- * written back. Only where the patch changed any: a patch that leaves the instrument alone pays
- * nothing. The readings are kept on each check, and which one stands is decided with the base's
- * own results in hand.
+ * The checks again, with the instrument the patch changed put back to the base's (restored where
+ * the base has it, removed where the patch added it; a package.json field is restored alone), then
+ * the patch's versions written back. Only where the patch changed any: a patch that leaves the
+ * instrument alone pays nothing. The readings are kept on each check, and which one stands is
+ * decided with the base's own results in hand. A pass under the base's instrument stands; what
+ * cannot be put back (a runner dependency from outside the registry) leaves the pass withheld.
  */
 async function readUnderBaseConfiguration(
   withPatch: readonly IndependentCheck[],
@@ -1277,31 +1290,60 @@ async function readUnderBaseConfiguration(
   options: IndependentVerificationOptions,
   timeoutMs: number,
 ): Promise<readonly IndependentCheck[]> {
-  const files = runnerConfigurationChanged(options.patch);
+  const changed = new Set<string>();
+  for (const check of withPatch)
+    for (const file of check.instrument?.files ?? [])
+      if (file.reference !== file.current) changed.add(file.path);
+  const files = [...changed].sort();
   if (files.length === 0 || withPatch.length === 0) return withPatch;
+  const whole = [...new Set(files.map((path) => path.split("#")[0] as string))];
   const patched = new Map<string, string | null>();
-  for (const path of files)
+  for (const path of whole)
     patched.set(path, await readFile(join(checkout, path), "utf8").catch(() => null));
   try {
-    for (const path of files) {
+    for (const path of whole) {
       const atBase = await options.commands.runVouched(
         ["git", "-C", ".", "show", `${options.baseCommit}:${path}`],
         { cwd: checkout, timeoutMs },
       );
+      const fields = files
+        .filter((one) => one.startsWith(`${path}#`))
+        .map((one) => one.slice(path.length + 1));
+      const current = patched.get(path) ?? null;
+      if (
+        path === "package.json" &&
+        fields.length > 0 &&
+        !files.includes(path) &&
+        atBase.exitCode === 0 &&
+        current !== null
+      ) {
+        await writeFile(
+          join(checkout, path),
+          restoreManifestFields(current, atBase.stdout, fields),
+        );
+        continue;
+      }
       if (atBase.exitCode === 0) await writeFile(join(checkout, path), atBase.stdout);
       else await rm(join(checkout, path), { force: true });
     }
     const underBase = await runChecks(checkout, options, timeoutMs);
     return withPatch.map((check) => {
       const reading = underBase.find((one) => one.id === check.id);
-      return reading?.observation === undefined
-        ? check
-        : {
-            ...check,
-            configurationObservation: reading.observation,
-            configurationStatus: reading.status,
-            configurationFiles: files,
-          };
+      if (reading?.observation === undefined) return check;
+      const reported = check.reportedStatus ?? check.status;
+      return {
+        ...check,
+        // Measured again under the base's instrument and passed there: that reading is the evidence.
+        ...(reported === "passed" && reading.status === "passed"
+          ? { status: "passed" as const }
+          : {}),
+        configurationObservation: reading.observation,
+        configurationStatus: reading.status,
+        configurationFiles: files,
+        ...(reading.instrument === undefined
+          ? {}
+          : { configurationInstrument: reading.instrument }),
+      };
     });
   } finally {
     for (const [path, text] of patched) {
@@ -1309,6 +1351,27 @@ async function readUnderBaseConfiguration(
       else await writeFile(join(checkout, path), text);
     }
   }
+}
+
+/** The patched manifest with the fields the instrument reads put back to the base's. */
+function restoreManifestFields(current: string, base: string, fields: readonly string[]): string {
+  const after = JSON.parse(current) as Record<string, unknown>;
+  const before = JSON.parse(base) as Record<string, unknown>;
+  for (const field of fields) {
+    const [head, ...rest] = field.split(".");
+    if (head === "scripts" && rest.length > 0) {
+      const name = rest.join(".");
+      const scripts = { ...((after.scripts as Record<string, unknown> | undefined) ?? {}) };
+      const original = (before.scripts as Record<string, unknown> | undefined)?.[name];
+      if (original === undefined) delete scripts[name];
+      else scripts[name] = original;
+      after.scripts = scripts;
+    } else if (head !== undefined && rest.length === 0) {
+      if (before[head] === undefined) delete after[head];
+      else after[head] = before[head];
+    }
+  }
+  return `${JSON.stringify(after, null, 2)}\n`;
 }
 
 /**

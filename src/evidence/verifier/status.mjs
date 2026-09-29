@@ -1,3 +1,51 @@
+import { createHash } from "node:crypto";
+
+function sortedJson(value) {
+  return JSON.stringify(value, (_key, inner) =>
+    inner !== null && typeof inner === "object" && !Array.isArray(inner)
+      ? Object.fromEntries(Object.entries(inner).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      : inner,
+  );
+}
+
+/**
+ * What makes a recorded instrument untrusted (instrument-identity-v1). Mirrors
+ * `instrumentChanges` in src/gates/instrument-identity.ts, written again here so the decision a
+ * record carries is re-derived from the digests it recorded rather than taken from the run. The
+ * closure itself was followed by the harness; this checks what follows from what it recorded.
+ */
+export function instrumentChanges(instrument) {
+  if (
+    instrument === null ||
+    typeof instrument !== "object" ||
+    instrument.rule !== "instrument-identity-v1"
+  )
+    return ["instrument record under an unknown rule"];
+  const changed = [];
+  for (const file of instrument.files ?? [])
+    if (file.reference !== file.current) changed.push(file.path);
+  for (const dependency of instrument.dependencies ?? [])
+    if (
+      dependency.reference !== dependency.current &&
+      dependency.currentSource !== "registry" &&
+      dependency.currentSource !== "absent"
+    )
+      changed.push(`dependency ${dependency.name}`);
+  for (const runner of instrument.installed ?? []) {
+    if (runner.found === null) continue;
+    if (runner.expected !== null && runner.found !== runner.expected)
+      changed.push(`installed ${runner.name} ${runner.found} (lockfile ${runner.expected})`);
+    if (!runner.linked) changed.push(`installed ${runner.name} executable link`);
+  }
+  if (instrument.complete !== true) changed.push("instrument closure not followed to its end");
+  if (instrument.before !== undefined) {
+    const { before: _before, ...rest } = instrument;
+    const now = `sha256:${createHash("sha256").update(sortedJson(rest)).digest("hex")}`;
+    if (now !== instrument.before) changed.push("the instrument changed while the check ran");
+  }
+  return changed;
+}
+
 function notApplicable(observation) {
   if (observation.unavailable !== null && observation.unavailable !== undefined)
     return "not-applicable";
@@ -17,6 +65,18 @@ function counter(text, name) {
  * to each other.
  */
 export function readStatus(parser, observation) {
+  const status = readParsedStatus(parser, observation);
+  // A pass reported under an instrument the change altered is the project's report, not evidence.
+  if (
+    status === "passed" &&
+    observation.instrument !== undefined &&
+    instrumentChanges(observation.instrument).length > 0
+  )
+    return "not-applicable";
+  return status;
+}
+
+function readParsedStatus(parser, observation) {
   const unavailable = notApplicable(observation);
   if (unavailable !== null) return unavailable;
   const stdout = observation.stdout ?? "";
@@ -71,7 +131,12 @@ function structuredPoints(observation) {
     let tests;
     if (report.schema === "swarm.pytest.v1") {
       if (!Array.isArray(report.tests) || report.tests.length > 100000) return null;
-      tests = report.tests;
+      tests = report.tests.map((test) => ({
+        id: test.id,
+        status: test.status,
+        identity: test.id,
+        cause: typeof test.message === "string" ? test.message : "",
+      }));
     } else {
       for (const field of ["numTotalTests", "numPassedTests", "numFailedTests", "numPendingTests"])
         if (!Number.isInteger(report[field]) || report[field] < 0) return null;
@@ -88,6 +153,8 @@ function structuredPoints(observation) {
           seen.set(test.fullName, count);
           return {
             id: `${file.name}:${test.fullName}${count === 1 ? "" : `#${count}`}`,
+            identity: `${file.name}:${test.fullName}`,
+            cause: Array.isArray(test.failureMessages) ? test.failureMessages.join("\n") : "",
             status: ["passed", "failed"].includes(test.status) ? test.status : "skipped",
           };
         });
@@ -133,11 +200,12 @@ function structuredTestStatus(observation) {
 }
 
 /**
- * The tests a run names as failed and passed, from a structured report or TAP; null where it
- * names none. Mirrors src/gates/failure-attribution.ts, written again here so a record is judged
- * by a second implementation rather than by the code that produced it.
+ * The tests a run names as failed and passed, under the title-only identity records were
+ * attributed with through 1.0.7 (failure-identity v1). Kept so those records re-derive under the
+ * rule that wrote them; it is not a rule new records are judged by, and an inheritance it proves
+ * is not re-established by it (SV-24).
  */
-function namedTests(observation) {
+function namedTestsV1(observation) {
   const stdout = observation.stdout ?? "";
   if (stdout.trimStart().startsWith("{")) {
     const points = structuredPoints(observation);
@@ -149,11 +217,7 @@ function namedTests(observation) {
   }
   const text = `${stdout}\n${observation.stderr ?? ""}`;
   if (!/^TAP version \d+/m.test(text)) {
-    // Vitest's text reporters name every failure on a FAIL line beside their Test Files summary.
-    const plain = text
-      .split(escapeCharacter)
-      .map((part, index) => (index === 0 ? part : part.replace(/^\[[0-9;]*[A-Za-z]/, "")))
-      .join("");
+    const plain = stripColour(text);
     const summary = /^\s*Test Files\s+(.+)$/m.exec(plain)?.[1];
     if (summary === undefined) return null;
     const failed = [];
@@ -178,11 +242,157 @@ function namedTests(observation) {
 
 const escapeCharacter = String.fromCharCode(27);
 
-function comparableOutput(observation) {
-  return `${observation.exitCode}\n${observation.stdout ?? ""}\n${observation.stderr ?? ""}`
+function stripColour(text) {
+  return text
     .split(escapeCharacter)
     .map((part, index) => (index === 0 ? part : part.replace(/^\[[0-9;]*[A-Za-z]/, "")))
-    .join("")
+    .join("");
+}
+
+function cause(text) {
+  return stripColour(text)
+    .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?/g, "<timestamp>")
+    .replace(/\b\d+(?:\.\d+)?\s?(?:ms|s|sec|secs|seconds)\b/g, "<duration>")
+    .trim()
+    .slice(0, 2000);
+}
+
+/** The directory every TAP failure location in the texts shares. */
+function locationRoot(texts) {
+  const files = [];
+  for (const text of texts)
+    for (const line of text.split("\n")) {
+      const found = /^\s*location:\s*'([^']+)'\s*$/.exec(line)?.[1];
+      if (found !== undefined) files.push(found.replace(/^file:\/\//, "").replace(/:\d+:\d+$/, ""));
+    }
+  if (files.length === 0) return "";
+  let shared = files[0].split("/").slice(0, -1);
+  for (const file of files.slice(1)) {
+    const parts = file.split("/").slice(0, -1);
+    let length = 0;
+    while (length < shared.length && shared[length] === parts[length]) length++;
+    shared = shared.slice(0, length);
+  }
+  return shared.length === 0 ? "" : `${shared.join("/")}/`;
+}
+
+const causeFields = ["failureType", "error", "code", "name", "expected", "actual", "operator"];
+
+/** Node's TAP read under failure-identity v2: a failure named by its location, depth and title. */
+function tapTests(text, truncated, root) {
+  const lines = text.split("\n");
+  const failed = [];
+  const passed = [];
+  const causes = {};
+  let leafFailures = 0;
+  for (let index = 0; index < lines.length; index++) {
+    const point = /^(\s*)(not ok|ok)\s+\d+\s+-\s+(.+?)\s*$/.exec(lines[index]);
+    if (point === null) continue;
+    if (/#\s*(TODO|SKIP)\b/i.test(point[3])) continue;
+    const depth = point[1].length;
+    const title = point[3].replace(/\s+#.*$/, "");
+    const yaml = [];
+    if (/^\s*---\s*$/.test(lines[index + 1] ?? ""))
+      for (
+        let inner = index + 2;
+        inner < lines.length && !/^\s*\.\.\.\s*$/.test(lines[inner]);
+        inner++
+      )
+        yaml.push(lines[inner]);
+    if (point[2] === "ok") {
+      passed.push(`${depth}:${title}`);
+      continue;
+    }
+    let location = null;
+    let type = null;
+    const kept = [];
+    let block = null;
+    // Keys sit two spaces inside the point; deeper lines belong to the key above them.
+    const inner = " ".repeat(depth + 2);
+    for (const line of yaml) {
+      const key =
+        line.startsWith(inner) && line[inner.length] !== " "
+          ? /^(\w+):\s*(.*)$/.exec(line.slice(inner.length))
+          : null;
+      if (key !== null) block = key[1];
+      const value = key === null ? null : key[2].replace(/^'(.*)'$/, "$1");
+      if (key !== null && key[1] === "location" && location === null)
+        location = value.replace(/^file:\/\//, "");
+      if (key !== null && key[1] === "type" && type === null) type = value;
+      if (block !== null && causeFields.includes(block)) kept.push(line.trim());
+    }
+    if (type !== "suite") leafFailures++;
+    const relative =
+      location !== null && root.length > 0 && location.startsWith(root)
+        ? location.slice(root.length)
+        : location;
+    const id = relative === null ? `${depth}:${title}` : `${relative} › ${depth}:${title}`;
+    failed.push(id);
+    causes[id] = cause(kept.join("\n"));
+  }
+  const counter = (name) => {
+    for (const line of lines) {
+      const match = /^[#ℹ]\s+(\w+)\s+(\d+)\s*$/.exec(line);
+      if (match !== null && match[1] === name) return Number(match[2]);
+    }
+    return null;
+  };
+  const fail = counter("fail");
+  const complete =
+    !truncated &&
+    lines.some((line) => /^1\.\.\d+\s*$/.test(line)) &&
+    (counter("cancelled") ?? 0) === 0 &&
+    (fail === null || fail === leafFailures);
+  return { failed, passed, causes, complete };
+}
+
+/** A run's tests under failure-identity v2, or null where it names none. */
+function namedTestsV2(observation, sharedRoot) {
+  const stdout = observation.stdout ?? "";
+  const root = sharedRoot ?? locationRoot([`${stdout}\n${observation.stderr ?? ""}`]);
+  if (stdout.trimStart().startsWith("{")) {
+    const points = structuredPoints(observation);
+    if (points === null) return null;
+    const failing = points.filter((p) => p.status === "failed" || p.status === "error");
+    const causes = {};
+    for (const p of failing) causes[p.identity] = cause(p.cause ?? "");
+    return {
+      failed: failing.map((p) => p.identity),
+      passed: points.filter((p) => p.status === "passed").map((p) => p.identity),
+      causes,
+      complete: true,
+    };
+  }
+  const text = `${stdout}\n${observation.stderr ?? ""}`;
+  if (/^TAP version \d+/m.test(text))
+    return tapTests(text, observation.outputTruncated === true, root);
+  const plain = stripColour(text);
+  const summary = /^\s*Test Files\s+(.+)$/m.exec(plain)?.[1];
+  if (summary === undefined) return null;
+  const lines = plain.split("\n");
+  const failed = [];
+  const causes = {};
+  for (let index = 0; index < lines.length; index++) {
+    const named = /^\s*FAIL\s+(\S.*?)\s*$/.exec(lines[index])?.[1];
+    if (!named) continue;
+    failed.push(named);
+    const next = lines.slice(index + 1).find((line) => line.trim().length > 0) ?? "";
+    causes[named] = /^\s*FAIL\s/.test(next) ? "" : cause(next);
+  }
+  if (failed.length === 0 && /\d+\s+failed/.test(summary)) return null;
+  const counted = /(\d+)\s+failed/.exec(/^\s*Tests\s+(.+)$/m.exec(plain)?.[1] ?? "")?.[1];
+  return {
+    failed,
+    passed: [],
+    causes,
+    complete: counted === undefined || Number(counted) <= failed.length,
+  };
+}
+
+function comparableOutput(observation) {
+  return stripColour(
+    `${observation.exitCode}\n${observation.stdout ?? ""}\n${observation.stderr ?? ""}`,
+  )
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?/g, "<timestamp>")
     .replace(/\b\d{1,2}:\d{2}:\d{2}(?:\.\d+)?\b/g, "<clock>")
     .replace(/\b\d+(?:\.\d+)?\s?(?:ms|s|sec|secs|seconds|m|min)\b/g, "<duration>")
@@ -191,12 +401,12 @@ function comparableOutput(observation) {
     .join("\n");
 }
 
-/** Why a failed reading failed, from it and the base's reading of the same check. */
-function attribution(failing, parser, baseObservation) {
+/** Why a failed reading failed under v1: title identities, as sets. */
+function attributionV1(failing, parser, baseObservation) {
   if (baseObservation === undefined || readStatus(parser, baseObservation) !== "failed")
     return { attribution: "new", newFailures: [] };
-  const patched = namedTests(failing);
-  const base = namedTests(baseObservation);
+  const patched = namedTestsV1(failing);
+  const base = namedTestsV1(baseObservation);
   if (patched !== null && base !== null && patched.failed.length > 0) {
     const newFailures = patched.failed.filter((id) => !base.failed.includes(id));
     return newFailures.length === 0
@@ -208,19 +418,92 @@ function attribution(failing, parser, baseObservation) {
     : { attribution: "unattributed", newFailures: [] };
 }
 
+function tally(ids) {
+  const found = new Map();
+  for (const id of ids) found.set(id, (found.get(id) ?? 0) + 1);
+  return found;
+}
+
+/**
+ * Why a failed reading failed under failure-identity v2: identities that tell same-titled tests
+ * apart, counted, with their causes, from two complete runs. Mirrors `attributeFailure` in
+ * src/gates/failure-attribution.ts.
+ */
+function attributionV2(failing, parser, baseObservation) {
+  if (baseObservation === undefined || readStatus(parser, baseObservation) !== "failed")
+    return { attribution: "new", newFailures: [] };
+  if (failing.outputTruncated === true || baseObservation.outputTruncated === true)
+    return { attribution: "unattributed", newFailures: [] };
+  const texts = [failing, baseObservation].map((one) => `${one.stdout ?? ""}\n${one.stderr ?? ""}`);
+  const root = texts.every((text) => /^TAP version \d+/m.test(text)) ? locationRoot(texts) : "";
+  const patched = namedTestsV2(failing, root);
+  const base = namedTestsV2(baseObservation, root);
+  if (patched !== null && base !== null && patched.failed.length > 0) {
+    const before = tally(base.failed);
+    const after = tally(patched.failed);
+    const newFailures = [...after]
+      .filter(([id, count]) => count > (before.get(id) ?? 0))
+      .map(([id]) => id)
+      .sort();
+    if (newFailures.length > 0) return { attribution: "new", newFailures };
+    const repeated = [...after, ...before].some(([, count]) => count > 1);
+    const changed = [...after.keys()].some((id) => patched.causes[id] !== base.causes[id]);
+    return patched.complete && base.complete && !repeated && !changed
+      ? { attribution: "inherited", newFailures: [] }
+      : { attribution: "unattributed", newFailures: [] };
+  }
+  if (patched !== null || base !== null) return { attribution: "unattributed", newFailures: [] };
+  return comparableOutput(failing) === comparableOutput(baseObservation)
+    ? { attribution: "inherited", newFailures: [] }
+    : { attribution: "unattributed", newFailures: [] };
+}
+
+/** Why a failed reading failed, under the rule the record names. */
+function attribution(check, failing) {
+  return check.attributionRule === "failure-identity-v2"
+    ? attributionV2(failing, check.parser, check.baseObservation)
+    : attributionV1(failing, check.parser, check.baseObservation);
+}
+
 /** The status a check must carry given its own, base-configuration and base readings. */
 function expectedStatus(check) {
-  const own = readStatus(check.parser, check.observation);
+  const within = (observation, instrument) =>
+    instrument === undefined ? observation : { ...observation, instrument };
+  const reported = readStatus(check.parser, check.observation);
+  const own = readStatus(check.parser, within(check.observation, check.instrument));
+  // What the runner said is kept where the instrument rule withheld it, and must be what it said.
+  if (own !== reported ? check.reportedStatus !== reported : check.reportedStatus !== undefined)
+    return null;
   if (check.configurationObservation === undefined) return { status: own, regressed: [] };
-  const underBase = readStatus(check.parser, check.configurationObservation);
+  const underBase = readStatus(
+    check.parser,
+    within(check.configurationObservation, check.configurationInstrument),
+  );
   if (underBase !== check.configurationStatus) return null;
-  if (own !== "passed" || underBase === "passed") return { status: own, regressed: [] };
-  const points = namedTests(check.configurationObservation);
-  const base = check.baseObservation === undefined ? null : namedTests(check.baseObservation);
+  if (reported !== "passed") return { status: own, regressed: [] };
+  // Measured again under the base's instrument and passed there: that reading stands.
+  if (underBase === "passed") return { status: "passed", regressed: [] };
+  const v2 = check.attributionRule === "failure-identity-v2";
+  const points = v2
+    ? namedTestsV2(check.configurationObservation)
+    : namedTestsV1(check.configurationObservation);
+  const base =
+    check.baseObservation === undefined
+      ? null
+      : v2
+        ? namedTestsV2(check.baseObservation)
+        : namedTestsV1(check.baseObservation);
+  const title = (id) => (id.includes(" › ") ? id.slice(id.indexOf(" › ") + 3) : id);
   const regressed =
     points === null || base === null
       ? []
-      : points.failed.filter((id) => base.passed.includes(id) && !base.failed.includes(id));
+      : v2
+        ? points.failed.filter(
+            (id) =>
+              base.passed.filter((one) => one === id || one === title(id)).length === 1 &&
+              !base.failed.some((one) => one === id || title(one) === title(id)),
+          )
+        : points.failed.filter((id) => base.passed.includes(id) && !base.failed.includes(id));
   return {
     status: underBase === "failed" && regressed.length > 0 ? "failed" : "not-applicable",
     regressed,
@@ -285,7 +568,7 @@ export function capturedRegression(checks) {
         (check.regressedUnderBaseConfiguration ?? []).length > 0
           ? check.configurationObservation
           : check.observation;
-      const derived = attribution(failing, check.parser, check.baseObservation);
+      const derived = attribution(check, failing);
       if (
         derived.attribution !== check.attribution ||
         (check.inheritedFromBase === true) !== (derived.attribution === "inherited") ||

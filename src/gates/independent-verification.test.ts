@@ -553,11 +553,11 @@ describe("a failure the base already had", () => {
     const tests = result.checks.find((check) => check.id === "tests");
     expect(tests?.attribution).toBe("new");
     expect(tests?.inheritedFromBase).toBe(false);
-    expect(tests?.newFailures).toEqual(["0:identity"]);
+    expect(tests?.newFailures).toEqual(["clamp.test.mjs:4:1 › 0:identity"]);
     expect(result.regression).toBe("fail");
     // The offline verifier, a second implementation, reads the same regression from the record.
     expect(capturedRegression(result.checks)).toBe(result.regression);
-    expect(result.advice).toContain("newly failing: 0:identity");
+    expect(result.advice).toContain("newly failing: clamp.test.mjs:4:1 › 0:identity");
   });
 
   /**
@@ -729,7 +729,7 @@ describe("a patch that changes the runner's configuration", () => {
     expect(tests?.configurationFiles).toEqual(["vitest.config.mjs"]);
     expect(tests?.configurationStatus).toBe("failed");
     expect(tests?.status).toBe("failed");
-    expect(tests?.regressedUnderBaseConfiguration).toEqual(["0:identity"]);
+    expect(tests?.regressedUnderBaseConfiguration).toEqual(["clamp.test.mjs:4:1 › 0:identity"]);
     expect(result.regression).toBe("fail");
     // The offline verifier, a second implementation, reads the same regression from the record.
     expect(capturedRegression(result.checks)).toBe(result.regression);

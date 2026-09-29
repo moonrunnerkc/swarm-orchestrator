@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { GateStatus, LoopEvent } from "../core/loop-events.ts";
+import { asJsonValue } from "../evidence/canonical-json.ts";
 import { claimPayloadSchema } from "../evidence/claim.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import { capabilityOf, type GateCapability } from "./gate-capability.ts";
@@ -13,6 +14,14 @@ import {
   type GateReading,
   type GateSeverity,
 } from "./gate-definition.ts";
+import {
+  gitInstrumentTrees,
+  type InstrumentObservation,
+  instrumentObservationSchema,
+  observationDigest,
+  observeInstrument,
+  readUnderInstrument,
+} from "./instrument-identity.ts";
 
 /** Big enough to hold a real failing suite, small enough that one gate cannot fill a disk. */
 const maxRecordedOutputChars = 256_000;
@@ -45,6 +54,11 @@ const gateRunSchema = z.object({
   stderr: z.string(),
   outputTruncated: z.boolean(),
   measures: z.record(z.string(), z.number()),
+  /**
+   * The instrument this command ran under, beside the reference's (instrument-identity-v1).
+   * Absent on records before it and on gates that run nothing; a reader applies the same rule.
+   */
+  instrument: instrumentObservationSchema.optional(),
 });
 
 interface GateRun {
@@ -158,17 +172,38 @@ export async function runGateCycle(
   const statuses: Record<string, GateStatus> = {};
   const measures: Record<string, number> = {};
 
+  const instrumentTrees = gitInstrumentTrees({
+    root: context.workspaceRoot,
+    referenceCommit: context.changes.baseRef,
+    changed: context.changes.files.map((file) => file.path),
+    readReference: (path) => context.probe.readBase(path),
+    readCurrent: (path) => context.probe.readCurrent(path),
+    installedRoot: context.workspaceRoot,
+  });
   for (const gate of gates) {
+    const instrumented =
+      gate.source.kind === "command"
+        ? { command: gate.source.command, argv: gate.source.argv ?? null }
+        : null;
+    const before =
+      instrumented === null ? null : await observeInstrument(instrumented, await instrumentTrees());
     const { observation, coverageReport, testReport } = await observe(gate, context, deps);
-    const reading = gate.parse(observation);
+    const instrument: InstrumentObservation | null =
+      instrumented === null || before === null || observation.unavailable !== null
+        ? null
+        : {
+            ...(await observeInstrument(instrumented, await instrumentTrees())),
+            before: observationDigest(before),
+          };
+    const reading = readUnderInstrument(gate.parse(observation), instrument);
     const blocking = gate.severity === "blocking";
-    const payload = gateRunPayload(gate, observation, reading, attempt);
+    const payload = gateRunPayload(gate, observation, reading, attempt, instrument);
 
     const recorded = await deps.evidence.record({
       type: "gate-run",
       actor: "harness",
       provenance: ["tool-output"],
-      payload,
+      payload: asJsonValue(payload),
     });
 
     const run: GateRun = {
@@ -287,6 +322,7 @@ function gateRunPayload(
   observation: GateObservation,
   reading: GateReading,
   attempt: number,
+  instrument: InstrumentObservation | null = null,
 ): z.infer<typeof gateRunSchema> {
   return gateRunSchema.parse({
     gateId: gate.id,
@@ -312,6 +348,7 @@ function gateRunPayload(
       observation.stdout.length > maxRecordedOutputChars ||
       observation.stderr.length > maxRecordedOutputChars,
     measures: reading.measures,
+    ...(instrument === null ? {} : { instrument }),
   });
 }
 
@@ -369,7 +406,7 @@ export async function recordBaselineRun(
     type: "gate-baseline",
     actor: "harness",
     provenance: ["tool-output"],
-    payload,
+    payload: asJsonValue(payload),
   });
   return {
     gateId: gate.id,
