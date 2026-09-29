@@ -29,7 +29,19 @@ const decisions = {
     const tests = row.verdict?.checks?.tests;
     return tests === "passed" ? "accept" : tests === "failed" ? "refuse" : "unmeasured";
   },
+  // The verifier's own decision, as its result reports it: a verified run or a regression pass
+  // accepts, a regression the verdict charges to the patch refuses, and an incomplete run or a
+  // run refused before measuring is unmeasured, as the frozen rule's text says. The analysis
+  // first read "any failed check" as a refusal, which since 1.0.6 counted a failure the verdict
+  // could not attribute (its regression unmeasured, its result "incomplete") as a refusal; that
+  // reading is kept as A1-as-first-coded below and in the protocol's amendment.
   A1: (row) => {
+    if (row.outcome !== "executed") return "unmeasured";
+    if (row.verdict?.verified === true || row.verdict?.regression === "pass") return "accept";
+    if (row.verdict?.regression === "fail") return "refuse";
+    return "unmeasured";
+  },
+  "A1-as-first-coded": (row) => {
     if (row.outcome !== "executed") return "unmeasured";
     if (row.verdict?.refusal) return "refuse";
     if (row.verdict?.verified === true || row.verdict?.regression === "pass") return "accept";
@@ -90,8 +102,14 @@ Paired false-green difference A0 minus A1: ${arms[0][1].falseGreen - arms[1][1].
 ${discordant.length} discordant row(s)${discordant.length < 10 ? " (below the ten the rule requires before a difference is called meaningful)" : ""}.
 
 A0 is the repository's own test command, exit code only. A1 is swarm-verify's regression-only
-verdict over the same run: the same suite, plus the base control and the refusal paths. A2 is
-swarm-verify with the held-back check as an oracle; rows without an A2 pass read "not run".
+verdict over the same run: the same suite, plus the base control and the refusal paths, decided
+as the verifier's result reports it. A2 is swarm-verify with the held-back check as an oracle;
+rows without an A2 pass read "not run".
+
+A1 as the analysis first coded it (any failed check refuses, whatever the verdict attributed):
+${rule(tally("A1-as-first-coded")).slice(2, -2)}. The two agree wherever every failed check is
+charged to the patch or proven inherited; they differ where the verdict could not attribute a
+failure and reports the run incomplete.
 
 ## Rows
 

@@ -60,16 +60,15 @@ const unjudged = rows.filter((row) => row.adjudication?.status === "unjudged");
 const notAdjudicated = rows.filter((row) => row.adjudication === undefined);
 const greenAdjudicated = green.filter((row) => adjudicated.includes(row));
 const falseGreen = greenAdjudicated.filter((row) => violated.includes(row));
+// The verifier's own decision, as Comparison A's A1 reads it (see comparison-a.mjs).
 const decision = (row) =>
   row.outcome !== "executed"
     ? "unmeasured"
-    : row.verdict?.refusal
-      ? "refuse"
-      : row.verdict?.verified === true || row.verdict?.regression === "pass"
-        ? "accept"
-        : Object.values(row.verdict?.checks ?? {}).some((status) => status === "failed")
-          ? "refuse"
-          : "unmeasured";
+    : row.verdict?.verified === true || row.verdict?.regression === "pass"
+      ? "accept"
+      : row.verdict?.regression === "fail"
+        ? "refuse"
+        : "unmeasured";
 const detected = falseGreen.filter((row) => decision(row) === "refuse");
 const goodAccepted = met.filter((row) => decision(row) === "accept");
 const goodRefused = met.filter((row) => decision(row) === "refuse");

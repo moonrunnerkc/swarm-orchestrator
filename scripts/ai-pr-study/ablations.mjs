@@ -14,17 +14,12 @@ const truthOf = (row) => row.adjudication?.status;
 const judged = rows.filter((row) =>
   ["requirement-met", "requirement-violated"].includes(truthOf(row)),
 );
-const failedChecks = (row) =>
-  Object.entries(row.verdict?.checks ?? {})
-    .filter(([, status]) => status === "failed")
-    .map(([id]) => id);
 
 /** The verifier's recorded regression-only decision, as Comparison A's A1 reads it. */
 const verifierDecision = (row) => {
   if (row.outcome !== "executed") return "unmeasured";
-  if (row.verdict?.refusal) return "refuse";
   if (row.verdict?.verified === true || row.verdict?.regression === "pass") return "accept";
-  if (failedChecks(row).length > 0) return "refuse";
+  if (row.verdict?.regression === "fail") return "refuse";
   return "unmeasured";
 };
 
