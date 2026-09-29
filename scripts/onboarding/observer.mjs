@@ -34,33 +34,67 @@ const record = (entry) =>
   appendFileSync(log, `${JSON.stringify({ t: Date.now() - startedAt, ...entry })}\n`);
 
 const name = `swarm-onboarding-${Date.now()}`;
-function docker(args, options = {}) {
-  return spawnSync("docker", args, {
+const lima = config.backend === "lima";
+function run(program, args, options = {}) {
+  return spawnSync(program, args, {
     encoding: "utf8",
     maxBuffer: 64_000_000,
     timeout: options.timeoutMs ?? 600_000,
   });
 }
+const docker = (args, options) => run("docker", args, options);
 
-// A fresh container with nothing but the pinned image; prerequisites are provisioned exactly
-// as the repository or the verifier README states them, and each provisioning command is logged.
-const created = docker([
-  "run",
-  "-d",
-  "--name",
-  name,
-  "--add-host=host.docker.internal:host-gateway",
-  "-w",
-  "/home/dev",
-  config.image,
-  "sleep",
-  "infinity",
-]);
-if (created.status !== 0) throw new Error(`container: ${created.stderr}`);
-record({ kind: "container", image: config.image, digest: config.imageDigest, name });
+// Either a fresh container from the pinned image, or (backend "lima") a fresh virtual machine
+// created from a Lima template for this attempt alone and deleted after it: its own kernel, disk,
+// package caches and home directory, nothing carried over from an earlier attempt. Prerequisites
+// are provisioned exactly as the repository or the verifier README states them, each one logged.
+if (lima) {
+  const created = run(
+    "limactl",
+    [
+      "create",
+      `--name=${name}`,
+      "--tty=false",
+      "--cpus=4",
+      "--memory=8",
+      `template:${config.template ?? "ubuntu-24.04"}`,
+    ],
+    { timeoutMs: 1_800_000 },
+  );
+  if (created.status !== 0) throw new Error(`vm create: ${created.stderr}`);
+  const started = run("limactl", ["start", "--tty=false", name], { timeoutMs: 1_800_000 });
+  if (started.status !== 0) throw new Error(`vm start: ${started.stderr}`);
+  const kernel = run("limactl", ["shell", name, "uname", "-a"]);
+  record({
+    kind: "vm",
+    backend: "lima",
+    template: config.template ?? "ubuntu-24.04",
+    name,
+    kernel: kernel.stdout.trim(),
+  });
+} else {
+  const created = docker([
+    "run",
+    "-d",
+    "--name",
+    name,
+    "--add-host=host.docker.internal:host-gateway",
+    "-w",
+    "/home/dev",
+    config.image,
+    "sleep",
+    "infinity",
+  ]);
+  if (created.status !== 0) throw new Error(`container: ${created.stderr}`);
+  record({ kind: "container", image: config.image, digest: config.imageDigest, name });
+}
 
 function shell(command, timeoutMs = 600_000) {
-  const ran = docker(["exec", "-w", "/home/dev", name, "bash", "-lc", command], { timeoutMs });
+  const ran = lima
+    ? run("limactl", ["shell", "--workdir", "/tmp", name, "bash", "-lc", `cd ~ && ${command}`], {
+        timeoutMs,
+      })
+    : docker(["exec", "-w", "/home/dev", name, "bash", "-lc", command], { timeoutMs });
   const stdout = (ran.stdout ?? "").slice(0, 12_000);
   const stderr = (ran.stderr ?? "").slice(0, 6_000);
   return { status: ran.status, stdout, stderr, timedOut: ran.signal === "SIGTERM" };
@@ -270,8 +304,9 @@ try {
   const summary = {
     repository: config.repository,
     category: config.category,
-    image: config.image,
-    imageDigest: config.imageDigest,
+    backend: lima ? "lima" : "docker",
+    image: lima ? `lima template:${config.template ?? "ubuntu-24.04"}` : config.image,
+    imageDigest: config.imageDigest ?? null,
     model: config.model,
     version: config.version,
     steps: messages.filter((m) => m.role === "tool").length,
@@ -283,6 +318,11 @@ try {
   writeFileSync(join(output, "summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
   console.log(JSON.stringify(summary, null, 2));
 } finally {
-  docker(["rm", "-f", name]);
-  record({ kind: "container-removed", name });
+  if (lima) {
+    run("limactl", ["delete", "--force", name], { timeoutMs: 600_000 });
+    record({ kind: "vm-deleted", name });
+  } else {
+    docker(["rm", "-f", name]);
+    record({ kind: "container-removed", name });
+  }
 }
