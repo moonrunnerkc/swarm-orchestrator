@@ -43,6 +43,9 @@ const integrationSuites = [
 
 const notThisProjectsSuite = [
   ...configDefaults.exclude,
+  // Worktrees an assistant creates for delegated work sit under .claude/, each a whole checkout
+  // of this repository at some other commit; collecting them runs another tree's suite as this one.
+  ".claude/**",
   // Everything under campaign/ is other projects' trees: clones, kept disagreement trees, mined
   // pull-request checkouts and the oracles carved out of them. Collecting any of it fails this
   // suite in somebody else's file, with "no test suite found" or a missing import of a module
