@@ -74,6 +74,36 @@ async function verifier(
   }
 }
 
+/**
+ * A committed Python project beside an ignored `.venv` whose interpreter is a shell stand-in:
+ * each `branches` line answers one `python -m` invocation, and anything else exits 2, so a check
+ * the project did not declare cannot pass by accident. Returns the check report's conclusions.
+ */
+async function checkedPythonProject(
+  name: string,
+  files: Readonly<Record<string, string>>,
+  installed: readonly string[],
+  branches: readonly string[],
+): Promise<(id: string) => { id: string; status: string; detail: string } | undefined> {
+  const environment: Record<string, string> = { ".venv/pyvenv.cfg": "home = /usr/bin\n" };
+  for (const tool of installed)
+    environment[`.venv/lib/python3.12/site-packages/${tool}/__init__.py`] = "";
+  const root = await repository(name, {
+    ".gitignore": ".venv/\n",
+    ...files,
+    ...environment,
+    ".venv/bin/python": ["#!/bin/sh", ...branches, 'echo "unexpected: $*" >&2; exit 2', ""].join(
+      "\n",
+    ),
+  });
+  await chmod(join(root, ".venv/bin/python"), 0o755);
+  const ran = await verifier(["--workspace", root, "--json"]);
+  const report = JSON.parse(ran.stdout.trim()) as {
+    conclusions: { checks: readonly { id: string; status: string; detail: string }[] };
+  };
+  return (id) => report.conclusions.checks.find((one) => one.id === id);
+}
+
 describe("swarm-verify with no subcommand", () => {
   it("checks a repository, prints five conclusions, and exits 0 as a regression-only pass", async () => {
     const root = await repository("passing", nodeTestFixture);
@@ -174,41 +204,59 @@ describe("swarm-verify with no subcommand", () => {
   it("checks formatting only with a formatter the project declares", async () => {
     // A project environment whose ruff lints clean and whose `ruff format --check` would
     // reformat a file, as nborder's and tavern's did: they lint with ruff and never format with it.
-    const pythonProject = async (name: string, pyproject: string) => {
-      const root = await repository(name, {
-        ".gitignore": ".venv/\n",
-        "pyproject.toml": pyproject,
-        "app.py": "value = {'a':1}\n",
-        ".venv/pyvenv.cfg": "home = /usr/bin\n",
-        ".venv/lib/python3.12/site-packages/ruff/__init__.py": "",
-        ".venv/bin/python": [
-          "#!/bin/sh",
-          'if [ "$1 $2 $3" = "-m ruff format" ]; then echo "Would reformat: app.py"; exit 1; fi',
-          'if [ "$1 $2 $3" = "-m ruff check" ]; then echo "All checks passed!"; exit 0; fi',
-          'echo "unexpected: $*" >&2; exit 2',
-          "",
-        ].join("\n"),
-      });
-      await chmod(join(root, ".venv/bin/python"), 0o755);
-      const ran = await verifier(["--workspace", root, "--json"]);
-      const report = JSON.parse(ran.stdout.trim()) as {
-        conclusions: { checks: readonly { id: string; status: string; detail: string }[] };
-      };
-      return (id: string) => report.conclusions.checks.find((one) => one.id === id);
-    };
-
-    const linted = await pythonProject("ruff-lint-only", '[project]\nname = "p"\n[tool.ruff]\n');
+    const ruff = [
+      'if [ "$1 $2 $3" = "-m ruff format" ]; then echo "Would reformat: app.py"; exit 1; fi',
+      'if [ "$1 $2 $3" = "-m ruff check" ]; then echo "All checks passed!"; exit 0; fi',
+    ];
+    const linted = await checkedPythonProject(
+      "ruff-lint-only",
+      { "pyproject.toml": '[project]\nname = "p"\n[tool.ruff]\n', "app.py": "value = {'a':1}\n" },
+      ["ruff"],
+      ruff,
+    );
     expect(linted("lint")?.status).toBe("passed");
     expect(linted("format")?.status).toBe("not-applicable");
     expect(linted("format")?.detail).toContain("declares no formatter");
 
     // The control: where the project does declare ruff as its formatter, the same unformatted
     // file is still a blocking failure.
-    const formatted = await pythonProject(
+    const formatted = await checkedPythonProject(
       "ruff-format-declared",
-      '[project]\nname = "p"\n[tool.ruff]\n[tool.ruff.format]\nquote-style = "double"\n',
+      {
+        "pyproject.toml":
+          '[project]\nname = "p"\n[tool.ruff]\n[tool.ruff.format]\nquote-style = "double"\n',
+        "app.py": "value = {'a':1}\n",
+      },
+      ["ruff"],
+      ruff,
     );
     expect(formatted("format")?.status).toBe("failed");
+  });
+
+  it("runs mypy on the targets mypy.ini names rather than on the whole tree", async () => {
+    // ironroot scopes mypy with `files = src` in mypy.ini; `mypy .` also checked its tests and
+    // reported 180 errors there. This environment's mypy fails a whole-tree run the same way,
+    // and checks `src` alone when given no target, failing only where `src` holds an error.
+    const mypy = [
+      'if [ "$*" = "-m mypy ." ]; then echo "tests/test_app.py: error: 180 errors"; exit 1; fi',
+      'if [ "$*" = "-m mypy" ]; then if [ -e src/broken.py ]; then echo "src/broken.py:1: error"; exit 1; fi; echo "Success"; exit 0; fi',
+    ];
+    const files = {
+      "pyproject.toml": '[project]\nname = "p"\n[dependency-groups]\ndev = ["mypy>=1.10"]\n',
+      "mypy.ini": "[mypy]\nfiles = src\nstrict = True\n",
+      "src/app.py": "def double(n: int) -> int:\n    return n * 2\n",
+    };
+    const scoped = await checkedPythonProject("mypy-scoped", files, ["mypy"], mypy);
+    expect(scoped("typecheck")?.status).toBe("passed");
+
+    // The control: a type error inside the scope mypy.ini names still fails the check.
+    const broken = await checkedPythonProject(
+      "mypy-scoped-broken",
+      { ...files, "src/broken.py": "value: int = 'text'\n" },
+      ["mypy"],
+      mypy,
+    );
+    expect(broken("typecheck")?.status).toBe("failed");
   });
 
   it("exits 4 without running a test script that asks for watch mode", async () => {

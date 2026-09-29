@@ -9,6 +9,14 @@ export function pythonFormatCommand(formatter: PythonFormatter): string {
   return formatter.tool === "black" ? "black --check ." : "ruff format --check .";
 }
 
+/**
+ * Plain `mypy` where the configuration mypy reads names its targets, so the project's own scope
+ * stands; `mypy .` only where nothing names one. Shared with the check plan.
+ */
+export function pythonTypecheckCommand(detection: ProjectDetection): string {
+  return detection.pythonMypyTargetsConfigured === true ? "mypy" : "mypy .";
+}
+
 /** Assemble configured Python checks using the project interpreter. */
 export function pythonGates(detection: ProjectDetection): readonly GateDefinition[] {
   const tools = new Set(detection.pythonTools);
@@ -40,7 +48,7 @@ export function pythonGates(detection: ProjectDetection): readonly GateDefinitio
             id: "typecheck",
             title: "typecheck (mypy)",
             severity: "blocking",
-            command: detection.pythonMypyTargetsConfigured ? "mypy" : "mypy .",
+            command: pythonTypecheckCommand(detection),
           })
         : unavailableGate(
             "typecheck",

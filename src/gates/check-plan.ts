@@ -5,7 +5,7 @@ import { nodeScriptCandidates } from "./node-gates.ts";
 import { readNoninteractive } from "./noninteractive-runner.ts";
 import { packageSelection } from "./package-scope.ts";
 import { detectProject, type ProjectDetection } from "./project-type.ts";
-import { pythonFormatCommand } from "./python-gates.ts";
+import { pythonFormatCommand, pythonTypecheckCommand } from "./python-gates.ts";
 
 /**
  * What a first run would do before it does it: the project the metadata describes, the test
@@ -277,7 +277,9 @@ function declaredChecksOf(
       },
       {
         id: `typecheck${suffix}`,
-        command: detection.pythonTools.includes("mypy") ? `${prefix}mypy` : null,
+        command: detection.pythonTools.includes("mypy")
+          ? `${prefix}${pythonTypecheckCommand(detection)}`
+          : null,
         unavailable: detection.pythonTools.includes("mypy")
           ? null
           : "no type checker is configured",

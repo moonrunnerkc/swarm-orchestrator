@@ -52,7 +52,6 @@ export async function detectProject(read: ManifestReader): Promise<ProjectDetect
   const manifests: string[] = [];
   let nodeScriptCommands: Readonly<Record<string, string>> = {};
   let pythonTools: readonly string[] = [];
-  let pythonMypyTargetsConfigured = false;
 
   for (const [type, candidates] of Object.entries(manifestsByType) as [
     ProjectType,
@@ -66,14 +65,15 @@ export async function detectProject(read: ManifestReader): Promise<ProjectDetect
       if (type === "node") nodeScriptCommands = readNodeScripts(text);
       if (type === "python" && manifest !== "setup.py") {
         pythonTools = [...new Set([...pythonTools, ...readPythonTools(text)])].sort();
-        pythonMypyTargetsConfigured ||= hasMypyTargets(manifest, text);
       }
     }
   }
 
   let pythonToolsInstalled: readonly string[] | undefined;
   let pythonFormatter: PythonFormatter | undefined;
+  let pythonMypyTargetsConfigured = false;
   if (types.includes("python")) {
+    pythonMypyTargetsConfigured = await mypyTargetsConfigured(read);
     pythonFormatter = await declaredFormatter(read);
     for (const file of ["pytest.ini", "tox.ini"]) {
       const text = await read(file);
@@ -152,22 +152,76 @@ async function declaredFormatter(read: ManifestReader): Promise<PythonFormatter 
   return undefined;
 }
 
-const configuredMypyTargets = z.object({
-  tool: z.object({
-    mypy: z.object({ files: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]) }),
-  }),
+const mypyTargetValue = z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]);
+const pyprojectMypy = z.object({
+  tool: z.object({ mypy: z.record(z.string(), z.unknown()).optional() }).optional(),
 });
 
-function hasMypyTargets(manifest: string, text: string): boolean {
-  if (manifest === "setup.cfg") {
-    const section = /^\s*\[mypy\]\s*$([\s\S]*?)(?=^\s*\[|$(?![\s\S]))/m.exec(text)?.[1];
-    return section !== undefined && /^\s*files\s*=\s*\S/m.test(section);
+/**
+ * Whether plain `mypy` has targets to check. mypy reads one configuration file, the first of
+ * `mypy.ini`, `.mypy.ini`, `pyproject.toml` holding `[tool.mypy]` and `setup.cfg` holding
+ * `[mypy]`, and takes its targets from that file's `files`, `packages` or `modules`. Targets in
+ * any other file are not read by mypy, so they select nothing here either, and the check keeps
+ * `mypy .` rather than a bare `mypy` that would exit asking for a target.
+ */
+async function mypyTargetsConfigured(read: ManifestReader): Promise<boolean> {
+  for (const file of ["mypy.ini", ".mypy.ini", "pyproject.toml", "setup.cfg"]) {
+    const text = await read(file);
+    if (text === null) continue;
+    if (file === "pyproject.toml") {
+      let section: Readonly<Record<string, unknown>> | undefined;
+      try {
+        section = pyprojectMypy.parse(parse(text)).tool?.mypy;
+      } catch {
+        // mypy stops on a pyproject.toml it cannot parse; the environment reading names it.
+        return false;
+      }
+      if (section === undefined) continue;
+      const configured = section;
+      return ["files", "packages", "modules"].some(
+        (key) => mypyTargetValue.safeParse(configured[key]).success,
+      );
+    }
+    const section = iniSection(text, "mypy");
+    if (section === null && file === "setup.cfg") continue;
+    return section !== null && iniHasValue(section, ["files", "packages", "modules"]);
   }
-  try {
-    return configuredMypyTargets.safeParse(parse(text)).success;
-  } catch {
-    return false;
+  return false;
+}
+
+/** The lines of one INI section, or null where the file has no such section. */
+function iniSection(text: string, name: string): readonly string[] | null {
+  let lines: string[] | null = null;
+  for (const line of text.split(/\r?\n/)) {
+    const header = /^\[([^\]]+)\]\s*$/.exec(line);
+    if (header !== null) {
+      if (lines !== null) return lines;
+      if (header[1]?.trim() === name) lines = [];
+      continue;
+    }
+    lines?.push(line);
   }
+  return lines;
+}
+
+/**
+ * Whether one of `keys` has a non-empty value, read as configparser reads it: `=` or `:` as the
+ * delimiter, and indented lines after a key continuing its value.
+ */
+function iniHasValue(section: readonly string[], keys: readonly string[]): boolean {
+  for (let index = 0; index < section.length; index += 1) {
+    const entry = /^([A-Za-z_][A-Za-z0-9_-]*)[ \t]*[=:](.*)$/.exec(section[index] ?? "");
+    if (entry === null || !keys.includes(entry[1] ?? "")) continue;
+    let value = entry[2] ?? "";
+    for (
+      let next = index + 1;
+      next < section.length && /^[ \t]+\S/.test(section[next] ?? "");
+      next += 1
+    )
+      value += ` ${section[next]}`;
+    if (/[^\s,]/.test(value)) return true;
+  }
+  return false;
 }
 
 function readNodeScripts(text: string): Readonly<Record<string, string>> {
