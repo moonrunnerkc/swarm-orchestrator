@@ -86,10 +86,14 @@ export function challengeVerdictsAgree(records, payloads) {
     const verdict = payloads.get(entry.payloadDigest);
     if (verdict?.rule !== "challenge-verdict-v1") continue;
     const problems = [];
-    const plan = commands.find(
-      (candidate) =>
-        candidate.sequence < entry.sequence && candidate.payloadDigest === verdict.plan,
-    );
+    // The nearest plan before the verdict: the same contract challenged twice over the same tree
+    // writes two plans with one digest, and the earlier one's runs are not this verdict's.
+    const plan = commands
+      .filter(
+        (candidate) =>
+          candidate.sequence < entry.sequence && candidate.payloadDigest === verdict.plan,
+      )
+      .at(-1);
     const planned = payloads.get(plan?.payloadDigest);
     if (planned?.rule !== "challenge-plan-v1" || planned.contractDigest !== verdict.contractDigest)
       problems.push("the verdict names no plan written before it for this contract");
