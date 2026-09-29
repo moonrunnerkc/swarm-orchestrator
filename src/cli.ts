@@ -41,9 +41,16 @@ import { reportGates } from "./cli-run-report.ts";
 import { diffBudgetFrom, gateOptionsFrom, settingsFor } from "./cli-run-settings.ts";
 import { createSystemClock, createSystemRandom } from "./cli-runtime-inputs.ts";
 import { chooseModel, select } from "./cli-select.ts";
+import { strengthenAndRepair, strengtheningLimits, tokensSpent } from "./cli-strengthen.ts";
 import { presetTaskContract } from "./cli-task-contract.ts";
 import { logReward, priceTask } from "./cli-task-cost.ts";
-import { finalizeTaskGoal, preflightTaskGoal, taskGoalGate } from "./cli-task-goal.ts";
+import {
+  finalizeTaskGoal,
+  preflightTaskGoal,
+  probeVerifier,
+  taskGoalGate,
+  verifyCandidateUnder,
+} from "./cli-task-goal.ts";
 import { startInterface } from "./cli-terminal.ts";
 import { verifyBundle } from "./cli-verify.ts";
 import type { StopReason } from "./core/termination.ts";
@@ -379,6 +386,7 @@ async function run(options: RunCommand): Promise<number> {
           signal: interruption.signal,
           isolation,
           install: options.recovery?.goal?.install ?? options.installDependencies === true,
+          challengePolicy: options.challenges ?? ("off" as const),
         };
   const gateOptions = {
     ...gateOptionsFrom(settings),
@@ -411,8 +419,12 @@ async function run(options: RunCommand): Promise<number> {
       throw new Error(
         "preset preflight exhausted implementation allowance; final verification time stays reserved",
       );
-    const taskRun = await runAgentTask({
+    const implementation = (
+      goal: typeof presetGoal,
+      repairFeedback?: string,
+    ): Parameters<typeof runAgentTask>[0] => ({
       task: options.task,
+      ...(repairFeedback === undefined ? {} : { repairFeedback }),
       ...(options.escalationModel === undefined
         ? {}
         : {
@@ -442,11 +454,11 @@ async function run(options: RunCommand): Promise<number> {
             previousSpec: options.recovery.previousSpec,
             previousCriteria: options.recovery.previousCriteria,
           }),
-      ...(presetGoal === undefined
+      ...(goal === undefined
         ? {}
         : {
             contract: presetTaskContract({
-              goal: presetGoal,
+              goal,
               task: options.task,
               ...(options.recovery === undefined
                 ? {}
@@ -486,14 +498,74 @@ async function run(options: RunCommand): Promise<number> {
       approvalMode: settings.approval,
       abortSignal: interruption.signal,
       homeDir: homedir(),
-      ...(gateOptions === undefined ? {} : { gateOptions }),
+      ...(gateOptions === undefined
+        ? {}
+        : {
+            gateOptions:
+              goalContext === undefined || goal === undefined || goal === presetGoal
+                ? gateOptions
+                : {
+                    ...gateOptions,
+                    acceptanceGate: taskGoalGate({ ...goalContext, contract: goal }),
+                  },
+          }),
       ...(diffBudget === undefined ? {} : { diffBudget }),
     });
+    const taskRun = await runAgentTask(implementation(presetGoal));
 
     const { loop, gates } = taskRun;
     let { green, verdict } = taskRun;
     if (goalContext !== undefined) {
-      verdict = await finalizeTaskGoal(goalContext);
+      // Strengthening follows a challenge and only where asked; challenging alone never calls a model.
+      const strengthened =
+        options.strengthen === undefined ||
+        options.challenges === undefined ||
+        options.challenges === "off"
+          ? null
+          : await strengthenAndRepair({
+              evidence,
+              workspace: options.workspace,
+              baseCommit,
+              root: goalContext.contract,
+              policy: options.challenges,
+              limits: strengtheningLimits(options.strengthen),
+              model,
+              clock,
+              signal: interruption.signal,
+              deadline,
+              reserveMs: 30_000,
+              remainingTokens: () => {
+                const used = tokensSpent(evidence);
+                if (used.unknown) return 0;
+                return (
+                  (options.recovery?.remainingTokens ?? options.maxTokens ?? 1_000_000) - used.spent
+                );
+              },
+              verifyCandidate: (contract, policy) =>
+                verifyCandidateUnder(goalContext, contract, policy),
+              verifyProbe: probeVerifier(goalContext),
+              repair: async (brief, contract) => {
+                const used = tokensSpent(evidence);
+                await runAgentTask({
+                  ...implementation(contract, brief),
+                  maxTokens: Math.max(
+                    0,
+                    (options.recovery?.remainingTokens ?? options.maxTokens ?? 1_000_000) -
+                      used.spent,
+                  ),
+                  ...(deadline === null
+                    ? {}
+                    : { maxWallTimeMs: Math.max(0, deadline - clock.now() - 30_000) }),
+                });
+              },
+            });
+      if (strengthened !== null)
+        ui.note(
+          `strengthening: ${strengthened.admitted.length} check(s) admitted over ${strengthened.rounds} round(s); stopped because ${strengthened.stopped}`,
+        );
+      verdict = await finalizeTaskGoal(
+        strengthened === null ? goalContext : { ...goalContext, contract: strengthened.contract },
+      );
       green = verdict.acceptable;
     }
     reportGates(gates.outcome, evidence, ui.note);

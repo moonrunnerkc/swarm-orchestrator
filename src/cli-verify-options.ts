@@ -189,6 +189,7 @@ const switchFlags = new Set([
   "no-color",
   "open-evidence",
   "no-open-evidence",
+  "strengthen",
 ]);
 
 export const defaultBaseRef = "HEAD";
