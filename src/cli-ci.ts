@@ -6,6 +6,7 @@ import { createSystemClock } from "./cli-runtime-inputs.ts";
 import { withVerificationEvidence } from "./cli-verification-evidence.ts";
 import type { CiCommand } from "./cli-verify-options.ts";
 import type { Clock } from "./core/clock.ts";
+import { challengeLines } from "./evidence/challenge-lines.ts";
 import { renderCiSummary } from "./evidence/ci-summary.ts";
 import { declareGoalContract } from "./evidence/goal-contract.ts";
 import { scrubText } from "./evidence/scrub.ts";
@@ -315,13 +316,7 @@ function readAgentStream(text: string, format: "generic" | "claude-code") {
 /** One line per requirement: what challenging its checks established, and the policy applied. */
 function describeChallenges(challenges: IndependentVerification["challenges"]): string {
   if (challenges === undefined) return "";
-  const lines = [
-    `challenges (${challenges.policy}): ${challenges.satisfied ? "every requirement demonstrated detection" : "not every requirement demonstrated detection"}`,
-    ...challenges.requirements.map(
-      (requirement) =>
-        `  ${requirement.outcome.padEnd(16)} ${requirement.id}: base ${requirement.baseControl}; ` +
-        `${requirement.caught.length} caught, ${requirement.gaps.length} gap(s), ${requirement.unwitnessed.length} unwitnessed, ${requirement.invalid.length} invalid. ${requirement.detail}`,
-    ),
-  ];
-  return `${lines.join("\n")}\n`;
+  const [head, ...rest] = challengeLines(challenges);
+  const details = challenges.requirements.map((requirement) => requirement.detail);
+  return `${[head, ...rest.map((line, index) => `  ${line}. ${details[index] ?? ""}`)].join("\n")}\n`;
 }

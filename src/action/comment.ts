@@ -1,3 +1,4 @@
+import { challengeLines } from "../evidence/challenge-lines.ts";
 import { reviewerText } from "../evidence/ci-summary.ts";
 import type { Verdict } from "./verdict.ts";
 
@@ -71,6 +72,13 @@ export function renderComment(options: {
       ? "Unmeasured: nothing the policy asked for."
       : `Unmeasured: ${verdict.decision.unmeasured.map(untrusted).join(", ")}.`,
     verdict.decision.reason === null ? "" : `Reason: ${untrusted(verdict.decision.reason)}.`,
+    ...(verdict.decision.challenges === null
+      ? []
+      : challengeLines(verdict.decision.challenges).map((line, index) =>
+          index === 0
+            ? `${untrusted(line.charAt(0).toUpperCase() + line.slice(1))}.`
+            : `- ${untrusted(line)}`,
+        )),
     "",
     `Signature: ${
       options.attestation.status === "signed"

@@ -1,6 +1,7 @@
 import type { SourceIdentity } from "../gates/change-source.ts";
 import { describeAttribution } from "../gates/failure-attribution.ts";
 import type { IndependentVerification } from "../gates/independent-verification.ts";
+import { challengeLines } from "./challenge-lines.ts";
 import { scrubText } from "./scrub.ts";
 
 /** Render untrusted text as bounded literal Markdown without links, HTML, or commands. */
@@ -59,6 +60,13 @@ export function renderCiSummary(options: {
             : "Supply missing acceptance criteria or repair the failing checks, then verify again.")),
     )}`,
   ];
+  if (result.challenges !== undefined)
+    lines.push(
+      "",
+      ...challengeLines(result.challenges).map((line, index) =>
+        index === 0 ? text(line) : `- ${text(line)}`,
+      ),
+    );
   if (result.checks.length > 100)
     lines.push("Summary truncated after 100 checks; consult the assessment digest in the bundle.");
   if ((options.changedPaths?.length ?? 0) > 50)
