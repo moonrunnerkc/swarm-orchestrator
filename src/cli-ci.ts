@@ -17,6 +17,7 @@ import { createRunCancellation } from "./exec/run-cancellation.ts";
 import { recordedContainerBackend } from "./exec/runtime-resource.ts";
 import { acceptancePackageExecutor } from "./gates/acceptance-package.ts";
 import { resolveChangeSource } from "./gates/change-source.ts";
+import { describeAttribution } from "./gates/failure-attribution.ts";
 import { resolveGithubPullRequest } from "./gates/github-source.ts";
 import {
   type IndependentVerification,
@@ -249,14 +250,8 @@ async function verifyPatchUnderCancellation(
   }
   for (const check of result.checks) {
     const label = check.status === "not-applicable" ? "n/a" : check.status;
-    const attribution =
-      check.attribution === "inherited"
-        ? " [the base fails it the same way]"
-        : check.attribution === "unattributed"
-          ? " [the base fails it too, but not comparably: unmeasured]"
-          : (check.newFailures ?? []).length > 0
-            ? ` [newly failing: ${(check.newFailures ?? []).slice(0, 5).join("; ")}]`
-            : "";
+    const described = describeAttribution(check);
+    const attribution = described === "" ? "" : ` [${described}]`;
     const configuration =
       check.configurationStatus === undefined
         ? ""
