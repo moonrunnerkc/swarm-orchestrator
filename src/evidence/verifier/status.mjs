@@ -471,8 +471,36 @@ function attribution(check, failing) {
     : attributionV1(failing, check.parser, check.baseObservation);
 }
 
-/** The status a check must carry given its own, base-configuration and base readings. */
+/**
+ * The status a check must carry given its own, base-configuration, base-tests and base readings.
+ * A pass whose base-written tests fail against the patch's source, in a way the base does not
+ * fail, is withheld with those tests named. Mirrors `weakenedUnderBaseTests` in
+ * src/gates/independent-verification.ts.
+ */
 function expectedStatus(check) {
+  const decided = expectedStatusBeforeTests(check);
+  if (decided === null) return null;
+  if (check.baseTestsObservation === undefined) return { ...decided, weakened: [] };
+  const within = (observation, instrument) =>
+    instrument === undefined ? observation : { ...observation, instrument };
+  const underTests = readStatus(
+    check.parser,
+    within(check.baseTestsObservation, check.baseTestsInstrument),
+  );
+  if (underTests !== check.baseTestsStatus) return null;
+  if (decided.status !== "passed" || underTests !== "failed") return { ...decided, weakened: [] };
+  const derived = attributionV2(check.baseTestsObservation, check.parser, check.baseObservation);
+  if (derived.attribution === "inherited") return { ...decided, weakened: [] };
+  const baseFailed =
+    check.baseObservation !== undefined &&
+    readStatus(check.parser, check.baseObservation) === "failed";
+  const weakened = baseFailed
+    ? derived.newFailures
+    : [...new Set(namedTestsV2(check.baseTestsObservation)?.failed ?? [])].sort();
+  return { status: "not-applicable", regressed: decided.regressed, weakened };
+}
+
+function expectedStatusBeforeTests(check) {
   const within = (observation, instrument) =>
     instrument === undefined ? observation : { ...observation, instrument };
   const reported = readStatus(check.parser, check.observation);
@@ -553,6 +581,7 @@ export function capturedRegression(checks) {
         return null;
       const expected = expectedStatus(check);
       if (expected === null || expected.status !== check.status) return null;
+      if (!sameList(expected.weakened, check.weakenedTests ?? [])) return null;
       if (
         check.configurationObservation !== undefined &&
         !sameList(expected.regressed, check.regressedUnderBaseConfiguration ?? [])
