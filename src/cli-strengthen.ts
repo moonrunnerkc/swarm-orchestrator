@@ -316,6 +316,21 @@ export async function strengthenAndRepair(
 ): Promise<StrengtheningOutcome> {
   const initial = strengtheningState(options.evidence, options.root);
   const limits = initial.plan ?? options.limits;
+  // An admission whose intent no completion answers was cut off (a killed process, a lost
+  // machine). It is named on the chain once and never run again: its round is already counted,
+  // and a proposal half-admitted is not admitted.
+  const unanswered = unansweredAdmissions(options.evidence);
+  if (unanswered.length > 0)
+    await options.evidence.record({
+      type: "verification-command",
+      actor: "harness",
+      provenance: ["tool-output"],
+      payload: asJsonValue({
+        rule: "strengthening-reconciliation-v1",
+        unanswered,
+        detail: "admissions interrupted before completion; not repeated, not admitted",
+      }),
+    });
   if (initial.plan === null)
     await options.evidence.record({
       type: "verification-command",
@@ -547,6 +562,24 @@ export async function strengthenAndRepair(
     admitted: admittedAll,
     stopped,
   };
+}
+
+/** Proposals whose admission intent has no completion and no reconciliation yet. */
+export function unansweredAdmissions(evidence: EvidenceRecorder): readonly string[] {
+  const open = new Set<string>();
+  for (const entry of evidence.records()) {
+    if (entry.type !== "verification-command") continue;
+    const payload = evidence.payloads().get(entry.payloadDigest) as
+      | { rule?: string; phase?: string; proposal?: string; unanswered?: string[] }
+      | undefined;
+    if (payload?.rule === "check-admission-v1" && typeof payload.proposal === "string") {
+      if (payload.phase === "intent") open.add(payload.proposal);
+      else open.delete(payload.proposal);
+    }
+    if (payload?.rule === "strengthening-reconciliation-v1")
+      for (const proposal of payload.unanswered ?? []) open.delete(proposal);
+  }
+  return [...open];
 }
 
 /** Tokens the chain records as spent by every model call in the session, and whether any is unknown. */
