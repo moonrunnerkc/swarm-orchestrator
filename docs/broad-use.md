@@ -73,6 +73,30 @@ access, with lifecycle scripts off, and is recorded with `network: registry` on 
 `dependency-install` record; every check that follows runs with the network off, and the
 containment self-test still measures `isolated`. Without `--install` a network-disabled
 container needs a prepared runtime, and nothing loosens its boundary.
+
+What the scripts-off install leaves undone runs afterwards as a deferred offline phase, never
+with the network the install had. First a probe run the way the checks run tries to connect to
+an endpoint the host itself can reach; only where that attempt is refused does anything that
+executes registry-served code run, through the same runner, container and built environment as
+the checks. Where the network is reachable (host execution) or cannot be measured, the deferred
+work does not run and the install detail says why. For npm, the dependencies whose lockfile
+entries carry `hasInstallScript` are rebuilt with `npm rebuild --foreground-scripts`, with
+`--nodedir` set to the running node's prefix where it ships headers, so node-gyp compiles a
+native binding offline (the default `node:24-bookworm` image has headers, python3, make and
+g++; a prebuilt-binary download is refused and falls back to that build). For uv, the project
+itself is installed editable as `uv sync` would: the build backend's declared and editable
+requirements are fetched as wheels only (`uv pip install --system --target ... --only-binary
+:all:`, which executes nothing), the backend runs offline to build the editable wheel, and uv
+installs that wheel offline, so tests import the package and find its console scripts. Each
+step is its own `dependency-install` record: `stage: offline-lifecycle`, `network: none` and the
+probe's result for offline work, `stage: build-requirements` with `network: registry` for a
+wheel fetch. A deferred step that fails (a script that needs the network, a backend that needs a
+requirement no wheel provides) is reported with its own output and the checks still run; a
+step that changes source files fails setup, as the install itself would. yarn lockfiles get no
+deferred scripts. Where pnpm is not in the image and the install fetched the declared
+`pnpm@X` through npx, the same version is also kept in `node_modules/.swarm-pnpm` (scripts off,
+recorded as `stage: package-manager`) and put first on the checks' PATH through the built
+environment, so a script such as `pnpm -r run typecheck` runs the pnpm that installed.
 Before model spending, the worker prints the planned checks and measures installed manager,
 interpreter and configured runner versions. A declared manager-version mismatch stops with a
 setup remedy. Implicit Corepack and Python downloads are disabled.
@@ -449,7 +473,9 @@ Action refuses to run candidate code anywhere but inside docker isolation. Candi
 never sees the job's token, the runner's socket or the evidence directory; it sees a
 network-disabled container with the owned checkout mounted. With `install: true` the lockfile
 install runs first inside the container with registry access and lifecycle scripts off, and
-is recorded as such; the checks then run with the network off.
+is recorded as such; the install scripts it skipped (and, for uv, the project's own editable
+install) then run as a deferred phase inside the same network-disabled container the checks
+use, after a probe shows the network is off; the checks then run with the network off.
 
 Inputs beyond the defaults: `target` (`head` or `merge`), `image`, `isolation` (`host` is
 explicit and recorded), `goal-contract`, `oracle`, `packages`, `install`, `require-task`,

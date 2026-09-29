@@ -29,6 +29,30 @@
   `excluded-environments-v1` record in the evidence). A tracked or staged `pyvenv.cfg`, a
   directory holding anything tracked, and every file a `ci` patch adds are still checked. Verdict
   change: such a tree no longer fails `check` on its environment's files.
+- **A dependency whose install script builds its native binding is measurable under
+  `--install`.** With scripts off, `better-sqlite3` never had its binding, so every test that
+  opened a database failed at base and head alike and the verdict read incomplete. The install
+  scripts `npm ci --ignore-scripts` skipped now run as a deferred phase with `npm rebuild`, where
+  the checks run, only after a probe shows a check-time command cannot connect, and with
+  node-gyp pointed at the running node's own headers so the build needs no download. Registry
+  code still never runs with network access: on the host, or wherever the probe cannot show the
+  network is off, the deferred scripts do not run and the install detail says why. A script
+  that tries the network there is refused and its output is reported.
+- **A uv project in src layout is installed before its tests run.** `uv sync
+  --no-install-project` left the project itself out, so tests could not import the package or
+  call its console scripts. The project is now installed editable in the deferred offline phase:
+  the build backend's requirements are fetched as wheels without being run, the backend builds
+  the editable wheel offline, and uv installs it offline.
+- **A script that calls pnpm finds the pnpm that installed.** Where the image has no pnpm and
+  the install fetched the declared version for its own command, a script such as
+  `pnpm -r run typecheck` read `pnpm: not found` and the check was unmeasured. The same version
+  is kept in the checkout's `node_modules` and put first on the checks' PATH through the built
+  environment.
+
+Each deferred step is its own intent and completion on the `dependency-install` record, naming
+its stage and its network (`none` with the probe's result for offline work), so a reader sees
+which scripts ran offline and which fetch reached the registry. A deferred step that fails is
+reported and the checks still run; one that changes source files fails setup.
 
 ## 1.1.0 - 2026-09-29
 
