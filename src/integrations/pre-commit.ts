@@ -155,10 +155,13 @@ async function runVerifier(entry: string, args: readonly string[], home: string)
   }
 }
 
-/** Write `.git/hooks/pre-commit` calling the verifier, or leave a foreign hook alone and say so. */
+/**
+ * Write `.git/hooks/pre-commit` calling the verifier through `launcher` (the shell command that
+ * reaches it, see `installedLauncher`), or leave a foreign hook alone and say so.
+ */
 export async function installPreCommit(
   repository: string,
-  entry: string,
+  launcher: string,
 ): Promise<{
   readonly state: "installed" | "present" | "foreign";
   readonly path: string;
@@ -167,7 +170,7 @@ export async function installPreCommit(
   const top = await git(repository, ["rev-parse", "--show-toplevel"]);
   const hooksDirectory = await git(top, ["rev-parse", "--git-path", "hooks"]);
   const path = join(top, hooksDirectory, "pre-commit");
-  const line = `exec ${JSON.stringify(process.execPath)} ${JSON.stringify(entry)} pre-commit`;
+  const line = `exec ${launcher} pre-commit`;
   const content = `#!/bin/sh\n${hookMarker}\n${line}\n`;
   if (await exists(path)) {
     const current = await readFile(path, "utf8");

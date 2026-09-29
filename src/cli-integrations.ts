@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import type { HookCommand, McpCommand, PreCommitCommand } from "./cli-verify-options.ts";
 import { defaultSessionRoot } from "./evidence/session.ts";
 import { installHook, runHook, uninstallHook } from "./integrations/claude-hook.ts";
+import { installedLauncher } from "./integrations/launcher.ts";
 import { describeTools, serveMcp } from "./integrations/mcp-server.ts";
 import { installPreCommit, uninstallPreCommit, verifyStaged } from "./integrations/pre-commit.ts";
 import { exitCodes } from "./machine-output.ts";
@@ -26,6 +27,11 @@ function verifierCommand(entry: string): string {
   const quote = (value: string) =>
     /^[A-Za-z0-9_./-]+$/.test(value) ? value : JSON.stringify(value);
   return `${quote(process.execPath)} ${quote(entry)}`;
+}
+
+async function launcher(entry: string): Promise<string> {
+  const { buildVersion } = await import("./build-version.ts");
+  return installedLauncher({ execPath: process.execPath, entry, version: buildVersion });
 }
 
 function out(line: string): void {
@@ -58,7 +64,7 @@ async function hook(options: HookCommand): Promise<number> {
       ? join(homedir(), ".claude", "settings.json")
       : join(options.workspace, ".claude", "settings.json"));
   if (options.step === "install") {
-    const installed = await installHook(settingsPath, verifierCommand(entry));
+    const installed = await installHook(settingsPath, await launcher(entry));
     out(
       `${installed.changed ? "installed" : "already present"}: ${installed.command} in ${settingsPath}`,
     );
@@ -121,7 +127,7 @@ async function mcp(options: McpCommand): Promise<number> {
 async function preCommit(options: PreCommitCommand): Promise<number> {
   const entry = entryPath();
   if (options.step === "install") {
-    const installed = await installPreCommit(options.workspace, entry);
+    const installed = await installPreCommit(options.workspace, await launcher(entry));
     if (installed.state === "foreign") {
       out(
         `a pre-commit hook that is not ours is at ${installed.path}; add this line to it rather than replacing it:`,
