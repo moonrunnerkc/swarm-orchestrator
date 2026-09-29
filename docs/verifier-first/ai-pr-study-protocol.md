@@ -198,7 +198,12 @@ study of a convenience population selected by the rule above.
   - *Setup was not recorded as setup.* Each side of each arm now records its dependency
     preparation (command, lockfile and its digest, exit, duration, output tail) and command
     environment (image id and repository digests, PATH with the project's `.venv/bin` and
-    `node_modules/.bin` first, network) under `setup`; a setup failure is its own outcome.
+    `node_modules/.bin` first, network) under `setup`; a setup failure is its own outcome. The
+    package manager a lockfile names (pnpm, yarn) is installed into the checkout during
+    preparation, while the registry is reachable, so the test command needs no network; a
+    development row showed the earlier form (`npx --package pnpm` at test time) recording a
+    suite as failed when no test had run. System commands the image lacks are recorded beside
+    a suite's status as `environmentGaps` without changing it.
   - *One reviewer saw the candidate implementation.* The check author read the head checkout
     and wrote one check; nothing checked it. The author now reads the pull request's text, the
     changed file names and a checkout of the base commit only, and writes checks per stated
