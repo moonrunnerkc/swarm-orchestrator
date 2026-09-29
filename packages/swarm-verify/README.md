@@ -1,22 +1,33 @@
 # swarm-verify
 
-Independently check what an AI-written change actually ran, whether the checks it passed
-could have caught wrong work, and what stays unverified. No model, no API key, no
-configuration.
+Swarm Verify runs a project's checks and records evidence showing what passed, what failed, and
+what remains unverified. No model, no API key, no configuration.
 
 ```sh
 npx swarm-verify
 ```
 
-Run it in a repository and it discovers the declared test command from the manifests, runs it
-the way a CI job would, and prints five conclusions apart: whether the command ran, what the
-checks found, how the commands were contained, whether any requirement was judged, and whether
-any check was challenged. A pass is a regression-only pass and is printed as one. Nothing is
-written into the repository.
+Run it in a git repository whose dependencies are installed. It reads the checks the project
+declares, runs them unattended the way a CI job would, and reports apart: whether the command
+ran, what each check found, how the commands were contained, and what it did not judge. By
+default it does not challenge the checks and does not judge whether the work is correct: a pass
+is a regression-only pass and is printed as one. A pass reported by a test configuration,
+script or runner the change itself edited is not counted as a pass.
+
+It creates no `swarm.toml` and keeps its evidence outside the repository, under
+`~/.swarm/sessions` by default. While it runs it briefly adds, then removes, its own
+`swarm-falsification-bond.*` fixtures, and the project's own commands may write build output or
+caches as they always do.
 
 Needs Node 22 or newer and git. Every measurement runs on Node 22.8 or newer; on 22.0 to 22.7
 the changed-line coverage measurement reports unmeasured by name. Linux and macOS run every
-command; Windows runs bundle verification.
+command; Windows runs bundle and verdict verification. Locally, commands run on the host with a
+built environment and no credentials, a policy and not a sandbox; the Action runs them in a
+network-disabled container.
+
+The source is [moonrunnerkc/swarm-orchestrator](https://github.com/moonrunnerkc/swarm-orchestrator),
+which also holds an optional beta coding agent; the Action is distributed from
+[moonrunnerkc/swarm-verify](https://github.com/moonrunnerkc/swarm-verify).
 
 ## In CI
 
@@ -58,8 +69,10 @@ swarm-verify gates [--workspace <dir>]         # run a workspace's gates and bon
 ```
 
 `ci` verifies a change in a fresh checkout of its base and answers two questions apart:
-`regression`, whether the repository's own suite still passes, and `task`, whether the work was
-done, which only a requirement contract or an oracle can say. With a goal contract,
+`regression`, whether any check fails because of the change (a failure the base already had,
+in the same tests the same way, is shown as inherited rather than counted), and `task`, whether
+the work was done, which only a requirement contract or an oracle can say. Neither a contract
+nor a signature proves the code is semantically correct. With a goal contract,
 `--challenges` asks whether the contract's checks could have caught wrong work: a base control
 per requirement, mechanical mutations of the changed lines witnessed by the repository suite,
 sealed fixtures, and named missing obligations. `required` refuses on a gap.
@@ -75,9 +88,8 @@ Exit codes: 0 acceptable, 1 not acceptable, 2 an unreadable command line, 3 canc
 missing prerequisite, an ambiguous workspace, a watch-mode script or a manifest-less directory
 as 4, each with the exact next step.
 
-The same commands ship inside [swarm-orchestrator](https://github.com/moonrunnerkc/swarm-orchestrator),
-the coding agent this verifier was built for, which is an advanced beta mode and is never
-needed to use this package. The walkthrough with captured transcripts is
+The same commands ship inside swarm-orchestrator, whose coding agent is an optional advanced
+beta mode and is never needed to use this package. The walkthrough with captured transcripts is
 [docs/verify-only.md](https://github.com/moonrunnerkc/swarm-orchestrator/blob/v13-main/docs/verify-only.md).
 
 Publication is separate from source delivery: only a `swarm-verify-vVERSION` tag matching this

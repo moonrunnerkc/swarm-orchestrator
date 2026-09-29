@@ -39,11 +39,31 @@ Paths are relative to this file's directory.
 | The tool was measured on fifty repositories in five languages, each seeded with one defect its own suite catches, under criteria sealed before any repository was looked at, and every bundle of the corpus verifies | `../campaign/criteria.md` and `../campaign/methodology.md`, both committed before what they govern; `../campaign/seeds/manifest.json`, committed before any arm ran; `../campaign/results/report.md`, generated from the result records alone: 43 of 43 executed bundles verify on `local-mlx` and 50 of 50 on `local-ollama`, with the frontier arm carried at zero runs. The bundles are under `../campaign/corpus/` with their own verifiers |
 | `swarm ci` refuses to certify on an oracle that never ran the change, and says which lines | `../src/gates/oracle-reach.ts` with `../src/gates/oracle-reach.test.ts` for the rule, `../src/gates/v8-coverage.ts` with `../src/gates/v8-coverage.test.ts` for the reader, which is checked line by line against node's own lcov report of the same run, and `../src/gates/independent-verification.test.ts` for both directions end to end: an oracle that takes a branch reads `reached` and one that does not reads `unreached` with the line named. Measured on the mined corpus: koa#1946 is refused for lines 270 to 273 of the file it certified, and dayjs#3181 for the `d.tz` branch its held-back case breaks on |
 | `swarm ci` asks whether the oracle asserted anything about the lines the patch added, and says what showed the mutant changed the program | `../src/gates/oracle-mutants.ts` with `../src/gates/oracle-mutants.test.ts` for the eight operators, read off the language's statement productions and derived in `oracle-bond-operators.md` before any of them was implemented; `../src/gates/mutant-parse.ts` with `../src/gates/mutant-parse.test.ts`, which runs each dialect rather than asserting which ones `node --check` reads; `../src/gates/mutant-witness.ts` and `../src/gates/oracle-bond-run.ts` with their tests for the two detectors and the order they are spent in; and `../src/gates/independent-verification.test.ts` for all of it end to end, including a patch whose accepted mutant coverage shows changed what ran, and one whose accepted mutant neither detector can witness. Measured over the corpus: all eight operators fire, the three general ones account for 25 of the 34 mutants built, and `node scripts/bond-cost.mjs` prints what requiring a witness costs against recording it |
+| A pass reported by an instrument the change edited is not counted as a pass | `../src/gates/instrument-identity.ts` with `../src/gates/instrument-identity.test.ts` and `../src/gates/instrument-identity.integration.test.ts`: with the real Vitest, a `vitest.config.mjs` that forges its report, a configuration importing a changed helper, a setup file under an unlisted name, a test script replaced by an echo and a runner taken from a path all read incomplete from `check`, and `ci` reruns the check with the base's instrument. The reproduction reported against the published 1.0.7 is in the installed-package matrix, `../scripts/verifier-matrix-smoke.mjs` |
+| Two failing tests with the same title are two failures | `../src/gates/failure-attribution.ts` and `../src/evidence/verifier/status.mjs` (failure-identity-v2), with `../src/gates/duplicate-titles.integration.test.ts`: the real node runner, two files each declaring `works`, the first already failing; breaking the second reads as a new failure, a comment-only patch as inherited, live, in the Action's decision and in the offline re-derivation |
+| A patch cannot pass `ci` by editing the test that would catch it | `../src/gates/attack-families.integration.test.ts`: a broken change behind a skipped, deleted or rewritten test reads unmeasured with the test named, and a correct change that also edits, renames and adds tests still passes |
 | The declared-file-set check blocks an out-of-set edit until an amendment is recorded | `evidence/2026-08-18/shakedown/bundles/task-08-file-set-amended`, where the gate blocked three times and the run went green only after an amendment with a reason reached the ledger |
 
 ## What may not be said
 
 Verbatim, because each of these has been tempting at some point in this project's history.
+
+- **"Nothing is written into the repository."** `check` creates no `swarm.toml` and keeps its
+  evidence outside the repository, but it briefly adds and removes its own falsification-bond
+  fixtures, and the project's own commands write whatever they write. Say that.
+- **That the basic command runs in a container when one is available.** Locally it runs on the
+  host under a built environment, a policy and not a sandbox; containers are the Action's default
+  and `--isolation` asks for one. The 1.0.0 release note said otherwise and carries a correction.
+- **That `regression: pass` means every check passed.** A failure the base had, in the same tests
+  the same way, is shown as inherited and not counted. Say "no check failed because of the change".
+- **That a requirement contract, a challenge or a signature proves the work correct.** A contract
+  defines scope, its checks are evidence, a challenge asks whether a check could fail, and a
+  signature says who produced a bundle.
+- **That swarm-verify catches more wrong work than another tool, or is the only tool that does
+  something.** No completed comparison supports either; the advantage is an open hypothesis
+  tracked in `verifier-first/README.md`.
+- **That the fork route has been exercised on a real fork**, until the completion index records a
+  real fork pull request run through the published Action.
 
 - **"Seven red-team laps."** The loop ledger records one completed lap. Six of the seven
   pass directories were human-driven work outside the driver, which
