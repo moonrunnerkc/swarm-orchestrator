@@ -1,0 +1,25 @@
+{
+  "repository": "zhihui-hu/one-ip",
+  "category": "vite",
+  "backend": "lima",
+  "image": "lima template:ubuntu-24.04",
+  "imageDigest": null,
+  "model": "qwen3.6:35b-a3b",
+  "version": "1.1.0",
+  "steps": 17,
+  "firstResultMs": 506138,
+  "outcome": {
+    "step": 18,
+    "firstResult": true,
+    "firstResultText": "Got swarm-verify running on ./repo. Result: **fail** (exit 1). 5 checks passed (lint, build, placeholder, secret-scan, diff-budget), 1 failed (tests - wrangler couldn't find dist directory), 4 not run (typecheck, format, file-set, behaviour-probe). Evidence bundle created at ~/.swarm/sessions/20260929T045401-259124/bundle. The bundle verified successfully with all integrity checks passing.",
+    "brokenCopyRefused": false,
+    "confusions": [
+      "swarm-verify did NOT refuse the broken copy - it ran normally and reported the test failure. It detected the file change (tests/ip-score.test.mjs) but only noted it as 'observed changes, not an authorised file set' without blocking execution.",
+      "The term 'refuses' in the README refers to bundle tampering detection (when a verified evidence bundle is altered), not source code modification detection. I modified source code, not the evidence bundle.",
+      "I expected swarm-verify might detect that a test file was intentionally broken and refuse to trust results, but it simply ran the checks and reported the failure normally."
+    ],
+    "report": "## Report: Testing swarm-verify on zhihui-hu/one-ip\n\n### Step 1: First Result on ./repo\n\n**Prerequisites setup:**\n- Node.js v22.22.3 and git 2.43.0 were available\n- pnpm was not installed; installed to user prefix (`~/.local`) due to permission restrictions\n- Installed repo dependencies with `pnpm install --frozen-lockfile` (606 packages)\n\n**swarm-verify result:**\n```\nresult: fail: a blocking check failed (exit 1)\nchecks: passed 5 (lint, build, placeholder, secret-scan, diff-budget), \n        failed 1 (tests), not run 4 (typecheck, format, file-set, behaviour-probe)\nevidence: /home/brad.guest/.swarm/sessions/20260929T045401-259124/bundle\n```\n\nThe test check failed because `wrangler deploy --dry-run` couldn't find the `dist` directory. The bundle was created and verified successfully (all 24 records intact, signature valid).\n\n### Step 2: Broken Copy Test\n\n**Action:** Copied repo to `./broken`, broke `tests/ip-score.test.mjs` by changing expected value from `\"var(--danger)\"` to `\"var(--wrong)\"`.\n\n**Result:** swarm-verify did **NOT refuse** the broken copy. It ran normally:\n```\nresult: fail: a blocking check failed (exit 1)\nchecks: passed 5, failed 1 (tests), not run 4\ntests: 187 collected, 186 passed, 1 failed - \"IP score colors use the same boundaries...\"\nfile-set: noted 1 changed file (tests/ip-score.test.mjs) but did not block\n```\n\nswarm-verify detected the file modification (`tests/ip-score.test.mjs`) and reported it as \"observed changes, not an authorised file set,\" but did not refuse or block execution. The exit code was still 1 (same as original), just for a different reason (actual test assertion failure vs. wrangler error).\n\n### Step 3: Bundle Verification\n\nThe original bundle verified successfully with all integrity checks passing:\n- Manifest format valid, ledger parses correctly\n- Hash chain intact (24 links)\n- Signature verifies (ed25519, ephemeral key)\n- All blobs match content addresses\n- Verdicts recomputed correctly\n\n### Key Findings & Confusions\n\n1. **swarm-verify did not \"refuse\" the broken copy** - It ran checks normally and reported the test failure. The \"refusal\" mechanism described in the README applies to tampered evidence bundles, not source code modifications.\n\n2. **File change detection** - swarm-verify does detect when test files are modified (`file-set` output), but only as informational, not as a blocking condition.\n\n3. **The falsification-bond mechanism** - The README mentions adding/removing `swarm-falsification-bond.*` fixtures to show passing checks can fail, but I did not specifically test this behavior.\n\n4. **Exit code 1** was returned in both cases (original and broken), just for different reasons.\n\n### Time: ~6 steps total\n1. Check Node/git versions\n2. Check repo structure/node_modules\n3. Install pnpm\n4. Install repo dependencies\n5. Run swarm-verify on original repo\n6. Copy repo and break a test\n7. Run swarm-verify on broken copy\n8. Verify original bundle"
+  },
+  "finishedAt": "2026-09-29T05:03:58.471Z",
+  "label": "AI onboarding simulation by a local model; not a human tester"
+}

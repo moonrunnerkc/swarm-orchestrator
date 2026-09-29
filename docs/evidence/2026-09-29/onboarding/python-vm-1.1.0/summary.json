@@ -1,0 +1,25 @@
+{
+  "repository": "taverntesting/tavern",
+  "category": "python",
+  "backend": "lima",
+  "image": "lima template:ubuntu-24.04",
+  "imageDigest": null,
+  "model": "qwen3.6:35b-a3b",
+  "version": "1.1.0",
+  "steps": 25,
+  "firstResultMs": 196648,
+  "outcome": {
+    "step": 26,
+    "firstResult": true,
+    "firstResultText": "swarm-verify ran on ./repo and exited with code 1 (fail). It reported that 2 checks passed (lint, tests) and 4 failed (format, placeholder, secret-scan, diff-budget). The tests check showed \"546 runner-reported tests, 539 executed; outcome passed\". The failure was due to lint/format issues, not test failures.",
+    "brokenCopyRefused": true,
+    "confusions": [
+      "The tavern README mentions `pip install` but swarm-verify detected a `uv.lock` file and required `uv`. I had to install `uv` to proceed.",
+      "Breaking `test_dummy.py` initially did not cause a test failure (outcome passed), likely because the test was skipped or excluded. Breaking `tavern/__init__.py` caused an import error that prevented proper result parsing. Finally, breaking an assertion in `tests/unit/test_marks.py` successfully caused a test failure.",
+      "The swarm-verify output for the broken copy showed 'outcome failed' for the tests check, confirming it detects broken tests."
+    ],
+    "report": "I successfully ran swarm-verify on the tavern repository.\n\n**First Result:**\nRunning `npx swarm-verify` in `./repo` exited with code 1 (fail). The output showed:\n- **Checks passed:** lint, tests (outcome passed: 546 runner-reported tests, 539 executed)\n- **Checks failed:** format, placeholder, secret-scan, diff-budget\n- **Result:** fail: a blocking check failed (exit 1)\n\nThe test suite itself passed, but other checks (formatting, placeholders, etc.) failed.\n\n**Broken Copy Test:**\nI created a disposable copy (`broken`), installed dependencies via `uv sync`, and broke an assertion in `tests/unit/test_marks.py`. Running swarm-verify in the broken copy again exited with code 1. This time, the **tests** check failed (\"outcome failed\"), confirming that swarm-verify detects broken tests and refuses (exits non-zero).\n\n**Confusions/Notes:**\n1. The tavern README mentions `pip install` for setup, but swarm-verify detected a `uv.lock` file and required `uv`. I had to install `uv` to proceed.\n2. Initial attempts to break tests (`test_dummy.py`, `tavern/__init__.py`) did not produce clean failure reports (either skipped or import errors). Breaking a specific assertion in an existing test file worked as expected.\n3. swarm-verify provides detailed evidence bundles and verification instructions, even on failure.\n\n**Time:** ~12 steps (commands) to complete the process."
+  },
+  "finishedAt": "2026-09-29T05:31:40.065Z",
+  "label": "AI onboarding simulation by a local model; not a human tester"
+}

@@ -1,0 +1,30 @@
+{
+  "repository": "hoangsonww/Claude-Code-Agent-Monitor",
+  "category": "express",
+  "prerequisites": [
+    {
+      "name": "apt prerequisites",
+      "command": "sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl ca-certificates git xz-utils python3 >/dev/null"
+    },
+    {
+      "name": "Node 22 from nodejs.org (pinned)",
+      "command": "curl -fsSL https://nodejs.org/dist/v22.22.3/node-v22.22.3-linux-$(uname -m | sed 's/x86_64/x64/;s/aarch64/arm64/').tar.xz -o /tmp/node.tar.xz && sudo mkdir -p /usr/local/lib/nodejs && sudo tar -xJf /tmp/node.tar.xz -C /usr/local/lib/nodejs --strip-components=1 && sudo ln -sf /usr/local/lib/nodejs/bin/node /usr/local/bin/node && sudo ln -sf /usr/local/lib/nodejs/bin/npm /usr/local/bin/npm && sudo ln -sf /usr/local/lib/nodejs/bin/npx /usr/local/bin/npx && node --version && printf 'export PATH=/usr/local/lib/nodejs/bin:$PATH\\n' | sudo tee /etc/profile.d/nodejs.sh >/dev/null"
+    },
+    {
+      "name": "git identity",
+      "command": "git config --global user.email dev@example.test && git config --global user.name dev"
+    }
+  ],
+  "model": "qwen3.6:35b-a3b",
+  "endpoint": "http://localhost:11434",
+  "extraBody": {
+    "options": {
+      "num_ctx": 32768
+    }
+  },
+  "maxSteps": 40,
+  "version": "candidate",
+  "verifierReadme": "@@README@@",
+  "backend": "lima",
+  "template": "ubuntu-24.04"
+}
