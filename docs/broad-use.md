@@ -68,7 +68,7 @@ injection is refused. Nothing writes back to the user's environment.
 
 Dependency preparation is separate and requires `--install`. npm uses `ci --ignore-scripts`,
 pnpm uses `install --frozen-lockfile --ignore-scripts`, and uv uses `sync --locked
---no-install-project`. Inside a container, that one authorized command runs with registry
+--no-install-project --no-build`. Inside a container, that one authorized command runs with registry
 access, with lifecycle scripts off, and is recorded with `network: registry` on its
 `dependency-install` record; every check that follows runs with the network off, and the
 containment self-test still measures `isolated`. Without `--install` a network-disabled
@@ -87,10 +87,18 @@ g++; a prebuilt-binary download is refused and falls back to that build). For uv
 itself is installed editable as `uv sync` would: the build backend's declared and editable
 requirements are fetched as wheels only (`uv pip install --system --target ... --only-binary
 :all:`, which executes nothing), the backend runs offline to build the editable wheel, and uv
-installs that wheel offline, so tests import the package and find its console scripts. Each
+installs that wheel offline, so tests import the package and find its console scripts. The uv
+install itself runs with `--no-build`, so no build backend or setup.py ever runs while the
+registry is reachable: a dependency that ships only a source archive, a workspace member and a
+local directory package are left out of it by name (`--no-install-package`) and built in the
+deferred phase the same way, the archive's bytes first fetched by the image's interpreter and
+checked against the lockfile's sha256 without being unpacked or run. A git source, or an
+archive whose address or hash cannot be checked, is left out with its reason in the detail;
+a package with no wheel for the platform and no lockfile entry the phase can build makes the
+install fail with uv's own message rather than build it with the network on. Each
 step is its own `dependency-install` record: `stage: offline-lifecycle`, `network: none` and the
 probe's result for offline work, `stage: build-requirements` with `network: registry` for a
-wheel fetch. A deferred step that fails (a script that needs the network, a backend that needs a
+wheel fetch, `stage: source-archive` with `network: registry` for an archive fetch. A deferred step that fails (a script that needs the network, a backend that needs a
 requirement no wheel provides) is reported with its own output and the checks still run; a
 step that changes source files fails setup, as the install itself would. yarn lockfiles get no
 deferred scripts. Where pnpm is not in the image and the install fetched the declared
