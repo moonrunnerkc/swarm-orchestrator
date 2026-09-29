@@ -73,6 +73,42 @@ describe("verifying the staged tree", () => {
     expect(await git(["worktree", "list"])).not.toContain("staged");
   }, 120_000);
 
+  it("does not pass a staged test script that prints a pass instead of running the tests, while an unstaged fix sits beside it", async () => {
+    await writeFile(join(repository, "double.mjs"), "export const double = (n) => n * 3;\n");
+    await writeFile(
+      join(repository, "package.json"),
+      '{ "name": "w", "version": "1.0.0", "type": "module", "scripts": { "test": "echo \'# tests 1\' && echo \'# pass 1\' && echo \'# fail 0\'" } }\n',
+    );
+    await git(["add", "double.mjs", "package.json"]);
+    await writeFile(join(repository, "double.mjs"), "export const double = (n) => n * 2;\n");
+    const outcome = await verifyStaged({ ...options(), json: true });
+    const report = JSON.parse(outcome.lines.at(-1) ?? "{}");
+    // The command comes from HEAD's manifest, which the harness runs itself: the staged script
+    // never ran, the real tests did, and the staged break is what they found.
+    expect(report.result).toBe("fail");
+    expect(outcome.exitCode).toBe(1);
+    expect(JSON.stringify(report.conclusions)).toContain("doubles");
+  });
+
+  it("does not pass a staged script change where the reference's script runs through npm", async () => {
+    await writeFile(
+      join(repository, "package.json"),
+      '{ "name": "w", "version": "1.0.0", "type": "module", "scripts": { "test": "node --test && node -e 0" } }\n',
+    );
+    await git(["commit", "-qam", "a composed test script"]);
+    await writeFile(join(repository, "double.mjs"), "export const double = (n) => n * 3;\n");
+    await writeFile(
+      join(repository, "package.json"),
+      '{ "name": "w", "version": "1.0.0", "type": "module", "scripts": { "test": "node -e 0" } }\n',
+    );
+    await git(["add", "double.mjs", "package.json"]);
+    const outcome = await verifyStaged({ ...options(), json: true });
+    const report = JSON.parse(outcome.lines.at(-1) ?? "{}");
+    expect(report.result).toBe("incomplete");
+    expect(outcome.exitCode).toBe(4);
+    expect(JSON.stringify(report.conclusions)).toContain("package.json#scripts.test");
+  });
+
   it("fails a staged change the suite refuses", async () => {
     await writeFile(join(repository, "double.mjs"), "export const double = (n) => n * 3;\n");
     await git(["add", "double.mjs"]);
