@@ -195,3 +195,109 @@ describe("family 3: a runner reached through a substituted executable", () => {
     await rm(modules, { recursive: true, force: true });
   }, 120_000);
 });
+
+/** `check` over the fixture as a real process, with a home of its own. */
+async function checkProcess(home: string) {
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  try {
+    const ran = await promisify(execFile)(
+      process.execPath,
+      [resolve("src/swarm-verify.ts"), "check", "--json", "--workspace", repository],
+      {
+        env: {
+          PATH: process.env.PATH ?? "",
+          HOME: home,
+          NO_COLOR: "1",
+          SWARM_LOCAL_BASE_URL: "http://127.0.0.1:9",
+        },
+        timeout: 120_000,
+        maxBuffer: 16_000_000,
+      },
+    );
+    return { code: 0, stdout: ran.stdout, stderr: ran.stderr };
+  } catch (cause) {
+    const failed = cause as { code?: number; stdout?: string; stderr?: string };
+    return { code: failed.code ?? 1, stdout: failed.stdout ?? "", stderr: failed.stderr ?? "" };
+  }
+}
+
+describe("family 9: candidate code writes into the verifier's own evidence", () => {
+  it("stops the run rather than export a chain the candidate appended to, and keeps what it wrote", async () => {
+    const home = await mkdtemp(join(tmpdir(), "swarm-evidence-home-"));
+    const store = join(home, ".swarm", "sessions");
+    // The attacker knows where the account's store is; the harness hands children another HOME.
+    await writeFile(join(repository, "store.txt"), store);
+    await writeFile(
+      join(repository, "calc.test.mjs"),
+      [
+        'import test from "node:test";',
+        'import assert from "node:assert/strict";',
+        'import { appendFileSync, readdirSync, readFileSync, statSync } from "node:fs";',
+        'import { join } from "node:path";',
+        'import { double } from "./calc.mjs";',
+        'test("doubles", () => {',
+        '  const root = readFileSync(new URL("./store.txt", import.meta.url), "utf8").trim();',
+        "  const newest = readdirSync(root).map((d) => join(root, d)).sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0];",
+        '  appendFileSync(join(newest, "ledger.jsonl"), \'{"forged":true}\\n\');',
+        "  assert.equal(double(2), 4);",
+        "});",
+        "",
+      ].join("\n"),
+    );
+    git(["add", "-A"]);
+    git(["commit", "-qm", "a test that knows the evidence store"]);
+    await writeFile(join(repository, "calc.mjs"), "export const double = (n) => n + n;\n");
+    const ran = await checkProcess(home);
+    expect(ran.code).not.toBe(0);
+    expect(ran.stdout).not.toContain('"result":"pass"');
+    expect(ran.stderr).toContain("could not be appended to");
+    const [session] = await readdir(store);
+    const ledger = await import("node:fs/promises").then((fs) =>
+      fs.readFile(join(store, session as string, "ledger.jsonl"), "utf8"),
+    );
+    // Preserved for reconciliation, never repaired or truncated.
+    expect(ledger).toContain('{"forged":true}');
+    await rm(home, { recursive: true, force: true });
+  }, 120_000);
+});
+
+describe("families 7 and 10: the instrument changes while, or after, the check runs", () => {
+  it("withholds a pass where a test rewrote the lockfile during the run, and measures again from scratch next time", async () => {
+    await writeFile(
+      join(repository, "package-lock.json"),
+      `${JSON.stringify({ name: "w", lockfileVersion: 3, packages: { "": { name: "w" } } }, null, 2)}\n`,
+    );
+    await writeFile(
+      join(repository, "package.json"),
+      '{"name":"w","private":true,"type":"module","scripts":{"test":"node --test && node -e 0"}}\n',
+    );
+    await writeFile(
+      join(repository, "drift.test.mjs"),
+      [
+        'import test from "node:test";',
+        'import { writeFileSync } from "node:fs";',
+        'test("drifts", () => {',
+        '  writeFileSync(new URL("./.npmrc", import.meta.url), "script-shell=/bin/sh\\n");',
+        "});",
+        "",
+      ].join("\n"),
+    );
+    git(["add", "-A"]);
+    git(["commit", "-qm", "a suite that rewrites npm's configuration while it runs"]);
+    await writeFile(join(repository, "calc.mjs"), "export const double = (n) => n + n;\n");
+    const home = await mkdtemp(join(tmpdir(), "swarm-drift-home-"));
+    const first = await checkProcess(home);
+    const report = JSON.parse(first.stdout) as { result: string; conclusions: unknown };
+    expect(report.result).toBe("incomplete");
+    expect(JSON.stringify(report.conclusions)).toContain(".npmrc");
+    // Nothing is reused: with the rewrite undone and the suite no longer rewriting, the next run
+    // measures the tree as it now stands and passes.
+    await rm(join(repository, ".npmrc"));
+    git(["rm", "-q", "drift.test.mjs"]);
+    git(["commit", "-qm", "the suite no longer rewrites npm's configuration"]);
+    const second = JSON.parse((await checkProcess(home)).stdout) as { result: string };
+    expect(second.result).toBe("pass");
+    await rm(home, { recursive: true, force: true });
+  }, 180_000);
+});
