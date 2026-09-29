@@ -249,7 +249,12 @@ async function readVerifierScript(): Promise<string> {
   const embeddedUpgrade = upgrade
     .replace(cryptoImport, "")
     .replace("export function upgradeControlPasses", "function upgradeControlPasses");
-  const embeddedStatus = status.replaceAll("export function ", "function ");
+  // The verifier already imports the hash; inside the closure an import is not allowed.
+  if (!status.includes(cryptoImport))
+    throw new Error("embedded status module layout changed; update its standalone assembly");
+  const embeddedStatus = status
+    .replace(cryptoImport, "")
+    .replaceAll("export function ", "function ");
   const embeddedChallenges = challenges.replaceAll("export function ", "function ");
   return verifier
     .replace(

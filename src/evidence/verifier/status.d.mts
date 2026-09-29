@@ -7,3 +7,5 @@ export function readStatus(
 export function capturedRegression(
   checks: unknown,
 ): "pass" | "fail" | "unmeasured" | null | undefined;
+/** What makes a recorded instrument-identity-v1 observation untrusted; empty where nothing does. */
+export function instrumentChanges(instrument: unknown): readonly string[];

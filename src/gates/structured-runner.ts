@@ -41,7 +41,10 @@ with tempfile.TemporaryDirectory(prefix="swarm-pytest-") as d:
   tests=[]
   for t in root.iter("testcase"):
    status="error" if t.find("error") is not None else "failed" if t.find("failure") is not None else "skipped" if t.find("skipped") is not None else "passed"
-   tests.append({"id":t.get("classname","")+":"+t.get("name",""),"status":status})
+   point={"id":t.get("classname","")+":"+t.get("name",""),"status":status}
+   why=t.find("error") if t.find("error") is not None else t.find("failure")
+   if why is not None: point["message"]=(why.get("message") or "")[:2000]
+   tests.append(point)
   print(json.dumps({"schema":"swarm.pytest.v1","tests":tests}))
  except Exception as e: print(json.dumps({"unavailable":str(e)}))
  sys.exit(result.returncode)
