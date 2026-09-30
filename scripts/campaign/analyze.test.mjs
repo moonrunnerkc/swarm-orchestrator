@@ -38,10 +38,13 @@ describe("paired effects", () => {
 
 describe("the superiority rule", () => {
   const margins = {
+    comparison: "B",
     incorrectApprovalReduction: 0.1,
     correctApprovalLoss: 0.1,
     wallTimeRatio: 2,
+    wallExtraMs: 15 * 60_000,
     tokenRatio: 2,
+    decisionMs: 10 * 60_000,
     criticalBypassesInTreatmentOnly: 0,
   };
   const launches = [];
@@ -63,7 +66,7 @@ describe("the superiority rule", () => {
     const verdict = superiority(cells, "refuse-all", "comparator", margins);
     expect(verdict.clauses.fewerIncorrectApprovals).toBe(true);
     expect(verdict.clauses.acceptableCorrectApprovalLoss).toBe(false);
-    expect(verdict.clauses.approvesSomeCorrectWork).toBe(false);
+    expect(verdict.clauses.approvesCorrectWorkWhereComparatorDoes).toBe(false);
     expect(verdict.superior).toBe(false);
   });
 
@@ -81,6 +84,20 @@ describe("the superiority rule", () => {
     expect(verdict.superior).toBe(true);
     expect(
       superiority(cells, "treatment", "comparator", { ...margins, wallTimeRatio: 1.2 }).superior,
+    ).toBe(false);
+  });
+
+  it("fails the cost clause where tokens are unmeasured, and reads Comparison A by decision time", () => {
+    const cells = [
+      { goal: "g1", arm: "c", outcomes: { "correct-approval": 1 }, wallMs: [1000], tokens: [null] },
+      { goal: "g1", arm: "t", outcomes: { "correct-approval": 1 }, wallMs: [1500], tokens: [null] },
+    ];
+    expect(superiority(cells, "t", "c", margins).clauses.practicalCost).toBe(false);
+    const inA = superiority(cells, "t", "c", { ...margins, comparison: "A" });
+    expect(inA.clauses.practicalCost).toBe(true);
+    expect(
+      superiority(cells, "t", "c", { ...margins, comparison: "A", decisionMs: 1000 }).clauses
+        .practicalCost,
     ).toBe(false);
   });
 });

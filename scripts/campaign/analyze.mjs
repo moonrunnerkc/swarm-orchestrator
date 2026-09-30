@@ -138,21 +138,32 @@ export function superiority(cells, treatment, comparator, margins) {
   const wall = (cellsOf) => median(goals.flatMap((goal) => cellsOf[goal].wallMs));
   const tokens = (cellsOf) => median(goals.flatMap((goal) => cellsOf[goal].tokens));
   const wallRatio = wall(left) && wall(right) ? wall(right) / wall(left) : null;
+  const wallExtraMs = wall(left) !== null && wall(right) !== null ? wall(right) - wall(left) : null;
   const tokenRatio = tokens(left) && tokens(right) ? tokens(right) / tokens(left) : null;
-  const anyCorrectApproval = goals.some(
-    (goal) => (right[goal].outcomes["correct-approval"] ?? 0) > 0,
-  );
+  const approvesCorrect = (cell) => (cell.outcomes["correct-approval"] ?? 0) > 0;
+  const comparatorApproves = goals.filter((goal) => approvesCorrect(left[goal]));
+  const treatmentAlsoApproves = comparatorApproves.filter((goal) => approvesCorrect(right[goal]));
+  // Comparator minus treatment, so both effects read "how much better (or worse) the treatment is":
+  // a positive incorrect-approval difference is a reduction, a positive correct-approval
+  // difference is a loss.
   const clauses = {
     fewerIncorrectApprovals:
       incorrectApproval.low !== null &&
       incorrectApproval.low > 0 &&
       incorrectApproval.difference >= margins.incorrectApprovalReduction,
     acceptableCorrectApprovalLoss:
-      correctApprovalLoss.high !== null &&
-      -correctApprovalLoss.high >= -margins.correctApprovalLoss,
-    practicalWallOverhead: wallRatio !== null && wallRatio <= margins.wallTimeRatio,
-    practicalTokenOverhead: tokenRatio === null ? null : tokenRatio <= margins.tokenRatio,
-    approvesSomeCorrectWork: anyCorrectApproval,
+      correctApprovalLoss.high !== null && correctApprovalLoss.high <= margins.correctApprovalLoss,
+    practicalCost:
+      margins.comparison === "A"
+        ? wall(right) !== null && wall(right) <= margins.decisionMs
+        : wallRatio !== null &&
+          wallRatio <= margins.wallTimeRatio &&
+          wallExtraMs <= margins.wallExtraMs &&
+          tokenRatio !== null &&
+          tokenRatio <= margins.tokenRatio,
+    approvesCorrectWorkWhereComparatorDoes:
+      comparatorApproves.length > 0 &&
+      treatmentAlsoApproves.length * 2 >= comparatorApproves.length,
     noNewCriticalBypass: margins.criticalBypassesInTreatmentOnly === 0,
   };
   return {
@@ -160,14 +171,9 @@ export function superiority(cells, treatment, comparator, margins) {
     comparator,
     goals: goals.length,
     incorrectApproval,
-    correctApprovalLoss: {
-      ...correctApprovalLoss,
-      // Loss is comparator minus treatment in correct approvals.
-      difference: correctApprovalLoss.difference === null ? null : -correctApprovalLoss.difference,
-      low: correctApprovalLoss.high === null ? null : -correctApprovalLoss.high,
-      high: correctApprovalLoss.low === null ? null : -correctApprovalLoss.low,
-    },
+    correctApprovalLoss,
     wallRatio,
+    wallExtraMs,
     tokenRatio,
     clauses,
     superior: Object.values(clauses).every((clause) => clause === true),
