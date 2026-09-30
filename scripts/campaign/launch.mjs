@@ -14,7 +14,14 @@
  * attempt stays beside the rerun. Nothing here reads a result to decide whether to run again.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { arch, platform } from "node:os";
 import { join } from "node:path";
 import { asJsonValue, digestOfBytes, digestOfJson } from "../../src/evidence/canonical-json.ts";
@@ -94,8 +101,9 @@ export async function runLaunch(manifest, manifestDigest, launch) {
   const attempt = nextAttempt(attempts, manifest.budgets.infrastructureReruns);
   if (attempt === null) return { skipped: true, record: attempts.at(-1) };
   mkdirSync(directory, { recursive: true });
-  const scratch = join(campaignRoot, "work", `${launch.id}.attempt-${attempt}`);
-  mkdirSync(scratch, { recursive: true });
+  // A fresh directory per attempt, never one an earlier or interrupted attempt left behind.
+  mkdirSync(join(campaignRoot, "work"), { recursive: true });
+  const scratch = mkdtempSync(join(campaignRoot, "work", `${launch.id}.attempt-${attempt}-`));
   const log = commandLog(join(campaignRoot, "blobs"));
   const loaded = loadGoalPackage(join(campaignRoot, "goals", launch.goal), { sealedRoot });
   const contractPath = join(scratch, "contract.json");
@@ -151,10 +159,11 @@ export async function runLaunch(manifest, manifestDigest, launch) {
       context.notes.push(`hidden oracle: ${scored.basis}`);
     }
   } catch (cause) {
-    const infrastructure = cause instanceof InfrastructureError;
+    // An exception is the harness or the machine failing, never an arm deciding: an arm's
+    // decision, inconclusive included, always returns. It is rerun under the registered rule.
     outcome = {
-      decision: infrastructure ? "infrastructure-failure" : "inconclusive",
-      basis: `${infrastructure ? "infrastructure" : "the arm could not run"}: ${cause.message}`,
+      decision: "infrastructure-failure",
+      basis: `${cause instanceof InfrastructureError ? "infrastructure" : "harness"}: ${cause.message}`,
     };
   }
   const endedAt = new Date();
