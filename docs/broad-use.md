@@ -272,7 +272,10 @@ swarm 'Clamp to a range' --workspace ./project --preset bugfix \
 4. **Limits.** At most one admitted check per requirement and two rounds by default;
    `--strengthen-rounds` and `--strengthen-per-requirement` can only lower them. The loop spends
    the run's one token and wall-clock budget and asks nothing of the model before the gate
-   criteria are sealed.
+   criteria are sealed. What is left of the token budget is read before every proposal and before
+   the repair, each proposal is asked for at most that much output, and a spent budget stops the
+   loop where it stands (`stopped because the task's token budget is spent`), keeping any check
+   already admitted on the revised contract.
 5. **Resume.** The plan, each admission's intent and its result are on the chain before and
    after each effect. A run killed during an admission is resumed with that admission named once
    as cut off (`strengthening-reconciliation-v1`), never rerun or admitted, and the recorded plan

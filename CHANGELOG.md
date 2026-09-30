@@ -518,6 +518,23 @@ simulations, with every defect they found fixed at its root and named here.
 - The container's scratch mount is executable, so a fetched package manager can run from it.
 - The README leads with the verifier; the coding agent's page is `docs/agent.md`.
 
+## Unreleased (swarm-orchestrator)
+
+### Fixed
+
+- **Check strengthening reads the token budget before every proposal, and asks for no more than
+  is left.** The controller checked the budget once at the start of a round, then asked one
+  proposal per requirement with a floor of 256 output tokens: with 128 tokens left it asked for
+  256, and after that call it asked the next requirement's proposal against nothing. The budget,
+  the task's allowance less every recorded model call, is now read before each proposal and
+  before the repair; a proposal is asked for at most what is left, never a floor; and a spent
+  budget stops the loop where it stands, with the reason recorded (`budget-spent`) and any check
+  admitted before the stop kept on the revised contract for the final verification. Usage a
+  provider did not report still spends the whole budget, and an uncapped run is unchanged. The
+  cap is on requested output; a provider's actual usage, input included, is what the chain
+  records and the next check reads. Not in any published version: the feature reached the tree
+  after 14.2.0.
+
 ## 14.2.0 - 2026-09-27
 
 ### Fixed
