@@ -43,8 +43,14 @@ export async function scoreHidden(log, goal, patch, { keep = false } = {}) {
     if (!(await applyPatch(log, checkout, patch, "candidate")))
       return { hidden: "unjudgeable", basis: "the patch does not apply to the base" };
     const prepared = await prepareDependencies(log, goal, checkout);
+    // The goal's install succeeds at the base and the reference (validation checks both), so a
+    // tree whose own manifest and lockfile cannot be installed is a change that broke them: it
+    // does not meet the requirement, whatever its source would have done.
     if (!prepared.ok)
-      return { hidden: "unjudgeable", basis: `install failed: ${prepared.failed.join(" ")}` };
+      return {
+        hidden: "fail",
+        basis: `the candidate's dependencies do not install: ${prepared.failed.join(" ")}`,
+      };
     return await judgeHiddenIn(log, goal, checkout, sealed);
   } finally {
     if (!keep) rmSync(scratch, { recursive: true, force: true });
