@@ -20,6 +20,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { commitAcceptanceMaterial } from "./acceptance-material.mjs";
 import {
@@ -290,6 +291,10 @@ async function b5(context) {
     "record",
     // Everything after `--` is the recorded agent's own argv, not VERA's flags.
     "--",
+    // VERA's key directory is the launch's HOME; the agent keeps the machine's own, as it has in
+    // every other arm, so its sessions and caches are where they always are.
+    "env",
+    `HOME=${homedir()}`,
     ...agentArgv(context, workspace, base, brief, [], context.remaining),
   ];
   await invokeAgent(context, recorded(prompt), workspace);
