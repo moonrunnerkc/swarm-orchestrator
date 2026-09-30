@@ -181,6 +181,36 @@ describe("swarm-verify with no subcommand", () => {
     expect(ran.code).toBe(0);
   });
 
+  it("builds before typechecking a workspace whose type declarations only the build writes", async () => {
+    // depose's per-package `tsc --noEmit` resolves its workspace dependencies through the
+    // `dist/index.d.ts` that `tsc --build` writes, and its CI builds first. Typechecked before
+    // the build, a clean tree read as a failed typecheck.
+    const files = {
+      "package.json":
+        '{ "name": "d", "version": "1.0.0", "type": "module", "scripts": { "build": "node build.mjs", "typecheck": "node typecheck.mjs", "test": "node --test" } }\n',
+      ".gitignore": "dist/\n",
+      "build.mjs":
+        'import { mkdirSync, writeFileSync } from "node:fs";\nmkdirSync("dist", { recursive: true });\nwriteFileSync("dist/index.d.ts", "export declare const double: (n: number) => number;\\n");\n',
+      "typecheck.mjs":
+        'import { existsSync } from "node:fs";\nif (!existsSync("dist/index.d.ts")) { console.error("error TS2307: Cannot find module \'@d/core\' or its corresponding type declarations."); process.exit(2); }\n',
+      "double.test.mjs": nodeTestFixture["double.test.mjs"],
+      "double.mjs": nodeTestFixture["double.mjs"],
+    };
+    const root = await repository("typecheck-reads-build", files);
+    const ran = await verifier(["--workspace", root]);
+    expect(ran.stdout).toContain("result       regression-only pass");
+    expect(ran.code).toBe(0);
+    // The control: a typecheck that fails whatever the build wrote still fails.
+    const broken = await repository("typecheck-broken", {
+      ...files,
+      "typecheck.mjs":
+        'console.error("error TS2322: Type string is not assignable");\nprocess.exit(2);\n',
+    });
+    const refused = await verifier(["--workspace", broken]);
+    expect(refused.stdout).toContain("failed 1 (typecheck)");
+    expect(refused.code).toBe(1);
+  });
+
   it("runs a vitest project once under CI=true and reads its structured outcome", async () => {
     const root = await repository("vitest", {
       "package.json":

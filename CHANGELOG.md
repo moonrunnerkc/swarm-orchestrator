@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Build runs before every check that can read its output.** 1.2.0 moved the build ahead of
+  tests only. A pnpm workspace whose per-package `tsc --noEmit` resolves its siblings through the
+  `dist/index.d.ts` that `tsc --build` writes, as its own CI builds first, read a failed typecheck
+  on a clean tree. The build now runs first, then typecheck, lint, format and tests. **Verdict
+  change:** such a project reads its real typecheck and lint results instead of a failure caused
+  by the order.
+
 ## 1.2.0 - 2026-09-29
 
 Fixes found by running the published 1.1.0 where a stranger would: fresh virtual machines, the

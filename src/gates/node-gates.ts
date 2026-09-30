@@ -88,15 +88,19 @@ export function nodeGates(
   const pick = (id: string): string | null =>
     (nodeScriptCandidates[id] ?? []).find((name) => scripts.has(name)) ?? null;
 
-  // Build before tests, the order a project's own CI conventionally runs them in: a suite that
-  // exercises build output (a bundle, generated types, a worker's asset directory) fails against
-  // a tree that was never built, and that failure is the harness's order, not the change.
+  // Build first, the order a project's own CI conventionally runs in: install, build, then lint,
+  // typecheck and tests. Every later check can read what the build writes: a suite exercises a
+  // bundle or a worker's asset directory, a workspace package's `tsc --noEmit` resolves its
+  // siblings through their built `.d.ts` files, and a type-aware lint rule does the same. Run
+  // before the build, each of those fails on a tree that was never built, and that failure is
+  // the harness's order, not the change. Nothing the build reads is written by a later check,
+  // so running it first costs no check its input.
   return (
     [
+      ...(scripts.has("build") ? ["build" as const] : []),
       "typecheck",
       "lint",
       "format",
-      ...(scripts.has("build") ? ["build" as const] : []),
       "tests",
     ] as const
   ).map((id) => {
