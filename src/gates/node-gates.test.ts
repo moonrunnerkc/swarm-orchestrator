@@ -27,9 +27,9 @@ describe("assembling the Node checks", () => {
       gate.id,
       gate.source.kind === "command" ? gate.source.command : gate.source.kind,
     ]);
-    expect(commands).toContainEqual(["typecheck", "npm run --silent typecheck"]);
-    expect(commands).toContainEqual(["build", "npm run --silent build"]);
-    expect(commands.find(([id]) => id === "tests")?.[1]).toBe("npm run --silent test");
+    expect(commands).toContainEqual(["typecheck", "npm run --loglevel=error typecheck"]);
+    expect(commands).toContainEqual(["build", "npm run --loglevel=error build"]);
+    expect(commands.find(([id]) => id === "tests")?.[1]).toBe("npm run --loglevel=error test");
     expect(commands.every(([, command]) => !String(command).startsWith("pnpm"))).toBe(true);
   });
 

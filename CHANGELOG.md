@@ -10,6 +10,12 @@
   on a clean tree. The build now runs first, then typecheck, lint, format and tests. **Verdict
   change:** such a project reads its real typecheck and lint results instead of a failure caused
   by the order.
+- **A failed check records what its runner printed.** Node checks ran as `npm run --silent`,
+  and npm hands that log level to the script as `npm_config_loglevel=silent`. pnpm reads it, so a
+  failed `pnpm -r run typecheck` recorded an exit code with empty output. Checks now run as
+  `npm run --loglevel=error`, which keeps npm's notices out of the record and every tool's errors
+  in it; `swarm init` writes the same form. No verdict changes: the failure is still a failure,
+  now with its reason.
 
 ## 1.2.0 - 2026-09-29
 

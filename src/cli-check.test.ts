@@ -108,7 +108,7 @@ describe("swarm-verify with no subcommand", () => {
   it("checks a repository, prints five conclusions, and exits 0 as a regression-only pass", async () => {
     const root = await repository("passing", nodeTestFixture);
     const ran = await verifier(["--workspace", root]);
-    expect(ran.stdout).toContain("command      npm run --silent test [node --test]");
+    expect(ran.stdout).toContain("command      npm run --loglevel=error test [node --test]");
     expect(ran.stdout).toContain("ran: exited 0");
     expect(ran.stdout).toMatch(/^checks {7}passed \d+ \(tests/m);
     expect(ran.stdout).toContain("execution    restricted");
@@ -179,6 +179,28 @@ describe("swarm-verify with no subcommand", () => {
     const ran = await verifier(["--workspace", root]);
     expect(ran.stdout).toContain("result       regression-only pass");
     expect(ran.code).toBe(0);
+  });
+
+  it("records what a failed check printed when its runner reads npm's log level", async () => {
+    // depose's `pnpm -r run typecheck` failed with nothing on stdout or stderr: `npm run
+    // --silent` hands `npm_config_loglevel=silent` to the script, and pnpm, reading it, printed
+    // none of its packages' output. This stand-in behaves as pnpm 9.15 was observed to.
+    const root = await repository("runner-reads-loglevel", {
+      ...nodeTestFixture,
+      "package.json":
+        '{ "name": "r", "version": "1.0.0", "type": "module", "scripts": { "typecheck": "node recursive.mjs", "test": "node --test" } }\n',
+      "recursive.mjs": [
+        'if (process.env.npm_config_loglevel !== "silent")',
+        '  console.log("packages/core typecheck: src/index.ts(3,7): error TS2322: Type string is not assignable to type number.");',
+        "process.exit(1);",
+        "",
+      ].join("\n"),
+    });
+    const ran = await verifier(["--workspace", root]);
+    // Still a failure: the fix changes what is recorded, not what is judged.
+    expect(ran.stdout).toContain("failed 1 (typecheck)");
+    expect(ran.stdout).toContain("| packages/core typecheck: src/index.ts(3,7): error TS2322");
+    expect(ran.code).toBe(1);
   });
 
   it("builds before typechecking a workspace whose type declarations only the build writes", async () => {

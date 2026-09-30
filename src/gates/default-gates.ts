@@ -175,7 +175,7 @@ const parserByName: Readonly<Record<OverrideParserName, GateParser>> = {
 export function scriptBodyBehind(command: string, detection: ProjectDetection): string | null {
   const trimmed = command.trim();
   const named =
-    /^(?:npm|pnpm)\s+(?:run|run-script)\s+(?:--silent\s+|-s\s+)?([A-Za-z0-9:._-]+)$/.exec(
+    /^(?:npm|pnpm)\s+(?:run|run-script)\s+(?:--silent\s+|-s\s+|--loglevel=error\s+)?([A-Za-z0-9:._-]+)$/.exec(
       trimmed,
     )?.[1] ?? (/^npm\s+(?:test|t)$/.test(trimmed) ? "test" : null);
   return named === null ? null : (detection.nodeScriptCommands[named] ?? null);

@@ -349,7 +349,7 @@ function scriptsOf(manifest: Record<string, unknown> | null): Readonly<Record<st
 /** The package script a package-manager command runs, or null where the command is not one. */
 function scriptOf(command: string | null): string | null {
   if (command === null) return null;
-  const match = /^(?:npm|pnpm|yarn|bun)\s+run(?:\s+--?[\w-]+)*\s+([\w:.@/-]+)\s*$/.exec(
+  const match = /^(?:npm|pnpm|yarn|bun)\s+run(?:\s+--?[\w-]+(?:=\S+)?)*\s+([\w:.@/-]+)\s*$/.exec(
     command.trim(),
   );
   return match?.[1] ?? null;
