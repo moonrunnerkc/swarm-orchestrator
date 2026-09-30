@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 1.3.0 - 2026-09-29
+
+Defects found by the sixteen-repository rollout of 1.2.0, each reproduced from a recorded run
+and fixed at the root. The verdicts that change are named below. The minor version is for the
+new attribution rule, `failure-identity-v3`, which new records carry; a record written under
+`failure-identity-v2` or v1 re-derives under the rule that wrote it.
 
 ### Fixed
 
