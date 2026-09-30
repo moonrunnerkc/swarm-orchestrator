@@ -57,6 +57,10 @@ describe("registered decision readings", () => {
       }),
     ).toBe("inconclusive");
     expect(swarmCiDecision(null)).toBe("inconclusive");
+    expect(swarmCiDecision(null, "@dotenvx/primitives must target exactly 3.0.3\n")).toBe("refuse");
+    expect(swarmCiDecision(null, "upgrade change outside declared scope: package.json")).toBe(
+      "refuse",
+    );
   });
 
   it("gives plain CI no third answer and never accepts an empty run", () => {
@@ -82,6 +86,8 @@ describe("registered decision readings", () => {
     expect(swarmTaskDecision(1, result)).toBe("refuse");
     expect(swarmTaskDecision(3, result)).toBe("inconclusive");
     expect(swarmTaskDecision(0, null)).toBe("inconclusive");
+    expect(swarmTaskDecision(1, null, "x must target exactly 3.0.3")).toBe("refuse");
+    expect(swarmTaskDecision(5, null, "x must target exactly 3.0.3")).toBe("inconclusive");
     expect(swarmTaskTokens(stdout)).toBe(1500);
     expect(swarmTaskTokens("plain text\n")).toBeNull();
   });

@@ -63,10 +63,18 @@ async function ciArm(context, patch) {
 async function veraPrepared(context, directory) {
   const { log, loaded } = context;
   await cloneAtBase(log, loaded.goal, directory);
-  const install = await prepareDependencies(log, loaded.goal, directory);
-  if (!install.ok) return false;
   await commitAcceptanceMaterial(log, directory, loaded.contract);
   return true;
+}
+
+/**
+ * The goal's install over the tree VERA is about to verify, after the change is in place, as the
+ * plain CI arm installs after applying the patch: an upgrade's new lockfile is what gets installed.
+ */
+async function veraInstall(context, directory) {
+  const installed = await prepareDependencies(context.log, context.loaded.goal, directory);
+  if (!installed.ok)
+    context.notes.push(`install over the verified tree failed: ${installed.failed.join(" ")}`);
 }
 
 /**
@@ -115,6 +123,7 @@ async function veraArm(context, patch, { replay = null } = {}) {
   };
   if (replay !== null) {
     await submit("replayed", replay);
+    await veraInstall(context, checkout);
     const first = await veraStep(context, checkout, ["verify"], home);
     context.notes.push(
       `replayed condition read ${veraDecision(first.exitCode, first.stdout.toString())}`,
@@ -125,7 +134,11 @@ async function veraArm(context, patch, { replay = null } = {}) {
       timeoutMs: 60_000,
     });
     await applyPatch(context.log, checkout, patch, "stale");
-  } else await submit("candidate", patch);
+    await veraInstall(context, checkout);
+  } else {
+    await submit("candidate", patch);
+    await veraInstall(context, checkout);
+  }
   const verified = await veraStep(context, checkout, ["verify"], home);
   const stdout = verified.stdout.toString();
   return {
@@ -173,7 +186,7 @@ async function swarmVerifyArm(context, patch, challenges) {
   });
   const report = lastJsonLine(ran.stdout.toString());
   return {
-    decision: swarmCiDecision(report),
+    decision: swarmCiDecision(report, ran.stderr.toString()),
     basis: `ci exited ${ran.exitCode}: regression ${report?.regression}, task ${report?.task}, verified ${report?.verified}${report?.refusal ? `, refusal ${String(report.refusal).slice(0, 200)}` : ""}`,
   };
 }

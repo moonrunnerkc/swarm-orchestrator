@@ -12,8 +12,17 @@
  * patch that reaches a declared-immutable path. Anything
  * else, including a run refused before it measured, is inconclusive.
  */
-export function swarmCiDecision(report) {
-  if (report === null || typeof report !== "object") return "inconclusive";
+/**
+ * The upgrade policy refusals the pinned product raises as an error before it writes any report:
+ * a dependency not at its authorized exact version, or a change outside the declared upgrade
+ * scope. They are decisions about the change, read from the error the process printed.
+ */
+export const upgradePolicyRefusal =
+  /must target exactly|upgrade change outside declared scope|must occur exactly once|was not in the declared base section|\bpin \S+==/;
+
+export function swarmCiDecision(report, stderr = "") {
+  if (report === null || typeof report !== "object")
+    return upgradePolicyRefusal.test(stderr) ? "refuse" : "inconclusive";
   if (report.verified === true) return "accept";
   const certification = JSON.stringify(report.certification ?? report.certificationPolicy ?? "");
   if (
@@ -51,8 +60,9 @@ export function veraDecision(exitCode, stdout) {
  * exit 0 is an acceptable run; exit 1 a finished run whose product was not acceptable; the
  * cancelled, unavailable and internal-error codes, or no result line, are inconclusive.
  */
-export function swarmTaskDecision(exitCode, resultLine) {
-  if (resultLine === null) return "inconclusive";
+export function swarmTaskDecision(exitCode, resultLine, stderr = "") {
+  if (resultLine === null)
+    return exitCode === 1 && upgradePolicyRefusal.test(stderr) ? "refuse" : "inconclusive";
   if (exitCode === 0 && resultLine.verdict?.acceptable === true) return "accept";
   if (exitCode === 1) return "refuse";
   return "inconclusive";

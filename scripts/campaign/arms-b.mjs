@@ -251,7 +251,7 @@ async function swarmArm(context, extra) {
     workspace,
   );
   return {
-    decision: swarmTaskDecision(ran.exitCode, result),
+    decision: swarmTaskDecision(ran.exitCode, result, ran.stderr.toString()),
     basis: `swarm exited ${ran.exitCode}; acceptable ${result?.verdict?.acceptable}; task ${result?.verdict?.task}`,
     patch: await finalPatch(context.log, workspace, base),
   };
