@@ -25,6 +25,28 @@ export const images = {
 
 export const cacheDirectory = join(campaignRoot, "docker-cache");
 
+/**
+ * Where a step with the network off runs: an internal Docker network, with no route out and no
+ * registry, but with an interface of its own. A container with no interface at all failed every
+ * project test that reads the machine's own network address (vercel/serve's server tests), at
+ * the base and the reference alike, which measures the harness rather than the change.
+ */
+export const internalNetwork = "swarm-campaign-internal";
+
+/** Create the internal network once; an existing one is reused. */
+export async function ensureInternalNetwork(log) {
+  const present = await log.run(["docker", "network", "inspect", internalNetwork], {
+    cwd: campaignRoot,
+    timeoutMs: 60_000,
+  });
+  if (present.exitCode === 0) return;
+  const made = await log.run(["docker", "network", "create", "--internal", internalNetwork], {
+    cwd: campaignRoot,
+    timeoutMs: 60_000,
+  });
+  if (made.exitCode !== 0) throw new Error("the internal campaign network could not be created");
+}
+
 const git = (log, cwd, ...args) => log.run(["git", ...args], { cwd, timeoutMs: 600_000 });
 
 /** A shallow checkout of the goal's base on a branch named `campaign`, verified by commit id. */
@@ -110,7 +132,7 @@ export function containerArgv({ image, directory, argv, network, env = {}, extra
     "--name",
     `campaign-${process.pid}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
     "--network",
-    network ? "bridge" : "none",
+    network ? "bridge" : internalNetwork,
     "--memory",
     "6g",
     "--user",
@@ -150,6 +172,7 @@ export function imageFor(goal, contract = null) {
 
 /** Build the pnpm image a goal needs if it is not already present. */
 export async function ensureImage(log, goal) {
+  await ensureInternalNetwork(log);
   const image = imageFor(goal);
   if (!image.startsWith("swarm-campaign-node:")) return image;
   const present = await log.run(["docker", "image", "inspect", image], {

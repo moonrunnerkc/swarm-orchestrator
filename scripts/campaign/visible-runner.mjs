@@ -41,6 +41,57 @@ function runCli(behavior, root) {
   };
 }
 
+/**
+ * An HTTP behaviour through the same dependency-free runner the verifier uses
+ * (`src/gates/http-check-runner.mjs`, copied beside this file), judged by the same rule: the
+ * status, every named header exactly, the body assertions and the JSON paths.
+ */
+function runHttp(behavior, root) {
+  const ran = spawnSync(
+    "node",
+    [
+      join(dirname(new URL(import.meta.url).pathname), "http-check-runner.mjs"),
+      JSON.stringify(behavior),
+    ],
+    {
+      cwd: resolve(root, behavior.cwd),
+      timeout: behavior.timeoutMs,
+      maxBuffer: 16 * 1024 * 1024,
+      env: { ...process.env, ...(behavior.environment ?? {}) },
+      encoding: "utf8",
+    },
+  );
+  let response;
+  try {
+    response = JSON.parse(ran.stdout);
+  } catch {
+    return { passed: false, detail: `the HTTP runner exited ${ran.status} without an observation` };
+  }
+  if (response.unavailable || response.failure || response.truncated)
+    return { passed: false, detail: response.unavailable ?? response.failure ?? "body truncated" };
+  let body;
+  try {
+    body = behavior.json.length > 0 ? JSON.parse(response.body ?? "") : null;
+  } catch {
+    return { passed: false, detail: "the body is not JSON" };
+  }
+  const jsonMatches = behavior.json.every((assertion) => {
+    let value = body;
+    for (const key of assertion.path)
+      value =
+        typeof value === "object" && value !== null && Object.hasOwn(value, key)
+          ? value[key]
+          : undefined;
+    return value === assertion.equals;
+  });
+  const passed =
+    response.status === behavior.status &&
+    Object.entries(behavior.headers).every(([name, value]) => response.headers?.[name] === value) &&
+    matches(response.body ?? "", behavior.body) &&
+    jsonMatches;
+  return { passed, detail: `status ${response.status}` };
+}
+
 function runBrowser(check, behavior, root) {
   const directory = join(root, ".campaign", `instrument-${check.id}`);
   mkdirSync(directory, { recursive: true });
@@ -102,6 +153,7 @@ export function runVisibleChecks(contract, root, { fromTree = false } = {}) {
     const behavior = check.behavior;
     let reading;
     if (behavior?.kind === "cli") reading = runCli(behavior, root);
+    else if (behavior?.kind === "http") reading = runHttp(behavior, root);
     else if (behavior?.kind === "browser" && behavior.instrument !== undefined)
       reading = runBrowser(check, behavior, root);
     else {

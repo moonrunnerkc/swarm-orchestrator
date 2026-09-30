@@ -9,11 +9,17 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const runner = join(dirname(fileURLToPath(import.meta.url)), "visible-runner.mjs");
+// The verifier's own HTTP behaviour runner, so an HTTP check is exercised the same way in every arm.
+const httpRunner = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../src/gates/http-check-runner.mjs",
+);
 
 /** Write the material into the tree without committing it (the plain CI arm's fresh run). */
 export function writeAcceptanceMaterial(directory, contract) {
   mkdirSync(join(directory, ".campaign"), { recursive: true });
   cpSync(runner, join(directory, ".campaign/visible-runner.mjs"));
+  cpSync(httpRunner, join(directory, ".campaign/http-check-runner.mjs"));
   writeFileSync(
     join(directory, ".campaign/contract.json"),
     `${JSON.stringify(contract, null, 2)}\n`,

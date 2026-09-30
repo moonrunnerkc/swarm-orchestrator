@@ -14,17 +14,9 @@
  * complete run; per-goal results are kept under the campaign cache as they finish.
  */
 import { execFileSync } from "node:child_process";
-import {
-  cpSync,
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { writeAcceptanceMaterial } from "./acceptance-material.mjs";
 import { commandLog } from "./exec.mjs";
 import { loadGoalPackage } from "./goal-package.mjs";
 import { judgeHiddenIn, sealedRoot } from "./truth.mjs";
@@ -38,7 +30,6 @@ import {
   touchesInstallInputs,
 } from "./workspace.mjs";
 
-const here = dirname(fileURLToPath(import.meta.url));
 const goalsRoot = join(campaignRoot, "goals");
 
 /** One tree's readings: the hidden oracle, the visible checks and the project's test command. */
@@ -60,8 +51,7 @@ async function readTree(log, loaded, prepared, patch, label, scratch) {
   }
   const hidden = await judgeHiddenIn(log, goal, trees.hidden);
   mkdirSync(join(trees.visible, ".campaign"), { recursive: true });
-  cpSync(join(here, "visible-runner.mjs"), join(trees.visible, ".campaign/visible-runner.mjs"));
-  writeFileSync(join(trees.visible, ".campaign/contract.json"), JSON.stringify(contract));
+  writeAcceptanceMaterial(trees.visible, contract);
   const visible = await log.run(
     containerArgv({
       image: imageFor(goal, contract),
