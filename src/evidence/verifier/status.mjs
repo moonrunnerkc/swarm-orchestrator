@@ -263,6 +263,25 @@ function cause(text) {
     .slice(0, 2000);
 }
 
+/**
+ * Temporary names set aside under failure-identity v3. Mirrors `withoutTemporaryNames` in
+ * src/gates/failure-attribution.ts: the same fixed temporary roots, and the same two places a
+ * generated name is recognised, a directory under one of them and a value an elision cut.
+ */
+const temporaryPath =
+  /((?:\/private)?\/var\/folders\/[^/\s'"`]+\/[^/\s'"`]+\/T|(?:\/private)?\/tmp|\/var\/tmp|\/dev\/shm|[A-Za-z]:\\Users\\[^\\\s'"`]+\\AppData\\Local\\Temp)([/\\][^\s'"`]*)/g;
+const directoryRun = /[A-Za-z0-9_]{6,}(?=[^/\\\s'"`]*[/\\])/g;
+
+function withoutTemporaryNames(text) {
+  return text
+    .replace(
+      temporaryPath,
+      (_whole, _root, rest) =>
+        `<tmp>${rest.replace(directoryRun, (run) => (/\d/.test(run) ? "<random>" : run))}`,
+    )
+    .replace(/\.\.\.([A-Za-z0-9_]{6,})/g, (whole, run) => (/\d/.test(run) ? "...<random>" : whole));
+}
+
 /** The directory every TAP failure location in the texts shares. */
 function locationRoot(texts) {
   const files = [];
@@ -441,8 +460,8 @@ function namedTestsV2(observation, sharedRoot) {
   };
 }
 
-function comparableOutput(observation) {
-  return stripColour(
+function comparableOutput(observation, rule = "v2") {
+  const text = stripColour(
     `${observation.exitCode}\n${observation.stdout ?? ""}\n${observation.stderr ?? ""}`,
   )
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?/g, "<timestamp>")
@@ -451,6 +470,7 @@ function comparableOutput(observation) {
     .split("\n")
     .map((line) => line.replace(/\s+$/, ""))
     .join("\n");
+  return rule === "v3" ? text.replace(/[^\n]+/g, (line) => withoutTemporaryNames(line)) : text;
 }
 
 /** Why a failed reading failed under v1: title identities, as sets. */
@@ -476,20 +496,32 @@ function tally(ids) {
   return found;
 }
 
+/** A run's tests under the rule named: v3 is v2 with temporary names set aside in each cause. */
+function namedTests(observation, sharedRoot, rule) {
+  const named = namedTestsV2(observation, sharedRoot);
+  if (named === null || rule !== "v3") return named;
+  return {
+    ...named,
+    causes: Object.fromEntries(
+      Object.entries(named.causes).map(([id, text]) => [id, withoutTemporaryNames(text)]),
+    ),
+  };
+}
+
 /**
- * Why a failed reading failed under failure-identity v2: identities that tell same-titled tests
- * apart, counted, with their causes, from two complete runs. Mirrors `attributeFailure` in
- * src/gates/failure-attribution.ts.
+ * Why a failed reading failed under failure-identity v2 or v3: identities that tell same-titled
+ * tests apart, counted, with their causes, from two complete runs. v3 sets temporary names aside.
+ * Mirrors `attributeFailure` in src/gates/failure-attribution.ts, which writes v3.
  */
-function attributionV2(failing, parser, baseObservation) {
+function attributionV2(failing, parser, baseObservation, rule = "v2") {
   if (baseObservation === undefined || readStatus(parser, baseObservation) !== "failed")
     return { attribution: "new", newFailures: [] };
   if (failing.outputTruncated === true || baseObservation.outputTruncated === true)
     return { attribution: "unattributed", newFailures: [] };
   const texts = [failing, baseObservation].map((one) => `${one.stdout ?? ""}\n${one.stderr ?? ""}`);
   const root = texts.every((text) => /^TAP version \d+/m.test(text)) ? locationRoot(texts) : "";
-  const patched = namedTestsV2(failing, root);
-  const base = namedTestsV2(baseObservation, root);
+  const patched = namedTests(failing, root, rule);
+  const base = namedTests(baseObservation, root, rule);
   if (patched !== null && base !== null && patched.failed.length > 0) {
     const before = tally(base.failed);
     const after = tally(patched.failed);
@@ -505,16 +537,26 @@ function attributionV2(failing, parser, baseObservation) {
       : { attribution: "unattributed", newFailures: [] };
   }
   if (patched !== null || base !== null) return { attribution: "unattributed", newFailures: [] };
-  return comparableOutput(failing) === comparableOutput(baseObservation)
+  return comparableOutput(failing, rule) === comparableOutput(baseObservation, rule)
     ? { attribution: "inherited", newFailures: [] }
     : { attribution: "unattributed", newFailures: [] };
 }
 
+/** The v2-family rule a record names; a record naming neither v2 nor v3 was written under v1. */
+function identityRule(check) {
+  return check.attributionRule === "failure-identity-v3"
+    ? "v3"
+    : check.attributionRule === "failure-identity-v2"
+      ? "v2"
+      : null;
+}
+
 /** Why a failed reading failed, under the rule the record names. */
 function attribution(check, failing) {
-  return check.attributionRule === "failure-identity-v2"
-    ? attributionV2(failing, check.parser, check.baseObservation)
-    : attributionV1(failing, check.parser, check.baseObservation);
+  const rule = identityRule(check);
+  return rule === null
+    ? attributionV1(failing, check.parser, check.baseObservation)
+    : attributionV2(failing, check.parser, check.baseObservation, rule);
 }
 
 /**
@@ -535,7 +577,13 @@ function expectedStatus(check) {
   );
   if (underTests !== check.baseTestsStatus) return null;
   if (decided.status !== "passed" || underTests !== "failed") return { ...decided, weakened: [] };
-  const derived = attributionV2(check.baseTestsObservation, check.parser, check.baseObservation);
+  // Records before v3 name no rule on a passing check and were read under v2.
+  const derived = attributionV2(
+    check.baseTestsObservation,
+    check.parser,
+    check.baseObservation,
+    identityRule(check) ?? "v2",
+  );
   if (derived.attribution === "inherited") return { ...decided, weakened: [] };
   const baseFailed =
     check.baseObservation !== undefined &&
@@ -563,7 +611,7 @@ function expectedStatusBeforeTests(check) {
   if (reported !== "passed") return { status: own, regressed: [] };
   // Measured again under the base's instrument and passed there: that reading stands.
   if (underBase === "passed") return { status: "passed", regressed: [] };
-  const v2 = check.attributionRule === "failure-identity-v2";
+  const v2 = identityRule(check) !== null;
   const points = v2
     ? namedTestsV2(check.configurationObservation)
     : namedTestsV1(check.configurationObservation);

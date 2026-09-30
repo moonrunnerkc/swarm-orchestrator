@@ -1,6 +1,12 @@
 import { expect, it } from "vitest";
 import { capturedRegression } from "../evidence/verifier/status.mjs";
-import { attributeFailure, testPoints } from "./failure-attribution.ts";
+import {
+  attributeFailure,
+  attributionRule,
+  testPoints,
+  unattributedReason,
+  withoutTemporaryNames,
+} from "./failure-attribution.ts";
 
 /**
  * Vitest's text reporters, as a project script with flags the structured runner does not take
@@ -133,7 +139,7 @@ function both(withPatch: ReturnType<typeof tap>, atBase: ReturnType<typeof tap>)
     observation: withPatch,
     baseObservation: atBase,
     attribution: live.attribution,
-    attributionRule: "failure-identity-v2",
+    attributionRule,
     inheritedFromBase: live.attribution === "inherited",
     ...(live.newFailures.length === 0 ? {} : { newFailures: live.newFailures }),
   };
@@ -287,4 +293,148 @@ it("tells same-titled failures apart in Node's spec reporter, as in TAP", () => 
   expect(both(base as never, base as never).attribution).toBe("inherited");
   const changed = spec([["a.test.mjs:3:1", "works", "3 !== 2"]], ["works"]);
   expect(both(changed as never, base as never).attribution).toBe("unattributed");
+});
+
+/**
+ * tracemantle's three failures, as its base and its patched run reported them through the
+ * harness's pytest runner: the same three ids, and two messages that differ only in the random
+ * name of pre-commit's repository directory, which pytest's repr cut to its tail.
+ */
+function pytestRun(tests: readonly { id: string; status: string; message?: string }[]) {
+  return {
+    exitCode: 1,
+    stdout: `${JSON.stringify({ schema: "swarm.pytest.v1", tests })}\n`,
+    stderr: "",
+    durationMs: 1,
+    unavailable: null,
+    outputTruncated: false,
+  };
+}
+const tokenizer =
+  "tracemantle.tokenizer.TokenizerError: Cannot load tiktoken cl100k_base. Install tracemantle[tiktoken] and warm its cache, or select --tokenizer heuristic for offline use.";
+const preCommit = (expected: number, stage: string, suffix: string) =>
+  `AssertionError: assert 3 == ${expected}\n +  where 3 = CompletedProcess(args=['pre-commit', 'run', 'tracemantle', '--all-files'], returncode=3, stdout='[INFO] ${stage} e...epo${suffix}\\' when installing build dependencies\\nCheck the log at /tmp/.cache/pre-commit/pre-commit.log\\n', stderr='').returncode`;
+const tracemantle = (suffix: string, passing = "tests.test_cli:test_help") =>
+  pytestRun([
+    {
+      id: "tests.test_build_plan_core:test_explicit_tokenizer_provenance_and_special_markers",
+      status: "failed",
+      message: tokenizer,
+    },
+    {
+      id: "tests.test_pre_commit:test_pre_commit_pass",
+      status: "failed",
+      message: preCommit(0, "Initializing", suffix),
+    },
+    {
+      id: "tests.test_pre_commit:test_pre_commit_fail",
+      status: "failed",
+      message: preCommit(1, "Installing env", suffix),
+    },
+    { id: passing, status: "passed" },
+  ]);
+
+function recorded(withPatch: ReturnType<typeof pytestRun>, atBase: ReturnType<typeof pytestRun>) {
+  const live = attributeFailure({ withPatch, baseStatus: "failed", atBase });
+  return {
+    live,
+    check: {
+      id: "tests",
+      parser: "structured-test-output",
+      severity: "blocking",
+      status: "failed",
+      observation: withPatch,
+      baseObservation: atBase,
+      attribution: live.attribution,
+      attributionRule,
+      inheritedFromBase: live.attribution === "inherited",
+      ...(live.newFailures.length === 0 ? {} : { newFailures: live.newFailures }),
+    },
+  };
+}
+
+const passingLint = {
+  id: "lint",
+  parser: "exit-code",
+  severity: "blocking",
+  status: "passed",
+  observation: { exitCode: 0, stdout: "", stderr: "", durationMs: 1, unavailable: null },
+};
+
+it("inherits failures that differ only in a temporary directory's random name, in both readers", () => {
+  const { live, check } = recorded(tracemantle("nyx5xidu"), tracemantle("c90ac5y6"));
+  expect(live).toEqual({ attribution: "inherited", newFailures: [] });
+  // The offline re-deriver reads the same attribution from the record, and refuses the other.
+  expect(capturedRegression([check, passingLint])).toBe("pass");
+  expect(capturedRegression([{ ...check, attribution: "unattributed" }, passingLint])).toBeNull();
+});
+
+it("still reads a failure whose message changed as changed", () => {
+  const changed = pytestRun([
+    ...JSON.parse(tracemantle("nyx5xidu").stdout).tests.slice(0, 2),
+    {
+      id: "tests.test_pre_commit:test_pre_commit_fail",
+      status: "failed",
+      message: preCommit(2, "Installing env", "nyx5xidu"),
+    },
+  ]);
+  const { live, check } = recorded(changed, tracemantle("c90ac5y6"));
+  expect(live.attribution).toBe("unattributed");
+  expect(capturedRegression([check, passingLint])).toBe("unmeasured");
+  expect(unattributedReason(changed, tracemantle("c90ac5y6"))).toContain(
+    "the same tests fail at the base, but for a different reason (tests.test_pre_commit:test_pre_commit_fail)",
+  );
+});
+
+it("keeps a meaningful difference in a path, and sets aside only generated temporary names", () => {
+  // Generated: the directory mkdtemp made, under each platform's temporary root.
+  expect(withoutTemporaryNames("at /tmp/pytest-of-root/tmpk3j_2x9a/out.json")).toBe(
+    withoutTemporaryNames("at /tmp/pytest-of-root/tmpq8vb01zz/out.json"),
+  );
+  expect(
+    withoutTemporaryNames("/private/var/folders/1q/2_tt_q51x/T/swarm-verify-2vP2VA/a.log"),
+  ).toBe(withoutTemporaryNames("/var/folders/7z/9yyk_0b3/T/swarm-verify-G3uTQs/a.log"));
+  expect(withoutTemporaryNames("C:\\Users\\ci\\AppData\\Local\\Temp\\jest_a1b2c3\\x.snap")).toBe(
+    withoutTemporaryNames("C:\\Users\\runner\\AppData\\Local\\Temp\\jest_z9y8x7\\x.snap"),
+  );
+  // Kept: a path outside a temporary root, a file's own name, a directory named without a digit,
+  // and a message.
+  expect(withoutTemporaryNames("at /workspace/src/parser1.py:3")).not.toBe(
+    withoutTemporaryNames("at /workspace/src/parser2.py:3"),
+  );
+  expect(withoutTemporaryNames("wrote /tmp/cache/report_v10001.json")).not.toBe(
+    withoutTemporaryNames("wrote /tmp/cache/report_v20002.json"),
+  );
+  expect(withoutTemporaryNames("/tmp/fixtures_alpha/data.json")).not.toBe(
+    withoutTemporaryNames("/tmp/fixtures_bravo/data.json"),
+  );
+  expect(withoutTemporaryNames("expected 'abc123' got 'abc124'")).not.toBe(
+    withoutTemporaryNames("expected 'abc123' got 'abc125'"),
+  );
+  // An elided value's tail is set aside only where it has a generated name's shape.
+  expect(withoutTemporaryNames("e...eponyx5xidu'")).toBe(withoutTemporaryNames("e...epoc90ac5y6'"));
+  expect(withoutTemporaryNames("e...alphabet'")).not.toBe(withoutTemporaryNames("e...alphabeu'"));
+});
+
+it("keeps a record written under failure-identity v2 judged by v2, temporary names and all", () => {
+  const { check } = recorded(tracemantle("nyx5xidu"), tracemantle("c90ac5y6"));
+  const legacy = { ...check, attributionRule: "failure-identity-v2" };
+  // v2 compared causes byte for byte: what 1.2.0 recorded as unattributed re-derives as that.
+  expect(
+    capturedRegression([
+      { ...legacy, attribution: "unattributed", inheritedFromBase: false },
+      passingLint,
+    ]),
+  ).toBe("unmeasured");
+  expect(capturedRegression([legacy, passingLint])).toBeNull();
+});
+
+it("names the tests an unattributed check's output does name", () => {
+  expect(unattributedReason(tracemantle("nyx5xidu"), undefined)).toBe(
+    "the base could not be put in place to run it",
+  );
+  const plain = { exitCode: 1, stdout: "boom", stderr: "", durationMs: 1, unavailable: null };
+  expect(unattributedReason(plain, { ...plain, stdout: "bang" })).toBe(
+    "its output names no tests to compare and differs from the base's",
+  );
 });

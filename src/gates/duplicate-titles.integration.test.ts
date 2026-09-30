@@ -78,7 +78,7 @@ it("calls the second same-titled failure new, in the verdict, the Action and the
   expect(tests?.status).toBe("failed");
   expect(tests?.attribution).toBe("new");
   expect(tests?.inheritedFromBase).toBe(false);
-  expect(tests?.attributionRule).toBe("failure-identity-v2");
+  expect(tests?.attributionRule).toBe("failure-identity-v3");
   expect(tests?.newFailures).toEqual(["b.test.mjs:4:1 › 0:works"]);
   expect(result.regression).toBe("fail");
   expect(capturedRegression(result.checks)).toBe("fail");

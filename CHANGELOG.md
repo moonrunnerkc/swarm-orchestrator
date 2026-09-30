@@ -27,6 +27,17 @@
   the base installs its own dependencies from its own lockfile. **Verdict changes:** such a
   workflow-only patch reads its real regression result, and a patch whose build output or
   dependency change broke the suite reads **Regression: fail** instead of an inherited failure.
+- **A failure that differs only in a temporary directory's random name is inherited.** The base
+  and the patch failed the same three tests, and two causes differed only in pre-commit's random
+  repository directory (`...eponyx5xidu` against `...epoc90ac5y6`), so the failures could not be
+  matched and the regression read unmeasured. Causes and outputs are now compared with generated
+  names set aside: platform temporary roots, digit-bearing directory names under them, and a
+  generated name's tail where a reporter elided the rest. A file's own name, a path outside a
+  temporary root and every other word still count, so a changed message still reads as changed.
+  New records carry `failure-identity-v3`; a record written under v2 re-derives under v2. The
+  advice for an unmatched failure now says why it could not be matched, instead of saying the
+  output names no tests when it names them. **Verdict change:** such inherited failures read
+  inherited, so the regression dimension is measured instead of unmeasured.
 
 ## 1.2.0 - 2026-09-29
 
