@@ -1,0 +1,24 @@
+{
+  "repository": "hoangsonww/Claude-Code-Agent-Monitor",
+  "category": "express",
+  "backend": "lima",
+  "image": "lima template:ubuntu-24.04",
+  "imageDigest": null,
+  "model": "qwen3.8:27b",
+  "version": "1.3.0",
+  "steps": 16,
+  "firstResultMs": 175992,
+  "outcome": {
+    "step": 17,
+    "firstResult": true,
+    "firstResultText": "First result on ./repo: \"regression-only pass: the declared checks passed on this tree; task correctness is unmeasured (exit 0)\". It ran `npm run test` (node --test server + client), reporting 1349 collected / 1348 passed / 1 skipped; checks passed 6 (build, format, tests, placeholder, secret-scan, diff-budget), failed 0, not run 4 (typecheck, lint, file-set, behaviour-probe). It emphasized this is a regression-only pass and task correctness was unmeasured (no requirement contract).",
+    "brokenCopyRefused": true,
+    "confusions": [
+      "The tool's reported exit code (1) vs the shell status I saw (0) was ambiguous because I piped through `tail`, so `$?` reflected the pipe's last command, not swarm-verify. I relied on the tool's own printed '(exit 1)' and the 'result fail' line rather than the shell status.",
+      "I had to install root and client deps (npm ci) before the first run; the repo's test script runs both server and client tests, so I installed both."
+    ],
+    "report": "Successfully completed all three goals in ~12 steps. (1) Got a first result from swarm-verify on ./repo: a \"regression-only pass\" (exit 0) — all declared checks passed (1349 tests collected, 1348 passed, 1 skipped), with task correctness explicitly unmeasured since no requirement contract was supplied. (2) Made a disposable copy (cp -r repo broken), broke exactly one assertion in server/__tests__/alerts.test.js line 152 by changing the expected value from { minutes: 30 } to { minutes: 31 } (original repo untouched). I first confirmed the single test file failed (12 pass / 1 fail). (3) Ran npx swarm-verify in the broken copy: it reported \"result fail: a blocking check failed (exit 1)\" and named the failing check (tests) and the specific failing test (\"creates, lists, updates, and deletes a rule\", \"Alert rule CRUD\"), showing 1347 passed / 1 failed. It also flagged the one changed file (server/__tests__/alerts.test.js) as an observed-but-unauthorised change. So yes — swarm-verify correctly reported the broken copy as failing. I cleaned up the disposable copy afterward."
+  },
+  "finishedAt": "2026-09-30T03:27:37.128Z",
+  "label": "AI onboarding simulation by a local model; not a human tester"
+}

@@ -1,0 +1,20 @@
+{
+  "repository": "zhihui-hu/one-ip",
+  "category": "vite",
+  "backend": "lima",
+  "image": "lima template:ubuntu-24.04",
+  "imageDigest": null,
+  "model": "qwen3.8:27b",
+  "version": "1.3.0",
+  "steps": 13,
+  "firstResultMs": 95917,
+  "outcome": {
+    "step": 14,
+    "firstResult": true,
+    "firstResultText": "First run in ./repo: \"result: regression-only pass: the declared checks passed on this tree; task correctness is unmeasured (exit 0)\". It ran the project's checks unattended: 6 checks passed (build, lint, tests, placeholder, secret-scan, diff-budget), 0 failed, 4 not run (typecheck, format, file-set, behaviour-probe — each named with why). Tests: 187 collected, 187 passed. It exported a signed evidence bundle under ~/.swarm/sessions with a dependency-free verify.mjs. Note: an earlier first attempt exited 4 (\"incomplete: pnpm is not on PATH\") because pnpm was missing; after installing pnpm it produced the real result.",
+    "brokenCopyRefused": true,
+    "report": "Goal achieved in both phases.\n\nPhase 1 (first result in ./repo): `npx swarm-verify` in ./repo. First attempt exited 4 with \"incomplete: pnpm is not on PATH\" — the repo pins pnpm@10.32.1 and its checks need pnpm. I installed pnpm globally (npm global prefix redirected to ~/.npm-global because /usr/local wasn't writable) and re-ran. Result: \"regression-only pass\" (exit 0) — 6 checks passed (build, lint, tests, placeholder, secret-scan, diff-budget), 0 failed, 4 not run with named reasons (no typecheck script; no check-only format script; no file set; no changed function to probe). Task correctness reported unmeasured (no requirement contract). Signed bundle exported under ~/.swarm/sessions.\n\nPhase 2 (broken copy): `cp -r repo broken`, then in the copy only I flipped one assertion in tests/claude-score.test.mjs (scoreTimezone('Asia/Taipei') expected 0 → 99). Running `npx swarm-verify` in ./broken reported: \"result: fail: a blocking check failed (exit 1)\" — checks: 5 passed, 1 failed (tests), naming the exact failing test \"upstream weights, region exceptions and risk boundaries stay intact\" (187 collected, 186 passed, 1 failed). It also noted the changed file tests/claude-score.test.mjs as an observed, unauthorised change. So yes, the broken copy was correctly reported as failing.\n\nConfusions: (1) pnpm missing and corepack enable failing with EACCES on a fresh machine — resolved by npm global prefix in home dir; (2) the tail of the pipeline masked the real exit code of the broken run in my shell (the pipeline's tail exited 0), but swarm-verify's own printed result line and exit-1 of the test command are unambiguous; (3) the repo's engines say node >=24 but the machine has Node 22.22.3 and everything ran fine.\n\nSteps taken: ~8 run-tool commands total (inspect repo, check pnpm, corepack attempts, pnpm install deps, first swarm-verify run, pnpm global install, second swarm-verify run, copy + break + third run)."
+  },
+  "finishedAt": "2026-09-30T03:42:17.957Z",
+  "label": "AI onboarding simulation by a local model; not a human tester"
+}

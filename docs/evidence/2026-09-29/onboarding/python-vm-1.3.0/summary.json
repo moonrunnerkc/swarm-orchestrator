@@ -1,0 +1,23 @@
+{
+  "repository": "taverntesting/tavern",
+  "category": "python",
+  "backend": "lima",
+  "image": "lima template:ubuntu-24.04",
+  "imageDigest": null,
+  "model": "qwen3.8:27b",
+  "version": "1.3.0",
+  "steps": 11,
+  "firstResultMs": 115297,
+  "outcome": {
+    "step": 12,
+    "firstResult": true,
+    "brokenCopyRefused": true,
+    "report": "First result obtained in ./repo: `npx swarm-verify` ran the project's declared checks (command: `uv run --locked --no-sync python -m pytest -q`). It reported: checks passed 5 (lint, tests, placeholder, secret-scan, diff-budget), failed 1 (format — 4 files would be reformatted, a pre-existing issue in the clean repo), not run 3 (typecheck because mypy isn't in the dev deps, file-set and behaviour-probe because nothing changed). Tests themselves passed (546 reported, 539 executed). Overall result: `fail: a blocking check failed (exit 1)` — but note this failure was the pre-existing `format` check, not the tests. It also noted requirements unmeasured (no contract) and exported a signed evidence bundle under ~/.swarm/sessions.\n\nBroken copy: `cp -r repo broken`, then in the copy only, flipped `assert as_bool is True` to `assert as_bool is False` in tests/unit/test_strict_util.py (3 parametrized cases). A direct pytest run confirmed 3 failed / 6 passed in that file. Running `npx swarm-verify` in ./broken then reported: command exited 1, checks failed 2 (format and tests), and result `fail: a blocking check failed (exit 1)` — it correctly named the `tests` check as failed and even noted the changed file (tests/unit/test_strict_util.py) in the file-set section. So yes, the broken copy was reported as failing.\n\nCaveat/confusion: because the clean repo already failed the `format` check, both runs ended in `fail`; the distinguishing signal for the broken copy was the `tests` check flipping to failed and the changed-line/file-set notes. To get a clean pass-vs-fail contrast I would have needed to fix the formatting first, but that would have meant editing ./repo, which was off-limits.\n\nSteps taken: ~8 run calls (inspect repo, check/install uv, uv sync, first swarm-verify run, copy repo, find/edit test, sanity pytest, swarm-verify in broken copy).",
+    "confusions": [
+      "The clean repo already failed the 'format' check, so both runs exited 1; the broken copy was distinguished by the 'tests' check failing and the changed file being named, not by an overall pass-to-fail flip.",
+      "swarm-verify needed uv installed for the Python project; it named the missing step but I installed uv via the standard astral.sh installer since neither README specifies an install command for uv itself."
+    ]
+  },
+  "finishedAt": "2026-09-30T03:45:41.237Z",
+  "label": "AI onboarding simulation by a local model; not a human tester"
+}

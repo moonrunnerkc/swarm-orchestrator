@@ -40,3 +40,21 @@ its output (`transcript.jsonl`) is packed losslessly in `packed-derived/onboardi
   (3888f9731); the README already says a failed check exits 1 and names it.
 
 The runs are repeated on the release carrying these fixes, and those records sit beside these.
+
+## Repeated on 1.3.0
+
+Fresh Lima VMs again, one at a time, observer on the resident Qwen3.8 27B (MLX, thinking off)
+so one model was loaded; configurations `config-{vite,express,python}-vm-mlx.json`. Greedy
+decoding looped the Vite observer on one command 33 times and left the Python observer out of
+steps; both attempts are kept (`*-greedy-attempt`) and the runs were repeated at Qwen's
+recommended temperature 0.7, top_p 0.8. Express ran at temperature 0 and is kept.
+
+| repository | steps | ms to first result | first result | broken copy reported as failing |
+| --- | --- | --- | --- | --- |
+| zhihui-hu/one-ip (Vite) | 13 | 95917 | yes | yes |
+| hoangsonww/Claude-Code-Agent-Monitor (Express) | 16 | 175992 | yes, regression-only pass | yes, naming the failing test |
+| taverntesting/tavern (Python) | 11 | 115297 | yes | yes |
+
+tavern's clean tree reads `fail` on formatting, correctly: its own declared `ruff-format`
+pre-commit hook (v0.16.8) also formats Markdown, and four of its docs files are unformatted;
+every Python file is formatted. That baseline is the project's, not relabeled.
