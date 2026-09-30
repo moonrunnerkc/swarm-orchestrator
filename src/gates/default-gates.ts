@@ -94,7 +94,7 @@ const commandGatesByType: Readonly<
   go: () => goGates,
 };
 
-const noManifestReason =
+export const noManifestReason =
   "no package.json, pyproject.toml, Cargo.toml, or go.mod was found in the workspace root";
 
 /**

@@ -47,6 +47,12 @@
   or cut run, or a base that names a failure of its own stays unmeasured, and nothing is ever
   inherited this way. **Verdict change:** such a run reads **Regression: fail** instead of
   unmeasured.
+- **The advice for a run that measured nothing says the right thing.** Where the install already
+  ran (the Action's `install: true` is passed as `--install`), a runner still missing was followed
+  by "pass --install"; it now says the environment does not carry that toolchain and names the
+  image setting for each route. Where it did not run, it names both routes' setting. A run that
+  planned no check printed "every check stood down ()"; it now says no check was planned and why,
+  and no longer suggests a `--command` flag the verifier does not have. No verdict changes.
 
 ## 1.2.0 - 2026-09-29
 

@@ -294,6 +294,63 @@ describe("verifying a repository whose tests need its dependencies", () => {
     });
 
     expect(result.advice).toMatch(/--install/);
+    // Both routes' way of asking for it: the Action passes `install: true` as --install.
+    expect(result.advice).toContain("`install: true` in the Action's inputs");
+  }, 180_000);
+
+  it("does not ask for an install that already ran when a runner is still missing", async () => {
+    // gemma-witness's workflow set `install: true`; its Rust checks read "not installed" and the
+    // advice still said to pass --install.
+    await writeFile(
+      join(repository, "package.json"),
+      '{"name":"w","version":"1.0.0","type":"module","scripts":{"test":"definitely-not-a-runner run"}}\n',
+    );
+    await writeFile(
+      join(repository, "package-lock.json"),
+      JSON.stringify({
+        name: "w",
+        version: "1.0.0",
+        lockfileVersion: 3,
+        requires: true,
+        packages: { "": { name: "w", version: "1.0.0" } },
+      }),
+    );
+    git(["add", "-A"], repository);
+    git(["commit", "-qm", "needs a runner no lockfile provides"], repository);
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch:
+        "diff --git a/clamp.mjs b/clamp.mjs\n--- a/clamp.mjs\n+++ b/clamp.mjs\n@@ -1 +1 @@\n-export const clamp = (v) => v;\n+export const clamp = (v) => v;\n",
+      installDependencies: true,
+      commands: commands(),
+      clock,
+    });
+    expect(result.install?.succeeded).toBe(true);
+    expect(result.unmeasured).toBe(true);
+    expect(result.advice).toContain("Dependencies were installed from the lockfile");
+    expect(result.advice).not.toContain("authorize lockfile setup");
+  }, 300_000);
+
+  it("says why no check was planned rather than listing none", async () => {
+    // nondet (Java) and a rules repository with no manifest read "every check stood down ()".
+    git(["rm", "-q", "package.json"], repository);
+    git(["commit", "-qm", "no manifest"], repository);
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch:
+        "diff --git a/clamp.mjs b/clamp.mjs\n--- a/clamp.mjs\n+++ b/clamp.mjs\n@@ -1 +1 @@\n-export const clamp = (v) => v;\n+export const clamp = (v) => 0;\n",
+      commands: commands(),
+      clock,
+    });
+    expect(result.checks).toEqual([]);
+    expect(result.unmeasured).toBe(true);
+    expect(result.verified).toBe(false);
+    expect(result.advice).toContain(
+      "no check was planned, because no package.json, pyproject.toml, Cargo.toml, or go.mod was found",
+    );
+    expect(result.advice).not.toContain("()");
   }, 180_000);
 
   it("installs from the lockfile when asked, so the checks can run", async () => {

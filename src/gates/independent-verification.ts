@@ -20,7 +20,7 @@ import {
   type RequirementObservation,
   verifyAcceptanceContract,
 } from "./contract-verification.ts";
-import type { GateSetOptions } from "./default-gates.ts";
+import { type GateSetOptions, noManifestReason } from "./default-gates.ts";
 import {
   type DependencyInstall,
   DependencySetupReconciliationError,
@@ -893,16 +893,7 @@ export async function verifyIndependently(
                           "whatever the registry serves, so a `prepare` step that generates what the tests import " +
                           "does not run."
                         : !measuredSomething
-                          ? `nothing here measured the patch: every check stood down (${checks
-                              .map((check) => `${check.id}: ${check.detail}`)
-                              .join("; ")}). ` +
-                            (checks.some((check) => /not installed/.test(check.detail))
-                              ? "A runner that is not installed on a fresh checkout usually means no installed " +
-                                "dependencies: pass --install to authorize lockfile setup with lifecycle scripts " +
-                                "disabled, or provide a prepared runtime. A toolchain the verifier does not drive " +
-                                "(Rust, Java, Go) stays unmeasured, which is not a pass."
-                              : "No declared check applies to this project as the verifier reads it; name the " +
-                                "command to run with --command, or add a test script to the manifest.")
+                          ? nothingMeasuredAdvice(checks, install?.succeeded === true)
                           : incompleteRequired
                             ? `a required check measured nothing: ${checks
                                 .filter(
@@ -935,6 +926,39 @@ export async function verifyIndependently(
   } finally {
     if (!preserveCheckout) await rm(checkout, { recursive: true, force: true });
   }
+}
+
+/**
+ * Why nothing was measured, and what would change that, for whichever route ran the verifier.
+ * Dependency setup is `--install` on the command line and `install: true` in the Action's inputs,
+ * and the Action passes the one as the other; where it already ran, telling the reader to ask for
+ * it again sent gemma-witness's owner after a setting the workflow already had. A run that planned
+ * no check at all has no stood-down checks to list, and says why none was planned.
+ */
+function nothingMeasuredAdvice(checks: readonly IndependentCheck[], installed: boolean): string {
+  if (checks.length === 0)
+    return (
+      `nothing here measured the patch: no check was planned, because ${noManifestReason}. ` +
+      "The verifier drives Node and Python projects and names the Rust and Go toolchains it " +
+      "finds; any other toolchain (Java, .NET and others) stays unmeasured, which is not a pass. " +
+      "A trusted oracle (`--oracle` on the command line, `oracle` in the Action's inputs) can " +
+      "still judge the task."
+    );
+  const stoodDown = `nothing here measured the patch: every check stood down (${checks
+    .map((check) => `${check.id}: ${check.detail}`)
+    .join("; ")}). `;
+  if (!checks.some((check) => /not installed/.test(check.detail)))
+    return `${stoodDown}No declared check applies to this project as the verifier reads it; add a test script to the manifest.`;
+  return installed
+    ? `${stoodDown}Dependencies were installed from the lockfile, so a runner still not installed ` +
+        "is a toolchain this environment does not carry. One the verifier does not install (Rust, " +
+        "Java, Go) stays unmeasured, which is not a pass; an image that carries it measures it " +
+        "(`--isolation docker:<image>` on the command line, `image` in the Action's inputs)."
+    : `${stoodDown}A runner that is not installed on a fresh checkout usually means no installed ` +
+        "dependencies: authorize lockfile setup with lifecycle scripts disabled (`--install` on " +
+        "the command line, `install: true` in the Action's inputs), or provide a prepared " +
+        "runtime. A toolchain the verifier does not drive (Rust, Java, Go) stays unmeasured, " +
+        "which is not a pass.";
 }
 
 /**
