@@ -41,6 +41,21 @@ describe("registered decision readings", () => {
         challenges: { policy: "required", satisfied: false },
       }),
     ).toBe("refuse");
+    expect(
+      swarmCiDecision({
+        verified: false,
+        regression: "unmeasured",
+        task: "unjudged",
+        refusal: "the patch changes test/a.spec.ts, which the run declared immutable.",
+      }),
+    ).toBe("refuse");
+    expect(
+      swarmCiDecision({
+        verified: false,
+        regression: "unmeasured",
+        refusal: "a fresh checkout could not be made",
+      }),
+    ).toBe("inconclusive");
     expect(swarmCiDecision(null)).toBe("inconclusive");
   });
 

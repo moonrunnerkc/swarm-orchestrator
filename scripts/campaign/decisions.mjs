@@ -8,7 +8,8 @@
  * swarm-verify `ci --json` (schema swarm.ci.v1) under a goal contract. Accept only a verified
  * run: task accepted and regression passing. Refuse a regression charged to the patch, a task
  * the contract rejected or found vacuous, and a required challenge that was not met
- * (`challenges.satisfied` false under `required`, the certification the product refuses). Anything
+ * (`challenges.satisfied` false under `required`, the certification the product refuses), and a
+ * patch that reaches a declared-immutable path. Anything
  * else, including a run refused before it measured, is inconclusive.
  */
 export function swarmCiDecision(report) {
@@ -21,7 +22,10 @@ export function swarmCiDecision(report) {
     report.task === "vacuous" ||
     (report.challenges?.policy === "required" && report.challenges?.satisfied === false) ||
     /challenges-unmet/.test(certification) ||
-    /challenges-unmet/.test(String(report.refusal ?? ""))
+    /challenges-unmet/.test(String(report.refusal ?? "")) ||
+    // A patch that reaches a path the contract declared immutable is refused by policy before
+    // anything runs: a decision about the change, not a failure to measure it.
+    /which the run declared immutable/.test(String(report.refusal ?? ""))
   )
     return "refuse";
   return "inconclusive";
