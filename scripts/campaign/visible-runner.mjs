@@ -49,8 +49,15 @@ function runCli(behavior, root) {
 function runHttp(behavior, root) {
   const ran = spawnSync(
     "node",
+    // Exactly as the verifier runs it: the runner's source as a module on `-e`, so the check is
+    // its first argument.
     [
-      join(dirname(new URL(import.meta.url).pathname), "http-check-runner.mjs"),
+      "--input-type=module",
+      "-e",
+      readFileSync(
+        join(dirname(new URL(import.meta.url).pathname), "http-check-runner.mjs"),
+        "utf8",
+      ),
       JSON.stringify(behavior),
     ],
     {
