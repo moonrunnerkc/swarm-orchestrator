@@ -83,6 +83,9 @@ function agentArgv(context, workspace, base, prompt, extra, remaining) {
     String(Math.max(1, Math.floor(remaining.agentMs / 60_000))),
     "--isolation",
     `docker:${imageFor(loaded.goal, loaded.contract)}`,
+    // Unattended: allowlist prompts are answered by the harness and recorded, as in every arm.
+    "--approve",
+    "auto",
     "--no-tui",
     "--no-open-evidence",
     "--json",
@@ -189,7 +192,8 @@ async function swarmArm(context, extra) {
     preset,
     "--goal-contract",
     context.contractPath,
-    ...(preset === "upgrade" ? ["--install"] : []),
+    // The final independent verification checks a fresh checkout, which needs the lockfile install.
+    "--install",
     ...loaded.goal.packages.flatMap((path) => ["--package", path]),
     ...extra,
   ];
