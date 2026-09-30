@@ -1,5 +1,5 @@
 import type { GateObservation } from "./gate-definition.ts";
-import { runnerTestPoints } from "./runner-results.ts";
+import { runnerTestPoints, unreconciledRunnerPoints } from "./runner-results.ts";
 
 /**
  * Whether a check that failed with the patch failed because of it.
@@ -468,10 +468,35 @@ export function attributeFailure(input: {
       ? { attribution: "inherited", newFailures: [] }
       : { attribution: "unattributed", newFailures: [] };
   }
+  if (patched !== null && base === null && patched.complete) {
+    const newFailures = failuresTheBaseNamedPassing(patched, input.atBase);
+    if (newFailures.length > 0) return { attribution: "new", newFailures };
+  }
   if (patched !== null || base !== null) return { attribution: "unattributed", newFailures: [] };
   return normalizedOutput(input.withPatch) === normalizedOutput(input.atBase)
     ? { attribution: "inherited", newFailures: [] }
     : { attribution: "unattributed", newFailures: [] };
+}
+
+/**
+ * The patched run's failures that the base's own report names as passed, where that report does
+ * not reconcile. quantproof's base control ran its whole suite, named every test, failed none, and
+ * exited 1 when a worker aborted on exit, leaving seven tests of another file pending; the two
+ * tests the patch broke were named passing there, and the check read unmeasured. A test the base
+ * ran and passed, that fails with the patch, is newly failing whatever else the base left undone.
+ *
+ * Only that, and conservatively. The base must name no failure at all, so its nonzero exit is not
+ * a test failing; a run the harness killed or cancelled (exit 128) proves nothing; each failure
+ * must be named passing exactly once. Nothing here reads as inherited: a crash can make a failure
+ * new, never excuse one.
+ */
+function failuresTheBaseNamedPassing(patched: TestPoints, atBase: GateObservation): string[] {
+  if (atBase.exitCode === 128 || !atBase.stdout.trimStart().startsWith("{")) return [];
+  const points = unreconciledRunnerPoints(atBase);
+  if (points === null || points.some((one) => one.status === "failed" || one.status === "error"))
+    return [];
+  const passed = counts(points.filter((one) => one.status === "passed").map((one) => one.identity));
+  return [...new Set(patched.failed)].filter((id) => passed.get(id) === 1).sort();
 }
 
 /**

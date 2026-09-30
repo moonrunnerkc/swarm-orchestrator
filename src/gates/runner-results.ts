@@ -52,14 +52,37 @@ export function runnerTestPoints(observation: GateObservation): readonly RunnerP
   )
     return null;
   try {
-    return pointsOf(JSON.parse(observation.stdout));
+    return pointsOf(JSON.parse(observation.stdout), true);
   } catch {
     return null;
   }
 }
 
-/** Throws on anything but a complete report whose totals agree with its points. */
-function pointsOf(value: unknown): RunnerPoint[] {
+/**
+ * The per-test outcomes a structured report names where its totals need not agree with them: a
+ * Vitest worker that aborted on exit (better-sqlite3 under Node 24, in quantproof's base control)
+ * leaves the tests it was running reported as pending and the totals short. Never a verdict; read
+ * only by failure attribution, for the tests the report itself names as passed. Null where the
+ * report is cut, unparseable or names one identity twice.
+ */
+export function unreconciledRunnerPoints(
+  observation: GateObservation,
+): readonly RunnerPoint[] | null {
+  if (
+    observation.unavailable !== null ||
+    observation.outputTruncated ||
+    observation.stdout.length > 4_000_000
+  )
+    return null;
+  try {
+    return pointsOf(JSON.parse(observation.stdout), false);
+  } catch {
+    return null;
+  }
+}
+
+/** Throws on anything but a report whose identities are unique and, if asked, whose totals agree. */
+function pointsOf(value: unknown, reconciled: boolean): RunnerPoint[] {
   const parsedPython = python.safeParse(value);
   let tests: RunnerPoint[];
   if (parsedPython.success)
@@ -92,10 +115,11 @@ function pointsOf(value: unknown): RunnerPoint[] {
       });
     });
     if (
-      report.numTotalTests !== tests.length ||
-      report.numPassedTests !== tests.filter((test) => test.status === "passed").length ||
-      report.numFailedTests !== tests.filter((test) => test.status === "failed").length ||
-      report.numPendingTests !== tests.filter((test) => test.status === "skipped").length
+      reconciled &&
+      (report.numTotalTests !== tests.length ||
+        report.numPassedTests !== tests.filter((test) => test.status === "passed").length ||
+        report.numFailedTests !== tests.filter((test) => test.status === "failed").length ||
+        report.numPendingTests !== tests.filter((test) => test.status === "skipped").length)
     )
       throw new Error("inconsistent totals");
   }
@@ -126,7 +150,7 @@ export function readRunnerResult(observation: GateObservation): GateReading {
       .safeParse(value);
     if (unavailable.success)
       return { status: "not-applicable", detail: unavailable.data.unavailable, measures: {} };
-    const tests = pointsOf(value);
+    const tests = pointsOf(value, true);
     const executed = tests.filter((test) => test.status !== "skipped");
     const failed = observation.exitCode !== 0 || executed.some((test) => test.status !== "passed");
     return {

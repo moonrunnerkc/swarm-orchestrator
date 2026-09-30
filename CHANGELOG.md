@@ -38,6 +38,15 @@
   advice for an unmatched failure now says why it could not be matched, instead of saying the
   output names no tests when it names them. **Verdict change:** such inherited failures read
   inherited, so the regression dimension is measured instead of unmeasured.
+- **A base control whose worker crashed on exit still shows a regression.** quantproof's base
+  ran its whole suite, failed no test, and exited 1 when a Vitest worker aborted on exit (a
+  better-sqlite3 assertion under Node 24), leaving one file's tests pending. Its report no longer
+  reconciled, so the two tests the patch broke, which that report names as passing, read
+  unmeasured. Where the base names no failure and was not killed by the harness, a test it names
+  passing once and the patch fails is now newly failing. A test the base never finished, a killed
+  or cut run, or a base that names a failure of its own stays unmeasured, and nothing is ever
+  inherited this way. **Verdict change:** such a run reads **Regression: fail** instead of
+  unmeasured.
 
 ## 1.2.0 - 2026-09-29
 
