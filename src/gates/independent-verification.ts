@@ -8,6 +8,14 @@ import { type GoalContract, goalImmutablePaths } from "../evidence/goal-contract
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import { certifies } from "./certification.ts";
 import {
+  type IgnoredSnapshot,
+  lockfileIdentity,
+  producedSince,
+  removalRoots,
+  removeProduced,
+  snapshotIgnored,
+} from "./checkout-environment.ts";
+import {
   type ContractVerification,
   type RequirementObservation,
   verifyAcceptanceContract,
@@ -443,32 +451,48 @@ export async function verifyIndependently(
           : { packages: options.gateOptions.packages }),
         ...(options.goal === undefined ? {} : { evidence: options.goal.evidence }),
       });
-    const install =
-      options.installDependencies === true
-        ? await prepareDependencies({
-            checkout,
-            ...(options.gateOptions?.packages === undefined
-              ? {}
-              : { packages: options.gateOptions.packages }),
-            ...(options.goal?.contract.preset?.kind === "upgrade"
-              ? { upgradeManifest: options.goal.contract.preset.manifest }
-              : {}),
-            commands: options.commands,
-            timeoutMs,
-            ...(options.signal === undefined ? {} : { signal: options.signal }),
-            ...((options.evidence ?? options.goal?.evidence) === undefined
-              ? {}
-              : { evidence: (options.evidence ?? options.goal?.evidence) as EvidenceRecorder }),
-          })
-        : null;
+    const unprepared = options.commands;
+    const installOptions = options;
+    const installFromTree = () =>
+      prepareDependencies({
+        checkout,
+        ...(installOptions.gateOptions?.packages === undefined
+          ? {}
+          : { packages: installOptions.gateOptions.packages }),
+        ...(installOptions.goal?.contract.preset?.kind === "upgrade"
+          ? { upgradeManifest: installOptions.goal.contract.preset.manifest }
+          : {}),
+        commands: unprepared,
+        timeoutMs,
+        ...(installOptions.signal === undefined ? {} : { signal: installOptions.signal }),
+        ...((installOptions.evidence ?? installOptions.goal?.evidence) === undefined
+          ? {}
+          : {
+              evidence: (installOptions.evidence ??
+                installOptions.goal?.evidence) as EvidenceRecorder,
+            }),
+      });
+    const install = options.installDependencies === true ? await installFromTree() : null;
 
     // The package manager the install fetched and recorded stays on PATH for every command that
     // follows, so a check whose script calls it measures the project rather than its absence.
-    if (install?.succeeded === true && install.toolDirectories !== undefined)
-      options = {
-        ...options,
-        commands: withPreparedTools(options.commands, install.toolDirectories),
-      };
+    // Read through the environment, since a side that installs its own dependencies fetches its
+    // own package manager.
+    const environment: ComparisonEnvironment = {
+      ignored: new Map(),
+      installedFrom: null,
+      toolDirectories: install?.succeeded === true ? (install.toolDirectories ?? []) : [],
+      reinstall: install?.succeeded === true ? installFromTree : null,
+    };
+    options = {
+      ...options,
+      commands: {
+        run: (command, runOptions) =>
+          withPreparedTools(unprepared, environment.toolDirectories).run(command, runOptions),
+        runVouched: (argv, runOptions) =>
+          withPreparedTools(unprepared, environment.toolDirectories).runVouched(argv, runOptions),
+      },
+    };
     if (install !== null && !install.succeeded)
       return {
         applied: true,
@@ -496,6 +520,15 @@ export async function verifyIndependently(
         timeoutMs,
       });
 
+    // What the prepared environment holds before any check has run, so the base is measured
+    // without anything the patched tree's checks wrote beside it.
+    environment.ignored = await snapshotIgnored(checkout);
+    if (environment.reinstall !== null)
+      environment.installedFrom = await lockfileIdentity(checkout);
+    const sides: ComparisonSides = {
+      toBase: () => resetToBase(checkout, options, timeoutMs, environment),
+      toPatch: () => restorePatch(checkout, options, timeoutMs, environment),
+    };
     const onlyTheOracle = options.repositoryChecks === "skip";
     const withPatch = onlyTheOracle
       ? []
@@ -526,11 +559,11 @@ export async function verifyIndependently(
     // place the answer can change, and before attribution reverts the tree for its own reasons.
     let restored = true;
     if (task === "accepted") {
-      const reverted = await resetToBase(checkout, options, timeoutMs);
+      const reverted = await sides.toBase();
       if (reverted) {
         const onBase = await judgeTask(checkout, options, timeoutMs, "base");
         if (onBase.run !== null) oracleRuns.push(onBase.run);
-        restored = await restorePatch(checkout, options, timeoutMs);
+        restored = await sides.toPatch();
         if (onBase.task === "accepted") {
           task = "vacuous";
         }
@@ -554,7 +587,7 @@ export async function verifyIndependently(
     // on a tree that does not have them.
     const bond =
       task === "accepted" && restored
-        ? await bondTheOracle(checkout, options, timeoutMs, reach.measured, withPatch)
+        ? await bondTheOracle(checkout, options, timeoutMs, reach.measured, withPatch, sides)
         : { verdict: "not-bonded" as const, mutants: [] };
     const evaluator = options.acceptance;
     const acceptance =
@@ -571,8 +604,7 @@ export async function verifyIndependently(
     const challengePolicy: ChallengePolicy = options.goal?.challengePolicy ?? "off";
     const preset = options.goal?.contract.preset;
     if (options.goal !== undefined && (preset?.kind === "bugfix" || preset?.kind === "refactor")) {
-      if (!(await resetToBase(checkout, options, timeoutMs)))
-        throw new Error("cannot prepare preset base control");
+      if (!(await sides.toBase())) throw new Error("cannot prepare preset base control");
       const baseTreeRun = await options.commands.runVouched(["git", "rev-parse", "HEAD^{tree}"], {
         cwd: checkout,
         timeoutMs,
@@ -597,7 +629,7 @@ export async function verifyIndependently(
             ? baseResult.accepted
             : reproducedBug(options.goal.contract, options.goal.evidence, baseTree),
       };
-      restored = await restorePatch(checkout, options, timeoutMs);
+      restored = await sides.toPatch();
     }
     // A contract without a preset has no base control of its own; challenging it needs one, and
     // it runs before the candidate's verification so the final goal record stays the last.
@@ -607,8 +639,7 @@ export async function verifyIndependently(
       baseVerification === null &&
       restored
     ) {
-      if (!(await resetToBase(checkout, options, timeoutMs)))
-        throw new Error("cannot prepare the challenge base control");
+      if (!(await sides.toBase())) throw new Error("cannot prepare the challenge base control");
       const baseTreeRun = await options.commands.runVouched(["git", "rev-parse", "HEAD^{tree}"], {
         cwd: checkout,
         timeoutMs,
@@ -624,7 +655,7 @@ export async function verifyIndependently(
         commands: options.commands,
         timeoutMs,
       });
-      restored = await restorePatch(checkout, options, timeoutMs);
+      restored = await sides.toPatch();
     }
     let goalTree = options.goal?.tree ?? "";
     if (options.goal !== undefined && goalTree === "" && restored) {
@@ -698,12 +729,12 @@ export async function verifyIndependently(
           commands: options.commands,
           timeoutMs,
           scratchDirectory: dirname(checkout),
-          restoreCandidate: () => restorePatch(checkout, options, timeoutMs),
+          restoreCandidate: () => sides.toPatch(),
           runRepositoryChecks: () => runChecks(checkout, options, timeoutMs),
           ...(options.signal === undefined ? {} : { signal: options.signal }),
         }),
       });
-      restored = await restorePatch(checkout, options, timeoutMs);
+      restored = await sides.toPatch();
     }
     const checks = withPatch.some(
       (check) =>
@@ -711,7 +742,7 @@ export async function verifyIndependently(
         passedOnlyUnderThePatchConfiguration(check) ||
         check.baseTestsStatus === "failed",
     )
-      ? await attributeFailures(withPatch, checkout, options, timeoutMs)
+      ? await attributeFailures(withPatch, checkout, options, timeoutMs, sides)
       : withPatch;
     // A run that was not asked to measure the suite reports that, rather than reporting the
     // absence of a failure as an absence of a problem. A failure the base already had is
@@ -995,6 +1026,7 @@ async function bondTheOracle(
   timeoutMs: number,
   measured: LineHits | null,
   checksWithPatch: readonly IndependentCheck[],
+  sides: ComparisonSides,
 ): Promise<OracleBond> {
   const oracle = options.taskOracle?.command;
   if (oracle === undefined) {
@@ -1052,7 +1084,7 @@ async function bondTheOracle(
       // back to the base and the patch, the mutant written again, and only then is the suite run.
       // A checkout that cannot be put back reports no check, which witnesses nothing.
       runRepositoryChecks: async () => {
-        if (!(await restorePatch(checkout, options, timeoutMs))) return [];
+        if (!(await sides.toPatch())) return [];
         if (written !== null) await writeFile(join(checkout, written.path), written.text);
         return runChecks(checkout, options, timeoutMs);
       },
@@ -1113,17 +1145,45 @@ export async function lineHitsUnder(
 }
 
 /**
- * Puts the checkout back at the base, patch and all its leftovers gone.
+ * The ignored tree each side of the comparison starts from, and how to prepare it again: see
+ * checkout-environment.ts. `installedFrom` names the lockfiles the installed dependencies came
+ * from, and is null where nothing was installed and both sides use one prepared runtime.
+ */
+interface ComparisonEnvironment {
+  ignored: IgnoredSnapshot;
+  installedFrom: string | null;
+  toolDirectories: readonly string[];
+  readonly reinstall: (() => Promise<DependencyInstall>) | null;
+}
+
+/** Moves the one checkout between the two trees the comparison measures. */
+interface ComparisonSides {
+  readonly toBase: () => Promise<boolean>;
+  readonly toPatch: () => Promise<boolean>;
+}
+
+/**
+ * Puts the checkout back at the base, patch and all its leftovers gone, on the environment the
+ * base is measured in.
  *
  * `git stash` was doing this and could not always undo itself: an oracle copies its own test file
  * into place before running, so a patch that adds a file at that path leaves the pop with the file
  * already there, and the pop refuses. Reverting and re-applying is two operations the harness can
  * check, and `git clean` removes what the oracle left rather than letting it collide.
- *
- * Ignored files are kept, since that is where the installed dependencies live and reinstalling
- * them would change what the base run measures.
  */
 async function resetToBase(
+  checkout: string,
+  options: IndependentVerificationOptions,
+  timeoutMs: number,
+  environment: ComparisonEnvironment,
+): Promise<boolean> {
+  return (
+    (await resetTrackedTree(checkout, options, timeoutMs)) &&
+    (await settleEnvironment(checkout, options, timeoutMs, environment))
+  );
+}
+
+async function resetTrackedTree(
   checkout: string,
   options: IndependentVerificationOptions,
   timeoutMs: number,
@@ -1180,13 +1240,66 @@ async function resetToBase(
   return refreshed.exitCode === 0;
 }
 
+/**
+ * Ignored files are what separates the two sides once git has reset the tracked ones: installed
+ * dependencies, which both sides share where they were installed from the same lockfiles, and
+ * whatever a run wrote, which neither side may see of the other's. What was added since the
+ * environment was prepared is removed. A prepared entry that was changed or removed cannot be put
+ * back, so the comparison is refused rather than run beside it; and where this tree's lockfiles
+ * are not the ones the dependencies came from, nothing installed is shared: every ignored entry
+ * goes and this tree installs its own, under the same authorization and record as the first.
+ */
+async function settleEnvironment(
+  checkout: string,
+  options: IndependentVerificationOptions,
+  timeoutMs: number,
+  environment: ComparisonEnvironment,
+): Promise<boolean> {
+  const refused = async (operation: string, detail: Record<string, unknown>) => {
+    await options.goal?.evidence.record({
+      type: "verification-command",
+      actor: "harness",
+      provenance: ["tool-output"],
+      payload: asJsonValue({ rule: "checkout-restore-failure-v1", operation, ...detail }),
+    });
+    return false;
+  };
+  if (environment.reinstall !== null && environment.installedFrom !== null) {
+    const wanted = await lockfileIdentity(checkout);
+    if (wanted !== environment.installedFrom) {
+      const emptied = await options.commands.runVouched(["git", "-C", ".", "clean", "-fdxq"], {
+        cwd: checkout,
+        timeoutMs,
+      });
+      if (emptied.exitCode !== 0) return refused("environment", { observation: emptied });
+      environment.toolDirectories = [];
+      const installed = await environment.reinstall();
+      if (!installed.succeeded)
+        return refused("environment", { install: installed.detail.slice(0, 2000) });
+      environment.toolDirectories = installed.toolDirectories ?? [];
+      environment.installedFrom = wanted;
+      environment.ignored = await snapshotIgnored(checkout);
+      return true;
+    }
+  }
+  const { added, altered } = producedSince(environment.ignored, await snapshotIgnored(checkout));
+  if (altered.length > 0)
+    return refused("environment", {
+      altered: altered.slice(0, 20),
+      alteredCount: altered.length,
+    });
+  await removeProduced(checkout, await removalRoots(checkout, added, environment.ignored));
+  return true;
+}
+
 /** The patch again, on a checkout `resetToBase` emptied, reported rather than assumed. */
 async function restorePatch(
   checkout: string,
   options: IndependentVerificationOptions,
   timeoutMs: number,
+  environment: ComparisonEnvironment,
 ): Promise<boolean> {
-  if (!(await resetToBase(checkout, options, timeoutMs))) {
+  if (!(await resetTrackedTree(checkout, options, timeoutMs))) {
     return false;
   }
   const patchPath = join(checkout, ".swarm-restore.patch");
@@ -1216,7 +1329,9 @@ async function restorePatch(
         observation: applied,
       }),
     });
-  return applied.exitCode === 0;
+  return (
+    applied.exitCode === 0 && (await settleEnvironment(checkout, options, timeoutMs, environment))
+  );
 }
 
 /**
@@ -1231,11 +1346,14 @@ async function attributeFailures(
   checkout: string,
   options: IndependentVerificationOptions,
   timeoutMs: number,
+  sides: ComparisonSides,
 ): Promise<readonly IndependentCheck[]> {
   // Cleaned as well as checked out: the base is measured as the base, and not beside whatever an
   // oracle copied into the checkout. A mined task's pull-request test file fails on the base by
-  // construction, and left in place it read every regression the patch caused as inherited.
-  if (!(await resetToBase(checkout, options, timeoutMs))) {
+  // construction, and left in place it read every regression the patch caused as inherited. The
+  // same holds for what the patched tree's own checks wrote: its build output, left in `dist/`,
+  // passed the base's typecheck and failed the base's suite in the patch's own way.
+  if (!(await sides.toBase())) {
     return withPatch.map((check) =>
       passedOnlyUnderThePatchConfiguration(check) ||
       (check.status === "passed" && check.baseTestsStatus === "failed")

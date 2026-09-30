@@ -301,6 +301,9 @@ async function installerArgv(
   ];
 }
 
+/** Every lockfile name an authorized install reads, in the order it is looked for. */
+export const lockfileNames: readonly string[] = lockfiles.map((candidate) => candidate.file);
+
 /** The declared locked preparation vector for a lockfile, as data. */
 export function lockfileInstallerArgv(file: string): readonly string[] | null {
   return lockfiles.find((candidate) => candidate.file === file)?.argv ?? null;
