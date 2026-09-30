@@ -156,8 +156,9 @@ export function superiority(cells, treatment, comparator, margins) {
     practicalCost:
       margins.comparison === "A"
         ? wall(right) !== null && wall(right) <= margins.decisionMs
-        : wallRatio !== null &&
-          wallRatio <= margins.wallTimeRatio &&
+        : // An absolute overhead, not a ratio: on a small goal a few minutes of verification is a
+          // large ratio and a small cost, and the budget a launch runs under is absolute.
+          wallExtraMs !== null &&
           wallExtraMs <= margins.wallExtraMs &&
           tokenRatio !== null &&
           tokenRatio <= margins.tokenRatio,

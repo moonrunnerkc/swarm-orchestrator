@@ -41,7 +41,6 @@ describe("the superiority rule", () => {
     comparison: "B",
     incorrectApprovalReduction: 0.1,
     correctApprovalLoss: 0.1,
-    wallTimeRatio: 2,
     wallExtraMs: 15 * 60_000,
     tokenRatio: 2,
     decisionMs: 10 * 60_000,
@@ -83,7 +82,7 @@ describe("the superiority rule", () => {
     const verdict = superiority(cells, "treatment", "comparator", margins);
     expect(verdict.superior).toBe(true);
     expect(
-      superiority(cells, "treatment", "comparator", { ...margins, wallTimeRatio: 1.2 }).superior,
+      superiority(cells, "treatment", "comparator", { ...margins, wallExtraMs: 100 }).superior,
     ).toBe(false);
   });
 
