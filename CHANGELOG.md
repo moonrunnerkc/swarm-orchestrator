@@ -16,6 +16,17 @@
   `npm run --loglevel=error`, which keeps npm's notices out of the record and every tool's errors
   in it; `swarm init` writes the same form. No verdict changes: the failure is still a failure,
   now with its reason.
+- **The base control sees nothing the patched tree's run produced.** The base was measured in
+  the same checkout after a forced checkout and a clean that keeps ignored files, so the base's
+  checks ran beside the patched tree's build output. depose's base typecheck passed on the `dist/`
+  the patched build wrote, and a workflow-only patch read **Regression: fail**; a module only the
+  patched build emitted stayed in `dist/` and failed the base's suite the same way, so a real
+  regression read as inherited. The ignored tree is now recorded once dependencies are prepared,
+  and every switch between the two sides removes what was added since; a prepared entry a run
+  changed refuses the comparison. Where the patch changes a lockfile, nothing installed is shared:
+  the base installs its own dependencies from its own lockfile. **Verdict changes:** such a
+  workflow-only patch reads its real regression result, and a patch whose build output or
+  dependency change broke the suite reads **Regression: fail** instead of an inherited failure.
 
 ## 1.2.0 - 2026-09-29
 

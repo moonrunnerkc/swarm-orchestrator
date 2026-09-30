@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -1949,4 +1949,181 @@ it("does not let a passing build certify a configured test runner with no usable
   expect(result.regression).toBe("unmeasured");
   expect(result.unmeasured).toBe(true);
   expect(result.verified).toBe(false);
+});
+
+/**
+ * The base control runs in the checkout the patched tree's checks just ran in. git resets the
+ * tracked files and removes the untracked ones, and keeps what `.gitignore` names: installed
+ * dependencies, and also build output. depose's base typecheck passed on the `dist/` the patched
+ * tree's build had written, and a workflow-only patch read "Regression: fail". Each fixture here
+ * is a real repository whose checks read ignored output another check or the install wrote.
+ */
+describe("a base control that sees nothing the patched tree's run produced", () => {
+  async function fixture(
+    files: Readonly<Record<string, string>>,
+    change: Readonly<Record<string, string>>,
+  ): Promise<{ readonly base: string; readonly patch: string }> {
+    for (const [path, text] of Object.entries(files)) {
+      await mkdir(join(repository, path, ".."), { recursive: true });
+      await writeFile(join(repository, path), text);
+    }
+    git(["add", "-A"], repository);
+    git(["commit", "-qm", "fixture"], repository);
+    const base = baseCommit();
+    for (const [path, text] of Object.entries(change)) {
+      await mkdir(join(repository, path, ".."), { recursive: true });
+      await writeFile(join(repository, path), text);
+    }
+    git(["add", "-A"], repository);
+    const patch = execFileSync("git", ["diff", "--cached", "HEAD"], {
+      cwd: repository,
+      encoding: "utf8",
+    });
+    git(["reset", "-q", "--hard", base], repository);
+    return { base, patch };
+  }
+
+  const verify = (base: string, patch: string, installDependencies = false) =>
+    verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: base,
+      patch,
+      commands: commands(),
+      clock,
+      installDependencies,
+    });
+
+  // A typecheck that reads what the test step generates, as a project whose `test` script runs
+  // a type generator does. Run in the harness's order, the typecheck fails on either tree.
+  const generatedTypes = {
+    ".gitignore": "generated/\n",
+    "package.json":
+      '{"name":"w","version":"1.0.0","type":"module","scripts":{"typecheck":"node typecheck.mjs","test":"node gen.mjs && node --test"}}\n',
+    "gen.mjs":
+      'import { mkdirSync, writeFileSync } from "node:fs";\nmkdirSync("generated", { recursive: true });\nwriteFileSync("generated/types.d.ts", "export type Id = string;\\n");\n',
+    "typecheck.mjs":
+      'import { existsSync } from "node:fs";\nif (!existsSync("generated/types.d.ts")) { console.error("error TS2307: Cannot find module \'./generated/types\'"); process.exit(2); }\n',
+  };
+
+  it("does not let the patched tree's generated output pass the base's typecheck", async () => {
+    const { base, patch } = await fixture(generatedTypes, {
+      ".github/workflows/verify.yml": "on: pull_request\n",
+    });
+    const result = await verify(base, patch);
+    const typecheck = result.checks.find((check) => check.id === "typecheck");
+    expect(typecheck?.status).toBe("failed");
+    expect(typecheck?.baseObservation?.exitCode).toBe(2);
+    expect(typecheck?.attribution).toBe("inherited");
+    expect(result.regression).toBe("pass");
+  }, 180_000);
+
+  it("still calls a typecheck the patch broke a regression", async () => {
+    const { base, patch } = await fixture(
+      { ...generatedTypes, "typecheck.mjs": "\n" },
+      {
+        "typecheck.mjs":
+          'console.error("error TS2322: Type number is not assignable");\nprocess.exit(2);\n',
+      },
+    );
+    const result = await verify(base, patch);
+    expect(result.checks.find((check) => check.id === "typecheck")?.attribution).toBe("new");
+    expect(result.regression).toBe("fail");
+  }, 180_000);
+
+  // A build that emits every source module, and a suite that loads every module the build
+  // emitted, as a plugin directory or a route table does.
+  const emittedModules = {
+    ".gitignore": "dist/\n",
+    "package.json":
+      '{"name":"w","version":"1.0.0","type":"module","scripts":{"build":"node build.mjs","test":"node --test"}}\n',
+    "build.mjs":
+      'import { copyFileSync, mkdirSync, readdirSync } from "node:fs";\nmkdirSync("dist", { recursive: true });\nfor (const name of readdirSync("src")) copyFileSync("src/" + name, "dist/" + name);\n',
+    "src/a.mjs": "export const ok = true;\n",
+    "modules.test.mjs": [
+      "import { test } from 'node:test';",
+      "import assert from 'node:assert/strict';",
+      "import { readdirSync } from 'node:fs';",
+      "for (const name of readdirSync(new URL('./dist/', import.meta.url)).sort())",
+      "  test(name, async () => assert.equal((await import('./dist/' + name)).ok, true));",
+      "",
+    ].join("\n"),
+  };
+
+  it("does not read a module only the patched build emitted as a failure the base shares", async () => {
+    const { base, patch } = await fixture(emittedModules, {
+      "src/b.mjs": "export const ok = false;\n",
+    });
+    const result = await verify(base, patch);
+    const tests = result.checks.find((check) => check.id === "tests");
+    expect(tests?.status).toBe("failed");
+    expect(tests?.attribution).toBe("new");
+    expect(result.regression).toBe("fail");
+  }, 180_000);
+
+  it("reads a build failure the base shares as inherited, and a typecheck of its output as passing", async () => {
+    // depose's shape: the build writes its declarations and then fails on a tool the image lacks.
+    const { base, patch } = await fixture(
+      {
+        ".gitignore": "dist/\n",
+        "package.json":
+          '{"name":"w","version":"1.0.0","type":"module","scripts":{"build":"node build.mjs","typecheck":"node typecheck.mjs","test":"node --test"}}\n',
+        "build.mjs":
+          'import { mkdirSync, writeFileSync } from "node:fs";\nmkdirSync("dist", { recursive: true });\nwriteFileSync("dist/index.d.ts", "export declare const clamp: (v: number) => number;\\n");\nconsole.error("/bin/sh: 1: go: not found");\nprocess.exit(2);\n',
+        "typecheck.mjs":
+          'import { existsSync } from "node:fs";\nif (!existsSync("dist/index.d.ts")) { console.error("error TS2307"); process.exit(2); }\n',
+      },
+      { ".github/workflows/verify.yml": "on: pull_request\n" },
+    );
+    const result = await verify(base, patch);
+    expect(result.checks.find((check) => check.id === "build")?.attribution).toBe("inherited");
+    expect(result.checks.find((check) => check.id === "typecheck")?.status).toBe("passed");
+    expect(result.regression).toBe("pass");
+  }, 180_000);
+
+  it("installs the base's own dependencies where the patch changes the lockfile", async () => {
+    const lock = (version: number) =>
+      `${JSON.stringify(
+        {
+          name: "w",
+          version: "1.0.0",
+          lockfileVersion: 3,
+          requires: true,
+          packages: {
+            "": {
+              name: "w",
+              version: "1.0.0",
+              dependencies: { dep: `file:vendor/dep-${version}` },
+            },
+            "node_modules/dep": { resolved: `vendor/dep-${version}`, link: true },
+            [`vendor/dep-${version}`]: { name: "dep", version: `${version}.0.0` },
+          },
+        },
+        null,
+        2,
+      )}\n`;
+    const manifest = (version: number) =>
+      `{"name":"w","version":"1.0.0","type":"module","scripts":{"lint":"node -e 0","test":"node --test"},"dependencies":{"dep":"file:vendor/dep-${version}"}}\n`;
+    const { base, patch } = await fixture(
+      {
+        ".gitignore": "node_modules/\n",
+        "package.json": manifest(1),
+        "package-lock.json": lock(1),
+        "vendor/dep-1/package.json": '{"name":"dep","version":"1.0.0","main":"index.js"}\n',
+        "vendor/dep-1/index.js": "module.exports = 1;\n",
+        "vendor/dep-2/package.json": '{"name":"dep","version":"2.0.0","main":"index.js"}\n',
+        "vendor/dep-2/index.js": "module.exports = 2;\n",
+        "dep.test.mjs":
+          "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport dep from 'dep';\ntest('dep', () => assert.equal(dep, 1));\n",
+      },
+      { "package.json": manifest(2), "package-lock.json": lock(2) },
+    );
+    const result = await verify(base, patch, true);
+    expect(result.install?.succeeded).toBe(true);
+    const tests = result.checks.find((check) => check.id === "tests");
+    expect(tests?.status).toBe("failed");
+    // Measured beside the patch's dependencies the base fails the same way, and the upgrade that
+    // broke the suite read as inherited.
+    expect(tests?.attribution).toBe("new");
+    expect(result.regression).toBe("fail");
+  }, 300_000);
 });
