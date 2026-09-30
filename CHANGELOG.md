@@ -518,7 +518,32 @@ simulations, with every defect they found fixed at its root and named here.
 - The container's scratch mount is executable, so a fetched package manager can run from it.
 - The README leads with the verifier; the coding agent's page is `docs/agent.md`.
 
-## Unreleased (swarm-orchestrator)
+## 14.3.0 - 2026-09-30
+
+The coding agent, `swarm-orchestrator`, released for the first time since the verifier-first
+work began. The `swarm` binary shares its verifier with `swarm-verify`, so every change published
+for `swarm-verify` 1.0.0 through 1.3.0 above is in this release too. What follows is what the
+agent itself gained; the verifier stays the primary product and the agent its advanced mode.
+
+### Added
+
+- **The verifier's commands in the `swarm` binary**: `swarm check`, `verdict`, `hook`, `mcp`,
+  `pre-commit` and `action`, as published for `swarm-verify` and documented there.
+- **Requirement-level challenges on the agent's preset path.** `--challenges off|report|required`
+  (with `--preset` and `--goal-contract`) runs the base control, mechanical mutations of the
+  changed lines witnessed by the repository's suite, and the contract's sealed fixtures against
+  the agent's own change; `required` refuses a run whose checks demonstrated no detection. The
+  challenge conclusions are stated the same way in the terminal, the summary and the comment.
+- **Check strengthening and repair.** `--strengthen` (with `--strengthen-rounds` and
+  `--strengthen-per-requirement`, which can only lower the defaults of two rounds and one check
+  per requirement) answers a witnessed gap: the model proposes one additive check, the harness
+  admits it only where it rejects the counterexample and accepts every sealed reference, the
+  admitted checks revise the contract with their lineage, and the implementation is repaired
+  under the same seal with a bounded brief. The JSON result carries `strengthening` (rounds,
+  admitted checks, why it stopped, contract digest). Nothing is asked of the model before the
+  criteria are sealed or after cancellation; a run killed mid-admission resumes with that
+  admission named once and never repeated. The bundle's verifier re-derives every admission and
+  revision offline.
 
 ### Fixed
 
@@ -532,8 +557,16 @@ simulations, with every defect they found fixed at its root and named here.
   admitted before the stop kept on the revised contract for the final verification. Usage a
   provider did not report still spends the whole budget, and an uncapped run is unchanged. The
   cap is on requested output; a provider's actual usage, input included, is what the chain
-  records and the next check reads. Not in any published version: the feature reached the tree
-  after 14.2.0.
+  records and the next check reads. Found by review before the feature was published; no
+  released version carried the defect.
+- **Dispatched workers no longer break each other's worktree add**: one worktree command runs at
+  a time against a repository. An unrelated worker counts as running from the moment the
+  controller admits it, not from its first model call.
+- **The Claude Code hook routes a test command piped through `tail`, `head` or `grep`** (such
+  as `npm test 2>&1 | tail -5`) through the verifier and keeps the filters, so the run is
+  recorded rather than left alone; any other pipeline or shell syntax is still untouched.
+- **The goal run's final verification is bound to the worker's own recorded diff**, held by a
+  regression test.
 
 ## 14.2.0 - 2026-09-27
 
