@@ -35,6 +35,7 @@ import {
   finalPatch,
   imageFor,
   prepareDependencies,
+  verifierInstalls,
 } from "./workspace.mjs";
 
 export const repairInvocations = 2;
@@ -192,8 +193,9 @@ async function swarmArm(context, extra) {
     preset,
     "--goal-contract",
     context.contractPath,
-    // The final independent verification checks a fresh checkout, which needs the lockfile install.
-    "--install",
+    // The final independent verification checks a fresh checkout: the verifier installs it, or
+    // stages the workspace environment the goal's install prepared (see verifierInstalls).
+    ...(verifierInstalls(loaded.goal, loaded.contract) ? ["--install"] : []),
     ...loaded.goal.packages.flatMap((path) => ["--package", path]),
     ...extra,
   ];
@@ -244,6 +246,8 @@ async function b5(context) {
   const recorded = (brief) => [
     vera,
     "record",
+    // Everything after `--` is the recorded agent's own argv, not VERA's flags.
+    "--",
     ...agentArgv(context, workspace, base, brief, [], context.remaining),
   ];
   await invokeAgent(context, recorded(prompt), workspace);

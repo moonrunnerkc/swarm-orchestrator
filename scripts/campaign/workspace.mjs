@@ -179,3 +179,15 @@ export async function prepareDependenciesOnHost(log, goal, directory) {
   }
   return { ok: true, failed: null };
 }
+
+/**
+ * Whether swarm-verify performs its own install (`--install`) or stages the environment the goal's
+ * install already prepared. Its own Python install syncs only the default dependency groups, so a
+ * project whose test runner lives in another group would read as unmeasured for a reason that is
+ * about preparation, not verification; the verifier's documented alternative is an existing
+ * `.venv`, which it copies into its owned checkout. An upgrade must be installed by the verifier
+ * (it refuses otherwise), and its clone never carries Node dependencies.
+ */
+export function verifierInstalls(goal, contract) {
+  return goal.ecosystem === "node" || contract.preset?.kind === "upgrade";
+}

@@ -22,6 +22,7 @@ import {
   ensureImage,
   imageFor,
   prepareDependencies,
+  verifierInstalls,
 } from "./workspace.mjs";
 
 /** The kill point for interrupt-resume, fixed for every arm. */
@@ -138,6 +139,10 @@ async function swarmVerifyArm(context, patch, challenges) {
   const { goal } = loaded;
   const checkout = join(scratch, `sv-${Date.now()}`);
   await cloneAtBase(log, goal, checkout);
+  if (!verifierInstalls(goal, loaded.contract)) {
+    const prepared = await prepareDependencies(log, goal, checkout);
+    if (!prepared.ok) return { decision: "inconclusive", basis: "the install step failed" };
+  }
   const patchPath = join(scratch, `sv-${Date.now()}.patch`);
   writeFileSync(patchPath, patch.endsWith("\n") ? patch : `${patch}\n`);
   const image = imageFor(goal, loaded.contract);
@@ -153,7 +158,7 @@ async function swarmVerifyArm(context, patch, challenges) {
     goal.upstreamBase,
     "--goal-contract",
     context.contractPath,
-    "--install",
+    ...(verifierInstalls(goal, loaded.contract) ? ["--install"] : []),
     "--isolation",
     `docker:${image}`,
     "--require-isolation",
