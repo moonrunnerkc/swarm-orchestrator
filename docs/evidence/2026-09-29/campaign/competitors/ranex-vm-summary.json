@@ -1,0 +1,70 @@
+{
+  "qemuVersion": "QEMU emulator version 11.1.1 (Homebrew qemu 11.1.1)",
+  "limaVersion": "limactl version 2.2.0 (plus Homebrew lima-additional-guestagents 2.2.0, required because Lima 2.2.0 ships the Linux-x86_64 guest agent separately; limactl create failed without it: 'guest agent binary could not be found for Linux-x86_64')",
+  "vmImage": "https://cloud-images.ubuntu.com/releases/noble/release-20260705/ubuntu-24.04-server-cloudimg-amd64.img (sha256:ffe6203da54deeb6db5d2a98a83f9ec8e55f149d3f7ba622e1abe5fa966ee3d6); guest reports Ubuntu 24.04.4 LTS, kernel 6.8.0-134-generic x86_64; vmType qemu (TCG full-system emulation), 4 CPUs, 6 GiB, 30 GiB disk",
+  "bootSeconds": {
+    "firstBoot": 131,
+    "firstBootNote": "limactl start from QEMU launch to READY including cloud-init first-boot provisioning; the 14 s image download before it is excluded (147 s total)",
+    "laterBoot": 43,
+    "laterBootNote": "limactl start of the existing stopped VM on 2026-09-30 after a host crash interrupted the first session during apt-get update"
+  },
+  "userNamespaces": {
+    "value": true,
+    "defaultImageValue": false,
+    "defaultImageObserved": {
+      "sysctl": "kernel.unprivileged_userns_clone = 1; kernel.apparmor_restrict_unprivileged_userns = 1; user.max_user_namespaces = 23527",
+      "unshare -Ur true": "unshare: write failed /proc/self/uid_map: Operation not permitted (exit 1)",
+      "bwrap --unshare-all --ro-bind / / true": "bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted (exit 1)",
+      "ranex run (correct patch)": "ERROR  bubblewrap lifecycle probe returned invalid JSON: bwrap: setting up uid map: Permission denied (exit 2)"
+    },
+    "change": "sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 (persisted in /etc/sysctl.d/60-ranex-userns.conf); lifts Ubuntu 24.04's AppArmor restriction, guest only",
+    "afterChangeObserved": {
+      "unshare -Ur true": "exit 0",
+      "unshare -Ur id": "uid=0(root) gid=0(root) groups=0(root),65534(nogroup) (exit 0)",
+      "bwrap --unshare-all --ro-bind / / true": "exit 0",
+      "bwrap --unshare-all --ro-bind / / id": "uid=501(brad) gid=1000(brad) groups=1000(brad),65534(nogroup) (exit 0)"
+    }
+  },
+  "ranexRevision": "131f280a122f832a4dc14b5887c876a5b56a5bb3 (main; git rev-parse HEAD confirmed in the guest; ranex --version -> ranex v0.1.006; git status clean after install)",
+  "installCommands": [
+    "sudo apt-get update && sudo apt-get install -y git bubblewrap curl ca-certificates python3 strace   (bubblewrap 0.9.0, CPython 3.12.3 at /usr/bin/python3)",
+    "curl -fsSL https://deb.nodesource.com/setup_24.x -o /tmp/nodesource_setup.sh && sudo -E bash /tmp/nodesource_setup.sh && sudo apt-get install -y nodejs   (Node v24.21.0 at /usr/bin/node, root-owned, so Ranex's pinned toolchain resolves it)",
+    "curl -LsSf https://astral.sh/uv/0.8.22/install.sh -o /tmp/uv-install.sh && sudo env UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh /tmp/uv-install.sh   (uv 0.8.22)",
+    "git clone https://github.com/anthonykewl20/ranex ~/ranex && git -C ~/ranex checkout 131f280a122f832a4dc14b5887c876a5b56a5bb3",
+    "cd ~/ranex && uv sync --frozen   (documented operator install; 32 packages; exit 0)",
+    "for n in worker campaign-approver verdict-signer: RANEX_SIGNING_KEY=~/.config/ranex/$n.key ~/ranex/.venv/bin/ranex keygen --external-repository ~/keygen-target --producer $n   (keys 0600 outside every repository)",
+    "sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0"
+  ],
+  "governance": {
+    "order": "per patch: fresh copy of fixture base (nested-base for weaken-nested-test) -> git init + commit base -> write and commit governance/producers.yaml, governance/gates.yaml, .gitignore -> only then git apply the patch and commit it",
+    "producersYaml": "producers {worker}; verdict_signer {id: kernel-verdict-signer}; principals worker (role worker), campaign-approver (role approver), kernel-verdict-signer (role service). Ranex requires the verdict signer id to be exactly kernel-verdict-signer; a first attempt with id verdict-signer was refused 'ERROR verdict_signer is malformed' (exit 2)",
+    "gatesYaml": "gate landing, rule TASK_TESTS, blocking, one claim tests-executed with command [\"/usr/bin/node\", \"--test\"] and no results_artifact (exit-code-only)",
+    "whyExitCodeOnly": "Ranex's catalog loader admits JUnit evidence only as pytest (--junitxml=PATH) or Vitest (--reporter=junit --outputFile=PATH); node --test has neither spelling, so no suite manifest of test IDs can be bound for this fixture"
+  },
+  "commandsPerPatch": [
+    "RANEX_SIGNING_KEY=~/.config/ranex/worker.key ~/ranex/.venv/bin/ranex run --external-repository ~/runs/<patch> --claim tests-executed --producer worker -- /usr/bin/node --test",
+    "RANEX_APPROVER_SIGNING_KEY=~/.config/ranex/campaign-approver.key RANEX_VERDICT_SIGNING_KEY=~/.config/ranex/verdict-signer.key RANEX_VERDICT_DIR=governance/verdicts ~/ranex/.venv/bin/ranex gate evaluate HEAD --external-repository ~/runs/<patch> --approver campaign-approver --journal governance/journal.sqlite3",
+    "~/ranex/.venv/bin/ranex journal verify --external-repository ~/runs/<patch> --journal governance/journal.sqlite3"
+  ],
+  "perPatch": [
+    {"patch": "correct", "truth": "correct", "verdict": "PASS", "reason": "run: RECORDED claim=tests-executed producer=worker exit=0; gate: PASS gate=landing subject=sha256:dd4c418adbac7ab2128ac334745bd6934c3cc387c509df45df5a1ae94dd9647e; dual-signed verdict published", "exitCode": 0, "runExitCode": 0, "wallSeconds": 6.04},
+    {"patch": "broken", "truth": "wrong", "verdict": "FAIL", "reason": "FAIL gate=landing rule=TASK_TESTS: the bound command was observed failing: tests-executed (node --test: pass 1, fail 1)", "exitCode": 1, "runExitCode": 1, "wallSeconds": 5.80},
+    {"patch": "echo-script", "truth": "wrong", "verdict": "FAIL", "reason": "FAIL gate=landing rule=TASK_TESTS: the bound command was observed failing: tests-executed (the patch rewrote package.json's test script, but the catalog binds /usr/bin/node --test, so the unfixed bug still failed)", "exitCode": 1, "runExitCode": 1, "wallSeconds": 5.80},
+    {"patch": "forged-report", "truth": "wrong", "verdict": "FAIL", "reason": "FAIL gate=landing rule=TASK_TESTS: the bound command was observed failing: tests-executed (forged vitest-report.json is not read by an exit-code claim)", "exitCode": 1, "runExitCode": 1, "wallSeconds": 5.81},
+    {"patch": "weaken-test", "truth": "wrong", "verdict": "PASS", "reason": "run: RECORDED exit=0 (node --test: pass 2, fail 0 against the weakened assertion); gate: PASS gate=landing subject=sha256:f99e31a46b3dca60246fac3dd442e9809f3de9b32a9c96a3410c8395d8258c5e. False green: nothing in an exit-code-only claim protects test bodies", "exitCode": 0, "runExitCode": 0, "wallSeconds": 5.83},
+    {"patch": "weaken-nested-test", "truth": "wrong", "verdict": "PASS", "reason": "run: RECORDED exit=0 (pass 2, fail 0 against the weakened nested assertion); gate: PASS gate=landing subject=sha256:9e380fc44c1163acbe98312d9452acc4feadc5a45e9a3aa67f41cdd25709316a. False green, same cause", "exitCode": 0, "runExitCode": 0, "wallSeconds": 5.81}
+  ],
+  "wallSecondsNote": "wall time covers ranex run plus gate evaluate inside the emulated guest; journal verify returned PASS chain=verified external-anchor=UNVERIFIED (exit 0) for all six",
+  "eligibleForComparisonA": true,
+  "eligibleForComparisonAReason": "Ranex at 131f280a issued real verdicts on all six patches through its own documented external-repository interface (keygen, committed keyring and gate catalog written before each patch, run, gate evaluate with an authenticated approver, journal verify) on an x86-64 Linux executor with unprivileged user namespaces. Conditions to publish with the rows: (1) the executor is QEMU TCG full-system emulation of x86-64 on Apple Silicon, with Ubuntu 24.04's AppArmor userns restriction lifted by sysctl; (2) for this Node fixture the only bindable claim is exit-code-only, since Ranex's JUnit path accepts only pytest and Vitest spellings, so these rows belong in the exit-code-only split, not with JUnit-bound runners; (3) governance was written by the operator (this run), not by Ranex.",
+  "remainingLimits": [
+    "Both test-weakening patches were accepted (PASS): an exit-code-only claim cannot see test bodies, and even Ranex's JUnit manifest freezes test IDs, not bodies (its own documentation says so).",
+    "No suite manifest could be frozen for node --test; a Vitest or pytest variant of the fixture would be needed to exercise Ranex's frozen test-ID checks.",
+    "The default Ubuntu 24.04 image does not qualify: AppArmor's kernel.apparmor_restrict_unprivileged_userns=1 makes bwrap fail, and ranex run then refuses with exit 2. The sysctl change was required.",
+    "The task dispatch/judge/merge flow was not exercised: ranex task judge takes --emitted-worktree/--emitted-commit from a prior task dispatch against the kernel-owned repository and has no --external-repository option; the judging path used is the documented external-repository core loop (run, gate evaluate, journal verify).",
+    "run --confinement strict-local (Landlock, seccomp, cgroups, qualified launcher) was not attempted; runs used the default kill-safe bubblewrap execution.",
+    "journal verify reports external-anchor=UNVERIFIED; no Rekor witness was used (it would send data to a hosted service, which was not authorized).",
+    "Emulation speed: each judgement took about 6 s in the guest; native x86-64 timing will differ.",
+    "Setup tools beyond qemu: Homebrew lima-additional-guestagents 2.2.0 (needed for any x86_64 Lima guest), NodeSource apt repository for Node 24, uv 0.8.22 from astral.sh."
+  ]
+}
