@@ -266,9 +266,8 @@ async function b5(context) {
   const vera = join(veraTool, "darwin/vera");
   await log.run([vera, "init"], { cwd: workspace, timeoutMs: 60_000, env });
   writeFileSync(join(workspace, ".vera/goal.yaml"), veraGoalYaml(loaded.goal, loaded.contract));
-  // VERA keeps its state and its evidence database in the workspace; a user ignores both, and they
-  // are no part of the change. Unignored, the database sat among the agent's untracked files, and
-  // every development verify failed VERA's own integrity check.
+  // VERA keeps its state and its evidence database in the working directory (the path is fixed in
+  // its source); a user ignores both, and they are no part of the change the arm is judged on.
   appendFileSync(join(workspace, ".git/info/exclude"), ".vera/\nvera-evidence.db\n");
   const prompt = taskPrompt(loaded.goal, loaded.contract);
   const verify = async () => {
