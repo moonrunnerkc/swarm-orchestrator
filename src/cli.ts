@@ -41,7 +41,12 @@ import { reportGates } from "./cli-run-report.ts";
 import { diffBudgetFrom, gateOptionsFrom, settingsFor } from "./cli-run-settings.ts";
 import { createSystemClock, createSystemRandom } from "./cli-runtime-inputs.ts";
 import { chooseModel, select } from "./cli-select.ts";
-import { strengthenAndRepair, strengtheningLimits, tokensSpent } from "./cli-strengthen.ts";
+import {
+  remainingTokenBudget,
+  strengthenAndRepair,
+  strengtheningLimits,
+  tokensSpent,
+} from "./cli-strengthen.ts";
 import { presetTaskContract } from "./cli-task-contract.ts";
 import { logReward, priceTask } from "./cli-task-cost.ts";
 import {
@@ -535,13 +540,11 @@ async function run(options: RunCommand): Promise<number> {
               signal: interruption.signal,
               deadline,
               reserveMs: 30_000,
-              remainingTokens: () => {
-                const used = tokensSpent(evidence);
-                if (used.unknown) return 0;
-                return (
-                  (options.recovery?.remainingTokens ?? options.maxTokens ?? 1_000_000) - used.spent
-                );
-              },
+              remainingTokens: () =>
+                remainingTokenBudget(
+                  evidence,
+                  options.recovery?.remainingTokens ?? options.maxTokens ?? 1_000_000,
+                ),
               verifyCandidate: (contract, policy) =>
                 verifyCandidateUnder(goalContext, contract, policy),
               verifyProbe: probeVerifier(goalContext),
