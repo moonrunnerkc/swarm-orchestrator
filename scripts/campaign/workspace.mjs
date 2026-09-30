@@ -144,7 +144,7 @@ export function touchesInstallInputs(patch) {
 export function imageFor(goal, contract = null) {
   if (contract?.checks.some((check) => check.behavior?.kind === "browser")) return images.browser;
   if (goal.ecosystem === "python") return images.python;
-  if (goal.manager === "pnpm") return `swarm-campaign-node:pnpm-${goal.managerVersion}`;
+  if (goal.manager === "pnpm") return `swarm-campaign-node:pnpm-${goal.managerVersion}-noyarn`;
   return images.node;
 }
 
@@ -161,7 +161,9 @@ export async function ensureImage(log, goal) {
     cwd: campaignRoot,
     timeoutMs: 1_800_000,
     // A global install, not a Corepack shim: the shim would fetch again for the unprivileged user.
-    input: `FROM ${images.node}\nRUN npm install -g pnpm@${goal.managerVersion} && pnpm --version\n`,
+    // The Node image's global yarn 1 is removed: it sits beside node, where a tool that prefers
+    // node's own directory finds it ahead of any yarn a project or test puts on PATH.
+    input: `FROM ${images.node}\nRUN npm install -g pnpm@${goal.managerVersion} && rm -f /usr/local/bin/yarn /usr/local/bin/yarnpkg && pnpm --version\n`,
   });
   if (built.exitCode !== 0) throw new Error(`${goal.id}: could not build ${image}`);
   return image;
