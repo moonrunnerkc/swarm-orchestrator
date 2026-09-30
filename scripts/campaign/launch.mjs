@@ -254,6 +254,29 @@ if (import.meta.url === `file://${process.argv[1]}`) {
         `${launch.id}: ${record.decision} in ${Math.round(record.wallMs / 1000)}s; truth ${JSON.stringify(record.truth)}`,
       );
     }
+  } else if (command === "rows") {
+    // One compact row per recorded attempt, for evidence pages: the full records stay in the cache.
+    const rows = [];
+    for (const launch of selected)
+      for (const record of attemptsOf(
+        join(campaignRoot, "runs", manifestDigest.slice(7, 23), launch.id),
+      ))
+        rows.push({
+          launch: launch.id,
+          attempt: record.attempt,
+          decision: record.decision,
+          wallSeconds: Math.round(record.wallMs / 1000),
+          agentSeconds: Math.round(
+            record.commands
+              .filter((one) => one.argv.some((word) => word === manifest.pins.swarmCli))
+              .reduce((sum, one) => sum + one.wallMs, 0) / 1000,
+          ),
+          tokens: record.tokens.total,
+          truth: record.truth,
+          basis: record.decisionBasis.slice(0, 200),
+          notes: record.notes.filter((note) => !note.startsWith("hidden oracle:")),
+        });
+    console.log(JSON.stringify({ manifest: manifestDigest, rows }, null, 1));
   } else if (command === "status") {
     const counts = {};
     for (const launch of selected) {
