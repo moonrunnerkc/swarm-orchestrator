@@ -30,6 +30,7 @@ import {
   attributionRule,
   type FailureAttribution,
   testPoints,
+  unattributedReason,
   underBaseConfiguration,
 } from "./failure-attribution.ts";
 import { normalizePath } from "./file-set.ts";
@@ -861,10 +862,18 @@ export async function verifyIndependently(
                   : checks.some((check) => check.attribution === "unattributed")
                     ? `a check fails at the base commit too, but not in a way that shows this patch added nothing to it: ${checks
                         .filter((check) => check.attribution === "unattributed")
-                        .map((check) => check.id)
+                        .map(
+                          (check) =>
+                            `${check.id} (${unattributedReason(
+                              (check.regressedUnderBaseConfiguration ?? []).length > 0
+                                ? check.configurationObservation
+                                : check.observation,
+                              check.baseObservation,
+                            )})`,
+                        )
                         .join(
-                          ", ",
-                        )}. Its output names no tests to compare and differs from the base's, so a failure this patch introduced could be hidden inside it; the regression dimension is unmeasured, not passed. Fixing the base's failure makes the comparison exact.`
+                          "; ",
+                        )}. A failure this patch introduced could be hidden inside it, so the regression dimension is unmeasured, not passed. Fixing the base's failure makes the comparison exact.`
                     : checks.some(
                           (check) =>
                             (check.configurationFiles ?? []).length > 0 &&
@@ -1436,7 +1445,9 @@ function weakenedUnderBaseTests(
     baseStatus: atBase?.status,
     atBase: atBase?.observation,
   });
-  if (attributed.attribution === "inherited") return check;
+  // The rule is named on the record, passing or withheld, so the offline reader re-derives this
+  // reading by the rule that made it.
+  if (attributed.attribution === "inherited") return { ...check, attributionRule };
   // Where the base passed the whole check, every failure here is one the base did not have.
   const named =
     atBase?.status !== "failed"
@@ -1444,6 +1455,7 @@ function weakenedUnderBaseTests(
       : attributed.newFailures;
   return {
     ...check,
+    attributionRule,
     status: "not-applicable",
     weakenedTests: named,
     detail:

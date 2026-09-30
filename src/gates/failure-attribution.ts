@@ -20,8 +20,11 @@ import { runnerTestPoints } from "./runner-results.ts";
  */
 export type FailureAttribution = "inherited" | "new" | "unattributed";
 
-/** The rule new records are attributed under; records without it were written under v1. */
-export const attributionRule = "failure-identity-v2";
+/**
+ * The rule new records are attributed under; records without it were written under v1. v3 is v2
+ * with temporary names set aside in causes and outputs (see `withoutTemporaryNames`).
+ */
+export const attributionRule = "failure-identity-v3";
 
 export interface TestPoints {
   /** Failing identities, once per failure: a repeated identity is repeated here. */
@@ -278,14 +281,59 @@ function vitestTextFailures(raw: string): TestPoints | null {
 /** Terminal colour sequences: escape, "[", parameters, a final letter. */
 const colourCode = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*[A-Za-z]`, "g");
 
-/** A failure's cause with colours, times and durations set aside, bounded. */
+/** A failure's cause with colours, times, durations and temporary names set aside, bounded. */
 function normalizedCause(text: string): string {
+  return withoutTemporaryNames(
+    text
+      .replace(colourCode, "")
+      .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?/g, "<timestamp>")
+      .replace(/\b\d+(?:\.\d+)?\s?(?:ms|s|sec|secs|seconds)\b/g, "<duration>")
+      .trim()
+      .slice(0, 2000),
+  );
+}
+
+/**
+ * A directory a platform creates for temporary files, with the path below it: `/tmp`,
+ * `/var/tmp`, `/dev/shm`, macOS's per-user `/var/folders/<a>/<b>/T` (and each under `/private`),
+ * and Windows' `%LOCALAPPDATA%\Temp`. The same fixed list in the offline re-deriver, which runs on
+ * some other machine: nothing here reads the machine's own temporary directory.
+ */
+const temporaryPath =
+  /((?:\/private)?\/var\/folders\/[^/\s'"`]+\/[^/\s'"`]+\/T|(?:\/private)?\/tmp|\/var\/tmp|\/dev\/shm|[A-Za-z]:\\Users\\[^\\\s'"`]+\\AppData\\Local\\Temp)([/\\][^\s'"`]*)/g;
+
+/**
+ * A run of six or more name characters inside a directory of the path (a separator follows it
+ * before the path ends), which is where a generated suffix sits: `mkdtemp` makes directories.
+ */
+const directoryRun = /[A-Za-z0-9_]{6,}(?=[^/\\\s'"`]*[/\\])/g;
+
+/** A generated suffix holds a digit; a word a person named a directory by usually does not. */
+function randomRun(run: string): string {
+  return /\d/.test(run) ? "<random>" : run;
+}
+
+/**
+ * Names a run chose at random, set aside. Two runs of one failure write under different temporary
+ * directories (pre-commit's `repoc90ac5y6` against `reponyx5xidu`), and tracemantle's identical
+ * inherited failures read as changed on that alone. Set aside: in a path under a temporary root,
+ * the root itself and every run of six or more name characters holding a digit in one of the
+ * path's directories; and the same shape directly after an elision marker, where a reporter cut a
+ * long value (pytest prints `e...eponyx5xidu`) and the root the name sat under was cut with it.
+ * Kept: a path outside a temporary root, a file's own name, a directory name without a digit, and
+ * every other word of a message, so a failure that moved to another file or says something else
+ * still reads as changed. The residual, named: two directories under a temporary root that differ
+ * only in a digit-bearing name of six or more characters read as the same.
+ */
+export function withoutTemporaryNames(text: string): string {
   return text
-    .replace(colourCode, "")
-    .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?/g, "<timestamp>")
-    .replace(/\b\d+(?:\.\d+)?\s?(?:ms|s|sec|secs|seconds)\b/g, "<duration>")
-    .trim()
-    .slice(0, 2000);
+    .replace(
+      temporaryPath,
+      (_whole, _root: string, rest: string) => `<tmp>${rest.replace(directoryRun, randomRun)}`,
+    )
+    .replace(/\.\.\.([A-Za-z0-9_]{6,})/g, (whole, run: string) =>
+      /\d/.test(run) ? "...<random>" : whole,
+    );
 }
 
 /**
@@ -301,7 +349,8 @@ export function normalizedOutput(observation: GateObservation): string {
     .replace(/\b\d+(?:\.\d+)?\s?(?:ms|s|sec|secs|seconds|m|min)\b/g, "<duration>")
     .split("\n")
     .map((line) => line.trimEnd())
-    .join("\n");
+    .join("\n")
+    .replace(/[^\n]+/g, (line) => withoutTemporaryNames(line));
 }
 
 function counts(ids: readonly string[]): Map<string, number> {
@@ -326,6 +375,47 @@ function pairedPoints(
   return { patched: testPoints(withPatch), base: testPoints(atBase) };
 }
 
+function namedList(ids: readonly string[]): string {
+  return `${ids.slice(0, 5).join("; ")}${ids.length > 5 ? `; and ${ids.length - 5} more` : ""}`;
+}
+
+/**
+ * Why a failed check's failures could not be matched one to one with the base's, read from the
+ * two runs' own output, so the advice names the obstacle rather than one fixed guess at it.
+ */
+export function unattributedReason(
+  withPatch: GateObservation | undefined,
+  atBase: GateObservation | undefined,
+): string {
+  if (withPatch === undefined || atBase === undefined)
+    return "the base could not be put in place to run it";
+  if (withPatch.outputTruncated === true || atBase.outputTruncated === true)
+    return "a run's output was cut short, and nothing after the cut can be compared";
+  const { patched, base } = pairedPoints(withPatch, atBase);
+  if (patched === null && base === null)
+    return "its output names no tests to compare and differs from the base's";
+  if (patched === null)
+    return "the base's run names its tests, and this run's output names none to hold them to";
+  if (base === null)
+    return `its output names the failing tests (${namedList(patched.failed)}), and the base's run names none it can be held to`;
+  const after = counts(patched.failed);
+  const before = counts(base.failed);
+  const reasons: string[] = [];
+  if ([...after, ...before].some(([, count]) => count > 1))
+    reasons.push("a failing test's name repeats, so its failures cannot be told apart");
+  const changed = [...after.keys()].filter((id) => patched.causes[id] !== base.causes[id]);
+  if (changed.length > 0)
+    reasons.push(
+      `the same tests fail at the base, but for a different reason (${namedList(changed)})`,
+    );
+  if (!patched.complete || !base.complete)
+    reasons.push("a run did not report completely (cut short, cancelled or short of its plan)");
+  if (patched.failed.length === 0) reasons.push("it failed without naming a failing test");
+  return reasons.length > 0
+    ? reasons.join("; ")
+    : "its failures could not be matched one to one with the base's";
+}
+
 /**
  * What a reader is told about a failed check beside its status: which tests failed and whether
  * the base control proved them inherited, new, or neither. A justified "no new regression" keeps
@@ -340,8 +430,7 @@ export function describeAttribution(check: {
   if (check.status !== "failed") return "";
   const failing =
     check.observation === undefined ? [] : (testPoints(check.observation)?.failed ?? []);
-  const named = (ids: readonly string[]) =>
-    `${ids.slice(0, 5).join("; ")}${ids.length > 5 ? `; and ${ids.length - 5} more` : ""}`;
+  const named = namedList;
   if (check.attribution === "inherited")
     return failing.length === 0
       ? "inherited: the base fails it the same way"
