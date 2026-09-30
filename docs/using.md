@@ -198,10 +198,10 @@ first run on a terminal in a workspace that has a manifest and no file offers to
 ```toml
 [gates]
 # from package.json scripts.test: node --test
-tests = { command = "npm run --silent test", parser = "test-output" }
+tests = { command = "npm run --loglevel=error test", parser = "test-output" }
 # from package.json scripts.lint: biome check
-lint = { command = "npm run --silent lint", parser = "exit-code" }
-build = "npm run --silent build"
+lint = { command = "npm run --loglevel=error lint", parser = "exit-code" }
+build = "npm run --loglevel=error build"
 
 [providers]
 local_thinking = false         # the model behind the local endpoint answers without reasoning first

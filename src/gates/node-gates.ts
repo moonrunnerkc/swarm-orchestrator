@@ -140,7 +140,12 @@ export function nodeGates(
           id,
           title: `${id} (${manager} run ${script})`,
           severity: "blocking",
-          command: `${manager} run --silent ${script}`,
+          // Not `--silent`: npm hands its log level to the script as `npm_config_loglevel`, and
+          // the project's own tools read it. pnpm read `silent` and a failed `pnpm -r run
+          // typecheck` printed nothing at all, so the record held an exit code and no reason.
+          // `error` keeps npm's notices and warnings out of the record, which two runs of one
+          // failure could print differently, and leaves every tool's errors in it.
+          command: `${manager} run --loglevel=error ${script}`,
         },
         detection.nodeScriptCommands[script],
         nodeVersion,

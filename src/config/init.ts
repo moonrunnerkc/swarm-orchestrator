@@ -108,7 +108,7 @@ export function planGates(detection: ProjectDetection): readonly PlannedGate[] {
       body,
       command:
         structuredRunner(body) === null
-          ? `${detection.nodeManager ?? "npm"} run --silent ${script}`
+          ? `${detection.nodeManager ?? "npm"} run --loglevel=error ${script}`
           : renderRunnerArgv(structuredRunner(body) ?? []),
       ...rule,
     });

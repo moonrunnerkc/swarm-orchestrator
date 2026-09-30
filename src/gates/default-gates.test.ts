@@ -54,7 +54,7 @@ describe("the tests gate on a Node below the isolated coverage floor", () => {
     const source = testsGate("v22.7.0");
 
     expect(source.argv).toBeUndefined();
-    expect(source.command).toBe("npm run --silent test");
+    expect(source.command).toBe("npm run --loglevel=error test");
     expect(source.coverageUnmeasured).toContain(
       "node version below the floor for isolated coverage",
     );

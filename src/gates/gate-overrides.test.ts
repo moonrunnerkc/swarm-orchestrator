@@ -48,6 +48,7 @@ describe("an override that runs a script by name", () => {
     const tests = gates.find((gate) => gate.id === "tests");
 
     expect(scriptBodyBehind("npm run --silent test", detection)).toBe("node --test");
+    expect(scriptBodyBehind("npm run --loglevel=error test", detection)).toBe("node --test");
     expect(scriptBodyBehind("npm test", detection)).toBe("node --test");
     expect(scriptBodyBehind("npm run test:fast", detection)).toBeNull();
     expect(tests?.source.kind === "command" ? tests.source.argv : undefined).toContain(

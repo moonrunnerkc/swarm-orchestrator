@@ -28,10 +28,10 @@ describe("planning gates from package.json scripts", () => {
     expect(
       plan.map((gate) => [gate.id, gate.script, gate.command, gate.parser, gate.severity]),
     ).toEqual([
-      ["tests", "test", "npm run --silent test", "test-output", "blocking"],
-      ["lint", "lint", "npm run --silent lint", "exit-code", "blocking"],
-      ["typecheck", "typecheck", "npm run --silent typecheck", "exit-code", "blocking"],
-      ["build", "build", "npm run --silent build", "exit-code", "blocking"],
+      ["tests", "test", "npm run --loglevel=error test", "test-output", "blocking"],
+      ["lint", "lint", "npm run --loglevel=error lint", "exit-code", "blocking"],
+      ["typecheck", "typecheck", "npm run --loglevel=error typecheck", "exit-code", "blocking"],
+      ["build", "build", "npm run --loglevel=error build", "exit-code", "blocking"],
     ]);
     expect(plan.every((gate) => gate.reason === null)).toBe(true);
   });
@@ -76,8 +76,12 @@ describe("the rendered file", () => {
     expect(text).toContain("# the harness has no parser for jest's output");
     expect(text).toContain("# from package.json scripts.lint: eslint .");
     expect(parseSwarmToml(text, "swarm.toml").gates).toEqual({
-      tests: { command: "npm run --silent test", parser: "exit-code", severity: "advisory" },
-      lint: { command: "npm run --silent lint", parser: "exit-code" },
+      tests: {
+        command: "npm run --loglevel=error test",
+        parser: "exit-code",
+        severity: "advisory",
+      },
+      lint: { command: "npm run --loglevel=error lint", parser: "exit-code" },
     });
   });
 
@@ -119,7 +123,9 @@ describe("initializeSwarmToml", () => {
 
     expect(outcome.path).toBe("/repo/swarm.toml");
     expect(outcome.gates.map((gate) => gate.id)).toEqual(["tests"]);
-    expect(files["/repo/swarm.toml"]).toContain('tests = { command = "npm run --silent test"');
+    expect(files["/repo/swarm.toml"]).toContain(
+      'tests = { command = "npm run --loglevel=error test"',
+    );
   });
 
   it("refuses to overwrite a file that exists, and never edits one", async () => {

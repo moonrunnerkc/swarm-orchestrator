@@ -61,7 +61,7 @@ describe("planning a check from a project's files", () => {
     // The scripts run through npm: pnpm installs the lockfile but is not in a trusted image,
     // which left every pnpm project's typecheck, lint and build "not installed" in a container.
     expect(plan.declaredChecks.find((check) => check.id === "tests")?.command).toBe(
-      "npm run --silent test",
+      "npm run --loglevel=error test",
     );
   });
 

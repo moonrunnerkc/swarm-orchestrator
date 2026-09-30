@@ -131,8 +131,8 @@ describe("assembling the default gate set", () => {
     expect(argvOf(gates, "tests")?.[0]).toBe("node");
     expect(argvOf(gates, "tests")?.join(" ")).toContain("require.resolve('vitest/package.json')");
     expect(argvOf(gates, "tests")?.join(" ")).toContain("--reporter=json");
-    expect(commandOf(gates, "lint")).toBe("npm run --silent lint");
-    expect(commandOf(gates, "format")).toBe("npm run --silent format:check");
+    expect(commandOf(gates, "lint")).toBe("npm run --loglevel=error lint");
+    expect(commandOf(gates, "format")).toBe("npm run --loglevel=error format:check");
     // No typecheck script, so there is no command to run and the gate says so.
     expect(commandOf(gates, "typecheck")).toBeNull();
   });
@@ -174,7 +174,7 @@ describe("assembling the default gate set", () => {
     );
 
     expect(argvOf(gates, "lint")).toBeNull();
-    expect(commandOf(gates, "lint")).toBe("npm run --silent lint");
+    expect(commandOf(gates, "lint")).toBe("npm run --loglevel=error lint");
   });
 
   it("runs the declared script where the harness cannot build a vector for it", async () => {
@@ -187,7 +187,7 @@ describe("assembling the default gate set", () => {
       ),
     );
 
-    expect(commandOf(gates, "tests")).toBe("npm run --silent test");
+    expect(commandOf(gates, "tests")).toBe("npm run --loglevel=error test");
     expect(argvOf(gates, "tests")).toBeNull();
   });
 
@@ -201,7 +201,7 @@ describe("assembling the default gate set", () => {
       );
       expect({ command, assembled: commandOf(gates, "tests") }).toEqual({
         command,
-        assembled: "npm run --silent test",
+        assembled: "npm run --loglevel=error test",
       });
     }
   });
@@ -217,7 +217,7 @@ describe("assembling the default gate set", () => {
       ),
     );
 
-    expect(commandOf(gates, "tests")).toBe("npm run --silent test");
+    expect(commandOf(gates, "tests")).toBe("npm run --loglevel=error test");
   });
 
   it("refuses to run a writing formatter as a gate", async () => {

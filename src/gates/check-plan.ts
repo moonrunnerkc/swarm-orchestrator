@@ -238,7 +238,7 @@ function declaredChecksOf(
         null;
       checks.push({
         id: detection.types.length > 1 ? `${id}:node` : id,
-        command: script === null ? null : `npm run --silent ${script}`,
+        command: script === null ? null : `npm run --loglevel=error ${script}`,
         unavailable:
           script === null
             ? id === "tests"

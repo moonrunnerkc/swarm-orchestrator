@@ -30,7 +30,7 @@ function trees(
 const manifest = (scripts: Record<string, string>, extra: Record<string, unknown> = {}) =>
   `${JSON.stringify({ name: "w", scripts, ...extra })}\n`;
 
-const npm = (script: string) => ({ command: `npm run --silent ${script}`, argv: null });
+const npm = (script: string) => ({ command: `npm run --loglevel=error ${script}`, argv: null });
 const vitestArgv = {
   command: "vitest",
   argv: ["node", "--input-type=module", "-e", "import('vitest')"],
