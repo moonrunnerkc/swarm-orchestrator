@@ -21,17 +21,17 @@ imported the candidate's wrapper. The failure both sides share was charged to th
 
 Three mechanism defects, one per layer:
 
-1. **Verifier, asymmetric base measurement (fixed here).** The reset kept every ignored file,
-   including output a check wrote after preparation. Fixed in `resetToBase`
-   (`src/gates/independent-verification.ts`): the ignored entries present once dependencies are
-   prepared are listed, and each reset removes ignored entries written after that. The
-   failing-first test, "measures the base without the ignored output a check wrote on the patch's
-   side" in `src/gates/independent-verification.test.ts`, shows the sharper form of the same
-   defect: with an incremental build that skips when its output exists, a patch that breaks the
-   code read as an inherited failure, a false green. Before the fix the base observation exited
-   1; after it the base exits 0 and the failure is attributed `new`. Residual, named in the code:
-   output written inside a directory preparation already held (`node_modules/.cache`) is not told
-   apart by the listing.
+1. **Verifier, asymmetric base measurement (fixed on v13-main in 4fd2ce5fd).** The reset kept
+   every ignored file, including output a check wrote after preparation, so the base's checks ran
+   beside the candidate's build output. This investigation found the defect independently and
+   wrote a failing-first fix; the fix that landed on v13-main first (4fd2ce5fd, "Measure the base
+   without the patched tree's run output") covers it, so only the test is carried here: "measures
+   the base without the ignored output a check wrote on the patch's side" in
+   `src/gates/independent-verification.test.ts`. It pins the sharper, false-green direction the
+   landed tests do not: with an incremental build that skips when its output exists, a patch that
+   breaks the code read as a failure the base shared (inherited), because the base was measured
+   beside the candidate's build. Before the fix the base observation exited 1; on v13-main the
+   base exits 0 and the failure is attributed `new`.
 2. **Verifier feedback that names nothing to fix (fixed before this campaign).** The 1.0.4 detail
    was "400 collected, 398 passed, 2 failed", with no test named. Since 3eea7e7fe the TAP reading
    names the failing tests.
@@ -41,10 +41,11 @@ Three mechanism defects, one per layer:
    registered on 2026-09-29 prepares every arm's workspace with the same install argv the verifier
    uses.
 
-Replay on the current source (commit b65161292, host, `ci --patch <fork> --install --json`, once
+Replay on the source of that day (host, `ci --patch <fork> --install --json`, once
 each, development evidence): all three read `regression: pass` with `build` then `tests` passing
 (400, 439 and 459 tests). Current check order runs `build` before `tests`, so the candidate side
 no longer fails, and with the reset fix the base side is measured without the candidate's output.
+The replay predates the landed fix; its reports are under `~/.cache/swarm-campaign/repair-replay/`.
 Under the current source B1 would have stopped at these forks, as the prefix's own judge did, and
 their held-back outcome (pass) was already B0's.
 

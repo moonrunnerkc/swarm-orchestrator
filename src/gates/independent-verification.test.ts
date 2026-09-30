@@ -692,6 +692,57 @@ describe("a failure the base already had", () => {
   });
 
   /**
+   * The base is measured by resetting the same checkout, and the reset kept ignored files so the
+   * installed dependencies survive. It kept everything else a check had written there as well. In
+   * Comparison B's koa repairs on 1.0.4 (koa#1904, #1961, #1999) the candidate's `build` wrote an
+   * ignored `dist/` that the base's tests then imported, so the two sides were measured over
+   * different trees. Here the build is incremental, as many are: it skips when its output exists.
+   * The patch breaks `clamp`; measured beside the candidate's build output, the base fails the
+   * same way, and that shared failure reads as inherited from the base: a false green.
+   */
+  it("measures the base without the ignored output a check wrote on the patch's side", async () => {
+    await writeFile(join(repository, ".gitignore"), "dist\n");
+    await writeFile(
+      join(repository, "package.json"),
+      '{"name":"w","version":"1.0.0","type":"module","scripts":{"test":"node --test","build":"node build.mjs"}}\n',
+    );
+    await writeFile(
+      join(repository, "build.mjs"),
+      "import { copyFileSync, existsSync, mkdirSync } from 'node:fs';\nif (!existsSync('dist/clamp.mjs')) {\n  mkdirSync('dist', { recursive: true });\n  copyFileSync('clamp.mjs', 'dist/clamp.mjs');\n}\n",
+    );
+    await writeFile(
+      join(repository, "built.test.mjs"),
+      "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\ntest('the built clamp keeps a value in range', async () => {\n  const { clamp } = await import('./dist/clamp.mjs');\n  assert.equal(clamp(3), 3);\n});\n",
+    );
+    git(["add", "-A"], repository);
+    git(["commit", "-qm", "tests that read an incremental build's output"], repository);
+    const patch = [
+      "diff --git a/clamp.mjs b/clamp.mjs",
+      "--- a/clamp.mjs",
+      "+++ b/clamp.mjs",
+      "@@ -1 +1 @@",
+      "-export const clamp = (v) => v;",
+      "+export const clamp = (v) => v + 1;",
+      "",
+    ].join("\n");
+
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch,
+      commands: commands(),
+      clock,
+    });
+
+    const tests = result.checks.find((check) => check.id === "tests");
+    expect(tests?.status).toBe("failed");
+    expect(tests?.baseObservation?.exitCode).toBe(0);
+    expect(tests?.attribution).toBe("new");
+    expect(result.regression).toBe("fail");
+    expect(capturedRegression(result.checks)).toBe(result.regression);
+  });
+
+  /**
    * Attribution reverts the patch to measure the base, so anything reading the tree afterwards
    * reads the base. The oracle must run before that or it judges the source the patch replaced,
    * rejects every patch, and reports it as the task not being done.
