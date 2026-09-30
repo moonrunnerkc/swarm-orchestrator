@@ -59,10 +59,23 @@ export async function applyPatch(log, directory, patch, name) {
   return applied.exitCode === 0;
 }
 
-/** The working tree's change against the base, untracked files included, as a binary diff. */
-export async function finalPatch(log, directory, base) {
+/**
+ * The working tree's change against the base, untracked files included, as a binary diff, with
+ * `excluded` paths (committed acceptance material) left out.
+ */
+export async function finalPatch(log, directory, base, excluded = []) {
   await git(log, directory, "add", "--all");
-  const diff = await git(log, directory, "diff", "--cached", "--binary", base);
+  const diff = await git(
+    log,
+    directory,
+    "diff",
+    "--cached",
+    "--binary",
+    base,
+    "--",
+    ".",
+    ...excluded.map((path) => `:(exclude)${path}`),
+  );
   await git(log, directory, "reset", "--quiet");
   return diff.stdout.toString();
 }
@@ -81,6 +94,12 @@ export function containerArgv({ image, directory, argv, network, env = {}, extra
     UV_CACHE_DIR: "/cache/uv",
     UV_PYTHON_INSTALL_DIR: "/cache/uv-python",
     UV_LINK_MODE: "copy",
+    // A container has no git identity; suites that commit into fixtures need one, as a CI runner
+    // provides.
+    GIT_AUTHOR_NAME: "campaign",
+    GIT_AUTHOR_EMAIL: "campaign@localhost",
+    GIT_COMMITTER_NAME: "campaign",
+    GIT_COMMITTER_EMAIL: "campaign@localhost",
     PATH: "/w/node_modules/.bin:/w/.venv/bin:/cache/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     ...env,
   };

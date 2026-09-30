@@ -12,7 +12,7 @@ const goal = (workType) => ({
 const rows = (overrides = {}) =>
   [
     { tree: "base", hidden: "fail", visible: "fail" },
-    { tree: "reference", hidden: "pass", visible: "pass" },
+    { tree: "reference", hidden: "pass", visible: "pass", projectTest: "pass" },
     { tree: "condition:correct", hidden: "pass" },
     { tree: "condition:incorrect", hidden: "fail" },
     { tree: "condition:forged", hidden: "pass" },

@@ -1,7 +1,9 @@
 /**
  * Comparison B: one complete workflow on one goal. The coding agent is the same in every arm:
- * the swarm worker loop at the pinned revision, the pinned local model, its commands behind the
- * goal's container image, the same task text and the same total budget. Arms differ only in what
+ * the swarm worker loop at the pinned revision, the pinned local model, on this host in the
+ * product's default restricted mode (the agent needs the registry to regenerate a lockfile, and
+ * its dependencies are installed for this host by the goal's own argv), the same task text and
+ * the same total budget. Arms differ only in what
  * checks the work and what happens when the check refuses:
  *
  * - b1-ci: the visible checks sit in the tree as committed acceptance material; after the agent,
@@ -16,6 +18,7 @@
  * all inside the one wall-clock and token budget. Truth is scored afterwards, apart from every
  * arm, by the sealed hidden oracle on the final tree.
  */
+import { spawnSync } from "node:child_process";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { commitAcceptanceMaterial } from "./acceptance-material.mjs";
@@ -28,6 +31,7 @@ import {
 } from "./decisions.mjs";
 import { veraGoalYaml } from "./vera-goal.mjs";
 import {
+  applyPatch,
   campaignRoot,
   cloneAtBase,
   containerArgv,
@@ -35,10 +39,13 @@ import {
   finalPatch,
   imageFor,
   prepareDependencies,
+  prepareDependenciesOnHost,
   verifierInstalls,
 } from "./workspace.mjs";
 
 export const repairInvocations = 2;
+/** The committed acceptance material of b1 and b5, left out of the change truth is scored on. */
+export const acceptancePaths = [".campaign", "acceptance/visible"];
 const veraTool = join(campaignRoot, "tools/vera");
 
 /** The task text every arm's agent receives, identical across arms for one goal. */
@@ -65,7 +72,7 @@ export function treeContract(contract) {
 }
 
 function agentArgv(context, workspace, base, prompt, extra, remaining) {
-  const { pins, loaded } = context;
+  const { pins } = context;
   return [
     "node",
     pins.swarmCli,
@@ -82,8 +89,6 @@ function agentArgv(context, workspace, base, prompt, extra, remaining) {
     String(remaining.tokens),
     "--max-wall-minutes",
     String(Math.max(1, Math.floor(remaining.agentMs / 60_000))),
-    "--isolation",
-    `docker:${imageFor(loaded.goal, loaded.contract)}`,
     // Unattended: allowlist prompts are answered by the harness and recorded, as in every arm.
     "--approve",
     "auto",
@@ -101,7 +106,7 @@ async function prepareWorkspace(context, withMaterial) {
   const base = withMaterial
     ? await commitAcceptanceMaterial(log, workspace, treeContract(loaded.contract))
     : loaded.goal.upstreamBase;
-  const installed = await prepareDependencies(log, loaded.goal, workspace);
+  const installed = await prepareDependenciesOnHost(log, loaded.goal, workspace);
   if (!installed.ok) throw new Error(`install failed: ${installed.failed.join(" ")}`);
   // The model's settings, kept out of the change the arm is judged on.
   writeFileSync(
@@ -125,25 +130,60 @@ async function invokeAgent(context, argv, cwd) {
   else context.tokensTotal += tokens;
   context.remaining.tokens = Math.max(1, context.remaining.tokens - (tokens ?? 0));
   context.remaining.agentMs -= ran.wallMs;
-  return { ran, stdout, result: swarmResultLine(stdout) };
+  const result = swarmResultLine(stdout);
+  // The hidden oracle lives outside the workspace and the tool guard refuses outside paths, which
+  // is a lexical guard, not a sandbox; so every run's own evidence is searched for the sealed
+  // location, and a hit is recorded on the launch.
+  const evidence = result?.bundleDirectory ? join(result.bundleDirectory, "..") : null;
+  if (evidence !== null) {
+    const hits = spawnSync("grep", ["-rlF", "swarm-campaign/sealed", evidence], {
+      encoding: "utf8",
+    });
+    context.notes.push(
+      hits.stdout.trim() === ""
+        ? `oracle exposure scan: no mention of the sealed location in ${evidence}`
+        : `ORACLE EXPOSURE: the sealed location appears in ${hits.stdout.trim().split("\n").length} evidence file(s) of ${evidence}`,
+    );
+  } else context.notes.push("oracle exposure scan: the run named no evidence directory");
+  return { ran, stdout, result };
 }
 
-async function ciCheck(context, workspace) {
+/**
+ * Plain CI over the agent's change: a fresh checkout of the base with the acceptance material
+ * committed, the change applied (acceptance edits included, as a repository's CI would run them),
+ * the goal's install in its image, then the project tests and the visible checks with the network
+ * off. The agent's own workspace is never the tree CI judges.
+ */
+async function ciCheck(context, workspace, base) {
   const { log, loaded } = context;
   const image = imageFor(loaded.goal, loaded.contract);
   const codes = [];
   const tails = [];
+  const change = await finalPatch(log, workspace, base);
+  const fresh = join(context.scratch, `ci-${Date.now()}`);
+  await cloneAtBase(log, loaded.goal, fresh);
+  await commitAcceptanceMaterial(log, fresh, treeContract(loaded.contract));
+  if (!(await applyPatch(log, fresh, change, `ci-${Date.now()}`)))
+    return {
+      decision: "refuse",
+      feedback: "the change does not apply to a fresh checkout",
+      codes: [null],
+    };
+  const installed = await prepareDependencies(log, loaded.goal, fresh);
+  if (!installed.ok)
+    return {
+      decision: "refuse",
+      feedback: `the install failed: ${installed.failed.join(" ")}`,
+      codes: [null],
+    };
   for (const argv of [
     loaded.goal.projectTest,
     ["node", ".campaign/visible-runner.mjs", ".campaign/contract.json", "--from-tree"],
   ]) {
-    const ran = await log.run(
-      containerArgv({ image, directory: workspace, argv, network: false }),
-      {
-        cwd: workspace,
-        timeoutMs: context.budget.verifierMs,
-      },
-    );
+    const ran = await log.run(containerArgv({ image, directory: fresh, argv, network: false }), {
+      cwd: fresh,
+      timeoutMs: context.budget.verifierMs,
+    });
     codes.push(ran.exitCode);
     if (ran.exitCode !== 0)
       tails.push(
@@ -161,7 +201,7 @@ async function b1(context) {
     agentArgv(context, workspace, base, prompt, [], context.remaining),
     workspace,
   );
-  let check = await ciCheck(context, workspace);
+  let check = await ciCheck(context, workspace, base);
   for (let repair = 1; repair <= repairInvocations && check.decision !== "accept"; repair += 1) {
     if (context.remaining.agentMs < 60_000) break;
     const brief = `${prompt}\n\nTool output from the project's CI after your change (it failed):\n${check.feedback}\n\nThe change is already in this workspace. Revise it so CI passes and the task is met.`;
@@ -170,12 +210,17 @@ async function b1(context) {
       agentArgv(context, workspace, base, brief, [], context.remaining),
       workspace,
     );
-    check = await ciCheck(context, workspace);
+    check = await ciCheck(context, workspace, base);
   }
   return {
     decision: check.decision,
     basis: `plain CI exited ${check.codes.join(", ")}`,
-    patch: await finalPatch(context.log, workspace, base),
+    patch: await finalPatch(
+      context.log,
+      workspace,
+      context.loaded.goal.upstreamBase,
+      acceptancePaths,
+    ),
   };
 }
 
@@ -223,19 +268,13 @@ async function b5(context) {
   appendFileSync(join(workspace, ".git/info/exclude"), ".vera/\n");
   const prompt = taskPrompt(loaded.goal, loaded.contract);
   const verify = async () => {
-    // VERA's verify runs its contracts where it is invoked; it runs inside the goal's image, as
-    // every other arm's checks do, with the linux build of the same release.
-    const ran = await log.run(
-      containerArgv({
-        image: imageFor(loaded.goal, loaded.contract),
-        directory: workspace,
-        argv: ["/opt/vera/vera", "verify"],
-        network: false,
-        env: { HOME: "/vera-home" },
-        extraMounts: [`${veraTool}/linux:/opt/vera:ro`, `${home}:/vera-home`],
-      }),
-      { cwd: workspace, timeoutMs: context.budget.verifierMs },
-    );
+    // VERA's workflow as documented: record and verify on the host, over the agent's own
+    // workspace, whose dependencies are this host's.
+    const ran = await log.run([vera, "verify"], {
+      cwd: workspace,
+      env,
+      timeoutMs: context.budget.verifierMs,
+    });
     const stdout = `${ran.stdout}${ran.stderr}`;
     return {
       decision: veraDecision(ran.exitCode, ran.stdout.toString()),
@@ -261,7 +300,7 @@ async function b5(context) {
   return {
     decision: check.decision,
     basis: `vera verify exited ${check.exitCode}`,
-    patch: await finalPatch(context.log, workspace, base),
+    patch: await finalPatch(context.log, workspace, loaded.goal.upstreamBase, acceptancePaths),
   };
 }
 
