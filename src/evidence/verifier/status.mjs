@@ -130,7 +130,7 @@ function readParsedStatus(parser, observation) {
  * The per-test outcomes of a structured report, or null where it is not a complete one. A title
  * repeated in one file is named by its occurrence, as src/gates/runner-results.ts names it.
  */
-function structuredPoints(observation) {
+function structuredPoints(observation, reconciled = true) {
   if (observation.outputTruncated || (observation.stdout ?? "").length > 4000000) return null;
   try {
     const report = JSON.parse(observation.stdout);
@@ -166,10 +166,11 @@ function structuredPoints(observation) {
         });
       });
       if (
-        report.numTotalTests !== tests.length ||
-        report.numPassedTests !== tests.filter((test) => test.status === "passed").length ||
-        report.numFailedTests !== tests.filter((test) => test.status === "failed").length ||
-        report.numPendingTests !== tests.filter((test) => test.status === "skipped").length
+        reconciled &&
+        (report.numTotalTests !== tests.length ||
+          report.numPassedTests !== tests.filter((test) => test.status === "passed").length ||
+          report.numFailedTests !== tests.filter((test) => test.status === "failed").length ||
+          report.numPendingTests !== tests.filter((test) => test.status === "skipped").length)
       )
         return null;
     }
@@ -536,10 +537,32 @@ function attributionV2(failing, parser, baseObservation, rule = "v2") {
       ? { attribution: "inherited", newFailures: [] }
       : { attribution: "unattributed", newFailures: [] };
   }
+  if (rule === "v3" && patched !== null && base === null && patched.complete) {
+    const newFailures = failuresTheBaseNamedPassing(patched, baseObservation);
+    if (newFailures.length > 0) return { attribution: "new", newFailures };
+  }
   if (patched !== null || base !== null) return { attribution: "unattributed", newFailures: [] };
   return comparableOutput(failing, rule) === comparableOutput(baseObservation, rule)
     ? { attribution: "inherited", newFailures: [] }
     : { attribution: "unattributed", newFailures: [] };
+}
+
+/**
+ * Under v3, the patched run's failures a base report that does not reconcile names as passed,
+ * once, beside no failure, from a run the harness did not kill. Mirrors
+ * `failuresTheBaseNamedPassing` in src/gates/failure-attribution.ts.
+ */
+function failuresTheBaseNamedPassing(patched, baseObservation) {
+  if (
+    baseObservation.exitCode === 128 ||
+    !(baseObservation.stdout ?? "").trimStart().startsWith("{")
+  )
+    return [];
+  const points = structuredPoints(baseObservation, false);
+  if (points === null || points.some((p) => p.status === "failed" || p.status === "error"))
+    return [];
+  const passed = tally(points.filter((p) => p.status === "passed").map((p) => p.identity));
+  return [...new Set(patched.failed)].filter((id) => passed.get(id) === 1).sort();
 }
 
 /** The v2-family rule a record names; a record naming neither v2 nor v3 was written under v1. */

@@ -438,3 +438,132 @@ it("names the tests an unattributed check's output does name", () => {
     "its output names no tests to compare and differs from the base's",
   );
 });
+
+/**
+ * Vitest's JSON as the harness's runner prints it. quantproof's base control ran all 637 tests,
+ * failed none, and exited 1 when a worker aborted on exit inside better-sqlite3 under Node 24; the
+ * file that worker was running reported its seven tests pending, so the totals did not reconcile.
+ */
+function vitestRun(
+  files: Readonly<Record<string, Readonly<Record<string, string>>>>,
+  exitCode: number,
+  totals: { pending?: number } = {},
+) {
+  const testResults = Object.entries(files).map(([name, tests]) => ({
+    name,
+    assertionResults: Object.entries(tests).map(([fullName, status]) => ({
+      fullName,
+      status,
+      ...(status === "failed" ? { failureMessages: [`AssertionError: ${fullName}`] } : {}),
+    })),
+  }));
+  const all = testResults.flatMap((file) => file.assertionResults);
+  return {
+    exitCode,
+    stdout: JSON.stringify({
+      numTotalTests: all.length,
+      numPassedTests: all.filter((one) => one.status === "passed").length,
+      numFailedTests: all.filter((one) => one.status === "failed").length,
+      numPendingTests: totals.pending ?? 0,
+      testResults,
+    }),
+    stderr: "",
+    durationMs: 1,
+    unavailable: null,
+    outputTruncated: false,
+  };
+}
+
+const scorer = "tests/scoring/numeric-tolerance-scorer.test.ts";
+const store = "tests/store/sqlite-store.test.ts";
+const crashedBase = vitestRun(
+  {
+    [scorer]: { "passes within relative tolerance": "passed", "reports both values": "passed" },
+    [store]: { "writes a run": "pending", "reads it back": "pending" },
+  },
+  1,
+);
+const brokenHead = vitestRun(
+  {
+    [scorer]: { "passes within relative tolerance": "failed", "reports both values": "failed" },
+    [store]: { "writes a run": "passed", "reads it back": "passed" },
+  },
+  1,
+);
+
+function vitestRecord(
+  withPatch: ReturnType<typeof vitestRun>,
+  atBase: ReturnType<typeof vitestRun>,
+) {
+  const live = attributeFailure({ withPatch, baseStatus: "failed", atBase });
+  return {
+    live,
+    check: {
+      id: "tests",
+      parser: "structured-test-output",
+      severity: "blocking",
+      status: "failed",
+      observation: withPatch,
+      baseObservation: atBase,
+      attribution: live.attribution,
+      attributionRule,
+      inheritedFromBase: live.attribution === "inherited",
+      ...(live.newFailures.length === 0 ? {} : { newFailures: live.newFailures }),
+    },
+  };
+}
+
+it("reads tests the crashed base named passing, and the patch fails, as newly failing", () => {
+  expect(testPoints(crashedBase)).toBeNull();
+  const { live, check } = vitestRecord(brokenHead, crashedBase);
+  expect(live).toEqual({
+    attribution: "new",
+    newFailures: [`${scorer}:passes within relative tolerance`, `${scorer}:reports both values`],
+  });
+  // The offline reader derives the same regression from the record, and refuses another reading.
+  expect(capturedRegression([check, passingLint])).toBe("fail");
+  expect(capturedRegression([{ ...check, attribution: "unattributed" }, passingLint])).toBeNull();
+  // Under v2, which 1.2.0 wrote, the same bytes read unattributed, as recorded then.
+  expect(
+    capturedRegression([
+      {
+        ...check,
+        attributionRule: "failure-identity-v2",
+        attribution: "unattributed",
+        newFailures: undefined,
+      },
+      passingLint,
+    ]),
+  ).toBe("unmeasured");
+});
+
+it("never makes a crash into a pass or into evidence the base did not give", () => {
+  // A failure in a test the crashed base never finished is not shown new, and nothing is inherited.
+  const failsWhereTheBaseStopped = vitestRun(
+    {
+      [scorer]: { "passes within relative tolerance": "passed", "reports both values": "passed" },
+      [store]: { "writes a run": "failed", "reads it back": "passed" },
+    },
+    1,
+  );
+  expect(vitestRecord(failsWhereTheBaseStopped, crashedBase).live.attribution).toBe("unattributed");
+  const { check } = vitestRecord(failsWhereTheBaseStopped, crashedBase);
+  expect(capturedRegression([check, passingLint])).toBe("unmeasured");
+  // A base the harness killed at its deadline (exit 128) proves nothing, whatever it printed.
+  expect(vitestRecord(brokenHead, { ...crashedBase, exitCode: 128 }).live.attribution).toBe(
+    "unattributed",
+  );
+  // A base that names a failure of its own is not a crash after completion.
+  const failingBase = vitestRun(
+    {
+      [scorer]: { "passes within relative tolerance": "passed", "reports both values": "passed" },
+      [store]: { "writes a run": "failed", "reads it back": "pending" },
+    },
+    1,
+  );
+  expect(vitestRecord(brokenHead, failingBase).live.attribution).toBe("unattributed");
+  // A cut report is never read.
+  expect(vitestRecord(brokenHead, { ...crashedBase, outputTruncated: true }).live.attribution).toBe(
+    "unattributed",
+  );
+});
