@@ -96,4 +96,35 @@ describe("the standalone verifier's import boundary", () => {
     expect(closure.size).toBeGreaterThan(60);
     expect(crossings(closure, sourceRoot)).toEqual([]);
   });
+
+  it("imports nothing but Node and the two packages the standalone verifier declares", async () => {
+    // The module boundary above keeps the provider adapters out; this keeps their SDKs out. A
+    // bare import of `ai` or `@ai-sdk/*` anywhere in the closure would make the published
+    // package fail at load time for every user, or pull a model SDK into a verifier that
+    // promises to need none.
+    const manifest = JSON.parse(
+      await readFile(join(sourceRoot, "..", "packages", "swarm-verify", "package.json"), "utf8"),
+    ) as { dependencies: Record<string, string> };
+    const declared = new Set(Object.keys(manifest.dependencies));
+    const bare = new Map<string, string>();
+    for (const file of (await importClosure(entry)).keys()) {
+      const source = await readFile(file, "utf8");
+      const specifiers = [
+        ...source.matchAll(/^\s*(?:import|export)\b[^"'\n]*\bfrom\s+["']([^"']+)["']/gm),
+        ...source.matchAll(/^\s*import\s+["']([^"']+)["']/gm),
+        ...source.matchAll(/\bimport\(\s*["']([^"']+)["']\s*\)/g),
+      ];
+      for (const match of specifiers) {
+        const specifier = match[1] ?? "";
+        if (specifier.startsWith(".") || specifier.startsWith("node:")) continue;
+        const name = specifier.startsWith("@")
+          ? specifier.split("/").slice(0, 2).join("/")
+          : (specifier.split("/")[0] ?? specifier);
+        if (!declared.has(name)) bare.set(name, relative(sourceRoot, file));
+      }
+    }
+
+    expect([...bare.entries()].map(([name, from]) => `${name} <- ${from}`)).toEqual([]);
+    expect([...declared].sort()).toEqual(["smol-toml", "zod"]);
+  });
 });
