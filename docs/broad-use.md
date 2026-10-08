@@ -497,6 +497,9 @@ the source-built Action over a good and a genuinely rejected candidate on every 
 asserts the verdict document, its signature and the absence of a comment on a push event.
 
 Pin the Action by full commit SHA where immutability matters:
-`uses: moonrunnerkc/swarm-verify@<sha> # v1.x.y`. The canonical implementation lives in this
-repository under `src/action/`; the distribution repository holds only the Action manifest and
-a lockfile naming the exact published `swarm-verify` version it installs.
+`uses: moonrunnerkc/swarm-verify@<sha> # v1.x.y`. The implementation lives in this repository
+under `src/action/`, with the source manifest at `packages/swarm-verify/action.yml`; the Action's
+product home, [moonrunnerkc/swarm-verify](https://github.com/moonrunnerkc/swarm-verify), holds the
+manifest with a lockfile naming the exact published `swarm-verify` version it installs, the Action
+reference, the examples and the verifier's changelog, every file generated from here by
+`scripts/build-action-distribution.mjs`.

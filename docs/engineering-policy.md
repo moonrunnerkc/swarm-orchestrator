@@ -46,6 +46,7 @@ packages are separate facts.
 - `src/select`: probes, calibration and experimental measured routing.
 - `src/tui`: views of ledger projections. `src/config`: Zod-validated settings.
 - `src/cli-session.ts`, `src/cli-parallel.ts`, `src/cli-calibrate.ts`: focused command composition; shared settings in `src/cli-run-settings.ts`.
+- `src/swarm-verify.ts`: the standalone verifier's entry. Its closure is the `swarm-verify` package built under `packages/swarm-verify`, the same modules the agent composes, and it may not reach providers, workers, the screen or the agent's run assembly. The agent uses the verifier; the verifier needs nothing of the agent.
 
 ## Invariants
 

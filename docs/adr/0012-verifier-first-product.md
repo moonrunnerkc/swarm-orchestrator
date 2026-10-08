@@ -1,6 +1,6 @@
 # 0012. The verifier is the product; the coding agent is an advanced beta mode
 
-**Status:** approved 2026-09-27, implementation tracked in [docs/verifier-first/README.md](../verifier-first/README.md)
+**Status:** approved 2026-09-27, implementation tracked in [docs/verifier-first/README.md](../verifier-first/README.md); superseded on 2026-10-08 by [0013](0013-two-products-one-verifier.md), which reverses the front-door decision below and keeps the three scope consequences
 
 ## Context
 

@@ -3,8 +3,11 @@
 Where to go, what to expect, and who answers.
 
 **Bugs and confusing setup**: open an issue with one of the forms
-([verifier bug](https://github.com/moonrunnerkc/swarm-orchestrator/issues/new?template=verifier-bug.yml),
+([agent bug](https://github.com/moonrunnerkc/swarm-orchestrator/issues/new?template=agent-bug.yml),
+[verifier bug](https://github.com/moonrunnerkc/swarm-orchestrator/issues/new?template=verifier-bug.yml),
 [setup confusion](https://github.com/moonrunnerkc/swarm-orchestrator/issues/new?template=setup-confusion.yml)).
+Both products, Swarm Orchestrator and the standalone Swarm Verify, are supported here; the
+verifier's product repository holds no issue tracker of its own.
 A minimal reproduction, the version and the scrubbed evidence make the difference between a
 question and a fix.
 
@@ -27,6 +30,6 @@ fixes that shipped are recorded in [the verifier-first index](docs/verifier-firs
 **What this project will not promise**: an implementation for every request, a response on
 a channel it does not watch, or a closed issue whose fix only exists on somebody's machine.
 
-**Labels**: `verifier`, `docs`, `action`, `integration` for the area; `needs-triage`,
+**Labels**: `agent`, `verifier`, `docs`, `action`, `integration` for the area; `needs-triage`,
 `reproduced`, `fix-released`, `cannot-reproduce`, `wontfix` for the state; `overdue` when
 the response promise has lapsed.
