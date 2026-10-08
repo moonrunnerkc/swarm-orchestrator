@@ -42,10 +42,9 @@ pass never claims task correctness: without a requirement contract that line rea
 ## Install only the verifier
 
 If all you do is check other people's patches and bundles, the recommended install is
-`swarm-verify`: the same commands, the same code, none of the agent, with a separate
-publication workflow. `npx swarm-verify` runs the published package; the
-[release evidence](https://github.com/moonrunnerkc/swarm-orchestrator/releases) records each
-version's registry availability. The reproducible source installation path is:
+[Swarm Verify](https://github.com/moonrunnerkc/swarm-verify): the same commands, the same code,
+none of the agent, with a separate publication workflow and its own releases. `npx swarm-verify`
+runs the published package. The reproducible source installation path is:
 
 ```sh
 git clone https://github.com/moonrunnerkc/swarm-orchestrator && cd swarm-orchestrator

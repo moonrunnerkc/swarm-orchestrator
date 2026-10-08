@@ -17,4 +17,5 @@ limits reads later as a guarantee.
 | [0009](0009-adaptive-goal-controller.md) | Complete goals through bounded integration repair | approved, implementation tracked |
 | [0010](0010-evidence-offload.md) | Move historical evidence payloads out of the tree, keep every digest, manifest and verifier in it | proposed |
 | [0011](0011-interactive-run-experience.md) | A run that says what it is doing, picks a served model, and asks once about approval | approved, implementation tracked |
-| [0012](0012-verifier-first-product.md) | The verifier is the product; the coding agent is an advanced beta mode | approved, implementation tracked |
+| [0012](0012-verifier-first-product.md) | The verifier is the product; the coding agent is an advanced beta mode | superseded by 0013 on the front door; its scope consequences stand |
+| [0013](0013-two-products-one-verifier.md) | Swarm Orchestrator is the product of this repository; Swarm Verify is the standalone verifier it is built on | approved |

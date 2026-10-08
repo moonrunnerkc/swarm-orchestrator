@@ -1,0 +1,55 @@
+name: swarm-orchestrator bug
+description: The coding agent did something wrong, a gate passed work it should have refused, or a run ended in a state its record does not explain.
+labels: ["agent", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks. The run's evidence bundle is the reproduction: its `manifest.json`, `summary.md` and the gate records are usually enough. Never paste keys, tokens or private code.
+  - type: input
+    id: version
+    attributes:
+      label: swarm-orchestrator version
+      description: Output of `swarm --version`.
+      placeholder: 14.4.0
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model and backend
+      description: The `--model` value or the served model it picked, and whether it ran against a local backend.
+      placeholder: local:qwen3.6:35b-a3b via Ollama
+  - type: textarea
+    id: task
+    attributes:
+      label: The task and the command line
+      description: What you asked for, with the flags, from a repository you can describe.
+      render: sh
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual
+      description: What the run reported, its exit code, and which gate or step it ended on.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Scrubbed evidence
+      description: The bundle's `manifest.json`, `summary.md` or the records of the gate in question, with anything sensitive removed.
+      render: json
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: Node 24.15, macOS 15, docker 29.5

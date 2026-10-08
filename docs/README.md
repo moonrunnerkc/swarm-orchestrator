@@ -2,15 +2,16 @@
 
 | Document | What it holds |
 | --- | --- |
-| [`../README.md`](../README.md#install) | install, and a first run from `npm install -g` to an opened review page |
+| [`../README.md`](../README.md) | Swarm Orchestrator, the coding agent: what it does, install, one task, what is verified, what evidence is produced, what is not proved |
 | [`cli.md`](cli.md) | every command and flag, with what each is for |
 | [`using.md`](using.md) | sessions, several workers, the screen, and `swarm.toml` |
 | [`verifying.md`](verifying.md) | bonds, `swarm ci`, the oracle and its reach, the nine answers, and what is not claimed |
-| [`verify-only.md`](verify-only.md) | `swarm check`, `swarm verify`, `swarm ci` and `swarm gates` with no model, walked through on committed artifacts |
+| [`verify-only.md`](verify-only.md) | `swarm check`, `swarm verify`, `swarm ci` and `swarm gates` with no model, walked through on committed artifacts; the same commands are the standalone [Swarm Verify](https://github.com/moonrunnerkc/swarm-verify) |
 | [`broad-use.md`](broad-use.md) | source inputs, package scope, acceptance instruments, challenges and the GitHub Action |
-| [`agent.md`](agent.md) | the coding agent, an advanced beta mode: install, first run, how it verifies, what is measured and what is not |
+| [`agent.md`](agent.md) | running the coding agent, the long form: install, first run, how it verifies, what is measured, what is not, and the roadmap |
 | [`integrations.md`](integrations.md) | the Claude Code hook, the MCP server and the pre-commit hook, each a client of the same verifier |
 | [`verifier-first/`](verifier-first/README.md) | the verifier-first campaign: the completion index, baseline, Node 22 record and dogfood manifest |
+| [`adr/`](adr/README.md) | the architecture decisions, each with what it replaced and what it does not buy; [0013](adr/0013-two-products-one-verifier.md) is the product boundary between the agent and the verifier |
 | [`claims.md`](claims.md) | every public claim and the committed artifact behind it, and what may not be said |
 | [`build-guide.md`](build-guide.md) | the design, the non-goals, and the residuals that ship open |
 | [`ratchet-inputs.md`](ratchet-inputs.md) | every input the ratchet reads, who can author it, and what was moved |

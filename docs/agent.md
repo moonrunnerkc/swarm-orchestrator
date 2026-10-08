@@ -1,9 +1,9 @@
-# The coding agent (advanced beta)
+# Running the coding agent
 
 `swarm` is a coding agent for the terminal that leaves a signed, offline-checkable record of
-what it ran and what passed. It is the advanced mode of this repository and is in beta: the
-verifier, [`swarm-verify`](../README.md), is the product, needs none of what is on this page,
-and is where a new user starts. Everything below is preserved for people who run the agent.
+what it ran and what passed. This page is the long form of the README: install, a first run,
+how a run is verified, what has been measured, what has not, and what is still open before
+the agent can be called production-ready.
 
 ## What it is
 
@@ -43,7 +43,9 @@ swarm "make slugify collapse whitespace and strip punctuation"
 
 Keys come from the environment or your OS keychain, never from `swarm.toml`: that file is
 committed and cloned, so a key in it has already been shared with everyone holding the
-repository. Every command and flag is in [cli.md](cli.md).
+repository. Every command and flag is in [cli.md](cli.md). The first run asks once how
+off-allowlist commands should be approved and records the answer in `swarm.toml`; `swarm init`
+configures a repository's declared checks without installing anything.
 
 ## How it verifies
 
@@ -52,7 +54,7 @@ append-only, hash-chained ledger that lives outside the workspace. When a run en
 exported as a signed bundle carrying a dependency-free verifier, so the bundle can be checked
 anywhere with plain Node.
 
-Five words carry most of the weight. A **gate** is a check declared as data: a command, a
+Six words carry most of the weight. A **gate** is a check declared as data: a command, a
 parser, and whether it blocks. The **ratchet** is the rule that a retry may not trade away
 tests, assertions or coverage to turn a gate green. A **bond** is one file a passing gate is
 handed that it must refuse, so a pass that cannot fail is caught. An **oracle** is the check
@@ -60,8 +62,21 @@ you supply that says the task was done, as distinct from nothing broke. **Reach*
 that oracle executed the lines a patch added. And **unmeasured** is a verdict of its own:
 nobody checked is not the same as checked and passed, and it never renders green.
 
+With a goal contract, the contract's checks are challenged and, under `--strengthen`, a
+witnessed gap may be closed by one additive check the harness admits only on its own
+observations, after which the code is repaired under the revised contract; the flags are in
+[cli.md](cli.md) and the mechanics in [broad-use.md](broad-use.md#challenging-the-checks).
+
 The mechanics, the nine-answer report and worked examples are in [verifying.md](verifying.md).
 Retries under the ratchet, sessions and several workers at once are in [using.md](using.md).
+
+## The verifier on its own
+
+The verification above is also a product of its own, [Swarm Verify](https://github.com/moonrunnerkc/swarm-verify),
+for a change from any source and with no model. The `swarm` binary carries its commands
+(`swarm check`, `swarm ci`, `swarm verify`, `swarm verdict`, `swarm gates`), walked through in
+[verify-only.md](verify-only.md); the package, the Action and the integrations are documented
+at the verifier's own home.
 
 ## Measured
 

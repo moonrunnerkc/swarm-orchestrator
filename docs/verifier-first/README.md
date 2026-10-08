@@ -5,7 +5,10 @@ the verifier-first assignment is bound to its implementation, its tests and its 
 evidence. It is kept current as work lands; a row that says "not started" or "open" is the
 truth of the tree at the commit that carries it, not a promise.
 
-The product decision is [ADR 0012](../adr/0012-verifier-first-product.md). Prior campaigns,
+The product decision this campaign ran under is [ADR 0012](../adr/0012-verifier-first-product.md);
+its front-door half was reversed on 2026-10-08 by [ADR 0013](../adr/0013-two-products-one-verifier.md),
+which keeps the verifier's engine, scope and opt-in rules and gives it its own product home. The rows
+below stay as recorded. Prior campaigns,
 frozen protocols, launch records and published results are preserved unchanged; nothing here
 is appended to an older pilot.
 

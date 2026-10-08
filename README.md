@@ -2,118 +2,235 @@
 
 <div align="center">
 
-<h1>Swarm Verify</h1>
+<h1>Swarm Orchestrator</h1>
 
-<p><strong>Swarm Verify runs a project's checks and records evidence showing what passed, what failed, and what remains unverified.</strong></p>
+<p><strong>A coding agent that must prove its work.</strong></p>
+
+<p>
+It makes bounded repository changes, runs the project's real checks, challenges weak evidence,<br />
+retries failures without trading away test quality, and records what actually happened,<br />
+so the agent's own summary is never the source of truth.
+</p>
+
+<p>
+  <a href="docs/README.md"><strong>Explore the docs »</strong></a>
+  ·
+  <a href="docs/evidence/2026-08-18/live-tasks.md">See a real run</a>
+  ·
+  <a href="https://github.com/moonrunnerkc/swarm-verify">Swarm Verify, the standalone verifier</a>
+  ·
+  <a href="https://github.com/moonrunnerkc/swarm-orchestrator/issues/new/choose">Report a bug</a>
+</p>
+
+[![gates](https://img.shields.io/github/actions/workflow/status/moonrunnerkc/swarm-orchestrator/gates.yml?branch=v13-main&style=for-the-badge&label=gates)](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/gates.yml)
+[![npm](https://img.shields.io/npm/v/swarm-orchestrator?style=for-the-badge&label=swarm-orchestrator&color=CB3837)](https://www.npmjs.com/package/swarm-orchestrator)
+[![node](https://img.shields.io/badge/node-%E2%89%A522-5FA04E?style=for-the-badge)](package.json)
+[![license](https://img.shields.io/badge/license-ISC-blue?style=for-the-badge)](LICENSE)
 
 </div>
 
-This is the main source repository for Swarm Verify, maintained under the swarm-orchestrator
-repository name. It also contains the optional beta coding agent. The separate
-[moonrunnerkc/swarm-verify](https://github.com/moonrunnerkc/swarm-verify) repository distributes
-the GitHub Action.
+---
 
-![A bundle verifies, one byte is changed, and the verifier refuses it with the broken link named](docs/evidence/2026-09-27/verifier-first/tamper-demo.gif)
+## What it does
 
-The recording is a real run of the published package over a committed evidence bundle: it
-verifies, one byte of one record is changed, and the altered bundle is refused with the broken
-link named. That is integrity. Who signed a bundle, and whether the tests it records measured
-the right thing, are separate questions the verifier answers separately
-([transcript](docs/evidence/2026-09-27/verifier-first/tamper-demo-transcript.txt),
-[script](docs/evidence/2026-09-27/verifier-first/tamper-demo.sh)).
+`swarm` takes a task and a git repository. It plans, declares the files it intends to touch,
+edits through one recording chokepoint, runs your project's checks as sealed gates, and retries
+failures under a ratchet that refuses a fix which trades away tests, assertions or coverage.
+When the gates pass it exports a signed, hash-chained evidence bundle that carries its own
+dependency-free verifier, so anyone can check what ran, and what passed, with nothing but Node
+and without trusting the machine that produced it.
+
+```text
+task
+  -> the agent plans and declares its files
+  -> a bounded change, every tool call recorded
+  -> the project's checks run as sealed gates
+  -> weak evidence is challenged: a passing check must be shown able to fail
+  -> the ratchet: a retry may not trade away tests, assertions or coverage
+  -> retry, accept, or refuse with the reason on the record
+  -> evidence: a signed bundle anyone can verify offline
+```
+
+Here is a real run, committed: [`live-tasks.md`](docs/evidence/2026-08-18/live-tasks.md),
+with its bundle in [`live-frontier/`](docs/evidence/2026-08-18/live-frontier). And here is the
+packaged tool doing it, installed from a tarball into a directory holding nothing else, against
+a workspace it had never seen, recorded in a real terminal:
+[`installed-package-run.md`](docs/evidence/2026-08-23/installed-package-run.md).
+
+## Why it is not an ordinary coding agent
+
+The model can say whatever it likes. It cannot make a check pass, mark a claim verified, or
+change a record after the fact. Those are the harness's to decide.
+
+- **A claim is not evidence.** A structured claim the model makes names a predicate and a
+  record; the harness evaluates it against its own records and renders the verdict. Narrative
+  never renders green, and a claim the harness cannot evaluate renders `UNVERIFIED` without
+  stopping the run.
+- **A pass must be able to fail.** Each passing gate is handed one fixture it has to refuse,
+  so a check that cannot fail is caught rather than counted.
+- **A retry cannot buy green by deleting tests.** Tests collected, assertions in touched tests
+  and covered changed lines cannot decrease across retries; skips cannot increase.
+- **Regression and task acceptance are two answers.** A suite passing says nothing broke. Only
+  a requirement contract or an acceptance check you supply can say the work was done, and the
+  tool reports when neither was given.
+- **Unmeasured is a verdict.** Nobody checked is not the same as checked and passed, and it is
+  never rendered as a pass.
+
+## Install
 
 ```sh
-npx swarm-verify
+npm install -g swarm-orchestrator
 ```
 
-Run it in a git repository whose dependencies are installed (`npm ci`, `pnpm install
---frozen-lockfile` or `uv sync`; it names the missing step and exits 4 when they are not). It
-reads the checks the project declares, runs them unattended the way a CI job would, and reports
-apart: whether the command ran, what each check found, how the commands were contained, and
-what it did not judge. By default it does not challenge the checks and does not judge whether
-the work is correct: a pass is a regression-only pass, and the result line says so. A failed
-check exits 1 and names the check; a check whose result cannot be trusted, such as a pass
-reported by a test configuration the change itself edited, exits 4 and says why.
+That is **14.4.0**, and it leaves `swarm` on your path. It runs on Node 22 or newer; Node 24 or
+newer is recommended, because the changed-line coverage measurement spawns Node's test runner
+with process isolation, which Node 22 below 22.8 rejects. Below that, the measurement reports
+unmeasured and never counts as a pass. `swarm doctor` says which Node it found and what owns
+the `swarm` command, and `--fix` repairs an install that an older build is shadowing.
 
-It creates no `swarm.toml` and keeps its evidence outside the repository, under
-`~/.swarm/sessions` by default. While it runs it briefly adds, then removes, its own
-`swarm-falsification-bond.*` fixtures to show each passing check can fail, and the project's
-own commands may write build output, caches or other files as they always do. No model, key
-or configuration is needed.
+## Run one task
 
-Needs Node 22 or newer, git, and `uv` for a Python project. Linux and macOS run every command;
-Windows runs bundle and verdict verification only. Locally, commands run on the host with a
-built environment and no credentials, which is a policy and not a sandbox; the Action runs
-them in a network-disabled container.
-
-[![gates](https://img.shields.io/github/actions/workflow/status/moonrunnerkc/swarm-orchestrator/gates.yml?branch=v13-main&style=for-the-badge&label=gates)](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/gates.yml)
-[![verifier matrix](https://img.shields.io/github/actions/workflow/status/moonrunnerkc/swarm-orchestrator/verifier-matrix.yml?branch=v13-main&style=for-the-badge&label=node%2022%20%7C%2024)](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/verifier-matrix.yml)
-[![npm](https://img.shields.io/npm/v/swarm-verify?style=for-the-badge&label=swarm-verify&color=CB3837)](https://www.npmjs.com/package/swarm-verify)
-[![license](https://img.shields.io/badge/license-ISC-blue?style=for-the-badge)](LICENSE)
-
-## In CI
-
-One job, one Action, the permissions a signed comment needs
-([the complete workflow](docs/examples/swarm-verification.yml)):
-
-```yaml
-name: swarm-verify
-on:
-  pull_request:
-permissions:
-  contents: read
-  pull-requests: write
-  id-token: write
-  attestations: write
-  artifact-metadata: write
-jobs:
-  verify:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: moonrunnerkc/swarm-verify@v1
-        with:
-          install: true # install from the lockfile, scripts off, then run skipped scripts offline; omit for a project with no dependencies
+```sh
+export ANTHROPIC_API_KEY=...       # or OPENAI_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY,
+                                   # or start Ollama and pass --model local:<id>
+cd your-repository
+swarm "make slugify collapse whitespace and strip punctuation"
 ```
 
-The Action fetches the pull request's head and base by commit id into a checkout it owns, runs
-the project's checks in a network-disabled container, signs the verdict as a GitHub artifact
-attestation, and posts one comment bound to the head that says what was measured and what was
-not. A route for forks and Dependabot is [documented](docs/examples/swarm-verification-forks.yml);
-what has been exercised on a real fork is recorded in
-[the completion index](docs/verifier-first/README.md). Inputs, outputs and how to verify a
-signed verdict from outside the run are in [the broad-use guide](docs/broad-use.md#github-action).
+Keys come from the environment or your OS keychain, never from `swarm.toml`: that file is
+committed and cloned, so a key in it has already been shared with everyone holding the
+repository. The run shows each step, each gate and each retry as it happens, and ends on the
+evidence panel. `swarm review <bundle>` opens a run's review page later; `swarm verify <bundle>`
+checks its integrity and who signed it. Every command and flag is in
+[docs/cli.md](docs/cli.md); sessions, several workers at once and the screen are in
+[docs/using.md](docs/using.md).
 
-## What it says, and what it does not
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-`regression: pass` means no check failed because of the change. It does not mean every check
-passed: a failure the base commit already had, the same way and in the same tests, is shown as
-inherited and does not count against the change, and the report names those failing tests. It
-does not mean the work was done either.
+## What verification happens
 
-A requirement contract (`swarm-verify ci --goal-contract`) defines what the work must do, and
-the contract's checks are the evidence for each requirement. Neither the contract nor a
-signature proves the code is semantically correct. `--challenges report` asks whether each
-requirement's check could have caught wrong work (does it reject the tree before the change,
-mechanical mutations of the change, a fixture sealed as a violation) and reports gaps;
-`--challenges required` refuses on a gap; `off` asks nothing.
+Every tool call and every check goes through one recording chokepoint, and the record is an
+append-only, hash-chained ledger that lives outside the workspace. The gates, their severities,
+their parsers and the budgets are sealed before the first model call, so nothing the model
+does during the run can change what it is measured against.
 
-Every run exports a bundle carrying its own dependency-free verifier. Integrity, signer
-identity, execution trust, regression, task acceptance and challenge coverage are reported as
-separate answers, and `unmeasured` is one of them.
+Six words carry most of the weight. A **gate** is a check declared as data: a command, a
+parser, and whether it blocks. The **ratchet** is the rule that a retry may not trade away
+tests, assertions or coverage to turn a gate green. A **bond** is one file a passing gate is
+handed that it must refuse, so a pass that cannot fail is caught. An **oracle** is the check
+you supply that says the task was done, as distinct from nothing broke. **Reach** is whether
+that oracle executed the lines a patch added. And **unmeasured** is a verdict of its own.
 
-## Where to go next
+With a goal contract (`--goal-contract`), the contract's own checks are challenged
+(`--challenges report|required`): a base control per requirement, mechanical mutations of the
+changed lines witnessed by the suite, and sealed fixtures, so a check that could not have
+caught wrong work is named. With `--strengthen`, the model may propose one additive check per
+witnessed gap; the harness admits it only where it observes the check reject the counterexample
+and accept every sealed reference, then repairs the code under the revised contract. Nothing is
+asked of the model before the criteria are sealed.
 
-| You want to | Read |
+The mechanics, the nine-answer report and worked examples are in
+[docs/verifying.md](docs/verifying.md). The goal contracts, presets and package scope are in
+[docs/broad-use.md](docs/broad-use.md).
+
+## What evidence is produced
+
+A run writes its ledger under `~/.swarm/sessions`, never inside the workspace, and exports a
+bundle: the manifest with the chain head and the signature, the records, every blob by
+SHA-256, the review page, the summary, and `verify.mjs`, a dependency-free verifier that
+re-derives every verdict from the records alone.
+
+```sh
+node <bundle>/verify.mjs <bundle>          # anywhere, nothing installed
+swarm verify <bundle> --signer <fp>        # here, with the signer judged too
+```
+
+Every number here links to the committed artifact of the thing happening; the full table, and
+the list of things that may not be said, is [docs/claims.md](docs/claims.md).
+
+- **One changed byte breaks verification.** The same bundle verified and then tampered with in
+  a single byte, exit 0 and exit 1 side by side, with a script to reproduce it:
+  [tamper demo](docs/evidence/2026-08-18/tamper-demo).
+- **A bundle verifies on a machine that has never seen this repository.** Run in a `node:24`
+  container with no network and no mount of this repository:
+  [clean-container-verification.md](docs/evidence/2026-08-23/clean-container-verification.md).
+- **A green verdict is computed by the harness, and the model cannot produce one.** In a real
+  run the model asserted a predicate the language does not parse; the harness rendered it
+  `UNVERIFIED` and carried on, twice: [shakedown results](docs/evidence/2026-08-18/shakedown/results.md).
+- **A suite passing is not the task being done.** Four of eighteen patches this project's own
+  agent and a baseline arm produced over three public TypeScript repositories passed their
+  project's whole suite and failed a hidden acceptance test, which is why `regression` and
+  `task` are two answers: [docs/verifying.md](docs/verifying.md). That is a measurement of
+  those eighteen patches, not a rate for AI-written changes in general.
+- **The oracle is judged too.** Certified tasks turned out to rest on oracles that could not
+  fail; the last false green standing was refused because its oracle accepted a change to a
+  line it had run: [docs/verifying.md](docs/verifying.md#the-oracle-is-judged-too).
+- **The September 6 mined-corpus false-green rate was 0 in 15**, 95% CI [0.0, 20.4], with two
+  oracles per task, one handed to the tool and one held back:
+  [mined-corpus](docs/evidence/2026-09-06/mined-corpus/README.md).
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## What it does not prove
+
+The five that matter most. The full list is in
+[docs/verifying.md](docs/verifying.md#what-is-not-claimed).
+
+- **It is not production-ready.** The counts above describe the linked campaigns, not a fresh
+  measurement of every gate on this checkout. Each row and what would settle it:
+  [docs/beta-gates.md](docs/beta-gates.md).
+- **Not "fully secure".** The secret detector does known-pattern scrubbing, not secret removal.
+  Zero crashes at a fuzz budget is evidence, not proof.
+- **The default execution mode is `restricted`, not `isolated`.** A lexical path and program
+  policy in front of interpreters unless you pass `--isolation`. Reported before the run starts
+  and recorded on the chain rather than quietly assumed, but it is not containment.
+- **0 in 15 says "under 20%", not "zero".** That upper bound is the honest half of the rate,
+  and it is a rate for that corpus and that build, not for this one.
+- **Shown its oracle, a model still gets past this.** Bonding and challenges ask whether the
+  checks judged what the patch added. They cannot ask what the patch left out, and that is
+  what an adversarial patch does.
+
+Gates prove mechanical quality, not design quality. What a bundle buys you is that reviewing the
+change is fast and its claims are checkable, not that review is unnecessary.
+
+## Swarm Verify, the standalone verifier
+
+The verification the agent is held to is a product of its own. [Swarm Verify](https://github.com/moonrunnerkc/swarm-verify)
+checks a change from any source, this agent, Claude Code, Codex, Copilot, another agent or a
+person, with no model, no key and no configuration:
+
+```sh
+npx swarm-verify                                   # run a repository's declared checks and report what that establishes
+npx swarm-verify ci --pr owner/repo#123            # verify a pull request in a fresh checkout of its base
+npx swarm-verify verify <bundle> --signer <fp>     # check a bundle this agent, or anything else, produced
+```
+
+It also ships as the GitHub Action `moonrunnerkc/swarm-verify@v1`, a Claude Code hook, an MCP
+server and a pre-commit hook. The same commands are in the `swarm` binary: `swarm check`,
+`swarm ci`, `swarm verify`, `swarm verdict` and `swarm gates` need no model, and
+[docs/verify-only.md](docs/verify-only.md) walks through them over committed artifacts.
+
+There is one implementation. The `swarm-verify` package is built from this repository's
+verification modules under [packages/swarm-verify](packages/swarm-verify), behind a build-time
+boundary that refuses any provider, worker or screen module; the agent composes those same
+modules. Swarm Orchestrator uses Swarm Verify. It is not Swarm Verify.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## Versions
+
+The package name has carried three different programs, and the majors are the boundary:
+
+| Versions | What it was |
 | --- | --- |
-| verify a patch, branch or pull request from any author, with a contract or without | [docs/verify-only.md](docs/verify-only.md), [docs/broad-use.md](docs/broad-use.md) |
-| check what a bundle establishes, and who signed it | [docs/verify-only.md](docs/verify-only.md#swarm-verify-a-bundle-and-who-signed-it) |
-| route an agent's test command through the ledger, from Claude Code, an MCP client or a git hook | [docs/integrations.md](docs/integrations.md) |
-| every command, flag and exit code | [docs/cli.md](docs/cli.md) |
-| every public claim and the artifact behind it, and what may not be said | [docs/claims.md](docs/claims.md) |
-| the coding agent this verifier was built for, an advanced beta mode | [docs/agent.md](docs/agent.md) |
-| the verifier-first campaign, its baseline, evidence and open items | [docs/verifier-first/README.md](docs/verifier-first/README.md) |
+| 8.x | a contract-first coding orchestrator: a goal compiled to typed obligations, persona candidates raced per obligation, verifier-gated commits, a hash-chained ledger |
+| 10.x to 12.x | a pull-request auditor: static cheat-pattern detectors over AI-written diffs, advisory by default, with a merge gate. The last of that line is the `v12-final` tag |
+| 13.x and later | this coding agent, with no migration path from 12.x and nothing of its interface |
+| 14.1.0 | the verification path extracted as the `swarm-verify` package, the same code with none of the agent |
+| 14.3.0 | the README and repository description presented Swarm Verify as this repository's product and the agent as a beta mode; 14.4.0 restores the agent as the product of this repository and gives the verifier its own home |
 
-The full documentation index is [docs/README.md](docs/README.md).
+Pin a major. Each release names the verifier version it carries in [CHANGELOG.md](CHANGELOG.md);
+the verifier's own changelog is [packages/swarm-verify/CHANGELOG.md](packages/swarm-verify/CHANGELOG.md).
 
 ## Contributing
 
@@ -127,5 +244,18 @@ does not establish.
 4. Commit (`git commit -m 'Add an amazing feature'`)
 5. Push (`git push origin feature/amazing-feature`)
 6. Open a pull request
+
+New dependencies need a one-line justification; the standard library is preferred.
+[docs/build-guide.md](docs/build-guide.md) is worth reading before structural work.
+
+## License
+
+Distributed under the ISC License. See [LICENSE](LICENSE).
+
+## Contact
+
+Brad Kinnard, [@KChackerman](https://x.com/KChackerman), bradkinnard@proton.me
+
+Project link: [github.com/moonrunnerkc/swarm-orchestrator](https://github.com/moonrunnerkc/swarm-orchestrator)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>

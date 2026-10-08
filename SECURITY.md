@@ -1,8 +1,9 @@
 # Security
 
-A way to make the verifier accept work it should refuse, to run candidate code outside the
-boundary the run declared, or to reach evidence, signing material or credentials is a
-security report. Report it privately through
+A way to make the verifier accept work it should refuse, to make the agent's gates pass work
+they should refuse, to run candidate or agent-authored code outside the boundary the run
+declared, or to reach evidence, signing material or credentials is a security report. This
+covers both Swarm Orchestrator and the standalone Swarm Verify, whose implementation lives here. Report it privately through
 [a GitHub security advisory](https://github.com/moonrunnerkc/swarm-orchestrator/security/advisories/new),
 not as a public issue. Include the version, the route and a reproduction; the scrubbed
 evidence bundle helps.
