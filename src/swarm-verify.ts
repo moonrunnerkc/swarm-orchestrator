@@ -34,7 +34,8 @@ export const usage = [
     .filter((command) => verifyOnlyNames.has(command.name))
     .map((command) => `  swarm-verify ${command.syntax.padEnd(42)} ${command.description}`),
   "",
-  "These need no model, no provider key and no local backend. The full agent is swarm-orchestrator.",
+  "These need no model, no provider key and no local backend. Swarm Orchestrator, the coding agent built on",
+  "this verifier, is the swarm-orchestrator package.",
 ].join("\n");
 
 async function main(): Promise<number> {
