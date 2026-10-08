@@ -1,5 +1,9 @@
-name: swarm-verify
-description: Independently verify a pull request's head in an isolated container, sign the verdict, and post one bound comment.
+name: Swarm Verify
+description: Independently verify what a pull request's checks actually established, in a network-disabled container, with a signed verdict and one comment bound to the head.
+author: Brad Kinnard
+branding:
+  icon: check-square
+  color: green
 inputs:
   target:
     description: What to verify. `head` is the pull request head; `merge` is GitHub's test merge of it onto the base.
@@ -104,17 +108,18 @@ runs:
     - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
       with:
         node-version: "24"
-    # SOURCE-BUILD-BEGIN: the canonical repository builds the verifier from its own source; the
-    # distribution repository replaces this step with an install of the published package.
+    # SOURCE-BUILD-BEGIN: in the source repository this manifest sits beside the package it
+    # ships, two directories below the root that builds it; the distribution repository
+    # replaces this step with an install of the published package.
     - name: Build the verifier from source
       shell: bash
       env:
         SWARM_ACTION_ROOT: ${{ github.action_path }}
       run: |
-        cd "$SWARM_ACTION_ROOT"
+        cd "$SWARM_ACTION_ROOT/../.."
         npm ci --ignore-scripts
         npm run build:verify
-        echo "SWARM_VERIFY_ENTRY=$SWARM_ACTION_ROOT/packages/swarm-verify/dist/swarm-verify.js" >> "$GITHUB_ENV"
+        echo "SWARM_VERIFY_ENTRY=$SWARM_ACTION_ROOT/dist/swarm-verify.js" >> "$GITHUB_ENV"
     # SOURCE-BUILD-END
     - name: Verify the identified source
       id: verify
