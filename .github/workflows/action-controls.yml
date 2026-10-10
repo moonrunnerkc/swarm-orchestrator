@@ -32,7 +32,7 @@ jobs:
         with:
           repository: moonrunnerkc/swarm-verify
           ref: ${{ inputs.distribution-ref }}
-          path: trusted/packages/swarm-verify
+          path: published
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
@@ -41,7 +41,17 @@ jobs:
       - id: fixture
         run: node trusted/scripts/action-fixture.mjs '${{ matrix.candidate }}'
       - uses: ./trusted/packages/swarm-verify
+        if: inputs.distribution-ref == ''
         id: verify
+        continue-on-error: true
+        with:
+          workspace: ${{ steps.fixture.outputs.workspace }}
+          head: ${{ steps.fixture.outputs.head }}
+          base: ${{ steps.fixture.outputs.base }}
+          goal-contract: ${{ steps.fixture.outputs.contract }}
+      - uses: ./published
+        if: inputs.distribution-ref != ''
+        id: published
         continue-on-error: true
         with:
           workspace: ${{ steps.fixture.outputs.workspace }}
@@ -51,13 +61,13 @@ jobs:
       - name: Assert the original verifier outcome
         if: always()
         env:
-          SWARM_REPORT: ${{ steps.verify.outputs.report }}
-          SWARM_STATUS: ${{ steps.verify.outputs.status }}
-          SWARM_OUTCOME: ${{ steps.verify.outcome }}
-          SWARM_EVIDENCE: ${{ steps.verify.outputs.evidence }}
+          SWARM_REPORT: ${{ steps.verify.outputs.report || steps.published.outputs.report }}
+          SWARM_STATUS: ${{ steps.verify.outputs.status || steps.published.outputs.status }}
+          SWARM_OUTCOME: ${{ inputs.distribution-ref != '' && steps.published.outcome || steps.verify.outcome }}
+          SWARM_EVIDENCE: ${{ steps.verify.outputs.evidence || steps.published.outputs.evidence }}
           SWARM_HEAD: ${{ steps.fixture.outputs.head }}
-          SWARM_RESULT: ${{ steps.verify.outputs.result }}
-          SWARM_ATTESTATION: ${{ steps.verify.outputs.attestation }}
-          SWARM_VERDICT: ${{ steps.verify.outputs.verdict }}
-          SWARM_COMMENT: ${{ steps.verify.outputs.comment }}
+          SWARM_RESULT: ${{ steps.verify.outputs.result || steps.published.outputs.result }}
+          SWARM_ATTESTATION: ${{ steps.verify.outputs.attestation || steps.published.outputs.attestation }}
+          SWARM_VERDICT: ${{ steps.verify.outputs.verdict || steps.published.outputs.verdict }}
+          SWARM_COMMENT: ${{ steps.verify.outputs.comment || steps.published.outputs.comment }}
         run: node trusted/scripts/action-fixture.mjs assert '${{ matrix.candidate }}'

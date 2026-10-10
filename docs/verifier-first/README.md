@@ -2,8 +2,9 @@
 
 ## Current disposition, 2026-10-10
 
-Registry check: Verify 1.3.0 and Orchestrator 14.3.0 are published. The independent 1.3.1 and
-14.4.0 delivery is tracked in [the delivery record](../release-delivery-2026-10-10.md).
+Registry check on October 10: Verify 1.3.1 and Orchestrator 14.4.0 are published from
+`d9360e4c1`, with fresh installations and npm provenance verified. Independent Action and
+GitHub release delivery is tracked in [the delivery record](../release-delivery-2026-10-10.md).
 The dated R rows and registration narrative below are historical observations, not current
 version pointers. Current readiness is in [beta-gates.md](../beta-gates.md).
 
