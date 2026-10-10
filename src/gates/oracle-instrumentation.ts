@@ -1,4 +1,3 @@
-import { isolatedCoverageShortfall } from "../node-floor.ts";
 import { harnessReportingCommand } from "./harness-reporting.ts";
 import { commandWords, shellQuoted } from "./node-test-command.ts";
 
