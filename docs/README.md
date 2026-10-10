@@ -39,7 +39,7 @@ text is retained for history and must not be reused as current guidance.
 ## Restoring offloaded artifacts
 
 **Every bundle a document calls verified verifies from a clone.** `cd` into one and run `node
-verify.mjs`. `node scripts/check-cited-bundles-verify.mjs` holds all fourteen of them to that on
+verify.mjs`. `node scripts/check-cited-bundles-verify.mjs` holds every cited bundle to that on
 every push, because for a while none of them did and nothing noticed.
 
 Two kinds of thing are kept outside the repository, with their digests left behind in the
