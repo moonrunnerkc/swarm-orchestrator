@@ -3,6 +3,11 @@ on:
   push:
     branches: [v13-main]
   workflow_dispatch:
+    inputs:
+      distribution-ref:
+        description: 'Exact swarm-verify distribution commit to validate; empty builds source'
+        required: false
+        type: string
 permissions:
   contents: read
   id-token: write
@@ -20,6 +25,14 @@ jobs:
         with:
           ref: ${{ github.sha }}
           path: trusted
+          persist-credentials: false
+      - name: Check out the published Action at the requested commit
+        if: inputs.distribution-ref != ''
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          repository: moonrunnerkc/swarm-verify
+          ref: ${{ inputs.distribution-ref }}
+          path: trusted/packages/swarm-verify
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:

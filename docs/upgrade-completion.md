@@ -1,5 +1,9 @@
 # Broad-use upgrade completion ledger
 
+Historical implementation and evidence record. Its dated results remain unchanged; current
+release status is in [delivery](release-delivery-2026-10-10.md) and current readiness is in
+[beta-gates.md](beta-gates.md). This is not a new execution plan.
+
 Status: audit corrections implemented and delivered, with local gates, exact-source remote CI,
 Action controls and nightly proof passing on `95891957987ec758f58a81ebb800933439f252de`.
 The subsequent report and consumer-pin update are documentation-only. Their exact commit checks

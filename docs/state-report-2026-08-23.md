@@ -1,5 +1,9 @@
 # Swarm Orchestrator v13: state of the system
 
+Historical implementation and evidence record. Its dated results remain unchanged; current
+release status is in [delivery](release-delivery-2026-10-10.md) and current readiness is in
+[beta-gates.md](beta-gates.md). This is not a new execution plan.
+
 - **Branch:** `v13-main`
 - **Package:** `swarm-orchestrator@13.1.0`
 - **Report date:** 2026-08-23

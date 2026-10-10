@@ -1,5 +1,13 @@
 # Documentation
 
+Current product boundaries are defined by ADR 0013: Orchestrator is the coding agent;
+[Swarm Verify](../packages/swarm-verify/README.md) is the independent verifier built from shared
+source. Installation resolves the published registry version, not necessarily the source version.
+The [delivery record](release-delivery-2026-10-10.md) distinguishes these states. Dated state
+reports, audit plans and `state/` entries are historical; the verifier completion index tracks
+remaining research, rollout and client work. October relaunch drafts await delivery; older launch
+text is retained for history and must not be reused as current guidance.
+
 | Document | What it holds |
 | --- | --- |
 | [`../README.md`](../README.md) | Swarm Orchestrator, the coding agent: what it does, install, one task, what is verified, what evidence is produced, what is not proved |
@@ -25,7 +33,8 @@
 | [`tech-debt.md`](tech-debt.md) | what the tree carries that it would rather not, with what closing each would take |
 | [`evidence/`](evidence) | dated runs, bundles, and reports, each verified by the verifier it carries |
 | [`state/`](state) | the state file of each unattended pass, with what was done and what was not |
-| [`RELEASE-COMPLETION-PROMPT.md`](RELEASE-COMPLETION-PROMPT.md) | the plan an earlier release was built to |
+| [`release-delivery-2026-10-10.md`](release-delivery-2026-10-10.md) | current delivery, cleanup decisions, validation and publication evidence |
+| [`history/RELEASE-COMPLETION-PROMPT-v13.md`](history/RELEASE-COMPLETION-PROMPT-v13.md) | archived v13 execution prompt; historical, not operational guidance |
 
 ## Restoring offloaded artifacts
 

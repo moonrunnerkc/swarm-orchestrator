@@ -1,5 +1,9 @@
 # Tech debt
 
+Current disposition reviewed 2026-10-10. Dated dependency, coverage and campaign numbers below
+are historical measurements, not a current audit. Release status is in the
+[delivery record](release-delivery-2026-10-10.md); readiness is in [beta-gates.md](beta-gates.md).
+
 What this tree carries that it would rather not, found in a bounded pass on 2026-08-23 and
 kept bounded on purpose. An item is on this list because fixing it is larger than one file, or
 needs a decision nobody has made, or would be a refactor riding along uninvited in a release.
@@ -11,7 +15,7 @@ imported.
 
 ## Dependencies
 
-`npm audit` reports **0 vulnerabilities**.
+The 2026-08-23 `npm audit` reported **0 vulnerabilities**; this is not a current scan.
 
 `npm outdated` on 2026-08-23:
 
@@ -521,14 +525,12 @@ The four accepted residuals in `docs/build-guide.md` 7.1 are open by design and 
 list. They are not defects awaiting a fix; each is a permanent case in the adversarial suite
 asserting the gap as it stands, and widening a check until one goes green is a regression.
 
-## Debt: swarm-orchestrator embeds the verification modules rather than depending on swarm-verify
+## Resolved by architecture decision: shared verifier source
 
-`packages/swarm-verify` is version 0.1.0 and not on the registry. Until it is published, a
-registry dependency from `swarm-orchestrator` on it would make `npm install -g swarm-orchestrator`
-fail for everyone, so the full CLI keeps compiling the same `src/` modules into its own `dist/`
-and the two binaries share source rather than a package. Nothing drifts while that holds, since
-there is one copy of each module in the tree and `src/swarm-verify.test.ts` compares the two
-binaries' output over a committed bundle. Paying this means publishing `swarm-verify` first,
-then depending on it from the root and routing `verify`, `ci` and `gates` through the dependency,
-at which point the root's `dist/` stops carrying its own copy. The duplication that stays until
-then is bytes in two tarballs, not two implementations.
+The proposed migration to a registry dependency is superseded by approved
+[ADR 0013](adr/0013-two-products-one-verifier.md). Verify is published: the registry served
+1.3.0 when checked on 2026-10-10; 1.3.1 is the delivery target. Orchestrator composes the same
+source modules that build the standalone verifier closure. Keeping those modules here is the
+approved architecture, not temporary debt awaiting publication. The standalone build and its
+boundary tests exclude providers, workers, model SDKs and the screen; Verify declares only
+`zod` and `smol-toml`. No dependency migration is planned for this release.

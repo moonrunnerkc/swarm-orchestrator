@@ -1,5 +1,24 @@
 # Production beta gates, against what has actually been measured
 
+## Current readiness assessment, 2026-10-10
+
+**Not production-ready.** Product delivery and readiness are separate. The September tables
+below preserve their original populations; their pass count is not today's scorecard.
+
+| Area | Current assessment | Evidence and remaining requirement |
+| --- | --- | --- |
+| Verification and evidence | Implemented; release validation required at the final commit | Shared-source boundary, inherited-failure rules, attack controls and signed bundles are covered by source and installed-package checks. See [delivery](release-delivery-2026-10-10.md) for actual results, not the historical gate 5 pass. |
+| Controller and goal acceptance | Implemented, no swarm advantage established | [September controller record](redesign-implementation-2026-09-13.md): replacement cohort 2 completed 120 slots. Executable final-tree obligations do not prove semantic completeness. |
+| Containment and cleanup | Partial | [Audit implementation](audit-implementation-2026-09-11.md) added owned runtime resources, cleanup observations and repair. Container teardown exists, superseding the old table's “neither is built”. Host process groups remain best effort against detached descendants; SIGKILL needs supervision or later repair. |
+| Independent adversarial assessment | Open | Maintainer-authored attack families and real hostile fork controls are useful evidence, not an independent attack campaign. |
+| Comparative task success | Unestablished | Earlier comparisons found no difference in their populations. SV-09 and SV-10 through SV-13 remain open; the [new campaign](evidence/2026-09-29/campaign/README.md) has development validation and a prefreeze manifest, not final results. |
+| Human onboarding | Open | Three fresh-VM AI simulations on public 1.3.0 are recorded in [onboarding](evidence/2026-09-29/onboarding/README.md). They do not meet the real-new-user gate. |
+| Clients and rollout | Partial | Real Claude Code, pre-commit and fork routes were exercised. Cursor needs an actual client/account; rollout follow-ups remain in [SV-15 and SV-17](verifier-first/README.md). |
+| Support loop | Controlled windows observed; external effectiveness open | [Issue 77](https://github.com/moonrunnerkc/swarm-orchestrator/issues/77) recorded the 24-hour reminder on September 30 and 72-hour escalation on October 2. No outside-user support success is inferred. |
+
+## Historical September assessment
+
+
 The build guide's beta gates are the list this project agreed not to call itself production-ready
 without. This is where each one stands, with the evidence or the absence of it named. A row with
 no proving artifact is `unproven`, not `probably fine`.

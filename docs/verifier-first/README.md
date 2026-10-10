@@ -1,5 +1,35 @@
 # Verifier-first: completion index
 
+## Current disposition, 2026-10-10
+
+Registry check: Verify 1.3.0 and Orchestrator 14.3.0 are published. The independent 1.3.1 and
+14.4.0 delivery is tracked in [the delivery record](../release-delivery-2026-10-10.md).
+The dated R rows and registration narrative below are historical observations, not current
+version pointers. Current readiness is in [beta-gates.md](../beta-gates.md).
+
+- **SV-09 remains open:** the corrected 50-row AI-PR study has no completed result in this tree.
+- **SV-10 through SV-13 remain open:** the September 29 campaign has 24 validated final goals,
+  a prefreeze 882-launch manifest and development pilots. It still needs the final source pin,
+  freeze, launches and scoring; the proposed cap is 300 machine hours and 460 million local
+  tokens. Do not confuse it with the earlier comparison that established no difference.
+- **SV-15 remains partial:** ten of sixteen rollout repositories have recorded clean merged
+  results. The depose base-output and tracemantle temporary-path fixes shipped in 1.3.0;
+  their repinned rollout outcomes still need verification. Owner packaging, unsupported
+  toolchains, a second reviewer and the unnamed Aftermath site remain separate blockers.
+- **SV-16 is closed at its recorded scope:** real fork, hostile, changed-head and Dependabot
+  controls ran on the published Action. This supersedes the early R1 “not exercised” status.
+- **SV-17 remains partial:** live Claude Code and pre-commit ran; Cursor still needs a real
+  installed client and account.
+- **SV-18 real-window observation completed:** issue 77 recorded the first reminder at
+  2026-09-30T03:36:35Z and escalation at 2026-10-02T04:34:22Z. It remains an open controlled
+  exercise; external-user support effectiveness is not established.
+- **SV-19 remains owner publication work:** the original GitHub 48-hour window ended on
+  September 30. Unpublished platform drafts have no response window. Older launch text is
+  superseded by the separate October relaunch drafts, after delivery.
+- **SV-14 is AI simulation only:** three fresh VMs on public 1.3.0 do not close human onboarding.
+
+
+
 Campaign identity: `verifier-first-2026-09-27`. This index is the one place every requirement of
 the verifier-first assignment is bound to its implementation, its tests and its executed
 evidence. It is kept current as work lands; a row that says "not started" or "open" is the
@@ -12,13 +42,13 @@ below stay as recorded. Prior campaigns,
 frozen protocols, launch records and published results are preserved unchanged; nothing here
 is appended to an older pilot.
 
-## Gates
+## Campaign gates, reconciled October 10
 
 | Gate | Required result | Status | Evidence |
 | --- | --- | --- | --- |
 | G0 repaired foundation | reliability fixes confirmed; execution and evidence boundaries work | met at the baseline, each prerequisite held by a regression test; two false passes were later reported against 1.0.5 and fixed at the root in 1.0.6 (attack-control families 2 and 13) | [baseline.md](baseline.md), [attack-controls.md](attack-controls.md) |
-| G1 verifier release | R1 to R6 and R9 implemented, installed, published, exercised; package, CI and security checks clean | met: stable `swarm-verify` on npm (`latest` = 1.0.7), Action `moonrunnerkc/swarm-verify@v1` (= `v1.0.7`), every release tagged only after remote gates, the verifier platform matrix and action-controls passed. Open within it: the fork route is documented, not exercised on a real fork (R1); the Aftermath site repository is not in the rollout (R4); Python mutation challenges | R1 to R6 and R9 below |
-| G2 public evidence and launch | R7 study complete; R8 permitted posts published; 48-hour response period elapsed; R10 loop active | R7 complete through a final replay on 1.0.7; R8 posted (GitHub releases 1.0.0 to 1.0.7 and a discussion issue), the 48-hour window runs to about 03:30 UTC 2026-09-30 with no outside response so far, and the Hacker News post is left to the person, as the assignment requires; R10 active with a named owner and an hourly triage workflow, exercised on an internal report only | R7, R8, R10 below; [response-log.md](../launch/response-log.md) |
+| G1 verifier release | R1 to R6 and R9 implemented, installed, published, exercised; package, CI and security checks clean | historical release gate met through 1.3.0; 1.3.1 delivery is tracked separately. Real fork testing closed in SV-16. The Aftermath site rollout remains open; limitations are not waived by publication | R1 to R6 and R9 below |
+| G2 public evidence and launch | R7 study complete; R8 permitted posts published; 48-hour response period elapsed; R10 loop active | R7 complete through a final replay on 1.0.7; R8 posted (GitHub releases 1.0.0 to 1.0.7 and a discussion issue), the original 48-hour window ended about 03:30 UTC 2026-09-30; the dated response log is the observation record, and the Hacker News post is left to the person, as the assignment requires; R10 active with a named owner and an hourly triage workflow, exercised on an internal report only | R7, R8, R10 below; [response-log.md](../launch/response-log.md) |
 | G3 comparative advantage | Comparisons A and B and the ablations complete under the frozen decision rule | complete, with no difference established: Comparison A on 1.0.2 and three replays, Comparison B over 79 paired tasks, the ablations, prior art; no arm produced a false green and no pair was discordant, so the hypothesis is neither supported nor refuted at this population (see the effectiveness row) | [comparison-protocol.md](comparison-protocol.md), Research scope below |
 
 Completing G1 is not completing the assignment. G3 stays in this table until it is either
@@ -26,13 +56,13 @@ established or explicitly handed off with its remaining manifest.
 
 ## Tracker SV-01 to SV-30 (from 2026-09-29)
 
-One row per tracker item of the finish-all assignment, superseding nothing above: earlier rows
-stay as the record of their date. States are **verified closed** (the finish condition is met and
+One row per tracker item of the finish-all assignment. The current disposition above supersedes
+stale remaining-work text; dated observations stay as the record of their version. States are **verified closed** (the finish condition is met and
 its evidence is linked), **in progress**, **open**, or **blocked** by a named external dependency.
 "Source" means tested from the repository; "installed" means tested through the packed or
 published package; "published" means on npm or in the Action distribution; "adopted" means merged
 into a repository's default branch; "established" means a completed, frozen experiment says so.
-Delivered at `4454d331d` as `swarm-verify@1.2.0` (npm `latest`, publish run 36650343238 with
+Historical 1.2.0 delivery: `4454d331d` as `swarm-verify@1.2.0` (npm `latest`, publish run 36650343238 with
 provenance, integrity `sha512-ZWf3OvDz...`) and Action `moonrunnerkc/swarm-verify@v1` = `v1.2.0` =
 `2c4b6944a`; remote gates 36649202183 and 36650343277, verifier matrix and action-controls green on
 that commit; the published package passes all 24 installed-smoke cases
@@ -50,7 +80,7 @@ that commit; the published package passes all 24 installed-smoke cases
 | SV-28 | verified closed | `src/gates/patch-paths.ts`, `change-source.ts`, `unified-diff.ts` | quoted and space-bearing paths refused | `e0fb28e1d` | real git-generated patches (spaces, quoting, renames, copies, both quotePath settings), unsafe paths still refused, `spaced-patch-path.integration.test.ts` | in 1.1.0 | none |
 | SV-16 | verified closed | fork route `docs/examples/swarm-verification-forks.yml`; lab `moonrunnerkc/swarm-verify-fork-lab` forked to `Aftermath-Technologies-Ltd` | never run on a real fork | `f35c92fc6` (every documented workflow sets `install: true`; without it all four lab runs read incomplete) | real fork PRs: valid #2 regression-only pass, broken #3 not verified, hostile #4 found no token variables, no network, none of the runner's paths; changed head: the older run reported `stale-head` and posted nothing, the newer one updated the single comment; Dependabot PR #1 regression-only pass; signed verdict trusted by `gh attestation verify` and refused for another head | published v1.1.0; rerun on v1.2.0 (`2c4b6944a`) before `v1` moved: fork PR #2 regression-only pass, #3 not verified, both signed (attestations 51310920, 51310950) | none |
 | SV-17 | in progress | `src/integrations/*` | scripted clients only | `2de4f27c9` (piped test command), `24facf72a` (hooks installed via npx pin the version), `e2f581fd9` (pre-commit framework hook) | live Claude Code 2.1.284: hook routed `npm test`, agent read `fail`; MCP client connected, `/etc` refused; real git hook and real pre-commit framework on npm 11.12.1 and 10.9.8: bad staged change refused, good one committed | public 1.2.0 | Cursor: not installed on this machine and needs the owner's account |
-| SV-18 | in progress | `scripts/triage/policy.mjs`, `.github/workflows/triage.yml` | the daily reminder SUPPORT.md promised did not exist | `7eca3e5e2`, `753169e83`, `a00ba4f38` | `policy.test.mjs`; live controlled exercise #76 on short windows: `overdue`, reminders 03:34, 03:50, 04:06 UTC as mentions (a `mention` notification reached the maintainer), escalation labelled and assigned, maintainer reply removed both labels and no reminder followed; #78 report to released fix in 1.1.0 | n/a | #77 on real windows: 24-hour reminder and 72-hour escalation still to elapse |
+| SV-18 | in progress | `scripts/triage/policy.mjs`, `.github/workflows/triage.yml` | the daily reminder SUPPORT.md promised did not exist | `7eca3e5e2`, `753169e83`, `a00ba4f38` | `policy.test.mjs`; live controlled exercise #76 on short windows: `overdue`, reminders 03:34, 03:50, 04:06 UTC as mentions (a `mention` notification reached the maintainer), escalation labelled and assigned, maintainer reply removed both labels and no reminder followed; #78 report to released fix in 1.1.0 | n/a | #77 real windows observed September 30 and October 2; closeout of the controlled exercise and external-user support observations remain |
 | SV-22 | verified closed | release notes | 1.0.0 said the basic command runs in a container | correction on the 1.0.0 release with the original text struck | 1.1.0 release notes and changelog state the host default | n/a | none |
 | SV-29 | verified closed | `README.md`, package README, `docs/claims.md`, `verify-only.md`, `integrations.md` | "nothing is written into the repository" was false (bond fixtures); container claim; the pre-commit framework route was broken | `8f650dd64`, `f35c92fc6`, integrations review in 1.2.0 | observed writes during `check`; snippet corrected after the lab showed `install` was missing | package README with the `install` line on npm since 1.2.0 | none |
 | SV-30 | verified closed | repository metadata | older About and topics | set 2026-09-29 | rendered page shows the description and exactly the ten topics | n/a | none |
@@ -58,14 +88,14 @@ that commit; the published package passes all 24 installed-smoke cases
 | SV-07 | verified closed | `scripts/ai-pr-study/containment.mjs`, `reviewer-tools.mjs` | prefix-collision reads, symlinked reads and writes, archive names escaping | `3fb8ff614`, `efd20d5f4` | 31 tests with real directories, mutation to a prefix check fails 2 | n/a | none |
 | SV-04, SV-05, SV-06, SV-08, SV-26 | verified closed | `scripts/ai-pr-study/{plain-ci,side-outcome,reviewers,check-execution,truth}.mjs`, `run.mjs`, `adjudicate.mjs` | audited 2026-09-29: suite-green derived from the verifier; base crashes counted as detection; one reviewer that saw candidate code; a regex split 13/9 | the study repair commits on v13-main (`Give every study attempt...` through `Pin each run's container images...`) with a dated amendment in [ai-pr-study-protocol.md](ai-pr-study-protocol.md) | 101 tests; controls for a syntax-error check, a base that does not load, a genuine assertion, a same-failure pair; a real bundle flipped one byte reads invalid; corrected reconciliation 11 behavioural and 11 text-inspected; three development rows exposed and fixed three harness defects | n/a | none; SV-09 runs on it |
 | SV-09 | open | study | | | | | the version-pinned 50-row run on 1.2.0 with the corrected machinery (about 5 to 13 hours of local model and container time, run one job at a time) |
-| SV-10, SV-11, SV-12, SV-13 | in progress | comparisons | the earlier 79-task Comparison B reused 65 outcomes | | installed-tool capability matrix published ([competitor-capabilities-2026-09-28.md](competitor-capabilities-2026-09-28.md)): VERA and plain CI judge fixed patches here, the hardened VERA goal passed a staged and a nested test weakening; Ranex needs x86-64 Linux; Critique needs a model; three development-set goals built and validated against their hidden oracles | | the frozen protocol, the remaining goals across eight repositories, the manifest and the resource statement are being built; final launches start after the freeze, at the local model's pace |
+| SV-10, SV-11, SV-12, SV-13 | in progress | comparisons | the earlier 79-task Comparison B reused 65 outcomes | | installed-tool capability matrix published ([competitor-capabilities-2026-09-28.md](competitor-capabilities-2026-09-28.md)): VERA and plain CI judge fixed patches here, the hardened VERA goal passed a staged and a nested test weakening; Ranex needs x86-64 Linux; Critique needs a model; three development-set goals built and validated against their hidden oracles | | 24 final goals validated; protocol, resource statement and prefreeze manifest committed September 29; final pin, freeze, launches and scoring remain |
 | SV-14 | verified closed | `scripts/onboarding/observer.mjs` (Lima VM backend `2d3b7a752`) | earlier runs used a reused container; on 1.1.0 the Vite clean tree failed on test-before-build and Python counted an untracked `.venv` and an undeclared formatter | `7eeff026d`, the Python fixes in 1.2.0, `d5918dfb9` (build before every check), `3888f9731` (observer wording) | three fresh-VM AI simulations on public 1.3.0 ([record](../evidence/2026-09-29/onboarding/README.md)): Vite 13 steps, Express 16, Python 11; each got a first result and saw its broken copy reported as failing; tavern's clean tree fails its own declared `ruff-format` hook on four Markdown files, reported as is | public 1.3.0 | none; AI simulations, not human testers |
-| SV-15 | in progress | rollout PRs ([record](../evidence/2026-09-29/rollout/README.md)) | 7 of 16 regression-only passes on 1.0.7 | 1.2.0 fixes for quantproof, tracemantle, ironroot, nborder, depose | 10 of 16 clean with signed verdicts, red controls refused, merged: crossfire, claimcheck, pubprep, dumpscan, counterfactual-court, cronproof, ruleprobe (1.1.0), quantproof, nborder, ironroot (1.2.0) | published 1.2.0 | depose (false regression: base control saw head build output) and tracemantle (temp paths in compared causes; three network-bound tests also fail at base) wait on verifier fixes in progress; rlfusion-orchestrator needs an owner packaging decision; gemma-witness (Rust) and nondet (Java) unsupported; swarm-orchestrator-rules has no manifest and needs a second account's approval; the Aftermath site source must be named by the owner |
+| SV-15 | in progress | rollout PRs ([record](../evidence/2026-09-29/rollout/README.md)) | 7 of 16 regression-only passes on 1.0.7 | 1.2.0 fixes for quantproof, tracemantle, ironroot, nborder, depose | 10 of 16 clean with signed verdicts, red controls refused, merged: crossfire, claimcheck, pubprep, dumpscan, counterfactual-court, cronproof, ruleprobe (1.1.0), quantproof, nborder, ironroot (1.2.0) | published 1.2.0 | depose and tracemantle fixes shipped in 1.3.0; repinned rollout outcomes still need verification; rlfusion-orchestrator needs an owner packaging decision; gemma-witness (Rust) and nondet (Java) unsupported; swarm-orchestrator-rules has no manifest and needs a second account's approval; the Aftermath site source must be named by the owner |
 | SV-19 | blocked | launch | no dev.to or Reddit post exists | drafts in [posts-2026-09-29.md](../launch/posts-2026-09-29.md) | | | the owner posts on dev.to, r/ClaudeAI, r/cursor and writes the Hacker News post; each 48-hour window starts then |
 | SV-23 | in progress | this index | rows said "not started" and "unpublished" after the fact | this section | | | kept current until every row closes |
 | SV-27 | verified closed (watch) | package install | intermittent dependency 404 earlier | none needed | matrix rows green on 22.0.0, 22, 24 at `4454d331d` | public 1.2.0 installed and run on Node 24 | rerun at each release |
 
-## Requirements R1 to R10
+## Historical requirements R1 to R10 (September 27 to 28)
 
 | Req | What it asks | Implementation | Tests | Executed evidence | Status |
 | --- | --- | --- | --- | --- | --- |

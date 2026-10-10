@@ -156,13 +156,16 @@ ${styles()}
 
 <header class="masthead">
   <p class="wordmark">swarm-orchestrator</p>
-  <p class="issue"><span class="version">${escapeHtml(version)}</span><span class="sep">/</span><code>npm install -g swarm-orchestrator</code></p>
+  <p class="issue"><span class="version">Source ${escapeHtml(version)}</span><span class="sep">/</span><code>npm install -g swarm-orchestrator</code></p>
 </header>
 
 <main>
   <section class="hero">
     <h1>The model can say whatever it likes. It cannot make a gate pass, it cannot mark a claim verified, and it cannot change a record after the fact.</h1>
     <p class="standfirst">Those are the harness's to decide. A run exports a signed, hash-chained bundle that anybody can check without installing this tool.</p>
+
+    <p>Swarm Orchestrator is the coding agent. <a href="https://github.com/moonrunnerkc/swarm-verify">Swarm Verify</a> is the independent verifier built from the same source, with no model or agent dependencies. Run <code>npx swarm-verify</code> in a repository whose dependencies are installed; local checks run on the host by default.</p>
+    <p>The install command resolves the registry's latest release. The source version above is not a publication claim. See the <a href="${blobBase}docs/release-delivery-2026-10-10.md">delivery record</a> and <a href="${blobBase}docs/beta-gates.md">readiness assessment</a>. Neither product proves semantic correctness or a swarm advantage.</p>
 
     <figure class="adjudication">
       <figcaption>One claim, twice refused, on a real run</figcaption>

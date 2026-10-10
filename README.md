@@ -82,7 +82,9 @@ change a record after the fact. Those are the harness's to decide.
 npm install -g swarm-orchestrator
 ```
 
-That is **14.4.0**, and it leaves `swarm` on your path. It runs on Node 22 or newer; Node 24 or
+This installs the registry’s `latest` release and leaves `swarm` on your path.
+The source version is **14.4.0**; publication is tracked in
+[the delivery record](docs/release-delivery-2026-10-10.md). It runs on Node 22 or newer; Node 24 or
 newer is recommended, because the changed-line coverage measurement spawns Node's test runner
 with process isolation, which Node 22 below 22.8 rejects. Below that, the measurement reports
 unmeasured and never counts as a pass. `swarm doctor` says which Node it found and what owns

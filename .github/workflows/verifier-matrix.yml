@@ -10,6 +10,11 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      registry-version:
+        description: 'Published swarm-verify version to install; empty uses the packed source'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -51,17 +56,24 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ matrix.node }}
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - if: inputs.registry-version == ''
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: swarm-verify-tarball
           path: ${{ runner.temp }}/tarball
-      - name: Install the tarball into an empty directory
+      - name: Install the verifier into an empty directory
         shell: bash
+        env:
+          SWARM_REGISTRY_VERSION: ${{ inputs.registry-version }}
         run: |
           mkdir -p "$RUNNER_TEMP/install"
           cd "$RUNNER_TEMP/install"
           echo '{"name":"consumer","private":true}' > package.json
-          npm install --no-audit --no-fund "$RUNNER_TEMP"/tarball/*.tgz
+          if [ -n "$SWARM_REGISTRY_VERSION" ]; then
+            npm install --no-audit --no-fund "swarm-verify@$SWARM_REGISTRY_VERSION"
+          else
+            npm install --no-audit --no-fund "$RUNNER_TEMP"/tarball/*.tgz
+          fi
           npm ls --depth=0
       - name: Install the real Vitest the forgery case runs
         if: runner.os != 'Windows'
