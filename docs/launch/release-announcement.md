@@ -1,5 +1,11 @@
 # swarm-verify 1.0.0: the announcement text
 
+Historical 1.0.0 launch text, superseded for publication by the separate
+[Verify](relaunch-2026-10-08-swarm-verify.md) and
+[Orchestrator](relaunch-2026-10-08-swarm-orchestrator.md) relaunch drafts. The container-default
+claim below was corrected in the published release: local checks default to host execution.
+The original draft is retained to explain that correction; do not reuse it.
+
 Status: draft, to be published with the stable release and not before. This text is for the
 GitHub release and the repository's own discussion thread. Hacker News is not in scope for
 this file: a submission there is written by a person, and none is drafted here.

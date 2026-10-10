@@ -77,7 +77,9 @@ patch that will not apply reports that no check happened rather than passing on 
 regression: pass   task: unjudged
 ```
 
-`regression` is whether the repository's own suite still passes: it says nothing broke.
+`regression: pass` means the measured checks found no failure attributable to the change.
+Demonstrated inherited failures can remain: it does not mean every check passed. Unmeasured
+checks and task acceptance remain separate dimensions.
 
 `task` is whether the work was actually done, and only an oracle can say that, because a suite
 tests the behaviour a project already had and a task adds behaviour it did not. A patch that adds
@@ -258,9 +260,11 @@ distinguishes them.
 
 ## A failure the base already had is not a regression
 
-A check that fails with the patch is re-run with the patch reverted, on the same checkout, so the
-two runs differ in the patch and nothing else. One that fails both ways is recorded as inherited
-and does not make `regression` fail.
+A failed check is compared with a controlled base run. Inheritance needs the same failure
+identities and causes, not merely two nonzero exits. Current runs use `failure-identity-v3`,
+including stable normalization of checkout paths; older records retain their original rule.
+Base measurement removes candidate build output and rebuilds as required. A demonstrated
+inherited failure does not make `regression` fail; a new or changed failure does.
 
 This is not hypothetical. Dependencies install with `--ignore-scripts`, because install scripts
 run whatever the registry serves, so a project that builds on `prepare` is verified without its

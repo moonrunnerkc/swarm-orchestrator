@@ -1,5 +1,9 @@
 # Adaptive goal controller implementation, September 13, 2026
 
+Historical implementation and evidence record. Its dated results remain unchanged; current
+release status is in [delivery](release-delivery-2026-10-10.md) and current readiness is in
+[beta-gates.md](beta-gates.md). This is not a new execution plan.
+
 Status: implementation and evidence are integrated into the verified `origin/v13-main` branch.
 Complete-goal behavior is established by development and integration evidence; no performance
 advantage or universal correctness is claimed. September 15 completion: replacement cohort 2

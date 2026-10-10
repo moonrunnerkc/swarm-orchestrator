@@ -1,5 +1,9 @@
 # Swarm Orchestrator v13: state of the system
 
+Historical implementation and evidence record. Its dated results remain unchanged; current
+release status is in [delivery](release-delivery-2026-10-10.md) and current readiness is in
+[beta-gates.md](beta-gates.md). This is not a new execution plan.
+
 - **Branch:** `crossfire-h3`
 - **HEAD:** `1303aa2c566c6a676dbd4577406407c5c1ce54ff` ("Scope the scrub property test to its own artifacts", 2026-08-17 21:28:57 -0600, moonrunnerkc)
 - **Package:** `swarm-orchestrator@13.0.0` (`package.json` lines 2-3)

@@ -62,8 +62,10 @@ Verbatim, because each of these has been tempting at some point in this project'
 - **That swarm-verify catches more wrong work than another tool, or is the only tool that does
   something.** No completed comparison supports either; the advantage is an open hypothesis
   tracked in `verifier-first/README.md`.
-- **That the fork route has been exercised on a real fork**, until the completion index records a
-  real fork pull request run through the published Action.
+- **That fork testing establishes unrestricted safety.** Real fork and Dependabot controls ran
+  on published 1.1.0 and 1.2.0, including hostile code and stale-head refusal; see SV-16 in
+  `verifier-first/README.md`. Those observations apply to their tested container and workflow
+  boundaries, not every runner or hostile program.
 
 - **"Seven red-team laps."** The loop ledger records one completed lap. Six of the seven
   pass directories were human-driven work outside the driver, which
@@ -76,13 +78,15 @@ Verbatim, because each of these has been tempting at some point in this project'
 - **"Fully secure", or any unbounded security claim.** The honest naming is known-pattern
   scrubbing, not secret removal, and there is a four-character floor under it. Zero crashes
   at a given fuzz budget is evidence, not proof.
-- **That a decomposition is checked for whether it satisfies the goal.** It is not. The
-  harness checks that a graph is well formed and that its declared nodes ran and landed. The
-  `--goal` run in `evidence/2026-08-24/swarm.md` passed every structural check on a
-  decomposition that could not work. Say "declared before it runs and checked for structure".
-- **That redundancy picks the best solution.** The comparator picks the most disciplined green
-  attempt. No number it reads tells doing the whole task from doing the minimum that passes
-  its own tests, and a number that could would be a judge, which section 2 refuses.
+- **That a well-formed decomposition proves the user’s goal complete.** The legacy graph run
+  in `evidence/2026-08-24/swarm.md` passed structural checks on an unusable decomposition. The
+  adaptive controller now checks declared executable obligations on the exact integrated tree,
+  with bounded revisions and independent acceptance (`redesign-implementation-2026-09-13.md`).
+  That establishes the tested contract, not that the contract captures all user intent.
+- **That redundancy picks the best solution.** The legacy comparator selects discipline;
+  goal selection first requires applicable executable obligations and integrated checks, then
+  ranks under the sealed objective. Neither establishes semantic completeness beyond those
+  checks, and missing human judgments remain unjudged.
 - **That the oracle-reach check proves an oracle judged the change.** It proves the oracle
   *executed* the lines, which is a necessary condition and not a sufficient one, and for every
   runner but node's own it reads a coverage report the workspace's own processes wrote. Nothing

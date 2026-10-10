@@ -119,7 +119,10 @@ describe("the rendered page", () => {
    * the tarball, where nothing checks it yet.
    */
   it("names the version the manifest names", () => {
-    expect(html).toContain(manifest.version);
+    expect(html).toContain(`Source ${manifest.version}`);
+    expect(html).toContain("https://github.com/moonrunnerkc/swarm-verify");
+    expect(html).toContain("npx swarm-verify");
+    expect(html).toContain("not a publication claim");
   });
 
   /**

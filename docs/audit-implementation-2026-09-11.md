@@ -1,5 +1,9 @@
 # Audit implementation, 11 September 2026
 
+Historical implementation and evidence record. Its dated results remain unchanged; current
+release status is in [delivery](release-delivery-2026-10-10.md) and current readiness is in
+[beta-gates.md](beta-gates.md). This is not a new execution plan.
+
 This change implements the audit's correctness repairs and adds campaign, acceptance-contract,
 security-observer and first-run study infrastructure. It does **not** complete the seven empirical
 roadmap claims. Independent submissions, a frozen strongest-baseline comparison, sufficient
