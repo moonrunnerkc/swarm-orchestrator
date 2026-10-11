@@ -51,6 +51,47 @@ bounded repair work when a clean merge fails behaviorally. Tiny or tightly coupl
 one worker. The result names accepted requirements, blockers, the integrated branch, and its
 evidence.
 
+## An ordinary task, start to finish
+
+Most tasks arrive as a sentence, not as a contract file. The ordinary workflow turns the
+sentence into sealed criteria, implements against them, and reports what was and was not
+established:
+
+```sh
+cd your-repository
+swarm "add a --no-cache flag that disables the response cache, with a test" --plan-checks
+```
+
+1. **Preflight**, before any model call: the repository and base commit, the manifest the gates
+   assemble from, the model and why it was chosen, the approval mode. A workspace with no
+   manifest is offered a harness first; a missing runtime stops the run here.
+2. **Criteria**, with `--plan-checks`: the planner reads the workspace with read-only tools and
+   pins requirements and executable checks, which are shown in plain language, one line per
+   requirement with the check that measures it. On a terminal you are asked to seal them;
+   anything but `y` stops the run having spent only the planning tokens, which are reported.
+   Off a terminal the criteria are sealed as written. They are labelled model-authored on the
+   chain, in the report and on the screen, and they stay so after you have read them: a person
+   agreeing to criteria is a person agreeing to be measured by them, not independent ground
+   truth. If the planner cannot pin criteria it says why (often a question about the task) and
+   the run stops before implementation; on a terminal you get one round to answer, with the
+   task text kept verbatim. With a contract of your own, pass `--goal-contract` instead.
+3. **Base check** of the sealed checks: a check that cannot run here stops the run with the
+   remedy named; a check that already passes on the base is named as not evidence of change.
+4. **Implementation** through the one worker loop: declared files, the recording chokepoint,
+   the gates with the sealed checks as the blocking `task-acceptance` gate, bounded repair under
+   the ratchet. A worker that repeats a tool call it has already been answered is told once and
+   stopped the second time, and the gates still run over the tree.
+5. **Final verification** of the exact tree in a fresh checkout, independent of the worker.
+6. **The outcome block**: the verdict and how the loop stopped; each requirement as met, unmet
+   or unjudged; the branch and the files the recorded diff touches; which checks ran over that
+   tree and what they could not measure; time, tokens and cost with planning shown separately;
+   interventions counted by who made them; and, when the run is not acceptable, what blocked it
+   and one next action, including `swarm resume <run-id>` where it applies. The evidence panel
+   follows with the bundle, the review page and the verifier.
+
+Planning and criteria authoring are part of what the task costs and are accounted against the
+run's token and wall allowances, not granted on top of them.
+
 ## A session, or a single task
 
 Run `swarm` with no task and it opens a session: one process, one ledger, and tasks typed one
