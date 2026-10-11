@@ -589,3 +589,152 @@ it("enforces its deadline even when a provider ignores cancellation", async () =
   expect((await pending).stopReason).toBe("max-wall-time");
   expect(harness.toolInvoker.invocations).toHaveLength(0);
 });
+
+describe("a loop that repeats itself", () => {
+  const inspect = (callId: string) =>
+    respondWithToolCalls("checking", [
+      { callId, toolName: "shell", input: { command: "cat package.json" } },
+    ]);
+  /** The chokepoint's trailer differs per call; the tracker must see through it. */
+  let record = 0;
+  const unchanged = () =>
+    `exit code: 0\nstdout:\n{"version":"1"}\n[evidence record sha256:${(++record).toString(16).padStart(64, "0")} kind tool-call:shell]`;
+
+  it("tells the model once, then stops it, and both are on the event stream", async () => {
+    const stalls: unknown[] = [];
+    const invoker = createRecordingToolInvoker(unchanged);
+    const harness = createHarness(
+      Array.from({ length: 12 }, (_, index) => inspect(`c${index}`)),
+      {
+        toolInvoker: invoker,
+        budget: { ...generousBudget, maxSteps: 20 },
+        stall: { observe: async (event) => void stalls.push(event) },
+      },
+    );
+
+    const outcome = await runAgentLoop("upgrade the dependency", harness.deps);
+
+    expect(outcome.stopReason).toBe("stalled");
+    // Four identical calls earn the notice; three more after it earn the stop. Nothing beyond
+    // that is spent: the fixture had twelve turns and five were never asked for.
+    expect(outcome.steps).toBe(7);
+    expect(invoker.invocations).toHaveLength(7);
+    const notice = outcome.messages.find(
+      (message) => message.role === "user" && message.text.includes("repeated tool calls"),
+    );
+    expect(notice).toBeDefined();
+    expect(outcome.messages.indexOf(notice as (typeof outcome.messages)[number])).toBe(1 + 4 * 2);
+    expect(harness.events.filter((event) => event.type === "stall")).toEqual([
+      { type: "stall", step: 4, toolName: "shell", repeats: 3, intervention: "feedback" },
+      { type: "stall", step: 7, toolName: "shell", repeats: 3, intervention: "stop" },
+    ]);
+    expect(stalls).toHaveLength(2);
+    expect(outcome.completionClaim).toBe("");
+  });
+
+  it("lets a model that acts on the notice finish", async () => {
+    const harness = createHarness(
+      [
+        inspect("a"),
+        inspect("b"),
+        inspect("c"),
+        inspect("d"),
+        respondWithToolCalls("acting on it", [
+          { callId: "w", toolName: "write", input: { path: "package.json", content: "2" } },
+        ]),
+        respondWithText("done"),
+      ],
+      { toolInvoker: createRecordingToolInvoker(unchanged) },
+    );
+    const outcome = await runAgentLoop("upgrade the dependency", harness.deps);
+    expect(outcome.stopReason).toBe("completed");
+    expect(harness.events.filter((event) => event.type === "stall")).toHaveLength(1);
+  });
+
+  it("never interrupts a poll whose answer keeps changing, or a reread after an edit", async () => {
+    let tick = 0;
+    const harness = createHarness(
+      [
+        ...Array.from({ length: 6 }, (_, index) => inspect(`poll${index}`)),
+        respondWithToolCalls("edit", [
+          { callId: "w", toolName: "write", input: { path: "package.json", content: "2" } },
+        ]),
+        inspect("reread"),
+        respondWithText("done"),
+      ],
+      {
+        toolInvoker: createRecordingToolInvoker((invocation) =>
+          invocation.toolName === "write" ? "written" : `exit code: 0\nstdout:\nline ${++tick}`,
+        ),
+        budget: { ...generousBudget, maxSteps: 20 },
+      },
+    );
+    const outcome = await runAgentLoop("watch the build", harness.deps);
+    expect(outcome.stopReason).toBe("completed");
+    expect(harness.events.some((event) => event.type === "stall")).toBe(false);
+  });
+
+  it("grants no second notice to a run taken up again with the first in its history", async () => {
+    const first = createHarness(
+      Array.from({ length: 5 }, (_, index) => inspect(`c${index}`)),
+      {
+        toolInvoker: createRecordingToolInvoker(unchanged),
+        budget: { ...generousBudget, maxSteps: 5 },
+      },
+    );
+    const before = await runAgentLoop("upgrade the dependency", first.deps);
+    expect(before.stopReason).toBe("max-steps");
+    expect(before.messages.some((m) => m.role === "user" && m.text.includes("repeated"))).toBe(
+      true,
+    );
+
+    const resumed = createHarness(
+      Array.from({ length: 6 }, (_, index) => inspect(`r${index}`)),
+      {
+        toolInvoker: createRecordingToolInvoker(unchanged),
+        budget: { ...generousBudget, maxSteps: 20 },
+        history: before.messages,
+      },
+    );
+    const after = await runAgentLoop("continue", resumed.deps);
+    expect(after.stopReason).toBe("stalled");
+    expect(after.steps).toBe(4);
+    expect(resumed.events.filter((event) => event.type === "stall")).toEqual([
+      { type: "stall", step: 4, toolName: "shell", repeats: 3, intervention: "stop" },
+    ]);
+  });
+
+  it("lets a cancellation outrank the stall", async () => {
+    const harness = createHarness(
+      Array.from({ length: 12 }, (_, index) => inspect(`c${index}`)),
+      {
+        toolInvoker: createRecordingToolInvoker(unchanged),
+        budget: { ...generousBudget, maxSteps: 20 },
+        stall: {
+          observe: async (event) => {
+            if (event.intervention === "stop") harness.controller.abort("stopped by hand");
+          },
+        },
+      },
+    );
+    const outcome = await runAgentLoop("upgrade the dependency", harness.deps);
+    // The stop is decided before the abort lands, and the loop reports the stall; the next
+    // thing a cancelled loop would do is not done.
+    expect(["stalled", "interrupted"]).toContain(outcome.stopReason);
+    expect(outcome.steps).toBe(7);
+  });
+
+  it("can be switched off, which only a test should want", async () => {
+    const harness = createHarness(
+      Array.from({ length: 10 }, (_, index) => inspect(`c${index}`)),
+      {
+        toolInvoker: createRecordingToolInvoker(unchanged),
+        budget: { ...generousBudget, maxSteps: 10 },
+        stall: false,
+      },
+    );
+    const outcome = await runAgentLoop("upgrade the dependency", harness.deps);
+    expect(outcome.stopReason).toBe("max-steps");
+    expect(outcome.steps).toBe(10);
+  });
+});

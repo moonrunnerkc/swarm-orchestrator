@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { expect, it } from "vitest";
 import { runAgentTask } from "./agent-run.ts";
+import { writeBundle } from "./cli-bundle.ts";
 import { createSystemClock } from "./cli-runtime-inputs.ts";
 import { presetTaskContract } from "./cli-task-contract.ts";
 import { finalizeTaskGoal, taskGoalGate } from "./cli-task-goal.ts";
@@ -242,8 +243,19 @@ it("refuses an implementation that omits a requirement although the project's ow
     const verdict = await finalizeTaskGoal(fixture.context);
     expect(verdict.acceptable).toBe(false);
     expect(verdict.task).toBe("rejected");
-    expect(verdict.reasons.task).toContain("unmet: strip");
-    expect(verdict.reasons.task).not.toContain("collapse");
+    expect(verdict.reasons.task).toBe("pinned goal checks: rejected");
+    // Which requirement was omitted is on the verification record the outcome display reads.
+    const verification = fixture.evidence
+      .records()
+      .filter((entry) => entry.type === "independent-verification")
+      .at(-1);
+    const payload = fixture.evidence.payloads().get(verification?.payloadDigest ?? "") as {
+      goalAcceptance: { obligations: { id: string; status: string }[] };
+    };
+    expect(payload.goalAcceptance.obligations.map(({ id, status }) => ({ id, status }))).toEqual([
+      { id: "collapse", status: "accepted" },
+      { id: "strip", status: "rejected" },
+    ]);
   } finally {
     await rm(fixture.root, { recursive: true, force: true });
   }
@@ -279,6 +291,23 @@ it("records a refused final verification as a non-success instead of ending the 
     expect(verdict.task).toBe("unjudged");
     expect(verdict.reasons.task).toMatch(/final verification refused: .*dependency setup failed/);
     expect(fixture.evidence.records().at(-1)?.type).toBe("run-assessment");
+    // The bundle's own dependency-free verifier re-derives the refused verdict and agrees.
+    const bundle = await writeBundle(
+      fixture.evidence,
+      join(fixture.root, "bundle"),
+      fixture.clock,
+      () => {},
+    );
+    const verified = await execute(process.execPath, [
+      join(bundle.directory, "verify.mjs"),
+      bundle.directory,
+    ]).then(
+      (ran) => ({ code: 0, stdout: ran.stdout }),
+      (failed: { code: number; stdout: string }) => ({ code: failed.code, stdout: failed.stdout }),
+    );
+    expect(verified.stdout).toMatch(/PASS {2}run assessment \d+ re-derived/);
+    expect(verified.stdout).not.toMatch(/FAIL/);
+    expect(verified.code).toBe(0);
   } finally {
     await rm(fixture.root, { recursive: true, force: true });
   }
