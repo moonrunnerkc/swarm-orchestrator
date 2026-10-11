@@ -31,31 +31,51 @@ so the agent's own summary is never the source of truth.
 
 ---
 
+## One task, done and shown
+
+On 2026-10-11, `swarm` was given this task on a checkout of
+[motdotla/dotenv-expand](https://github.com/motdotla/dotenv-expand) at `148488a4`, with the
+local model `qwen3.8:27b` served by rapid-mlx on one Mac:
+
+> Upgrade the devDependency @dotenvx/primitives, which dotenv-expand bundles into its build,
+> from 2.1.1 to exactly 3.0.3. package-lock.json is regenerated with npm so that `npm ci`
+> installs 3.0.3 from the npm registry. lib/main.js keeps working on top of 3.0.3. Do not
+> change the tests. `npm test` must still pass.
+
+| | |
+| --- | --- |
+| result | accepted: the sealed check (`primitives-3-0-3`, installed version and behaviour) passed in a fresh checkout, the project's own suite passed, 2 files changed, 8 insertions, 8 deletions ([the diff](docs/evidence/2026-10-11/tool-stall/final.patch)) |
+| checks performed | build, lint, tests, file-set, placeholder, secret scan, diff budget, the sealed acceptance check; then the independent final verification of the exact tree |
+| elapsed | 12 min 25 s, 36 model calls, 350,648 tokens |
+| cost | no money: a local model; electricity only |
+| interventions | none by a person. Automatic: after the upgrade was in place the model repeated one cleanup command seven times; the harness told it once, stopped it, ran the gates, and one bounded repair removed the scratch files |
+| version | source commit `d690cf045` (14.4.0 plus this release's changes); the full account with record digests is [live-run.md](docs/evidence/2026-10-11/tool-stall/live-run.md) |
+
+That goal is from the development set of the September comparison campaign, chosen because the
+September pilot had stalled on it; it is one run and an illustration of the workflow, not a
+rate. The comparative measurement is further down.
+
 ## What it does
 
-`swarm` takes a task and a git repository. It plans, declares the files it intends to touch,
-edits through one recording chokepoint, runs your project's checks as sealed gates, and retries
-failures under a ratchet that refuses a fix which trades away tests, assertions or coverage.
-When the gates pass it exports a signed, hash-chained evidence bundle that carries its own
-dependency-free verifier, so anyone can check what ran, and what passed, with nothing but Node
-and without trusting the machine that produced it.
+`swarm` takes a task and a git repository. It seals the completion criteria, declares the files
+it intends to touch, edits through one recording chokepoint, runs your project's checks as
+sealed gates, and retries failures under a ratchet that refuses a fix which trades away tests,
+assertions or coverage. The exact final tree is then verified in a fresh checkout, and the run
+ends on an outcome block: which requirements were met, unmet or unjudged, what changed, what
+ran, what it cost, which interventions happened, and the next action when it is not done.
+Everything it did is a signed, hash-chained evidence bundle that carries its own
+dependency-free verifier.
 
 ```text
-task
-  -> the agent plans and declares its files
-  -> a bounded change, every tool call recorded
-  -> the project's checks run as sealed gates
-  -> weak evidence is challenged: a passing check must be shown able to fail
+task in words
+  -> criteria: a sealed goal contract you supply, or one the planner authors and shows you
+  -> preflight: the checks are established on the base before the first model call
+  -> a bounded change, every tool call recorded; a worker repeating itself is told once, then stopped
+  -> the project's checks and the sealed acceptance check run as gates
   -> the ratchet: a retry may not trade away tests, assertions or coverage
-  -> retry, accept, or refuse with the reason on the record
-  -> evidence: a signed bundle anyone can verify offline
+  -> the exact final tree verified independently in a fresh checkout
+  -> the outcome block, then evidence: a signed bundle anyone can verify offline
 ```
-
-Here is a real run, committed: [`live-tasks.md`](docs/evidence/2026-08-18/live-tasks.md),
-with its bundle in [`live-frontier/`](docs/evidence/2026-08-18/live-frontier). And here is the
-packaged tool doing it, installed from a tarball into a directory holding nothing else, against
-a workspace it had never seen, recorded in a real terminal:
-[`installed-package-run.md`](docs/evidence/2026-08-23/installed-package-run.md).
 
 ## Why it is not an ordinary coding agent
 
@@ -94,10 +114,17 @@ the `swarm` command, and `--fix` repairs an install that an older build is shado
 
 ```sh
 export ANTHROPIC_API_KEY=...       # or OPENAI_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY,
-                                   # or start Ollama and pass --model local:<id>
+                                   # or start Ollama or rapid-mlx and pass --model local:<id>
 cd your-repository
-swarm "make slugify collapse whitespace and strip punctuation"
+swarm "make slugify collapse whitespace and strip punctuation" --plan-checks
 ```
+
+`--plan-checks` has the planner read the repository and author completion criteria from your
+sentence: requirements and executable checks, shown in plain language and sealed before the
+first edit, labelled model-authored on the chain and in the report. Without it a run is measured
+by the project's own checks only, and the outcome block says so; with a contract file of your
+own, pass `--goal-contract` instead ([docs/broad-use.md](docs/broad-use.md)). Node 22 or newer
+is required and Node 24 is recommended; the model is a local server or a frontier key.
 
 Keys come from the environment or your OS keychain, never from `swarm.toml`: that file is
 committed and cloned, so a key in it has already been shared with everyone holding the
@@ -134,6 +161,20 @@ asked of the model before the criteria are sealed.
 The mechanics, the nine-answer report and worked examples are in
 [docs/verifying.md](docs/verifying.md). The goal contracts, presets and package scope are in
 [docs/broad-use.md](docs/broad-use.md).
+
+## What was measured, and what was not
+
+The product hypothesis is that Swarm completes real repository tasks with less supervision and
+rework than an ordinary coding agent. It is measured, not assumed, in an exploratory paired
+trial of twenty issue-sized historical changes mined from five public repositories outside every
+earlier corpus (marked, fast-xml-parser, yargs-parser, js-yaml, minimatch), Swarm against
+OpenCode on the same local model, the same prepared workspace, the same visible check, the same
+wall budget and one deterministic supervision rule applied to both, scored by the upstream
+commit's own tests held sealed from both arms. The protocol was registered before any launch;
+the counts, with their denominators, and what they do and do not support are in
+[docs/evidence/2026-10-11/comparison/README.md](docs/evidence/2026-10-11/comparison/README.md).
+Developer hours saved and real-world adoption are not measured there; the prepared, unrun
+protocol for five developers on their own tasks is [docs/human-trial-protocol.md](docs/human-trial-protocol.md).
 
 ## What evidence is produced
 
