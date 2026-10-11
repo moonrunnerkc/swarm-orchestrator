@@ -686,3 +686,65 @@ describe("--approve", () => {
     expect(() => parseCommandLine(["--approve", "maybe", "fix it"], context)).toThrow(/--approve/);
   });
 });
+
+describe("a goal contract on the ordinary task path", () => {
+  it("is accepted without a preset, so a feature task carries sealed requirements", () => {
+    const parsed = parseRun(["add a --no-cache flag", "--goal-contract", "goal.json"]);
+    expect(parsed.goalContract).toBe("/work/repo/goal.json");
+    expect(parsed.preset).toBeUndefined();
+    expect(parsed.installDependencies).toBe(false);
+    expect(parsed.planChecks).toBeUndefined();
+  });
+
+  it("carries --install and --challenges beside a contract that names no preset", () => {
+    const parsed = parseRun([
+      "add a --no-cache flag",
+      "--goal-contract",
+      "goal.json",
+      "--install",
+      "--challenges",
+      "required",
+      "--strengthen",
+    ]);
+    expect(parsed).toMatchObject({
+      goalContract: "/work/repo/goal.json",
+      installDependencies: true,
+      challenges: "required",
+      strengthen: {},
+    });
+  });
+
+  it("still ties every preset to a contract and the upgrade preset to --install", () => {
+    expect(() => parseRun(["fix it", "--preset", "bugfix"])).toThrow(
+      "--preset requires --goal-contract",
+    );
+    expect(() =>
+      parseRun(["bump it", "--preset", "upgrade", "--goal-contract", "goal.json"]),
+    ).toThrow("upgrade requires --install");
+    expect(
+      parseRun(["bump it", "--preset", "upgrade", "--goal-contract", "goal.json", "--install"]),
+    ).toMatchObject({ preset: "upgrade", goalContract: "/work/repo/goal.json" });
+  });
+
+  it("refuses a challenge with nothing to challenge, naming the contract rather than a preset", () => {
+    expect(() => parseRun(["fix it", "--challenges", "report"])).toThrow(
+      "--challenges needs a --goal-contract",
+    );
+  });
+
+  it("refuses an empty contract path", () => {
+    expect(() => parseRun(["fix it", "--goal-contract", ""])).toThrow(
+      "--goal-contract needs the path",
+    );
+  });
+
+  it("authors criteria with --plan-checks, and never beside a supplied contract or preset", () => {
+    expect(parseRun(["add a --no-cache flag", "--plan-checks"]).planChecks).toBe(true);
+    expect(() =>
+      parseRun(["add a flag", "--plan-checks", "--goal-contract", "goal.json"]),
+    ).toThrow("pass one, not both");
+    expect(() => parseRun(["fix it", "--plan-checks", "--preset", "bugfix"])).toThrow(
+      "--preset requires --goal-contract",
+    );
+  });
+});

@@ -39,8 +39,15 @@ export { InvalidCommandLineError };
  * resolution lives in src/config/settings.ts rather than here.
  */
 export interface RunCommand {
+  /** A behavior policy the sealed contract must name too; absent for a general feature task. */
   readonly preset?: "bugfix" | "refactor" | "upgrade";
+  /** A sealed goal contract file: requirements and checks held outside the solver's reach. */
   readonly goalContract?: string;
+  /**
+   * Author the completion criteria before implementation through the planner, present them,
+   * and seal them. Model-authored checks stay labelled as such on the chain and in the report.
+   */
+  readonly planChecks?: boolean;
   readonly installDependencies?: boolean;
   readonly escalationModel?: string;
   readonly maxTokens?: number;
@@ -319,7 +326,11 @@ export const usage = [
   "  swarm --version                                  which build this is",
   "    --redundancy <n>                               try each task n ways, land the best",
   "    --concurrency <n>                              how many may hold a worktree at once",
-  "    --preset bugfix|refactor|upgrade --goal-contract <file>   pinned behavior policy",
+  "    --goal-contract <file>                         sealed requirements and checks the",
+  "                                                   worker must satisfy; no preset needed",
+  "    --preset bugfix|refactor|upgrade                 a behavior policy the contract also names",
+  "    --plan-checks                                  author, show and seal model-labelled",
+  "                                                   criteria before implementation",
   "    --escalate-model <provider:id>                  authorize one bounded capability escalation",
   "    --challenges off|report|required [--strengthen [--strengthen-rounds <n>]]",
   "                                                   challenge the goal's checks; strengthen a gap",
@@ -598,11 +609,20 @@ export function parseCommandLine(
     throw invalid("upgrade requires --install authorization for locked dependency preparation");
   if (flags.has("escalate-effort"))
     throw invalid("effort escalation is unsupported; name an explicit --escalate-model instead");
+  // A contract carries its requirements whether or not it names a preset: a feature task has
+  // none, and still needs its sealed checks to reach acceptance, repair and final verification.
+  const goalContract = flags.get("goal-contract");
+  if (goalContract !== undefined && goalContract.trim().length === 0)
+    throw invalid("--goal-contract needs the path of a sealed goal contract file");
   const challenges = flags.get("challenges");
   if (challenges !== undefined && !["off", "report", "required"].includes(challenges))
     throw invalid("--challenges must be off, report, or required");
-  if (challenges !== undefined && preset === undefined)
-    throw invalid("--challenges needs a --preset run with a --goal-contract to challenge");
+  if (challenges !== undefined && goalContract === undefined)
+    throw invalid("--challenges needs a --goal-contract whose checks it can challenge");
+  if (flags.has("plan-checks") && goalContract !== undefined)
+    throw invalid(
+      "--plan-checks authors the criteria and --goal-contract supplies them; pass one, not both",
+    );
   const strengthen = flags.has("strengthen");
   if (strengthen && (challenges === undefined || challenges === "off"))
     throw invalid(
@@ -636,13 +656,14 @@ export function parseCommandLine(
           },
         }
       : {}),
-    ...(preset === undefined
+    ...(preset === undefined ? {} : { preset: preset as "bugfix" | "refactor" | "upgrade" }),
+    ...(goalContract === undefined
       ? {}
       : {
-          preset: preset as "bugfix" | "refactor" | "upgrade",
-          goalContract: resolve(context.currentDirectory, flags.get("goal-contract") as string),
+          goalContract: resolve(context.currentDirectory, goalContract),
           installDependencies: flags.has("install"),
         }),
+    ...(flags.has("plan-checks") ? { planChecks: true } : {}),
     ...(flags.has("escalate-model")
       ? { escalationModel: flags.get("escalate-model") as string }
       : {}),
