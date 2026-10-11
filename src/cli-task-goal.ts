@@ -96,29 +96,77 @@ async function verify(
   });
 }
 
-/** Establish required base behavior before any implementation call can consume its budget. */
+/**
+ * Establish the acceptance instrument on the base before any implementation call can consume
+ * its budget: a bugfix or refactor needs its base control, and every contract needs checks
+ * that can run here at all. A check whose toolchain is missing, or a fresh checkout that cannot
+ * be prepared, is found now, with the remedy named, rather than after the model has spent the
+ * interesting part of the budget. Upgrades are excluded: their checks assert the installed
+ * version, which the base cannot have, and their authorization is enforced per candidate.
+ */
 export async function preflightTaskGoal(context: TaskGoalContext): Promise<void> {
   const kind = context.contract.preset?.kind;
-  if (kind !== "bugfix" && kind !== "refactor") return;
+  if (kind === "upgrade") return;
   const result = await check(context, "", { contract: context.contract, challengePolicy: "off" });
+  const cannotRun = (result.goalAcceptance?.checkResults ?? []).filter(
+    (check) => check.status === "unjudged",
+  );
+  const passesOnBase = (result.goalAcceptance?.checkResults ?? [])
+    .filter((check) => check.status === "accepted")
+    .map((check) => check.id);
   await context.evidence.record({
     type: "verification-command",
     actor: "harness",
     provenance: ["tool-output"],
     payload: asJsonValue({
-      rule: "preset-preflight-v1",
+      rule: kind === undefined ? "goal-preflight-v1" : "preset-preflight-v1",
       sourceBase: context.baseCommit,
+      ...(kind === undefined
+        ? { cannotRun: cannotRun.map((check) => check.id), passesOnBase }
+        : {}),
       ...result,
     }),
   });
-  if (result.goalAcceptance?.presetControl?.accepted !== true)
+  if (result.refusal !== null)
+    throw new Error(
+      `the acceptance checks cannot be established on the base: ${result.refusal}; repair the prepared environment before model spending`,
+    );
+  if (
+    (kind === "bugfix" || kind === "refactor") &&
+    result.goalAcceptance?.presetControl?.accepted !== true
+  )
     throw new Error(
       `${kind} base control was not established; repair the reproducer or prepared environment before model spending`,
     );
   if (result.unmeasured)
     throw new Error(
-      `preset setup is unmeasured: ${result.advice || result.refusal}; prepare required tools before model spending`,
+      `${kind ?? "goal"} setup is unmeasured: ${result.advice || result.refusal}; prepare required tools before model spending`,
     );
+  if (kind === undefined && cannotRun.length > 0)
+    throw new Error(
+      `acceptance check(s) cannot run here: ${cannotRun.map((check) => `${check.id} (${check.detail.split("\n")[0]})`).join("; ")}; prepare the tools they need before model spending`,
+    );
+}
+
+/** What a goal preflight observed on the base, for the terminal: which checks already pass there. */
+export function describeGoalPreflight(evidence: EvidenceRecorder): readonly string[] {
+  const record = evidence
+    .records()
+    .findLast(
+      (entry) =>
+        entry.type === "verification-command" &&
+        (evidence.payloads().get(entry.payloadDigest) as { rule?: string } | undefined)?.rule ===
+          "goal-preflight-v1",
+    );
+  const payload = evidence.payloads().get(record?.payloadDigest ?? "") as
+    | { passesOnBase?: string[] }
+    | undefined;
+  if (payload === undefined) return [];
+  return payload.passesOnBase === undefined || payload.passesOnBase.length === 0
+    ? ["preflight: every sealed check fails on the base, so a pass will mean the change did it"]
+    : [
+        `preflight: ${payload.passesOnBase.join(", ")} already pass on the base; a pass there is not evidence the change did anything`,
+      ];
 }
 
 /** Project exact final-source acceptance into the recorded worker assessment. */
