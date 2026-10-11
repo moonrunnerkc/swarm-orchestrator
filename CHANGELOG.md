@@ -4,6 +4,48 @@ The coding agent. The standalone verifier it is built on, `swarm-verify`, has it
 [packages/swarm-verify/CHANGELOG.md](packages/swarm-verify/CHANGELOG.md); an agent release names
 the verifier version it carries rather than repeating those entries.
 
+## 14.5.0 - unreleased
+
+The ordinary task workflow: a task in words, sealed criteria, acceptance, repair and final
+verification on one path, with the run's outcome led by what was and was not established.
+Source on `v13-main`; not published until a release names it.
+
+### Added
+
+- **A goal contract without a preset.** `--goal-contract <file>` now carries a feature task's
+  sealed requirements through the acceptance gate, bounded repair, challenges and strengthening,
+  recovery and the independent final verification of the exact tree. `--challenges` follows the
+  contract rather than a preset. A preset is named in both places or in neither.
+- **`--plan-checks`**: the goal controller's planner authors requirements and executable checks
+  for one task from its text, on a planning chain of its own, shows them in plain language,
+  confirms them on a terminal and seals them as written off one. They stay labelled
+  model-authored on the chain, in the report and in the JSON result. A planner that pins nothing
+  stops the run before implementation spending with its account (exit 4); a decline is exit 3.
+- **Every contract is established on the base before the first model call**: a check whose tool
+  is missing or a fresh checkout that cannot be prepared stops the run with the remedy named;
+  checks that already pass on the base are named as not evidence of change.
+- **The outcome block** at the end of a run, derived from the chain: the verdict, each
+  requirement's status and author, the tree and changed files, the checks and what they could
+  not measure, time, tokens and cost with planning shown separately, interventions by who made
+  them, and one next action when the run is not acceptable. `swarm.result.v1` carries the same
+  fields additively as `outcome`.
+- **Repeated tool calls are stopped.** A worker that repeats a call it has already been answered
+  is told once and stopped the second time (stop reason `stalled`); both decisions are
+  `session-budget` records (`tool-stall-v1`) and `stall` events. Replayed against the September
+  development run that repeated one command thirty-five times, the detector intervenes at step
+  9 and stops at step 12 of a loop that ran to 72 calls
+  ([evidence](docs/evidence/2026-10-11/tool-stall/replay.md)).
+
+### Fixed
+
+- A refused final verification (a fresh checkout that could not install, an immutable path
+  reached, an upgrade policy decision) ended the run with a schema error and no result line. It
+  is now a recorded non-success: task unjudged, not acceptable, the refusal as the reason; the
+  bundled verifier re-derives it. Upgrade policy decisions fail the acceptance gate with the
+  reason instead of ending the run.
+- A model failure whose payload is not an Error (a local server's error body) was recorded and
+  shown as `[object Object]`; it is now described, with the original kept as the cause.
+
 ## 14.4.0 - 2026-10-08
 
 Swarm Orchestrator is the product of this repository again. 14.3.0's README and repository
