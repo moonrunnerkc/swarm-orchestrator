@@ -81,13 +81,13 @@ export const tasks = [
     taskText: `With GFM autolinking enabled, marked currently turns any text starting with "www." into a link regardless of letter case, so "Www.example.com" and "WWW.example.com" become links. Per the GFM spec a bare www autolink must start with lowercase "www." exactly; mixed- or upper-case variants must stay plain text. Scheme autolinks must remain case-insensitive for the scheme, so "(See hTtPS://example.com/fhqwhgads.)" must still produce a link with the trailing period excluded. Make "www." detection case-sensitive without changing how http://, https:// or ftp:// are detected, and keep email autolinks working. Source lives under src/ (TypeScript); the library is built with npm run build:esbuild before tests run.`,
     visible: check(
       marked,
-      `import assert from "node:assert/strict";
-import { marked } from "../../lib/marked.esm.js";
-const upper = marked.parse("Www.example.com", { gfm: true });
-assert.ok(!upper.includes("<a "), "Www.example.com must stay plain text");
-const lower = marked.parse("www.example.com", { gfm: true });
-assert.ok(lower.includes('<a href="http://www.example.com"'), "www.example.com must link");
-console.log("visible check passed");
+      `import assert from 'node:assert/strict';
+import { marked } from '../../lib/marked.esm.js';
+const upper = marked.parse('Www.example.com', { gfm: true });
+assert.ok(!upper.includes('<a '), 'Www.example.com must stay plain text');
+const lower = marked.parse('www.example.com', { gfm: true });
+assert.ok(lower.includes('<a href="http://www.example.com"'), 'www.example.com must link');
+console.log('visible check passed');
 `,
     ),
   },
@@ -105,16 +105,16 @@ console.log("visible check passed");
     taskText: `Link reference definitions such as '[link]: https://example.com "title"' are consumed by the lexer and recorded in lexer.links, but they do not appear in the token array returned by marked.lexer(), so walkTokens and token-based extensions cannot see them. Expose each definition as a block token of type "def" with fields raw, tag (the normalized label), href and title (undefined when absent), placed at its position in the token stream. Rendered output must not change: the parser must render nothing for the new token by default, through a new overridable renderer method def(token) so custom renderers can emit something for definitions. Every existing spec example must still pass. Source lives under src/ (TypeScript); the library is built with npm run build:esbuild before tests run.`,
     visible: check(
       marked,
-      `import assert from "node:assert/strict";
-import { marked } from "../../lib/marked.esm.js";
-const tokens = marked.lexer("[a]: http://x \\"t\\"\\n\\n[a]");
-const def = tokens.find((token) => token.type === "def");
-assert.ok(def, "a def token must appear in the token stream");
-assert.equal(def.tag, "a");
-assert.equal(def.href, "http://x");
-assert.equal(def.title, "t");
-assert.equal(marked.parse("[a]: http://x\\n\\n[a]"), '<p><a href="http://x">a</a></p>\\n');
-console.log("visible check passed");
+      `import assert from 'node:assert/strict';
+import { marked } from '../../lib/marked.esm.js';
+const tokens = marked.lexer('[a]: http://x "t"\\n\\n[a]');
+const def = tokens.find((token) => token.type === 'def');
+assert.ok(def, 'a def token must appear in the token stream');
+assert.equal(def.tag, 'a');
+assert.equal(def.href, 'http://x');
+assert.equal(def.title, 't');
+assert.equal(marked.parse('[a]: http://x\\n\\n[a]'), '<p><a href="http://x">a</a></p>\\n');
+console.log('visible check passed');
 `,
     ),
   },
@@ -144,11 +144,11 @@ console.log("visible check passed");
     taskText: `Five while-loops in src/Lexer.ts and src/Tokenizer.ts test the result of RegExp.prototype.exec with loose inequality (\`!= null\`). RegExp.exec returns an array or null, never undefined, so replace every such loose comparison in those two files with strict \`!== null\`, and change nothing else: no other logic, no output. Every existing test must still pass (npm test).`,
     visible: check(
       marked,
-      `import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-const sources = ["src/Lexer.ts", "src/Tokenizer.ts"].map((path) => readFileSync(path, "utf8")).join("\\n");
-assert.equal((sources.match(/\\.exec\\([^)]*\\)\\) != null/g) ?? []).length, 0, "loose exec comparisons remain");
-console.log("visible check passed");
+      `import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const sources = ['src/Lexer.ts', 'src/Tokenizer.ts'].map((path) => readFileSync(path, 'utf8')).join('\\n');
+assert.equal((sources.match(/\\.exec\\([^)]*\\)\\) != null/g) ?? []).length, 0, 'loose exec comparisons remain');
+console.log('visible check passed');
 `,
     ),
   },
@@ -167,11 +167,11 @@ console.log("visible check passed");
     taskText: `Upgrade the devDependency cheerio from the pinned version 1.1.2 to exactly 1.2.0 in package.json (declare "1.2.0", no range), regenerate package-lock.json with npm so that npm ci installs 1.2.0, and confirm npm test still passes. Change no other dependency and nothing else in package.json.`,
     visible: check(
       marked,
-      `import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-const manifest = JSON.parse(readFileSync("package.json", "utf8"));
-assert.ok(["1.2.0", "^1.2.0"].includes(manifest.devDependencies.cheerio), manifest.devDependencies.cheerio);
-console.log("visible check passed");
+      `import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const manifest = JSON.parse(readFileSync('package.json', 'utf8'));
+assert.ok(['1.2.0', '^1.2.0'].includes(manifest.devDependencies.cheerio), manifest.devDependencies.cheerio);
+console.log('visible check passed');
 `,
     ),
   },
@@ -519,7 +519,88 @@ console.log("visible check passed");
 `,
     ),
   },
+  {
+    id: "minimatch-bugfix-partial-globstar",
+    ...minimatch,
+    install: [npmCi, ["npx", "tshy"]],
+    build: [["npx", "tshy"]],
+    visiblePrefix: "npx tshy && ",
+    workType: "bugfix",
+    baseCommit: "ea948403",
+    upstreamCommit: "3a0d83b6",
+    hidden: {
+      testFiles: ["test/partial.ts"],
+      argv: ["npx", "tap", "run", "--disable-coverage", "test/partial.ts"],
+    },
+    immutable: ["test"],
+    taskText: `With the partial: true option (and Minimatch#match(path, true)), a path should match when it is a valid prefix of a path that the full pattern could match, including when the pattern contains **. Today patterns with a globstar wrongly report false for valid prefixes. For example minimatch("/b/c/d/a", "/**/a/b/c", { partial: true }), minimatch("/b/c/d/a", "/**/a/b/c/**", { partial: true }), minimatch("a", "a/**", { partial: true }), minimatch("/b/c/d/a", "/**/a/**/b/c/**", { partial: true }) and minimatch("/b/c/d/a", "/**/a/**", { partial: true }) must all return true, while minimatch("b/a", "a/**", { partial: true }) must still return false. Existing partial behavior for patterns without ** (for example "/a/b" against "/*/b/x/y/z" is true and "/a/b/c" is false) and makeRe(pattern, { partial: true }) must be unchanged, and non-partial matching must not loosen: minimatch("/b/c/d/a", "/**/a/b/c") stays false. Make the change in the ** path-walking logic in src/index.ts, not by post-processing results. The library is TypeScript built with npx tshy; tests run with npm test (tap, which requires 100% coverage).`,
+    visible: {
+      path: "acceptance/visible/check.mjs",
+      command: "npx tshy && node acceptance/visible/check.mjs",
+      source: `import assert from "node:assert/strict";
+import { minimatch } from "../../dist/esm/index.js";
+assert.equal(minimatch("/b/c/d/a", "/**/a/b/c", { partial: true }), true);
+assert.equal(minimatch("b/a", "a/**", { partial: true }), false);
+assert.equal(minimatch("/b/c/d/a", "/**/a/b/c"), false);
+console.log("visible check passed");
+`,
+    },
+  },
+  {
+    id: "minimatch-bugfix-drive-letter",
+    ...minimatch,
+    install: [npmCi, ["npx", "tshy"]],
+    build: [["npx", "tshy"]],
+    visiblePrefix: "npx tshy && ",
+    workType: "bugfix",
+    baseCommit: "1caf9189",
+    upstreamCommit: "7953af1f",
+    hidden: {
+      testFiles: ["test/optimization-level-2.ts"],
+      argv: ["npx", "tap", "run", "--disable-coverage", "test/optimization-level-2.ts"],
+    },
+    immutable: ["test"],
+    taskText: `When matching on Windows (platform: "win32") at optimizationLevel 2, the path optimizer that collapses "<dir>/.." segments must treat a drive-letter root such as "C:" as a root rather than an ordinary directory, so ".." cannot step past it. Today new Minimatch("public/**", { platform: "win32", optimizationLevel: 2 }).match("C:/../public/secret") returns true, because the optimizer rewrites "C:/../public/secret" into "public/secret"; it must return false, as it already does at optimizationLevel 1. On non-Windows platforms a leading "C:" is not special, so new Minimatch("public/**", { platform: "darwin", optimizationLevel: 2 }).match("C:/../public/secret") must remain true. Only the ..-collapsing step may change; "**/.." and "./" handling stay as they are. Source is src/index.ts (TypeScript built with npx tshy); tests run with npm test (tap, which requires 100% coverage).`,
+    visible: {
+      path: "acceptance/visible/check.mjs",
+      command: "npx tshy && node acceptance/visible/check.mjs",
+      source: `import assert from "node:assert/strict";
+import { Minimatch } from "../../dist/esm/index.js";
+assert.equal(new Minimatch("public/**", { platform: "win32", optimizationLevel: 2 }).match("C:/../public/secret"), false);
+assert.equal(new Minimatch("public/**", { platform: "darwin", optimizationLevel: 2 }).match("C:/../public/secret"), true);
+console.log("visible check passed");
+`,
+    },
+  },
+  {
+    id: "minimatch-upgrade-tap-types-node",
+    ...minimatch,
+    install: [npmCi, ["npx", "tshy"]],
+    build: [["npx", "tshy"]],
+    visiblePrefix: "",
+    workType: "upgrade",
+    baseCommit: "b9d01537",
+    upstreamCommit: "fa2133b3",
+    hidden: {
+      testFiles: [],
+      argv: ["npm", "test"],
+      upgrade: [
+        { name: "@types/node", section: "devDependencies", version: "25.3.0" },
+        { name: "tap", section: "devDependencies", version: "21.6.1" },
+      ],
+    },
+    immutable: ["test", "src"],
+    taskText: `Upgrade two devDependencies to exact versions declared without ranges in package.json: @types/node to 25.3.0 and tap to 21.6.1, regenerating package-lock.json with npm so that npm ci --ignore-scripts installs exactly those versions and no other dependency section changes. After the upgrade, npm test (the tshy build followed by tap with its default 100% coverage requirement) must pass on Node 24; at present the suite hangs on this Node version until tap's timeout. Do not change any source or test file.`,
+    visible: {
+      path: "acceptance/visible/check.mjs",
+      command: "node acceptance/visible/check.mjs",
+      source: `import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+const manifest = JSON.parse(readFileSync("package.json", "utf8"));
+assert.ok(["25.3.0", "^25.3.0"].includes(manifest.devDependencies["@types/node"]), manifest.devDependencies["@types/node"]);
+assert.ok(["21.6.1", "^21.6.1"].includes(manifest.devDependencies.tap), manifest.devDependencies.tap);
+console.log("visible check passed");
+`,
+    },
+  },
 ];
-
-/** The fifth repository's profile, used by the tasks added when its mining completes. */
-export const minimatchProfile = minimatch;

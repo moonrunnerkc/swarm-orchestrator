@@ -10,7 +10,6 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { commandLog, storeBlob } from "../campaign/exec.mjs";
@@ -152,7 +151,6 @@ async function runLaunch(manifest, manifestDigest, launch) {
   const blobs = join(comparisonRoot, "blobs");
   const log = commandLog(blobs);
   const startedAt = new Date().toISOString();
-  const started = Date.now();
   mkdirSync(join(comparisonRoot, "work"), { recursive: true });
   const scratch = mkdtempSync(join(comparisonRoot, "work", `${launch.task}.${launch.arm}-`));
   const workspace = join(scratch, "workspace");

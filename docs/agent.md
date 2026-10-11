@@ -38,7 +38,7 @@ shadowing.
 export ANTHROPIC_API_KEY=...       # or OPENAI_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY,
                                    # or start Ollama and pass --model local:<id>
 cd your-repository
-swarm "make slugify collapse whitespace and strip punctuation"
+swarm "make slugify collapse whitespace and strip punctuation" --plan-checks
 ```
 
 Keys come from the environment or your OS keychain, never from `swarm.toml`: that file is
@@ -46,6 +46,15 @@ committed and cloned, so a key in it has already been shared with everyone holdi
 repository. Every command and flag is in [cli.md](cli.md). The first run asks once how
 off-allowlist commands should be approved and records the answer in `swarm.toml`; `swarm init`
 configures a repository's declared checks without installing anything.
+
+`--plan-checks` has the planner author the completion criteria from the task text and seal them
+before implementation, labelled model-authored; `--goal-contract <file>` seals criteria you wrote,
+with or without a bugfix, refactor or upgrade preset. Either way the sealed checks are established
+on the base before the first model call, iterated against as the blocking acceptance gate, and
+the exact final tree is verified independently. The run ends on an outcome block that names each
+requirement as met, unmet or unjudged, the changed files, the checks and what they could not
+measure, time and tokens, the interventions, and the next action when it is not done. The whole
+workflow, step by step, is in [using.md](using.md#an-ordinary-task-start-to-finish).
 
 ## How it verifies
 
