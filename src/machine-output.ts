@@ -1,6 +1,6 @@
-import type { RequirementOutcome, RunOutcomeInput } from "./cli-run-outcome.ts";
 import type { LoopEvent } from "./core/loop-events.ts";
 import type { RunVerdict } from "./evidence/verdict.ts";
+import type { RunOutcomeReport } from "./run-outcome-shape.ts";
 
 /**
  * Line-delimited JSON, so a CI job or another agent reads a run without scraping the text a
@@ -65,15 +65,7 @@ export interface MachineResult {
    * counted by who made them, what planning cost, and whether `swarm resume` applies. Absent
    * on a run that ended before a verdict.
    */
-  readonly outcome?: {
-    readonly lifecycle: string;
-    readonly requirements: readonly RequirementOutcome[] | null;
-    readonly changedFiles: readonly string[];
-    readonly finalVerification: RunOutcomeInput["finalVerification"];
-    readonly interventions: RunOutcomeInput["interventions"];
-    readonly setup: RunOutcomeInput["usage"]["setup"];
-    readonly resumable: boolean;
-  };
+  readonly outcome?: RunOutcomeReport;
   /** Present only where criteria planning ended the run before implementation. */
   readonly planning?: {
     readonly outcome: "declined" | "unresolved";

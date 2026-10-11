@@ -43,11 +43,11 @@ describe("the comparison tables", () => {
       started: 3,
       infrastructureFailures: 0,
       correct: 2,
-      correctWithoutCorrection: 1,
+      correctWithoutCorrection: 2,
       correctionsTotal: 2,
       visibleUnresolved: 1,
       claimedSuccessButHiddenFailed: 1,
-      tokensAllKnown: 2000,
+      tokensAllKnown: 3000,
     });
     expect(summary.arms.opencode).toMatchObject({
       started: 3,
@@ -59,7 +59,7 @@ describe("the comparison tables", () => {
     });
     const text = renderMarkdown(summary);
     expect(text).toContain(
-      "| correct completion (hidden oracle passed) / started | 1 / 2 | 1 / 3 |",
+      "| correct completion (hidden oracle passed) / started | 2 / 3 | 1 / 3 |",
     );
     expect(text).toContain("| b | fail (+2 corr.), visible unresolved | fail |");
     expect(text).toContain("| c | pass | infrastructure |");
