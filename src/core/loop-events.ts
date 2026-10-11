@@ -83,6 +83,17 @@ export type LoopEvent =
       readonly record: string;
     }
   | { readonly type: "attempt"; readonly attempt: number; readonly cap: number }
+  /**
+   * The loop repeated tool calls it had already been answered. Once it is told; the second time
+   * it is stopped. Both are said here so the screen and the stream can show what happened.
+   */
+  | {
+      readonly type: "stall";
+      readonly step: number;
+      readonly toolName: string;
+      readonly repeats: number;
+      readonly intervention: "feedback" | "stop";
+    }
   | {
       readonly type: "ratchet";
       readonly attempt: number;

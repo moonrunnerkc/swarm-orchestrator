@@ -4,7 +4,7 @@ import { type WorkerPromptProfile, workerPrompt } from "./agent-prompt.ts";
 import { buildVersion } from "./build-version.ts";
 import type { ApprovalMode } from "./config/approval-mode.ts";
 import type { Clock } from "./core/clock.ts";
-import { type AgentLoopOutcome, runAgentLoop } from "./core/loop.ts";
+import { type AgentLoopOutcome, runAgentLoop, type StallIntervention } from "./core/loop.ts";
 import type { LoopEvent } from "./core/loop-events.ts";
 import type { ConversationMessage, ModelClient, SamplingSettings } from "./core/model-client.ts";
 import type { RandomSource } from "./core/random-source.ts";
@@ -537,6 +537,18 @@ async function executeAgentTask(
       maxSteps: options.maxSteps,
       maxTokens: options.maxTokens ?? 1_000_000,
       maxWallTimeMs: wall.loopBudgetMs(),
+    },
+    stall: {
+      // On the chain before the loop goes on, as the escalation controller records its own
+      // decisions: a notice the model was given and a stop are both harness policy events.
+      observe: async (event: StallIntervention) => {
+        await options.evidence.record({
+          type: "session-budget",
+          actor: "harness",
+          provenance: ["tool-output"],
+          payload: { rule: "tool-stall-v1", ...event },
+        });
+      },
     },
     abortSignal: options.abortSignal,
     systemPrompt:

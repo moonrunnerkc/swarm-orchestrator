@@ -40,6 +40,10 @@ export function describeLoopEvent(event: LoopEvent): string | null {
       );
     case "attempt":
       return `auto-resolve attempt ${event.attempt} of ${event.cap}`;
+    case "stall":
+      return event.intervention === "feedback"
+        ? `stall at step ${event.step}: ${event.toolName} repeated ${event.repeats + 1} times with the same result; the model was told once`
+        : `stall at step ${event.step}: ${event.toolName} repeated again after the notice; the loop stops here`;
     case "ratchet":
       return `ratchet ${event.accepted ? "accepted" : "rejected"} attempt ${event.attempt}: ${event.detail} [evidence record ${event.record}]`;
     case "escalated":

@@ -20,6 +20,7 @@ export const assessmentInputsSchema = z.object({
     "model-error",
     "output-cap",
     "empty-response",
+    "stalled",
   ]),
   cancelled: z.boolean(),
   settled: z.enum(["green", "escalated"]),
@@ -129,20 +130,6 @@ export async function recordGoalAssessment(
       }),
     ])
     .parse(evidence.payloads().get(verificationDigest));
-  const obligations = z
-    .object({
-      goalAcceptance: z
-        .object({
-          obligations: z.array(
-            z.object({ id: z.string(), status: z.enum(["accepted", "rejected", "unjudged"]) }),
-          ),
-          checkResults: z
-            .array(z.object({ id: z.string(), status: z.string(), detail: z.string() }))
-            .optional(),
-        })
-        .optional(),
-    })
-    .parse(evidence.payloads().get(verificationDigest));
   const diffRecord = evidence
     .records()
     .findLast((record) => record.type === "workspace-diff" && record.sequence < prior.sequence);
@@ -166,10 +153,13 @@ export async function recordGoalAssessment(
     acceptable: base.verdict.acceptable && independent.verified,
     reasons: {
       ...base.verdict.reasons,
+      // Mirrored byte for byte by the bundled verifier's re-derivation of this record; a richer
+      // account of which requirements were unmet is read off the verification payload by the
+      // run outcome display, not written here.
       task:
         "refusal" in independent && independent.refusal != null
           ? `final verification refused: ${independent.refusal}`
-          : independent.advice || describeObligations(independent.task, obligations.goalAcceptance),
+          : independent.advice || `pinned goal checks: ${independent.task}`,
     },
   };
   await evidence.record({
@@ -187,31 +177,4 @@ export async function recordGoalAssessment(
     }),
   });
   return verdict;
-}
-
-/**
- * Which requirements the final verification left unmet or unjudged, by name, with the check
- * detail that decided each. "rejected" alone sent a reader back to the ledger to learn which of
- * two requirements the implementation had omitted.
- */
-function describeObligations(
-  task: "accepted" | "rejected" | "unjudged" | "vacuous",
-  acceptance:
-    | {
-        readonly obligations: readonly { id: string; status: string }[];
-        readonly checkResults?: readonly { id: string; status: string; detail: string }[] | undefined;
-      }
-    | undefined,
-): string {
-  const named = (status: string) =>
-    (acceptance?.obligations ?? []).filter((one) => one.status === status).map((one) => one.id);
-  const parts = [`pinned goal checks: ${task}`];
-  const rejected = named("rejected");
-  const unjudged = named("unjudged");
-  if (rejected.length > 0) parts.push(`unmet: ${rejected.join(", ")}`);
-  if (unjudged.length > 0) parts.push(`unjudged: ${unjudged.join(", ")}`);
-  for (const check of acceptance?.checkResults ?? [])
-    if (check.status === "rejected" && check.detail.length > 0)
-      parts.push(`${check.id}: ${check.detail.split("\n")[0]?.slice(0, 200)}`);
-  return parts.join("; ");
 }

@@ -1280,6 +1280,16 @@ function collectChecks(directory) {
       const sealed = payloads.get(
         prior.find((candidate) => candidate.type === "run-spec-sealed")?.payloadDigest,
       );
+      // A final verification that refused before running anything (a fresh checkout that
+      // could not install, an immutable path reached, a policy decision against the change)
+      // carries the refusal and no certification policy. It is re-derived as task unjudged and
+      // not acceptable, with the refusal as the reason, the way the harness records it.
+      const refused =
+        observed?.certificationPolicy === undefined &&
+        typeof observed?.refusal === "string" &&
+        observed.refusal.length > 0 &&
+        observed.verified === false &&
+        observed.task === "unjudged";
       const task = observed?.task === "vacuous" ? "unjudged" : observed?.task;
       const expected = {
         ...base?.verdict,
@@ -1287,7 +1297,9 @@ function collectChecks(directory) {
         acceptable: base?.verdict?.acceptable === true && observed?.verified === true,
         reasons: {
           ...base?.verdict?.reasons,
-          task: observed?.advice || `pinned goal checks: ${observed?.task}`,
+          task: refused
+            ? `final verification refused: ${observed.refusal}`
+            : observed?.advice || `pinned goal checks: ${observed?.task}`,
         },
       };
       record(
@@ -1296,7 +1308,7 @@ function collectChecks(directory) {
           ["run-acceptance-v1", "run-acceptance-v2"].includes(base?.inputs?.policy) &&
           verification !== undefined &&
           source !== undefined &&
-          observed?.certificationPolicy === "goal-obligations-v1" &&
+          (observed?.certificationPolicy === "goal-obligations-v1" || refused) &&
           diff?.rawPatchDigest === observed?.sourcePatchDigest &&
           sealed?.spec?.repository?.baseCommit === observed?.sourceBase &&
           canonicalJson(verdict) === canonicalJson(expected),

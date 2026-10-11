@@ -20,7 +20,7 @@ export interface GateLine {
  * expanding a row shows more evidence rather than more prose.
  */
 export interface ActionRow {
-  readonly kind: "tool-call" | "tool-outcome" | "model-error" | "ratchet" | "compacted";
+  readonly kind: "tool-call" | "tool-outcome" | "model-error" | "ratchet" | "compacted" | "stall";
   readonly summary: string;
   readonly detail: string;
   /** The ledger record this row was written from, where the event carried one. */
@@ -262,6 +262,29 @@ export function applyLoopEventAt(
             detail: event.detail,
             record: event.record,
             failed: !event.accepted,
+            at,
+          },
+        ],
+      };
+    case "stall":
+      return {
+        ...view,
+        actions: [
+          ...view.actions,
+          {
+            kind: "stall",
+            summary:
+              event.intervention === "feedback"
+                ? `stall: ${event.toolName} repeated ${event.repeats + 1} times with the same result; told once`
+                : `stall: ${event.toolName} repeated again after the notice; loop stopped`,
+            detail:
+              `At step ${event.step} the last ${event.repeats + 1} ${event.toolName} calls were ` +
+              "calls the model had already made, with results it had already received." +
+              (event.intervention === "feedback"
+                ? " It was told once; the next repeated call ends the loop."
+                : " The loop stopped; the gates run over the tree as it stands."),
+            record: null,
+            failed: event.intervention === "stop",
             at,
           },
         ],

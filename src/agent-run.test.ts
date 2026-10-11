@@ -790,3 +790,42 @@ it("repairs failed pinned behavior through the existing loop even when regressio
   expect(result.gates.outcome.finalCycle.statuses["task-acceptance"]).toBe("passed");
   expect(result.green).toBe(true);
 }, 60000);
+
+describe("a worker that repeats one inspection", () => {
+  it("is told once, stopped the second time, and both decisions are on the chain and in the assessment", async () => {
+    const inspection = (callId: string) =>
+      respondWithToolCalls("checking the manifest", [
+        { callId, toolName: "read", input: { path: "src/greet.js" } },
+      ]);
+    const result = await task(
+      Array.from({ length: 12 }, (_, index) => inspection(`look-${index}`)),
+      { maxSteps: 20 },
+    );
+
+    expect(result.loop.stopReason).toBe("stalled");
+    expect(result.loop.steps).toBe(7);
+    // The tree is unchanged, so the gates measured nothing and the run is not acceptable.
+    expect(result.green).toBe(false);
+    const decisions = evidence
+      .records()
+      .filter((record) => record.type === "session-budget")
+      .map((record) => evidence.payloads().get(record.payloadDigest) as { rule?: string })
+      .filter((payload) => payload.rule === "tool-stall-v1");
+    expect(decisions).toEqual([
+      expect.objectContaining({ intervention: "feedback", toolName: "read", repeats: 3, step: 4 }),
+      expect.objectContaining({ intervention: "stop", toolName: "read", repeats: 3, step: 7 }),
+    ]);
+    const assessment = evidence.records().findLast((record) => record.type === "run-assessment");
+    expect(evidence.payloads().get(assessment?.payloadDigest ?? "")).toMatchObject({
+      inputs: { lifecycle: "stalled" },
+      verdict: { acceptable: false },
+    });
+    // The notice reached the model as a conversation message the next call carried.
+    const prompts = evidence
+      .records()
+      .filter((record) => record.type === "model-call")
+      .map((record) => JSON.stringify(evidence.payloads().get(record.payloadDigest)));
+    expect(prompts.at(-1)).toContain("repeated tool calls");
+    expect(prompts[3]).not.toContain("repeated tool calls");
+  });
+});
