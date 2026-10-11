@@ -8,10 +8,15 @@ import type { ContainerBackendOptions } from "./exec/container-backend.ts";
 import { recordedContainerBackend } from "./exec/runtime-resource.ts";
 import type { GateDefinition } from "./gates/gate-definition.ts";
 import type { ChallengePolicy } from "./gates/goal-challenges.ts";
-import { verifyIndependently } from "./gates/independent-verification.ts";
+import {
+  type IndependentVerification,
+  refusedVerification,
+  verifyIndependently,
+} from "./gates/independent-verification.ts";
 import { createNodeCommandRunner } from "./gates/node-command-runner.ts";
 import { inspectionParser } from "./gates/parsers.ts";
 import { diffAgainstBase, patchAgainstBase } from "./gates/scratch-index.ts";
+import { VerificationRefusalError } from "./gates/verification-refusal.ts";
 
 export interface TaskGoalContext {
   readonly contract: GoalContract;
@@ -26,6 +31,25 @@ export interface TaskGoalContext {
   readonly challengePolicy?: ChallengePolicy;
 }
 async function check(
+  context: TaskGoalContext,
+  patch: string,
+  override?: {
+    readonly contract: GoalContract;
+    readonly challengePolicy: ChallengePolicy;
+    readonly repositoryChecks?: "skip";
+  },
+): Promise<IndependentVerification> {
+  try {
+    return await verify(context, patch, override);
+  } catch (cause) {
+    // A policy decision against the change, named, is a result the gate feeds back and the
+    // final assessment records; thrown through, it ended the run with no verdict at all.
+    if (cause instanceof VerificationRefusalError) return refusedVerification(cause.message);
+    throw cause;
+  }
+}
+
+async function verify(
   context: TaskGoalContext,
   patch: string,
   override?: {
@@ -207,14 +231,20 @@ export function taskGoalGate(context: TaskGoalContext): GateDefinition {
             detail,
           })) ?? [];
         const unavailable = result.unmeasured || result.task === "unjudged";
+        // A refusal is a decision against the change and reads as one; an unmeasured setup is
+        // something to prepare. The repair feedback is this text, so the two must not be confused.
+        const stderr =
+          result.refusal !== null && !result.unmeasured
+            ? `refused: ${result.refusal}`
+            : unavailable
+              ? `setup unavailable: ${result.advice || result.refusal || "required acceptance instrument is unmeasured"}`
+              : "";
         return {
           exitCode: result.verified ? 0 : 1,
           unavailable: null,
           durationMs: context.clock.now() - started,
           stdout: JSON.stringify({ regression: result.regression, task: result.task, findings }),
-          stderr: unavailable
-            ? `setup unavailable: ${result.advice || result.refusal || "required acceptance instrument is unmeasured"}`
-            : "",
+          stderr,
         };
       },
     },

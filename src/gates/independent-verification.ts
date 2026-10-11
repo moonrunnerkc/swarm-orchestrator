@@ -61,6 +61,7 @@ import { enforceUpgrade, reproducedBug } from "./preset-verification.ts";
 import { parseUnifiedDiff } from "./unified-diff.ts";
 import { observeUpgradeResolution } from "./upgrade-resolution.ts";
 import { readV8Coverage } from "./v8-coverage.ts";
+import { VerificationRefusalError } from "./verification-refusal.ts";
 
 /**
  * Verification that does not trust the tree it is verifying.
@@ -140,6 +141,30 @@ export interface IndependentCheck {
 }
 
 export type { DependencyInstall } from "./dependency-install.ts";
+
+/**
+ * A verdict refused before anything ran: nothing applied, nothing measured, the reason named.
+ * `unmeasured` is false because the refusal is a decision about the change, not a failure to
+ * take a measurement, and a reader must not be sent to fix an environment.
+ */
+export function refusedVerification(refusal: string): IndependentVerification {
+  return {
+    applied: false,
+    checks: [],
+    refusal,
+    regression: "unmeasured",
+    task: "unjudged",
+    oracleReach: "unmeasured",
+    unreachedByOracle: [],
+    oracleBond: "not-bonded",
+    bondedMutants: [],
+    verified: false,
+    unmeasured: false,
+    advice: "",
+    install: null,
+    checkoutPath: null,
+  };
+}
 
 export interface IndependentVerification {
   readonly certificationPolicy?: "oracle-v3" | "required-obligations-v1" | "goal-obligations-v1";
@@ -312,31 +337,16 @@ export async function verifyIndependently(
     ? outsidePackages(touched, options.gateOptions.packages)
     : [];
   if (outside.length > 0)
-    throw new Error(
+    throw new VerificationRefusalError(
       `change outside selected packages is unverified: ${outside.join(", ")}; expand the declared package scope or verify the whole repository`,
     );
   const forbidden = touched.filter((path) => matchesAny(path, immutable));
-  if (forbidden.length > 0) {
-    return {
-      applied: false,
-      checks: [],
-      refusal:
-        `the patch changes ${forbidden.join(", ")}, which the run declared immutable. ` +
+  if (forbidden.length > 0)
+    return refusedVerification(
+      `the patch changes ${forbidden.join(", ")}, which the run declared immutable. ` +
         "Nothing was run: a patch that reaches a path the run promised not to touch is " +
         "refused before it is measured, not measured and then judged.",
-      regression: "unmeasured",
-      task: "unjudged",
-      oracleReach: "unmeasured",
-      unreachedByOracle: [],
-      oracleBond: "not-bonded",
-      bondedMutants: [],
-      verified: false,
-      unmeasured: false,
-      advice: "",
-      install: null,
-      checkoutPath: null,
-    };
-  }
+    );
 
   const checkout = await mkdtemp(join(options.checkoutRoot ?? tmpdir(), "swarm-verify-"));
   const timeoutMs = options.timeoutMs ?? defaultGateTimeoutMs;
