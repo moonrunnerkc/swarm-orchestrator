@@ -247,8 +247,9 @@ with no alternatives says.
 
 ## Strengthening the checks, then repairing
 
-On the coding agent's preset path, a challenge that finds a gap can be answered instead of only
-reported. `--strengthen` (with `--challenges report` or `required`) runs a bounded loop after the
+On the coding agent's task path under a goal contract, with or without a preset, a challenge
+that finds a gap can be answered instead of only reported. `--strengthen` (with `--challenges
+report` or `required`) runs a bounded loop after the
 implementation run:
 
 ```sh
