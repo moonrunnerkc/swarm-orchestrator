@@ -2,11 +2,12 @@
 // Check the runtime before loading the command composition.
 import "./node-floor-check.ts";
 
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { appendFileSync, statSync } from "node:fs";
 import { readFile, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { promisify } from "node:util";
 import { runAgentTask } from "./agent-run.ts";
 import { announceBundle, writeBundle } from "./cli-bundle.ts";
 import { summarizeEvidence } from "./cli-evidence-summary.ts";
@@ -26,6 +27,7 @@ import {
   type RunCommand,
   usage,
 } from "./cli-options.ts";
+import { type PlanChecksOutcome, planChecks } from "./cli-plan-checks.ts";
 import { describePreflight, manifestsIn } from "./cli-preflight.ts";
 import { registrySettingsFrom } from "./cli-provider-settings.ts";
 import {
@@ -37,6 +39,13 @@ import {
   retryStep,
   runStorePath,
 } from "./cli-run-commands.ts";
+import {
+  changedFilesOf,
+  describeRunOutcome,
+  interventionsOn,
+  type RunOutcomeInput,
+  requirementOutcomes,
+} from "./cli-run-outcome.ts";
 import { reportGates } from "./cli-run-report.ts";
 import { diffBudgetFrom, gateOptionsFrom, settingsFor } from "./cli-run-settings.ts";
 import { createSystemClock, createSystemRandom } from "./cli-runtime-inputs.ts";
@@ -54,22 +63,34 @@ import {
 } from "./cli-task-contract.ts";
 import { logReward, priceTask } from "./cli-task-cost.ts";
 import {
+  describeGoalPreflight,
   finalizeTaskGoal,
   preflightTaskGoal,
   probeVerifier,
   taskGoalGate,
   verifyCandidateUnder,
 } from "./cli-task-goal.ts";
-import { startInterface } from "./cli-terminal.ts";
+import { askOnTerminal, startInterface } from "./cli-terminal.ts";
 import { verifyBundle } from "./cli-verify.ts";
 import type { StopReason } from "./core/termination.ts";
 import { readBundle } from "./evidence/bundle.ts";
 import { buildEvidenceDag } from "./evidence/dag.ts";
-import { declareGoalContract, freezeGoalContract } from "./evidence/goal-contract.ts";
+import {
+  declareGoalContract,
+  freezeGoalContract,
+  type GoalContract,
+} from "./evidence/goal-contract.ts";
 import { createRecordingModelClient } from "./evidence/model-call-recording.ts";
 import { replayBundle } from "./evidence/replay.ts";
 import { collectSessions, describeCollection, olderThanMs } from "./evidence/retention.ts";
-import { createSessionId, defaultSessionRoot, openEvidenceSession } from "./evidence/session.ts";
+import {
+  createSessionId,
+  defaultSessionRoot,
+  type EvidenceRecorder,
+  openEvidenceSession,
+} from "./evidence/session.ts";
+import type { RunVerdict } from "./evidence/verdict.ts";
+import { harnessChildEnvironment } from "./exec/child-environment.ts";
 import { parseIsolationOption } from "./exec/isolation-option.ts";
 import { recordedContainerBackend } from "./exec/runtime-resource.ts";
 import { createFileSetRegistry } from "./gates/file-set.ts";
@@ -242,7 +263,7 @@ async function run(options: RunCommand): Promise<number> {
 
   await offerInit(options.workspace);
   await offerApprovalMode(approvalOfferOnDisk(options.workspace));
-  const sealedGoal =
+  let sealedGoal =
     options.recovery?.goal?.contract ??
     (options.goalContract === undefined
       ? undefined
@@ -352,6 +373,97 @@ async function run(options: RunCommand): Promise<number> {
     transcript: "components",
   });
   const fileSet = createFileSetRegistry(evidence);
+  const interruption = new AbortController();
+  // The clock starts before planning: criteria authoring is part of what the task costs.
+  const startedAt = clock.now();
+  const allowance = options.recovery?.remainingTokens ?? options.maxTokens ?? defaultTaskTokens;
+
+  // Criteria authored before the screen goes up, because the planner's questions and the
+  // person's answer go through the terminal, which the screen then owns. The planner reads
+  // the workspace with read-only tools on a chain of its own; what it pins is sealed on this
+  // chain below exactly as a supplied contract is, and stays labelled model-authored.
+  let planning: PlanChecksOutcome | null = null;
+  if (options.planChecks === true && sealedGoal === undefined) {
+    const interactive =
+      !options.json && process.stdout.isTTY === true && process.stdin.isTTY === true;
+    planning = await planChecks({
+      task: options.task,
+      workspace: options.workspace,
+      home: homedir(),
+      sessionRoot,
+      runId: evidence.sessionId,
+      createModel: (chain) =>
+        createRecordingModelClient(registry.create(runSpec), chain, { transcript: "components" }),
+      clock,
+      random,
+      maxSteps: settings.maxSteps,
+      maxTokens: allowance,
+      maxWallMs: (settings.maxWallMinutes ?? 30) * 60_000,
+      signal: interruption.signal,
+      note: (line) => process.stderr.write(`${line}\n`),
+      ...(interactive ? { ask: askOnTerminal } : {}),
+    });
+    await evidence.record({
+      type: "verification-command",
+      actor: "harness",
+      provenance: ["user", "model"],
+      payload: {
+        rule: "plan-checks-v1",
+        outcome: planning.kind,
+        planningSession: planning.planningSessionId,
+        tokensUsed: planning.tokensUsed,
+        durationMs: planning.durationMs,
+        steps: planning.steps,
+        ...(planning.kind === "sealed"
+          ? {
+              contractDigest: freezeGoalContract(planning.contract).digest,
+              confirmedBy: planning.confirmedBy,
+              tasksProposed: planning.tasksProposed,
+            }
+          : {}),
+        ...(planning.kind === "unresolved"
+          ? { stopReason: planning.stopReason, account: planning.account }
+          : {}),
+      },
+    });
+    if (planning.kind !== "sealed") {
+      const written = await writeBundle(evidence, options.bundleDirectory, clock, (line) =>
+        process.stderr.write(`${line}\n`),
+      );
+      const why =
+        planning.kind === "declined"
+          ? "criteria declined; nothing was implemented and no model call was spent on implementation."
+          : `no criteria could be sealed for this task (the planner stopped as ${planning.stopReason})` +
+            (planning.account.length === 0
+              ? "."
+              : `. It said:\n${planning.account}\n` +
+                "Answer that in the task text, or pass --goal-contract with the criteria written out.");
+      process.stderr.write(
+        `${why}\nplanning used ${planning.tokensUsed} tokens in ${Math.round(planning.durationMs / 1000)}s; evidence: ${written.directory}\n`,
+      );
+      if (options.json)
+        process.stdout.write(
+          `${jsonResultLine({
+            runId: evidence.sessionId,
+            verdict: null,
+            bundleDirectory: written.directory,
+            exitCode: planning.kind === "declined" ? exitCodes.cancelled : exitCodes.unavailable,
+            planning: {
+              outcome: planning.kind,
+              tokensUsed: planning.tokensUsed,
+              durationMs: planning.durationMs,
+            },
+          })}\n`,
+        );
+      return planning.kind === "declined" ? exitCodes.cancelled : exitCodes.unavailable;
+    }
+    sealedGoal = planning.contract;
+    if (planning.tasksProposed > 1)
+      process.stderr.write(
+        `the planner would split this into ${planning.tasksProposed} tasks; this run does it as one. swarm parallel --goal runs them as separate workers.\n`,
+      );
+  }
+  const implementationTokens = Math.max(0, allowance - (planning?.tokensUsed ?? 0));
 
   const ui = await startInterface({
     task: options.task,
@@ -360,7 +472,6 @@ async function run(options: RunCommand): Promise<number> {
     clock,
   });
 
-  const interruption = new AbortController();
   const onInterrupt = () => {
     interruption.abort("the run was cancelled from the keyboard");
   };
@@ -369,7 +480,6 @@ async function run(options: RunCommand): Promise<number> {
   // Ink holds stdin in raw mode, so Ctrl-C arrives as a keystroke rather than as a signal.
   // Both routes reach the same abort, and neither is the one that leaves the view.
   void ui.cancelled().then(onInterrupt);
-  const startedAt = clock.now();
   const deadline =
     options.recovery?.deadline ??
     (sealedGoal === undefined && settings.maxWallMinutes === null
@@ -422,7 +532,10 @@ async function run(options: RunCommand): Promise<number> {
         },
       });
     }
-    if (goalContext !== undefined) await preflightTaskGoal(goalContext);
+    if (goalContext !== undefined) {
+      await preflightTaskGoal(goalContext);
+      for (const line of describeGoalPreflight(evidence)) ui.note(line);
+    }
     if (goalContext !== undefined && deadline !== null && deadline - clock.now() <= 30_000)
       throw new Error(
         "preset preflight exhausted implementation allowance; final verification time stays reserved",
@@ -453,9 +566,9 @@ async function run(options: RunCommand): Promise<number> {
             },
           }),
       ...(options.recovery === undefined
-        ? options.maxTokens === undefined
+        ? options.maxTokens === undefined && planning === null
           ? {}
-          : { maxTokens: options.maxTokens }
+          : { maxTokens: implementationTokens }
         : {
             history: options.recovery.history,
             maxTokens: options.recovery.remainingTokens,
@@ -543,11 +656,7 @@ async function run(options: RunCommand): Promise<number> {
               signal: interruption.signal,
               deadline,
               reserveMs: 30_000,
-              remainingTokens: () =>
-                remainingTokenBudget(
-                  evidence,
-                  options.recovery?.remainingTokens ?? options.maxTokens ?? 1_000_000,
-                ),
+              remainingTokens: () => remainingTokenBudget(evidence, implementationTokens),
               verifyCandidate: (contract, policy) =>
                 verifyCandidateUnder(goalContext, contract, policy),
               verifyProbe: probeVerifier(goalContext),
@@ -559,11 +668,7 @@ async function run(options: RunCommand): Promise<number> {
                   // would be a second set of criteria, which the bundle's verifier refuses. The
                   // acceptance gate keeps its identity and judges the recorded revision.
                   criteriaSealed: true,
-                  maxTokens: Math.max(
-                    0,
-                    (options.recovery?.remainingTokens ?? options.maxTokens ?? 1_000_000) -
-                      used.spent,
-                  ),
+                  maxTokens: Math.max(0, implementationTokens - used.spent),
                   ...(deadline === null
                     ? {}
                     : { maxWallTimeMs: Math.max(0, deadline - clock.now() - 30_000) }),
@@ -591,6 +696,28 @@ async function run(options: RunCommand): Promise<number> {
     // Every finished run is one more sample the router learns from, and the ratchet numerics
     // ride along so a pass earned by erosion cannot look like a win (section 3.8).
     const cost = await priceTask(usable.modelSpec, evidence);
+    const outcome = await runOutcome({
+      evidence,
+      task: options.task,
+      verdict,
+      lifecycle: loop.stopReason,
+      workspace: options.workspace,
+      baseCommit,
+      gates: gates.outcome.finalCycle,
+      contract: strengthening === undefined ? sealedGoal : (goalContext?.contract ?? sealedGoal),
+      usage: {
+        durationMs: clock.now() - startedAt,
+        steps: loop.steps,
+        tokensUsed: loop.tokensUsed,
+        callsWithUnknownUsage: loop.callsWithUnknownUsage,
+        costUsd: cost.costUsd,
+        setup:
+          planning === null
+            ? null
+            : { tokensUsed: planning.tokensUsed, durationMs: planning.durationMs },
+      },
+    });
+    for (const line of describeRunOutcome(outcome)) ui.note(line);
     await logReward({
       evidence,
       green,
@@ -635,6 +762,15 @@ async function run(options: RunCommand): Promise<number> {
           bundleDirectory: written.directory,
           exitCode: code,
           ...(strengthening === undefined ? {} : { strengthening }),
+          outcome: {
+            lifecycle: outcome.lifecycle,
+            requirements: outcome.requirements,
+            changedFiles: outcome.changedFiles,
+            finalVerification: outcome.finalVerification,
+            interventions: outcome.interventions,
+            setup: outcome.usage.setup,
+            resumable: outcome.resumable,
+          },
         })}\n`,
       );
     }
@@ -663,6 +799,94 @@ async function run(options: RunCommand): Promise<number> {
 
 function describeError(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
+}
+
+/** The run's default token allowance where none was named, the figure the spec seals. */
+const defaultTaskTokens = 1_000_000;
+const execFileAsync = promisify(execFile);
+
+/**
+ * The outcome block's inputs, read off the chain and the tree rather than off anything the
+ * model said: the recorded diff names the files, the last independent verification names the
+ * requirements' statuses, the chain counts the interventions.
+ */
+async function runOutcome(input: {
+  readonly evidence: EvidenceRecorder;
+  readonly task: string;
+  readonly verdict: RunVerdict;
+  readonly lifecycle: string;
+  readonly workspace: string;
+  readonly baseCommit: string;
+  readonly gates: RunOutcomeInput["gates"];
+  readonly contract: GoalContract | undefined;
+  readonly usage: RunOutcomeInput["usage"];
+}): Promise<RunOutcomeInput> {
+  const { evidence } = input;
+  const payloads = evidence.payloads();
+  const diff = evidence.records().findLast((record) => record.type === "workspace-diff");
+  const diffPayload = payloads.get(diff?.payloadDigest ?? "") as
+    | { patch?: string; truncated?: boolean }
+    | undefined;
+  const verification = evidence
+    .records()
+    .findLast((record) => record.type === "independent-verification");
+  const verificationPayload = payloads.get(verification?.payloadDigest ?? "") as
+    | {
+        refusal?: string | null;
+        regression?: string;
+        unmeasured?: boolean;
+        advice?: string;
+        goalAcceptance?: Parameters<typeof requirementOutcomes>[1] extends infer T
+          ? T extends { goalAcceptance?: infer G }
+            ? G
+            : never
+          : never;
+      }
+    | undefined;
+  let branch: string | null = null;
+  try {
+    const named = await execFileAsync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+      cwd: input.workspace,
+      env: harnessChildEnvironment().variables,
+      timeout: 10_000,
+    });
+    branch = named.stdout.trim() === "HEAD" ? "a detached HEAD" : named.stdout.trim();
+  } catch {
+    branch = null;
+  }
+  return {
+    task: input.task,
+    verdict: input.verdict,
+    lifecycle: input.lifecycle,
+    workspace: input.workspace,
+    branch,
+    baseCommit: input.baseCommit,
+    changedFiles: changedFilesOf(diffPayload?.patch ?? ""),
+    diffTruncated: diffPayload?.truncated === true,
+    gates: input.gates,
+    requirements:
+      input.contract === undefined
+        ? null
+        : requirementOutcomes(
+            input.contract,
+            verificationPayload === undefined ? undefined : { ...verificationPayload },
+          ),
+    finalVerification:
+      input.contract === undefined || verificationPayload === undefined
+        ? null
+        : {
+            refusal: verificationPayload.refusal ?? null,
+            regression: verificationPayload.regression ?? "unmeasured",
+            unmeasured: verificationPayload.unmeasured === true,
+            advice: verificationPayload.advice ?? "",
+          },
+    usage: input.usage,
+    interventions: interventionsOn(evidence),
+    runId: evidence.sessionId,
+    resumable:
+      !input.verdict.acceptable &&
+      (input.lifecycle === "interrupted" || input.lifecycle === "max-wall-time"),
+  };
 }
 
 /** How long a local backend gets to say what it serves before the answer stops being worth waiting for. */

@@ -8,7 +8,12 @@ import { runAgentTask } from "./agent-run.ts";
 import { writeBundle } from "./cli-bundle.ts";
 import { createSystemClock } from "./cli-runtime-inputs.ts";
 import { presetTaskContract } from "./cli-task-contract.ts";
-import { finalizeTaskGoal, taskGoalGate } from "./cli-task-goal.ts";
+import {
+  describeGoalPreflight,
+  finalizeTaskGoal,
+  preflightTaskGoal,
+  taskGoalGate,
+} from "./cli-task-goal.ts";
 import { createFixedRandom } from "./core/test-doubles.ts";
 import { digestOfBytes } from "./evidence/canonical-json.ts";
 import { declareGoalContract, type GoalContract } from "./evidence/goal-contract.ts";
@@ -169,6 +174,58 @@ function featureRun(
     ...extra,
   });
 }
+
+it("establishes a feature contract's checks on the base before any model call, and names what already passes", async () => {
+  const fixture = await slugFixture({
+    ...featureContract,
+    requirements: [
+      ...featureContract.requirements,
+      { id: "plain", description: "a plain word is itself", checks: ["plain"] },
+    ],
+    checks: [...featureContract.checks, cliCheck("plain", "word", "word")],
+  });
+  try {
+    await preflightTaskGoal(fixture.context);
+    const record = fixture.evidence
+      .records()
+      .findLast((entry) => entry.type === "verification-command");
+    expect(fixture.evidence.payloads().get(record?.payloadDigest ?? "")).toMatchObject({
+      rule: "goal-preflight-v1",
+      cannotRun: [],
+      passesOnBase: ["plain"],
+    });
+    expect(describeGoalPreflight(fixture.evidence)).toEqual([
+      "preflight: plain already pass on the base; a pass there is not evidence the change did anything",
+    ]);
+    expect(fixture.evidence.records().some((entry) => entry.type === "model-call")).toBe(false);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+}, 120_000);
+
+it("stops before model spending when a sealed check cannot run here", async () => {
+  const fixture = await slugFixture({
+    ...featureContract,
+    checks: [
+      {
+        ...cliCheck("collapse", "a  b", "a-b"),
+        behavior: {
+          ...cliCheck("collapse", "a  b", "a-b").behavior,
+          argv: ["no-such-interpreter-xyz", "cli.mjs"],
+        },
+      },
+      cliCheck("strip", "a!b", "ab"),
+    ],
+  });
+  try {
+    await expect(preflightTaskGoal(fixture.context)).rejects.toThrow(
+      /acceptance check\(s\) cannot run here: collapse|cannot be established on the base|unmeasured/,
+    );
+    expect(fixture.evidence.records().some((entry) => entry.type === "model-call")).toBe(false);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+}, 120_000);
 
 it("carries a feature contract through acceptance, bounded repair and final verification of the exact tree", async () => {
   const fixture = await slugFixture(featureContract);

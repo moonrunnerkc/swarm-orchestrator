@@ -1,3 +1,4 @@
+import type { RequirementOutcome, RunOutcomeInput } from "./cli-run-outcome.ts";
 import type { LoopEvent } from "./core/loop-events.ts";
 import type { RunVerdict } from "./evidence/verdict.ts";
 
@@ -57,6 +58,28 @@ export interface MachineResult {
     readonly stopped: string;
     readonly contractDigest: string;
   };
+  /**
+   * Added in 14.5.0, beside the verdict rather than inside it: the outcome a person reads,
+   * derived from the chain. Each requirement's status and author, the files the recorded
+   * diff touches, the final verification's refusal or regression reading, the interventions
+   * counted by who made them, what planning cost, and whether `swarm resume` applies. Absent
+   * on a run that ended before a verdict.
+   */
+  readonly outcome?: {
+    readonly lifecycle: string;
+    readonly requirements: readonly RequirementOutcome[] | null;
+    readonly changedFiles: readonly string[];
+    readonly finalVerification: RunOutcomeInput["finalVerification"];
+    readonly interventions: RunOutcomeInput["interventions"];
+    readonly setup: RunOutcomeInput["usage"]["setup"];
+    readonly resumable: boolean;
+  };
+  /** Present only where criteria planning ended the run before implementation. */
+  readonly planning?: {
+    readonly outcome: "declined" | "unresolved";
+    readonly tokensUsed: number;
+    readonly durationMs: number;
+  };
 }
 
 export function jsonResultLine(result: MachineResult): string {
@@ -67,5 +90,7 @@ export function jsonResultLine(result: MachineResult): string {
     bundleDirectory: result.bundleDirectory,
     exitCode: result.exitCode,
     ...(result.strengthening === undefined ? {} : { strengthening: result.strengthening }),
+    ...(result.outcome === undefined ? {} : { outcome: result.outcome }),
+    ...(result.planning === undefined ? {} : { planning: result.planning }),
   });
 }
