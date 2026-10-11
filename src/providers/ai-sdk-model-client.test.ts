@@ -207,3 +207,23 @@ describe("what the backend would not take", () => {
     expect(response.unsupportedFeatures).toEqual([]);
   });
 });
+
+it("names a stream error that is not an Error, keeping the original as the cause", async () => {
+  // A local OpenAI-compatible server's error body reaches the stream as a plain object. Three
+  // repair calls of a live run recorded "[object Object]" as their whole account of failing.
+  const body = { error: { message: "context length exceeded", type: "invalid_request_error" } };
+  const model = createAiSdkModelClient(
+    "local:qwen",
+    streamingModel([
+      { type: "stream-start", warnings: [] },
+      { type: "error", error: body },
+    ]),
+  );
+  const failure = await model.generate(request()).then(
+    () => null,
+    (cause: unknown) => cause,
+  );
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toBe("context length exceeded");
+  expect((failure as Error).cause).toBe(body);
+});
