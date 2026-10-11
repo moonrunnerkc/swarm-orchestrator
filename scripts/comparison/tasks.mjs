@@ -488,7 +488,7 @@ import { dump, load } from "js-yaml";
 for (const value of [":{", ":[", "x:{"]) {
   assert.deepEqual(load(dump([value], { flowLevel: 0 })), [value], JSON.stringify(value));
 }
-assert.equal(dump({ k: "x:{" }), "k: x:{\n");
+assert.equal(dump({ k: "x:{" }), "k: x:{\\n");
 console.log("visible check passed");
 `,
     ),
@@ -509,7 +509,7 @@ console.log("visible check passed");
       fxp,
       `import assert from "node:assert/strict";
 import { XMLParser } from "../../src/fxp.js";
-const xml = "<root><a x="1">t</a><b/></root>";
+const xml = '<root><a x="1">t</a><b/></root>';
 const parser = new XMLParser({ captureMetaData: true, ignoreAttributes: false });
 const meta = XMLParser.getMetaDataSymbol();
 const parsed = parser.parse(xml);

@@ -50,7 +50,7 @@ for (const task of tasks) {
       visible: referenceVisible.passed,
       hidden: referenceHidden.verdict,
       hiddenBasis: referenceHidden.basis,
-      visibleDetail: referenceVisible.detail.slice(0, 800),
+      visibleDetail: referenceVisible.detail.slice(-4000),
     };
     row.valid =
       baseVisible.passed === false &&
