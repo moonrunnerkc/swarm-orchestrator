@@ -2,6 +2,12 @@ import type { GoalContract } from "./evidence/goal-contract.ts";
 import type { EvidenceRecorder } from "./evidence/session.ts";
 import type { RunVerdict } from "./evidence/verdict.ts";
 import type { GateCycle } from "./gates/gate-runner.ts";
+import type {
+  FinalVerificationOutcome,
+  InterventionCounts,
+  RequirementOutcome,
+  SetupUsage,
+} from "./run-outcome-shape.ts";
 import { formatElapsed } from "./tui/elapsed.ts";
 import { formatCost, formatTokens } from "./tui/evidence-panel.ts";
 
@@ -13,14 +19,7 @@ import { formatCost, formatTokens } from "./tui/evidence-panel.ts";
  * evidence panel that follows it is where the deeper record is; this is the summary a reader
  * should not have to assemble from it.
  */
-export interface RequirementOutcome {
-  readonly id: string;
-  readonly description: string;
-  readonly status: "accepted" | "rejected" | "unjudged";
-  /** Model-authored criteria stay labelled, however many times a person has read them. */
-  readonly authoredBy: "user" | "model";
-  readonly detail: string | null;
-}
+export type { RequirementOutcome } from "./run-outcome-shape.ts";
 
 export interface RunOutcomeInput {
   readonly task: string;
@@ -34,30 +33,16 @@ export interface RunOutcomeInput {
   readonly gates: GateCycle;
   readonly requirements: readonly RequirementOutcome[] | null;
   /** Null where no final independent verification ran. */
-  readonly finalVerification: {
-    readonly refusal: string | null;
-    readonly regression: string;
-    readonly unmeasured: boolean;
-    readonly advice: string;
-  } | null;
+  readonly finalVerification: FinalVerificationOutcome | null;
   readonly usage: {
     readonly durationMs: number;
     readonly steps: number;
     readonly tokensUsed: number;
     readonly callsWithUnknownUsage: number;
     readonly costUsd: number | null;
-    /** Planning and acceptance authoring, where the run did that before implementation. */
-    readonly setup: { readonly tokensUsed: number; readonly durationMs: number } | null;
+    readonly setup: SetupUsage | null;
   };
-  readonly interventions: {
-    readonly repairAttempts: number;
-    readonly stallNotices: number;
-    readonly stallStops: number;
-    readonly escalations: number;
-    readonly promptsAnsweredByPerson: number;
-    readonly promptsPreApproved: number;
-    readonly promptsDeclined: number;
-  };
+  readonly interventions: InterventionCounts;
   readonly runId: string;
   readonly resumable: boolean;
 }
@@ -265,7 +250,7 @@ export function requirementOutcomes(
 }
 
 /** How many interventions the chain records, by who made them. */
-export function interventionsOn(evidence: EvidenceRecorder): RunOutcomeInput["interventions"] {
+export function interventionsOn(evidence: EvidenceRecorder): InterventionCounts {
   const payloads = evidence.payloads();
   let repairAttempts = 0;
   let stallNotices = 0;
