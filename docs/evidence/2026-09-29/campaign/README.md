@@ -87,6 +87,14 @@ in the campaign scripts before the next.
 - **The base-measurement defect found in the Comparison B repairs** was fixed on v13-main in
   4fd2ce5fd; the false-green direction is pinned by the test this work adds.
 
+**2026-10-11 note.** The first and third product findings above (a goal contract refused without
+a preset; the worker not stopping a repeated tool call) and the refused-verification schema error
+that ended the upgrade launches are fixed on `v13-main` in this release's changes; the recorded
+stall and its replay through the new detector are in
+[docs/evidence/2026-10-11/tool-stall/replay.md](../../2026-10-11/tool-stall/replay.md). This
+campaign's manifest, pins and records are unchanged by that; regenerating the manifest for the
+six feature goals remains the registered amendment path, not done here.
+
 ## Resource statement
 
 Nothing here spends money beyond this machine's electricity: every model is local (rapid-mlx
