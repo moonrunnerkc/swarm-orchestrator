@@ -24,6 +24,13 @@ describe("the comparison tables", () => {
         hidden: { verdict: "fail" },
         invocations: [{ claimedSuccess: true }],
       }),
+      record("swarm", "c", {
+        infrastructureFailure: "endpoint down",
+        hidden: { verdict: "unjudgeable" },
+        invocations: [],
+        totals: { agentWallMs: 0, tokens: null, tokensUnknownInvocations: 0 },
+      }),
+      record("swarm", "c"),
       record("opencode", "c", {
         infrastructureFailure: "preparation failed",
         hidden: { verdict: "unjudgeable" },
@@ -31,9 +38,11 @@ describe("the comparison tables", () => {
         totals: { agentWallMs: 0, tokens: null, tokensUnknownInvocations: 0 },
       }),
     ]);
+    // The rerun of c replaces its failed attempt; the failed attempt stays in the files.
     expect(summary.arms.swarm).toMatchObject({
-      started: 2,
-      correct: 1,
+      started: 3,
+      infrastructureFailures: 0,
+      correct: 2,
       correctWithoutCorrection: 1,
       correctionsTotal: 2,
       visibleUnresolved: 1,
@@ -53,6 +62,6 @@ describe("the comparison tables", () => {
       "| correct completion (hidden oracle passed) / started | 1 / 2 | 1 / 3 |",
     );
     expect(text).toContain("| b | fail (+2 corr.), visible unresolved | fail |");
-    expect(text).toContain("| c | not run | infrastructure |");
+    expect(text).toContain("| c | pass | infrastructure |");
   });
 });

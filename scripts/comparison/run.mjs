@@ -10,7 +10,15 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { commandLog, storeBlob } from "../campaign/exec.mjs";
 import {
@@ -146,6 +154,30 @@ async function runLaunch(manifest, manifestDigest, launch) {
   const recordPath = join(runsDirectory, `${launch.task}.${launch.arm}.json`);
   if (existsSync(recordPath)) {
     console.log(`skip ${launch.task} ${launch.arm}: recorded`);
+    return;
+  }
+  // The protocol's rerun rule: an attempt that failed for infrastructure is kept beside the
+  // rerun under its own name, and a launch gets at most one rerun. No result is read to decide.
+  const infrastructureAttempts = readdirSync(runsDirectory).filter((name) =>
+    name.startsWith(`${launch.task}.${launch.arm}.infrastructure-`),
+  ).length;
+  if (infrastructureAttempts >= 2) {
+    console.log(
+      `skip ${launch.task} ${launch.arm}: two infrastructure failures recorded; no further rerun`,
+    );
+    return;
+  }
+  const endpoint = await probeEndpoint(pins.endpoint);
+  if (endpoint !== null) {
+    writeFileSync(
+      join(
+        runsDirectory,
+        `${launch.task}.${launch.arm}.infrastructure-${infrastructureAttempts + 1}.json`,
+      ),
+      `${JSON.stringify({ schema: "swarm-ordinary-comparison.record.v1", task: launch.task, arm: launch.arm, order: launch.order, manifestDigest, infrastructureFailure: `endpoint did not answer before the launch: ${endpoint}`, startedAt: new Date().toISOString(), endedAt: new Date().toISOString(), notes: [], invocations: [], corrections: 0, resolvedVisible: false, hidden: { verdict: "unjudgeable", basis: "not launched", detailDigest: null }, totals: { agentWallMs: 0, tokens: null, tokensUnknownInvocations: 0 }, preparation: { wallMs: 0, ok: false, detail: "" }, host: { platform: process.platform, arch: process.arch, node: process.version }, versions: { swarmRevision: pins.swarmRevision, opencode: pins.opencode, model: pins.model, endpoint: pins.endpoint }, finalPatchDigest: digestOf(""), finalPatchBytes: 0, oracleExposure: "not scanned" }, null, 2)}\n`,
+      { flag: "wx" },
+    );
+    console.log(`infrastructure ${launch.task} ${launch.arm}: ${endpoint}`);
     return;
   }
   const blobs = join(comparisonRoot, "blobs");
@@ -296,8 +328,15 @@ async function runLaunch(manifest, manifestDigest, launch) {
     const parsed = recordSchema.safeParse(record);
     if (!parsed.success)
       notes.push(`record did not validate: ${parsed.error.message.slice(0, 500)}`);
+    const destination =
+      infrastructureFailure === null
+        ? recordPath
+        : join(
+            runsDirectory,
+            `${launch.task}.${launch.arm}.infrastructure-${infrastructureAttempts + 1}.json`,
+          );
     writeFileSync(
-      recordPath,
+      destination,
       `${JSON.stringify({ ...record, commands: log.commands }, null, 2)}\n`,
       { flag: "wx" },
     );
@@ -309,6 +348,20 @@ async function runLaunch(manifest, manifestDigest, launch) {
 }
 
 class InfrastructureError extends Error {}
+
+/** Null when the model endpoint lists its models; otherwise what went wrong. */
+async function probeEndpoint(endpoint) {
+  try {
+    const response = await fetch(`${endpoint.replace(/\/$/, "")}/models`, {
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) return `HTTP ${response.status}`;
+    const body = await response.json();
+    return Array.isArray(body?.data) && body.data.length > 0 ? null : "no models listed";
+  } catch (cause) {
+    return cause instanceof Error ? cause.message : String(cause);
+  }
+}
 
 if (args.has("freeze")) {
   await freeze(args.get("out") ?? "manifest.json");

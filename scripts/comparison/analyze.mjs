@@ -7,7 +7,23 @@
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-export function summarize(records) {
+/** One record per task and arm: the completed one where it exists, else the last failed attempt. */
+export function latestAttempts(records) {
+  const byKey = new Map();
+  for (const record of records) {
+    const key = `${record.task}\u0000${record.arm}`;
+    const current = byKey.get(key);
+    if (
+      current === undefined ||
+      (current.infrastructureFailure !== null && record.infrastructureFailure === null)
+    )
+      byKey.set(key, record);
+  }
+  return [...byKey.values()];
+}
+
+export function summarize(allRecords) {
+  const records = latestAttempts(allRecords);
   const byArm = { swarm: [], opencode: [] };
   for (const record of records) byArm[record.arm]?.push(record);
   const tasks = [...new Set(records.map((record) => record.task))].sort();
