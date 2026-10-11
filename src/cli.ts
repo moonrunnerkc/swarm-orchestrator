@@ -47,7 +47,11 @@ import {
   strengtheningLimits,
   tokensSpent,
 } from "./cli-strengthen.ts";
-import { presetTaskContract } from "./cli-task-contract.ts";
+import {
+  assertPresetSelection,
+  presetTaskContract,
+  readGoalContractFile,
+} from "./cli-task-contract.ts";
 import { logReward, priceTask } from "./cli-task-cost.ts";
 import {
   finalizeTaskGoal,
@@ -238,13 +242,12 @@ async function run(options: RunCommand): Promise<number> {
 
   await offerInit(options.workspace);
   await offerApprovalMode(approvalOfferOnDisk(options.workspace));
-  const presetGoal =
+  const sealedGoal =
     options.recovery?.goal?.contract ??
     (options.goalContract === undefined
       ? undefined
-      : freezeGoalContract(JSON.parse(await readFile(options.goalContract, "utf8"))).contract);
-  if (options.preset !== undefined && presetGoal?.preset?.kind !== options.preset)
-    throw new Error("preset selection must match the sealed goal contract");
+      : await readGoalContractFile(options.goalContract));
+  if (sealedGoal !== undefined) assertPresetSelection(options.preset, sealedGoal);
   const settings = await settingsFor(options.workspace, {
     model: options.modelSpec,
     maxSteps: options.maxSteps,
@@ -369,7 +372,7 @@ async function run(options: RunCommand): Promise<number> {
   const startedAt = clock.now();
   const deadline =
     options.recovery?.deadline ??
-    (presetGoal === undefined && settings.maxWallMinutes === null
+    (sealedGoal === undefined && settings.maxWallMinutes === null
       ? null
       : startedAt + (settings.maxWallMinutes ?? 30) * 60_000);
   const deadlineTimer =
@@ -380,10 +383,10 @@ async function run(options: RunCommand): Promise<number> {
           Math.max(0, deadline - clock.now()),
         );
   const goalContext =
-    presetGoal === undefined
+    sealedGoal === undefined
       ? undefined
       : {
-          contract: presetGoal,
+          contract: sealedGoal,
           workspace: options.workspace,
           baseCommit,
           evidence,
@@ -404,15 +407,15 @@ async function run(options: RunCommand): Promise<number> {
 
   let exporting = false;
   try {
-    if (presetGoal !== undefined) {
-      await declareGoalContract(evidence, presetGoal);
+    if (sealedGoal !== undefined) {
+      await declareGoalContract(evidence, sealedGoal);
       await evidence.record({
         type: "verification-command",
         actor: "harness",
         provenance: ["user"],
         payload: {
           rule: "goal-run-settings-v1",
-          contractDigest: freezeGoalContract(presetGoal).digest,
+          contractDigest: freezeGoalContract(sealedGoal).digest,
           install: goalContext?.install ?? false,
           deadline,
           sourceBase: baseCommit,
@@ -425,7 +428,7 @@ async function run(options: RunCommand): Promise<number> {
         "preset preflight exhausted implementation allowance; final verification time stays reserved",
       );
     const implementation = (
-      goal: typeof presetGoal,
+      goal: typeof sealedGoal,
       repairFeedback?: string,
     ): Parameters<typeof runAgentTask>[0] => ({
       task: options.task,
@@ -507,7 +510,7 @@ async function run(options: RunCommand): Promise<number> {
         ? {}
         : {
             gateOptions:
-              goalContext === undefined || goal === undefined || goal === presetGoal
+              goalContext === undefined || goal === undefined || goal === sealedGoal
                 ? gateOptions
                 : {
                     ...gateOptions,
@@ -516,7 +519,7 @@ async function run(options: RunCommand): Promise<number> {
           }),
       ...(diffBudget === undefined ? {} : { diffBudget }),
     });
-    const taskRun = await runAgentTask(implementation(presetGoal));
+    const taskRun = await runAgentTask(implementation(sealedGoal));
 
     const { loop, gates } = taskRun;
     let { green, verdict } = taskRun;
