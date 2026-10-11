@@ -7,6 +7,7 @@ import type { TaskPreset } from "../evidence/task-preset.ts";
 import type { GateCommandRunner } from "./gate-definition.ts";
 import { pathsInPatch } from "./patch-paths.ts";
 import { validateUpgradeManifest } from "./upgrade-contract.ts";
+import { VerificationRefusalError } from "./verification-refusal.ts";
 
 /** Authorize narrow dependency changes before preparation executes candidate code. */
 export async function enforceUpgrade(options: {
@@ -23,7 +24,9 @@ export async function enforceUpgrade(options: {
   const allowed = new Set([preset.manifest, preset.lockfile, ...preset.sourcePaths]);
   const outside = pathsInPatch(options.patch).filter((path) => !allowed.has(path));
   if (outside.length)
-    throw new Error(`upgrade change outside declared scope: ${outside.join(", ")}`);
+    throw new VerificationRefusalError(
+      `upgrade change outside declared scope: ${outside.join(", ")}`,
+    );
   const original = await options.commands.runVouched(
     ["git", "show", `${options.base}:${preset.manifest}`],
     { cwd: options.checkout, timeoutMs: options.timeoutMs },
@@ -32,7 +35,7 @@ export async function enforceUpgrade(options: {
     throw new Error("cannot read pinned base manifest for upgrade");
   const candidate = await readFile(join(options.checkout, preset.manifest), "utf8");
   const problem = validateUpgradeManifest(original.stdout, candidate, preset);
-  if (problem) throw new Error(problem);
+  if (problem) throw new VerificationRefusalError(problem);
   if (original.stdout.length + candidate.length > 1_000_000)
     throw new Error("upgrade manifests exceed the evidence size bound");
   const recorded = await options.evidence?.record({

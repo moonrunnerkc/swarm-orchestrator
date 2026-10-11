@@ -105,14 +105,42 @@ export async function recordGoalAssessment(
     );
   if (captured === undefined)
     throw new Error("final goal assessment needs a subsequent independent verification record");
+  // Either the verifier judged the source under the goal policy, or it refused before running
+  // anything and named why. A refusal is a non-success the assessment records, never a crash:
+  // the September pilot ended every refused upgrade run with no verdict and no result line.
   const independent = z
+    .union([
+      z.object({
+        certificationPolicy: z.literal("goal-obligations-v1"),
+        refusal: z.null().optional(),
+        verified: z.boolean(),
+        task: z.enum(["accepted", "rejected", "unjudged", "vacuous"]),
+        advice: z.string(),
+        sourcePatchDigest: z.string(),
+        sourceBase: z.string(),
+      }),
+      z.object({
+        refusal: z.string().min(1),
+        verified: z.literal(false),
+        task: z.literal("unjudged"),
+        advice: z.string(),
+        sourcePatchDigest: z.string(),
+        sourceBase: z.string(),
+      }),
+    ])
+    .parse(evidence.payloads().get(verificationDigest));
+  const obligations = z
     .object({
-      certificationPolicy: z.literal("goal-obligations-v1"),
-      verified: z.boolean(),
-      task: z.enum(["accepted", "rejected", "unjudged", "vacuous"]),
-      advice: z.string(),
-      sourcePatchDigest: z.string(),
-      sourceBase: z.string(),
+      goalAcceptance: z
+        .object({
+          obligations: z.array(
+            z.object({ id: z.string(), status: z.enum(["accepted", "rejected", "unjudged"]) }),
+          ),
+          checkResults: z
+            .array(z.object({ id: z.string(), status: z.string(), detail: z.string() }))
+            .optional(),
+        })
+        .optional(),
     })
     .parse(evidence.payloads().get(verificationDigest));
   const diffRecord = evidence
@@ -138,7 +166,10 @@ export async function recordGoalAssessment(
     acceptable: base.verdict.acceptable && independent.verified,
     reasons: {
       ...base.verdict.reasons,
-      task: independent.advice || `pinned goal checks: ${independent.task}`,
+      task:
+        "refusal" in independent && independent.refusal != null
+          ? `final verification refused: ${independent.refusal}`
+          : independent.advice || describeObligations(independent.task, obligations.goalAcceptance),
     },
   };
   await evidence.record({
@@ -156,4 +187,31 @@ export async function recordGoalAssessment(
     }),
   });
   return verdict;
+}
+
+/**
+ * Which requirements the final verification left unmet or unjudged, by name, with the check
+ * detail that decided each. "rejected" alone sent a reader back to the ledger to learn which of
+ * two requirements the implementation had omitted.
+ */
+function describeObligations(
+  task: "accepted" | "rejected" | "unjudged" | "vacuous",
+  acceptance:
+    | {
+        readonly obligations: readonly { id: string; status: string }[];
+        readonly checkResults?: readonly { id: string; status: string; detail: string }[] | undefined;
+      }
+    | undefined,
+): string {
+  const named = (status: string) =>
+    (acceptance?.obligations ?? []).filter((one) => one.status === status).map((one) => one.id);
+  const parts = [`pinned goal checks: ${task}`];
+  const rejected = named("rejected");
+  const unjudged = named("unjudged");
+  if (rejected.length > 0) parts.push(`unmet: ${rejected.join(", ")}`);
+  if (unjudged.length > 0) parts.push(`unjudged: ${unjudged.join(", ")}`);
+  for (const check of acceptance?.checkResults ?? [])
+    if (check.status === "rejected" && check.detail.length > 0)
+      parts.push(`${check.id}: ${check.detail.split("\n")[0]?.slice(0, 200)}`);
+  return parts.join("; ");
 }
