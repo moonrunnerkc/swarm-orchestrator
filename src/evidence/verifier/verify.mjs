@@ -18,7 +18,7 @@ import { pathToFileURL } from "node:url";
 import { behaviorStatus } from "./behavior.mjs";
 import { challengeVerdictsAgree } from "./challenges.mjs";
 import { readControllerHistory } from "./controller.mjs";
-import { capturedRegression } from "./status.mjs";
+import { authorizedWithin, capturedRegression } from "./status.mjs";
 import { strengtheningAgrees } from "./strengthening.mjs";
 import { upgradeControlPasses } from "./upgrade.mjs";
 
@@ -1092,6 +1092,21 @@ function collectChecks(directory) {
         `independent regression ${entry.sequence} re-derived`,
         regression !== null && regression === reading.regression,
         "configured checks derive from captured process observations",
+      );
+    const preset = records
+      .filter(
+        (candidate) => candidate.type === "goal-contract" && candidate.sequence < entry.sequence,
+      )
+      .map((candidate) => payloads.get(candidate.payloadDigest)?.contract?.preset)
+      .at(-1);
+    if (Array.isArray(reading?.checks))
+      record(
+        `independent instrument authorization ${entry.sequence} re-derived`,
+        authorizedWithin(
+          reading.checks,
+          preset?.kind === "upgrade" ? [preset.manifest, preset.lockfile] : [],
+        ),
+        "an authorized instrument difference is an upgrade preset's manifest or lockfile and nothing else",
       );
     if (reading?.certificationPolicy !== "goal-obligations-v1") continue;
     const observed = records

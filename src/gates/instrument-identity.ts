@@ -68,6 +68,12 @@ export interface InstrumentObservation {
    * run itself rewrote (a test that swaps the configuration and puts it back) differs here.
    */
   readonly before?: string;
+  /**
+   * Paths whose difference from the reference is the task itself: an upgrade preset's manifest
+   * and lockfile, after the run enforced that nothing but the declared dependencies changed in
+   * them. A difference there is not an edit to the instrument. Absent means none.
+   */
+  readonly authorized?: readonly string[];
 }
 
 const digestPattern = z.string().regex(/^sha256:[0-9a-f]{64}$/);
@@ -101,6 +107,7 @@ export const instrumentObservationSchema = z.strictObject({
   complete: z.boolean(),
   residuals: z.array(z.string()),
   before: digestPattern.optional(),
+  authorized: z.array(z.string().min(1)).optional(),
 });
 
 /** The digest an observation carries as `before`: of everything in it but that field. */
@@ -131,8 +138,10 @@ export interface InstrumentedCommand {
 /** What makes an observation untrusted, by name; empty means the instrument is the reference's. */
 export function instrumentChanges(observation: InstrumentObservation): readonly string[] {
   const changed: string[] = [];
+  const authorized = observation.authorized ?? [];
   for (const file of observation.files)
-    if (file.reference !== file.current) changed.push(file.path);
+    if (file.reference !== file.current && !authorized.includes(file.path.split("#")[0] as string))
+      changed.push(file.path);
   for (const dependency of observation.dependencies)
     if (
       dependency.reference !== dependency.current &&
@@ -643,6 +652,7 @@ function tomlTable(text: string | null, table: string): string | null {
 export async function observeInstrument(
   command: InstrumentedCommand,
   trees: InstrumentTrees,
+  options: { readonly authorized?: readonly string[] } = {},
 ): Promise<InstrumentObservation> {
   const files = new Map<string, InstrumentFile>();
   const residuals = new Set<string>();
@@ -845,6 +855,9 @@ export async function observeInstrument(
     installed,
     complete,
     residuals: [...residuals].sort(),
+    ...(options.authorized === undefined || options.authorized.length === 0
+      ? {}
+      : { authorized: [...new Set(options.authorized)].sort() }),
   };
 }
 

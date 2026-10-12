@@ -238,6 +238,9 @@ export async function runGatesEngine(options: GatesEngineOptions): Promise<Gates
         : await changesTheRunMade(await probe.changes(), probe, options.inherited),
     fileSet: options.fileSet.state(),
     ...(options.authorizedScope === undefined ? {} : { authorizedScope: options.authorizedScope }),
+    ...(options.gateOptions?.authorizedInstrumentPaths === undefined
+      ? {}
+      : { authorizedInstrumentPaths: options.gateOptions.authorizedInstrumentPaths }),
     budgets,
     probe,
     // Under the session store, beside the coverage reports and for the same reason: a probe
