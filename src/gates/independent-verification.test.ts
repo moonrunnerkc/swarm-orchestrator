@@ -202,6 +202,30 @@ describe("verification that does not trust the tree it is verifying", () => {
     expect(result.refusal).toMatch(/immutable/i);
   }, 120_000);
 
+  it("reads an immutable directory as covering what is under it, as the chokepoint does", async () => {
+    const patch = [
+      "diff --git a/acceptance/visible/check.mjs b/acceptance/visible/check.mjs",
+      "new file mode 100644",
+      "--- /dev/null",
+      "+++ b/acceptance/visible/check.mjs",
+      "@@ -0,0 +1 @@",
+      "+console.log('rewritten by a formatter')",
+      "",
+    ].join("\n");
+
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch,
+      immutablePaths: ["acceptance/visible"],
+      commands: commands(),
+      clock,
+    });
+
+    expect(result.verified).toBe(false);
+    expect(result.refusal).toMatch(/acceptance\/visible\/check\.mjs.*immutable/);
+  }, 120_000);
+
   it("says a patch that will not apply did not apply, rather than passing on an unchanged tree", async () => {
     const result = await verifyIndependently({
       repositoryRoot: repository,
