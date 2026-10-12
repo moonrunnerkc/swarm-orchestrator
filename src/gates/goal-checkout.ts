@@ -9,11 +9,20 @@ import {
   readFile,
   readlink,
   rm,
+  utimes,
 } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { pipeline } from "node:stream/promises";
 
-/** Preserve the verifier's setup, including installed dependencies, between candidate checks. */
+/**
+ * Preserve the verifier's setup, including installed dependencies, between candidate checks.
+ *
+ * Restoring puts back only what a check changed. The first version rewrote every file from the
+ * snapshot, which gave each of the thousands of installed files a new modification time, and
+ * the ignored-tree record that guards the base control read all of them as altered by the run:
+ * the base could not be put in place, and a check that failed on the candidate stayed
+ * unattributed. A file whose bytes and mode are what they were is left alone.
+ */
 export async function snapshotGoalCheckout(checkout: string, signal?: AbortSignal) {
   const snapshot = await mkdtemp(join(dirname(checkout), "swarm-goal-snapshot-"));
   const dispose = () => rm(snapshot, { recursive: true, force: true });
@@ -22,6 +31,7 @@ export async function snapshotGoalCheckout(checkout: string, signal?: AbortSigna
       recursive: true,
       dereference: false,
       verbatimSymlinks: true,
+      preserveTimestamps: true,
       filter: () => {
         cancellation?.throwIfAborted();
         return true;
@@ -63,12 +73,17 @@ async function restoreDirectory(source: string, destination: string): Promise<vo
       throw cause;
     });
     if (original.isDirectory() && current?.isDirectory() && !current.isSymbolicLink()) {
-      await chmod(to, original.mode);
+      if (current.mode !== original.mode) await chmod(to, original.mode);
       await restoreDirectory(from, to);
     } else if (original.isFile() && current?.isFile()) {
-      await chmod(to, original.mode | 0o200);
-      await pipeline(createReadStream(from), createWriteStream(to, { flags: "w" }));
-      await chmod(to, original.mode);
+      const untouched =
+        current.size === original.size && (await readFile(from)).equals(await readFile(to));
+      if (!untouched) {
+        await chmod(to, original.mode | 0o200);
+        await pipeline(createReadStream(from), createWriteStream(to, { flags: "w" }));
+        await utimes(to, original.atime, original.mtime);
+      }
+      if (!untouched || current.mode !== original.mode) await chmod(to, original.mode);
     } else if (
       original.isSymbolicLink() &&
       current?.isSymbolicLink() &&
@@ -76,7 +91,12 @@ async function restoreDirectory(source: string, destination: string): Promise<vo
     ) {
     } else {
       if (current !== null) await rm(to, { recursive: true, force: true });
-      await cp(from, to, { recursive: true, dereference: false, verbatimSymlinks: true });
+      await cp(from, to, {
+        recursive: true,
+        dereference: false,
+        verbatimSymlinks: true,
+        preserveTimestamps: true,
+      });
     }
   }
 }
