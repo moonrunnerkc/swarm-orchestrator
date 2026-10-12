@@ -72,6 +72,47 @@ export async function visibleVerdict(log, task, base, patch) {
   }
 }
 
+/**
+ * The project's own lint script over the base with the visible check committed. A check file the
+ * project's linter rejects fails every candidate's lint gate for a reason the candidate did not
+ * cause: the first freeze's js-yaml checks did, and Swarm's preflight refused those tasks before
+ * any model call. No lint script, or lint already failing on the bare base, leaves nothing for
+ * the check to break.
+ */
+export async function lintVerdict(log, task, base) {
+  const tree = await freshTree(log, task, base, "", "lint");
+  try {
+    if (!tree.prepared.ok)
+      return {
+        ok: false,
+        applicable: true,
+        detail: `preparation failed:\n${tree.prepared.detail}`,
+      };
+    const manifest = JSON.parse(readFileSync(join(tree.checkout, "package.json"), "utf8"));
+    if (typeof manifest.scripts?.lint !== "string")
+      return { ok: true, applicable: false, detail: "the project declares no lint script" };
+    const lint = ["npm", "run", "--loglevel=error", "lint"];
+    const withCheck = await run(log, tree.checkout, lint);
+    if (withCheck.exitCode === 0)
+      return {
+        ok: true,
+        applicable: true,
+        detail: "lint passes with the visible check in the tree",
+      };
+    rmSync(join(tree.checkout, "acceptance"), { recursive: true, force: true });
+    const bare = await run(log, tree.checkout, lint);
+    return bare.exitCode === 0
+      ? {
+          ok: false,
+          applicable: true,
+          detail: `the visible check fails the project's lint:\n${tail(withCheck)}`,
+        }
+      : { ok: true, applicable: true, detail: "lint already fails on the bare base" };
+  } finally {
+    rmSync(tree.scratch, { recursive: true, force: true });
+  }
+}
+
 /** A hidden test file's bytes at the sealed upstream commit, read from the mirror. */
 export function sealedFile(log, task, upstream, path) {
   const mirror = mirrorOf(task.repository);

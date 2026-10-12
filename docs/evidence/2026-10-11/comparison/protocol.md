@@ -140,3 +140,58 @@ the upstream tests remain unestablished.
 ---
 
 Amendments are appended below with date and reason.
+
+### Amendment 1, 2026-10-12: two failed passes, eight defects, one relaunch of every launch
+
+Two complete passes over the forty launches ran before this amendment, and neither stands as
+the trial's result.
+
+- **Pass 1 (2026-10-11 20:27Z to 22:13Z)**: every launch recorded an infrastructure failure. The
+  harness scored each final tree against a checkout at the acceptance commit instead of the
+  task's base ("checkout is not at the base"), and the OpenCode arm exited within a second with
+  no output, because its runtime read the launcher's inherited `PWD` and found no workspace
+  configuration there, and because the machine's global OpenCode configuration named a small
+  model on another server. All three were harness defects, fixed in the launcher before pass 2.
+- **Pass 2 (2026-10-12 00:01Z to 08:57Z)**: all forty launches completed and were scored. Reading
+  the Swarm arm's records afterwards showed that eleven of its twenty launches had been refused
+  by Swarm's own preflight before any model call, and that four more had ended for reasons that
+  were defects in Swarm or in this harness rather than outcomes of the agent. The OpenCode arm's
+  records show no such defect. Pass 2's counts are reported in the README as a failed pass, not
+  as the comparison.
+
+The defects, each fixed at its root in the Swarm source before pass 3 and each named in the
+project's changelog:
+
+1. Restoring the verifier checkout between goal checks rewrote every installed file, so the
+   base control was refused as altered (four js-yaml launches, one minimatch launch).
+2. The `npm` package installed by `@semantic-release/npm` links `npm` and `npx` under
+   `node_modules/.bin`, which the instrument rule read as a shadowing interpreter (three marked
+   launches).
+3. A tree holding both a `package-lock.json` and a `yarn.lock` was refused with no way to name
+   one (four fast-xml-parser launches).
+4. An upgrade's own manifest change was read as an edit to the instrument, so no upgrade task
+   could establish its regression dimension (marked cheerio upgrade).
+5. The deadline cancelled the final verification mid-command, ending a run with no result line
+   (js-yaml vite upgrade, whose final tree the hidden oracle nonetheless passed).
+6. A tool call the model cut off at its output limit was replayed to the server as a string, and
+   the server's chat template then failed on every later request; three runs ended as model
+   errors (fast-xml-parser strnum upgrade, marked cheerio upgrade, one minimatch correction).
+7. An immutable directory was matched by exact name in the final verification, so a formatter's
+   rewrite of the visible check file was not refused (minimatch drive-letter task).
+8. The upgrade preset's schema refused dotfile source paths, so the yargs-parser toolchain
+   contract could not be sealed and all three of its invocations exited at once.
+
+Two defects were in this harness and are fixed here: the js-yaml visible check files failed
+that repository's own linter (semicolons and double quotes), which is a failure every candidate
+would inherit, so the five js-yaml checks are restyled with the same assertions and validation
+now runs each project's lint script over the base with the check committed; and the Swarm arm's
+invocation now names the lockfile the harness itself installed from (`--lockfile
+package-lock.json`), which is the same information the OpenCode arm receives through its
+prepared `node_modules`. The task set, the task texts, the hidden oracles, the supervision
+rule, the budgets, the seed and the order are unchanged.
+
+On the rerun rule: the decision to run pass 3 was taken after reading pass 2's records, which
+the rule above forbids for selective reruns. Pass 3 is not selective. Every one of the forty
+launches, both arms alike, runs again under a new manifest that pins the fixed Swarm revision
+and this document's new digest; pass 2's records stay under their own manifest digest with
+their file digests listed in the README. The comparison is pass 3 alone.

@@ -380,12 +380,12 @@ console.log("visible check passed");
     taskText: `With the YAML 1.1 schema (YAML11_SCHEMA), timestamps whose year is between 0000 and 0099 are not recognized: load("- 0001-01-01\\n- 0050-06-15T12:30:00Z", { schema: YAML11_SCHEMA }) returns plain strings instead of Date objects, and a Date in that range does not survive dump followed by load. Make such date-only and full timestamps resolve to Date values whose UTC year is the literal four-digit year written in the document (year 1, year 50), with calendar validation still rejecting dates that Date would normalize such as 0001-02-29 (which must stay a string, and must raise "cannot resolve" when tagged !!timestamp explicitly). Behavior for years 0100 and later must not change. Source is under src/ (TypeScript); the package is built with npm run build and tests run with node --test "test/core/**/*.test.mjs" "test/spec/*.test.mjs".`,
     visible: check(
       jsYaml,
-      `import assert from "node:assert/strict";
-import { load, YAML11_SCHEMA } from "js-yaml";
-const date = load("0050-06-15T12:30:00Z", { schema: YAML11_SCHEMA });
-assert.ok(date instanceof Date, "year 0050 must resolve to a Date");
-assert.equal(date.getUTCFullYear(), 50);
-console.log("visible check passed");
+      `import assert from 'node:assert/strict'
+import { load, YAML11_SCHEMA } from 'js-yaml'
+const date = load('0050-06-15T12:30:00Z', { schema: YAML11_SCHEMA })
+assert.ok(date instanceof Date, 'year 0050 must resolve to a Date')
+assert.equal(date.getUTCFullYear(), 50)
+console.log('visible check passed')
 `,
     ),
   },
@@ -403,11 +403,11 @@ console.log("visible check passed");
     taskText: `Add a maxAliases loader option to load() and loadAll(), documented in README next to the other load options, that limits how many alias nodes (*ref) a single document may contain. The default -1 means no limit; 0 rejects any alias; a positive N allows at most N alias uses per document. Exceeding the limit must throw the library's YAMLException with a message containing "maxAliases" (for example "aliases exceeded maxAliases (1)"). The count resets for every document in a multi-document stream, so loadAll on two documents with one alias each succeeds with maxAliases: 1 and fails with maxAliases: 0. Documents without aliases are unaffected whatever the option. Source is under src/ (TypeScript); the package is built with npm run build and tests run with node --test "test/core/**/*.test.mjs" "test/spec/*.test.mjs".`,
     visible: check(
       jsYaml,
-      `import assert from "node:assert/strict";
-import { load } from "js-yaml";
-assert.throws(() => load("a: &x 1\\nb: *x\\nc: *x", { maxAliases: 1 }), /maxAliases/);
-assert.deepEqual(load("a: &x 1\\nb: *x\\nc: *x", { maxAliases: 2 }), { a: 1, b: 1, c: 1 });
-console.log("visible check passed");
+      `import assert from 'node:assert/strict'
+import { load } from 'js-yaml'
+assert.throws(() => load('a: &x 1\\nb: *x\\nc: *x', { maxAliases: 1 }), /maxAliases/)
+assert.deepEqual(load('a: &x 1\\nb: *x\\nc: *x', { maxAliases: 2 }), { a: 1, b: 1, c: 1 })
+console.log('visible check passed')
 `,
     ),
   },
@@ -431,14 +431,14 @@ console.log("visible check passed");
     taskText: `The helper isPlainObject (true only for a non-null, non-array object whose prototype is null or Object.prototype) is defined inside src/tag/mapping/map.ts and re-exported from there for src/tag/mapping/real_map.ts, although it is a general-purpose utility. Move it into a new module src/common/object.ts as a named export isPlainObject with the same signature (data: unknown) => boolean and identical semantics; import it from "../../common/object.ts" in both mapping tag modules; remove the definition and its export from map.ts. Public behavior, the full test suite, lint and type-check must be unchanged. Source is under src/ (TypeScript); the package is built with npm run build and tests run with node --test "test/core/**/*.test.mjs" "test/spec/*.test.mjs".`,
     visible: check(
       jsYaml,
-      `import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { isPlainObject } from "../../src/common/object.ts";
-assert.equal(isPlainObject({}), true);
-assert.equal(isPlainObject([]), false);
-assert.equal(isPlainObject(null), false);
-assert.equal((readFileSync("src/tag/mapping/map.ts", "utf8").match(/function isPlainObject/g) ?? []).length, 0);
-console.log("visible check passed");
+      `import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { isPlainObject } from '../../src/common/object.ts'
+assert.equal(isPlainObject({}), true)
+assert.equal(isPlainObject([]), false)
+assert.equal(isPlainObject(null), false)
+assert.equal((readFileSync('src/tag/mapping/map.ts', 'utf8').match(/function isPlainObject/g) ?? []).length, 0)
+console.log('visible check passed')
 `,
     ),
   },
@@ -460,12 +460,12 @@ console.log("visible check passed");
     taskText: `Update two devDependencies to exact versions declared without ranges in package.json: vite to 8.1.2 and workerpool to 10.0.3. Regenerate package-lock.json with npm so that npm ci --ignore-scripts installs exactly those versions, and confirm the build (npm run build, which uses vite) and the full node:test suite still pass. No other dependency may change and nothing else in package.json may change.`,
     visible: check(
       jsYaml,
-      `import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-const manifest = JSON.parse(readFileSync("package.json", "utf8"));
-assert.ok(["8.1.2", "^8.1.2"].includes(manifest.devDependencies.vite), manifest.devDependencies.vite);
-assert.ok(["10.0.3", "^10.0.3"].includes(manifest.devDependencies.workerpool), manifest.devDependencies.workerpool);
-console.log("visible check passed");
+      `import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+const manifest = JSON.parse(readFileSync('package.json', 'utf8'))
+assert.ok(['8.1.2', '^8.1.2'].includes(manifest.devDependencies.vite), manifest.devDependencies.vite)
+assert.ok(['10.0.3', '^10.0.3'].includes(manifest.devDependencies.workerpool), manifest.devDependencies.workerpool)
+console.log('visible check passed')
 `,
     ),
   },
@@ -483,13 +483,13 @@ console.log("visible check passed");
     taskText: `dump() emits unparseable or lossy output for strings in flow collections when a colon is immediately followed by a flow indicator. For example dump([":{"], { flowLevel: 0 }) and dump({ k: ":[" }, { flowLevel: 0 }) leave the value as a plain scalar, so load(dump(x)) does not give back x for values such as ":{", ":[", ":,", ":}", ":]" or "x:{". In flow context a colon followed by any of , [ ] { } is not plain-safe (YAML 1.2, ns-plain-safe-in excludes c-flow-indicator), so such values must be quoted when presented in flow style, while block-context output and other plain scalars (for example "a:b", or "x:{" at block level) must stay exactly as they are today. Source is under src/ (TypeScript); the package is built with npm run build and tests run with node --test "test/core/**/*.test.mjs" "test/spec/*.test.mjs".`,
     visible: check(
       jsYaml,
-      `import assert from "node:assert/strict";
-import { dump, load } from "js-yaml";
-for (const value of [":{", ":[", "x:{"]) {
-  assert.deepEqual(load(dump([value], { flowLevel: 0 })), [value], JSON.stringify(value));
+      `import assert from 'node:assert/strict'
+import { dump, load } from 'js-yaml'
+for (const value of [':{', ':[', 'x:{']) {
+  assert.deepEqual(load(dump([value], { flowLevel: 0 })), [value], JSON.stringify(value))
 }
-assert.equal(dump({ k: "x:{" }), "k: x:{\\n");
-console.log("visible check passed");
+assert.equal(dump({ k: 'x:{' }), 'k: x:{\\n')
+console.log('visible check passed')
 `,
     ),
   },

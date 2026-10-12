@@ -1,7 +1,8 @@
 /**
  * Deterministic validation of every task before any arm runs, with no model: the base (with the
  * visible check committed) must fail the hidden oracle and the visible check; the upstream
- * reference (the upstream commit's own diff, tests included) must pass both. A task that fails
+ * reference (the upstream commit's own diff, tests included) must pass both; and the visible
+ * check must not fail the project's own lint where that passes without it. A task that fails
  * this is removed from the frozen set with the reason recorded, not launched.
  *
  *   node scripts/comparison/validate.mjs --out <file> [--only <task-id>]
@@ -9,7 +10,7 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { commandLog } from "../campaign/exec.mjs";
-import { hiddenVerdict, visibleVerdict } from "./checks.mjs";
+import { hiddenVerdict, lintVerdict, visibleVerdict } from "./checks.mjs";
 import { taskSchema } from "./schema.mjs";
 import { tasks } from "./tasks.mjs";
 import { comparisonRoot, mirrorOf, resolveFull } from "./workspace.mjs";
@@ -41,6 +42,8 @@ for (const task of tasks) {
     const baseHidden = await hiddenVerdict(log, task, base, upstream, "");
     const referenceVisible = await visibleVerdict(log, task, base, patch);
     const referenceHidden = await hiddenVerdict(log, task, base, upstream, patch);
+    const lint = await lintVerdict(log, task, base);
+    row.lint = lint;
     row.base = {
       visible: baseVisible.passed,
       hidden: baseHidden.verdict,
@@ -56,7 +59,8 @@ for (const task of tasks) {
       baseVisible.passed === false &&
       baseHidden.verdict === "fail" &&
       referenceVisible.passed === true &&
-      referenceHidden.verdict === "pass";
+      referenceHidden.verdict === "pass" &&
+      lint.ok;
   } catch (cause) {
     row.valid = false;
     row.error = String(cause?.stack ?? cause);
@@ -64,7 +68,7 @@ for (const task of tasks) {
   row.wallMs = Date.now() - started;
   rows.push(row);
   console.log(
-    `${row.valid ? "VALID  " : "INVALID"} ${task.id} (${Math.round(row.wallMs / 1000)}s)${row.valid ? "" : `: base visible=${row.base?.visible} hidden=${row.base?.hidden} (${row.base?.hiddenBasis ?? ""}); reference visible=${row.reference?.visible} hidden=${row.reference?.hidden} (${row.reference?.hiddenBasis ?? ""}) ${row.error ?? ""}`}`,
+    `${row.valid ? "VALID  " : "INVALID"} ${task.id} (${Math.round(row.wallMs / 1000)}s)${row.valid ? "" : `: base visible=${row.base?.visible} hidden=${row.base?.hidden} (${row.base?.hiddenBasis ?? ""}); reference visible=${row.reference?.visible} hidden=${row.reference?.hidden} (${row.reference?.hiddenBasis ?? ""}); lint ${row.lint?.ok} (${row.lint?.detail?.split("\n")[0] ?? ""}) ${row.error ?? ""}`}`,
   );
 }
 if (args.has("out"))

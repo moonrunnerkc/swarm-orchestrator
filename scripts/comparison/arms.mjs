@@ -101,6 +101,10 @@ export function swarmArgv(pins, task, workspace, base, prompt, contractPath, rem
     contractPath,
     ...(task.workType === "upgrade" ? ["--preset", "upgrade"] : []),
     "--install",
+    // The same lockfile the harness installed every workspace from: fast-xml-parser keeps a
+    // yarn.lock beside its package-lock.json, and the verifier refuses to guess between them.
+    "--lockfile",
+    "package-lock.json",
     "--max-tokens",
     String(swarmTokenCap),
     "--max-wall-minutes",

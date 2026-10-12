@@ -72,6 +72,11 @@ describe("what both arms are given", () => {
     const swarm = swarmArgv(pins, upgrade, "/w", "abc", "PROMPT", "/c.json", 10 * 60_000);
     expect(swarm).toContain("PROMPT");
     expect(swarm).toContain("--preset");
+    // The harness installed every workspace from package-lock.json; the arm names the same one.
+    expect(swarm.slice(swarm.indexOf("--lockfile"), swarm.indexOf("--lockfile") + 2)).toEqual([
+      "--lockfile",
+      "package-lock.json",
+    ]);
     expect(swarm.slice(swarm.indexOf("--max-wall-minutes") + 1)[0]).toBe("10");
     expect(swarmArgv(pins, bugfix, "/w", "abc", "PROMPT", "/c.json", 10 * 60_000)).not.toContain(
       "--preset",
