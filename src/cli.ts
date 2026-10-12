@@ -374,6 +374,15 @@ async function run(options: RunCommand): Promise<number> {
   });
   const fileSet = createFileSetRegistry(evidence);
   const interruption = new AbortController();
+  // The deadline is the clock on model work: planning, the loop, repair and strengthening. The
+  // final verification of the tree they produced is not cut by it. A run whose loop ran to its
+  // wall budget was verified under thirty seconds of the same clock, and the verification's git
+  // commands were cancelled under it: the run ended with no result line at all. The final gates
+  // run after the budget is spent, as the budget record says they do, under their own timeouts.
+  const modelWork = new AbortController();
+  interruption.signal.addEventListener("abort", () => modelWork.abort(interruption.signal.reason), {
+    once: true,
+  });
   // The clock starts before planning: criteria authoring is part of what the task costs.
   const startedAt = clock.now();
   const allowance = options.recovery?.remainingTokens ?? options.maxTokens ?? defaultTaskTokens;
@@ -399,7 +408,7 @@ async function run(options: RunCommand): Promise<number> {
       maxSteps: settings.maxSteps,
       maxTokens: allowance,
       maxWallMs: (settings.maxWallMinutes ?? 30) * 60_000,
-      signal: interruption.signal,
+      signal: modelWork.signal,
       note: (line) => process.stderr.write(`${line}\n`),
       ...(interactive ? { ask: askOnTerminal } : {}),
     });
@@ -489,7 +498,7 @@ async function run(options: RunCommand): Promise<number> {
     deadline === null
       ? null
       : setTimeout(
-          () => interruption.abort("original task deadline reached"),
+          () => modelWork.abort("original task deadline reached"),
           Math.max(0, deadline - clock.now()),
         );
   const lockfile = options.recovery?.goal?.lockfile ?? options.lockfile;
@@ -621,7 +630,7 @@ async function run(options: RunCommand): Promise<number> {
       },
       confirm: ui.confirm,
       approvalMode: settings.approval,
-      abortSignal: interruption.signal,
+      abortSignal: modelWork.signal,
       homeDir: homedir(),
       ...(gateOptions === undefined
         ? {}
@@ -657,7 +666,7 @@ async function run(options: RunCommand): Promise<number> {
               limits: strengtheningLimits(options.strengthen),
               model,
               clock,
-              signal: interruption.signal,
+              signal: modelWork.signal,
               deadline,
               reserveMs: 30_000,
               remainingTokens: () => remainingTokenBudget(evidence, implementationTokens),
