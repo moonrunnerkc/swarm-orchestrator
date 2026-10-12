@@ -9,6 +9,43 @@ describe("toModelMessages", () => {
     ]);
   });
 
+  it("replays a tool call whose arguments never parsed as a mapping the server can render", () => {
+    // A call cut off at the output limit arrives with the fragment it managed; sent back as a
+    // string, an OpenAI-compatible server's chat template fails on every later request.
+    const messages: ConversationMessage[] = [
+      { role: "assistant", text: "", toolCalls: [{ callId: "c", toolName: "shell", input: "{" }] },
+      {
+        role: "assistant",
+        text: "",
+        toolCalls: [{ callId: "d", toolName: "shell", input: ["not", "a", "mapping"] }],
+      },
+    ];
+    expect(toModelMessages(messages)).toEqual([
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "c",
+            toolName: "shell",
+            input: { unparsed_arguments: "{" },
+          },
+        ],
+      },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "d",
+            toolName: "shell",
+            input: { unparsed_arguments: '["not","a","mapping"]' },
+          },
+        ],
+      },
+    ]);
+  });
+
   it("keeps text and tool calls together on an assistant turn", () => {
     const messages: ConversationMessage[] = [
       {
