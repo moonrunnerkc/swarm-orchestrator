@@ -85,6 +85,8 @@ export const recordSchema = z.strictObject({
     opencode: z.string(),
     model: z.string(),
     endpoint: z.string(),
+    /** The answering server instance at launch; a change mid-launch is infrastructure. */
+    endpointInstance: z.string().nullable(),
   }),
   preparation: z.strictObject({
     wallMs: z.number().int().nonnegative(),

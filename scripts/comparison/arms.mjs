@@ -134,6 +134,11 @@ export function opencodeArgv(pins, prompt, workspace) {
     "json",
     "-m",
     `rapidmlx/${pins.model}`,
+    // Left to itself OpenCode names the session with a second model call on the same endpoint,
+    // issued while the first turn is still being prefilled. Two sequences at once took the
+    // local server past its memory and it died mid-launch; a given title asks for no name.
+    "--title",
+    "comparison launch",
     prompt,
   ];
 }
@@ -188,12 +193,30 @@ export function opencodeTokens(stdout) {
 
 /**
  * What the arm itself reported. swarm: an acceptable verdict with exit 0. opencode: a run that
- * exited 0 and ended on an assistant message, which is the only account it gives; it has no
- * verdict of its own, so "claimed" here means "finished without reporting an error".
+ * exited 0, reported no error and whose last turn ended on a message, which is the only
+ * account it gives; it has no verdict of its own, so "claimed" here means "finished with an
+ * answer and without reporting an error". A last turn that finished with no message and no
+ * tool call (the server having stopped the generation) said nothing, and is not a claim.
  */
 export function claimedSuccess(arm, exitCode, stdout) {
   if (arm === "swarm") return exitCode === 0 && swarmResult(stdout)?.verdict?.acceptable === true;
-  return exitCode === 0 && !/"type":"error"/.test(stdout);
+  return exitCode === 0 && !/"type":"error"/.test(stdout) && lastTurnAnswered(stdout);
+}
+
+/** Whether OpenCode's last finished turn carried a text part. */
+function lastTurnAnswered(stdout) {
+  let textInTurn = false;
+  let lastTurnAnswered = false;
+  for (const line of stdout.split("\n")) {
+    if (!line.startsWith("{")) continue;
+    try {
+      const parsed = JSON.parse(line);
+      if (parsed.type === "step_start") textInTurn = false;
+      else if (parsed.type === "text") textInTurn = true;
+      else if (parsed.type === "step_finish") lastTurnAnswered = textInTurn;
+    } catch {}
+  }
+  return lastTurnAnswered;
 }
 
 export const digestOf = (text) => `sha256:${createHash("sha256").update(text).digest("hex")}`;

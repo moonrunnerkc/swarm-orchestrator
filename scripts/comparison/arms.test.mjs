@@ -91,6 +91,8 @@ describe("what both arms are given", () => {
       "json",
       "-m",
       "rapidmlx/qwen3.8:27b",
+      "--title",
+      "comparison launch",
       "PROMPT",
     ]);
   });
@@ -119,14 +121,25 @@ describe("reading what the arms reported", () => {
     expect(opencodeTokens("")).toBeNull();
   });
 
-  it("reads a claim of success only from an acceptable swarm verdict or a clean opencode exit", () => {
+  it("reads a claim of success only from an acceptable swarm verdict or an opencode turn that answered", () => {
     const acceptable = JSON.stringify({ schema: "swarm.result.v1", verdict: { acceptable: true } });
     const refused = JSON.stringify({ schema: "swarm.result.v1", verdict: { acceptable: false } });
     expect(claimedSuccess("swarm", 0, acceptable)).toBe(true);
     expect(claimedSuccess("swarm", 1, refused)).toBe(false);
     expect(claimedSuccess("swarm", 0, "")).toBe(false);
-    expect(claimedSuccess("opencode", 0, '{"type":"text"}')).toBe(true);
-    expect(claimedSuccess("opencode", 0, '{"type":"error"}')).toBe(false);
-    expect(claimedSuccess("opencode", 1, "")).toBe(false);
+    const start = '{"type":"step_start","part":{"type":"step-start"}}';
+    const text = '{"type":"text","part":{"type":"text","text":"done"}}';
+    const finish = '{"type":"step_finish","part":{"type":"step-finish","reason":"stop"}}';
+    const answered = [start, text, finish].join("\n");
+    expect(claimedSuccess("opencode", 0, answered)).toBe(true);
+    expect(claimedSuccess("opencode", 0, `${answered}\n{"type":"error"}`)).toBe(false);
+    expect(claimedSuccess("opencode", 1, answered)).toBe(false);
+    // A last turn that finished with no message said nothing: the server stopped it.
+    expect(claimedSuccess("opencode", 0, [start, text, finish, start, finish].join("\n"))).toBe(
+      false,
+    );
+    expect(claimedSuccess("opencode", 0, [start, finish].join("\n"))).toBe(false);
+    expect(claimedSuccess("opencode", 0, text)).toBe(false);
+    expect(claimedSuccess("opencode", 0, "")).toBe(false);
   });
 });

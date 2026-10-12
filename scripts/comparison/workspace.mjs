@@ -151,7 +151,11 @@ export function writeArmConfiguration(directory, arm, endpoint, model) {
               npm: "@ai-sdk/openai-compatible",
               name: "rapid-mlx",
               options: { baseURL: endpoint },
-              models: { [model]: { name: model, tool_call: true } },
+              // The same per-call output cap Swarm uses (8192); OpenCode's default for an
+              // unlisted model asks for 32000, which this server cannot serve in one call.
+              models: {
+                [model]: { name: model, tool_call: true, limit: { context: 131072, output: 8192 } },
+              },
             },
           },
           model: `rapidmlx/${model}`,

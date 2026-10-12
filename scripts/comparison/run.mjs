@@ -37,6 +37,8 @@ import {
   wallBudgetMs,
 } from "./arms.mjs";
 import { hiddenVerdict, visibleVerdict } from "./checks.mjs";
+import { instanceChange, probeEndpoint } from "./endpoint.mjs";
+import { harnessDigest } from "./harness-identity.mjs";
 import { launches, seed } from "./order.mjs";
 import { recordSchema, taskSchema } from "./schema.mjs";
 import { tasks as allTasks } from "./tasks.mjs";
@@ -84,6 +86,7 @@ async function freeze(outPath) {
       swarmRevision: args.get("swarm-revision") ?? "unknown",
       opencode: versionOf(["opencode", "--version"]),
       node: process.version,
+      harnessDigest: harnessDigest(),
     },
     budgets: { wallMsPerInvocation: wallBudgetMs, swarmTokenCap: 600_000, maxCorrections },
     seed,
@@ -168,17 +171,17 @@ async function runLaunch(manifest, manifestDigest, launch) {
     );
     return;
   }
-  const endpoint = await probeEndpoint(pins.endpoint);
-  if (endpoint !== null) {
+  const probe = await probeEndpoint(pins.endpoint);
+  if (probe.problem !== null) {
     writeFileSync(
       join(
         runsDirectory,
         `${launch.task}.${launch.arm}.infrastructure-${infrastructureAttempts + 1}.json`,
       ),
-      `${JSON.stringify({ schema: "swarm-ordinary-comparison.record.v1", task: launch.task, arm: launch.arm, order: launch.order, manifestDigest, infrastructureFailure: `endpoint did not answer before the launch: ${endpoint}`, startedAt: new Date().toISOString(), endedAt: new Date().toISOString(), notes: [], invocations: [], corrections: 0, resolvedVisible: false, hidden: { verdict: "unjudgeable", basis: "not launched", detailDigest: null }, totals: { agentWallMs: 0, tokens: null, tokensUnknownInvocations: 0 }, preparation: { wallMs: 0, ok: false, detail: "" }, host: { platform: process.platform, arch: process.arch, node: process.version }, versions: { swarmRevision: pins.swarmRevision, opencode: pins.opencode, model: pins.model, endpoint: pins.endpoint }, finalPatchDigest: digestOf(""), finalPatchBytes: 0, oracleExposure: "not scanned" }, null, 2)}\n`,
+      `${JSON.stringify({ schema: "swarm-ordinary-comparison.record.v1", task: launch.task, arm: launch.arm, order: launch.order, manifestDigest, infrastructureFailure: `endpoint did not answer before the launch: ${probe.problem}`, startedAt: new Date().toISOString(), endedAt: new Date().toISOString(), notes: [], invocations: [], corrections: 0, resolvedVisible: false, hidden: { verdict: "unjudgeable", basis: "not launched", detailDigest: null }, totals: { agentWallMs: 0, tokens: null, tokensUnknownInvocations: 0 }, preparation: { wallMs: 0, ok: false, detail: "" }, host: { platform: process.platform, arch: process.arch, node: process.version }, versions: { swarmRevision: pins.swarmRevision, opencode: pins.opencode, model: pins.model, endpoint: pins.endpoint, endpointInstance: null }, finalPatchDigest: digestOf(""), finalPatchBytes: 0, oracleExposure: "not scanned" }, null, 2)}\n`,
       { flag: "wx" },
     );
-    console.log(`infrastructure ${launch.task} ${launch.arm}: ${endpoint}`);
+    console.log(`infrastructure ${launch.task} ${launch.arm}: ${probe.problem}`);
     return;
   }
   const blobs = join(comparisonRoot, "blobs");
@@ -203,6 +206,7 @@ async function runLaunch(manifest, manifestDigest, launch) {
       opencode: pins.opencode,
       model: pins.model,
       endpoint: pins.endpoint,
+      endpointInstance: probe.instance,
     },
     preparation: { wallMs: 0, ok: false, detail: "" },
     invocations: [],
@@ -259,6 +263,10 @@ async function runLaunch(manifest, manifestDigest, launch) {
         },
       });
       if (invoked.evidence) evidenceDirectories.push(invoked.evidence);
+      // An endpoint that died or restarted while the arm was talking to it is a failed
+      // instrument; the invocation is kept, and the launch is recorded as infrastructure.
+      const change = instanceChange(probe.instance, await probeEndpoint(pins.endpoint));
+      if (change !== null) throw new InfrastructureError(`${change} during the ${kind} invocation`);
       const patch = await finalPatch(log, workspace, base);
       const visible = await visibleVerdict(log, task, task.baseCommit, patch);
       record.invocations[record.invocations.length - 1].visible = {
@@ -350,26 +358,18 @@ async function runLaunch(manifest, manifestDigest, launch) {
 
 class InfrastructureError extends Error {}
 
-/** Null when the model endpoint lists its models; otherwise what went wrong. */
-async function probeEndpoint(endpoint) {
-  try {
-    const response = await fetch(`${endpoint.replace(/\/$/, "")}/models`, {
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!response.ok) return `HTTP ${response.status}`;
-    const body = await response.json();
-    return Array.isArray(body?.data) && body.data.length > 0 ? null : "no models listed";
-  } catch (cause) {
-    return cause instanceof Error ? cause.message : String(cause);
-  }
-}
-
 if (args.has("freeze")) {
   await freeze(args.get("out") ?? "manifest.json");
 } else if (args.has("manifest")) {
   const bytes = readFileSync(args.get("manifest"));
   const manifest = JSON.parse(bytes.toString());
   const manifestDigest = digestOf(bytes.toString());
+  if (manifest.pins.harnessDigest !== harnessDigest()) {
+    console.error(
+      `the harness in scripts/comparison differs from the one the manifest froze (${manifest.pins.harnessDigest ?? "none recorded"}); re-freeze before launching`,
+    );
+    process.exit(2);
+  }
   const selected = manifest.launches.filter(
     (launch) =>
       (!args.has("only") || launch.task === args.get("only")) &&
