@@ -63,6 +63,8 @@ export interface GateContext {
   readonly workspaceRoot: string;
   /** Absent means `agent-declared`, which is what every agent run has always been. */
   readonly authorizedScope?: AuthorizedScope;
+  /** See `GateSetOptions.authorizedInstrumentPaths`; absent means none. */
+  readonly authorizedInstrumentPaths?: readonly string[];
   readonly changes: WorkspaceChanges;
   readonly fileSet: FileSetState;
   readonly budgets: DiffBudget;

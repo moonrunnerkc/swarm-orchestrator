@@ -6,6 +6,7 @@ import { freezeAcceptanceContract } from "../evidence/acceptance-contract.ts";
 import { asJsonValue } from "../evidence/canonical-json.ts";
 import { type GoalContract, goalImmutablePaths } from "../evidence/goal-contract.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
+import { protectsPath } from "../evidence/task-contract.ts";
 import { certifies } from "./certification.ts";
 import {
   type IgnoredSnapshot,
@@ -57,7 +58,6 @@ import { pathsInPatch } from "./patch-paths.ts";
 import { prepareDependencies } from "./prepare-dependencies.ts";
 import { stagePreparedPython } from "./prepared-python.ts";
 import { withPreparedTools } from "./prepared-tools.ts";
-import { protectsPath } from "../evidence/task-contract.ts";
 import { enforceUpgrade, reproducedBug } from "./preset-verification.ts";
 import { parseUnifiedDiff } from "./unified-diff.ts";
 import { observeUpgradeResolution } from "./upgrade-resolution.ts";
@@ -1582,9 +1582,16 @@ async function readUnderBaseConfiguration(
   timeoutMs: number,
 ): Promise<readonly IndependentCheck[]> {
   const changed = new Set<string>();
+  // A difference the observation names as authorized (an upgrade's manifest and lockfile) is
+  // the task, not a configuration to put back: the base's would measure the tree the task was
+  // asked to leave rather than the one it was asked to make.
   for (const check of withPatch)
     for (const file of check.instrument?.files ?? [])
-      if (file.reference !== file.current) changed.add(file.path);
+      if (
+        file.reference !== file.current &&
+        !(check.instrument?.authorized ?? []).includes(file.path.split("#")[0] as string)
+      )
+        changed.add(file.path);
   const files = [...changed].sort();
   if (files.length === 0 || withPatch.length === 0) return withPatch;
   const whole = [...new Set(files.map((path) => path.split("#")[0] as string))];

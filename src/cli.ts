@@ -520,6 +520,11 @@ async function run(options: RunCommand): Promise<number> {
   const gateOptions = {
     ...gateOptionsFrom(settings),
     ...(lockfile === undefined ? {} : { lockfile }),
+    ...(sealedGoal?.preset?.kind === "upgrade"
+      ? {
+          authorizedInstrumentPaths: [sealedGoal.preset.manifest, sealedGoal.preset.lockfile],
+        }
+      : {}),
     ...(goalContext === undefined ? {} : { acceptanceGate: taskGoalGate(goalContext) }),
   };
   const diffBudget = diffBudgetFrom(settings);
