@@ -119,11 +119,12 @@ async function invokeArm(
     const contractPath = join(scratch, "contract.json");
     writeFileSync(contractPath, JSON.stringify(swarmContract(task), null, 2));
     argv = swarmArgv(pins, task, workspace, base, prompt, contractPath, remaining);
-  } else argv = opencodeArgv(pins, prompt);
+  } else argv = opencodeArgv(pins, prompt, workspace);
   const ran = await log.run(argv, {
     cwd: workspace,
     timeoutMs: remaining + 60_000,
-    env: { ...process.env, HOME: process.env.HOME, PUPPETEER_SKIP_DOWNLOAD: "true" },
+    // PWD follows the cwd: a spawned process inherits the launcher's, and OpenCode reads it.
+    env: { ...process.env, PWD: workspace, PUPPETEER_SKIP_DOWNLOAD: "true" },
   });
   const stdout = ran.stdout.toString();
   const tokens = arm === "swarm" ? swarmTokens(stdout) : opencodeTokens(stdout);
@@ -259,7 +260,7 @@ async function runLaunch(manifest, manifestDigest, launch) {
       });
       if (invoked.evidence) evidenceDirectories.push(invoked.evidence);
       const patch = await finalPatch(log, workspace, base);
-      const visible = await visibleVerdict(log, task, base, patch);
+      const visible = await visibleVerdict(log, task, task.baseCommit, patch);
       record.invocations[record.invocations.length - 1].visible = {
         checkExit: visible.checkExit,
         projectTestExit: visible.projectTestExit,
@@ -282,7 +283,7 @@ async function runLaunch(manifest, manifestDigest, launch) {
     const patch = await finalPatch(log, workspace, base);
     record.finalPatchDigest = storeBlob(blobs, Buffer.from(patch));
     record.finalPatchBytes = Buffer.byteLength(patch);
-    const hidden = await hiddenVerdict(log, task, base, task.upstreamCommit, patch);
+    const hidden = await hiddenVerdict(log, task, task.baseCommit, task.upstreamCommit, patch);
     record.hidden = {
       verdict: hidden.verdict,
       basis: hidden.basis,

@@ -155,6 +155,10 @@ export function writeArmConfiguration(directory, arm, endpoint, model) {
             },
           },
           model: `rapidmlx/${model}`,
+          // The machine's global OpenCode configuration names a small model on another server
+          // for its thread-title call; a refused connection there ended a run before its first
+          // output. Every call of the arm goes to the one pinned model.
+          small_model: `rapidmlx/${model}`,
           permission: { edit: "allow", bash: "allow", webfetch: "deny" },
         },
         null,

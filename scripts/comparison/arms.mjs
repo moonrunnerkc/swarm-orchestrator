@@ -113,8 +113,25 @@ export function swarmArgv(pins, task, workspace, base, prompt, contractPath, rem
   ];
 }
 
-export function opencodeArgv(pins, prompt) {
-  return ["opencode", "run", "--pure", "--format", "json", "-m", `rapidmlx/${pins.model}`, prompt];
+/**
+ * The directory is named on the command line as well as being the cwd: OpenCode's runtime reads
+ * the inherited PWD variable, which for a spawned process still names the launcher's directory,
+ * and a run that read the wrong directory found no workspace configuration and exited at once
+ * with nothing printed.
+ */
+export function opencodeArgv(pins, prompt, workspace) {
+  return [
+    "opencode",
+    "run",
+    "--dir",
+    workspace,
+    "--pure",
+    "--format",
+    "json",
+    "-m",
+    `rapidmlx/${pins.model}`,
+    prompt,
+  ];
 }
 
 /** swarm's `swarm.result.v1` line, or null where the run wrote none. */

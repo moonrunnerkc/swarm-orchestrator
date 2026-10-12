@@ -76,9 +76,11 @@ describe("what both arms are given", () => {
     expect(swarmArgv(pins, bugfix, "/w", "abc", "PROMPT", "/c.json", 10 * 60_000)).not.toContain(
       "--preset",
     );
-    expect(opencodeArgv(pins, "PROMPT")).toEqual([
+    expect(opencodeArgv(pins, "PROMPT", "/w")).toEqual([
       "opencode",
       "run",
+      "--dir",
+      "/w",
       "--pure",
       "--format",
       "json",
