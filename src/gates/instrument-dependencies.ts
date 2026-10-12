@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
+import type { Stats } from "node:fs";
 import { lstat, readFile, realpath } from "node:fs/promises";
-import { dirname, join, relative, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import type { InstrumentTrees } from "./instrument-identity.ts";
 
 /**
@@ -295,15 +296,7 @@ export async function observeInstalled(
       await readFile(join(packageDirectory, "package.json"), "utf8").catch(() => null),
     );
     const found = typeof manifest?.version === "string" ? (manifest.version as string) : null;
-    const expected =
-      lock[`node_modules/${name}`]?.version ??
-      (pnpmLock === null
-        ? null
-        : // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp - name is a fixed tool package from the table above, escaped.
-          (new RegExp(
-            `^\\s+/?${name.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}@(\\d[^:(\\s]*)`,
-            "m",
-          ).exec(pnpmLock)?.[1] ?? null));
+    const expected = lock[`node_modules/${name}`]?.version ?? pnpmPinnedVersion(pnpmLock, name);
     let linked = true;
     if (found !== null && rule.bin !== undefined) {
       const link = await realpath(join(root, "node_modules", ".bin", rule.bin)).catch(() => null);
@@ -322,18 +315,116 @@ export async function observeInstalled(
   }
   // `npm run` puts node_modules/.bin first on PATH, so a link there named like an interpreter
   // replaces it for every script: a dependency, or an edit to node_modules, that ships `node` or
-  // `sh` runs instead of the real one. Recorded as an executable no tool package owns.
+  // `sh` runs instead of the real one. One a package owns, where both sides' lockfiles pin that
+  // package under the same entry, is the reference's own instrument: the `npm` package, which
+  // release tooling depends on, links `npm` and `npx` in every tree that installs it. Anything
+  // else is recorded as an executable no tool package owns.
+  const referenceLock = npmPackages(
+    parseJson(
+      (await trees.reference("package-lock.json")) ??
+        (await trees.reference("npm-shrinkwrap.json")),
+    ),
+  );
+  const referencePnpmLock = await trees.reference("pnpm-lock.yaml");
   for (const shell of shadowedInterpreters) {
-    const found = await lstat(join(root, "node_modules", ".bin", shell)).catch(() => null);
-    if (found !== null)
+    const link = join(root, "node_modules", ".bin", shell);
+    const entry = await lstat(link).catch(() => null);
+    if (entry === null) continue;
+    const owner = await shimOwner(root, link, entry);
+    const pinned =
+      owner === null
+        ? null
+        : pinnedOnBothSides(owner, lock, referenceLock, pnpmLock, referencePnpmLock);
+    if (owner === null || pinned === null) {
       runners.push({
         name: `node_modules/.bin/${shell}`,
         expected: null,
         found: "present",
         linked: false,
       });
+      continue;
+    }
+    const manifest = parseJson(
+      await readFile(join(root, owner.path, "package.json"), "utf8").catch(() => null),
+    );
+    runners.push({
+      name: `node_modules/.bin/${shell}`,
+      expected: pinned,
+      found: typeof manifest?.version === "string" ? (manifest.version as string) : "present",
+      linked: true,
+    });
   }
   return runners;
 }
 
 const shadowedInterpreters = ["node", "npm", "npx", "sh", "bash", "env", "python", "python3"];
+
+/** The version a pnpm lockfile pins for a package, or null where it names none. */
+function pnpmPinnedVersion(pnpmLock: string | null, name: string): string | null {
+  if (pnpmLock === null) return null;
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp - name is a package name read from the tree, escaped.
+  return (
+    new RegExp(`^\\s+/?${name.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}@(\\d[^:(\\s]*)`, "m").exec(
+      pnpmLock,
+    )?.[1] ?? null
+  );
+}
+
+/**
+ * The package an installed executable runs, by the lockfile path of its directory: a link is
+ * followed to where it resolves under node_modules, and a shell shim is read for the last
+ * package directory it names. Null where neither reaches a package.
+ */
+async function shimOwner(
+  root: string,
+  link: string,
+  entry: Stats,
+): Promise<{ readonly name: string; readonly path: string } | null> {
+  let inside: string | null = null;
+  if (entry.isSymbolicLink()) {
+    const modules = await realpath(join(root, "node_modules")).catch(() => null);
+    const target = await realpath(link).catch(() => null);
+    if (modules === null || target === null) return null;
+    const within = relative(modules, target);
+    if (within === "" || within.startsWith("..") || isAbsolute(within)) return null;
+    inside = `node_modules/${within.split(sep).join("/")}`;
+  } else if (entry.isFile()) {
+    const shim = await readFile(link, "utf8").catch(() => "");
+    const named = [...shim.matchAll(/node_modules\/((?:@[^/\s"'`]+\/)?[^/\s"'`]+)\//g)]
+      .map((match) => match[1] ?? "")
+      .filter((name) => name !== "" && !name.startsWith("."));
+    const last = named.at(-1);
+    if (last === undefined) return null;
+    inside = `node_modules/${last}/`;
+  }
+  if (inside === null) return null;
+  const at = inside.lastIndexOf("node_modules/") + "node_modules/".length;
+  const segments = inside.slice(at).split("/");
+  const name = segments[0]?.startsWith("@") ? segments.slice(0, 2).join("/") : (segments[0] ?? "");
+  if (name === "" || name.startsWith(".") || name.includes("/") !== name.startsWith("@"))
+    return null;
+  return { name, path: `${inside.slice(0, at)}${name}` };
+}
+
+/** The version both sides pin for the owner under one identical lockfile entry, or null. */
+function pinnedOnBothSides(
+  owner: { readonly name: string; readonly path: string },
+  current: Readonly<Record<string, NpmLockEntry>>,
+  reference: Readonly<Record<string, NpmLockEntry>>,
+  currentPnpm: string | null,
+  referencePnpm: string | null,
+): string | null {
+  const now = current[owner.path];
+  const then = reference[owner.path];
+  if (
+    now !== undefined &&
+    then !== undefined &&
+    typeof now.version === "string" &&
+    canonical(now) === canonical(then)
+  )
+    return now.version;
+  const pinnedNow = pnpmPinnedVersion(currentPnpm, owner.name);
+  return pinnedNow !== null && pinnedNow === pnpmPinnedVersion(referencePnpm, owner.name)
+    ? pinnedNow
+    : null;
+}
