@@ -57,6 +57,7 @@ import { pathsInPatch } from "./patch-paths.ts";
 import { prepareDependencies } from "./prepare-dependencies.ts";
 import { stagePreparedPython } from "./prepared-python.ts";
 import { withPreparedTools } from "./prepared-tools.ts";
+import { protectsPath } from "../evidence/task-contract.ts";
 import { enforceUpgrade, reproducedBug } from "./preset-verification.ts";
 import { parseUnifiedDiff } from "./unified-diff.ts";
 import { observeUpgradeResolution } from "./upgrade-resolution.ts";
@@ -1723,13 +1724,13 @@ async function judgeTask(
  * rewrites the test script would otherwise choose the instrument that measures it.
  */
 
+/**
+ * Whether a declared path covers a changed one: itself, or anything under it as a directory,
+ * which is the rule the chokepoint applies to the same declaration (`protectsPath`). Read as an
+ * exact name here, `acceptance/visible` let a formatter's rewrite of `acceptance/visible/check.mjs`
+ * through the final verification that the run had promised to refuse.
+ */
 function matchesAny(path: string, patterns: readonly string[]): boolean {
   const normalized = normalizePath(path);
-  return patterns.some((pattern) => {
-    const normalizedPattern = normalizePath(pattern);
-    if (normalizedPattern.endsWith("/**")) {
-      return normalized.startsWith(normalizedPattern.slice(0, -2));
-    }
-    return normalized === normalizedPattern;
-  });
+  return patterns.some((pattern) => protectsPath(normalizePath(pattern), normalized));
 }
