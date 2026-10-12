@@ -45,6 +45,54 @@ Source on `v13-main`; not published until a release names it.
   reason instead of ending the run.
 - A model failure whose payload is not an Error (a local server's error body) was recorded and
   shown as `[object Object]`; it is now described, with the original kept as the cause.
+- **The base control could not be put in place after a goal check ran.** Restoring the verifier
+  checkout between goal checks rewrote every file from its snapshot, installed dependencies
+  included, so the ignored-tree record that guards the base control read all of them as altered
+  by the run and refused the comparison: a check that failed on the candidate stayed
+  unattributed, the regression dimension read unmeasured, and a feature task's preflight stopped
+  before the first model call. Restoring now touches only what a check changed. Found in the
+  exploratory trial on a js-yaml task.
+- **A package that ships `npm` or `npx` into `node_modules/.bin` no longer voids every check.**
+  The instrument check recorded such a link as an interpreter no package owns, which is what it
+  is for an edit to node_modules, and withheld every pass; a project whose release tooling
+  depends on the `npm` package (`@semantic-release/npm` does) could never be verified. A link
+  resolving into a package that both sides' lockfiles pin under one identical entry is now the
+  reference's own instrument, recorded with the version it pins. Found in the trial on marked.
+- **A tree with two lockfiles was refused with no way through.** The installer named "explicit
+  package selection" as the remedy, and nothing offered one. The manifest's `packageManager`
+  declaration now decides, and `--lockfile <file>` names the lockfile where it does not
+  (`swarm ... --install --lockfile package-lock.json`, also on `swarm-verify ci`). Without
+  either, a tree holding several is still refused rather than guessed. Found in the trial on
+  fast-xml-parser, which keeps a package-lock.json and a yarn.lock side by side.
+- **An upgrade's own manifest change no longer withholds every pass.** A check whose instrument
+  reaches package.json (a build program that reads it, a configuration that imports it) read the
+  declared dependency bump as an edit to the instrument, withheld the pass, reran under the
+  base's manifest and found that reading not applicable either: no upgrade task could establish
+  its regression dimension. The preset's enforcement already holds the manifest and lockfile to
+  the declared dependencies, so the instrument observation now names them as `authorized` and
+  neither implementation of the instrument rule reads a difference there as a change; the
+  bundled verifier additionally refuses an authorization that is not an upgrade preset's own
+  manifest and lockfile. Found in the trial on marked.
+- **An immutable directory covers what is under it in the final verification**, as it already
+  did at the chokepoint. Read as an exact name, `acceptance/visible` let a formatter's rewrite
+  of `acceptance/visible/check.mjs` through a verification the run had promised to refuse.
+  Found in the trial on minimatch.
+- **The deadline ends model work, not the final verification.** The wall clock aborted
+  everything at once; a run whose loop used its budget had its final verification cancelled
+  thirty seconds later, mid-command, and ended with no result line (`cannot pin final candidate
+  tree`). Planning, the loop, repair and strengthening stop at the deadline; the final gates and
+  verification of what they produced run to their own end, as the budget record says they do.
+  Found in the trial on js-yaml.
+- **A tool call the model cut off at its output limit no longer ends the run.** The fragment
+  (`{`) was kept as it was and refused at the chokepoint, which is right, and then replayed to
+  the provider as it was, which an OpenAI-compatible server parses to a string and whose chat
+  template then fails on every later request ("Can only get item pairs from a mapping"): three
+  such failures ended the run as a model error. The replay carries the fragment under one key,
+  so the model sees what it wrote and the server has a mapping to render. Three trial runs
+  ended this way.
+- **A dotfile is a valid upgrade source path.** `.eslintrc.json` and `.eslintignore` were
+  refused by the preset schema, so a toolchain upgrade that names them could not be sealed. A
+  `..` segment is still refused.
 
 ## 14.4.0 - 2026-10-08
 
