@@ -1,12 +1,12 @@
 {
   "schema": "swarm-ordinary-comparison.manifest.v1",
-  "frozenAt": "2026-10-11T20:17:07.876Z",
-  "protocolDigest": "sha256:011ab517c9a42462da45a6999077613f7205d79fd7ba3d570caeb28bcdce7495",
+  "frozenAt": "2026-10-12T09:54:38.455Z",
+  "protocolDigest": "sha256:ac58a8c7c73f78935c7df1d820523cdd12496073ef79791a014f355b389483d6",
   "pins": {
     "model": "qwen3.8:27b",
     "endpoint": "http://127.0.0.1:8000/v1",
     "swarmCli": "/Users/brad/.cache/swarm-comparison/tools/swarm/dist/cli.js",
-    "swarmRevision": "0dd525358f44bcce153dcb503a9d13858d9e91d3",
+    "swarmRevision": "7bd3e1aa67a8aafc2f5af9341a9aa5b14f3df5ae",
     "opencode": "1.14.48",
     "node": "v24.15.0"
   },
@@ -633,7 +633,7 @@
       "visible": {
         "path": "acceptance/visible/check.mjs",
         "command": "npm run build && node acceptance/visible/check.mjs",
-        "source": "import assert from \"node:assert/strict\";\nimport { load, YAML11_SCHEMA } from \"js-yaml\";\nconst date = load(\"0050-06-15T12:30:00Z\", { schema: YAML11_SCHEMA });\nassert.ok(date instanceof Date, \"year 0050 must resolve to a Date\");\nassert.equal(date.getUTCFullYear(), 50);\nconsole.log(\"visible check passed\");\n"
+        "source": "import assert from 'node:assert/strict'\nimport { load, YAML11_SCHEMA } from 'js-yaml'\nconst date = load('0050-06-15T12:30:00Z', { schema: YAML11_SCHEMA })\nassert.ok(date instanceof Date, 'year 0050 must resolve to a Date')\nassert.equal(date.getUTCFullYear(), 50)\nconsole.log('visible check passed')\n"
       }
     },
     {
@@ -689,7 +689,7 @@
       "visible": {
         "path": "acceptance/visible/check.mjs",
         "command": "npm run build && node acceptance/visible/check.mjs",
-        "source": "import assert from \"node:assert/strict\";\nimport { load } from \"js-yaml\";\nassert.throws(() => load(\"a: &x 1\\nb: *x\\nc: *x\", { maxAliases: 1 }), /maxAliases/);\nassert.deepEqual(load(\"a: &x 1\\nb: *x\\nc: *x\", { maxAliases: 2 }), { a: 1, b: 1, c: 1 });\nconsole.log(\"visible check passed\");\n"
+        "source": "import assert from 'node:assert/strict'\nimport { load } from 'js-yaml'\nassert.throws(() => load('a: &x 1\\nb: *x\\nc: *x', { maxAliases: 1 }), /maxAliases/)\nassert.deepEqual(load('a: &x 1\\nb: *x\\nc: *x', { maxAliases: 2 }), { a: 1, b: 1, c: 1 })\nconsole.log('visible check passed')\n"
       }
     },
     {
@@ -778,7 +778,7 @@
       "visible": {
         "path": "acceptance/visible/check.mjs",
         "command": "npm run build && node acceptance/visible/check.mjs",
-        "source": "import assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\nimport { isPlainObject } from \"../../src/common/object.ts\";\nassert.equal(isPlainObject({}), true);\nassert.equal(isPlainObject([]), false);\nassert.equal(isPlainObject(null), false);\nassert.equal((readFileSync(\"src/tag/mapping/map.ts\", \"utf8\").match(/function isPlainObject/g) ?? []).length, 0);\nconsole.log(\"visible check passed\");\n"
+        "source": "import assert from 'node:assert/strict'\nimport { readFileSync } from 'node:fs'\nimport { isPlainObject } from '../../src/common/object.ts'\nassert.equal(isPlainObject({}), true)\nassert.equal(isPlainObject([]), false)\nassert.equal(isPlainObject(null), false)\nassert.equal((readFileSync('src/tag/mapping/map.ts', 'utf8').match(/function isPlainObject/g) ?? []).length, 0)\nconsole.log('visible check passed')\n"
       }
     },
     {
@@ -845,7 +845,7 @@
       "visible": {
         "path": "acceptance/visible/check.mjs",
         "command": "npm run build && node acceptance/visible/check.mjs",
-        "source": "import assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\nconst manifest = JSON.parse(readFileSync(\"package.json\", \"utf8\"));\nassert.ok([\"8.1.2\", \"^8.1.2\"].includes(manifest.devDependencies.vite), manifest.devDependencies.vite);\nassert.ok([\"10.0.3\", \"^10.0.3\"].includes(manifest.devDependencies.workerpool), manifest.devDependencies.workerpool);\nconsole.log(\"visible check passed\");\n"
+        "source": "import assert from 'node:assert/strict'\nimport { readFileSync } from 'node:fs'\nconst manifest = JSON.parse(readFileSync('package.json', 'utf8'))\nassert.ok(['8.1.2', '^8.1.2'].includes(manifest.devDependencies.vite), manifest.devDependencies.vite)\nassert.ok(['10.0.3', '^10.0.3'].includes(manifest.devDependencies.workerpool), manifest.devDependencies.workerpool)\nconsole.log('visible check passed')\n"
       }
     },
     {
@@ -901,7 +901,7 @@
       "visible": {
         "path": "acceptance/visible/check.mjs",
         "command": "npm run build && node acceptance/visible/check.mjs",
-        "source": "import assert from \"node:assert/strict\";\nimport { dump, load } from \"js-yaml\";\nfor (const value of [\":{\", \":[\", \"x:{\"]) {\n  assert.deepEqual(load(dump([value], { flowLevel: 0 })), [value], JSON.stringify(value));\n}\nassert.equal(dump({ k: \"x:{\" }), \"k: x:{\\n\");\nconsole.log(\"visible check passed\");\n"
+        "source": "import assert from 'node:assert/strict'\nimport { dump, load } from 'js-yaml'\nfor (const value of [':{', ':[', 'x:{']) {\n  assert.deepEqual(load(dump([value], { flowLevel: 0 })), [value], JSON.stringify(value))\n}\nassert.equal(dump({ k: 'x:{' }), 'k: x:{\\n')\nconsole.log('visible check passed')\n"
       }
     },
     {
