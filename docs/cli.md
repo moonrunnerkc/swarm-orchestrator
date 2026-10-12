@@ -16,6 +16,7 @@ swarm --version                  # which build this is
 | `--goal-contract <file>` | sealed requirements and checks, held outside the solver's reach, that the run must satisfy; a feature task needs no preset. The run establishes the checks on the base before the first model call, iterates against them as the blocking `task-acceptance` gate, repairs under the ratchet, and verifies the exact final tree in a fresh checkout |
 | `--plan-checks` | author those criteria from the task text: the planner reads the workspace with read-only tools and pins requirements and executable checks, shown in plain language and confirmed on a terminal (sealed as written off one). They stay labelled model-authored. A planner that pins nothing stops the run before implementation spending with its own account (exit 4); a decline is exit 3 |
 | `--preset bugfix\|refactor\|upgrade` | a behavior policy the contract also names: base controls for a bugfix or refactor, narrow scope and exact targets for an upgrade (with `--install`). Named in both places or in neither |
+| `--install [--lockfile <file>]` | install the checkout's dependencies from its lockfile before the checks run, with install scripts off. A tree that holds several lockfiles is refused rather than guessed: name the one to install from, or declare `packageManager` in package.json |
 | `--challenges off\|report\|required` | challenge the goal contract's checks with witnessed mutants, fixtures and sealed references |
 | `--strengthen` | after a challenge finds a gap, ask the model for one additive check per gap, admit it only when the harness observes it reject the counterexample and accept every sealed reference, then repair the implementation under the revised contract |
 | `--strengthen-rounds <n>` | lower the default of two strengthening rounds; a higher value is ignored |
@@ -197,6 +198,7 @@ swarm ci --pr <owner/repo#number>
   --require-isolation            # refuse unless the selected backend measures isolated
   --oracle <command>             # what says the task was done
   --install                      # install the checkout's dependencies from its lockfile
+  --lockfile <file>              # which lockfile, where the tree holds several
   --oracle-only                  # judge the oracle, skip the repository's own checks
   --immutable <a,b>              # paths the patch may not touch
   --agent-stream <file>          # another agent's event stream, read beside it

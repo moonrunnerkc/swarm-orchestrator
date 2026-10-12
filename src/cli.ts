@@ -492,6 +492,7 @@ async function run(options: RunCommand): Promise<number> {
           () => interruption.abort("original task deadline reached"),
           Math.max(0, deadline - clock.now()),
         );
+  const lockfile = options.recovery?.goal?.lockfile ?? options.lockfile;
   const goalContext =
     sealedGoal === undefined
       ? undefined
@@ -504,10 +505,12 @@ async function run(options: RunCommand): Promise<number> {
           signal: interruption.signal,
           isolation,
           install: options.recovery?.goal?.install ?? options.installDependencies === true,
+          ...(lockfile === undefined ? {} : { lockfile }),
           challengePolicy: options.challenges ?? ("off" as const),
         };
   const gateOptions = {
     ...gateOptionsFrom(settings),
+    ...(lockfile === undefined ? {} : { lockfile }),
     ...(goalContext === undefined ? {} : { acceptanceGate: taskGoalGate(goalContext) }),
   };
   const diffBudget = diffBudgetFrom(settings);
@@ -527,6 +530,7 @@ async function run(options: RunCommand): Promise<number> {
           rule: "goal-run-settings-v1",
           contractDigest: freezeGoalContract(sealedGoal).digest,
           install: goalContext?.install ?? false,
+          ...(lockfile === undefined ? {} : { lockfile }),
           deadline,
           sourceBase: baseCommit,
         },
