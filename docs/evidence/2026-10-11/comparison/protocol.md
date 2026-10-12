@@ -195,3 +195,55 @@ the rule above forbids for selective reruns. Pass 3 is not selective. Every one 
 launches, both arms alike, runs again under a new manifest that pins the fixed Swarm revision
 and this document's new digest; pass 2's records stay under their own manifest digest with
 their file digests listed in the README. The comparison is pass 3 alone.
+
+### Amendment 2, 2026-10-13: the model server died under the OpenCode arm; one relaunch of every launch
+
+Pass 3 (2026-10-12 09:54Z to 23:19Z) completed all forty launches under the manifest
+amendment 1 froze. Reading its records afterwards showed that the OpenCode arm had not been
+measured either: 44 of its 58 invocations, in every one of its twenty launches, end on
+OpenCode's "Unable to connect" error within about two minutes of starting, and its final patch
+is empty in all twenty. Pass 2's OpenCode launches carried the same failure (41 of 53
+invocations, 16 of 20 launches), which amendment 1 did not see; its statement that the OpenCode
+arm's records showed no defect was wrong. The Swarm arm lost the endpoint in none of its
+invocations in either pass.
+
+The cause, from the server's own log. OpenCode names each session with a second model call on
+the same endpoint, issued while the first turn of the session is still being prefilled, so the
+server batches two sequences at once; with this model's 23,000-token first turn that took the
+Metal working set to about 54 GB on a 69 GB machine and the server process died of GPU memory
+exhaustion (`[METAL] Command buffer execution failed: Insufficient Memory`). The launch agent
+restarted it within seconds, so the harness's pre-launch probe always found it answering, and
+the arm's in-flight request failed as a refused connection. Swarm sends one request at a time
+and never put two sequences on the server. A controlled replay against the same server, with a
+fresh 22,500-token prompt so the prefix cache missed as it did before every crash: with a
+concurrent second request, the server died in 2 of 6 trials (both at an 8192-token output cap;
+0 of 3 at 32000); alone, in 0 of 11 trials at either cap. OpenCode's default 32000-token output
+cap for an unlisted model also exceeded what the server serves in one call: the 13 requests
+that ended in `[metal::malloc] Resource limit exceeded` during a long generation were all at
+that cap.
+
+What changes, all in this harness, none in Swarm:
+
+1. **The OpenCode arm is launched with `--title`**, so it makes no session-naming call. The
+   task turn is the only request in flight. OpenCode is otherwise unchanged.
+2. **The OpenCode arm's model entry declares the same per-call output cap Swarm uses (8192
+   tokens)**, so both arms ask the server for the same budget per call. This is a settings line
+   in the workspace's `opencode.json`, not a change to OpenCode.
+3. **The endpoint is watched across every invocation.** The launcher records the process
+   answering the endpoint before a launch and probes it again after each invocation; a launch
+   during which that process changed or stopped answering is recorded as an infrastructure
+   failure with the invocation kept, never as the arm's result, and the rerun rule applies.
+4. **An OpenCode run claims success only when its last turn answered.** A run that exited 0
+   with no error reported, whose last turn finished after about 10,500 generated tokens with no
+   message and no tool call (the server having stopped the generation at its resource limit),
+   was counted as a claim; three of the five runs in pass 3's "reported success while the
+   hidden oracle failed" row for OpenCode are such runs. They were not claims.
+5. **The manifest pins the harness.** A digest over the launcher's own modules is frozen with
+   the manifest, and a launch under an edited harness is refused instead of recorded.
+
+The task set, the task texts, the hidden oracles, the supervision rule, the wall budget, the
+seed, the order and the Swarm revision are unchanged. As with pass 3, the decision follows a
+reading of records and is not selective: every one of the forty launches, both arms alike, runs
+again under a new manifest carrying this document's digest, and pass 3's records stay under
+their own manifest digest with their file digests listed in the README. The comparison is
+pass 4 alone.

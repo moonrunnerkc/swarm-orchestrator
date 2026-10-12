@@ -32,6 +32,8 @@ is recorded once; failed, capped and infrastructure launches are retained.
 - [results-pass2.md](results-pass2.md), [records-pass2.sha256](records-pass2.sha256) and
   [manifest-pass2.json](manifest-pass2.json): the failed second pass, its tables, the digests
   of its retained records and the manifest it ran under.
+- [results-pass3.md](results-pass3.md), [records-pass3.sha256](records-pass3.sha256) and
+  [manifest-pass3.json](manifest-pass3.json): the failed third pass, likewise.
 
 ## Passes
 
@@ -39,11 +41,12 @@ is recorded once; failed, capped and infrastructure launches are retained.
 | --- | --- | --- | --- |
 | 1 | 2026-10-11 20:27 to 22:13 | every launch an infrastructure failure: the harness scored against the wrong commit and the OpenCode arm exited at once (inherited `PWD`, global small-model setting). Harness defects, fixed before pass 2 | the `*.infrastructure-1.json` records beside pass 2's |
 | 2 | 2026-10-12 00:01 to 08:57 | all forty launches completed and scored; afterwards, eleven Swarm launches were found refused by Swarm's own preflight before any model call and four more ended on Swarm or harness defects. Eight Swarm defects and two harness defects fixed at the root | [results-pass2.md](results-pass2.md), [records-pass2.sha256](records-pass2.sha256) |
-| 3 | after the amendment | every launch again, both arms, under the re-frozen manifest | [results.md](results.md), [records/](records) |
+| 3 | 2026-10-12 09:54 to 23:19 | all forty launches completed and scored; afterwards, every OpenCode launch was found to have lost the model endpoint mid-run (44 of 58 invocations), because the server died of GPU memory exhaustion whenever that arm's session-title call ran beside its first turn. Pass 2's OpenCode launches had the same failure, unseen at the time. Two harness defects fixed at the root, one OpenCode setting changed, the endpoint now watched | [results-pass3.md](results-pass3.md), [records-pass3.sha256](records-pass3.sha256) |
+| 4 | after amendment 2 | every launch again, both arms, under the re-frozen manifest | [results.md](results.md), [records/](records) |
 
-The reasons, the fixes and the rerun decision are in [protocol.md](protocol.md), amendment 1.
-Pass 3 is the comparison; passes 1 and 2 are reported because they happened.
+The reasons, the fixes and the rerun decisions are in [protocol.md](protocol.md), amendments 1
+and 2. Pass 4 is the comparison; passes 1 to 3 are reported because they happened.
 
 ## Status
 
-See [results.md](results.md) for pass 3's launches and the counts.
+See [results.md](results.md) for pass 4's launches and the counts.
