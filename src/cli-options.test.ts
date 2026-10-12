@@ -655,6 +655,27 @@ it("parses separate shared budgets, resource classes and supplied goal checks", 
   });
 });
 
+it("names the lockfile setup installs from only beside --install, from the installer's list", () => {
+  expect(
+    parseRun(["task", "--goal-contract", "goal.json", "--install", "--lockfile", "yarn.lock"]),
+  ).toMatchObject({ installDependencies: true, lockfile: "yarn.lock" });
+  expect(() => parseRun(["task", "--lockfile", "yarn.lock"])).toThrow(
+    "--lockfile names the lockfile --install reads; pass --install as well",
+  );
+  expect(() => parseRun(["task", "--install", "--lockfile", "Gemfile.lock"])).toThrow(
+    "--lockfile must be one of package-lock.json, pnpm-lock.yaml, yarn.lock, uv.lock",
+  );
+  expect(
+    parseCommandLine(
+      ["ci", "--patch", "p.diff", "--install", "--lockfile", "pnpm-lock.yaml"],
+      context,
+    ),
+  ).toMatchObject({ command: "ci", installDependencies: true, lockfile: "pnpm-lock.yaml" });
+  expect(() =>
+    parseCommandLine(["ci", "--patch", "p.diff", "--lockfile", "pnpm-lock.yaml"], context),
+  ).toThrow("--lockfile names the lockfile --install reads; pass --install as well");
+});
+
 it("makes parallel lockfile setup explicit", () => {
   expect(parseCommandLine(["parallel", "--goal", "fix cache", "--install"], context)).toMatchObject(
     { command: "parallel", installDependencies: true },

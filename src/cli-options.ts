@@ -8,6 +8,7 @@ import {
   type GatesCommand,
   type HookCommand,
   InvalidCommandLineError,
+  lockfileChoices,
   type McpCommand,
   type PreCommitCommand,
   parseVerifyOnlyCommand,
@@ -49,6 +50,8 @@ export interface RunCommand {
    */
   readonly planChecks?: boolean;
   readonly installDependencies?: boolean;
+  /** The lockfile `--install` reads where the tree holds several; refused rather than guessed. */
+  readonly lockfile?: string;
   readonly escalationModel?: string;
   readonly maxTokens?: number;
   /** How the goal's requirement checks are challenged; absent is off. */
@@ -62,6 +65,7 @@ export interface RunCommand {
     readonly goal?: {
       readonly contract: import("./evidence/goal-contract.ts").GoalContract;
       readonly install: boolean;
+      readonly lockfile?: string;
     };
     readonly history: readonly import("./core/model-client.ts").ConversationMessage[];
     readonly escalationCount?: number;
@@ -329,6 +333,8 @@ export const usage = [
   "    --goal-contract <file>                         sealed requirements and checks the",
   "                                                   worker must satisfy; no preset needed",
   "    --preset bugfix|refactor|upgrade                 a behavior policy the contract also names",
+  "    --install [--lockfile <file>]                   install from the lockfile before the checks;",
+  "                                                   name the lockfile where the tree holds several",
   "    --plan-checks                                  author, show and seal model-labelled",
   "                                                   criteria before implementation",
   "    --escalate-model <provider:id>                  authorize one bounded capability escalation",
@@ -345,6 +351,7 @@ export const usage = [
   "    [--agent-format generic|claude-code]           beside it, so the record is not a guess",
   "    [--install]                                    install the checkout's dependencies first,",
   "                                                   without which a real project measures nothing",
+  "    [--lockfile <file>]                            which lockfile, where the tree holds several",
   "    [--oracle <command>]                           what says the task was done; without it the",
   "                                                   task is unjudged and nothing is verified",
   "",
@@ -607,6 +614,11 @@ export function parseCommandLine(
     throw invalid("--preset requires --goal-contract with pinned behavior obligations");
   if (preset === "upgrade" && !flags.has("install"))
     throw invalid("upgrade requires --install authorization for locked dependency preparation");
+  const lockfile = flags.get("lockfile");
+  if (lockfile !== undefined && !lockfileChoices.includes(lockfile))
+    throw invalid(`--lockfile must be one of ${lockfileChoices.join(", ")}`);
+  if (lockfile !== undefined && !flags.has("install"))
+    throw invalid("--lockfile names the lockfile --install reads; pass --install as well");
   if (flags.has("escalate-effort"))
     throw invalid("effort escalation is unsupported; name an explicit --escalate-model instead");
   // A contract carries its requirements whether or not it names a preset: a feature task has
@@ -663,6 +675,7 @@ export function parseCommandLine(
           goalContract: resolve(context.currentDirectory, goalContract),
           installDependencies: flags.has("install"),
         }),
+    ...(lockfile === undefined ? {} : { lockfile }),
     ...(flags.has("plan-checks") ? { planChecks: true } : {}),
     ...(flags.has("escalate-model")
       ? { escalationModel: flags.get("escalate-model") as string }

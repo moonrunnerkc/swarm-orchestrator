@@ -470,6 +470,9 @@ export async function verifyIndependently(
         ...(installOptions.gateOptions?.packages === undefined
           ? {}
           : { packages: installOptions.gateOptions.packages }),
+        ...(installOptions.gateOptions?.lockfile === undefined
+          ? {}
+          : { lockfile: installOptions.gateOptions.lockfile }),
         ...(installOptions.goal?.contract.preset?.kind === "upgrade"
           ? { upgradeManifest: installOptions.goal.contract.preset.manifest }
           : {}),

@@ -68,9 +68,21 @@ const observationSchema = z.strictObject({
   detail: z.string().optional(),
 });
 const lockfiles = [
-  { file: "package-lock.json", argv: ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"] },
-  { file: "pnpm-lock.yaml", argv: ["pnpm", "install", "--frozen-lockfile", "--ignore-scripts"] },
-  { file: "yarn.lock", argv: ["yarn", "install", "--frozen-lockfile", "--ignore-scripts"] },
+  {
+    file: "package-lock.json",
+    manager: "npm",
+    argv: ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"],
+  },
+  {
+    file: "pnpm-lock.yaml",
+    manager: "pnpm",
+    argv: ["pnpm", "install", "--frozen-lockfile", "--ignore-scripts"],
+  },
+  {
+    file: "yarn.lock",
+    manager: "yarn",
+    argv: ["yarn", "install", "--frozen-lockfile", "--ignore-scripts"],
+  },
   // Every dependency group and every extra. Groups are development-only by definition
   // (PEP 735), and a project that keeps pytest in a `test` group had no runner after a default
   // sync. The older layout keeps the same tools in a `dev` extra, and the study found most of its
@@ -79,6 +91,7 @@ const lockfiles = [
   // uv refuse, which is reported as a failed install, not worked around.
   {
     file: "uv.lock",
+    manager: "uv",
     // `--no-build`: installing never runs a build backend while the registry is reachable. A
     // package that would need one is left out here by name and built in the deferred offline
     // phase, or left out with its reason where that cannot be done safely.
@@ -93,28 +106,60 @@ const lockfiles = [
     ],
   },
 ] as const;
+type Lockfile = (typeof lockfiles)[number];
+
+/**
+ * Which lockfile an install reads. One present is the one. Several present name different
+ * package managers, and installing from the wrong one measures dependencies the project does
+ * not run with, so the caller's choice is taken where it names one, then the manifest's own
+ * `packageManager` declaration, and otherwise nothing is guessed.
+ */
+async function selectLockfile(
+  workspace: string,
+  present: readonly Lockfile[],
+  named: string | undefined,
+): Promise<{ ok: true; candidates: readonly Lockfile[] } | { ok: false; detail: string }> {
+  const names = present.map((candidate) => candidate.file).join(", ");
+  if (named !== undefined) {
+    const chosen = present.find((candidate) => candidate.file === named);
+    if (chosen === undefined)
+      return {
+        ok: false,
+        detail: `${named} was named for setup but is not here (${present.length === 0 ? "no supported lockfile" : `present: ${names}`}); no dependency setup ran`,
+      };
+    return { ok: true, candidates: [chosen] };
+  }
+  if (present.length <= 1) return { ok: true, candidates: present };
+  const declared = await declaredPackageManager(workspace);
+  const chosen =
+    declared === null ? undefined : present.find((candidate) => candidate.manager === declared);
+  if (chosen === undefined)
+    return {
+      ok: false,
+      detail: `multiple lockfiles (${names}): name the one to install from with --lockfile, or declare packageManager in package.json; no dependency setup ran`,
+    };
+  return { ok: true, candidates: [chosen] };
+}
+
+/** The package manager the manifest's `packageManager` field names, or null. */
+async function declaredPackageManager(workspace: string): Promise<string | null> {
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(await readFile(join(workspace, "package.json"), "utf8"));
+  } catch {
+    return null;
+  }
+  const declared = (manifest as { packageManager?: unknown } | null)?.packageManager;
+  const match = typeof declared === "string" ? /^(npm|pnpm|yarn)@/.exec(declared) : null;
+  return match?.[1] ?? null;
+}
 
 /** Setup is an authorized harness effect, under the same runner, cancellation and resource pool. */
 export async function installFromLockfile(options: InstallOptions): Promise<DependencyInstall> {
   const { workspace, evidence } = options;
   options.signal?.throwIfAborted();
   if (evidence !== undefined) assertDependencyEffectsSettled(evidence);
-  const present = await Promise.all(
-    lockfiles.map(async (candidate) => ({
-      candidate,
-      exists: await lstat(join(workspace, candidate.file)).then(
-        () => true,
-        () => false,
-      ),
-    })),
-  );
-  if (present.filter((entry) => entry.exists).length > 1)
-    return {
-      attempted: false,
-      succeeded: false,
-      command: "",
-      detail: "multiple lockfiles require explicit package selection; no dependency setup ran",
-    };
+  const present: Lockfile[] = [];
   for (const candidate of lockfiles) {
     let lock: Awaited<ReturnType<typeof lstat>>;
     try {
@@ -124,6 +169,12 @@ export async function installFromLockfile(options: InstallOptions): Promise<Depe
       throw cause;
     }
     if (!lock.isFile()) throw new Error(`${candidate.file} must be a regular lockfile, not a link`);
+    present.push(candidate);
+  }
+  const selected = await selectLockfile(workspace, present, options.lockfile);
+  if (!selected.ok)
+    return { attempted: false, succeeded: false, command: "", detail: selected.detail };
+  for (const candidate of selected.candidates) {
     const before = await sourceFingerprint(workspace, options.signal);
     const argv = await installerArgv(candidate, workspace, options);
     const lockDigest = digestOfBytes(await readFile(join(workspace, candidate.file)));
@@ -178,6 +229,8 @@ interface InstallOptions {
   timeoutMs: number;
   evidence?: EvidenceRecorder;
   signal?: AbortSignal;
+  /** The lockfile to install from where the tree holds several; see `selectLockfile`. */
+  lockfile?: string;
   /** How the checks' network is measured before deferred work; the real probe by default. */
   probeNetwork?: NetworkProbe;
 }

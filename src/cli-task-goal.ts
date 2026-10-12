@@ -27,6 +27,8 @@ export interface TaskGoalContext {
   readonly signal: AbortSignal;
   readonly isolation: ContainerBackendOptions | null;
   readonly install: boolean;
+  /** The lockfile setup installs from where the checkout holds several. */
+  readonly lockfile?: string;
   /** How the requirement checks are challenged; absent is off. */
   readonly challengePolicy?: ChallengePolicy;
 }
@@ -81,6 +83,7 @@ async function verify(
       ? {}
       : { repositoryChecks: override.repositoryChecks }),
     installDependencies: context.install,
+    ...(context.lockfile === undefined ? {} : { gateOptions: { lockfile: context.lockfile } }),
     commandsForCheckout: async (checkout) =>
       createNodeCommandRunner(
         context.clock,

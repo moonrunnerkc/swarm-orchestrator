@@ -488,6 +488,9 @@ async function executeAgentTask(
       ...(options.gateOptions?.packages === undefined
         ? {}
         : { packages: options.gateOptions.packages }),
+      ...(options.gateOptions?.lockfile === undefined
+        ? {}
+        : { lockfile: options.gateOptions.lockfile }),
       commands: createNodeCommandRunner(
         options.clock,
         harnessChildEnvironment(),
