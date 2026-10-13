@@ -153,8 +153,19 @@ export function writeArmConfiguration(directory, arm, endpoint, model) {
               options: { baseURL: endpoint },
               // The same per-call output cap Swarm uses (8192); OpenCode's default for an
               // unlisted model asks for 32000, which this server cannot serve in one call.
+              // Thinking off, as Swarm sends it: the server enables thinking for any model
+              // not named "coder", and a turn spent thinking to the cap answers nothing.
+              // OpenCode merges a model's options into the request body as they are, so the
+              // keys are the server's own field names. Swarm sends no sampling fields and
+              // gets the server's defaults; OpenCode sends top_p 1 of its own, so the
+              // server's default top_p (0.95) is named here for the same sampling.
               models: {
-                [model]: { name: model, tool_call: true, limit: { context: 131072, output: 8192 } },
+                [model]: {
+                  name: model,
+                  tool_call: true,
+                  limit: { context: 131072, output: 8192 },
+                  options: { enable_thinking: false, top_p: 0.95 },
+                },
               },
             },
           },
