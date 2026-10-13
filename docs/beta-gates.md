@@ -11,7 +11,7 @@ below preserve their original populations; their pass count is not today's score
 | Controller and goal acceptance | Implemented, no swarm advantage established | [September controller record](redesign-implementation-2026-09-13.md): replacement cohort 2 completed 120 slots. Executable final-tree obligations do not prove semantic completeness. |
 | Containment and cleanup | Partial | [Audit implementation](audit-implementation-2026-09-11.md) added owned runtime resources, cleanup observations and repair. Container teardown exists, superseding the old table's “neither is built”. Host process groups remain best effort against detached descendants; SIGKILL needs supervision or later repair. |
 | Independent adversarial assessment | Open | Maintainer-authored attack families and real hostile fork controls are useful evidence, not an independent attack campaign. |
-| Comparative task success | Unestablished | Earlier comparisons found no difference in their populations. SV-09 and SV-10 through SV-13 remain open; the [new campaign](evidence/2026-09-29/campaign/README.md) has development validation and a prefreeze manifest, not final results. |
+| Comparative task success | Unestablished | Earlier comparisons found no difference in their populations. An exploratory paired trial of twenty mined tasks against OpenCode on one local model, [comparison](evidence/2026-10-11/comparison/README.md), completed on 2026-10-13: 5 of 20 correct against 4 of 20, one task apart, which establishes nothing about task success; it does record that every OpenCode first invocation but one had to be killed at the wall while every Swarm launch returned with a verdict. SV-09 and SV-10 through SV-13 remain open; the [new campaign](evidence/2026-09-29/campaign/README.md) has development validation and a prefreeze manifest, not final results. |
 | Human onboarding | Open | Three fresh-VM AI simulations on public 1.3.0 are recorded in [onboarding](evidence/2026-09-29/onboarding/README.md). They do not meet the real-new-user gate. |
 | Clients and rollout | Partial | Real Claude Code, pre-commit and fork routes were exercised. Cursor needs an actual client/account; rollout follow-ups remain in [SV-15 and SV-17](verifier-first/README.md). |
 | Support loop | Controlled windows observed; external effectiveness open | [Issue 77](https://github.com/moonrunnerkc/swarm-orchestrator/issues/77) recorded the 24-hour reminder on September 30 and 72-hour escalation on October 2. No outside-user support success is inferred. |
@@ -146,8 +146,11 @@ directories are closer, and they were also self-run.
 
 **A baseline comparison (7).** This needs tasks hard enough that a strong model fails some of
 them, and enough of those tasks for a paired test to say anything. Three is not enough and the
-golden set is too easy. Authoring more tasks with hidden oracles is the work, and it is work
-somebody has to do by hand.
+golden set is too easy. Twenty mined tasks with sealed oracles exist now in the
+[exploratory comparison](evidence/2026-10-11/comparison/README.md), and on them both arms fail
+every bugfix and feature task and tie or trade the rest, so with this model the set discriminates
+too little for a paired test; a stronger local model or more tasks is the next step, and the
+authoring is no longer by hand.
 
 **A ten-minute first run (12).** Needs a person who has not seen the tool, and a stopwatch.
 
