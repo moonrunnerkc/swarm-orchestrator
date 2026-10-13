@@ -137,7 +137,7 @@ export function describeUnknownError(cause: unknown): string {
 
   // Bounded: a cycle in a cause chain would otherwise spin here rather than fail.
   for (let depth = 0; depth < 5 && current !== undefined && current !== null; depth += 1) {
-    const message = current instanceof Error ? current.message : String(current);
+    const message = current instanceof Error ? current.message : describeValue(current);
     if (message.length > 0 && !parts.includes(message)) {
       parts.push(message);
     }
@@ -145,10 +145,54 @@ export function describeUnknownError(cause: unknown): string {
     if (typeof code === "string" && !parts.includes(code)) {
       parts.push(code);
     }
-    current = current instanceof Error ? current.cause : undefined;
+    current =
+      current instanceof Error
+        ? current.cause
+        : typeof current === "object"
+          ? (current as { cause?: unknown }).cause
+          : undefined;
   }
 
-  return parts.length === 0 ? String(cause) : parts.join(", caused by ");
+  return parts.length === 0 ? describeValue(cause) : parts.join(", caused by ");
+}
+
+/** How much of an unknown error value is kept: enough to act on, never a transcript. */
+const describedValueCap = 400;
+
+/**
+ * A thrown value that is not an Error, said rather than stringified. A local server's error
+ * body arrives as a plain object (`{ error: { message, type } }` or `{ message }`) and
+ * `String(object)` is "[object Object]", which is what three repair calls of a live run
+ * recorded as their whole account of failing.
+ */
+function describeValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value !== "object" || value === null) return String(value);
+  const record = value as Record<string, unknown>;
+  const nested = record.error;
+  const message =
+    typeof record.message === "string"
+      ? record.message
+      : nested !== null && typeof nested === "object"
+        ? (nested as { message?: unknown }).message
+        : typeof nested === "string"
+          ? nested
+          : undefined;
+  const status = record.status ?? record.statusCode;
+  const statusText = record.statusText;
+  const head = [
+    typeof message === "string" ? message : null,
+    typeof status === "number" || typeof status === "string" ? `status ${status}` : null,
+    typeof statusText === "string" ? statusText : null,
+  ].filter((part): part is string => part !== null);
+  if (head.length > 0) return head.join(", ");
+  try {
+    const json = JSON.stringify(value);
+    if (json === undefined || json === "{}") return "an error carrying no message";
+    return json.length > describedValueCap ? `${json.slice(0, describedValueCap)}...` : json;
+  } catch {
+    return "an error that cannot be described";
+  }
 }
 
 export class ModelCallFailedError extends Error {

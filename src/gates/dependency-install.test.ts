@@ -668,3 +668,46 @@ describe("deferred setup after the scripts-off install", () => {
     });
   });
 });
+
+describe("a tree that holds several lockfiles", () => {
+  it("refuses to guess, and names the two ways through", async () => {
+    await writeFile(join(workspace, "yarn.lock"), "# yarn lockfile v1\n");
+    const observed = await installFromLockfile(await settings());
+    expect(observed).toMatchObject({ attempted: false, succeeded: false, command: "" });
+    expect(observed.detail).toBe(
+      "multiple lockfiles (package-lock.json, yarn.lock): name the one to install from with --lockfile, or declare packageManager in package.json; no dependency setup ran",
+    );
+  });
+
+  it("installs from the lockfile the caller names", async () => {
+    await writeFile(join(workspace, "yarn.lock"), "# yarn lockfile v1\n");
+    const observed = await installFromLockfile({
+      ...(await settings()),
+      lockfile: "package-lock.json",
+    });
+    expect(observed.succeeded).toBe(true);
+    expect(observed.command).toBe("npm ci --ignore-scripts --no-audit --no-fund");
+  });
+
+  it("installs from the lockfile the manifest's packageManager names", async () => {
+    await writeFile(join(workspace, "yarn.lock"), "# yarn lockfile v1\n");
+    await writeFile(
+      join(workspace, "package.json"),
+      JSON.stringify({ name: "fixture", version: "1.0.0", packageManager: "npm@11.0.0" }),
+    );
+    const observed = await installFromLockfile(await settings());
+    expect(observed.succeeded).toBe(true);
+    expect(observed.command).toBe("npm ci --ignore-scripts --no-audit --no-fund");
+  });
+
+  it("refuses a named lockfile the tree does not hold", async () => {
+    const observed = await installFromLockfile({
+      ...(await settings()),
+      lockfile: "pnpm-lock.yaml",
+    });
+    expect(observed).toMatchObject({ attempted: false, succeeded: false });
+    expect(observed.detail).toBe(
+      "pnpm-lock.yaml was named for setup but is not here (present: package-lock.json); no dependency setup ran",
+    );
+  });
+});

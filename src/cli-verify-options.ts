@@ -7,6 +7,18 @@ import { resolve } from "node:path";
  * worker and screen modules the standalone package must not carry.
  */
 
+/**
+ * The lockfiles dependency setup can install from, as `--lockfile` may name one. The same list
+ * the installer keeps, held here as a literal so this parser stays free of the gate modules;
+ * a test holds the two together.
+ */
+export const lockfileChoices: readonly string[] = [
+  "package-lock.json",
+  "pnpm-lock.yaml",
+  "yarn.lock",
+  "uv.lock",
+];
+
 /** Runs the gates over a workspace and reports, with no model and no retries. */
 export interface GatesCommand {
   readonly isolation?: string | null;
@@ -38,6 +50,8 @@ export interface CiCommand {
   readonly requireIsolation?: boolean;
   readonly bundleDirectory?: string;
   readonly packages?: readonly string[];
+  /** The lockfile `--install` reads where the checkout holds several. */
+  readonly lockfile?: string;
   readonly command: "ci";
   readonly patchFile?: string;
   readonly branch?: string;
@@ -190,6 +204,7 @@ const switchFlags = new Set([
   "open-evidence",
   "no-open-evidence",
   "strengthen",
+  "plan-checks",
 ]);
 
 export const defaultBaseRef = "HEAD";
@@ -268,6 +283,11 @@ export function parseVerifyOnlyCommand(
       throw invalid("--challenges must be off, report, or required");
     if (challenges !== undefined && !flags.has("goal-contract"))
       throw invalid("--challenges needs --goal-contract: challenges are of requirement checks");
+    const lockfile = flags.get("lockfile");
+    if (lockfile !== undefined && !lockfileChoices.includes(lockfile))
+      throw invalid(`--lockfile must be one of ${lockfileChoices.join(", ")}`);
+    if (lockfile !== undefined && !flags.has("install"))
+      throw invalid("--lockfile names the lockfile --install reads; pass --install as well");
     const streamPath = flags.get("agent-stream");
     const streamFormat = flags.get("agent-format") ?? "generic";
     if (streamFormat !== "generic" && streamFormat !== "claude-code") {
@@ -296,6 +316,7 @@ export function parseVerifyOnlyCommand(
         ? {}
         : { challenges: challenges as "off" | "report" | "required" }),
       installDependencies: flags.has("install"),
+      ...(lockfile === undefined ? {} : { lockfile }),
       oracleOnly: flags.has("oracle-only"),
       ...(flags.has("require-isolation") ? { requireIsolation: true } : {}),
       taskOracle: flags.get("oracle") ?? null,

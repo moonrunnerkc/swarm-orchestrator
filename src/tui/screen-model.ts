@@ -218,7 +218,7 @@ function describeAction(action: ActionRow, input: ScreenInput): string {
     ? glyphs.failed
     : action.kind === "tool-call"
       ? glyphs.pending
-      : action.kind === "compacted"
+      : action.kind === "compacted" || action.kind === "stall"
         ? glyphs.bullet
         : glyphs.done;
   const when = layout.narrow ? "" : `${formatClock(action.at)}  `;

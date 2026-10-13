@@ -118,6 +118,11 @@ function describePlannerStop(stopReason: string): string {
       );
     case "max-steps":
       return "It ran out of steps before it declared anything: raise --max-steps.";
+    case "stalled":
+      return (
+        "It repeated the same reads with the same results after being told once, and was " +
+        "stopped: try a goal that names the files it should read, or a stronger model."
+      );
     case "max-wall-time":
       return "It ran out of wall time before it declared anything: raise --max-wall-minutes.";
     case "completed":

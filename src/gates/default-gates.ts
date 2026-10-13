@@ -144,6 +144,17 @@ export interface GateSetOptions {
   readonly acceptanceGate?: GateDefinition;
   readonly packages?: readonly string[];
   /**
+   * The lockfile dependency setup installs from where a unit holds several, as `--lockfile`
+   * names it. Without it a tree with two lockfiles is refused rather than guessed.
+   */
+  readonly lockfile?: string;
+  /**
+   * Paths whose difference from the base the run authorized as the task itself: an upgrade
+   * preset's manifest and lockfile. The instrument rule does not read a difference there as an
+   * edit to the instrument; the preset's own enforcement holds it to the declared dependencies.
+   */
+  readonly authorizedInstrumentPaths?: readonly string[];
+  /**
    * Replaces the assembled gate for one id, from swarm.toml or a flag, or adds a gate under an
    * id the assembled set has no slot for, such as `build`.
    */

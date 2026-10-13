@@ -240,7 +240,12 @@ async function readVerifierScript(): Promise<string> {
     ]);
   const controllerImport = 'import { readControllerHistory } from "./controller.mjs";';
   const cryptoImport = 'import { createHash } from "node:crypto";';
-  if (!verifier.includes(controllerImport) || !controller.includes(cryptoImport))
+  const statusImport = 'import { authorizedWithin, capturedRegression } from "./status.mjs";';
+  if (
+    !verifier.includes(controllerImport) ||
+    !verifier.includes(statusImport) ||
+    !controller.includes(cryptoImport)
+  )
     throw new Error(
       "embedded verifier module layout changed; update and validate its standalone assembly",
     );
@@ -275,8 +280,9 @@ async function readVerifierScript(): Promise<string> {
         `const strengtheningAgrees = (() => {${embeddedStrengthening}\nreturn strengtheningAgrees;})();`,
     )
     .replace(
-      'import { capturedRegression } from "./status.mjs";',
-      () => `const capturedRegression = (() => {${embeddedStatus}\nreturn capturedRegression;})();`,
+      'import { authorizedWithin, capturedRegression } from "./status.mjs";',
+      () =>
+        `const { authorizedWithin, capturedRegression } = (() => {${embeddedStatus}\nreturn { authorizedWithin, capturedRegression };})();`,
     )
     .replace(
       'import { upgradeControlPasses } from "./upgrade.mjs";',

@@ -21,7 +21,13 @@ export type StopReason =
    * less room than it needed. Reading a truncation as an empty response hides the one number
    * that explains it.
    */
-  | "output-cap";
+  | "output-cap"
+  /**
+   * The model repeated tool calls it had already made and been answered, was told so once,
+   * and repeated them again. Not a budget: the loop stops because another step would spend
+   * budget on an answer the model has. The gates still run over whatever the tree holds.
+   */
+  | "stalled";
 
 export interface LoopBudget {
   readonly maxSteps: number;

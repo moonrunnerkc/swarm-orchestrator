@@ -14,6 +14,7 @@ import { declareGoalContract } from "./evidence/goal-contract.ts";
 import { createRecordingModelClient } from "./evidence/model-call-recording.ts";
 import { openEvidenceSession } from "./evidence/session.ts";
 import { createFileSetRegistry } from "./gates/file-set.ts";
+import type { IndependentVerification } from "./gates/independent-verification.ts";
 import {
   createFixtureModelClient,
   respondWithText,
@@ -196,6 +197,20 @@ it("completes a narrow upgrade through the ordinary worker and final installed-v
     expect(result.gates.outcome.finalCycle.statuses["task-acceptance"]).toBe("passed");
     expect(result.green).toBe(true);
     expect((await finalizeTaskGoal(context)).acceptable).toBe(true);
+    const verification = evidence
+      .records()
+      .filter((record) => record.type === "independent-verification")
+      .map(
+        (record) =>
+          evidence.payloads().get(record.payloadDigest) as unknown as IndependentVerification,
+      )
+      .at(-1);
+    expect(verification?.regression).toBe("pass");
+    // Under an upgrade preset every instrument observation names the manifest and lockfile as
+    // the task's own, so a difference there is never read as an edit to the instrument.
+    const build = verification?.checks.find((check) => check.id === "build");
+    expect(build?.status).toBe("passed");
+    expect(build?.instrument?.authorized).toEqual(["package-lock.json", "package.json"]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

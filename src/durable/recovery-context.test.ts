@@ -181,12 +181,13 @@ it("restores sealed preset criteria and install permission without renewing the 
       rule: "goal-run-settings-v1",
       contractDigest: freezeGoalContract(contract).digest,
       install: true,
+      lockfile: "package-lock.json",
       deadline: 2100,
       sourceBase: "a".repeat(40),
     },
   });
   const restored = await recoveryContext(root, "one", 1100);
-  expect(restored.goal).toEqual({ contract, install: true });
+  expect(restored.goal).toEqual({ contract, install: true, lockfile: "package-lock.json" });
   expect(restored.remainingWallMs).toBe(1000);
   expect(restored.deadline).toBe(2100);
   await expect(recoveryContext(root, "one", 2100)).rejects.toThrow("original goal deadline");

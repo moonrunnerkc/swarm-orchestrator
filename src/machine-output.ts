@@ -1,5 +1,6 @@
 import type { LoopEvent } from "./core/loop-events.ts";
 import type { RunVerdict } from "./evidence/verdict.ts";
+import type { RunOutcomeReport } from "./run-outcome-shape.ts";
 
 /**
  * Line-delimited JSON, so a CI job or another agent reads a run without scraping the text a
@@ -57,6 +58,20 @@ export interface MachineResult {
     readonly stopped: string;
     readonly contractDigest: string;
   };
+  /**
+   * Added in 14.5.0, beside the verdict rather than inside it: the outcome a person reads,
+   * derived from the chain. Each requirement's status and author, the files the recorded
+   * diff touches, the final verification's refusal or regression reading, the interventions
+   * counted by who made them, what planning cost, and whether `swarm resume` applies. Absent
+   * on a run that ended before a verdict.
+   */
+  readonly outcome?: RunOutcomeReport;
+  /** Present only where criteria planning ended the run before implementation. */
+  readonly planning?: {
+    readonly outcome: "declined" | "unresolved";
+    readonly tokensUsed: number;
+    readonly durationMs: number;
+  };
 }
 
 export function jsonResultLine(result: MachineResult): string {
@@ -67,5 +82,7 @@ export function jsonResultLine(result: MachineResult): string {
     bundleDirectory: result.bundleDirectory,
     exitCode: result.exitCode,
     ...(result.strengthening === undefined ? {} : { strengthening: result.strengthening }),
+    ...(result.outcome === undefined ? {} : { outcome: result.outcome }),
+    ...(result.planning === undefined ? {} : { planning: result.planning }),
   });
 }

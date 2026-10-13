@@ -167,7 +167,14 @@ async function verifyPatchUnderCancellation(
       checkoutRoot: evidence.directory,
       baseCommit,
       patch,
-      ...(options.packages === undefined ? {} : { gateOptions: { packages: options.packages } }),
+      ...(options.packages === undefined && options.lockfile === undefined
+        ? {}
+        : {
+            gateOptions: {
+              ...(options.packages === undefined ? {} : { packages: options.packages }),
+              ...(options.lockfile === undefined ? {} : { lockfile: options.lockfile }),
+            },
+          }),
       ...(acceptance === undefined ? {} : { acceptance }),
       ...(goalContract === undefined
         ? {}

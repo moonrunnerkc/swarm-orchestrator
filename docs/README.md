@@ -26,6 +26,9 @@ text is retained for history and must not be reused as current guidance.
 | [`security-coverage.md`](security-coverage.md) | the fuzzed boundaries and the instrumented coverage numbers |
 | [`empty-turn-diagnosis.md`](empty-turn-diagnosis.md) | the empty assistant turns of August, instrumented, replayed, and located |
 | [`beta-gates.md`](beta-gates.md) | the twelve gates this project will not call itself production-ready without, and where each stands |
+| [`evidence/2026-10-11/tool-stall/`](evidence/2026-10-11/tool-stall/replay.md) | the repeated-tool-call stall of the September pilot, its deterministic replay through the new detector, and a live run of the same goal on the current source |
+| [`evidence/2026-10-11/comparison/`](evidence/2026-10-11/comparison/README.md) | the exploratory comparison of Swarm against an ordinary coding agent on twenty mined tasks: protocol, manifest, validation, records and tables |
+| [`human-trial-protocol.md`](human-trial-protocol.md) | the prepared, unrun protocol and recruitment text for five developers on their own tasks; adoption and human time stay pending |
 | [`evidence/2026-09-06/second-oracle/`](evidence/2026-09-06/second-oracle) | how a false-green rate is measured, why one oracle cannot produce one, and the number |
 | [`evidence/2026-09-06/mined-corpus/`](evidence/2026-09-06/mined-corpus) | tasks mined from merged pull requests, the filter that replaces labelling, and the weakness |
 | [`evidence/2026-09-17/reach-pressure-experiment/`](evidence/2026-09-17/reach-pressure-experiment/report.md) | whether enforcing reach after visible acceptance changes held-back correctness, pre-registered, paired over 79 tasks |

@@ -40,7 +40,11 @@ export async function recoveryContext(sessionRoot: string, runId: string, now = 
   if (goals.length > 1) throw new Error("goal contract changed; reconcile before resuming");
   let goalDeadline: number | undefined;
   let goal:
-    | { contract: ReturnType<typeof freezeGoalContract>["contract"]; install: boolean }
+    | {
+        contract: ReturnType<typeof freezeGoalContract>["contract"];
+        install: boolean;
+        lockfile?: string;
+      }
     | undefined;
   if (goals[0] !== undefined) {
     const frozen = freezeGoalContract(payloads.get(goals[0].payloadDigest)?.contract);
@@ -55,6 +59,7 @@ export async function recoveryContext(sessionRoot: string, runId: string, now = 
       .object({
         contractDigest: z.string(),
         install: z.boolean(),
+        lockfile: z.string().optional(),
         sourceBase: z.string(),
         deadline: z.number(),
       })
@@ -63,7 +68,11 @@ export async function recoveryContext(sessionRoot: string, runId: string, now = 
       throw new Error("goal contract or source changed; reconcile before resuming");
     if (value.deadline <= now) throw new Error("the original goal deadline has elapsed");
     goalDeadline = value.deadline;
-    goal = { contract: frozen.contract, install: value.install };
+    goal = {
+      contract: frozen.contract,
+      install: value.install,
+      ...(value.lockfile === undefined ? {} : { lockfile: value.lockfile }),
+    };
   }
   const staging = new Set<string>();
   for (const record of parsed.records) {

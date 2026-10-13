@@ -1,5 +1,12 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, it, vi } from "vitest";
-import { presetTaskContract } from "./cli-task-contract.ts";
+import {
+  assertPresetSelection,
+  presetTaskContract,
+  readGoalContractFile,
+} from "./cli-task-contract.ts";
 import { freezeGoalContract } from "./evidence/goal-contract.ts";
 import { restrictFileSet } from "./gates/contract-scope.ts";
 import { emptyFileSet } from "./gates/file-set.ts";
@@ -54,4 +61,77 @@ it("gives upgrade workers exact targets and enforces only the named migration pa
       network: "denied",
     }).objective,
   ).toBe(contract.objective);
+});
+
+const featureGoal = freezeGoalContract({
+  version: 1,
+  goal: "serve a --no-cache flag",
+  requirements: [{ id: "flag", description: "the flag disables caching", checks: [] }],
+  checks: [],
+  immutablePaths: ["tests/"],
+}).contract;
+
+it("gives a feature task the whole workspace, its sealed objective and the acceptance check", () => {
+  const contract = presetTaskContract({
+    goal: featureGoal,
+    task: "add --no-cache",
+    maxSteps: 4,
+    maxWallMs: 60000,
+    network: "unrestricted",
+  });
+  expect(contract.scopeKind).toBe("workspace");
+  expect(contract.immutablePaths).toEqual(["tests"]);
+  expect(contract.requiredChecks).toEqual(["task-acceptance"]);
+  expect(contract.objective).toContain("Sealed objective: serve a --no-cache flag");
+  expect(contract.objective).toContain("Preset: null");
+});
+
+it("names a preset in both places or in neither", () => {
+  expect(() => assertPresetSelection(undefined, featureGoal)).not.toThrow();
+  expect(() => assertPresetSelection("bugfix", featureGoal)).toThrow(
+    "the goal contract carries no preset",
+  );
+  const upgrade = freezeGoalContract({
+    version: 1,
+    goal: "Upgrade parser",
+    requirements: [{ id: "parse", description: "Preserve parsed values", checks: [] }],
+    checks: [],
+    immutablePaths: [],
+    preset: {
+      kind: "upgrade",
+      manager: "npm",
+      manifest: "package.json",
+      lockfile: "package-lock.json",
+      dependencies: [{ name: "is-number", section: "dependencies", version: "7.0.0" }],
+      sourcePaths: [],
+    },
+  }).contract;
+  expect(() => assertPresetSelection(undefined, upgrade)).toThrow(
+    "pass --preset upgrade to run under that policy (with --install)",
+  );
+  expect(() => assertPresetSelection("bugfix", upgrade)).toThrow(
+    "--preset bugfix does not match the upgrade preset",
+  );
+  expect(() => assertPresetSelection("upgrade", upgrade)).not.toThrow();
+});
+
+it("names the contract file and what is wrong with it", async () => {
+  const root = await mkdtemp(join(tmpdir(), "swarm-contract-file-"));
+  try {
+    await expect(readGoalContractFile(join(root, "missing.json"))).rejects.toThrow(
+      "missing.json cannot be read",
+    );
+    await writeFile(join(root, "broken.json"), "{");
+    await expect(readGoalContractFile(join(root, "broken.json"))).rejects.toThrow(
+      "broken.json is not JSON",
+    );
+    await writeFile(join(root, "invalid.json"), JSON.stringify({ version: 1 }));
+    await expect(readGoalContractFile(join(root, "invalid.json"))).rejects.toThrow(
+      "invalid.json is not a valid goal contract",
+    );
+    await writeFile(join(root, "good.json"), JSON.stringify(featureGoal));
+    expect((await readGoalContractFile(join(root, "good.json"))).goal).toBe(featureGoal.goal);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

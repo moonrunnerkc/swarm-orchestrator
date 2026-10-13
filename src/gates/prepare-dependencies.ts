@@ -8,6 +8,8 @@ import type { GateCommandRunner } from "./gate-definition.ts";
 export async function prepareDependencies(options: {
   checkout: string;
   packages?: readonly string[];
+  /** The lockfile to install from where a unit holds several; nothing is guessed without it. */
+  lockfile?: string;
   upgradeManifest?: string;
   commands: GateCommandRunner;
   timeoutMs: number;
@@ -34,6 +36,7 @@ export async function prepareDependencies(options: {
       workspace,
       commands: options.commands,
       timeoutMs: options.timeoutMs,
+      ...(options.lockfile === undefined ? {} : { lockfile: options.lockfile }),
       ...(options.evidence === undefined ? {} : { evidence: options.evidence }),
       ...(options.signal === undefined ? {} : { signal: options.signal }),
     });
