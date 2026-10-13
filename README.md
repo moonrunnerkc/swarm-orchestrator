@@ -173,6 +173,13 @@ wall budget and one deterministic supervision rule applied to both, scored by th
 commit's own tests held sealed from both arms. The protocol was registered before any launch;
 the counts, with their denominators, and what they do and do not support are in
 [docs/evidence/2026-10-11/comparison/README.md](docs/evidence/2026-10-11/comparison/README.md).
+In the pass that stands (the fifth; four earlier passes were discarded for defects found in the
+harness, in Swarm and in the model server, each reported there), Swarm completed 5 of 20 tasks
+correctly and OpenCode 4 of 20, a one-task difference that supports no claim of an advantage.
+What separated the arms was how they ended: 19 of OpenCode's 20 first invocations had to be
+killed at the 30-minute wall, most of them repeating one command, while every Swarm launch
+returned on its own with a verdict; the correct Swarm tasks cost 355 thousand tokens each
+against 4.76 million for OpenCode's.
 Developer hours saved and real-world adoption are not measured there; the prepared, unrun
 protocol for five developers on their own tasks is [docs/human-trial-protocol.md](docs/human-trial-protocol.md).
 
