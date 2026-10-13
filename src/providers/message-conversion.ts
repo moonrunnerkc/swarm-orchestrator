@@ -38,8 +38,21 @@ function toAssistantContent(text: string, toolCalls: readonly ModelToolCall[]): 
       type: "tool-call",
       toolCallId: call.callId,
       toolName: call.toolName,
-      input: call.input,
+      input: renderableInput(call.input),
     });
   }
   return parts.length === 0 ? "" : parts;
+}
+
+/**
+ * What a replayed tool call carries as its arguments. A call the model cut off at its output
+ * limit arrives with the fragment it managed (`{`), which the loop keeps as it was and refuses
+ * at the chokepoint. Sent back as it is, an OpenAI-compatible server parses the fragment to a
+ * string and its chat template fails on every later request ("Can only get item pairs from a
+ * mapping"), which ended three trial runs as model errors. The fragment is carried under one
+ * key instead, so the model sees what it wrote and the server has a mapping to render.
+ */
+function renderableInput(input: unknown): unknown {
+  if (input !== null && typeof input === "object" && !Array.isArray(input)) return input;
+  return { unparsed_arguments: typeof input === "string" ? input : (JSON.stringify(input) ?? "") };
 }

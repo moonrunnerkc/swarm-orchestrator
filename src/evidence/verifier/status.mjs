@@ -22,8 +22,10 @@ export function instrumentChanges(instrument) {
   )
     return ["instrument record under an unknown rule"];
   const changed = [];
+  const authorized = instrument.authorized ?? [];
   for (const file of instrument.files ?? [])
-    if (file.reference !== file.current) changed.push(file.path);
+    if (file.reference !== file.current && !authorized.includes(file.path.split("#")[0]))
+      changed.push(file.path);
   for (const dependency of instrument.dependencies ?? [])
     if (
       dependency.reference !== dependency.current &&
@@ -64,6 +66,24 @@ function counter(text, name) {
  * and src/gates/default-gates.ts, rule for rule; the parity test in that tree holds the two
  * to each other.
  */
+/**
+ * Whether every authorized instrument difference a verification's checks carry is one the
+ * sealed goal allows: an upgrade preset's manifest and lockfile, and nothing without one.
+ */
+export function authorizedWithin(checks, allowed) {
+  if (!Array.isArray(checks)) return true;
+  return checks.every((check) =>
+    [check.instrument, check.configurationInstrument, check.baseTestsInstrument].every(
+      (instrument) =>
+        instrument === undefined ||
+        instrument === null ||
+        instrument.authorized === undefined ||
+        (Array.isArray(instrument.authorized) &&
+          instrument.authorized.every((path) => allowed.includes(path))),
+    ),
+  );
+}
+
 export function readStatus(parser, observation) {
   const status = readParsedStatus(parser, observation);
   // A pass reported under an instrument the change altered is the project's report, not evidence.

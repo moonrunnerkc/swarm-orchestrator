@@ -8,10 +8,15 @@ import type { ContainerBackendOptions } from "./exec/container-backend.ts";
 import { recordedContainerBackend } from "./exec/runtime-resource.ts";
 import type { GateDefinition } from "./gates/gate-definition.ts";
 import type { ChallengePolicy } from "./gates/goal-challenges.ts";
-import { verifyIndependently } from "./gates/independent-verification.ts";
+import {
+  type IndependentVerification,
+  refusedVerification,
+  verifyIndependently,
+} from "./gates/independent-verification.ts";
 import { createNodeCommandRunner } from "./gates/node-command-runner.ts";
 import { inspectionParser } from "./gates/parsers.ts";
 import { diffAgainstBase, patchAgainstBase } from "./gates/scratch-index.ts";
+import { VerificationRefusalError } from "./gates/verification-refusal.ts";
 
 export interface TaskGoalContext {
   readonly contract: GoalContract;
@@ -22,10 +27,31 @@ export interface TaskGoalContext {
   readonly signal: AbortSignal;
   readonly isolation: ContainerBackendOptions | null;
   readonly install: boolean;
+  /** The lockfile setup installs from where the checkout holds several. */
+  readonly lockfile?: string;
   /** How the requirement checks are challenged; absent is off. */
   readonly challengePolicy?: ChallengePolicy;
 }
 async function check(
+  context: TaskGoalContext,
+  patch: string,
+  override?: {
+    readonly contract: GoalContract;
+    readonly challengePolicy: ChallengePolicy;
+    readonly repositoryChecks?: "skip";
+  },
+): Promise<IndependentVerification> {
+  try {
+    return await verify(context, patch, override);
+  } catch (cause) {
+    // A policy decision against the change, named, is a result the gate feeds back and the
+    // final assessment records; thrown through, it ended the run with no verdict at all.
+    if (cause instanceof VerificationRefusalError) return refusedVerification(cause.message);
+    throw cause;
+  }
+}
+
+async function verify(
   context: TaskGoalContext,
   patch: string,
   override?: {
@@ -57,6 +83,7 @@ async function check(
       ? {}
       : { repositoryChecks: override.repositoryChecks }),
     installDependencies: context.install,
+    ...(context.lockfile === undefined ? {} : { gateOptions: { lockfile: context.lockfile } }),
     commandsForCheckout: async (checkout) =>
       createNodeCommandRunner(
         context.clock,
@@ -72,29 +99,77 @@ async function check(
   });
 }
 
-/** Establish required base behavior before any implementation call can consume its budget. */
+/**
+ * Establish the acceptance instrument on the base before any implementation call can consume
+ * its budget: a bugfix or refactor needs its base control, and every contract needs checks
+ * that can run here at all. A check whose toolchain is missing, or a fresh checkout that cannot
+ * be prepared, is found now, with the remedy named, rather than after the model has spent the
+ * interesting part of the budget. Upgrades are excluded: their checks assert the installed
+ * version, which the base cannot have, and their authorization is enforced per candidate.
+ */
 export async function preflightTaskGoal(context: TaskGoalContext): Promise<void> {
   const kind = context.contract.preset?.kind;
-  if (kind !== "bugfix" && kind !== "refactor") return;
+  if (kind === "upgrade") return;
   const result = await check(context, "", { contract: context.contract, challengePolicy: "off" });
+  const cannotRun = (result.goalAcceptance?.checkResults ?? []).filter(
+    (check) => check.status === "unjudged",
+  );
+  const passesOnBase = (result.goalAcceptance?.checkResults ?? [])
+    .filter((check) => check.status === "accepted")
+    .map((check) => check.id);
   await context.evidence.record({
     type: "verification-command",
     actor: "harness",
     provenance: ["tool-output"],
     payload: asJsonValue({
-      rule: "preset-preflight-v1",
+      rule: kind === undefined ? "goal-preflight-v1" : "preset-preflight-v1",
       sourceBase: context.baseCommit,
+      ...(kind === undefined
+        ? { cannotRun: cannotRun.map((check) => check.id), passesOnBase }
+        : {}),
       ...result,
     }),
   });
-  if (result.goalAcceptance?.presetControl?.accepted !== true)
+  if (result.refusal !== null)
+    throw new Error(
+      `the acceptance checks cannot be established on the base: ${result.refusal}; repair the prepared environment before model spending`,
+    );
+  if (
+    (kind === "bugfix" || kind === "refactor") &&
+    result.goalAcceptance?.presetControl?.accepted !== true
+  )
     throw new Error(
       `${kind} base control was not established; repair the reproducer or prepared environment before model spending`,
     );
   if (result.unmeasured)
     throw new Error(
-      `preset setup is unmeasured: ${result.advice || result.refusal}; prepare required tools before model spending`,
+      `${kind ?? "goal"} setup is unmeasured: ${result.advice || result.refusal}; prepare required tools before model spending`,
     );
+  if (kind === undefined && cannotRun.length > 0)
+    throw new Error(
+      `acceptance check(s) cannot run here: ${cannotRun.map((check) => `${check.id} (${check.detail.split("\n")[0]})`).join("; ")}; prepare the tools they need before model spending`,
+    );
+}
+
+/** What a goal preflight observed on the base, for the terminal: which checks already pass there. */
+export function describeGoalPreflight(evidence: EvidenceRecorder): readonly string[] {
+  const record = evidence
+    .records()
+    .findLast(
+      (entry) =>
+        entry.type === "verification-command" &&
+        (evidence.payloads().get(entry.payloadDigest) as { rule?: string } | undefined)?.rule ===
+          "goal-preflight-v1",
+    );
+  const payload = evidence.payloads().get(record?.payloadDigest ?? "") as
+    | { passesOnBase?: string[] }
+    | undefined;
+  if (payload === undefined) return [];
+  return payload.passesOnBase === undefined || payload.passesOnBase.length === 0
+    ? ["preflight: every sealed check fails on the base, so a pass will mean the change did it"]
+    : [
+        `preflight: ${payload.passesOnBase.join(", ")} already pass on the base; a pass there is not evidence the change did anything`,
+      ];
 }
 
 /** Project exact final-source acceptance into the recorded worker assessment. */
@@ -207,14 +282,20 @@ export function taskGoalGate(context: TaskGoalContext): GateDefinition {
             detail,
           })) ?? [];
         const unavailable = result.unmeasured || result.task === "unjudged";
+        // A refusal is a decision against the change and reads as one; an unmeasured setup is
+        // something to prepare. The repair feedback is this text, so the two must not be confused.
+        const stderr =
+          result.refusal !== null && !result.unmeasured
+            ? `refused: ${result.refusal}`
+            : unavailable
+              ? `setup unavailable: ${result.advice || result.refusal || "required acceptance instrument is unmeasured"}`
+              : "";
         return {
           exitCode: result.verified ? 0 : 1,
           unavailable: null,
           durationMs: context.clock.now() - started,
           stdout: JSON.stringify({ regression: result.regression, task: result.task, findings }),
-          stderr: unavailable
-            ? `setup unavailable: ${result.advice || result.refusal || "required acceptance instrument is unmeasured"}`
-            : "",
+          stderr,
         };
       },
     },

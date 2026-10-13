@@ -13,8 +13,10 @@ swarm --version                  # which build this is
 
 | flag | what it does |
 | --- | --- |
-| `--preset bugfix\|refactor\|upgrade` | select a policy on the ordinary worker path; requires a matching goal contract |
-| `--goal-contract <file>` | sealed requirement/check definitions outside solver write access |
+| `--goal-contract <file>` | sealed requirements and checks, held outside the solver's reach, that the run must satisfy; a feature task needs no preset. The run establishes the checks on the base before the first model call, iterates against them as the blocking `task-acceptance` gate, repairs under the ratchet, and verifies the exact final tree in a fresh checkout |
+| `--plan-checks` | author those criteria from the task text: the planner reads the workspace with read-only tools and pins requirements and executable checks, shown in plain language and confirmed on a terminal (sealed as written off one). They stay labelled model-authored. A planner that pins nothing stops the run before implementation spending with its own account (exit 4); a decline is exit 3 |
+| `--preset bugfix\|refactor\|upgrade` | a behavior policy the contract also names: base controls for a bugfix or refactor, narrow scope and exact targets for an upgrade (with `--install`). Named in both places or in neither |
+| `--install [--lockfile <file>]` | install the checkout's dependencies from its lockfile before the checks run, with install scripts off. A tree that holds several lockfiles is refused rather than guessed: name the one to install from, or declare `packageManager` in package.json |
 | `--challenges off\|report\|required` | challenge the goal contract's checks with witnessed mutants, fixtures and sealed references |
 | `--strengthen` | after a challenge finds a gap, ask the model for one additive check per gap, admit it only when the harness observes it reject the counterexample and accept every sealed reference, then repair the implementation under the revised contract |
 | `--strengthen-rounds <n>` | lower the default of two strengthening rounds; a higher value is ignored |
@@ -35,6 +37,18 @@ swarm --version                  # which build this is
 | `--no-color` | no colour, whatever the terminal says |
 | `--open-evidence` | open the review page when it finishes |
 | `--local-endpoint <url>` | an OpenAI-compatible server other than the default |
+
+A run ends with an outcome block before the evidence panel, derived from the chain and not from
+anything the model said: the verdict and how the loop stopped; each sealed requirement as met,
+unmet or unjudged, with model-authored criteria labelled; the tree, the branch and the files the
+recorded diff touches; which checks ran over that tree and what they could not measure; time,
+steps, tokens (a lower bound where a call reported no usage) and cost, with planning shown
+separately; interventions counted by who made them (a person's answers apart from the approval
+mode's); and, when the run is not acceptable, what blocked it and one next action, which is
+`swarm resume <run-id>` when the run was interrupted or ran out of wall time. With `--json` the
+same fields travel on the `swarm.result.v1` line as `outcome`, beside the verdict. A run that
+repeats tool calls it has already been answered is told once and stopped the second time (stop
+reason `stalled`), and both decisions are on the chain.
 
 ## Setting up
 
@@ -184,6 +198,7 @@ swarm ci --pr <owner/repo#number>
   --require-isolation            # refuse unless the selected backend measures isolated
   --oracle <command>             # what says the task was done
   --install                      # install the checkout's dependencies from its lockfile
+  --lockfile <file>              # which lockfile, where the tree holds several
   --oracle-only                  # judge the oracle, skip the repository's own checks
   --immutable <a,b>              # paths the patch may not touch
   --agent-stream <file>          # another agent's event stream, read beside it

@@ -70,6 +70,10 @@ export async function runChecks(
     installedRoot: checkout,
   });
 
+  // An upgrade's manifest and lockfile differ from the reference by definition; the preset's
+  // enforcement, which ran before any check, holds that difference to the declared dependencies.
+  const preset = options.goal?.contract.preset;
+  const authorized = preset?.kind === "upgrade" ? [preset.manifest, preset.lockfile] : [];
   const results: IndependentCheck[] = [];
   for (const gate of gates) {
     if (gate.source.kind === "inspection" && gate.source.unavailableReason === undefined) continue;
@@ -78,7 +82,9 @@ export async function runChecks(
         ? { command: gate.source.command, argv: gate.source.argv ?? null }
         : null;
     const before =
-      instrumented === null ? null : await observeInstrument(instrumented, await trees());
+      instrumented === null
+        ? null
+        : await observeInstrument(instrumented, await trees(), { authorized });
     const observed =
       gate.source.kind === "inspection"
         ? unavailableObservation(gate.source.unavailableReason ?? "check unavailable")
@@ -89,7 +95,7 @@ export async function runChecks(
       instrumented === null || before === null || observed.unavailable !== null
         ? null
         : {
-            ...(await observeInstrument(instrumented, await trees())),
+            ...(await observeInstrument(instrumented, await trees(), { authorized })),
             before: observationDigest(before),
           };
     const reported = gate.parse(observed);

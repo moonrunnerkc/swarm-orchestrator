@@ -60,6 +60,8 @@ export interface PlannerOutcome {
    */
   readonly stopReason: StopReason;
   readonly steps: number;
+  /** The model's last words where it finished without declaring: a question, or an account. Unverified. */
+  readonly completionClaim: string;
 }
 
 /**
@@ -171,6 +173,7 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
     graph: declared.graph,
     stopReason: loop.stopReason,
     steps: loop.steps,
+    completionClaim: loop.completionClaim,
     ...(options.requireGoalChecks === true ? { goalContract } : {}),
   };
 }

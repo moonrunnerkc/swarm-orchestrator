@@ -20,6 +20,7 @@ export const assessmentInputsSchema = z.object({
     "model-error",
     "output-cap",
     "empty-response",
+    "stalled",
   ]),
   cancelled: z.boolean(),
   settled: z.enum(["green", "escalated"]),
@@ -105,15 +106,29 @@ export async function recordGoalAssessment(
     );
   if (captured === undefined)
     throw new Error("final goal assessment needs a subsequent independent verification record");
+  // Either the verifier judged the source under the goal policy, or it refused before running
+  // anything and named why. A refusal is a non-success the assessment records, never a crash:
+  // the September pilot ended every refused upgrade run with no verdict and no result line.
   const independent = z
-    .object({
-      certificationPolicy: z.literal("goal-obligations-v1"),
-      verified: z.boolean(),
-      task: z.enum(["accepted", "rejected", "unjudged", "vacuous"]),
-      advice: z.string(),
-      sourcePatchDigest: z.string(),
-      sourceBase: z.string(),
-    })
+    .union([
+      z.object({
+        certificationPolicy: z.literal("goal-obligations-v1"),
+        refusal: z.null().optional(),
+        verified: z.boolean(),
+        task: z.enum(["accepted", "rejected", "unjudged", "vacuous"]),
+        advice: z.string(),
+        sourcePatchDigest: z.string(),
+        sourceBase: z.string(),
+      }),
+      z.object({
+        refusal: z.string().min(1),
+        verified: z.literal(false),
+        task: z.literal("unjudged"),
+        advice: z.string(),
+        sourcePatchDigest: z.string(),
+        sourceBase: z.string(),
+      }),
+    ])
     .parse(evidence.payloads().get(verificationDigest));
   const diffRecord = evidence
     .records()
@@ -138,7 +153,13 @@ export async function recordGoalAssessment(
     acceptable: base.verdict.acceptable && independent.verified,
     reasons: {
       ...base.verdict.reasons,
-      task: independent.advice || `pinned goal checks: ${independent.task}`,
+      // Mirrored byte for byte by the bundled verifier's re-derivation of this record; a richer
+      // account of which requirements were unmet is read off the verification payload by the
+      // run outcome display, not written here.
+      task:
+        "refusal" in independent && independent.refusal != null
+          ? `final verification refused: ${independent.refusal}`
+          : independent.advice || `pinned goal checks: ${independent.task}`,
     },
   };
   await evidence.record({

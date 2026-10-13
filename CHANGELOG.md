@@ -4,6 +4,96 @@ The coding agent. The standalone verifier it is built on, `swarm-verify`, has it
 [packages/swarm-verify/CHANGELOG.md](packages/swarm-verify/CHANGELOG.md); an agent release names
 the verifier version it carries rather than repeating those entries.
 
+## 14.5.0 - unreleased
+
+The ordinary task workflow: a task in words, sealed criteria, acceptance, repair and final
+verification on one path, with the run's outcome led by what was and was not established.
+Source on `v13-main`; not published until a release names it.
+
+### Added
+
+- **A goal contract without a preset.** `--goal-contract <file>` now carries a feature task's
+  sealed requirements through the acceptance gate, bounded repair, challenges and strengthening,
+  recovery and the independent final verification of the exact tree. `--challenges` follows the
+  contract rather than a preset. A preset is named in both places or in neither.
+- **`--plan-checks`**: the goal controller's planner authors requirements and executable checks
+  for one task from its text, on a planning chain of its own, shows them in plain language,
+  confirms them on a terminal and seals them as written off one. They stay labelled
+  model-authored on the chain, in the report and in the JSON result. A planner that pins nothing
+  stops the run before implementation spending with its account (exit 4); a decline is exit 3.
+- **Every contract is established on the base before the first model call**: a check whose tool
+  is missing or a fresh checkout that cannot be prepared stops the run with the remedy named;
+  checks that already pass on the base are named as not evidence of change.
+- **The outcome block** at the end of a run, derived from the chain: the verdict, each
+  requirement's status and author, the tree and changed files, the checks and what they could
+  not measure, time, tokens and cost with planning shown separately, interventions by who made
+  them, and one next action when the run is not acceptable. `swarm.result.v1` carries the same
+  fields additively as `outcome`.
+- **Repeated tool calls are stopped.** A worker that repeats a call it has already been answered
+  is told once and stopped the second time (stop reason `stalled`); both decisions are
+  `session-budget` records (`tool-stall-v1`) and `stall` events. Replayed against the September
+  development run that repeated one command thirty-five times, the detector intervenes at step
+  9 and stops at step 12 of a loop that ran to 72 calls
+  ([evidence](docs/evidence/2026-10-11/tool-stall/replay.md)).
+
+### Fixed
+
+- A refused final verification (a fresh checkout that could not install, an immutable path
+  reached, an upgrade policy decision) ended the run with a schema error and no result line. It
+  is now a recorded non-success: task unjudged, not acceptable, the refusal as the reason; the
+  bundled verifier re-derives it. Upgrade policy decisions fail the acceptance gate with the
+  reason instead of ending the run.
+- A model failure whose payload is not an Error (a local server's error body) was recorded and
+  shown as `[object Object]`; it is now described, with the original kept as the cause.
+- **The base control could not be put in place after a goal check ran.** Restoring the verifier
+  checkout between goal checks rewrote every file from its snapshot, installed dependencies
+  included, so the ignored-tree record that guards the base control read all of them as altered
+  by the run and refused the comparison: a check that failed on the candidate stayed
+  unattributed, the regression dimension read unmeasured, and a feature task's preflight stopped
+  before the first model call. Restoring now touches only what a check changed. Found in the
+  exploratory trial on a js-yaml task.
+- **A package that ships `npm` or `npx` into `node_modules/.bin` no longer voids every check.**
+  The instrument check recorded such a link as an interpreter no package owns, which is what it
+  is for an edit to node_modules, and withheld every pass; a project whose release tooling
+  depends on the `npm` package (`@semantic-release/npm` does) could never be verified. A link
+  resolving into a package that both sides' lockfiles pin under one identical entry is now the
+  reference's own instrument, recorded with the version it pins. Found in the trial on marked.
+- **A tree with two lockfiles was refused with no way through.** The installer named "explicit
+  package selection" as the remedy, and nothing offered one. The manifest's `packageManager`
+  declaration now decides, and `--lockfile <file>` names the lockfile where it does not
+  (`swarm ... --install --lockfile package-lock.json`, also on `swarm-verify ci`). Without
+  either, a tree holding several is still refused rather than guessed. Found in the trial on
+  fast-xml-parser, which keeps a package-lock.json and a yarn.lock side by side.
+- **An upgrade's own manifest change no longer withholds every pass.** A check whose instrument
+  reaches package.json (a build program that reads it, a configuration that imports it) read the
+  declared dependency bump as an edit to the instrument, withheld the pass, reran under the
+  base's manifest and found that reading not applicable either: no upgrade task could establish
+  its regression dimension. The preset's enforcement already holds the manifest and lockfile to
+  the declared dependencies, so the instrument observation now names them as `authorized` and
+  neither implementation of the instrument rule reads a difference there as a change; the
+  bundled verifier additionally refuses an authorization that is not an upgrade preset's own
+  manifest and lockfile. Found in the trial on marked.
+- **An immutable directory covers what is under it in the final verification**, as it already
+  did at the chokepoint. Read as an exact name, `acceptance/visible` let a formatter's rewrite
+  of `acceptance/visible/check.mjs` through a verification the run had promised to refuse.
+  Found in the trial on minimatch.
+- **The deadline ends model work, not the final verification.** The wall clock aborted
+  everything at once; a run whose loop used its budget had its final verification cancelled
+  thirty seconds later, mid-command, and ended with no result line (`cannot pin final candidate
+  tree`). Planning, the loop, repair and strengthening stop at the deadline; the final gates and
+  verification of what they produced run to their own end, as the budget record says they do.
+  Found in the trial on js-yaml.
+- **A tool call the model cut off at its output limit no longer ends the run.** The fragment
+  (`{`) was kept as it was and refused at the chokepoint, which is right, and then replayed to
+  the provider as it was, which an OpenAI-compatible server parses to a string and whose chat
+  template then fails on every later request ("Can only get item pairs from a mapping"): three
+  such failures ended the run as a model error. The replay carries the fragment under one key,
+  so the model sees what it wrote and the server has a mapping to render. Three trial runs
+  ended this way.
+- **A dotfile is a valid upgrade source path.** `.eslintrc.json` and `.eslintignore` were
+  refused by the preset schema, so a toolchain upgrade that names them could not be sealed. A
+  `..` segment is still refused.
+
 ## 14.4.0 - 2026-10-08
 
 Swarm Orchestrator is the product of this repository again. 14.3.0's README and repository

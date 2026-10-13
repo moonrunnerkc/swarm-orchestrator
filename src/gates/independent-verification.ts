@@ -6,6 +6,7 @@ import { freezeAcceptanceContract } from "../evidence/acceptance-contract.ts";
 import { asJsonValue } from "../evidence/canonical-json.ts";
 import { type GoalContract, goalImmutablePaths } from "../evidence/goal-contract.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
+import { protectsPath } from "../evidence/task-contract.ts";
 import { certifies } from "./certification.ts";
 import {
   type IgnoredSnapshot,
@@ -61,6 +62,7 @@ import { enforceUpgrade, reproducedBug } from "./preset-verification.ts";
 import { parseUnifiedDiff } from "./unified-diff.ts";
 import { observeUpgradeResolution } from "./upgrade-resolution.ts";
 import { readV8Coverage } from "./v8-coverage.ts";
+import { VerificationRefusalError } from "./verification-refusal.ts";
 
 /**
  * Verification that does not trust the tree it is verifying.
@@ -140,6 +142,30 @@ export interface IndependentCheck {
 }
 
 export type { DependencyInstall } from "./dependency-install.ts";
+
+/**
+ * A verdict refused before anything ran: nothing applied, nothing measured, the reason named.
+ * `unmeasured` is false because the refusal is a decision about the change, not a failure to
+ * take a measurement, and a reader must not be sent to fix an environment.
+ */
+export function refusedVerification(refusal: string): IndependentVerification {
+  return {
+    applied: false,
+    checks: [],
+    refusal,
+    regression: "unmeasured",
+    task: "unjudged",
+    oracleReach: "unmeasured",
+    unreachedByOracle: [],
+    oracleBond: "not-bonded",
+    bondedMutants: [],
+    verified: false,
+    unmeasured: false,
+    advice: "",
+    install: null,
+    checkoutPath: null,
+  };
+}
 
 export interface IndependentVerification {
   readonly certificationPolicy?: "oracle-v3" | "required-obligations-v1" | "goal-obligations-v1";
@@ -312,31 +338,16 @@ export async function verifyIndependently(
     ? outsidePackages(touched, options.gateOptions.packages)
     : [];
   if (outside.length > 0)
-    throw new Error(
+    throw new VerificationRefusalError(
       `change outside selected packages is unverified: ${outside.join(", ")}; expand the declared package scope or verify the whole repository`,
     );
   const forbidden = touched.filter((path) => matchesAny(path, immutable));
-  if (forbidden.length > 0) {
-    return {
-      applied: false,
-      checks: [],
-      refusal:
-        `the patch changes ${forbidden.join(", ")}, which the run declared immutable. ` +
+  if (forbidden.length > 0)
+    return refusedVerification(
+      `the patch changes ${forbidden.join(", ")}, which the run declared immutable. ` +
         "Nothing was run: a patch that reaches a path the run promised not to touch is " +
         "refused before it is measured, not measured and then judged.",
-      regression: "unmeasured",
-      task: "unjudged",
-      oracleReach: "unmeasured",
-      unreachedByOracle: [],
-      oracleBond: "not-bonded",
-      bondedMutants: [],
-      verified: false,
-      unmeasured: false,
-      advice: "",
-      install: null,
-      checkoutPath: null,
-    };
-  }
+    );
 
   const checkout = await mkdtemp(join(options.checkoutRoot ?? tmpdir(), "swarm-verify-"));
   const timeoutMs = options.timeoutMs ?? defaultGateTimeoutMs;
@@ -460,6 +471,9 @@ export async function verifyIndependently(
         ...(installOptions.gateOptions?.packages === undefined
           ? {}
           : { packages: installOptions.gateOptions.packages }),
+        ...(installOptions.gateOptions?.lockfile === undefined
+          ? {}
+          : { lockfile: installOptions.gateOptions.lockfile }),
         ...(installOptions.goal?.contract.preset?.kind === "upgrade"
           ? { upgradeManifest: installOptions.goal.contract.preset.manifest }
           : {}),
@@ -1568,9 +1582,16 @@ async function readUnderBaseConfiguration(
   timeoutMs: number,
 ): Promise<readonly IndependentCheck[]> {
   const changed = new Set<string>();
+  // A difference the observation names as authorized (an upgrade's manifest and lockfile) is
+  // the task, not a configuration to put back: the base's would measure the tree the task was
+  // asked to leave rather than the one it was asked to make.
   for (const check of withPatch)
     for (const file of check.instrument?.files ?? [])
-      if (file.reference !== file.current) changed.add(file.path);
+      if (
+        file.reference !== file.current &&
+        !(check.instrument?.authorized ?? []).includes(file.path.split("#")[0] as string)
+      )
+        changed.add(file.path);
   const files = [...changed].sort();
   if (files.length === 0 || withPatch.length === 0) return withPatch;
   const whole = [...new Set(files.map((path) => path.split("#")[0] as string))];
@@ -1710,13 +1731,13 @@ async function judgeTask(
  * rewrites the test script would otherwise choose the instrument that measures it.
  */
 
+/**
+ * Whether a declared path covers a changed one: itself, or anything under it as a directory,
+ * which is the rule the chokepoint applies to the same declaration (`protectsPath`). Read as an
+ * exact name here, `acceptance/visible` let a formatter's rewrite of `acceptance/visible/check.mjs`
+ * through the final verification that the run had promised to refuse.
+ */
 function matchesAny(path: string, patterns: readonly string[]): boolean {
   const normalized = normalizePath(path);
-  return patterns.some((pattern) => {
-    const normalizedPattern = normalizePath(pattern);
-    if (normalizedPattern.endsWith("/**")) {
-      return normalized.startsWith(normalizedPattern.slice(0, -2));
-    }
-    return normalized === normalizedPattern;
-  });
+  return patterns.some((pattern) => protectsPath(normalizePath(pattern), normalized));
 }

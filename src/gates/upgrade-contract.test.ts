@@ -123,3 +123,20 @@ it.each(["npm", "pnpm", "uv"] as const)(
     ).toBe(false);
   },
 );
+
+it("accepts dotfile source paths and still refuses a parent segment", () => {
+  const preset = (sourcePaths: string[]) => ({
+    kind: "upgrade",
+    manager: "npm",
+    manifest: "package.json",
+    lockfile: "package-lock.json",
+    dependencies: [{ name: "gts", section: "devDependencies", version: "6.0.2" }],
+    sourcePaths,
+  });
+  // A toolchain upgrade often has to touch the linter's own dotfiles.
+  expect(
+    taskPresetSchema.parse(preset([".eslintrc.json", ".eslintignore", ".github/workflows/ci.yml"])),
+  ).toMatchObject({ sourcePaths: [".eslintrc.json", ".eslintignore", ".github/workflows/ci.yml"] });
+  expect(() => taskPresetSchema.parse(preset(["../outside.js"]))).toThrow();
+  expect(() => taskPresetSchema.parse(preset(["src/../../outside.js"]))).toThrow();
+});

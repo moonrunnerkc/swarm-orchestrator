@@ -185,14 +185,17 @@ export async function runGateCycle(
       gate.source.kind === "command"
         ? { command: gate.source.command, argv: gate.source.argv ?? null }
         : null;
+    const authorized = context.authorizedInstrumentPaths ?? [];
     const before =
-      instrumented === null ? null : await observeInstrument(instrumented, await instrumentTrees());
+      instrumented === null
+        ? null
+        : await observeInstrument(instrumented, await instrumentTrees(), { authorized });
     const { observation, coverageReport, testReport } = await observe(gate, context, deps);
     const instrument: InstrumentObservation | null =
       instrumented === null || before === null || observation.unavailable !== null
         ? null
         : {
-            ...(await observeInstrument(instrumented, await instrumentTrees())),
+            ...(await observeInstrument(instrumented, await instrumentTrees(), { authorized })),
             before: observationDigest(before),
           };
     const reading = readUnderInstrument(gate.parse(observation), instrument);

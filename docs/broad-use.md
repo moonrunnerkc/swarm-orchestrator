@@ -247,8 +247,9 @@ with no alternatives says.
 
 ## Strengthening the checks, then repairing
 
-On the coding agent's preset path, a challenge that finds a gap can be answered instead of only
-reported. `--strengthen` (with `--challenges report` or `required`) runs a bounded loop after the
+On the coding agent's task path under a goal contract, with or without a preset, a challenge
+that finds a gap can be answered instead of only reported. `--strengthen` (with `--challenges
+report` or `required`) runs a bounded loop after the
 implementation run:
 
 ```sh
@@ -294,6 +295,28 @@ the repair added the missing ceiling, the challenge then read `detected`, and th
 (`bundle.tar.gz` beside the summary) verifies with its own verifier. It validates the mechanism
 on one fixture; it measures nothing about how often strengthening helps.
 
+## A feature task with a goal contract
+
+A general task carries its sealed requirements the same way, without a preset:
+
+```sh
+swarm 'Add a --no-cache flag that disables the response cache' --workspace ./project \
+  --goal-contract /trusted/no-cache.json --install --model local:gemma4:e2b-it-q8_0
+```
+
+The contract names the requirements and the checks that measure them, and the checks live
+outside the solver's reach (artifact paths are new files only the verifier uses; immutable paths
+cover the existing tests). Before the first model call the checks are established on the base: a
+check that cannot run here, or a fresh checkout that cannot be prepared, stops the run with the
+remedy named, and a check that already passes on the base is named as not evidence of change.
+The worker then iterates against the checks as the blocking `task-acceptance` gate, repairs under
+the ratchet, and the exact final tree is verified in a fresh checkout. A regression suite passing
+never stands in for the requirements: an implementation that meets one of two requirements is
+refused with the unmet one named, however green the project's own tests are.
+
+Without a contract file, `--plan-checks` has the planner author one from the task text
+([using.md](using.md#an-ordinary-task-start-to-finish)); the criteria stay labelled model-authored.
+
 ## Presets on the ordinary worker path
 
 ```sh
@@ -306,7 +329,10 @@ swarm 'Upgrade the named dependency' --workspace ./project --preset upgrade \
 ```
 
 Model names are explicit examples from the observed local environment, not recommendations.
-Use your configured model. These flags select policies in the existing worker engine.
+Use your configured model. These flags select policies in the existing worker engine. A preset
+is named in both places or in neither: the contract seals the policy the verifier enforces and
+the flag says the operator meant it, so a contract carrying a preset is refused without the
+matching `--preset`, and `--preset` is refused against a contract that carries none.
 
 A bugfix contract includes `"preset":{"kind":"bugfix","reproducer":"negative"}`. Its named
 CLI reproducer must finish on base with the expected process exit but wrong asserted output,

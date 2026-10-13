@@ -24,7 +24,9 @@ export const taskPresetSchema = z
         .array(
           z
             .string()
-            .regex(/^[A-Za-z0-9_][A-Za-z0-9_./-]*$/)
+            // A leading dot is a dotfile (`.eslintrc.json`, `.github/workflows/ci.yml`), which a
+            // toolchain upgrade often has to touch; a `..` segment is refused below.
+            .regex(/^[A-Za-z0-9_.][A-Za-z0-9_./-]*$/)
             .refine((path) => !path.split("/").includes("..")),
         )
         .max(256),

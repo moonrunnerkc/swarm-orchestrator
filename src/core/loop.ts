@@ -17,6 +17,13 @@ import {
 import type { RandomSource } from "./random-source.ts";
 import { findExhaustedLimit, type LoopBudget, type StopReason } from "./termination.ts";
 import type { ToolInvoker } from "./tool-invoker.ts";
+import {
+  createStallTracker,
+  type StallDetected,
+  type StallPolicy,
+  stallNotice,
+  stallNoticePrefix,
+} from "./tool-stall.ts";
 
 interface ModelRetryPolicy {
   /** Total attempts per step, including the first. */
@@ -55,7 +62,29 @@ export interface AgentLoopDependencies {
   readonly history?: readonly ConversationMessage[];
   /** How much conversation is resent per call. Defaults to `defaultContextTokens`. */
   readonly contextTokens?: number;
+  /**
+   * Repeated-call detection: the policy, and a hook that is awaited when a stall is found so
+   * the caller can put it on the record before the loop goes on. Absent is the default policy
+   * with no hook; `false` turns detection off, which only a test wants.
+   */
+  readonly stall?:
+    | {
+        readonly policy?: StallPolicy;
+        readonly observe?: (event: StallIntervention) => Promise<void>;
+      }
+    | false;
 }
+
+export interface StallIntervention extends StallDetected {
+  readonly step: number;
+  readonly intervention: "feedback" | "stop";
+}
+
+/**
+ * How many times a loop is told it is repeating itself before it is stopped: once. A second
+ * notice would be the harness repeating itself at a model that did not act on the first.
+ */
+const stallNoticeAllowance = 1;
 
 export interface AgentLoopOutcome {
   readonly stopReason: StopReason;
@@ -87,6 +116,12 @@ export async function runAgentLoop(
   const startedAt = deps.clock.now();
   const deadline = startedAt + deps.budget.maxWallTimeMs;
   const messages: ConversationMessage[] = [...(deps.history ?? []), { role: "user", text: task }];
+  const stalls = deps.stall === false ? null : createStallTracker(deps.stall?.policy);
+  // A notice given before a resume is still the one notice: the allowance travels with the
+  // conversation, so taking a run up again does not grant it another round of repeats.
+  let stallNotices = (deps.history ?? []).filter(
+    (message) => message.role === "user" && message.text.startsWith(stallNoticePrefix),
+  ).length;
   let lastCompactedAt = 0;
   let steps = 0;
   let answeredSteps = 0;
@@ -211,6 +246,7 @@ export async function runAgentLoop(
     }
 
     const outcomes: ToolCallOutcome[] = [];
+    let stalled: StallDetected | null = null;
     for (const call of response.toolCalls) {
       if (deps.abortSignal.aborted || deps.clock.now() >= deadline) {
         const remaining = response.toolCalls.slice(outcomes.length);
@@ -243,8 +279,26 @@ export async function runAgentLoop(
         output: outcome.output,
       });
       outcomes.push(outcome);
+      stalled =
+        stalls?.observe({
+          toolName: call.toolName,
+          input: call.input,
+          failed: outcome.failed,
+          output: outcome.output,
+        }) ?? stalled;
     }
     messages.push({ role: "tool", outcomes });
+
+    if (stalled !== null) {
+      const intervention = stallNotices < stallNoticeAllowance ? "feedback" : "stop";
+      const event: StallIntervention = { ...stalled, step: steps, intervention };
+      deps.emit({ type: "stall", ...event });
+      if (deps.stall !== false) await deps.stall?.observe?.(event);
+      if (intervention === "stop") return finish("stalled", "");
+      stallNotices += 1;
+      stalls?.reset();
+      messages.push({ role: "user", text: stallNotice(stalled) });
+    }
   }
 }
 

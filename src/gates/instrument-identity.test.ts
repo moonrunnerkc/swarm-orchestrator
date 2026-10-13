@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { instrumentChanges as offlineChanges, readStatus } from "../evidence/verifier/status.mjs";
+import {
+  authorizedWithin,
+  instrumentChanges as offlineChanges,
+  readStatus,
+} from "../evidence/verifier/status.mjs";
 import {
   type InstrumentObservation,
   type InstrumentTrees,
@@ -357,5 +361,72 @@ describe("the decision", () => {
       expect(readStatus("exit-code", record)).toBe("not-applicable");
       expect(readStatus("exit-code", { ...record, instrument: clean })).toBe("passed");
     }
+  });
+});
+
+describe("an authorized instrument difference", () => {
+  const observation = (authorized?: readonly string[]): InstrumentObservation => ({
+    rule: "instrument-identity-v1",
+    tools: ["node-test"],
+    files: [
+      {
+        path: "package.json",
+        reference: `sha256:${"a".repeat(64)}`,
+        current: `sha256:${"b".repeat(64)}`,
+      },
+      {
+        path: "package.json#scripts.test",
+        reference: `sha256:${"c".repeat(64)}`,
+        current: `sha256:${"c".repeat(64)}`,
+      },
+    ],
+    dependencies: [],
+    installed: [],
+    complete: true,
+    residuals: [],
+    ...(authorized === undefined ? {} : { authorized }),
+  });
+
+  it("is not a change where the observation names the path as the task's own", () => {
+    const authorized = observation(["package-lock.json", "package.json"]);
+    expect(instrumentObservationSchema.parse(authorized)).toEqual(authorized);
+    expect(instrumentChanges(authorized)).toEqual([]);
+    expect(offlineChanges(JSON.parse(JSON.stringify(authorized)))).toEqual([]);
+    expect(instrumentChanges(observation())).toEqual(["package.json"]);
+    expect(offlineChanges(JSON.parse(JSON.stringify(observation())))).toEqual(["package.json"]);
+  });
+
+  it("is carried on the observation itself, where a manifest a program reads differs", async () => {
+    const reference = {
+      "package.json": manifest({ build: "node build.cjs" }, { dependencies: { left: "1.0.0" } }),
+      "build.cjs": "require('./package.json');",
+    };
+    const current = {
+      ...reference,
+      "package.json": manifest({ build: "node build.cjs" }, { dependencies: { left: "2.0.0" } }),
+    };
+    const plain = await observeInstrument(npm("build"), trees(reference, current));
+    expect(plain.files.map((file) => file.path)).toContain("package.json");
+    expect(instrumentChanges(plain)).toEqual(["package.json"]);
+    const upgrade = await observeInstrument(npm("build"), trees(reference, current), {
+      authorized: ["package.json", "package-lock.json"],
+    });
+    expect(upgrade.authorized).toEqual(["package-lock.json", "package.json"]);
+    expect(instrumentObservationSchema.parse(upgrade)).toEqual(upgrade);
+    expect(instrumentChanges(upgrade)).toEqual([]);
+    expect(offlineChanges(JSON.parse(JSON.stringify(upgrade)))).toEqual([]);
+  });
+
+  it("is allowed by the bundled verifier only under an upgrade preset's own manifest and lockfile", () => {
+    const checks = [{ id: "tests", instrument: observation(["package.json"]) }];
+    expect(authorizedWithin(checks, ["package.json", "package-lock.json"])).toBe(true);
+    expect(authorizedWithin(checks, [])).toBe(false);
+    expect(authorizedWithin([{ id: "tests", instrument: observation() }], [])).toBe(true);
+    expect(
+      authorizedWithin(
+        [{ id: "tests", instrument: observation(), configurationInstrument: observation(["x"]) }],
+        ["package.json"],
+      ),
+    ).toBe(false);
   });
 });

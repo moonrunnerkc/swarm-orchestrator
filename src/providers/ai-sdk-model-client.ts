@@ -6,6 +6,7 @@ import type {
   ModelResponse,
   ToolSchema,
 } from "../core/model-client.ts";
+import { describeUnknownError } from "../core/model-client.ts";
 import { toModelMessages } from "./message-conversion.ts";
 
 /**
@@ -112,7 +113,12 @@ async function streamOnce(
     // A stream error is the call failing, so it is raised rather than left to surface as
     // an empty response the loop would read as a completion claim.
     if (part.type === "error") {
-      throw part.error;
+      // An Error passes through with its cause chain. Anything else (a local server's parsed
+      // error body is a plain object) is wrapped so the loop, the record and the screen get a
+      // sentence rather than "[object Object]", and the original stays reachable as the cause.
+      throw part.error instanceof Error
+        ? part.error
+        : new Error(describeUnknownError(part.error), { cause: part.error });
     }
     // The stream was already being drained here to time the first token. Handing the text
     // on as it arrives costs nothing and is the difference between a screen that says
