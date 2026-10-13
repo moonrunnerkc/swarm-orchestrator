@@ -12,7 +12,7 @@ function workspace() {
 }
 
 describe("what each arm is configured with", () => {
-  it("gives opencode the pinned endpoint and model for every call, with Swarm's output cap", () => {
+  it("gives opencode the pinned endpoint and model for every call, with Swarm's output cap and thinking off", () => {
     const directory = workspace();
     writeArmConfiguration(directory, "opencode", "http://127.0.0.1:8000/v1", "qwen3.8:27b");
     const written = JSON.parse(readFileSync(join(directory, "opencode.json"), "utf8"));
@@ -23,6 +23,7 @@ describe("what each arm is configured with", () => {
       name: "qwen3.8:27b",
       tool_call: true,
       limit: { context: 131072, output: 8192 },
+      options: { enable_thinking: false, top_p: 0.95 },
     });
     expect(written.permission).toEqual({ edit: "allow", bash: "allow", webfetch: "deny" });
     expect(readFileSync(join(directory, ".git/info/exclude"), "utf8")).toContain("opencode.json");

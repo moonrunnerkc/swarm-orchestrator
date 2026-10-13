@@ -247,3 +247,29 @@ reading of records and is not selective: every one of the forty launches, both a
 again under a new manifest carrying this document's digest, and pass 3's records stay under
 their own manifest digest with their file digests listed in the README. The comparison is
 pass 4 alone.
+
+### Amendment 3, 2026-10-13: the OpenCode arm's model was thinking; pass 4 stopped after two launches
+
+Pass 4 began 2026-10-12 23:54Z under the manifest amendment 2 froze. Its first OpenCode launch
+held the endpoint through all three invocations, which amendment 2's changes were for, and still
+produced no change: in each invocation the third turn generated the whole 8192-token output cap
+with no message and no tool call. The same shape, cut off by the server after about 10,500
+tokens, is what pass 3's long silent turns were (10 of 92 OpenCode turns) and pass 2's (5 of
+105). It is thinking. The server enables thinking for any model whose name does not contain
+"coder" unless a request turns it off; Swarm turns it off in every request (`enable_thinking`
+false, as the protocol's "thinking off" states), OpenCode sent nothing, and with thinking on
+this model thinks to the cap and answers nothing, which is the known behaviour of this server
+and model that decided the protocol's setting. The two arms were therefore not on the same
+model setting in any pass, and pass 4 was stopped after its second launch rather than run for
+nine hours. OpenCode also sent `top_p` 1 where Swarm sends no sampling fields and takes the
+server's default of 0.95.
+
+What changes, in the harness only: the OpenCode arm's model entry now carries
+`enable_thinking: false` and `top_p: 0.95`, which OpenCode merges into every request body as
+given; a run through a logging proxy shows each request leaving with `enable_thinking` false,
+`top_p` 0.95 and `max_tokens` 8192, one request at a time, and the turn answering. The task
+set, the task texts, the hidden oracles, the supervision rule, the wall budget, the seed, the
+order and the Swarm revision are unchanged. Every one of the forty launches, both arms alike,
+runs again under a new manifest carrying this document's digest; pass 4's two records stay
+under their own manifest digest with their file digests in the README. The comparison is
+pass 5 alone.

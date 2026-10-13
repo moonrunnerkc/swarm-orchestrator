@@ -12,6 +12,16 @@ Source on `v13-main`; not published until a release names it.
 
 ### Added
 
+- **An exploratory comparison against an ordinary coding agent, run and reported.** Twenty
+  issue-sized historical changes mined from five public repositories, Swarm against OpenCode
+  1.14.48 on the same local model with the same workspace, visible check, wall budget and one
+  scripted supervision rule, scored by each upstream commit's own tests sealed from both arms.
+  The harness is `scripts/comparison/`; the registered protocol, its three amendments, the four
+  passes discarded for defects and the pass that stands are under
+  `docs/evidence/2026-10-11/comparison/`. In that pass Swarm completed 5 of 20 tasks and
+  OpenCode 4 of 20, one task apart, which supports no claim of an advantage; 19 of OpenCode's 20
+  first invocations had to be killed at the wall while every Swarm launch returned with a
+  verdict. The trial found eight Swarm defects, all fixed below.
 - **A goal contract without a preset.** `--goal-contract <file>` now carries a feature task's
   sealed requirements through the acceptance gate, bounded repair, challenges and strengthening,
   recovery and the independent final verification of the exact tree. `--challenges` follows the

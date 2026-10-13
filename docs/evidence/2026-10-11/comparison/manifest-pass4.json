@@ -1,0 +1,1310 @@
+{
+  "schema": "swarm-ordinary-comparison.manifest.v1",
+  "frozenAt": "2026-10-12T23:48:57.292Z",
+  "protocolDigest": "sha256:820e1122e97403f00a51af5e1a1429ca843be686480e78da94d2ac8578a917c4",
+  "pins": {
+    "model": "qwen3.8:27b",
+    "endpoint": "http://127.0.0.1:8000/v1",
+    "swarmCli": "/Users/brad/.cache/swarm-comparison/tools/swarm/dist/cli.js",
+    "swarmRevision": "7bd3e1aa67a8aafc2f5af9341a9aa5b14f3df5ae",
+    "opencode": "1.14.48",
+    "node": "v24.15.0",
+    "harnessDigest": "sha256:b0abdff9fa50d5c24a716ccea78dffd04ce70e32c2c610b4541da4dd32463317"
+  },
+  "budgets": {
+    "wallMsPerInvocation": 1800000,
+    "swarmTokenCap": 600000,
+    "maxCorrections": 2
+  },
+  "seed": "swarm-ordinary-comparison-2026-10-11",
+  "tasks": [
+    {
+      "id": "marked-bugfix-www-case",
+      "repository": "markedjs/marked",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ]
+      ],
+      "build": [
+        [
+          "npm",
+          "run",
+          "build:esbuild"
+        ]
+      ],
+      "projectTest": [
+        "npm",
+        "test"
+      ],
+      "visiblePrefix": "npm run build:esbuild && ",
+      "workType": "bugfix",
+      "baseCommit": "e3c0d3e208c80daca2c9fbb68f125f060cd30fc3",
+      "upstreamCommit": "626d961335c95e3712469564ab8b15d028600fde",
+      "hidden": {
+        "testFiles": [
+          "test/specs/new/autolinks.md",
+          "test/specs/new/autolinks.html"
+        ],
+        "argv": [
+          "node",
+          "--test",
+          "--test-reporter=spec",
+          "--test-name-pattern=autolinks",
+          "test/run-spec-tests.js"
+        ]
+      },
+      "immutable": [
+        "test"
+      ],
+      "taskText": "With GFM autolinking enabled, marked currently turns any text starting with \"www.\" into a link regardless of letter case, so \"Www.example.com\" and \"WWW.example.com\" become links. Per the GFM spec a bare www autolink must start with lowercase \"www.\" exactly; mixed- or upper-case variants must stay plain text. Scheme autolinks must remain case-insensitive for the scheme, so \"(See hTtPS://example.com/fhqwhgads.)\" must still produce a link with the trailing period excluded. Make \"www.\" detection case-sensitive without changing how http://, https:// or ftp:// are detected, and keep email autolinks working. Source lives under src/ (TypeScript); the library is built with npm run build:esbuild before tests run.",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "npm run build:esbuild && node acceptance/visible/check.mjs",
+        "source": "import assert from 'node:assert/strict';\nimport { marked } from '../../lib/marked.esm.js';\nconst upper = marked.parse('Www.example.com', { gfm: true });\nassert.ok(!upper.includes('<a '), 'Www.example.com must stay plain text');\nconst lower = marked.parse('www.example.com', { gfm: true });\nassert.ok(lower.includes('<a href=\"http://www.example.com\"'), 'www.example.com must link');\nconsole.log('visible check passed');\n"
+      }
+    },
+    {
+      "id": "marked-feature-def-token",
+      "repository": "markedjs/marked",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ]
+      ],
+      "build": [
+        [
+          "npm",
+          "run",
+          "build:esbuild"
+        ]
+      ],
+      "projectTest": [
+        "npm",
+        "test"
+      ],
+      "visiblePrefix": "npm run build:esbuild && ",
+      "workType": "feature",
+      "baseCommit": "5f4b638e09c30bc126be69e212c93b246c73ec54",
+      "upstreamCommit": "07691248df5e23ce101e9e43a58393fa7d6fb9fa",
+      "hidden": {
+        "testFiles": [
+          "test/unit/Lexer.test.js"
+        ],
+        "argv": [
+          "node",
+          "--test",
+          "--test-reporter=spec",
+          "test/unit/Lexer.test.js"
+        ]
+      },
+      "immutable": [
+        "test"
+      ],
+      "taskText": "Link reference definitions such as '[link]: https://example.com \"title\"' are consumed by the lexer and recorded in lexer.links, but they do not appear in the token array returned by marked.lexer(), so walkTokens and token-based extensions cannot see them. Expose each definition as a block token of type \"def\" with fields raw, tag (the normalized label), href and title (undefined when absent), placed at its position in the token stream. Rendered output must not change: the parser must render nothing for the new token by default, through a new overridable renderer method def(token) so custom renderers can emit something for definitions. Every existing spec example must still pass. Source lives under src/ (TypeScript); the library is built with npm run build:esbuild before tests run.",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "npm run build:esbuild && node acceptance/visible/check.mjs",
+        "source": "import assert from 'node:assert/strict';\nimport { marked } from '../../lib/marked.esm.js';\nconst tokens = marked.lexer('[a]: http://x \"t\"\\n\\n[a]');\nconst def = tokens.find((token) => token.type === 'def');\nassert.ok(def, 'a def token must appear in the token stream');\nassert.equal(def.tag, 'a');\nassert.equal(def.href, 'http://x');\nassert.equal(def.title, 't');\nassert.equal(marked.parse('[a]: http://x\\n\\n[a]'), '<p><a href=\"http://x\">a</a></p>\\n');\nconsole.log('visible check passed');\n"
+      }
+    },
+    {
+      "id": "marked-refactor-strict-exec",
+      "repository": "markedjs/marked",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ]
+      ],
+      "build": [
+        [
+          "npm",
+          "run",
+          "build:esbuild"
+        ]
+      ],
+      "projectTest": [
+        "npm",
+        "test"
+      ],
+      "visiblePrefix": "npm run build:esbuild && ",
+      "workType": "refactor",
+      "baseCommit": "e6b37f24771c419a8131295dcb5f5ff27fa80d15",
+      "upstreamCommit": "3b59e81a1bacc32f127177ff85850bde946c12e5",
+      "hidden": {
+        "testFiles": [],
+        "argv": [
+          "npm",
+          "test"
+        ],
+        "structural": [
+          {
+            "pattern": "\\.exec\\([^)]*\\)\\) != null",
+            "files": [
+              "src/Lexer.ts",
+              "src/Tokenizer.ts"
+            ],
+            "count": 0
+          },
+          {
+            "pattern": "\\.exec\\([^)]*\\)\\) !== null",
+            "files": [
+              "src/Lexer.ts",
+              "src/Tokenizer.ts"
+            ],
+            "count": 5
+          }
+        ]
+      },
+      "immutable": [
+        "test"
+      ],
+      "taskText": "Five while-loops in src/Lexer.ts and src/Tokenizer.ts test the result of RegExp.prototype.exec with loose inequality (`!= null`). RegExp.exec returns an array or null, never undefined, so replace every such loose comparison in those two files with strict `!== null`, and change nothing else: no other logic, no output. Every existing test must still pass (npm test).",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "npm run build:esbuild && node acceptance/visible/check.mjs",
+        "source": "import assert from 'node:assert/strict';\nimport { readFileSync } from 'node:fs';\nconst sources = ['src/Lexer.ts', 'src/Tokenizer.ts'].map((path) => readFileSync(path, 'utf8')).join('\\n');\nassert.equal((sources.match(/\\.exec\\([^)]*\\)\\) != null/g) ?? []).length, 0, 'loose exec comparisons remain');\nconsole.log('visible check passed');\n"
+      }
+    },
+    {
+      "id": "marked-upgrade-cheerio",
+      "repository": "markedjs/marked",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ]
+      ],
+      "build": [
+        [
+          "npm",
+          "run",
+          "build:esbuild"
+        ]
+      ],
+      "projectTest": [
+        "npm",
+        "test"
+      ],
+      "visiblePrefix": "npm run build:esbuild && ",
+      "workType": "upgrade",
+      "baseCommit": "163c06298c4a630586d8ddeb4c8f763c84382c19",
+      "upstreamCommit": "05d546992b8ddcc512007264be1031e49d911bd5",
+      "hidden": {
+        "testFiles": [],
+        "argv": [
+          "npm",
+          "test"
+        ],
+        "upgrade": [
+          {
+            "name": "cheerio",
+            "section": "devDependencies",
+            "version": "1.2.0"
+          }
+        ]
+      },
+      "immutable": [
+        "test"
+      ],
+      "taskText": "Upgrade the devDependency cheerio from the pinned version 1.1.2 to exactly 1.2.0 in package.json (declare \"1.2.0\", no range), regenerate package-lock.json with npm so that npm ci installs 1.2.0, and confirm npm test still passes. Change no other dependency and nothing else in package.json.",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "npm run build:esbuild && node acceptance/visible/check.mjs",
+        "source": "import assert from 'node:assert/strict';\nimport { readFileSync } from 'node:fs';\nconst manifest = JSON.parse(readFileSync('package.json', 'utf8'));\nassert.ok(['1.2.0', '^1.2.0'].includes(manifest.devDependencies.cheerio), manifest.devDependencies.cheerio);\nconsole.log('visible check passed');\n"
+      }
+    },
+    {
+      "id": "fxp-bugfix-uint8array-utf8",
+      "repository": "NaturalIntelligence/fast-xml-parser",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ]
+      ],
+      "build": [],
+      "projectTest": [
+        "npm",
+        "test"
+      ],
+      "visiblePrefix": "",
+      "workType": "bugfix",
+      "baseCommit": "3617550adfb280989f482d662b7e9ece55a32a34",
+      "upstreamCommit": "bb2ec6ce4bfc3f62d621df6e6bf2b3152965175a",
+      "hidden": {
+        "testFiles": [
+          "spec/inputType_spec.js"
+        ],
+        "argv": [
+          "npx",
+          "jasmine",
+          "spec/inputType_spec.js"
+        ]
+      },
+      "immutable": [
+        "spec"
+      ],
+      "taskText": "XMLParser.parse() accepts non-string input that has a toString method, but when a plain Uint8Array (for example the output of TextEncoder.encode) is passed, the parser stringifies it as a comma-separated list of byte values instead of decoding the bytes, so parsing fails or produces garbage. Make parse() treat a Uint8Array as UTF-8 encoded XML text: multi-byte characters (accented letters, emoji) must round-trip correctly; only the bytes inside the given view must be decoded (respect byteOffset and length of a subarray); a leading UTF-8 byte order mark must be preserved in the decoded string so that captureMetaData startIndex values match those obtained when the equivalent string is parsed directly; validation (validator.validate) must accept the same bytes it would accept as a string and reject malformed XML. Node.js Buffer input must keep working exactly as before. Source is under src/; tests run with npm test (jasmine).",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "node acceptance/visible/check.mjs",
+        "source": "import assert from \"node:assert/strict\";\nimport { XMLParser } from \"../../src/fxp.js\";\nconst parsed = new XMLParser().parse(new TextEncoder().encode(\"<a>caf\\u00e9 \\u{1F600}</a>\"));\nassert.equal(parsed.a, \"caf\\u00e9 \\u{1F600}\");\nconsole.log(\"visible check passed\");\n"
+      }
+    },
+    {
+      "id": "fxp-feature-strict-reserved-names",
+      "repository": "NaturalIntelligence/fast-xml-parser",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ]
+      ],
+      "build": [],
+      "projectTest": [
+        "npm",
+        "test"
+      ],
+      "visiblePrefix": "",
+      "workType": "feature",
+      "baseCommit": "c692040f6b5f5045d38b66b1da04e4d3abc97052",
+      "upstreamCommit": "c3ffbab9e5a2bab9db65803933d0af656076fc33",
+      "hidden": {
+        "testFiles": [
+          "spec/nfr_spec.js"
+        ],
+        "argv": [
+          "npx",
+          "jasmine",
+          "spec/nfr_spec.js"
+        ]
+      },
+      "immutable": [
+        "spec"
+      ],
+      "taskText": "An XML element whose tag name equals the configured commentPropName or cdataPropName collides with the synthetic property the parser uses for comments or CDATA in the output object, which can let untrusted input masquerade as parser-generated structure. Add a parser option strictReservedNames (boolean, default true, documented in the TypeScript option type in src/fxp.d.ts). When it is true, encountering an opening tag whose name (after updateTag) equals commentPropName or cdataPropName must throw an Error with the message exactly \"Invalid tag name: <name>\". When it is explicitly set to false, such tags must be parsed as ordinary elements, producing the same output as before this option existed. Source is under src/; tests run with npm test (jasmine).",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "node acceptance/visible/check.mjs",
+        "source": "import assert from \"node:assert/strict\";\nimport { XMLParser } from \"../../src/fxp.js\";\nassert.throws(\n  () => new XMLParser({ commentPropName: \"__comment\" }).parse(\"<r><__comment>x</__comment></r>\"),\n  /Invalid tag name: __comment/,\n);\nconst relaxed = new XMLParser({ commentPropName: \"__comment\", strictReservedNames: false }).parse(\"<r><__comment>x</__comment></r>\");\nassert.equal(relaxed.r.__comment, \"x\");\nconsole.log(\"visible check passed\");\n"
+      }
+    },
+    {
+      "id": "fxp-refactor-unpaired-set",
+      "repository": "NaturalIntelligence/fast-xml-parser",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ]
+      ],
+      "build": [],
+      "projectTest": [
+        "npm",
+        "test"
+      ],
+      "visiblePrefix": "",
+      "workType": "refactor",
+      "baseCommit": "217c46a142f1625fe9fa743e2a6a17e3eb1ef15d",
+      "upstreamCommit": "4c8651f87b090ba6bd969974de29a4ba4cf8fd92",
+      "hidden": {
+        "testFiles": [],
+        "argv": [
+          "npm",
+          "test"
+        ],
+        "structural": [
+          {
+            "pattern": "options\\.unpairedTags\\.indexOf",
+            "files": [
+              "src/xmlparser/OrderedObjParser.js"
+            ],
+            "count": 0
+          },
+          {
+            "pattern": "unpairedTagsSet\\.has\\(",
+            "files": [
+              "src/xmlparser/OrderedObjParser.js"
+            ],
+            "count": 5
+          },
+          {
+            "pattern": "unpairedTagsSet = new Set\\(",
+            "files": [
+              "src/xmlparser/OptionsBuilder.js"
+            ],
+            "count": 1
+          }
+        ]
+      },
+      "immutable": [
+        "spec"
+      ],
+      "taskText": "The parser checks whether a tag is one of the configured unpairedTags in five places in src/xmlparser/OrderedObjParser.js, each time with a linear Array.prototype.indexOf scan over this.options.unpairedTags. Replace these with constant-time membership tests: build a Set from the unpairedTags array exactly once when options are normalized in buildOptions (src/xmlparser/OptionsBuilder.js), expose it on the built options as unpairedTagsSet (assigned with `unpairedTagsSet = new Set(...)`), and use unpairedTagsSet.has(...) at every former indexOf site so that no indexOf call on options.unpairedTags remains in the parser. Behavior must be unchanged: the original unpairedTags array stays available on the options object and the whole existing suite (npm test) passes.",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "node acceptance/visible/check.mjs",
+        "source": "import assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\nimport { XMLParser } from \"../../src/fxp.js\";\nconst parser = readFileSync(\"src/xmlparser/OrderedObjParser.js\", \"utf8\");\nassert.equal((parser.match(/options\\.unpairedTags\\.indexOf/g) ?? []).length, 0, \"indexOf scans remain\");\nconst parsed = new XMLParser({ unpairedTags: [\"br\"] }).parse(\"<p>a<br>b</p>\");\nassert.ok(parsed.p !== undefined);\nconsole.log(\"visible check passed\");\n"
+      }
+    },
+    {
+      "id": "fxp-upgrade-strnum",
+      "repository": "NaturalIntelligence/fast-xml-parser",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ]
+      ],
+      "build": [],
+      "projectTest": [
+        "npm",
+        "test"
+      ],
+      "visiblePrefix": "",
+      "workType": "upgrade",
+      "baseCommit": "8d71292a9aaaa8f4a24294e636bd191cfbf4d8a7",
+      "upstreamCommit": "9c1905edd7ea28db70770f758e293fcf079060c5",
+      "hidden": {
+        "testFiles": [],
+        "argv": [
+          "npm",
+          "test"
+        ],
+        "upgrade": [
+          {
+            "name": "strnum",
+            "section": "dependencies",
+            "version": "2.4.1"
+          }
+        ]
+      },
+      "immutable": [
+        "spec"
+      ],
+      "taskText": "Upgrade the runtime dependency strnum from the currently locked 2.4.0 to exactly 2.4.1: declare \"2.4.1\" in package.json (no range) and regenerate package-lock.json with npm so that node_modules/strnum resolves to exactly 2.4.1 after npm ci. Then npm ci --ignore-scripts and npm test must pass. Do not change any other dependency and do not modify source files.",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "node acceptance/visible/check.mjs",
+        "source": "import assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\nconst manifest = JSON.parse(readFileSync(\"package.json\", \"utf8\"));\nassert.ok([\"2.4.1\", \"^2.4.1\"].includes(manifest.dependencies.strnum), manifest.dependencies.strnum);\nconsole.log(\"visible check passed\");\n"
+      }
+    },
+    {
+      "id": "yargs-parser-bugfix-count-sentinel",
+      "repository": "yargs/yargs-parser",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ],
+        [
+          "npx",
+          "tsc",
+          "-p",
+          "tsconfig.test.json"
+        ]
+      ],
+      "build": [
+        [
+          "npx",
+          "tsc",
+          "-p",
+          "tsconfig.test.json"
+        ]
+      ],
+      "projectTest": [
+        "npm",
+        "test"
+      ],
+      "visiblePrefix": "npx tsc -p tsconfig.test.json && ",
+      "workType": "bugfix",
+      "baseCommit": "b82ba0f90d7e7eaac404a77ed6675d8d3fbda5f3",
+      "upstreamCommit": "add38aafb96709e8eeecdc86b825419b3f1d5f96",
+      "hidden": {
+        "testFiles": [
+          "test/yargs-parser.mjs"
+        ],
+        "argv": [
+          "npx",
+          "mocha",
+          "test/yargs-parser.mjs"
+        ]
+      },
+      "immutable": [
+        "test"
+      ],
+      "taskText": "When an option that is NOT declared as a count is repeated with numeric values and one of those values is 1, the parser silently adds them up instead of collecting them: parser(\"-x 3 -x 1\") returns { x: 4 } while parser(\"-x 3 -x 2\") correctly returns { x: [3, 2] }. Repeated values must always be collected into an array (\"-x 3 -x 1\" gives [3, 1], \"-x 1 -x 1\" gives [1, 1], \"-x 1 -x 3\" gives [1, 3]) whatever the numbers, and options that ARE declared under count must keep incrementing exactly as before (\"-v -v -v\" with count: [\"v\"] gives 3). Nothing else about duplicate-argument handling may change. Source is lib/yargs-parser.ts; tests are compiled with npx tsc -p tsconfig.test.json and run with npm test (mocha); test/yargs-parser.mjs imports the built library.",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "npx tsc -p tsconfig.test.json && node acceptance/visible/check.mjs",
+        "source": "import assert from \"node:assert/strict\";\nimport parser from \"../../build/lib/index.js\";\nassert.deepEqual(parser(\"-x 3 -x 1\"), { _: [], x: [3, 1] });\nassert.deepEqual(parser(\"-v -v -v\", { count: [\"v\"] }), { _: [], v: 3 });\nconsole.log(\"visible check passed\");\n"
+      }
+    },
+    {
+      "id": "yargs-parser-bugfix-negation-unknown",
+      "repository": "yargs/yargs-parser",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ],
+        [
+          "npx",
+          "tsc",
+          "-p",
+          "tsconfig.test.json"
+        ]
+      ],
+      "build": [
+        [
+          "npx",
+          "tsc",
+          "-p",
+          "tsconfig.test.json"
+        ]
+      ],
+      "projectTest": [
+        "npm",
+        "test"
+      ],
+      "visiblePrefix": "npx tsc -p tsconfig.test.json && ",
+      "workType": "bugfix",
+      "baseCommit": "c58adb0af4316a99241f9e341d23653215041586",
+      "upstreamCommit": "b82ba0f90d7e7eaac404a77ed6675d8d3fbda5f3",
+      "hidden": {
+        "testFiles": [
+          "test/yargs-parser.mjs"
+        ],
+        "argv": [
+          "npx",
+          "mocha",
+          "test/yargs-parser.mjs"
+        ]
+      },
+      "immutable": [
+        "test"
+      ],
+      "taskText": "With the configuration unknown-options-as-args: true, arguments that are not recognised options are placed into the positional array _ instead of being parsed as flags. When boolean-negation is additionally set to false, the --no-<name> negation syntax is disabled, so --no-known-arg can no longer refer to the declared boolean known-arg and must be treated as an unknown option. Today it is still recognised and produces knownArg: false. Required: parser(\"--no-known-arg --no-unknown-arg\", { boolean: [\"known-arg\"], configuration: { \"unknown-options-as-args\": true, \"boolean-negation\": false } }) must return exactly { _: [\"--no-known-arg\", \"--no-unknown-arg\"] }. With boolean-negation left at its default, behavior must not change (--no-known-arg still yields knownArg: false). Source is lib/yargs-parser.ts; tests are compiled with npx tsc -p tsconfig.test.json and run with npm test (mocha).",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "npx tsc -p tsconfig.test.json && node acceptance/visible/check.mjs",
+        "source": "import assert from \"node:assert/strict\";\nimport parser from \"../../build/lib/index.js\";\nassert.deepEqual(\n  parser(\"--no-known-arg --no-unknown-arg\", {\n    boolean: [\"known-arg\"],\n    configuration: { \"unknown-options-as-args\": true, \"boolean-negation\": false },\n  }),\n  { _: [\"--no-known-arg\", \"--no-unknown-arg\"] },\n);\nconsole.log(\"visible check passed\");\n"
+      }
+    },
+    {
+      "id": "yargs-parser-upgrade-toolchain",
+      "repository": "yargs/yargs-parser",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ]
+      ],
+      "build": [
+        [
+          "npx",
+          "tsc",
+          "-p",
+          "tsconfig.test.json"
+        ]
+      ],
+      "projectTest": [
+        "npm",
+        "test"
+      ],
+      "visiblePrefix": "npx tsc -p tsconfig.test.json && ",
+      "workType": "upgrade",
+      "baseCommit": "9866eca5a6360180c924c20d590ab45da097efb2",
+      "upstreamCommit": "913df9d1ddbea131e38516c09c2a81eb15c69968",
+      "hidden": {
+        "testFiles": [],
+        "argv": [
+          "npm",
+          "test"
+        ],
+        "extraArgv": [
+          [
+            "npm",
+            "run",
+            "check"
+          ]
+        ],
+        "upgrade": [
+          {
+            "name": "mocha",
+            "section": "devDependencies",
+            "version": "12.0.0"
+          },
+          {
+            "name": "chai",
+            "section": "devDependencies",
+            "version": "6.2.2"
+          },
+          {
+            "name": "c8",
+            "section": "devDependencies",
+            "version": "12.0.0"
+          },
+          {
+            "name": "gts",
+            "section": "devDependencies",
+            "version": "6.0.2"
+          }
+        ]
+      },
+      "upgradeSourcePaths": [
+        ".eslintrc.json",
+        ".eslintignore"
+      ],
+      "immutable": [
+        "test"
+      ],
+      "taskText": "Upgrade the test and lint toolchain devDependencies to these exact versions, declared without ranges in package.json: mocha 12.0.0, chai 6.2.2, c8 12.0.0 and gts 6.0.2, and regenerate package-lock.json with npm so npm ci --ignore-scripts installs exactly those. Afterwards npm test must pass on Node 24 and npm run check (gts lint) must still pass; gts 6 needs the ESLint configuration adjusted (a parserOptions.project for the TypeScript override and the Deno files excluded from linting), so .eslintrc.json and .eslintignore may change. Do not change library source or tests, and change no other dependency.",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "npx tsc -p tsconfig.test.json && node acceptance/visible/check.mjs",
+        "source": "import assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\nconst manifest = JSON.parse(readFileSync(\"package.json\", \"utf8\"));\nfor (const [name, version] of [[\"mocha\", \"12.0.0\"], [\"chai\", \"6.2.2\"], [\"c8\", \"12.0.0\"], [\"gts\", \"6.0.2\"]])\n  assert.ok([version, `^${version}`].includes(manifest.devDependencies[name]), `${name}: ${manifest.devDependencies[name]}`);\nconsole.log(\"visible check passed\");\n"
+      }
+    },
+    {
+      "id": "js-yaml-bugfix-timestamp-early-years",
+      "repository": "nodeca/js-yaml",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ],
+        [
+          "node",
+          "support/get-yaml-test-suite.mjs"
+        ],
+        [
+          "npm",
+          "run",
+          "build"
+        ]
+      ],
+      "build": [
+        [
+          "npm",
+          "run",
+          "build"
+        ]
+      ],
+      "projectTest": [
+        "node",
+        "--test",
+        "test/core/**/*.test.mjs",
+        "test/spec/*.test.mjs"
+      ],
+      "visiblePrefix": "npm run build && ",
+      "workType": "bugfix",
+      "baseCommit": "355dc969519947daf7b886059439fed9b741b080",
+      "upstreamCommit": "49280f3e799b6deb596ba9a041b0ebe2bba83c77",
+      "hidden": {
+        "testFiles": [
+          "test/core/tags/timestamp.test.mjs"
+        ],
+        "argv": [
+          "node",
+          "--test",
+          "test/core/tags/timestamp.test.mjs"
+        ]
+      },
+      "immutable": [
+        "test"
+      ],
+      "taskText": "With the YAML 1.1 schema (YAML11_SCHEMA), timestamps whose year is between 0000 and 0099 are not recognized: load(\"- 0001-01-01\\n- 0050-06-15T12:30:00Z\", { schema: YAML11_SCHEMA }) returns plain strings instead of Date objects, and a Date in that range does not survive dump followed by load. Make such date-only and full timestamps resolve to Date values whose UTC year is the literal four-digit year written in the document (year 1, year 50), with calendar validation still rejecting dates that Date would normalize such as 0001-02-29 (which must stay a string, and must raise \"cannot resolve\" when tagged !!timestamp explicitly). Behavior for years 0100 and later must not change. Source is under src/ (TypeScript); the package is built with npm run build and tests run with node --test \"test/core/**/*.test.mjs\" \"test/spec/*.test.mjs\".",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "npm run build && node acceptance/visible/check.mjs",
+        "source": "import assert from 'node:assert/strict'\nimport { load, YAML11_SCHEMA } from 'js-yaml'\nconst date = load('0050-06-15T12:30:00Z', { schema: YAML11_SCHEMA })\nassert.ok(date instanceof Date, 'year 0050 must resolve to a Date')\nassert.equal(date.getUTCFullYear(), 50)\nconsole.log('visible check passed')\n"
+      }
+    },
+    {
+      "id": "js-yaml-feature-max-aliases",
+      "repository": "nodeca/js-yaml",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ],
+        [
+          "node",
+          "support/get-yaml-test-suite.mjs"
+        ],
+        [
+          "npm",
+          "run",
+          "build"
+        ]
+      ],
+      "build": [
+        [
+          "npm",
+          "run",
+          "build"
+        ]
+      ],
+      "projectTest": [
+        "node",
+        "--test",
+        "test/core/**/*.test.mjs",
+        "test/spec/*.test.mjs"
+      ],
+      "visiblePrefix": "npm run build && ",
+      "workType": "feature",
+      "baseCommit": "3105455b81dee69e0fd36e09ac0b2ccfdb54adc1",
+      "upstreamCommit": "125cd5ab9f1355d4edaf6d95bf3a7099dc333d35",
+      "hidden": {
+        "testFiles": [
+          "test/core/units/load-options.test.mjs"
+        ],
+        "argv": [
+          "node",
+          "--test",
+          "test/core/units/load-options.test.mjs"
+        ]
+      },
+      "immutable": [
+        "test"
+      ],
+      "taskText": "Add a maxAliases loader option to load() and loadAll(), documented in README next to the other load options, that limits how many alias nodes (*ref) a single document may contain. The default -1 means no limit; 0 rejects any alias; a positive N allows at most N alias uses per document. Exceeding the limit must throw the library's YAMLException with a message containing \"maxAliases\" (for example \"aliases exceeded maxAliases (1)\"). The count resets for every document in a multi-document stream, so loadAll on two documents with one alias each succeeds with maxAliases: 1 and fails with maxAliases: 0. Documents without aliases are unaffected whatever the option. Source is under src/ (TypeScript); the package is built with npm run build and tests run with node --test \"test/core/**/*.test.mjs\" \"test/spec/*.test.mjs\".",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "npm run build && node acceptance/visible/check.mjs",
+        "source": "import assert from 'node:assert/strict'\nimport { load } from 'js-yaml'\nassert.throws(() => load('a: &x 1\\nb: *x\\nc: *x', { maxAliases: 1 }), /maxAliases/)\nassert.deepEqual(load('a: &x 1\\nb: *x\\nc: *x', { maxAliases: 2 }), { a: 1, b: 1, c: 1 })\nconsole.log('visible check passed')\n"
+      }
+    },
+    {
+      "id": "js-yaml-refactor-is-plain-object",
+      "repository": "nodeca/js-yaml",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ],
+        [
+          "node",
+          "support/get-yaml-test-suite.mjs"
+        ],
+        [
+          "npm",
+          "run",
+          "build"
+        ]
+      ],
+      "build": [
+        [
+          "npm",
+          "run",
+          "build"
+        ]
+      ],
+      "projectTest": [
+        "node",
+        "--test",
+        "test/core/**/*.test.mjs",
+        "test/spec/*.test.mjs"
+      ],
+      "visiblePrefix": "npm run build && ",
+      "workType": "refactor",
+      "baseCommit": "0429ae6b0623137c22bf913b8a3c96f7085f103f",
+      "upstreamCommit": "d482b163e94fb1f562708f0f55d24364be9bda09",
+      "hidden": {
+        "testFiles": [
+          "test/core/common/object.test.mjs"
+        ],
+        "argv": [
+          "node",
+          "--test",
+          "test/core/common/object.test.mjs",
+          "test/core/tags/*.test.mjs"
+        ],
+        "structural": [
+          {
+            "pattern": "function isPlainObject",
+            "files": [
+              "src/common/object.ts"
+            ],
+            "count": 1
+          },
+          {
+            "pattern": "function isPlainObject",
+            "files": [
+              "src/tag/mapping/map.ts"
+            ],
+            "count": 0
+          },
+          {
+            "pattern": "common/object",
+            "files": [
+              "src/tag/mapping/map.ts"
+            ],
+            "count": 1
+          },
+          {
+            "pattern": "common/object",
+            "files": [
+              "src/tag/mapping/real_map.ts"
+            ],
+            "count": 1
+          }
+        ]
+      },
+      "immutable": [
+        "test/spec",
+        "test/core/tags",
+        "test/core/units"
+      ],
+      "taskText": "The helper isPlainObject (true only for a non-null, non-array object whose prototype is null or Object.prototype) is defined inside src/tag/mapping/map.ts and re-exported from there for src/tag/mapping/real_map.ts, although it is a general-purpose utility. Move it into a new module src/common/object.ts as a named export isPlainObject with the same signature (data: unknown) => boolean and identical semantics; import it from \"../../common/object.ts\" in both mapping tag modules; remove the definition and its export from map.ts. Public behavior, the full test suite, lint and type-check must be unchanged. Source is under src/ (TypeScript); the package is built with npm run build and tests run with node --test \"test/core/**/*.test.mjs\" \"test/spec/*.test.mjs\".",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "npm run build && node acceptance/visible/check.mjs",
+        "source": "import assert from 'node:assert/strict'\nimport { readFileSync } from 'node:fs'\nimport { isPlainObject } from '../../src/common/object.ts'\nassert.equal(isPlainObject({}), true)\nassert.equal(isPlainObject([]), false)\nassert.equal(isPlainObject(null), false)\nassert.equal((readFileSync('src/tag/mapping/map.ts', 'utf8').match(/function isPlainObject/g) ?? []).length, 0)\nconsole.log('visible check passed')\n"
+      }
+    },
+    {
+      "id": "js-yaml-upgrade-vite-workerpool",
+      "repository": "nodeca/js-yaml",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ],
+        [
+          "node",
+          "support/get-yaml-test-suite.mjs"
+        ],
+        [
+          "npm",
+          "run",
+          "build"
+        ]
+      ],
+      "build": [
+        [
+          "npm",
+          "run",
+          "build"
+        ]
+      ],
+      "projectTest": [
+        "node",
+        "--test",
+        "test/core/**/*.test.mjs",
+        "test/spec/*.test.mjs"
+      ],
+      "visiblePrefix": "npm run build && ",
+      "workType": "upgrade",
+      "baseCommit": "39f3211a2f01b3c6982710cf21434ab7060acefe",
+      "upstreamCommit": "4a864e55eec5044da67ca95a13f48c73e9ae8c0d",
+      "hidden": {
+        "testFiles": [],
+        "argv": [
+          "node",
+          "--test",
+          "test/core/**/*.test.mjs",
+          "test/spec/*.test.mjs"
+        ],
+        "upgrade": [
+          {
+            "name": "vite",
+            "section": "devDependencies",
+            "version": "8.1.2"
+          },
+          {
+            "name": "workerpool",
+            "section": "devDependencies",
+            "version": "10.0.3"
+          }
+        ]
+      },
+      "immutable": [
+        "test"
+      ],
+      "taskText": "Update two devDependencies to exact versions declared without ranges in package.json: vite to 8.1.2 and workerpool to 10.0.3. Regenerate package-lock.json with npm so that npm ci --ignore-scripts installs exactly those versions, and confirm the build (npm run build, which uses vite) and the full node:test suite still pass. No other dependency may change and nothing else in package.json may change.",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "npm run build && node acceptance/visible/check.mjs",
+        "source": "import assert from 'node:assert/strict'\nimport { readFileSync } from 'node:fs'\nconst manifest = JSON.parse(readFileSync('package.json', 'utf8'))\nassert.ok(['8.1.2', '^8.1.2'].includes(manifest.devDependencies.vite), manifest.devDependencies.vite)\nassert.ok(['10.0.3', '^10.0.3'].includes(manifest.devDependencies.workerpool), manifest.devDependencies.workerpool)\nconsole.log('visible check passed')\n"
+      }
+    },
+    {
+      "id": "js-yaml-bugfix-flow-colon-quoting",
+      "repository": "nodeca/js-yaml",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ],
+        [
+          "node",
+          "support/get-yaml-test-suite.mjs"
+        ],
+        [
+          "npm",
+          "run",
+          "build"
+        ]
+      ],
+      "build": [
+        [
+          "npm",
+          "run",
+          "build"
+        ]
+      ],
+      "projectTest": [
+        "node",
+        "--test",
+        "test/core/**/*.test.mjs",
+        "test/spec/*.test.mjs"
+      ],
+      "visiblePrefix": "npm run build && ",
+      "workType": "bugfix",
+      "baseCommit": "ac16b42c46c11c5c7f66062bfc78b168b5f07ecd",
+      "upstreamCommit": "bd7ebb2b7818873407c942c6371504e427c99cba",
+      "hidden": {
+        "testFiles": [
+          "test/core/units/dump-options.test.mjs"
+        ],
+        "argv": [
+          "node",
+          "--test",
+          "test/core/units/dump-options.test.mjs"
+        ]
+      },
+      "immutable": [
+        "test"
+      ],
+      "taskText": "dump() emits unparseable or lossy output for strings in flow collections when a colon is immediately followed by a flow indicator. For example dump([\":{\"], { flowLevel: 0 }) and dump({ k: \":[\" }, { flowLevel: 0 }) leave the value as a plain scalar, so load(dump(x)) does not give back x for values such as \":{\", \":[\", \":,\", \":}\", \":]\" or \"x:{\". In flow context a colon followed by any of , [ ] { } is not plain-safe (YAML 1.2, ns-plain-safe-in excludes c-flow-indicator), so such values must be quoted when presented in flow style, while block-context output and other plain scalars (for example \"a:b\", or \"x:{\" at block level) must stay exactly as they are today. Source is under src/ (TypeScript); the package is built with npm run build and tests run with node --test \"test/core/**/*.test.mjs\" \"test/spec/*.test.mjs\".",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "npm run build && node acceptance/visible/check.mjs",
+        "source": "import assert from 'node:assert/strict'\nimport { dump, load } from 'js-yaml'\nfor (const value of [':{', ':[', 'x:{']) {\n  assert.deepEqual(load(dump([value], { flowLevel: 0 })), [value], JSON.stringify(value))\n}\nassert.equal(dump({ k: 'x:{' }), 'k: x:{\\n')\nconsole.log('visible check passed')\n"
+      }
+    },
+    {
+      "id": "fxp-feature-end-index",
+      "repository": "NaturalIntelligence/fast-xml-parser",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ]
+      ],
+      "build": [],
+      "projectTest": [
+        "npm",
+        "test"
+      ],
+      "visiblePrefix": "",
+      "workType": "feature",
+      "baseCommit": "2ce7191ef0f96473b8c7e0c384fbc4ad34a222de",
+      "upstreamCommit": "4652011b74f330c7fde73ecd1f8d31eb7743f4d8",
+      "hidden": {
+        "testFiles": [
+          "spec/endIndex_spec.js",
+          "spec/startIndex_spec.js"
+        ],
+        "argv": [
+          "npx",
+          "jasmine",
+          "spec/endIndex_spec.js",
+          "spec/startIndex_spec.js"
+        ]
+      },
+      "immutable": [
+        "spec"
+      ],
+      "taskText": "When the captureMetaData option is enabled, every parsed element node carries a metadata object (under the symbol returned by XMLParser.getMetaDataSymbol()) that currently holds only startIndex, the offset of the node's opening \"<\". Add endIndex to that same metadata object: the exclusive offset just past the last character of the node in the input string, so that input.slice(startIndex, endIndex) is the node's full source text. It must be set for paired elements (the position after the closing tag's \">\"), self-closing elements (after \"/>\"), unpaired tags configured through unpairedTags, and processing-instruction nodes (after \"?>\"); nested elements each get their own value; it must work in both the default and the preserveOrder output, and the updateTag option must not disturb a sibling's indices. Declare the field in the TypeScript types in src/fxp.d.ts. Source is under src/; tests run with npm test (jasmine).",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "node acceptance/visible/check.mjs",
+        "source": "import assert from \"node:assert/strict\";\nimport { XMLParser } from \"../../src/fxp.js\";\nconst xml = '<root><a x=\"1\">t</a><b/></root>';\nconst parser = new XMLParser({ captureMetaData: true, ignoreAttributes: false });\nconst meta = XMLParser.getMetaDataSymbol();\nconst parsed = parser.parse(xml);\nconst a = parsed.root.a[meta];\nassert.equal(xml.slice(a.startIndex, a.endIndex), '<a x=\"1\">t</a>');\nconsole.log(\"visible check passed\");\n"
+      }
+    },
+    {
+      "id": "minimatch-bugfix-partial-globstar",
+      "repository": "isaacs/minimatch",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ],
+        [
+          "npx",
+          "tshy"
+        ]
+      ],
+      "build": [
+        [
+          "npx",
+          "tshy"
+        ]
+      ],
+      "projectTest": [
+        "npm",
+        "test"
+      ],
+      "visiblePrefix": "npx tshy && ",
+      "workType": "bugfix",
+      "baseCommit": "ea94840326c3f40522f1b544bd2303024b0eec35",
+      "upstreamCommit": "3a0d83b6f03a17ebc15361c2faa7110777042aab",
+      "hidden": {
+        "testFiles": [
+          "test/partial.ts"
+        ],
+        "argv": [
+          "npx",
+          "tap",
+          "run",
+          "--disable-coverage",
+          "test/partial.ts"
+        ]
+      },
+      "immutable": [
+        "test"
+      ],
+      "taskText": "With the partial: true option (and Minimatch#match(path, true)), a path should match when it is a valid prefix of a path that the full pattern could match, including when the pattern contains **. Today patterns with a globstar wrongly report false for valid prefixes. For example minimatch(\"/b/c/d/a\", \"/**/a/b/c\", { partial: true }), minimatch(\"/b/c/d/a\", \"/**/a/b/c/**\", { partial: true }), minimatch(\"a\", \"a/**\", { partial: true }), minimatch(\"/b/c/d/a\", \"/**/a/**/b/c/**\", { partial: true }) and minimatch(\"/b/c/d/a\", \"/**/a/**\", { partial: true }) must all return true, while minimatch(\"b/a\", \"a/**\", { partial: true }) must still return false. Existing partial behavior for patterns without ** (for example \"/a/b\" against \"/*/b/x/y/z\" is true and \"/a/b/c\" is false) and makeRe(pattern, { partial: true }) must be unchanged, and non-partial matching must not loosen: minimatch(\"/b/c/d/a\", \"/**/a/b/c\") stays false. Make the change in the ** path-walking logic in src/index.ts, not by post-processing results. The library is TypeScript built with npx tshy; tests run with npm test (tap, which requires 100% coverage).",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "npx tshy && node acceptance/visible/check.mjs",
+        "source": "import assert from \"node:assert/strict\";\nimport { minimatch } from \"../../dist/esm/index.js\";\nassert.equal(minimatch(\"/b/c/d/a\", \"/**/a/b/c\", { partial: true }), true);\nassert.equal(minimatch(\"b/a\", \"a/**\", { partial: true }), false);\nassert.equal(minimatch(\"/b/c/d/a\", \"/**/a/b/c\"), false);\nconsole.log(\"visible check passed\");\n"
+      }
+    },
+    {
+      "id": "minimatch-bugfix-drive-letter",
+      "repository": "isaacs/minimatch",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ],
+        [
+          "npx",
+          "tshy"
+        ]
+      ],
+      "build": [
+        [
+          "npx",
+          "tshy"
+        ]
+      ],
+      "projectTest": [
+        "npm",
+        "test"
+      ],
+      "visiblePrefix": "npx tshy && ",
+      "workType": "bugfix",
+      "baseCommit": "1caf91893b67586255c68e2e513b14ac66785a24",
+      "upstreamCommit": "7953af1fac53267c05e362f036b70de898318faa",
+      "hidden": {
+        "testFiles": [
+          "test/optimization-level-2.ts"
+        ],
+        "argv": [
+          "npx",
+          "tap",
+          "run",
+          "--disable-coverage",
+          "test/optimization-level-2.ts"
+        ]
+      },
+      "immutable": [
+        "test"
+      ],
+      "taskText": "When matching on Windows (platform: \"win32\") at optimizationLevel 2, the path optimizer that collapses \"<dir>/..\" segments must treat a drive-letter root such as \"C:\" as a root rather than an ordinary directory, so \"..\" cannot step past it. Today new Minimatch(\"public/**\", { platform: \"win32\", optimizationLevel: 2 }).match(\"C:/../public/secret\") returns true, because the optimizer rewrites \"C:/../public/secret\" into \"public/secret\"; it must return false, as it already does at optimizationLevel 1. On non-Windows platforms a leading \"C:\" is not special, so new Minimatch(\"public/**\", { platform: \"darwin\", optimizationLevel: 2 }).match(\"C:/../public/secret\") must remain true. Only the ..-collapsing step may change; \"**/..\" and \"./\" handling stay as they are. Source is src/index.ts (TypeScript built with npx tshy); tests run with npm test (tap, which requires 100% coverage).",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "npx tshy && node acceptance/visible/check.mjs",
+        "source": "import assert from \"node:assert/strict\";\nimport { Minimatch } from \"../../dist/esm/index.js\";\nassert.equal(new Minimatch(\"public/**\", { platform: \"win32\", optimizationLevel: 2 }).match(\"C:/../public/secret\"), false);\nassert.equal(new Minimatch(\"public/**\", { platform: \"darwin\", optimizationLevel: 2 }).match(\"C:/../public/secret\"), true);\nconsole.log(\"visible check passed\");\n"
+      }
+    },
+    {
+      "id": "minimatch-upgrade-tap-types-node",
+      "repository": "isaacs/minimatch",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ],
+        [
+          "npx",
+          "tshy"
+        ]
+      ],
+      "build": [
+        [
+          "npx",
+          "tshy"
+        ]
+      ],
+      "projectTest": [
+        "npm",
+        "test"
+      ],
+      "visiblePrefix": "",
+      "workType": "upgrade",
+      "baseCommit": "b9d015374719dfb32083b33944e582a0636ddb4a",
+      "upstreamCommit": "fa2133b3488d7fe590a5fb9549327471e81a0fc9",
+      "hidden": {
+        "testFiles": [],
+        "argv": [
+          "npm",
+          "test"
+        ],
+        "upgrade": [
+          {
+            "name": "@types/node",
+            "section": "devDependencies",
+            "version": "25.3.0"
+          },
+          {
+            "name": "tap",
+            "section": "devDependencies",
+            "version": "21.6.1"
+          }
+        ]
+      },
+      "immutable": [
+        "test",
+        "src"
+      ],
+      "taskText": "Upgrade two devDependencies to exact versions declared without ranges in package.json: @types/node to 25.3.0 and tap to 21.6.1, regenerating package-lock.json with npm so that npm ci --ignore-scripts installs exactly those versions and no other dependency section changes. After the upgrade, npm test (the tshy build followed by tap with its default 100% coverage requirement) must pass on Node 24; at present the suite hangs on this Node version until tap's timeout. Do not change any source or test file.",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "node acceptance/visible/check.mjs",
+        "source": "import assert from \"node:assert/strict\";\nimport { readFileSync } from \"node:fs\";\nconst manifest = JSON.parse(readFileSync(\"package.json\", \"utf8\"));\nassert.ok([\"25.3.0\", \"^25.3.0\"].includes(manifest.devDependencies[\"@types/node\"]), manifest.devDependencies[\"@types/node\"]);\nassert.ok([\"21.6.1\", \"^21.6.1\"].includes(manifest.devDependencies.tap), manifest.devDependencies.tap);\nconsole.log(\"visible check passed\");\n"
+      }
+    }
+  ],
+  "launches": [
+    {
+      "task": "fxp-upgrade-strnum",
+      "arm": "swarm",
+      "order": 0
+    },
+    {
+      "task": "fxp-upgrade-strnum",
+      "arm": "opencode",
+      "order": 1
+    },
+    {
+      "task": "minimatch-bugfix-drive-letter",
+      "arm": "opencode",
+      "order": 2
+    },
+    {
+      "task": "minimatch-bugfix-drive-letter",
+      "arm": "swarm",
+      "order": 3
+    },
+    {
+      "task": "fxp-feature-strict-reserved-names",
+      "arm": "swarm",
+      "order": 4
+    },
+    {
+      "task": "fxp-feature-strict-reserved-names",
+      "arm": "opencode",
+      "order": 5
+    },
+    {
+      "task": "minimatch-upgrade-tap-types-node",
+      "arm": "opencode",
+      "order": 6
+    },
+    {
+      "task": "minimatch-upgrade-tap-types-node",
+      "arm": "swarm",
+      "order": 7
+    },
+    {
+      "task": "minimatch-bugfix-partial-globstar",
+      "arm": "swarm",
+      "order": 8
+    },
+    {
+      "task": "minimatch-bugfix-partial-globstar",
+      "arm": "opencode",
+      "order": 9
+    },
+    {
+      "task": "js-yaml-bugfix-timestamp-early-years",
+      "arm": "opencode",
+      "order": 10
+    },
+    {
+      "task": "js-yaml-bugfix-timestamp-early-years",
+      "arm": "swarm",
+      "order": 11
+    },
+    {
+      "task": "marked-feature-def-token",
+      "arm": "swarm",
+      "order": 12
+    },
+    {
+      "task": "marked-feature-def-token",
+      "arm": "opencode",
+      "order": 13
+    },
+    {
+      "task": "js-yaml-bugfix-flow-colon-quoting",
+      "arm": "opencode",
+      "order": 14
+    },
+    {
+      "task": "js-yaml-bugfix-flow-colon-quoting",
+      "arm": "swarm",
+      "order": 15
+    },
+    {
+      "task": "js-yaml-upgrade-vite-workerpool",
+      "arm": "swarm",
+      "order": 16
+    },
+    {
+      "task": "js-yaml-upgrade-vite-workerpool",
+      "arm": "opencode",
+      "order": 17
+    },
+    {
+      "task": "marked-upgrade-cheerio",
+      "arm": "opencode",
+      "order": 18
+    },
+    {
+      "task": "marked-upgrade-cheerio",
+      "arm": "swarm",
+      "order": 19
+    },
+    {
+      "task": "js-yaml-refactor-is-plain-object",
+      "arm": "swarm",
+      "order": 20
+    },
+    {
+      "task": "js-yaml-refactor-is-plain-object",
+      "arm": "opencode",
+      "order": 21
+    },
+    {
+      "task": "js-yaml-feature-max-aliases",
+      "arm": "opencode",
+      "order": 22
+    },
+    {
+      "task": "js-yaml-feature-max-aliases",
+      "arm": "swarm",
+      "order": 23
+    },
+    {
+      "task": "marked-refactor-strict-exec",
+      "arm": "swarm",
+      "order": 24
+    },
+    {
+      "task": "marked-refactor-strict-exec",
+      "arm": "opencode",
+      "order": 25
+    },
+    {
+      "task": "fxp-feature-end-index",
+      "arm": "opencode",
+      "order": 26
+    },
+    {
+      "task": "fxp-feature-end-index",
+      "arm": "swarm",
+      "order": 27
+    },
+    {
+      "task": "marked-bugfix-www-case",
+      "arm": "swarm",
+      "order": 28
+    },
+    {
+      "task": "marked-bugfix-www-case",
+      "arm": "opencode",
+      "order": 29
+    },
+    {
+      "task": "yargs-parser-upgrade-toolchain",
+      "arm": "opencode",
+      "order": 30
+    },
+    {
+      "task": "yargs-parser-upgrade-toolchain",
+      "arm": "swarm",
+      "order": 31
+    },
+    {
+      "task": "yargs-parser-bugfix-count-sentinel",
+      "arm": "swarm",
+      "order": 32
+    },
+    {
+      "task": "yargs-parser-bugfix-count-sentinel",
+      "arm": "opencode",
+      "order": 33
+    },
+    {
+      "task": "yargs-parser-bugfix-negation-unknown",
+      "arm": "opencode",
+      "order": 34
+    },
+    {
+      "task": "yargs-parser-bugfix-negation-unknown",
+      "arm": "swarm",
+      "order": 35
+    },
+    {
+      "task": "fxp-bugfix-uint8array-utf8",
+      "arm": "swarm",
+      "order": 36
+    },
+    {
+      "task": "fxp-bugfix-uint8array-utf8",
+      "arm": "opencode",
+      "order": 37
+    },
+    {
+      "task": "fxp-refactor-unpaired-set",
+      "arm": "opencode",
+      "order": 38
+    },
+    {
+      "task": "fxp-refactor-unpaired-set",
+      "arm": "swarm",
+      "order": 39
+    }
+  ]
+}
