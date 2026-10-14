@@ -12,6 +12,20 @@ Source on `v13-main`; not published until a release names it.
 
 ### Added
 
+- **The comparison launcher stops when the experiment is invalid.** Before this the harness
+  recorded an infrastructure failure for the launch it hit and started the next one, which is
+  how passes 1 to 4 ran on through a dead or restarted endpoint, an arm that never started and
+  a model setting that was wrong for one arm. `scripts/comparison/run.mjs` now halts, before any
+  later launch, on a failed endpoint (watched by its listener during every invocation), a pin
+  that does not match what is installed, a task environment that cannot be prepared, a scorer
+  that cannot judge, a record that cannot be validated, written or backed by evidence, an
+  interruption, or any harness exception; an arm's own failure, budget, stall or false claim
+  still records and continues. The halt is a `halt-N.json` beside the records with the attempt
+  kept, one runner holds a manifest at a time, SIGINT and SIGTERM stop the owned child and record
+  the interruption, a runner killed without cleanup is recognised on the next start, and
+  resumption needs `--recover --justification` after every pin is read again. The classes are
+  amendment 4 of the comparison protocol; the fault-injection proof and its measured detection
+  and termination times are under `docs/evidence/comparison-stop-controls/`.
 - **An exploratory comparison against an ordinary coding agent, run and reported.** Twenty
   issue-sized historical changes mined from five public repositories, Swarm against OpenCode
   1.14.48 on the same local model with the same workspace, visible check, wall budget and one
