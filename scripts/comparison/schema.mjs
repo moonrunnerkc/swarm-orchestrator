@@ -8,6 +8,23 @@ const digest = z.string().regex(/^sha256:[0-9a-f]{64}$/);
 export const workTypes = ["bugfix", "feature", "refactor", "upgrade"];
 export const arms = ["swarm", "opencode"];
 
+/**
+ * Why a campaign stopped. Each is a failure of the experiment, never of an arm: the endpoint
+ * died or changed; the frozen configuration or an arm's runtime is not what it should be; the
+ * task environment could not be prepared; the scorer could not judge; a record could not be
+ * validated, written or backed by evidence; the runner or a child was interrupted; or the
+ * harness itself threw. An arm that fails its task continues the campaign and is none of these.
+ */
+export const fatalClasses = [
+  "endpoint",
+  "configuration",
+  "preparation",
+  "scorer",
+  "records",
+  "interrupted",
+  "harness",
+];
+
 export const taskSchema = z.strictObject({
   id: z.string().regex(/^[a-z][a-z0-9-]{3,80}$/),
   repository: z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
@@ -111,4 +128,65 @@ export const recordSchema = z.strictObject({
   }),
   infrastructureFailure: z.string().nullable(),
   notes: z.array(z.string()),
+  /** Present on an attempt the campaign stopped on: the class and the halt record beside it. */
+  halt: z.strictObject({ class: z.enum(fatalClasses), record: z.string() }).optional(),
+});
+
+const launchRef = z.strictObject({ task: z.string(), arm: z.enum(arms), order: z.number() });
+
+export const haltSchema = z.strictObject({
+  schema: z.literal("swarm-ordinary-comparison.halt.v1"),
+  manifestDigest: digest,
+  class: z.enum(fatalClasses),
+  reason: z.string().min(1),
+  /** When the failure was seen, and when the halt was recorded. */
+  detectedAt: z.string(),
+  haltedAt: z.string(),
+  /** The launch in progress, its retained attempt record and its kept workspace, if any. */
+  launch: launchRef.nullable(),
+  attemptRecord: z.string().nullable(),
+  scratch: z.string().nullable(),
+  cleanup: z.strictObject({
+    outcome: z.enum(["terminated", "unconfirmed", "nothing-running"]),
+    wallMs: z.number().int().nonnegative(),
+    deadlineMs: z.number().int().positive(),
+  }),
+  /** Children of a runner that died without cleanup, found and stopped on the next start. */
+  orphans: z.array(
+    z.strictObject({
+      pid: z.number().int(),
+      started: z.string(),
+      outcome: z.enum(["terminated", "unconfirmed", "already-gone"]),
+    }),
+  ),
+  remaining: z.array(launchRef),
+  identity: z.strictObject({
+    pins: z.record(z.string(), z.unknown()),
+    harnessDigest: digest,
+    node: z.string(),
+    platform: z.string(),
+  }),
+  runner: z.strictObject({ pid: z.number().int(), started: z.string().nullable() }),
+  notes: z.array(z.string()),
+});
+
+export const recoverySchema = z.strictObject({
+  schema: z.literal("swarm-ordinary-comparison.recovery.v1"),
+  manifestDigest: digest,
+  recoveredAt: z.string(),
+  /** The halt this clears, by file name and digest, so the pairing is checkable. */
+  clears: z.string(),
+  clearsDigest: digest,
+  justification: z.string().min(1),
+  revalidation: z.strictObject({
+    problems: z.array(z.string()),
+    harnessDigest: digest,
+    node: z.string(),
+    endpointInstance: z.string().nullable(),
+    models: z.array(z.string()),
+    opencode: z.string(),
+    swarmCliDigest: digest.nullable(),
+  }),
+  completed: z.number().int().nonnegative(),
+  remaining: z.array(launchRef),
 });

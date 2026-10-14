@@ -1,0 +1,719 @@
+/**
+ * Fault injection against the real runner. Every case here spawns `run.mjs` as a process with
+ * a temporary HOME (so the comparison root, the records, the lock and the halt records are its
+ * own), a disposable endpoint process that lists one model, a local mirror of a tiny task
+ * repository, and the fixture arm in place of both products. The counts come from markers the
+ * arm leaves while it runs, never from a return value: `launches.log` says how many invocations
+ * started and which were corrections, and the `heartbeat` file's mtime says when the last owned
+ * child stopped.
+ *
+ * COMPARISON_RUNNER names another copy of the runner to drive, which is how the proof shows the
+ * assertions fail against a runner whose stop path is broken.
+ */
+import { spawn, spawnSync } from "node:child_process";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { digestOf } from "./arms.mjs";
+import { launches } from "./order.mjs";
+
+const here = dirname(new URL(import.meta.url).pathname);
+const runner = process.env.COMPARISON_RUNNER ?? join(here, "run.mjs");
+const { harnessDigest } = await import(join(dirname(runner), "harness-identity.mjs"));
+const fixtures = join(here, "fixtures");
+const detectionDeadlineMs = 10_000;
+const terminationDeadlineMs = 10_000;
+
+/** Timings worth keeping as evidence, written where the proof script asks for them. */
+const measurements = [];
+afterEach(() => {
+  if (process.env.COMPARISON_PROOF_OUT && measurements.length > 0)
+    writeFileSync(process.env.COMPARISON_PROOF_OUT, `${JSON.stringify(measurements, null, 2)}\n`);
+});
+
+const children = [];
+const roots = [];
+afterEach(() => {
+  for (const child of children.splice(0)) {
+    try {
+      process.kill(-child.pid, "SIGKILL");
+    } catch {}
+    try {
+      child.kill("SIGKILL");
+    } catch {}
+  }
+  for (const root of roots.splice(0)) {
+    // A case that removed write permission puts it back so the directory can go.
+    for (const directory of walk(root)) {
+      try {
+        chmodSync(directory, 0o700);
+      } catch {}
+    }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+function* walk(directory) {
+  yield directory;
+  let entries = [];
+  try {
+    entries = readdirSync(directory, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) if (entry.isDirectory()) yield* walk(join(directory, entry.name));
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function until(predicate, { timeoutMs = 30_000, every = 50, what = "condition" } = {}) {
+  const started = Date.now();
+  while (!predicate()) {
+    if (Date.now() - started > timeoutMs)
+      throw new Error(`${what} did not hold within ${timeoutMs} ms`);
+    await sleep(every);
+  }
+  return Date.now();
+}
+
+function git(cwd, ...args) {
+  const ran = spawnSync(
+    "git",
+    ["-c", "user.name=fixture", "-c", "user.email=fixture@localhost", ...args],
+    { cwd, encoding: "utf8" },
+  );
+  if (ran.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${ran.stderr}`);
+  return ran.stdout.trim();
+}
+
+/**
+ * A task repository with a base that fails the visible check and the hidden oracle, and an
+ * upstream commit (the base's child) that passes both, mirrored bare where the harness looks.
+ */
+function mirrorTask(home, repository) {
+  const source = mkdtempSync(join(tmpdir(), "comparison-source-"));
+  roots.push(source);
+  writeFileSync(
+    join(source, "package.json"),
+    '{ "name": "calc", "type": "module", "version": "1.0.0" }\n',
+  );
+  writeFileSync(
+    join(source, "calc.mjs"),
+    "export const add = (a, b) => a - b;\nexport const mul = (a, b) => a * b;\n",
+  );
+  mkdirSync(join(source, "test"));
+  writeFileSync(
+    join(source, "test/run.mjs"),
+    'import { mul } from "../calc.mjs";\nif (mul(2, 3) !== 6) { console.error("mul"); process.exit(1); }\n',
+  );
+  git(source, "init", "-q");
+  git(source, "add", "--all");
+  git(source, "commit", "-qm", "base");
+  const base = git(source, "rev-parse", "HEAD");
+  writeFileSync(
+    join(source, "calc.mjs"),
+    "export const add = (a, b) => a + b;\nexport const mul = (a, b) => a * b;\n",
+  );
+  writeFileSync(
+    join(source, "test/add.test.mjs"),
+    'import { add } from "../calc.mjs";\nif (add(2, 3) !== 5 || add(1, 1) !== 2) { console.error("add"); process.exit(1); }\n',
+  );
+  git(source, "add", "--all");
+  git(source, "commit", "-qm", "fix add");
+  const upstream = git(source, "rev-parse", "HEAD");
+  const mirror = join(
+    home,
+    ".cache/swarm-comparison/mirrors",
+    `${repository.replace("/", "__")}.git`,
+  );
+  mkdirSync(dirname(mirror), { recursive: true });
+  git(source, "clone", "--quiet", "--bare", source, mirror);
+  return { base, upstream };
+}
+
+function task(id, repository, commits, overrides = {}) {
+  return {
+    id,
+    repository,
+    workType: "bugfix",
+    baseCommit: commits.base,
+    upstreamCommit: commits.upstream,
+    install: [["true"]],
+    build: [],
+    projectTest: ["node", "test/run.mjs"],
+    visiblePrefix: "",
+    visible: {
+      path: "acceptance/visible/check.mjs",
+      command: "node acceptance/visible/check.mjs",
+      source:
+        'import { add } from "../../calc.mjs";\nif (add(2, 3) !== 5) { console.error("add(2, 3) is " + add(2, 3)); process.exit(1); }\n',
+    },
+    hidden: { testFiles: ["test/add.test.mjs"], argv: ["node", "test/add.test.mjs"] },
+    immutable: ["test"],
+    taskText:
+      "add(a, b) in calc.mjs subtracts instead of adding; make it add and keep mul as it is.",
+    ...overrides,
+  };
+}
+
+/** A temporary HOME, the fixture markers, and an `opencode` shim on PATH that runs the fixture arm. */
+function environment() {
+  const home = mkdtempSync(join(tmpdir(), "comparison-home-"));
+  roots.push(home);
+  const markers = join(home, "markers");
+  mkdirSync(markers);
+  const bin = join(home, "bin");
+  mkdirSync(bin);
+  writeFileSync(
+    join(bin, "opencode"),
+    `#!/bin/sh\nif [ "$1" = "--version" ]; then echo "\${COMPARISON_FIXTURE_OPENCODE_VERSION:-fixture-1.0.0}"; exit 0; fi\nexec node "${join(fixtures, "arm.mjs")}" opencode "$@"\n`,
+    { mode: 0o755 },
+  );
+  return { home, markers, bin };
+}
+
+async function startEndpoint(home, model = "fixture-model", port = 0) {
+  const ready = join(home, `endpoint-ready-${Date.now()}-${Math.random()}`);
+  const child = spawn("node", [join(fixtures, "endpoint-server.mjs"), ready, model, String(port)], {
+    stdio: "ignore",
+    detached: true,
+  });
+  children.push(child);
+  await until(() => existsSync(ready), { what: "the endpoint fixture to listen" });
+  const { port: bound, pid } = JSON.parse(readFileSync(ready, "utf8"));
+  return { child, port: bound, pid, url: `http://127.0.0.1:${bound}/v1` };
+}
+
+function stopEndpoint(endpoint) {
+  process.kill(endpoint.pid, "SIGKILL");
+  return Date.now();
+}
+
+function writeManifest(home, { endpoint, tasks, budgets = {}, pins = {}, launchOverrides = {} }) {
+  const manifest = {
+    schema: "swarm-ordinary-comparison.manifest.v1",
+    frozenAt: "2026-10-14T00:00:00.000Z",
+    protocolDigest: null,
+    pins: {
+      model: "fixture-model",
+      endpoint,
+      swarmCli: join(fixtures, "arm.mjs"),
+      swarmRevision: "fixture",
+      opencode: "fixture-1.0.0",
+      node: process.version,
+      harnessDigest: harnessDigest(),
+      ...pins,
+    },
+    budgets: { wallMsPerInvocation: 60_000, swarmTokenCap: 600_000, maxCorrections: 2, ...budgets },
+    seed: "swarm-ordinary-comparison-2026-10-11",
+    tasks,
+    launches: launches(tasks.map((one) => one.id)).map((launch) => ({
+      ...launch,
+      ...launchOverrides[launch.order],
+    })),
+  };
+  const path = join(home, "manifest.json");
+  const bytes = `${JSON.stringify(manifest, null, 2)}\n`;
+  writeFileSync(path, bytes);
+  const digest = digestOf(bytes);
+  return {
+    path,
+    manifest,
+    digest,
+    runs: join(home, ".cache/swarm-comparison/runs", digest.slice(7, 23)),
+  };
+}
+
+function startRunner(env, manifestPath, extra = [], behavior = "correct", more = {}) {
+  const child = spawn("node", [runner, "--manifest", manifestPath, ...extra], {
+    env: {
+      ...process.env,
+      HOME: env.home,
+      PATH: `${env.bin}:${process.env.PATH}`,
+      COMPARISON_FIXTURE_DIR: env.markers,
+      COMPARISON_FIXTURE_BEHAVIOR: behavior,
+      ...more,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+    detached: true,
+  });
+  children.push(child);
+  const out = [];
+  const err = [];
+  child.stdout.on("data", (chunk) => out.push(chunk));
+  child.stderr.on("data", (chunk) => err.push(chunk));
+  child.done = new Promise((resolve) => {
+    child.on("close", (code, signal) =>
+      resolve({
+        code,
+        signal,
+        stdout: Buffer.concat(out).toString(),
+        stderr: Buffer.concat(err).toString(),
+      }),
+    );
+  });
+  return child;
+}
+
+const runRunner = (env, manifestPath, extra, behavior, more) =>
+  startRunner(env, manifestPath, extra, behavior, more).done;
+
+const launchLines = (env) =>
+  existsSync(join(env.markers, "launches.log"))
+    ? readFileSync(join(env.markers, "launches.log"), "utf8").trim().split("\n").filter(Boolean)
+    : [];
+const corrections = (env) =>
+  launchLines(env).filter((line) => line.includes(" correction ")).length;
+const heartbeatAt = (env) => statSync(join(env.markers, "heartbeat")).mtimeMs;
+const files = (directory) => (existsSync(directory) ? readdirSync(directory).sort() : []);
+const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
+const halts = (runs) => files(runs).filter((name) => /^halt-\d+\.json$/.test(name));
+const recordsOf = (runs) =>
+  files(runs).filter((name) => /^[a-z0-9-]+\.(swarm|opencode)\.json$/.test(name));
+const attemptsOf = (runs) =>
+  files(runs).filter((name) => /\.(halted|infrastructure)-\d+\.json$/.test(name));
+
+/** Waits for the heartbeat to stop moving, and says when it last moved. */
+async function heartbeatStopped(env, deadlineMs) {
+  const started = Date.now();
+  let last = heartbeatAt(env);
+  while (Date.now() - started < deadlineMs + 2000) {
+    await sleep(600);
+    const now = heartbeatAt(env);
+    if (now === last && Date.now() - now > 1000) return last;
+    last = now;
+  }
+  throw new Error("the owned child was still alive after the termination deadline");
+}
+
+async function setup({ tasks: build, endpoint: endpointOptions = {}, ...rest } = {}) {
+  const env = environment();
+  const endpoint = endpointOptions.absent
+    ? null
+    : await startEndpoint(env.home, endpointOptions.model);
+  const commits = mirrorTask(env.home, "fixture/calc");
+  const tasks = (
+    build ??
+    ((t) => [
+      t("calc-fix-add", "fixture/calc", commits),
+      t("calc-fix-add-again", "fixture/calc", commits),
+    ])
+  )(task, commits);
+  const frozen = writeManifest(env.home, {
+    endpoint: endpoint ? endpoint.url : "http://127.0.0.1:1/v1",
+    tasks,
+    ...rest,
+  });
+  return { env, endpoint, commits, tasks, ...frozen };
+}
+
+describe("stopping the comparison when the experiment is invalid", () => {
+  it("dispatches no agent after a fatal failure before the first launch (the continuation defect)", async () => {
+    const first = launches(["calc-fix-add", "calc-fix-add-again"])[0].task;
+    const other = first === "calc-fix-add" ? "calc-fix-add-again" : "calc-fix-add";
+    const fixture = await setup({
+      tasks: (t, commits) => [
+        // The first task in the frozen order cannot establish its environment.
+        t(first, "fixture/calc", commits, { install: [["false"]] }),
+        t(other, "fixture/calc", commits),
+      ],
+    });
+    const result = await runRunner(fixture.env, fixture.path);
+    expect(launchLines(fixture.env)).toEqual([]);
+    expect(result.code).toBe(3);
+    expect(attemptsOf(fixture.runs)).toHaveLength(1);
+    expect(recordsOf(fixture.runs)).toEqual([]);
+    expect(halts(fixture.runs)).toEqual(["halt-1.json"]);
+    const halt = readJson(join(fixture.runs, "halt-1.json"));
+    expect(halt.class).toBe("preparation");
+    expect(halt.remaining).toHaveLength(3);
+    expect(result.stderr).toContain("halt-1.json");
+  });
+
+  it("launches nothing when the endpoint does not answer before the first launch", async () => {
+    const fixture = await setup({ endpoint: { absent: true } });
+    const result = await runRunner(fixture.env, fixture.path);
+    expect(result.code).toBe(3);
+    expect(launchLines(fixture.env)).toEqual([]);
+    expect(attemptsOf(fixture.runs)).toEqual([]);
+    const halt = readJson(join(fixture.runs, halts(fixture.runs)[0]));
+    expect(halt.class).toBe("endpoint");
+    expect(halt.launch).toBeNull();
+    expect(halt.remaining).toHaveLength(4);
+  });
+
+  it("launches nothing when the endpoint serves a different model than the manifest froze", async () => {
+    const fixture = await setup({ endpoint: { model: "some-other-model" } });
+    const result = await runRunner(fixture.env, fixture.path);
+    expect(result.code).toBe(3);
+    expect(launchLines(fixture.env)).toEqual([]);
+    expect(readJson(join(fixture.runs, "halt-1.json")).class).toBe("configuration");
+    expect(result.stderr).toContain("fixture-model");
+  });
+
+  it("launches nothing when the installed OpenCode is not the pinned version", async () => {
+    const fixture = await setup();
+    const result = await runRunner(fixture.env, fixture.path, [], "correct", {
+      COMPARISON_FIXTURE_OPENCODE_VERSION: "fixture-9.9.9",
+    });
+    expect(result.code).toBe(3);
+    expect(launchLines(fixture.env)).toEqual([]);
+    expect(readJson(join(fixture.runs, "halt-1.json")).class).toBe("configuration");
+  });
+
+  it("launches nothing when the pinned Swarm CLI bytes have changed", async () => {
+    const fixture = await setup({ pins: { swarmCliDigest: digestOf("some other build") } });
+    const result = await runRunner(fixture.env, fixture.path);
+    expect(result.code).toBe(3);
+    expect(launchLines(fixture.env)).toEqual([]);
+    expect(readJson(join(fixture.runs, "halt-1.json")).class).toBe("configuration");
+  });
+
+  it("stops the active arm and starts no later launch when the endpoint disappears mid-launch", async () => {
+    const fixture = await setup();
+    const child = startRunner(fixture.env, fixture.path, [], "hang");
+    await until(() => launchLines(fixture.env).length === 1, { what: "the first launch" });
+    await sleep(500);
+    const killedAt = stopEndpoint(fixture.endpoint);
+    const result = await child.done;
+    const stoppedAt = await heartbeatStopped(fixture.env, terminationDeadlineMs);
+    expect(result.code).toBe(3);
+    expect(launchLines(fixture.env)).toHaveLength(1);
+    const halt = readJson(join(fixture.runs, "halt-1.json"));
+    expect(halt.class).toBe("endpoint");
+    expect(halt.reason).toContain("stopped");
+    const detectedAt = Date.parse(halt.detectedAt);
+    expect(detectedAt - killedAt).toBeLessThanOrEqual(detectionDeadlineMs);
+    expect(stoppedAt - detectedAt).toBeLessThanOrEqual(terminationDeadlineMs);
+    expect(halt.cleanup.outcome).toBe("terminated");
+    const attempt = readJson(join(fixture.runs, attemptsOf(fixture.runs)[0]));
+    expect(attempt.invocations).toHaveLength(1);
+    expect(attempt.invocations[0].signal).toBe("SIGKILL(interrupted)");
+    expect(attempt.corrections).toBe(0);
+    measurements.push({
+      fault: "endpoint disappears mid-launch",
+      detectionMs: detectedAt - killedAt,
+      childStoppedMs: stoppedAt - killedAt,
+      cleanup: halt.cleanup,
+    });
+  });
+
+  it("stops the active arm and starts no later launch when the endpoint restarts mid-launch", async () => {
+    const fixture = await setup();
+    const child = startRunner(fixture.env, fixture.path, [], "hang");
+    await until(() => launchLines(fixture.env).length === 1, { what: "the first launch" });
+    await sleep(500);
+    const killedAt = stopEndpoint(fixture.endpoint);
+    await startEndpoint(fixture.env.home, "fixture-model", fixture.endpoint.port);
+    const result = await child.done;
+    const stoppedAt = await heartbeatStopped(fixture.env, terminationDeadlineMs);
+    expect(result.code).toBe(3);
+    expect(launchLines(fixture.env)).toHaveLength(1);
+    const halt = readJson(join(fixture.runs, "halt-1.json"));
+    expect(halt.class).toBe("endpoint");
+    expect(halt.reason).toContain("restarted");
+    const detectedAt = Date.parse(halt.detectedAt);
+    expect(detectedAt - killedAt).toBeLessThanOrEqual(detectionDeadlineMs);
+    expect(stoppedAt - detectedAt).toBeLessThanOrEqual(terminationDeadlineMs);
+    measurements.push({
+      fault: "endpoint restarts mid-launch",
+      detectionMs: detectedAt - killedAt,
+      childStoppedMs: stoppedAt - killedAt,
+      cleanup: halt.cleanup,
+    });
+  });
+
+  it("halts rather than inventing a task failure when the scorer cannot read its sealed material", async () => {
+    const fixture = await setup({
+      tasks: (t, commits) =>
+        ["calc-fix-add", "calc-fix-add-again"].map((id) =>
+          t(id, "fixture/calc", commits, {
+            hidden: {
+              testFiles: ["test/never-committed.test.mjs"],
+              argv: ["node", "test/add.test.mjs"],
+            },
+          }),
+        ),
+    });
+    const result = await runRunner(fixture.env, fixture.path);
+    expect(result.code).toBe(3);
+    expect(launchLines(fixture.env)).toHaveLength(1);
+    expect(recordsOf(fixture.runs)).toEqual([]);
+    const halt = readJson(join(fixture.runs, "halt-1.json"));
+    expect(halt.class).toBe("scorer");
+    const attempt = readJson(join(fixture.runs, attemptsOf(fixture.runs)[0]));
+    expect(attempt.hidden.verdict).toBe("unjudgeable");
+    expect(attempt.infrastructureFailure).toContain("sealed file");
+  });
+
+  it("halts when the arm's runtime never started (nothing printed, or Swarm's unavailable status)", async () => {
+    for (const [behavior, expected] of [
+      ["empty", "printed nothing"],
+      ["exit-unavailable", "exited 4"],
+    ]) {
+      const fixture = await setup();
+      const result = await runRunner(fixture.env, fixture.path, [], behavior);
+      expect(result.code).toBe(3);
+      expect(launchLines(fixture.env)).toHaveLength(1);
+      const halt = readJson(join(fixture.runs, "halt-1.json"));
+      expect(halt.class).toBe("configuration");
+      expect(halt.reason).toContain(expected);
+    }
+  });
+
+  it("halts when OpenCode reports it could not connect while the endpoint it was given is healthy", async () => {
+    const fixture = await setup({
+      tasks: (t, commits) => [t("calc-fix-add", "fixture/calc", commits)],
+    });
+    const result = await runRunner(fixture.env, fixture.path, [], "connect-error");
+    expect(result.code).toBe(3);
+    const halt = readJson(join(fixture.runs, "halt-1.json"));
+    expect(halt.class).toBe("configuration");
+    expect(halt.launch.arm).toBe("opencode");
+    expect(halt.reason).toContain("Unable to connect");
+    // The Swarm arm of the same task was correct; whether it ran depends on the frozen order,
+    // and either way nothing after the OpenCode launch started.
+    const order = launches(["calc-fix-add"]).findIndex((launch) => launch.arm === "opencode");
+    expect(launchLines(fixture.env)).toHaveLength(order + 1);
+  });
+
+  it("halts when a required record cannot be validated, written, or backed by its evidence", async () => {
+    // An order the schema rejects: the record of the first launch does not validate.
+    const invalid = await setup({ launchOverrides: { 0: { order: 0.5 } } });
+    let result = await runRunner(invalid.env, invalid.path);
+    expect(result.code).toBe(3);
+    expect(launchLines(invalid.env)).toHaveLength(1);
+    expect(recordsOf(invalid.runs)).toEqual([]);
+    expect(attemptsOf(invalid.runs)).toHaveLength(1);
+    expect(readJson(join(invalid.runs, "halt-1.json")).class).toBe("records");
+
+    // The record directory loses write permission during the launch: no record, no halt record,
+    // and still a nonzero exit; a restart does not continue either.
+    const unwritable = await setup();
+    result = await runRunner(unwritable.env, unwritable.path, [], "chmod-runs", {
+      COMPARISON_FIXTURE_RUNS_DIR: unwritable.runs,
+    });
+    expect(result.code).toBe(3);
+    expect(launchLines(unwritable.env)).toHaveLength(1);
+    expect(result.stderr).toMatch(/EACCES|permission/i);
+    const restarted = await runRunner(unwritable.env, unwritable.path, [], "chmod-runs", {
+      COMPARISON_FIXTURE_RUNS_DIR: unwritable.runs,
+    });
+    expect(restarted.code).not.toBe(0);
+    expect(launchLines(unwritable.env)).toHaveLength(1);
+    chmodSync(unwritable.runs, 0o700);
+    expect(recordsOf(unwritable.runs)).toEqual([]);
+
+    // Swarm names an evidence directory that is not there.
+    const missing = await setup({
+      tasks: (t, commits) => [t("calc-fix-add", "fixture/calc", commits)],
+    });
+    result = await runRunner(missing.env, missing.path, [], "missing-evidence");
+    expect(result.code).toBe(3);
+    const halt = readJson(join(missing.runs, "halt-1.json"));
+    expect(halt.class).toBe("records");
+    expect(halt.launch.arm).toBe("swarm");
+    expect(halt.reason).toContain("evidence");
+  });
+
+  it("records a wrong patch as a failed task, corrects it twice, and lets the next task run", async () => {
+    const fixture = await setup();
+    const result = await runRunner(fixture.env, fixture.path, [], "wrong");
+    expect(result.code).toBe(0);
+    expect(halts(fixture.runs)).toEqual([]);
+    expect(recordsOf(fixture.runs)).toHaveLength(4);
+    expect(launchLines(fixture.env)).toHaveLength(12);
+    expect(corrections(fixture.env)).toBe(8);
+    for (const name of recordsOf(fixture.runs)) {
+      const record = readJson(join(fixture.runs, name));
+      expect(record.infrastructureFailure).toBeNull();
+      expect(record.corrections).toBe(2);
+      expect(record.resolvedVisible).toBe(false);
+      expect(record.hidden.verdict).toBe("fail");
+      // Both fixtures report success; the scorer's "fail" over a claim is a recorded outcome.
+      expect(record.invocations.at(-1).claimedSuccess).toBe(true);
+    }
+  });
+
+  it("records a stalled arm killed at the wall as that arm's result and lets the next launch run", async () => {
+    const fixture = await setup({
+      tasks: (t, commits) => [t("calc-fix-add", "fixture/calc", commits)],
+      budgets: { wallMsPerInvocation: 1500, wallGraceMs: 500 },
+    });
+    const result = await runRunner(fixture.env, fixture.path, [], "hang");
+    expect(result.code).toBe(0);
+    expect(halts(fixture.runs)).toEqual([]);
+    expect(recordsOf(fixture.runs)).toHaveLength(2);
+    expect(launchLines(fixture.env)).toHaveLength(2);
+    for (const name of recordsOf(fixture.runs)) {
+      const record = readJson(join(fixture.runs, name));
+      expect(record.infrastructureFailure).toBeNull();
+      expect(record.invocations[0].signal).toBe("SIGKILL(deadline)");
+      expect(record.hidden.verdict).toBe("fail");
+      expect(record.notes).toContain("the wall budget was spent before the corrections were");
+    }
+  });
+
+  it("halts when the arm's process ends on a signal the harness did not send", async () => {
+    const fixture = await setup();
+    const result = await runRunner(fixture.env, fixture.path, [], "external-kill");
+    expect(result.code).toBe(3);
+    expect(launchLines(fixture.env)).toHaveLength(1);
+    const halt = readJson(join(fixture.runs, "halt-1.json"));
+    expect(halt.class).toBe("interrupted");
+    expect(halt.reason).toContain("SIGTERM");
+  });
+
+  it("stops the owned child on SIGTERM, records the interruption, and refuses to continue on restart", async () => {
+    const fixture = await setup();
+    const child = startRunner(fixture.env, fixture.path, [], "hang");
+    await until(() => launchLines(fixture.env).length === 1, { what: "the first launch" });
+    await sleep(500);
+    const signalledAt = Date.now();
+    process.kill(child.pid, "SIGTERM");
+    const result = await child.done;
+    const stoppedAt = await heartbeatStopped(fixture.env, terminationDeadlineMs);
+    expect(result.code).toBe(143);
+    expect(stoppedAt - signalledAt).toBeLessThanOrEqual(terminationDeadlineMs);
+    const halt = readJson(join(fixture.runs, "halt-1.json"));
+    expect(halt.class).toBe("interrupted");
+    expect(halt.reason).toContain("SIGTERM");
+    expect(halt.cleanup.outcome).toBe("terminated");
+    expect(attemptsOf(fixture.runs)).toHaveLength(1);
+    expect(existsSync(join(fixture.runs, "runner.lock"))).toBe(false);
+    measurements.push({
+      fault: "SIGTERM to the runner mid-launch",
+      childStoppedMs: stoppedAt - signalledAt,
+      cleanup: halt.cleanup,
+    });
+
+    const restarted = await runRunner(fixture.env, fixture.path, [], "correct");
+    expect(restarted.code).toBe(3);
+    expect(restarted.stderr).toContain("halted");
+    expect(launchLines(fixture.env)).toHaveLength(1);
+    expect(halts(fixture.runs)).toEqual(["halt-1.json"]);
+  });
+
+  it("recovers an interrupted state after SIGKILL: the orphaned arm is stopped and the campaign is halted", async () => {
+    const fixture = await setup();
+    const child = startRunner(fixture.env, fixture.path, [], "hang");
+    await until(() => launchLines(fixture.env).length === 1, { what: "the first launch" });
+    await sleep(500);
+    process.kill(child.pid, "SIGKILL");
+    await child.done;
+    // SIGKILL ran no cleanup: the lock is still there and the arm is still beating.
+    expect(existsSync(join(fixture.runs, "runner.lock"))).toBe(true);
+    await sleep(700);
+    expect(Date.now() - heartbeatAt(fixture.env)).toBeLessThan(600);
+
+    const restartedAt = Date.now();
+    const restarted = await runRunner(fixture.env, fixture.path, [], "correct");
+    const stoppedAt = await heartbeatStopped(fixture.env, terminationDeadlineMs);
+    expect(restarted.code).toBe(3);
+    expect(launchLines(fixture.env)).toHaveLength(1);
+    expect(stoppedAt - restartedAt).toBeLessThanOrEqual(terminationDeadlineMs);
+    const halt = readJson(join(fixture.runs, "halt-1.json"));
+    expect(halt.class).toBe("interrupted");
+    expect(halt.reason).toContain("without cleanup");
+    expect(halt.orphans).toHaveLength(1);
+    expect(halt.orphans[0].outcome).toBe("terminated");
+  });
+
+  it("refuses a second runner on the same manifest while the first holds it", async () => {
+    const fixture = await setup();
+    const first = startRunner(fixture.env, fixture.path, [], "hang");
+    await until(() => launchLines(fixture.env).length === 1, { what: "the first launch" });
+    const second = await runRunner(fixture.env, fixture.path, [], "correct");
+    expect(second.code).toBe(4);
+    expect(second.stderr).toContain(String(first.pid));
+    expect(launchLines(fixture.env)).toHaveLength(1);
+    expect(halts(fixture.runs)).toEqual([]);
+    process.kill(first.pid, "SIGTERM");
+    await first.done;
+  });
+
+  it("resumes untouched cells only through an explicit, revalidated recovery, leaving completed cells as they were", async () => {
+    const fixture = await setup();
+    const only = fixture.manifest.launches[0].task;
+    const completed = await runRunner(fixture.env, fixture.path, ["--only", only]);
+    expect(completed.code).toBe(0);
+    expect(recordsOf(fixture.runs)).toHaveLength(2);
+    const before = Object.fromEntries(
+      recordsOf(fixture.runs).map((name) => [
+        name,
+        digestOf(readFileSync(join(fixture.runs, name), "utf8")),
+      ]),
+    );
+
+    stopEndpoint(fixture.endpoint);
+    const halted = await runRunner(fixture.env, fixture.path);
+    expect(halted.code).toBe(3);
+    expect(launchLines(fixture.env)).toHaveLength(2);
+    expect(readJson(join(fixture.runs, "halt-1.json")).remaining).toHaveLength(2);
+
+    // Recovery with the fault still present is refused and records nothing.
+    const refused = await runRunner(fixture.env, fixture.path, [
+      "--recover",
+      "--justification",
+      "trying anyway",
+    ]);
+    expect(refused.code).toBe(3);
+    expect(files(fixture.runs).filter((name) => name.startsWith("recovery-"))).toEqual([]);
+    // Without a recovery the campaign stays halted.
+    expect((await runRunner(fixture.env, fixture.path)).code).toBe(3);
+    expect(launchLines(fixture.env)).toHaveLength(2);
+
+    await startEndpoint(fixture.env.home, "fixture-model", fixture.endpoint.port);
+    const recovered = await runRunner(fixture.env, fixture.path, [
+      "--recover",
+      "--justification",
+      "the endpoint was restarted by hand; pins unchanged",
+    ]);
+    expect(recovered.code).toBe(0);
+    const recovery = readJson(join(fixture.runs, "recovery-1.json"));
+    expect(recovery.clears).toBe("halt-1.json");
+    expect(recovery.justification).toContain("restarted by hand");
+    expect(recovery.revalidation.problems).toEqual([]);
+    expect(launchLines(fixture.env)).toHaveLength(2);
+
+    const resumed = await runRunner(fixture.env, fixture.path);
+    expect(resumed.code).toBe(0);
+    expect(recordsOf(fixture.runs)).toHaveLength(4);
+    expect(launchLines(fixture.env)).toHaveLength(4);
+    for (const [name, digest] of Object.entries(before))
+      expect(digestOf(readFileSync(join(fixture.runs, name), "utf8"))).toBe(digest);
+    expect(halts(fixture.runs)).toEqual(["halt-1.json"]);
+  });
+
+  it("completes a healthy campaign, records every cell once, and leaves no lock or scratch behind", async () => {
+    const fixture = await setup();
+    const result = await runRunner(fixture.env, fixture.path);
+    expect(result.code).toBe(0);
+    expect(halts(fixture.runs)).toEqual([]);
+    expect(recordsOf(fixture.runs)).toHaveLength(4);
+    expect(launchLines(fixture.env)).toHaveLength(4);
+    expect(corrections(fixture.env)).toBe(0);
+    for (const name of recordsOf(fixture.runs)) {
+      const record = readJson(join(fixture.runs, name));
+      expect(record.hidden.verdict).toBe("pass");
+      expect(record.resolvedVisible).toBe(true);
+      expect(record.manifestDigest).toBe(fixture.digest);
+    }
+    expect(existsSync(join(fixture.runs, "runner.lock"))).toBe(false);
+    expect(files(join(fixture.env.home, ".cache/swarm-comparison/work"))).toEqual([]);
+    const again = await runRunner(fixture.env, fixture.path);
+    expect(again.code).toBe(0);
+    expect(launchLines(fixture.env)).toHaveLength(4);
+  });
+});
