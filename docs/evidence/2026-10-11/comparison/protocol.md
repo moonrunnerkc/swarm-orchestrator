@@ -273,3 +273,76 @@ order and the Swarm revision are unchanged. Every one of the forty launches, bot
 runs again under a new manifest carrying this document's digest; pass 4's two records stay
 under their own manifest digest with their file digests in the README. The comparison is
 pass 5 alone.
+
+### Amendment 4, 2026-10-14: failure classification and the stop contract
+
+Passes 1 to 4 each ran on through an experiment that was already invalid, and the defect was
+found by reading records afterwards: the harness recorded an infrastructure failure for the
+launch it hit and let the loop start the next one, a record that failed its schema added a
+note and nothing more, and the endpoint was probed only before and after an invocation. This
+amendment names what the launcher now distinguishes and what it does about each. Pass 5 is
+untouched: it ran to completion under the manifest amendment 3 froze and is not rerun; a
+harness carrying this amendment refuses that manifest (the harness digest differs) and any
+further comparison freezes a new one.
+
+**An arm's outcome, recorded, and the next launch runs.** Under a working instrument: the arm
+produces wrong or incomplete code; the task's visible or hidden checks fail because of the
+change it made; the arm spends its wall or token budget, stalls, is killed at the wall, or
+refuses the task; the arm claims success and the sealed oracle disagrees. None of these stops
+anything. A product defect that makes an arm do worse is that arm's outcome, not
+infrastructure; pass 2's preflight refusals (exit 1 with a verdict) are of this kind.
+
+**A failure of the experiment, which halts the campaign before any later launch.** Each class
+is a value in the halt record ([schema.mjs](../../../../scripts/comparison/schema.mjs)):
+
+- `endpoint`: the model endpoint does not answer before a launch, or the process listening on
+  its port disappears or is replaced while an arm is running, or it has stopped answering by the
+  probe after an invocation.
+- `configuration`: what is installed differs from what the manifest froze (the served model, the
+  OpenCode version, the Node version, the Swarm CLI's bytes where pinned), or an arm's runtime
+  never started: it could not be spawned, it printed nothing, Swarm exited with its "invalid
+  request", "unavailable" or "internal error" status, OpenCode reported it could not connect
+  while the endpoint it was given was answering and unchanged.
+- `preparation`: the checkout, the visible-check commit or the task's install steps could not
+  establish the registered environment for the arm's workspace.
+- `scorer`: the hidden oracle could not reach a verdict (sealed material missing from the mirror,
+  a patch that does not apply, any error in the scorer), or Swarm named an evidence directory
+  that is not there. An unjudgeable tree is kept as unjudgeable; it is not scored as a failure.
+- `records`: the attempt's record does not validate, cannot be written, or cites an output or
+  patch digest that is not in the blob store; a cell's existing record is not a valid record of
+  this manifest; a cell has already failed twice.
+- `interrupted`: the runner received SIGINT or SIGTERM; an arm's process ended on a signal the
+  harness did not send; or a previous runner ended without cleanup (SIGKILL, a crash) and left
+  its lock, in which case its orphaned child is stopped on the next start.
+- `harness`: any other exception in the launcher. Uncertain cases stop for diagnosis; nothing is
+  classified by guessing.
+
+**What a halt does.** The arm's process group is killed, no correction and no hidden scoring
+follow, and no later launch starts. The attempt so far is written as
+`<task>.<arm>.halted-N.json` with its invocations, its notes and the halt's class, and its
+workspace is kept; `halt-N.json` beside the records holds the class, the reason, when the
+failure was seen and when the halt was written, the attempt and workspace, the cleanup outcome
+and its deadline, the remaining launches, the pins, the harness digest and the runner. Records
+already written are never touched. The runner exits 3 (130 or 143 on a signal) naming the halt
+record. A halt whose record cannot be written still exits 3. The same command refuses to run
+while the campaign is halted. One runner holds a manifest at a time (`runner.lock`, pid and
+start time); a second exits 4 without dispatching.
+
+**Resumption** is explicit: `--recover --justification "<why>"` reads every pin again (harness
+digest, Node, the endpoint and its listed model, the Swarm CLI, the OpenCode version), refuses
+if any fails, and otherwise writes `recovery-N.json` naming the halt it clears, its digest, the
+justification and the observed values. Only cells without a record are then launched; a change
+to the harness, the model, the settings or the Swarm build is a new manifest under a dated
+amendment, never a resumption. There is no automatic restart.
+
+**Detection and termination.** During an invocation the endpoint's listener (lsof, ps) is read
+every 2 seconds; no request is made to the server, since a second sequence beside a long prefill
+is what killed it in pass 3. The declared bounds are detection within 10 seconds of an
+observable endpoint or process failure and confirmed termination of the owned process group
+within a further 10 seconds; on this host (macOS, Node 24) the fault tests measure detection in
+about 2 seconds and termination in milliseconds, recorded in
+[docs/evidence/comparison-stop-controls/](../../comparison-stop-controls/README.md). A server
+that is alive and hung is not detected by the watch; the wall deadline covers it. A remote
+endpoint has no local listener and cannot be watched. No stop control detects a defect it has
+no observation of: an arm that is running against a server which answers wrongly, for
+instance, is an arm's outcome until some record disagrees.
