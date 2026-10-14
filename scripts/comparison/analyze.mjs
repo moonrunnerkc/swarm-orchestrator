@@ -7,6 +7,10 @@
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+/** A launch record's file name: a cell's record or one of its failed attempts; not a halt or recovery. */
+export const isLaunchRecord = (name) =>
+  /^[a-z][a-z0-9-]*\.(swarm|opencode)\.(json|(infrastructure|halted)-\d+\.json)$/.test(name);
+
 /** One record per task and arm: the completed one where it exists, else the last failed attempt. */
 export function latestAttempts(records) {
   const byKey = new Map();
@@ -135,7 +139,7 @@ if (process.argv[1]?.endsWith("analyze.mjs")) {
   }
   const directory = args.get("runs");
   const records = readdirSync(directory)
-    .filter((name) => name.endsWith(".json"))
+    .filter(isLaunchRecord)
     .map((name) => JSON.parse(readFileSync(join(directory, name), "utf8")));
   const summary = summarize(records);
   const markdown = renderMarkdown(summary);

@@ -1,0 +1,36 @@
+
+ RUN  v4.1.11 /Users/brad/projects/swarm-stop-controls
+
+ ❯ |suite| scripts/comparison/run.test.mjs (19 tests | 1 failed | 18 skipped) 3840ms
+     × dispatches no agent after a fatal failure before the first launch (the continuation defect) 3840ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |suite| scripts/comparison/run.test.mjs > stopping the comparison when the experiment is invalid > dispatches no agent after a fatal failure before the first launch (the continuation defect)
+AssertionError: expected [ …(2) ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "opencode initial 97887 1791986303836",
++   "swarm initial 98723 1791986304973",
++ ]
+
+ ❯ scripts/comparison/run.test.mjs:303:38
+    301|     });
+    302|     const result = await runRunner(fixture.env, fixture.path);
+    303|     expect(launchLines(fixture.env)).toEqual([]);
+       |                                      ^
+    304|     expect(result.code).toBe(3);
+    305|     expect(attemptsOf(fixture.runs)).toHaveLength(1);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 18 skipped (19)
+   Start at  07:58:21
+   Duration  3.91s (transform 16ms, setup 0ms, import 23ms, tests 3.84s, environment 0ms)
+

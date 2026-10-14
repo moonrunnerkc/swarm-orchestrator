@@ -5,7 +5,7 @@
  */
 import { copyFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { renderMarkdown, summarize } from "./analyze.mjs";
+import { isLaunchRecord, renderMarkdown, summarize } from "./analyze.mjs";
 import { digestOf } from "./arms.mjs";
 import { comparisonRoot } from "./workspace.mjs";
 
@@ -22,11 +22,13 @@ const digest = digestOf(manifestBytes);
 const runs = join(comparisonRoot, "runs", digest.slice(7, 23));
 const records = [];
 mkdirSync(join(outDir, "records"), { recursive: true });
+// Every JSON file travels (records, failed attempts, halts and recoveries alike); the tables are
+// rendered from the launch records only, since a halt or recovery is not a cell.
 for (const name of readdirSync(runs)
   .filter((one) => one.endsWith(".json"))
   .sort()) {
   copyFileSync(join(runs, name), join(outDir, "records", name));
-  records.push(JSON.parse(readFileSync(join(runs, name), "utf8")));
+  if (isLaunchRecord(name)) records.push(JSON.parse(readFileSync(join(runs, name), "utf8")));
 }
 const summary = summarize(records);
 const launched = records.filter((record) => record.infrastructureFailure === null).length;

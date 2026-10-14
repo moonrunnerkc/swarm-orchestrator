@@ -39,6 +39,8 @@ const integrationSuites = [
   "src/exec/execution-envelope-record.test.ts",
   "src/tools/shell-tool.test.ts",
   "src/select/calibrate.test.ts",
+  // Drives the comparison runner as a process with fixture arms and a disposable endpoint.
+  "scripts/comparison/run.test.mjs",
 ];
 
 const notThisProjectsSuite = [
