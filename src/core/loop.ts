@@ -483,6 +483,10 @@ async function callModelWithRetry(
             request.onToolInput?.(text);
             watchStream(text);
           },
+          onReasoning: (text) => {
+            request.onReasoning?.(text);
+            watchStream(text);
+          },
         },
         deadline - deps.clock.now(),
         spiral.signal,
