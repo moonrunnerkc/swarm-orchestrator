@@ -1,5 +1,15 @@
 # Real-task pilot, 2026-10-14: does the tool work usefully on small real tasks?
 
+> **Corrected on 2026-10-15.** This report is kept as published. The gate's first item below
+> ("no unresolved setup or scoring problem") does not hold: three of the four Swarm launches ran
+> a product gate the task did not name, and two of them shared an environment one of them had
+> changed. The corrected derivation, when each fact was observable and recognized, the amended
+> upgrade oracle and the repairs made afterwards are in
+> [correction-2026-10-15.md](correction-2026-10-15.md); the corrected tables are
+> [results-corrected.md](results-corrected.md). The decision below stands, with that setup
+> validity failure added. The development checks of the repairs are reported under
+> [development/](development/README.md).
+
 ## Decision: DO NOT PROCEED to a larger study
 
 Stage A ran all eight launches it froze and failed one item of the frozen gate: Swarm correctly

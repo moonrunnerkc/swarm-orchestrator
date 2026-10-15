@@ -677,7 +677,9 @@ const number = (value) =>
     ? value.toLocaleString("en-US", { maximumFractionDigits: 1 })
     : String(value);
 
-export function renderMarkdown(stageA, stageB) {
+export function renderMarkdown(stageA, stageB, labels = {}) {
+  const labelA = labels.a ?? "Stage A: four fresh tasks, one launch per arm";
+  const shortA = labels.shortA ?? "Stage A";
   const lines = [];
   const validityLines = (stage, label) => {
     lines.push(`### ${label}: evidence ${stage.validity.complete ? "complete" : "INCOMPLETE"}`, "");
@@ -744,8 +746,8 @@ export function renderMarkdown(stageA, stageB) {
     lines.push("");
   };
   lines.push(`Derived by analyzer ${analyzerDigest} (${analysisSchema}).`, "");
-  lines.push("## Stage A: four fresh tasks, one launch per arm", "");
-  validityLines(stageA, "Stage A");
+  lines.push(`## ${labelA}`, "");
+  validityLines(stageA, shortA);
   if (stageA.validity.complete) {
     pairedTable(stageA.rows, "Launches");
     armTable(stageA.rows, "Per arm");
@@ -827,7 +829,13 @@ if (process.argv[1]?.endsWith("analyze.mjs")) {
   }
   const stageA = readStage(args.get("evidence"));
   const stageB = args.has("evidence-b") ? readStage(args.get("evidence-b")) : null;
-  const markdown = renderMarkdown(stageA, stageB);
+  // A development stage is rendered under its own heading; the pilot's gate items still apply
+  // literally to its rows and are read as such in the stage's report.
+  const markdown = renderMarkdown(
+    stageA,
+    stageB,
+    args.has("label") ? { a: args.get("label"), shortA: args.get("label") } : {},
+  );
   const analysis = analysisOf(stageA, stageB);
   if (args.has("out")) writeFileSync(args.get("out"), `${JSON.stringify(analysis, null, 2)}\n`);
   if (args.has("markdown")) writeFileSync(args.get("markdown"), `${markdown}\n`);

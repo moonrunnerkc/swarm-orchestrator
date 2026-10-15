@@ -1,0 +1,30 @@
+{
+  "chai-upgrade-c8-v12-dev": {
+    "build": "esbuild --bundle --format=esm --target=es2021 --keep-names --legal-comments=none --outfile=index.js lib/chai.js",
+    "prebuild": "npm run clean",
+    "format": "prettier --write lib",
+    "pretest": "npm run lint",
+    "test": "npm run test-node && npm run test-chrome",
+    "test-node": "c8 --99 --check-coverage mocha --require ./test/bootstrap/index.js test/*.js",
+    "test-chrome": "web-test-runner --playwright",
+    "lint": "npm run lint:js && npm run lint:format",
+    "lint:js": "eslint lib/",
+    "lint:format": "prettier --check lib",
+    "lint:types": "tsc",
+    "clean": "rm -rf index.js coverage/"
+  },
+  "chai-feature-deep-contain-oneof-dev": {
+    "build": "esbuild --bundle --format=esm --target=es2021 --keep-names --legal-comments=none --outfile=index.js lib/chai.js",
+    "prebuild": "npm run clean",
+    "format": "prettier --write lib",
+    "pretest": "npm run lint",
+    "test": "npm run test-node && npm run test-chrome",
+    "test-node": "c8 --99 --check-coverage mocha --require ./test/bootstrap/index.js test/*.js",
+    "test-chrome": "web-test-runner --playwright",
+    "lint": "npm run lint:js && npm run lint:format",
+    "lint:js": "eslint lib/",
+    "lint:format": "prettier --check lib",
+    "lint:types": "tsc",
+    "clean": "rm -rf index.js coverage/"
+  }
+}

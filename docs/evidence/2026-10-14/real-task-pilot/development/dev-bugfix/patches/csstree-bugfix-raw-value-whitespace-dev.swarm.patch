@@ -1,0 +1,23 @@
+diff --git a/scratch-probe.mjs b/scratch-probe.mjs
+new file mode 100644
+index 0000000..d4da8e7
+--- /dev/null
++++ b/scratch-probe.mjs
+@@ -0,0 +1,17 @@
++import { parse, generate, walk } from './lib/index.js';
++
++const ast = parse('a{border:1%var(--a)#ff0000}', { parseValue: false });
++walk(ast, (node) => {
++    if (node.type === 'Raw') {
++        console.log('RAW:', JSON.stringify(node.value));
++    }
++});
++console.log('check:', JSON.stringify(generate(ast)));
++
++const rules = parse('span#foo { border: 1%var(--a)#ff0000; }', { parseRulePrelude: false, parseValue: false });
++walk(rules, (node) => {
++    if (node.type === 'Raw') {
++        console.log('RAW:', JSON.stringify(node.value));
++    }
++});
++console.log('raw:', JSON.stringify(generate(rules)));
