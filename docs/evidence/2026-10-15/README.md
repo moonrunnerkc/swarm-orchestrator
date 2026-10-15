@@ -9,7 +9,7 @@ directory.
 | directory | what it holds |
 | --- | --- |
 | [verification-replay/](verification-replay/README.md) | the retained correct chai feature patch applied byte for byte to its recorded base and judged by an ordinary goal-contract run's final verification under the run's sealed gates, with three controls: the unchanged base, a wrong candidate, and the same patch with the tests override withheld |
-| [bugfix-diagnosis/](bugfix-diagnosis/protocol.md) | the registered protocol for at most four live launches on the known csstree bug fix, each manifest frozen against the pinned build of this branch, the server's stream probe, and each launch's published records as they are produced |
+| [bugfix-diagnosis/](bugfix-diagnosis/README.md) | the registered [protocol](bugfix-diagnosis/protocol.md) for at most four live launches on the known csstree bug fix, the two launches run (neither model delivered; 22.7 of 60 agent-minutes), their published records and analyses, the two servers' stream probes, and why launches 3 and 4 were not run |
 
 The repairs themselves are on the branch's commits, each with a regression that fails on the
 previous source and passes after: a private child HOME per run; the loop's spiral watcher
