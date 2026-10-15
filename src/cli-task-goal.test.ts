@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createSystemClock } from "./cli-runtime-inputs.ts";
-import { type TaskGoalContext, verifyCandidateUnder } from "./cli-task-goal.ts";
+import { preflightTaskGoal, type TaskGoalContext, verifyCandidateUnder } from "./cli-task-goal.ts";
 import { freezeGoalContract } from "./evidence/goal-contract.ts";
 import { type EvidenceRecorder, openEvidenceSession } from "./evidence/session.ts";
 
@@ -134,5 +134,66 @@ describe("the gates the independent verification of a goal run assembles", () =>
     expect(tests?.status).toBe("failed");
     expect(tests?.observation?.stdout).toContain("browser missing");
     expect(verified.unmeasured).toBe(true);
+  }, 60_000);
+});
+
+describe("a bugfix's base control", () => {
+  /**
+   * A bugfix contract needs its reproducer to fail on the base before any model call can
+   * spend the budget: a check that already passes there would pass a change that did nothing.
+   * The control is established in the preflight, through the same verification path.
+   */
+  const bugfix = (expected: string) =>
+    freezeGoalContract({
+      version: 1,
+      goal: "make greet return hello",
+      preset: { kind: "bugfix", reproducer: "greets" },
+      requirements: [{ id: "greets", description: "greet returns hello", checks: ["greets"] }],
+      checks: [
+        {
+          id: "greets",
+          command: "pinned output",
+          author: "user",
+          exposure: "withheld",
+          artifacts: [],
+          behavior: {
+            kind: "cli",
+            cwd: ".",
+            timeoutMs: 3000,
+            maxOutputBytes: 4000,
+            toolchain: "Node",
+            network: "inherit",
+            argv: [
+              "node",
+              "--input-type=module",
+              "-e",
+              "import {greet} from './greet.mjs';console.log(greet())",
+            ],
+            exitCode: 0,
+            stdout: [{ kind: "equals", value: expected }],
+            stderr: [],
+          },
+        },
+      ],
+      immutablePaths: [],
+    }).contract;
+
+  it("is established where the reproducer fails on the base, and refused where it already passes", async () => {
+    const overrides = { commandOverrides: { tests: "npm run test-node" } };
+    await expect(
+      preflightTaskGoal(await context({ ...overrides, contract: bugfix("hello\n") })),
+    ).resolves.toBeUndefined();
+    // Its own chain: the control is read off the goal-check records for the base tree, and a
+    // second contract judged on the first's chain would read the first's reproduction.
+    const vacuous = await openEvidenceSession({
+      root: join(scratch, "sessions"),
+      sessionId: "task-goal-vacuous",
+      clock: createSystemClock(),
+    });
+    await expect(
+      preflightTaskGoal(
+        await context({ ...overrides, evidence: vacuous, contract: bugfix("goodbye\n") }),
+      ),
+    ).rejects.toThrow("base control was not established");
   }, 60_000);
 });
