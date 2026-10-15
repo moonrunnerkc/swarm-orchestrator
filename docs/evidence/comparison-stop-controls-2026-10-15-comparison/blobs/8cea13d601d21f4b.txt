@@ -1,0 +1,74 @@
+
+ RUN  v4.1.11 /Users/brad/projects/swarm-orchestrator/.claude/worktrees/pilot-real-tasks
+
+ ❯ |suite| scripts/comparison/run.test.mjs (22 tests | 3 failed | 19 skipped) 11543ms
+     × writes the task's test command as Swarm's tests gate and stops before dispatch when the product's effective plan differs 3060ms
+     × stops before dispatch when the effective tests gate fails on the prepared base under the launch's home 2991ms
+     × gives every launch a fresh home of its own, so what one launch installs is absent for the next 5491ms
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 19 skipped (22)
+   Start at  22:19:31
+   Duration  11.62s (transform 18ms, setup 0ms, import 26ms, tests 11.54s, environment 0ms)
+
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |suite| scripts/comparison/run.test.mjs > stopping the comparison when the experiment is invalid > writes the task's test command as Swarm's tests gate and stops before dispatch when the product's effective plan differs
+AssertionError: expected +0 to be 3 // Object.is equality
+
+- Expected
++ Received
+
+- 3
++ 0
+
+ ❯ scripts/comparison/run.test.mjs:709:25
+    707|       COMPARISON_FIXTURE_CHECK: "ignore-override",
+    708|     });
+    709|     expect(result.code).toBe(3);
+       |                         ^
+    710|     expect(launchLines(fixture.env)).toEqual([]);
+    711|     expect(recordsOf(fixture.runs)).toEqual([]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  |suite| scripts/comparison/run.test.mjs > stopping the comparison when the experiment is invalid > stops before dispatch when the effective tests gate fails on the prepared base under the launch's home
+AssertionError: expected +0 to be 3 // Object.is equality
+
+- Expected
++ Received
+
+- 3
++ 0
+
+ ❯ scripts/comparison/run.test.mjs:737:25
+    735|       COMPARISON_FIXTURE_CHECK: "prerequisite-missing",
+    736|     });
+    737|     expect(result.code).toBe(3);
+       |                         ^
+    738|     expect(launchLines(fixture.env)).toEqual([]);
+    739|     const halt = readJson(join(fixture.runs, "halt-1.json"));
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  |suite| scripts/comparison/run.test.mjs > stopping the comparison when the experiment is invalid > gives every launch a fresh home of its own, so what one launch installs is absent for the next
+AssertionError: expected 1 to be 4 // Object.is equality
+
+- Expected
++ Received
+
+- 4
++ 1
+
+ ❯ scripts/comparison/run.test.mjs:761:33
+    759|     expect(lines).toHaveLength(4);
+    760|     const homes = lines.map((line) => /home=(\S+)/.exec(line)?.[1]);
+    761|     expect(new Set(homes).size).toBe(4);
+       |                                 ^
+    762|     for (const line of lines) expect(line).toContain("found=0");
+    763|     for (const name of recordsOf(fixture.runs)) {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
