@@ -45,7 +45,7 @@ Known caveats of the chosen tasks, disclosed before freeze:
 - chai's tests import the esbuild bundle, so `npm run build` precedes the visible check and the
   tests; lru-cache's tests need `npm run prepare` (tshy) first.
 - The refactor's structural requirement names the exact guard spelling `!this.ttlAutopurge ?`
-  once in `src/index.ts`; it is stated in the task text, so it is a stated requirement rather
+  once in the cache's main source file; it is stated in the task text, so it is a stated requirement rather
   than a hidden one.
 - The lru-cache tap totals differ between base and upstream (17773 against 17704 assertions,
   both exit 0); the mining agent did not investigate why. The oracle reads the exit status.
