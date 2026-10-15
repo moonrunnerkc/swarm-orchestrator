@@ -56,9 +56,12 @@ bundle's `blobs.digests.json`:
 - **The record payloads of bulk run archives that nothing cites as evidence**, which today means
   the eighteen runs under `evidence/2026-09-04/real-repos/`. Those bundles do *not* verify until
   the payloads are restored, and they are kept so their recorded patches can be re-scored, which
-  reads `runs.jsonl` and `diff.patch` rather than the ledger. A cited bundle is never offloaded
-  this way: a reader who follows a claim to its evidence and gets exit 1 has been told something
-  false.
+  reads `runs.jsonl` and `diff.patch` rather than the ledger. Since 2026-10-15 each repository's
+  `swarm/` and `baseline/` run directories there are packed whole as completed corpora
+  (`packed-derived/real-repos-<repo>-<arm>`, restored byte for byte by
+  `node scripts/evidence-pack.mjs restore <pack directory>`), so re-scoring restores first. A
+  cited bundle is never offloaded this way: a reader who follows a claim to its evidence and gets
+  exit 1 has been told something false.
 
 To put either back from the session store of the machine that produced the run:
 
