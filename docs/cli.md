@@ -22,7 +22,7 @@ swarm --version                  # which build this is
 | `--strengthen-rounds <n>` | lower the default of two strengthening rounds; a higher value is ignored |
 | `--strengthen-per-requirement <n>` | lower the default of one admitted check per requirement |
 | `--escalate-model <provider:id>` | authorize at most one alternate model for repeated observed implementation failure |
-| `--max-tokens <n>` | bound model usage; unknown usage remains unknown |
+| `--max-tokens <n>` | the run's allowance for model usage: input and output of every call, the first loop and every repair attempt together, checked before each call. The next call's prompt is reserved at the size of the last one the provider measured, so a call that cannot fit is not made; the run can still exceed the figure by one call's growth, which is why it is a bound checked between calls and not a hard cap. A scripted correction or a new session is a new run with its own allowance. Unknown usage remains unknown and is counted as nothing, which the record says |
 | `--model <provider:id>` | a specific model, e.g. `local:qwen3.6:35b-a3b` |
 | `--workspace <dir>` | a repository other than the current directory |
 | `--base <ref>` | what the diff and the ratchet measure against |

@@ -8,6 +8,19 @@ import type { StopReason } from "./termination.ts";
 export type GateStatus = "passed" | "failed" | "not-applicable";
 
 /**
+ * What a loop spent, by kind, summed over the calls that reported usage. Input and output are
+ * what `tokensUsed` adds up; reasoning sits inside output and cached input inside input, each
+ * null until a provider reports it, so nothing is counted twice and an absent figure is never
+ * read as zero.
+ */
+export interface LoopUsage {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly reasoningTokens: number | null;
+  readonly cachedInputTokens: number | null;
+}
+
+/**
  * What the loop reports as it runs. The TUI renders from these alone, never from a
  * side channel, so every displayed line traces to something the harness observed.
  */
@@ -72,6 +85,10 @@ export type LoopEvent =
       readonly reason: StopReason;
       readonly steps: number;
       readonly tokensUsed: number;
+      /** The spend by kind, where the loop measured it; a reader of an older stream sees none. */
+      readonly usage?: LoopUsage;
+      /** Set where the loop stopped before a call because the next prompt could not fit: that prompt's size. */
+      readonly reservedTokens?: number;
     }
   /** Emitted after the gate's ledger record is written, and carrying that record's digest. */
   | {

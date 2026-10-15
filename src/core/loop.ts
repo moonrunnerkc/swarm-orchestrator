@@ -1,7 +1,7 @@
 import type { Clock } from "./clock.ts";
 import { compactConversation, estimateTokens } from "./compaction.ts";
 import { type RepeatedTail, repeatedTail } from "./degenerate-output.ts";
-import type { LoopEvent } from "./loop-events.ts";
+import type { LoopEvent, LoopUsage } from "./loop-events.ts";
 import { withModelCancellation } from "./model-cancellation.ts";
 import {
   type ConversationMessage,
@@ -98,6 +98,14 @@ export interface AgentLoopOutcome {
    * where this is above zero it is a lower bound and not the total.
    */
   readonly callsWithUnknownUsage: number;
+  /** The spend behind `tokensUsed`, by kind. */
+  readonly usage: LoopUsage;
+  /**
+   * Where the loop stopped on `max-tokens` before making a call, the size of the prompt it
+   * would have sent: the last call's reported input, which the next call's input can only
+   * exceed unless the conversation was compacted since. Zero where no call was withheld.
+   */
+  readonly reservedTokens: number;
   /** The plan the model stated on its first turn, as unverified prose. */
   readonly plan: string;
   /** The model's account of finishing. Unverified here: gates decide, not the model (invariant 1). */
@@ -128,16 +136,36 @@ export async function runAgentLoop(
   let answeredSteps = 0;
   let tokensUsed = 0;
   let callsWithUnknownUsage = 0;
+  let usage: LoopUsage = {
+    inputTokens: 0,
+    outputTokens: 0,
+    reasoningTokens: null,
+    cachedInputTokens: null,
+  };
+  // The last call's reported input, which bounds the next call's from below: the conversation
+  // only grows between calls. Zero where nothing has been reported yet or the conversation was
+  // compacted since, both of which leave the next prompt's size unknown.
+  let lastInputTokens = 0;
+  let reservedTokens = 0;
   let plan = "";
 
   const finish = (stopReason: StopReason, completionClaim: string): AgentLoopOutcome => {
-    deps.emit({ type: "stopped", reason: stopReason, steps, tokensUsed });
+    deps.emit({
+      type: "stopped",
+      reason: stopReason,
+      steps,
+      tokensUsed,
+      usage,
+      ...(reservedTokens === 0 ? {} : { reservedTokens }),
+    });
     return {
       stopReason,
       steps,
       answeredSteps,
       tokensUsed,
       callsWithUnknownUsage,
+      usage,
+      reservedTokens,
       plan,
       completionClaim,
       messages,
@@ -168,11 +196,21 @@ export async function runAgentLoop(
       // Answers that fell out of the conversation are no longer answers the model has, so a
       // call that fetches one again is progress, not a repeat.
       stalls?.forget();
+      lastInputTokens = 0;
       deps.emit({
         type: "compacted",
         droppedMessages: context.droppedMessages,
         droppedTokens: context.droppedTokens,
       });
+    }
+
+    // The next prompt is at least as long as the last one the provider measured. A call whose
+    // prompt alone cannot fit in what is left of the budget is not made: its input would be
+    // spent past the cap before the check between calls could see it, which is how a run with
+    // a 600,000-token allowance reported 628,848 used. What was reserved is said on the stop.
+    if (lastInputTokens > 0 && tokensUsed + lastInputTokens >= deps.budget.maxTokens) {
+      reservedTokens = lastInputTokens;
+      return finish("max-tokens", "");
     }
 
     deps.emit({ type: "model-call", step: steps + 1, modelId: deps.model.modelId });
@@ -195,7 +233,9 @@ export async function runAgentLoop(
         deadline,
         (response) => {
           tokensUsed += response.inputTokens + response.outputTokens;
+          usage = addUsage(usage, response);
           if (response.usageStatus === "unknown") callsWithUnknownUsage += 1;
+          else lastInputTokens = response.inputTokens;
         },
         () => deps.budget.maxTokens - tokensUsed,
       );
@@ -584,4 +624,16 @@ function stoppedWhileWaiting(reason: unknown): string {
         ? reason.message
         : "the run was cancelled";
   return `the run was stopped while waiting for the model: ${named}`;
+}
+
+/** One call's reported usage added to the loop's, by kind; a kind nobody has reported stays null. */
+function addUsage(total: LoopUsage, response: ModelResponse): LoopUsage {
+  const add = (sum: number | null, part: number | null | undefined): number | null =>
+    part === null || part === undefined ? sum : (sum ?? 0) + part;
+  return {
+    inputTokens: total.inputTokens + response.inputTokens,
+    outputTokens: total.outputTokens + response.outputTokens,
+    reasoningTokens: add(total.reasoningTokens, response.reasoningTokens),
+    cachedInputTokens: add(total.cachedInputTokens, response.cachedInputTokens),
+  };
 }

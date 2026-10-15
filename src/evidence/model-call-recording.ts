@@ -100,6 +100,8 @@ export function createRecordingModelClient(
           usageStatus: response.usageStatus ?? "reported",
           inputTokens: response.inputTokens,
           outputTokens: response.outputTokens,
+          reasoningTokens: response.reasoningTokens ?? null,
+          cachedInputTokens: response.cachedInputTokens ?? null,
           finishReason: response.finishReason,
           toolCallCount: response.toolCalls.length,
           // Harness-computed, over the assembled response the model cannot reach. An empty

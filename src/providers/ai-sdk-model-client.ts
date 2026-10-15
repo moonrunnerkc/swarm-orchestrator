@@ -148,6 +148,8 @@ async function streamOnce(
       usage.inputTokens === undefined || usage.outputTokens === undefined ? "unknown" : "reported",
     inputTokens: usage.inputTokens ?? 0,
     outputTokens: usage.outputTokens ?? 0,
+    reasoningTokens: usage.outputTokenDetails?.reasoningTokens ?? null,
+    cachedInputTokens: usage.inputTokenDetails?.cacheReadTokens ?? null,
     finishReason: await result.finishReason,
     performance: performanceOf(await result.steps),
     unsupportedFeatures: refusedFeatures(await result.warnings),

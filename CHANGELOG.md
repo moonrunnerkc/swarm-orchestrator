@@ -62,6 +62,18 @@ Source on `v13-main`; not published until a release names it.
 
 ### Fixed
 
+- **`--max-tokens` could be exceeded by one prompt, and the spend was one number.** The
+  allowance counts input and output of every call and was checked between calls, so a loop with
+  a 600,000-token allowance reported 628,848 used: the last call's prompt went out before the
+  check could see it. The loop now reserves the next prompt at the size of the last one the
+  provider measured and withholds a call that cannot fit, naming the reserved size on the stop
+  (`reservedTokens`). Every model-call record, each loop's stop record and the settled budget
+  record now carry input, output, reasoning and cached-input tokens apart (`inputTokens`,
+  `outputTokens`, `reasoningTokens`, `cachedInputTokens`), the last two null where the provider
+  reports none, so a run's account can say how much was prompt, answer, thinking and replayed
+  prefix without adding any twice. The flag's documented meaning is the bound it is: checked
+  between calls, shared by the first loop and every repair attempt, not a hard cap, and not
+  carried across a new session.
 - **An interrupted run could be told to resume and then be refused, or resume into the wrong
   home.** Through the ordinary command line: a run interrupted while the model was answering
   recorded that call with unknown usage, and `swarm resume` refused to reconstruct the sealed
