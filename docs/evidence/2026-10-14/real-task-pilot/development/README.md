@@ -1,5 +1,11 @@
 # Development validation of the pilot repairs, 2026-10-15
 
+Amended 2026-10-15: the attribution of the bug-fix failure below ("a capability limit of this
+model on this task") is narrowed in
+[amendment-2026-10-15-attribution.md](amendment-2026-10-15-attribution.md), which names product
+defects in the retained loops that this report did not account for. The figures and records here
+are unchanged.
+
 Five launches of the repaired instrument and product on three known tasks, under
 [protocol.md](protocol.md); the sixth was withheld as predeclared. These are development
 checks, not fresh comparative evidence and not a repetition of the pilot. The larger-study

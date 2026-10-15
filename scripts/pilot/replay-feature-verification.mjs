@@ -17,7 +17,6 @@
  */
 import { createHash } from "node:crypto";
 import {
-  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -26,8 +25,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { commandLog } from "../campaign/exec.mjs";

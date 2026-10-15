@@ -73,6 +73,12 @@ const purposes = {
     "development validation of the repairs on the known bug fix, one clean launch under Swarm; not comparative evidence",
   "dev-bugfix2":
     "a second, independent development launch of the bug fix under Swarm, run only under the condition the development protocol states",
+  "diagnosis-1":
+    "live diagnosis launch 1 of 2026-10-15: the known bug fix under Swarm on the repaired loop; not comparative evidence",
+  "diagnosis-2":
+    "live diagnosis launch 2 of 2026-10-15: the known bug fix under Swarm with a second installed local model; not comparative evidence",
+  "diagnosis-3":
+    "live diagnosis launch 3 of 2026-10-15: the known bug fix under OpenCode; not comparative evidence",
 };
 // A development stage freezes exactly the cells it launches, so its published evidence is
 // complete when every frozen cell has a record.

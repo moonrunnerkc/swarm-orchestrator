@@ -164,6 +164,13 @@ proceed on one arm's records.
 
 ## Diagnosis of the bug-fix failure
 
+Amended 2026-10-15, after this document was written: the classification at the end of this
+section is narrowed in
+[development/amendment-2026-10-15-attribution.md](development/amendment-2026-10-15-attribution.md).
+The retained runs establish that the tested configuration did not deliver the fix, not that
+the model alone could not have; a second reading of the same ledgers found further product
+defects, named there with their repairs. The observations below are unchanged.
+
 From the retained ledger of session 20261015T020025-3beb8b and the product source at the
 tested revision:
 
