@@ -124,8 +124,8 @@ interface SessionReading {
 }
 
 /** The run's own record of its envelope and what its shell children printed, off the ledger. */
-function readSession(sessionId: string): SessionReading {
-  const directory = join(home, ".swarm", "sessions", sessionId);
+function readSession(sessionId: string, operatorHome = home): SessionReading {
+  const directory = join(operatorHome, ".swarm", "sessions", sessionId);
   const records = readFileSync(join(directory, "ledger.jsonl"), "utf8")
     .trim()
     .split("\n")
@@ -197,12 +197,19 @@ describe("the child HOME of an ordinary run", () => {
     const a = await startScriptedEndpoint({ modelId: "stub", turns: script(writeSentinel) });
     const b = await startScriptedEndpoint({ modelId: "stub", turns: script(writeSentinel) });
     endpoints.push(a, b);
+    // Two operators' runs at once: the run store under one operator home serializes its
+    // writers, which is that store's rule and not the question here. The child homes share
+    // one root under the same scratch, which is where two runs could meet.
+    const homeLeft = join(scratch, "home-left");
+    const homeRight = join(scratch, "home-right");
+    await mkdir(homeLeft, { recursive: true });
+    await mkdir(homeRight, { recursive: true });
     const [one, two] = await Promise.all([
-      swarm(await workspace("left"), a),
-      swarm(await workspace("right"), b),
+      swarm(await workspace("left"), a, { HOME: homeLeft }),
+      swarm(await workspace("right"), b, { HOME: homeRight }),
     ]);
-    const left = readSession(sessionOf(one.output));
-    const right = readSession(sessionOf(two.output));
+    const left = readSession(sessionOf(one.output), homeLeft);
+    const right = readSession(sessionOf(two.output), homeRight);
     expect(left.envelope.childHome).not.toBe(right.envelope.childHome);
     expect(left.shellOutputs.join("\n")).toContain(`home=${left.envelope.childHome}`);
     expect(right.shellOutputs.join("\n")).toContain(`home=${right.envelope.childHome}`);
