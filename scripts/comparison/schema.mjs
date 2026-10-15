@@ -130,6 +130,36 @@ export const recordSchema = z.strictObject({
   notes: z.array(z.string()),
   /** Present on an attempt the campaign stopped on: the class and the halt record beside it. */
   halt: z.strictObject({ class: z.enum(fatalClasses), record: z.string() }).optional(),
+  /**
+   * The mutable state this launch's processes were given: a HOME of its own, fresh when the
+   * launch started, with npm's store linked to the shared content-addressed cache; and whether
+   * a browser cache was there before the arm ran and after it. Absent on records written before
+   * launches had homes of their own, which is itself the finding those records carry.
+   */
+  preparedState: z
+    .strictObject({
+      home: z.string(),
+      fresh: z.boolean(),
+      npmCache: z.string(),
+      browserCacheBefore: z.boolean(),
+      browserCacheAfter: z.boolean(),
+    })
+    .optional(),
+  /**
+   * For a Swarm launch: the tests gate the task names, the command the product's own check ran
+   * under this launch's HOME, its status on the prepared base, and the verdict. A launch is not
+   * dispatched unless `ok`; the record keeps the measurement either way.
+   */
+  gatePlan: z
+    .strictObject({
+      ok: z.boolean(),
+      expected: z.string(),
+      effective: z.string().nullable(),
+      status: z.string().nullable(),
+      bundleDirectory: z.string().nullable(),
+      detail: z.string(),
+    })
+    .optional(),
 });
 
 const launchRef = z.strictObject({ task: z.string(), arm: z.enum(arms), order: z.number() });

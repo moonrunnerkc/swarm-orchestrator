@@ -22,6 +22,13 @@ export const wallBudgetMs = 30 * 60_000;
 export const swarmTokenCap = 600_000;
 export const maxCorrections = 2;
 
+/**
+ * The environment name the product reads for the HOME its child processes get
+ * (src/exec/child-environment.ts). Set per launch to a fresh directory, so a browser one
+ * launch's repair downloads is not there for the next launch's gate.
+ */
+export const swarmChildHomeName = "SWARM_CHILD_HOME";
+
 export function taskPrompt(task) {
   return [
     task.taskText.trim(),

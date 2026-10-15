@@ -34,13 +34,14 @@ import {
   opencodeArgv,
   opencodeTokens,
   swarmArgv,
+  swarmChildHomeName,
   swarmContract,
   swarmEvidenceDirectory,
   swarmTokens,
   taskPrompt,
   wallBudgetMs,
 } from "./arms.mjs";
-import { hiddenVerdict, visibleVerdict } from "./checks.mjs";
+import { hiddenVerdict, swarmGatePlanVerdict, visibleVerdict } from "./checks.mjs";
 import {
   acquireLock,
   campaignState,
@@ -64,11 +65,13 @@ import { launches, seed } from "./order.mjs";
 import { recordSchema, taskSchema } from "./schema.mjs";
 import { tasks as allTasks } from "./tasks.mjs";
 import {
+  browserCacheIn,
   cloneAtBase,
   commitVisibleCheck,
   comparisonRoot,
   finalPatch,
   prepare,
+  prepareLaunchHome,
   resolveFull,
   writeArmConfiguration,
 } from "./workspace.mjs";
@@ -158,7 +161,7 @@ const interrupted = () =>
  * failure is returned beside the invocation so the caller keeps both.
  */
 async function invokeArm(log, launch, pins, budgets, task, workspace, base, turn, scratch) {
-  const { prompt, kind, correction, deadlineMs, instance, onChild } = turn;
+  const { prompt, kind, correction, deadlineMs, instance, onChild, home } = turn;
   // A correction is never started with less than a minute (or the whole budget, where that is
   // smaller); the flag Swarm takes is in whole minutes.
   const remaining = Math.max(
@@ -187,7 +190,15 @@ async function invokeArm(log, launch, pins, budgets, task, workspace, base, turn
       signal: watch.signal,
       onSpawn: onChild,
       // PWD follows the cwd: a spawned process inherits the launcher's, and OpenCode reads it.
-      env: { ...process.env, PWD: workspace, PUPPETEER_SKIP_DOWNLOAD: "true" },
+      // Each arm's processes get the launch's own home: Swarm builds its children's environment
+      // and reads the name for the HOME it gives them; OpenCode and everything it runs inherit
+      // HOME as any process does.
+      env: {
+        ...process.env,
+        PWD: workspace,
+        PUPPETEER_SKIP_DOWNLOAD: "true",
+        ...(launch.arm === "swarm" ? { [swarmChildHomeName]: home } : { HOME: home }),
+      },
     });
   } finally {
     stopWatch?.();
@@ -335,13 +346,38 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory, owner)
     notes,
   };
   let fatal = null;
+  const home = join(scratch, "home");
   try {
     console.log(`launch ${launch.order}: ${launch.task} ${launch.arm}`);
     const preparationStarted = Date.now();
     await cloneAtBase(log, task, task.baseCommit, workspace);
     const base = await commitVisibleCheck(log, task, workspace);
     const prepared = await prepare(log, task, workspace);
-    writeArmConfiguration(workspace, launch.arm, pins.endpoint, pins.model);
+    writeArmConfiguration(workspace, launch.arm, pins.endpoint, pins.model, task);
+    // The launch's own mutable state, declared before anything runs in it. What the manifest
+    // declares a task to need (nothing but the lockfile install, unless it says otherwise) is
+    // what the fresh home must show; a prerequisite this harness does not provision cannot be
+    // declared required, and a home that is not fresh is not this launch's.
+    const prerequisites = manifest.prerequisites ?? { browsers: false };
+    if (prerequisites.browsers === true)
+      throw new FatalError(
+        "configuration",
+        `${launch.task} declares browsers as a required prerequisite and this harness does not provision them; declare browsers: false or provision them before freezing`,
+      );
+    const launchHome = prepareLaunchHome(home);
+    const browserCacheBefore = browserCacheIn(home);
+    record.preparedState = {
+      home,
+      fresh: true,
+      npmCache: launchHome.npmCache,
+      browserCacheBefore,
+      browserCacheAfter: browserCacheBefore,
+    };
+    if (browserCacheBefore !== prerequisites.browsers)
+      throw new FatalError(
+        "preparation",
+        `the declared prepared state does not hold for ${launch.task} ${launch.arm}: a browser cache is ${browserCacheBefore ? "present" : "absent"} in the fresh home ${home} and the manifest declares browsers: ${prerequisites.browsers}`,
+      );
     record.preparation = {
       wallMs: Date.now() - preparationStarted,
       ok: prepared.ok,
@@ -353,6 +389,22 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory, owner)
         "preparation",
         `preparation failed: ${prepared.failed.join(" ")}\n${prepared.detail}`,
       );
+    // Swarm's effective gate plan, measured by the product itself under this launch's home and
+    // held against the command the task names, before the arm is given the task. A product that
+    // would run some other command as its blocking tests gate, or whose gate fails on the base
+    // in this environment, is not dispatched: that is the supervisor's setup, never the arm's
+    // result, and the pilot's upgrade launch is what happens when it is dispatched anyway.
+    if (launch.arm === "swarm") {
+      const gatePlan = await swarmGatePlanVerdict(log, task, task.baseCommit, pins, home);
+      record.gatePlan = gatePlan;
+      record.preparation.wallMs = Date.now() - preparationStarted;
+      if (interrupted()) throw interrupted();
+      if (!gatePlan.ok)
+        throw new FatalError(
+          "configuration",
+          `Swarm's effective tests gate for ${launch.task} is not the task's: ${gatePlan.detail}`,
+        );
+    }
 
     const deadlineMs = Date.now() + budgets.wallMsPerInvocation;
     const turn = {
@@ -361,6 +413,7 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory, owner)
       correction: 0,
       deadlineMs,
       instance: probe.instance,
+      home,
       // The lock names the arm's process while it runs, so a runner killed without cleanup leaves
       // the next start exactly what to stop.
       onChild: (pid) =>
@@ -421,6 +474,17 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory, owner)
     const patch = await finalPatch(log, workspace, base);
     record.finalPatchDigest = storeBlob(blobs, Buffer.from(patch));
     record.finalPatchBytes = Buffer.byteLength(patch);
+    // What the arm left in its own home: recorded, and removed with the launch, so it reaches
+    // no later launch. A browser cache here is the arm installing a prerequisite inside a
+    // measured task, which the record names rather than hides.
+    if (record.preparedState !== undefined) {
+      const browserCacheAfter = browserCacheIn(home);
+      record.preparedState = { ...record.preparedState, browserCacheAfter };
+      if (browserCacheAfter && !record.preparedState.browserCacheBefore)
+        notes.push(
+          "the arm installed a browser cache into its own launch home during the task; it is removed with the launch and was not available to any other launch",
+        );
+    }
     const hidden = await hiddenVerdict(log, task, task.baseCommit, task.upstreamCommit, patch);
     if (interrupted()) throw interrupted();
     record.hidden = {

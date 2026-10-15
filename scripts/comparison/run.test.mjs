@@ -696,6 +696,92 @@ describe("stopping the comparison when the experiment is invalid", () => {
     expect(halts(fixture.runs)).toEqual(["halt-1.json"]);
   });
 
+  it("writes the task's test command as Swarm's tests gate and stops before dispatch when the product's effective plan differs", async () => {
+    // The task names `node test/run.mjs`; the product, asked what it would run, says the
+    // manifest's own test script. That is what the pilot's upgrade launch ran into after it had
+    // been dispatched. Nothing is launched: not the Swarm arm, and no later cell either.
+    const fixture = await setup({
+      tasks: (t, commits) => [t("calc-fix-add", "fixture/calc", commits)],
+    });
+    const result = await runRunner(fixture.env, fixture.path, [], "correct", {
+      COMPARISON_FIXTURE_CHECK: "ignore-override",
+    });
+    expect(result.code).toBe(3);
+    expect(launchLines(fixture.env)).toEqual([]);
+    expect(recordsOf(fixture.runs)).toEqual([]);
+    const halt = readJson(join(fixture.runs, "halt-1.json"));
+    expect(halt.class).toBe("configuration");
+    expect(halt.reason).toContain("effective tests gate");
+    expect(halt.reason).toContain('"npm run --loglevel=error test"');
+    expect(halt.reason).toContain('"node test/run.mjs"');
+    const attempt = readJson(join(fixture.runs, attemptsOf(fixture.runs)[0]));
+    expect(attempt.invocations).toEqual([]);
+    expect(attempt.gatePlan).toMatchObject({
+      ok: false,
+      expected: "node test/run.mjs",
+      effective: "npm run --loglevel=error test",
+      status: "passed",
+    });
+  });
+
+  it("stops before dispatch when the effective tests gate fails on the prepared base under the launch's home", async () => {
+    // The gate is the right command and it fails for a prerequisite absent from the launch's
+    // fresh home. The pilot let the solver discover this inside its measured task and repair
+    // the environment with the clock running; here the launch is refused with the output kept.
+    const fixture = await setup({
+      tasks: (t, commits) => [t("calc-fix-add", "fixture/calc", commits)],
+    });
+    const result = await runRunner(fixture.env, fixture.path, [], "correct", {
+      COMPARISON_FIXTURE_CHECK: "prerequisite-missing",
+    });
+    expect(result.code).toBe(3);
+    expect(launchLines(fixture.env)).toEqual([]);
+    const halt = readJson(join(fixture.runs, "halt-1.json"));
+    expect(halt.class).toBe("configuration");
+    expect(halt.reason).toContain("failed on the prepared base");
+    expect(halt.reason).toContain("Executable doesn't exist");
+    const attempt = readJson(join(fixture.runs, attemptsOf(fixture.runs)[0]));
+    expect(attempt.gatePlan).toMatchObject({ ok: false, status: "failed" });
+    // The home it was measured under is the launch's own, under its scratch, and is named.
+    expect(halt.reason).toContain(attempt.preparedState.home);
+    expect(attempt.preparedState.home.startsWith(join(fixture.env.home, ".cache"))).toBe(true);
+  });
+
+  it("gives every launch a fresh home of its own, so what one launch installs is absent for the next", async () => {
+    // Each fixture invocation writes a sentinel into the home it was given and counts the
+    // sentinels already there. Under one shared home (the pilot's) the second launch finds the
+    // first's; here every launch finds none, and the four homes are four directories.
+    const fixture = await setup();
+    const result = await runRunner(fixture.env, fixture.path);
+    expect(result.code).toBe(0);
+    expect(halts(fixture.runs)).toEqual([]);
+    const lines = launchLines(fixture.env);
+    expect(lines).toHaveLength(4);
+    const homes = lines.map((line) => /home=(\S+)/.exec(line)?.[1]);
+    expect(new Set(homes).size).toBe(4);
+    for (const line of lines) expect(line).toContain("found=0");
+    for (const name of recordsOf(fixture.runs)) {
+      const record = readJson(join(fixture.runs, name));
+      expect(homes).toContain(record.preparedState.home);
+      expect(record.preparedState).toMatchObject({
+        fresh: true,
+        browserCacheBefore: false,
+        browserCacheAfter: false,
+      });
+      expect(record.preparedState.npmCache).toContain("content-addressed");
+      if (record.arm === "swarm")
+        expect(record.gatePlan).toMatchObject({
+          ok: true,
+          expected: "node test/run.mjs",
+          effective: "node test/run.mjs",
+          status: "passed",
+        });
+      else expect(record.gatePlan).toBeUndefined();
+      // The home went with the launch's scratch: nothing of it reaches a later launch.
+      expect(existsSync(record.preparedState.home)).toBe(false);
+    }
+  });
+
   it("completes a healthy campaign, records every cell once, and leaves no lock or scratch behind", async () => {
     const fixture = await setup();
     const result = await runRunner(fixture.env, fixture.path);
