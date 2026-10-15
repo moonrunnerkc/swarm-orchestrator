@@ -284,10 +284,13 @@ export async function runAgentTask(input: AgentTaskOptions): Promise<AgentTaskRe
           contract,
           task: contract.objective,
           maxSteps: Math.min(input.maxSteps, contract.budget.maxSteps),
-          maxTokens: Math.min(
-            input.maxTokens ?? defaultRunTokens,
-            contract.budget.maxTokens ?? defaultRunTokens,
-          ),
+          // A contract that names a token budget bounds the run's; one that names none leaves
+          // the run's own allowance standing. The default used to stand in for the contract's
+          // silence and clipped a launcher's 8,000,000 to 1,000,000 without a word on the record.
+          maxTokens:
+            contract.budget.maxTokens === undefined
+              ? (input.maxTokens ?? defaultRunTokens)
+              : Math.min(input.maxTokens ?? defaultRunTokens, contract.budget.maxTokens),
           maxWallTimeMs: Math.min(
             input.maxWallTimeMs ?? defaultRunWallMs,
             contract.budget.maxWallMs,

@@ -79,6 +79,11 @@ Source on `v13-main`; not published until a release names it.
 
 ### Fixed
 
+- **`--max-tokens` above 1,000,000 was silently clipped on a goal-contract run.** The sealed
+  task contract names no token budget, and the default stood in for its silence, so a run asked
+  for 8,000,000 tokens sealed 1,000,000 and stopped there three times in one launch with nothing
+  on the record naming the clip. A contract that names no token budget now leaves the run's own
+  allowance standing; one that names a budget still bounds it.
 - **`--max-tokens` could be exceeded by one prompt, and the spend was one number.** The
   allowance counts input and output of every call and was checked between calls, so a loop with
   a 600,000-token allowance reported 628,848 used: the last call's prompt went out before the
