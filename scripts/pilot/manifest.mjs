@@ -53,7 +53,7 @@ const stage = args.get("stage");
 const developmentStage = stage in developmentStages;
 if (stage !== "A" && stage !== "B" && !developmentStage) {
   console.error(
-    `usage: manifest.mjs --stage A|B|${Object.keys(developmentStages).join("|")} --out <file> --swarm-cli <path> --swarm-revision <commit> [--protocol <file>] [--wall-minutes 19]`,
+    `usage: manifest.mjs --stage A|B|${Object.keys(developmentStages).join("|")} --out <file> --swarm-cli <path> --swarm-revision <commit> [--protocol <file>] [--wall-minutes 19] [--model <served name>] [--endpoint <url>]`,
   );
   process.exit(2);
 }
@@ -115,6 +115,9 @@ const manifest = {
     : "frozen (scripts/pilot/tasks.mjs)",
   pins: {
     ...defaultPins,
+    // A diagnosis launch may name another served model or endpoint; a pilot stage never does.
+    ...(args.has("model") ? { model: args.get("model") } : {}),
+    ...(args.has("endpoint") ? { endpoint: args.get("endpoint") } : {}),
     swarmCli,
     swarmRevision: args.get("swarm-revision") ?? "unknown",
     swarmCliDigest: digestOf(readFileSync(swarmCli)),
