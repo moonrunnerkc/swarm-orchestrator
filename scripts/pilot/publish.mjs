@@ -16,9 +16,9 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { isLaunchRecord } from "../comparison/analyze.mjs";
 import { digestOf } from "../comparison/arms.mjs";
 import { comparisonRoot } from "../comparison/workspace.mjs";
+import { isLaunchRecord } from "./analyze.mjs";
 
 const args = new Map();
 for (let index = 2; index < process.argv.length; index += 1) {

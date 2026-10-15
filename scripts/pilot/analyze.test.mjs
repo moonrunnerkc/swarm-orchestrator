@@ -104,7 +104,10 @@ describe("armSummary and the stage A gate", () => {
   });
 
   it("does not qualify stage A when fewer than eight launches are valid", () => {
-    const gate = stageAGate([analyzeRecord(record())], [{ id: "repo-bugfix-thing", workType: "bugfix" }]);
+    const gate = stageAGate(
+      [analyzeRecord(record())],
+      [{ id: "repo-bugfix-thing", workType: "bugfix" }],
+    );
     expect(gate.qualifies).toBe(false);
     expect(gate.items[0].holds).toBe(false);
   });

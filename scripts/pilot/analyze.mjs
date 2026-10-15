@@ -20,9 +20,16 @@
  */
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { isLaunchRecord } from "../comparison/analyze.mjs";
 import { digestOf, swarmResult } from "../comparison/arms.mjs";
 import { comparisonRoot } from "../comparison/workspace.mjs";
+
+/**
+ * A launch record's file name, as `scripts/comparison/analyze.mjs` defines it. Spelled here
+ * rather than imported: that module runs its command-line block whenever the entry script is
+ * named analyze.mjs, which this one is.
+ */
+export const isLaunchRecord = (name) =>
+  /^[a-z][a-z0-9-]*\.(swarm|opencode)\.(json|(infrastructure|halted)-\d+\.json)$/.test(name);
 
 const blobs = join(comparisonRoot, "blobs");
 const blob = (digest) => {
