@@ -60,6 +60,23 @@ Source on `v13-main`; not published until a release names it.
   9 and stops at step 12 of a loop that ran to 72 calls
   ([evidence](docs/evidence/2026-10-11/tool-stall/replay.md)).
 
+### Added
+
+- **A small comparison against OpenCode on four fresh tasks, with its readiness shown first.**
+  `scripts/pilot/tasks-2026-10-15.mjs` freezes four maintainer-authored changes from three
+  public repositories (a mime bug fix whose wrong patch is a security negative control, a pako
+  feature and refactor, a csstree esbuild upgrade) and an argparse calibration task; the pilot
+  helpers take `--set` to name a task set and `--stage calibration`; the scorer writes
+  task-authored hidden checks into the scoring checkout only and does not judge a patch's edits
+  to a test file the oracle overlays; the validator rewrites an upgrade reference's range
+  declaration to the exact version a task requires, generally. The comparison launcher now
+  shares one token allowance across a launch's scripted corrections and records each arm's
+  spend by kind, and OpenCode's configuration spells thinking off the way its provider maps it.
+  The analyzer decides a stage by the rule of the comparison that froze its manifest, compares
+  the declared primary measures as win, tie, loss or unknown, and names a cost regression. The
+  protocol, candidates, validation, records and results are under
+  `docs/evidence/2026-10-15/comparison/`.
+
 ### Fixed
 
 - **`--max-tokens` could be exceeded by one prompt, and the spend was one number.** The
