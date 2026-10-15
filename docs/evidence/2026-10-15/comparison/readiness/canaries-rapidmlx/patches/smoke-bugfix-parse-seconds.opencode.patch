@@ -1,0 +1,22 @@
+diff --git a/src/duration.mjs b/src/duration.mjs
+index 1f3cf17..4cafdd4 100644
+--- a/src/duration.mjs
++++ b/src/duration.mjs
+@@ -1,12 +1,14 @@
+ /**
+- * Durations written as "1h30m" or "45m": hours and minutes, in any order, each at most once.
++ * Durations written as "1h30m" or "45m" or "2m5s": hours, minutes and seconds,
++ * in any order, each at most once.
+  * Returns the total in seconds.
+  */
+ export function parseDuration(text) {
+   let seconds = 0;
+-  for (const [, amount, unit] of text.matchAll(/(\d+)([hm])/g)) {
++  for (const [, amount, unit] of text.matchAll(/(\d+)([hms])/g)) {
+     if (unit === "h") seconds += Number(amount) * 3600;
+-    else seconds += Number(amount) * 60;
++    else if (unit === "m") seconds += Number(amount) * 60;
++    else seconds += Number(amount);
+   }
+   return seconds;
+ }
