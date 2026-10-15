@@ -65,6 +65,19 @@ export interface ModelRequest {
    * Nothing downstream reads it, so what the loop records is still the whole response.
    */
   readonly onText?: (text: string) => void;
+  /**
+   * Called with each piece of a tool call's arguments as it streams, for the same watcher
+   * that reads `onText`. A model that spirals inside a tool call's arguments produces no text
+   * at all, so a watcher reading text alone saw nothing until the output cap ended the call:
+   * one live call spent eight minutes streaming a shell argument that was then unreadable.
+   */
+  readonly onToolInput?: (text: string) => void;
+  /**
+   * Called with each piece of reasoning a model streams before its answer, for the same
+   * watcher. A reasoning model that spirals in its thinking produces neither text nor a tool
+   * call until the cap; the deltas are the only place the spiral shows while it is happening.
+   */
+  readonly onReasoning?: (text: string) => void;
 }
 
 /**

@@ -53,7 +53,7 @@ const stage = args.get("stage");
 const developmentStage = stage in developmentStages;
 if (stage !== "A" && stage !== "B" && !developmentStage) {
   console.error(
-    `usage: manifest.mjs --stage A|B|${Object.keys(developmentStages).join("|")} --out <file> --swarm-cli <path> --swarm-revision <commit> [--protocol <file>] [--wall-minutes 19]`,
+    `usage: manifest.mjs --stage A|B|${Object.keys(developmentStages).join("|")} --out <file> --swarm-cli <path> --swarm-revision <commit> [--protocol <file>] [--wall-minutes 19] [--model <served name>] [--endpoint <url>]`,
   );
   process.exit(2);
 }
@@ -73,6 +73,12 @@ const purposes = {
     "development validation of the repairs on the known bug fix, one clean launch under Swarm; not comparative evidence",
   "dev-bugfix2":
     "a second, independent development launch of the bug fix under Swarm, run only under the condition the development protocol states",
+  "diagnosis-1":
+    "live diagnosis launch 1 of 2026-10-15: the known bug fix under Swarm on the repaired loop; not comparative evidence",
+  "diagnosis-2":
+    "live diagnosis launch 2 of 2026-10-15: the known bug fix under Swarm with a second installed local model; not comparative evidence",
+  "diagnosis-3":
+    "live diagnosis launch 3 of 2026-10-15: the known bug fix under OpenCode; not comparative evidence",
 };
 // A development stage freezes exactly the cells it launches, so its published evidence is
 // complete when every frozen cell has a record.
@@ -109,6 +115,9 @@ const manifest = {
     : "frozen (scripts/pilot/tasks.mjs)",
   pins: {
     ...defaultPins,
+    // A diagnosis launch may name another served model or endpoint; a pilot stage never does.
+    ...(args.has("model") ? { model: args.get("model") } : {}),
+    ...(args.has("endpoint") ? { endpoint: args.get("endpoint") } : {}),
     swarmCli,
     swarmRevision: args.get("swarm-revision") ?? "unknown",
     swarmCliDigest: digestOf(readFileSync(swarmCli)),

@@ -1,0 +1,152 @@
+{
+  "schema": "swarm-real-task-pilot.analysis.v2",
+  "analyzerDigest": "sha256:92562b207da36aeb9792af46f4b2cb228fc16840dc2ff4470873cf5bf855450d",
+  "renderedAt": "2026-10-15T15:28:14.065Z",
+  "result": "derived",
+  "stageA": {
+    "evidenceRoot": "docs/evidence/2026-10-15/bugfix-diagnosis/launch-2/diagnosis-2",
+    "manifestDigest": "sha256:93daba6f552aeed3e9c8c16c8a6f8a9a00415e042fee2d1b3b8d5dc188e932dc",
+    "validity": {
+      "complete": true,
+      "problems": [],
+      "cells": 1
+    },
+    "halts": [],
+    "recoveries": [],
+    "rows": [
+      {
+        "task": "csstree-bugfix-raw-value-whitespace-diagnosis-2",
+        "arm": "swarm",
+        "order": 0,
+        "valid": true,
+        "eligible": true,
+        "ineligibleBecause": [],
+        "setup": {
+          "effectiveTestsGate": "npm test",
+          "expectedTestsGate": "npm test",
+          "gateMismatch": false,
+          "scriptBody": "mocha lib/__tests --require lib/__tests/helpers/setup.js --reporter progress",
+          "sharedHome": false,
+          "installedPrerequisite": false,
+          "dependedOnSharedPrerequisite": null
+        },
+        "correctPatch": false,
+        "delivered": false,
+        "deliveredWithoutCorrection": false,
+        "falseClaim": false,
+        "claim": "reports-not-acceptable",
+        "claimBasis": "exit 1: required checks unmet: task-acceptance; the gates settled escalated; the run stopped as max-tokens",
+        "account": {
+          "acceptable": false,
+          "exitCodeReported": 1,
+          "assessment": "required checks unmet: task-acceptance; the gates settled escalated; the run stopped as max-tokens",
+          "taskReason": "a check failed on this patch in a way it did not fail at the base commit: lint, tests. Read its finding above; if the suite is nondeterministic, that is what the base control cannot tell apart from a regression.",
+          "stopped": "completed; max-tokens",
+          "loops": 2,
+          "steps": 31,
+          "tokensReported": 621014,
+          "bundleDirectory": "/Users/brad/.swarm/sessions/20261015T152229-8e7356/bundle",
+          "runId": "20261015T152229-8e7356"
+        },
+        "finalText": null,
+        "notDeliveredBecause": [
+          "hidden fail: hidden tests (npx mocha lib/__tests/generate.js --require lib/__tests/helpers/setup.js) exited 255",
+          "visible checks never resolved",
+          "exit 1",
+          "claim: reports-not-acceptable (exit 1: required checks unmet: task-acceptance; the gates settled escalated; the run stopped as max-tokens)",
+          "swarm's own verdict is not acceptable"
+        ],
+        "corrections": 2,
+        "invocations": [
+          {
+            "kind": "initial",
+            "exitCode": 1,
+            "signal": null,
+            "wallMs": 164329,
+            "tokens": 628848,
+            "visible": false,
+            "claimedSuccess": false
+          },
+          {
+            "kind": "correction",
+            "exitCode": 1,
+            "signal": null,
+            "wallMs": 178991,
+            "tokens": 604373,
+            "visible": false,
+            "claimedSuccess": false
+          },
+          {
+            "kind": "correction",
+            "exitCode": 1,
+            "signal": null,
+            "wallMs": 202707,
+            "tokens": 621014,
+            "visible": false,
+            "claimedSuccess": false
+          }
+        ],
+        "resolvedVisible": false,
+        "hidden": "fail",
+        "hiddenBasis": "hidden tests (npx mocha lib/__tests/generate.js --require lib/__tests/helpers/setup.js) exited 255",
+        "oracleExposure": "no mention of the sealed commit or mirror in 3 evidence director(ies)",
+        "time": {
+          "agentMs": 546027,
+          "preparationMs": 9385,
+          "scoringAndHarnessMs": 8304,
+          "elapsedMs": 563716
+        },
+        "tokens": {
+          "total": 1854235,
+          "unknownInvocations": 0,
+          "perInvocationCap": 600000,
+          "capBound": true
+        },
+        "preparedState": {
+          "home": "/Users/brad/.cache/swarm-comparison/work/csstree-bugfix-raw-value-whitespace-diagnosis-2.swarm-BWgKAW/home",
+          "fresh": true,
+          "npmCache": "/Users/brad/.cache/swarm-comparison/npm-cache/_cacache (content-addressed, shared by link)",
+          "browserCacheBefore": false,
+          "browserCacheAfter": false
+        },
+        "gatePlan": {
+          "ok": true,
+          "expected": "npm test",
+          "effective": "npm test",
+          "status": "passed",
+          "bundleDirectory": "/Users/brad/.swarm/sessions/20261015T151632-e32117/bundle",
+          "detail": "the product runs npm test as its blocking tests gate and it passes on the base; the override was read back by the pinned build's parser"
+        },
+        "notes": [],
+        "finalPatchDigest": "sha256:3dbd07c9e2b6ddbdccb9a45816392873f6cb1bbbbe6ff0dea324e26112de1c64",
+        "finalPatchBytes": 5922
+      }
+    ],
+    "gate": {
+      "items": [
+        {
+          "item": "eight valid, inspectable launches; no unresolved setup/scoring problem; no exposure",
+          "holds": false,
+          "value": "1 valid of 1 recorded; evidence complete; no setup problem"
+        },
+        {
+          "item": "Swarm correctly delivers at least three of four, including the bug fix and the feature",
+          "holds": false,
+          "value": "0 delivered: none"
+        },
+        {
+          "item": "Swarm makes zero false completion claims, needs no manual repair or hints, respects controls and budgets",
+          "holds": true,
+          "value": "0 false claim(s); max agent time 9.1 min; manual involvement: none recorded by the launcher; exposure status: as scanned by the launcher, unknown beyond that scan"
+        },
+        {
+          "item": "comparative benefit: Swarm delivers more; or the same number with at least 20% less end-to-end time over the four tasks and no more corrections on tasks both deliver",
+          "holds": false,
+          "value": "deliveries swarm 0 vs opencode 0; end-to-end 9.4 vs 0.0 min; corrections no worse on the 0 task(s) both deliver: true"
+        }
+      ],
+      "qualifies": false
+    }
+  },
+  "stageB": null
+}

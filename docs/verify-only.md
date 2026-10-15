@@ -269,6 +269,14 @@ Every flag: `--install` to install the checkout's dependencies from its lockfile
 scripts off, `--immutable <a,b>` for paths the patch may not touch, `--json` for one
 `swarm.ci.v1` line, and `--oracle-only` to judge a second oracle without re-running the suite.
 
+Which checks run is the base commit's decision. The checks come from the manifests at the base,
+and where the base commit holds a `swarm.toml` with a `[gates]` table, its overrides apply, as
+they would in a run started in that tree. The candidate's own copy of the file is never read:
+a patch that adds or rewrites `swarm.toml` is still judged by the base's checks, and the
+`configuration:` line of the report says so. A run and its final verification read the
+workspace's `swarm.toml` as the run was configured; `swarm ci` has no workspace beyond the
+fresh checkout, so it names the base's file explicitly, and `swarm-verify ci` reads the same.
+
 ## swarm gates: a workspace, measured
 
 `swarm gates` runs the gates over the current tree with no model and no retries, hands each

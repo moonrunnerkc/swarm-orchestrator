@@ -762,3 +762,80 @@ describe("a loop that repeats itself", () => {
     expect(outcome.steps).toBe(10);
   });
 });
+
+describe("a turn that spirals in its reasoning", () => {
+  it("is cut off before the cap, as a spiral in the text is", async () => {
+    let streamed = 0;
+    const done = respondWithText("done");
+    const spiralling: ModelClient = {
+      modelId: "fixture:reasoning-spiral",
+      generate(request: ModelRequest): Promise<ModelResponse> {
+        if (streamed > 0 && done.kind === "response") {
+          return Promise.resolve(done.response);
+        }
+        return new Promise((_, reject) => {
+          const feed = (): void => {
+            if (request.abortSignal.aborted) {
+              reject(new Error("This operation was aborted"));
+              return;
+            }
+            streamed += 1;
+            request.onReasoning?.("Wait, but ");
+            setImmediate(feed);
+          };
+          feed();
+        });
+      },
+    };
+    const harness = createHarness([], { model: spiralling });
+    const outcome = await runAgentLoop("add the page", harness.deps);
+
+    expect(outcome.stopReason).toBe("completed");
+    expect(streamed).toBe(degenerateRepeatThreshold);
+    expect(harness.events.filter((event) => event.type === "model-error")).toMatchObject([
+      { willRetry: true, message: expect.stringContaining('repeated "Wait, but "') },
+    ]);
+  });
+});
+
+describe("a turn that spirals inside a tool call's arguments", () => {
+  it("is cut off the same way as one that spirals in its text", async () => {
+    // The live call streamed eight minutes of a shell argument nobody could read; the text
+    // watcher saw nothing, because none of it was text.
+    let streamed = 0;
+    const done = respondWithText("done");
+    const spiralling: ModelClient = {
+      modelId: "fixture:argument-spiral",
+      generate(request: ModelRequest): Promise<ModelResponse> {
+        if (streamed > 0 && done.kind === "response") {
+          return Promise.resolve(done.response);
+        }
+        return new Promise((_, reject) => {
+          const feed = (): void => {
+            if (request.abortSignal.aborted) {
+              reject(new Error("This operation was aborted"));
+              return;
+            }
+            streamed += 1;
+            request.onToolInput?.('{"command":');
+            setImmediate(feed);
+          };
+          feed();
+        });
+      },
+    };
+    const harness = createHarness([], { model: spiralling });
+    const outcome = await runAgentLoop("add the page", harness.deps);
+
+    expect(outcome.stopReason).toBe("completed");
+    expect(streamed).toBe(degenerateRepeatThreshold);
+    expect(harness.events.filter((event) => event.type === "model-error")).toMatchObject([
+      {
+        willRetry: true,
+        message: expect.stringContaining(
+          `repeated ${JSON.stringify('{"command":')} ${degenerateRepeatThreshold} times in a row`,
+        ),
+      },
+    ]);
+  });
+});

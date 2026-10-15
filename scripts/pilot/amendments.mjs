@@ -81,6 +81,24 @@ export const developmentStages = {
     suffix: "-dev2",
     arms: ["swarm"],
   },
+  // The bounded live diagnosis of 2026-10-15 (docs/evidence/2026-10-15/bugfix-diagnosis): one
+  // launch per registered question, each a cell of its own so no record can be read as a pilot
+  // or development cell.
+  "diagnosis-1": {
+    ids: ["csstree-bugfix-raw-value-whitespace"],
+    suffix: "-diagnosis-1",
+    arms: ["swarm"],
+  },
+  "diagnosis-2": {
+    ids: ["csstree-bugfix-raw-value-whitespace"],
+    suffix: "-diagnosis-2",
+    arms: ["swarm"],
+  },
+  "diagnosis-3": {
+    ids: ["csstree-bugfix-raw-value-whitespace"],
+    suffix: "-diagnosis-3",
+    arms: ["opencode"],
+  },
 };
 
 export function developmentTasks(stage) {

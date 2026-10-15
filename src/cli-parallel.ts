@@ -28,6 +28,7 @@ import {
 } from "./evidence/session.ts";
 import { createKeychainSecretStore, resolveSigningKey } from "./evidence/signing.ts";
 import { harnessChildEnvironment } from "./exec/child-environment.ts";
+import { withRunChildHome } from "./exec/child-home.ts";
 import { containerClientEnvironment } from "./exec/container-backend.ts";
 import { parseIsolationOption } from "./exec/isolation-option.ts";
 import { createRunCancellation } from "./exec/run-cancellation.ts";
@@ -268,22 +269,29 @@ export async function parallel(options: ParallelCommand): Promise<number> {
       bundleDirectory: options.bundleDirectory,
     }),
   );
-  return runAndPresent(
-    launch,
-    {
-      coordinator,
-      clock,
-      random,
-      sessionRoot,
-      home: homedir(),
-      storePath: runStorePath(),
-      createModel: () => registry.create(spec),
-    },
-    {
-      json: options.json,
-      details: options.details ?? false,
-      interactive: process.stdout.isTTY === true && (options.tui ?? settings.interface.tui),
-    },
+  // One child HOME for the whole run: the planner, every worker, the queue's checks and the
+  // final verification. Kept where the run did not finish green, since it may be resumed.
+  return withRunChildHome(
+    { runId },
+    () =>
+      runAndPresent(
+        launch,
+        {
+          coordinator,
+          clock,
+          random,
+          sessionRoot,
+          home: homedir(),
+          storePath: runStorePath(),
+          createModel: () => registry.create(spec),
+        },
+        {
+          json: options.json,
+          details: options.details ?? false,
+          interactive: process.stdout.isTTY === true && (options.tui ?? settings.interface.tui),
+        },
+      ),
+    (code) => code !== 0,
   );
 }
 
@@ -311,22 +319,29 @@ export async function resumeParallel(runId: string): Promise<number> {
     localThinking: launch.localThinking,
   });
   const spec = parseModelSpec(launch.modelSpec);
-  return runAndPresent(
-    launch,
-    {
-      coordinator,
-      clock,
-      random: createSystemRandom(),
-      sessionRoot,
-      home: homedir(),
-      storePath: runStorePath(),
-      createModel: () => registry.create(spec),
-    },
-    {
-      json: false,
-      details: false,
-      interactive: process.stdout.isTTY === true && settings.interface.tui,
-    },
+  // The run's own child HOME again, validated as its own: a resumption never takes over
+  // another run's state, and a home that is gone is made fresh and recorded as such.
+  return withRunChildHome(
+    { runId: sessionId, resumeOf: runId },
+    () =>
+      runAndPresent(
+        launch,
+        {
+          coordinator,
+          clock,
+          random: createSystemRandom(),
+          sessionRoot,
+          home: homedir(),
+          storePath: runStorePath(),
+          createModel: () => registry.create(spec),
+        },
+        {
+          json: false,
+          details: false,
+          interactive: process.stdout.isTTY === true && settings.interface.tui,
+        },
+      ),
+    (code) => code !== 0,
   );
 }
 

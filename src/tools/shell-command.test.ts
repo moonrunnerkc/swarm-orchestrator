@@ -51,3 +51,29 @@ describe("reading a shell command without a shell", () => {
     expect(readShellCommand("   ")).toBeNull();
   });
 });
+
+describe("a quoted word that holds a script", () => {
+  it("is not itself offered as a path, while the paths inside it still are", () => {
+    const read = readShellCommand(
+      `node -e "\nconst fs = require('fs');\nconsole.log(fs.readFileSync('~/.ssh/id_rsa'))\n"`,
+    );
+    expect(read?.executables).toEqual(["node"]);
+    // The whole script was refused as a path holding a control character; it is no path at all.
+    expect(read?.operands.some((operand) => operand.includes("\n"))).toBe(false);
+    // What the script names is still checked.
+    expect(read?.operands.some((operand) => operand.includes("~/.ssh/id_rsa"))).toBe(true);
+  });
+});
+
+describe("punctuation inside a script word", () => {
+  it("is not offered as a path, while a bare slash as the whole word still is", () => {
+    const read = readShellCommand(
+      `node -e "const a = 1 / 2; // half\nconsole.log(require('./lib/index.js'))"`,
+    );
+    expect(read?.operands).not.toContain("/");
+    expect(read?.operands).not.toContain("//");
+    expect(read?.operands.some((operand) => operand.includes("./lib/index.js"))).toBe(true);
+    // The word on its own names the root, and is still checked as a path.
+    expect(readShellCommand("ls /")?.operands).toEqual(["/"]);
+  });
+});

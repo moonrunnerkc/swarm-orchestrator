@@ -178,7 +178,10 @@ describe("a command run with a home and a scratch directory of its own", () => {
       const seen = JSON.parse(ran.stdout.trim()) as Record<string, string>;
       expect(seen.home).toBe(home);
       expect(seen.scratch).toBe(scratch);
-      expect(seen.tools).toBe(join(scratch, "swarm-child-home"));
+      // A home private to that process, under the scratch it was given: never the one
+      // directory every run on the machine used to share.
+      expect(seen.tools?.startsWith(`${join(scratch, "swarm-child-homes")}/process-`)).toBe(true);
+      expect(seen.tools).not.toBe(join(scratch, "swarm-child-home"));
     } finally {
       await rm(home, { recursive: true, force: true });
       await rm(scratch, { recursive: true, force: true });
