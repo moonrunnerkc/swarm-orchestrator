@@ -43,7 +43,7 @@ whitespace) did not touch. Four repositories in all, three in the scored set.
 ## Caveats, disclosed before the freeze
 
 - mime: the project's `lint` (Prettier over the tree) fails at the base on files the task does
-  not touch, including `src/Mime.ts` itself, so lint is not a rule either arm is held to there;
+  not touch, including the Mime class source itself, so lint is not a rule either arm is held to there;
   the task text asks for the file's existing style instead. `npm test` builds first and then
   runs the node suite and an exports test that packs the package into `/tmp/mime_test`.
 - pako feature: the upstream test file is replaced whole at scoring time, so the arm's own
