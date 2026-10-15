@@ -295,10 +295,23 @@ export interface ExecutionEnvelope {
    * Named so a reader can tell whether two runs shared one and what one of them left there.
    */
   readonly childHome: string | null;
+  /**
+   * How the run came by that HOME, where this process established it: private to the run or
+   * a directory a supervisor named, fresh or resumed. Absent on records written before homes
+   * were allocated per run, and where the HOME was handed in by a caller.
+   */
+  readonly childHomeState?: ChildHomeState | undefined;
   /** Whether configuration the repository controls was allowed to decide anything. */
   readonly repositoryConfigTrusted: boolean;
   readonly probes: readonly ContainmentProbe[];
   readonly summary: string;
+}
+
+export interface ChildHomeState {
+  readonly mode: "private" | "explicit";
+  readonly origin: "created" | "resumed" | "recreated" | "named";
+  readonly runId: string;
+  readonly npmCache: string | null;
 }
 
 /**
@@ -311,6 +324,7 @@ export function describeExecutionEnvelope(input: {
   readonly workspaceRoot: string;
   readonly withheldEnvironmentNames: readonly string[];
   readonly childHome?: string | undefined;
+  readonly childHomeState?: ChildHomeState | undefined;
   readonly repositoryConfigTrusted: boolean;
   readonly readOnlyPaths?: readonly string[] | undefined;
 }): ExecutionEnvelope {
@@ -329,6 +343,7 @@ export function describeExecutionEnvelope(input: {
     environmentPolicy: "built",
     credentialNamesWithheld: input.withheldEnvironmentNames.length,
     childHome: input.childHome ?? null,
+    ...(input.childHomeState === undefined ? {} : { childHomeState: input.childHomeState }),
     repositoryConfigTrusted: input.repositoryConfigTrusted,
     probes: input.selfTest.probes,
     summary: input.selfTest.summary,

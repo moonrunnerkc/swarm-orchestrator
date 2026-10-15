@@ -1,7 +1,13 @@
 import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute } from "node:path";
 import { isCredentialName } from "../evidence/scrub.ts";
+import {
+  childHomeEnvironmentName,
+  currentChildHome,
+  processChildHome,
+  UnusableChildHome,
+} from "./child-home.ts";
 
 /**
  * The environment a child process gets, built rather than inherited.
@@ -224,41 +230,30 @@ export function harnessChildEnvironment(options?: {
   });
 }
 
-/**
- * The name a supervisor sets to give one run a child HOME of its own. The default below is one
- * directory for every run on the machine, so what one run's child processes install there (a
- * browser a test suite downloads, a cache a tool warms) satisfies the next run's prerequisite
- * without that run having established it: two launches of a comparison measured the same gate
- * under different environments because the first had installed the browsers the second found.
- * A supervisor that needs each launch to start from the same declared state names a fresh
- * directory here per launch; the value must be an absolute path.
- */
-export const childHomeEnvironmentName = "SWARM_CHILD_HOME";
-
-/** Thrown where the named child HOME is not a usable absolute path. Fail closed, not silently default. */
-export class UnusableChildHome extends Error {
-  constructor(named: string) {
-    super(
-      `${childHomeEnvironmentName}=${JSON.stringify(named)} is not an absolute path; name an absolute directory or unset it`,
-    );
-    this.name = "UnusableChildHome";
-  }
-}
+export { childHomeEnvironmentName, UnusableChildHome } from "./child-home.ts";
 
 /**
- * Not the operator's home, and not inside the workspace either: a HOME under the tree being
- * measured shows up in the diff and counts against the declared file set. Created here, because
- * a toolchain handed a HOME that is not there fails in ways that read as a measurement.
+ * The HOME a child process gets where the caller named none: the run's own private home
+ * where one was established at the run's lifecycle boundary, the directory `SWARM_CHILD_HOME`
+ * names where the supervisor chose one, and otherwise a home private to this process. Never
+ * the operator's home, and not inside the workspace either: a HOME under the tree being
+ * measured shows up in the diff and counts against the declared file set. Never one directory
+ * for every run on the machine, which is what let one run's children find what another's had
+ * installed.
  */
 export function defaultChildHome(
   inherited: Readonly<Record<string, string | undefined>> = process.env,
 ): string {
   const named = inherited[childHomeEnvironmentName];
-  let home = join(tmpdir(), "swarm-child-home");
   if (named !== undefined && named.trim() !== "") {
     if (!isAbsolute(named)) throw new UnusableChildHome(named);
-    home = named;
+    mkdirSync(named, { recursive: true, mode: 0o700 });
+    return named;
   }
-  mkdirSync(home, { recursive: true, mode: 0o700 });
-  return home;
+  const established = currentChildHome();
+  if (established !== null) {
+    mkdirSync(established.path, { recursive: true, mode: 0o700 });
+    return established.path;
+  }
+  return processChildHome().path;
 }
