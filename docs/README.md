@@ -28,6 +28,7 @@ text is retained for history and must not be reused as current guidance.
 | [`beta-gates.md`](beta-gates.md) | the twelve gates this project will not call itself production-ready without, and where each stands |
 | [`evidence/2026-10-11/tool-stall/`](evidence/2026-10-11/tool-stall/replay.md) | the repeated-tool-call stall of the September pilot, its deterministic replay through the new detector, and a live run of the same goal on the current source |
 | [`evidence/2026-10-11/comparison/`](evidence/2026-10-11/comparison/README.md) | the exploratory comparison of Swarm against an ordinary coding agent on twenty mined tasks: protocol, manifest, validation, records and tables |
+| [`evidence/2026-10-14/real-task-pilot/`](evidence/2026-10-14/real-task-pilot/README.md) | the bounded real-task pilot: four fresh tasks under Swarm and OpenCode, the frozen protocol and decision rule, every launch record, and the decision |
 | [`human-trial-protocol.md`](human-trial-protocol.md) | the prepared, unrun protocol and recruitment text for five developers on their own tasks; adoption and human time stay pending |
 | [`evidence/2026-09-06/second-oracle/`](evidence/2026-09-06/second-oracle) | how a false-green rate is measured, why one oracle cannot produce one, and the number |
 | [`evidence/2026-09-06/mined-corpus/`](evidence/2026-09-06/mined-corpus) | tasks mined from merged pull requests, the filter that replaces labelling, and the weakness |
