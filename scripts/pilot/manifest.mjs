@@ -22,7 +22,7 @@ import { harnessDigest } from "../comparison/harness-identity.mjs";
 import { launches, seed } from "../comparison/order.mjs";
 import { taskSchema } from "../comparison/schema.mjs";
 import { comparisonRoot, resolveFull } from "../comparison/workspace.mjs";
-import { amendmentDate, developmentTasks } from "./amendments.mjs";
+import { amendmentDate, developmentStages, developmentTasks } from "./amendments.mjs";
 import { stageTasks } from "./tasks.mjs";
 
 const args = new Map();
@@ -50,10 +50,10 @@ export function treeDigest(root) {
 }
 
 const stage = args.get("stage");
-const developmentStage = stage === "dev" || stage === "dev2";
+const developmentStage = stage in developmentStages;
 if (stage !== "A" && stage !== "B" && !developmentStage) {
   console.error(
-    "usage: manifest.mjs --stage A|B|dev|dev2 --out <file> --swarm-cli <path> --swarm-revision <commit> [--protocol <file>] [--wall-minutes 19]",
+    `usage: manifest.mjs --stage A|B|${Object.keys(developmentStages).join("|")} --out <file> --swarm-cli <path> --swarm-revision <commit> [--protocol <file>] [--wall-minutes 19]`,
   );
   process.exit(2);
 }
@@ -68,8 +68,20 @@ const tasks = developmentStage ? developmentTasks(stage) : stageTasks(stage);
 const purposes = {
   A: "four fresh tasks, one launch per arm",
   B: "the predeclared bugfix and feature repeated once per arm in fresh sessions",
-  dev: "development validation of the repairs on known tasks under the amended oracle: the upgrade and the feature once per arm, the bug fix once under Swarm (its OpenCode cell is frozen here and not launched); not comparative evidence and not a repetition of the pilot",
-  dev2: "a second, independent development launch of the bug fix under Swarm, run only under the condition the development protocol states",
+  dev: "development validation of the repairs on known tasks under the amended oracle: the upgrade and the feature once per arm; not comparative evidence and not a repetition of the pilot",
+  "dev-bugfix":
+    "development validation of the repairs on the known bug fix, one clean launch under Swarm; not comparative evidence",
+  "dev-bugfix2":
+    "a second, independent development launch of the bug fix under Swarm, run only under the condition the development protocol states",
+};
+// A development stage freezes exactly the cells it launches, so its published evidence is
+// complete when every frozen cell has a record.
+const stageLaunches = (ids) => {
+  const arms = developmentStage ? developmentStages[stage].arms : null;
+  const all = launches(ids);
+  return arms === null
+    ? all
+    : all.filter((one) => arms.includes(one.arm)).map((one, order) => ({ ...one, order }));
 };
 const log = commandLog(join(comparisonRoot, "blobs"));
 for (const task of tasks) {
@@ -123,7 +135,7 @@ const manifest = {
   },
   seed,
   tasks,
-  launches: launches(tasks.map((task) => task.id)),
+  launches: stageLaunches(tasks.map((task) => task.id)),
 };
 const out = args.get("out") ?? `pilot-stage-${stage}.json`;
 writeFileSync(out, `${JSON.stringify(manifest, null, 2)}\n`);

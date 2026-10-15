@@ -66,20 +66,25 @@ const byId = (id) => {
   return task;
 };
 
-/** The development-validation stages, by name. */
+/**
+ * The development-validation stages, by name. Each stage freezes exactly the cells it launches,
+ * so a published stage is complete when every frozen cell has a record: `dev` is the upgrade
+ * and the feature under both arms; `dev-bugfix` and `dev-bugfix2` are one bug-fix cell each,
+ * under Swarm only, the second launched only under the condition the development protocol
+ * states.
+ */
+export const developmentStages = {
+  dev: { ids: [upgradeId, "chai-feature-deep-contain-oneof"], suffix: "-dev", arms: null },
+  "dev-bugfix": { ids: ["csstree-bugfix-raw-value-whitespace"], suffix: "-dev", arms: ["swarm"] },
+  "dev-bugfix2": {
+    ids: ["csstree-bugfix-raw-value-whitespace"],
+    suffix: "-dev2",
+    arms: ["swarm"],
+  },
+};
+
 export function developmentTasks(stage) {
-  if (stage === "dev")
-    return [
-      upgradeId,
-      "chai-feature-deep-contain-oneof",
-      "csstree-bugfix-raw-value-whitespace",
-    ].map((id) => ({ ...byId(id), id: `${id}-dev` }));
-  if (stage === "dev2")
-    return [
-      {
-        ...byId("csstree-bugfix-raw-value-whitespace"),
-        id: "csstree-bugfix-raw-value-whitespace-dev2",
-      },
-    ];
-  throw new Error(`unknown development stage ${stage}`);
+  const definition = developmentStages[stage];
+  if (definition === undefined) throw new Error(`unknown development stage ${stage}`);
+  return definition.ids.map((id) => ({ ...byId(id), id: `${id}${definition.suffix}` }));
 }

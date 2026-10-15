@@ -1,0 +1,89 @@
+{
+  "schema": "swarm-ordinary-comparison.manifest.v1",
+  "frozenAt": "2026-10-15T04:42:51.392Z",
+  "protocolDigest": "sha256:d8bceb087fe90a79b85082f3379575f003ba3d02ae8ccabf125e496fb404bdac",
+  "purpose": "real-task pilot 2026-10-14, stage dev-bugfix2: a second, independent development launch of the bug fix under Swarm, run only under the condition the development protocol states",
+  "prerequisites": {
+    "browsers": false
+  },
+  "oracle": "amended 2026-10-15 (scripts/pilot/amendments.mjs)",
+  "pins": {
+    "model": "qwen3.8:27b",
+    "endpoint": "http://127.0.0.1:8000/v1",
+    "swarmCli": "/Users/brad/.cache/swarm-comparison/tools/swarm-6f4984002/dist/cli.js",
+    "swarmRevision": "6f49840028be5a88fd3a2ae3110dbf47cb764872",
+    "swarmCliDigest": "sha256:e51fab44d36c34b796ae4c690e6c953c070f783fd784321fde4352fe74c06d5b",
+    "swarmDistDigest": "sha256:60d7513a33ad5310b4a4a9f04e3bcb3777ca2eab157ad4cb90219bd7b8426e01",
+    "opencode": "1.14.48",
+    "node": "v24.15.0",
+    "harnessDigest": "sha256:71eb545b77b2cdc423227f24eb129589c965888d49c203dae78c7890f4c921d5",
+    "pilotHelpers": {
+      "scripts/pilot/amendments.mjs": "sha256:3ef36dc6c24ff07c65026087ed76ffb9f98341a470afa4e7e4729456c7dc8312",
+      "scripts/pilot/analyze.mjs": "sha256:cd2413e471fe84ac5d4ca00b70cfc93deb142d086e7321258bc176fbd60f8162",
+      "scripts/pilot/manifest.mjs": "sha256:ad9f85d4cd1a77e71292a8bb44dba32ddf95a5039c227b5861a164c9709f6619",
+      "scripts/pilot/publish.mjs": "sha256:47bf2d9f377feef668d5f438b5710963b84422030aa10eb92c5c242cdb502dbe",
+      "scripts/pilot/recheck.mjs": "sha256:46871bc4762c86ad0b09eb7c268cf6d44e7488177518e180dc7ab0f62356a759",
+      "scripts/pilot/tasks.mjs": "sha256:2f4afe721c4b4cb72e0abecea64e910637fab7d1bb5a2cb69f97e65db3ffe20b",
+      "scripts/pilot/validate.mjs": "sha256:55f4bd33cb36485adeb0a317322fcd1c9fa06c8963e6937cc85df2c4bdbabb1c"
+    },
+    "stage": "dev-bugfix2"
+  },
+  "budgets": {
+    "wallMsPerInvocation": 1140000,
+    "wallGraceMs": 60000,
+    "swarmTokenCap": 600000,
+    "maxCorrections": 2
+  },
+  "seed": "swarm-ordinary-comparison-2026-10-11",
+  "tasks": [
+    {
+      "id": "csstree-bugfix-raw-value-whitespace-dev2",
+      "repository": "csstree/csstree",
+      "workType": "bugfix",
+      "baseCommit": "85b917c679b1ccbdf93a9a9533adf66a6e2d96c5",
+      "upstreamCommit": "6a1646e7aa60c518e14d4ca95aff57c813fcfe70",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ]
+      ],
+      "build": [],
+      "projectTest": [
+        "npm",
+        "test"
+      ],
+      "visiblePrefix": "",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "node acceptance/visible/check.mjs",
+        "source": "import assert from 'node:assert/strict';\nimport { parse, generate } from '../../lib/index.js';\n\n// A declaration value kept as a raw string (parseValue: false) must be\n// serialized verbatim, without automatic whitespace between its tokens.\nconst ast = parse('a{border:1%var(--a)#ff0000}', { parseValue: false });\nassert.equal(generate(ast), 'a{border:1%var(--a)#ff0000}');\n\n// Parsed values still get the whitespace needed to keep tokens apart.\nconst parsed = parse('a{border:1%var(--a)#ff0000}');\nassert.equal(generate(parsed), 'a{border:1% var(--a) #ff0000}');\n\nconsole.log('visible check passed');\n"
+      },
+      "hidden": {
+        "testFiles": [
+          "lib/__tests/generate.js"
+        ],
+        "argv": [
+          "npx",
+          "mocha",
+          "lib/__tests/generate.js",
+          "--require",
+          "lib/__tests/helpers/setup.js"
+        ]
+      },
+      "immutable": [
+        "lib/__tests",
+        "fixtures"
+      ],
+      "taskText": "The CSS generator (lib/generator) automatically inserts a space between two adjacent tokens when leaving them adjacent would change how the text tokenizes (for example `1%` followed by `var(` or `#ff0000`). That rule is correct for values the parser turned into nodes, but it is also applied to Raw nodes, whose string value is re-tokenized on output. A raw value is text the parser deliberately left untouched (for example when parsing with `parseValue: false` or `parseRulePrelude: false`), so it must be emitted exactly as written. Today `generate(parse('span#foo { border: 1%var(--a)#ff0000; }', { parseRulePrelude: false, parseValue: false }))` returns `span #foo{border:1% var(--a) #ff0000}`; it must return `span#foo{border:1%var(--a)#ff0000}`. Automatic whitespace must still be inserted where a raw value meets its surroundings (the space in `@media screen` when the prelude is raw must stay) and for fully parsed values: `generate(parse('span#foo { border: 1%var(--a)#ff0000; }'))` must still give `span#foo{border:1% var(--a) #ff0000}`. The change belongs in lib/generator (create.js and its token-before logic). All existing generate, round-trip and source-map tests must keep passing; do not edit tests or fixtures."
+    }
+  ],
+  "launches": [
+    {
+      "task": "csstree-bugfix-raw-value-whitespace-dev2",
+      "arm": "swarm",
+      "order": 0
+    }
+  ]
+}
