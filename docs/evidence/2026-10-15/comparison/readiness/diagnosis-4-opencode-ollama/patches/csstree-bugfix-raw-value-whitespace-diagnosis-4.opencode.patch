@@ -1,0 +1,219 @@
+diff --git a/lib/generator/create.js b/lib/generator/create.js
+index c542f4f..f0d1a8d 100644
+--- a/lib/generator/create.js
++++ b/lib/generator/create.js
+@@ -23,12 +23,41 @@ function processChildren(node, delimeter) {
+     node.children.forEach(this.node, this);
+ }
+ 
+-function processChunk(chunk) {
++function processChunk(chunk, context) {
++    let prev = 0;
++    let first = true;
+     tokenize(chunk, (type, start, end) => {
+-        this.token(type, chunk.slice(start, end));
++        const value = chunk.slice(start, end);
++        if (first) {
++            first = false;
++            prev = context.tokenBefore(prev, type, value);
++            context.emit(value, type, false);
++            if (type === Delim && value.charCodeAt(0) === REVERSESOLIDUS) {
++                context.emit('\n', WhiteSpace, true);
++            }
++        } else {
++            prev = code(type, value);
++            context.emit(value, type, false);
++            if (type === Delim && value.charCodeAt(0) === REVERSESOLIDUS) {
++                context.emit('\n', WhiteSpace, true);
++            }
++        }
+     });
+ }
+ 
++function code(type, value) {
++    if (type === Delim) {
++        type = value;
++    }
++
++    if (typeof type === 'string') {
++        const charCode = type.charCodeAt(0);
++        return charCode > 0x7F ? 0x8000 : charCode << 8;
++    }
++
++    return type;
++}
++
+ export function createGenerator(config) {
+     const types = new Map();
+ 
+@@ -87,7 +116,7 @@ export function createGenerator(config) {
+             node: (node) => handlers.node(node),
+             children: processChildren,
+             token: (type, value) => handlers.token(type, value),
+-            tokenize: processChunk
++            tokenize: (chunk) => processChunk(chunk, handlers)
+         };
+ 
+         handlers.node(node);
+diff --git a/lib/generator/create.js.bak b/lib/generator/create.js.bak
+new file mode 100644
+index 0000000..5dbfc5c
+--- /dev/null
++++ b/lib/generator/create.js.bak
+@@ -0,0 +1,111 @@
++import { tokenize, Delim, WhiteSpace } from '../tokenizer/index.js';
++import { generateSourceMap } from './sourceMap.js';
++import * as tokenBefore from './token-before.js';
++
++const REVERSESOLIDUS = 0x005c; // U+005C REVERSE SOLIDUS (\)
++
++function processChildren(node, delimeter) {
++    if (typeof delimeter === 'function') {
++        let prev = null;
++
++        node.children.forEach(node => {
++            if (prev !== null) {
++                delimeter.call(this, prev);
++            }
++
++            this.node(node);
++            prev = node;
++        });
++
++        return;
++    }
++
++    node.children.forEach(this.node, this);
++}
++
++function processChunk(chunk, context) {
++    let first = true;
++    tokenize(chunk, (type, start, end) => {
++        const value = chunk.slice(start, end);
++        if (first) {
++            first = false;
++            context.prevCode = context.tokenBefore(context.prevCode, type, value);
++            context.emit(value, type, false);
++            if (type === Delim && value.charCodeAt(0) === REVERSESOLIDUS) {
++                context.emit('\n', WhiteSpace, true);
++            }
++        } else {
++            context.emit(value, type, false);
++            if (type === Delim && value.charCodeAt(0) === REVERSESOLIDUS) {
++                context.emit('\n', WhiteSpace, true);
++            }
++        }
++    });
++}
++
++export function createGenerator(config) {
++    const types = new Map();
++
++    for (let [name, item] of Object.entries(config.node)) {
++        const fn = item.generate || item;
++
++        if (typeof fn === 'function') {
++            types.set(name, item.generate || item);
++        }
++    }
++
++    return function(node, options) {
++        let buffer = '';
++        let prevCode = 0;
++        let handlers = {
++            node(node) {
++                if (types.has(node.type)) {
++                    types.get(node.type).call(publicApi, node);
++                } else {
++                    throw new Error('Unknown node type: ' + node.type);
++                }
++            },
++            tokenBefore: tokenBefore.safe,
++            token(type, value) {
++                prevCode = this.tokenBefore(prevCode, type, value);
++
++                this.emit(value, type, false);
++
++                if (type === Delim && value.charCodeAt(0) === REVERSESOLIDUS) {
++                    this.emit('\n', WhiteSpace, true);
++                }
++            },
++            emit(value) {
++                buffer += value;
++            },
++            result() {
++                return buffer;
++            }
++        };
++
++        if (options) {
++            if (typeof options.decorator === 'function') {
++                handlers = options.decorator(handlers);
++            }
++
++            if (options.sourceMap) {
++                handlers = generateSourceMap(handlers);
++            }
++
++            if (options.mode in tokenBefore) {
++                handlers.tokenBefore = tokenBefore[options.mode];
++            }
++        }
++
++        const publicApi = {
++            node: (node) => handlers.node(node),
++            children: processChildren,
++            token: (type, value) => handlers.token(type, value),
++            tokenize: (chunk) => processChunk(chunk, handlers)
++        };
++
++        handlers.node(node);
++
++        return handlers.result();
++    };
++};
+diff --git a/test-ws.mjs b/test-ws.mjs
+new file mode 100644
+index 0000000..3186549
+--- /dev/null
++++ b/test-ws.mjs
+@@ -0,0 +1,39 @@
++import { tokenize, Colon, Percentage } from './lib/tokenizer/index.js';
++import { parse, generate } from './lib/index.js';
++
++// Patch token-before to add logging
++import * as fs from 'fs';
++const origContent = fs.readFileSync('./lib/generator/create.js', 'utf8');
++
++// Manual test: what happens during generation of the raw value?
++let emitted = '';
++let prevCode = 0;
++
++function logTokenBefore(pc, type, value) {
++    const result = tokenBeforeSafe(pc, type, value);
++    if (emitted === '' && pc > 0) {
++        console.log(`tokenBefore: prevCode=${pc}, type=${type}, value="${value}", emitted_ws=${result !== pc}`);
++    }
++    return result;
++}
++
++// Actually let me just trace the generator more directly
++// Temporarily modify create.js to add logging
++fs.writeFileSync('./lib/generator/create-orig.js', origContent);
++
++const patched = origContent.replace(
++    "context.prevCode = context.tokenBefore(context.prevCode, type, value);",
++    `console.log('RAW tokenBefore:', { prevCode: context.prevCode, type, value });
++            context.prevCode = context.tokenBefore(context.prevCode, type, value);`
++).replace(
++    "prevCode = this.tokenBefore(prevCode, type, value);",
++    `console.log('tokenBefore:', { prevCode, type, value });
++                prevCode = this.tokenBefore(prevCode, type, value);`
++);
++
++fs.writeFileSync('./lib/generator/create-debug.js', patched);
++
++// Now manually test by importing the debug version
++import { createGenerator as createGenDebug } from './lib/generator/create-debug.js';
++
++console.log('Done patching');
