@@ -82,6 +82,8 @@ const purposes = {
     "live diagnosis launch 2 of 2026-10-15: the known bug fix under Swarm with a second installed local model; not comparative evidence",
   "diagnosis-3":
     "live diagnosis launch 3 of 2026-10-15: the known bug fix under OpenCode; not comparative evidence",
+  "diagnosis-4":
+    "live diagnosis launch 4 of 2026-10-15: the known bug fix under OpenCode on the Ollama configuration with thinking off; not comparative evidence",
 };
 // A development stage freezes exactly the cells it launches, so its published evidence is
 // complete when every frozen cell has a record.

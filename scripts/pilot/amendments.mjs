@@ -99,6 +99,14 @@ export const developmentStages = {
     suffix: "-diagnosis-3",
     arms: ["opencode"],
   },
+  // The same bug fix under OpenCode on the second earlier-tested configuration (Ollama,
+  // qwen3.6:35b-a3b, thinking off through reasoning_effort), run 2026-10-15 as development
+  // diagnosis beside launch 2's Swarm attempt.
+  "diagnosis-4": {
+    ids: ["csstree-bugfix-raw-value-whitespace"],
+    suffix: "-diagnosis-4",
+    arms: ["opencode"],
+  },
 };
 
 export function developmentTasks(stage) {
