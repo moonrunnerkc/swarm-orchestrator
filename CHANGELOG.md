@@ -74,8 +74,10 @@ Source on `v13-main`; not published until a release names it.
   spend by kind, and OpenCode's configuration spells thinking off the way its provider maps it.
   The analyzer decides a stage by the rule of the comparison that froze its manifest, compares
   the declared primary measures as win, tie, loss or unknown, and names a cost regression. The
-  protocol, candidates, validation, records and results are under
-  `docs/evidence/2026-10-15/comparison/`.
+  protocol, candidates, validation and the readiness records are under
+  `docs/evidence/2026-10-15/comparison/`: both tools delivered the disposable smoke fix, neither
+  delivered the calibration task in two attempts each, and the scored comparison was therefore
+  not frozen or launched.
 
 ### Fixed
 
