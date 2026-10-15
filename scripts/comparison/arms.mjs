@@ -25,8 +25,14 @@ export const wallBudgetMs = 30 * 60_000;
  * `--max-tokens`, a bound checked between calls (the product reserves the next prompt, and can
  * still exceed the figure by one call's growth), not a hard cap. OpenCode has no equivalent and
  * runs to the wall only; the arms are not budget-matched on tokens, and the record says so.
+ *
+ * Set well above what either arm has spent in any fifteen-minute launch observed here (the most
+ * was 5.9 million, OpenCode running to the wall), so that the wall is the bound both arms share
+ * and this figure is a safety bound. The pilot's 600,000 bound in two minutes on the Ollama
+ * configuration, where a fast model re-sends a 20,000-token prompt every few seconds, and left
+ * no allowance for a repair while the other arm ran on uncapped.
  */
-export const swarmTokenCap = 600_000;
+export const swarmTokenCap = 8_000_000;
 /** Less than one answer's worth of allowance left (the product's output cap) starts no correction. */
 export const minimumInvocationTokens = 8_192;
 export const maxCorrections = 2;

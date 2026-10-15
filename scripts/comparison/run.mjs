@@ -32,6 +32,7 @@ import {
   digestOf,
   maxCorrections,
   minimumInvocationTokens,
+  swarmTokenCap,
   opencodeArgv,
   opencodeTokens,
   opencodeUsage,
@@ -123,7 +124,7 @@ async function freeze(outPath) {
     budgets: {
       wallMsPerInvocation: wallBudgetMs,
       wallGraceMs: 60_000,
-      swarmTokenCap: 600_000,
+      swarmTokenCap,
       maxCorrections,
     },
     seed,

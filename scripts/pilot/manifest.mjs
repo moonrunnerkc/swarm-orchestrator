@@ -16,7 +16,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { commandLog } from "../campaign/exec.mjs";
-import { defaultPins, digestOf } from "../comparison/arms.mjs";
+import { defaultPins, digestOf, swarmTokenCap } from "../comparison/arms.mjs";
 import { opencodeVersion } from "../comparison/control.mjs";
 import { harnessDigest } from "../comparison/harness-identity.mjs";
 import { launches, seed } from "../comparison/order.mjs";
@@ -142,9 +142,10 @@ const manifest = {
     // deadline, tracked separately.
     wallMsPerInvocation: wallMinutes * 60_000,
     wallGraceMs: 60_000,
-    // The cap the Swarm arm is launched with, per invocation (`scripts/comparison/arms.mjs`,
-    // the same constant). OpenCode has no equivalent native cap; recorded, not matched.
-    swarmTokenCap: 600_000,
+    // Swarm's token allowance for the whole launch, shared by its corrections
+    // (`scripts/comparison/arms.mjs`, the same constant). OpenCode has no equivalent native
+    // cap; recorded, not matched.
+    swarmTokenCap,
     maxCorrections: 2,
   },
   seed,

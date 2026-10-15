@@ -399,7 +399,10 @@ export function analyzeRecord(record, context = {}) {
     tokens: {
       total: record.totals.tokens,
       unknownInvocations: record.totals.tokensUnknownInvocations,
-      perInvocationCap: record.arm === "swarm" ? 600_000 : null,
+      // The allowance the launch gave Swarm's first invocation (600,000 per invocation on the
+      // records written before launches carried one), and whether any invocation reached it.
+      launchAllowance:
+        record.arm === "swarm" ? (record.invocations[0]?.tokenAllowance ?? 600_000) : null,
       capBound:
         record.arm === "swarm"
           ? record.invocations.some((one) => (one.tokens ?? 0) >= (one.tokenAllowance ?? 600_000))
