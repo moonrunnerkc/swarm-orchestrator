@@ -829,3 +829,49 @@ describe("a worker that repeats one inspection", () => {
     expect(prompts[3]).not.toContain("repeated tool calls");
   });
 });
+
+describe("what a repair attempt is handed about the loop before it", () => {
+  it("carries the previous loop's account and holds the measured gate time back from its wall", async () => {
+    const result = await task(
+      [
+        respondWithToolCalls("declaring", [
+          { callId: "c0", toolName: "declare_file_set", input: { files: ["src/greet.js"] } },
+        ]),
+        respondWithToolCalls("looking", [
+          { callId: "c1", toolName: "search", input: { pattern: "emitWsNeeded", path: "src" } },
+        ]),
+        respondWithToolCalls("writing", [
+          { callId: "c2", toolName: "write", input: { path: "src/greet.js", content: broken } },
+        ]),
+        respondWithText("done"),
+        respondWithText("No repair found."),
+      ],
+      // A real clock, so the gates' measured durations are what the reserve is read from.
+      { attempts: 1, clock: createSystemClock() },
+    );
+
+    expect(result.green).toBe(false);
+    expect(result.gates.outcome.attempts).toHaveLength(1);
+    const repairs = evidence
+      .records()
+      .filter((record) => record.type === "session-stopped")
+      .map((record) => evidence.payloads().get(record.payloadDigest) as Record<string, unknown>)
+      .filter((payload) => payload.repair === true);
+    expect(repairs).toHaveLength(1);
+    const repair = repairs[0] as { reservedForGatesMs: number; priorLoopNotes: string };
+    // The failing cycle took real time to run its gates; that much was held back.
+    expect(repair.reservedForGatesMs).toBeGreaterThan(0);
+    expect(repair.priorLoopNotes).toContain("derived by the harness");
+    expect(repair.priorLoopNotes).toContain("files it edited: src/greet.js");
+    expect(repair.priorLoopNotes).toContain(
+      "matched nothing, so these names are not in the workspace: /emitWsNeeded/ under src",
+    );
+    // The account reached the repair loop as part of its brief, not as a system instruction.
+    const prompts = evidence
+      .records()
+      .filter((record) => record.type === "model-call")
+      .map((record) => JSON.stringify(evidence.payloads().get(record.payloadDigest)));
+    expect(prompts.at(-1)).toContain("Account of the previous loop");
+    expect(prompts[0]).not.toContain("Account of the previous loop");
+  });
+});

@@ -39,20 +39,35 @@ export interface ProcessRunResult {
 const notFoundExitCode = 127;
 const defaultKillGraceMs = 2_000;
 
+/**
+ * The start failure a command gets when the harness will not spawn it at all: the run was
+ * cancelled, or no time was left in the wall budget. A gate given this has run nothing, and a
+ * reader that compares it with the same gate's earlier pass is comparing a measurement with a
+ * refusal. Three real runs read exactly that comparison as "passed before and now reports
+ * failed", rejected the attempt as a regression, then matched the refusal at the base commit
+ * (also refused) and reported the gate as failing at the base the same way. The refusal is a
+ * start failure, which is the name this type already has for a program that never ran.
+ */
+export const refusedBeforeSpawn = "execution refused before spawn";
+
 export function runProcessGroup(
   file: string,
   args: readonly string[],
   options: ProcessRunOptions,
 ): Promise<ProcessRunResult> {
   if (options.signal?.aborted || options.timeoutMs <= 0) {
+    const reason = options.signal?.aborted
+      ? "the run was cancelled"
+      : "no time remained in the wall budget";
+    const refused = `${refusedBeforeSpawn}: ${reason}`;
     return Promise.resolve({
       stdout: "",
-      stderr: "execution refused before spawn",
+      stderr: refused,
       exitCode: 128,
       timedOut: options.timeoutMs <= 0,
       cancelled: options.signal?.aborted === true,
       truncated: false,
-      startFailure: null,
+      startFailure: refused,
     });
   }
   return new Promise((settle) => {
