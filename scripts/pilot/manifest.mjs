@@ -22,6 +22,7 @@ import { harnessDigest } from "../comparison/harness-identity.mjs";
 import { launches, seed } from "../comparison/order.mjs";
 import { taskSchema } from "../comparison/schema.mjs";
 import { comparisonRoot, resolveFull } from "../comparison/workspace.mjs";
+import { amendmentDate, developmentTasks } from "./amendments.mjs";
 import { stageTasks } from "./tasks.mjs";
 
 const args = new Map();
@@ -49,9 +50,10 @@ export function treeDigest(root) {
 }
 
 const stage = args.get("stage");
-if (stage !== "A" && stage !== "B") {
+const developmentStage = stage === "dev" || stage === "dev2";
+if (stage !== "A" && stage !== "B" && !developmentStage) {
   console.error(
-    "usage: manifest.mjs --stage A|B --out <file> --swarm-cli <path> --swarm-revision <commit> [--protocol <file>] [--wall-minutes 19]",
+    "usage: manifest.mjs --stage A|B|dev|dev2 --out <file> --swarm-cli <path> --swarm-revision <commit> [--protocol <file>] [--wall-minutes 19]",
   );
   process.exit(2);
 }
@@ -62,7 +64,13 @@ if (!swarmCli || !existsSync(swarmCli)) {
 }
 const wallMinutes = Number(args.get("wall-minutes") ?? "19");
 const protocolPath = args.get("protocol") ?? "docs/evidence/2026-10-14/real-task-pilot/protocol.md";
-const tasks = stageTasks(stage);
+const tasks = developmentStage ? developmentTasks(stage) : stageTasks(stage);
+const purposes = {
+  A: "four fresh tasks, one launch per arm",
+  B: "the predeclared bugfix and feature repeated once per arm in fresh sessions",
+  dev: "development validation of the repairs on known tasks under the amended oracle: the upgrade and the feature once per arm, the bug fix once under Swarm (its OpenCode cell is frozen here and not launched); not comparative evidence and not a repetition of the pilot",
+  dev2: "a second, independent development launch of the bug fix under Swarm, run only under the condition the development protocol states",
+};
 const log = commandLog(join(comparisonRoot, "blobs"));
 for (const task of tasks) {
   taskSchema.parse(task);
@@ -80,7 +88,13 @@ const manifest = {
   schema: "swarm-ordinary-comparison.manifest.v1",
   frozenAt: new Date().toISOString(),
   protocolDigest: existsSync(protocolPath) ? digestOf(readFileSync(protocolPath, "utf8")) : null,
-  purpose: `real-task pilot 2026-10-14, stage ${stage}: ${stage === "A" ? "four fresh tasks, one launch per arm" : "the predeclared bugfix and feature repeated once per arm in fresh sessions"}`,
+  purpose: `real-task pilot 2026-10-14, stage ${stage}: ${purposes[stage]}`,
+  // What a launch's fresh home must show before dispatch: no browser cache, because no task
+  // here needs one and this launcher provisions none. Read by the launcher before every launch.
+  prerequisites: { browsers: false },
+  oracle: developmentStage
+    ? `amended ${amendmentDate} (scripts/pilot/amendments.mjs)`
+    : "frozen (scripts/pilot/tasks.mjs)",
   pins: {
     ...defaultPins,
     swarmCli,

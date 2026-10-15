@@ -59,9 +59,15 @@ export const taskSchema = z.strictObject({
           name: z.string().min(1),
           section: z.enum(["dependencies", "devDependencies"]),
           version: z.string().min(1),
+          /** The exact declaration the task requires in package.json and the lockfile root, where it fixes one. */
+          declared: z.string().min(1).optional(),
         }),
       )
       .optional(),
+    /** Dotted package.json paths that must equal the base's, such as `scripts.test-node`. */
+    unchanged: z.array(z.string().min(1)).optional(),
+    /** The only paths a patch may touch, where the task authorizes a closed set. */
+    allowedPaths: z.array(z.string().min(1)).optional(),
   }),
   upgradeSourcePaths: z.array(z.string().min(1)).optional(),
   immutable: z.array(z.string().min(1)),
