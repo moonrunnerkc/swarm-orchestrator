@@ -9,10 +9,11 @@ import type { $ZodIssue } from "zod/v4/core";
  * that was, in substance, correct.
  *
  * Decoding is bounded by the declared schema and never widens it. A field is decoded only
- * where the schema itself reports that it wanted an array or an object and a string arrived,
- * the string parses as JSON, and the parsed value is of the type the schema asked for. The
- * result is then validated by that same schema at the chokepoint, so nothing skips validation.
- * A field the schema declares as a string is never touched, whatever it happens to contain.
+ * where the schema itself reports that it wanted an array, an object, a number or a boolean
+ * and a string arrived, the string parses as JSON, and the parsed value is of the type the
+ * schema asked for. The result is then validated by that same schema at the chokepoint, so
+ * nothing skips validation. A field the schema declares as a string is never touched,
+ * whatever it happens to contain.
  *
  * Only a decoding that makes the call valid is returned: a partial repair would produce a
  * denial about arguments the model never sent. What arrived is recorded either way, alongside
@@ -75,7 +76,7 @@ interface DecodedIssue {
 }
 
 function decodeIssue(root: unknown, issue: $ZodIssue): DecodedIssue | null {
-  const expected = containerExpectedBy(issue);
+  const expected = typeExpectedBy(issue);
   if (expected === null) {
     return null;
   }
@@ -104,15 +105,31 @@ function decodeIssue(root: unknown, issue: $ZodIssue): DecodedIssue | null {
   };
 }
 
-/** The container the schema says it wanted here, or null when it wanted something else. */
-function containerExpectedBy(issue: $ZodIssue): "array" | "object" | null {
+type DecodableType = "array" | "object" | "number" | "boolean";
+
+/**
+ * The type the schema says it wanted here, where a JSON string could carry it, or null. A
+ * number or a boolean is decoded for the same reason a container is: a tool-call parser that
+ * hands every argument over as a string sent `"timeoutMs": "300000"` for a field declared as a
+ * number, and the call it rejected was, in substance, correct. A string field is never
+ * decoded, whatever it holds.
+ */
+function typeExpectedBy(issue: $ZodIssue): DecodableType | null {
   if (issue.code !== "invalid_type") {
     return null;
   }
-  if (issue.expected === "array") {
-    return "array";
+  switch (issue.expected) {
+    case "array":
+      return "array";
+    case "object":
+      return "object";
+    case "number":
+      return "number";
+    case "boolean":
+      return "boolean";
+    default:
+      return null;
   }
-  return issue.expected === "object" ? "object" : null;
 }
 
 /** Null for a path this cannot address, which a symbol key makes it: tool arguments are JSON. */
@@ -127,11 +144,17 @@ function pathOf(path: $ZodIssue["path"]): readonly PathStep[] | null {
   return steps;
 }
 
-function isOfType(value: unknown, expected: "array" | "object"): boolean {
-  if (expected === "array") {
-    return Array.isArray(value);
+function isOfType(value: unknown, expected: DecodableType): boolean {
+  switch (expected) {
+    case "array":
+      return Array.isArray(value);
+    case "object":
+      return typeof value === "object" && value !== null && !Array.isArray(value);
+    case "number":
+      return typeof value === "number" && Number.isFinite(value);
+    case "boolean":
+      return typeof value === "boolean";
   }
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function valueAt(root: unknown, path: readonly PathStep[]): unknown {

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { createStallTracker, stallNotice, stallNoticePrefix } from "./tool-stall.ts";
+import {
+  createStallTracker,
+  repeatedAnswerNotice,
+  stallNotice,
+  stallNoticePrefix,
+} from "./tool-stall.ts";
 
 const trailer = (n: number) =>
   `\n[evidence record sha256:${n.toString(16).padStart(64, "0")} kind tool-call:shell]`;
@@ -144,5 +149,31 @@ describe("the stall tracker", () => {
     expect(stall?.input.startsWith('{"path":".","pattern":"xxx')).toBe(true);
     expect(stall?.output.length).toBeLessThanOrEqual(243);
     expect(stall?.output).not.toContain("evidence record");
+  });
+});
+
+describe("what the tracker says between stalls", () => {
+  it("counts the repeats as they happen, and forgets them all when told the answers are gone", () => {
+    const tracker = createStallTracker();
+    tracker.observe(inspection(1));
+    expect(tracker.repeats()).toBe(0);
+    tracker.observe(inspection(2));
+    expect(tracker.repeats()).toBe(1);
+    tracker.observe(inspection(3));
+    expect(tracker.repeats()).toBe(2);
+    // After compaction the earlier answers are not in the conversation, so the same call is new.
+    tracker.forget();
+    expect(tracker.repeats()).toBe(0);
+    expect(tracker.observe(inspection(4))).toBeNull();
+    expect(tracker.repeats()).toBe(0);
+  });
+
+  it("hands the model a notice in the answer's place that names the call and quotes the answer's first line", () => {
+    const notice = repeatedAnswerNotice("read", `import {\n    WhiteSpace${trailer(9)}`, 2);
+    expect(notice).toContain("[harness notice: already answered]");
+    expect(notice).toContain("This read call is identical");
+    expect(notice).toContain("2 times now");
+    expect(notice).toContain('"import {"');
+    expect(notice).not.toContain("WhiteSpace");
   });
 });

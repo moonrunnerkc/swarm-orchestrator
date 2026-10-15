@@ -112,7 +112,11 @@ function pathsAWordCouldOpen(word: string): readonly string[] {
   if (word.length === 0) {
     return [];
   }
-  const candidates = new Set<string>([word]);
+  // A word holding a line break is a script, never one file name: `node -e "<several lines>"`
+  // was refused as a path with a control character, and the probe it carried was written to
+  // a file instead, at the cost of a step. Its pieces are still offered, so a path inside the
+  // script is still checked.
+  const candidates = new Set<string>(/[\r\n]/.test(word) ? [] : [word]);
   for (const piece of word.split(/[\s]+/)) {
     if (piece.length > 0) {
       candidates.add(piece);

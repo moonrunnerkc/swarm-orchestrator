@@ -58,8 +58,12 @@ function excerpt(text: string): string {
 export interface StallTracker {
   /** Record one tool outcome; the stall it completes, or null while the loop is making progress. */
   observe(observation: ToolObservation): StallDetected | null;
+  /** How many consecutive observations, the last one included, the window had already seen. */
+  repeats(): number;
   /** Forget the repeats after an intervention, so the next stall is a new one. */
   reset(): void;
+  /** Forget everything seen: after compaction, an earlier answer is no longer one the model has. */
+  forget(): void;
 }
 
 /**
@@ -91,10 +95,30 @@ export function createStallTracker(policy: StallPolicy = defaultStallPolicy): St
           }
         : null;
     },
+    repeats: () => repeats,
     reset() {
       repeats = 0;
     },
+    forget() {
+      seen.length = 0;
+      repeats = 0;
+    },
   };
+}
+
+/**
+ * What the model is handed in place of an answer it already has. The answer's first line is
+ * quoted so the two can be matched by eye, and the count says how long this has gone on. The
+ * ledger holds the full result of every call, this one included.
+ */
+export function repeatedAnswerNotice(toolName: string, output: string, repeats: number): string {
+  return (
+    `[harness notice: already answered] This ${toolName} call is identical to one answered ` +
+    `earlier in this conversation (${repeats === 1 ? "once" : `${repeats} times`} now), and its ` +
+    `result is unchanged; it began: ${JSON.stringify(excerpt(output))}. The full result is above. ` +
+    "Nothing in the workspace changed since. Act on the answer you have: make the edit it calls " +
+    "for, try a different approach, or finish with a summary that names exactly what is blocking you."
+  );
 }
 
 function observationKey(observation: ToolObservation): string {

@@ -19,6 +19,7 @@ import { findExhaustedLimit, type LoopBudget, type StopReason } from "./terminat
 import type { ToolInvoker } from "./tool-invoker.ts";
 import {
   createStallTracker,
+  repeatedAnswerNotice,
   type StallDetected,
   type StallPolicy,
   stallNotice,
@@ -164,6 +165,9 @@ export async function runAgentLoop(
     });
     if (context.compacted && context.droppedMessages > lastCompactedAt) {
       lastCompactedAt = context.droppedMessages;
+      // Answers that fell out of the conversation are no longer answers the model has, so a
+      // call that fetches one again is progress, not a repeat.
+      stalls?.forget();
       deps.emit({
         type: "compacted",
         droppedMessages: context.droppedMessages,
@@ -278,7 +282,6 @@ export async function runAgentLoop(
         failed: outcome.failed,
         output: outcome.output,
       });
-      outcomes.push(outcome);
       stalled =
         stalls?.observe({
           toolName: call.toolName,
@@ -286,6 +289,17 @@ export async function runAgentLoop(
           failed: outcome.failed,
           output: outcome.output,
         }) ?? stalled;
+      // A call already made, with the answer already received: the model is handed the
+      // notice in the answer's place rather than the answer again. The chokepoint ran the
+      // call and recorded what it returned; what is withheld here is only the repeat of a
+      // result the conversation still holds, which resent in full was feeding the repetition
+      // it reported. A repeat after compaction is answered, since the earlier answer is gone.
+      const repeats = stalls?.repeats() ?? 0;
+      outcomes.push(
+        repeats > 0
+          ? { ...outcome, output: repeatedAnswerNotice(call.toolName, outcome.output, repeats) }
+          : outcome,
+      );
     }
     messages.push({ role: "tool", outcomes });
 
@@ -445,8 +459,9 @@ async function callModelWithRetry(
     // is going to be a tool call.
     const spiral = new AbortController();
     const stream: { text: string; repeated: RepeatedTail | null } = { text: "", repeated: null };
-    const watchText = (text: string): void => {
-      request.onText?.(text);
+    // Text and tool arguments are one stream to the watcher: a spiral inside a tool call's
+    // arguments reaches the cap exactly as one in the text does, and used to run to it unseen.
+    const watchStream = (text: string): void => {
       if (stream.repeated !== null) return;
       stream.text += text;
       stream.repeated = repeatedTail(stream.text);
@@ -460,7 +475,14 @@ async function callModelWithRetry(
         {
           ...request,
           maxOutputTokens: Math.max(1, Math.min(request.maxOutputTokens, remainingTokens())),
-          onText: watchText,
+          onText: (text) => {
+            request.onText?.(text);
+            watchStream(text);
+          },
+          onToolInput: (text) => {
+            request.onToolInput?.(text);
+            watchStream(text);
+          },
         },
         deadline - deps.clock.now(),
         spiral.signal,
