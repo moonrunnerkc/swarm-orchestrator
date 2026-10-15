@@ -164,6 +164,10 @@ const derivedNames: readonly RegExp[] = [
   // A shakedown task's captured terminal log (`04-testfix-scrub-digit.txt`), which the bundle
   // beside it records as evidence; the log is what the terminal showed of that run.
   /^\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*\.txt$/,
+  // The comparison publisher's excerpt of an arm's output stream for one invocation
+  // (`<task>.<arm>.initial-0.txt`, `<task>.<arm>.correction-1.txt`): a tail of the stream whose
+  // whole bytes are the digest-addressed blob the record cites. Nothing re-derives from it.
+  /\.(?:swarm|opencode)\.(?:initial|correction)-\d+\.txt$/,
 ];
 
 /** The one spelling of "derived", read by the offload here and by the in-tree evidence packer. */
