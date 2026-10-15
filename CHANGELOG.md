@@ -62,6 +62,18 @@ Source on `v13-main`; not published until a release names it.
 
 ### Fixed
 
+- **An interrupted run could be told to resume and then be refused, or resume into the wrong
+  home.** Through the ordinary command line: a run interrupted while the model was answering
+  recorded that call with unknown usage, and `swarm resume` refused to reconstruct the sealed
+  budget; a continuation that did start opened a new chain with no file-set declaration, so its
+  first edit was refused as unauthorized; it reached whichever local endpoint discovery found
+  rather than the one the run was pinned to; and resuming a session that was itself a
+  continuation allocated a fresh child HOME under the intermediate session's id, leaving the
+  original run's home orphaned. Each is repaired with a regression, and
+  `src/cli-resume-child-home.integration.test.ts` drives the whole chain (run, interrupt, resume,
+  interrupt, resume) through the real CLI against a scripted endpoint: one home from first
+  session to last, the first session's state still there for the third, the cut-off calls
+  charged at their recorded bounds and named on the continuation's first record.
 - A refused final verification (a fresh checkout that could not install, an immutable path
   reached, an upgrade policy decision) ended the run with a schema error and no result line. It
   is now a recorded non-success: task unjudged, not acceptable, the refusal as the reason; the
