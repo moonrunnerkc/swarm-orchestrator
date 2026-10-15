@@ -19,6 +19,7 @@ import {
   openEvidenceSession,
 } from "./evidence/session.ts";
 import { describeVerdict, type RunVerdict } from "./evidence/verdict.ts";
+import { withRunChildHome } from "./exec/child-home.ts";
 import {
   type ContainmentSelfTest,
   hostExecutionBackend,
@@ -91,12 +92,25 @@ export async function measureWorkspace(
   options: WorkspaceMeasurementOptions,
   signal: AbortSignal,
 ): Promise<WorkspaceMeasurement> {
-  const settings = await settingsFor(options.workspace, noFlagSettings);
   const clock = createSystemClock();
-  const random = createSystemRandom();
+  const sessionId = createSessionId(clock, createSystemRandom());
+  // The measurement's child processes get a HOME of this session's own, released with it: a
+  // check is not resumed, so nothing of its children's state outlives it.
+  return withRunChildHome({ runId: sessionId }, () =>
+    measureOpenedWorkspace(options, signal, clock, sessionId),
+  );
+}
+
+async function measureOpenedWorkspace(
+  options: WorkspaceMeasurementOptions,
+  signal: AbortSignal,
+  clock: ReturnType<typeof createSystemClock>,
+  sessionId: string,
+): Promise<WorkspaceMeasurement> {
+  const settings = await settingsFor(options.workspace, noFlagSettings);
   const evidence = await openEvidenceSession({
     root: defaultSessionRoot(homedir()),
-    sessionId: createSessionId(clock, random),
+    sessionId,
     clock,
   });
   const fileSet = createFileSetRegistry(evidence);

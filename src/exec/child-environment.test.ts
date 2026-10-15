@@ -171,8 +171,10 @@ describe("what a child process inherits", () => {
     expect(() => defaultChildHome({ [childHomeEnvironmentName]: "child-home" })).toThrow(
       UnusableChildHome,
     );
-    // Blank is the same as unset: the shared default, not a refusal.
-    expect(defaultChildHome({ [childHomeEnvironmentName]: "  " })).toBe(
+    // Blank is the same as unset: the process's own private home, not a refusal and not
+    // one directory shared by every run on the machine.
+    expect(defaultChildHome({ [childHomeEnvironmentName]: "  " })).toBe(defaultChildHome({}));
+    expect(defaultChildHome({ [childHomeEnvironmentName]: "  " })).not.toBe(
       join(tmpdir(), "swarm-child-home"),
     );
   });
