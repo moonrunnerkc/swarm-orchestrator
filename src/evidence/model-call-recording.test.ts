@@ -174,11 +174,18 @@ it("records an aborted unresponsive call before returning, with unknown usage ex
   cancellation.abort();
   await expect(pending).rejects.toThrow();
   const record = evidence.records().find((entry) => entry.type === "model-call");
-  expect(evidence.payloads().get(record?.payloadDigest ?? "")).toMatchObject({
+  const payload = evidence.payloads().get(record?.payloadDigest ?? "") as {
+    requestBound: { reservedTokens: number; maxOutputTokens: number };
+  };
+  expect(payload).toMatchObject({
     usageStatus: "unknown",
     response: { failed: true },
     cancelled: true,
   });
+  // The bound a continuation charges the cut-off call at: the whole output cap plus a generous
+  // estimate of the prompt, so it is never less than what the call could have cost.
+  expect(payload.requestBound.maxOutputTokens).toBe(request("work").maxOutputTokens);
+  expect(payload.requestBound.reservedTokens).toBeGreaterThan(request("work").maxOutputTokens);
 });
 
 it("records a provider that raised as a failure nobody cancelled", async () => {

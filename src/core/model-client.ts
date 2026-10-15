@@ -106,6 +106,14 @@ export interface ModelResponse {
   readonly toolCalls: readonly ModelToolCall[];
   readonly inputTokens: number;
   readonly outputTokens: number;
+  /**
+   * Reasoning tokens inside the output and cached tokens inside the input, where the provider
+   * reports them; null where it does not. Kept apart from the totals they are part of, so a
+   * run's account can say how much of its spend was thinking and how much was replayed prefix
+   * without adding either twice.
+   */
+  readonly reasoningTokens?: number | null;
+  readonly cachedInputTokens?: number | null;
   readonly finishReason: string;
   readonly performance: ModelPerformance;
   /**

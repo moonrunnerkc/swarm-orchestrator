@@ -127,6 +127,63 @@ describe("createAiSdkModelClient", () => {
     expect(response.outputTokens).toBe(3);
   });
 
+  it("carries reasoning and cached counts apart from the totals, and null where the provider gave none", async () => {
+    const detailed: LanguageModelV4Usage = {
+      inputTokens: { total: 70, noCache: 20, cacheRead: 50, cacheWrite: 0 },
+      outputTokens: { total: 30, text: 10, reasoning: 20 },
+    };
+    const model = createAiSdkModelClient(
+      "local:qwen",
+      streamingModel([
+        { type: "stream-start", warnings: [] },
+        { type: "text-start", id: "t" },
+        { type: "text-delta", id: "t", delta: "Hello" },
+        { type: "text-end", id: "t" },
+        {
+          type: "finish",
+          finishReason: { unified: "stop" as const, raw: "stop" },
+          usage: detailed,
+        },
+      ]),
+    );
+    const response = await model.generate(request());
+    expect(response).toMatchObject({
+      inputTokens: 70,
+      outputTokens: 30,
+      reasoningTokens: 20,
+      cachedInputTokens: 50,
+    });
+
+    const bare = createAiSdkModelClient(
+      "local:qwen",
+      streamingModel([
+        { type: "stream-start", warnings: [] },
+        { type: "text-start", id: "t" },
+        { type: "text-delta", id: "t", delta: "Hello" },
+        { type: "text-end", id: "t" },
+        {
+          type: "finish",
+          finishReason: { unified: "stop" as const, raw: "stop" },
+          usage: {
+            inputTokens: {
+              total: 7,
+              noCache: undefined,
+              cacheRead: undefined,
+              cacheWrite: undefined,
+            },
+            outputTokens: { total: 3, text: undefined, reasoning: undefined },
+          },
+        },
+      ]),
+    );
+    expect(await bare.generate(request())).toMatchObject({
+      inputTokens: 7,
+      outputTokens: 3,
+      reasoningTokens: null,
+      cachedInputTokens: null,
+    });
+  });
+
   it("throws when the stream carries an error, rather than returning half a response", async () => {
     const model = createAiSdkModelClient(
       "local:qwen",

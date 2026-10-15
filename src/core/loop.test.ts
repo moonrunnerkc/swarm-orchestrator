@@ -179,6 +179,71 @@ describe("runAgentLoop", () => {
     expect(outcome.tokensUsed).toBe(120);
   });
 
+  it("withholds a call whose prompt alone cannot fit in what is left, naming the reserved size", async () => {
+    // 220 of 300 spent; the next prompt is at least the 200 the last one measured, so the call
+    // is not made and the second turn stays unplayed. Before this the call went out and the run
+    // ended past its cap by one prompt.
+    const harness = createHarness(
+      [
+        respondWithToolCalls("reading", [{ callId: "a", toolName: "list", input: {} }], {
+          input: 200,
+          output: 20,
+        }),
+        respondWithText("never reached"),
+      ],
+      { budget: { ...generousBudget, maxTokens: 300 } },
+    );
+
+    const outcome = await runAgentLoop("spend carefully", harness.deps);
+
+    expect(outcome.stopReason).toBe("max-tokens");
+    expect(outcome.tokensUsed).toBe(220);
+    expect(outcome.reservedTokens).toBe(200);
+    expect(outcome.steps).toBe(1);
+    expect(harness.events.at(-1)).toMatchObject({
+      type: "stopped",
+      reason: "max-tokens",
+      tokensUsed: 220,
+      reservedTokens: 200,
+    });
+  });
+
+  it("keeps the spend by kind apart, with reasoning and cached counts null until reported", async () => {
+    const harness = createHarness([
+      respondWithToolCalls("reading", [{ callId: "a", toolName: "list", input: {} }], {
+        input: 100,
+        output: 10,
+      }),
+      {
+        kind: "response",
+        response: {
+          text: "done",
+          toolCalls: [],
+          inputTokens: 150,
+          outputTokens: 40,
+          reasoningTokens: 30,
+          cachedInputTokens: 90,
+          finishReason: "stop",
+          performance: unobservedPerformance,
+          unsupportedFeatures: [],
+        },
+      },
+    ]);
+
+    const outcome = await runAgentLoop("account", harness.deps);
+
+    expect(outcome.tokensUsed).toBe(300);
+    expect(outcome.usage).toEqual({
+      inputTokens: 250,
+      outputTokens: 50,
+      reasoningTokens: 30,
+      cachedInputTokens: 90,
+    });
+    expect(outcome.reservedTokens).toBe(0);
+    expect(harness.events.at(-1)).toMatchObject({ type: "stopped", usage: outcome.usage });
+    expect(harness.events.at(-1)).not.toHaveProperty("reservedTokens");
+  });
+
   it("stops on max-wall-time using the injected clock", async () => {
     const harness = createHarness(
       [
