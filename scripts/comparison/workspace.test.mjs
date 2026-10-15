@@ -41,7 +41,7 @@ describe("what each arm is configured with", () => {
       options: {
         enable_thinking: false,
         chat_template_kwargs: { enable_thinking: false },
-        reasoning_effort: "none",
+        reasoningEffort: "none",
         top_p: 0.95,
       },
     });

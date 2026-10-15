@@ -2,8 +2,9 @@
  * The 2026-10-15 comparison's frozen task set: four maintainer-authored changes from three
  * public repositories that no earlier launch, calibration, diagnosis or repair in this repository
  * used, plus one calibration task both tools must deliver before the comparison is frozen. The
- * csstree repository carries two tasks; both are changes no earlier task here touched (the
- * earlier csstree task was the generator's raw-value whitespace). Each task's base is the parent
+ * pako repository carries two tasks (a feature and a refactor, different commits); the csstree
+ * repository's one task here is a change its earlier task (the generator's raw-value
+ * whitespace) did not touch. Each task's base is the parent
  * of the upstream commit; the hidden oracle is the upstream commit's own test files overlaid from
  * the sealed mirror at scoring time, plus the structural, version and extra checks named here;
  * the visible check is one weaker assertion both arms are shown. Task text was written from the
@@ -43,14 +44,14 @@ export const tasks = [
     },
     immutable: ["test", "types"],
     taskText:
-      "Mime.getType(path) (src/Mime.ts) derives a type from the extension after the last dot of the last path segment. The two regular expressions that strip the directory part and the part before the extension do not match across line terminators, so a file name that contains one is typed wrongly: getType('LINE\\nFEED.png') returns null instead of 'image/png', and the same happens for a carriage return (U+000D), a line separator (U+2028) and a paragraph separator (U+2029), with or without a directory part in front. This matters where the file name comes from an untrusted source: a content type decided from it must come from the extension after the last dot of the last segment, whatever characters precede it, so that a name crafted with a line terminator cannot make the lookup fail or pick an earlier extension. Make getType treat every line terminator like any other character when it strips the directory part and the extension's prefix; a space or tab in the name already works and must keep working. getExtension, define and the rest of the class stay as they are. The change belongs in src/Mime.ts only. Repository rules: Prettier formatting (npm run lint), no new dependencies, no edits under test or types, and the whole suite (npm test, which builds first) must keep passing.",
+      "Mime.getType(path) (src/Mime.ts) derives a type from the extension after the last dot of the last path segment. The two regular expressions that strip the directory part and the part before the extension do not match across line terminators, so a file name that contains one is typed wrongly: getType('LINE\\nFEED.png') returns null instead of 'image/png', and the same happens for a carriage return (U+000D), a line separator (U+2028) and a paragraph separator (U+2029), with or without a directory part in front. This matters where the file name comes from an untrusted source: a content type decided from it must come from the extension after the last dot of the last segment, whatever characters precede it, so that a name crafted with a line terminator cannot make the lookup fail or pick an earlier extension. Make getType treat every line terminator like any other character when it strips the directory part and the extension's prefix; a space or tab in the name already works and must keep working. getExtension, define and the rest of the class stay as they are. The change belongs in src/Mime.ts only. Repository rules: keep the file's existing style, no new dependencies, no edits under test or types, and the whole suite (npm test, which builds first) must keep passing.",
   },
   {
-    id: "csstree-feature-parser-list-option",
-    repository: "csstree/csstree",
+    id: "pako-feature-inflate-push-after-end",
+    repository: "nodeca/pako",
     workType: "feature",
-    baseCommit: "39a0c7289fdb5d7698f2cc066e5146ffc067d50b",
-    upstreamCommit: "20f56718315e832a70d4c761ae037a78187dec29",
+    baseCommit: "ef2f14af9b51376aa82215e68a3747a0faac62b7",
+    upstreamCommit: "16fb5c47d936af5c88e943178c8e6f455e067128",
     install: [["npm", "ci", "--ignore-scripts"]],
     build: [],
     projectTest: ["npm", "test"],
@@ -59,23 +60,16 @@ export const tasks = [
       path: "acceptance/visible/check.mjs",
       command: "node acceptance/visible/check.mjs",
       source:
-        "import assert from 'node:assert/strict';\nimport { parse, List } from '../../lib/index.js';\n\n// The default and an explicit `list: true` keep linked lists for children.\nassert.ok(parse('a{}').children instanceof List);\nassert.ok(parse('a{}', { list: true }).children instanceof List);\n\n// `list: false` builds plain arrays, at every level of the tree.\nconst ast = parse('a{color:red}', { list: false });\nassert.ok(Array.isArray(ast.children), 'stylesheet children');\nassert.ok(Array.isArray(ast.children[0].block.children), 'block children');\nassert.ok(Array.isArray(ast.children[0].block.children[0].value.children), 'value children');\n\nconsole.log('visible check passed');\n",
+        "import assert from 'node:assert/strict';\nimport zlib from 'node:zlib';\nimport { Inflate } from '../../src/index.ts';\n\n// A compressed stream can end before the caller's data does: trailing chunks are no-ops that\n// report the decode's outcome and leave the delivered result intact.\nconst stream = zlib.deflateSync(Buffer.from('payload'));\nconst inflator = new Inflate();\nassert.equal(inflator.push(stream), true);\nassert.equal(inflator.ended, true);\nassert.equal(inflator.push(new Uint8Array([1, 2, 3])), true);\nassert.equal(Buffer.from(inflator.result).toString(), 'payload');\nassert.equal(inflator.err, 0);\n\nconsole.log('visible check passed');\n",
     },
     hidden: {
-      testFiles: ["lib/__tests/parse.js"],
-      argv: ["npx", "mocha", "lib/__tests/parse.js", "--require", "lib/__tests/helpers/setup.js"],
-      files: [
-        {
-          path: "acceptance/hidden/list-option.mjs",
-          source:
-            "import assert from 'node:assert/strict';\nimport { parse, generate, walk, List } from '../../lib/index.js';\n\nconst css = '@media screen and (min-width: 10px) { a:hover, b > c { color: rgb(1, 2, 3); margin: 1px 2px } } .x { --y: z }';\n\n// Arrays at every level when list is false: no List instance survives anywhere in the tree.\nconst arrays = parse(css, { list: false });\nlet lists = 0;\nlet arrayChildren = 0;\nwalk(arrays, (node) => {\n  if (node.children instanceof List) lists += 1;\n  if (Array.isArray(node.children)) arrayChildren += 1;\n});\nassert.equal(lists, 0, 'a List survived under list: false');\nassert.ok(arrayChildren >= 8, `too few array-valued children: ${arrayChildren}`);\n\n// Lists at every level by default and under list: true: no array survives.\nfor (const options of [{}, { list: true }]) {\n  const linked = parse(css, options);\n  let plain = 0;\n  walk(linked, (node) => {\n    if (Array.isArray(node.children)) plain += 1;\n  });\n  assert.equal(plain, 0, 'an array survived under list: true');\n}\n\n// The two trees serialize the same way, and a falsy non-boolean value means arrays.\nassert.equal(generate(arrays), generate(parse(css)));\nassert.ok(Array.isArray(parse('a{}', { list: 0 }).children));\nassert.ok(Array.isArray(parse('a{}', { list: null }).children));\n\n// Other options keep working beside it.\nconst raw = parse('a{b:c}', { list: false, parseValue: false });\nassert.equal(raw.children[0].block.children[0].value.type, 'Raw');\n\nconsole.log('hidden list-option check passed');\n",
-        },
-      ],
-      extraArgv: [["node", "acceptance/hidden/list-option.mjs"]],
+      testFiles: ["test/inflate.test.mjs"],
+      argv: ["node", "--test", "test/inflate.test.mjs"],
+      allowedPaths: ["src/inflate.ts", "CHANGELOG.md"],
     },
-    immutable: ["lib/__tests", "fixtures"],
+    immutable: ["test", "benchmark"],
     taskText:
-      "The parser (lib/parser/create.js) builds every node's `children` as a linked list, an instance of the exported `List` class, through the parser's createList, createSingleNodeList, getFirstListNode and getLastListNode methods. Add a parse option named `list` so that callers can choose plain arrays instead: when `list` is omitted or truthy, children are List instances exactly as today; when `list` is a falsy value (false, 0, null), every node's children, at every depth of the tree (stylesheet, rules, blocks, declarations, values, selectors, at-rule preludes and so on), is a plain JavaScript array, and the four list methods above produce and read arrays accordingly (an empty array for a new list, a one-element array for a single-node list, the first and last element or null for the ends). The option is read where the other parse options (parseValue, parseRulePrelude, context, onComment, onToken) are read and applies to the whole parse call. Trees built either way must generate the same CSS, and all existing options must keep working beside the new one. All existing parser, generator, walker and fixture tests must keep passing; do not edit tests or fixtures, do not change the List class, and keep the change in lib/parser/create.js.",
+      "The streaming decoder class Inflate (src/inflate.ts) tracks whether the compressed stream has ended in a private `ended` field, and its push(data, flush_mode) method returns a blanket false for every call made after that point. A compressed stream can end before the caller's data does (trailing bytes after the deflate or gzip stream), and the caller has no way to know that in advance, so a push made after the end must become a no-op that reports the recorded outcome instead: once the stream has ended, push returns true if the decode finished without error (this.err is Z_OK) and false if it failed, whatever data or flush mode it is given, and it leaves `err`, `msg` and `result` exactly as they were, so the delivered result survives any trailing chunks and a failed stream keeps reporting failure. Make `ended` a public, documented property so callers can check it, and document the new push behaviour in its JSDoc. Pushes before the end, the onData and onEnd callbacks, the one-shot inflate helpers and everything else are unchanged. The project's full check (npm test: lint, build, type-check and the node test suite) must keep passing; change only src/inflate.ts (a CHANGELOG entry is welcome but not required) and do not edit tests or benchmarks.",
   },
   {
     id: "pako-refactor-options-default-param",
@@ -102,7 +96,7 @@ export const tasks = [
         { pattern: "options\\?: InflateOptions\\b", files: ["src/inflate.ts"], count: 0 },
         { pattern: "options\\?: DeflateOptions\\b", files: ["src/deflate.ts"], count: 0 },
         { pattern: "options: InflateOptions = \\{\\}", files: ["src/inflate.ts"], count: 1 },
-        { pattern: "options: DeflateOptions = \\{\\}", files: ["src/deflate.ts"], count: 1 },
+        { pattern: "options: DeflateOptions = \\{\\}", files: ["src/deflate.ts"], count: 4 },
         { pattern: "options: O = \\{\\} as O", files: ["src/inflate.ts"], count: 3 },
         { pattern: "options\\?: O\\b", files: ["src/inflate.ts"], count: 0 },
       ],
@@ -110,7 +104,7 @@ export const tasks = [
     },
     immutable: ["test", "benchmark"],
     taskText:
-      "In src/inflate.ts and src/deflate.ts the `options` parameter is declared optional (`options?: InflateOptions`, `options?: DeflateOptions`, and `options?: O` on the inflate, inflateRaw and ungzip helpers) and every use guards against its absence with `options || {}`, `options ?? {}` or an `options && options.windowBits` test. Refactor both files so the parameter carries a default value instead and the guards go: the two class constructors declare `options: InflateOptions = {}` and `options: DeflateOptions = {}` and pass `options` straight to Object.assign; the three helper functions in inflate.ts declare `options: O = {} as O` (their generic parameter `O` loses its `= {}` default, since the value now has one) and pass `options` straight through, reading `options.toText` and `options.windowBits` directly with no intermediate `opts` variable and no truthiness guard on `options` itself. Structural requirements, each checked by regular expression after the change: `options || {}` and `options ?? {}` occur zero times across the two files; `options?: InflateOptions`, `options?: DeflateOptions` and `options?: O` occur zero times; `options: InflateOptions = {}` occurs exactly once in src/inflate.ts, `options: DeflateOptions = {}` exactly once in src/deflate.ts, and `options: O = {} as O` exactly three times in src/inflate.ts. Behaviour must be unchanged for every caller, with and without options, and the project's full check (npm test: lint, build, type-check and the node test suite) must pass as it does today. Change nothing outside these two files; do not edit tests, benchmarks or the build.",
+      "In src/inflate.ts and src/deflate.ts the `options` parameter is declared optional (`options?: InflateOptions`, `options?: DeflateOptions`, and `options?: O` on the inflate, inflateRaw and ungzip helpers) and every use guards against its absence with `options || {}`, `options ?? {}` or an `options && options.windowBits` test. Refactor both files so the parameter carries a default value instead and the guards go: the two class constructors declare `options: InflateOptions = {}` and `options: DeflateOptions = {}` and pass `options` straight to Object.assign; the three helper functions in inflate.ts declare `options: O = {} as O` (their generic parameter `O` loses its `= {}` default, since the value now has one) and pass `options` straight through, reading `options.toText` and `options.windowBits` directly with no intermediate `opts` variable and no truthiness guard on `options` itself. Structural requirements, each checked by regular expression after the change: `options || {}` and `options ?? {}` occur zero times across the two files; `options?: InflateOptions`, `options?: DeflateOptions` and `options?: O` occur zero times; `options: InflateOptions = {}` occurs exactly once in src/inflate.ts, `options: DeflateOptions = {}` exactly four times in src/deflate.ts (the constructor and the three helpers that already carry it), and `options: O = {} as O` exactly three times in src/inflate.ts. Behaviour must be unchanged for every caller, with and without options, and the project's full check (npm test: lint, build, type-check and the node test suite) must pass as it does today. Change nothing outside these two files; do not edit tests, benchmarks or the build.",
   },
   {
     id: "csstree-upgrade-esbuild-0-24",
@@ -166,7 +160,7 @@ export const calibrationTasks = [
       path: "acceptance/visible/check.mjs",
       command: "node acceptance/visible/check.mjs",
       source:
-        "import assert from 'node:assert/strict';\nimport { createRequire } from 'node:module';\n\nconst { ArgumentParser } = createRequire(import.meta.url)('../../lib/argparse.js');\n\nfunction parse(type, value) {\n  const parser = new ArgumentParser({ exit_on_error: false });\n  parser.add_argument('--v', { type });\n  return parser.parse_args(['--v', value]).v;\n}\n\n// Python's float() spellings the port must accept.\nassert.equal(parse('float', 'inf'), Infinity);\nassert.equal(parse('float', '-Infinity'), -Infinity);\nassert.ok(Number.isNaN(parse('float', 'nan')));\nassert.equal(parse('float', '1_000'), 1000);\n// And one it must reject.\nassert.throws(() => parse('float', '1,5'));\n// int('-0') is 0, never negative zero.\nassert.ok(Object.is(parse('int', '-0'), 0));\n\nconsole.log('visible check passed');\n",
+        "import assert from 'node:assert/strict'\nimport { createRequire } from 'node:module'\n\nconst { ArgumentParser } = createRequire(import.meta.url)('../../lib/argparse.js')\n\nfunction parse (type, value) {\n  const parser = new ArgumentParser({ exit_on_error: false })\n  parser.add_argument('--v', { type })\n  return parser.parse_args([`--v=${value}`]).v\n}\n\n// Python's float() spellings the port must accept.\nassert.equal(parse('float', 'inf'), Infinity)\nassert.equal(parse('float', '-Infinity'), -Infinity)\nassert.ok(Number.isNaN(parse('float', 'nan')))\nassert.equal(parse('float', '1_000'), 1000)\n// And one it must reject.\nassert.throws(() => parse('float', '1,5'))\n// int('-0') is 0, never negative zero.\nassert.ok(Object.is(parse('int', '-0'), 0))\n\nconsole.log('visible check passed')\n",
     },
     hidden: {
       testFiles: ["test/test_port.js"],
@@ -197,8 +191,8 @@ export function stageTasks(stage) {
 export const wrongPatches = {
   "mime-bugfix-gettype-line-terminators":
     "--- a/src/Mime.ts\n+++ b/src/Mime.ts\n@@ -72,6 +72,7 @@ export default class Mime {\n   getType(path: string) {\n     if (typeof path !== 'string') return null;\n \n+    path = path.replace(/[\\r\\n]/g, '');\n     // Remove chars preceeding `/` or `\\`\n     const last = path.replace(/^.*[/\\\\]/, '').toLowerCase();\n \n",
-  "csstree-feature-parser-list-option":
-    "--- a/lib/parser/create.js\n+++ b/lib/parser/create.js\n@@ -372,6 +372,10 @@ export function createParser(config) {\n         }\n \n         const ast = parser.context[context].call(parser, options);\n+        // Only the root children are converted; nested nodes keep their lists.\n+        if ('list' in options && !options.list && ast.children && typeof ast.children.toArray === 'function') {\n+            ast.children = ast.children.toArray();\n+        }\n \n         if (!parser.eof) {\n             onParseError(new SyntaxError('Unexpected input', source, parser.tokenStart), ast);\n",
+  "pako-feature-inflate-push-after-end":
+    "--- a/src/inflate.ts\n+++ b/src/inflate.ts\n@@ -206,7 +206,7 @@ class Inflate {\n     let _flush_mode: Z_FlushMode;\n     let last_avail_out: number;\n \n-    if (this.ended) return false;\n+    if (this.ended) return true;\n \n     if (typeof flush_mode === 'number') _flush_mode = flush_mode;\n     else _flush_mode = flush_mode === true ? Z_FINISH : Z_NO_FLUSH;\n",
   "pako-refactor-options-default-param":
     "--- a/src/deflate.ts\n+++ b/src/deflate.ts\n@@ -158,8 +158,8 @@ class Deflate {\n    * console.log(deflate.result);\n    * ```\n    */\n-  constructor(options?: DeflateOptions) {\n-    this.options = Object.assign({}, defaultOptions, options || {});\n+  constructor(options: DeflateOptions = {}) {\n+    this.options = Object.assign({}, defaultOptions, options);\n \n     const opt = this.options;\n \n",
   "csstree-upgrade-esbuild-0-24":

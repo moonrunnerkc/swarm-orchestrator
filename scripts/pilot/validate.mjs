@@ -80,10 +80,17 @@ for (const task of tasks) {
 
     // The reference. Under the amendment the maintainer's own commit and the task-compliant
     // rewrite are both measured and both reported.
-    const compliant =
-      amended && task.hidden.upgrade?.some((one) => one.declared !== undefined)
+    const exactDeclarations = (task.hidden.upgrade ?? []).filter(
+      (one) => one.declared !== undefined,
+    );
+    const compliant = amended
+      ? exactDeclarations.length > 0
         ? taskCompliantReference(historical)
-        : historical;
+        : historical
+      : exactDeclarations.reduce(
+          (patch, dependency) => exactlyDeclaredReference(patch, dependency),
+          historical,
+        );
     const referenceVisible = await visibleVerdict(log, task, base, compliant);
     const referenceHidden = await hiddenVerdict(log, task, base, upstream, compliant);
     row.reference = {
@@ -167,3 +174,20 @@ if (args.has("out"))
     )}\n`,
   );
 process.exitCode = rows.every((row) => row.valid) ? 0 : 1;
+
+/**
+ * A maintainer's upgrade that declared a range, rewritten to the exact declaration the task
+ * requires, in package.json and the lockfile's root entry and nowhere else: the resolved and
+ * installed version, the integrity hashes and the tree are the maintainer's own. Two
+ * declarations and exactly two, or the reference is not the shape this rewrite is for.
+ */
+function exactlyDeclaredReference(referencePatch, dependency) {
+  const escaped = dependency.version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const range = new RegExp(`^(\\+\\s+"${dependency.name}": )"\\^${escaped}",$`, "gm");
+  const count = (referencePatch.match(range) ?? []).length;
+  if (count !== 2)
+    throw new Error(
+      `the reference patch carries ${count} range declaration(s) of ${dependency.name}, not the 2 an exact-declaration task rewrites`,
+    );
+  return referencePatch.replace(range, `$1"${dependency.declared}",`);
+}
