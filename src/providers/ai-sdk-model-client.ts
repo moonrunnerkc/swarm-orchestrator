@@ -126,6 +126,14 @@ async function streamOnce(
     if (part.type === "text-delta" && request.onText !== undefined) {
       request.onText(part.text);
     }
+    // A tool call's arguments stream the same way, and a spiral inside them is the same
+    // spiral: handed to the watcher as they arrive rather than read whole at the end.
+    if (part.type === "tool-input-delta" && request.onToolInput !== undefined) {
+      request.onToolInput(part.delta);
+    }
+    if (part.type === "reasoning-delta" && request.onReasoning !== undefined) {
+      request.onReasoning(part.text);
+    }
   }
 
   const usage = await result.usage;

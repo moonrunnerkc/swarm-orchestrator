@@ -3,8 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import type { PolicyGuard } from "../tools/policy-guard.ts";
+import { currentChildHome } from "./child-home.ts";
 import { recordExecutionEnvelope } from "./execution-envelope-record.ts";
 import {
+  type ChildHomeState,
   describeExecutionEnvelope,
   type ExecutionEnvelope,
   hostExecutionBackend,
@@ -38,6 +40,7 @@ export async function establishExecutionEnvelope(input: {
       workspaceRoot: input.guard.workspaceRoot,
       withheldEnvironmentNames: input.guard.childEnvironment.withheld,
       childHome: input.guard.childEnvironment.variables.HOME,
+      childHomeState: childHomeStateFor(input.guard.childEnvironment.variables.HOME),
       repositoryConfigTrusted: input.repositoryConfigTrusted,
     });
 
@@ -48,14 +51,34 @@ export async function establishExecutionEnvelope(input: {
   }
 }
 
+/**
+ * How the run came by the child HOME it is about to record, where that HOME is the one this
+ * process established: a reader of two bundles can then tell a private home from a shared one
+ * named by a supervisor, and a resumed home from a fresh one.
+ */
+function childHomeStateFor(home: string | undefined): ChildHomeState | undefined {
+  const established = currentChildHome();
+  if (established === null || established.path !== home) return undefined;
+  return {
+    mode: established.mode,
+    origin: established.origin,
+    runId: established.runId,
+    npmCache: established.npmCache,
+  };
+}
+
 /** What a person is told before the run starts. Never the word "guard" for a lexical policy. */
 export function describeEnvelopeForReader(envelope: ExecutionEnvelope): readonly string[] {
+  const state =
+    envelope.childHomeState === undefined
+      ? ""
+      : ` (${envelope.childHomeState.mode}, ${envelope.childHomeState.origin})`;
   const lines = [
     `execution mode: ${envelope.mode} (backend: ${envelope.backend})`,
     `  ${envelope.summary}`,
     `  writable: ${envelope.writablePaths.join(", ")}`,
     `  network: ${envelope.network}`,
-    `  environment: ${envelope.environmentPolicy}, ${envelope.credentialNamesWithheld} names withheld from child processes${envelope.childHome === null ? "" : `, child HOME ${envelope.childHome}`}`,
+    `  environment: ${envelope.environmentPolicy}, ${envelope.credentialNamesWithheld} names withheld from child processes${envelope.childHome === null ? "" : `, child HOME ${envelope.childHome}${state}`}`,
     `  repository configuration trusted: ${envelope.repositoryConfigTrusted ? "yes" : "no"}`,
   ];
   if (envelope.mode !== "isolated") {

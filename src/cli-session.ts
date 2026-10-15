@@ -27,6 +27,7 @@ import {
   type EvidenceRecorder,
   openEvidenceSession,
 } from "./evidence/session.ts";
+import { establishRunChildHome, releaseRunChildHome } from "./exec/child-home.ts";
 import { parseIsolationOption } from "./exec/isolation-option.ts";
 import { recordedContainerBackend } from "./exec/runtime-resource.ts";
 import { defaultDiffBudget, sealAssembledCriteria } from "./gates/engine.ts";
@@ -93,6 +94,8 @@ export async function session(options: SessionCommand): Promise<number> {
     sessionId: createSessionId(clock, random),
     clock,
   });
+  // Every turn's children, gates and repairs read one HOME of this session's own.
+  const childHome = establishRunChildHome({ runId: evidence.sessionId });
   // Before the screen goes up, so it stays on the scrollback. The model is chosen per task,
   // so the card names it only where a pin has already decided it.
   for (const line of describePreflight({
@@ -170,6 +173,7 @@ export async function session(options: SessionCommand): Promise<number> {
     }
     await ui.stop();
     closeTaskReader();
+    releaseRunChildHome(childHome, { keep: false });
   }
 
   if (turns === 0) {

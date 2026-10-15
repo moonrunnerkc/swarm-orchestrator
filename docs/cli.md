@@ -233,6 +233,27 @@ Intent is written before every effect, so a crash between the two is visible rat
 invisible, and idempotency is keyed on the work rather than a clock, so resuming does not repeat
 an effect that already committed.
 
+## The HOME a run's child processes get
+
+Every command a run spawns (the model's shell calls, the gates, each repair attempt, the final
+independent verification) runs with a HOME that is private to that run: a directory under the
+system scratch named after the run id, created once when the run starts and removed when the run
+finishes. Two runs never share it, two runs at once never meet in it, and a browser one run's
+test suite downloads is not there for the next run. The run's evidence records which home it
+had, whether it was private or named by a caller, and whether it was fresh or taken up again.
+This is state separation, not containment: a child can still reach any path the host lets it.
+
+- An interrupted run keeps its home, and `swarm resume <run-id>` takes it back after checking
+  that the directory's ownership marker names that run and that no other live process holds it.
+  A home that is gone by then is made fresh, and the record says so.
+- `swarm gc` lists homes no run holds any more, and removes them with `--remove`.
+- `SWARM_CHILD_HOME=<absolute path>` names the home instead. That is a caller's choice to reuse
+  or share a directory, recorded as `explicit`; the run never removes it, and a relative path is
+  refused before anything runs.
+- The one thing private homes share is npm's content-addressed package store, linked in under
+  `~/.npm/_cacache`, so a run does not download every package again. The store holds bytes
+  keyed by their hash; everything else npm or any tool writes under HOME stays with the run.
+
 ## Credentials
 
 Set `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` for a frontier model,
@@ -247,6 +268,12 @@ repository, and a file naming one is refused with rotation guidance.
 One optional file: providers and endpoints, gate definitions, budgets, model pins, and the
 `[interface]`, `[theme]` and `[keys]` tables. Flags win over the file. Settings are described in
 [using.md](using.md); two are worth knowing before you need them.
+
+A run reads the workspace's file once, before the model is asked for anything, and its final
+independent verification judges the fresh checkout by the same `[gates]` commands the run was
+configured with. `swarm ci` and `swarm-verify ci` read the file as committed at the base commit
+and never the candidate's copy, so a patch cannot redefine the checks it is judged by; the
+report's `configuration:` line names which applied.
 
 ```toml
 [providers]

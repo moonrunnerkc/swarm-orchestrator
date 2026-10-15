@@ -5,7 +5,9 @@ import { describeOracleBond } from "./cli-bond-report.ts";
 import { createSystemClock } from "./cli-runtime-inputs.ts";
 import { withVerificationEvidence } from "./cli-verification-evidence.ts";
 import type { CiCommand } from "./cli-verify-options.ts";
+import { parseSwarmToml, swarmTomlFileName } from "./config/swarm-toml.ts";
 import type { Clock } from "./core/clock.ts";
+import { digestOfBytes } from "./evidence/canonical-json.ts";
 import { challengeLines } from "./evidence/challenge-lines.ts";
 import { renderCiSummary } from "./evidence/ci-summary.ts";
 import { declareGoalContract } from "./evidence/goal-contract.ts";
@@ -132,6 +134,18 @@ async function verifyPatchUnderCancellation(
     provenance: ["tool-output"],
     payload: JSON.parse(JSON.stringify(sourceIdentity)),
   });
+  const baseConfiguration = await readBaseConfiguration(
+    preparationCommands,
+    options.workspace,
+    baseCommit,
+    patch,
+  );
+  await evidence.record({
+    type: "verification-command",
+    actor: "harness",
+    provenance: ["tool-output"],
+    payload: { rule: "base-configuration-v1", ...baseConfiguration },
+  });
   const goalContract =
     options.goalContract === undefined
       ? undefined
@@ -167,12 +181,17 @@ async function verifyPatchUnderCancellation(
       checkoutRoot: evidence.directory,
       baseCommit,
       patch,
-      ...(options.packages === undefined && options.lockfile === undefined
+      ...(options.packages === undefined &&
+      options.lockfile === undefined &&
+      baseConfiguration.overrides === null
         ? {}
         : {
             gateOptions: {
               ...(options.packages === undefined ? {} : { packages: options.packages }),
               ...(options.lockfile === undefined ? {} : { lockfile: options.lockfile }),
+              ...(baseConfiguration.overrides === null
+                ? {}
+                : { commandOverrides: baseConfiguration.overrides }),
             },
           }),
       ...(acceptance === undefined ? {} : { acceptance }),
@@ -234,12 +253,12 @@ async function verifyPatchUnderCancellation(
     );
   if (options.json) {
     process.stdout.write(
-      `${scrubText(JSON.stringify({ schema: "swarm.ci.v1", changedPaths, assessmentDigest, sourceIdentity, baseCommit, executionTrust, bundleDirectory, ...result })).value}\n`,
+      `${scrubText(JSON.stringify({ schema: "swarm.ci.v1", changedPaths, assessmentDigest, sourceIdentity, baseCommit, executionTrust, bundleDirectory, baseConfiguration, ...result })).value}\n`,
     );
     return result.verified ? exitCodes.acceptable : exitCodes.notAcceptable;
   }
 
-  process.stdout.write(`base: ${baseCommit}\n`);
+  process.stdout.write(`base: ${baseCommit}\n${describeBaseConfiguration(baseConfiguration)}\n`);
   if (result.refusal !== null) {
     process.stdout.write(`refused: ${result.refusal}\n`);
     return exitCodes.notAcceptable;
@@ -314,6 +333,74 @@ function describeSetAside(
   }
   const named = setAside.slice(0, 6).map((file) => `${file.path} (${file.reason})`);
   return `\n  reach set aside: ${named.join(", ")}${setAside.length > 6 ? ", ..." : ""}`;
+}
+
+interface BaseConfiguration {
+  readonly file: string;
+  /** Whether the base commit holds the file at all. */
+  readonly present: boolean;
+  readonly digest: string | null;
+  /** The gate overrides the base's file declares, or null where there are none to apply. */
+  readonly overrides: Readonly<
+    Record<string, import("./gates/gate-definition.ts").GateOverride>
+  > | null;
+  /** Whether the candidate patch touches the file: a change this verification does not read. */
+  readonly changedByPatch: boolean;
+}
+
+/**
+ * The gate overrides the base commit's own swarm.toml declares, read from that commit and
+ * never from the candidate: the file travels with the repository, so the merge target's copy
+ * is the project's trusted configuration, and a patch that rewrites it to a weaker command is
+ * exactly the patch that must not be judged by it. A run reads the workspace's file, which is
+ * the same file where the workspace is at the base; here the checkout is fresh and the only
+ * copy a candidate could reach is its own, so the base's is read explicitly.
+ */
+async function readBaseConfiguration(
+  commands: ReturnType<typeof createNodeCommandRunner>,
+  workspace: string,
+  baseCommit: string,
+  patch: string,
+): Promise<BaseConfiguration> {
+  const changedByPatch = pathsInPatch(patch).includes(swarmTomlFileName);
+  const shown = await commands.runVouched(["git", "show", `${baseCommit}:${swarmTomlFileName}`], {
+    cwd: workspace,
+    timeoutMs: 30_000,
+  });
+  if (shown.exitCode !== 0)
+    return {
+      file: swarmTomlFileName,
+      present: false,
+      digest: null,
+      overrides: null,
+      changedByPatch,
+    };
+  const parsed = parseSwarmToml(shown.stdout, `${baseCommit}:${swarmTomlFileName}`);
+  return {
+    file: swarmTomlFileName,
+    present: true,
+    digest: digestOfBytes(shown.stdout),
+    overrides: Object.keys(parsed.gates).length === 0 ? null : parsed.gates,
+    changedByPatch,
+  };
+}
+
+function describeBaseConfiguration(configuration: BaseConfiguration): string {
+  const source =
+    configuration.overrides === null
+      ? configuration.present
+        ? `checks from the manifests; the base's ${configuration.file} overrides no gate`
+        : `checks from the manifests; the base has no ${configuration.file}`
+      : `checks from the base's ${configuration.file}: ${Object.entries(configuration.overrides)
+          .map(
+            ([id, override]) =>
+              `${id} = ${typeof override === "string" ? override : override.command}`,
+          )
+          .join(", ")}`;
+  const ignored = configuration.changedByPatch
+    ? `; the patch changes ${configuration.file}, and that change does not decide the checks`
+    : "";
+  return `configuration: ${source}${ignored}`;
 }
 
 function readAgentStream(text: string, format: "generic" | "claude-code") {

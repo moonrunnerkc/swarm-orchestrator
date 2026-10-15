@@ -631,7 +631,8 @@ it("dispatches one explicit alternate after repeated observed failure and stops 
     .records()
     .find((record) => record.type === "model-call" && record.actor === "fixture:alternate");
   const prompt = JSON.stringify(evidence.payloads().get(alternateCall?.payloadDigest ?? ""));
-  expect(prompt).toContain("Candidate patch: sha256:");
+  expect(prompt).toContain("Your current change against it is recorded as sha256:");
+  expect(prompt).not.toContain("Candidate patch:");
   expect(prompt).toContain("Remaining model allowance:");
   expect(prompt).toContain("Prior checked attempt:");
   expect(result.green).toBe(false);
@@ -873,5 +874,80 @@ describe("what a repair attempt is handed about the loop before it", () => {
       .map((record) => JSON.stringify(evidence.payloads().get(record.payloadDigest)));
     expect(prompts.at(-1)).toContain("Account of the previous loop");
     expect(prompts[0]).not.toContain("Account of the previous loop");
+  });
+});
+
+describe("an answer the model already has", () => {
+  it("is handed back as a notice in the answer's place, while the ledger keeps every result whole", async () => {
+    const inspection = (callId: string) =>
+      respondWithToolCalls("checking the manifest", [
+        { callId, toolName: "read", input: { path: "src/greet.js" } },
+      ]);
+    const fixture = createFixtureModelClient({
+      modelId: "fixture:worker",
+      turns: Array.from({ length: 12 }, (_, index) => inspection(`look-${index}`)),
+    });
+    const result = await task([], {
+      maxSteps: 20,
+      model: createRecordingModelClient(fixture, evidence),
+    });
+    expect(result.loop.stopReason).toBe("stalled");
+
+    // What each call carried as the last tool answer: the file once, the notice after.
+    const lastToolOutput = (request: ModelRequest): string => {
+      const turn = request.messages.findLast((message) => message.role === "tool");
+      return turn?.role === "tool" ? (turn.outcomes[0]?.output ?? "") : "";
+    };
+    expect(lastToolOutput(fixture.requests[1] as ModelRequest)).toContain("return 'hello'");
+    expect(lastToolOutput(fixture.requests[2] as ModelRequest)).toContain(
+      "[harness notice: already answered]",
+    );
+    expect(lastToolOutput(fixture.requests[2] as ModelRequest)).toContain("once now");
+    expect(lastToolOutput(fixture.requests[2] as ModelRequest)).not.toContain("return 'hello'");
+    // What the chokepoint recorded for that second call is the file it actually read.
+    const reads = evidence
+      .records()
+      .filter((record) => record.type === "tool-call")
+      .map(
+        (record) =>
+          evidence.payloads().get(record.payloadDigest) as { decision: string; output: string },
+      )
+      .filter((call) => call.decision === "allowed");
+    expect(reads[1]?.output).toContain("return 'hello'");
+  });
+});
+
+describe("a repair attempt with no usable budget", () => {
+  it("is withheld on the record and ends the attempts, rather than run empty and measured", async () => {
+    const result = await task(
+      [
+        respondWithToolCalls("declare", [
+          { callId: "declare", toolName: "declare_file_set", input: { files: ["src/greet.js"] } },
+        ]),
+        respondWithToolCalls("change", [
+          { callId: "break", toolName: "write", input: { path: "src/greet.js", content: broken } },
+        ]),
+        respondWithText("done"),
+        respondWithText("No repair found."),
+        respondWithText("No repair found."),
+      ],
+      // Three answers' worth and nothing to spare: after the first loop fewer tokens remain
+      // than one answer could take, so no attempt can be dispatched honestly.
+      { attempts: 3, maxTokens: 8_000 },
+    );
+
+    expect(result.green).toBe(false);
+    // One attempt recorded as withheld, and the cap not spent on empty loops after it.
+    expect(result.gates.outcome.attempts).toHaveLength(1);
+    const stops = evidence
+      .records()
+      .filter((record) => record.type === "session-stopped")
+      .map((record) => evidence.payloads().get(record.payloadDigest) as Record<string, unknown>);
+    expect(stops.filter((stop) => stop.stopReason === "repair-withheld")).toMatchObject([
+      { repair: true, attempt: 1, floor: { maxTokens: 8192 }, remaining: { maxTokens: 7955 } },
+    ]);
+    // The repair turns were never asked for: three model calls, the first loop's and no more.
+    expect(evidence.records().filter((record) => record.type === "model-call")).toHaveLength(3);
+    expect(result.gates.outcome.settled).toBe("escalated");
   });
 });

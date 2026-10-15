@@ -24,6 +24,9 @@ export async function recordExecutionEnvelope(
       environmentPolicy: envelope.environmentPolicy,
       credentialNamesWithheld: envelope.credentialNamesWithheld,
       childHome: envelope.childHome,
+      ...(envelope.childHomeState === undefined
+        ? {}
+        : { childHomeState: { ...envelope.childHomeState } }),
       repositoryConfigTrusted: envelope.repositoryConfigTrusted,
       probes: envelope.probes.map((probe) => ({
         id: probe.id,

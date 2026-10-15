@@ -91,6 +91,11 @@ import {
 } from "./evidence/session.ts";
 import type { RunVerdict } from "./evidence/verdict.ts";
 import { harnessChildEnvironment } from "./exec/child-environment.ts";
+import {
+  collectChildHomes,
+  establishRunChildHome,
+  releaseRunChildHome,
+} from "./exec/child-home.ts";
 import { parseIsolationOption } from "./exec/isolation-option.ts";
 import { recordedContainerBackend } from "./exec/runtime-resource.ts";
 import { createFileSetRegistry } from "./gates/file-set.ts";
@@ -126,6 +131,20 @@ async function collectGarbage(options: GcCommand): Promise<number> {
     remove: options.remove,
   });
   process.stdout.write(`${root}\n${describeCollection(collection, options.remove)}\n`);
+  // Private child homes nobody holds: a run killed before it could release its own, or one
+  // kept for a resumption that never came. The same window and the same ask-first rule.
+  const homes = collectChildHomes({
+    olderThan: olderThanMs(options.olderThan),
+    now: Date.now(),
+    remove: options.remove,
+  });
+  if (homes.length > 0)
+    process.stdout.write(
+      `${options.remove ? "removed" : "would remove"} ${homes.length} unheld child home(s): ${homes
+        .slice(0, 8)
+        .map((home) => home.runId)
+        .join(", ")}${homes.length > 8 ? ", ..." : ""}\n`,
+    );
   return exitCodes.acceptable;
 }
 
@@ -308,6 +327,14 @@ async function run(options: RunCommand): Promise<number> {
     sessionId: createSessionId(clock, random),
     clock,
   });
+  // One HOME for every child of this run: the loop's shells, the gates, each repair attempt
+  // and the final independent verification. A resumption takes the original run's home back,
+  // validated as that run's; a finished run removes it; an interrupted one keeps it to resume.
+  const childHome = establishRunChildHome({
+    runId: evidence.sessionId,
+    ...(options.recovery === undefined ? {} : { resumeOf: options.recovery.source.sessionId }),
+  });
+  let keepChildHome = true;
   if (options.recovery !== undefined)
     await evidence.record({
       type: "session-started",
@@ -464,6 +491,7 @@ async function run(options: RunCommand): Promise<number> {
             },
           })}\n`,
         );
+      releaseRunChildHome(childHome, { keep: false });
       return planning.kind === "declined" ? exitCodes.cancelled : exitCodes.unavailable;
     }
     sealedGoal = planning.contract;
@@ -740,6 +768,7 @@ async function run(options: RunCommand): Promise<number> {
             : { tokensUsed: planning.tokensUsed, durationMs: planning.durationMs },
       },
     });
+    keepChildHome = outcome.resumable;
     for (const line of describeRunOutcome(outcome)) ui.note(line);
     await logReward({
       evidence,
@@ -817,6 +846,7 @@ async function run(options: RunCommand): Promise<number> {
     await ui.stop();
     process.off("SIGINT", onInterrupt);
     process.off("SIGTERM", onInterrupt);
+    releaseRunChildHome(childHome, { keep: keepChildHome });
   }
 }
 

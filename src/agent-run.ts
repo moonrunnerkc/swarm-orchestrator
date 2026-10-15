@@ -646,26 +646,61 @@ async function executeAgentTask(
       // before they could start, and the refusal was then read as the attempt's result. What
       // a cycle costs is what the failing cycle just measured, so that much is held back.
       const reservedForGatesMs = measuredCycleMs(request.cycle);
+      const attemptBudget = {
+        maxTokens: Math.max(
+          0,
+          remainingTokens -
+            (alternate == null ? 0 : (options.escalation?.settings.reservedTokens ?? 0)),
+        ),
+        maxWallTimeMs: Math.max(
+          0,
+          wall.loopBudgetMs() -
+            reservedForGatesMs -
+            (alternate == null ? 0 : (options.escalation?.settings.reserveMs ?? 0)),
+        ),
+      };
+      // An attempt with less than one answer's worth of tokens, or less than a minute, cannot
+      // read a file and change it: two such attempts ran with nothing left, each an empty
+      // loop followed by a full gate cycle over the unchanged tree. Withheld instead, on the
+      // record, and the loop stops at this attempt rather than spending the cap on nothing.
+      // Named as the budget's own fields are: a field called "tokens" is scrubbed as a credential.
+      const floor = {
+        maxTokens: loopDependencies.maxOutputTokens,
+        maxWallTimeMs: Math.min(
+          minimumAttemptWallMs,
+          Math.floor((options.maxWallTimeMs ?? defaultRunWallMs) / attemptWallFraction),
+        ),
+      };
+      if (
+        attemptBudget.maxTokens < floor.maxTokens ||
+        attemptBudget.maxWallTimeMs < floor.maxWallTimeMs
+      ) {
+        await options.evidence.record({
+          type: "session-stopped",
+          actor: "harness",
+          provenance: ["tool-output"],
+          payload: {
+            stopReason: "repair-withheld",
+            repair: true,
+            attempt: request.attempt,
+            remaining: attemptBudget,
+            floor,
+            reservedForGatesMs,
+          },
+        });
+        throw new Error(
+          `repair stopped: no usable budget remains for attempt ${request.attempt}: ` +
+            `${attemptBudget.maxTokens} tokens and ${attemptBudget.maxWallTimeMs} ms left, and an ` +
+            `attempt needs at least ${floor.maxTokens} tokens and ${floor.maxWallTimeMs} ms`,
+        );
+      }
       const account = describePriorLoop(
         priorLoopAccount(latestLoop.messages, latestLoop.stopReason, latestLoop.steps),
       );
       const repair = await resolveWithModel(request, options, account, {
         ...loopDependencies,
         ...(alternate == null ? {} : { model: alternate }),
-        budget: {
-          ...loopDependencies.budget,
-          maxTokens: Math.max(
-            0,
-            remainingTokens -
-              (alternate == null ? 0 : (options.escalation?.settings.reservedTokens ?? 0)),
-          ),
-          maxWallTimeMs: Math.max(
-            0,
-            wall.loopBudgetMs() -
-              reservedForGatesMs -
-              (alternate == null ? 0 : (options.escalation?.settings.reserveMs ?? 0)),
-          ),
-        },
+        budget: { ...loopDependencies.budget, ...attemptBudget },
       });
       if (alternate != null) await escalation?.complete(repair.callsWithUnknownUsage > 0);
       remainingTokens -= repair.tokensUsed;
@@ -774,6 +809,13 @@ function criteriaRefOf(options: AgentTaskOptions): string {
 /** What the spec records where a run named no wall budget of its own. */
 const defaultRunWallMs = 30 * 60 * 1000;
 const defaultRunTokens = 1_000_000;
+/**
+ * The least wall a repair attempt is dispatched with: a minute, or a twentieth of the run's
+ * whole wall where the run is shorter than twenty minutes. Under that a local model answers
+ * once, if at all, and the attempt's gates then run over a tree it never touched.
+ */
+const minimumAttemptWallMs = 60_000;
+const attemptWallFraction = 20;
 
 /**
  * Sealed after the gate set, because the spec names the gates the set assembled, and before the
@@ -1045,7 +1087,10 @@ async function resolveWithModel(
     "skip marker, or lowering coverage of the lines you changed will have the attempt rejected",
     "and will still cost you the attempt.",
     "",
-    `Base source: ${options.baseRef}. Candidate patch: ${candidateDigest}.`,
+    // Named as what it is: the state of the files the attempt will read. Called "candidate
+    // patch" it read as a thing to look for, and an attempt spent its budget searching the
+    // workspace for one.
+    `Base source: ${options.baseRef}. Your current change against it is recorded as ${candidateDigest}; it is the state of the workspace files now, not a file to find.`,
     `Prior checked attempt: ${request.cycle.attempt}. Remaining model allowance: ${loopDependencies.budget.maxTokens} tokens and ${loopDependencies.budget.maxWallTimeMs} ms.`,
     `Immutable requirements: ${JSON.stringify(options.contract?.immutablePaths ?? [])}.`,
     "",

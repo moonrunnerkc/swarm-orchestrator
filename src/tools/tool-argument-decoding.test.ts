@@ -102,3 +102,42 @@ describe("decodeStringifiedToolArguments", () => {
     expect(decoded.decodedFields).toEqual(["edits.0"]);
   });
 });
+
+describe("scalar fields a tool-call parser handed over as strings", () => {
+  const shell = z.object({ command: z.string(), timeoutMs: z.number().int().optional() });
+  const search = z.object({ pattern: z.string(), maxResults: z.number().optional() });
+  const list = z.object({ path: z.string(), recursive: z.boolean().optional() });
+
+  it("decodes a number sent as its own JSON text and names the field", () => {
+    const decoded = decodeStringifiedToolArguments(
+      { command: "npm test", timeoutMs: "300000" },
+      shell,
+    );
+    expect(decoded.input).toEqual({ command: "npm test", timeoutMs: 300000 });
+    expect(decoded.decodedFields).toEqual(["timeoutMs"]);
+    expect(decodeStringifiedToolArguments({ pattern: "x", maxResults: "50" }, search)).toEqual({
+      input: { pattern: "x", maxResults: 50 },
+      decodedFields: ["maxResults"],
+    });
+  });
+
+  it("decodes a boolean sent as its JSON text", () => {
+    const decoded = decodeStringifiedToolArguments({ path: "src", recursive: "true" }, list);
+    expect(decoded.input).toEqual({ path: "src", recursive: true });
+    expect(decoded.decodedFields).toEqual(["recursive"]);
+  });
+
+  it("leaves a string that is not a number's text to the schema's own refusal", () => {
+    for (const timeoutMs of ["300000ms", "", "NaN", "Infinity", "{}"]) {
+      const decoded = decodeStringifiedToolArguments({ command: "npm test", timeoutMs }, shell);
+      expect(decoded.input).toEqual({ command: "npm test", timeoutMs });
+      expect(decoded.decodedFields).toEqual([]);
+    }
+  });
+
+  it("never decodes a field the schema declares as a string, whatever it holds", () => {
+    const decoded = decodeStringifiedToolArguments({ command: "42" }, shell);
+    expect(decoded.input).toEqual({ command: "42" });
+    expect(decoded.decodedFields).toEqual([]);
+  });
+});
