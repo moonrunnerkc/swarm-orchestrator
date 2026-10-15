@@ -129,6 +129,30 @@ describe("what a gate leaves running after it is stopped", () => {
   }, 20_000);
 });
 
+describe("a gate the harness would not start", () => {
+  it("measures nothing and says why, rather than reporting a failure of a command that never ran", async () => {
+    // The wall budget was spent before this gate's turn. The observation used to read as a
+    // failed run with exit 128, and a ratchet compared that failure with the gate's earlier
+    // pass. A gate that never started has no result; what it has is the reason.
+    const stopping = new AbortController();
+    stopping.abort();
+    const refusing = createNodeCommandRunner(
+      { now: () => 0, sleep: () => Promise.resolve() },
+      childEnvironment(process.env, { homeDir: join(workspace, "child-home") }),
+      undefined,
+      stopping.signal,
+    );
+
+    const observation = await refusing.run("node -e 0", { cwd: workspace, timeoutMs: 30_000 });
+
+    expect(observation.unavailable).toBe(
+      "execution refused before spawn: the run was cancelled, so this gate measured nothing",
+    );
+    expect(observation.exitCode).toBe(128);
+    expect(observation.stdout).toBe("");
+  });
+});
+
 describe("what a gate leaves running after the run itself is stopped", () => {
   /**
    * The timeout is not the only way a command stops. A person presses Ctrl-C, a supervisor sends

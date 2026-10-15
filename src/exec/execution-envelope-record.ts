@@ -23,6 +23,7 @@ export async function recordExecutionEnvelope(
       network: envelope.network,
       environmentPolicy: envelope.environmentPolicy,
       credentialNamesWithheld: envelope.credentialNamesWithheld,
+      childHome: envelope.childHome,
       repositoryConfigTrusted: envelope.repositoryConfigTrusted,
       probes: envelope.probes.map((probe) => ({
         id: probe.id,

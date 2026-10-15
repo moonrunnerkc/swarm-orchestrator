@@ -78,6 +78,48 @@ describe("the numeric ratchet", () => {
     expect(decision.violations[0]?.detail).toContain("lint");
   });
 
+  it("abstains by name on a gate the harness could not run, rather than reading the refusal as a regression", () => {
+    // A repair loop spent the last of the wall budget; the candidate's gates were refused
+    // before they could start. Three real runs read that as "passed before and now reports
+    // failed" and undid the attempt as a regression. Nothing moved: nothing was measured.
+    const refusal =
+      "execution refused before spawn: no time remained in the wall budget, so this gate measured nothing";
+    const decision = judgeRatchet(
+      input({
+        baselineGates: { tests: "passed", lint: "passed" },
+        candidateGates: { tests: "not-applicable", lint: "not-applicable" },
+        unmeasuredGates: new Map([
+          ["tests", refusal],
+          ["lint", refusal],
+        ]),
+      }),
+    );
+
+    expect(decision.accepted).toBe(true);
+    expect(decision.violations).toEqual([]);
+    const gates = decision.abstentions.filter((abstention) =>
+      abstention.measure.startsWith("gate:"),
+    );
+    expect(gates.map((abstention) => abstention.measure)).toEqual(["gate:tests", "gate:lint"]);
+    expect(gates[0]?.reason).toContain("could not be run in this attempt");
+    expect(gates[0]?.reason).toContain("no time remained");
+    expect(decision.detail).toContain("not compared: gate:tests, gate:lint");
+  });
+
+  it("still rejects a gate the candidate itself made unavailable, which is a change to the instrument", () => {
+    // The same "not-applicable" status with no refusal behind it: the attempt deleted the test
+    // script from the manifest. That is the regression the gate comparison exists to catch.
+    const decision = judgeRatchet(
+      input({
+        baselineGates: { tests: "passed" },
+        candidateGates: { tests: "not-applicable" },
+      }),
+    );
+
+    expect(decision.accepted).toBe(false);
+    expect(decision.violations[0]?.kind).toBe("gate-regressed");
+  });
+
   it("does not count a gate that was already failing as a regression", () => {
     const decision = judgeRatchet(
       input({

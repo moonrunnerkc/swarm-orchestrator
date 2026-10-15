@@ -37,6 +37,16 @@ describe("guard path containment", () => {
     expect(guard.checkPath("/etc/passwd").allowed).toBe(false);
   });
 
+  it("allows the null device, which holds nothing and keeps nothing", () => {
+    // `2>/dev/null` was refused as a path outside the workspace while `2>&1` beside a `$?`
+    // went through confirmation and ran: the readable spelling denied, the opaque one allowed.
+    const verdict = guard.checkPath("/dev/null");
+    expect(verdict.allowed).toBe(true);
+    expect(verdict.allowed && verdict.absolutePath).toBe("/dev/null");
+    expect(guard.checkPath("/dev/nullx").allowed).toBe(false);
+    expect(guard.checkPath("/dev/null/../etc/passwd").allowed).toBe(false);
+  });
+
   it("refuses a path with a newline in it, which is a filename run into its content", () => {
     // A run asked for "test.mjs\n<" and the workspace got one: not the file anything else
     // referred to, counted against the declared file set, and named in a gate failure as a

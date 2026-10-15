@@ -52,6 +52,9 @@ export const defaultShellAllowlist: readonly string[] = [
   "wc",
 ];
 
+/** The one path outside every workspace a command may name: it holds nothing and keeps nothing. */
+const nullDevice = "/dev/null";
+
 export interface PolicyGuardRules {
   readonly workspaceRoot: string;
   readonly homeDir: string;
@@ -137,6 +140,15 @@ export function createPolicyGuard(policy: PolicyGuardRules): PolicyGuard {
             `the path holds a control character (0x${control.code.toString(16).padStart(2, "0")}) ` +
             `at position ${control.at}, so it is not one name. Pass the path on its own.`,
         };
+      }
+
+      // The null device is not a file: reading it yields nothing and writing to it discards.
+      // `2>/dev/null` is the ordinary way a command quiets a stream, and a run refused it
+      // because the device sits outside the workspace, then wrote the same intent as `2>&1`
+      // beside a `$?`, which this reader cannot settle and so sends to confirmation. A policy
+      // that denies the readable spelling and confirms the opaque one has the two backwards.
+      if (candidate.trim() === nullDevice) {
+        return { allowed: true, absolutePath: nullDevice };
       }
 
       const named = expandHome(candidate.trim(), homeDirectory);

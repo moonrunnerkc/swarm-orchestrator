@@ -8,7 +8,7 @@ import {
 } from "../exec/child-environment.ts";
 import type { IsolationBackend } from "../exec/execution-mode.ts";
 import type { ResourcePool } from "../exec/resource-pool.ts";
-import { runProcessGroup } from "../exec/run-process.ts";
+import { refusedBeforeSpawn, runProcessGroup } from "../exec/run-process.ts";
 import {
   type CommandOptions,
   type GateCommandRunner,
@@ -127,8 +127,11 @@ export function createNodeCommandRunner(
     const durationMs = clock.now() - startedAt;
 
     if (ran.startFailure !== null) {
+      // A program that could not be found and a program the harness refused to start are both
+      // start failures, and neither measured anything. They keep their own exit codes, because
+      // 127 is what a reader expects of an absent program and a refusal is not one.
       return {
-        exitCode: notFoundExitCode,
+        exitCode: ran.startFailure.startsWith(refusedBeforeSpawn) ? 128 : notFoundExitCode,
         stdout: "",
         stderr: ran.startFailure,
         durationMs,

@@ -290,6 +290,11 @@ export interface ExecutionEnvelope {
   readonly environmentPolicy: "built" | "inherited";
   /** How many names the parent held that the child did not get. */
   readonly credentialNamesWithheld: number;
+  /**
+   * The HOME every child process of this run was given, or null where the caller did not say.
+   * Named so a reader can tell whether two runs shared one and what one of them left there.
+   */
+  readonly childHome: string | null;
   /** Whether configuration the repository controls was allowed to decide anything. */
   readonly repositoryConfigTrusted: boolean;
   readonly probes: readonly ContainmentProbe[];
@@ -305,6 +310,7 @@ export function describeExecutionEnvelope(input: {
   readonly selfTest: ContainmentSelfTest;
   readonly workspaceRoot: string;
   readonly withheldEnvironmentNames: readonly string[];
+  readonly childHome?: string | undefined;
   readonly repositoryConfigTrusted: boolean;
   readonly readOnlyPaths?: readonly string[] | undefined;
 }): ExecutionEnvelope {
@@ -322,6 +328,7 @@ export function describeExecutionEnvelope(input: {
           : "unknown",
     environmentPolicy: "built",
     credentialNamesWithheld: input.withheldEnvironmentNames.length,
+    childHome: input.childHome ?? null,
     repositoryConfigTrusted: input.repositoryConfigTrusted,
     probes: input.selfTest.probes,
     summary: input.selfTest.summary,

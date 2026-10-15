@@ -1,11 +1,16 @@
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { isCredentialName } from "../evidence/scrub.ts";
 import {
   childEnvironment,
+  childHomeEnvironmentName,
+  defaultChildHome,
   harnessChildEnvironment,
   overlaidEnvironment,
   UnauthorizableEnvironmentName,
+  UnusableChildHome,
   UnusableToolDirectory,
   withToolDirectories,
 } from "./child-environment.ts";
@@ -149,6 +154,27 @@ describe("what a child process inherits", () => {
       HOME: workerHome,
       TMPDIR: built.variables.TMPDIR,
     });
+  });
+
+  it("gives a run the child HOME a supervisor named, so one run's installs cannot satisfy another's", () => {
+    const named = join(tmpdir(), `swarm-child-home-test-${process.pid}`);
+    try {
+      expect(defaultChildHome({ [childHomeEnvironmentName]: named })).toBe(named);
+      expect(existsSync(named)).toBe(true);
+      expect(harnessChildEnvironment().variables.HOME).not.toBe(named);
+    } finally {
+      rmSync(named, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a relative child HOME rather than resolving it against whatever the cwd is", () => {
+    expect(() => defaultChildHome({ [childHomeEnvironmentName]: "child-home" })).toThrow(
+      UnusableChildHome,
+    );
+    // Blank is the same as unset: the shared default, not a refusal.
+    expect(defaultChildHome({ [childHomeEnvironmentName]: "  " })).toBe(
+      join(tmpdir(), "swarm-child-home"),
+    );
   });
 
   it("names a scratch directory that exists, because a missing one is measured as nothing", () => {

@@ -10,6 +10,7 @@ import { scrubText } from "./evidence/scrub.ts";
 import type { EvidenceRecorder } from "./evidence/session.ts";
 import { createRunCancellation } from "./exec/run-cancellation.ts";
 import { type CheckPlan, planCheck } from "./gates/check-plan.ts";
+import type { GateDefinition } from "./gates/gate-definition.ts";
 import { requireBaseCommit } from "./gates/git-workspace.ts";
 import { untrackedEnvironments } from "./gates/scratch-index.ts";
 import { exitCodes } from "./machine-output.ts";
@@ -38,6 +39,13 @@ export interface CheckConclusions {
     readonly severity: "blocking" | "advisory";
     readonly detail: string;
     readonly measures: Readonly<Record<string, number>>;
+    /**
+     * The command this check ran, after any swarm.toml override, or null for a check that reads
+     * the diff rather than running anything. The plan above says what the manifests declare;
+     * this says what was actually executed, so a supervisor can hold the two against the
+     * command it told the solver about.
+     */
+    readonly command: string | null;
     /** The last lines the command printed, for a check that failed; absent otherwise. */
     readonly output?: string;
   }[];
@@ -246,6 +254,10 @@ function challengesConclusion(): CheckConclusions["challenges"] {
   };
 }
 
+function commandOfGate(gate: GateDefinition | undefined): string | null {
+  return gate !== undefined && gate.source.kind === "command" ? gate.source.command : null;
+}
+
 function reportOf(
   plan: CheckPlan,
   tree: CheckReport["tree"],
@@ -260,6 +272,7 @@ function reportOf(
     severity: run.severity,
     detail: run.detail,
     measures: run.measures,
+    command: commandOfGate(measured.run.gates.find((gate) => gate.id === run.gateId)),
     // "the command exited 1" tells a reader nothing about why; the tail of what the command
     // printed is what they would have read at a terminal. Bounded, and scrubbed with the rest.
     ...(run.status === "failed" && run.kind === "command"

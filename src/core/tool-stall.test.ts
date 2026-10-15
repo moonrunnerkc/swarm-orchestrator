@@ -19,7 +19,7 @@ describe("the stall tracker", () => {
     expect(tracker.observe(inspection(1))).toBeNull();
     expect(tracker.observe(inspection(2))).toBeNull();
     expect(tracker.observe(inspection(3))).toBeNull();
-    expect(tracker.observe(inspection(4))).toEqual({ toolName: "shell", repeats: 3 });
+    expect(tracker.observe(inspection(4))).toMatchObject({ toolName: "shell", repeats: 3 });
   });
 
   it("treats a poll whose answer changes as progress", () => {
@@ -34,7 +34,7 @@ describe("the stall tracker", () => {
     expect(tracker.observe({ ...inspection(2), failed: true })).toBeNull();
     expect(tracker.observe(inspection(3))).toBeNull();
     expect(tracker.observe({ ...inspection(4), failed: true })).toBeNull();
-    expect(tracker.observe(inspection(5))).toEqual({ toolName: "shell", repeats: 3 });
+    expect(tracker.observe(inspection(5))).toMatchObject({ toolName: "shell", repeats: 3 });
   });
 
   it("counts two calls alternated with unchanged answers as the same stall", () => {
@@ -49,7 +49,7 @@ describe("the stall tracker", () => {
     expect(tracker.observe(read(2))).toBeNull();
     expect(tracker.observe(inspection(3))).toBeNull();
     expect(tracker.observe(read(4))).toBeNull();
-    expect(tracker.observe(inspection(5))).toEqual({ toolName: "shell", repeats: 3 });
+    expect(tracker.observe(inspection(5))).toMatchObject({ toolName: "shell", repeats: 3 });
   });
 
   it("starts over after an edit, and again when a reread shows the edit", () => {
@@ -70,7 +70,7 @@ describe("the stall tracker", () => {
     expect(tracker.observe(inspection(5, "exit code: 0\nstdout:\n3.0.4"))).toBeNull();
     expect(tracker.observe(inspection(6, "exit code: 0\nstdout:\n3.0.4"))).toBeNull();
     expect(tracker.observe(inspection(7, "exit code: 0\nstdout:\n3.0.4"))).toBeNull();
-    expect(tracker.observe(inspection(8, "exit code: 0\nstdout:\n3.0.4"))).toEqual({
+    expect(tracker.observe(inspection(8, "exit code: 0\nstdout:\n3.0.4"))).toMatchObject({
       toolName: "shell",
       repeats: 3,
     });
@@ -95,7 +95,7 @@ describe("the stall tracker", () => {
     tracker.observe(call({ pattern: "a", path: "src" }, 1));
     tracker.observe(call({ path: "src", pattern: "a" }, 2));
     tracker.observe(call({ pattern: "a", path: "src" }, 3));
-    expect(tracker.observe(call({ path: "src", pattern: "a" }, 4))).toEqual({
+    expect(tracker.observe(call({ path: "src", pattern: "a" }, 4))).toMatchObject({
       toolName: "search",
       repeats: 3,
     });
@@ -107,13 +107,42 @@ describe("the stall tracker", () => {
     tracker.reset();
     expect(tracker.observe(inspection(5))).toBeNull();
     expect(tracker.observe(inspection(6))).toBeNull();
-    expect(tracker.observe(inspection(7))).toEqual({ toolName: "shell", repeats: 3 });
+    expect(tracker.observe(inspection(7))).toMatchObject({ toolName: "shell", repeats: 3 });
   });
 
-  it("writes a notice that names the harness, the tool and the count", () => {
-    const notice = stallNotice({ toolName: "shell", repeats: 3 });
+  it("writes a notice that names the harness, the tool, the count, the call and its answer", () => {
+    const notice = stallNotice({
+      toolName: "search",
+      repeats: 3,
+      input: '{"path":".","pattern":"emitWsNeeded"}',
+      output: "no match for /emitWsNeeded/",
+    });
     expect(notice.startsWith(stallNoticePrefix)).toBe(true);
-    expect(notice).toContain("The last 4 shell calls");
+    expect(notice).toContain("The last 4 search calls");
+    // A notice that only said "you repeated yourself" was followed by the same search under
+    // another directory and then as a shell grep; the name it kept looking for is what it
+    // has to be told is not there.
+    expect(notice).toContain('search {"path":".","pattern":"emitWsNeeded"}');
+    expect(notice).toContain('began: "no match for /emitWsNeeded/"');
+    expect(notice).toContain("not in this workspace");
     expect(notice).toContain("ends this loop");
+  });
+
+  it("reports the repeated call and its answer with the stall, bounded and without the trailer", () => {
+    const tracker = createStallTracker();
+    const long = "x".repeat(500);
+    let stall = null;
+    for (let index = 0; index < 4; index += 1)
+      stall = tracker.observe({
+        toolName: "search",
+        input: { pattern: long, path: "." },
+        failed: false,
+        output: `no match for /${long}/\n[evidence record sha256:${"0".repeat(64)} kind tool-call:search]`,
+      });
+    expect(stall?.repeats).toBe(3);
+    expect(stall?.input.length).toBeLessThanOrEqual(243);
+    expect(stall?.input.startsWith('{"path":".","pattern":"xxx')).toBe(true);
+    expect(stall?.output.length).toBeLessThanOrEqual(243);
+    expect(stall?.output).not.toContain("evidence record");
   });
 });
