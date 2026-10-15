@@ -118,7 +118,10 @@ function pathsAWordCouldOpen(word: string): readonly string[] {
   // script is still checked.
   const candidates = new Set<string>(/[\r\n]/.test(word) ? [] : [word]);
   for (const piece of word.split(/[\s]+/)) {
-    if (piece.length > 0) {
+    // A piece with no letter or digit (`/`, `//`, `=>`, `{`) is an operator or punctuation
+    // inside a script, not a file the script opens: a bare `/` in a probe resolved to the
+    // filesystem root and refused the whole command. The word itself is still offered whole.
+    if (piece.length > 0 && /[\p{L}\p{N}]/u.test(piece)) {
       candidates.add(piece);
     }
   }

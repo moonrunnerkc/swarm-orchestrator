@@ -64,3 +64,16 @@ describe("a quoted word that holds a script", () => {
     expect(read?.operands.some((operand) => operand.includes("~/.ssh/id_rsa"))).toBe(true);
   });
 });
+
+describe("punctuation inside a script word", () => {
+  it("is not offered as a path, while a bare slash as the whole word still is", () => {
+    const read = readShellCommand(
+      `node -e "const a = 1 / 2; // half\nconsole.log(require('./lib/index.js'))"`,
+    );
+    expect(read?.operands).not.toContain("/");
+    expect(read?.operands).not.toContain("//");
+    expect(read?.operands.some((operand) => operand.includes("./lib/index.js"))).toBe(true);
+    // The word on its own names the root, and is still checked as a path.
+    expect(readShellCommand("ls /")?.operands).toEqual(["/"]);
+  });
+});
