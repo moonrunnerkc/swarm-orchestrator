@@ -1,10 +1,12 @@
 import { z } from "zod";
 import { escalationEventSchema } from "../agent-escalation.ts";
 import type { ConversationMessage } from "../core/model-client.ts";
+import type { JsonValue } from "../evidence/canonical-json.ts";
 import { freezeGoalContract, isRootDeclaration } from "../evidence/goal-contract.ts";
 import { hashOfRecord } from "../evidence/ledger-record.ts";
 import { parseRunSpec } from "../evidence/run-spec.ts";
 import { reconstructTranscript } from "../evidence/transcript.ts";
+import { replayFileSet } from "../gates/file-set.ts";
 import { gateSetSealSchema } from "../gates/gate-set-seal.ts";
 import { assertGoalEffectsSettled } from "../gates/goal-effects.ts";
 import { readSessionEvidence } from "./session-evidence.ts";
@@ -167,14 +169,27 @@ export async function recoveryContext(sessionRoot: string, runId: string, now = 
     });
     if (outcomes.length > 0) history.push({ role: "tool", outcomes });
   }
-  if (calls.some((record) => payloads.get(record.payloadDigest)?.usageStatus === "unknown"))
-    throw new Error(
-      "provider usage is unknown in this run; a continuation cannot reconstruct the remaining sealed token budget",
-    );
-  const tokensUsed = calls.reduce((sum, record) => {
+  // A call the harness itself cancelled (an interruption, the wall) reported no usage, and its
+  // cost is bounded by what it was asked for: it is charged at the bound its record carries,
+  // and the charge is named on the continuation. A call whose usage is unknown for any other
+  // reason has no bound on the record and still refuses the continuation.
+  const chargedForCancelledCalls = { calls: 0, tokens: 0 };
+  for (const record of calls) {
     const call = payloads.get(record.payloadDigest);
-    return sum + Number(call?.inputTokens ?? 0) + Number(call?.outputTokens ?? 0);
-  }, 0);
+    if (call?.usageStatus !== "unknown") continue;
+    const bound = requestBoundSchema.safeParse(call.requestBound);
+    if (call.cancelled !== true || !bound.success)
+      throw new Error(
+        "provider usage is unknown in this run; a continuation cannot reconstruct the remaining sealed token budget",
+      );
+    chargedForCancelledCalls.calls += 1;
+    chargedForCancelledCalls.tokens += bound.data.reservedTokens;
+  }
+  const tokensUsed =
+    calls.reduce((sum, record) => {
+      const call = payloads.get(record.payloadDigest);
+      return sum + Number(call?.inputTokens ?? 0) + Number(call?.outputTokens ?? 0);
+    }, 0) + chargedForCancelledCalls.tokens;
   const ambiguous = pending.filter((call) => !["read", "list", "search"].includes(call.toolName));
   if (ambiguous.length > 0)
     throw new Error(
@@ -182,6 +197,22 @@ export async function recoveryContext(sessionRoot: string, runId: string, now = 
     );
   const started = parsed.records[0]?.timestamp;
   const lastTimestamp = parsed.records.at(-1)?.timestamp;
+  const childHomeOwner = childHomeOwnerOf(parsed.records, payloads, runId);
+  // The endpoint the run was pinned to, so a continuation reaches the same server rather than
+  // whichever one discovery finds first; a run that let discovery choose records no pin.
+  const endpointRecord = parsed.records.find((record) => record.type === "local-endpoint");
+  const endpoint = localEndpointSchema.safeParse(payloads.get(endpointRecord?.payloadDigest ?? ""));
+  const localEndpoint =
+    endpoint.success && endpoint.data.origin === "flag" ? endpoint.data.url : null;
+  // The files the run was authorized to edit, declared and amended on its chain. A continuation
+  // opens a new chain, and a write there before a declaration is a write before authorization,
+  // so the continuation re-declares this set first, naming the session it came from.
+  const fileSet = replayFileSet({
+    records: () => parsed.records,
+    // Parsed JSON blobs are JSON values; the reader types them as records for field access.
+    payloads: () => payloads as ReadonlyMap<string, JsonValue>,
+  });
+  const declaredFiles = fileSet.wasDeclared ? [...fileSet.allowed] : [];
   const elapsed =
     started === undefined || lastTimestamp === undefined
       ? spec.budgets.maxWallMs
@@ -220,5 +251,41 @@ export async function recoveryContext(sessionRoot: string, runId: string, now = 
     escalationCount,
     remainingTokens: Math.max(0, spec.budgets.maxTokens - tokensUsed),
     pending,
+    childHomeOwner,
+    chargedForCancelledCalls,
+    localEndpoint,
+    declaredFiles,
   };
+}
+
+const localEndpointSchema = z.object({ origin: z.string(), url: z.string().url() });
+
+const requestBoundSchema = z.object({
+  reservedTokens: z.number().int().nonnegative(),
+  maxOutputTokens: z.number().int().nonnegative(),
+});
+
+const childHomeStateSchema = z.object({
+  mode: z.enum(["private", "explicit"]),
+  runId: z.string().min(1),
+});
+
+/**
+ * The run whose private child HOME a continuation takes back. A session that was itself a
+ * continuation recorded the original run's id in its execution envelope, and that is the home
+ * that holds the state; resuming under the intermediate session's own id would allocate a
+ * fresh home beside it and read the original's absence as "recreated". A session with no
+ * envelope, or one that ran under a caller-named home, has nothing of its own to hand on, so
+ * its own id stands.
+ */
+export function childHomeOwnerOf(
+  records: readonly { readonly type: string; readonly payloadDigest: string }[],
+  payloads: ReadonlyMap<string, Record<string, unknown>>,
+  runId: string,
+): string {
+  const envelope = records.find((record) => record.type === "execution-envelope");
+  const state = childHomeStateSchema.safeParse(
+    payloads.get(envelope?.payloadDigest ?? "")?.childHomeState,
+  );
+  return state.success && state.data.mode === "private" ? state.data.runId : runId;
 }
