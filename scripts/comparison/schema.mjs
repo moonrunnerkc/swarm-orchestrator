@@ -84,6 +84,23 @@ export const invocationSchema = z.strictObject({
   stdoutDigest: digest,
   stderrDigest: digest,
   tokens: z.number().int().nonnegative().nullable(),
+  /**
+   * The same spend by kind as the arm reports it: input and output, and inside them reasoning
+   * and cached tokens where the provider exposes them (null where it does not). Absent on records
+   * written before the arms' streams carried the breakdown; null where the arm reported none.
+   */
+  usage: z
+    .strictObject({
+      input: z.number().int().nonnegative(),
+      output: z.number().int().nonnegative(),
+      reasoning: z.number().int().nonnegative().nullable(),
+      cacheRead: z.number().int().nonnegative().nullable(),
+      cacheWrite: z.number().int().nonnegative().nullable(),
+    })
+    .nullable()
+    .optional(),
+  /** The allowance this invocation was launched with: what the earlier ones left of the launch's cap (Swarm only). */
+  tokenAllowance: z.number().int().nonnegative().nullable().optional(),
   /** The arm's own account of finishing: swarm's verdict, opencode's exit; never the truth. */
   claimedSuccess: z.boolean(),
   visible: z.strictObject({

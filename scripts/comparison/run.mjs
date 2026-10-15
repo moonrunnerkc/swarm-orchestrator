@@ -31,13 +31,16 @@ import {
   defaultPins,
   digestOf,
   maxCorrections,
+  minimumInvocationTokens,
   opencodeArgv,
   opencodeTokens,
+  opencodeUsage,
   swarmArgv,
   swarmChildHomeName,
   swarmContract,
   swarmEvidenceDirectory,
   swarmTokens,
+  swarmUsage,
   taskPrompt,
   wallBudgetMs,
 } from "./arms.mjs";
@@ -161,7 +164,7 @@ const interrupted = () =>
  * failure is returned beside the invocation so the caller keeps both.
  */
 async function invokeArm(log, launch, pins, budgets, task, workspace, base, turn, scratch) {
-  const { prompt, kind, correction, deadlineMs, instance, onChild, home } = turn;
+  const { prompt, kind, correction, deadlineMs, instance, onChild, home, tokenAllowance } = turn;
   // A correction is never started with less than a minute (or the whole budget, where that is
   // smaller); the flag Swarm takes is in whole minutes.
   const remaining = Math.max(
@@ -172,7 +175,7 @@ async function invokeArm(log, launch, pins, budgets, task, workspace, base, turn
   if (launch.arm === "swarm") {
     const contractPath = join(scratch, "contract.json");
     writeFileSync(contractPath, JSON.stringify(swarmContract(task), null, 2));
-    argv = swarmArgv(pins, task, workspace, base, prompt, contractPath, remaining);
+    argv = swarmArgv(pins, task, workspace, base, prompt, contractPath, remaining, tokenAllowance);
   } else argv = opencodeArgv(pins, prompt, workspace);
   const watch = new AbortController();
   const stopWatch =
@@ -216,6 +219,8 @@ async function invokeArm(log, launch, pins, budgets, task, workspace, base, turn
       stdoutDigest: storeBlob(blobs, ran.stdout),
       stderrDigest: storeBlob(blobs, ran.stderr),
       tokens: launch.arm === "swarm" ? swarmTokens(stdout) : opencodeTokens(stdout),
+      usage: launch.arm === "swarm" ? swarmUsage(stdout) : opencodeUsage(stdout),
+      tokenAllowance: launch.arm === "swarm" ? tokenAllowance : null,
       claimedSuccess: claimedSuccess(launch.arm, ran.exitCode, stdout),
     },
     evidence: launch.arm === "swarm" ? swarmEvidenceDirectory(stdout) : null,
@@ -414,6 +419,9 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory, owner)
       deadlineMs,
       instance: probe.instance,
       home,
+      // Swarm's allowance for the whole launch; each correction is launched with what the
+      // earlier invocations left of it, so a new session never resets the task's budget.
+      tokenAllowance: budgets.swarmTokenCap,
       // The lock names the arm's process while it runs, so a runner killed without cleanup leaves
       // the next start exactly what to stop.
       onChild: (pid) =>
@@ -466,6 +474,21 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory, owner)
         if (Date.now() >= deadlineMs)
           notes.push("the wall budget was spent before the corrections were");
         break;
+      }
+      if (launch.arm === "swarm") {
+        const spent = record.invocations.reduce((sum, one) => sum + (one.tokens ?? 0), 0);
+        const unknown = record.invocations.some((one) => one.tokens === null);
+        turn.tokenAllowance = Math.max(0, budgets.swarmTokenCap - spent);
+        // Usage the product could not report is not free: an allowance that cannot be computed
+        // is not spent on another invocation.
+        if (unknown || turn.tokenAllowance < minimumInvocationTokens) {
+          notes.push(
+            unknown
+              ? "an invocation reported no usage, so the launch's remaining token allowance could not be computed and no correction was started"
+              : `the launch's token allowance (${budgets.swarmTokenCap}) was spent before the corrections were: ${spent} used, ${turn.tokenAllowance} left`,
+          );
+          break;
+        }
       }
       record.corrections = turn.correction + 1;
       turn.prompt = correctionPrompt(task, visible.detail);
