@@ -180,6 +180,10 @@ What separated the arms was how they ended: 19 of OpenCode's 20 first invocation
 killed at the 30-minute wall, most of them repeating one command, while every Swarm launch
 returned on its own with a verdict; the correct Swarm tasks cost 355 thousand tokens each
 against 4.76 million for OpenCode's.
+A later bounded pilot on four fresh tasks ([docs/evidence/2026-10-14/real-task-pilot/](docs/evidence/2026-10-14/real-task-pilot/README.md))
+ended DO NOT PROCEED, with a setup failure of its own corrected the next day; the repairs that
+followed, a replay of its retained evidence through the repaired product, and a bounded live
+diagnosis of the undelivered bug fix are in [docs/evidence/2026-10-15/](docs/evidence/2026-10-15/README.md).
 Developer hours saved and real-world adoption are not measured there; the prepared, unrun
 protocol for five developers on their own tasks is [docs/human-trial-protocol.md](docs/human-trial-protocol.md).
 
