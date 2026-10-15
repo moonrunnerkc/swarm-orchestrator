@@ -68,6 +68,13 @@ export const taskSchema = z.strictObject({
     unchanged: z.array(z.string().min(1)).optional(),
     /** The only paths a patch may touch, where the task authorizes a closed set. */
     allowedPaths: z.array(z.string().min(1)).optional(),
+    /**
+     * Acceptance checks written for the task rather than taken from the upstream commit, written
+     * into the scoring checkout before `extraArgv` runs and never into an arm's workspace.
+     */
+    files: z
+      .array(z.strictObject({ path: z.string().min(1), source: z.string().min(1) }))
+      .optional(),
   }),
   upgradeSourcePaths: z.array(z.string().min(1)).optional(),
   immutable: z.array(z.string().min(1)),

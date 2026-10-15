@@ -300,6 +300,12 @@ export async function hiddenVerdict(
       mkdirSync(dirname(target), { recursive: true });
       writeFileSync(target, shown.stdout);
     }
+    // Acceptance checks written for this task, held outside both arms' workspaces until now.
+    for (const file of task.hidden.files ?? []) {
+      const target = join(tree.checkout, file.path);
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, file.source);
+    }
     for (const argv of task.build) {
       const built = await run(log, tree.checkout, argv);
       if (built.exitCode !== 0)

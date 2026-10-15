@@ -27,7 +27,7 @@ import {
   amendmentDate,
   taskCompliantReference,
 } from "./amendments.mjs";
-import { stageTasks, wrongPatches } from "./tasks.mjs";
+import { taskSet } from "./task-sets.mjs";
 
 const args = new Map();
 for (let index = 2; index < process.argv.length; index += 1) {
@@ -36,9 +36,12 @@ for (let index = 2; index < process.argv.length; index += 1) {
 }
 
 const amended = args.has("amended");
+const { stageTasks, wrongPatches } = await taskSet(args.get("set"));
 const log = commandLog(join(comparisonRoot, "blobs"));
 const rows = [];
-const tasks = amended ? amendedTasks : stageTasks("A");
+const tasks = amended
+  ? amendedTasks
+  : [...stageTasks("A"), ...(args.get("set") === undefined ? [] : stageTasks("calibration"))];
 const repeated = stageTasks("B");
 const wrong = amended ? amendedWrongPatches : wrongPatches;
 
