@@ -131,6 +131,9 @@ async function streamOnce(
     if (part.type === "tool-input-delta" && request.onToolInput !== undefined) {
       request.onToolInput(part.delta);
     }
+    if (part.type === "reasoning-delta" && request.onReasoning !== undefined) {
+      request.onReasoning(part.text);
+    }
   }
 
   const usage = await result.usage;
