@@ -61,6 +61,15 @@ applies: the model alone is not shown responsible, the task is not looped on fur
 readiness requirement moves to one calibration task both tools must deliver. The csstree fix
 stays an unresolved limitation of its own.
 
-### Calibration
+### Calibration (`argparse-calibration-number-conversion`, both tools, fifteen minutes each)
 
-Filled in from the calibration records below once they exist.
+| attempt | configuration | tool | outcome | agent time | tokens (input / output) | what happened |
+| --- | --- | --- | --- | --- | --- | --- |
+| [1](readiness/calibration-ollama/) | Ollama, `qwen3.6:35b-a3b`, 600,000-token launch allowance | Swarm | not delivered: hidden fail (4 cases expecting a rejection), visible unresolved, exit 1, stop `max-tokens` | 2.0 min | 610,546 (607,382 / 3,164) | 26 fast calls with prompts up to 29,309 tokens spent the whole allowance in two minutes; the fix passed the visible check in its own shell and failed the project's lint (trailing spaces, `throw null`, a comparison against -0); no allowance was left for a repair, so the launch ended with a 4,813-byte patch and no correction |
+| 1 | the same | OpenCode | not delivered: visible passed, completion claimed, hidden fail (1 case) | 6.9 min | 4,161,399 (4,147,119 / 14,280) | a near miss: a 3,617-byte patch rewriting the shared conversion helper, correct on the visible cases and one hidden literal short; the claim is a false completion claim by the oracle's standard |
+
+Attempt 1 showed the pilot's token allowance binding the Swarm arm in two minutes of a
+fifteen-minute launch while the other arm ran on uncapped, which is a readiness defect of the
+configuration rather than a result; the protocol's allowance row was amended before any freeze
+(8,000,000 per launch, a safety bound above any observed spend, so the wall is the shared bound)
+and the calibration was attempted again under it.
