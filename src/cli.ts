@@ -515,6 +515,11 @@ async function run(options: RunCommand): Promise<number> {
           isolation,
           install: options.recovery?.goal?.install ?? options.installDependencies === true,
           ...(lockfile === undefined ? {} : { lockfile }),
+          // The same gate commands the run's own gates are assembled from, so the independent
+          // verification judges by the gates the run sealed rather than by the checkout's manifest.
+          ...(Object.keys(settings.gateCommandOverrides).length === 0
+            ? {}
+            : { commandOverrides: settings.gateCommandOverrides }),
           challengePolicy: options.challenges ?? ("off" as const),
         };
   const gateOptions = {
