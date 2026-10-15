@@ -1,0 +1,146 @@
+{
+  "schema": "swarm-ordinary-comparison.manifest.v1",
+  "frozenAt": "2026-10-15T00:23:20.011Z",
+  "protocolDigest": "sha256:ba851848e3d5c6cdfef0f4015a24b575a4ec4c0399db006e8583a6f94274d921",
+  "purpose": "real-task pilot 2026-10-14, stage B: the predeclared bugfix and feature repeated once per arm in fresh sessions",
+  "pins": {
+    "model": "qwen3.8:27b",
+    "endpoint": "http://127.0.0.1:8000/v1",
+    "swarmCli": "/Users/brad/.cache/swarm-comparison/tools/swarm-0dd4b1255/dist/cli.js",
+    "swarmRevision": "0dd4b12558bfd523c0b5adb23c0e6a11e86bd1d9",
+    "swarmCliDigest": "sha256:e51fab44d36c34b796ae4c690e6c953c070f783fd784321fde4352fe74c06d5b",
+    "swarmDistDigest": "sha256:9badb8b6daf5bda2fadcde480b3f889994cdad9dc7388deb1bfd0d5b6dac646c",
+    "opencode": "1.14.48",
+    "node": "v24.15.0",
+    "harnessDigest": "sha256:1386bcd95e8b6c5b910aa1409499ffe744bca566c6abcbfd01db51a6e23fd86d",
+    "pilotHelpers": {
+      "scripts/pilot/analyze.mjs": "sha256:c662072db6db65fb5d6ce2b568d765deec1b316239bbbf49efd860be9952d6db",
+      "scripts/pilot/manifest.mjs": "sha256:a55b85b1e4a47bb5729c2b5ff526c9ebd4c713f8169fdb29e0a8fdefdc3592bd",
+      "scripts/pilot/publish.mjs": "sha256:536924a7e44ad9e8e5f58e9b4e3544c9fb7444c3ba0f291c1c7f8cb0a08f7c41",
+      "scripts/pilot/tasks.mjs": "sha256:2f4afe721c4b4cb72e0abecea64e910637fab7d1bb5a2cb69f97e65db3ffe20b",
+      "scripts/pilot/validate.mjs": "sha256:6f97b0975ab0787139ea1dbc59873ddaf10d092e0eec9c6c19eef42e4191e778"
+    },
+    "stage": "B"
+  },
+  "budgets": {
+    "wallMsPerInvocation": 1140000,
+    "wallGraceMs": 60000,
+    "swarmTokenCap": 600000,
+    "maxCorrections": 2
+  },
+  "seed": "swarm-ordinary-comparison-2026-10-11",
+  "tasks": [
+    {
+      "id": "csstree-bugfix-raw-value-whitespace-rep",
+      "repository": "csstree/csstree",
+      "workType": "bugfix",
+      "baseCommit": "85b917c679b1ccbdf93a9a9533adf66a6e2d96c5",
+      "upstreamCommit": "6a1646e7aa60c518e14d4ca95aff57c813fcfe70",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ]
+      ],
+      "build": [],
+      "projectTest": [
+        "npm",
+        "test"
+      ],
+      "visiblePrefix": "",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "node acceptance/visible/check.mjs",
+        "source": "import assert from 'node:assert/strict';\nimport { parse, generate } from '../../lib/index.js';\n\n// A declaration value kept as a raw string (parseValue: false) must be\n// serialized verbatim, without automatic whitespace between its tokens.\nconst ast = parse('a{border:1%var(--a)#ff0000}', { parseValue: false });\nassert.equal(generate(ast), 'a{border:1%var(--a)#ff0000}');\n\n// Parsed values still get the whitespace needed to keep tokens apart.\nconst parsed = parse('a{border:1%var(--a)#ff0000}');\nassert.equal(generate(parsed), 'a{border:1% var(--a) #ff0000}');\n\nconsole.log('visible check passed');\n"
+      },
+      "hidden": {
+        "testFiles": [
+          "lib/__tests/generate.js"
+        ],
+        "argv": [
+          "npx",
+          "mocha",
+          "lib/__tests/generate.js",
+          "--require",
+          "lib/__tests/helpers/setup.js"
+        ]
+      },
+      "immutable": [
+        "lib/__tests",
+        "fixtures"
+      ],
+      "taskText": "The CSS generator (lib/generator) automatically inserts a space between two adjacent tokens when leaving them adjacent would change how the text tokenizes (for example `1%` followed by `var(` or `#ff0000`). That rule is correct for values the parser turned into nodes, but it is also applied to Raw nodes, whose string value is re-tokenized on output. A raw value is text the parser deliberately left untouched (for example when parsing with `parseValue: false` or `parseRulePrelude: false`), so it must be emitted exactly as written. Today `generate(parse('span#foo { border: 1%var(--a)#ff0000; }', { parseRulePrelude: false, parseValue: false }))` returns `span #foo{border:1% var(--a) #ff0000}`; it must return `span#foo{border:1%var(--a)#ff0000}`. Automatic whitespace must still be inserted where a raw value meets its surroundings (the space in `@media screen` when the prelude is raw must stay) and for fully parsed values: `generate(parse('span#foo { border: 1%var(--a)#ff0000; }'))` must still give `span#foo{border:1% var(--a) #ff0000}`. The change belongs in lib/generator (create.js and its token-before logic). All existing generate, round-trip and source-map tests must keep passing; do not edit tests or fixtures."
+    },
+    {
+      "id": "chai-feature-deep-contain-oneof-rep",
+      "repository": "chaijs/chai",
+      "workType": "feature",
+      "baseCommit": "f178cfb2cdff210f478e881528dcba9e007b9e3e",
+      "upstreamCommit": "4225e809708f7ea8fef9fed2e55652f765caaf3a",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ]
+      ],
+      "build": [
+        [
+          "npm",
+          "run",
+          "build"
+        ]
+      ],
+      "projectTest": [
+        "npm",
+        "run",
+        "test-node"
+      ],
+      "visiblePrefix": "npm run build && ",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "npm run build && node acceptance/visible/check.mjs",
+        "source": "import * as chai from '../../index.js';\nimport assert from 'node:assert/strict';\n\nchai.expect([[1], [2]]).to.deep.contain.oneOf([[1], [2]]);\nchai.expect([[3], [4]]).to.not.deep.contain.oneOf([[1], [2]]);\nassert.throws(() => chai.expect([[1]]).to.deep.contain.oneOf([[2]]));\nchai.expect([1, 2]).to.contain.oneOf([4, 2, 5]);\nchai.expect([[1]]).to.not.contain.oneOf([[1]]);\n\nconsole.log('visible check passed');\n"
+      },
+      "hidden": {
+        "testFiles": [
+          "test/expect.js"
+        ],
+        "argv": [
+          "npx",
+          "mocha",
+          "--require",
+          "./test/bootstrap/index.js",
+          "test/expect.js"
+        ]
+      },
+      "immutable": [
+        "test"
+      ],
+      "taskText": "chai's `.oneOf(list)` assertion (function oneOf in lib/chai/core/assertions.js) has a `contain`/`include` form that asserts the subject array or string contains at least one member of the list. That form only uses strict identity via indexOf, so the `deep` flag has no effect: expect([[1], [2]]).to.deep.contain.oneOf([[1], [2]]) currently fails with \"expected [ [ 1 ], [ 2 ] ] to contain one of [ [ 1 ], [ 2 ] ]\". Add deep support to the contain form. When the `deep` flag is set and the subject is an array, a list member counts as contained if any subject element is deep-equal to it (use the same deep-equality utility the file already uses for other deep assertions); without the deep flag the current strict behavior must be unchanged, so expect([[1]]).to.not.contain.oneOf([[1]]) still passes. The failure messages for the contain form must say \"deeply\" when the deep flag is set: expect([[1]]).to.deep.contain.oneOf([[2]]) must throw \"expected [ [ 1 ] ] to deeply contain one of [ [ 2 ] ]\" and expect([[1]]).to.not.deep.contain.oneOf([[1]]) must throw \"expected [ [ 1 ] ] to not deeply contain one of [ [ 1 ] ]\". Nested cases such as expect([[[1]]]).to.deep.contain.oneOf([[[1]]]) must pass. String subjects, the non-contain form of oneOf, the list-must-be-an-array check and all existing messages stay as they are. Do not edit the test directory."
+    }
+  ],
+  "launches": [
+    {
+      "task": "csstree-bugfix-raw-value-whitespace-rep",
+      "arm": "swarm",
+      "order": 0
+    },
+    {
+      "task": "csstree-bugfix-raw-value-whitespace-rep",
+      "arm": "opencode",
+      "order": 1
+    },
+    {
+      "task": "chai-feature-deep-contain-oneof-rep",
+      "arm": "opencode",
+      "order": 2
+    },
+    {
+      "task": "chai-feature-deep-contain-oneof-rep",
+      "arm": "swarm",
+      "order": 3
+    }
+  ]
+}
