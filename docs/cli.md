@@ -269,6 +269,12 @@ One optional file: providers and endpoints, gate definitions, budgets, model pin
 `[interface]`, `[theme]` and `[keys]` tables. Flags win over the file. Settings are described in
 [using.md](using.md); two are worth knowing before you need them.
 
+A run reads the workspace's file once, before the model is asked for anything, and its final
+independent verification judges the fresh checkout by the same `[gates]` commands the run was
+configured with. `swarm ci` and `swarm-verify ci` read the file as committed at the base commit
+and never the candidate's copy, so a patch cannot redefine the checks it is judged by; the
+report's `configuration:` line names which applied.
+
 ```toml
 [providers]
 local_thinking = false         # a reasoning model served locally answers without reasoning first
