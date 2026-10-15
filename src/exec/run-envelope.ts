@@ -37,6 +37,7 @@ export async function establishExecutionEnvelope(input: {
       }),
       workspaceRoot: input.guard.workspaceRoot,
       withheldEnvironmentNames: input.guard.childEnvironment.withheld,
+      childHome: input.guard.childEnvironment.variables.HOME,
       repositoryConfigTrusted: input.repositoryConfigTrusted,
     });
 
@@ -54,7 +55,7 @@ export function describeEnvelopeForReader(envelope: ExecutionEnvelope): readonly
     `  ${envelope.summary}`,
     `  writable: ${envelope.writablePaths.join(", ")}`,
     `  network: ${envelope.network}`,
-    `  environment: ${envelope.environmentPolicy}, ${envelope.credentialNamesWithheld} names withheld from child processes`,
+    `  environment: ${envelope.environmentPolicy}, ${envelope.credentialNamesWithheld} names withheld from child processes${envelope.childHome === null ? "" : `, child HOME ${envelope.childHome}`}`,
     `  repository configuration trusted: ${envelope.repositoryConfigTrusted ? "yes" : "no"}`,
   ];
   if (envelope.mode !== "isolated") {

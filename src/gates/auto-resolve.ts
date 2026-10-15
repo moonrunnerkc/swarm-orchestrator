@@ -1,5 +1,6 @@
 import type { LoopEvent } from "../core/loop-events.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
+import { refusedBeforeSpawn } from "../exec/run-process.ts";
 import { type AttemptSummary, type EscalationPayload, escalationSchema } from "./escalation.ts";
 import { failureSignature } from "./failure-signature.ts";
 import type { GateContext, GateDefinition, GateObservation } from "./gate-definition.ts";
@@ -185,6 +186,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
       baseline,
       candidate,
       newSpecifications: clearedTests(respecification),
+      unmeasuredGates: gatesTheHarnessCouldNotRun(candidateCycle),
     };
     const decision = judgeRatchet(input);
     const recorded = await deps.evidence.record({
@@ -397,6 +399,24 @@ function regressedTestFiles(
 }
 
 /**
+ * Gates a cycle could not run because the harness refused to start them: the wall budget was
+ * spent or the run was cancelled before the command could spawn. By id, each with the reason.
+ * A gate the project itself made unavailable (a script deleted from the manifest) is not here;
+ * that is a change to the instrument, and the ratchet still reads it as a regression.
+ */
+export function gatesTheHarnessCouldNotRun(cycle: GateCycle): ReadonlyMap<string, string> {
+  const notRun = new Map<string, string>();
+  for (const run of cycle.runs)
+    if (
+      run.kind === "command" &&
+      run.observation.unavailable !== null &&
+      run.observation.unavailable.startsWith(refusedBeforeSpawn)
+    )
+      notRun.set(run.gateId, run.observation.unavailable);
+  return notRun;
+}
+
+/**
  * Which of the first cycle's blocking failures the base tree already has, unchanged. Each is
  * measured once, by running the gate over the base and comparing the failure's signature,
  * and recorded as a gate-baseline record whether or not it matched.
@@ -455,29 +475,39 @@ async function escalate(
   // down, so nothing executed the change. Naming that is the difference between an escalation
   // a reader can act on and one that says "gate unknown (unknown)" with an empty record.
   const unmeasured = !executedTheChange(cycle);
+  // A cycle the harness could not run is its own case, named before the general one: the gates
+  // did not stand down over the work, they were never started, and "the work is not in a
+  // shape the test command can run" would blame the change for the clock.
+  const notRun = gatesTheHarnessCouldNotRun(cycle);
   const payload = escalationSchema.parse({
     gateId:
-      blocking?.gateId ?? (unmeasured ? "unmeasured" : eroded === null ? "unknown" : "ratchet"),
+      blocking?.gateId ??
+      (notRun.size > 0 || unmeasured ? "unmeasured" : eroded === null ? "unknown" : "ratchet"),
     title:
       blocking?.title ??
-      (unmeasured
-        ? "nothing ran over this change"
-        : eroded === null
-          ? "unknown"
-          : "the ratchet against the base commit"),
+      (notRun.size > 0
+        ? "the gates could not be run"
+        : unmeasured
+          ? "nothing ran over this change"
+          : eroded === null
+            ? "unknown"
+            : "the ratchet against the base commit"),
     reason:
       (blocking === undefined
         ? undefined
         : failingAtBase.has(blocking.gateId)
           ? `fails the same way at the base commit, before this change: ${blocking.detail}`
           : blocking.detail) ??
-      (unmeasured
-        ? `${cycle.measures.changedFiles ?? 0} file(s) changed and every gate that runs a ` +
-          "command stood down, so nothing executed them. The work is not in a shape this " +
-          "project's own test command can run."
-        : eroded === null
-          ? "the run stopped with a blocking failure that is no longer in the final cycle"
-          : eroded.decision.detail),
+      (notRun.size > 0
+        ? `${[...notRun.keys()].join(", ")} could not be run: ${[...new Set(notRun.values())].join("; ")}. ` +
+          "Nothing in this cycle measured the change; the last accepted state stands and is not a pass."
+        : unmeasured
+          ? `${cycle.measures.changedFiles ?? 0} file(s) changed and every gate that runs a ` +
+            "command stood down, so nothing executed them. The work is not in a shape this " +
+            "project's own test command can run."
+          : eroded === null
+            ? "the run stopped with a blocking failure that is no longer in the final cycle"
+            : eroded.decision.detail),
     attemptsUsed: attempts.length,
     cap: deps.cap,
     attemptsRejectedByRatchet: rejected.length + (eroded === null ? 0 : 1),

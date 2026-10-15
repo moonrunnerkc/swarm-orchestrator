@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { runProcessGroup } from "./run-process.ts";
+import { refusedBeforeSpawn, runProcessGroup } from "./run-process.ts";
 
 let workspace = "";
 
@@ -85,6 +85,28 @@ describe("running a process the harness can still stop", () => {
 
     expect(ran.startFailure).toContain("ENOENT");
     expect(ran.exitCode).toBe(127);
+  });
+
+  it("reports a command it refused to start as a start failure that names why, never as a run", async () => {
+    // No time left: the wall budget was spent before the command could spawn.
+    const spent = await runProcessGroup("node", ["-e", "0"], options({ timeoutMs: 0 }));
+    expect(spent.startFailure).toBe(`${refusedBeforeSpawn}: no time remained in the wall budget`);
+    expect(spent.stderr).toBe(spent.startFailure);
+    expect(spent.exitCode).toBe(128);
+    expect(spent.timedOut).toBe(true);
+    expect(spent.cancelled).toBe(false);
+
+    // Already cancelled: the run is over.
+    const stopping = new AbortController();
+    stopping.abort();
+    const cancelled = await runProcessGroup(
+      "node",
+      ["-e", "0"],
+      options({ signal: stopping.signal }),
+    );
+    expect(cancelled.startFailure).toBe(`${refusedBeforeSpawn}: the run was cancelled`);
+    expect(cancelled.cancelled).toBe(true);
+    expect(cancelled.exitCode).toBe(128);
   });
 
   it("stops reading at the output ceiling instead of holding everything in memory", async () => {

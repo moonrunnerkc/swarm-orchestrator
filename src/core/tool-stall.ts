@@ -41,6 +41,18 @@ export interface StallDetected {
   readonly toolName: string;
   /** Consecutive observations the window had already seen, this one included. */
   readonly repeats: number;
+  /** The repeated call's arguments, as bounded JSON, so the notice can name what was repeated. */
+  readonly input: string;
+  /** The first line of the answer it kept getting, bounded, so the notice can name that too. */
+  readonly output: string;
+}
+
+/** How much of a repeated call and its answer a notice quotes back. */
+const excerptChars = 240;
+
+function excerpt(text: string): string {
+  const firstLine = text.replace(evidenceTrailer, "").split("\n")[0] ?? "";
+  return firstLine.length > excerptChars ? `${firstLine.slice(0, excerptChars)}...` : firstLine;
 }
 
 export interface StallTracker {
@@ -70,7 +82,14 @@ export function createStallTracker(policy: StallPolicy = defaultStallPolicy): St
         return null;
       }
       repeats += 1;
-      return repeats >= policy.threshold ? { toolName: observation.toolName, repeats } : null;
+      return repeats >= policy.threshold
+        ? {
+            toolName: observation.toolName,
+            repeats,
+            input: excerpt(stableJson(observation.input) ?? "null"),
+            output: excerpt(observation.output),
+          }
+        : null;
     },
     reset() {
       repeats = 0;
@@ -127,7 +146,10 @@ export function stallNotice(stall: StallDetected): string {
   return (
     `${stallNoticePrefix} The last ${stall.repeats + 1} ${stall.toolName} calls were calls ` +
     "you had already made, with results you had already received, and nothing in the workspace " +
-    "changed between them. Repeating them again will not change the answer. Act on the result " +
+    `changed between them. The repeated call was ${stall.toolName} ${stall.input} and its ` +
+    `answer each time began: ${JSON.stringify(stall.output)}. Repeating it again will not change ` +
+    "the answer: a search that matched nothing names something that is not in this workspace, " +
+    "so stop looking for it and work from the files you have already read. Act on the result " +
     "you have: make the edit it calls for, try a different approach, or finish with a summary " +
     "that names exactly what is blocking you. Repeating already-answered calls again ends this loop."
   );

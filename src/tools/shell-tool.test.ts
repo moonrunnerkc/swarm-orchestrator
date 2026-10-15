@@ -106,6 +106,15 @@ describe("what a shell command is allowed to touch", () => {
     expect(output).toContain("exit code: 0");
     expect(output).toContain('"name":"x"');
   });
+
+  it("runs a command that quiets a stream into the null device", async () => {
+    const { output, outcome } = await run("cat package.json missing.json 2>/dev/null");
+
+    expect(outcome?.decision).toBe("allowed");
+    expect(output).toContain("exit code: 1");
+    expect(output).toContain('"name":"x"');
+    expect(output).not.toContain("No such file");
+  });
 });
 
 describe("what a shell command inherits from the process that started the run", () => {

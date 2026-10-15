@@ -625,11 +625,29 @@ describe("a loop that repeats itself", () => {
     expect(notice).toBeDefined();
     expect(outcome.messages.indexOf(notice as (typeof outcome.messages)[number])).toBe(1 + 4 * 2);
     expect(harness.events.filter((event) => event.type === "stall")).toEqual([
-      { type: "stall", step: 4, toolName: "shell", repeats: 3, intervention: "feedback" },
-      { type: "stall", step: 7, toolName: "shell", repeats: 3, intervention: "stop" },
+      {
+        type: "stall",
+        step: 4,
+        toolName: "shell",
+        repeats: 3,
+        input: '{"command":"cat package.json"}',
+        output: "exit code: 0",
+        intervention: "feedback",
+      },
+      {
+        type: "stall",
+        step: 7,
+        toolName: "shell",
+        repeats: 3,
+        input: '{"command":"cat package.json"}',
+        output: "exit code: 0",
+        intervention: "stop",
+      },
     ]);
     expect(stalls).toHaveLength(2);
     expect(outcome.completionClaim).toBe("");
+    // The notice names the call that was repeated and what it kept answering.
+    expect((notice as { text: string }).text).toContain('shell {"command":"cat package.json"}');
   });
 
   it("lets a model that acts on the notice finish", async () => {
@@ -700,7 +718,13 @@ describe("a loop that repeats itself", () => {
     expect(after.stopReason).toBe("stalled");
     expect(after.steps).toBe(4);
     expect(resumed.events.filter((event) => event.type === "stall")).toEqual([
-      { type: "stall", step: 4, toolName: "shell", repeats: 3, intervention: "stop" },
+      expect.objectContaining({
+        type: "stall",
+        step: 4,
+        toolName: "shell",
+        repeats: 3,
+        intervention: "stop",
+      }),
     ]);
   });
 
