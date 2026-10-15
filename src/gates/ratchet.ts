@@ -55,6 +55,15 @@ export interface RatchetInput {
    * single new spec. Omitted means nothing was cleared, which is the stricter reading.
    */
   readonly newSpecifications?: ReadonlySet<string>;
+  /**
+   * Gates the harness could not run in the candidate cycle, by id, each with the reason: the
+   * wall budget was spent or the run was cancelled before the command could start. A gate
+   * that was not run has no result to compare, so it is abstained on by name. This is not
+   * the same as a gate the candidate made unavailable (a test script it deleted from the
+   * manifest), which stays a regression: there the project's declaration changed, here only
+   * the harness's clock did. Omitted means every gate in the candidate ran.
+   */
+  readonly unmeasuredGates?: ReadonlyMap<string, string>;
 }
 
 /**
@@ -125,6 +134,14 @@ export function judgeRatchet(input: RatchetInput): RatchetDecision {
       abstentions.push({
         measure: `gate:${gateId}`,
         reason: "the gate did not run in this attempt, so its result could not be compared",
+      });
+      continue;
+    }
+    const notRun = input.unmeasuredGates?.get(gateId);
+    if (notRun !== undefined) {
+      abstentions.push({
+        measure: `gate:${gateId}`,
+        reason: `the gate could not be run in this attempt (${notRun}), so its result could not be compared`,
       });
       continue;
     }

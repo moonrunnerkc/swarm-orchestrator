@@ -1,4 +1,4 @@
-import { readdir } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import { join, matchesGlob, relative } from "node:path";
 import { z } from "zod";
 import { readFileWindow } from "./bounded-file.ts";
@@ -36,7 +36,10 @@ class UnsafeSearchPatternError extends Error {
 
 const searchInput = z.object({
   pattern: z.string().min(1).max(1024).describe("JavaScript regular expression to match per line."),
-  path: z.string().optional().describe("Workspace-relative directory to search."),
+  path: z
+    .string()
+    .optional()
+    .describe("Workspace-relative directory to search, or one file to search within."),
   maxResults: z.number().int().positive().max(1000).optional(),
   include: z.array(z.string().min(1)).optional(),
   exclude: z.array(z.string().min(1)).optional(),
@@ -73,11 +76,29 @@ export function createSearchTool(guard: PolicyGuard): ToolDefinition {
         throw new UnsafeSearchPatternError(input.pattern, risk);
       }
 
+      // A file is searched on its own; anything else is walked. Said in the tool's own terms
+      // rather than left to the filesystem: a model that asked to search one test file was
+      // answered "ENOTDIR: not a directory, scandir ..." and went on to search the whole tree
+      // for a name that was not in it.
+      let rootKind: "file" | "directory";
+      try {
+        rootKind = (await stat(root)).isDirectory() ? "directory" : "file";
+      } catch (cause) {
+        if ((cause as NodeJS.ErrnoException).code === "ENOENT")
+          throw new Error(
+            `${searchRootOf(input.path)} is not in the workspace, so there is nothing to search there; list its parent directory to see what is`,
+          );
+        throw cause;
+      }
+
       const matches: string[] = [];
       const matcher = createRegexMatcher(pattern.source, 1000, context?.signal);
       const scan = { files: 0, bytes: 0, truncated: false, deadline: Date.now() + 5000 };
       try {
-        await collectMatches(root, guard, matcher, limit, matches, scan, input, context?.signal);
+        if (rootKind === "file")
+          await scanFile(root, guard, matcher, limit, matches, scan, context?.signal);
+        else
+          await collectMatches(root, guard, matcher, limit, matches, scan, input, context?.signal);
       } finally {
         await matcher.close();
       }
@@ -142,36 +163,52 @@ async function collectMatches(
         !scope.include.some((glob) => matchesGlob(workspacePath, glob)))
     )
       continue;
-    let window: Awaited<ReturnType<typeof readFileWindow>>;
-    try {
-      window = await readFileWindow(childPath, {
-        maxBytes: 256_000,
-        maxScanBytes: 256_000,
-        signal,
-      });
-    } catch (cause) {
-      signal?.throwIfAborted();
-      if ((cause as NodeJS.ErrnoException).code === "ENOENT") continue;
-      throw cause;
+    await scanFile(childPath, guard, matcher, limit, matches, scan, signal);
+    if (matches.length >= limit) {
+      return;
     }
-    scan.files += 1;
-    scan.bytes += window.scannedBytes;
-    scan.truncated ||= window.truncated;
-    if (window.text.includes("\u0000")) continue;
-    const lines = window.text.split("\n").map((line) => {
-      scan.truncated ||= line.length > maxScannedLineLength;
-      return line.slice(0, maxScannedLineLength);
-    });
-    const matched = await matcher.match(lines);
+  }
+}
 
-    for (const [index, line] of lines.entries()) {
-      const scanned =
-        line.length > maxScannedLineLength ? line.slice(0, maxScannedLineLength) : line;
-      if (matched[index]) {
-        matches.push(`${workspacePath}:${index + 1}: ${scanned.trim()}`);
-        if (matches.length >= limit) {
-          return;
-        }
+/** One file's matching lines, appended to `matches` up to the limit; binary and vanished files are skipped. */
+async function scanFile(
+  path: string,
+  guard: PolicyGuard,
+  matcher: ReturnType<typeof createRegexMatcher>,
+  limit: number,
+  matches: string[],
+  scan: { files: number; bytes: number; truncated: boolean; deadline: number },
+  signal?: AbortSignal,
+): Promise<void> {
+  const workspacePath = relative(guard.workspaceRoot, path);
+  let window: Awaited<ReturnType<typeof readFileWindow>>;
+  try {
+    window = await readFileWindow(path, {
+      maxBytes: 256_000,
+      maxScanBytes: 256_000,
+      signal,
+    });
+  } catch (cause) {
+    signal?.throwIfAborted();
+    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw cause;
+  }
+  scan.files += 1;
+  scan.bytes += window.scannedBytes;
+  scan.truncated ||= window.truncated;
+  if (window.text.includes("\u0000")) return;
+  const lines = window.text.split("\n").map((line) => {
+    scan.truncated ||= line.length > maxScannedLineLength;
+    return line.slice(0, maxScannedLineLength);
+  });
+  const matched = await matcher.match(lines);
+
+  for (const [index, line] of lines.entries()) {
+    const scanned = line.length > maxScannedLineLength ? line.slice(0, maxScannedLineLength) : line;
+    if (matched[index]) {
+      matches.push(`${workspacePath}:${index + 1}: ${scanned.trim()}`);
+      if (matches.length >= limit) {
+        return;
       }
     }
   }

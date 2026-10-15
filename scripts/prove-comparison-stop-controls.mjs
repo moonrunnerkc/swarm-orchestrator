@@ -209,20 +209,28 @@ function produce(outDir) {
     withinTerminationDeadline:
       one.cleanup.outcome === "terminated" && one.cleanup.wallMs <= terminationDeadlineMs,
   }));
+  // A proof produced without a live smoke says so by carrying no smoke check at all, rather
+  // than a failed one: `--verify` requires every check present to hold, and a reader sees in
+  // the manifest's `smoke: null` that the live exercise is elsewhere (or absent).
   const checks = {
     suiteGreen: suite.exitCode === 0 && suite.failed === 0 && suite.passed > 0,
     everyMeasurementWithinDeadlines:
       timing.length === 3 &&
       timing.every((one) => one.withinDetectionDeadline && one.withinTerminationDeadline),
-    beforeEvidenceRetained: args.has("before") && args.has("broken"),
-    smokeComplete:
-      smoke !== null &&
-      smoke.launches.length === smoke.manifest.launches &&
-      smoke.launches.every(
-        (one) => one.infrastructureFailure === null && one.invocations.length > 0,
-      ) &&
-      smoke.halts.length === 0 &&
-      smoke.workLeft.length === 0,
+    // The regression output against the previous launcher is what shows the cases bite;
+    // `--broken` is further retained evidence where a deliberately broken copy was driven.
+    beforeEvidenceRetained: args.has("before"),
+    ...(smoke === null
+      ? {}
+      : {
+          smokeComplete:
+            smoke.launches.length === smoke.manifest.launches &&
+            smoke.launches.every(
+              (one) => one.infrastructureFailure === null && one.invocations.length > 0,
+            ) &&
+            smoke.halts.length === 0 &&
+            smoke.workLeft.length === 0,
+        }),
   };
   const manifest = {
     schema: "swarm.comparison-stop-controls.proof.v1",

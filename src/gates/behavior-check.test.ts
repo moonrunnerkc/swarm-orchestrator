@@ -90,7 +90,12 @@ it("does not accept an already-cancelled command", async () => {
     },
     { checkout, commands: cancelled },
   );
-  expect(result.reading.status).toBe("rejected");
+  // A command the runner refused to start observed nothing: not accepted, and not a measured
+  // rejection either. It used to read as rejected off the refusal's exit code, which claimed a
+  // behaviour failure of a command that never ran.
+  expect(result.reading.status).toBe("unjudged");
+  expect(result.reading.detail).toContain("execution refused before spawn");
+  expect(result.reading.detail).toContain("the run was cancelled");
 });
 it("checks actual HTTP behavior separately from readiness and refuses to follow redirects", async () => {
   const port = 23000 + Math.floor(Math.random() * 10000);

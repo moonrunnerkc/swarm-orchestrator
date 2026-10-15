@@ -5,11 +5,46 @@
  * committed on top of the base as acceptance material both arms see and neither may edit.
  */
 import { createHash } from "node:crypto";
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { stringify as stringifyToml } from "smol-toml";
 
 export const comparisonRoot = join(homedir(), ".cache/swarm-comparison");
+
+/**
+ * The one download cache every launch shares: npm's content-addressed store. A package tarball
+ * is the same bytes whichever launch fetched it, and `npm ci` installs the lockfile's exact
+ * versions either way, so the logical installed environment is equivalent; what the sharing
+ * changes is whether a launch pays the registry's time, and that policy is declared here and
+ * in each record rather than left to whichever launch ran first.
+ */
+export const sharedNpmCache = join(comparisonRoot, "npm-cache");
+
+/**
+ * The mutable state one launch's processes get: a HOME of its own, created here and never seen
+ * by another launch, so a browser one launch's repair installs or a sentinel it writes is absent
+ * for the next. Inside it, npm's store is a link to the shared content-addressed cache above;
+ * everything else npm or any other tool writes under HOME stays with the launch.
+ */
+export function prepareLaunchHome(home) {
+  if (existsSync(home)) throw new Error(`${home} already exists; a launch home must be fresh`);
+  mkdirSync(home, { recursive: true, mode: 0o700 });
+  mkdirSync(join(sharedNpmCache, "_cacache"), { recursive: true });
+  mkdirSync(join(home, ".npm"), { recursive: true });
+  symlinkSync(join(sharedNpmCache, "_cacache"), join(home, ".npm", "_cacache"));
+  return {
+    home,
+    npmCache: `${join(sharedNpmCache, "_cacache")} (content-addressed, shared by link)`,
+  };
+}
+
+/** Where Playwright keeps the browsers it downloads under a HOME, on macOS and on Linux. */
+export const browserCachePaths = ["Library/Caches/ms-playwright", ".cache/ms-playwright"];
+
+/** Whether a HOME holds a downloaded browser cache: the prerequisite the pilot's upgrade launch installed. */
+export const browserCacheIn = (home) =>
+  browserCachePaths.some((path) => existsSync(join(home, path)));
 export const mirrorOf = (repository) =>
   join(comparisonRoot, "mirrors", `${repository.replace("/", "__")}.git`);
 export const tagOf = (task) => `comparison/${task.id}/base`;
@@ -96,6 +131,8 @@ export function installEnvironment() {
     npm_config_fund: "false",
     npm_config_audit: "false",
     npm_config_update_notifier: "false",
+    // The harness's own installs fill the same content-addressed store the launches read.
+    npm_config_cache: sharedNpmCache,
   };
 }
 
@@ -133,13 +170,42 @@ export async function applyPatch(log, directory, patch) {
   return applied.exitCode === 0;
 }
 
+/**
+ * The one word shape a gate override may be built from: the task's own argv words, as the
+ * protocol freezes them. A word a shell could read otherwise (a quote, a space, a redirect, a
+ * substitution) is refused rather than escaped, since the override runs through the product's
+ * own shell and the only safe serialization of something this cannot read is none.
+ */
+const plainArgvWord = /^[A-Za-z0-9_./:=@+-]+$/;
+
+/**
+ * The gate overrides Swarm is given, derived from the frozen task: the project test command
+ * both arms are told about becomes the product's blocking `tests` gate. Without this the
+ * product assembled its own gate from the manifest's `test` script, and ran chai's browser
+ * suite while the task named `npm run test-node`.
+ */
+export function swarmGateOverrides(task) {
+  for (const word of task.projectTest)
+    if (!plainArgvWord.test(word))
+      throw new Error(
+        `${task.id}: the project test word ${JSON.stringify(word)} cannot be written as a gate override; the frozen argv must be plain words`,
+      );
+  return { tests: { command: task.projectTest.join(" ") } };
+}
+
+/** The swarm.toml an arm's workspace gets, serialized rather than concatenated. */
+export function swarmConfigurationText(endpoint, task) {
+  const text = stringifyToml({
+    providers: { local_endpoint: endpoint, local_thinking: false },
+    gates: swarmGateOverrides(task),
+  });
+  return text.endsWith("\n") ? text : `${text}\n`;
+}
+
 /** Arm configuration the agent needs and the change must not carry. */
-export function writeArmConfiguration(directory, arm, endpoint, model) {
+export function writeArmConfiguration(directory, arm, endpoint, model, task) {
   if (arm === "swarm") {
-    writeFileSync(
-      join(directory, "swarm.toml"),
-      `[providers]\nlocal_endpoint = "${endpoint}"\nlocal_thinking = false\n`,
-    );
+    writeFileSync(join(directory, "swarm.toml"), swarmConfigurationText(endpoint, task));
   } else {
     writeFileSync(
       join(directory, "opencode.json"),

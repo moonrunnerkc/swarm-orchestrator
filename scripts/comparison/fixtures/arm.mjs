@@ -22,11 +22,77 @@
  *   so the harness cannot persist the record;
  * - `external-kill`: kills itself with SIGTERM, a signal the harness did not send.
  */
-import { appendFileSync, chmodSync, mkdirSync, utimesSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 
 const markers = process.env.COMPARISON_FIXTURE_DIR;
 const words = process.argv.slice(2);
+
+/**
+ * The product's own `check` command, as the preflight invokes it: `node arm.mjs check
+ * --workspace <dir> --json`. It reads the swarm.toml the harness wrote and reports what it would
+ * run as its tests gate, shaped as the real `swarm.check.v1` report. COMPARISON_FIXTURE_CHECK
+ * picks the fault:
+ *
+ * - `honest` (default): the gate is the override's command and it passes;
+ * - `ignore-override`: the gate is the manifest's own `npm run --loglevel=error test`, which is
+ *   what the product did before overrides were written;
+ * - `prerequisite-missing`: the gate is the override's command and it fails for a browser that
+ *   is not installed under the home it was given.
+ */
+if (words[0] === "check") {
+  const workspace = words[words.indexOf("--workspace") + 1];
+  const toml = existsSync(join(workspace, "swarm.toml"))
+    ? readFileSync(join(workspace, "swarm.toml"), "utf8")
+    : "";
+  const override = /\[gates\.tests\]\s*\ncommand = "([^"]*)"/.exec(toml)?.[1] ?? null;
+  const fault = process.env.COMPARISON_FIXTURE_CHECK ?? "honest";
+  const home = process.env.SWARM_CHILD_HOME ?? process.env.HOME;
+  const tests =
+    fault === "ignore-override"
+      ? {
+          command: "npm run --loglevel=error test",
+          status: "passed",
+          detail: "the command exited 0",
+        }
+      : fault === "prerequisite-missing"
+        ? {
+            command: override,
+            status: "failed",
+            detail: "the command exited 1",
+            output: `browserType.launch: Executable doesn't exist at ${home}/Library/Caches/ms-playwright/chromium_headless_shell-1194/chrome-mac/headless_shell`,
+          }
+        : { command: override, status: "passed", detail: "the command exited 0" };
+  const failed = tests.status !== "passed";
+  console.log(
+    JSON.stringify({
+      schema: "swarm.check.v1",
+      plan: { version: "swarm.check-plan.v1", workspace },
+      tree: null,
+      conclusions: {
+        command: { status: "ran", detail: tests.detail },
+        checks: [{ id: "tests", severity: "blocking", measures: {}, ...tests }],
+        executionTrust: { mode: "restricted", detail: "fixture" },
+        requirements: { status: "unmeasured", detail: "fixture" },
+        challenges: { status: "none", detail: "fixture" },
+      },
+      result: failed ? "fail" : "pass",
+      exitCode: failed ? 1 : 0,
+      bundleDirectory: null,
+    }),
+  );
+  process.exit(failed ? 1 : 0);
+}
+
 const arm = words[0] === "opencode" ? "opencode" : "swarm";
 // A behavior that only one product can exhibit leaves the other arm correct, so a test can
 // name the arm the halt should attribute it to.
@@ -44,7 +110,18 @@ const prompt = arm === "swarm" ? words[0] : words.at(-1);
 const kind = /still fail after the previous attempt/.test(prompt) ? "correction" : "initial";
 
 mkdirSync(markers, { recursive: true });
-appendFileSync(join(markers, "launches.log"), `${arm} ${kind} ${process.pid} ${Date.now()}\n`);
+// The home this invocation's processes were given, and whether another launch's sentinel is
+// already in it: Swarm reads SWARM_CHILD_HOME for its children, OpenCode inherits HOME. A
+// launch that finds a sentinel was handed state another launch prepared.
+const home = (arm === "swarm" ? process.env.SWARM_CHILD_HOME : undefined) ?? process.env.HOME;
+const sentinels = existsSync(home)
+  ? readdirSync(home).filter((name) => name.startsWith("installed-by-")).length
+  : 0;
+writeFileSync(join(home, `installed-by-${process.pid}`), "");
+appendFileSync(
+  join(markers, "launches.log"),
+  `${arm} ${kind} ${process.pid} ${Date.now()} home=${home} found=${sentinels}\n`,
+);
 const heartbeat = join(markers, "heartbeat");
 writeFileSync(heartbeat, "");
 const beat = setInterval(() => {

@@ -92,6 +92,9 @@ export type LoopEvent =
       readonly step: number;
       readonly toolName: string;
       readonly repeats: number;
+      /** The repeated call's arguments and the answer it kept getting, both bounded excerpts. */
+      readonly input: string;
+      readonly output: string;
       readonly intervention: "feedback" | "stop";
     }
   | {

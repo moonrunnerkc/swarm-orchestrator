@@ -135,7 +135,7 @@ describe("swarm-verify with no subcommand", () => {
       exitCode: number;
       plan: { tests: { runner: string } };
       conclusions: {
-        checks: readonly { id: string; status: string }[];
+        checks: readonly { id: string; status: string; command: string | null }[];
         command: { status: string };
       };
     };
@@ -144,8 +144,31 @@ describe("swarm-verify with no subcommand", () => {
     expect(report.exitCode).toBe(0);
     expect(report.plan.tests.runner).toBe("node-test");
     expect(report.conclusions.command.status).toBe("ran");
-    expect(report.conclusions.checks.find((one) => one.id === "tests")?.status).toBe("passed");
+    const tests = report.conclusions.checks.find((one) => one.id === "tests");
+    expect(tests?.status).toBe("passed");
+    // What actually ran, so a supervisor can hold it against what it told the solver.
+    expect(tests?.command).toContain("node --test");
+    expect(report.conclusions.checks.find((one) => one.id === "placeholder")?.command).toBeNull();
     expect(ran.code).toBe(0);
+  });
+
+  it("reports the overridden command a swarm.toml named, not the manifest's script", async () => {
+    // The pilot's lesson: the supervisor told the solver one test command and the product
+    // ran another. The report has to say which command the tests check actually executed.
+    const root = await repository("overridden", {
+      ...nodeTestFixture,
+      "package.json":
+        '{ "name": "w", "version": "1.0.0", "type": "module", "scripts": { "test": "node --test", "test-node": "node --test double.test.mjs" } }\n',
+      "swarm.toml": '[gates]\ntests = { command = "npm run test-node" }\n',
+    });
+    const ran = await verifier(["--workspace", root, "--json"]);
+    const report = JSON.parse(ran.stdout.trim()) as {
+      conclusions: { checks: readonly { id: string; status: string; command: string | null }[] };
+    };
+    const tests = report.conclusions.checks.find((one) => one.id === "tests");
+    expect(tests?.status).toBe("passed");
+    expect(tests?.command).toContain("double.test.mjs");
+    expect(tests?.command).not.toBe("npm run --loglevel=error test");
   });
 
   it("exits 1 when a declared check fails, and says which", async () => {

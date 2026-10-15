@@ -1,0 +1,60 @@
+{
+  "schema": "swarm-real-task-pilot.environment.v1",
+  "recordedAt": "2026-10-15T00:09:00Z",
+  "assignmentStartedAt": "2026-10-14T23:50:07Z",
+  "host": { "platform": "darwin", "arch": "arm64", "memoryBytes": 68719476736, "node": "v24.15.0", "npm": "11.12.1" },
+  "swarm": {
+    "sourceCommit": "0dd4b12558bfd523c0b5adb23c0e6a11e86bd1d9",
+    "sourceDescription": "origin/v13-main at the merge of PR #81 (head 46e485612aff254f0dd013945a7d558c3948cc77); worktree clean (git status --porcelain empty) when cloned and built",
+    "buildDirectory": "/Users/brad/.cache/swarm-comparison/tools/swarm-0dd4b1255",
+    "buildCommands": ["npm ci --no-audit --no-fund", "npm run build"],
+    "cliPath": "/Users/brad/.cache/swarm-comparison/tools/swarm-0dd4b1255/dist/cli.js",
+    "cliVersion": "14.4.0",
+    "cliEntryDigest": "sha256:e51fab44d36c34b796ae4c690e6c953c070f783fd784321fde4352fe74c06d5b",
+    "cliEntryDigestNote": "identical to the entry the 2026-10-14 smoke pinned (built at 7bd3e1aa); the entry imports its siblings, so the dist tree digest below is what identifies this build",
+    "distTreeDigest": "sha256:cfd5b2369143124461eac4141dbea1fa5fc535e7447adea8ac0f26922dda2781",
+    "distTreeDigestMethod": "find dist -type f | sort | xargs shasum -a 256 | shasum -a 256 (line-list digest); the manifest's swarmDistDigest is the per-file digest scripts/pilot/manifest.mjs computes",
+    "sameBuildAsLiveSmoke": "the dist tree built here has the same line-list digest as the build the 2026-10-14 live smoke ran (~/.cache/swarm-comparison/tools/swarm/dist, built at 7bd3e1aa): git log 7bd3e1aa..0dd4b1255 -- src package.json package-lock.json scripts/build-dist.mjs is empty, so the product under test is byte-identical to the one the smoke exercised and the smoke's four launches apply; no preflight launch is spent",
+    "gatesBeforeFreeze": { "command": "npm run gates", "startedAt": "2026-10-14T23:56:21Z", "endedAt": "2026-10-15T00:00:16Z", "exitCode": 0, "tests": "454 files, 4242 passed, 0 failed, 0 skipped", "log": "gates-prefreeze.log" },
+    "requestSettings": {
+      "thinking": "enable_thinking false and chat_template_kwargs.enable_thinking false in every local request unless [providers] local_thinking = true (src/providers/registry.ts, thinkingOptions); the workspace swarm.toml the harness writes sets local_thinking = false",
+      "maxOutputTokensPerCall": 8192,
+      "maxOutputTokensSource": "src/agent-run.ts: maxOutputTokens: 8192, reduced only by the remaining token budget",
+      "sampling": "no temperature or top_p sent; the server's defaults apply (temperature 1.0, top_p 0.95 from the launch agent's arguments)",
+      "tokenCap": "600000 per invocation via --max-tokens, the constant in scripts/comparison/arms.mjs"
+    }
+  },
+  "opencode": {
+    "version": "1.14.48",
+    "path": "/Users/brad/.npm-global/bin/opencode",
+    "requestSettings": {
+      "source": "the workspace opencode.json the harness writes (scripts/comparison/workspace.mjs): model rapidmlx/qwen3.8:27b, limit.output 8192, options enable_thinking false and top_p 0.95, small_model the same model, --title given so no session-naming call is made; retained proxy capture in protocol amendment 3 (2026-10-13) showed each request leaving with enable_thinking false, top_p 0.95 and max_tokens 8192, one request at a time",
+      "tokenCap": "none native; the wall deadline and the harness kill are the only limits"
+    },
+    "globalConfiguration": "~/.config/opencode/opencode.json names other providers on other ports; the workspace configuration and the explicit model flag take precedence (pass 1 of the comparison established that the workspace file is read when --dir and PWD name the workspace)"
+  },
+  "model": {
+    "servedName": "qwen3.8:27b",
+    "artifact": "malekoo/Qwen3.8-27B-MLX-8bit",
+    "artifactSnapshot": "6a88621e929c7261b3f5e5c000bac8b663a3bcf3",
+    "server": "rapid-mlx 0.6.15 (mlx 0.31.2, mlx-lm 0.31.3, Python 3.12.13)",
+    "endpoint": "http://127.0.0.1:8000/v1",
+    "launchAgent": "~/Library/LaunchAgents/com.brad.rapid-mlx.plist: --max-tokens 32768 --default-temperature 1.0 --default-top-p 0.95 --continuous-batching --kv-cache-quantization 8 bits --pin-system-prompt --cache-memory-mb 6144 --prefill-step-size 512 --timeout 1200 --reasoning-parser qwen3 --tool-call-parser qwen3_coder_xml",
+    "startedAt": "2026-10-15T00:02:27Z (local 18:02:27), pid 18414, started for this pilot after the project gates finished; not running when the assignment began",
+    "persistedPrefixCache": "the server loaded 8 persisted prefix-cache entries (6022 MB of KV) from earlier sessions at start; both arms may hit cached prefixes from earlier runs of the same products, which is a speed effect, disclosed, not controlled",
+    "stoppedAt": "2026-10-15T02:21:00Z, after stage A's last record and the decision that stage B does not run; the launch agent is unloaded again, as it was when the assignment began",
+    "listenerUnchangedThroughStageA": "every record names the same endpoint instance (pid 18414, started 18:02:27 local); no halt, no recovery",
+    "concurrentWorkloads": "Ollama's service is resident with no model loaded; no other inference workload runs during launches"
+  },
+  "harness": {
+    "comparisonHarnessDigest": "sha256:1386bcd95e8b6c5b910aa1409499ffe744bca566c6abcbfd01db51a6e23fd86d",
+    "stopControlsProof": "node scripts/prove-comparison-stop-controls.mjs --verify docs/evidence/comparison-stop-controls: verified on this tree (commit af6ce8c3b, 18 fingerprints unchanged, evidence intact), 2026-10-14T23:51Z",
+    "stopControlsSuite": "npx vitest run scripts/comparison/run.test.mjs scripts/comparison/control.test.mjs scripts/comparison/endpoint.test.mjs: 32 passed, 63.7 s, 2026-10-14T23:51Z",
+    "harnessUnchanged": "no file under scripts/comparison is edited by this pilot; the proof's fingerprints therefore apply as they stand",
+    "helpersChangedAfterFreeze": "scripts/pilot/analyze.mjs and scripts/pilot/publish.mjs were corrected after freeze (commit 3c5ea2926: the record-name predicate is spelled locally instead of imported, because the comparison's analyze module runs its command-line block for any entry script named analyze.mjs). Both are read-only helpers used after the launches; the manifests record the helper digests as they were at freeze, so the difference is visible. The launch, scoring and control path (scripts/comparison) is unchanged."
+  },
+  "driftObservedDuringStageA": {
+    "swarmChildHomePlaywright": "Swarm runs every child command under its own scratch HOME (/var/folders/.../T/swarm-child-home), where no Playwright browsers existed at the first launch. chai's `npm test` includes `test-chrome` (web-test-runner with Playwright), so Swarm's blocking `tests` gate failed in the upgrade launch (`browserType.launch: Executable doesn't exist`). The model's automatic repair attempt then ran `npx playwright install chromium`, which downloaded 479 MB of browsers into that scratch HOME at 18:35 to 18:36 local; the later chai feature launch's `tests` gate passed with Chromium (510 tests). This is an environment change made by the arm inside its own scratch HOME, not by the harness; it is disclosed here and in the report and is why the two chai Swarm launches did not run under the same gate environment.",
+    "swarmGateCommandNotConfigured": "The task text tells both arms the project test command is `npm run test-node`; Swarm's gate plan reads the project's `npm test` script (test-node and test-chrome). swarm.toml supports a [gates] override for the tests command, and the harness writes only the [providers] table, so the product ran in its default mode as the comparison protocol states. OpenCode was never asked to run `npm test`."
+  }
+}

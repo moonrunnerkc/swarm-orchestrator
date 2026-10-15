@@ -82,6 +82,24 @@ describe("what the search finds", () => {
     expect(outcome.text).not.toContain("two.mjs");
   });
 
+  it("searches within one file when pointed at a file", async () => {
+    // A model asked to search one test file and was answered with the filesystem's own
+    // "ENOTDIR: not a directory, scandir ...", then went looking through the whole tree.
+    await write("lib/__tests/generate.js", "describe('Raw', () => {});\nit('other', () => {});\n");
+    await write("lib/__tests/other.js", "describe('Raw', () => {});\n");
+
+    const outcome = await run({ pattern: "Raw", path: "lib/__tests/generate.js" });
+
+    expect(outcome.text).toBe("lib/__tests/generate.js:1: describe('Raw', () => {});");
+    expect(outcome.facts).toMatchObject({ matches: 1, scannedFiles: 1 });
+  });
+
+  it("says in its own terms that a path is not in the workspace", async () => {
+    await expect(run({ pattern: "Raw", path: "dist/__tests__" })).rejects.toThrow(
+      "dist/__tests__ is not in the workspace, so there is nothing to search there",
+    );
+  });
+
   it("reads an empty path as the workspace root, the way an absent one is read", async () => {
     await write("one.mjs", "marker\n");
 

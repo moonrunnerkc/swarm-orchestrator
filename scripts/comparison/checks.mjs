@@ -11,6 +11,9 @@
  */
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { parse as parseToml } from "smol-toml";
+import { swarmChildHomeName } from "./arms.mjs";
 import {
   applyPatch,
   cloneAtBase,
@@ -20,6 +23,7 @@ import {
   mirrorOf,
   prepare,
   tail,
+  writeArmConfiguration,
 } from "./workspace.mjs";
 
 async function freshTree(log, task, base, patch, label) {
@@ -113,19 +117,165 @@ export async function lintVerdict(log, task, base) {
   }
 }
 
+/**
+ * Swarm's effective gate plan over the prepared base, measured by the product itself with no
+ * model: the pinned CLI's `check` command, under the launch's own child HOME, over a fresh
+ * checkout configured exactly as the launch's workspace will be. Three things are held together
+ * here that the pilot found apart: the command the task text names, the override the harness
+ * writes (parsed back by the pinned build's own parser), and the command the product actually
+ * ran as its blocking `tests` gate, which must have passed on the base under that HOME. A
+ * mismatch or a failing gate is the supervisor's configuration or environment, never the arm's
+ * outcome, and stops the launch before it is dispatched.
+ */
+export async function swarmGatePlanVerdict(log, task, base, pins, childHome) {
+  const expected = task.projectTest.join(" ");
+  const verdict = (ok, detail, extra = {}) => ({
+    ok,
+    expected,
+    effective: null,
+    status: null,
+    bundleDirectory: null,
+    detail,
+    ...extra,
+  });
+  const tree = await freshTree(log, task, base, "", "gate-plan");
+  try {
+    if (!tree.prepared.ok)
+      return verdict(
+        false,
+        `preparation failed (${tree.prepared.failed.join(" ")}):\n${tree.prepared.detail}`,
+      );
+    writeArmConfiguration(tree.checkout, "swarm", pins.endpoint, pins.model, task);
+    const written = readFileSync(join(tree.checkout, "swarm.toml"), "utf8");
+    // Read back by the pinned build's own parser where the build carries one (the product's
+    // dist does); a stand-in arm without one is read by the TOML library the product itself
+    // parses with, and the verdict says which.
+    const parserPath = join(dirname(pins.swarmCli), "config", "swarm-toml.js");
+    const pinnedParser = existsSync(parserPath);
+    let parsed;
+    try {
+      parsed = pinnedParser
+        ? (await import(pathToFileURL(parserPath).href)).parseSwarmToml(written, "swarm.toml")
+        : parseToml(written);
+    } catch (cause) {
+      return verdict(
+        false,
+        `the ${pinnedParser ? "pinned build's" : "TOML"} parser rejects the written swarm.toml: ${cause?.message ?? cause}`,
+      );
+    }
+    const declared = parsed.gates?.tests;
+    const declaredCommand = typeof declared === "string" ? declared : declared?.command;
+    if (declaredCommand !== expected)
+      return verdict(
+        false,
+        `the written swarm.toml parses to a tests command of ${JSON.stringify(declaredCommand ?? null)}, not ${JSON.stringify(expected)}`,
+      );
+    const ran = await log.run(
+      ["node", pins.swarmCli, "check", "--workspace", tree.checkout, "--json"],
+      {
+        cwd: tree.checkout,
+        timeoutMs: 900_000,
+        env: { ...installEnvironment(), [swarmChildHomeName]: childHome },
+      },
+    );
+    const report = lastJsonLine(ran.stdout.toString(), "swarm.check.v1");
+    if (report === null)
+      return verdict(
+        false,
+        `the product's check printed no swarm.check.v1 report (exit ${ran.exitCode}):\n${tail(ran)}`,
+      );
+    const tests = (report.conclusions?.checks ?? []).find((one) => one.id === "tests") ?? null;
+    const effective = tests?.command ?? null;
+    const status = tests?.status ?? null;
+    const extra = { effective, status, bundleDirectory: report.bundleDirectory ?? null };
+    if (tests === null)
+      return verdict(false, "the product's check reports no tests gate at all", extra);
+    // A vouched rewrite keeps the command and adds the harness's own flags after it.
+    if (effective !== expected && !(effective ?? "").startsWith(`${expected} `))
+      return verdict(
+        false,
+        `the product's effective tests gate is ${JSON.stringify(effective)}, not the task's ${JSON.stringify(expected)}`,
+        extra,
+      );
+    if (status !== "passed")
+      return verdict(
+        false,
+        `the product's tests gate (${effective}) is ${status} on the prepared base under the launch's child HOME: ${tests.detail}${tests.output ? `\n${tests.output}` : ""}`,
+        extra,
+      );
+    return verdict(
+      true,
+      `the product runs ${effective} as its blocking tests gate and it passes on the base; the override was read back by ${pinnedParser ? "the pinned build's parser" : "the TOML library the product parses with"}`,
+      extra,
+    );
+  } finally {
+    rmSync(tree.scratch, { recursive: true, force: true });
+  }
+}
+
+/** The last line of a stream that parses as JSON with the named schema, or null. */
+function lastJsonLine(text, schema) {
+  for (const line of text.split("\n").reverse()) {
+    if (!line.startsWith("{")) continue;
+    try {
+      const parsed = JSON.parse(line);
+      if (parsed.schema === schema) return parsed;
+    } catch {}
+  }
+  return null;
+}
+
 /** A hidden test file's bytes at the sealed upstream commit, read from the mirror. */
 export function sealedFile(log, task, upstream, path) {
   const mirror = mirrorOf(task.repository);
   return log.run(["git", "show", `${upstream}:${path}`], { cwd: mirror, timeoutMs: 60_000 });
 }
 
-export async function hiddenVerdict(log, task, base, upstream, patch) {
-  if (patch.trim() === "" && task.workType !== "refactor")
+/** The paths a patch touches, from its headers. */
+export function patchedPaths(patch) {
+  const paths = new Set();
+  for (const line of patch.split("\n")) {
+    const header = /^diff --git a\/(.+?) b\/(.+)$/.exec(line);
+    if (header) paths.add(header[2]);
+  }
+  return [...paths].sort();
+}
+
+/** A value inside a parsed manifest by dotted path, or undefined. */
+const valueAt = (object, path) =>
+  path.split(".").reduce((value, key) => (value == null ? undefined : value[key]), object);
+
+/**
+ * `executeEmpty` runs the oracle over the base tree even where nothing was changed. The
+ * short-circuit above it is right for a launch (an unchanged tree is a failed task), but as a
+ * control it establishes nothing: a validator that reads "the final tree is the base" has not
+ * shown that the hidden tests reject the missing behaviour, only that the scorer refuses an
+ * empty patch. Validation asks for the execution and labels the control by what it ran.
+ */
+export async function hiddenVerdict(
+  log,
+  task,
+  base,
+  upstream,
+  patch,
+  { executeEmpty = false } = {},
+) {
+  if (patch.trim() === "" && task.workType !== "refactor" && !executeEmpty)
     return {
       verdict: "fail",
       basis: "the final tree is the base: nothing was changed",
       detail: "",
     };
+  const allowed = task.hidden.allowedPaths;
+  if (allowed !== undefined) {
+    const outside = patchedPaths(patch).filter((path) => !allowed.includes(path));
+    if (outside.length > 0)
+      return {
+        verdict: "fail",
+        basis: `the patch touches ${outside.join(", ")}; this task authorizes changes to ${allowed.join(", ")} only`,
+        detail: "",
+      };
+  }
   const tree = await freshTree(log, task, base, patch, "hidden");
   try {
     if (!tree.prepared.ok)
@@ -178,6 +328,49 @@ export async function hiddenVerdict(log, task, base, upstream, patch) {
           detail: "",
         };
       details.push(`${dependency.name} ${dependency.version} locked and installed`);
+      // The declaration itself, where the task fixes its spelling: a range that resolves to the
+      // right version installs the right version and still is not what was asked for.
+      if (dependency.declared !== undefined) {
+        const manifest = JSON.parse(readFileSync(join(tree.checkout, "package.json"), "utf8"));
+        const inManifest = manifest[dependency.section]?.[dependency.name];
+        const inLockRoot = lock.packages?.[""]?.[dependency.section]?.[dependency.name];
+        for (const [where, found] of [
+          ["package.json", inManifest],
+          ["the lockfile's root package entry", inLockRoot],
+        ])
+          if (found !== dependency.declared)
+            return {
+              verdict: "fail",
+              basis: `${where} declares ${dependency.name} as ${JSON.stringify(found ?? null)}, not exactly ${JSON.stringify(dependency.declared)}`,
+              detail: "",
+            };
+        details.push(
+          `${dependency.name} declared exactly ${dependency.declared} in package.json and the lockfile root`,
+        );
+      }
+    }
+    // Manifest fields the task says must stay as the base had them, compared with the base's
+    // own package.json read from the mirror.
+    for (const path of task.hidden.unchanged ?? []) {
+      const shown = await sealedFile(log, task, base, "package.json");
+      if (shown.exitCode !== 0)
+        return {
+          verdict: "unjudgeable",
+          basis: "package.json is not at the base commit",
+          detail: tail(shown),
+        };
+      const before = valueAt(JSON.parse(shown.stdout.toString()), path);
+      const after = valueAt(
+        JSON.parse(readFileSync(join(tree.checkout, "package.json"), "utf8")),
+        path,
+      );
+      if (JSON.stringify(before) !== JSON.stringify(after))
+        return {
+          verdict: "fail",
+          basis: `package.json ${path} changed from ${JSON.stringify(before)} to ${JSON.stringify(after)}; the task requires it unchanged`,
+          detail: "",
+        };
+      details.push(`package.json ${path} unchanged`);
     }
     for (const structural of task.hidden.structural ?? []) {
       const text = structural.files

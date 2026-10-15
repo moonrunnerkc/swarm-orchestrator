@@ -5,6 +5,7 @@ import { buildVersion } from "./build-version.ts";
 import type { ApprovalMode } from "./config/approval-mode.ts";
 import type { Clock } from "./core/clock.ts";
 import { type AgentLoopOutcome, runAgentLoop, type StallIntervention } from "./core/loop.ts";
+import { describePriorLoop, priorLoopAccount } from "./core/loop-account.ts";
 import type { LoopEvent } from "./core/loop-events.ts";
 import type { ConversationMessage, ModelClient, SamplingSettings } from "./core/model-client.ts";
 import type { RandomSource } from "./core/random-source.ts";
@@ -579,6 +580,8 @@ async function executeAgentTask(
   let totalSteps = loop.steps;
   let completionClaim = loop.completionClaim;
   let messages = loop.messages;
+  // The loop whose account the next repair attempt is handed: the first loop, then each attempt.
+  let latestLoop: AgentLoopOutcome = loop;
   remainingTokens -= loop.tokensUsed;
   let callsWithUnknownUsage = loop.callsWithUnknownUsage;
   await options.evidence.record({
@@ -638,7 +641,15 @@ async function executeAgentTask(
         remainingMs: wall.loopBudgetMs(),
         unknownUsage: callsWithUnknownUsage > 0,
       });
-      const repair = await resolveWithModel(request, options, {
+      // The attempt's candidate has to be measured inside the wall, or the attempt was spent
+      // for nothing: a repair loop that used the last of the budget left its gates refused
+      // before they could start, and the refusal was then read as the attempt's result. What
+      // a cycle costs is what the failing cycle just measured, so that much is held back.
+      const reservedForGatesMs = measuredCycleMs(request.cycle);
+      const account = describePriorLoop(
+        priorLoopAccount(latestLoop.messages, latestLoop.stopReason, latestLoop.steps),
+      );
+      const repair = await resolveWithModel(request, options, account, {
         ...loopDependencies,
         ...(alternate == null ? {} : { model: alternate }),
         budget: {
@@ -651,6 +662,7 @@ async function executeAgentTask(
           maxWallTimeMs: Math.max(
             0,
             wall.loopBudgetMs() -
+              reservedForGatesMs -
               (alternate == null ? 0 : (options.escalation?.settings.reserveMs ?? 0)),
           ),
         },
@@ -662,6 +674,7 @@ async function executeAgentTask(
       totalSteps += repair.steps;
       completionClaim = repair.completionClaim;
       messages = repair.messages;
+      latestLoop = repair;
       await options.evidence.record({
         type: "session-stopped",
         actor: "harness",
@@ -671,6 +684,10 @@ async function executeAgentTask(
           steps: repair.steps,
           tokensUsed: repair.tokensUsed,
           repair: true,
+          // Held back from the attempt's wall so its candidate could be measured, and the
+          // account of the previous loop it was handed, both on the record.
+          reservedForGatesMs,
+          priorLoopNotes: account,
         },
       });
     },
@@ -998,14 +1015,23 @@ function createWallBudget(options: AgentTaskOptions): WallBudget {
   };
 }
 
+/** What the cycle's gate commands took to run, which is what the next cycle will need again. */
+function measuredCycleMs(cycle: ResolveRequest["cycle"]): number {
+  return cycle.runs.reduce((total, run) => total + run.observation.durationMs, 0);
+}
+
 /**
  * One attempt at fixing what a gate reported. A fresh loop rather than a continued one: the
  * gate output is the whole brief, and starting clean keeps an attempt from inheriting the
- * reasoning that produced the failure.
+ * reasoning that produced the failure. What it does inherit is the previous loop's account:
+ * which files were read and edited, which searches matched nothing, which calls were refused.
+ * Without it an attempt re-read the same files and searched again for a name the workspace
+ * does not hold, until the token budget ended it with nothing changed.
  */
 async function resolveWithModel(
   request: ResolveRequest,
   options: AgentTaskOptions,
+  account: string,
   loopDependencies: Parameters<typeof runAgentLoop>[1],
 ): Promise<AgentLoopOutcome> {
   const candidateDigest = digestOfBytes(
@@ -1022,6 +1048,9 @@ async function resolveWithModel(
     `Base source: ${options.baseRef}. Candidate patch: ${candidateDigest}.`,
     `Prior checked attempt: ${request.cycle.attempt}. Remaining model allowance: ${loopDependencies.budget.maxTokens} tokens and ${loopDependencies.budget.maxWallTimeMs} ms.`,
     `Immutable requirements: ${JSON.stringify(options.contract?.immutablePaths ?? [])}.`,
+    "",
+    account,
+    "",
     request.gateOutput.length > 16000
       ? `${request.gateOutput.slice(0, 16000)}\n[diagnostic excerpt truncated; consult the cited evidence records]`
       : request.gateOutput,

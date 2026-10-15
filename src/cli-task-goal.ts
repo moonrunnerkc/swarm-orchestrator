@@ -6,7 +6,8 @@ import type { EvidenceRecorder } from "./evidence/session.ts";
 import { harnessChildEnvironment } from "./exec/child-environment.ts";
 import type { ContainerBackendOptions } from "./exec/container-backend.ts";
 import { recordedContainerBackend } from "./exec/runtime-resource.ts";
-import type { GateDefinition } from "./gates/gate-definition.ts";
+import type { GateSetOptions } from "./gates/default-gates.ts";
+import type { GateDefinition, GateOverride } from "./gates/gate-definition.ts";
 import type { ChallengePolicy } from "./gates/goal-challenges.ts";
 import {
   type IndependentVerification,
@@ -29,8 +30,28 @@ export interface TaskGoalContext {
   readonly install: boolean;
   /** The lockfile setup installs from where the checkout holds several. */
   readonly lockfile?: string;
+  /**
+   * The gate commands the run was configured with (swarm.toml `[gates]`), so the fresh checkout
+   * judges the candidate by the gates the run sealed. Without them the verifier assembled its
+   * own gates from the checkout's manifest, and a run whose sealed `tests` gate was the
+   * project's node suite was refused on the browser suite its manifest's `test` script runs:
+   * the checkout had no swarm.toml, the workspace's being untracked, and nothing else carried
+   * the override across.
+   */
+  readonly commandOverrides?: Readonly<Record<string, GateOverride>>;
   /** How the requirement checks are challenged; absent is off. */
   readonly challengePolicy?: ChallengePolicy;
+}
+
+/** The gate options the verification shares with the run: its lockfile and its command overrides. */
+function verificationGateOptions(context: TaskGoalContext): GateSetOptions | undefined {
+  const options: GateSetOptions = {
+    ...(context.lockfile === undefined ? {} : { lockfile: context.lockfile }),
+    ...(context.commandOverrides === undefined || Object.keys(context.commandOverrides).length === 0
+      ? {}
+      : { commandOverrides: context.commandOverrides }),
+  };
+  return Object.keys(options).length === 0 ? undefined : options;
 }
 async function check(
   context: TaskGoalContext,
@@ -60,6 +81,7 @@ async function verify(
     readonly repositoryChecks?: "skip";
   },
 ) {
+  const gateOptions = verificationGateOptions(context);
   return verifyIndependently({
     repositoryRoot: context.workspace,
     checkoutRoot: context.evidence.directory,
@@ -83,7 +105,7 @@ async function verify(
       ? {}
       : { repositoryChecks: override.repositoryChecks }),
     installDependencies: context.install,
-    ...(context.lockfile === undefined ? {} : { gateOptions: { lockfile: context.lockfile } }),
+    ...(gateOptions === undefined ? {} : { gateOptions }),
     commandsForCheckout: async (checkout) =>
       createNodeCommandRunner(
         context.clock,

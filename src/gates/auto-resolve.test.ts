@@ -131,6 +131,31 @@ function stubCommands(workspace: MemoryWorkspace) {
 interface Harness {
   readonly workspace: MemoryWorkspace;
   run(resolve: ResolveAttempt, baseControl?: BaseControlRunner | null): Promise<AutoResolveOutcome>;
+  /** From now on every command is refused before it spawns, as a spent wall budget does. */
+  refuseCommandsFromNow(): void;
+}
+
+const refusal =
+  "execution refused before spawn: no time remained in the wall budget, so this gate measured nothing";
+
+/** The stub runner, with a switch that turns every later command into a refusal. */
+function refusable(
+  inner: ReturnType<typeof createStubCommandRunner>,
+  state: { refuse: boolean },
+): ReturnType<typeof createStubCommandRunner> {
+  const refused = () =>
+    Promise.resolve({
+      exitCode: 128,
+      stdout: "",
+      stderr: refusal,
+      durationMs: 0,
+      unavailable: refusal,
+    });
+  return {
+    commands: inner.commands,
+    run: (command, options) => (state.refuse ? refused() : inner.run(command, options)),
+    runVouched: (argv, options) => (state.refuse ? refused() : inner.runVouched(argv, options)),
+  };
 }
 
 function harness(
@@ -147,7 +172,8 @@ function harness(
     base: { [sourcePath]: fixedSource, [testPath]: originalTests },
     current: { [sourcePath]: brokenSource, [testPath]: originalTests },
   });
-  const commands = stubCommands(workspace);
+  const refusing = { refuse: false };
+  const commands = refusable(stubCommands(workspace), refusing);
 
   const context = async (): Promise<GateContext> => ({
     workspaceRoot: "/workspace",
@@ -159,6 +185,9 @@ function harness(
 
   return {
     workspace,
+    refuseCommandsFromNow: () => {
+      refusing.refuse = true;
+    },
     run: (resolve, baseControl = null) =>
       runAutoResolve({
         gates: options.gates ?? [testsGate, lintGate],
@@ -356,6 +385,51 @@ describe("the ratchet against the base commit", () => {
 
     const decision = ledgerPayloads("ratchet-decision")[0];
     expect(decision?.detail).toContain("not compared: testsCollected, changedLineCoverage");
+  });
+});
+
+describe("a cycle the harness could not run", () => {
+  /**
+   * The repair attempt used the last of the wall budget, and the candidate's gates were refused
+   * before they could spawn. The ratchet used to read "passed before, now failed" off that
+   * refusal, reject the attempt as a regression, revert the fix, and then match the refusal at
+   * the base commit (also refused) to report the gate failing there the same way.
+   */
+  it("abstains on the refused gates, keeps the work, and escalates naming the budget rather than a regression", async () => {
+    const test = harness({ cap: 1 });
+
+    const outcome = await test.run(() => {
+      test.workspace.write(sourcePath, fixedSource);
+      test.refuseCommandsFromNow();
+      return Promise.resolve();
+    });
+
+    expect(outcome.settled).toBe("escalated");
+    expect(outcome.attempts).toHaveLength(1);
+    const decision = outcome.attempts[0]?.decision;
+    expect(decision?.accepted).toBe(true);
+    expect(decision?.violations).toEqual([]);
+    // Only a gate that passed before is compared: lint did, tests was the failure being fixed.
+    const gates = (decision?.abstentions ?? []).filter((abstention) =>
+      abstention.measure.startsWith("gate:"),
+    );
+    expect(gates.map((abstention) => abstention.measure)).toEqual(["gate:lint"]);
+    expect(gates[0]?.reason).toContain("could not be run in this attempt");
+    // The fix stands in the tree: nothing measured it, and nothing measured against it either.
+    expect(test.workspace.files.get(sourcePath)).toBe(fixedSource);
+    expect(outcome.finalCycle.statuses).toEqual({
+      tests: "not-applicable",
+      lint: "not-applicable",
+    });
+    expect(outcome.escalation).toMatchObject({
+      gateId: "unmeasured",
+      title: "the gates could not be run",
+      attemptsRejectedByRatchet: 0,
+      failingAtBase: [],
+    });
+    expect(outcome.escalation?.reason).toContain("tests, lint could not be run");
+    expect(outcome.escalation?.reason).toContain("no time remained in the wall budget");
+    expect(outcome.escalation?.reason).toContain("is not a pass");
   });
 });
 
