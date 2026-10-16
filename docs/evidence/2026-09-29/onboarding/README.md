@@ -8,7 +8,7 @@ result, then break a disposable copy and see what the verifier reports. These ar
 by a model, not human testers and not customer validation. Configurations:
 `docs/evidence/2026-09-27/onboarding/config-{vite,express,python}-vm.json`; each directory here
 holds the filled configuration and the observer's report (`summary.json`); every command with
-its output (`transcript.jsonl`) is packed losslessly in `packed-derived/onboarding-transcripts`
+its output (`transcript.jsonl`) is packed losslessly in `packed-derived/onboarding-transcripts` (the 1.1.0 runs) and `packed-derived/onboarding-transcripts-v130` (the 1.3.0 runs)
 (`node scripts/evidence-pack.mjs restore <that directory>`).
 
 | repository | kind | first result | steps | ms to first result | broken copy |
