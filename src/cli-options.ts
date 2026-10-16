@@ -341,8 +341,10 @@ export const usage = [
   "    --preset bugfix|refactor|upgrade                 a behavior policy the contract also names",
   "    --install [--lockfile <file>]                   install from the lockfile before the checks;",
   "                                                   name the lockfile where the tree holds several",
-  "    --plan-checks                                  author, show and seal model-labelled",
-  "                                                   criteria before implementation",
+  "    --plan-checks                                  author model-labelled behavior checks from",
+  "                                                   the task before implementation, admit each by",
+  "                                                   its result on the base, add them to any",
+  "                                                   --goal-contract, and repair against them",
   "    --escalate-model <provider:id>                  authorize one bounded capability escalation",
   "    --challenges off|report|required [--strengthen [--strengthen-rounds <n>]]",
   "                                                   challenge the goal's checks; strengthen a gap",
@@ -637,10 +639,6 @@ export function parseCommandLine(
     throw invalid("--challenges must be off, report, or required");
   if (challenges !== undefined && goalContract === undefined)
     throw invalid("--challenges needs a --goal-contract whose checks it can challenge");
-  if (flags.has("plan-checks") && goalContract !== undefined)
-    throw invalid(
-      "--plan-checks authors the criteria and --goal-contract supplies them; pass one, not both",
-    );
   const strengthen = flags.has("strengthen");
   if (strengthen && (challenges === undefined || challenges === "off"))
     throw invalid(

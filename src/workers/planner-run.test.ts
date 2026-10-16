@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Clock } from "../core/clock.ts";
 import type { ModelClient, ModelRequest } from "../core/model-client.ts";
 import { createFixedRandom, createTestClock } from "../core/test-doubles.ts";
+import { freezeGoalContract } from "../evidence/goal-contract.ts";
 import { type EvidenceRecorder, openEvidenceSession } from "../evidence/session.ts";
 import {
   createFixtureModelClient,
@@ -267,4 +268,103 @@ it("cancels planning under the shared run context and records unresolved provide
   expect(context.accounting().unknownCalls).toBe(1);
   expect(outcome.graph).toBeNull();
   context.dispose();
+});
+
+describe("planned checks", () => {
+  const base = freezeGoalContract({
+    version: 1,
+    goal: "move the boundary",
+    requirements: [{ id: "suite", description: "the suite passes", checks: ["suite"] }],
+    checks: [
+      { id: "suite", command: "node --test", author: "user", exposure: "shared", artifacts: [] },
+    ],
+    immutablePaths: ["value.test.mjs"],
+  }).contract;
+  const inline = (id: string) => ({
+    id,
+    command: "node --input-type=module -e console.log(1)",
+    author: "user",
+    exposure: "withheld",
+    atBase: "fails",
+    artifacts: [],
+    behavior: {
+      kind: "cli",
+      cwd: ".",
+      timeoutMs: 1000,
+      maxOutputBytes: 4096,
+      toolchain: "Node",
+      network: "inherit",
+      argv: ["node", "--input-type=module", "-e", "console.log(1)"],
+      exitCode: 0,
+      stdout: [{ kind: "equals", value: "2\n" }],
+      stderr: [],
+    },
+  });
+  const declaring = (callId: string, extra: Record<string, unknown>) => ({
+    callId,
+    toolName: "declare_goal_contract",
+    input: {
+      version: 1,
+      goal: "move the boundary",
+      requirements: [{ id: "boundary", description: "10 is small", checks: ["boundary"] }],
+      checks: [inline("boundary")],
+      immutablePaths: [],
+      ...extra,
+    },
+  });
+
+  it("refuses what admission would trust, then adds to the supplied contract without changing it", async () => {
+    const outcome = await runPlanner({
+      goal: "move the boundary",
+      workspace,
+      homeDir: scratch,
+      evidence,
+      clock: createTestClock(1000),
+      random: createFixedRandom(),
+      emit: () => {},
+      maxSteps: 6,
+      requireGoalChecks: true,
+      plannedChecks: { base },
+      abortSignal: new AbortController().signal,
+      model: createFixtureModelClient({
+        modelId: "fixture:planner",
+        turns: [
+          respondWithToolCalls("references of my own", [
+            declaring("references", {
+              challenges: { version: 1, mutations: "none", fixtures: [], references: [] },
+            }),
+          ]),
+          respondWithToolCalls("a file artifact", [
+            declaring("artifact", {
+              checks: [{ ...inline("boundary"), artifacts: [{ path: "check.mjs", content: "1" }] }],
+            }),
+          ]),
+          respondWithToolCalls("a reused id", [
+            declaring("reused", {
+              requirements: [{ id: "suite", description: "again", checks: ["boundary"] }],
+            }),
+          ]),
+          respondWithToolCalls("as asked", [declaring("valid", {})]),
+          respondWithText("declared"),
+        ],
+      }),
+    });
+
+    const contract = outcome.goalContract;
+    expect(contract?.requirements.map((one) => one.id)).toEqual(["suite", "boundary"]);
+    expect(contract?.checks.map((one) => [one.id, one.author, one.exposure, one.atBase])).toEqual([
+      ["suite", "user", "shared", undefined],
+      ["boundary", "model", "shared", "fails"],
+    ]);
+    expect(contract?.immutablePaths).toEqual(["value.test.mjs"]);
+    expect(contract?.challenges).toBeUndefined();
+    const refusals = evidence
+      .records()
+      .filter((record) => record.type === "tool-call")
+      .map((record) => JSON.stringify(evidence.payloads().get(record.payloadDigest)))
+      .filter((text) => text.includes("declare_goal_contract"));
+    expect(refusals.join("\n")).toMatch(/cannot declare a preset or challenges/);
+    expect(refusals.join("\n")).toMatch(/no artifacts/);
+    expect(refusals.join("\n")).toMatch(/already exist in the supplied contract/);
+  });
 });

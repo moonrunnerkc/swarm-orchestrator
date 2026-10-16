@@ -18,6 +18,13 @@ import type { TaskGraph } from "./task-graph.ts";
 
 export interface PlannerOptions {
   readonly requireGoalChecks?: boolean;
+  /**
+   * The planned-check mode of `--plan-checks`: every check the planner authors is a command-line
+   * behavior check that says what it should do on the unchanged base, so it can be admitted by
+   * that control before anything is implemented. Where a supplied contract is named, the planner
+   * adds to it and cannot change what it already holds.
+   */
+  readonly plannedChecks?: { readonly base?: GoalContract };
   readonly maxTokens?: number;
   readonly maxWallTimeMs?: number;
   readonly goal: string;
@@ -105,14 +112,15 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
                   );
                 if (input.goal !== options.goal)
                   throw new Error("the goal contract must retain the supplied goal verbatim");
-                goalContract = freezeGoalContract({
-                  ...input,
-                  checks: input.checks.map((check) => ({
-                    ...check,
-                    author: "model",
-                    exposure: "shared",
-                  })),
-                }).contract;
+                const authored = input.checks.map((check) => ({
+                  ...check,
+                  author: "model" as const,
+                  exposure: "shared" as const,
+                }));
+                goalContract =
+                  options.plannedChecks === undefined
+                    ? freezeGoalContract({ ...input, checks: authored }).contract
+                    : plannedContract(input, authored, options.plannedChecks.base);
                 return Promise.resolve({
                   text: "candidate goal checks pinned; the independent verifier will run these on the integrated tree",
                   facts: { requirements: goalContract.requirements.length },
@@ -150,9 +158,11 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
     },
     abortSignal: options.abortSignal,
     systemPrompt:
-      options.requireGoalChecks === true
-        ? `${plannerPrompt} Before finishing, also call declare_goal_contract with the supplied goal verbatim, every observable requirement and executable checks that cover their combined behavior. Author new check artifacts that can run from a fresh checkout. Do not require a reference implementation. Prefer one worker for a tiny or tightly coupled goal. Requirements without executable checks will remain unjudged.`
-        : plannerPrompt,
+      options.plannedChecks !== undefined
+        ? `${plannerPrompt} ${plannedChecksPrompt(options.plannedChecks.base)}`
+        : options.requireGoalChecks === true
+          ? `${plannerPrompt} Before finishing, also call declare_goal_contract with the supplied goal verbatim, every observable requirement and executable checks that cover their combined behavior. Author new check artifacts that can run from a fresh checkout. Do not require a reference implementation. Prefer one worker for a tiny or tightly coupled goal. Requirements without executable checks will remain unjudged.`
+          : plannerPrompt,
     maxOutputTokens: 8192,
     retryPolicy: { attempts: 3, baseDelayMs: 500, maxJitterRatio: 0.5 },
   });
@@ -176,4 +186,92 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
     completionClaim: loop.completionClaim,
     ...(options.requireGoalChecks === true ? { goalContract } : {}),
   };
+}
+
+/**
+ * How planned checks are written. Every rule here is about the shape of a check and where its
+ * expected values come from, never about any particular task: the expectations come from the
+ * task's own words and the project's documented or tested behaviour, each check says what it
+ * should do on the unchanged base, and a check is a script the harness runs and compares.
+ */
+function plannedChecksPrompt(base: GoalContract | undefined): string {
+  return [
+    "Before finishing, call declare_goal_contract with the supplied goal verbatim and executable",
+    "checks for the task's observable requirements. These checks are written before any",
+    "implementation exists and are what the implementation is repaired against, so derive every",
+    "expected value from the task text and the project's existing documented or tested behaviour,",
+    "never from a guess about how the change will be written.",
+    "Cover each stated rule where it is easy to get wrong: its boundaries, the combinations of the",
+    "special cases the task names (position, repetition, mixing with other inputs), and the",
+    "ordinary inputs the task says must keep working.",
+    "Each check is a command-line behavior check with no artifacts: behavior.argv is node,",
+    '--input-type=module, -e and the script itself, run from the repository root (cwd "."),',
+    "and command repeats that argv as text. The script imports the project's public entry point",
+    "with a path relative to the repository root, computes the results for a fixed list of inputs,",
+    "prints them as one JSON line and exits 0; behavior.stdout holds one equals assertion with",
+    "the exact expected line and a trailing newline, and behavior.exitCode is 0. If the project's",
+    "tests need a build first, run that build at the start of the script with execSync from",
+    "node:child_process and stdio ignored. Write inputs with JSON escapes so every character is",
+    "exact, and keep each script short.",
+    "Set atBase on every check: fails for a check of the requested change,",
+    "which the unchanged base must get wrong, and passes for a check of behaviour that must stay,",
+    "which the base already gets right. Keep the two kinds in separate checks.",
+    "A check whose base result does not match its atBase is dropped before implementation, so do",
+    "not put a preserved case in a fails check. Do not declare a preset or challenges.",
+    ...(base === undefined
+      ? []
+      : [
+          `The contract already holds requirements ${base.requirements.map((one) => one.id).join(", ")}`,
+          `and checks ${base.checks.map((one) => one.id).join(", ") || "(none)"}; they stay as they`,
+          "are. Declare only what you add, with new ids.",
+        ]),
+  ].join(" ");
+}
+
+type DeclaredContract = typeof goalContractSchema._output;
+
+/**
+ * The planner's additions on top of a supplied contract, or the planner's contract alone. The
+ * supplied requirements, checks, preset and immutable paths stand unchanged; what the planner
+ * adds must be command-line behavior checks with a declared base expectation, and it cannot
+ * author a preset, challenge fixtures or references, which are what admission would trust.
+ */
+function plannedContract(
+  input: DeclaredContract,
+  authored: DeclaredContract["checks"],
+  base: GoalContract | undefined,
+): GoalContract {
+  if (input.preset !== undefined || input.challenges !== undefined)
+    throw new Error(
+      "planned checks cannot declare a preset or challenges; declare requirements and checks only",
+    );
+  const malformed = authored.filter(
+    (check) =>
+      check.behavior?.kind !== "cli" || check.atBase === undefined || check.artifacts.length > 0,
+  );
+  if (malformed.length > 0)
+    throw new Error(
+      `${malformed.map((check) => check.id).join(", ")}: every planned check is a command-line ` +
+        "behavior check (behavior.kind cli) with its script inline in argv, no artifacts, and " +
+        "atBase set to fails or passes",
+    );
+  const taken = new Set([
+    ...(base?.requirements ?? []).map((one) => one.id),
+    ...(base?.checks ?? []).map((one) => one.id),
+  ]);
+  const reused = [...input.requirements, ...authored].filter((one) => taken.has(one.id));
+  if (reused.length > 0)
+    throw new Error(
+      `${reused.map((one) => one.id).join(", ")} already exist in the supplied contract; use new ids`,
+    );
+  return freezeGoalContract({
+    version: 1,
+    goal: base?.goal ?? input.goal,
+    ...(base?.preset === undefined ? {} : { preset: base.preset }),
+    requirements: [...(base?.requirements ?? []), ...input.requirements],
+    checks: [...(base?.checks ?? []), ...authored],
+    immutablePaths: [...new Set([...(base?.immutablePaths ?? []), ...input.immutablePaths])],
+    selection: base?.selection ?? input.selection,
+    ...(base?.challenges === undefined ? {} : { challenges: base.challenges }),
+  }).contract;
 }

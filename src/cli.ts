@@ -28,6 +28,7 @@ import {
   usage,
 } from "./cli-options.ts";
 import { type PlanChecksOutcome, planChecks } from "./cli-plan-checks.ts";
+import { admitPlannedChecks } from "./cli-planned-checks.ts";
 import { describePreflight, manifestsIn } from "./cli-preflight.ts";
 import { registrySettingsFrom } from "./cli-provider-settings.ts";
 import {
@@ -439,10 +440,35 @@ async function run(options: RunCommand): Promise<number> {
   // the workspace with read-only tools on a chain of its own; what it pins is sealed on this
   // chain below exactly as a supplied contract is, and stays labelled model-authored.
   let planning: PlanChecksOutcome | null = null;
-  if (options.planChecks === true && sealedGoal === undefined) {
+  if (options.planChecks === true && options.recovery === undefined) {
     const interactive =
       !options.json && process.stdout.isTTY === true && process.stdin.isTTY === true;
+    const supplied = sealedGoal;
     planning = await planChecks({
+      ...(supplied === undefined ? {} : { base: supplied }),
+      // Each planned check is run once on a fresh checkout of the base, on the planning chain,
+      // and admitted only where it does there what it says it does.
+      admit: (chain, contract) =>
+        admitPlannedChecks({
+          contract,
+          base: supplied,
+          evidence: chain,
+          verifyAtBase: (probe) =>
+            probeVerifier({
+              contract: probe,
+              workspace: options.workspace,
+              baseCommit,
+              evidence: chain,
+              clock,
+              signal: modelWork.signal,
+              isolation,
+              install: options.installDependencies === true,
+              ...(options.lockfile === undefined ? {} : { lockfile: options.lockfile }),
+              ...(Object.keys(settings.gateCommandOverrides).length === 0
+                ? {}
+                : { commandOverrides: settings.gateCommandOverrides }),
+            })("", probe),
+        }),
       task: options.task,
       workspace: options.workspace,
       home: homedir(),

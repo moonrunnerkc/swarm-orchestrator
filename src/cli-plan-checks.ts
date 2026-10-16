@@ -1,3 +1,4 @@
+import type { PlannedCheckAdmission } from "./cli-planned-checks.ts";
 import { tokensSpent } from "./cli-strengthen.ts";
 import type { Clock } from "./core/clock.ts";
 import type { ModelClient } from "./core/model-client.ts";
@@ -39,6 +40,19 @@ export interface PlanChecksDependencies {
    * with its account rather than guessing.
    */
   readonly ask?: (question: string) => Promise<string>;
+  /**
+   * A contract the user supplied: the planner adds checks to it and cannot change it. Absent,
+   * the planner authors the whole contract, as it always has.
+   */
+  readonly base?: GoalContract;
+  /**
+   * Admit the planner's checks by their base control before anything is sealed. Absent, the
+   * planner's checks are sealed as written, which is what `--plan-checks` did before.
+   */
+  readonly admit?: (
+    planning: EvidenceRecorder,
+    contract: GoalContract,
+  ) => Promise<PlannedCheckAdmission>;
 }
 
 interface PlanningSpend {
@@ -89,6 +103,9 @@ export async function planChecks(deps: PlanChecksDependencies): Promise<PlanChec
       homeDir: deps.home,
       model: deps.createModel(planning),
       requireGoalChecks: true,
+      ...(deps.admit === undefined
+        ? {}
+        : { plannedChecks: deps.base === undefined ? {} : { base: deps.base } }),
       maxTokens: Math.max(0, deps.maxTokens - tokensSpent(planning).spent),
       maxWallTimeMs: Math.max(0, deps.maxWallMs - (deps.clock.now() - startedAt)),
       evidence: planning,
@@ -99,7 +116,18 @@ export async function planChecks(deps: PlanChecksDependencies): Promise<PlanChec
       abortSignal: deps.signal,
     });
     steps += outcome.steps;
-    const contract = outcome.goalContract ?? null;
+    const declared = outcome.goalContract ?? null;
+    const admission =
+      declared === null || deps.admit === undefined ? null : await deps.admit(planning, declared);
+    if (admission !== null) for (const line of describeAdmission(admission)) deps.note(line);
+    const contract = admission === null ? declared : admission.contract;
+    if (declared !== null && contract === null)
+      return {
+        kind: "unresolved",
+        stopReason: outcome.stopReason,
+        account: "no planned check held its base control, so no requirement could be sealed",
+        ...spend(steps),
+      };
     if (contract !== null) {
       for (const line of describeCriteria(contract)) deps.note(line);
       if (deps.ask === undefined)
@@ -158,4 +186,21 @@ export function describeCriteria(contract: GoalContract): readonly string[] {
     "  They are not independent ground truth; a requirement without an executable check stays unjudged.",
   );
   return lines;
+}
+
+/** Each planned check's base control in a line, admitted or not, with the reason. */
+export function describeAdmission(admission: PlannedCheckAdmission): readonly string[] {
+  return [
+    "",
+    "planned checks on the unchanged base:",
+    ...admission.decisions.map(
+      (one) =>
+        `  ${one.admitted ? "admitted" : "dropped "} ${one.check} (should ${one.atBase === "fails" ? "fail" : "pass"} there): ${one.reason}`,
+    ),
+    ...(admission.droppedRequirements.length === 0
+      ? []
+      : [
+          `  requirements left with no check, dropped: ${admission.droppedRequirements.join(", ")}`,
+        ]),
+  ];
 }

@@ -22,6 +22,13 @@ export const goalContractSchema = z.strictObject({
         command: z.string().min(1).max(8192),
         author: z.enum(["user", "model"]),
         exposure: z.enum(["shared", "withheld"]),
+        /**
+         * What a planned check should do on the unchanged base, which is the control it is
+         * admitted by: `fails` detects the requested change (the base is a known-wrong
+         * implementation of it), `passes` preserves behaviour the task keeps (the base is a
+         * known-right one). Additive: a contract without it digests as before.
+         */
+        atBase: z.enum(["fails", "passes"]).optional(),
         artifacts: z
           .array(
             z.strictObject({
