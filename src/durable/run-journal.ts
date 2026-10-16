@@ -139,17 +139,27 @@ export function openRunJournal<Projection extends object>(
           Record<string, unknown>
         >;
         const value = change(current.projection);
-        const projection = parse(scrubJson(JSON.parse(JSON.stringify(current.projection))).value);
-        const delta: Record<string, Record<string, unknown>> = {};
-        for (const [collection, fields] of Object.entries(projection)) {
-          const prior = before[collection] ?? {};
-          const changed: Record<string, unknown> = {};
-          for (const id of new Set([...Object.keys(prior), ...Object.keys(fields)])) {
-            if (JSON.stringify(prior[id]) !== JSON.stringify(fields[id]))
-              changed[id] = fields[id] ?? null;
+        // Only what this operation changed is scrubbed, under its own collection and id so the
+        // name-governed rules read the same key path. Every held entry was scrubbed when it was
+        // appended; scrubbing the whole history again on every append made each tool call's
+        // durable step cost a fifth of a second on a journal of eleven thousand operations.
+        const changes = scrubJson(
+          JSON.parse(JSON.stringify(changedEntries(before, current.projection))),
+        ).value as Record<string, Record<string, unknown>>;
+        const merged = JSON.parse(JSON.stringify(before)) as Record<
+          string,
+          Record<string, unknown>
+        >;
+        for (const [collection, fields] of Object.entries(changes)) {
+          const held = merged[collection] ?? {};
+          merged[collection] = held;
+          for (const [id, entry] of Object.entries(fields)) {
+            if (entry === null) delete held[id];
+            else held[id] = entry;
           }
-          if (Object.keys(changed).length > 0) delta[collection] = changed;
         }
+        const projection = parse(merged);
+        const delta = changedEntries(before, projection);
         const encoded = entrySchema.parse({
           sequence: current.count,
           previousHash: current.head,
@@ -185,4 +195,24 @@ export function openRunJournal<Projection extends object>(
       }
     },
   };
+}
+
+/** Entries that differ between two projections, by collection; a removed entry is null. */
+function changedEntries(
+  before: Record<string, Record<string, unknown>>,
+  after: object,
+): Record<string, Record<string, unknown>> {
+  const delta: Record<string, Record<string, unknown>> = {};
+  for (const [collection, fields] of Object.entries(
+    after as Record<string, Record<string, unknown>>,
+  )) {
+    const prior = before[collection] ?? {};
+    const changed: Record<string, unknown> = {};
+    for (const id of new Set([...Object.keys(prior), ...Object.keys(fields)])) {
+      if (JSON.stringify(prior[id]) !== JSON.stringify(fields[id]))
+        changed[id] = fields[id] ?? null;
+    }
+    if (Object.keys(changed).length > 0) delta[collection] = changed;
+  }
+  return delta;
 }
