@@ -215,7 +215,13 @@ function writeManifest(home, { endpoint, tasks, budgets = {}, pins = {}, launchO
       harnessDigest: harnessDigest(),
       ...pins,
     },
-    budgets: { wallMsPerInvocation: 60_000, swarmTokenCap: 600_000, maxCorrections: 2, ...budgets },
+    // Five minutes, so a correction always has its minute left after a fixture's quick invocation.
+    budgets: {
+      wallMsPerInvocation: 300_000,
+      swarmTokenCap: 600_000,
+      maxCorrections: 2,
+      ...budgets,
+    },
     seed: "swarm-ordinary-comparison-2026-10-11",
     tasks,
     launches: launches(tasks.map((one) => one.id)).map((launch) => ({
@@ -563,6 +569,113 @@ describe("stopping the comparison when the experiment is invalid", () => {
       expect(record.hidden.verdict).toBe("fail");
       expect(record.notes).toContain("the wall budget was spent before the corrections were");
     }
+  });
+
+  it("kills the arm at the launch's deadline: the grace is cleanup, not more solving time", async () => {
+    const fixture = await setup({
+      tasks: (t, commits) => [t("calc-fix-add", "fixture/calc", commits)],
+      budgets: { wallMsPerInvocation: 2000, wallGraceMs: 30_000 },
+    });
+    const result = await runRunner(fixture.env, fixture.path, [], "hang");
+    expect(result.code).toBe(0);
+    for (const name of recordsOf(fixture.runs)) {
+      const record = readJson(join(fixture.runs, name));
+      const [only] = record.invocations;
+      expect(only.signal).toBe("SIGKILL(deadline)");
+      // Killed at two seconds and confirmed within the termination bound, never at 32.
+      expect(only.wallMs).toBeGreaterThanOrEqual(2000);
+      expect(only.wallMs).toBeLessThan(2000 + terminationDeadlineMs);
+      expect(only.termination.confirmed).toBe(true);
+      expect(record.cleanup.deadlineKills).toBe(1);
+      expect(record.cleanup.wallMs).toBeLessThanOrEqual(record.cleanup.limitMs);
+    }
+  });
+
+  it("halts, scoring nothing and dispatching nothing more, when a killed arm's end cannot be confirmed", async () => {
+    const fixture = await setup({ budgets: { wallMsPerInvocation: 1500, wallGraceMs: 2000 } });
+    const result = await runRunner(fixture.env, fixture.path, [], "escape");
+    try {
+      expect(result.code).toBe(3);
+      expect(launchLines(fixture.env)).toHaveLength(1);
+      const halt = readJson(join(fixture.runs, "halt-1.json"));
+      expect(halt.class).toBe("interrupted");
+      expect(halt.reason).toContain("not confirmed");
+      expect(halt.remaining).toHaveLength(3);
+      const attempt = readJson(join(fixture.runs, attemptsOf(fixture.runs)[0]));
+      expect(attempt.invocations[0].termination.confirmed).toBe(false);
+      expect(attempt.hidden.verdict).toBe("unjudgeable");
+      // The escaped process worked in the workspace, so the harness found and stopped it too.
+      expect(attempt.cleanup.strays.map((one) => one.outcome)).toEqual(["terminated"]);
+    } finally {
+      try {
+        process.kill(
+          Number(readFileSync(join(fixture.env.markers, "escaped.pid"), "utf8")),
+          "SIGKILL",
+        );
+      } catch {}
+    }
+  });
+
+  it("stops a process the arm detached in its directory before the tree is scored", async () => {
+    const fixture = await setup({
+      tasks: (t, commits) => [t("calc-fix-add", "fixture/calc", commits)],
+    });
+    const result = await runRunner(fixture.env, fixture.path, [], "detach");
+    expect(result.code).toBe(0);
+    expect(recordsOf(fixture.runs)).toHaveLength(2);
+    for (const name of recordsOf(fixture.runs)) {
+      const record = readJson(join(fixture.runs, name));
+      expect(record.cleanup.strays).toHaveLength(1);
+      expect(record.cleanup.strays[0].outcome).toBe("terminated");
+      expect(record.cleanup.strays[0].command).toContain("sleep");
+      expect(record.hidden.verdict).toBe("pass");
+    }
+    const detached = Number(readFileSync(join(fixture.env.markers, "detached.pid"), "utf8"));
+    expect(() => process.kill(detached, 0)).toThrow();
+  });
+
+  it("launches each correction with what is left of the token allowance and keeps Swarm's verification reserve inside the deadline", async () => {
+    const fixture = await setup({
+      tasks: (t, commits) => [t("calc-fix-add", "fixture/calc", commits)],
+      budgets: {
+        wallMsPerInvocation: 600_000,
+        swarmTokenCap: 600_000,
+        swarmVerificationReserveMs: 120_000,
+      },
+    });
+    const result = await runRunner(fixture.env, fixture.path, [], "wrong");
+    expect(result.code).toBe(0);
+    // What the arm process was actually started with, read from its own marker line.
+    const swarm = launchLines(fixture.env)
+      .filter((line) => line.startsWith("swarm "))
+      .map((line) => ({
+        tokens: Number(/max-tokens=(\d+)/.exec(line)?.[1]),
+        minutes: Number(/max-wall-minutes=(\d+)/.exec(line)?.[1]),
+      }));
+    // The fixture reports 1,234 tokens per invocation; nothing resets the launch's allowance.
+    expect(swarm.map((one) => one.tokens)).toEqual([600_000, 598_766, 597_532]);
+    // Ten minutes less the two reserved for verification, in the whole minutes the flag takes
+    // (eight where the invocation starts within the same millisecond, seven otherwise).
+    expect(swarm[0].minutes).toBeGreaterThanOrEqual(7);
+    for (const one of swarm) expect(one.minutes).toBeLessThanOrEqual(8);
+    const record = readJson(join(fixture.runs, "calc-fix-add.swarm.json"));
+    expect(record.invocations.map((one) => one.tokenAllowance)).toEqual([
+      600_000, 598_766, 597_532,
+    ]);
+  });
+
+  it("starts no correction without a minute left, and none for Swarm without its verification reserve on top", async () => {
+    const fixture = await setup({
+      tasks: (t, commits) => [t("calc-fix-add", "fixture/calc", commits)],
+      budgets: { wallMsPerInvocation: 100_000, swarmVerificationReserveMs: 60_000 },
+    });
+    const result = await runRunner(fixture.env, fixture.path, [], "wrong");
+    expect(result.code).toBe(0);
+    const swarm = readJson(join(fixture.runs, "calc-fix-add.swarm.json"));
+    expect(swarm.corrections).toBe(0);
+    expect(swarm.notes).toContain("the wall budget was spent before the corrections were");
+    const opencode = readJson(join(fixture.runs, "calc-fix-add.opencode.json"));
+    expect(opencode.corrections).toBe(2);
   });
 
   it("halts when the arm's process ends on a signal the harness did not send", async () => {

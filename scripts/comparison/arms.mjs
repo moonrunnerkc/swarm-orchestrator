@@ -36,6 +36,15 @@ export const swarmTokenCap = 8_000_000;
 /** Less than one answer's worth of allowance left (the product's output cap) starts no correction. */
 export const minimumInvocationTokens = 8_192;
 export const maxCorrections = 2;
+/** A correction starts only with this much solving time left before the launch's deadline. */
+export const minimumCorrectionMs = 60_000;
+
+/**
+ * The part of the launch's deadline kept for Swarm's final verification of its tree: the
+ * product runs that verification after its own wall, so the wall it is given ends this long
+ * before the launch's deadline. Declared in the manifest; zero where a manifest predates it.
+ */
+export const verificationReserveMs = (budgets) => budgets.swarmVerificationReserveMs ?? 0;
 
 /**
  * The environment name the product reads for the HOME its child processes get

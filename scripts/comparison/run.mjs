@@ -31,6 +31,7 @@ import {
   defaultPins,
   digestOf,
   maxCorrections,
+  minimumCorrectionMs,
   minimumInvocationTokens,
   opencodeArgv,
   opencodeTokens,
@@ -43,6 +44,7 @@ import {
   swarmTokens,
   swarmUsage,
   taskPrompt,
+  verificationReserveMs,
   wallBudgetMs,
 } from "./arms.mjs";
 import { hiddenVerdict, swarmGatePlanVerdict, visibleVerdict } from "./checks.mjs";
@@ -57,6 +59,7 @@ import {
   processStart,
   releaseLock,
   revalidate,
+  stopStrays,
   terminateGroup,
   terminationDeadlineMs,
   updateLock,
@@ -166,17 +169,25 @@ const interrupted = () =>
  */
 async function invokeArm(log, launch, pins, budgets, task, workspace, base, turn, scratch) {
   const { prompt, kind, correction, deadlineMs, instance, onChild, home, tokenAllowance } = turn;
-  // A correction is never started with less than a minute (or the whole budget, where that is
-  // smaller); the flag Swarm takes is in whole minutes.
-  const remaining = Math.max(
-    Math.min(60_000, budgets.wallMsPerInvocation),
-    deadlineMs - Date.now(),
-  );
+  // Every invocation ends at the launch's one deadline. Past it the arm's process group is
+  // killed; the grace is not more solving time, only the bound on confirming that kill.
+  const remaining = Math.max(0, deadlineMs - Date.now());
   let argv;
   if (launch.arm === "swarm") {
     const contractPath = join(scratch, "contract.json");
     writeFileSync(contractPath, JSON.stringify(swarmContract(task), null, 2));
-    argv = swarmArgv(pins, task, workspace, base, prompt, contractPath, remaining, tokenAllowance);
+    // Swarm's own wall is the implementation's: its final verification of the tree runs after
+    // it, so the reserve the manifest declares for that verification is kept inside the deadline.
+    argv = swarmArgv(
+      pins,
+      task,
+      workspace,
+      base,
+      prompt,
+      contractPath,
+      remaining - verificationReserveMs(budgets),
+      tokenAllowance,
+    );
   } else argv = opencodeArgv(pins, prompt, workspace);
   const watch = new AbortController();
   const stopWatch =
@@ -189,8 +200,8 @@ async function invokeArm(log, launch, pins, budgets, task, workspace, base, turn
   try {
     ran = await log.run(argv, {
       cwd: workspace,
-      timeoutMs: remaining + (budgets.wallGraceMs ?? 60_000),
-      killConfirmMs: terminationDeadlineMs,
+      timeoutMs: remaining,
+      killConfirmMs: Math.min(terminationDeadlineMs, budgets.wallGraceMs ?? 60_000),
       signal: watch.signal,
       onSpawn: onChild,
       // PWD follows the cwd: a spawned process inherits the launcher's, and OpenCode reads it.
@@ -223,6 +234,10 @@ async function invokeArm(log, launch, pins, budgets, task, workspace, base, turn
       usage: launch.arm === "swarm" ? swarmUsage(stdout) : opencodeUsage(stdout),
       tokenAllowance: launch.arm === "swarm" ? tokenAllowance : null,
       claimedSuccess: claimedSuccess(launch.arm, ran.exitCode, stdout),
+      termination:
+        ran.termination === null
+          ? null
+          : { confirmed: ran.termination.confirmed, confirmMs: ran.termination.ms ?? null },
     },
     evidence: launch.arm === "swarm" ? swarmEvidenceDirectory(stdout) : null,
     stdout,
@@ -429,6 +444,12 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory, owner)
         updateLock(runsDirectory, owner, { child: { pid, started: processStart(pid) } }),
     };
     const evidenceDirectories = [];
+    record.cleanup = {
+      limitMs: budgets.wallGraceMs ?? 60_000,
+      deadlineKills: 0,
+      wallMs: 0,
+      strays: [],
+    };
     for (; turn.correction <= budgets.maxCorrections; turn.correction += 1) {
       const invoked = await invokeArm(
         log,
@@ -442,7 +463,23 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory, owner)
         scratch,
       );
       record.invocations.push({ ...invoked.invocation, visible: emptyVisible() });
+      if (invoked.ran.termination !== null) {
+        record.cleanup.deadlineKills += 1;
+        record.cleanup.wallMs += invoked.ran.termination.ms ?? terminationDeadlineMs;
+      }
       if (invoked.fatal !== null) throw invoked.fatal;
+      // A kill at the deadline whose end was not confirmed may have left a process of the
+      // launch's running; nothing is scored or dispatched beside it.
+      // What is still working in the launch's directory is stopped first, and the halt says so.
+      if (invoked.ran.termination !== null && !invoked.ran.termination.confirmed) {
+        const cleaned = await stopStrays(scratch);
+        record.cleanup.wallMs += cleaned.wallMs;
+        record.cleanup.strays.push(...cleaned.strays);
+        throw new FatalError(
+          "interrupted",
+          `the ${launch.arm} arm's process group was killed at the launch deadline and its end was not confirmed within ${terminationDeadlineMs} ms; a process it started may still be running (afterwards ${cleaned.strays.length} process(es) found in the launch's directory, ${cleaned.unstopped.length} not confirmed stopped)`,
+        );
+      }
       // An endpoint that died or restarted while the arm was talking to it is a failed
       // instrument; the invocation is kept and the campaign stops.
       const change = instanceChange(probe.instance, await probeEndpoint(pins.endpoint));
@@ -457,6 +494,16 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory, owner)
         exists: existsSync,
       });
       if (armFault !== null) throw new FatalError(armFault.class, armFault.reason);
+      // Nothing the launch started outlives the invocation that started it: a process still
+      // working in the launch's directory is stopped before the tree is read or scored.
+      const cleaned = await stopStrays(scratch);
+      record.cleanup.wallMs += cleaned.wallMs;
+      record.cleanup.strays.push(...cleaned.strays);
+      if (cleaned.unstopped.length > 0)
+        throw new FatalError(
+          "interrupted",
+          `process(es) ${cleaned.unstopped.join(", ")} of the ${launch.arm} arm were still running in the launch's directory and could not be confirmed stopped within ${terminationDeadlineMs} ms`,
+        );
       if (invoked.evidence) evidenceDirectories.push(invoked.evidence);
       const patch = await finalPatch(log, workspace, base);
       const visible = await visibleVerdict(log, task, task.baseCommit, patch);
@@ -471,21 +518,29 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory, owner)
         record.resolvedVisible = true;
         break;
       }
-      if (turn.correction === budgets.maxCorrections || Date.now() >= deadlineMs) {
-        if (Date.now() >= deadlineMs)
-          notes.push("the wall budget was spent before the corrections were");
+      if (turn.correction === budgets.maxCorrections) break;
+      // A correction starts only with a minute of solving time left before the deadline, and for
+      // Swarm its verification reserve on top; it is never given time past the deadline.
+      const needed =
+        minimumCorrectionMs + (launch.arm === "swarm" ? verificationReserveMs(budgets) : 0);
+      if (deadlineMs - Date.now() < needed) {
+        notes.push("the wall budget was spent before the corrections were");
         break;
       }
       if (launch.arm === "swarm") {
         const spent = record.invocations.reduce((sum, one) => sum + (one.tokens ?? 0), 0);
-        const unknown = record.invocations.some((one) => one.tokens === null);
+        // A total that leaves out calls the provider never reported is a lower bound, and an
+        // allowance computed from it would be too generous.
+        const unknown = record.invocations.some(
+          (one) => one.tokens === null || (one.usage?.unknownCalls ?? 0) > 0,
+        );
         turn.tokenAllowance = Math.max(0, budgets.swarmTokenCap - spent);
         // Usage the product could not report is not free: an allowance that cannot be computed
         // is not spent on another invocation.
         if (unknown || turn.tokenAllowance < minimumInvocationTokens) {
           notes.push(
             unknown
-              ? "an invocation reported no usage, so the launch's remaining token allowance could not be computed and no correction was started"
+              ? "an invocation, or a call inside one, reported no usage, so the launch's remaining token allowance could not be computed and no correction was started"
               : `the launch's token allowance (${budgets.swarmTokenCap}) was spent before the corrections were: ${spent} used, ${turn.tokenAllowance} left`,
           );
           break;

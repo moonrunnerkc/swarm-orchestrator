@@ -103,6 +103,13 @@ export const invocationSchema = z.strictObject({
       reasoning: z.number().int().nonnegative().nullable(),
       cacheRead: z.number().int().nonnegative().nullable(),
       cacheWrite: z.number().int().nonnegative().nullable(),
+      /** Answered calls without reported usage, so the figures are lower bounds; null where the arm's stream cannot say. */
+      unknownCalls: z.number().int().nonnegative().nullable().optional(),
+      /**
+       * How the kinds relate: `subsets` where reasoning is inside output and cached inside input
+       * (Swarm, the AI SDK's shape), `disjoint` where each is reported apart (OpenCode).
+       */
+      breakdown: z.enum(["subsets", "disjoint"]).optional(),
     })
     .nullable()
     .optional(),
@@ -110,6 +117,14 @@ export const invocationSchema = z.strictObject({
   tokenAllowance: z.number().int().nonnegative().nullable().optional(),
   /** The arm's own account of finishing: swarm's verdict, opencode's exit; never the truth. */
   claimedSuccess: z.boolean(),
+  /** Set where the harness killed the invocation at the launch's deadline: whether and how fast its end was confirmed. */
+  termination: z
+    .strictObject({
+      confirmed: z.boolean(),
+      confirmMs: z.number().int().nonnegative().nullable(),
+    })
+    .nullable()
+    .optional(),
   visible: z.strictObject({
     checkExit: z.number().int().nullable(),
     projectTestExit: z.number().int().nullable(),
@@ -158,6 +173,26 @@ export const recordSchema = z.strictObject({
   }),
   infrastructureFailure: z.string().nullable(),
   notes: z.array(z.string()),
+  /**
+   * Cleanup after the arm, apart from its solving time: kills at the deadline and the processes
+   * still working in the launch's directory that were stopped, with how long that took against
+   * the manifest's limit. Absent on records written before cleanup was measured.
+   */
+  cleanup: z
+    .strictObject({
+      limitMs: z.number().int().nonnegative(),
+      deadlineKills: z.number().int().nonnegative(),
+      wallMs: z.number().int().nonnegative(),
+      strays: z.array(
+        z.strictObject({
+          pid: z.number().int(),
+          command: z.string(),
+          outcome: z.enum(["terminated", "unconfirmed", "already-gone"]),
+          wallMs: z.number().int().nonnegative(),
+        }),
+      ),
+    })
+    .optional(),
   /** Present on an attempt the campaign stopped on: the class and the halt record beside it. */
   halt: z.strictObject({ class: z.enum(fatalClasses), record: z.string() }).optional(),
   /**
