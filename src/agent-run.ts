@@ -6,7 +6,7 @@ import type { ApprovalMode } from "./config/approval-mode.ts";
 import type { Clock } from "./core/clock.ts";
 import { type AgentLoopOutcome, runAgentLoop, type StallIntervention } from "./core/loop.ts";
 import { describePriorLoop, priorLoopAccount } from "./core/loop-account.ts";
-import type { LoopEvent } from "./core/loop-events.ts";
+import type { LoopEvent, LoopUsage } from "./core/loop-events.ts";
 import type { ConversationMessage, ModelClient, SamplingSettings } from "./core/model-client.ts";
 import type { RandomSource } from "./core/random-source.ts";
 import type { ToolInvoker } from "./core/tool-invoker.ts";
@@ -284,10 +284,13 @@ export async function runAgentTask(input: AgentTaskOptions): Promise<AgentTaskRe
           contract,
           task: contract.objective,
           maxSteps: Math.min(input.maxSteps, contract.budget.maxSteps),
-          maxTokens: Math.min(
-            input.maxTokens ?? defaultRunTokens,
-            contract.budget.maxTokens ?? defaultRunTokens,
-          ),
+          // A contract that names a token budget bounds the run's; one that names none leaves
+          // the run's own allowance standing. The default used to stand in for the contract's
+          // silence and clipped a launcher's 8,000,000 to 1,000,000 without a word on the record.
+          maxTokens:
+            contract.budget.maxTokens === undefined
+              ? (input.maxTokens ?? defaultRunTokens)
+              : Math.min(input.maxTokens ?? defaultRunTokens, contract.budget.maxTokens),
           maxWallTimeMs: Math.min(
             input.maxWallTimeMs ?? defaultRunWallMs,
             contract.budget.maxWallMs,
@@ -593,10 +596,12 @@ async function executeAgentTask(
       stopReason: loop.stopReason,
       steps: loop.steps,
       tokensUsed: loop.tokensUsed,
+      ...usageFields(loop),
       // Recorded as what it is: the model's account, never a result.
       completionNarrative: loop.completionClaim,
     },
   });
+  let usageTotal = loop.usage;
 
   // The model has said it is done. Nothing about that is a result yet: the gates run now,
   // and what they measure is what decides the outcome.
@@ -705,6 +710,7 @@ async function executeAgentTask(
       if (alternate != null) await escalation?.complete(repair.callsWithUnknownUsage > 0);
       remainingTokens -= repair.tokensUsed;
       callsWithUnknownUsage += repair.callsWithUnknownUsage;
+      usageTotal = combineUsage(usageTotal, repair.usage);
       finalStopReason = repair.stopReason;
       totalSteps += repair.steps;
       completionClaim = repair.completionClaim;
@@ -718,6 +724,7 @@ async function executeAgentTask(
           stopReason: repair.stopReason,
           steps: repair.steps,
           tokensUsed: repair.tokensUsed,
+          ...usageFields(repair),
           repair: true,
           // Held back from the attempt's wall so its candidate could be measured, and the
           // account of the previous loop it was handed, both on the record.
@@ -766,6 +773,9 @@ async function executeAgentTask(
       phase: "settled",
       steps: finalLoop.steps,
       tokensUsed: finalLoop.tokensUsed,
+      // The same spend by kind, over the first loop and every repair attempt: what of it was
+      // prompt, what was answer, and inside those what the provider called reasoning and cached.
+      ...usageFields({ usage: usageTotal, reservedTokens: latestLoop.reservedTokens }),
       // Beside the total it qualifies: above zero, `tokensUsed` is a lower bound.
       callsWithUnknownUsage: finalLoop.callsWithUnknownUsage,
       stopReason: finalLoop.stopReason,
@@ -1102,4 +1112,30 @@ async function resolveWithModel(
   ].join("\n");
 
   return runAgentLoop(brief, loopDependencies);
+}
+
+/**
+ * A loop's spend by kind as record fields, named with the scrubber's metric names. The reserved
+ * prompt is named only where a call was withheld for it, so an ordinary stop carries no zero
+ * that reads as a measurement.
+ */
+function usageFields(loop: Pick<AgentLoopOutcome, "usage" | "reservedTokens">) {
+  return {
+    inputTokens: loop.usage.inputTokens,
+    outputTokens: loop.usage.outputTokens,
+    reasoningTokens: loop.usage.reasoningTokens,
+    cachedInputTokens: loop.usage.cachedInputTokens,
+    ...(loop.reservedTokens === 0 ? {} : { reservedTokens: loop.reservedTokens }),
+  };
+}
+
+function combineUsage(left: LoopUsage, right: LoopUsage): LoopUsage {
+  const add = (a: number | null, b: number | null): number | null =>
+    a === null && b === null ? null : (a ?? 0) + (b ?? 0);
+  return {
+    inputTokens: left.inputTokens + right.inputTokens,
+    outputTokens: left.outputTokens + right.outputTokens,
+    reasoningTokens: add(left.reasoningTokens, right.reasoningTokens),
+    cachedInputTokens: add(left.cachedInputTokens, right.cachedInputTokens),
+  };
 }

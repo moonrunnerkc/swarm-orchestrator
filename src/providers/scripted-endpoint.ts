@@ -18,6 +18,8 @@ export interface ScriptedToolCall {
 export interface ScriptedTurn {
   readonly text?: string;
   readonly toolCalls?: readonly ScriptedToolCall[];
+  /** How long the endpoint holds the request before it starts streaming the turn; a model that is slow to answer. */
+  readonly delayMs?: number;
 }
 
 export interface ScriptedEndpoint {
@@ -57,7 +59,9 @@ export async function startScriptedEndpoint(script: {
           text: "The scripted endpoint has no more turns; finishing.",
         };
         played += 1;
-        streamTurn(response, script.modelId, turn, played);
+        const sequence = played;
+        if (turn.delayMs === undefined) streamTurn(response, script.modelId, turn, sequence);
+        else setTimeout(() => streamTurn(response, script.modelId, turn, sequence), turn.delayMs);
       });
       return;
     }

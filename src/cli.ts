@@ -329,10 +329,11 @@ async function run(options: RunCommand): Promise<number> {
   });
   // One HOME for every child of this run: the loop's shells, the gates, each repair attempt
   // and the final independent verification. A resumption takes the original run's home back,
-  // validated as that run's; a finished run removes it; an interrupted one keeps it to resume.
+  // validated as that run's, however many sessions lie between; a finished run removes it; an
+  // interrupted one keeps it to resume.
   const childHome = establishRunChildHome({
     runId: evidence.sessionId,
-    ...(options.recovery === undefined ? {} : { resumeOf: options.recovery.source.sessionId }),
+    ...(options.recovery === undefined ? {} : { resumeOf: options.recovery.childHomeOwner }),
   });
   let keepChildHome = true;
   if (options.recovery !== undefined)
@@ -340,7 +341,18 @@ async function run(options: RunCommand): Promise<number> {
       type: "session-started",
       actor: "harness",
       provenance: ["tool-output"],
-      payload: { task: options.task, continuation: options.recovery.source },
+      payload: {
+        task: options.task,
+        continuation: options.recovery.source,
+        childHomeOwner: options.recovery.childHomeOwner,
+        // Named with the scrubber's metric names: the allowance this continuation runs under,
+        // and what cancelled calls with no reported usage were charged against the sealed budget.
+        maxTokens: options.recovery.remainingTokens,
+        chargedForCancelledCalls: {
+          calls: options.recovery.chargedForCancelledCalls.calls,
+          reservedTokens: options.recovery.chargedForCancelledCalls.tokens,
+        },
+      },
     });
   if (localBackend !== null) {
     await evidence.record(localEndpointRecord(localBackend));
@@ -400,6 +412,13 @@ async function run(options: RunCommand): Promise<number> {
     transcript: "components",
   });
   const fileSet = createFileSetRegistry(evidence);
+  // The earlier session's authorization, carried onto this chain before any edit: without it
+  // the continuation's first write is refused for want of a declaration the run already made.
+  if (options.recovery !== undefined && options.recovery.declaredFiles.length > 0)
+    await fileSet.declare(
+      options.recovery.declaredFiles,
+      `continuation of ${options.recovery.source.sessionId}`,
+    );
   const interruption = new AbortController();
   // The deadline is the clock on model work: planning, the loop, repair and strengthening. The
   // final verification of the tree they produced is not cut by it. A run whose loop ran to its
@@ -1082,6 +1101,7 @@ async function resumeExecution(
       context.spec.repository.baseCommit,
       "--model",
       context.spec.model.spec,
+      ...(context.localEndpoint === null ? [] : ["--local-endpoint", context.localEndpoint]),
       "--isolation",
       context.spec.isolation.backend === "host" ? "none" : context.spec.isolation.backend,
       ...(context.spec.taskOracle === null ? [] : ["--oracle", context.spec.taskOracle.command]),
@@ -1112,6 +1132,9 @@ async function resumeExecution(
       previousSpec: context.spec,
       previousCriteria: context.criteria,
       source: context.source,
+      childHomeOwner: context.childHomeOwner,
+      chargedForCancelledCalls: context.chargedForCancelledCalls,
+      declaredFiles: context.declaredFiles,
     },
   });
 }

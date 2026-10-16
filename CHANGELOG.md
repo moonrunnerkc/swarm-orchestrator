@@ -60,8 +60,56 @@ Source on `v13-main`; not published until a release names it.
   9 and stops at step 12 of a loop that ran to 72 calls
   ([evidence](docs/evidence/2026-10-11/tool-stall/replay.md)).
 
+### Added
+
+- **A small comparison against OpenCode on four fresh tasks, with its readiness shown first.**
+  `scripts/pilot/tasks-2026-10-15.mjs` freezes four maintainer-authored changes from three
+  public repositories (a mime bug fix whose wrong patch is a security negative control, a pako
+  feature and refactor, a csstree esbuild upgrade) and an argparse calibration task; the pilot
+  helpers take `--set` to name a task set and `--stage calibration`; the scorer writes
+  task-authored hidden checks into the scoring checkout only and does not judge a patch's edits
+  to a test file the oracle overlays; the validator rewrites an upgrade reference's range
+  declaration to the exact version a task requires, generally. The comparison launcher now
+  shares one token allowance across a launch's scripted corrections and records each arm's
+  spend by kind, and OpenCode's configuration spells thinking off the way its provider maps it.
+  The analyzer decides a stage by the rule of the comparison that froze its manifest, compares
+  the declared primary measures as win, tie, loss or unknown, and names a cost regression. The
+  protocol, candidates, validation and the readiness records are under
+  `docs/evidence/2026-10-15/comparison/`: both tools delivered the disposable smoke fix, neither
+  delivered the calibration task in two attempts each, and the scored comparison was therefore
+  not frozen or launched.
+
 ### Fixed
 
+- **`--max-tokens` above 1,000,000 was silently clipped on a goal-contract run.** The sealed
+  task contract names no token budget, and the default stood in for its silence, so a run asked
+  for 8,000,000 tokens sealed 1,000,000 and stopped there three times in one launch with nothing
+  on the record naming the clip. A contract that names no token budget now leaves the run's own
+  allowance standing; one that names a budget still bounds it.
+- **`--max-tokens` could be exceeded by one prompt, and the spend was one number.** The
+  allowance counts input and output of every call and was checked between calls, so a loop with
+  a 600,000-token allowance reported 628,848 used: the last call's prompt went out before the
+  check could see it. The loop now reserves the next prompt at the size of the last one the
+  provider measured and withholds a call that cannot fit, naming the reserved size on the stop
+  (`reservedTokens`). Every model-call record, each loop's stop record and the settled budget
+  record now carry input, output, reasoning and cached-input tokens apart (`inputTokens`,
+  `outputTokens`, `reasoningTokens`, `cachedInputTokens`), the last two null where the provider
+  reports none, so a run's account can say how much was prompt, answer, thinking and replayed
+  prefix without adding any twice. The flag's documented meaning is the bound it is: checked
+  between calls, shared by the first loop and every repair attempt, not a hard cap, and not
+  carried across a new session.
+- **An interrupted run could be told to resume and then be refused, or resume into the wrong
+  home.** Through the ordinary command line: a run interrupted while the model was answering
+  recorded that call with unknown usage, and `swarm resume` refused to reconstruct the sealed
+  budget; a continuation that did start opened a new chain with no file-set declaration, so its
+  first edit was refused as unauthorized; it reached whichever local endpoint discovery found
+  rather than the one the run was pinned to; and resuming a session that was itself a
+  continuation allocated a fresh child HOME under the intermediate session's id, leaving the
+  original run's home orphaned. Each is repaired with a regression, and
+  `src/cli-resume-child-home.integration.test.ts` drives the whole chain (run, interrupt, resume,
+  interrupt, resume) through the real CLI against a scripted endpoint: one home from first
+  session to last, the first session's state still there for the third, the cut-off calls
+  charged at their recorded bounds and named on the continuation's first record.
 - A refused final verification (a fresh checkout that could not install, an immutable path
   reached, an upgrade policy decision) ended the run with a schema error and no result line. It
   is now a recorded non-success: task unjudged, not acceptable, the refusal as the reason; the
