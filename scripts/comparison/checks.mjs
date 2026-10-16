@@ -19,10 +19,10 @@ import {
   cloneAtBase,
   commitVisibleCheck,
   comparisonRoot,
-  installEnvironment,
   mirrorOf,
   prepare,
   tail,
+  taskEnvironment,
   writeArmConfiguration,
 } from "./workspace.mjs";
 
@@ -41,8 +41,8 @@ async function freshTree(log, task, base, patch, label) {
   return { scratch, checkout, prepared };
 }
 
-const run = (log, checkout, argv, timeoutMs = 900_000) =>
-  log.run(argv, { cwd: checkout, timeoutMs, env: installEnvironment() });
+const run = (log, task, checkout, argv, timeoutMs = 900_000) =>
+  log.run(argv, { cwd: checkout, timeoutMs, env: taskEnvironment(task) });
 
 /** The visible verdict and the text the supervisor hands back on failure. */
 export async function visibleVerdict(log, task, base, patch) {
@@ -55,8 +55,8 @@ export async function visibleVerdict(log, task, base, patch) {
         projectTestExit: null,
         detail: `preparation failed (${tree.prepared.failed.join(" ")}):\n${tree.prepared.detail}`,
       };
-    const check = await run(log, tree.checkout, ["sh", "-c", task.visible.command]);
-    const project = await run(log, tree.checkout, task.projectTest);
+    const check = await run(log, task, tree.checkout, ["sh", "-c", task.visible.command]);
+    const project = await run(log, task, tree.checkout, task.projectTest);
     const passed = check.exitCode === 0 && project.exitCode === 0;
     const detail = passed
       ? "visible check and project tests passed"
@@ -96,7 +96,7 @@ export async function lintVerdict(log, task, base) {
     if (typeof manifest.scripts?.lint !== "string")
       return { ok: true, applicable: false, detail: "the project declares no lint script" };
     const lint = ["npm", "run", "--loglevel=error", "lint"];
-    const withCheck = await run(log, tree.checkout, lint);
+    const withCheck = await run(log, task, tree.checkout, lint);
     if (withCheck.exitCode === 0)
       return {
         ok: true,
@@ -104,7 +104,7 @@ export async function lintVerdict(log, task, base) {
         detail: "lint passes with the visible check in the tree",
       };
     rmSync(join(tree.checkout, "acceptance"), { recursive: true, force: true });
-    const bare = await run(log, tree.checkout, lint);
+    const bare = await run(log, task, tree.checkout, lint);
     return bare.exitCode === 0
       ? {
           ok: false,
@@ -175,7 +175,7 @@ export async function swarmGatePlanVerdict(log, task, base, pins, childHome) {
       {
         cwd: tree.checkout,
         timeoutMs: 900_000,
-        env: { ...installEnvironment(), [swarmChildHomeName]: childHome },
+        env: { ...taskEnvironment(task), [swarmChildHomeName]: childHome },
       },
     );
     const report = lastJsonLine(ran.stdout.toString(), "swarm.check.v1");
@@ -312,7 +312,7 @@ export async function hiddenVerdict(
       writeFileSync(target, file.source);
     }
     for (const argv of task.build) {
-      const built = await run(log, tree.checkout, argv);
+      const built = await run(log, task, tree.checkout, argv);
       if (built.exitCode !== 0)
         return {
           verdict: "fail",
@@ -400,7 +400,7 @@ export async function hiddenVerdict(
         };
       details.push(`structural /${structural.pattern}/ = ${count}`);
     }
-    const judged = await run(log, tree.checkout, task.hidden.argv, 1_200_000);
+    const judged = await run(log, task, tree.checkout, task.hidden.argv, 1_200_000);
     if (judged.exitCode !== 0)
       return {
         verdict: "fail",
@@ -408,7 +408,7 @@ export async function hiddenVerdict(
         detail: tail(judged, 120),
       };
     for (const argv of task.hidden.extraArgv ?? []) {
-      const extra = await run(log, tree.checkout, argv);
+      const extra = await run(log, task, tree.checkout, argv);
       if (extra.exitCode !== 0)
         return {
           verdict: "fail",
@@ -417,7 +417,7 @@ export async function hiddenVerdict(
         };
     }
     if (task.hidden.argv.join(" ") !== task.projectTest.join(" ")) {
-      const project = await run(log, tree.checkout, task.projectTest, 1_200_000);
+      const project = await run(log, task, tree.checkout, task.projectTest, 1_200_000);
       if (project.exitCode !== 0)
         return {
           verdict: "fail",

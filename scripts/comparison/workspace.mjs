@@ -4,6 +4,7 @@
  * is not in the object store the agent can read; the remote is removed. The visible check is
  * committed on top of the base as acceptance material both arms see and neither may edit.
  */
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -118,7 +119,7 @@ export async function commitVisibleCheck(log, task, directory) {
 /** The task's install argv list, in order; false with the failing step when one fails. */
 export async function prepare(log, task, directory, { timeoutMs = 900_000 } = {}) {
   for (const argv of task.install) {
-    const ran = await log.run(argv, { cwd: directory, timeoutMs, env: installEnvironment() });
+    const ran = await log.run(argv, { cwd: directory, timeoutMs, env: taskEnvironment(task) });
     if (ran.exitCode !== 0) return { ok: false, failed: argv, detail: tail(ran) };
   }
   return { ok: true, failed: null, detail: "" };
@@ -134,6 +135,49 @@ export function installEnvironment() {
     // The harness's own installs fill the same content-addressed store the launches read.
     npm_config_cache: sharedNpmCache,
   };
+}
+
+/** Where the harness keeps a package manager release a task's base declares. */
+export const npmToolchain = (version) => join(comparisonRoot, "tools", `npm-${version}`);
+
+const declaredNpmCache = new Map();
+
+/**
+ * The npm release a task's base declares in its manifest (`packageManager: "npm@11.2.0"`), read
+ * from the sealed mirror so no change an arm makes can move it; null where it declares none.
+ */
+export function declaredNpm(task) {
+  if (declaredNpmCache.has(task.id)) return declaredNpmCache.get(task.id);
+  const shown = spawnSync("git", ["show", `${task.baseCommit}:package.json`], {
+    cwd: mirrorOf(task.repository),
+    encoding: "utf8",
+  });
+  let version = null;
+  if (shown.status === 0) {
+    const declared = JSON.parse(shown.stdout).packageManager;
+    const match = typeof declared === "string" ? /^npm@(\d+\.\d+\.\d+)/.exec(declared) : null;
+    version = match?.[1] ?? null;
+  }
+  declaredNpmCache.set(task.id, version);
+  return version;
+}
+
+/**
+ * The environment every command of a task runs in, the arms' included: the install
+ * environment, with the npm release the base declares first on PATH where it declares one. A
+ * project that pins its package manager is prepared with that one; Swarm refuses to spend model
+ * calls in an environment other than the declared one, and both arms get the same.
+ */
+export function taskEnvironment(task) {
+  const environment = installEnvironment();
+  const version = declaredNpm(task);
+  if (version === null) return environment;
+  const bin = join(npmToolchain(version), "node_modules", ".bin");
+  if (!existsSync(join(bin, "npm")))
+    throw new Error(
+      `${task.id} declares npm@${version} and it is not provisioned; before freezing run: npm install --prefix ${npmToolchain(version)} --no-audit --no-fund npm@${version}`,
+    );
+  return { ...environment, PATH: `${bin}:${environment.PATH}` };
 }
 
 export function tail(ran, lines = 60) {

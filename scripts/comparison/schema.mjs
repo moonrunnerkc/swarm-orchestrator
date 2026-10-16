@@ -206,6 +206,8 @@ export const recordSchema = z.strictObject({
       home: z.string(),
       fresh: z.boolean(),
       npmCache: z.string(),
+      /** The npm release the task's base declares and every command of the launch ran with; null where it declares none. */
+      declaredNpm: z.string().nullable().optional(),
       browserCacheBefore: z.boolean(),
       browserCacheAfter: z.boolean(),
     })

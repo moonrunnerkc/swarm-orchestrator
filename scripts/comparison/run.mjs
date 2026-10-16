@@ -76,10 +76,12 @@ import {
   cloneAtBase,
   commitVisibleCheck,
   comparisonRoot,
+  declaredNpm,
   finalPatch,
   prepare,
   prepareLaunchHome,
   resolveFull,
+  taskEnvironment,
   writeArmConfiguration,
 } from "./workspace.mjs";
 
@@ -210,6 +212,9 @@ async function invokeArm(log, launch, pins, budgets, task, workspace, base, turn
       // HOME as any process does.
       env: {
         ...process.env,
+        // The package manager the task's base declares, where it declares one, as every other
+        // command of the task gets it.
+        PATH: taskEnvironment(task).PATH,
         PWD: workspace,
         PUPPETEER_SKIP_DOWNLOAD: "true",
         ...(launch.arm === "swarm" ? { [swarmChildHomeName]: home } : { HOME: home }),
@@ -371,6 +376,11 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory, owner)
   try {
     console.log(`launch ${launch.order}: ${launch.task} ${launch.arm}`);
     const preparationStarted = Date.now();
+    try {
+      taskEnvironment(task);
+    } catch (cause) {
+      throw new FatalError("preparation", cause.message);
+    }
     await cloneAtBase(log, task, task.baseCommit, workspace);
     const base = await commitVisibleCheck(log, task, workspace);
     const prepared = await prepare(log, task, workspace);
@@ -391,6 +401,7 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory, owner)
       home,
       fresh: true,
       npmCache: launchHome.npmCache,
+      declaredNpm: declaredNpm(task),
       browserCacheBefore,
       browserCacheAfter: browserCacheBefore,
     };

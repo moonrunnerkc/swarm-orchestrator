@@ -127,7 +127,7 @@ const sentinels = existsSync(home)
 writeFileSync(join(home, `installed-by-${process.pid}`), "");
 appendFileSync(
   join(markers, "launches.log"),
-  `${arm} ${kind} ${process.pid} ${Date.now()} home=${home} found=${sentinels}${arm === "swarm" ? ` max-tokens=${flag("--max-tokens")} max-wall-minutes=${flag("--max-wall-minutes")}` : ""}\n`,
+  `${arm} ${kind} ${process.pid} ${Date.now()} home=${home} found=${sentinels}${arm === "swarm" ? ` max-tokens=${flag("--max-tokens")} max-wall-minutes=${flag("--max-wall-minutes")}` : ""} npm=${(process.env.PATH ?? "").split(":").find((entry) => entry.includes("/tools/npm-")) ?? "system"}\n`,
 );
 const heartbeat = join(markers, "heartbeat");
 writeFileSync(heartbeat, "");

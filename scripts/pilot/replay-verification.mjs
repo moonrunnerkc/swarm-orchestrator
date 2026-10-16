@@ -45,6 +45,7 @@ import {
   prepare,
   resolveFull,
   swarmConfigurationText,
+  taskEnvironment,
 } from "../comparison/workspace.mjs";
 import { solverReference } from "./reference.mjs";
 import { readSession } from "./swarm-session.mjs";
@@ -215,7 +216,7 @@ for (const scenario of plan.scenarios) {
       cwd: workspace,
       timeoutMs: 20 * 60_000,
       env: {
-        PATH: process.env.PATH,
+        PATH: taskEnvironment(task).PATH,
         HOME: home,
         NO_COLOR: "1",
         ...Object.fromEntries(

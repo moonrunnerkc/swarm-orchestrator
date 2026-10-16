@@ -101,12 +101,12 @@ function git(cwd, ...args) {
  * A task repository with a base that fails the visible check and the hidden oracle, and an
  * upstream commit (the base's child) that passes both, mirrored bare where the harness looks.
  */
-function mirrorTask(home, repository) {
+function mirrorTask(home, repository, manifest = {}) {
   const source = mkdtempSync(join(tmpdir(), "comparison-source-"));
   roots.push(source);
   writeFileSync(
     join(source, "package.json"),
-    '{ "name": "calc", "type": "module", "version": "1.0.0" }\n',
+    `${JSON.stringify({ name: "calc", type: "module", version: "1.0.0", ...manifest })}\n`,
   );
   writeFileSync(
     join(source, "calc.mjs"),
@@ -303,12 +303,17 @@ async function heartbeatStopped(env, deadlineMs) {
   throw new Error("the owned child was still alive after the termination deadline");
 }
 
-async function setup({ tasks: build, endpoint: endpointOptions = {}, ...rest } = {}) {
+async function setup({
+  tasks: build,
+  endpoint: endpointOptions = {},
+  manifest: baseManifest = {},
+  ...rest
+} = {}) {
   const env = environment();
   const endpoint = endpointOptions.absent
     ? null
     : await startEndpoint(env.home, endpointOptions.model);
-  const commits = mirrorTask(env.home, "fixture/calc");
+  const commits = mirrorTask(env.home, "fixture/calc", baseManifest);
   const tasks = (
     build ??
     ((t) => [
@@ -676,6 +681,36 @@ describe("stopping the comparison when the experiment is invalid", () => {
     expect(swarm.notes).toContain("the wall budget was spent before the corrections were");
     const opencode = readJson(join(fixture.runs, "calc-fix-add.opencode.json"));
     expect(opencode.corrections).toBe(2);
+  });
+
+  it("runs every command of a task, both arms included, with the npm release its base declares", async () => {
+    const fixture = await setup({
+      tasks: (t, commits) => [t("calc-fix-add", "fixture/calc", commits)],
+      manifest: { packageManager: "npm@9.9.9" },
+    });
+    const bin = join(fixture.env.home, ".cache/swarm-comparison/tools/npm-9.9.9/node_modules/.bin");
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(join(bin, "npm"), "#!/bin/sh\necho 9.9.9\n", { mode: 0o755 });
+    const result = await runRunner(fixture.env, fixture.path, [], "correct");
+    expect(result.code).toBe(0);
+    const lines = launchLines(fixture.env);
+    expect(lines).toHaveLength(2);
+    for (const line of lines) expect(line).toContain(`npm=${bin}`);
+    for (const name of recordsOf(fixture.runs))
+      expect(readJson(join(fixture.runs, name)).preparedState.declaredNpm).toBe("9.9.9");
+  });
+
+  it("dispatches nothing when the npm release a task's base declares is not provisioned", async () => {
+    const fixture = await setup({
+      tasks: (t, commits) => [t("calc-fix-add", "fixture/calc", commits)],
+      manifest: { packageManager: "npm@9.9.9" },
+    });
+    const result = await runRunner(fixture.env, fixture.path, [], "correct");
+    expect(result.code).toBe(3);
+    expect(launchLines(fixture.env)).toHaveLength(0);
+    const halt = readJson(join(fixture.runs, "halt-1.json"));
+    expect(halt.class).toBe("preparation");
+    expect(halt.reason).toContain("npm install --prefix");
   });
 
   it("halts when the arm's process ends on a signal the harness did not send", async () => {
