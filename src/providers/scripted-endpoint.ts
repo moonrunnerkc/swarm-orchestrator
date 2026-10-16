@@ -27,6 +27,12 @@ export interface ScriptedTurn {
   readonly usage?: { readonly promptTokens: number; readonly completionTokens: number } | null;
 }
 
+/**
+ * A turn, or a turn computed from the request it answers: what a model does when its answer
+ * depends on something only the prompt carries, such as a record digest the harness minted.
+ */
+export type ScriptedTurnSource = ScriptedTurn | ((request: unknown) => ScriptedTurn);
+
 export interface ScriptedEndpoint {
   /** The base url the product is pointed at, ending in `/v1`. */
   readonly url: string;
@@ -40,7 +46,7 @@ export interface ScriptedEndpoint {
 
 export async function startScriptedEndpoint(script: {
   readonly modelId: string;
-  readonly turns: readonly ScriptedTurn[];
+  readonly turns: readonly ScriptedTurnSource[];
 }): Promise<ScriptedEndpoint> {
   const requests: unknown[] = [];
   let played = 0;
@@ -60,9 +66,10 @@ export async function startScriptedEndpoint(script: {
         } catch {
           requests.push(null);
         }
-        const turn = script.turns[played] ?? {
+        const source = script.turns[played] ?? {
           text: "The scripted endpoint has no more turns; finishing.",
         };
+        const turn = typeof source === "function" ? source(requests.at(-1)) : source;
         played += 1;
         const sequence = played;
         if (turn.delayMs === undefined) streamTurn(response, script.modelId, turn, sequence);

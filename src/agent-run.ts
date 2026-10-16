@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { createEscalationController } from "./agent-escalation.ts";
+import { describeJustificationRequest, runJustificationTurn } from "./agent-justification.ts";
 import { type WorkerPromptProfile, workerPrompt } from "./agent-prompt.ts";
 import { buildVersion } from "./build-version.ts";
 import type { ApprovalMode } from "./config/approval-mode.ts";
@@ -40,6 +41,7 @@ import { type FileSetRegistry, writeRefusal } from "./gates/file-set.ts";
 import { createAmendFileSetTool, createDeclareFileSetTool } from "./gates/file-set-tool.ts";
 import { capabilityOf } from "./gates/gate-capability.ts";
 import type { DiffBudget } from "./gates/gate-definition.ts";
+import { justifiedRecords, outstandingJustifications } from "./gates/gate-runner.ts";
 import { createGitWorkspaceProbe } from "./gates/git-workspace.ts";
 import { captureInheritedChanges, type InheritedChanges } from "./gates/inherited-changes.ts";
 import { createNodeCommandRunner } from "./gates/node-command-runner.ts";
@@ -47,6 +49,7 @@ import { prepareDependencies } from "./gates/prepare-dependencies.ts";
 import { detectProject } from "./gates/project-type.ts";
 import type { EscalationSettings } from "./gates/repair-policy.ts";
 import { diffAgainstBase } from "./gates/scratch-index.ts";
+import { parseUnifiedDiff } from "./gates/unified-diff.ts";
 import { taskBrief } from "./task-brief.ts";
 import { type ConfirmationPrompt, createToolChokepoint } from "./tools/chokepoint.ts";
 import { createLedgerChokepointRecorder } from "./tools/chokepoint-record.ts";
@@ -351,7 +354,7 @@ async function executeAgentTask(
   store: RunStore | undefined,
 ): Promise<AgentTaskResult> {
   const pending = new Map<string, string>();
-  const { definitions, toolInvoker, guard } = assembleToolset({
+  const toolsetBase: Omit<ToolsetOptions, "tools"> = {
     workspace: options.workspace,
     ...(options.repairFeedback === undefined ? {} : { untrustedContext: options.repairFeedback }),
     abortSignal: options.abortSignal,
@@ -391,6 +394,9 @@ async function executeAgentTask(
       }
     },
     ...(options.isolation === undefined ? {} : { isolation: options.isolation }),
+  };
+  const { definitions, toolInvoker, guard } = assembleToolset({
+    ...toolsetBase,
     tools: (guard) => [
       ...createWorkspaceTools(guard, (path) => writeRefusal(options.fileSet.state(), path), {
         backend: options.isolation,
@@ -741,6 +747,84 @@ async function executeAgentTask(
       : { singleFileTestCommand: options.singleFileTestCommand }),
   });
 
+  // An advisory gate that demands a justification is owed one turn to answer it, once the work
+  // is otherwise acceptable. Before this, nothing asked: the model was never told, no call
+  // followed the gates, and the run was refused for a claim it had no chance to make.
+  const demands = outstandingJustifications(
+    gates.outcome.finalCycle,
+    justifiedRecords(options.evidence),
+  );
+  if (
+    demands.length > 0 &&
+    gates.outcome.settled === "green" &&
+    gates.outcome.baseComparison.decision.accepted &&
+    !options.abortSignal.aborted
+  ) {
+    const budget = { maxTokens: remainingTokens, maxWallTimeMs: wall.loopBudgetMs() };
+    if (
+      budget.maxTokens < loopDependencies.maxOutputTokens ||
+      budget.maxWallTimeMs < justificationFloorMs
+    ) {
+      await options.evidence.record({
+        type: "session-stopped",
+        actor: "harness",
+        provenance: ["tool-output"],
+        payload: {
+          stopReason: "justification-withheld",
+          justification: true,
+          remaining: budget,
+          floor: {
+            maxTokens: loopDependencies.maxOutputTokens,
+            maxWallTimeMs: justificationFloorMs,
+          },
+          demands: demands.map((run) => run.record),
+        },
+      });
+    } else {
+      const claimOnly = assembleToolset({
+        ...toolsetBase,
+        tools: () => definitions.filter((tool) => tool.name === "claim"),
+      });
+      const turn = await runJustificationTurn(
+        describeJustificationRequest({
+          task: taskBrief(options.task, options.contract),
+          demands,
+          changes: parseUnifiedDiff(
+            await diffAgainstBase({ workspaceRoot: options.workspace, baseRef: options.baseRef }),
+          ),
+        }),
+        demands.length,
+        {
+          ...loopDependencies,
+          toolInvoker: claimOnly.toolInvoker,
+          toolSchemas: claimOnly.definitions,
+          budget: { ...loopDependencies.budget, ...budget },
+        },
+      );
+      remainingTokens -= turn.tokensUsed;
+      callsWithUnknownUsage += turn.callsWithUnknownUsage;
+      usageTotal = combineUsage(usageTotal, turn.usage);
+      totalSteps += turn.steps;
+      // Not a loop lifecycle: the work loop's stop still describes the work. This one is the
+      // turn's own account, beside the demands it was asked to answer.
+      await options.evidence.record({
+        type: "session-stopped",
+        actor: "harness",
+        provenance: ["model"],
+        payload: {
+          stopReason: "justification",
+          justification: true,
+          outcome: turn.stopReason,
+          steps: turn.steps,
+          tokensUsed: turn.tokensUsed,
+          ...usageFields(turn),
+          demands: demands.map((run) => run.record),
+          completionNarrative: turn.completionClaim,
+        },
+      });
+    }
+  }
+
   wall.release();
 
   // Said to the screen as well as written down, because a gate strip of passes over a tree
@@ -825,6 +909,8 @@ const defaultRunTokens = 1_000_000;
  * once, if at all, and the attempt's gates then run over a tree it never touched.
  */
 const minimumAttemptWallMs = 60_000;
+/** One local answer with a claim in it, measured at a few seconds; a justification needs no more. */
+const justificationFloorMs = 15_000;
 const attemptWallFraction = 20;
 
 /**
