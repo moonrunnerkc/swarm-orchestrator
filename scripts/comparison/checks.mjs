@@ -127,7 +127,7 @@ export async function lintVerdict(log, task, base) {
  * mismatch or a failing gate is the supervisor's configuration or environment, never the arm's
  * outcome, and stops the launch before it is dispatched.
  */
-export async function swarmGatePlanVerdict(log, task, base, pins, childHome) {
+export async function swarmGatePlanVerdict(log, task, base, pins, childHome, declaredGates = {}) {
   const expected = task.projectTest.join(" ");
   const verdict = (ok, detail, extra = {}) => ({
     ok,
@@ -145,7 +145,7 @@ export async function swarmGatePlanVerdict(log, task, base, pins, childHome) {
         false,
         `preparation failed (${tree.prepared.failed.join(" ")}):\n${tree.prepared.detail}`,
       );
-    writeArmConfiguration(tree.checkout, "swarm", pins.endpoint, pins.model, task);
+    writeArmConfiguration(tree.checkout, "swarm", pins.endpoint, pins.model, task, declaredGates);
     const written = readFileSync(join(tree.checkout, "swarm.toml"), "utf8");
     // Read back by the pinned build's own parser where the build carries one (the product's
     // dist does); a stand-in arm without one is read by the TOML library the product itself
@@ -203,6 +203,18 @@ export async function swarmGatePlanVerdict(log, task, base, pins, childHome) {
         `the product's tests gate (${effective}) is ${status} on the prepared base under the launch's child HOME: ${tests.detail}${tests.output ? `\n${tests.output}` : ""}`,
         extra,
       );
+    // A gate the manifest declares advisory must read advisory in the product's own plan; the
+    // declaration is otherwise a sentence in a manifest and not the configuration that ran.
+    const checks = report.conclusions?.checks ?? [];
+    for (const [id, gate] of Object.entries(declaredGates)) {
+      const planned = checks.find((one) => one.id === id);
+      if (planned?.severity !== gate.severity)
+        return verdict(
+          false,
+          `the manifest declares the ${id} gate ${gate.severity}, and the product's plan reads it as ${planned?.severity ?? "absent"}`,
+          extra,
+        );
+    }
     return verdict(
       true,
       `the product runs ${effective} as its blocking tests gate and it passes on the base; the override was read back by ${pinnedParser ? "the pinned build's parser" : "the TOML library the product parses with"}`,

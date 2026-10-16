@@ -54,7 +54,10 @@ const words = process.argv.slice(2);
  * - `ignore-override`: the gate is the manifest's own `npm run --loglevel=error test`, which is
  *   what the product did before overrides were written;
  * - `prerequisite-missing`: the gate is the override's command and it fails for a browser that
- *   is not installed under the home it was given.
+ *   is not installed under the home it was given;
+ * - `ignore-severity`: a lint gate the swarm.toml declares advisory is planned blocking anyway.
+ *
+ * A `[gates.lint]` table with `severity = "advisory"` is reported as an advisory lint gate.
  */
 if (words[0] === "check") {
   const workspace = words[words.indexOf("--workspace") + 1];
@@ -79,6 +82,20 @@ if (words[0] === "check") {
             output: `browserType.launch: Executable doesn't exist at ${home}/Library/Caches/ms-playwright/chromium_headless_shell-1194/chrome-mac/headless_shell`,
           }
         : { command: override, status: "passed", detail: "the command exited 0" };
+  const lintAdvisory =
+    fault !== "ignore-severity" && /\[gates\.lint\][^[]*severity = "advisory"/.test(toml);
+  const lint = /\[gates\.lint\]/.test(toml)
+    ? [
+        {
+          id: "lint",
+          severity: lintAdvisory ? "advisory" : "blocking",
+          measures: {},
+          command: "npm run --loglevel=error lint",
+          status: "failed",
+          detail: "the command exited 1",
+        },
+      ]
+    : [];
   const failed = tests.status !== "passed";
   console.log(
     JSON.stringify({
@@ -87,7 +104,7 @@ if (words[0] === "check") {
       tree: null,
       conclusions: {
         command: { status: "ran", detail: tests.detail },
-        checks: [{ id: "tests", severity: "blocking", measures: {}, ...tests }],
+        checks: [{ id: "tests", severity: "blocking", measures: {}, ...tests }, ...lint],
         executionTrust: { mode: "restricted", detail: "fixture" },
         requirements: { status: "unmeasured", detail: "fixture" },
         challenges: { status: "none", detail: "fixture" },

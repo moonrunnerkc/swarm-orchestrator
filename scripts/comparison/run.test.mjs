@@ -200,11 +200,15 @@ function stopEndpoint(endpoint) {
   return Date.now();
 }
 
-function writeManifest(home, { endpoint, tasks, budgets = {}, pins = {}, launchOverrides = {} }) {
+function writeManifest(
+  home,
+  { endpoint, tasks, budgets = {}, pins = {}, launchOverrides = {}, swarmGates },
+) {
   const manifest = {
     schema: "swarm-ordinary-comparison.manifest.v1",
     frozenAt: "2026-10-14T00:00:00.000Z",
     protocolDigest: null,
+    ...(swarmGates === undefined ? {} : { swarmGates }),
     pins: {
       model: "fixture-model",
       endpoint,
@@ -711,6 +715,29 @@ describe("stopping the comparison when the experiment is invalid", () => {
     const halt = readJson(join(fixture.runs, "halt-1.json"));
     expect(halt.class).toBe("preparation");
     expect(halt.reason).toContain("npm install --prefix");
+  });
+
+  it("writes a gate the manifest declares advisory into Swarm's configuration and stops before dispatch where the product's plan does not read it so", async () => {
+    const lint = { command: "npm run --loglevel=error lint", severity: "advisory" };
+    const honest = await setup({
+      tasks: (t, commits) => [t("calc-fix-add", "fixture/calc", commits)],
+      swarmGates: { "calc-fix-add": { lint } },
+    });
+    expect((await runRunner(honest.env, honest.path, [], "correct")).code).toBe(0);
+    const record = readJson(join(honest.runs, "calc-fix-add.swarm.json"));
+    expect(record.gatePlan.ok).toBe(true);
+    const ignored = await setup({
+      tasks: (t, commits) => [t("calc-fix-add", "fixture/calc", commits)],
+      swarmGates: { "calc-fix-add": { lint } },
+    });
+    const result = await runRunner(ignored.env, ignored.path, [], "correct", {
+      COMPARISON_FIXTURE_CHECK: "ignore-severity",
+    });
+    expect(result.code).toBe(3);
+    expect(launchLines(ignored.env).filter((line) => line.startsWith("swarm "))).toHaveLength(0);
+    const halt = readJson(join(ignored.runs, "halt-1.json"));
+    expect(halt.class).toBe("configuration");
+    expect(halt.reason).toContain("declares the lint gate advisory");
   });
 
   it("halts when the arm's process ends on a signal the harness did not send", async () => {

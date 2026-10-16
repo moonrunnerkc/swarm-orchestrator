@@ -158,7 +158,7 @@ for (const scenario of plan.scenarios) {
       throw new Error(`${scenario.id}: the patch did not apply`);
     writeFileSync(
       join(workspace, "swarm.toml"),
-      swarmConfigurationText("http://127.0.0.1:1/v1", task),
+      swarmConfigurationText("http://127.0.0.1:1/v1", task, plan.swarmGates ?? {}),
     );
     writeFileSync(join(workspace, ".git", "info", "exclude"), "swarm.toml\n.swarm/\n", {
       flag: "a",

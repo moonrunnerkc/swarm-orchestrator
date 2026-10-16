@@ -384,7 +384,8 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory, owner)
     await cloneAtBase(log, task, task.baseCommit, workspace);
     const base = await commitVisibleCheck(log, task, workspace);
     const prepared = await prepare(log, task, workspace);
-    writeArmConfiguration(workspace, launch.arm, pins.endpoint, pins.model, task);
+    const declaredGates = manifest.swarmGates?.[task.id] ?? {};
+    writeArmConfiguration(workspace, launch.arm, pins.endpoint, pins.model, task, declaredGates);
     // The launch's own mutable state, declared before anything runs in it. What the manifest
     // declares a task to need (nothing but the lockfile install, unless it says otherwise) is
     // what the fresh home must show; a prerequisite this harness does not provision cannot be
@@ -427,7 +428,14 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory, owner)
     // in this environment, is not dispatched: that is the supervisor's setup, never the arm's
     // result, and the pilot's upgrade launch is what happens when it is dispatched anyway.
     if (launch.arm === "swarm") {
-      const gatePlan = await swarmGatePlanVerdict(log, task, task.baseCommit, pins, home);
+      const gatePlan = await swarmGatePlanVerdict(
+        log,
+        task,
+        task.baseCommit,
+        pins,
+        home,
+        declaredGates,
+      );
       record.gatePlan = gatePlan;
       record.preparation.wallMs = Date.now() - preparationStarted;
       if (interrupted()) throw interrupted();
