@@ -107,9 +107,14 @@ function stopReasonOf(
   let reason: string | null = null;
   for (const entry of payloads) {
     if (entry.type !== "session-stopped") continue;
-    const payload = entry.payload as { stopReason?: unknown; repair?: unknown };
-    // A gate-repair loop inside the invocation records its own stop; the invocation's is the other.
-    if (payload.repair === true) continue;
+    const payload = entry.payload as {
+      stopReason?: unknown;
+      repair?: unknown;
+      justification?: unknown;
+    };
+    // A gate-repair loop inside the invocation records its own stop, and so does the turn that
+    // answers a justification demand; the invocation's is the other.
+    if (payload.repair === true || payload.justification === true) continue;
     if (typeof payload.stopReason === "string") reason = payload.stopReason;
   }
   return reason;
