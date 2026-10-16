@@ -19,9 +19,17 @@
  * regenerated one must match, and the scenarios: `patch` (a retained patch, checked against the
  * record that names its digest), `base` (no change) or `reference` (the maintainer's change to
  * the task's authorized paths, scripts/pilot/reference.mjs).
+ *
+ * `delivery` says how the change reaches the run. `written` (the default) starts the run at the
+ * base and has the scripted model write each changed file through the product's own tool, as a
+ * live launch does, so the gates measure the change as the run's own. `inherited` applies the
+ * patch before the run starts, which is how the earlier replays ran: the product then records
+ * the change as inherited and measures it as its baseline, which is why those replays counted 0
+ * added lines and never met the size budget's demand.
  */
 import { createHash } from "node:crypto";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -140,6 +148,27 @@ async function candidateOf(scenario) {
   };
 }
 
+const delivery = plan.delivery ?? "written";
+if (!["written", "inherited"].includes(delivery))
+  throw new Error(`delivery must be written or inherited, not ${delivery}`);
+
+/** Each file the patch leaves behind, read from the patched tree, before the tree goes back to base. */
+async function patchedContents(workspace, patch, touched) {
+  if (!(await applyPatch(log, workspace, patch))) throw new Error("the patch did not apply");
+  const contents = touched.map((path) => {
+    const absolute = join(workspace, path);
+    if (!existsSync(absolute))
+      throw new Error(`${path} is deleted by the patch; the write tool cannot replay a deletion`);
+    return { path, content: readFileSync(absolute, "utf8") };
+  });
+  const reset = await log.run(["git", "checkout", "HEAD", "--", ...touched], {
+    cwd: workspace,
+    timeoutMs: 60_000,
+  });
+  if (reset.exitCode !== 0) throw new Error("the patched files could not be returned to the base");
+  return contents;
+}
+
 const results = [];
 for (const scenario of plan.scenarios) {
   const candidate = await candidateOf(scenario);
@@ -154,7 +183,16 @@ for (const scenario of plan.scenarios) {
     const base = await commitVisibleCheck(log, task, workspace);
     const prepared = await prepare(log, task, workspace);
     if (!prepared.ok) throw new Error(`${scenario.id}: preparation failed: ${prepared.detail}`);
-    if (candidate.patch !== "" && !(await applyPatch(log, workspace, candidate.patch)))
+    const touched = patchedPaths(candidate.patch);
+    const written =
+      delivery === "written" && candidate.patch !== ""
+        ? await patchedContents(workspace, candidate.patch, touched)
+        : [];
+    if (
+      delivery === "inherited" &&
+      candidate.patch !== "" &&
+      !(await applyPatch(log, workspace, candidate.patch))
+    )
       throw new Error(`${scenario.id}: the patch did not apply`);
     writeFileSync(
       join(workspace, "swarm.toml"),
@@ -165,12 +203,14 @@ for (const scenario of plan.scenarios) {
     });
     const contractPath = join(scratch, "contract.json");
     writeFileSync(contractPath, `${JSON.stringify(contract, null, 2)}\n`);
-    const touched = patchedPaths(candidate.patch);
     endpoint = await startScriptedEndpoint({
       modelId: "stub",
       turns: [
         {
-          text: "Plan: the change is already in the working tree; declare it and finish.",
+          text:
+            delivery === "written"
+              ? "Plan: declare the files, then write the change."
+              : "Plan: the change is already in the working tree; declare it and finish.",
           toolCalls: [
             {
               name: "declare_file_set",
@@ -180,6 +220,9 @@ for (const scenario of plan.scenarios) {
             },
           ],
         },
+        ...(written.length === 0
+          ? []
+          : [{ toolCalls: written.map((file) => ({ name: "write", input: file })) }]),
         { text: "The change is in the working tree." },
       ],
     });
@@ -318,7 +361,8 @@ for (const scenario of plan.scenarios) {
 }
 
 const manifest = {
-  schema: "swarm-verification-replay.v2",
+  schema: "swarm-verification-replay.v3",
+  delivery,
   recordedAt: new Date().toISOString(),
   purpose: plan.purpose,
   plan: { path: planPath, digest: digestOf(planBytes) },
