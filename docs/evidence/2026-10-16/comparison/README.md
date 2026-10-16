@@ -91,6 +91,11 @@ Follow-ups:
 - ask for the justification, or exclude a preset's authorized lockfile from the size budget;
 - name the actual blocker in the outcome block.
 
+Both are done after this report, with the refusal reproduced from the original base on the
+measured build and accepted on the repaired one:
+[../development/csstree-lifecycle/](../development/csstree-lifecycle/README.md). Stage A's
+result is unchanged by that repair.
+
 The preflight replays did not catch it. A patch applied before a replay run is the baseline for
 the product's inspection gates, so the replayed reference measured 0 added lines. That is a limit
 of the replay instrument, stated here and in the amendment's readiness section.
