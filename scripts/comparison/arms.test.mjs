@@ -2,11 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   claimedSuccess,
   correctionPrompt,
+  defaultPins,
   opencodeArgv,
   opencodeTokens,
+  opencodeUsage,
   swarmArgv,
   swarmContract,
+  swarmTokenCap,
   swarmTokens,
+  swarmUsage,
   taskPrompt,
 } from "./arms.mjs";
 import { taskSchema } from "./schema.mjs";
@@ -119,6 +123,84 @@ describe("reading what the arms reported", () => {
     ].join("\n");
     expect(opencodeTokens(openOut)).toBe(60);
     expect(opencodeTokens("")).toBeNull();
+  });
+
+  it("keeps each arm's spend by kind apart, null where a kind was never reported", () => {
+    const swarmOut = [
+      JSON.stringify({
+        schema: "swarm.event.v1",
+        event: {
+          type: "stopped",
+          tokensUsed: 110,
+          usage: {
+            inputTokens: 100,
+            outputTokens: 10,
+            reasoningTokens: null,
+            cachedInputTokens: null,
+          },
+        },
+      }),
+      JSON.stringify({
+        schema: "swarm.event.v1",
+        event: {
+          type: "stopped",
+          tokensUsed: 60,
+          usage: { inputTokens: 40, outputTokens: 20, reasoningTokens: 15, cachedInputTokens: 30 },
+        },
+      }),
+    ].join("\n");
+    expect(swarmUsage(swarmOut)).toEqual({
+      input: 140,
+      output: 30,
+      reasoning: 15,
+      cacheRead: 30,
+      cacheWrite: null,
+    });
+    // A stream from a build whose stopped events carried only the total reads as no breakdown.
+    expect(
+      swarmUsage(
+        JSON.stringify({ schema: "swarm.event.v1", event: { type: "stopped", tokensUsed: 5 } }),
+      ),
+    ).toBeNull();
+    const openOut = [
+      JSON.stringify({
+        type: "step_finish",
+        part: {
+          type: "step-finish",
+          tokens: { input: 20, output: 5, reasoning: 2, cache: { read: 7, write: 1 } },
+        },
+      }),
+      JSON.stringify({
+        type: "step_finish",
+        part: { type: "step-finish", tokens: { input: 30, output: 5 } },
+      }),
+    ].join("\n");
+    expect(opencodeUsage(openOut)).toEqual({
+      input: 50,
+      output: 10,
+      reasoning: 2,
+      cacheRead: 7,
+      cacheWrite: 1,
+    });
+    expect(opencodeUsage("")).toBeNull();
+  });
+
+  it("launches swarm with what the earlier invocations left of the launch's allowance", () => {
+    const pins = { ...defaultPins, swarmCli: "/tool/cli.js" };
+    const task = tasks[0];
+    const initial = swarmArgv(pins, task, "/w", "abc", "PROMPT", "/c.json", 10 * 60_000);
+    expect(initial[initial.indexOf("--max-tokens") + 1]).toBe(String(swarmTokenCap));
+    const correction = swarmArgv(
+      pins,
+      task,
+      "/w",
+      "abc",
+      "PROMPT",
+      "/c.json",
+      10 * 60_000,
+      123_456,
+    );
+    expect(correction[correction.indexOf("--max-tokens") + 1]).toBe("123456");
   });
 
   it("reads a claim of success only from an acceptable swarm verdict or an opencode turn that answered", () => {

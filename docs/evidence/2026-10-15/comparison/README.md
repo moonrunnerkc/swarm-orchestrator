@@ -1,0 +1,126 @@
+# Comparison of 2026-10-15: readiness, calibration and the scored stages
+
+The registered rules are in [protocol.md](protocol.md); the task choices and exclusions in
+[candidates.md](candidates.md); the deterministic validation of every task in
+[validation.json](validation.json) (and the withdrawn feature task in
+[validation-withdrawn-csstree-feature.md](validation-withdrawn-csstree-feature.md)). Every
+number below is derived from the records and packaged blobs under this directory; the stdout
+excerpt copies the publisher writes are packed losslessly beside each stage
+(`output/packed-derived/`), and each tool's request settings as captured by a proxy are in
+`readiness/request-capture-*.jsonl`.
+
+## Readiness
+
+### Canaries (at most four executions of two minutes; three ran, plus one option probe)
+
+The smoke bug fix (`smoke-bugfix-parse-seconds`: make a duration parser accept seconds) through
+each tool's ordinary entry point, one invocation, no corrections, scored by the hidden oracle in
+a fresh checkout. Records under [readiness/canaries-rapidmlx/](readiness/canaries-rapidmlx/) and
+[readiness/canary-ollama/](readiness/canary-ollama/).
+
+| tool | configuration | connected, model, tools, read, edit, check, report | hidden oracle | agent time | tokens (input / output / reasoning) |
+| --- | --- | --- | --- | --- | --- |
+| Swarm | rapid-mlx, `qwen3.8:27b` | yes: 7 model calls, read, shell, edit, its tests gate, acceptable verdict, exit 0 | pass | 78 s | 35,200 (34,129 / 1,071 / 0) |
+| OpenCode | rapid-mlx, `qwen3.8:27b` | yes: bash, read, edit, its own test run, final answer, exit 0 | pass | 48 s | 43,975 (43,457 / 518 / 0) |
+| OpenCode | Ollama, `qwen3.6:35b-a3b` | yes, the same | pass | 14 s | 58,623 (57,818 / 805 / 0) |
+| OpenCode | rapid-mlx (option probe, one request, no task) | which model options reach the request body | not scored | 9 s | 10,471 |
+
+Swarm on Ollama was not canaried again: the live diagnosis of the morning (launch 2) already
+drove it through the same path on that configuration with edits, gates and a verdict.
+
+What the captured requests show ([readiness/request-capture-rapidmlx.jsonl](readiness/request-capture-rapidmlx.jsonl),
+[readiness/request-capture-ollama.jsonl](readiness/request-capture-ollama.jsonl)):
+
+| setting | Swarm | OpenCode |
+| --- | --- | --- |
+| max_tokens | 8192 | 8192 |
+| thinking | `enable_thinking: false`, `chat_template_kwargs.enable_thinking: false`, `reasoning_effort: "none"` | the same three, after the repair below |
+| sampling | none sent (the server's defaults: temperature 1.0, top_p 0.95 on both servers) | `top_p: 0.95` sent; no temperature |
+| tool_choice | auto | auto |
+| tools declared | 9 (read, write, edit, list, search, shell, claim, declare_file_set, amend_file_set) | 9 (bash, edit, glob, grep, read, skill, task, todowrite, write) |
+| system prompt | 6,737 characters | 9,336 characters (Ollama: 9,344) |
+
+The first OpenCode canary's requests carried no `reasoning_effort` although the harness had
+written one: OpenCode's provider maps its own `reasoningEffort` option to that wire field and
+overwrites a `reasoning_effort` given directly. The option probe sent both spellings and the
+field arrived; the harness now writes the SDK spelling, and the Ollama canary's requests carry
+`reasoning_effort: "none"`, which is the one spelling Ollama's route reads. Reasoning tokens were
+0 in every canary on both servers.
+
+### The retained csstree bug fix under OpenCode (development diagnosis, not comparative evidence)
+
+| launch | configuration | outcome | agent time | tokens (input / output) | shape |
+| --- | --- | --- | --- | --- | --- |
+| [diagnosis-3](readiness/diagnosis-3-opencode-rapidmlx/) | rapid-mlx, `qwen3.8:27b` | not delivered: no edit, killed at the wall, hidden fail | 16.0 min | 4,620,544 (4,607,177 / 13,367) | 152 turns, 150 bash calls, 147 of them one identical `ls` of two paths that do not exist |
+| [diagnosis-4](readiness/diagnosis-4-opencode-ollama/) | Ollama, `qwen3.6:35b-a3b`, thinking off | not delivered: edited `lib/generator/create.js` wrongly (a 7,014-byte patch with a stray `.bak` copy), one scripted correction killed at the wall, hidden fail | 16.0 min | 5,906,078 (5,864,399 / 41,679) | 35 turns in the first invocation: a sub-agent exploration, 9 reads, 21 bash calls, 3 edits |
+
+With the morning's two Swarm launches ([../bugfix-diagnosis/README.md](../bugfix-diagnosis/README.md):
+`qwen3.8:27b` repeated itself without editing; `qwen3.6:35b-a3b` edited wrongly), both tools
+have failed this task under both configurations, each differently. The protocol's reading
+applies: the model alone is not shown responsible, the task is not looped on further, and the
+readiness requirement moves to one calibration task both tools must deliver. The csstree fix
+stays an unresolved limitation of its own.
+
+### Calibration (`argparse-calibration-number-conversion`, both tools, fifteen minutes each)
+
+| attempt | configuration | tool | outcome | agent time | tokens (input / output) | what happened |
+| --- | --- | --- | --- | --- | --- | --- |
+| [1](readiness/calibration-ollama/) | Ollama, `qwen3.6:35b-a3b`, 600,000-token launch allowance | Swarm | not delivered: hidden fail (4 cases expecting a rejection), visible unresolved, exit 1, stop `max-tokens` | 2.0 min | 610,546 (607,382 / 3,164) | 26 fast calls with prompts up to 29,309 tokens spent the whole allowance in two minutes; the fix passed the visible check in its own shell and failed the project's lint (trailing spaces, `throw null`, a comparison against -0); no allowance was left for a repair, so the launch ended with a 4,813-byte patch and no correction |
+| 1 | the same | OpenCode | not delivered: visible passed, completion claimed, hidden fail (1 case) | 6.9 min | 4,161,399 (4,147,119 / 14,280) | a near miss: a 3,617-byte patch rewriting the shared conversion helper, correct on the visible cases and one hidden literal short; the claim is a false completion claim by the oracle's standard |
+
+Attempt 1 showed the pilot's token allowance binding the Swarm arm in two minutes of a
+fifteen-minute launch while the other arm ran on uncapped, which is a readiness defect of the
+configuration rather than a result; the protocol's allowance row was amended before any freeze
+(8,000,000 per launch, a safety bound above any observed spend, so the wall is the shared bound)
+and the calibration was attempted again under it.
+
+| attempt | configuration | tool | outcome | agent time | tokens (input / output) | what happened |
+| --- | --- | --- | --- | --- | --- | --- |
+| [2](readiness/calibration-ollama-2/) | Ollama, `qwen3.6:35b-a3b`, 8,000,000-token launch allowance | Swarm | not delivered: hidden fail (6 cases), visible unresolved after two scripted corrections, exit 1 each time | 10.4 min | 2,982,403 (2,957,654 / 24,749) | three invocations of about 993,000 tokens each: the product sealed 1,000,000, not the 8,000,000 the launcher asked for, because a goal contract that names no token budget let the default clip the flag (repaired on this branch with a regression, after the launch); each invocation ended on `max-tokens` or `max-steps` (40) with lint and visible failures (`_string_to_number` undefined, then unused; `sub` undefined), and the last left two project tests failing |
+| 2 | the same | OpenCode | not delivered: visible passed, completion claimed, hidden fail (2 cases, `float("-0")` and a missing rejection) | 4.2 min | 2,767,368 (2,759,975 / 7,393) | a 2,588-byte patch, correct on the visible cases, two hidden literals short; a false completion claim by the oracle's standard |
+
+### Readiness outcome
+
+The calibration requirement was not met: in four calibration launches under the Ollama
+configuration neither tool delivered `argparse-calibration-number-conversion`, and the
+development allowance (six launches of fifteen minutes) is spent: two OpenCode diagnostics and
+four calibration launches, 55.5 agent-minutes of the 90 allowed. No scored comparison was
+frozen or launched; the stage A and B manifests prepared for this configuration were not run and
+are not published as evidence. The rapid-mlx configuration was not calibrated: its two canaries
+delivered, but OpenCode on it ran the csstree task to the wall repeating one command, and the
+development allowance did not stretch to a third configuration pass.
+
+What the readiness work established, with its limits:
+
+- Both tools function end to end on both configurations: they connect, receive the pinned
+  model, call their real tools, read, edit, run the project's checks and report, and each
+  delivered the disposable smoke fix (three canaries). Their request settings are captured and
+  equal on output cap and thinking; OpenCode sends `top_p` and a larger system prompt.
+- Neither tool delivered the calibration task in four attempts, and neither delivered the
+  retained csstree bug fix in four launches across the two days. Close misses on both sides
+  (OpenCode one and two hidden cases short; Swarm with working visible fixes undone by lint and
+  budget) do not count: a wrong patch is a failed task.
+- OpenCode claimed completion on both calibration attempts with patches the hidden oracle
+  rejects (two false completion claims); Swarm made none in any readiness launch and reported
+  each failure as not acceptable with the failing gate named. This is a descriptive observation
+  from development launches, not a scored result.
+- Two product defects surfaced and were repaired with regressions: the token allowance clipped
+  by a silent contract default, and (from attempt 1) the pilot's 600,000-token launch allowance
+  binding in two minutes on a fast model, which the protocol now sets above any observed spend
+  so the wall is the shared bound.
+
+The spending rule was never applied, because its first condition (eight valid stage A records)
+has no records to hold on. The csstree bug fix remains an unresolved limitation of the product
+and of both models on both servers tested.
+
+### Live execution spent, against the ceilings
+
+| allowance | ceiling | used |
+| --- | --- | --- |
+| integration canaries | 4 executions, 8 agent-minutes | 4 executions (three smoke launches and one option probe), 2.5 agent-minutes |
+| development diagnosis and calibration | 6 launches, 90 agent-minutes | 6 launches (diagnosis 3 and 4; calibration 1 and 2, both arms), 55.5 agent-minutes |
+| fresh comparison, repetitions, reruns | 16 launches, 240 agent-minutes | 0 |
+| total live agent execution | 338 minutes | about 58 minutes |
+
+Deterministic work (repairs, tests, builds, validation, publishing) is reported in the commit
+log and the pull request, not here.

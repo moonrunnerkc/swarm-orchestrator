@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   buildBlobManifest,
+  namesADerivedArtifact,
   offloadBlobs,
   offloadDerivedArtifacts,
   restoreVerification,
@@ -130,5 +131,20 @@ describe("what this must never delete", () => {
 
     expect(offloaded.offloaded).toHaveLength(0);
     expect(await readdir(bundle)).toContain("review.html");
+  });
+});
+
+describe("what counts as a derived artifact by name", () => {
+  it("names the comparison publisher's output excerpts, and never a record, patch or blob", () => {
+    expect(namesADerivedArtifact("mime-bugfix-gettype-line-terminators.swarm.initial-0.txt")).toBe(
+      true,
+    );
+    expect(namesADerivedArtifact("chai-feature-deep-contain-oneof.opencode.correction-2.txt")).toBe(
+      true,
+    );
+    expect(namesADerivedArtifact("mime-bugfix-gettype-line-terminators.swarm.json")).toBe(false);
+    expect(namesADerivedArtifact("mime-bugfix-gettype-line-terminators.swarm.patch")).toBe(false);
+    expect(namesADerivedArtifact(`${"a".repeat(64)}.gz`)).toBe(false);
+    expect(namesADerivedArtifact("gate-runs.json.gz")).toBe(false);
   });
 });

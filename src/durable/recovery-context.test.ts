@@ -207,3 +207,104 @@ it("refuses interrupted prepared-environment staging", async () => {
   });
   await expect(recoveryContext(root, "one", 101)).rejects.toThrow("staging is interrupted");
 });
+it("names the original run's child HOME as the one to take back, through a chain of resumptions", async () => {
+  // Session "one" ran under its own private home.
+  const first = await fixture();
+  expect((await recoveryContext(first.root, "one", 1100)).childHomeOwner).toBe("one");
+
+  // Session "one" was itself a continuation that took back run "original"'s home: a third
+  // session resumes "original"'s home, not a fresh one under "one"'s name.
+  const second = await fixture();
+  await second.evidence.record({
+    type: "execution-envelope",
+    actor: "harness",
+    provenance: ["tool-output"],
+    payload: {
+      mode: "restricted",
+      childHome: "/scratch/swarm-child-homes/original",
+      childHomeState: { mode: "private", origin: "resumed", runId: "original", npmCache: null },
+    },
+  });
+  expect((await recoveryContext(second.root, "one", 1100)).childHomeOwner).toBe("original");
+
+  // A caller-named home belongs to the caller: the session's own id stands and the explicit
+  // name decides, as it did for the session.
+  const third = await fixture();
+  await third.evidence.record({
+    type: "execution-envelope",
+    actor: "harness",
+    provenance: ["tool-output"],
+    payload: {
+      mode: "restricted",
+      childHome: "/named/home",
+      childHomeState: { mode: "explicit", origin: "named", runId: "one", npmCache: null },
+    },
+  });
+  expect((await recoveryContext(third.root, "one", 1100)).childHomeOwner).toBe("one");
+});
+it("carries the declared file set and charges a cancelled call at its recorded bound", async () => {
+  const { root, evidence } = await fixture();
+  await evidence.record({
+    type: "file-set-declared",
+    actor: "fixture:one",
+    provenance: ["model"],
+    payload: { files: ["src/file.ts"], fileCount: 1 },
+  });
+  await evidence.record({
+    type: "file-set-amended",
+    actor: "fixture:one",
+    provenance: ["model"],
+    payload: {
+      files: ["src/other.ts"],
+      added: ["src/other.ts"],
+      addedCount: 1,
+      reason: "the fix spans two files",
+      amendment: true,
+      fileCountAfter: 2,
+    },
+  });
+  // The interruption cut this call off before the provider reported usage; its record carries
+  // the bound the request was made under, and the continuation charges exactly that.
+  await evidence.record({
+    type: "model-call",
+    actor: "fixture",
+    provenance: ["model"],
+    promptDigest: digestOfJson({ messages: [] }),
+    responseDigest: digestOfJson({ failed: true }),
+    payload: {
+      prompt: { messages: [] },
+      response: { failed: true, message: "aborted" },
+      usageStatus: "unknown",
+      inputTokens: 0,
+      outputTokens: 0,
+      cancelled: true,
+      requestBound: { reservedTokens: 300, maxOutputTokens: 200 },
+    },
+  });
+  const context = await recoveryContext(root, "one", 1100);
+  expect(context.declaredFiles).toEqual(["src/file.ts", "src/other.ts"]);
+  expect(context.chargedForCancelledCalls).toEqual({ calls: 1, tokens: 300 });
+  expect(context.remainingTokens).toBe(1000 - 150 - 300);
+  expect(context.localEndpoint).toBeNull();
+});
+
+it("still refuses a call whose usage is unknown for a reason other than the harness cancelling it", async () => {
+  const { root, evidence } = await fixture();
+  await evidence.record({
+    type: "model-call",
+    actor: "fixture",
+    provenance: ["model"],
+    promptDigest: digestOfJson({ messages: [] }),
+    responseDigest: digestOfJson({ failed: true }),
+    payload: {
+      prompt: { messages: [] },
+      response: { failed: true, message: "provider raised" },
+      usageStatus: "unknown",
+      inputTokens: 0,
+      outputTokens: 0,
+      cancelled: false,
+      requestBound: { reservedTokens: 300, maxOutputTokens: 200 },
+    },
+  });
+  await expect(recoveryContext(root, "one", 1100)).rejects.toThrow(/provider usage is unknown/);
+});

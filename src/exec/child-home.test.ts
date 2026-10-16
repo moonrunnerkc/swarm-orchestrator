@@ -205,6 +205,49 @@ describe("resumption", () => {
     ).toThrow(/names run run-b/);
   });
 
+  it("keeps the original run's state through a second resumption that names the original owner", () => {
+    const original = establishRunChildHome({
+      runId: "run-a",
+      root,
+      inherited: noOverride,
+      pid: 11,
+      now: 1000,
+    });
+    writeFileSync(join(original.path, "state"), "kept");
+    releaseRunChildHome(original, { keep: true });
+
+    const second = establishRunChildHome({
+      runId: "run-b",
+      resumeOf: "run-a",
+      root,
+      inherited: noOverride,
+      pid: 12,
+      now: 2000,
+      isAlive: () => false,
+    });
+    writeFileSync(join(second.path, "more"), "also kept");
+    releaseRunChildHome(second, { keep: true });
+
+    // The third session resumes the second, whose home is the original's: the continuation
+    // names the owner the second session recorded, and finds both sessions' state.
+    const third = establishRunChildHome({
+      runId: "run-c",
+      resumeOf: second.runId,
+      root,
+      inherited: noOverride,
+      pid: 13,
+      now: 3000,
+      isAlive: () => false,
+    });
+    expect(third).toMatchObject({ path: original.path, origin: "resumed", runId: "run-a" });
+    expect(readFileSync(join(third.path, "state"), "utf8")).toBe("kept");
+    expect(readFileSync(join(third.path, "more"), "utf8")).toBe("also kept");
+    // Nothing was allocated under the intermediate session's own name.
+    expect(existsSync(join(root, "run-b"))).toBe(false);
+    releaseRunChildHome(third, { keep: false });
+    expect(existsSync(original.path)).toBe(false);
+  });
+
   it("recreates the home, and says so, where the earlier run's home is gone", () => {
     const resumed = establishRunChildHome({
       runId: "run-a-continued",

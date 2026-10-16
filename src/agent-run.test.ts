@@ -18,6 +18,7 @@ import { createRecordingModelClient } from "./evidence/model-call-recording.ts";
 import { recordGoalAssessment } from "./evidence/run-assessment.ts";
 import { type EvidenceRecorder, openEvidenceSession } from "./evidence/session.ts";
 import { createEphemeralSigningKey } from "./evidence/signing.ts";
+import { parseTaskContract } from "./evidence/task-contract.ts";
 import { harnessChildEnvironment } from "./exec/child-environment.ts";
 import { createFileSetRegistry } from "./gates/file-set.ts";
 import { verifyIndependently } from "./gates/independent-verification.ts";
@@ -949,5 +950,43 @@ describe("a repair attempt with no usable budget", () => {
     // The repair turns were never asked for: three model calls, the first loop's and no more.
     expect(evidence.records().filter((record) => record.type === "model-call")).toHaveLength(3);
     expect(result.gates.outcome.settled).toBe("escalated");
+  });
+});
+
+describe("the token allowance under a contract that names no token budget", () => {
+  const contractWith = (maxTokens?: number) =>
+    parseTaskContract({
+      version: 3,
+      scopeKind: "workspace",
+      taskId: "allowance",
+      objective: "add a shout helper",
+      dependsOn: [],
+      allowedPaths: ["**"],
+      immutablePaths: [],
+      allowedTools: ["read", "write", "edit", "list", "search", "shell"],
+      network: "unrestricted",
+      requiredChecks: [],
+      budget: { maxSteps: 8, maxWallMs: 60_000, ...(maxTokens === undefined ? {} : { maxTokens }) },
+      riskTier: "medium",
+      scopeAuthority: "human",
+    });
+  const sealedBudget = () => {
+    const spec = evidence.records().find((record) => record.type === "run-spec-sealed");
+    const payload = evidence.payloads().get(spec?.payloadDigest ?? "") as {
+      spec: { budgets: { maxTokens: number } };
+    };
+    return payload.spec.budgets.maxTokens;
+  };
+
+  it("lets the run's own allowance stand, and still bounds it by a contract that names one", async () => {
+    // A launcher asked for 8,000,000 and the contract said nothing about tokens; the run used to
+    // seal 1,000,000, the default standing in for the contract's silence.
+    await task([respondWithText("done")], { contract: contractWith(), maxTokens: 8_000_000 });
+    expect(sealedBudget()).toBe(8_000_000);
+  });
+
+  it("takes the smaller of the two where the contract does name a token budget", async () => {
+    await task([respondWithText("done")], { contract: contractWith(500), maxTokens: 8_000_000 });
+    expect(sealedBudget()).toBe(500);
   });
 });

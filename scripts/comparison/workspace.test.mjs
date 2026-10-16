@@ -38,7 +38,12 @@ describe("what each arm is configured with", () => {
       name: "qwen3.8:27b",
       tool_call: true,
       limit: { context: 131072, output: 8192 },
-      options: { enable_thinking: false, top_p: 0.95 },
+      options: {
+        enable_thinking: false,
+        chat_template_kwargs: { enable_thinking: false },
+        reasoningEffort: "none",
+        top_p: 0.95,
+      },
     });
     expect(written.permission).toEqual({ edit: "allow", bash: "allow", webfetch: "deny" });
     expect(readFileSync(join(directory, ".git/info/exclude"), "utf8")).toContain("opencode.json");

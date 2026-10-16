@@ -22,7 +22,7 @@ swarm --version                  # which build this is
 | `--strengthen-rounds <n>` | lower the default of two strengthening rounds; a higher value is ignored |
 | `--strengthen-per-requirement <n>` | lower the default of one admitted check per requirement |
 | `--escalate-model <provider:id>` | authorize at most one alternate model for repeated observed implementation failure |
-| `--max-tokens <n>` | bound model usage; unknown usage remains unknown |
+| `--max-tokens <n>` | the run's allowance for model usage: input and output of every call, the first loop and every repair attempt together, checked before each call. The next call's prompt is reserved at the size of the last one the provider measured, so a call that cannot fit is not made; the run can still exceed the figure by one call's growth, which is why it is a bound checked between calls and not a hard cap. A scripted correction or a new session is a new run with its own allowance. Unknown usage remains unknown and is counted as nothing, which the record says |
 | `--model <provider:id>` | a specific model, e.g. `local:qwen3.6:35b-a3b` |
 | `--workspace <dir>` | a repository other than the current directory |
 | `--base <ref>` | what the diff and the ratchet measure against |
@@ -245,7 +245,15 @@ This is state separation, not containment: a child can still reach any path the 
 
 - An interrupted run keeps its home, and `swarm resume <run-id>` takes it back after checking
   that the directory's ownership marker names that run and that no other live process holds it.
-  A home that is gone by then is made fresh, and the record says so.
+  Resuming a continuation takes back the original run's home, not one named after the
+  continuation: each session records which run's home it executed under, and the next one reads
+  it there. A home that is gone by then is made fresh, and the record says so.
+- A continuation re-declares the file set the earlier sessions declared and amended, naming the
+  session it came from, so its first edit is not refused as unauthorized; it runs against the
+  endpoint the run was pinned to; and a call the interruption cut off before the provider
+  reported usage is charged against the sealed budget at the bound its record carries (the whole
+  output cap plus a generous estimate of the prompt), named on the continuation's first record,
+  rather than making the run unresumable.
 - `swarm gc` lists homes no run holds any more, and removes them with `--remove`.
 - `SWARM_CHILD_HOME=<absolute path>` names the home instead. That is a caller's choice to reuse
   or share a directory, recorded as `explicit`; the run never removes it, and a relative path is

@@ -19,7 +19,22 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 export const wallBudgetMs = 30 * 60_000;
-export const swarmTokenCap = 600_000;
+/**
+ * Swarm's token allowance for one launch: the initial invocation and every scripted correction
+ * draw from it, each invocation launched with what the earlier ones left. It is the product's
+ * `--max-tokens`, a bound checked between calls (the product reserves the next prompt, and can
+ * still exceed the figure by one call's growth), not a hard cap. OpenCode has no equivalent and
+ * runs to the wall only; the arms are not budget-matched on tokens, and the record says so.
+ *
+ * Set well above what either arm has spent in any fifteen-minute launch observed here (the most
+ * was 5.9 million, OpenCode running to the wall), so that the wall is the bound both arms share
+ * and this figure is a safety bound. The pilot's 600,000 bound in two minutes on the Ollama
+ * configuration, where a fast model re-sends a 20,000-token prompt every few seconds, and left
+ * no allowance for a repair while the other arm ran on uncapped.
+ */
+export const swarmTokenCap = 8_000_000;
+/** Less than one answer's worth of allowance left (the product's output cap) starts no correction. */
+export const minimumInvocationTokens = 8_192;
 export const maxCorrections = 2;
 
 /**
@@ -91,7 +106,16 @@ export function swarmContract(task) {
   };
 }
 
-export function swarmArgv(pins, task, workspace, base, prompt, contractPath, remainingMs) {
+export function swarmArgv(
+  pins,
+  task,
+  workspace,
+  base,
+  prompt,
+  contractPath,
+  remainingMs,
+  remainingTokens = swarmTokenCap,
+) {
   return [
     "node",
     pins.swarmCli,
@@ -113,7 +137,7 @@ export function swarmArgv(pins, task, workspace, base, prompt, contractPath, rem
     "--lockfile",
     "package-lock.json",
     "--max-tokens",
-    String(swarmTokenCap),
+    String(remainingTokens),
     "--max-wall-minutes",
     String(Math.max(1, Math.floor(remainingMs / 60_000))),
     "--approve",
@@ -177,6 +201,64 @@ export function swarmTokens(stdout) {
     } catch {}
   }
   return seen ? total : null;
+}
+
+/**
+ * Swarm's spend by kind, summed over every loop's stopped event: prompt and answer apart, and
+ * inside them what the provider called reasoning and cached. A kind no event reported is null,
+ * never zero; a stream from a build before the events carried the breakdown reads as null whole.
+ */
+export function swarmUsage(stdout) {
+  let total = null;
+  for (const line of stdout.split("\n")) {
+    if (!line.startsWith("{")) continue;
+    try {
+      const parsed = JSON.parse(line);
+      const usage = parsed.schema === "swarm.event.v1" ? parsed.event?.usage : undefined;
+      if (parsed.event?.type !== "stopped" || usage === undefined) continue;
+      total = addUsage(total, {
+        input: usage.inputTokens,
+        output: usage.outputTokens,
+        reasoning: usage.reasoningTokens,
+        cacheRead: usage.cachedInputTokens,
+        cacheWrite: null,
+      });
+    } catch {}
+  }
+  return total;
+}
+
+/** OpenCode's spend by kind, summed over step-finish parts as it reports them. */
+export function opencodeUsage(stdout) {
+  let total = null;
+  for (const line of stdout.split("\n")) {
+    if (!line.startsWith("{")) continue;
+    try {
+      const parsed = JSON.parse(line);
+      const part = parsed.part ?? parsed;
+      if (part?.type !== "step-finish" || !part.tokens) continue;
+      total = addUsage(total, {
+        input: part.tokens.input ?? 0,
+        output: part.tokens.output ?? 0,
+        reasoning: part.tokens.reasoning ?? null,
+        cacheRead: part.tokens.cache?.read ?? null,
+        cacheWrite: part.tokens.cache?.write ?? null,
+      });
+    } catch {}
+  }
+  return total;
+}
+
+function addUsage(total, part) {
+  const add = (sum, value) => (value === null || value === undefined ? sum : (sum ?? 0) + value);
+  const base = total ?? { input: 0, output: 0, reasoning: null, cacheRead: null, cacheWrite: null };
+  return {
+    input: base.input + part.input,
+    output: base.output + part.output,
+    reasoning: add(base.reasoning, part.reasoning),
+    cacheRead: add(base.cacheRead, part.cacheRead),
+    cacheWrite: add(base.cacheWrite, part.cacheWrite),
+  };
 }
 
 /** Tokens OpenCode's JSON events report: the sum over step-finish parts of input plus output. */

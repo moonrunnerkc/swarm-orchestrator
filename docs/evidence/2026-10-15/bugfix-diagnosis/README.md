@@ -1,5 +1,11 @@
 # Live diagnosis of the csstree bug-fix failure: results, 2026-10-15
 
+> Amended later the same day: launch 2's allowance went to re-sent prompt, not thinking, and
+> Ollama's OpenAI route does turn thinking off through `reasoning_effort`, which the product
+> sends; the probe below sent the two spellings it ignores. The figures and records here are
+> unchanged; the corrected readings are in
+> [amendment-2026-10-15-ollama-thinking.md](amendment-2026-10-15-ollama-thinking.md).
+
 Two of the four launches the [protocol](protocol.md) registered were run; the third and fourth
 were not, under the protocol's own conditions. The bug fix was not delivered by either
 installed model under the repaired product. The fresh comparison the assignment conditioned on

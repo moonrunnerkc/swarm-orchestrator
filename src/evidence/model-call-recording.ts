@@ -75,6 +75,10 @@ export function createRecordingModelClient(
             // Whether the harness ended this call itself. A call cut off at the wall budget and
             // a provider that raised are both `call-failed`, and only one is about the endpoint.
             cancelled: request.abortSignal.aborted,
+            // What the call could have cost at most, so a continuation can charge a cancelled
+            // call against the sealed budget instead of refusing to continue: the output cap the
+            // request carried, and a deliberately generous character estimate of the prompt.
+            requestBound: requestBoundOf(prompt, request),
             content: { ...callFailedTurn },
           },
           promptDigest,
@@ -96,6 +100,8 @@ export function createRecordingModelClient(
           usageStatus: response.usageStatus ?? "reported",
           inputTokens: response.inputTokens,
           outputTokens: response.outputTokens,
+          reasoningTokens: response.reasoningTokens ?? null,
+          cachedInputTokens: response.cachedInputTokens ?? null,
           finishReason: response.finishReason,
           toolCallCount: response.toolCalls.length,
           // Harness-computed, over the assembled response the model cannot reach. An empty
@@ -142,5 +148,23 @@ function describeRequest(request: ModelRequest): JsonValue {
             topP: request.sampling.topP,
             seed: request.sampling.seed,
           },
+  };
+}
+
+/**
+ * An upper bound on what a call that never reported usage could have cost: the prompt at one
+ * token per two characters, twice the harness's ordinary estimate so the bound errs toward
+ * charging too much, plus the whole output cap the request carried. `reservedTokens` is that
+ * sum; the cap is beside it so the prompt's share can be read back. Recorded on the failed
+ * call, read by recovery; never a measurement. The field names are the scrubber's metric
+ * names on purpose: a name it does not know that mentions tokens is redacted as a credential.
+ */
+export function requestBoundOf(
+  prompt: JsonValue,
+  request: ModelRequest,
+): { readonly reservedTokens: number; readonly maxOutputTokens: number } {
+  return {
+    reservedTokens: Math.ceil(JSON.stringify(prompt).length / 2) + request.maxOutputTokens,
+    maxOutputTokens: request.maxOutputTokens,
   };
 }

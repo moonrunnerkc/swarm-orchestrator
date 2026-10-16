@@ -399,11 +399,18 @@ export function analyzeRecord(record, context = {}) {
     tokens: {
       total: record.totals.tokens,
       unknownInvocations: record.totals.tokensUnknownInvocations,
-      perInvocationCap: record.arm === "swarm" ? 600_000 : null,
+      // The allowance the launch gave Swarm's first invocation (600,000 per invocation on the
+      // records written before launches carried one), and whether any invocation reached it.
+      launchAllowance:
+        record.arm === "swarm" ? (record.invocations[0]?.tokenAllowance ?? 600_000) : null,
       capBound:
         record.arm === "swarm"
-          ? record.invocations.some((one) => (one.tokens ?? 0) >= 600_000)
+          ? record.invocations.some((one) => (one.tokens ?? 0) >= (one.tokenAllowance ?? 600_000))
           : null,
+      // The spend by kind as the arm reported it, summed over the invocations; a kind no
+      // invocation reported stays null, and a launch whose record predates the breakdown reads
+      // as null whole.
+      usage: usageOf(record.invocations),
     },
     preparedState: record.preparedState ?? null,
     gatePlan: record.gatePlan ?? null,
@@ -414,6 +421,31 @@ export function analyzeRecord(record, context = {}) {
 }
 
 const sum = (rows, pick) => rows.reduce((total, row) => total + (pick(row) ?? 0), 0);
+
+/** Usage by kind added up over invocations or launches; null where none carries it. */
+export function usageOf(parts) {
+  let total = null;
+  for (const part of parts) {
+    const usage = part.usage ?? null;
+    if (usage === null) continue;
+    const add = (a, b) => (b === null || b === undefined ? a : (a ?? 0) + b);
+    const base = total ?? {
+      input: 0,
+      output: 0,
+      reasoning: null,
+      cacheRead: null,
+      cacheWrite: null,
+    };
+    total = {
+      input: base.input + usage.input,
+      output: base.output + usage.output,
+      reasoning: add(base.reasoning, usage.reasoning),
+      cacheRead: add(base.cacheRead, usage.cacheRead),
+      cacheWrite: add(base.cacheWrite, usage.cacheWrite),
+    };
+  }
+  return total;
+}
 
 export function armSummary(rows) {
   const delivered = rows.filter((row) => row.delivered);
@@ -442,6 +474,8 @@ export function armSummary(rows) {
     tokensUnknownLaunches: rows.filter(
       (row) => row.tokens.total === null || row.tokens.unknownInvocations > 0,
     ).length,
+    usage: usageOf(rows.map((row) => ({ usage: row.tokens.usage ?? null }))),
+    usageLaunchesWithout: rows.filter((row) => (row.tokens.usage ?? null) === null).length,
     costPerDelivery: {
       agentMinutes: perDelivery(sum(rows, (row) => row.time.agentMs) / 60_000),
       endToEndMinutes: perDelivery(sum(rows, (row) => row.time.elapsedMs) / 60_000),
@@ -512,6 +546,179 @@ export function stageAGate(rows, tasks, validity = { complete: true, problems: [
     ...comparative,
   });
   return { items, qualifies: items.every((one) => one.holds) };
+}
+
+/** Which protocol's rule a stage is decided by: the manifest says which comparison froze it. */
+export function ruleFor(manifest) {
+  return typeof manifest?.purpose === "string" &&
+    manifest.purpose.startsWith("comparison 2026-10-15")
+    ? "2026-10-15"
+    : "pilot-2026-10-14";
+}
+
+/**
+ * The primary measures the 2026-10-15 protocol declared, compared arm against arm: quality and
+ * supervision (deliveries, deliveries without correction, false claims, corrections, launches
+ * killed at the wall, unresolved launches) and the two cost measures (end-to-end minutes and
+ * tokens per correct delivery). Each is a win, tie, loss or unknown for Swarm; a quality
+ * advantage needs a win on deliveries without correction, or fewer corrections at equal
+ * deliveries. The third route the protocol allows, a predeclared independently checked quality
+ * improvement, is not derivable here and is reported as unjudged by the analyzer.
+ */
+export function primaryMeasures(rows) {
+  const s = armSummary(rows.filter((row) => row.arm === "swarm"));
+  const o = armSummary(rows.filter((row) => row.arm === "opencode"));
+  const compare = (a, b, higherIsBetter) =>
+    typeof a !== "number" || typeof b !== "number"
+      ? "unknown"
+      : a === b
+        ? "tie"
+        : (higherIsBetter ? a > b : a < b)
+          ? "win"
+          : "loss";
+  const unresolved = (a) => a.launches - a.deliveries;
+  const measures = [
+    {
+      measure: "correct deliveries",
+      swarm: s.deliveries,
+      opencode: o.deliveries,
+      verdict: compare(s.deliveries, o.deliveries, true),
+    },
+    {
+      measure: "deliveries without correction",
+      swarm: s.deliveriesWithoutCorrection,
+      opencode: o.deliveriesWithoutCorrection,
+      verdict: compare(s.deliveriesWithoutCorrection, o.deliveriesWithoutCorrection, true),
+    },
+    {
+      measure: "false completion claims",
+      swarm: s.falseClaims,
+      opencode: o.falseClaims,
+      verdict: compare(s.falseClaims, o.falseClaims, false),
+    },
+    {
+      measure: "scripted corrections",
+      swarm: s.correctionsTotal,
+      opencode: o.correctionsTotal,
+      verdict: compare(s.correctionsTotal, o.correctionsTotal, false),
+    },
+    {
+      measure: "launches killed at the wall",
+      swarm: s.killedAtWall,
+      opencode: o.killedAtWall,
+      verdict: compare(s.killedAtWall, o.killedAtWall, false),
+    },
+    {
+      measure: "unresolved launches (no correct delivery)",
+      swarm: unresolved(s),
+      opencode: unresolved(o),
+      verdict: compare(unresolved(s), unresolved(o), false),
+    },
+    {
+      measure: "end-to-end minutes per correct delivery (cost)",
+      swarm: s.costPerDelivery.endToEndMinutes,
+      opencode: o.costPerDelivery.endToEndMinutes,
+      verdict: compare(s.costPerDelivery.endToEndMinutes, o.costPerDelivery.endToEndMinutes, false),
+    },
+    {
+      measure: "tokens per correct delivery, as each arm reports them (cost)",
+      swarm: s.costPerDelivery.tokens,
+      opencode: o.costPerDelivery.tokens,
+      verdict: compare(s.costPerDelivery.tokens, o.costPerDelivery.tokens, false),
+    },
+  ];
+  const quality = measures.slice(0, 6);
+  const cost = measures.slice(6);
+  const advantage =
+    measures[1].verdict === "win" ||
+    (measures[0].verdict === "tie" && s.deliveries > 0 && measures[3].verdict === "win");
+  return {
+    measures,
+    advantage,
+    advantageBasis: advantage
+      ? measures[1].verdict === "win"
+        ? "more correct deliveries without correction"
+        : "fewer corrections at equal delivery performance"
+      : "neither more deliveries without correction nor fewer corrections at equal deliveries; a predeclared quality improvement is not derivable by the analyzer and stays unjudged",
+    noWorse: quality.every((one) => one.verdict !== "loss"),
+    costRegression: cost.some((one) => one.verdict === "loss"),
+    costUnresolved: cost.some((one) => one.verdict === "unknown"),
+  };
+}
+
+/** The 2026-10-15 protocol's stage A spending rule, item by item. */
+export function stageAGate2026_10_15(rows, tasks, validity = { complete: true, problems: [] }) {
+  const swarm = rows.filter((row) => row.arm === "swarm");
+  const byType = (type) => tasks.find((task) => task.workType === type)?.id;
+  const deliveredIds = new Set(swarm.filter((row) => row.delivered).map((row) => row.task));
+  const ineligible = rows.filter((row) => !row.eligible);
+  const primary = primaryMeasures(rows);
+  const items = [
+    {
+      item: "all eight stage A records valid and inspectable; no unresolved setup, scoring or exposure problem",
+      holds:
+        validity.complete && rows.length === 8 && rows.every((row) => row.valid && row.eligible),
+      value: `${rows.filter((row) => row.valid).length} valid of ${rows.length} recorded; ${validity.complete ? "evidence complete" : `evidence incomplete (${validity.problems.length} problem(s))`}; ${ineligible.length === 0 ? "no setup problem" : `setup problems on ${ineligible.map((row) => `${row.task} ${row.arm}`).join(", ")}`}`,
+    },
+    {
+      item: "Swarm correctly delivers at least three of four, including the bug fix and the feature, with no manual help and no false completion claim (every delivery met the hidden oracle, which holds the task's mandatory requirements)",
+      holds:
+        deliveredIds.size >= 3 &&
+        deliveredIds.has(byType("bugfix")) &&
+        deliveredIds.has(byType("feature")) &&
+        swarm.every((row) => !row.falseClaim),
+      value: `${deliveredIds.size} delivered: ${[...deliveredIds].join(", ") || "none"}; ${swarm.filter((row) => row.falseClaim).length} false claim(s); manual involvement: none recorded by the launcher`,
+    },
+    {
+      item: "a concrete quality or supervision advantage: more correct deliveries without correction, or fewer corrections at equal delivery performance (the predeclared-quality route is judged outside the analyzer)",
+      holds: primary.advantage,
+      value: primary.advantageBasis,
+    },
+    {
+      item: "Swarm no worse on the other primary quality, supervision and reliability measures; primary cost measures shown, a regression or an unresolved one named",
+      holds: primary.noWorse,
+      value: `${primary.measures.map((one) => `${one.measure}: ${one.verdict} (${number(one.swarm)} vs ${number(one.opencode)})`).join("; ")}; cost regression: ${primary.costRegression ? "yes" : "no"}; cost unresolved: ${primary.costUnresolved ? "yes" : "no"}`,
+    },
+  ];
+  return { items, qualifies: items.every((one) => one.holds), primary };
+}
+
+/** The 2026-10-15 protocol's stage B rule: both repetitions delivered, the advantage still supported combined. */
+export function stageBGate2026_10_15(rowsB, rowsAll, validity = { complete: true, problems: [] }) {
+  const swarmB = rowsB.filter((row) => row.arm === "swarm");
+  const opencodeB = rowsB.filter((row) => row.arm === "opencode");
+  const primary = primaryMeasures(rowsAll);
+  const items = [
+    {
+      item: "both repeated tasks recorded under both arms, evidence complete",
+      holds:
+        validity.complete &&
+        rowsB.length === 4 &&
+        swarmB.length === 2 &&
+        opencodeB.length === 2 &&
+        rowsB.every((row) => row.valid && row.eligible),
+      value: `${rowsB.length} record(s): swarm ${swarmB.length}, opencode ${opencodeB.length}; ${validity.complete ? "evidence complete" : "evidence incomplete"}`,
+    },
+    {
+      item: "both repeated tasks correctly delivered by Swarm",
+      holds: swarmB.length === 2 && swarmB.every((row) => row.delivered),
+      value:
+        swarmB
+          .map((row) => `${row.task}: ${row.delivered ? "delivered" : "not delivered"}`)
+          .join("; ") || "not run",
+    },
+    {
+      item: "zero false claims or control failures throughout",
+      holds: rowsAll.every((row) => row.valid && !(row.arm === "swarm" && row.falseClaim)),
+      value: `${rowsAll.filter((row) => row.arm === "swarm" && row.falseClaim).length} false claim(s), ${rowsAll.filter((row) => !row.valid).length} invalid launch(es)`,
+    },
+    {
+      item: "the advantage still supported in the combined descriptive results, Swarm no worse on the other primary measures",
+      holds: primary.advantage && primary.noWorse,
+      value: `${primary.advantageBasis}; no worse: ${primary.noWorse}; cost regression: ${primary.costRegression ? "yes" : "no"}`,
+    },
+  ];
+  return { items, proceeds: items.every((one) => one.holds), primary };
 }
 
 /**
@@ -732,6 +939,16 @@ export function renderMarkdown(stageA, stageB, labels = {}) {
         ? `not fully known (${a.tokensUnknownLaunches} launch(es) with unknown usage)`
         : a.tokensKnown.toLocaleString("en-US"),
     );
+    const kind = (label, pick) =>
+      row(`${label}, as each arm reports it`, (a) =>
+        a.usage === null
+          ? "not reported"
+          : `${pick(a.usage) === null ? "not reported" : pick(a.usage).toLocaleString("en-US")}${a.usageLaunchesWithout > 0 ? ` (${a.usageLaunchesWithout} launch(es) without a breakdown)` : ""}`,
+      );
+    kind("input tokens", (u) => u.input);
+    kind("output tokens", (u) => u.output);
+    kind("reasoning tokens (inside output)", (u) => u.reasoning);
+    kind("cached input tokens (inside input)", (u) => u.cacheRead);
     row("agent minutes per delivery (all work / deliveries)", (a) =>
       number(a.costPerDelivery.agentMinutes),
     );
@@ -751,8 +968,14 @@ export function renderMarkdown(stageA, stageB, labels = {}) {
   if (stageA.validity.complete) {
     pairedTable(stageA.rows, "Launches");
     armTable(stageA.rows, "Per arm");
-    const gateA = stageAGate(stageA.rows, stageA.manifest.tasks, stageA.validity);
-    gateTable(gateA, `Stage A gate: ${gateA.qualifies ? "qualifies" : "does not qualify"}`);
+    const gateA =
+      ruleFor(stageA.manifest) === "2026-10-15"
+        ? stageAGate2026_10_15(stageA.rows, stageA.manifest.tasks, stageA.validity)
+        : stageAGate(stageA.rows, stageA.manifest.tasks, stageA.validity);
+    gateTable(
+      gateA,
+      `Stage A gate (${ruleFor(stageA.manifest)} rule): ${gateA.qualifies ? "qualifies" : "does not qualify"}`,
+    );
   }
   if (stageB) {
     lines.push("## Stage B: the bugfix and feature repeated once per arm", "");
@@ -765,10 +988,13 @@ export function renderMarkdown(stageA, stageB, labels = {}) {
         all,
         "Combined descriptive view: four unique tasks, two of them repeated (12 launches)",
       );
-      const gateB = stageBGate(stageB.rows, all, stageB.validity);
+      const gateB =
+        ruleFor(stageA.manifest) === "2026-10-15"
+          ? stageBGate2026_10_15(stageB.rows, all, stageB.validity)
+          : stageBGate(stageB.rows, all, stageB.validity);
       gateTable(
         gateB,
-        `Stage B gate: ${gateB.proceeds ? "PROCEED TO A LARGER STUDY" : "DO NOT PROCEED"}`,
+        `Stage B gate (${ruleFor(stageA.manifest)} rule): ${gateB.proceeds ? "PROCEED TO A LARGER STUDY" : "DO NOT PROCEED"}`,
       );
     }
   }
@@ -799,8 +1025,11 @@ export function analysisOf(stageA, stageB) {
         : "incomplete",
     stageA: {
       ...stage(stageA),
+      rule: ruleFor(stageA.manifest),
       gate: stageA.validity.complete
-        ? stageAGate(stageA.rows, stageA.manifest.tasks, stageA.validity)
+        ? ruleFor(stageA.manifest) === "2026-10-15"
+          ? stageAGate2026_10_15(stageA.rows, stageA.manifest.tasks, stageA.validity)
+          : stageAGate(stageA.rows, stageA.manifest.tasks, stageA.validity)
         : null,
     },
     stageB: stageB
@@ -808,7 +1037,13 @@ export function analysisOf(stageA, stageB) {
           ...stage(stageB),
           gate:
             stageB.validity.complete && stageA.validity.complete
-              ? stageBGate(stageB.rows, [...stageA.rows, ...stageB.rows], stageB.validity)
+              ? ruleFor(stageA.manifest) === "2026-10-15"
+                ? stageBGate2026_10_15(
+                    stageB.rows,
+                    [...stageA.rows, ...stageB.rows],
+                    stageB.validity,
+                  )
+                : stageBGate(stageB.rows, [...stageA.rows, ...stageB.rows], stageB.validity)
               : null,
         }
       : null,

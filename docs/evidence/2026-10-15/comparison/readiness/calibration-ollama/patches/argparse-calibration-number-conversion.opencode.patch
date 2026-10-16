@@ -1,0 +1,86 @@
+diff --git a/lib/argparse.js b/lib/argparse.js
+index 87b2f31..6c031e6 100644
+--- a/lib/argparse.js
++++ b/lib/argparse.js
+@@ -167,13 +167,57 @@ function _string_split (string, sep, maxsplit) {
+     return result
+ }
+ 
+-function _string_to_number (string) {
+-    if (typeof string === 'string' && !/(?:^|\D)_|_(?:\D|$)/.test(string)) {
+-        string = string.replace(/_/g, '')
++function _string_to_number (string, isFloat) {
++    if (typeof string !== 'string') return Number(string)
++
++    const s = string.trim()
++
++    if (isFloat) {
++        // float(): handle inf/nan case-insensitively with optional leading sign
++        if (/^[+-]?(inf(inity)?)$/i.test(s)) {
++            return /^-/.test(s) ? -Infinity : Infinity
++        }
++        if (/^[+-]?nan$/i.test(s)) {
++            return NaN
++        }
++
++        // For decimal literals, validate PEP 515 underscores:
++        // only between digit characters (no leading/trailing underscore in any segment, no consecutive)
++        if (/_/.test(s)) {
++            const numPart = s.replace(/^[+-]/, '')
++            const segments = numPart.split(/[.eE]/)
++            for (let i = 0; i < segments.length; i++) {
++                const seg = segments[i]
++                // Allow empty segments only at boundaries (leading dot or trailing exponent sign)
++                if (!seg.length && !(i === 0 || i === segments.length - 1)) {
++                    throw new TypeError(sub('could not convert string to float: %r', string))
++                }
++                if (seg.length && (/^_|_$|__/.test(seg))) {
++                    throw new TypeError(sub('could not convert string to float: %r', string))
++                }
++            }
++        }
++
++        // Reject hex/binary/octal/human-readable numbers and empty/invalid patterns that Number() accepts
++        const stripped = s.replace(/_/g, '')
++        if (!/^[-+]?\d*\.?\d+([eE][-+]?\d+)?$/.test(stripped) &&
++            !/^[-+]?\.\d+([eE][-+]?\d+)?$/.test(stripped)) {
++            throw new TypeError(sub('could not convert string to float: %r', string))
++        }
++
++        const result = Number(s.replace(/_/g, ''))
++        return result
++    }
++
++    // int(): decimal integers with optional sign, whitespace and digit-group underscores
++    if (!/^[+-]?\d+(?:_?\d+)*$/.test(s)) {
++        throw new TypeError(sub('could not convert string to int: %r', string))
+     }
+-    return Number(string)
++    const result = Number(s.replace(/_/g, ''))
++    return result === 0 ? 0 : result
+ }
+ 
++
+ function _array_remove (array, item) {
+     const idx = array.indexOf(item)
+     if (idx === -1) throw new TypeError(sub('%r not in list', item))
+@@ -2707,17 +2751,14 @@ const ArgumentParser = _callable(class ArgumentParser extends _AttributeHolder(_
+             if (typeof x === 'string' && !/^[+-]?\d+(?:_?\d+)*$/.test(x.trim())) {
+                 throw new TypeError(sub('could not convert string to int: %r', x))
+             }
+-            const result = _string_to_number(x)
++            const result = _string_to_number(x, false)
+             if (!Number.isInteger(result)) {
+                 throw new TypeError(sub('could not convert string to int: %r', x))
+             }
+             return result
+         })
+         this.register('type', 'float', function (x) {
+-            const result = _string_to_number(x)
+-            if (isNaN(result)) {
+-                throw new TypeError(sub('could not convert string to float: %r', x))
+-            }
++            const result = _string_to_number(x, true)
+             return result
+         })
+         this.register('type', 'str', String)

@@ -73,6 +73,12 @@ export interface RunCommand {
     readonly remainingWallMs: number;
     readonly deadline: number;
     readonly source: { readonly sessionId: string; readonly head: string };
+    /** The run whose private child HOME this continuation takes back: the original run's, through any chain of resumptions. */
+    readonly childHomeOwner: string;
+    /** Cancelled calls with no reported usage, charged at their recorded bounds against the sealed budget. */
+    readonly chargedForCancelledCalls: { readonly calls: number; readonly tokens: number };
+    /** The file set the earlier session declared and amended, re-declared on this chain before any edit. */
+    readonly declaredFiles: readonly string[];
     readonly previousCriteria: import("./gates/gate-set-seal.ts").GateSetSeal;
     readonly previousSpec: import("./evidence/run-spec.ts").RunSpec;
   };

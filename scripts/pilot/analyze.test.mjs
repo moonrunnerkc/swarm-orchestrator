@@ -10,8 +10,11 @@ import {
   armSummary,
   normalizeCommand,
   readStage,
+  ruleFor,
   stageAGate,
+  stageAGate2026_10_15,
   stageBGate,
+  usageOf,
 } from "./analyze.mjs";
 
 const digestOf = (text) => `sha256:${createHash("sha256").update(text).digest("hex")}`;
@@ -565,5 +568,108 @@ describe("armSummary and the gates", () => {
     expect(gate.items[3].value).toContain(
       "corrections no worse on the 1 task(s) both deliver: false",
     );
+  });
+});
+
+describe("the 2026-10-15 rule", () => {
+  const row = (arm, task, over = {}) => ({
+    task,
+    arm,
+    order: 0,
+    valid: true,
+    eligible: true,
+    correctPatch: true,
+    delivered: true,
+    deliveredWithoutCorrection: true,
+    falseClaim: false,
+    claim: "claims-completion",
+    corrections: 0,
+    invocations: [{ signal: null }],
+    time: { agentMs: 60_000, preparationMs: 0, scoringAndHarnessMs: 0, elapsedMs: 60_000 },
+    tokens: { total: 1000, unknownInvocations: 0, usage: null },
+    ...over,
+  });
+  const tasks = [
+    { id: "b", workType: "bugfix" },
+    { id: "f", workType: "feature" },
+    { id: "r", workType: "refactor" },
+    { id: "u", workType: "upgrade" },
+  ];
+  const stageA = (swarmOver, opencodeOver) => [
+    ...tasks.map((t) => row("swarm", t.id, swarmOver(t.id))),
+    ...tasks.map((t) => row("opencode", t.id, opencodeOver(t.id))),
+  ];
+
+  it("is selected by the manifest's purpose and ties are ties", () => {
+    expect(ruleFor({ purpose: "comparison 2026-10-15, stage A: four fresh tasks" })).toBe(
+      "2026-10-15",
+    );
+    expect(ruleFor({ purpose: "real-task pilot 2026-10-14, stage A" })).toBe("pilot-2026-10-14");
+    const rows = stageA(
+      () => ({}),
+      () => ({}),
+    );
+    const gate = stageAGate2026_10_15(rows, tasks);
+    expect(gate.items[0].holds).toBe(true);
+    expect(gate.items[1].holds).toBe(true);
+    // Equal deliveries, equal corrections: no advantage, and no loss either.
+    expect(gate.items[2].holds).toBe(false);
+    expect(gate.items[3].holds).toBe(true);
+    expect(gate.qualifies).toBe(false);
+    expect(gate.primary.measures.every((one) => one.verdict === "tie")).toBe(true);
+  });
+
+  it("passes on more deliveries without correction and fails on a cost regression named rather than hidden", () => {
+    const rows = stageA(
+      () => ({}),
+      (id) =>
+        id === "r"
+          ? {
+              delivered: false,
+              deliveredWithoutCorrection: false,
+              correctPatch: false,
+              corrections: 2,
+            }
+          : {
+              time: {
+                agentMs: 30_000,
+                preparationMs: 0,
+                scoringAndHarnessMs: 0,
+                elapsedMs: 30_000,
+              },
+            },
+    );
+    const gate = stageAGate2026_10_15(rows, tasks);
+    expect(gate.items[2].holds).toBe(true);
+    expect(gate.primary.advantageBasis).toBe("more correct deliveries without correction");
+    // OpenCode's three deliveries cost 1.5 minutes together; Swarm's four cost 4: a regression
+    // on end-to-end minutes per delivery, which the item names and the gate does not hide.
+    expect(gate.primary.costRegression).toBe(true);
+    expect(gate.items[3].value).toContain("cost regression: yes");
+    expect(gate.qualifies).toBe(true);
+  });
+
+  it("fails item 4 where Swarm loses a primary quality measure, and item 2 on a false claim", () => {
+    const rows = stageA(
+      (id) => (id === "u" ? { falseClaim: true, delivered: false, correctPatch: false } : {}),
+      () => ({}),
+    );
+    const gate = stageAGate2026_10_15(rows, tasks);
+    expect(gate.items[1].holds).toBe(false);
+    expect(gate.items[3].holds).toBe(false);
+    expect(
+      gate.primary.measures.find((one) => one.measure === "false completion claims").verdict,
+    ).toBe("loss");
+  });
+
+  it("sums usage by kind and keeps a kind nobody reported null", () => {
+    expect(
+      usageOf([
+        { usage: { input: 10, output: 2, reasoning: null, cacheRead: 3, cacheWrite: null } },
+        { usage: null },
+        { usage: { input: 5, output: 1, reasoning: 4, cacheRead: null, cacheWrite: null } },
+      ]),
+    ).toEqual({ input: 15, output: 3, reasoning: 4, cacheRead: 3, cacheWrite: null });
+    expect(usageOf([{ usage: null }])).toBeNull();
   });
 });

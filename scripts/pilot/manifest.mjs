@@ -16,14 +16,14 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { commandLog } from "../campaign/exec.mjs";
-import { defaultPins, digestOf } from "../comparison/arms.mjs";
+import { defaultPins, digestOf, swarmTokenCap } from "../comparison/arms.mjs";
 import { opencodeVersion } from "../comparison/control.mjs";
 import { harnessDigest } from "../comparison/harness-identity.mjs";
 import { launches, seed } from "../comparison/order.mjs";
 import { taskSchema } from "../comparison/schema.mjs";
 import { comparisonRoot, resolveFull } from "../comparison/workspace.mjs";
 import { amendmentDate, developmentStages, developmentTasks } from "./amendments.mjs";
-import { stageTasks } from "./tasks.mjs";
+import { taskSet } from "./task-sets.mjs";
 
 const args = new Map();
 for (let index = 2; index < process.argv.length; index += 1) {
@@ -51,7 +51,8 @@ export function treeDigest(root) {
 
 const stage = args.get("stage");
 const developmentStage = stage in developmentStages;
-if (stage !== "A" && stage !== "B" && !developmentStage) {
+const { stageTasks, setName } = await taskSet(args.get("set"));
+if (stage !== "A" && stage !== "B" && stage !== "calibration" && !developmentStage) {
   console.error(
     `usage: manifest.mjs --stage A|B|${Object.keys(developmentStages).join("|")} --out <file> --swarm-cli <path> --swarm-revision <commit> [--protocol <file>] [--wall-minutes 19] [--model <served name>] [--endpoint <url>]`,
   );
@@ -68,6 +69,8 @@ const tasks = developmentStage ? developmentTasks(stage) : stageTasks(stage);
 const purposes = {
   A: "four fresh tasks, one launch per arm",
   B: "the predeclared bugfix and feature repeated once per arm in fresh sessions",
+  calibration:
+    "the declared calibration task under both arms, which each tool must deliver before the comparison is frozen; excluded from scoring",
   dev: "development validation of the repairs on known tasks under the amended oracle: the upgrade and the feature once per arm; not comparative evidence and not a repetition of the pilot",
   "dev-bugfix":
     "development validation of the repairs on the known bug fix, one clean launch under Swarm; not comparative evidence",
@@ -79,6 +82,8 @@ const purposes = {
     "live diagnosis launch 2 of 2026-10-15: the known bug fix under Swarm with a second installed local model; not comparative evidence",
   "diagnosis-3":
     "live diagnosis launch 3 of 2026-10-15: the known bug fix under OpenCode; not comparative evidence",
+  "diagnosis-4":
+    "live diagnosis launch 4 of 2026-10-15: the known bug fix under OpenCode on the Ollama configuration with thinking off; not comparative evidence",
 };
 // A development stage freezes exactly the cells it launches, so its published evidence is
 // complete when every frozen cell has a record.
@@ -106,13 +111,13 @@ const manifest = {
   schema: "swarm-ordinary-comparison.manifest.v1",
   frozenAt: new Date().toISOString(),
   protocolDigest: existsSync(protocolPath) ? digestOf(readFileSync(protocolPath, "utf8")) : null,
-  purpose: `real-task pilot 2026-10-14, stage ${stage}: ${purposes[stage]}`,
+  purpose: `${setName}, stage ${stage}: ${purposes[stage]}`,
   // What a launch's fresh home must show before dispatch: no browser cache, because no task
   // here needs one and this launcher provisions none. Read by the launcher before every launch.
   prerequisites: { browsers: false },
   oracle: developmentStage
     ? `amended ${amendmentDate} (scripts/pilot/amendments.mjs)`
-    : "frozen (scripts/pilot/tasks.mjs)",
+    : `frozen (${args.get("set") === undefined ? "scripts/pilot/tasks.mjs" : `scripts/pilot/tasks-${args.get("set")}.mjs`})`,
   pins: {
     ...defaultPins,
     // A diagnosis launch may name another served model or endpoint; a pilot stage never does.
@@ -137,9 +142,10 @@ const manifest = {
     // deadline, tracked separately.
     wallMsPerInvocation: wallMinutes * 60_000,
     wallGraceMs: 60_000,
-    // The cap the Swarm arm is launched with, per invocation (`scripts/comparison/arms.mjs`,
-    // the same constant). OpenCode has no equivalent native cap; recorded, not matched.
-    swarmTokenCap: 600_000,
+    // Swarm's token allowance for the whole launch, shared by its corrections
+    // (`scripts/comparison/arms.mjs`, the same constant). OpenCode has no equivalent native
+    // cap; recorded, not matched.
+    swarmTokenCap,
     maxCorrections: 2,
   },
   seed,

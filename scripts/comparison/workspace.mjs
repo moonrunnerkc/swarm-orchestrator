@@ -230,7 +230,18 @@ export function writeArmConfiguration(directory, arm, endpoint, model, task) {
                   name: model,
                   tool_call: true,
                   limit: { context: 131072, output: 8192 },
-                  options: { enable_thinking: false, top_p: 0.95 },
+                  // Three spellings of "do not think", for the servers that read each: rapid-mlx
+                  // and vLLM the templated enable_thinking, Ollama reasoning_effort (its
+                  // OpenAI route ignores the other two). Swarm sends the same three. The last
+                  // is spelled as the SDK's own option: OpenCode's provider maps reasoningEffort
+                  // to the wire field and overwrites a reasoning_effort given directly, which a
+                  // proxy capture of the canary showed arriving without it.
+                  options: {
+                    enable_thinking: false,
+                    chat_template_kwargs: { enable_thinking: false },
+                    reasoningEffort: "none",
+                    top_p: 0.95,
+                  },
                 },
               },
             },

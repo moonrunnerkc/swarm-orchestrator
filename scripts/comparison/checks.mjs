@@ -268,7 +268,12 @@ export async function hiddenVerdict(
     };
   const allowed = task.hidden.allowedPaths;
   if (allowed !== undefined) {
-    const outside = patchedPaths(patch).filter((path) => !allowed.includes(path));
+    // A sealed test file is overlaid at scoring time whatever the patch did to it, so an edit
+    // there is discarded rather than judged; the reference's own test changes pass through here
+    // the same way.
+    const outside = patchedPaths(patch).filter(
+      (path) => !allowed.includes(path) && !task.hidden.testFiles.includes(path),
+    );
     if (outside.length > 0)
       return {
         verdict: "fail",
@@ -299,6 +304,12 @@ export async function hiddenVerdict(
       const target = join(tree.checkout, path);
       mkdirSync(dirname(target), { recursive: true });
       writeFileSync(target, shown.stdout);
+    }
+    // Acceptance checks written for this task, held outside both arms' workspaces until now.
+    for (const file of task.hidden.files ?? []) {
+      const target = join(tree.checkout, file.path);
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, file.source);
     }
     for (const argv of task.build) {
       const built = await run(log, tree.checkout, argv);
