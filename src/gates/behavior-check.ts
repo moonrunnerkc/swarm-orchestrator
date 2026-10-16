@@ -27,6 +27,44 @@ const matches = (
     assertion.kind === "equals" ? actual === assertion.value : actual.includes(assertion.value),
   );
 
+/**
+ * What a rejected command-line check saw against what it expected, for a check the worker may
+ * see: the exit status and each stream assertion that did not hold, with the captured text
+ * beside it. Without this the repair brief said only that the assertions were evaluated, so the
+ * worker had nothing to repair from. A withheld check never gets this: its expectations are the
+ * part the worker must not see.
+ */
+export function describeCliMismatch(
+  check: Extract<BehaviorCheck, { kind: "cli" }>,
+  observation: GateObservation,
+): string {
+  const bound = (text: string) =>
+    text.length <= mismatchExcerptChars
+      ? JSON.stringify(text)
+      : `${JSON.stringify(text.slice(0, mismatchExcerptChars))} (${text.length} characters, truncated)`;
+  const streams = [
+    { name: "stdout", actual: observation.stdout, assertions: check.stdout },
+    { name: "stderr", actual: observation.stderr, assertions: check.stderr },
+  ];
+  const parts = [
+    observation.exitCode === check.exitCode
+      ? `exit status ${observation.exitCode} as expected`
+      : `exit status ${observation.exitCode}, expected ${check.exitCode}`,
+    ...streams.flatMap((stream) =>
+      stream.assertions
+        .filter((assertion) => !matches(stream.actual, [assertion]))
+        .map(
+          (assertion) =>
+            `${stream.name} ${assertion.kind === "equals" ? "should equal" : "should contain"} ` +
+            `${bound(assertion.value)} but was ${bound(stream.actual)}`,
+        ),
+    ),
+  ];
+  return parts.join("; ");
+}
+
+const mismatchExcerptChars = 2000;
+
 /** Evaluate raw bounded observations independently from the executable's own success claims. */
 export function evaluateBehavior(
   check: BehaviorCheck,
