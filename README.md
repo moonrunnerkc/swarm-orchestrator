@@ -186,9 +186,11 @@ followed, a replay of its retained evidence through the repaired product, and a 
 diagnosis of the undelivered bug fix are in [docs/evidence/2026-10-15/](docs/evidence/2026-10-15/README.md).
 The four-task comparison that followed, without its calibration gate
 ([docs/evidence/2026-10-16/comparison/](docs/evidence/2026-10-16/comparison/README.md)), found no
-demonstrated benefit: both tools produced correct patches on all four tasks with no correction,
-OpenCode delivered four and Swarm three (it refused its own correct upgrade on a size-budget
-defect named there), and Swarm took more time and tokens per delivery.
+demonstrated benefit: both tools' patches passed the frozen oracle on all four tasks with no
+correction, OpenCode delivered four and Swarm three (it refused its own upgrade on a size-budget
+defect named there), and Swarm took more time and tokens per delivery. A later audit found both
+mime patches wrong on line-terminator cases the oracle never tried
+([amendment](docs/evidence/2026-10-16/comparison/correctness-amendment/README.md)).
 Developer hours saved and real-world adoption are not measured there; the prepared, unrun
 protocol for five developers on their own tasks is [docs/human-trial-protocol.md](docs/human-trial-protocol.md).
 

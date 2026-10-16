@@ -80,8 +80,11 @@ Source on `v13-main`; not published until a release names it.
   not frozen or launched.
 - **The four-task comparison against OpenCode, run without the calibration gate.** Under an
   amendment registered before any scored launch (`docs/evidence/2026-10-16/comparison/`), both
-  tools produced a correct patch on all four tasks with no correction and no false completion
-  claim. OpenCode delivered four of four. Swarm delivered three, and refused its own correct
+  tools' patches passed the frozen hidden oracle on all four tasks with no correction and no
+  false completion claim under that oracle. A dated post hoc audit
+  (`docs/evidence/2026-10-16/comparison/correctness-amendment/`) found both mime patches wrong
+  on line-terminator cases the oracle never tried (Swarm 30 of 65, OpenCode 20 of 65); the
+  scores stand as recorded. OpenCode delivered four of four. Swarm delivered three, and refused its own correct
   csstree upgrade because an advisory size budget it counts over the regenerated lockfile
   demanded a justification the loop never asked for. Swarm took more time and tokens per
   delivery, so there is no demonstrated benefit and the repetition stage did not run.
