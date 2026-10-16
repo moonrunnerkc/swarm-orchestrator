@@ -1,0 +1,371 @@
+{
+  "schema": "swarm-ordinary-comparison.manifest.v1",
+  "frozenAt": "2026-10-16T20:15:19.185Z",
+  "protocolDigest": "sha256:ab319bdf5852480fbaf00431e122bbad4a74d4bb34493a836a62a8576c774ac2",
+  "purpose": "comparison 2026-10-15, stage A: four fresh tasks, one launch per arm (amended 2026-10-16: no calibration gate; docs/evidence/2026-10-16/comparison/protocol-amendment.md)",
+  "prerequisites": {
+    "browsers": false
+  },
+  "swarmGates": {
+    "mime-bugfix-gettype-line-terminators": {
+      "lint": {
+        "command": "npm run --loglevel=error lint",
+        "severity": "advisory"
+      }
+    },
+    "mime-bugfix-gettype-line-terminators-rep": {
+      "lint": {
+        "command": "npm run --loglevel=error lint",
+        "severity": "advisory"
+      }
+    }
+  },
+  "oracle": "frozen (scripts/pilot/tasks-2026-10-15.mjs)",
+  "pins": {
+    "model": "qwen3.6:35b-a3b",
+    "endpoint": "http://127.0.0.1:11434/v1",
+    "swarmCli": "/Users/brad/.cache/swarm-comparison/tools/swarm-917312983/dist/cli.js",
+    "swarmRevision": "917312983a13784a47c2a9812f1d54859fbaedd4",
+    "swarmCliDigest": "sha256:f14402355cbf92169f2fc1a59b521c2b362353ec860930e40a7c8d6d9940d61d",
+    "swarmDistDigest": "sha256:f213f2f4d4e90b749d72ad295716ccad4acf0e285fad84ec73833e66cbd83c18",
+    "opencode": "1.14.48",
+    "node": "v24.15.0",
+    "harnessDigest": "sha256:59d3763e9d92a23ef3c142b64df4d03e8cb36798556ae555a45eba2547438efa",
+    "pilotHelpers": {
+      "scripts/pilot/amendments.mjs": "sha256:4a1c729093e1af5766ff5a950ac5d26f65becc16ea5ec561a3152cff82b1d4f1",
+      "scripts/pilot/analyze.mjs": "sha256:6e731b4f517465bc3f957e2da8cf02603b412dc60eafa47698a66a99887128f8",
+      "scripts/pilot/blind-patches.mjs": "sha256:22dc03f052434b73d60ce2f9aec430faf0a6c85e9d813dbd15a66db110398bba",
+      "scripts/pilot/check-prompt-delivery.mjs": "sha256:e7a5927c0a67fc35e2dc5a8351a70162dffe767a42e8628336549dfddf902243",
+      "scripts/pilot/manifest.mjs": "sha256:2fa148175204c6ce3c43984fa22afdffdabd84c6632a4fba99971342a49dbcc7",
+      "scripts/pilot/publish.mjs": "sha256:47bf2d9f377feef668d5f438b5710963b84422030aa10eb92c5c242cdb502dbe",
+      "scripts/pilot/recheck.mjs": "sha256:56001b14ae7e205cc759f5652ee1518c144840415e6ddb87591cb1781fca9fed",
+      "scripts/pilot/reference.mjs": "sha256:3df1444d5e6d38f4f4e263018281c3b0fcdd30090605f6bf313c808bbd60b83e",
+      "scripts/pilot/replay-feature-verification.mjs": "sha256:3bd1a0a03c521713c96385435b1d34024173a8d61eb4bacf531540e0c8334c90",
+      "scripts/pilot/replay-verification.mjs": "sha256:7363c124384cab401acdc1bd6dfb4892414c94ed5dff33848c81f7de2bcab2b1",
+      "scripts/pilot/swarm-session.mjs": "sha256:4708e9b2dc95bf38e46bb37baedb69d651c04f66fc608a71256327a269164a82",
+      "scripts/pilot/task-sets.mjs": "sha256:b2b5d389a830283df6ef9e417383d58775f96923d807c7f43bf894381f0bd181",
+      "scripts/pilot/tasks-2026-10-15.mjs": "sha256:ddd33ca249729b223e0aaf7ed98b1848c92ff49d73a4ff767da030ef96c75c04",
+      "scripts/pilot/tasks.mjs": "sha256:2f4afe721c4b4cb72e0abecea64e910637fab7d1bb5a2cb69f97e65db3ffe20b",
+      "scripts/pilot/validate.mjs": "sha256:26f3c799e525297300f3f4cd211695f0971b14f04027891c6be77f4559b24031"
+    },
+    "stage": "A",
+    "toolchains": {
+      "mime-bugfix-gettype-line-terminators": {
+        "npm": "11.2.0",
+        "path": "/Users/brad/.cache/swarm-comparison/tools/npm-11.2.0",
+        "observed": "11.2.0"
+      }
+    }
+  },
+  "budgets": {
+    "wallMsPerInvocation": 900000,
+    "wallGraceMs": 60000,
+    "swarmTokenCap": 8000000,
+    "maxCorrections": 2,
+    "swarmVerificationReserveMs": 60000,
+    "swarmProductLimits": {
+      "maxStepsPerLoop": 40,
+      "attempts": 3,
+      "maxOutputTokensPerCall": 8192,
+      "finalVerificationReserveMs": 30000
+    }
+  },
+  "seed": "swarm-ordinary-comparison-2026-10-11",
+  "tasks": [
+    {
+      "id": "mime-bugfix-gettype-line-terminators",
+      "repository": "broofa/mime",
+      "workType": "bugfix",
+      "baseCommit": "953ae3ebc59c387064f3760b73085eff6760a7f6",
+      "upstreamCommit": "d7871f3bac120df5e4776e7c395b39d0d8e7b562",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ]
+      ],
+      "build": [
+        [
+          "npm",
+          "run",
+          "build"
+        ]
+      ],
+      "projectTest": [
+        "npm",
+        "test"
+      ],
+      "visiblePrefix": "npm run build && ",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "npm run build && node acceptance/visible/check.mjs",
+        "source": "import assert from 'node:assert/strict';\nimport mime from '../../dist/src/index.js';\n\n// A file name holding a line feed must still be typed by the extension after its last dot.\nassert.equal(mime.getType('LINE\\nFEED.png'), 'image/png');\nassert.equal(mime.getType('/path/to/LINE\\nFEED.png'), 'image/png');\n\n// Ordinary names are unchanged.\nassert.equal(mime.getType('report.html'), 'text/html');\nassert.equal(mime.getType('/path/to/.config.json'), 'application/json');\nassert.equal(mime.getType('/path/to/file'), null);\n\nconsole.log('visible check passed');\n"
+      },
+      "hidden": {
+        "testFiles": [
+          "test/mime.test.js"
+        ],
+        "argv": [
+          "node",
+          "--test",
+          "test/mime.test.js"
+        ],
+        "allowedPaths": [
+          "src/Mime.ts"
+        ]
+      },
+      "immutable": [
+        "test",
+        "types"
+      ],
+      "taskText": "Mime.getType(path) (src/Mime.ts) derives a type from the extension after the last dot of the last path segment. The two regular expressions that strip the directory part and the part before the extension do not match across line terminators, so a file name that contains one is typed wrongly: getType('LINE\\nFEED.png') returns null instead of 'image/png', and the same happens for a carriage return (U+000D), a line separator (U+2028) and a paragraph separator (U+2029), with or without a directory part in front. This matters where the file name comes from an untrusted source: a content type decided from it must come from the extension after the last dot of the last segment, whatever characters precede it, so that a name crafted with a line terminator cannot make the lookup fail or pick an earlier extension. Make getType treat every line terminator like any other character when it strips the directory part and the extension's prefix; a space or tab in the name already works and must keep working. getExtension, define and the rest of the class stay as they are. The change belongs in src/Mime.ts only. Repository rules: keep the file's existing style, no new dependencies, no edits under test or types, and the whole suite (npm test, which builds first) must keep passing."
+    },
+    {
+      "id": "pako-feature-inflate-push-after-end",
+      "repository": "nodeca/pako",
+      "workType": "feature",
+      "baseCommit": "ef2f14af9b51376aa82215e68a3747a0faac62b7",
+      "upstreamCommit": "16fb5c47d936af5c88e943178c8e6f455e067128",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ]
+      ],
+      "build": [],
+      "projectTest": [
+        "npm",
+        "test"
+      ],
+      "visiblePrefix": "",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "node acceptance/visible/check.mjs",
+        "source": "import assert from 'node:assert/strict';\nimport zlib from 'node:zlib';\nimport { Inflate } from '../../src/index.ts';\n\n// A compressed stream can end before the caller's data does: trailing chunks are no-ops that\n// report the decode's outcome and leave the delivered result intact.\nconst stream = zlib.deflateSync(Buffer.from('payload'));\nconst inflator = new Inflate();\nassert.equal(inflator.push(stream), true);\nassert.equal(inflator.ended, true);\nassert.equal(inflator.push(new Uint8Array([1, 2, 3])), true);\nassert.equal(Buffer.from(inflator.result).toString(), 'payload');\nassert.equal(inflator.err, 0);\n\nconsole.log('visible check passed');\n"
+      },
+      "hidden": {
+        "testFiles": [
+          "test/inflate.test.mjs"
+        ],
+        "argv": [
+          "node",
+          "--test",
+          "test/inflate.test.mjs"
+        ],
+        "allowedPaths": [
+          "src/inflate.ts",
+          "CHANGELOG.md"
+        ]
+      },
+      "immutable": [
+        "test",
+        "benchmark"
+      ],
+      "taskText": "The streaming decoder class Inflate (src/inflate.ts) tracks whether the compressed stream has ended in a private `ended` field, and its push(data, flush_mode) method returns a blanket false for every call made after that point. A compressed stream can end before the caller's data does (trailing bytes after the deflate or gzip stream), and the caller has no way to know that in advance, so a push made after the end must become a no-op that reports the recorded outcome instead: once the stream has ended, push returns true if the decode finished without error (this.err is Z_OK) and false if it failed, whatever data or flush mode it is given, and it leaves `err`, `msg` and `result` exactly as they were, so the delivered result survives any trailing chunks and a failed stream keeps reporting failure. Make `ended` a public, documented property so callers can check it, and document the new push behaviour in its JSDoc. Pushes before the end, the onData and onEnd callbacks, the one-shot inflate helpers and everything else are unchanged. The project's full check (npm test: lint, build, type-check and the node test suite) must keep passing; change only src/inflate.ts (a CHANGELOG entry is welcome but not required) and do not edit tests or benchmarks."
+    },
+    {
+      "id": "pako-refactor-options-default-param",
+      "repository": "nodeca/pako",
+      "workType": "refactor",
+      "baseCommit": "b77b601e1a86512887c83839a92f4ce8ab50266f",
+      "upstreamCommit": "1754a8b32c876f155aa816d33681db4553838123",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ]
+      ],
+      "build": [],
+      "projectTest": [
+        "npm",
+        "test"
+      ],
+      "visiblePrefix": "",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "node acceptance/visible/check.mjs",
+        "source": "import { readFileSync } from 'node:fs';\nimport assert from 'node:assert/strict';\nimport { Deflate, Inflate, deflate, inflate } from '../../src/index.ts';\n\nconst inflateSource = readFileSync(new URL('../../src/inflate.ts', import.meta.url), 'utf8');\nconst deflateSource = readFileSync(new URL('../../src/deflate.ts', import.meta.url), 'utf8');\n\n// The fallbacks are gone from both files.\nassert.equal((inflateSource.match(/options \\|\\| \\{\\}/g) ?? []).length, 0, 'inflate.ts still has `options || {}`');\nassert.equal((deflateSource.match(/options \\|\\| \\{\\}/g) ?? []).length, 0, 'deflate.ts still has `options || {}`');\n\n// Behaviour is unchanged with and without options.\nconst data = new TextEncoder().encode('pako default options');\nassert.equal(new TextDecoder().decode(inflate(deflate(data))), 'pako default options');\nassert.equal(inflate(deflate(data), { toText: true }), 'pako default options');\nconst d = new Deflate();\nd.push(data, true);\nconst i = new Inflate();\ni.push(d.result, true);\nassert.equal(new TextDecoder().decode(i.result), 'pako default options');\n\nconsole.log('visible check passed');\n"
+      },
+      "hidden": {
+        "testFiles": [],
+        "argv": [
+          "npm",
+          "test"
+        ],
+        "structural": [
+          {
+            "pattern": "options \\|\\| \\{\\}",
+            "files": [
+              "src/inflate.ts",
+              "src/deflate.ts"
+            ],
+            "count": 0
+          },
+          {
+            "pattern": "options \\?\\? \\{\\}",
+            "files": [
+              "src/inflate.ts",
+              "src/deflate.ts"
+            ],
+            "count": 0
+          },
+          {
+            "pattern": "options\\?: InflateOptions\\b",
+            "files": [
+              "src/inflate.ts"
+            ],
+            "count": 0
+          },
+          {
+            "pattern": "options\\?: DeflateOptions\\b",
+            "files": [
+              "src/deflate.ts"
+            ],
+            "count": 0
+          },
+          {
+            "pattern": "options: InflateOptions = \\{\\}",
+            "files": [
+              "src/inflate.ts"
+            ],
+            "count": 1
+          },
+          {
+            "pattern": "options: DeflateOptions = \\{\\}",
+            "files": [
+              "src/deflate.ts"
+            ],
+            "count": 4
+          },
+          {
+            "pattern": "options: O = \\{\\} as O",
+            "files": [
+              "src/inflate.ts"
+            ],
+            "count": 3
+          },
+          {
+            "pattern": "options\\?: O\\b",
+            "files": [
+              "src/inflate.ts"
+            ],
+            "count": 0
+          }
+        ],
+        "allowedPaths": [
+          "src/inflate.ts",
+          "src/deflate.ts"
+        ]
+      },
+      "immutable": [
+        "test",
+        "benchmark"
+      ],
+      "taskText": "In src/inflate.ts and src/deflate.ts the `options` parameter is declared optional (`options?: InflateOptions`, `options?: DeflateOptions`, and `options?: O` on the inflate, inflateRaw and ungzip helpers) and every use guards against its absence with `options || {}`, `options ?? {}` or an `options && options.windowBits` test. Refactor both files so the parameter carries a default value instead and the guards go: the two class constructors declare `options: InflateOptions = {}` and `options: DeflateOptions = {}` and pass `options` straight to Object.assign; the three helper functions in inflate.ts declare `options: O = {} as O` (their generic parameter `O` loses its `= {}` default, since the value now has one) and pass `options` straight through, reading `options.toText` and `options.windowBits` directly with no intermediate `opts` variable and no truthiness guard on `options` itself. Structural requirements, each checked by regular expression after the change: `options || {}` and `options ?? {}` occur zero times across the two files; `options?: InflateOptions`, `options?: DeflateOptions` and `options?: O` occur zero times; `options: InflateOptions = {}` occurs exactly once in src/inflate.ts, `options: DeflateOptions = {}` exactly four times in src/deflate.ts (the constructor and the three helpers that already carry it), and `options: O = {} as O` exactly three times in src/inflate.ts. Behaviour must be unchanged for every caller, with and without options, and the project's full check (npm test: lint, build, type-check and the node test suite) must pass as it does today. Change nothing outside these two files; do not edit tests, benchmarks or the build."
+    },
+    {
+      "id": "csstree-upgrade-esbuild-0-24",
+      "repository": "csstree/csstree",
+      "workType": "upgrade",
+      "baseCommit": "eab1c8e7819786d0ec53a744271c3b90fb0b5659",
+      "upstreamCommit": "7cfec03270088f42ee40db1c744e00efe2bc219e",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ]
+      ],
+      "build": [],
+      "projectTest": [
+        "npm",
+        "test"
+      ],
+      "visiblePrefix": "",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "node acceptance/visible/check.mjs",
+        "source": "import { readFileSync } from 'node:fs';\nimport assert from 'node:assert/strict';\n\nconst pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));\nassert.equal(pkg.devDependencies.esbuild, '0.24.0', pkg.devDependencies.esbuild);\nconst lock = JSON.parse(readFileSync(new URL('../../package-lock.json', import.meta.url), 'utf8'));\nassert.equal(lock.packages['node_modules/esbuild'].version, '0.24.0');\nassert.equal(lock.packages[''].devDependencies.esbuild, '0.24.0');\nconst installed = JSON.parse(readFileSync(new URL('../../node_modules/esbuild/package.json', import.meta.url), 'utf8'));\nassert.equal(installed.version, '0.24.0');\n\nconsole.log('visible check passed');\n"
+      },
+      "hidden": {
+        "testFiles": [],
+        "argv": [
+          "npm",
+          "run",
+          "build-and-test"
+        ],
+        "upgrade": [
+          {
+            "name": "esbuild",
+            "section": "devDependencies",
+            "version": "0.24.0",
+            "declared": "0.24.0"
+          }
+        ],
+        "unchanged": [
+          "scripts.build",
+          "scripts.bundle",
+          "scripts.esm-to-cjs",
+          "scripts.test",
+          "dependencies"
+        ],
+        "allowedPaths": [
+          "package.json",
+          "package-lock.json"
+        ]
+      },
+      "upgradeSourcePaths": [],
+      "immutable": [
+        "lib",
+        "scripts",
+        "fixtures"
+      ],
+      "taskText": "Upgrade the esbuild bundler this project builds its dist files with. In package.json the devDependency \"esbuild\" is currently \"^0.14.53\"; change it to exactly \"0.24.0\" (declare \"0.24.0\", no range) and regenerate package-lock.json with npm so that the lockfile resolves esbuild to 0.24.0, its root package entry records the same declaration, and npm ci installs 0.24.0. The build (npm run build, which runs the bundle script in scripts/bundle.js through esbuild and then the esm-to-cjs step) and the bundled and CommonJS test suites (npm run build-and-test) must pass after the upgrade. Do not change any other dependency, the scripts block, or anything under lib, scripts or fixtures; the change is package.json and package-lock.json only."
+    }
+  ],
+  "launches": [
+    {
+      "task": "pako-feature-inflate-push-after-end",
+      "arm": "swarm",
+      "order": 0
+    },
+    {
+      "task": "pako-feature-inflate-push-after-end",
+      "arm": "opencode",
+      "order": 1
+    },
+    {
+      "task": "csstree-upgrade-esbuild-0-24",
+      "arm": "opencode",
+      "order": 2
+    },
+    {
+      "task": "csstree-upgrade-esbuild-0-24",
+      "arm": "swarm",
+      "order": 3
+    },
+    {
+      "task": "mime-bugfix-gettype-line-terminators",
+      "arm": "swarm",
+      "order": 4
+    },
+    {
+      "task": "mime-bugfix-gettype-line-terminators",
+      "arm": "opencode",
+      "order": 5
+    },
+    {
+      "task": "pako-refactor-options-default-param",
+      "arm": "opencode",
+      "order": 6
+    },
+    {
+      "task": "pako-refactor-options-default-param",
+      "arm": "swarm",
+      "order": 7
+    }
+  ]
+}
