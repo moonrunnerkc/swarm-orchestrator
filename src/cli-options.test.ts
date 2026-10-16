@@ -759,6 +759,14 @@ describe("a goal contract on the ordinary task path", () => {
     );
   });
 
+  it("selects the worker prompt profile, and refuses one it does not know", () => {
+    expect(parseRun(["fix it"]).promptProfile).toBeUndefined();
+    expect(parseRun(["fix it", "--prompt-profile", "concise"]).promptProfile).toBe("concise");
+    expect(() => parseRun(["fix it", "--prompt-profile", "short"])).toThrow(
+      "--prompt-profile must be legacy or concise",
+    );
+  });
+
   it("authors criteria with --plan-checks, adds them to a supplied contract, and needs one for a preset", () => {
     expect(parseRun(["add a --no-cache flag", "--plan-checks"]).planChecks).toBe(true);
     const both = parseRun(["add a flag", "--plan-checks", "--goal-contract", "goal.json"]);

@@ -652,6 +652,7 @@ async function run(options: RunCommand): Promise<number> {
       repairFeedback?: string,
     ): Parameters<typeof runAgentTask>[0] => ({
       task: options.task,
+      ...(options.promptProfile === undefined ? {} : { promptProfile: options.promptProfile }),
       ...(repairFeedback === undefined ? {} : { repairFeedback }),
       ...(options.escalationModel === undefined
         ? {}
