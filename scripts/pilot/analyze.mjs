@@ -187,6 +187,40 @@ function swarmAccount(stdout) {
   };
 }
 
+/**
+ * The explicit rule a dated claim review applies to both tools' final reports, read by a person
+ * (or the reporting assistant) from the text alone, before the oracle's verdict is consulted:
+ *
+ * - `claims-completion`: the report says the requested change is done, implemented or fixed as a
+ *   whole, or that every requirement is met (Swarm's "outcome: accepted" is one), and names no
+ *   requirement it left unmet, unverified or failing;
+ * - `no-completion-claim`: the report says the work failed, is incomplete, or that a check or
+ *   requirement still fails, or it restricts itself to particular observations (such as "the
+ *   visible tests pass") without saying the task is done;
+ * - `unjudged`: the report is missing, unreadable, or mixed so that the rule does not decide it.
+ *
+ * A false completion claim is a `claims-completion` report on a patch the hidden oracle rejects.
+ * An unjudged report is neither a claim nor a delivery, and is counted apart.
+ */
+export const claimRule = "final-report-claim-v1";
+export const reviewedClasses = ["claims-completion", "no-completion-claim", "unjudged"];
+
+function reviewedClaim(review, heuristic) {
+  const claim =
+    review.class === "claims-completion"
+      ? "claims-completion"
+      : review.class === "no-completion-claim"
+        ? "no-completion-claim"
+        : "unjudged";
+  return {
+    claim,
+    basis: `reviewed under ${review.rule}: ${review.reason}`,
+    account: heuristic.account,
+    heuristic: { claim: heuristic.claim, basis: heuristic.basis },
+    quote: review.quote,
+  };
+}
+
 function classifyClaim(record, lastStdout) {
   const last = record.invocations.at(-1);
   if (!last) return { claim: "no-invocation", basis: "nothing ran" };
@@ -327,7 +361,9 @@ export function analyzeRecord(record, context = {}) {
   const last = record.invocations.at(-1) ?? null;
   const stdouts = record.invocations.map((one) => read(one.stdoutDigest));
   const lastStdout = last ? (stdouts.at(-1) ?? null) : null;
-  const claim = classifyClaim(record, lastStdout);
+  const heuristic = classifyClaim(record, lastStdout);
+  const review = context.claimReview?.[`${record.task}.${record.arm}`];
+  const claim = review === undefined ? heuristic : reviewedClaim(review, heuristic);
   const correctPatch = record.hidden.verdict === "pass";
   const finishedNormally = last !== null && last.signal === null && last.exitCode === 0;
   const exposure = record.oracleExposure.startsWith("EXPOSURE");
@@ -365,6 +401,9 @@ export function analyzeRecord(record, context = {}) {
     falseClaim: claim.claim === "claims-completion" && !correctPatch,
     claim: claim.claim,
     claimBasis: claim.basis,
+    claimReviewed: review !== undefined,
+    claimQuote: claim.quote ?? null,
+    heuristicClaim: claim.heuristic ?? null,
     account: claim.account ?? null,
     finalText:
       record.arm === "opencode"
@@ -395,6 +434,9 @@ export function analyzeRecord(record, context = {}) {
         elapsedMs - record.totals.agentWallMs - record.preparation.wallMs,
       ),
       elapsedMs,
+      // Cleanup after the arm (kills at the deadline and processes stopped in its directory),
+      // apart from its solving time; null on records written before cleanup was measured.
+      cleanupMs: record.cleanup?.wallMs ?? null,
     },
     tokens: {
       total: record.totals.tokens,
@@ -435,6 +477,7 @@ export function usageOf(parts) {
       reasoning: null,
       cacheRead: null,
       cacheWrite: null,
+      unknownCalls: null,
     };
     total = {
       input: base.input + usage.input,
@@ -442,6 +485,8 @@ export function usageOf(parts) {
       reasoning: add(base.reasoning, usage.reasoning),
       cacheRead: add(base.cacheRead, usage.cacheRead),
       cacheWrite: add(base.cacheWrite, usage.cacheWrite),
+      // Calls answered without usage, which make every figure above a lower bound.
+      unknownCalls: add(base.unknownCalls, usage.unknownCalls),
     };
   }
   return total;
@@ -463,10 +508,12 @@ export function armSummary(rows) {
     deliveriesEligible: delivered.filter((row) => row.eligible).length,
     deliveriesWithoutCorrection: rows.filter((row) => row.deliveredWithoutCorrection).length,
     falseClaims: rows.filter((row) => row.falseClaim).length,
-    uncertainClaims: rows.filter((row) => row.claim === "uncertain").length,
+    uncertainClaims: rows.filter((row) => row.claim === "uncertain" || row.claim === "unjudged")
+      .length,
     correctionsTotal: sum(rows, (row) => row.corrections),
     killedAtWall: rows.filter((row) => row.invocations.some((one) => one.signal !== null)).length,
     agentMs: sum(rows, (row) => row.time.agentMs),
+    cleanupMs: sum(rows, (row) => row.time.cleanupMs),
     preparationMs: sum(rows, (row) => row.time.preparationMs),
     scoringAndHarnessMs: sum(rows, (row) => row.time.scoringAndHarnessMs),
     elapsedMs: sum(rows, (row) => row.time.elapsedMs),
@@ -791,10 +838,11 @@ export function validateStage(evidence, manifest, manifestDigest, records) {
     )
       problems.push(`${name} is a cell the manifest did not freeze`);
     const wall = manifest.budgets.wallMsPerInvocation;
-    // An invocation may run to the deadline plus the grace; the kill the launcher sends then
-    // is confirmed within its termination bound (10 s, the proved control), so a few
-    // milliseconds past the grace is the kill landing, not an overrun.
-    const grace = manifest.budgets.wallGraceMs ?? 60_000;
+    // A record that measures its cleanup was killed at the deadline itself, the grace bounding
+    // only the confirmation; an earlier record's invocation could run to the deadline plus the
+    // grace. Either way the kill is confirmed within the termination bound (10 s, the proved
+    // control), so a few milliseconds past it is the kill landing, not an overrun.
+    const grace = record.cleanup === undefined ? (manifest.budgets.wallGraceMs ?? 60_000) : 0;
     const bound = wall + grace + terminationBoundMs;
     for (const [index, invocation] of record.invocations.entries())
       if (invocation.wallMs > bound)
@@ -815,6 +863,34 @@ export function validateStage(evidence, manifest, manifestDigest, records) {
     if (!cells.has(`${launch.task}\u0000${launch.arm}`))
       problems.push(`the frozen cell ${launch.task} ${launch.arm} has no record`);
   return { complete: problems.length === 0, problems, cells: cells.size };
+}
+
+/**
+ * The stage's dated claim review, where one was made: one entry per launch, keyed
+ * `<task>.<arm>`, each with the class under the rule, the quoted final report it was read from
+ * and the reason. A malformed review is a validity problem, never silently skipped.
+ */
+function readClaimReview(root, validity) {
+  const path = join(root, "claims-review.json");
+  if (!existsSync(path)) return null;
+  const review = JSON.parse(readFileSync(path, "utf8"));
+  const entries = {};
+  for (const entry of review.entries ?? []) {
+    if (
+      review.rule !== claimRule ||
+      !reviewedClasses.includes(entry.class) ||
+      typeof entry.quote !== "string" ||
+      typeof entry.reason !== "string"
+    ) {
+      validity.problems.push(
+        `claims-review.json entry ${entry.task}.${entry.arm} is not a ${claimRule} review`,
+      );
+      validity.complete = false;
+      continue;
+    }
+    entries[`${entry.task}.${entry.arm}`] = { ...entry, rule: review.rule };
+  }
+  return entries;
 }
 
 /** One stage read whole from its evidence directory: manifest, records, validity and rows. */
@@ -843,6 +919,7 @@ export function readStage(root) {
   const halts = names.filter((name) => /^halt-\d+\.json$/.test(name));
   const recoveries = names.filter((name) => /^recovery-\d+\.json$/.test(name));
   const validity = validateStage(evidence, manifest, digest, records);
+  const claimReview = readClaimReview(root, validity);
   const scripts = evidence.json("project-scripts.json") ?? {};
   const swarmInstalls = records
     .filter((record) => record.arm === "swarm")
@@ -866,6 +943,7 @@ export function readStage(root) {
     const testsRun = gateRuns?.find((run) => run.gateId === "tests" && run.attempt === 0) ?? null;
     return analyzeRecord(record, {
       blob: (cited) => evidence.blob(cited),
+      claimReview,
       task: manifest.tasks.find((task) => task.id === record.task) ?? null,
       scripts: scripts[record.task] ?? null,
       earlierSwarmInstalls,
@@ -927,10 +1005,11 @@ export function renderMarkdown(stageA, stageB, labels = {}) {
     );
     row("delivered without scripted correction", (a) => `${a.deliveriesWithoutCorrection}`);
     row("claimed completion the oracle rejects", (a) => `${a.falseClaims}`);
-    row("uncertain claims", (a) => `${a.uncertainClaims}`);
+    row("uncertain or unjudged claims", (a) => `${a.uncertainClaims}`);
     row("scripted corrections, total", (a) => `${a.correctionsTotal}`);
     row("launches killed at the wall", (a) => `${a.killedAtWall}`);
     row("agent time, all launches", (a) => minutes(a.agentMs));
+    row("cleanup after the arm, all launches", (a) => minutes(a.cleanupMs));
     row("preparation (install), all launches", (a) => minutes(a.preparationMs));
     row("scoring and harness, all launches", (a) => minutes(a.scoringAndHarnessMs));
     row("end-to-end, all launches", (a) => minutes(a.elapsedMs));
@@ -998,8 +1077,11 @@ export function renderMarkdown(stageA, stageB, labels = {}) {
       );
     }
   }
+  const reviewed = [stageA, stageB].some((stage) => stage?.rows.some((row) => row.claimReviewed));
   lines.push(
-    "OpenCode's claim classification is a keyword heuristic over its final text; the text is kept in the analysis JSON beside each launch. Eligibility is derived from the records and the packaged blobs: the product's planned tests gate, prerequisite installs it printed, and the packaged gate runs of its sessions.",
+    reviewed
+      ? `Claims are classified by the stage's dated review under ${claimRule} (claims-review.json): one rule applied to both tools' final reports, the quoted text kept beside each launch with the keyword heuristic's reading. Eligibility is derived from the records and the packaged blobs: the product's planned tests gate, prerequisite installs it printed, and the packaged gate runs of its sessions.`
+      : "OpenCode's claim classification is a keyword heuristic over its final text; the text is kept in the analysis JSON beside each launch. Eligibility is derived from the records and the packaged blobs: the product's planned tests gate, prerequisite installs it printed, and the packaged gate runs of its sessions.",
     "",
   );
   return lines.join("\n");
