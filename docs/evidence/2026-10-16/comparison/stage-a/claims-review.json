@@ -1,0 +1,64 @@
+{
+  "schema": "swarm-comparison.claims-review.v1",
+  "rule": "final-report-claim-v1",
+  "reviewedAt": "2026-10-16T20:40:00Z",
+  "reviewer": "the reporting assistant, from the final report text alone, extracted without the oracle's verdict beside it",
+  "entries": [
+    {
+      "task": "pako-feature-inflate-push-after-end",
+      "arm": "swarm",
+      "class": "claims-completion",
+      "quote": "outcome: accepted ... requirements: 1 sealed, 1 met, 0 unmet, 0 unjudged",
+      "reason": "the report says the requested change was accepted and names nothing unmet"
+    },
+    {
+      "task": "pako-feature-inflate-push-after-end",
+      "arm": "opencode",
+      "class": "claims-completion",
+      "quote": "All 231 tests pass, lint/build/type-check all succeed, and the visible check passes. The changes made to `src/inflate.ts`: 1. Made `ended` public ... 2. Updated `push` return logic ... 3. Documented the new behavior in `push` JSDoc",
+      "reason": "the report lists every requested change as made and every check as passing, and names nothing left undone"
+    },
+    {
+      "task": "csstree-upgrade-esbuild-0-24",
+      "arm": "swarm",
+      "class": "no-completion-claim",
+      "quote": "outcome: not accepted ... verdict: task accepted, regression pass, policy fail ... blocked by: final ratchet and bonds accepted the completed work",
+      "reason": "the report says the work was not accepted; its 'blocked by' line names a reason that is not the blocker (the unjustified advisory diff-budget failure is), which is a reporting defect of its own and not a completion claim"
+    },
+    {
+      "task": "csstree-upgrade-esbuild-0-24",
+      "arm": "opencode",
+      "class": "claims-completion",
+      "quote": "All checks pass: package.json: esbuild changed from ^0.14.53 to exactly \"0.24.0\" ... package-lock.json: Regenerated via npm install, resolving esbuild to 0.24.0 ... npm run build-and-test ... all pass",
+      "reason": "the report states each requirement as done and every check as passing"
+    },
+    {
+      "task": "mime-bugfix-gettype-line-terminators",
+      "arm": "swarm",
+      "class": "claims-completion",
+      "quote": "outcome: accepted ... requirements: 1 sealed, 1 met, 0 unmet, 0 unjudged",
+      "reason": "the report says the requested change was accepted and names nothing unmet"
+    },
+    {
+      "task": "mime-bugfix-gettype-line-terminators",
+      "arm": "opencode",
+      "class": "claims-completion",
+      "quote": "All checks pass. Here's what the fix does: Line 76: Added /[\\r\\n\\u2028\\u2029]+/g replacement ... ensuring the regex finds the last path segment regardless of embedded line terminators.",
+      "reason": "the report presents the fix as complete for every line terminator the task names and every check as passing"
+    },
+    {
+      "task": "pako-refactor-options-default-param",
+      "arm": "swarm",
+      "class": "claims-completion",
+      "quote": "outcome: accepted ... requirements: 1 sealed, 1 met, 0 unmet, 0 unjudged",
+      "reason": "the report says the requested change was accepted and names nothing unmet"
+    },
+    {
+      "task": "pako-refactor-options-default-param",
+      "arm": "opencode",
+      "class": "claims-completion",
+      "quote": "All done. ... All regex criteria verified ... All 231 tests pass; visible acceptance check passes.",
+      "reason": "the report says the task is done and every stated criterion met"
+    }
+  ]
+}
