@@ -8,10 +8,16 @@
  *
  *   node scripts/pilot/manifest.mjs --stage A|B --out <file> --swarm-cli <dist/cli.js>
  *     --swarm-revision <commit> [--protocol <file>] [--wall-minutes 19]
+ *     [--verification-reserve-seconds <n>] [--swarm-gates <json file>] [--purpose-note <text>]
+ *
+ * `--swarm-gates` names, per task id, the gates declared advisory for Swarm (the product's own
+ * command, `severity: "advisory"`), where the task's base already fails them; the launcher writes
+ * them into the workspace's swarm.toml and checks the product's plan reads them so.
  *
  * Stage B is the two predeclared repetitions (bugfix and feature) under distinct task ids, so a
  * second manifest's cells can never be read as already recorded by the first's.
  */
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
@@ -21,7 +27,13 @@ import { opencodeVersion } from "../comparison/control.mjs";
 import { harnessDigest } from "../comparison/harness-identity.mjs";
 import { launches, seed } from "../comparison/order.mjs";
 import { taskSchema } from "../comparison/schema.mjs";
-import { comparisonRoot, resolveFull } from "../comparison/workspace.mjs";
+import {
+  comparisonRoot,
+  declaredNpm,
+  npmToolchain,
+  resolveFull,
+  taskEnvironment,
+} from "../comparison/workspace.mjs";
 import { amendmentDate, developmentStages, developmentTasks } from "./amendments.mjs";
 import { taskSet } from "./task-sets.mjs";
 
@@ -64,6 +76,10 @@ if (!swarmCli || !existsSync(swarmCli)) {
   process.exit(2);
 }
 const wallMinutes = Number(args.get("wall-minutes") ?? "19");
+const reserveSeconds = Number(args.get("verification-reserve-seconds") ?? "0");
+const swarmGates = args.has("swarm-gates")
+  ? JSON.parse(readFileSync(args.get("swarm-gates"), "utf8"))
+  : undefined;
 const protocolPath = args.get("protocol") ?? "docs/evidence/2026-10-14/real-task-pilot/protocol.md";
 const tasks = developmentStage ? developmentTasks(stage) : stageTasks(stage);
 const purposes = {
@@ -101,6 +117,23 @@ for (const task of tasks) {
   if (resolved.base !== task.baseCommit || resolved.upstream !== task.upstreamCommit)
     throw new Error(`${task.id}: the task must pin full commit ids that resolve in the mirror`);
 }
+// The package manager each task's base declares, provisioned before the freeze and observed now.
+const toolchains = {};
+for (const task of tasks) {
+  const version = declaredNpm(task);
+  if (version === null) continue;
+  const environment = taskEnvironment(task);
+  const observed = spawnSync("npm", ["--version"], { env: environment, encoding: "utf8" });
+  if (observed.stdout.trim() !== version)
+    throw new Error(
+      `${task.id} declares npm@${version} and the provisioned one reports ${observed.stdout.trim()}`,
+    );
+  toolchains[task.id] = {
+    npm: version,
+    path: npmToolchain(version),
+    observed: observed.stdout.trim(),
+  };
+}
 const helpers = {};
 for (const name of readdirSync(import.meta.dirname).filter(
   (one) => one.endsWith(".mjs") && !one.endsWith(".test.mjs"),
@@ -111,10 +144,11 @@ const manifest = {
   schema: "swarm-ordinary-comparison.manifest.v1",
   frozenAt: new Date().toISOString(),
   protocolDigest: existsSync(protocolPath) ? digestOf(readFileSync(protocolPath, "utf8")) : null,
-  purpose: `${setName}, stage ${stage}: ${purposes[stage]}`,
+  purpose: `${setName}, stage ${stage}: ${purposes[stage]}${args.has("purpose-note") ? ` (${args.get("purpose-note")})` : ""}`,
   // What a launch's fresh home must show before dispatch: no browser cache, because no task
   // here needs one and this launcher provisions none. Read by the launcher before every launch.
   prerequisites: { browsers: false },
+  ...(swarmGates === undefined ? {} : { swarmGates }),
   oracle: developmentStage
     ? `amended ${amendmentDate} (scripts/pilot/amendments.mjs)`
     : `frozen (${args.get("set") === undefined ? "scripts/pilot/tasks.mjs" : `scripts/pilot/tasks-${args.get("set")}.mjs`})`,
@@ -134,6 +168,7 @@ const manifest = {
     harnessDigest: harnessDigest(join(import.meta.dirname, "..", "comparison")),
     pilotHelpers: helpers,
     stage,
+    toolchains,
   },
   budgets: {
     // One deadline per launch: every invocation, including each scripted correction, ends at
@@ -147,6 +182,18 @@ const manifest = {
     // cap; recorded, not matched.
     swarmTokenCap,
     maxCorrections: 2,
+    // Kept inside each launch's deadline for Swarm's final verification of its tree, which the
+    // product runs after its own wall (scripts/comparison/arms.mjs, verificationReserveMs).
+    ...(reserveSeconds > 0 ? { swarmVerificationReserveMs: reserveSeconds * 1000 } : {}),
+    // The product's own documented limits, unchanged for this comparison and named so a reader
+    // need not infer them: steps per loop, gate-repair attempts, output tokens per call, and the
+    // part of its wall it keeps for its final verification.
+    swarmProductLimits: {
+      maxStepsPerLoop: 40,
+      attempts: 3,
+      maxOutputTokensPerCall: 8192,
+      finalVerificationReserveMs: 30_000,
+    },
   },
   seed,
   tasks,
