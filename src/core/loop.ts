@@ -156,6 +156,7 @@ export async function runAgentLoop(
       steps,
       tokensUsed,
       usage,
+      callsWithUnknownUsage,
       ...(reservedTokens === 0 ? {} : { reservedTokens }),
     });
     return {
