@@ -26,6 +26,18 @@ export { readControllerHistory };
 
 const GENESIS = "genesis";
 const COMPARISONS = ["==", "!=", ">=", "<=", ">", "<"];
+/** How a loop can stop, as run assessments name it (src/evidence/run-assessment.ts keeps the same list). */
+const loopLifecycles = [
+  "completed",
+  "interrupted",
+  "max-steps",
+  "max-tokens",
+  "max-wall-time",
+  "model-error",
+  "output-cap",
+  "empty-response",
+  "stalled",
+];
 
 // One record type covers many subjects: every gate writes a gate-run, every tool writes a
 // tool-call. A claim names the subject it asserts against, and this is how that name is
@@ -1357,7 +1369,14 @@ function collectChecks(directory) {
       [...latestGates.values()].every((digest) => gateRecords.includes(digest));
     const measured = Object.assign({}, ...gates.map((gate) => gate?.measures ?? {}));
     consistent &&= inputs?.changedFiles === (measured.changedFiles ?? 0);
-    const stop = thisRun.filter((candidate) => candidate.type === "session-stopped").at(-1);
+    // The last stop of a loop: a withheld repair attempt is recorded as a stop without one.
+    const stop = thisRun
+      .filter(
+        (candidate) =>
+          candidate.type === "session-stopped" &&
+          loopLifecycles.includes(payloads.get(candidate.payloadDigest)?.stopReason),
+      )
+      .at(-1);
     consistent &&=
       inputs?.lifecycleRecord === (stop?.payloadDigest ?? null) &&
       (stop === undefined
