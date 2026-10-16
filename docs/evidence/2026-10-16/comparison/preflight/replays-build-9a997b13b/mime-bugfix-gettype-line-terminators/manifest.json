@@ -1,0 +1,419 @@
+{
+  "schema": "swarm-verification-replay.v2",
+  "recordedAt": "2026-10-16T19:04:29.874Z",
+  "purpose": "before the freeze, with no model: Swarm's final verification of the scored task's known-good reference and of its unchanged base under the launch configuration, to show the product's path accepts a correct change and refuses none, and to measure how long that verification takes",
+  "plan": {
+    "path": "docs/evidence/2026-10-16/comparison/preflight-replays-repaired/mime-bugfix-gettype-line-terminators/plan.json",
+    "digest": "sha256:3d1b4c80dae0a1579ebb2dd01a84eb9ea52fa74dca1190a8edcb12ea59ca0477"
+  },
+  "product": {
+    "sourceCommit": "9a997b13b79317d7e50b390434b3cdc5832a1aba",
+    "cli": "/Users/brad/.cache/swarm-comparison/tools/swarm-9a997b13b/dist/cli.js",
+    "cliDigest": "sha256:f14402355cbf92169f2fc1a59b521c2b362353ec860930e40a7c8d6d9940d61d",
+    "distTreeDigest": "sha256:d2696c78154a8ab5514863f02704ad56c15ce03a594c65f8c4ae96c2ce256fcd",
+    "node": "v24.15.0",
+    "platform": "darwin"
+  },
+  "task": {
+    "id": "mime-bugfix-gettype-line-terminators",
+    "set": "2026-10-15",
+    "stage": "A",
+    "repository": "broofa/mime",
+    "base": "953ae3ebc59c387064f3760b73085eff6760a7f6",
+    "upstream": "d7871f3bac120df5e4776e7c395b39d0d8e7b562",
+    "projectTest": [
+      "npm",
+      "test"
+    ]
+  },
+  "contract": {
+    "regeneratedDigest": "sha256:35ab32502dc53d4669f70d9ef5e74d673aaea88dfd4d853bc4caa02ca370bd51",
+    "sealedInRetainedSessions": []
+  },
+  "model": "scripted endpoint (src/providers/scripted-endpoint.ts): declares the patch's files and claims completion; generates no code",
+  "scenarios": [
+    {
+      "id": "reference",
+      "kind": "reference",
+      "purpose": "the maintainer's change to the task's authorized paths, which every verdict must accept",
+      "candidate": {
+        "source": "the maintainer's change to src/Mime.ts",
+        "record": null,
+        "patchDigest": "sha256:cb3b427f17e3e3eacfcbdedb6b5c762becc9b34b143fe4aa9206a307de4e368c",
+        "patchBytes": 730,
+        "paths": [
+          "src/Mime.ts"
+        ]
+      },
+      "base": "a87c96912c10188f5a89b8395f89c399a8939153",
+      "visible": {
+        "passed": true,
+        "checkExit": 0,
+        "projectTestExit": 0,
+        "covers": "npm run build && node acceptance/visible/check.mjs; then npm test",
+        "detailDigest": "sha256:9411893919bd418834ba645b1c91ea6ab220196289f3cb0dbc4ca3c33774bf54",
+        "detailTail": "visible check and project tests passed"
+      },
+      "swarm": {
+        "exitCode": 1,
+        "signal": null,
+        "acceptable": false,
+        "verdict": {
+          "version": 1,
+          "integrity": "unverified",
+          "signer": "untrusted",
+          "executionTrust": "restricted",
+          "policy": "pass",
+          "mechanical": "fail",
+          "behavioral": "pass",
+          "semantic": "unmeasured",
+          "task": "accepted",
+          "humanApproval": "not-required",
+          "reasons": {
+            "assessment": "the gates settled escalated; nothing changed",
+            "mechanical": "lint failed",
+            "policy": "file-set, placeholder, secret-scan, diff-budget passed",
+            "behavioral": "tests, task-acceptance passed",
+            "semantic": "no check here judges whether the change means what the task asked for, and nothing in this system is allowed to: a model's opinion is not a verdict",
+            "task": "at least one check fails at the base commit too, with this patch not applied, and every test it fails also failed there (or its output is the same), so it is reported as inherited rather than as a regression. A common cause is a project that builds on install: dependencies are installed with --ignore-scripts, because install scripts run whatever the registry serves, so a `prepare` step that generates what the tests import does not run.",
+            "executionTrust": "commands ran under a lexical path and program policy, which is not containment",
+            "humanApproval": "this run did nothing that needs a person's decision",
+            "signer": "no expected signer was matched, so the signature shows the bundle is unchanged since it was written and not who wrote it"
+          },
+          "acceptable": false
+        },
+        "finalVerification": {
+          "refusal": null,
+          "regression": "pass",
+          "unmeasured": false,
+          "advice": "at least one check fails at the base commit too, with this patch not applied, and every test it fails also failed there (or its output is the same), so it is reported as inherited rather than as a regression. A common cause is a project that builds on install: dependencies are installed with --ignore-scripts, because install scripts run whatever the registry serves, so a `prepare` step that generates what the tests import does not run."
+        },
+        "requirements": [
+          {
+            "id": "visible-check",
+            "description": "the visible acceptance check passes on a fresh checkout",
+            "status": "accepted",
+            "authoredBy": "user",
+            "detail": null
+          }
+        ],
+        "covers": {
+          "sealedRequirements": [
+            "visible-check: the visible acceptance check passes on a fresh checkout"
+          ],
+          "sealedChecks": [
+            "visible-check: npm run build && node acceptance/visible/check.mjs"
+          ],
+          "sealedGates": [
+            {
+              "id": "build",
+              "command": "npm run --loglevel=error build",
+              "severity": "blocking"
+            },
+            {
+              "id": "typecheck",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "lint",
+              "command": "npm run --loglevel=error lint",
+              "severity": "blocking"
+            },
+            {
+              "id": "format",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "tests",
+              "command": "npm test",
+              "severity": "blocking"
+            },
+            {
+              "id": "file-set",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "placeholder",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "secret-scan",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "behaviour-probe",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "diff-budget",
+              "command": null,
+              "severity": "advisory"
+            },
+            {
+              "id": "task-acceptance",
+              "command": null,
+              "severity": "blocking"
+            }
+          ]
+        },
+        "sessionId": "20261016T190134-ff130b",
+        "contractDigest": "sha256:35ab32502dc53d4669f70d9ef5e74d673aaea88dfd4d853bc4caa02ca370bd51",
+        "sealedTestsGate": "npm test",
+        "independentVerification": {
+          "record": "sha256:6482b06b54ff3d2fc0296a51fa3fe26ee7a2bb4cd3f9f451f0ed5291881d71c6",
+          "verified": true,
+          "regression": "pass",
+          "task": "accepted",
+          "unmeasured": false,
+          "refusal": null,
+          "advice": "at least one check fails at the base commit too, with this patch not applied, and every test it fails also failed there (or its output is the same), so it is reported as inherited rather than as a regression. A common cause is a project that builds on install: dependencies are installed with --ignore-scripts, because install scripts run whatever the registry serves, so a `prepare` step that generates what the tests import does not run.",
+          "checks": [
+            {
+              "id": "build",
+              "status": "passed",
+              "detail": "the command exited 0"
+            },
+            {
+              "id": "typecheck",
+              "status": "not-applicable",
+              "detail": "package.json declares no typecheck script"
+            },
+            {
+              "id": "lint",
+              "status": "failed",
+              "detail": "the command exited 1"
+            },
+            {
+              "id": "format",
+              "status": "not-applicable",
+              "detail": "package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging"
+            },
+            {
+              "id": "tests",
+              "status": "passed",
+              "detail": "15 collected, 15 passed, 0 failed, 0 skipped (exit 0)"
+            }
+          ],
+          "goalChecks": [
+            {
+              "id": "visible-check",
+              "status": "accepted",
+              "detail": "command exited 0"
+            }
+          ]
+        },
+        "timing": {
+          "productRunMs": 81977,
+          "runMs": 80264,
+          "afterLastModelCallMs": 26570,
+          "finalVerificationMs": 10720
+        },
+        "stdoutDigest": "sha256:50b4a4f44715118f6c499ea7a5bab0d69bd7ce0ab641406b12a38b223f19cd7a",
+        "stderrDigest": "sha256:6b9ae0688838a985130bd207a65760e7b725e39bd91c3d2bc8110820073b2347"
+      },
+      "hidden": {
+        "verdict": "pass",
+        "basis": "hidden tests, project tests and every structural or version requirement passed",
+        "covers": "the upstream commit's test/mime.test.js (node --test test/mime.test.js), the authorized paths src/Mime.ts, and the project tests",
+        "detailTail": ""
+      }
+    },
+    {
+      "id": "unchanged-base",
+      "kind": "base",
+      "purpose": "the base with no change, which the sealed visible criterion must reject",
+      "candidate": {
+        "source": "no change",
+        "record": null,
+        "patchDigest": null,
+        "patchBytes": 0,
+        "paths": []
+      },
+      "base": "4797ccf217448238828c35160ff2be1accf8be9a",
+      "visible": {
+        "passed": false,
+        "checkExit": 1,
+        "projectTestExit": 0,
+        "covers": "npm run build && node acceptance/visible/check.mjs; then npm test",
+        "detailDigest": "sha256:54590c1e9a45d62ab947914e446da7cd967a727da93011b127f88f1060a07db2",
+        "detailTail": "    at ModuleJob.run (node:internal/modules/esm/module_job:437:25)\n    at async node:internal/modules/esm/loader:639:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {\n  generatedMessage: true,\n  code: 'ERR_ASSERTION',\n  actual: null,\n  expected: 'image/png',\n  operator: 'strictEqual',\n  diff: 'simple'\n}\n\nNode.js v24.15.0"
+      },
+      "swarm": {
+        "exitCode": 1,
+        "signal": null,
+        "acceptable": false,
+        "verdict": {
+          "version": 1,
+          "integrity": "unverified",
+          "signer": "untrusted",
+          "executionTrust": "restricted",
+          "policy": "pass",
+          "mechanical": "fail",
+          "behavioral": "fail",
+          "semantic": "unmeasured",
+          "task": "rejected",
+          "humanApproval": "not-required",
+          "reasons": {
+            "assessment": "required checks unmet: task-acceptance; the gates settled escalated; nothing changed",
+            "mechanical": "lint failed",
+            "policy": "file-set, placeholder, secret-scan, diff-budget passed",
+            "behavioral": "task-acceptance failed",
+            "semantic": "no check here judges whether the change means what the task asked for, and nothing in this system is allowed to: a model's opinion is not a verdict",
+            "task": "at least one check fails at the base commit too, with this patch not applied, and every test it fails also failed there (or its output is the same), so it is reported as inherited rather than as a regression. A common cause is a project that builds on install: dependencies are installed with --ignore-scripts, because install scripts run whatever the registry serves, so a `prepare` step that generates what the tests import does not run.",
+            "executionTrust": "commands ran under a lexical path and program policy, which is not containment",
+            "humanApproval": "this run did nothing that needs a person's decision",
+            "signer": "no expected signer was matched, so the signature shows the bundle is unchanged since it was written and not who wrote it"
+          },
+          "acceptable": false
+        },
+        "finalVerification": {
+          "refusal": null,
+          "regression": "pass",
+          "unmeasured": false,
+          "advice": "at least one check fails at the base commit too, with this patch not applied, and every test it fails also failed there (or its output is the same), so it is reported as inherited rather than as a regression. A common cause is a project that builds on install: dependencies are installed with --ignore-scripts, because install scripts run whatever the registry serves, so a `prepare` step that generates what the tests import does not run."
+        },
+        "requirements": [
+          {
+            "id": "visible-check",
+            "description": "the visible acceptance check passes on a fresh checkout",
+            "status": "rejected",
+            "authoredBy": "user",
+            "detail": "command exited 1"
+          }
+        ],
+        "covers": {
+          "sealedRequirements": [
+            "visible-check: the visible acceptance check passes on a fresh checkout"
+          ],
+          "sealedChecks": [
+            "visible-check: npm run build && node acceptance/visible/check.mjs"
+          ],
+          "sealedGates": [
+            {
+              "id": "build",
+              "command": "npm run --loglevel=error build",
+              "severity": "blocking"
+            },
+            {
+              "id": "typecheck",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "lint",
+              "command": "npm run --loglevel=error lint",
+              "severity": "blocking"
+            },
+            {
+              "id": "format",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "tests",
+              "command": "npm test",
+              "severity": "blocking"
+            },
+            {
+              "id": "file-set",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "placeholder",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "secret-scan",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "behaviour-probe",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "diff-budget",
+              "command": null,
+              "severity": "advisory"
+            },
+            {
+              "id": "task-acceptance",
+              "command": null,
+              "severity": "blocking"
+            }
+          ]
+        },
+        "sessionId": "20261016T190304-821179",
+        "contractDigest": "sha256:35ab32502dc53d4669f70d9ef5e74d673aaea88dfd4d853bc4caa02ca370bd51",
+        "sealedTestsGate": "npm test",
+        "independentVerification": {
+          "record": "sha256:f47bf562c06b76e4ebe87e13dc5e882b2c4bdbb8daad4e26995a3371426a48e5",
+          "verified": false,
+          "regression": "pass",
+          "task": "rejected",
+          "unmeasured": false,
+          "refusal": null,
+          "advice": "at least one check fails at the base commit too, with this patch not applied, and every test it fails also failed there (or its output is the same), so it is reported as inherited rather than as a regression. A common cause is a project that builds on install: dependencies are installed with --ignore-scripts, because install scripts run whatever the registry serves, so a `prepare` step that generates what the tests import does not run.",
+          "checks": [
+            {
+              "id": "build",
+              "status": "passed",
+              "detail": "the command exited 0"
+            },
+            {
+              "id": "typecheck",
+              "status": "not-applicable",
+              "detail": "package.json declares no typecheck script"
+            },
+            {
+              "id": "lint",
+              "status": "failed",
+              "detail": "the command exited 1"
+            },
+            {
+              "id": "format",
+              "status": "not-applicable",
+              "detail": "package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging"
+            },
+            {
+              "id": "tests",
+              "status": "passed",
+              "detail": "15 collected, 15 passed, 0 failed, 0 skipped (exit 0)"
+            }
+          ],
+          "goalChecks": [
+            {
+              "id": "visible-check",
+              "status": "rejected",
+              "detail": "command exited 1"
+            }
+          ]
+        },
+        "timing": {
+          "productRunMs": 80631,
+          "runMs": 79430,
+          "afterLastModelCallMs": 25897,
+          "finalVerificationMs": 10730
+        },
+        "stdoutDigest": "sha256:36bedc7212802aeaef631954d01c072eed72f8e2d067b6b9fe674a225e003ccb",
+        "stderrDigest": "sha256:2c32fcd6c9acfdbe214d6d93a6f29fd90a95a2d37da1d36362067ddaac2c776f"
+      },
+      "hidden": {
+        "verdict": "fail",
+        "basis": "hidden tests (node --test test/mime.test.js) exited 1",
+        "covers": "the upstream commit's test/mime.test.js (node --test test/mime.test.js), the authorized paths src/Mime.ts, and the project tests",
+        "detailTail": "✔ CLI (225.067208ms)\nℹ tests 13\nℹ suites 3\nℹ pass 12\nℹ fail 1\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 260.888208\n\n✖ failing tests:\n\ntest at test/mime.test.js:91:3\n✖ getType() (0.233291ms)\n  AssertionError [ERR_ASSERTION]: class Mime: CARRIAGE\rRETURN.png, image/png\n      at testGetType (file:///Users/brad/.cache/swarm-comparison/work/hidden-mime-bugfix-gettype-line-terminators-49o23n/checkout/test/test_util.js:5:12)\n      at TestContext.<anonymous> (file:///Users/brad/.cache/swarm-comparison/work/hidden-mime-bugfix-gettype-line-terminators-49o23n/checkout/test/mime.test.js:92:5)\n      at Test.runInAsyncScope (node:async_hooks:227:14)\n      at Test.run (node:internal/test_runner/test:1201:25)\n      at Suite.processPendingSubtests (node:internal/test_runner/test:831:18)\n      at Test.postRun (node:internal/test_runner/test:1330:19)\n      at Test.run (node:internal/test_runner/test:1258:12)\n      at async Suite.processPendingSubtests (node:internal/test_runner/test:831:7) {\n    generatedMessage: false,\n    code: 'ERR_ASSERTION',\n    actual: null,\n    expected: 'image/png',\n    operator: '==',\n    diff: 'simple'\n  }"
+      }
+    }
+  ],
+  "harnessCommands": 74
+}

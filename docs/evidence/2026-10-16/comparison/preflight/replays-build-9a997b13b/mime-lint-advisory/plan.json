@@ -1,0 +1,25 @@
+{
+  "purpose": "before the freeze, with no model: Swarm's final verification of the scored task's known-good reference and of its unchanged base under the launch configuration, to show the product's path accepts a correct change and refuses none, and to measure how long that verification takes; with the lint gate declared advisory, as the manifest declares it for this task (its base fails Prettier on files the task does not touch)",
+  "set": "2026-10-15",
+  "stage": "A",
+  "task": "mime-bugfix-gettype-line-terminators",
+  "sealedFrom": [],
+  "scenarios": [
+    {
+      "id": "reference",
+      "kind": "reference",
+      "purpose": "the maintainer's change to the task's authorized paths, which every verdict must accept"
+    },
+    {
+      "id": "unchanged-base",
+      "kind": "base",
+      "purpose": "the base with no change, which the sealed visible criterion must reject"
+    }
+  ],
+  "swarmGates": {
+    "lint": {
+      "command": "npm run --loglevel=error lint",
+      "severity": "advisory"
+    }
+  }
+}

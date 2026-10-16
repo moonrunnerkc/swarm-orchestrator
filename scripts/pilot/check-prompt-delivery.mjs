@@ -3,7 +3,9 @@
  * sends, with no inference: both products are pointed at the scripted endpoint, which records the
  * request bodies and answers with a closing text, in a workspace prepared exactly as a launch's.
  * The first request's user content must hold the prompt the harness builds (task text, visible
- * check, test command and the acceptance-directory rule) whole.
+ * check, test command and the acceptance-directory rule) whole: verbatim, or in the one other
+ * form seen, OpenCode's `run` wrapping a message that holds double quotes in quotes and
+ * escaping each inner one, which loses nothing and is named apart.
  *
  *   node scripts/pilot/check-prompt-delivery.mjs --set 2026-10-15 --stage A --swarm-cli <dist/cli.js>
  *     --swarm-gates <json file> --out <file>
@@ -112,7 +114,10 @@ for (const task of stageTasks(args.get("stage") ?? "A")) {
         promptDigest: digestOf(prompt),
         promptChars: prompt.length,
         userChars: sent.length,
-        wholePromptSent: sent.includes(prompt),
+        verbatim: sent.includes(prompt),
+        quotedByProduct: sent.includes(`"${prompt.replaceAll('"', '\\"')}"`),
+        wholePromptSent:
+          sent.includes(prompt) || sent.includes(`"${prompt.replaceAll('"', '\\"')}"`),
         taskTextSent: sent.includes(task.taskText.trim()),
         maxTokens: first?.max_tokens ?? null,
         thinkingOff: {
@@ -121,8 +126,9 @@ for (const task of stageTasks(args.get("stage") ?? "A")) {
           reasoning_effort: first?.reasoning_effort ?? null,
         },
       });
+      const row = rows.at(-1);
       console.log(
-        `${task.id} ${arm}: ${endpoint.requests.length} request(s); whole prompt sent: ${sent.includes(prompt)} (${prompt.length} chars in ${sent.length})`,
+        `${task.id} ${arm}: ${endpoint.requests.length} request(s); whole prompt sent: ${row.wholePromptSent} (${row.verbatim ? "verbatim" : "quoted by the product"}, ${prompt.length} chars in ${sent.length})`,
       );
     } finally {
       await endpoint.close();
