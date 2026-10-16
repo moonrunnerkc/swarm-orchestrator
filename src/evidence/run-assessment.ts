@@ -7,21 +7,24 @@ import type { EvidenceRecorder } from "./session.ts";
 import type { TaskContract } from "./task-contract.ts";
 import { type RunVerdict, runVerdict, runVerdictSchema } from "./verdict.ts";
 
+/** How a loop can stop: the lifecycle an assessment names, and the stop records that are a loop's. */
+const loopLifecycles = [
+  "completed",
+  "interrupted",
+  "max-steps",
+  "max-tokens",
+  "max-wall-time",
+  "model-error",
+  "output-cap",
+  "empty-response",
+  "stalled",
+] as const;
+
 export const assessmentInputsSchema = z.object({
   policy: z.enum(["run-acceptance-v1", "run-acceptance-v2"]),
   requiredChecks: z.array(z.string().min(1)).optional(),
   contractRecord: z.string().optional(),
-  lifecycle: z.enum([
-    "completed",
-    "interrupted",
-    "max-steps",
-    "max-tokens",
-    "max-wall-time",
-    "model-error",
-    "output-cap",
-    "empty-response",
-    "stalled",
-  ]),
+  lifecycle: z.enum(loopLifecycles),
   cancelled: z.boolean(),
   settled: z.enum(["green", "escalated"]),
   baseRatchetAccepted: z.boolean(),
@@ -55,9 +58,17 @@ export async function recordRunAssessment(
                   ?.phase === "effective",
             )?.payloadDigest,
         }),
+    // The last stop of a loop. A repair attempt withheld for want of budget is recorded as a
+    // stop too, but it never ran a loop and its reason is not a lifecycle; naming it here put a
+    // record beside a lifecycle it does not carry, and the bundle's own verifier refused it.
     lifecycleRecord:
-      evidence.records().findLast((entry) => entry.type === "session-stopped")?.payloadDigest ??
-      null,
+      evidence.records().findLast((entry) => {
+        if (entry.type !== "session-stopped") return false;
+        const stopReason = (
+          evidence.payloads().get(entry.payloadDigest) as { stopReason?: unknown }
+        )?.stopReason;
+        return (loopLifecycles as readonly unknown[]).includes(stopReason);
+      })?.payloadDigest ?? null,
     lifecycle,
     cancelled,
     settled: gates.outcome.settled,
