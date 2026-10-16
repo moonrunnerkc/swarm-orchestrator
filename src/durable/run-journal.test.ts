@@ -117,7 +117,7 @@ it("scrubs what each operation writes and appends only that operation's entries"
   roots.push(root);
   const path = join(root, "items.jsonl");
   const schema = z.object({ items: z.record(z.string(), z.record(z.string(), z.unknown())) });
-  const items = openRunJournal(
+  const items = openRunJournal<z.infer<typeof schema>>(
     path,
     () => ({ items: {} }),
     (input) => schema.parse(input),
