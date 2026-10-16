@@ -27,6 +27,7 @@ import {
   amendmentDate,
   taskCompliantReference,
 } from "./amendments.mjs";
+import { exactlyDeclaredReference } from "./reference.mjs";
 import { taskSet } from "./task-sets.mjs";
 
 const args = new Map();
@@ -174,20 +175,3 @@ if (args.has("out"))
     )}\n`,
   );
 process.exitCode = rows.every((row) => row.valid) ? 0 : 1;
-
-/**
- * A maintainer's upgrade that declared a range, rewritten to the exact declaration the task
- * requires, in package.json and the lockfile's root entry and nowhere else: the resolved and
- * installed version, the integrity hashes and the tree are the maintainer's own. Two
- * declarations and exactly two, or the reference is not the shape this rewrite is for.
- */
-function exactlyDeclaredReference(referencePatch, dependency) {
-  const escaped = dependency.version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const range = new RegExp(`^(\\+\\s+"${dependency.name}": )"\\^${escaped}",$`, "gm");
-  const count = (referencePatch.match(range) ?? []).length;
-  if (count !== 2)
-    throw new Error(
-      `the reference patch carries ${count} range declaration(s) of ${dependency.name}, not the 2 an exact-declaration task rewrites`,
-    );
-  return referencePatch.replace(range, `$1"${dependency.declared}",`);
-}

@@ -43,6 +43,7 @@ import {
   swarmConfigurationText,
 } from "../comparison/workspace.mjs";
 import { developmentTasks } from "./amendments.mjs";
+import { readSession } from "./swarm-session.mjs";
 
 const args = new Map();
 for (let index = 2; index < process.argv.length; index += 1) {
@@ -308,59 +309,6 @@ for (const scenario of scenarios) {
     if (endpoint !== null) await endpoint.close();
     if (args.get("keep") !== "true") rmSync(scratch, { recursive: true, force: true });
   }
-}
-
-/** What the run put on its own chain: the envelope, the sealed gates, the contract, the last verification. */
-function readSession(directory) {
-  const records = readFileSync(join(directory, "ledger.jsonl"), "utf8")
-    .trim()
-    .split("\n")
-    .map((line) => JSON.parse(line));
-  const bytesOf = (digest) => readFileSync(join(directory, "blobs", `${digest.slice(7)}.json`));
-  const payload = (digest) => JSON.parse(bytesOf(digest).toString("utf8"));
-  const find = (type) => records.filter((one) => one.type === type);
-  const envelope = find("execution-envelope")[0];
-  const sealed = find("gate-set-sealed")[0];
-  const goal = find("goal-contract")[0];
-  const verification = find("independent-verification").at(-1);
-  const sealedPayload = sealed === undefined ? null : payload(sealed.payloadDigest);
-  const verificationPayload =
-    verification === undefined ? null : payload(verification.payloadDigest);
-  const retained = [envelope, sealed, goal, verification].filter(Boolean);
-  return {
-    envelope: envelope === undefined ? null : payload(envelope.payloadDigest),
-    sealedTestsGate:
-      sealedPayload === null
-        ? null
-        : (sealedPayload.gates.find((gate) => gate.id === "tests")?.command ?? null),
-    contractDigest: goal === undefined ? null : payload(goal.payloadDigest).digest,
-    lastVerification:
-      verificationPayload === null
-        ? null
-        : {
-            record: verification.payloadDigest,
-            verified: verificationPayload.verified,
-            regression: verificationPayload.regression,
-            task: verificationPayload.task,
-            unmeasured: verificationPayload.unmeasured,
-            refusal: verificationPayload.refusal,
-            advice: verificationPayload.advice,
-            checks: (verificationPayload.checks ?? []).map((check) => ({
-              id: check.id,
-              status: check.status,
-              detail: check.detail,
-            })),
-            goalChecks: (verificationPayload.goalAcceptance?.checkResults ?? []).map((check) => ({
-              id: check.id,
-              status: check.status,
-              detail: check.detail,
-            })),
-          },
-    retainedPayloads: retained.map((one) => ({
-      digest: one.payloadDigest,
-      bytes: bytesOf(one.payloadDigest),
-    })),
-  };
 }
 
 const manifest = {
