@@ -78,9 +78,40 @@ Source on `v13-main`; not published until a release names it.
   `docs/evidence/2026-10-15/comparison/`: both tools delivered the disposable smoke fix, neither
   delivered the calibration task in two attempts each, and the scored comparison was therefore
   not frozen or launched.
+- **The four-task comparison against OpenCode, run without the calibration gate.** Under an
+  amendment registered before any scored launch (`docs/evidence/2026-10-16/comparison/`), both
+  tools produced a correct patch on all four tasks with no correction and no false completion
+  claim. OpenCode delivered four of four. Swarm delivered three, and refused its own correct
+  csstree upgrade because an advisory size budget it counts over the regenerated lockfile
+  demanded a justification the loop never asked for. Swarm took more time and tokens per
+  delivery, so there is no demonstrated benefit and the repetition stage did not run.
+
+  The launcher now:
+  - ends every invocation at the launch's deadline;
+  - halts on a kill it cannot confirm, and stops processes left in the launch's directory;
+  - keeps Swarm's verification inside the deadline;
+  - runs each task with the npm release its base declares;
+  - lets a manifest declare a gate advisory where the task's base already fails it;
+  - counts both arms' tokens as the server counted them.
+
+  The analyzer decides claims by a dated review of both tools' final reports. A proof through the
+  runner and the pinned build shows the token allowance and walls each Swarm session sealed.
 
 ### Fixed
 
+- **A build program's source files were counted as the instrument that measured them.** A check's
+  instrument is everything it loads that is not the tests or the source, but every string a
+  program run by the check held that named a file was followed into the closure. pako's build
+  hands vite `'src/index.ts'` by name, so its whole source counted as the build's instrument; the
+  final verification put it back to the base's and refused the maintainer's own fix. A program's
+  strings are now its input unless it starts processes or loads code by a computed name, and they
+  are recorded as a residual. Configuration strings and imports are followed as before.
+- **Every run that withheld a repair attempt was refused by its own bundle verifier.** The run
+  assessment named the withheld attempt's stop record, whose reason is not a lifecycle, as its
+  lifecycle record. Both the assessment and the bundled verifier now take the last stop of a
+  loop.
+- **A call with no reported usage read as a measured total.** The loop's `stopped` event now
+  carries `callsWithUnknownUsage`, and the scripted endpoint can report a turn's usage, or none.
 - **`--max-tokens` above 1,000,000 was silently clipped on a goal-contract run.** The sealed
   task contract names no token budget, and the default stood in for its silence, so a run asked
   for 8,000,000 tokens sealed 1,000,000 and stopped there three times in one launch with nothing

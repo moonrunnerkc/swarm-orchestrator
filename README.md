@@ -184,6 +184,11 @@ A later bounded pilot on four fresh tasks ([docs/evidence/2026-10-14/real-task-p
 ended DO NOT PROCEED, with a setup failure of its own corrected the next day; the repairs that
 followed, a replay of its retained evidence through the repaired product, and a bounded live
 diagnosis of the undelivered bug fix are in [docs/evidence/2026-10-15/](docs/evidence/2026-10-15/README.md).
+The four-task comparison that followed, without its calibration gate
+([docs/evidence/2026-10-16/comparison/](docs/evidence/2026-10-16/comparison/README.md)), found no
+demonstrated benefit: both tools produced correct patches on all four tasks with no correction,
+OpenCode delivered four and Swarm three (it refused its own correct upgrade on a size-budget
+defect named there), and Swarm took more time and tokens per delivery.
 Developer hours saved and real-world adoption are not measured there; the prepared, unrun
 protocol for five developers on their own tasks is [docs/human-trial-protocol.md](docs/human-trial-protocol.md).
 
