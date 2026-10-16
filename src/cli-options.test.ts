@@ -759,11 +759,11 @@ describe("a goal contract on the ordinary task path", () => {
     );
   });
 
-  it("authors criteria with --plan-checks, and never beside a supplied contract or preset", () => {
+  it("authors criteria with --plan-checks, adds them to a supplied contract, and needs one for a preset", () => {
     expect(parseRun(["add a --no-cache flag", "--plan-checks"]).planChecks).toBe(true);
-    expect(() => parseRun(["add a flag", "--plan-checks", "--goal-contract", "goal.json"])).toThrow(
-      "pass one, not both",
-    );
+    const both = parseRun(["add a flag", "--plan-checks", "--goal-contract", "goal.json"]);
+    expect(both.planChecks).toBe(true);
+    expect(both.goalContract).toMatch(/goal\.json$/);
     expect(() => parseRun(["fix it", "--plan-checks", "--preset", "bugfix"])).toThrow(
       "--preset requires --goal-contract",
     );
