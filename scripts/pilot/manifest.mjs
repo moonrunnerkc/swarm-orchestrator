@@ -63,9 +63,11 @@ export function treeDigest(root) {
 }
 
 const stage = args.get("stage");
-const developmentStage = stage in developmentStages;
-const { stageTasks, setName } = await taskSet(args.get("set"));
-if (stage !== "A" && stage !== "B" && stage !== "calibration" && !developmentStage) {
+const { stageTasks, setName, stagePurposes } = await taskSet(args.get("set"));
+// A set that names its own stages owns them; the pilot's development stages are the pilot's.
+const ownStage = stagePurposes !== undefined && stage in stagePurposes;
+const developmentStage = stagePurposes === undefined && stage in developmentStages;
+if (stage !== "A" && stage !== "B" && stage !== "calibration" && !developmentStage && !ownStage) {
   console.error(
     `usage: manifest.mjs --stage A|B|${Object.keys(developmentStages).join("|")} --out <file> --swarm-cli <path> --swarm-revision <commit> [--protocol <file>] [--wall-minutes 19] [--model <served name>] [--endpoint <url>]`,
   );
@@ -86,6 +88,10 @@ const protocolPath = args.get("protocol") ?? "docs/evidence/2026-10-14/real-task
 const swarmFlags = args.has("swarm-flags") ? JSON.parse(args.get("swarm-flags")) : [];
 swarmWorkflowFlags(swarmFlags);
 const tasks = developmentStage ? developmentTasks(stage) : stageTasks(stage);
+// Which arms this stage launches, where it is not both: a stage freezes only the cells it runs.
+const armsOnly = args.has("arms") ? args.get("arms").split(",") : null;
+if (armsOnly !== null && !armsOnly.every((arm) => ["swarm", "opencode"].includes(arm)))
+  throw new Error(`--arms names swarm and opencode only, not ${args.get("arms")}`);
 const purposes = {
   A: "four fresh tasks, one launch per arm",
   B: "the predeclared bugfix and feature repeated once per arm in fresh sessions",
@@ -108,7 +114,7 @@ const purposes = {
 // A development stage freezes exactly the cells it launches, so its published evidence is
 // complete when every frozen cell has a record.
 const stageLaunches = (ids) => {
-  const arms = developmentStage ? developmentStages[stage].arms : null;
+  const arms = developmentStage ? developmentStages[stage].arms : armsOnly;
   const all = launches(ids);
   return arms === null
     ? all
@@ -148,7 +154,7 @@ const manifest = {
   schema: "swarm-ordinary-comparison.manifest.v1",
   frozenAt: new Date().toISOString(),
   protocolDigest: existsSync(protocolPath) ? digestOf(readFileSync(protocolPath, "utf8")) : null,
-  purpose: `${setName}, stage ${stage}: ${purposes[stage]}${args.has("purpose-note") ? ` (${args.get("purpose-note")})` : ""}`,
+  purpose: `${setName}, stage ${stage}: ${ownStage ? stagePurposes[stage] : purposes[stage]}${args.has("purpose-note") ? ` (${args.get("purpose-note")})` : ""}`,
   // What a launch's fresh home must show before dispatch: no browser cache, because no task
   // here needs one and this launcher provisions none. Read by the launcher before every launch.
   prerequisites: { browsers: false },

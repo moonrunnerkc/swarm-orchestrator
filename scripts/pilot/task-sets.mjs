@@ -20,5 +20,15 @@ export async function taskSet(name) {
       wrongPatches: module.wrongPatches,
     };
   }
-  throw new Error(`unknown task set ${name}; known: 2026-10-14, 2026-10-15`);
+  if (name === "2026-10-16") {
+    const module = await import("./tasks-2026-10-16.mjs");
+    return {
+      setName: "follow-up 2026-10-16",
+      stageTasks: module.stageTasks,
+      wrongPatches: module.wrongPatches,
+      // This set names its own stages and what each is for; the pilot's do not apply to it.
+      stagePurposes: module.stagePurposes,
+    };
+  }
+  throw new Error(`unknown task set ${name}; known: 2026-10-14, 2026-10-15, 2026-10-16`);
 }
