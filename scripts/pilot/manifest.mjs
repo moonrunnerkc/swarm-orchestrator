@@ -9,6 +9,7 @@
  *   node scripts/pilot/manifest.mjs --stage A|B --out <file> --swarm-cli <dist/cli.js>
  *     --swarm-revision <commit> [--protocol <file>] [--wall-minutes 19]
  *     [--verification-reserve-seconds <n>] [--swarm-gates <json file>] [--purpose-note <text>]
+ *     [--swarm-flags '["--prompt-profile","concise"]']
  *
  * `--swarm-gates` names, per task id, the gates declared advisory for Swarm (the product's own
  * command, `severity: "advisory"`), where the task's base already fails them; the launcher writes
@@ -22,7 +23,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { commandLog } from "../campaign/exec.mjs";
-import { defaultPins, digestOf, swarmTokenCap } from "../comparison/arms.mjs";
+import { defaultPins, digestOf, swarmTokenCap, swarmWorkflowFlags } from "../comparison/arms.mjs";
 import { opencodeVersion } from "../comparison/control.mjs";
 import { harnessDigest } from "../comparison/harness-identity.mjs";
 import { launches, seed } from "../comparison/order.mjs";
@@ -81,6 +82,9 @@ const swarmGates = args.has("swarm-gates")
   ? JSON.parse(readFileSync(args.get("swarm-gates"), "utf8"))
   : undefined;
 const protocolPath = args.get("protocol") ?? "docs/evidence/2026-10-14/real-task-pilot/protocol.md";
+// Swarm's own workflow flags for every launch of this stage, checked by the launcher's own rule.
+const swarmFlags = args.has("swarm-flags") ? JSON.parse(args.get("swarm-flags")) : [];
+swarmWorkflowFlags(swarmFlags);
 const tasks = developmentStage ? developmentTasks(stage) : stageTasks(stage);
 const purposes = {
   A: "four fresh tasks, one launch per arm",
@@ -159,6 +163,7 @@ const manifest = {
     ...(args.has("endpoint") ? { endpoint: args.get("endpoint") } : {}),
     swarmCli,
     swarmRevision: args.get("swarm-revision") ?? "unknown",
+    ...(swarmFlags.length === 0 ? {} : { swarmFlags }),
     swarmCliDigest: digestOf(readFileSync(swarmCli)),
     // The CLI entry imports its siblings, so its bytes alone do not pin the build; the whole
     // dist tree does.

@@ -154,7 +154,34 @@ export function swarmArgv(
     "--no-tui",
     "--no-open-evidence",
     "--json",
+    // The product's own workflow flags, frozen in the manifest's pins: the same for every launch
+    // of a cohort, so a cohort measures one configuration of the product.
+    ...swarmWorkflowFlags(pins.swarmFlags ?? []),
   ];
+}
+
+/** The workflow flags a manifest may freeze for Swarm, each checked by name and value. */
+const workflowFlags = {
+  "--prompt-profile": ["legacy", "concise"],
+  "--plan-checks": null,
+};
+
+export function swarmWorkflowFlags(flags) {
+  const out = [];
+  for (let index = 0; index < flags.length; index += 1) {
+    const flag = flags[index];
+    if (!(flag in workflowFlags))
+      throw new Error(`${flag} is not a workflow flag a manifest may freeze`);
+    out.push(flag);
+    const values = workflowFlags[flag];
+    if (values === null) continue;
+    const value = flags[index + 1];
+    if (!values.includes(value))
+      throw new Error(`${flag} takes ${values.join(" or ")}, not ${value}`);
+    out.push(value);
+    index += 1;
+  }
+  return out;
 }
 
 /**
