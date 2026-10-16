@@ -8,7 +8,7 @@ import { type EvidenceRecorder, openEvidenceSession } from "../evidence/session.
 import { type AutoResolveOutcome, type ResolveAttempt, runAutoResolve } from "./auto-resolve.ts";
 import type { FileSetState } from "./file-set.ts";
 import type { DiffBudget, GateContext, GateDefinition } from "./gate-definition.ts";
-import { citedRecords, outstandingJustifications } from "./gate-runner.ts";
+import { justifiedRecords, outstandingJustifications } from "./gate-runner.ts";
 import { diffBudgetGate } from "./inspection-gates.ts";
 import { measureTestFile } from "./measures.ts";
 import { exitCodeParser, testOutputParser } from "./parsers.ts";
@@ -696,7 +696,7 @@ describe("an advisory gate that demands a justification", () => {
     // Advisory, so the run is still green: over budget does not block.
     expect(outcome.settled).toBe("green");
     expect(
-      outstandingJustifications(outcome.finalCycle, citedRecords(evidence)).map(
+      outstandingJustifications(outcome.finalCycle, justifiedRecords(evidence)).map(
         (gate) => gate.gateId,
       ),
     ).toEqual(["diff-budget"]);
@@ -711,7 +711,7 @@ describe("an advisory gate that demands a justification", () => {
       "model",
     );
 
-    expect(outstandingJustifications(outcome.finalCycle, citedRecords(evidence))).toEqual([]);
+    expect(outstandingJustifications(outcome.finalCycle, justifiedRecords(evidence))).toEqual([]);
   });
 });
 

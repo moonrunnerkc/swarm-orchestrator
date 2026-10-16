@@ -3,7 +3,11 @@ import type { AutoResolveOutcome } from "./gates/auto-resolve.ts";
 import type { BondOutcome } from "./gates/bond-runner.ts";
 import { vacuousBlockingBonds } from "./gates/engine.ts";
 import { describeEscalation } from "./gates/escalation.ts";
-import { citedRecords, type GateCycle, outstandingJustifications } from "./gates/gate-runner.ts";
+import {
+  type GateCycle,
+  justifiedRecords,
+  outstandingJustifications,
+} from "./gates/gate-runner.ts";
 
 export function describeCycle(cycle: GateCycle): string {
   return cycle.runs
@@ -42,10 +46,11 @@ export function reportGates(
     );
   }
 
-  for (const run of outstandingJustifications(outcome.finalCycle, citedRecords(evidence))) {
+  for (const run of outstandingJustifications(outcome.finalCycle, justifiedRecords(evidence))) {
     note(
-      `\nthe ${run.gateId} gate asked for a justification and no claim cites its record ` +
-        `${run.record}. This does not block, and the bundle shows it unanswered.`,
+      `\nthe ${run.gateId} gate asked for a justification and no verified claim cites its ` +
+        `record ${run.record}. The work is not accepted until one does, and the bundle shows ` +
+        "it unanswered.",
     );
   }
 
