@@ -98,6 +98,7 @@ import {
 } from "./exec/child-home.ts";
 import { parseIsolationOption } from "./exec/isolation-option.ts";
 import { recordedContainerBackend } from "./exec/runtime-resource.ts";
+import { defaultDiffBudget } from "./gates/engine.ts";
 import { createFileSetRegistry } from "./gates/file-set.ts";
 import { requireBaseCommit } from "./gates/git-workspace.ts";
 import { summarizeRatchet } from "./gates/ratchet-summary.ts";
@@ -579,7 +580,17 @@ async function run(options: RunCommand): Promise<number> {
       : {}),
     ...(goalContext === undefined ? {} : { acceptanceGate: taskGoalGate(goalContext) }),
   };
-  const diffBudget = diffBudgetFrom(settings);
+  // An authorized upgrade regenerates its lockfile, and that file's size is not authored work:
+  // its lines are counted apart. The final verification still holds the change to the sealed
+  // dependency targets, and every other file, the manifest included, stays on the budget.
+  const configuredBudget = diffBudgetFrom(settings);
+  const diffBudget =
+    sealedGoal?.preset?.kind === "upgrade"
+      ? {
+          ...(configuredBudget ?? defaultDiffBudget),
+          generatedPaths: [sealedGoal.preset.lockfile],
+        }
+      : configuredBudget;
   // Off unless a destination is named. A telemetry pipeline that is on by default is a place
   // secrets end up somewhere nobody scrubs, and payload capture stays a second decision on top.
   const telemetry = createRunTelemetry(evidence.sessionId);

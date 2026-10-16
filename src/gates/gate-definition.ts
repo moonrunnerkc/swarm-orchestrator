@@ -41,6 +41,12 @@ export type GateParser = (observation: GateObservation) => GateReading;
 export interface DiffBudget {
   readonly maxChangedFiles: number;
   readonly maxAddedLines: number;
+  /**
+   * Files the package manager writes for an authorized upgrade (the preset's lockfile). Their
+   * added lines are counted and reported apart, not against the line budget; the final
+   * verification still holds the dependency change to the sealed targets.
+   */
+  readonly generatedPaths?: readonly string[];
 }
 
 /**
