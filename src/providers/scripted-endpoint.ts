@@ -20,6 +20,11 @@ export interface ScriptedTurn {
   readonly toolCalls?: readonly ScriptedToolCall[];
   /** How long the endpoint holds the request before it starts streaming the turn; a model that is slow to answer. */
   readonly delayMs?: number;
+  /**
+   * The usage the turn reports. Absent, a fixed 100 prompt tokens and a completion count from
+   * the turn's size; null, no usage at all, the way a local server's stream can end.
+   */
+  readonly usage?: { readonly promptTokens: number; readonly completionTokens: number } | null;
 }
 
 export interface ScriptedEndpoint {
@@ -134,14 +139,17 @@ function streamTurn(
   response.write(
     chunk([{ index: 0, delta: {}, finish_reason: calls.length > 0 ? "tool_calls" : "stop" }]),
   );
-  const completion = (turn.text?.length ?? 0) + calls.length * 20;
-  response.write(
-    chunk([], {
-      prompt_tokens: 100,
-      completion_tokens: completion,
-      total_tokens: 100 + completion,
-    }),
-  );
+  if (turn.usage !== null) {
+    const prompt = turn.usage?.promptTokens ?? 100;
+    const completion = turn.usage?.completionTokens ?? (turn.text?.length ?? 0) + calls.length * 20;
+    response.write(
+      chunk([], {
+        prompt_tokens: prompt,
+        completion_tokens: completion,
+        total_tokens: prompt + completion,
+      }),
+    );
+  }
   response.write("data: [DONE]\n\n");
   response.end();
 }
