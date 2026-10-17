@@ -282,25 +282,20 @@ describe("planned checks", () => {
     immutablePaths: ["value.test.mjs"],
   }).contract;
   const program = "import { classify } from './value.mjs';\nexport default (n) => classify(n);\n";
+  const check = {
+    id: "boundary",
+    purpose: "change",
+    requirement: "boundary",
+    description: "10 is small",
+    quote: "every n up to ... including 10",
+    program,
+    cases: [{ input: 10, expected: "small" }],
+    why: "the task says 10 is small",
+  };
   const declaring = (callId: string, input: Record<string, unknown>) => ({
     callId,
-    toolName: "declare_planned_checks",
-    input: {
-      requirements: [
-        { id: "boundary", description: "10 is small", quote: "every n up to and including 10" },
-      ],
-      checks: [
-        {
-          id: "boundary",
-          requirement: "boundary",
-          purpose: "change",
-          program,
-          cases: [{ input: 10, expected: "small" }],
-          why: "the task says 10 is small",
-        },
-      ],
-      ...input,
-    },
+    toolName: "declare_planned_check",
+    input: { ...check, ...input },
   });
   const plan = (turns: Parameters<typeof createFixtureModelClient>[0]["turns"]) =>
     runPlanner({
@@ -322,32 +317,49 @@ describe("planned checks", () => {
       .records()
       .filter((record) => record.type === "tool-call")
       .map((record) => JSON.stringify(evidence.payloads().get(record.payloadDigest)))
-      .filter((text) => text.includes("declare_planned_checks"))
+      .filter((text) => text.includes("declare_planned_check"))
       .join("\n");
 
-  it("builds the contract's own checks from a program and cases, adding to the supplied contract", async () => {
+  it("builds the contract's own checks from one call per check, adding to the supplied contract", async () => {
     const outcome = await plan([
-      respondWithToolCalls("as asked", [declaring("valid", {})]),
+      respondWithToolCalls("as asked", [
+        declaring("valid", {}),
+        declaring("kept", {
+          id: "above",
+          purpose: "preserve",
+          requirement: "above",
+          description: "11 stays big",
+          quote: undefined,
+          cases: [{ input: 11, expected: "big" }],
+        }),
+      ]),
       respondWithText("declared"),
     ]);
     const contract = outcome.goalContract;
     expect(contract?.requirements.map((one) => [one.id, one.checks])).toEqual([
       ["suite", ["suite"]],
       ["boundary", ["boundary"]],
+      ["above", ["above"]],
     ]);
-    const check = contract?.checks.find((one) => one.id === "boundary");
-    expect([check?.author, check?.exposure, check?.atBase]).toEqual(["model", "shared", "fails"]);
-    expect(check?.artifacts).toEqual([]);
-    if (check?.behavior?.kind !== "cli") throw new Error("a command-line behavior check");
-    expect(check.behavior.argv.slice(0, 3)).toEqual(["node", "--input-type=module", "-e"]);
-    expect(JSON.parse(check.behavior.stdin)).toEqual({ program, inputs: [10] });
-    expect(check.behavior.stdout).toEqual([
+    const built = contract?.checks.find((one) => one.id === "boundary");
+    expect([built?.author, built?.exposure, built?.atBase]).toEqual(["model", "shared", "fails"]);
+    expect(contract?.checks.find((one) => one.id === "above")?.atBase).toBe("passes");
+    expect(built?.artifacts).toEqual([]);
+    if (built?.behavior?.kind !== "cli") throw new Error("a command-line behavior check");
+    expect(built.behavior.argv.slice(0, 3)).toEqual(["node", "--input-type=module", "-e"]);
+    expect(JSON.parse(built.behavior.stdin)).toEqual({ program, inputs: [10] });
+    expect(built.behavior.stdout).toEqual([
       { kind: "equals", value: '{"input":10,"result":"small"}\n' },
     ]);
     expect(contract?.immutablePaths).toEqual(["value.test.mjs"]);
+    // An elided quote is accepted part by part, and the requirement records it.
+    expect(contract?.requirements.find((one) => one.id === "boundary")?.description).toContain(
+      "every n up to ... including 10",
+    );
   });
 
   it("refuses what admission would trust and what the task does not say, naming each problem", async () => {
+    const { quote: _quote, ...unquoted } = check;
     const outcome = await plan([
       respondWithToolCalls("references of my own", [
         declaring("references", {
@@ -355,49 +367,29 @@ describe("planned checks", () => {
         }),
       ]),
       respondWithToolCalls("the old contract fields", [
-        declaring("fields", {
-          checks: [{ id: "boundary", command: "node x", behavior: { kind: "cli" } }],
-        }),
+        declaring("fields", { command: "node x", behavior: { kind: "cli" } }),
       ]),
-      respondWithToolCalls("a reused id and an unquoted change", [
-        declaring("reused", {
-          requirements: [
-            { id: "suite", description: "again" },
-            { id: "boundary", description: "10 is small" },
-          ],
-        }),
+      respondWithToolCalls("a reused id", [
+        declaring("reused", { id: "suite", requirement: "suite" }),
+      ]),
+      respondWithToolCalls("an unquoted change", [
+        { callId: "unquoted", toolName: "declare_planned_check", input: unquoted },
       ]),
       respondWithToolCalls("a quote from the revision brief, not the task", [
-        declaring("quote", {
-          requirements: [
-            { id: "boundary", description: "99 is small", quote: "every n up to and including 99" },
-          ],
-        }),
+        declaring("quote", { quote: "every n up to and including 99" }),
       ]),
-      respondWithToolCalls("an undeclared requirement and no default export", [
-        declaring("orphan", {
-          checks: [
-            {
-              id: "boundary",
-              requirement: "elsewhere",
-              purpose: "change",
-              program: "console.log(1)",
-              cases: [{ input: 10, expected: "small" }],
-              why: "w",
-            },
-          ],
-        }),
+      respondWithToolCalls("no default export", [
+        declaring("export", { program: "console.log(1)" }),
       ]),
       respondWithText("gave up"),
     ]);
     expect(outcome.goalContract).toBeNull();
     const errors = toolErrors();
     expect(errors).toMatch(/challenges/);
-    expect(errors).toMatch(/already exists in the contract/);
+    expect(errors).toMatch(/check suite already exists in the contract/);
+    expect(errors).toMatch(/requirement suite already exists in the contract/);
     expect(errors).toMatch(/covered by a change check, so quote the task/);
     expect(errors).toMatch(/its quote is not in the task text/);
-    expect(errors).toMatch(/names requirement elsewhere/);
-    expect(errors).toMatch(/requirement boundary has no check/);
     expect(errors).toMatch(/must export a default function/);
   });
 
@@ -405,19 +397,10 @@ describe("planned checks", () => {
     await plan([
       respondWithToolCalls("escaped twice", [
         declaring("twice", {
-          checks: [
-            {
-              id: "boundary",
-              requirement: "boundary",
-              purpose: "change",
-              program,
-              // What arrives when a model writes \\n in the tool's JSON: a backslash and an n.
-              cases: [
-                { input: "LINE\\nFEED.png", expected: "image/png" },
-                { input: "LS\u2028.png", expected: "image/png" },
-              ],
-              why: "w",
-            },
+          // What arrives when a model writes \\n in the tool's JSON: a backslash and an n.
+          cases: [
+            { input: "LINE\\nFEED.png", expected: "image/png" },
+            { input: "LS\u2028.png", expected: "image/png" },
           ],
         }),
       ]),
@@ -430,32 +413,24 @@ describe("planned checks", () => {
     expect(answer).not.toMatch(/case 2 holds a backslash/);
   });
 
-  it("lets a planner replace what it pinned before anything has run", async () => {
+  it("lets a planner replace a check it pinned before anything has run", async () => {
     const outcome = await plan([
       respondWithToolCalls("first", [declaring("first", {})]),
       respondWithToolCalls("a better one", [
         declaring("second", {
-          checks: [
-            {
-              id: "boundary",
-              requirement: "boundary",
-              purpose: "change",
-              program,
-              cases: [
-                { input: 10, expected: "small" },
-                { input: 9, expected: "small" },
-              ],
-              why: "the task says up to and including 10",
-            },
+          cases: [
+            { input: 10, expected: "small" },
+            { input: 9, expected: "small" },
           ],
         }),
       ]),
       respondWithText("declared"),
     ]);
-    const check = outcome.goalContract?.checks.find((one) => one.id === "boundary");
-    expect(check?.behavior?.kind === "cli" && JSON.parse(check.behavior.stdin).inputs).toEqual([
-      10, 9,
-    ]);
-    expect(toolErrors()).toMatch(/replacing the earlier declaration/);
+    const built = outcome.goalContract?.checks.filter((one) => one.id === "boundary") ?? [];
+    expect(built).toHaveLength(1);
+    expect(
+      built[0]?.behavior?.kind === "cli" && JSON.parse(built[0].behavior.stdin).inputs,
+    ).toEqual([10, 9]);
+    expect(toolErrors()).toMatch(/replacing the earlier one/);
   });
 });

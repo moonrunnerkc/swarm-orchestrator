@@ -67,6 +67,59 @@ export const plannedChecksInput = z.strictObject({
     .max(16),
 });
 export type PlannedChecksDeclaration = z.infer<typeof plannedChecksInput>;
+
+/**
+ * One planned check per call, every field at the top level, the requirement named beside it.
+ * Declared as an array of nested objects, live planners wrote JavaScript inside the array
+ * (template strings for programs, `undefined` for values), which the local server could not
+ * parse and passed on as one string; a program as its own string parameter is written as it is.
+ */
+export const plannedCheckInput = z.strictObject({
+  id,
+  purpose: z.enum(["change", "preserve"]),
+  requirement: id,
+  description: z.string().min(1).max(2000),
+  quote: z.string().min(1).max(2000).optional(),
+  program: z.string().min(1).max(16_000),
+  cases: z.array(caseSchema).min(1).max(32),
+  why: z.string().min(1).max(2000),
+});
+export type PlannedCheckCall = z.infer<typeof plannedCheckInput>;
+
+/**
+ * The declaration so far with one call folded in: the check replaces any of the same id, and
+ * the requirement it names takes the call's description, and its quote where the call gives one.
+ */
+export function withPlannedCheck(
+  declaration: PlannedChecksDeclaration | null,
+  call: PlannedCheckCall,
+): PlannedChecksDeclaration {
+  const check = {
+    id: call.id,
+    requirement: call.requirement,
+    purpose: call.purpose,
+    program: call.program,
+    cases: call.cases,
+    why: call.why,
+  };
+  const checks = [...(declaration?.checks ?? []).filter((one) => one.id !== call.id), check];
+  const previous = declaration?.requirements.find((one) => one.id === call.requirement);
+  const quote = call.quote ?? previous?.quote;
+  const requirement = {
+    id: call.requirement,
+    description: call.description,
+    ...(quote === undefined ? {} : { quote }),
+  };
+  // In declaration order: a requirement a later call names again keeps its place.
+  const requirements = (
+    previous === undefined
+      ? [...(declaration?.requirements ?? []), requirement]
+      : (declaration?.requirements ?? []).map((one) =>
+          one.id === call.requirement ? requirement : one,
+        )
+  ).filter((one) => checks.some((check) => check.requirement === one.id));
+  return { requirements, checks };
+}
 type PlannedCase = z.infer<typeof caseSchema>;
 
 /**
@@ -172,6 +225,30 @@ function contractCheck(check: PlannedChecksDeclaration["checks"][number]): GoalC
   };
 }
 
+/**
+ * The verbatim parts of a quote, split where it elides with an ellipsis, as quotations do.
+ * Planners quoting long sentences elided their middles, and a verbatim-only rule refused them.
+ */
+function fragments(quote: string): readonly string[] {
+  return folded(quote)
+    .split(/\s*(?:\.\.\.|\u2026)\s*/)
+    .map((one) => one.trim())
+    .filter((one) => one.length > 0);
+}
+
+/** Whether every verbatim part of a quote is in the text, in order. */
+function quotedIn(text: string, quote: string): boolean {
+  const haystack = folded(text);
+  const parts = fragments(quote);
+  let from = 0;
+  for (const part of parts) {
+    const at = haystack.indexOf(part, from);
+    if (at === -1) return false;
+    from = at + part.length;
+  }
+  return parts.length > 0;
+}
+
 /** Whitespace, case and quotation marks folded, so a faithful quote is found however it was typed. */
 function folded(text: string): string {
   return text.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, " ").trim().toLowerCase();
@@ -208,14 +285,13 @@ export function declarationProblems(
     }
   }
   const requirementIds = new Set(input.requirements.map((one) => one.id));
-  const taskText = folded(task);
   for (const requirement of input.requirements) {
     const checks = input.checks.filter((check) => check.requirement === requirement.id);
     if (checks.length === 0)
       problems.push(`requirement ${requirement.id} has no check; give it one or leave it out`);
-    if (requirement.quote !== undefined && !taskText.includes(folded(requirement.quote)))
+    if (requirement.quote !== undefined && !quotedIn(task, requirement.quote))
       problems.push(
-        `requirement ${requirement.id}: its quote is not in the task text; quote the task's own words`,
+        `requirement ${requirement.id}: its quote is not in the task text; quote the task's own words (an elided part may be written ...)`,
       );
     if (requirement.quote === undefined && checks.some((check) => check.purpose === "change"))
       problems.push(
@@ -403,12 +479,14 @@ export function taskSentences(task: string): readonly string[] {
 export function sentencesQuoted(task: string, quotes: readonly string[]): readonly number[] {
   const sentences = taskSentences(task).map(folded);
   const covered = new Set<number>();
-  for (const quote of quotes.map(folded)) {
+  for (const parts of quotes.map(fragments)) {
     sentences.forEach((sentence, index) => {
       if (
-        sentence.includes(quote) ||
-        quote.includes(sentence) ||
-        sentence.includes(quote.slice(0, 40))
+        parts.some(
+          (part) =>
+            (part.length >= 12 || parts.length === 1) &&
+            (sentence.includes(part) || part.includes(sentence)),
+        )
       )
         covered.add(index + 1);
     });

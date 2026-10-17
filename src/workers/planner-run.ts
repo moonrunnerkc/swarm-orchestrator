@@ -19,8 +19,9 @@ import {
   describeDeclaredCases,
   describeUncoveredSentences,
   type PlannedChecksDeclaration,
-  plannedChecksInput,
+  plannedCheckInput,
   plannedContract,
+  withPlannedCheck,
 } from "./planned-check-program.ts";
 import type { TaskGraph } from "./task-graph.ts";
 
@@ -147,35 +148,37 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
                   },
                 })
               : defineTool({
-                  name: "declare_planned_checks",
+                  name: "declare_planned_check",
                   description:
-                    "Pin the requirements this task is implemented and repaired against, each with checks. A check is a short ES module program whose default export takes one case's input and returns what the project gives for it, plus cases of input and expected result (or throws: true). The harness runs the program once per case in a fresh checkout of the base before anything is implemented, compares each result with the expected one as JSON, and admits a change check only if the base gets at least one case wrong and a preserve check only if the base gets every case right. A requirement covered by a change check quotes the task's own words in quote.",
-                  inputSchema: plannedChecksInput,
+                    "Pin one acceptance check, with the requirement it covers; call once per check, and again with the same id to replace that check. program is a short ES module whose default export takes one case's input and returns what the project gives for it; cases are inputs with the expected result (or throws: true). The harness runs the program once per case in a fresh checkout of the unchanged base before anything is implemented, compares each result with the expected one as JSON, and admits a change check only if the base gets at least one case wrong, a preserve check only if the base gets every case right. A requirement covered by a change check quotes the task's own words in quote.",
+                  inputSchema: plannedCheckInput,
                   kind: "evidence",
                   pathsFrom: () => [],
                   execute(input) {
                     // Nothing has run yet, so a planner that finds a mistake in what it pinned may
                     // replace it: refusing that spent two launches' remaining wall on re-declares.
                     // The supplied contract is never part of what is replaced.
-                    const replacing = goalContract !== null;
-                    goalContract = plannedContract(
-                      options.plannedChecks?.task ?? options.goal,
-                      input,
-                      options.plannedChecks?.base,
-                      { root: options.workspace, exists: existsSync },
-                    );
-                    plannedDeclaration = input;
+                    const task = options.plannedChecks?.task ?? options.goal;
+                    const replacing =
+                      plannedDeclaration?.checks.some((one) => one.id === input.id) ?? false;
+                    const declaration = withPlannedCheck(plannedDeclaration, input);
+                    goalContract = plannedContract(task, declaration, options.plannedChecks?.base, {
+                      root: options.workspace,
+                      exists: existsSync,
+                    });
+                    plannedDeclaration = declaration;
+                    const pinned = declaration.checks.find((one) => one.id === input.id);
                     return Promise.resolve({
                       text: [
-                        `${input.checks.length} planned check(s) pinned${replacing ? ", replacing the earlier declaration" : ""}; each runs once on the unchanged base before implementation.`,
-                        ...describeDeclaredCases(input),
-                        ...describeUncoveredSentences(
-                          options.plannedChecks?.task ?? options.goal,
-                          input,
-                        ),
-                        "If every input is what you meant and every behaviour the task states is covered, finish now with a one-line summary; otherwise declare again, which replaces this declaration.",
+                        `check ${input.id} pinned${replacing ? ", replacing the earlier one" : ""}; ${declaration.checks.length} planned check(s) so far (${declaration.checks.map((one) => one.id).join(", ")}), each run once on the unchanged base before implementation.`,
+                        ...describeDeclaredCases({
+                          requirements: [],
+                          checks: pinned === undefined ? [] : [pinned],
+                        }),
+                        ...describeUncoveredSentences(task, declaration),
+                        "When every input is what you meant and every behaviour the task states is covered, finish with a one-line summary and no tool calls.",
                       ].join("\n"),
-                      facts: { requirements: goalContract.requirements.length },
+                      facts: { checks: declaration.checks.length },
                     });
                   },
                 }),
@@ -256,8 +259,8 @@ function plannedChecksPrompt(options: NonNullable<PlannerOptions["plannedChecks"
   return [
     "You write the acceptance checks a coding task is implemented and repaired against, before",
     "any implementation exists. You do not implement the task. Read the relevant source, tests",
-    "and manifest with the read-only tools, then call declare_planned_checks once and finish with",
-    "a one-line summary and no tool calls.",
+    "and manifest with the read-only tools, then call declare_planned_check once for each check",
+    "and finish with a one-line summary and no tool calls.",
     "Derive every expected result from the task text and the project's existing documented or",
     "tested behaviour, never from a guess about how the change will be written. Cover each rule",
     "the task states where it is easy to get wrong: its boundaries, the combinations of the",

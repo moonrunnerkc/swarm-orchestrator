@@ -103,8 +103,23 @@ function plannedCheck(
 const classifying = (path: string) =>
   `import { classify } from '${path}';\nexport default (n) => classify(n);\n`;
 const quote = "every n up to and including 10 is small";
-const declaring = (requirements: unknown[], checks: unknown[]) => ({
-  toolCalls: [{ name: "declare_planned_checks", input: { requirements, checks } }],
+/** One declare_planned_check call per check, each naming its requirement's words beside it. */
+const declaring = (
+  requirements: { id: string; description: string; quote?: string }[],
+  checks: ReturnType<typeof plannedCheck>[],
+) => ({
+  toolCalls: checks.map((check) => {
+    const requirement = requirements.find((one) => one.id === check.requirement);
+    if (requirement === undefined) throw new Error(`no requirement ${check.requirement}`);
+    return {
+      name: "declare_planned_check",
+      input: {
+        ...check,
+        description: requirement.description,
+        ...(requirement.quote === undefined ? {} : { quote: requirement.quote }),
+      },
+    };
+  }),
 });
 
 /** Every brief the planner was sent, as text, for what it carried. */
