@@ -9,6 +9,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { runAgentTask } from "./agent-run.ts";
+import { describeRunningVersion } from "./build-version.ts";
 import { announceBundle, writeBundle } from "./cli-bundle.ts";
 import { summarizeEvidence } from "./cli-evidence-summary.ts";
 import { gates } from "./cli-gates.ts";
@@ -248,7 +249,18 @@ async function runningVersion(packageRoot: string): Promise<string> {
       manifest !== null && typeof manifest === "object"
         ? (manifest as { readonly version?: unknown }).version
         : undefined;
-    return typeof version === "string" ? version : "unknown";
+    if (typeof version !== "string") return "unknown";
+    let describe: string | null = null;
+    try {
+      const source: unknown = JSON.parse(
+        await readFile(join(import.meta.dirname, "source.json"), "utf8"),
+      );
+      const recorded = (source as { readonly describe?: unknown } | null)?.describe;
+      describe = typeof recorded === "string" ? recorded : null;
+    } catch {
+      // Run from source, or built before builds recorded their commit: the manifest's version is all there is.
+    }
+    return describeRunningVersion(version, describe);
   } catch {
     return "unknown";
   }
