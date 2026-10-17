@@ -54,6 +54,7 @@ import {
   resolveFull,
   swarmConfigurationText,
   taskEnvironment,
+  workRoot,
 } from "../comparison/workspace.mjs";
 import { solverReference } from "./reference.mjs";
 import { readSession } from "./swarm-session.mjs";
@@ -173,7 +174,8 @@ const results = [];
 for (const scenario of plan.scenarios) {
   const candidate = await candidateOf(scenario);
   const startedAt = Date.now();
-  const scratch = mkdtempSync(join(comparisonRoot, "work", `replay-${scenario.id}-`));
+  mkdirSync(workRoot, { recursive: true });
+  const scratch = mkdtempSync(join(workRoot, `replay-${scenario.id}-`));
   const workspace = join(scratch, "workspace");
   const home = join(scratch, "home");
   mkdirSync(home, { recursive: true, mode: 0o700 });

@@ -919,7 +919,10 @@ describe("stopping the comparison when the experiment is invalid", () => {
     expect(attempt.gatePlan).toMatchObject({ ok: false, status: "failed" });
     // The home it was measured under is the launch's own, under its scratch, and is named.
     expect(halt.reason).toContain(attempt.preparedState.home);
-    expect(attempt.preparedState.home.startsWith(join(fixture.env.home, ".cache"))).toBe(true);
+    // Outside any hidden directory, where a project tool skipping dot paths still sees the tree.
+    expect(
+      attempt.preparedState.home.startsWith(join(fixture.env.home, "swarm-comparison-work")),
+    ).toBe(true);
   });
 
   it("gives every launch a fresh home of its own, so what one launch installs is absent for the next", async () => {

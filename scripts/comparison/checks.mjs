@@ -23,11 +23,13 @@ import {
   prepare,
   tail,
   taskEnvironment,
+  workRoot,
   writeArmConfiguration,
 } from "./workspace.mjs";
 
 async function freshTree(log, task, base, patch, label) {
-  const scratch = mkdtempSync(join(comparisonRoot, "work", `${label}-${task.id}-`));
+  mkdirSync(workRoot, { recursive: true });
+  const scratch = mkdtempSync(join(workRoot, `${label}-${task.id}-`));
   const checkout = join(scratch, "checkout");
   await cloneAtBase(log, task, base, checkout);
   await commitVisibleCheck(log, task, checkout);
@@ -317,12 +319,6 @@ export async function hiddenVerdict(
       mkdirSync(dirname(target), { recursive: true });
       writeFileSync(target, shown.stdout);
     }
-    // Acceptance checks written for this task, held outside both arms' workspaces until now.
-    for (const file of task.hidden.files ?? []) {
-      const target = join(tree.checkout, file.path);
-      mkdirSync(dirname(target), { recursive: true });
-      writeFileSync(target, file.source);
-    }
     for (const argv of task.build) {
       const built = await run(log, task, tree.checkout, argv);
       if (built.exitCode !== 0)
@@ -419,6 +415,14 @@ export async function hiddenVerdict(
         basis: `hidden tests (${task.hidden.argv.join(" ")}) exited ${judged.exitCode}`,
         detail: tail(judged, 120),
       };
+    // Acceptance checks written for this task, held outside both arms' workspaces until now and
+    // written only once the project's own tests have run: in the tree any earlier, they were
+    // linted by the project's own check (domutils' npm test runs eslint over the whole tree).
+    for (const file of task.hidden.files ?? []) {
+      const target = join(tree.checkout, file.path);
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, file.source);
+    }
     for (const argv of task.hidden.extraArgv ?? []) {
       const extra = await run(log, task, tree.checkout, argv);
       if (extra.exitCode !== 0)
@@ -428,6 +432,8 @@ export async function hiddenVerdict(
           detail: tail(extra),
         };
     }
+    for (const file of task.hidden.files ?? [])
+      rmSync(join(tree.checkout, file.path), { force: true });
     if (task.hidden.argv.join(" ") !== task.projectTest.join(" ")) {
       const project = await run(log, task, tree.checkout, task.projectTest, 1_200_000);
       if (project.exitCode !== 0)
