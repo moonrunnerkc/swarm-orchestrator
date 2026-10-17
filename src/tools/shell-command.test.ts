@@ -77,3 +77,29 @@ describe("punctuation inside a script word", () => {
     expect(readShellCommand("ls /")?.operands).toEqual(["/"]);
   });
 });
+
+describe("a program passed inline to an interpreter", () => {
+  it("offers only what is shaped like a path, from its words and its relative literals", () => {
+    const operands =
+      readShellCommand(
+        'node -e \'const m = /^.*\\./.exec(name); // why\nload("./lib/a.js", "/api/users"); f( ~/.ssh/id_rsa )\'',
+      )?.operands ?? [];
+    expect(operands).toContain("~/.ssh/id_rsa");
+    expect(operands).toContain("./lib/a.js");
+    for (const code of ["/^.*\\./.exec(name);", "//", "/api/users", 'load("./lib/a.js",'])
+      expect(operands).not.toContain(code);
+    expect(operands.some((operand) => operand.includes("\n"))).toBe(false);
+  });
+
+  it("reads only the argument after the inline flag as code, for node and python", () => {
+    const node = readShellCommand("node --input-type=module -e 'x(/a\\/b/)' ../outside.js");
+    expect(node?.operands).toContain("../outside.js");
+    expect(node?.operands).not.toContain("x(/a/b/)");
+    const python = readShellCommand("python3 -c 'import re; re.match(r\"^/a/b\", s)'");
+    expect(python?.operands.some((operand) => operand.includes("/a/b"))).toBe(false);
+    // Not an inline flag: the word is offered whole and in pieces, as before.
+    expect(readShellCommand("sed -n 'w /home/dev/.ssh/authorized_keys'")?.operands).toContain(
+      "/home/dev/.ssh/authorized_keys",
+    );
+  });
+});

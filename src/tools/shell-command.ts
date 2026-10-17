@@ -79,8 +79,48 @@ export function readShellCommand(command: string): ShellCommand | null {
   }
   return {
     executables: pipeline.map((one) => one.executable),
-    operands: pipeline.flatMap((one) => one.arguments.flatMap(pathsAWordCouldOpen)),
+    operands: pipeline.flatMap((one) =>
+      one.arguments.flatMap((argument, index) =>
+        inlineProgram(one.executable, one.arguments, index)
+          ? pathsInlineCodeCouldOpen(argument)
+          : pathsAWordCouldOpen(argument),
+      ),
+    ),
   };
+}
+
+/** The flags that hand an interpreter its program as the next argument, by interpreter. */
+const inlineProgramFlags: Readonly<Record<string, readonly string[]>> = {
+  node: ["-e", "--eval", "-p", "--print", "-pe"],
+  python: ["-c"],
+  python3: ["-c"],
+};
+
+/** Whether this argument is a program the interpreter runs, rather than a file it is handed. */
+function inlineProgram(executable: string, argumentsOf: readonly string[], index: number): boolean {
+  const flags = inlineProgramFlags[executable.split("/").at(-1) ?? ""] ?? [];
+  const previous = index === 0 ? undefined : argumentsOf[index - 1];
+  return previous !== undefined && flags.includes(previous);
+}
+
+/**
+ * The paths a program passed inline could name. Its source is code, so it is read as code: a piece
+ * that is nothing but path characters (`f( ~/.ssh/id_rsa )`), and a quoted literal that names a
+ * relative or home path (`readFileSync('.env')`), are offered; `/^.*\./.exec(name)` is not. Offered
+ * whole, a regular expression literal resolved to an absolute path and refused a diagnostic as an
+ * outside access, while a credential named inside a call passed, because the piece around it was
+ * no path at all. An absolute literal is left alone: `'/api/users'` and `'/^a/'` are ordinary in
+ * code, and a path built inside the code was never visible to this reader, which is the residual
+ * the guard names for every allowed interpreter.
+ */
+function pathsInlineCodeCouldOpen(code: string): readonly string[] {
+  const pathShaped = (text: string) =>
+    /^[\p{L}\p{N}._~/@+-]+$/u.test(text) && /[\p{L}\p{N}]/u.test(text);
+  const pieces = code.split(/\s+/).filter((piece) => pathShaped(piece) && !piece.startsWith("//"));
+  const literals = [...code.matchAll(/(['"`])([^'"`\s]+)\1/g)]
+    .map((match) => match[2] ?? "")
+    .filter((literal) => pathShaped(literal) && !literal.startsWith("/"));
+  return [...new Set([...pieces, ...literals])];
 }
 
 /** A word whose colon is part of a scheme names a resource rather than a file after the colon. */
