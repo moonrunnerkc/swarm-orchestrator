@@ -961,8 +961,14 @@ function describeError(cause: unknown): string {
 
 /** The run's default token allowance where none was named, the figure the spec seals. */
 const defaultTaskTokens = 1_000_000;
-/** The part of a run's wall and token allowance that authoring planned checks may spend. */
-const planningShare = 0.25;
+/**
+ * The most of a run's wall and token allowance that authoring planned checks may spend. It is a
+ * cap, not a reservation: the run's deadline counts from its start and its tokens as spent, so
+ * what planning leaves goes to implementation and repair. A quarter ended the first planning round
+ * at its wall in every one of six live launches that pinned checks, once with the base's answer to
+ * its checks in hand and the fix unwritten; implementation keeps at least three fifths.
+ */
+const planningShare = 0.4;
 const execFileAsync = promisify(execFile);
 
 /**
