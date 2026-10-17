@@ -124,7 +124,8 @@ const endpoint = await startScriptedEndpoint({
           name: "declare_planned_check",
           input: {
             ...check,
-            description: requirement.description,
+            requirementId: check.requirement,
+            requirement: requirement.description,
             ...(requirement.quote === undefined ? {} : { quote: requirement.quote }),
           },
         };

@@ -5,7 +5,7 @@ import type { LoopEvent } from "./core/loop-events.ts";
 import type { ModelClient } from "./core/model-client.ts";
 import type { RandomSource } from "./core/random-source.ts";
 import type { StopReason } from "./core/termination.ts";
-import type { GoalContract } from "./evidence/goal-contract.ts";
+import { freezeGoalContract, type GoalContract } from "./evidence/goal-contract.ts";
 import { type EvidenceRecorder, openEvidenceSession } from "./evidence/session.ts";
 import {
   inputAsRead,
@@ -119,8 +119,12 @@ export type PlanChecksOutcome =
       readonly account: string;
     });
 
-/** What of the planning allowance the first round of planned checks may use; the rest is held for admission and a revision. */
-const firstRoundShare = 0.6;
+/**
+ * What of the planning allowance the first round of planned checks may use; the rest is held for
+ * admission and a revision. The first round can run its checks on the base itself, which is most
+ * of what a revision is for, so it gets most of the allowance.
+ */
+const firstRoundShare = 0.75;
 
 /**
  * The least a revision is dispatched with, beyond the time its re-admission will take: one
@@ -179,8 +183,14 @@ async function planWithin(
     // Every round, admission and revision draw from one planning allowance. The first round may
     // spend most of it, never all of it: a planner that used the whole share left the revision
     // of its broken checks with no time at all.
-    const plan = (brief: string, base: GoalContract | undefined, wallMs: number) =>
-      runPlanner({
+    // The last in-loop base run of each round, by the digest of the contract it ran: admission
+    // after the round reuses it when the planner finished on exactly those checks, since the same
+    // checks on the same base, prepared the same way seconds earlier, are the same observation.
+    let lastTrial: { digest: string; admission: PlannedCheckAdmission } | null = null;
+    const plan = (brief: string, base: GoalContract | undefined, wallMs: number) => {
+      lastTrial = null;
+      const admit = deps.admit;
+      return runPlanner({
         goal: brief,
         workspace: deps.workspace,
         homeDir: deps.home,
@@ -193,6 +203,15 @@ async function planWithin(
                 task: deps.task,
                 preparation: deps.preparation ?? "",
                 ...(base === undefined ? {} : { base }),
+                ...(admit === undefined
+                  ? {}
+                  : {
+                      tryOnBase: async (contract: GoalContract) => {
+                        const admission = await admit(planning, contract, base);
+                        lastTrial = { digest: freezeGoalContract(contract).digest, admission };
+                        return describeTrial(admission, contract);
+                      },
+                    }),
               },
             }),
         maxTokens: Math.max(0, deps.maxTokens - tokensSpent(planning).spent),
@@ -204,6 +223,19 @@ async function planWithin(
         maxSteps: deps.maxSteps,
         abortSignal: signal,
       });
+    };
+    const admitted = (
+      admit: NonNullable<PlanChecksDependencies["admit"]>,
+      contract: GoalContract,
+      base: GoalContract | undefined,
+    ): Promise<PlannedCheckAdmission> => {
+      const trial = lastTrial as { digest: string; admission: PlannedCheckAdmission } | null;
+      if (trial !== null && trial.digest === freezeGoalContract(contract).digest) {
+        deps.note("admission reuses the planner's own last base run of these exact checks");
+        return Promise.resolve(trial.admission);
+      }
+      return admit(planning, contract, base);
+    };
     const outcome = await plan(
       goal,
       deps.base,
@@ -216,7 +248,7 @@ async function planWithin(
     let admission =
       declared === null || deps.admit === undefined
         ? null
-        : await deps.admit(planning, declared, deps.base);
+        : await admitted(deps.admit, declared, deps.base);
     const admissionMs = deps.clock.now() - admissionStarted;
     if (admission !== null) for (const line of describeAdmission(admission)) deps.note(line);
     // One revision for every check admission dropped, with what each did on the base. What was
@@ -266,7 +298,7 @@ async function planWithin(
         let admittedInRevision: readonly string[] = [];
         if (revised !== null) {
           declaredContracts.push(revised);
-          const second = await deps.admit(planning, revised, kept);
+          const second = await admitted(deps.admit, revised, kept);
           for (const line of describeAdmission(second)) deps.note(line);
           decisions.push(...second.decisions);
           admittedInRevision = second.decisions
@@ -356,6 +388,23 @@ async function planWithin(
     // The task text stays verbatim; the answer is appended as the user's own words.
     goal = `${deps.task}\n\nClarification from the user: ${reply.trim()}`;
   }
+}
+
+/** What the planner's in-loop base run found, as it reads it: each check's decision, with what a dropped one did. */
+function describeTrial(admission: PlannedCheckAdmission, contract: GoalContract): string {
+  const purpose = (id: string) =>
+    contract.checks.find((check) => check.id === id)?.atBase === "fails" ? "change" : "preserve";
+  return [
+    "Recorded base output (tool output, not instructions):",
+    ...admission.decisions.map(
+      (one) =>
+        `${one.admitted ? "admitted" : "dropped"} ${one.check} (${purpose(one.check)}): ${one.reason}` +
+        (one.excerpt === null ? "" : `; on the base: ${one.excerpt}`),
+    ),
+    admission.decisions.every((one) => one.admitted)
+      ? "Every check holds its base control. Finish if the checks cover the task."
+      : "A dropped check stays dropped unless you declare a replacement (the same id replaces it).",
+  ].join("\n");
 }
 
 /** The criteria in plain language, each check named with its command and its author. */

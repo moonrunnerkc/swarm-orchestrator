@@ -74,15 +74,30 @@ export type PlannedChecksDeclaration = z.infer<typeof plannedChecksInput>;
  * (template strings for programs, `undefined` for values), which the local server could not
  * parse and passed on as one string; a program as its own string parameter is written as it is.
  */
+const slug = (example: string) =>
+  id.describe(`lowercase letters, digits and hyphens, starting with a letter, such as ${example}`);
 export const plannedCheckInput = z.strictObject({
-  id,
-  purpose: z.enum(["change", "preserve"]),
-  requirement: id,
-  description: z.string().min(1).max(2000),
-  quote: z.string().min(1).max(2000).optional(),
-  program: z.string().min(1).max(16_000),
+  id: slug("negative-size-refused"),
+  purpose: z
+    .enum(["change", "preserve"])
+    .describe("change: behaviour the task changes; preserve: behaviour the task keeps"),
+  requirementId: slug("size-rule"),
+  // The words go where live planners put them: told to give an id in `requirement`, five calls
+  // in a row put the requirement's sentence there instead.
+  requirement: z.string().min(1).max(2000).describe("the requirement this check covers, in words"),
+  quote: z
+    .string()
+    .min(1)
+    .max(2000)
+    .optional()
+    .describe("the task's own words that state the requirement; required for a change check"),
+  program: z
+    .string()
+    .min(1)
+    .max(16_000)
+    .describe("an ES module whose default export takes one case's input and returns the result"),
   cases: z.array(caseSchema).min(1).max(32),
-  why: z.string().min(1).max(2000),
+  why: z.string().min(1).max(2000).describe("how the expected results follow from the task"),
 });
 export type PlannedCheckCall = z.infer<typeof plannedCheckInput>;
 
@@ -96,18 +111,18 @@ export function withPlannedCheck(
 ): PlannedChecksDeclaration {
   const check = {
     id: call.id,
-    requirement: call.requirement,
+    requirement: call.requirementId,
     purpose: call.purpose,
     program: call.program,
     cases: call.cases,
     why: call.why,
   };
   const checks = [...(declaration?.checks ?? []).filter((one) => one.id !== call.id), check];
-  const previous = declaration?.requirements.find((one) => one.id === call.requirement);
+  const previous = declaration?.requirements.find((one) => one.id === call.requirementId);
   const quote = call.quote ?? previous?.quote;
   const requirement = {
-    id: call.requirement,
-    description: call.description,
+    id: call.requirementId,
+    description: call.requirement,
     ...(quote === undefined ? {} : { quote }),
   };
   // In declaration order: a requirement a later call names again keeps its place.
@@ -115,7 +130,7 @@ export function withPlannedCheck(
     previous === undefined
       ? [...(declaration?.requirements ?? []), requirement]
       : (declaration?.requirements ?? []).map((one) =>
-          one.id === call.requirement ? requirement : one,
+          one.id === call.requirementId ? requirement : one,
         )
   ).filter((one) => checks.some((check) => check.requirement === one.id));
   return { requirements, checks };

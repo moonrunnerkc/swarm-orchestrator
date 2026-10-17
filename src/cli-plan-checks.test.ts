@@ -198,8 +198,8 @@ describe("the planned-check revision and its share of the planning allowance", (
         input: {
           id,
           purpose: "change",
-          requirement: `r-${id}`,
-          description: `requirement ${id}`,
+          requirementId: `r-${id}`,
+          requirement: `requirement ${id}`,
           quote: "collapses whitespace",
           program: "import { slugify } from './slug.mjs';\nexport default slugify;\n",
           cases: [{ input: "a  b", expected: "a-b" }],

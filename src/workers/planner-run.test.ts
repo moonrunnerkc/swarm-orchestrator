@@ -285,8 +285,8 @@ describe("planned checks", () => {
   const check = {
     id: "boundary",
     purpose: "change",
-    requirement: "boundary",
-    description: "10 is small",
+    requirementId: "boundary",
+    requirement: "10 is small",
     // Wrapped in its own quotation marks and elided, as live planners quoted.
     quote: '"every n up to ... including 10"',
     program,
@@ -328,8 +328,8 @@ describe("planned checks", () => {
         declaring("kept", {
           id: "above",
           purpose: "preserve",
-          requirement: "above",
-          description: "11 stays big",
+          requirementId: "above",
+          requirement: "11 stays big",
           quote: undefined,
           cases: [{ input: 11, expected: "big" }],
         }),
@@ -371,7 +371,7 @@ describe("planned checks", () => {
         declaring("fields", { command: "node x", behavior: { kind: "cli" } }),
       ]),
       respondWithToolCalls("a reused id", [
-        declaring("reused", { id: "suite", requirement: "suite" }),
+        declaring("reused", { id: "suite", requirementId: "suite" }),
       ]),
       respondWithToolCalls("an unquoted change", [
         { callId: "unquoted", toolName: "declare_planned_check", input: unquoted },
