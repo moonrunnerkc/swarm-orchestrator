@@ -31,7 +31,8 @@ The npm release (14.4.0) predates what this page describes, so build from source
 git clone https://github.com/moonrunnerkc/swarm-orchestrator.git
 cd swarm-orchestrator
 npm ci
-npm install -g "$(npm pack --silent)"
+npm pack
+npm install -g ./swarm-orchestrator-*.tgz
 swarm --version
 ```
 
