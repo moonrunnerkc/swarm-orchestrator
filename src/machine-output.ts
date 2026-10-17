@@ -66,6 +66,22 @@ export interface MachineResult {
    * on a run that ended before a verdict.
    */
   readonly outcome?: RunOutcomeReport;
+  /**
+   * Present only where `--plan-checks` ran: how planning ended, which planned checks admission
+   * admitted and dropped (with why), and what became of the revision. Read from the planning
+   * chain's admission records, so a consumer can tell a run that implemented against admitted
+   * planned checks from one that fell back to the supplied contract alone.
+   */
+  readonly plannedChecks?: {
+    readonly outcome: "sealed" | "declined" | "unresolved";
+    readonly admitted: readonly string[];
+    readonly dropped: readonly { readonly check: string; readonly reason: string }[];
+    readonly revision:
+      | { readonly outcome: "not-needed" }
+      | { readonly outcome: "ran"; readonly admitted: readonly string[] }
+      | { readonly outcome: "withheld"; readonly remainingMs: number; readonly neededMs: number }
+      | null;
+  };
   /** Present only where criteria planning ended the run before implementation. */
   readonly planning?: {
     readonly outcome: "declined" | "unresolved";
@@ -84,5 +100,6 @@ export function jsonResultLine(result: MachineResult): string {
     ...(result.strengthening === undefined ? {} : { strengthening: result.strengthening }),
     ...(result.outcome === undefined ? {} : { outcome: result.outcome }),
     ...(result.planning === undefined ? {} : { planning: result.planning }),
+    ...(result.plannedChecks === undefined ? {} : { plannedChecks: result.plannedChecks }),
   });
 }

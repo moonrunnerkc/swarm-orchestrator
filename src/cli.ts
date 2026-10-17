@@ -28,7 +28,7 @@ import {
   usage,
 } from "./cli-options.ts";
 import { type PlanChecksOutcome, planChecks } from "./cli-plan-checks.ts";
-import { admitPlannedChecks } from "./cli-planned-checks.ts";
+import { admitPlannedChecks, describeCheckoutPreparation } from "./cli-planned-checks.ts";
 import { describePreflight, manifestsIn } from "./cli-preflight.ts";
 import { registrySettingsFrom } from "./cli-provider-settings.ts";
 import {
@@ -77,6 +77,7 @@ import { verifyBundle } from "./cli-verify.ts";
 import type { LoopEvent } from "./core/loop-events.ts";
 import type { StopReason } from "./core/termination.ts";
 import { readBundle } from "./evidence/bundle.ts";
+import { asJsonValue } from "./evidence/canonical-json.ts";
 import { buildEvidenceDag } from "./evidence/dag.ts";
 import {
   declareGoalContract,
@@ -448,6 +449,18 @@ async function run(options: RunCommand): Promise<number> {
     const supplied = sealedGoal;
     planning = await planChecks({
       ...(supplied === undefined ? {} : { base: supplied }),
+      preparation: await describeCheckoutPreparation({
+        workspace: options.workspace,
+        baseCommit,
+        install: options.installDependencies === true,
+        ...(options.lockfile === undefined ? {} : { lockfile: options.lockfile }),
+        gateOptions: {
+          ...(options.lockfile === undefined ? {} : { lockfile: options.lockfile }),
+          ...(Object.keys(settings.gateCommandOverrides).length === 0
+            ? {}
+            : { commandOverrides: settings.gateCommandOverrides }),
+        },
+      }),
       // Each planned check is run once on a fresh checkout of the base, on the planning chain,
       // and admitted only where it does there what it says it does.
       admit: (chain, contract, base) =>
@@ -509,6 +522,7 @@ async function run(options: RunCommand): Promise<number> {
         tokensUsed: planning.tokensUsed,
         durationMs: planning.durationMs,
         steps: planning.steps,
+        admission: planning.admission === null ? null : asJsonValue(planning.admission),
         ...(planning.kind === "sealed"
           ? {
               contractDigest: freezeGoalContract(planning.contract).digest,
@@ -832,6 +846,7 @@ async function run(options: RunCommand): Promise<number> {
       baseCommit,
       gates: gates.outcome.finalCycle,
       contract: strengthening === undefined ? sealedGoal : (goalContext?.contract ?? sealedGoal),
+      uncheckedRequirements: planning?.admission?.uncheckedRequirements ?? [],
       usage: {
         durationMs: clock.now() - startedAt,
         steps: loop.steps,
@@ -898,7 +913,20 @@ async function run(options: RunCommand): Promise<number> {
             interventions: outcome.interventions,
             setup: outcome.usage.setup,
             resumable: outcome.resumable,
+            ...(outcome.uncheckedRequirements === undefined
+              ? {}
+              : { uncheckedRequirements: outcome.uncheckedRequirements }),
           },
+          ...(planning === null
+            ? {}
+            : {
+                plannedChecks: {
+                  outcome: planning.kind,
+                  admitted: planning.admission?.admitted ?? [],
+                  dropped: planning.admission?.dropped ?? [],
+                  revision: planning.admission?.revision ?? null,
+                },
+              }),
         })}\n`,
       );
     }
@@ -950,6 +978,7 @@ async function runOutcome(input: {
   readonly baseCommit: string;
   readonly gates: RunOutcomeInput["gates"];
   readonly contract: GoalContract | undefined;
+  readonly uncheckedRequirements: NonNullable<RunOutcomeInput["uncheckedRequirements"]>;
   readonly usage: RunOutcomeInput["usage"];
 }): Promise<RunOutcomeInput> {
   const { evidence } = input;
@@ -995,6 +1024,9 @@ async function runOutcome(input: {
     changedFiles: changedFilesOf(diffPayload?.patch ?? ""),
     diffTruncated: diffPayload?.truncated === true,
     gates: input.gates,
+    ...(input.uncheckedRequirements.length === 0
+      ? {}
+      : { uncheckedRequirements: input.uncheckedRequirements }),
     requirements:
       input.contract === undefined
         ? null

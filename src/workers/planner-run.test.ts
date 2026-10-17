@@ -271,97 +271,162 @@ it("cancels planning under the shared run context and records unresolved provide
 });
 
 describe("planned checks", () => {
+  const task = "make classify(n) call 10 small: every n up to and including 10 is small";
   const base = freezeGoalContract({
     version: 1,
-    goal: "move the boundary",
+    goal: task,
     requirements: [{ id: "suite", description: "the suite passes", checks: ["suite"] }],
     checks: [
       { id: "suite", command: "node --test", author: "user", exposure: "shared", artifacts: [] },
     ],
     immutablePaths: ["value.test.mjs"],
   }).contract;
-  const inline = (id: string) => ({
-    id,
-    command: "node --input-type=module -e console.log(1)",
-    author: "user",
-    exposure: "withheld",
-    atBase: "fails",
-    artifacts: [],
-    behavior: {
-      kind: "cli",
-      cwd: ".",
-      timeoutMs: 1000,
-      maxOutputBytes: 4096,
-      toolchain: "Node",
-      network: "inherit",
-      argv: ["node", "--input-type=module", "-e", "console.log(1)"],
-      exitCode: 0,
-      stdout: [{ kind: "equals", value: "2\n" }],
-      stderr: [],
-    },
-  });
-  const declaring = (callId: string, extra: Record<string, unknown>) => ({
+  const program = "import { classify } from './value.mjs';\nexport default (n) => classify(n);\n";
+  const declaring = (callId: string, input: Record<string, unknown>) => ({
     callId,
     toolName: "declare_planned_checks",
     input: {
-      requirements: [{ id: "boundary", description: "10 is small", checks: ["boundary"] }],
-      checks: [inline("boundary")],
-      ...extra,
+      requirements: [
+        { id: "boundary", description: "10 is small", quote: "every n up to and including 10" },
+      ],
+      checks: [
+        {
+          id: "boundary",
+          requirement: "boundary",
+          purpose: "change",
+          program,
+          cases: [{ input: 10, expected: "small" }],
+          why: "the task says 10 is small",
+        },
+      ],
+      ...input,
     },
   });
-
-  it("refuses what admission would trust, then adds to the supplied contract without changing it", async () => {
-    const outcome = await runPlanner({
-      goal: "move the boundary",
+  const plan = (turns: Parameters<typeof createFixtureModelClient>[0]["turns"]) =>
+    runPlanner({
+      goal: `Revision brief with recorded output: "every n up to and including 99"\n${task}`,
       workspace,
       homeDir: scratch,
       evidence,
       clock: createTestClock(1000),
       random: createFixedRandom(),
       emit: () => {},
-      maxSteps: 6,
+      maxSteps: 8,
       requireGoalChecks: true,
-      plannedChecks: { base },
+      plannedChecks: { base, task, preparation: "The checkout is installed first." },
       abortSignal: new AbortController().signal,
-      model: createFixtureModelClient({
-        modelId: "fixture:planner",
-        turns: [
-          respondWithToolCalls("references of my own", [
-            declaring("references", {
-              challenges: { version: 1, mutations: "none", fixtures: [], references: [] },
-            }),
-          ]),
-          respondWithToolCalls("a file artifact", [
-            declaring("artifact", {
-              checks: [{ ...inline("boundary"), artifacts: [{ path: "check.mjs", content: "1" }] }],
-            }),
-          ]),
-          respondWithToolCalls("a reused id", [
-            declaring("reused", {
-              requirements: [{ id: "suite", description: "again", checks: ["boundary"] }],
-            }),
-          ]),
-          respondWithToolCalls("as asked", [declaring("valid", {})]),
-          respondWithText("declared"),
-        ],
-      }),
+      model: createFixtureModelClient({ modelId: "fixture:planner", turns }),
     });
-
-    const contract = outcome.goalContract;
-    expect(contract?.requirements.map((one) => one.id)).toEqual(["suite", "boundary"]);
-    expect(contract?.checks.map((one) => [one.id, one.author, one.exposure, one.atBase])).toEqual([
-      ["suite", "user", "shared", undefined],
-      ["boundary", "model", "shared", "fails"],
-    ]);
-    expect(contract?.immutablePaths).toEqual(["value.test.mjs"]);
-    expect(contract?.challenges).toBeUndefined();
-    const refusals = evidence
+  const toolErrors = () =>
+    evidence
       .records()
       .filter((record) => record.type === "tool-call")
       .map((record) => JSON.stringify(evidence.payloads().get(record.payloadDigest)))
-      .filter((text) => text.includes("declare_planned_checks"));
-    expect(refusals.join("\n")).toMatch(/challenges/);
-    expect(refusals.join("\n")).toMatch(/no artifacts/);
-    expect(refusals.join("\n")).toMatch(/already exist in the supplied contract/);
+      .filter((text) => text.includes("declare_planned_checks"))
+      .join("\n");
+
+  it("builds the contract's own checks from a program and cases, adding to the supplied contract", async () => {
+    const outcome = await plan([
+      respondWithToolCalls("as asked", [declaring("valid", {})]),
+      respondWithText("declared"),
+    ]);
+    const contract = outcome.goalContract;
+    expect(contract?.requirements.map((one) => [one.id, one.checks])).toEqual([
+      ["suite", ["suite"]],
+      ["boundary", ["boundary"]],
+    ]);
+    const check = contract?.checks.find((one) => one.id === "boundary");
+    expect([check?.author, check?.exposure, check?.atBase]).toEqual(["model", "shared", "fails"]);
+    expect(check?.artifacts).toEqual([]);
+    if (check?.behavior?.kind !== "cli") throw new Error("a command-line behavior check");
+    expect(check.behavior.argv.slice(0, 3)).toEqual(["node", "--input-type=module", "-e"]);
+    expect(JSON.parse(check.behavior.stdin)).toEqual({ program, inputs: [10] });
+    expect(check.behavior.stdout).toEqual([
+      { kind: "equals", value: '{"input":10,"result":"small"}\n' },
+    ]);
+    expect(contract?.immutablePaths).toEqual(["value.test.mjs"]);
+  });
+
+  it("refuses what admission would trust and what the task does not say, naming each problem", async () => {
+    const outcome = await plan([
+      respondWithToolCalls("references of my own", [
+        declaring("references", {
+          challenges: { version: 1, mutations: "none", fixtures: [], references: [] },
+        }),
+      ]),
+      respondWithToolCalls("the old contract fields", [
+        declaring("fields", {
+          checks: [{ id: "boundary", command: "node x", behavior: { kind: "cli" } }],
+        }),
+      ]),
+      respondWithToolCalls("a reused id and an unquoted change", [
+        declaring("reused", {
+          requirements: [
+            { id: "suite", description: "again" },
+            { id: "boundary", description: "10 is small" },
+          ],
+        }),
+      ]),
+      respondWithToolCalls("a quote from the revision brief, not the task", [
+        declaring("quote", {
+          requirements: [
+            { id: "boundary", description: "99 is small", quote: "every n up to and including 99" },
+          ],
+        }),
+      ]),
+      respondWithToolCalls("an undeclared requirement and no default export", [
+        declaring("orphan", {
+          checks: [
+            {
+              id: "boundary",
+              requirement: "elsewhere",
+              purpose: "change",
+              program: "console.log(1)",
+              cases: [{ input: 10, expected: "small" }],
+              why: "w",
+            },
+          ],
+        }),
+      ]),
+      respondWithText("gave up"),
+    ]);
+    expect(outcome.goalContract).toBeNull();
+    const errors = toolErrors();
+    expect(errors).toMatch(/challenges/);
+    expect(errors).toMatch(/already exists in the contract/);
+    expect(errors).toMatch(/covered by a change check, so quote the task/);
+    expect(errors).toMatch(/its quote is not in the task text/);
+    expect(errors).toMatch(/names requirement elsewhere/);
+    expect(errors).toMatch(/requirement boundary has no check/);
+    expect(errors).toMatch(/must export a default function/);
+  });
+
+  it("lets a planner replace what it pinned before anything has run", async () => {
+    const outcome = await plan([
+      respondWithToolCalls("first", [declaring("first", {})]),
+      respondWithToolCalls("a better one", [
+        declaring("second", {
+          checks: [
+            {
+              id: "boundary",
+              requirement: "boundary",
+              purpose: "change",
+              program,
+              cases: [
+                { input: 10, expected: "small" },
+                { input: 9, expected: "small" },
+              ],
+              why: "the task says up to and including 10",
+            },
+          ],
+        }),
+      ]),
+      respondWithText("declared"),
+    ]);
+    const check = outcome.goalContract?.checks.find((one) => one.id === "boundary");
+    expect(check?.behavior?.kind === "cli" && JSON.parse(check.behavior.stdin).inputs).toEqual([
+      10, 9,
+    ]);
+    expect(toolErrors()).toMatch(/replacing the earlier declaration/);
   });
 });
