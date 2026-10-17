@@ -301,6 +301,8 @@ describe("planned checks through the ordinary command line", () => {
     );
     expect(revisionBrief).toContain("the check program did not load");
     expect(revisionBrief).toContain("./missing.mjs");
+    // Each dropped check's inputs as read, so a planner can see what the harness received.
+    expect(revisionBrief).toContain("inputs as read: 3");
     expect(revisionBrief).not.toMatch(/mislabelled[^-]*on the base:/);
 
     // Sealed: the supplied requirement and the two planned ones that kept a check. The planned

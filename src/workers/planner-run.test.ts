@@ -401,6 +401,35 @@ describe("planned checks", () => {
     expect(errors).toMatch(/must export a default function/);
   });
 
+  it("shows the planner its inputs as read, and warns where a line feed was escaped twice", async () => {
+    await plan([
+      respondWithToolCalls("escaped twice", [
+        declaring("twice", {
+          checks: [
+            {
+              id: "boundary",
+              requirement: "boundary",
+              purpose: "change",
+              program,
+              // What arrives when a model writes \\n in the tool's JSON: a backslash and an n.
+              cases: [
+                { input: "LINE\\nFEED.png", expected: "image/png" },
+                { input: "LS\u2028.png", expected: "image/png" },
+              ],
+              why: "w",
+            },
+          ],
+        }),
+      ]),
+      respondWithText("declared"),
+    ]);
+    const answer = toolErrors();
+    expect(answer).toContain("boundary inputs as read:");
+    expect(answer).toContain("LS\\\\u2028.png");
+    expect(answer).toMatch(/warning: boundary case 1 holds a backslash followed by n/);
+    expect(answer).not.toMatch(/case 2 holds a backslash/);
+  });
+
   it("lets a planner replace what it pinned before anything has run", async () => {
     const outcome = await plan([
       respondWithToolCalls("first", [declaring("first", {})]),

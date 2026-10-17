@@ -276,13 +276,64 @@ export function plannedContract(
   }).contract;
 }
 
-/** The program a built planned check carries, for showing it back to the planner that wrote it. */
-export function plannedProgram(check: GoalCheckDefinition): string | null {
+/** What a built planned check carries on stdin, or null for any other check. */
+function carried(check: GoalCheckDefinition): { program?: unknown; inputs?: unknown } | null {
   if (check.behavior?.kind !== "cli" || check.behavior.argv[3] !== plannedCheckRunner) return null;
   try {
-    const carried = JSON.parse(check.behavior.stdin) as { program?: unknown };
-    return typeof carried.program === "string" ? carried.program : null;
+    return JSON.parse(check.behavior.stdin) as { program?: unknown; inputs?: unknown };
   } catch {
     return null;
   }
+}
+
+/** The program a built planned check carries, for showing it back to the planner that wrote it. */
+export function plannedProgram(check: GoalCheckDefinition): string | null {
+  const program = carried(check)?.program;
+  return typeof program === "string" ? program : null;
+}
+
+/** The inputs a built planned check carries, in case order. */
+export function plannedInputs(check: GoalCheckDefinition): readonly unknown[] | null {
+  const inputs = carried(check)?.inputs;
+  return Array.isArray(inputs) ? inputs : null;
+}
+
+/** A value as the harness read it, with line terminators and other invisible characters escaped. */
+export function inputAsRead(value: unknown): string {
+  return (JSON.stringify(value) ?? "null").replace(
+    /[\u2028\u2029\u007f-\u009f]/g,
+    (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  );
+}
+
+/** Every string inside a value, however deeply nested. */
+function stringsIn(value: unknown): readonly string[] {
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap(stringsIn);
+  if (value !== null && typeof value === "object") return Object.values(value).flatMap(stringsIn);
+  return [];
+}
+
+/**
+ * The cases as the harness read them, and a warning for each input holding a backslash before
+ * n, r, t or u: the two characters a model writes when it escapes a line feed twice inside the
+ * tool's JSON. A live planner did that for every case of its change check, which then passed on
+ * the base and was dropped. Nothing is unescaped for it, since a backslash can be meant (a
+ * Windows path is one); the planner is told, and may declare again.
+ */
+export function describeDeclaredCases(input: PlannedChecksDeclaration): readonly string[] {
+  const lines: string[] = [];
+  for (const check of input.checks) {
+    lines.push(
+      `${check.id} inputs as read: ${check.cases.map((one) => inputAsRead(one.input)).join(", ")}`,
+    );
+    check.cases.forEach((one, index) => {
+      const escaped = stringsIn(one.input).find((text) => /\\[nrtu]/.test(text));
+      if (escaped !== undefined)
+        lines.push(
+          `warning: ${check.id} case ${index + 1} holds a backslash followed by ${/\\([nrtu])/.exec(escaped)?.[1]}, which is two characters, not a line terminator or tab. If you meant the control character, write it inside the JSON string with one backslash (\\n) and declare again; if the backslash is meant, leave it.`,
+        );
+    });
+  }
+  return lines;
 }

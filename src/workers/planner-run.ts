@@ -14,7 +14,11 @@ import type { EvidenceRecorder } from "../evidence/session.ts";
 import { defineTool } from "../tools/tool-definition.ts";
 import { createWorkspaceTools } from "../tools/workspace-tools.ts";
 import { createDeclareTaskGraphTool, type DeclaredGraph } from "./graph-tool.ts";
-import { plannedChecksInput, plannedContract } from "./planned-check-program.ts";
+import {
+  describeDeclaredCases,
+  plannedChecksInput,
+  plannedContract,
+} from "./planned-check-program.ts";
 import type { TaskGraph } from "./task-graph.ts";
 
 export interface PlannerOptions {
@@ -154,7 +158,11 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
                       options.plannedChecks?.base,
                     );
                     return Promise.resolve({
-                      text: `${input.checks.length} planned check(s) pinned${replacing ? ", replacing the earlier declaration" : ""}; each now runs once on the unchanged base before implementation. Finish now with a one-line summary.`,
+                      text: [
+                        `${input.checks.length} planned check(s) pinned${replacing ? ", replacing the earlier declaration" : ""}; each runs once on the unchanged base before implementation.`,
+                        ...describeDeclaredCases(input),
+                        "If every input is what you meant, finish now with a one-line summary.",
+                      ].join("\n"),
                       facts: { requirements: goalContract.requirements.length },
                     });
                   },
@@ -253,8 +261,10 @@ function plannedChecksPrompt(options: NonNullable<PlannerOptions["plannedChecks"
     "build, install or print anything in the program: the harness prepares the checkout first.",
     options.preparation,
     "Each case gives the input and the expected result, or throws: true where the call must",
-    "throw. Write inputs with JSON escapes so every character is exact. In why, say how the",
-    "expected results follow from the task.",
+    "throw. The tool's arguments are JSON, so a line feed inside an input string is written \\n",
+    "with one backslash, exactly as in any JSON string; \\\\n would be a backslash followed by n.",
+    "The tool's answer shows every input as it was read. In why, say how the expected results",
+    "follow from the task.",
     ...(base === undefined
       ? []
       : [

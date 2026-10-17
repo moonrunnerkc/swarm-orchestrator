@@ -307,3 +307,28 @@ describe("the planned-check revision and its share of the planning allowance", (
     });
   });
 });
+
+it("ends planning at its allowance even while a model call is still unanswered", async () => {
+  // A stuck server: the call settles only when it is aborted. A planner whose allowance was
+  // checked only between calls waited on one like this until the launch was killed.
+  const unanswered = {
+    modelId: "fixture:stuck",
+    generate: (request: { abortSignal: AbortSignal }) =>
+      new Promise<never>((_resolve, reject) => {
+        request.abortSignal.addEventListener("abort", () => reject(request.abortSignal.reason), {
+          once: true,
+        });
+      }),
+  };
+  const { planner } = deps([], {
+    maxWallMs: 300,
+    createModel: () => unanswered as never,
+    admit: () => Promise.reject(new Error("nothing was declared, so nothing is admitted")),
+  });
+  const started = Date.now();
+  const outcome = await planChecks(planner);
+  expect(Date.now() - started).toBeLessThan(5_000);
+  expect(outcome.kind).toBe("unresolved");
+  // The run's own signal is not the planner's: implementation still has its allowance.
+  expect(planner.signal.aborted).toBe(false);
+});
