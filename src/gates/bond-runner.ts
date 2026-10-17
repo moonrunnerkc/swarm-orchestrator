@@ -1,5 +1,7 @@
+import { execFile } from "node:child_process";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
+import { promisify } from "node:util";
 import { z } from "zod";
 import type { JsonValue } from "../evidence/canonical-json.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
@@ -96,10 +98,15 @@ export async function runBonds(input: BondRunInput): Promise<readonly BondOutcom
       continue;
     }
 
-    const placed = await placeBond(input.workspaceRoot, bond);
+    const located = gate.source.kind === "inspection" ? await visibleTo(input, bond) : bond;
+    if (typeof located === "string") {
+      outcomes.push(await record(input, gate, bond, collectedBefore, null, "not-bonded", located));
+      continue;
+    }
+    const placed = await placeBond(input.workspaceRoot, located);
     if (!placed.ok) {
       outcomes.push(
-        await record(input, gate, bond, collectedBefore, null, "not-bonded", placed.reason),
+        await record(input, gate, located, collectedBefore, null, "not-bonded", placed.reason),
       );
       continue;
     }
@@ -117,7 +124,7 @@ export async function runBonds(input: BondRunInput): Promise<readonly BondOutcom
         await record(
           input,
           gate,
-          bond,
+          located,
           collectedBefore,
           { observation, reading },
           verdict,
@@ -125,7 +132,7 @@ export async function runBonds(input: BondRunInput): Promise<readonly BondOutcom
         ),
       );
     } finally {
-      await removeBond(input.workspaceRoot, bond);
+      await removeBond(input.workspaceRoot, located);
     }
   }
   return outcomes;
@@ -143,6 +150,47 @@ function describeVerdict(verdict: BondVerdict, gateId: string, detail: string): 
       return `the ${gateId} gate could not run over the bond: ${detail}`;
   }
 }
+
+/**
+ * The bond where an inspection can see it. An inspection reads the change set, which leaves out
+ * whatever the repository ignores, so a bond at an ignored path is a bond nothing was handed:
+ * node-tar ignores every root entry its .gitignore does not name, and three sound gates read
+ * as vacuous over bonds written at its root. Such a file moves beside a file the change itself
+ * touched; where that is ignored too, the gate is not bonded, by name, rather than misjudged.
+ */
+async function visibleTo(
+  input: BondRunInput,
+  bond: BondDefinition,
+): Promise<BondDefinition | string> {
+  const changed = (await input.context()).changes.files[0]?.path;
+  const files: { path: string; content: string }[] = [];
+  for (const file of bond.files) {
+    if (!(await ignored(input, file.path))) {
+      files.push(file);
+      continue;
+    }
+    const beside = changed === undefined ? null : join(dirname(changed), basename(file.path));
+    if (beside === null || (await ignored(input, beside)))
+      return `the repository ignores ${file.path}${beside === null ? "" : ` and ${beside}`}, so a bond there is not part of the change this gate inspects`;
+    files.push({ ...file, path: beside });
+  }
+  return { ...bond, files };
+}
+
+/** Whether git would leave a new file at this path out of the change: exit 0 means ignored. */
+async function ignored(input: BondRunInput, path: string): Promise<boolean> {
+  try {
+    await runGit("git", ["check-ignore", "-q", "--", path], {
+      cwd: input.workspaceRoot,
+      timeout: 10_000,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const runGit = promisify(execFile);
 
 async function placeBond(
   workspaceRoot: string,
