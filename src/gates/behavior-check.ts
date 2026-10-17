@@ -54,10 +54,14 @@ export function differingLines(expected: string, actual: string, limit = 8): rea
 
 /** A line as text, with control, line and paragraph separator characters written as escapes. */
 const shown = (text: string) => {
-  const visible = text.replace(
-    /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g,
-    (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`,
-  );
+  const visible = [...text]
+    .map((character) => {
+      const code = character.codePointAt(0) ?? 0;
+      return code < 0x20 || (code >= 0x7f && code <= 0x9f) || code === 0x2028 || code === 0x2029
+        ? `\\u${code.toString(16).padStart(4, "0")}`
+        : character;
+    })
+    .join("");
   return visible.length <= mismatchExcerptChars
     ? `\`${visible}\``
     : `\`${visible.slice(0, mismatchExcerptChars)}\` (${visible.length} characters, truncated)`;
