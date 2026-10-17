@@ -65,7 +65,7 @@ The four chosen tasks come from four repositories.
 ## Caveats, disclosed before the freeze
 
 - **tar:**
-  - The base's `npm test` fails tap's 100% coverage rule on one branch of `src/pax.ts`, although
+  - The base's `npm test` fails tap's 100% coverage rule on one branch of node-tar's `pax.ts`, although
     every assertion passes. The project test, for both tools and the scorer, is therefore
     `npm test -- --allow-incomplete-coverage`, and the task text says so.
   - The tests import the built `dist`, so `npm run prepare` builds before every check.

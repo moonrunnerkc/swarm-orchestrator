@@ -66,7 +66,7 @@ The decision rule, item by item:
 
 **What was wrong.** Swarm's tar repetition-2 patch
 ([stage-a/patches/tar-bugfix-negative-size-r2.swarm.patch](stage-a/patches/tar-bugfix-negative-size-r2.swarm.patch))
-split `case 'size'` out of a fall-through group in `src/pax.ts`. `dev`, `ino` and `nlink` now
+split `case 'size'` out of a fall-through group in node-tar's `pax.ts`. `dev`, `ino` and `nlink` now
 fall into the new block, which drops negative values. The task says every other field keeps its
 current parsing, negative values included. The task-authored hidden check catches this:
 `Pax.parse('10 uid=-1\n').uid` is `undefined`, expected `-1`.
