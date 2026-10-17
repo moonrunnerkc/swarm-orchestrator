@@ -202,7 +202,19 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
                       const tryOnBase = options.plannedChecks?.tryOnBase;
                       if (goalContract === null || tryOnBase === undefined)
                         throw new Error("pin a check with declare_planned_check first");
-                      return { text: await tryOnBase(goalContract), facts: {} };
+                      const task = options.plannedChecks?.task ?? options.goal;
+                      // Where the planner decides to stop: what its checks did, and what of the
+                      // task none of them yet exercises.
+                      return {
+                        text: [
+                          await tryOnBase(goalContract),
+                          ...(plannedDeclaration === null
+                            ? []
+                            : describeUncoveredSentences(task, plannedDeclaration)),
+                          "Before finishing, reread each sentence of the task that states a rule and ask whether a case exercises it where an implementation could get it wrong: the special input at the start or the end, repeated, next to the separators the rule names, or combined with another special input. Add such cases (the same id replaces a check) and run this again, or finish.",
+                        ].join("\n"),
+                        facts: {},
+                      };
                     },
                   }),
                 ]),

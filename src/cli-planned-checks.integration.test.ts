@@ -483,6 +483,10 @@ describe("planned checks through the ordinary command line", () => {
     });
     // The second in-loop run saw both checks hold their control.
     expect(JSON.stringify(endpoint.requests)).toContain("Every check holds its base control");
+    // And at that point it is asked what of the task its cases do not yet exercise.
+    expect(JSON.stringify(endpoint.requests)).toContain(
+      "reread each sentence of the task that states a rule",
+    );
   }, 200_000);
 
   it("admits a check of built output, because the base runs the project's build first as acceptance does", async () => {
