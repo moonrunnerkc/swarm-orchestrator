@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { assembleToolset } from "../agent-run.ts";
 import type { Clock } from "../core/clock.ts";
 import { runAgentLoop } from "../core/loop.ts";
@@ -98,35 +99,58 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
       ...(options.requireGoalChecks !== true
         ? []
         : [
-            defineTool({
-              name: "declare_goal_contract",
-              description:
-                "Pin observable requirements and executable acceptance checks before implementation. Checks are candidate instruments authored by this model, never independent ground truth. A requirement without executable coverage remains unjudged. Artifact paths must be new files used only by the verifier.",
-              inputSchema: goalContractSchema,
-              kind: "evidence",
-              pathsFrom: () => [],
-              execute(input) {
-                if (goalContract !== null)
-                  throw new Error(
-                    "goal checks already declared; their requirements cannot be overwritten",
-                  );
-                if (input.goal !== options.goal)
-                  throw new Error("the goal contract must retain the supplied goal verbatim");
-                const authored = input.checks.map((check) => ({
-                  ...check,
-                  author: "model" as const,
-                  exposure: "shared" as const,
-                }));
-                goalContract =
-                  options.plannedChecks === undefined
-                    ? freezeGoalContract({ ...input, checks: authored }).contract
-                    : plannedContract(input, authored, options.plannedChecks.base);
-                return Promise.resolve({
-                  text: "candidate goal checks pinned; the independent verifier will run these on the integrated tree",
-                  facts: { requirements: goalContract.requirements.length },
-                });
-              },
-            }),
+            options.plannedChecks === undefined
+              ? defineTool({
+                  name: "declare_goal_contract",
+                  description:
+                    "Pin observable requirements and executable acceptance checks before implementation. Checks are candidate instruments authored by this model, never independent ground truth. A requirement without executable coverage remains unjudged. Artifact paths must be new files used only by the verifier.",
+                  inputSchema: goalContractSchema,
+                  kind: "evidence",
+                  pathsFrom: () => [],
+                  execute(input) {
+                    if (goalContract !== null)
+                      throw new Error(
+                        "goal checks already declared; their requirements cannot be overwritten",
+                      );
+                    if (input.goal !== options.goal)
+                      throw new Error("the goal contract must retain the supplied goal verbatim");
+                    goalContract = freezeGoalContract({
+                      ...input,
+                      checks: input.checks.map((check) => ({
+                        ...check,
+                        author: "model",
+                        exposure: "shared",
+                      })),
+                    }).contract;
+                    return Promise.resolve({
+                      text: "candidate goal checks pinned; the independent verifier will run these on the integrated tree",
+                      facts: { requirements: goalContract.requirements.length },
+                    });
+                  },
+                })
+              : defineTool({
+                  name: "declare_planned_checks",
+                  description:
+                    "Pin the requirements and command-line behavior checks this task is implemented and repaired against. The goal is the task as given; declare only requirements, checks and any extra immutable paths. Each check is run once on the unchanged base before anything is implemented and admitted only if it does there what its atBase says.",
+                  inputSchema: plannedChecksInput,
+                  kind: "evidence",
+                  pathsFrom: () => [],
+                  execute(input) {
+                    if (goalContract !== null)
+                      throw new Error(
+                        "planned checks already declared; their requirements cannot be overwritten",
+                      );
+                    goalContract = plannedContract(
+                      options.goal,
+                      input,
+                      options.plannedChecks?.base,
+                    );
+                    return Promise.resolve({
+                      text: "planned checks pinned; each now runs once on the unchanged base before implementation",
+                      facts: { requirements: goalContract.requirements.length },
+                    });
+                  },
+                }),
           ]),
     ],
   });
@@ -196,8 +220,8 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
  */
 function plannedChecksPrompt(base: GoalContract | undefined): string {
   return [
-    "Before finishing, call declare_goal_contract with the supplied goal verbatim and executable",
-    "checks for the task's observable requirements. These checks are written before any",
+    "Before finishing, call declare_planned_checks once with requirements and executable checks",
+    "for the task's observable requirements; the goal is the task as given and is not repeated. These checks are written before any",
     "implementation exists and are what the implementation is repaired against, so derive every",
     "expected value from the task text and the project's existing documented or tested behaviour,",
     "never from a guess about how the change will be written.",
@@ -217,7 +241,7 @@ function plannedChecksPrompt(base: GoalContract | undefined): string {
     "which the unchanged base must get wrong, and passes for a check of behaviour that must stay,",
     "which the base already gets right. Keep the two kinds in separate checks.",
     "A check whose base result does not match its atBase is dropped before implementation, so do",
-    "not put a preserved case in a fails check. Do not declare a preset or challenges.",
+    "not put a preserved case in a fails check.",
     ...(base === undefined
       ? []
       : [
@@ -228,23 +252,33 @@ function plannedChecksPrompt(base: GoalContract | undefined): string {
   ].join(" ");
 }
 
-type DeclaredContract = typeof goalContractSchema._output;
+/**
+ * What a planner declares in planned-check mode: requirements and checks only. The goal and the
+ * contract's version are the harness's to fill in; a planner asked to retype a long task text
+ * verbatim failed at it more than twenty times and spent its whole step budget doing so.
+ */
+const plannedChecksInput = z.strictObject({
+  requirements: goalContractSchema.shape.requirements,
+  checks: goalContractSchema.shape.checks,
+  immutablePaths: goalContractSchema.shape.immutablePaths.default([]),
+});
 
 /**
  * The planner's additions on top of a supplied contract, or the planner's contract alone. The
- * supplied requirements, checks, preset and immutable paths stand unchanged; what the planner
- * adds must be command-line behavior checks with a declared base expectation, and it cannot
- * author a preset, challenge fixtures or references, which are what admission would trust.
+ * supplied goal, requirements, checks, preset and immutable paths stand unchanged; what the
+ * planner adds must be command-line behavior checks with a declared base expectation, and it
+ * cannot author a preset, challenge fixtures or references, which are what admission would trust.
  */
 function plannedContract(
-  input: DeclaredContract,
-  authored: DeclaredContract["checks"],
+  goal: string,
+  input: z.infer<typeof plannedChecksInput>,
   base: GoalContract | undefined,
 ): GoalContract {
-  if (input.preset !== undefined || input.challenges !== undefined)
-    throw new Error(
-      "planned checks cannot declare a preset or challenges; declare requirements and checks only",
-    );
+  const authored = input.checks.map((check) => ({
+    ...check,
+    author: "model" as const,
+    exposure: "shared" as const,
+  }));
   const malformed = authored.filter(
     (check) =>
       check.behavior?.kind !== "cli" || check.atBase === undefined || check.artifacts.length > 0,
@@ -266,12 +300,12 @@ function plannedContract(
     );
   return freezeGoalContract({
     version: 1,
-    goal: base?.goal ?? input.goal,
+    goal: base?.goal ?? goal,
     ...(base?.preset === undefined ? {} : { preset: base.preset }),
     requirements: [...(base?.requirements ?? []), ...input.requirements],
     checks: [...(base?.checks ?? []), ...authored],
     immutablePaths: [...new Set([...(base?.immutablePaths ?? []), ...input.immutablePaths])],
-    selection: base?.selection ?? input.selection,
+    ...(base === undefined ? {} : { selection: base.selection }),
     ...(base?.challenges === undefined ? {} : { challenges: base.challenges }),
   }).contract;
 }
