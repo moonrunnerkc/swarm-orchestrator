@@ -28,7 +28,10 @@ is recorded once; failed, capped and infrastructure launches are retained.
   patch digest and the hidden verdict. Output blobs and final patches are kept under
   `~/.cache/swarm-comparison/blobs/` by digest.
 - [results.md](results.md): the tables, produced by `scripts/comparison/analyze.mjs` from the
-  records, and what they do and do not support.
+  records, and what they do and do not support. The records are packed losslessly in
+  [packed-derived/records](packed-derived/records/inventory.json); `node
+  scripts/comparison/analyze.mjs --runs docs/evidence/2026-10-11/comparison/records` reads them
+  from the pack and re-derives the tables.
 - [results-pass2.md](results-pass2.md), [records-pass2.sha256](records-pass2.sha256) and
   [manifest-pass2.json](manifest-pass2.json): the failed second pass, its tables, the digests
   of its retained records and the manifest it ran under.
