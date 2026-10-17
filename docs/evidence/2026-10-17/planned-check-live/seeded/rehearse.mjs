@@ -117,7 +117,19 @@ const tarFix = () => {
 const endpoint = await startScriptedEndpoint({
   modelId: "qwen3.6:35b-a3b",
   turns: [
-    { toolCalls: [{ name: "declare_planned_checks", input: { requirements: plan.requirements, checks: plan.checks } }] },
+    {
+      toolCalls: plan.checks.map((check) => {
+        const requirement = plan.requirements.find((one) => one.id === check.requirement);
+        return {
+          name: "declare_planned_check",
+          input: {
+            ...check,
+            description: requirement.description,
+            ...(requirement.quote === undefined ? {} : { quote: requirement.quote }),
+          },
+        };
+      }),
+    },
     { text: "Pinned." },
     (request) =>
       JSON.stringify(request).includes("should be")

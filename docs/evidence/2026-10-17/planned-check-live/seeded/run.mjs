@@ -142,7 +142,7 @@ function captureGeneratedChecks() {
   const declarations = records
     .filter((record) => record.type === "tool-call")
     .map((record) => payload(record.payloadDigest))
-    .filter((call) => call.toolName === "declare_planned_checks" && call.decision !== "requested");
+    .filter((call) => call.toolName?.startsWith("declare_planned_check") && call.decision !== "requested");
   const verification = records
     .filter((record) => record.type === "verification-command")
     .map((record) => ({ at: record.timestamp ?? null, ...payload(record.payloadDigest) }));
@@ -192,6 +192,9 @@ const proxy = createServer((incoming, answer) => {
         method: incoming.method,
         path: `${target.pathname.replace(/\/v1$/, "")}${incoming.url}`,
         headers: { ...incoming.headers, host: target.host, "content-length": raw.length },
+        // A fresh connection per request: the first live launch's retry after a server 500 went
+        // out on a reused upstream socket and was never answered.
+        agent: false,
       },
       (response) => {
         exchange.status = response.statusCode;
@@ -208,6 +211,8 @@ const proxy = createServer((incoming, answer) => {
         });
       },
     );
+    // An upstream that never answers reaches the product as a failed call, not as a hang.
+    forwarded.setTimeout(10 * 60_000, () => forwarded.destroy(new Error("upstream gave no answer in 10 minutes")));
     forwarded.on("error", (error) => {
       exchange.error = String(error);
       answer.writeHead(502);
@@ -316,3 +321,5 @@ for (const name of summary.sessions) {
   if (existsSync(ledger)) copyFileSync(ledger, join(out, `${name}.ledger.jsonl`));
 }
 console.log(JSON.stringify(summary, null, 2));
+// Nothing this driver owns is left running: the proxy and the seeded endpoint are closed above.
+process.exit(0);

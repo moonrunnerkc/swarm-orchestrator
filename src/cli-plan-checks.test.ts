@@ -190,27 +190,23 @@ it("describes criteria with their author and the ones that stay unjudged", () =>
 
 describe("the planned-check revision and its share of the planning allowance", () => {
   const declaring = (ids: readonly string[]): FixtureTurn =>
-    respondWithToolCalls("pinning", [
-      {
-        callId: `declare-${ids.join("-")}`,
-        toolName: "declare_planned_checks",
+    respondWithToolCalls(
+      "pinning",
+      ids.map((id) => ({
+        callId: `declare-${id}`,
+        toolName: "declare_planned_check",
         input: {
-          requirements: ids.map((id) => ({
-            id: `r-${id}`,
-            description: `requirement ${id}`,
-            quote: "collapses whitespace",
-          })),
-          checks: ids.map((id) => ({
-            id,
-            requirement: `r-${id}`,
-            purpose: "change",
-            program: "import { slugify } from './slug.mjs';\nexport default slugify;\n",
-            cases: [{ input: "a  b", expected: "a-b" }],
-            why: "the task says runs of whitespace become one dash",
-          })),
+          id,
+          purpose: "change",
+          requirement: `r-${id}`,
+          description: `requirement ${id}`,
+          quote: "collapses whitespace",
+          program: "import { slugify } from './slug.mjs';\nexport default slugify;\n",
+          cases: [{ input: "a  b", expected: "a-b" }],
+          why: "the task says runs of whitespace become one dash",
         },
-      },
-    ]);
+      })),
+    );
 
   /** Admission that takes `ms` of the planning clock, admits the checks named, and drops the rest. */
   function admitting(admit: readonly string[], ms: () => number, advance: (by: number) => void) {
