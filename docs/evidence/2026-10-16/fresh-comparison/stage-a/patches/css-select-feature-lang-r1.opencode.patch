@@ -1,0 +1,126 @@
+diff --git a/src/pseudo-selectors/filters.ts b/src/pseudo-selectors/filters.ts
+index 6fe3738..fa0f2ce 100644
+--- a/src/pseudo-selectors/filters.ts
++++ b/src/pseudo-selectors/filters.ts
+@@ -178,8 +178,121 @@ export const filters: Record<string, Filter> = {
+     hover: dynamicStatePseudo("isHovered"),
+     visited: dynamicStatePseudo("isVisited"),
+     active: dynamicStatePseudo("isActive"),
++
++    lang(next, rule, options) {
++        const { adapter } = options;
++        // Parse the comma-separated language ranges from the selector argument
++        const ranges = rule.split(",").map((r) => {
++            let trimmed = r.trim();
++            /*
++             * Remove surrounding quotes (single or double)
++             */
++            if (
++                (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
++                (trimmed.startsWith("'") && trimmed.endsWith("'"))
++            ) {
++                trimmed = trimmed.slice(1, -1);
++            }
++            return trimmed;
++        });
++
++        /*
++         * Get the element's language tag by looking up xml:lang first, then lang,
++         * then walking up to the nearest ancestor.
++         */
++        function getLanguage(
++            element: Parameters<typeof adapter.getParent>["0"],
++        ) {
++            let current: typeof element | null = element;
++            while (current != null) {
++                if (adapter.hasAttrib(current, "xml:lang")) {
++                    return adapter.getAttributeValue(current, "xml:lang");
++                }
++                if (adapter.hasAttrib(current, "lang")) {
++                    return adapter.getAttributeValue(current, "lang");
++                }
++                const parent = adapter.getParent(current);
++                current =
++                    parent != null && adapter.isTag(parent) ? parent : null;
++            }
++            return null;
++        }
++
++        /* Check if a single language range matches the tag using RFC 4647 extended filtering. */
++
++        const hasEmptyRange = ranges.includes("");
++
++        return (element) => {
++            const tag = getLanguage(element);
++
++            if (tag == null) {
++                return hasEmptyRange && next(element);
++            }
++
++            if (tag === "") {
++                return hasEmptyRange && next(element);
++            }
++
++            return (
++                ranges.some((range) => {
++                    if (range === "") {
++                        return tag === "";
++                    }
++                    return matchesRFC4647(range, tag);
++                }) && next(element)
++            );
++        };
++    },
+ };
+ 
++/*
++ * Check if a single language range matches the tag using RFC 4647 extended filtering.
++ */
++function matchesRFC4647(range: string, tag: string): boolean {
++    const rangeLower = range.toLowerCase();
++    const tagLower = tag.toLowerCase();
++    const rSubs = rangeLower.split("-");
++    const tSubs = tagLower.split("-");
++
++    /* Step 1-2: Check first subtag */
++    if (rSubs[0] !== "*" && tSubs[0] !== rSubs[0]) {
++        return false;
++    }
++
++    let ri = 1;
++    let ti = 1;
++
++    while (ri < rSubs.length && ti < tSubs.length) {
++        if (rSubs[ri] === "*") {
++            ri++;
++            continue;
++        }
++        if (rSubs[ri] === tSubs[ti]) {
++            ri++;
++            ti++;
++            continue;
++        }
++        /* No match at current position; try skipping long tag subtags */
++        let found = false;
++        while (ti < tSubs.length) {
++            if (rSubs[ri] === tSubs[ti]) {
++                ri++;
++                ti++;
++                found = true;
++                break;
++            }
++            /* Can skip tag subtags of length >= 2 */
++            if (tSubs[ti].length <= 1) {
++                break;
++            }
++            ti++;
++        }
++        if (!found) return false;
++    }
++
++    return ri === rSubs.length;
++}
++
+ /**
+  * Dynamic state pseudos. These depend on optional Adapter methods.
+  * @param name The name of the adapter method to call.
