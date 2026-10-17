@@ -8,8 +8,12 @@ otherwise runs as registered. The amendment, the frozen plan and the readiness e
 **Decision: no demonstrated benefit.** Stage A does not meet the spending rule, so stage B did not
 run and nothing here supports a larger study under this configuration.
 
-Both tools produced a correct patch for all four tasks, with no scripted correction and no false
-completion claim. OpenCode delivered all four. Swarm delivered three, and refused its own correct
+Both tools' patches passed the frozen hidden oracle on all four tasks, with no scripted
+correction and no false completion claim under that oracle. **Amended:** a dated post hoc audit
+([correctness-amendment/](correctness-amendment/README.md)) found both mime patches wrong on
+line-terminator cases the oracle never tried, so "correct patch" below means "passed the frozen
+oracle", and on mime it is not correct against the task's own rule. The scores are unchanged.
+OpenCode delivered all four. Swarm delivered three, and refused its own correct
 csstree upgrade because of a product defect, described below. Swarm was also slower and used
 more tokens per delivery.
 
@@ -41,6 +45,7 @@ re-derived by `node scripts/pilot/analyze.mjs --evidence docs/evidence/2026-10-1
 | end-to-end minutes per correct delivery (all work counted) | 2.7 | 0.8 | loss |
 | comparable tokens per correct delivery (all work counted) | 335,189 | 159,292 | loss |
 | security property (mime: U+2028, U+2029, CR and LF before the extension) | held | held | tie |
+| the task's full rule on mime, audited after the fact ([amendment](correctness-amendment/README.md)) | 30 of 65 terminator cases wrong | 20 of 65 wrong | not a decision measure |
 | lint and type checks where they pass at the base | pass | pass | tie |
 | file scope and other dependencies | inside, none changed | inside, none changed | tie |
 | review rubric, discretionary (design / scope / comments, 1 to 3) | 11 / 12 / 12 | 11 / 10 / 11 | not a decision measure |
@@ -85,6 +90,11 @@ Follow-ups:
 
 - ask for the justification, or exclude a preset's authorized lockfile from the size budget;
 - name the actual blocker in the outcome block.
+
+Both are done after this report, with the refusal reproduced from the original base on the
+measured build and accepted on the repaired one:
+[../development/csstree-lifecycle/](../development/csstree-lifecycle/README.md). Stage A's
+result is unchanged by that repair.
 
 The preflight replays did not catch it. A patch applied before a replay run is the baseline for
 the product's inspection gates, so the replayed reference measured 0 added lines. That is a limit

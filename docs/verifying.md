@@ -34,7 +34,7 @@ bonds, one per gate that passed:
   placeholder: held. the placeholder gate refused the bond: 1 placeholder marker(s) introduced: swarm-falsification-bond.js:1 // TODO: swarm falsification bond
   secret-scan: held. the secret-scan gate refused the bond: 1 added line(s) match a known credential pattern: swarm-falsification-bond.env.example.js:1 (github-token)
   behaviour-probe: not bonded. no bond is defined for this gate, so its pass has not been shown capable of failing
-  diff-budget: held. the diff-budget gate refused the bond: over budget: 2 file(s) against 12 and 603 added line(s) against 600. This does not block. It requires a justification claim citing this record.
+  diff-budget: held. the diff-budget gate refused the bond: over budget: 2 file(s) against 12 and 603 added line(s) against 600. This alone does not fail the work, but acceptance requires a justification claim citing this record.
 ```
 
 After the gates go green, each one that passed is handed a bond: one file it has to refuse, a

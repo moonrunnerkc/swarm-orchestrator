@@ -1,0 +1,143 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 3eb173a..a9c8b44 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -32,6 +32,8 @@
+ - Perf: The parser no longer allocates an object for each token.
+ - Perf: The lexer dispatches on its state with a `switch` instead of an object
+   lookup.
++- Perf: The parser dispatches on its state with a `switch` instead of an object
++  lookup.
+ - Build: rollup + buble + core-js are removed, and the package is published from
+   its sources without a build step. tap and sinon are replaced by `node:test`.
+   The package has no runtime dependencies.
+diff --git a/lib/parse.js b/lib/parse.js
+index 7c1e3d7..4367b2a 100644
+--- a/lib/parse.js
++++ b/lib/parse.js
+@@ -39,7 +39,7 @@ export function parse (text, reviver) {
+         //     throw invalidParseState()
+         // }
+ 
+-        parseStates[parseState]()
++        processParseState(parseState)
+     } while (tokenType !== TOKEN_EOF)
+ 
+     if (typeof reviver === 'function') {
+@@ -857,16 +857,18 @@ function unicodeEscape () {
+     return String.fromCodePoint(parseInt(buffer, 16))
+ }
+ 
+-const parseStates = {
+-    start () {
++function processParseState (state) {
++    switch (state) {
++    case 'start': {
+         if (tokenType === TOKEN_EOF) {
+             throw invalidEOF()
+         }
+ 
+         push()
+-    },
++        return
++    }
+ 
+-    beforePropertyName () {
++    case 'beforePropertyName': {
+         switch (tokenType) {
+         case TOKEN_IDENTIFIER:
+         case TOKEN_STRING:
+@@ -887,11 +889,13 @@ const parseStates = {
+             throw invalidEOF()
+         }
+ 
++        return
++
+         // This code is unreachable since it's handled by the lexState.
+         // throw invalidToken()
+-    },
++    }
+ 
+-    afterPropertyName () {
++    case 'afterPropertyName': {
+         // This code is unreachable since it's handled by the lexState.
+         // if (tokenType !== TOKEN_PUNCTUATOR || tokenValue !== ':') {
+         //     throw invalidToken()
+@@ -902,17 +906,19 @@ const parseStates = {
+         }
+ 
+         parseState = 'beforePropertyValue'
+-    },
++        return
++    }
+ 
+-    beforePropertyValue () {
++    case 'beforePropertyValue': {
+         if (tokenType === TOKEN_EOF) {
+             throw invalidEOF()
+         }
+ 
+         push()
+-    },
++        return
++    }
+ 
+-    beforeArrayValue () {
++    case 'beforeArrayValue': {
+         if (tokenType === TOKEN_EOF) {
+             throw invalidEOF()
+         }
+@@ -923,9 +929,10 @@ const parseStates = {
+         }
+ 
+         push()
+-    },
++        return
++    }
+ 
+-    afterPropertyValue () {
++    case 'afterPropertyValue': {
+         // This code is unreachable since it's handled by the lexState.
+         // if (tokenType !== TOKEN_PUNCTUATOR) {
+         //     throw invalidToken()
+@@ -944,11 +951,13 @@ const parseStates = {
+             pop()
+         }
+ 
++        return
++
+         // This code is unreachable since it's handled by the lexState.
+         // throw invalidToken()
+-    },
++    }
+ 
+-    afterArrayValue () {
++    case 'afterArrayValue': {
+         // This code is unreachable since it's handled by the lexState.
+         // if (tokenType !== TOKEN_PUNCTUATOR) {
+         //     throw invalidToken()
+@@ -967,16 +976,21 @@ const parseStates = {
+             pop()
+         }
+ 
++        return
++
+         // This code is unreachable since it's handled by the lexState.
+         // throw invalidToken()
+-    },
++    }
+ 
+-    end () {
++    case 'end': {
+         // This code is unreachable since it's handled by the lexState.
+         // if (tokenType !== TOKEN_EOF) {
+         //     throw invalidToken()
+         // }
+-    },
++
++        return
++    }
++    }
+ }
+ 
+ function push () {

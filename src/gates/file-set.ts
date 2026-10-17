@@ -99,6 +99,21 @@ export class NothingTemporaryToRetainError extends Error {
   }
 }
 
+/**
+ * An amendment widens a declared set. Before any declaration it used to be recorded and leave
+ * the set undeclared, so the next write was refused anyway and the model spent two more calls
+ * finding that out; it is refused at once instead, saying which tool comes first.
+ */
+export class NothingDeclaredToAmendError extends Error {
+  constructor() {
+    super(
+      "no file set is declared yet, so there is nothing to amend. Call declare_file_set first " +
+        "with every file you intend to touch; amend_file_set widens a set once it is declared.",
+    );
+    this.name = "NothingDeclaredToAmendError";
+  }
+}
+
 export class FileSetAlreadyDeclaredError extends Error {
   constructor() {
     super(
@@ -297,6 +312,7 @@ export function createFileSetRegistry(evidence: EvidenceRecorder): FileSetRegist
       actor: string,
       marks: FileSetMarks = {},
     ): Promise<FileSetState> {
+      if (!current.wasDeclared) throw new NothingDeclaredToAmendError();
       const temporary = unique(marks.temporary ?? []);
       const retain = unique(marks.retain ?? []);
       const neverTemporary = retain.filter((path) => current.temporary?.has(path) !== true);

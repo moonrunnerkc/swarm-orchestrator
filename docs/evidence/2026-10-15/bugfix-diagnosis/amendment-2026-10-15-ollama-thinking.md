@@ -12,7 +12,7 @@ its 600,000-token allowance in about three minutes of thinking".
 
 ## What the ledgers show
 
-The three sessions of launch 2 are published under [launch-2/diagnosis-2/sessions/](launch-2/diagnosis-2/sessions/)
+The three sessions of launch 2 are published under [launch-2/diagnosis-2/sessions/](launch-2/diagnosis-2/packed-derived/gzip/) (packed in place; `node scripts/evidence-pack.mjs restore <that directory>` gives the files back)
 and their payloads are in the local session store they were packed from. Summed over every
 `model-call` record (`inputTokens`, `outputTokens`, and whether the response text held a
 `<think>` block):
@@ -33,7 +33,7 @@ budget record) and what the loop's reservation of the next prompt now bounds.
 
 ## What the probe shows
 
-The README's stream probe ([stream-probe-ollama.json.gz](stream-probe-ollama.json.gz)) sent
+The README's stream probe ([stream-probe-ollama.json.gz](../packed-derived/gzip/) (packed in place; `node scripts/evidence-pack.mjs restore <that directory>` gives the files back)) sent
 `enable_thinking: false` and `chat_template_kwargs: { enable_thinking: false }`, and the server
 streamed 183 reasoning deltas. Those are the two spellings Ollama's OpenAI route does not read;
 the spelling it documents is `reasoning_effort`, and the product has sent all three on every

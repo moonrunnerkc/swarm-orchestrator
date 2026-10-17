@@ -454,8 +454,11 @@ export const secretScanGate: GateDefinition = {
 };
 
 /**
- * Advisory by design (section 3.7). Exceeding the budget does not block; it demands a
- * justification claim that lands in the bundle for a reviewer to weigh.
+ * Advisory by design (section 3.7). Exceeding the budget does not fail the work by itself; it
+ * demands a justification claim citing this record, and acceptance waits on that claim. The
+ * demand is a measure (`justificationRequired`), so what reads it reads data rather than a gate
+ * id. Lines in a file the budget names as generated are counted apart and reported: an
+ * authorized upgrade regenerates its lockfile, and the size of that file is not authored work.
  */
 export const diffBudgetGate: GateDefinition = {
   id: "diff-budget",
@@ -466,24 +469,41 @@ export const diffBudgetGate: GateDefinition = {
     inspect: async (context: GateContext): Promise<GateObservation> => {
       const files = context.changes.files.length;
       const addedLines = countAddedLines(context.changes);
+      const generated = new Set(context.budgets.generatedPaths ?? []);
+      const generatedFiles = context.changes.files.filter((file) => generated.has(file.path));
+      const generatedLines = generatedFiles.reduce(
+        (total, file) => total + file.addedLines.length,
+        0,
+      );
+      const budgetedLines = addedLines - generatedLines;
       const overFiles = files > context.budgets.maxChangedFiles;
-      const overLines = addedLines > context.budgets.maxAddedLines;
+      const overLines = budgetedLines > context.budgets.maxAddedLines;
       const over = overFiles || overLines;
+      const apart =
+        generatedFiles.length === 0
+          ? ""
+          : `, plus ${generatedLines} generated line(s) in ${generatedFiles
+              .map((file) => file.path)
+              .join(", ")} counted apart`;
 
       return observationFromJson(
         {
           detail: over
             ? `over budget: ${files} file(s) against ${context.budgets.maxChangedFiles} and ` +
-              `${addedLines} added line(s) against ${context.budgets.maxAddedLines}. ` +
-              "This does not block. It requires a justification claim citing this record."
-            : `within budget: ${files} file(s) and ${addedLines} added line(s)`,
+              `${budgetedLines} added line(s) against ${context.budgets.maxAddedLines}${apart}. ` +
+              "This alone does not fail the work, but acceptance requires a justification " +
+              "claim citing this record."
+            : `within budget: ${files} file(s) and ${budgetedLines} added line(s)${apart}`,
           overBudget: over,
           justificationRequired: over,
+          generatedPaths: generatedFiles.map((file) => file.path),
           measures: {
             changedFiles: files,
             addedLines,
+            generatedLines,
             maxChangedFiles: context.budgets.maxChangedFiles,
             maxAddedLines: context.budgets.maxAddedLines,
+            justificationRequired: over ? 1 : 0,
           },
         },
         over ? 1 : 0,

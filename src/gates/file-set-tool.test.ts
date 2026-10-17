@@ -151,3 +151,26 @@ describe("what both tools refuse before running", () => {
     );
   });
 });
+
+describe("amending before anything is declared", () => {
+  /**
+   * pako, 2026-10-16: the model called amend_file_set first, the amendment was recorded, the set
+   * stayed undeclared, and the next edit was refused; two calls went to finding that out.
+   */
+  it("is refused at once, names declare_file_set, and records nothing", async () => {
+    const { amend, declare, registry } = tools();
+
+    const refused = await amend.execute({
+      files: ["src/inflate.ts"],
+      reason: "the fix lives here",
+    });
+
+    expect(refused.text).toContain("Call declare_file_set first");
+    expect(recordsOfType("file-set-amended")).toEqual([]);
+    expect(registry.state().wasDeclared).toBe(false);
+
+    await declare.execute({ files: ["src/inflate.ts"] });
+    const widened = await amend.execute({ files: ["CHANGELOG.md"], reason: "a changelog entry" });
+    expect(widened.text).toBe("the declared file set now covers 2 file(s)");
+  });
+});

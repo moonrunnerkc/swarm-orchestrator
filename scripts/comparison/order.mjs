@@ -22,3 +22,21 @@ export function launches(taskIds) {
   });
   return out;
 }
+
+/**
+ * Repetitions of a task set: each runs every task once per arm in the seeded order, a task's
+ * first arm alternating with its position as above and flipping from one repetition to the next,
+ * so across two repetitions each arm goes first on each task exactly once.
+ */
+export function repeatedLaunches(taskIds, suffixes) {
+  const out = [];
+  suffixes.forEach((suffix, repetition) => {
+    frozenOrder(taskIds).forEach((task, index) => {
+      const first = (index + repetition) % 2 === 0 ? "swarm" : "opencode";
+      const second = first === "swarm" ? "opencode" : "swarm";
+      out.push({ task: `${task}${suffix}`, arm: first, order: out.length });
+      out.push({ task: `${task}${suffix}`, arm: second, order: out.length });
+    });
+  });
+  return out;
+}

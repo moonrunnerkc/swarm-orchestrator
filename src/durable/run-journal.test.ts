@@ -112,3 +112,34 @@ it("refuses invalid UTF-8 instead of hashing a decoded replacement character", (
   expect(() => opened.read()).toThrow("invalid UTF-8");
   expect(readFileSync(filename)).toEqual(malformed);
 });
+it("scrubs what each operation writes and appends only that operation's entries", () => {
+  const root = mkdtempSync(join(tmpdir(), "swarm-journal-"));
+  roots.push(root);
+  const path = join(root, "items.jsonl");
+  const schema = z.object({ items: z.record(z.string(), z.record(z.string(), z.unknown())) });
+  const items = openRunJournal<z.infer<typeof schema>>(
+    path,
+    () => ({ items: {} }),
+    (input) => schema.parse(input),
+  );
+  items.update("first", (projection) => {
+    projection.items.leaky = {
+      apiKey: "abcd1234efgh",
+      note: "ghp_SwarmJournalCase0000000000000000000000",
+    };
+  });
+  items.update("second", (projection) => {
+    projection.items.plain = { note: "nothing secret" };
+  });
+  const lines = readFileSync(path, "utf8").trim().split("\n");
+  expect(lines).toHaveLength(2);
+  // Name-governed and pattern scrubbing both apply to the entry the first operation wrote.
+  expect(lines[0]).not.toContain("abcd1234efgh");
+  expect(lines[0]).not.toContain("ghp_SwarmJournalCase");
+  // The second operation carries its own entry and nothing it did not change.
+  expect(lines[1]).toContain("plain");
+  expect(lines[1]).not.toContain("leaky");
+  const held = items.read().items;
+  expect(JSON.stringify(held.leaky)).not.toContain("abcd1234efgh");
+  expect(held.plain).toEqual({ note: "nothing secret" });
+});

@@ -259,4 +259,58 @@ describe("bonding an inspection over a real workspace", () => {
     expect(outcome?.detail).toContain("placeholder marker");
     expect((await probe.changes()).files.map((file) => file.path)).toEqual([]);
   });
+
+  /** node-tar's .gitignore ignores every root entry it does not name, so a root bond was invisible. */
+  it("moves a bond away from an ignored root to beside the change, and still holds", async () => {
+    await run("git", ["init", "-q"], { cwd: root });
+    await writeFile(join(root, ".gitignore"), "/*\n!/.gitignore\n!/src\n");
+    await run("mkdir", ["-p", join(root, "src")]);
+    await writeFile(join(root, "src", "index.js"), "export const a = 1;\n");
+    await run("git", ["add", "-A"], { cwd: root });
+    await run(
+      "git",
+      [
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@example.invalid",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-q",
+        "-m",
+        "base",
+      ],
+      { cwd: root },
+    );
+    await writeFile(join(root, "src", "index.js"), "export const a = 2;\n");
+    const probe = createGitWorkspaceProbe({ workspaceRoot: root, baseRef: "HEAD" });
+    const context = async (): Promise<GateContext> => ({
+      workspaceRoot: root,
+      changes: await probe.changes(),
+      fileSet: declaredFor(["src/index.js"]),
+      budgets: defaultDiffBudget,
+      probe,
+    });
+
+    const [outcome] = await runBonds({
+      gates: [placeholderGate],
+      finalCycle: cycleWhere({ placeholder: "passed" }),
+      context,
+      deps: {
+        commands: createStubCommandRunner(() => ({ exitCode: 0 })),
+        evidence,
+        emit: () => {},
+      },
+      evidence,
+      workspaceRoot: root,
+      detectedTypes: ["node"],
+    });
+
+    expect(outcome?.verdict).toBe("held");
+    const [recorded] = await recordedBonds();
+    const placed = (recorded?.bond as { files: string[] } | undefined)?.files ?? [];
+    expect(placed[0]).toMatch(/^src\/swarm-falsification-bond/);
+    expect((await probe.changes()).files.map((file) => file.path)).toEqual(["src/index.js"]);
+  });
 });

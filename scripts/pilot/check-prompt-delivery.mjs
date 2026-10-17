@@ -29,6 +29,7 @@ import {
   prepare,
   prepareLaunchHome,
   taskEnvironment,
+  workRoot,
   writeArmConfiguration,
 } from "../comparison/workspace.mjs";
 import { taskSet } from "./task-sets.mjs";
@@ -75,7 +76,8 @@ const run = (argv, options) =>
 const rows = [];
 for (const task of stageTasks(args.get("stage") ?? "A")) {
   for (const arm of ["swarm", "opencode"]) {
-    const scratch = mkdtempSync(join(comparisonRoot, "work", `prompt-${task.id}.${arm}-`));
+    mkdirSync(workRoot, { recursive: true });
+    const scratch = mkdtempSync(join(workRoot, `prompt-${task.id}.${arm}-`));
     const workspace = join(scratch, "workspace");
     const home = join(scratch, "home");
     const endpoint = await startScriptedEndpoint({ modelId: "stub", turns: [] });

@@ -14,6 +14,15 @@ import { stringify as stringifyToml } from "smol-toml";
 export const comparisonRoot = join(homedir(), ".cache/swarm-comparison");
 
 /**
+ * Where launch and scoring checkouts live: outside any hidden directory. A project's own tools
+ * may skip a dot-named path component anywhere in a file's absolute path (css-select's Biome
+ * configuration excludes every path matching `**\/.*`), and under ~/.cache that turned the
+ * project's lint into "no files were processed" and its test script into a failure at the base,
+ * for every arm, whatever the change.
+ */
+export const workRoot = join(homedir(), "swarm-comparison-work");
+
+/**
  * The one download cache every launch shares: npm's content-addressed store. A package tarball
  * is the same bytes whichever launch fetched it, and `npm ci` installs the lockfile's exact
  * versions either way, so the logical installed environment is equivalent; what the sharing
@@ -100,7 +109,9 @@ export async function commitVisibleCheck(log, task, directory) {
   const path = join(directory, task.visible.path);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, task.visible.source);
-  await git(log, directory, "add", task.visible.path);
+  // Forced: the check is the harness's own file, and a repository whose .gitignore admits only
+  // listed paths (node-tar ignores every root entry it does not name) would otherwise refuse it.
+  await git(log, directory, "add", "--force", task.visible.path);
   const committed = await git(
     log,
     directory,

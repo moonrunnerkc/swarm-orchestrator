@@ -11,6 +11,7 @@ import {
   swarmTokenCap,
   swarmTokens,
   swarmUsage,
+  swarmWorkflowFlags,
   taskPrompt,
 } from "./arms.mjs";
 import { taskSchema } from "./schema.mjs";
@@ -254,5 +255,25 @@ describe("reading what the arms reported", () => {
     expect(claimedSuccess("opencode", 0, [start, finish].join("\n"))).toBe(false);
     expect(claimedSuccess("opencode", 0, text)).toBe(false);
     expect(claimedSuccess("opencode", 0, "")).toBe(false);
+  });
+});
+
+describe("Swarm's frozen workflow flags", () => {
+  it("appends the manifest's workflow flags and refuses anything else", () => {
+    const task = { id: "t", workType: "bugfix", visible: { path: "acceptance/visible/check.mjs" } };
+    const argv = swarmArgv(
+      { ...defaultPins, swarmFlags: ["--prompt-profile", "concise", "--plan-checks"] },
+      task,
+      "/w",
+      "abc",
+      "PROMPT",
+      "/c.json",
+      10 * 60_000,
+    );
+    expect(argv.slice(-3)).toEqual(["--prompt-profile", "concise", "--plan-checks"]);
+    expect(() => swarmWorkflowFlags(["--max-tokens", "1"])).toThrow("not a workflow flag");
+    expect(() => swarmWorkflowFlags(["--prompt-profile", "terse"])).toThrow(
+      "takes legacy or concise",
+    );
   });
 });

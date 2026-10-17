@@ -9,6 +9,7 @@
  *   node scripts/pilot/manifest.mjs --stage A|B --out <file> --swarm-cli <dist/cli.js>
  *     --swarm-revision <commit> [--protocol <file>] [--wall-minutes 19]
  *     [--verification-reserve-seconds <n>] [--swarm-gates <json file>] [--purpose-note <text>]
+ *     [--swarm-flags '["--prompt-profile","concise"]']
  *
  * `--swarm-gates` names, per task id, the gates declared advisory for Swarm (the product's own
  * command, `severity: "advisory"`), where the task's base already fails them; the launcher writes
@@ -22,10 +23,10 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { commandLog } from "../campaign/exec.mjs";
-import { defaultPins, digestOf, swarmTokenCap } from "../comparison/arms.mjs";
+import { defaultPins, digestOf, swarmTokenCap, swarmWorkflowFlags } from "../comparison/arms.mjs";
 import { opencodeVersion } from "../comparison/control.mjs";
 import { harnessDigest } from "../comparison/harness-identity.mjs";
-import { launches, seed } from "../comparison/order.mjs";
+import { launches, repeatedLaunches, seed } from "../comparison/order.mjs";
 import { taskSchema } from "../comparison/schema.mjs";
 import {
   comparisonRoot,
@@ -62,9 +63,11 @@ export function treeDigest(root) {
 }
 
 const stage = args.get("stage");
-const developmentStage = stage in developmentStages;
-const { stageTasks, setName } = await taskSet(args.get("set"));
-if (stage !== "A" && stage !== "B" && stage !== "calibration" && !developmentStage) {
+const { stageTasks, setName, stagePurposes, repetitions } = await taskSet(args.get("set"));
+// A set that names its own stages owns them; the pilot's development stages are the pilot's.
+const ownStage = stagePurposes !== undefined && stage in stagePurposes;
+const developmentStage = stagePurposes === undefined && stage in developmentStages;
+if (stage !== "A" && stage !== "B" && stage !== "calibration" && !developmentStage && !ownStage) {
   console.error(
     `usage: manifest.mjs --stage A|B|${Object.keys(developmentStages).join("|")} --out <file> --swarm-cli <path> --swarm-revision <commit> [--protocol <file>] [--wall-minutes 19] [--model <served name>] [--endpoint <url>]`,
   );
@@ -81,7 +84,14 @@ const swarmGates = args.has("swarm-gates")
   ? JSON.parse(readFileSync(args.get("swarm-gates"), "utf8"))
   : undefined;
 const protocolPath = args.get("protocol") ?? "docs/evidence/2026-10-14/real-task-pilot/protocol.md";
+// Swarm's own workflow flags for every launch of this stage, checked by the launcher's own rule.
+const swarmFlags = args.has("swarm-flags") ? JSON.parse(args.get("swarm-flags")) : [];
+swarmWorkflowFlags(swarmFlags);
 const tasks = developmentStage ? developmentTasks(stage) : stageTasks(stage);
+// Which arms this stage launches, where it is not both: a stage freezes only the cells it runs.
+const armsOnly = args.has("arms") ? args.get("arms").split(",") : null;
+if (armsOnly !== null && !armsOnly.every((arm) => ["swarm", "opencode"].includes(arm)))
+  throw new Error(`--arms names swarm and opencode only, not ${args.get("arms")}`);
 const purposes = {
   A: "four fresh tasks, one launch per arm",
   B: "the predeclared bugfix and feature repeated once per arm in fresh sessions",
@@ -104,8 +114,10 @@ const purposes = {
 // A development stage freezes exactly the cells it launches, so its published evidence is
 // complete when every frozen cell has a record.
 const stageLaunches = (ids) => {
-  const arms = developmentStage ? developmentStages[stage].arms : null;
-  const all = launches(ids);
+  const arms = developmentStage ? developmentStages[stage].arms : armsOnly;
+  const repeated = repetitions?.[stage];
+  const all =
+    repeated === undefined ? launches(ids) : repeatedLaunches(repeated.tasks, repeated.suffixes);
   return arms === null
     ? all
     : all.filter((one) => arms.includes(one.arm)).map((one, order) => ({ ...one, order }));
@@ -144,7 +156,7 @@ const manifest = {
   schema: "swarm-ordinary-comparison.manifest.v1",
   frozenAt: new Date().toISOString(),
   protocolDigest: existsSync(protocolPath) ? digestOf(readFileSync(protocolPath, "utf8")) : null,
-  purpose: `${setName}, stage ${stage}: ${purposes[stage]}${args.has("purpose-note") ? ` (${args.get("purpose-note")})` : ""}`,
+  purpose: `${setName}, stage ${stage}: ${ownStage ? stagePurposes[stage] : purposes[stage]}${args.has("purpose-note") ? ` (${args.get("purpose-note")})` : ""}`,
   // What a launch's fresh home must show before dispatch: no browser cache, because no task
   // here needs one and this launcher provisions none. Read by the launcher before every launch.
   prerequisites: { browsers: false },
@@ -159,6 +171,7 @@ const manifest = {
     ...(args.has("endpoint") ? { endpoint: args.get("endpoint") } : {}),
     swarmCli,
     swarmRevision: args.get("swarm-revision") ?? "unknown",
+    ...(swarmFlags.length === 0 ? {} : { swarmFlags }),
     swarmCliDigest: digestOf(readFileSync(swarmCli)),
     // The CLI entry imports its siblings, so its bytes alone do not pin the build; the whole
     // dist tree does.

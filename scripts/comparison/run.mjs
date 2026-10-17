@@ -82,6 +82,7 @@ import {
   prepareLaunchHome,
   resolveFull,
   taskEnvironment,
+  workRoot,
   writeArmConfiguration,
 } from "./workspace.mjs";
 
@@ -334,8 +335,8 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory, owner)
   const blobs = join(comparisonRoot, "blobs");
   const log = commandLog(blobs, { signal: interruption.controller.signal });
   const startedAt = new Date().toISOString();
-  mkdirSync(join(comparisonRoot, "work"), { recursive: true });
-  const scratch = mkdtempSync(join(comparisonRoot, "work", `${launch.task}.${launch.arm}-`));
+  mkdirSync(workRoot, { recursive: true });
+  const scratch = mkdtempSync(join(workRoot, `${launch.task}.${launch.arm}-`));
   const workspace = join(scratch, "workspace");
   updateLock(runsDirectory, owner, { launch, scratch });
   const notes = [];
