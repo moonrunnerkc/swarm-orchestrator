@@ -270,6 +270,15 @@ describe("planned checks through the ordinary command line", () => {
     ]);
     // The repair turn was asked, and with the concrete mismatch: it is the turn that wrote the fix.
     expect(endpoint.played()).toBe(7);
+    // Planning's spend is on the machine stream with the implementation's and the repair's, where
+    // a launcher sums the stopped events: three loops, three stops.
+    const stops = stdout
+      .split("\n")
+      .filter((line) => line.startsWith("{"))
+      .map((line) => JSON.parse(line) as { event?: { type?: string; tokensUsed?: number } })
+      .filter((line) => line.event?.type === "stopped");
+    expect(stops).toHaveLength(3);
+    expect(stops.every((stop) => (stop.event?.tokensUsed ?? 0) > 0)).toBe(true);
   }, 200_000);
 
   it("goes on against the supplied contract when the planner adds nothing", async () => {

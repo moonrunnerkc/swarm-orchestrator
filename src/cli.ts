@@ -73,6 +73,7 @@ import {
 } from "./cli-task-goal.ts";
 import { askOnTerminal, startInterface } from "./cli-terminal.ts";
 import { verifyBundle } from "./cli-verify.ts";
+import type { LoopEvent } from "./core/loop-events.ts";
 import type { StopReason } from "./core/termination.ts";
 import { readBundle } from "./evidence/bundle.ts";
 import { buildEvidenceDag } from "./evidence/dag.ts";
@@ -486,6 +487,14 @@ async function run(options: RunCommand): Promise<number> {
       maxWallMs: Math.floor((settings.maxWallMinutes ?? 30) * 60_000 * planningShare),
       signal: modelWork.signal,
       note: (line) => process.stderr.write(`${line}\n`),
+      // On the machine stream like the implementation's own events, so a consumer that sums the
+      // stopped events counts planning: a launcher that did not was short 341,256 tokens.
+      ...(options.json
+        ? {
+            emit: (event: LoopEvent) =>
+              process.stdout.write(`${jsonEventLine(event, { runId: evidence.sessionId })}\n`),
+          }
+        : {}),
       ...(interactive ? { ask: askOnTerminal } : {}),
     });
     await evidence.record({

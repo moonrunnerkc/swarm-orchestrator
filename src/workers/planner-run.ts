@@ -95,7 +95,9 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
     evidence: options.evidence,
     tools: (guard) => [
       ...createWorkspaceTools(guard).filter((tool) => tool.kind === "read"),
-      createDeclareTaskGraphTool(declared),
+      // A planned-check planner writes checks and nothing else; offered a task graph as well, it
+      // read the task as work to do and spent its steps trying to implement it read-only.
+      ...(options.plannedChecks === undefined ? [createDeclareTaskGraphTool(declared)] : []),
       ...(options.requireGoalChecks !== true
         ? []
         : [
@@ -168,7 +170,11 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
     },
   });
 
-  const loop = await runAgentLoop(options.goal, {
+  const brief =
+    options.plannedChecks === undefined
+      ? options.goal
+      : `Write the acceptance checks for this task before anyone implements it. Do not implement it: you can read the repository and cannot change it.\n\nThe task:\n${options.goal}`;
+  const loop = await runAgentLoop(brief, {
     model: options.model,
     toolInvoker,
     toolSchemas: definitions,
@@ -183,7 +189,7 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
     abortSignal: options.abortSignal,
     systemPrompt:
       options.plannedChecks !== undefined
-        ? `${plannerPrompt} ${plannedChecksPrompt(options.plannedChecks.base)}`
+        ? plannedChecksPrompt(options.plannedChecks.base)
         : options.requireGoalChecks === true
           ? `${plannerPrompt} Before finishing, also call declare_goal_contract with the supplied goal verbatim, every observable requirement and executable checks that cover their combined behavior. Author new check artifacts that can run from a fresh checkout. Do not require a reference implementation. Prefer one worker for a tiny or tightly coupled goal. Requirements without executable checks will remain unjudged.`
           : plannerPrompt,
@@ -220,8 +226,11 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
  */
 function plannedChecksPrompt(base: GoalContract | undefined): string {
   return [
-    "Before finishing, call declare_planned_checks once with requirements and executable checks",
-    "for the task's observable requirements; the goal is the task as given and is not repeated. These checks are written before any",
+    "You write the acceptance checks a coding task is implemented and repaired against, before",
+    "any implementation exists. You do not implement the task. Read the relevant source, tests",
+    "and manifest with the read-only tools, then call declare_planned_checks once with",
+    "requirements and executable checks for the task's observable requirements; the goal is the",
+    "task as given and is not repeated. Then finish with a one-line summary and no tool calls. These checks are written before any",
     "implementation exists and are what the implementation is repaired against, so derive every",
     "expected value from the task text and the project's existing documented or tested behaviour,",
     "never from a guess about how the change will be written.",
