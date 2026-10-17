@@ -5,7 +5,7 @@ import { freezeGoalContract, type GoalContract } from "../evidence/goal-contract
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import { createPolicyGuard } from "../tools/policy-guard.ts";
 import { retainBehaviorArtifacts } from "./behavior-artifacts.ts";
-import { runBehaviorCheck } from "./behavior-check.ts";
+import { describeCliMismatch, runBehaviorCheck } from "./behavior-check.ts";
 import type { GateCommandRunner } from "./gate-definition.ts";
 import {
   goalArtifactUnchanged,
@@ -172,9 +172,15 @@ export async function verifyGoal(options: {
           status,
           record: recorded.record.payloadDigest,
           detail:
-            behavior?.reading.detail ??
-            observation.unavailable ??
-            `command exited ${observation.exitCode}`,
+            status === "rejected" && behavior?.reading.status === "accepted"
+              ? "the check's assertions held, but running it changed the checked tree or its own artifacts"
+              : status === "rejected" &&
+                  check.exposure === "shared" &&
+                  check.behavior?.kind === "cli"
+                ? describeCliMismatch(check.behavior, observation)
+                : (behavior?.reading.detail ??
+                  observation.unavailable ??
+                  `command exited ${observation.exitCode}`),
         });
       } finally {
         if (!pending) await snapshot.restore();

@@ -69,6 +69,10 @@ interface VerdictInput {
     readonly baseRatchetAccepted: boolean;
     readonly vacuousBlockingBonds: readonly string[];
     readonly changedFiles: number;
+    /** Advisory demands answered by a verified worker claim: the gate record and the claim. */
+    readonly justifications?:
+      | readonly { readonly gateRecord: string; readonly claimRecord: string }[]
+      | undefined;
   };
   /** Approvals the run's spec said it would need, and whether they were given. */
   readonly approvals?: {
@@ -87,35 +91,69 @@ interface CapabilityRun {
   readonly capability: GateCapability;
   readonly status: "passed" | "failed" | "not-applicable";
   readonly severity: "blocking" | "advisory";
+  readonly detail: string;
+  readonly record: string;
+  readonly measures: Readonly<Record<string, number>>;
+}
+
+/** What an accepted worker assessment says. A final verification may still refuse the work. */
+export const acceptedAssessmentReason =
+  "every acceptance condition held: the blocking gates, policy, execution, final ratchet and bonds";
+/** The same, in the words assessments recorded before the conditions were listed together. */
+const legacyAcceptedAssessmentReason = "final ratchet and bonds accepted the completed work";
+
+/**
+ * The reason a refused verdict should be read for. Where the worker's own assessment accepted
+ * the work and something after it (the final verification) refused, the assessment reason is
+ * an acceptance, so the task reason names the blocker instead.
+ */
+export function blockingReason(verdict: RunVerdict): string {
+  const assessment = verdict.reasons.assessment;
+  const accepted =
+    assessment === acceptedAssessmentReason || assessment === legacyAcceptedAssessmentReason;
+  return (
+    (accepted ? verdict.reasons.task : assessment) ??
+    verdict.reasons.task ??
+    "no blocking reason was recorded"
+  );
 }
 
 export function runVerdict(input: VerdictInput): RunVerdict {
   const runs = input.cycle.runs as unknown as readonly CapabilityRun[];
   const changed = input.cycle.measures.changedFiles ?? 0;
+  const justified = new Map(
+    (input.assessment?.justifications ?? []).map((one) => [one.gateRecord, one.claimRecord]),
+  );
 
   const mechanical = judge(runs, "static");
-  const policy = judge(runs, "policy");
+  const policy = judgePolicy(runs, justified);
   const behavioral = judge(runs, "dynamic");
 
   const executed = changed === 0 || behavioral.answer === "pass";
-  const blockingFailed = input.cycle.blockingFailures.length > 0;
-
   const approval = input.humanApproval ?? approvalStateOf(input.approvals);
   const complete = input.assessment;
   const unmetChecks = (complete?.requiredChecks ?? []).filter(
     (id) => !runs.some((run) => run.gateId === id && run.status === "passed"),
   );
-  const finalAccepted =
-    complete === undefined ||
-    (unmetChecks.length === 0 &&
-      complete.settled === "green" &&
-      complete.baseRatchetAccepted &&
-      !complete.cancelled &&
-      complete.lifecycle !== "interrupted" &&
-      complete.lifecycle !== "max-wall-time" &&
-      complete.lifecycle !== "max-tokens" &&
-      complete.vacuousBlockingBonds.length === 0 &&
-      (complete.changedFiles > 0 || complete.lifecycle === "completed"));
+  // One list of what stands between the work and acceptance. `acceptable` is its emptiness and
+  // the assessment reason is its text, so a refusal always names the condition that refused:
+  // the two were computed apart, and an advisory budget refused a run whose stated reason was
+  // that everything had been accepted.
+  const refusals = [
+    ...(complete === undefined ? [] : assessmentRefusals(complete, unmetChecks)),
+    ...(input.cycle.blockingFailures.length === 0
+      ? []
+      : [
+          `blocking gate(s) failed: ${input.cycle.blockingFailures.map((run) => run.gateId).join(", ")}`,
+        ]),
+    ...policy.refusals,
+    ...(executed ? [] : [`nothing executed the change: ${behavioral.reason}`]),
+    ...(input.task === "rejected" ? ["the task oracle rejected the change"] : []),
+    ...(approval === "required"
+      ? [`approval still required: ${describeApprovals(input.approvals)}`]
+      : []),
+    ...(approval === "rejected" ? ["a person rejected the change"] : []),
+  ];
   return {
     version: 1,
     integrity: input.integrity,
@@ -132,11 +170,11 @@ export function runVerdict(input: VerdictInput): RunVerdict {
     humanApproval: approval,
     reasons: {
       assessment:
-        complete === undefined
-          ? "legacy cycle-only assessment"
-          : finalAccepted
-            ? "final ratchet and bonds accepted the completed work"
-            : describeRefusal(complete, unmetChecks),
+        refusals.length > 0
+          ? refusals.join("; ")
+          : complete === undefined
+            ? "legacy cycle-only assessment"
+            : acceptedAssessmentReason,
       mechanical: mechanical.reason,
       policy: policy.reason,
       behavioral: behavioral.reason,
@@ -155,14 +193,46 @@ export function runVerdict(input: VerdictInput): RunVerdict {
           : "no expected signer was matched, so the signature shows the bundle is unchanged " +
             "since it was written and not who wrote it",
     },
-    acceptable:
-      finalAccepted &&
-      !blockingFailed &&
-      policy.answer !== "fail" &&
-      executed &&
-      input.task !== "rejected" &&
-      approval !== "required" &&
-      approval !== "rejected",
+    acceptable: refusals.length === 0,
+  };
+}
+
+/**
+ * Policy, with the one way an advisory failure is answered: a gate that demanded a
+ * justification and has a verified claim answering it. Every other failed policy gate, blocking
+ * or advisory, still fails policy, so a justification never stands in for the secret scan or the
+ * declared file set.
+ */
+function judgePolicy(
+  runs: readonly CapabilityRun[],
+  justified: ReadonlyMap<string, string>,
+): { readonly answer: Measured; readonly reason: string; readonly refusals: readonly string[] } {
+  const judged = judge(runs, "policy");
+  const failed = runs.filter((run) => run.capability === "policy" && run.status === "failed");
+  const answerable = (run: CapabilityRun) =>
+    run.severity === "advisory" && run.measures.justificationRequired === 1;
+  const answered = failed.filter((run) => answerable(run) && justified.has(run.record));
+  const unanswered = failed.filter((run) => answerable(run) && !justified.has(run.record));
+  const refused = failed.filter((run) => !answerable(run));
+  const refusals = [
+    ...unanswered.map(
+      (run) =>
+        `${run.gateId} asked for a justification and no verified claim cites its record ` +
+        `${run.record} (${run.detail})`,
+    ),
+    ...(refused.length === 0
+      ? []
+      : [`policy gate(s) failed: ${refused.map((run) => run.gateId).join(", ")}`]),
+  ];
+  if (failed.length === 0 || failed.length !== answered.length)
+    return { answer: judged.answer, reason: judged.reason, refusals };
+  const passed = runs.filter((run) => run.capability === "policy" && run.status === "passed");
+  return {
+    answer: "pass",
+    reason:
+      `${answered.map((run) => `${run.gateId} over budget, justified by claim ${justified.get(run.record)}`).join("; ")}` +
+      (passed.length === 0 ? "" : `; ${passed.map((run) => run.gateId).join(", ")} passed`),
+    refusals,
   };
 }
 
@@ -248,25 +318,28 @@ export function describeVerdict(verdict: RunVerdict): readonly string[] {
 }
 
 /**
- * Only what refused, each condition in the words a person reads, and no prefix: the status
- * line that carries this already says "work refused". It used to list every condition with
- * its value, so four failed gates read as "required checks passed" because no required check
- * was unmet, and the prefix appeared twice.
+ * The worker assessment's own conditions, each in the words a person reads and only where it
+ * refused. A lifecycle is named only where it is one that refuses: a loop that stopped at its
+ * step limit and left green work is not refused for it.
  */
-function describeRefusal(
+function assessmentRefusals(
   complete: NonNullable<VerdictInput["assessment"]>,
   unmetChecks: readonly string[],
-): string {
-  const refusals = [
+): readonly string[] {
+  const refusingLifecycle = ["interrupted", "max-wall-time", "max-tokens"].includes(
+    complete.lifecycle,
+  );
+  return [
     unmetChecks.length > 0 ? `required checks unmet: ${unmetChecks.join(", ")}` : null,
     complete.settled === "green" ? null : `the gates settled ${complete.settled}`,
-    complete.lifecycle === "completed" ? null : `the run stopped as ${complete.lifecycle}`,
+    refusingLifecycle ? `the run stopped as ${complete.lifecycle}` : null,
     complete.baseRatchetAccepted ? null : "the base ratchet rejected the final state",
     complete.vacuousBlockingBonds.length > 0
       ? `vacuous blocking bonds: ${complete.vacuousBlockingBonds.join(", ")}`
       : null,
     complete.cancelled ? "the run was cancelled" : null,
-    complete.changedFiles === 0 && complete.lifecycle === "completed" ? "nothing changed" : null,
+    complete.changedFiles === 0 && complete.lifecycle !== "completed"
+      ? `nothing changed and the run stopped as ${complete.lifecycle}`
+      : null,
   ].filter((reason): reason is string => reason !== null);
-  return refusals.length > 0 ? refusals.join("; ") : "the final assessment did not accept the work";
 }

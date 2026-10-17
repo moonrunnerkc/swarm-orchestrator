@@ -49,7 +49,11 @@ configures a repository's declared checks without installing anything.
 
 `--plan-checks` has the planner author the completion criteria from the task text and seal them
 before implementation, labelled model-authored; `--goal-contract <file>` seals criteria you wrote,
-with or without a bugfix, refactor or upgrade preset. Either way the sealed checks are established
+with or without a bugfix, refactor or upgrade preset, and the two combine: the planner's checks are
+added to yours. A planned check is admitted only if the unchanged base does what the check says it
+should (fails a check of the change by a wrong answer, passes a check of behaviour that stays), so
+an interpretation nothing executable supports does not become a requirement. It is the model's
+reading of the task: one base run is a control, not proof the check means what the task means. Either way the sealed checks are established
 on the base before the first model call, iterated against as the blocking acceptance gate, and
 the exact final tree is verified independently. The run ends on an outcome block that names each
 requirement as met, unmet or unjudged, the changed files, the checks and what they could not

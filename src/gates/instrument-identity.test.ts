@@ -156,6 +156,76 @@ describe("what the instrument is", () => {
     expect(await changes(npm("lint"), reference, { ...reference, "sum.js": "b" })).toEqual([]);
   });
 
+  it("reads the files a run program hands its tools by name as the source it measures, not the instrument", async () => {
+    // pako's build: a program that gives vite and rollup its entries by string. The entries are
+    // what the build measures; a change to them is the task, and putting them back to the
+    // base's undid the change and refused a correct patch.
+    const reference = {
+      "package.json": manifest({ build: "node support/build.mjs" }),
+      "support/build.mjs":
+        "import { build } from 'vite';\nawait build({ build: { lib: { entry: 'src/index.ts' } } });\nfor (const [entry] of [[ 'src/inflate.ts', 'pako_inflate' ]]) await build({ entry });\n",
+      "src/index.ts": "export * from './inflate.ts';\n",
+      "src/inflate.ts": "export const ended = false;\n",
+    };
+    const current = { ...reference, "src/inflate.ts": "export const ended = true;\n" };
+    expect(await changes(npm("build"), reference, current)).toEqual([]);
+    const observation = await observeInstrument(npm("build"), trees(reference, current));
+    expect(observation.residuals.join("\n")).toContain(
+      "support/build.mjs names 2 file(s) in the tree by string without importing or running them (src/index.ts, src/inflate.ts)",
+    );
+    // The program itself is still the instrument.
+    expect(
+      await changes(npm("build"), reference, {
+        ...reference,
+        "support/build.mjs": "process.exit(0);\n",
+      }),
+    ).toEqual(["support/build.mjs"]);
+  });
+
+  it("follows what a run program imports, and what it names where it runs processes or loads by computed name", async () => {
+    const reference = {
+      "package.json": manifest({
+        test: "node scripts/run.mjs",
+        spawn: "node scripts/spawn.mjs",
+        load: "node scripts/load.mjs",
+      }),
+      "scripts/run.mjs": "import { report } from './report.mjs';\nreport();\n",
+      "scripts/report.mjs": "export const report = () => {};\n",
+      "scripts/spawn.mjs":
+        "import { spawnSync } from 'node:child_process';\nprocess.exit(spawnSync('node', ['scripts/child.mjs']).status);\n",
+      "scripts/child.mjs": "process.exit(1);\n",
+      "scripts/load.mjs": "const name = './plugin.mjs';\nawait import(name);\n",
+      "scripts/plugin.mjs": "",
+    };
+    expect(
+      await changes(npm("test"), reference, {
+        ...reference,
+        "scripts/report.mjs": "process.exit(0);\n",
+      }),
+    ).toEqual(["scripts/report.mjs"]);
+    expect(
+      await changes(npm("spawn"), reference, {
+        ...reference,
+        "scripts/child.mjs": "process.exit(0);\n",
+      }),
+    ).toEqual(["scripts/child.mjs"]);
+    expect(
+      await changes(npm("load"), reference, { ...reference, "scripts/plugin.mjs": "x" }),
+    ).toEqual(["scripts/plugin.mjs"]);
+  });
+
+  it("follows a configuration's strings into a file a run program also names, as configuration", async () => {
+    const reference = {
+      "package.json": manifest({ test: "node scripts/run.mjs && vitest run" }),
+      "scripts/run.mjs": "console.log('tools/prime.js');\n",
+      "vitest.config.mjs": 'export default { test: { setupFiles: ["tools/prime.js"] } };\n',
+      "tools/prime.js": "",
+    };
+    expect(await changes(npm("test"), reference, { ...reference, "tools/prime.js": "x" })).toEqual([
+      "tools/prime.js",
+    ]);
+  });
+
   it("follows a conftest into the local modules it imports and the plugins it names", async () => {
     const pytest = { command: "pytest", argv: ["python", "-c", "import pytest"] };
     const reference = {

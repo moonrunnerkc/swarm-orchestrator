@@ -20,7 +20,18 @@ export interface ScriptedTurn {
   readonly toolCalls?: readonly ScriptedToolCall[];
   /** How long the endpoint holds the request before it starts streaming the turn; a model that is slow to answer. */
   readonly delayMs?: number;
+  /**
+   * The usage the turn reports. Absent, a fixed 100 prompt tokens and a completion count from
+   * the turn's size; null, no usage at all, the way a local server's stream can end.
+   */
+  readonly usage?: { readonly promptTokens: number; readonly completionTokens: number } | null;
 }
+
+/**
+ * A turn, or a turn computed from the request it answers: what a model does when its answer
+ * depends on something only the prompt carries, such as a record digest the harness minted.
+ */
+export type ScriptedTurnSource = ScriptedTurn | ((request: unknown) => ScriptedTurn);
 
 export interface ScriptedEndpoint {
   /** The base url the product is pointed at, ending in `/v1`. */
@@ -35,7 +46,7 @@ export interface ScriptedEndpoint {
 
 export async function startScriptedEndpoint(script: {
   readonly modelId: string;
-  readonly turns: readonly ScriptedTurn[];
+  readonly turns: readonly ScriptedTurnSource[];
 }): Promise<ScriptedEndpoint> {
   const requests: unknown[] = [];
   let played = 0;
@@ -55,9 +66,10 @@ export async function startScriptedEndpoint(script: {
         } catch {
           requests.push(null);
         }
-        const turn = script.turns[played] ?? {
+        const source = script.turns[played] ?? {
           text: "The scripted endpoint has no more turns; finishing.",
         };
+        const turn = typeof source === "function" ? source(requests.at(-1)) : source;
         played += 1;
         const sequence = played;
         if (turn.delayMs === undefined) streamTurn(response, script.modelId, turn, sequence);
@@ -134,14 +146,17 @@ function streamTurn(
   response.write(
     chunk([{ index: 0, delta: {}, finish_reason: calls.length > 0 ? "tool_calls" : "stop" }]),
   );
-  const completion = (turn.text?.length ?? 0) + calls.length * 20;
-  response.write(
-    chunk([], {
-      prompt_tokens: 100,
-      completion_tokens: completion,
-      total_tokens: 100 + completion,
-    }),
-  );
+  if (turn.usage !== null) {
+    const prompt = turn.usage?.promptTokens ?? 100;
+    const completion = turn.usage?.completionTokens ?? (turn.text?.length ?? 0) + calls.length * 20;
+    response.write(
+      chunk([], {
+        prompt_tokens: prompt,
+        completion_tokens: completion,
+        total_tokens: prompt + completion,
+      }),
+    );
+  }
   response.write("data: [DONE]\n\n");
   response.end();
 }

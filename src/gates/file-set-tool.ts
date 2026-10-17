@@ -3,6 +3,7 @@ import { defineTool, type ToolDefinition } from "../tools/tool-definition.ts";
 import {
   FileSetAlreadyDeclaredError,
   type FileSetRegistry,
+  NothingDeclaredToAmendError,
   NothingTemporaryToRetainError,
 } from "./file-set.ts";
 
@@ -101,7 +102,10 @@ export function createAmendFileSetTool(registry: FileSetRegistry, actor: string)
         });
       } catch (cause) {
         // Told to the model as a result and not thrown: it named a path wrongly, which it can fix.
-        if (cause instanceof NothingTemporaryToRetainError) {
+        if (
+          cause instanceof NothingTemporaryToRetainError ||
+          cause instanceof NothingDeclaredToAmendError
+        ) {
           return { text: cause.message, facts: { declaredFiles: registry.state().allowed.size } };
         }
         throw cause;

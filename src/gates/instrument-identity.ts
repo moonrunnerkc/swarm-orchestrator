@@ -480,6 +480,8 @@ interface Reading {
   readonly strings: readonly string[];
   readonly globs: readonly string[];
   readonly open: readonly string[];
+  /** Whether the file starts processes or loads code by a name it computes, so a string may name code it runs. */
+  readonly runsNamedFiles: boolean;
 }
 
 /** What a JavaScript or JSON-shaped file names: modules it loads and strings it holds. */
@@ -512,7 +514,12 @@ function readScript(text: string): Reading {
   if (/\beval\s*\(|\bnew\s+Function\s*\(/.test(text)) open.push("code evaluated from a string");
   if (/\b(?:readdirSync|readdir|globSync|fg\.sync|fast-glob|tinyglobby)\b/.test(text))
     open.push("files listed at run time");
-  return { specifiers, strings, globs, open: [...new Set(open)] };
+  const runsNamedFiles =
+    open.length > 0 ||
+    /\b(?:spawn|spawnSync|exec|execSync|execFile|execFileSync|fork)\s*\(|\bnew\s+Worker\s*\(/.test(
+      text,
+    );
+  return { specifiers, strings, globs, open: [...new Set(open)], runsNamedFiles };
 }
 
 /** What a Python file imports, and the plugin modules a conftest names. */
@@ -534,7 +541,7 @@ function readPython(text: string): Reading {
   const open: string[] = [];
   if (/\b(?:importlib\.import_module|__import__|exec|eval)\s*\(/.test(text))
     open.push("a module loaded by a computed name");
-  return { specifiers, strings, globs: [], open };
+  return { specifiers, strings, globs: [], open, runsNamedFiles: open.length > 0 };
 }
 
 function pythonCandidates(module: string, from: string): readonly string[] {
@@ -715,10 +722,13 @@ export async function observeInstrument(
     if (match[1] !== undefined) seeds.add(posix.normalize(match[1].replace(/^\.\//, "")));
   // A local program the command runs is part of what runs, unless it is one of the tests. A
   // file handed to a tool as its subject (`node --check sum.js`, `eslint src`) is what is measured.
+  const programs = new Set<string>();
   for (const program of programsRun(text)) {
     const path = posix.normalize(program.replace(/^\.\//, ""));
-    if (!path.startsWith("..") && !path.startsWith("/") && !testFileName.test(path))
+    if (!path.startsWith("..") && !path.startsWith("/") && !testFileName.test(path)) {
       seeds.add(path);
+      programs.add(path);
+    }
   }
   for (const match of text.matchAll(
     /--(?:import|require|loader|experimental-loader|test-reporter)[\s=]+(\S+)/g,
@@ -731,15 +741,28 @@ export async function observeInstrument(
 
   const declaredBefore = declaredDependencies(referenceManifest);
   const declaredNow = declaredDependencies(currentManifest);
-  // The closure: every seed on either side, and everything each names, on either side.
-  const pending = [...seeds];
-  const visited = new Set<string>();
+  // The closure: every seed on either side, and everything each names, on either side. A file is
+  // reached as configuration (what a tool discovers, and everything that names) or only as code
+  // a run program loads. Configuration names the files a tool will load, so every string in it
+  // that names a file is followed. A program's strings that name files are its input (a bundler's
+  // entry, a fixture it reads), the source it measures rather than the instrument, unless it
+  // starts processes or loads code by a computed name, when a string may name code it runs.
+  const pending: { path: string; role: "configuration" | "program" }[] = [...seeds].map((path) => ({
+    path,
+    role: programs.has(path) ? "program" : "configuration",
+  }));
+  const visited = new Map<string, "configuration" | "program">();
+  // Files a run program names only as its input, by the program that names them.
+  const programInputs = new Map<string, string[]>();
   const globs: { pattern: RegExp; from: string }[] = [];
   while (pending.length > 0) {
-    const path = pending.shift() as string;
-    if (visited.has(path)) continue;
+    const { path, role } = pending.shift() as { path: string; role: "configuration" | "program" };
+    const seen = visited.get(path);
+    // Reached again as configuration after being read as a program's code: read it again so its
+    // strings are followed too.
+    if (seen === "configuration" || seen === role) continue;
     if (!seeds.has(path) && !trees.listed.has(path)) continue;
-    visited.add(path);
+    visited.set(path, role);
     if (visited.size > closureLimit) {
       complete = false;
       residuals.add(
@@ -764,13 +787,15 @@ export async function observeInstrument(
           residuals.add(`${path} uses ${construct}; files it loads that way are not followed`);
       for (const specifier of reading.specifiers) {
         if (python) {
-          for (const candidate of pythonCandidates(specifier, path)) pending.push(candidate);
+          for (const candidate of pythonCandidates(specifier, path))
+            pending.push({ path: candidate, role });
           continue;
         }
         if (specifier.startsWith(".") || specifier.startsWith("/")) {
           if (specifier.startsWith("/"))
             residuals.add(`${path} loads ${specifier} by an absolute path outside the comparison`);
-          for (const candidate of candidatePaths(specifier, path)) pending.push(candidate);
+          for (const candidate of candidatePaths(specifier, path))
+            pending.push({ path: candidate, role });
         } else {
           const name = packageName(specifier);
           if (name !== null) dependencyNames.add(name);
@@ -785,8 +810,16 @@ export async function observeInstrument(
         )
           dependencyNames.add(name);
         if (!/[/.]/.test(value)) continue;
-        for (const candidate of candidatePaths(value, path))
-          if (!testFileName.test(candidate)) pending.push(candidate);
+        const named = candidatePaths(value, path).filter(
+          (candidate) => !testFileName.test(candidate),
+        );
+        if (role === "program" && !reading.runsNamedFiles) {
+          const input = named.find((candidate) => trees.listed.has(candidate));
+          if (input !== undefined)
+            programInputs.set(path, [...(programInputs.get(path) ?? []), input]);
+          continue;
+        }
+        for (const candidate of named) pending.push({ path: candidate, role });
       }
       for (const glob of reading.globs) {
         const pattern = globPattern(glob, path);
@@ -797,7 +830,8 @@ export async function observeInstrument(
         const extended = /"extends"\s*:\s*"([^"]+)"/.exec(content)?.[1];
         if (extended !== undefined) {
           if (extended.startsWith("."))
-            for (const candidate of candidatePaths(extended, path)) pending.push(candidate);
+            for (const candidate of candidatePaths(extended, path))
+              pending.push({ path: candidate, role });
           else {
             const name = packageName(extended);
             if (name !== null) dependencyNames.add(name);
@@ -805,6 +839,12 @@ export async function observeInstrument(
         }
       }
     }
+  }
+  for (const [program, inputs] of programInputs) {
+    const unique = [...new Set(inputs)].sort();
+    residuals.add(
+      `${program} names ${unique.length} file(s) in the tree by string without importing or running them (${unique.slice(0, 3).join(", ")}${unique.length > 3 ? ", ..." : ""}); they are read as the program's input, the source it measures, and not followed`,
+    );
   }
   // A changed file a configuration names by pattern (a setup glob, a reporter directory).
   for (const path of trees.changed)

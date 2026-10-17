@@ -1,7 +1,8 @@
 import { z } from "zod";
 import type { GateStatus, LoopEvent } from "../core/loop-events.ts";
 import { asJsonValue } from "../evidence/canonical-json.ts";
-import { claimPayloadSchema } from "../evidence/claim.ts";
+import { claimPayloadSchema, evaluateClaim } from "../evidence/claim.ts";
+import { indexCitedRecords } from "../evidence/record-index.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import { capabilityOf, type GateCapability } from "./gate-capability.ts";
 import {
@@ -356,32 +357,42 @@ function gateRunPayload(
 }
 
 /**
- * Advisory gates that asked for a justification and did not get one. Section 3.7's diff
- * budget does not block; it demands a claim that lands in the bundle. Nothing enforces that
- * demand, so the outstanding ones are named here and reported, which is the difference
- * between an advisory gate and a gate nobody reads.
+ * Advisory gates whose own observation demands a justification before the work is accepted,
+ * and that have not had one. Section 3.7's diff budget does not fail a change for its size; it
+ * asks for a claim that lands in the bundle for a reviewer to weigh, and acceptance waits on
+ * it. The demand is read off the gate's `justificationRequired` measure, never off its id, and
+ * an advisory failure that makes no such demand is not owed one.
  */
 export function outstandingJustifications(
   cycle: GateCycle,
-  citedRecords: ReadonlySet<string>,
+  justified: { has(record: string): boolean },
 ): readonly GateRun[] {
-  return cycle.advisoryFailures.filter((run) => !citedRecords.has(run.record));
+  return cycle.advisoryFailures.filter(
+    (run) => run.measures.justificationRequired === 1 && !justified.has(run.record),
+  );
 }
 
-/** Every record digest some claim on the ledger cites. */
-export function citedRecords(evidence: EvidenceRecorder): ReadonlySet<string> {
-  const cited = new Set<string>();
+/**
+ * Gate records answered by a justification, each with the claim that answers it. A
+ * justification is a claim made by the worker (not the harness) that cites the gate's record
+ * under that record's own kind, carries a narrative for the reviewer, and that the harness
+ * evaluates as verified. A claim that cites the record and does not verify is not an answer:
+ * a narrative bound to a predicate the evidence refutes justifies nothing.
+ */
+export function justifiedRecords(evidence: EvidenceRecorder): ReadonlyMap<string, string> {
+  const index = indexCitedRecords(evidence.records(), evidence.payloads());
+  const justified = new Map<string, string>();
   for (const record of evidence.records()) {
-    if (record.type !== "claim") {
-      continue;
-    }
-    const payload = evidence.payloads().get(record.payloadDigest);
-    const parsed = claimPayloadSchema.safeParse(payload);
-    if (parsed.success && parsed.data.record !== null) {
-      cited.add(parsed.data.record);
-    }
+    if (record.type !== "claim" || record.actor === "harness") continue;
+    const parsed = claimPayloadSchema.safeParse(evidence.payloads().get(record.payloadDigest));
+    if (!parsed.success || parsed.data.record === null) continue;
+    const claim = parsed.data;
+    const cited = parsed.data.record;
+    if (!claim.recordKind.startsWith("gate-run:") || claim.narrative.trim().length === 0) continue;
+    if (evaluateClaim(claim, (digest) => index.get(digest)).verdict !== "verified") continue;
+    if (!justified.has(cited)) justified.set(cited, record.payloadDigest);
   }
-  return cited;
+  return justified;
 }
 
 export interface BaselineRun {
@@ -445,11 +456,13 @@ export function describeFailuresForModel(
       .join("\n"),
   );
 
-  const advisory = cycle.advisoryFailures.map(
-    (run) =>
-      `advisory gate ${run.gateId} (${run.title}) is over budget: ${run.detail}\n` +
-      `evidence record: ${run.record} kind gate-run:${run.gateId}\n` +
-      "This does not block. Submit a claim citing that record to justify the size.",
+  const advisory = cycle.advisoryFailures.map((run) =>
+    run.measures.justificationRequired === 1
+      ? `advisory gate ${run.gateId} (${run.title}) asks for a justification: ${run.detail}\n` +
+        `evidence record: ${run.record} kind gate-run:${run.gateId}\n` +
+        "If the task needs this, submit a claim citing that record with a narrative saying why."
+      : `advisory gate ${run.gateId} (${run.title}) failed: ${run.detail}\n` +
+        `evidence record: ${run.record} kind gate-run:${run.gateId}`,
   );
 
   // Not a gate's own bytes, because no gate objected: every one of them that runs a command

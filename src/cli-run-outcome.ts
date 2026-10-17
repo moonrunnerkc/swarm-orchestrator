@@ -1,6 +1,6 @@
 import type { GoalContract } from "./evidence/goal-contract.ts";
 import type { EvidenceRecorder } from "./evidence/session.ts";
-import type { RunVerdict } from "./evidence/verdict.ts";
+import { blockingReason, type RunVerdict } from "./evidence/verdict.ts";
 import type { GateCycle } from "./gates/gate-runner.ts";
 import type {
   FinalVerificationOutcome,
@@ -157,11 +157,7 @@ export function describeRunOutcome(input: RunOutcomeInput): readonly string[] {
   );
 
   if (!ok) {
-    const blocker =
-      input.verdict.reasons.assessment ??
-      input.verdict.reasons.task ??
-      "no blocking reason was recorded";
-    say(`  blocked by: ${firstLine(blocker, 200)}`);
+    say(`  blocked by: ${firstLine(blockingReason(input.verdict), 400)}`);
     say(`  next: ${nextAction(input)}`);
   }
   return lines;
@@ -175,6 +171,11 @@ function nextAction(input: RunOutcomeInput): string {
     return `review the change for ${unmet.map((one) => one.id).join(", ")}, then run the task again or finish it by hand; the sealed checks are in the bundle`;
   if (input.finalVerification?.refusal !== null && input.finalVerification !== null)
     return "fix what the refusal names (the environment, the lockfile or the path the run promised not to touch), then run again";
+  const owed = input.gates.advisoryFailures.filter(
+    (run) => run.measures.justificationRequired === 1,
+  );
+  if (input.gates.blockingFailures.length === 0 && owed.length > 0)
+    return `review the size the ${owed.map((run) => run.gateId).join(", ")} gate asked to have justified; the change is in the bundle, and a smaller change or a justified one can be accepted`;
   if (input.gates.blockingFailures.length > 0)
     return `fix the failing ${input.gates.blockingFailures.map((run) => run.gateId).join(", ")} check(s) and run again, or review the bundle`;
   if (input.changedFiles.length === 0)

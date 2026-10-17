@@ -14,13 +14,14 @@ async function readGate(
   base: Record<string, string>,
   current: Record<string, string>,
   fileSet: FileSetState = declared(Object.keys({ ...base, ...current })),
+  budgets: GateContext["budgets"] = { maxChangedFiles: 12, maxAddedLines: 600 },
 ): Promise<{ status: string; detail: string; measures: Record<string, number> }> {
   const probe = createMemoryWorkspace({ base, current });
   const context: GateContext = {
     workspaceRoot: "/workspace",
     changes: await probe.changes(),
     fileSet,
-    budgets: { maxChangedFiles: 12, maxAddedLines: 600 },
+    budgets,
     probe,
   };
   if (gate.source.kind !== "inspection") {
@@ -343,9 +344,61 @@ describe("the diff budget gate", () => {
 
     expect(diffBudgetGate.severity).toBe("advisory");
     expect(reading.status).toBe("failed");
-    expect(reading.detail).toContain("This does not block");
+    expect(reading.detail).toContain("This alone does not fail the work");
     expect(reading.detail).toContain("justification claim");
     expect(reading.measures.changedFiles).toBe(20);
+  });
+
+  // The csstree upgrade: one manifest line and a regenerated lockfile of 697.
+  const lock = (lines: number) =>
+    `${Array.from({ length: lines }, (_, index) => `  "line-${index}": true,`).join("\n")}\n`;
+  const upgrade = {
+    base: { "package.json": '{ "esbuild": "^0.14.53" }\n', "package-lock.json": "{}\n" },
+    current: { "package.json": '{ "esbuild": "0.24.0" }\n', "package-lock.json": lock(697) },
+  };
+
+  it("counts an authorized upgrade's lockfile apart from the authored lines", async () => {
+    const reading = await readGate(
+      diffBudgetGate,
+      upgrade.base,
+      upgrade.current,
+      declared(["package.json", "package-lock.json"]),
+      { maxChangedFiles: 12, maxAddedLines: 600, generatedPaths: ["package-lock.json"] },
+    );
+
+    expect(reading.status).toBe("passed");
+    expect(reading.measures).toMatchObject({ addedLines: 698, generatedLines: 697 });
+    expect(reading.measures.justificationRequired).toBe(0);
+    expect(reading.detail).toBe(
+      "within budget: 2 file(s) and 1 added line(s), plus 697 generated line(s) in package-lock.json counted apart",
+    );
+  });
+
+  it("still counts a lockfile no authorized upgrade names, and demands a justification", async () => {
+    const reading = await readGate(
+      diffBudgetGate,
+      upgrade.base,
+      upgrade.current,
+      declared(["package.json", "package-lock.json"]),
+    );
+
+    expect(reading.status).toBe("failed");
+    expect(reading.measures).toMatchObject({ generatedLines: 0, justificationRequired: 1 });
+    expect(reading.detail).toContain("698 added line(s) against 600");
+  });
+
+  it("does not let generated lines hide authored ones over the budget", async () => {
+    const reading = await readGate(
+      diffBudgetGate,
+      { ...upgrade.base, "src/a.ts": "" },
+      { ...upgrade.current, "src/a.ts": lock(601) },
+      declared(["package.json", "package-lock.json", "src/a.ts"]),
+      { maxChangedFiles: 12, maxAddedLines: 600, generatedPaths: ["package-lock.json"] },
+    );
+
+    expect(reading.status).toBe("failed");
+    expect(reading.measures.justificationRequired).toBe(1);
+    expect(reading.detail).toContain("602 added line(s) against 600");
   });
 
   it("passes a change inside its budget", async () => {

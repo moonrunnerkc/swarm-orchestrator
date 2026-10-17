@@ -950,6 +950,48 @@ describe("a repair attempt with no usable budget", () => {
     // The repair turns were never asked for: three model calls, the first loop's and no more.
     expect(evidence.records().filter((record) => record.type === "model-call")).toHaveLength(3);
     expect(result.gates.outcome.settled).toBe("escalated");
+
+    // The assessment names the loop's own stop as its lifecycle record, never the withheld
+    // attempt's: naming that one put a stop reason beside a lifecycle it does not carry, and the
+    // bundle's own verifier refused every run that withheld an attempt.
+    const assessment = evidence.records().findLast((record) => record.type === "run-assessment");
+    const inputs = (
+      evidence.payloads().get(assessment?.payloadDigest ?? "") as {
+        inputs: { lifecycle: string; lifecycleRecord: string };
+      }
+    ).inputs;
+    const named = evidence.payloads().get(inputs.lifecycleRecord) as { stopReason: string };
+    expect(named.stopReason).toBe(inputs.lifecycle);
+    const spec = evidence.records().find((record) => record.type === "run-spec-sealed");
+    if (!spec) throw Error("missing run seal");
+    const key = createEphemeralSigningKey();
+    const destination = join(scratch, "withheld-bundle");
+    await exportBundle({
+      source: bundleSourceFromRecorder(evidence),
+      destination,
+      signingKey: key,
+      clock: createTestClock(),
+      attestation: signAttestation(
+        buildAttestation({
+          runId: evidence.sessionId,
+          specDigest: spec.payloadDigest,
+          sourceCommit: "0".repeat(40),
+          patchDigest: digestOfBytes(""),
+          chainHead: evidence.head().hash,
+          toolVersion: "test",
+          executionMode: result.verdict.executionTrust,
+          verdict: { ...result.verdict },
+        }),
+        key,
+      ),
+    });
+    const verified = await run(process.execPath, [
+      join(destination, "verify.mjs"),
+      destination,
+    ]).catch((failure: { stdout: string }) => failure);
+    // The bundle's own verifier re-derives the assessment from the records it names.
+    expect(verified.stdout).toMatch(/PASS {2}run assessment \d+ re-derived/);
+    expect(verified.stdout).not.toMatch(/FAIL {2}run assessment/);
   });
 });
 
