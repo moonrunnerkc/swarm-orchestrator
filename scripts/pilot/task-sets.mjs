@@ -28,6 +28,10 @@ export async function taskSet(name) {
       wrongPatches: module.wrongPatches,
       // This set names its own stages and what each is for; the pilot's do not apply to it.
       stagePurposes: module.stagePurposes,
+      // Stage A repeats each task under these suffixes, ordered so each arm leads each task once.
+      repetitions: {
+        A: { tasks: module.tasks.map((task) => task.id), suffixes: module.repetitions },
+      },
     };
   }
   throw new Error(`unknown task set ${name}; known: 2026-10-14, 2026-10-15, 2026-10-16`);

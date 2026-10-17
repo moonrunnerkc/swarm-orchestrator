@@ -37,13 +37,20 @@ for (let index = 2; index < process.argv.length; index += 1) {
 }
 
 const amended = args.has("amended");
-const { stageTasks, wrongPatches } = await taskSet(args.get("set"));
+const { stageTasks, wrongPatches, stagePurposes } = await taskSet(args.get("set"));
 const log = commandLog(join(comparisonRoot, "blobs"));
 const rows = [];
 const tasks = amended
   ? amendedTasks
-  : [...stageTasks("A"), ...(args.get("set") === undefined ? [] : stageTasks("calibration"))];
-const repeated = stageTasks("B");
+  : [
+      ...stageTasks("A"),
+      // A set that names its own stages has no calibration stage.
+      ...(args.get("set") === undefined || stagePurposes !== undefined
+        ? []
+        : stageTasks("calibration")),
+    ];
+// Stage B repeats stage A tasks under other ids; a set that names its own stages has none.
+const repeated = stagePurposes === undefined ? stageTasks("B") : [];
 const wrong = amended ? amendedWrongPatches : wrongPatches;
 
 const summarize = (visible, hidden) => ({

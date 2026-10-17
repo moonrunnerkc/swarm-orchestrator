@@ -26,7 +26,7 @@ import { commandLog } from "../campaign/exec.mjs";
 import { defaultPins, digestOf, swarmTokenCap, swarmWorkflowFlags } from "../comparison/arms.mjs";
 import { opencodeVersion } from "../comparison/control.mjs";
 import { harnessDigest } from "../comparison/harness-identity.mjs";
-import { launches, seed } from "../comparison/order.mjs";
+import { launches, repeatedLaunches, seed } from "../comparison/order.mjs";
 import { taskSchema } from "../comparison/schema.mjs";
 import {
   comparisonRoot,
@@ -63,7 +63,7 @@ export function treeDigest(root) {
 }
 
 const stage = args.get("stage");
-const { stageTasks, setName, stagePurposes } = await taskSet(args.get("set"));
+const { stageTasks, setName, stagePurposes, repetitions } = await taskSet(args.get("set"));
 // A set that names its own stages owns them; the pilot's development stages are the pilot's.
 const ownStage = stagePurposes !== undefined && stage in stagePurposes;
 const developmentStage = stagePurposes === undefined && stage in developmentStages;
@@ -115,7 +115,9 @@ const purposes = {
 // complete when every frozen cell has a record.
 const stageLaunches = (ids) => {
   const arms = developmentStage ? developmentStages[stage].arms : armsOnly;
-  const all = launches(ids);
+  const repeated = repetitions?.[stage];
+  const all =
+    repeated === undefined ? launches(ids) : repeatedLaunches(repeated.tasks, repeated.suffixes);
   return arms === null
     ? all
     : all.filter((one) => arms.includes(one.arm)).map((one, order) => ({ ...one, order }));

@@ -7,14 +7,15 @@
 import { mirrorOf } from "../comparison/workspace.mjs";
 
 /**
- * A maintainer's upgrade that declared a range, rewritten to the exact declaration the task
+ * A maintainer's upgrade that declared a caret or tilde range, rewritten to the exact declaration the task
  * requires, in package.json and the lockfile's root entry and nowhere else: the resolved and
  * installed version, the integrity hashes and the tree are the maintainer's own. Two
  * declarations and exactly two, or the reference is not the shape this rewrite is for.
  */
 export function exactlyDeclaredReference(referencePatch, dependency) {
   const escaped = dependency.version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const range = new RegExp(`^(\\+\\s+"${dependency.name}": )"\\^${escaped}",$`, "gm");
+  // A caret or a tilde: the maintainer's range, whichever operator it used.
+  const range = new RegExp(`^(\\+\\s+"${dependency.name}": )"[\\^~]${escaped}",$`, "gm");
   const count = (referencePatch.match(range) ?? []).length;
   if (count !== 2)
     throw new Error(

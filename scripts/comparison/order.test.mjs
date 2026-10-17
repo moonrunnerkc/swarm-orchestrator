@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { frozenOrder, launches } from "./order.mjs";
+import { frozenOrder, launches, repeatedLaunches } from "./order.mjs";
 
 describe("the frozen launch order", () => {
   it("is a deterministic permutation of the task ids", () => {
@@ -20,5 +20,19 @@ describe("the frozen launch order", () => {
     expect(out[0].arm).toBe("swarm");
     expect(out[2].arm).toBe("opencode");
     expect(out[4].arm).toBe("swarm");
+  });
+});
+
+describe("repeated launches", () => {
+  it("runs every task once per arm per repetition and lets each arm lead each task once", () => {
+    const out = repeatedLaunches(["a-task", "b-task", "c-task"], ["-r1", "-r2"]);
+    expect(out).toHaveLength(12);
+    expect(out.map((one) => one.order)).toEqual([...out.keys()]);
+    for (const task of ["a-task", "b-task", "c-task"]) {
+      const leads = ["-r1", "-r2"].map(
+        (suffix) => out.find((one) => one.task === `${task}${suffix}`)?.arm,
+      );
+      expect(new Set(leads)).toEqual(new Set(["swarm", "opencode"]));
+    }
   });
 });
