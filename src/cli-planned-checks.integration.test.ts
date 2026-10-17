@@ -115,7 +115,8 @@ const declaring = (
       name: "declare_planned_check",
       input: {
         ...check,
-        description: requirement.description,
+        requirementId: check.requirement,
+        requirement: requirement.description,
         ...(requirement.quote === undefined ? {} : { quote: requirement.quote }),
       },
     };
@@ -433,6 +434,55 @@ describe("planned checks through the ordinary command line", () => {
       admitted: ["boundary", "above"],
     });
     expect(code).toBe(0);
+  }, 200_000);
+
+  it("lets the planner run its checks on the base inside its own loop, and admits what it finished on", async () => {
+    const requirements = [{ id: "boundary", description: "10 is small", quote }];
+    const good = plannedCheck("boundary", "boundary", "change", [{ input: 10, expected: "small" }]);
+    const trial = { toolCalls: [{ name: "run_planned_checks_on_base", input: {} }] };
+    // Replaces the broken check only when the in-loop run reported why it never loaded.
+    const replaces: ScriptedTurnSource = (request) =>
+      JSON.stringify(request).includes("the check program did not load")
+        ? declaring(requirements, [
+            plannedCheck("loads", "boundary", "change", [{ input: 10, expected: "small" }]),
+          ])
+        : { text: "The base run reported nothing to fix." };
+    const { endpoint, stdout, code } = await swarm([
+      declaring(requirements, [
+        good,
+        plannedCheck(
+          "loads",
+          "boundary",
+          "change",
+          [{ input: 10, expected: "small" }],
+          classifying("./missing.mjs"),
+        ),
+      ]),
+      trial,
+      replaces,
+      trial,
+      { text: "Pinned and checked on the base." },
+      { text: "Plan: move the boundary.", toolCalls: [declare] },
+      {
+        toolCalls: [
+          write("export function classify(n) {\n  return n <= 10 ? 'small' : 'big';\n}\n"),
+        ],
+      },
+      { text: "Done." },
+    ]);
+
+    expect(code, stdout.slice(-3000)).toBe(0);
+    expect(stdout).toContain(
+      "admission reuses the planner's own last base run of these exact checks",
+    );
+    expect(resultOf(stdout)?.plannedChecks).toMatchObject({
+      outcome: "sealed",
+      admitted: ["boundary", "loads"],
+      dropped: [],
+      revision: { outcome: "not-needed" },
+    });
+    // The second in-loop run saw both checks hold their control.
+    expect(JSON.stringify(endpoint.requests)).toContain("Every check holds its base control");
   }, 200_000);
 
   it("admits a check of built output, because the base runs the project's build first as acceptance does", async () => {

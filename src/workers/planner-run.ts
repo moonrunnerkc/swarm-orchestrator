@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { z } from "zod";
 import { assembleToolset } from "../agent-run.ts";
 import type { Clock } from "../core/clock.ts";
 import { runAgentLoop } from "../core/loop.ts";
@@ -39,6 +40,11 @@ export interface PlannerOptions {
     readonly task: string;
     /** What the harness does to a fresh checkout before a check runs, read from the run's settings. */
     readonly preparation: string;
+    /**
+     * Admission's own base run of the checks pinned so far, offered to the planner as a tool so
+     * it sees what each did while it still holds its reasoning. Its answer is recorded output.
+     */
+    readonly tryOnBase?: (contract: GoalContract) => Promise<string>;
   };
   readonly maxTokens?: number;
   readonly maxWallTimeMs?: number;
@@ -182,6 +188,24 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
                     });
                   },
                 }),
+            ...(options.plannedChecks?.tryOnBase === undefined
+              ? []
+              : [
+                  defineTool({
+                    name: "run_planned_checks_on_base",
+                    description:
+                      "Run every check pinned so far once on a fresh checkout of the unchanged base, exactly as admission will when you finish, and see what each did there: admitted or dropped, why, and what a dropped one printed. It takes as long as the repository's preparation. Fix what it reports with declare_planned_check (the same id replaces a check) and run it again while time allows.",
+                    inputSchema: z.strictObject({}),
+                    kind: "evidence",
+                    pathsFrom: () => [],
+                    async execute() {
+                      const tryOnBase = options.plannedChecks?.tryOnBase;
+                      if (goalContract === null || tryOnBase === undefined)
+                        throw new Error("pin a check with declare_planned_check first");
+                      return { text: await tryOnBase(goalContract), facts: {} };
+                    },
+                  }),
+                ]),
           ]),
     ],
   });
@@ -260,7 +284,9 @@ function plannedChecksPrompt(options: NonNullable<PlannerOptions["plannedChecks"
     "You write the acceptance checks a coding task is implemented and repaired against, before",
     "any implementation exists. You do not implement the task. Read the relevant source, tests",
     "and manifest with the read-only tools, then call declare_planned_check once for each check",
-    "(several calls may go in one turn) and finish with a one-line summary and no tool calls.",
+    "(several calls may go in one turn). Then call run_planned_checks_on_base to see what each",
+    "check does on the unchanged base, fix what it reports, and finish with a one-line summary and",
+    "no tool calls.",
     "Derive every expected result from the task text and the project's existing documented or",
     "tested behaviour, never from a guess about how the change will be written. Cover each rule",
     "the task states where it is easy to get wrong: its boundaries, the combinations of the",
