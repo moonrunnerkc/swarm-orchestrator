@@ -120,16 +120,19 @@ swarm "make slugify collapse whitespace and strip punctuation" --plan-checks
 ```
 
 `--plan-checks` has the planner read the repository and author completion criteria from your
-sentence: requirements and executable checks, shown in plain language and sealed before the
-first edit, labelled model-authored on the chain and in the report. Each planned check is run
-once on the unchanged base and admitted only if it does there what it declares (fails a check of
-the change with a wrong answer, passes a check of behaviour that stays). Without it a run is
-measured by the project's own checks only, and the outcome block says so; with a contract file
-of your own, pass `--goal-contract`, alone or with `--plan-checks` to add planned checks to it
-([docs/broad-use.md](docs/broad-use.md)). On the one local model measured so far, planning added
-no admitted check in four development launches and cost three to four times the tokens
-([docs/evidence/2026-10-16/development/](docs/evidence/2026-10-16/development/README.md)), so it
-is not yet shown to help. Node 22 or newer
+sentence: requirements, each with checks written as a short program over the project and input
+cases with expected results, shown in plain language and sealed before the first edit, labelled
+model-authored on the chain and in the report. The planner can run its checks on the unchanged
+base while it plans; each is admitted only if it does there what it declares (a check of the
+change gets a case wrong and one right, a check of behaviour that stays gets every case right).
+Without it a run is measured by the project's own checks only, and the outcome block says so;
+with a contract file of your own, pass `--goal-contract`, alone or with `--plan-checks` to add
+planned checks to it ([docs/broad-use.md](docs/broad-use.md)). It is experimental: in eleven
+development launches on one local model a planner once generated a check that caught a seeded
+omission, no repair from such a check succeeded, and admitted checks that were wrong made Swarm
+refuse or misrepair work
+([docs/evidence/2026-10-17/planned-check-live/](docs/evidence/2026-10-17/planned-check-live/README.md)).
+Node 22 or newer
 is required and Node 24 is recommended; the model is a local server or a frontier key.
 
 Keys come from the environment or your OS keychain, never from `swarm.toml`: that file is
@@ -199,9 +202,11 @@ mime patches wrong on line-terminator cases the oracle never tried
 ([amendment](docs/evidence/2026-10-16/comparison/correctness-amendment/README.md)). After the
 size-budget and verification defects it exposed were repaired, a fresh comparison on four new
 tasks, two runs per tool ([docs/evidence/2026-10-16/fresh-comparison/](docs/evidence/2026-10-16/fresh-comparison/README.md)),
-again found no demonstrated benefit: OpenCode delivered 8 of 8 and Swarm 7 of 8, with one false
-completion claim where its acceptance passed a patch the hidden check rejects, at about twice
-the time per delivery.
+again found no demonstrated benefit. Scored by the frozen oracle, OpenCode delivered 8 of 8 and
+Swarm 7 of 8, with one false completion claim where Swarm's acceptance passed a node-tar patch the
+hidden check rejects, at about twice the time per delivery. A coverage audit after scoring found
+one more delivered css-select patch from each tool that the task text refutes. Swarm ran with
+planned checks disabled there.
 Developer hours saved and real-world adoption are not measured there; the prepared, unrun
 protocol for five developers on their own tasks is [docs/human-trial-protocol.md](docs/human-trial-protocol.md).
 
