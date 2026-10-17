@@ -1,0 +1,108 @@
+{
+  "capturedAt": "2026-10-17T14:29:45.195Z",
+  "chain": "20261017T142904-7a36f8-plan",
+  "declarations": [
+    {
+      "callId": "call_1_0",
+      "decision": "allowed",
+      "decodedFields": [],
+      "denial": null,
+      "derivation": {
+        "matched": false,
+        "method": "none",
+        "score": 0,
+        "settings": {
+          "minSubstringLength": 12,
+          "ngramSize": 3,
+          "threshold": 0.6,
+          "windowSize": 8
+        },
+        "source": null
+      },
+      "detail": "126 bytes returned",
+      "facts": {
+        "requirements": 3
+      },
+      "input": {
+        "checks": [
+          {
+            "cases": [
+              {
+                "expected": null,
+                "input": "11 size=-1\n"
+              },
+              {
+                "expected": 0,
+                "input": "10 size=0\n"
+              }
+            ],
+            "id": "pax-size",
+            "program": "import { Pax } from './dist/esm/pax.js';\nexport default (record) => Pax.parse(record).size;\n",
+            "purpose": "change",
+            "requirement": "pax-size",
+            "why": "size=-1 leaves size undefined and size=0 gives 0"
+          },
+          {
+            "cases": [
+              {
+                "expected": -1,
+                "input": "10 uid=-1\n"
+              }
+            ],
+            "id": "other-fields",
+            "program": "import { Pax } from './dist/esm/pax.js';\nexport default (record) => Pax.parse(record).uid;\n",
+            "purpose": "preserve",
+            "requirement": "other-fields",
+            "why": "every other field keeps its current parsing, negative values included"
+          }
+        ],
+        "requirements": [
+          {
+            "description": "a negative pax size is refused",
+            "id": "pax-size",
+            "quote": "In Pax.parse, a 'size' record is kept only when its numeric value is zero or greater"
+          },
+          {
+            "description": "negative uid keeps parsing",
+            "id": "other-fields"
+          }
+        ]
+      },
+      "kind": "evidence",
+      "output": "2 planned check(s) pinned; each now runs once on the unchanged base before implementation. Finish now with a one-line summary.",
+      "outputBytes": 126,
+      "toolName": "declare_planned_checks"
+    }
+  ],
+  "verification": [
+    {
+      "at": 1792247363169,
+      "admittedContract": "sha256:182af3af43a6a79310c6f701a68b137ac16d3b92206eefcc4adccbedb58a339d",
+      "decisions": [
+        {
+          "admitted": true,
+          "atBase": "fails",
+          "broken": false,
+          "check": "pax-size",
+          "excerpt": null,
+          "observed": "rejected",
+          "reason": "it completes on the base with a wrong result, as a check of the change must",
+          "record": "sha256:e7a751deeed284c201b26e3388c11264c8e10f244e892a9ace84feeb05050372"
+        },
+        {
+          "admitted": true,
+          "atBase": "passes",
+          "broken": false,
+          "check": "other-fields",
+          "excerpt": null,
+          "observed": "accepted",
+          "reason": "it passes on the base, which keeps the behaviour it checks",
+          "record": "sha256:5c92e6a5131a2b5d278d627a7ef7ee8ea838a71e276fdc658f5efc06f2bba4a3"
+        }
+      ],
+      "droppedRequirements": [],
+      "rule": "planned-check-admission-v1"
+    }
+  ],
+  "contracts": []
+}
