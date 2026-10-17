@@ -72,7 +72,8 @@ is one of:
   established, a model-written check disagrees, or a check refused the change. The block names
   which, and what to do next.
 
-`swarm verify <bundle>` checks a run's evidence.
+The run ends by printing its evidence bundle's path; `node <bundle>/verify.mjs <bundle>` re-checks
+it anywhere, with nothing installed.
 
 ## Limitations
 
