@@ -319,12 +319,17 @@ export function taskGoalGate(context: TaskGoalContext): GateDefinition {
         const unavailable = result.unmeasured || result.task === "unjudged";
         // A refusal is a decision against the change and reads as one; an unmeasured setup is
         // something to prepare. The repair feedback is this text, so the two must not be confused.
+        // The findings again as plain lines: inside the JSON above, a check's detail reaches the
+        // repair brief escaped, and a worker reads the line it got wrong more easily here.
+        const failed = findings
+          .filter((finding) => finding.status !== "accepted")
+          .map((finding) => `check ${finding.id} ${finding.status}: ${finding.detail}`);
         const stderr =
           result.refusal !== null && !result.unmeasured
             ? `refused: ${result.refusal}`
             : unavailable
               ? `setup unavailable: ${result.advice || result.refusal || "required acceptance instrument is unmeasured"}`
-              : "";
+              : failed.join("\n");
         return {
           exitCode: result.verified ? 0 : 1,
           unavailable: null,

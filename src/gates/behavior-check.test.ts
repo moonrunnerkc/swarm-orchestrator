@@ -210,10 +210,29 @@ describe("what a rejected command-line check tells the worker", () => {
     });
     if (lines.kind !== "cli") throw new Error("a cli check");
     expect(describeCliMismatch(lines, observation("a\nB\nc\n"))).toBe(
-      'exit status 0 as expected; stdout differs from the expected 3 line(s): line 2 should be "b" but was "B"',
+      "exit status 0 as expected; stdout differs from the expected 3 line(s): line 2 should be `b` but was `B`",
     );
     expect(describeCliMismatch(lines, observation("a\n"))).toContain(
-      'line 2 should be "b" but was ""; line 3 should be "c" but was absent',
+      "line 2 should be `b` but was ``; line 3 should be `c` but was absent",
+    );
+    // A JSON line reads as itself, with only the invisible characters escaped.
+    const json = behaviorCheckSchema.parse({
+      ...check,
+      stdout: [
+        {
+          kind: "equals",
+          value: '{"input":"a\\nb","result":"x"}\n{"input":"LS\u2028","result":1}\n',
+        },
+      ],
+    });
+    if (json.kind !== "cli") throw new Error("a cli check");
+    expect(
+      describeCliMismatch(
+        json,
+        observation('{"input":"a\\nb","result":null}\n{"input":"LS\u2028","result":2}\n'),
+      ),
+    ).toContain(
+      'line 1 should be `{"input":"a\\nb","result":"x"}` but was `{"input":"a\\nb","result":null}`; line 2 should be `{"input":"LS\\u2028","result":1}`',
     );
   });
 });
