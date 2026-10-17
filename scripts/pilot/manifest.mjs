@@ -9,7 +9,7 @@
  *   node scripts/pilot/manifest.mjs --stage A|B --out <file> --swarm-cli <dist/cli.js>
  *     --swarm-revision <commit> [--protocol <file>] [--wall-minutes 19]
  *     [--verification-reserve-seconds <n>] [--swarm-gates <json file>] [--purpose-note <text>]
- *     [--swarm-flags '["--prompt-profile","concise"]']
+ *     [--swarm-flags '["--prompt-profile","concise"]'] [--max-corrections 2]
  *
  * `--swarm-gates` names, per task id, the gates declared advisory for Swarm (the product's own
  * command, `severity: "advisory"`), where the task's base already fails them; the launcher writes
@@ -194,7 +194,8 @@ const manifest = {
     // (`scripts/comparison/arms.mjs`, the same constant). OpenCode has no equivalent native
     // cap; recorded, not matched.
     swarmTokenCap,
-    maxCorrections: 2,
+    // A development cohort that measures unattended launches freezes none.
+    maxCorrections: Number(args.get("max-corrections") ?? "2"),
     // Kept inside each launch's deadline for Swarm's final verification of its tree, which the
     // product runs after its own wall (scripts/comparison/arms.mjs, verificationReserveMs).
     ...(reserveSeconds > 0 ? { swarmVerificationReserveMs: reserveSeconds * 1000 } : {}),
