@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { decodeStringifiedToolArguments } from "./tool-argument-decoding.ts";
+import {
+  decodeStringifiedToolArguments,
+  explainUndecodedFields,
+} from "./tool-argument-decoding.ts";
 
 const declareFileSet = z.object({ files: z.array(z.string().min(1)).min(1) });
 
@@ -139,5 +142,23 @@ describe("scalar fields a tool-call parser handed over as strings", () => {
     const decoded = decodeStringifiedToolArguments({ command: "42" }, shell);
     expect(decoded.input).toEqual({ command: "42" });
     expect(decoded.decodedFields).toEqual([]);
+  });
+
+  it("explains why a field sent as a string was not read, without decoding anything", () => {
+    const schema = z.strictObject({ files: z.array(z.string().regex(/^[a-z]+$/)) });
+    expect(explainUndecodedFields({ files: '["a", undefined]' }, schema)).toEqual([
+      expect.stringMatching(
+        /^files arrived as a string and is not valid JSON \(.+\); send it as an array itself/,
+      ),
+    ]);
+    expect(explainUndecodedFields({ files: '{"a": 1}' }, schema)).toEqual([
+      "files arrived as a string holding JSON that is not an array",
+    ]);
+    expect(explainUndecodedFields({ files: '["ok", "Not-OK"]' }, schema)).toEqual([
+      expect.stringMatching(
+        /^files arrived as a string; read as JSON, its contents fail: files\.1: /,
+      ),
+    ]);
+    expect(explainUndecodedFields({ files: ["ok"] }, schema)).toEqual([]);
   });
 });
