@@ -25,7 +25,7 @@ import type { ResourcePool } from "./exec/resource-pool.ts";
 import { describeEnvelopeForReader, establishExecutionEnvelope } from "./exec/run-envelope.ts";
 import { enforceContractExecution } from "./exec/task-contract-enforcement.ts";
 import { approvalsRequiredFor } from "./gates/approval.ts";
-import type { ResolveRequest } from "./gates/auto-resolve.ts";
+import { describeRejectedCandidate, type ResolveRequest } from "./gates/auto-resolve.ts";
 import type { SingleFileCommand } from "./gates/base-control.ts";
 import { restrictFileSet } from "./gates/contract-scope.ts";
 import type { GateSetOptions } from "./gates/default-gates.ts";
@@ -1187,11 +1187,15 @@ async function resolveWithModel(
     // patch" it read as a thing to look for, and an attempt spent its budget searching the
     // workspace for one.
     `Base source: ${options.baseRef}. Your current change against it is recorded as ${candidateDigest}; it is the state of the workspace files now, not a file to find.`,
-    `Prior checked attempt: ${request.cycle.attempt}. Remaining model allowance: ${loopDependencies.budget.maxTokens} tokens and ${loopDependencies.budget.maxWallTimeMs} ms.`,
+    // The workspace's state and the last attempt are named apart: after a rollback they are not
+    // the same thing, and "prior checked attempt: 1" sent a repair back to a failure two attempts old.
+    `The workspace is in the state gate cycle ${request.cycle.attempt} checked${request.rejected === null ? "" : `; attempt ${request.rejected.attempt} since then was rolled back`}. Remaining model allowance: ${loopDependencies.budget.maxTokens} tokens and ${loopDependencies.budget.maxWallTimeMs} ms.`,
     `Immutable requirements: ${JSON.stringify(options.contract?.immutablePaths ?? [])}.`,
     "",
     account,
     "",
+    ...(request.rejected === null ? [] : [describeRejectedCandidate(request.rejected), ""]),
+    `What the gates report on the workspace as it is now (cycle ${request.cycle.attempt}):`,
     request.gateOutput.length > 16000
       ? `${request.gateOutput.slice(0, 16000)}\n[diagnostic excerpt truncated; consult the cited evidence records]`
       : request.gateOutput,

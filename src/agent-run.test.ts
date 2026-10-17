@@ -635,7 +635,7 @@ it("dispatches one explicit alternate after repeated observed failure and stops 
   expect(prompt).toContain("Your current change against it is recorded as sha256:");
   expect(prompt).not.toContain("Candidate patch:");
   expect(prompt).toContain("Remaining model allowance:");
-  expect(prompt).toContain("Prior checked attempt:");
+  expect(prompt).toContain("The workspace is in the state gate cycle");
   expect(result.green).toBe(false);
 }, 30000);
 
@@ -876,6 +876,61 @@ describe("what a repair attempt is handed about the loop before it", () => {
     expect(prompts.at(-1)).toContain("Account of the previous loop");
     expect(prompts[0]).not.toContain("Account of the previous loop");
   });
+});
+
+describe("a repair after a rolled-back repair (scripted model)", () => {
+  it("is briefed on the regression that caused the rollback while working from the restored files", async () => {
+    // A lint rule the first repair will break while fixing the test, as mime launch 11's second
+    // repair passed every planned check and broke seven project tests.
+    await write(
+      "scripts/lint.mjs",
+      "import { readFileSync } from 'node:fs';\n" +
+        "if (readFileSync('src/greet.js', 'utf8').includes('var ')) {\n" +
+        "  console.error('src/greet.js: \"var\" is not allowed');\n  process.exit(1);\n}\n",
+    );
+    await git("add", "scripts/lint.mjs");
+    await git("commit", "-qm", "lint rule");
+    const writeGreet = (callId: string, content: string) =>
+      respondWithToolCalls("writing", [
+        { callId, toolName: "write", input: { path: "src/greet.js", content } },
+      ]);
+    const result = await task(
+      [
+        respondWithToolCalls("declaring", [
+          { callId: "c0", toolName: "declare_file_set", input: { files: ["src/greet.js"] } },
+        ]),
+        writeGreet("c1", broken),
+        respondWithText("done"),
+        writeGreet("c2", "export function greet() {\n  var word = 'hello';\n  return word;\n}\n"),
+        respondWithText("fixed the greeting"),
+        writeGreet("c3", "export function greet() {\n  const word = 'hello';\n  return word;\n}\n"),
+        respondWithText("fixed it without var"),
+      ],
+      {
+        attempts: 2,
+        gateOptions: { commandOverrides: { ...gateOverrides, lint: "node scripts/lint.mjs" } },
+      },
+    );
+
+    expect(result.gates.outcome.attempts.map((one) => one.decision.accepted)).toEqual([
+      false,
+      true,
+    ]);
+    expect(result.green).toBe(true);
+    const prompts = evidence
+      .records()
+      .filter((record) => record.type === "model-call")
+      .map((record) => JSON.stringify(evidence.payloads().get(record.payloadDigest)));
+    const secondRepair = prompts.find((prompt) => prompt.includes("This is attempt 2 of 2"));
+    expect(secondRepair).toContain("Attempt 1 was rolled back");
+    expect(secondRepair).toContain("Gates it fixed: tests. Gates it broke: lint.");
+    expect(secondRepair).toContain('\\"var\\" is not allowed');
+    expect(secondRepair).toContain("The workspace is in the state gate cycle 0 checked");
+    expect(secondRepair).not.toContain("Prior checked attempt");
+    // The first repair was never told about a rollback, since there had been none.
+    const firstRepair = prompts.find((prompt) => prompt.includes("This is attempt 1 of 2"));
+    expect(firstRepair).not.toContain("rolled back");
+  }, 60000);
 });
 
 describe("an answer the model already has", () => {

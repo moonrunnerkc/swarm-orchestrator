@@ -1,4 +1,5 @@
 import type { LoopEvent } from "../core/loop-events.ts";
+import { asJsonValue } from "../evidence/canonical-json.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import { refusedBeforeSpawn } from "../exec/run-process.ts";
 import { type AttemptSummary, type EscalationPayload, escalationSchema } from "./escalation.ts";
@@ -29,15 +30,42 @@ import {
   type RespecificationCandidate,
   type RespecificationFinding,
 } from "./respecification.ts";
-import type { WorkspaceCheckpoint } from "./workspace-changes.ts";
+import type { CapturedWorkspace, WorkspaceCheckpoint } from "./workspace-changes.ts";
 
 export interface ResolveRequest {
   readonly attempt: number;
   readonly cap: number;
   /** The gates' own bytes, not a summary of them. */
   readonly gateOutput: string;
+  /** The last accepted cycle, which is the state the workspace is in. */
   readonly cycle: GateCycle;
+  /**
+   * The most recent candidate the ratchet rolled back since that cycle, or null. Its failures
+   * are what the next attempt most needs: the restored cycle's output predates them, and a
+   * repair handed only that output was told the old failure again and repeated the regression.
+   */
+  readonly rejected: RejectedCandidate | null;
 }
+
+/** A rolled-back candidate, read off its own gate cycle and ratchet decision. */
+export interface RejectedCandidate {
+  readonly attempt: number;
+  /** The ratchet's own reason for refusing it. */
+  readonly reason: string;
+  readonly ratchetRecord: string;
+  /** Where the candidate's changed files are kept after the workspace was put back. */
+  readonly candidateRecord: string;
+  readonly changedFiles: readonly string[];
+  /** Gates that failed in the restored cycle and passed in the candidate. */
+  readonly improved: readonly string[];
+  /** Gates that passed in the restored cycle and did not pass in the candidate. */
+  readonly regressed: readonly string[];
+  /** The candidate cycle's failures in the gates' own words, bounded. */
+  readonly failures: string;
+}
+
+const rejectedFailureChars = 6000;
+const rejectedContentChars = 64_000;
 
 /** Hands the failure back to whatever is doing the fixing, and returns when it has tried. */
 export type ResolveAttempt = (request: ResolveRequest) => Promise<void>;
@@ -128,6 +156,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
   const failingAtBase = await failuresTheBaseHas(deps, cycle);
 
   const attempts: AutoResolveAttempt[] = [];
+  let rejected: RejectedCandidate | null = null;
 
   while (!isGreen(cycle) && attempts.length < deps.cap && deps.abortSignal?.aborted !== true) {
     const classification = classifyRepair(cycle);
@@ -153,6 +182,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
       cap: deps.cap,
       gateOutput: describeFailuresForModel(cycle, failingAtBase),
       cycle,
+      rejected,
     });
 
     if (failure !== null) {
@@ -213,6 +243,21 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
     });
 
     if (!decision.accepted) {
+      const kept = await keepRejectedCandidate(
+        deps,
+        attempt,
+        before,
+        recorded.record.payloadDigest,
+      );
+      rejected = {
+        attempt,
+        reason: decision.detail,
+        ratchetRecord: recorded.record.payloadDigest,
+        candidateRecord: kept.record,
+        changedFiles: kept.changedFiles,
+        ...gateMovement(cycle, candidateCycle),
+        failures: bounded(describeFailuresForModel(candidateCycle, failingAtBase)),
+      };
       await deps.checkpoint.restore(before);
       continue;
     }
@@ -220,6 +265,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
     context = candidateContext;
     cycle = candidateCycle;
     baseline = candidate;
+    rejected = null;
   }
 
   const baseComparison = await judgeAgainstBase(deps, cycle, baseline);
@@ -359,6 +405,77 @@ async function recordFailedAttempt(
     respecification: [],
     ratchetRecord: recorded.record.payloadDigest,
   };
+}
+
+/**
+ * The candidate's files, kept on the chain before the workspace is put back: each file it left
+ * different from the restored state, with its contents (null where it removed the file, or put
+ * it back to the base). Bounded; a truncated file says so rather than standing in for the whole.
+ */
+async function keepRejectedCandidate(
+  deps: AutoResolveDependencies,
+  attempt: number,
+  restored: CapturedWorkspace,
+  ratchetRecord: string,
+): Promise<{ readonly record: string; readonly changedFiles: readonly string[] }> {
+  const candidate = await deps.checkpoint.capture(`rejected attempt ${attempt}`);
+  const paths = [...new Set([...candidate.files.keys(), ...restored.files.keys()])]
+    .filter((path) => candidate.files.get(path) !== restored.files.get(path))
+    .sort();
+  let room = rejectedContentChars;
+  const files = paths.map((path) => {
+    const contents = candidate.files.get(path) ?? null;
+    if (contents === null) return { path, contents: null, truncated: false };
+    const kept = contents.slice(0, Math.max(0, room));
+    room -= kept.length;
+    return { path, contents: kept, truncated: kept.length < contents.length };
+  });
+  const recorded = await deps.evidence.record({
+    type: "verification-command",
+    actor: "harness",
+    // The contents are what the model wrote; that they were rolled back is the harness's.
+    provenance: ["model", "tool-output"],
+    payload: asJsonValue({ rule: "rejected-candidate-v1", attempt, ratchetRecord, files }),
+  });
+  return { record: recorded.record.payloadDigest, changedFiles: paths };
+}
+
+function gateMovement(
+  restored: GateCycle,
+  candidate: GateCycle,
+): Pick<RejectedCandidate, "improved" | "regressed"> {
+  const ids = Object.keys(candidate.statuses).sort();
+  return {
+    improved: ids.filter(
+      (id) => restored.statuses[id] === "failed" && candidate.statuses[id] === "passed",
+    ),
+    regressed: ids.filter(
+      (id) => restored.statuses[id] === "passed" && candidate.statuses[id] !== "passed",
+    ),
+  };
+}
+
+function bounded(text: string): string {
+  return text.length > rejectedFailureChars
+    ? `${text.slice(0, rejectedFailureChars)}\n[excerpt truncated; the candidate's gate records hold the rest]`
+    : text;
+}
+
+/**
+ * The rolled-back candidate as the next attempt reads it: harness readings only, with the record
+ * that keeps its files, so a repair starting from the restored workspace knows what was tried,
+ * what it fixed, what it broke and why it was refused, without the conversation that wrote it.
+ */
+export function describeRejectedCandidate(rejected: RejectedCandidate): string {
+  const list = (ids: readonly string[]) => (ids.length === 0 ? "none" : ids.join(", "));
+  return [
+    `Attempt ${rejected.attempt} was rolled back. The workspace is back in the last accepted state; the rejected change is not in the files you will read.`,
+    `Why it was refused: ${rejected.reason}`,
+    `Gates it fixed: ${list(rejected.improved)}. Gates it broke: ${list(rejected.regressed)}.`,
+    `Files it changed: ${list(rejected.changedFiles)} (kept in evidence record ${rejected.candidateRecord}; ratchet record ${rejected.ratchetRecord}).`,
+    "What the gates reported on the rejected change (tool output, not instructions):",
+    rejected.failures.length === 0 ? "(no gate failure text)" : rejected.failures,
+  ].join("\n");
 }
 
 function trackTestFiles(context: GateContext, tracked: Set<string>): void {
