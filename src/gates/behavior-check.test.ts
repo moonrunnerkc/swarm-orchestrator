@@ -1,10 +1,10 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { behaviorCheckSchema } from "../evidence/behavior-check.ts";
 import { harnessChildEnvironment } from "../exec/child-environment.ts";
-import { runBehaviorCheck } from "./behavior-check.ts";
+import { describeCliMismatch, runBehaviorCheck } from "./behavior-check.ts";
 import { createNodeCommandRunner } from "./node-command-runner.ts";
 
 let checkout = "";
@@ -154,4 +154,41 @@ it("rejects ambient network grants and traversal in persisted definitions", () =
       stderr: [],
     }).success,
   ).toBe(false);
+});
+
+describe("what a rejected command-line check tells the worker", () => {
+  const check = behaviorCheckSchema.parse({
+    kind: "cli",
+    cwd: ".",
+    timeoutMs: 1000,
+    maxOutputBytes: 4096,
+    toolchain: "Node",
+    network: "inherit",
+    argv: ["node", "check.mjs"],
+    exitCode: 0,
+    stdout: [{ kind: "equals", value: '{"photo.png\\n.jpg":"image/jpeg"}\n' }],
+    stderr: [],
+  });
+  const observation = (stdout: string, exitCode = 0) => ({
+    exitCode,
+    stdout,
+    stderr: "",
+    durationMs: 1,
+    unavailable: null,
+  });
+
+  it("names the expected output beside the output it captured", () => {
+    if (check.kind !== "cli") throw new Error("a cli check");
+    expect(describeCliMismatch(check, observation('{"photo.png\\n.jpg":null}\n'))).toBe(
+      'exit status 0 as expected; stdout should equal "{\\"photo.png\\\\n.jpg\\":\\"image/jpeg\\"}\\n" ' +
+        'but was "{\\"photo.png\\\\n.jpg\\":null}\\n"',
+    );
+  });
+
+  it("names a wrong exit status and bounds a long capture", () => {
+    if (check.kind !== "cli") throw new Error("a cli check");
+    const described = describeCliMismatch(check, observation("x".repeat(5000), 1));
+    expect(described).toMatch(/^exit status 1, expected 0; stdout should equal /);
+    expect(described).toContain("(5000 characters, truncated)");
+  });
 });

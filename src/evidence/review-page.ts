@@ -122,7 +122,17 @@ function renderWhatHappened(dag: EvidenceDag): readonly string[] {
     )
     .filter((payload): payload is Record<string, unknown> => payload !== null);
   const started = turns[turns.length - 1] ?? null;
-  const stopped = lastPayloadOf(dag, "session-stopped");
+  // How the work ended, not how a justification turn after it ended.
+  const stopped =
+    dag.evidence
+      .filter((node) => node.type === "session-stopped")
+      .map((node) =>
+        node.payload !== null && typeof node.payload === "object" && !Array.isArray(node.payload)
+          ? (node.payload as Record<string, unknown>)
+          : null,
+      )
+      .filter((payload) => payload !== null && payload.justification !== true)
+      .at(-1) ?? null;
   const reward = lastPayloadOf(dag, "reward");
 
   const task = textOf(started?.task);

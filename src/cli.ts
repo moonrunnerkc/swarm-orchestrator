@@ -28,6 +28,7 @@ import {
   usage,
 } from "./cli-options.ts";
 import { type PlanChecksOutcome, planChecks } from "./cli-plan-checks.ts";
+import { admitPlannedChecks } from "./cli-planned-checks.ts";
 import { describePreflight, manifestsIn } from "./cli-preflight.ts";
 import { registrySettingsFrom } from "./cli-provider-settings.ts";
 import {
@@ -63,6 +64,7 @@ import {
 } from "./cli-task-contract.ts";
 import { logReward, priceTask } from "./cli-task-cost.ts";
 import {
+  baseVerifier,
   describeGoalPreflight,
   finalizeTaskGoal,
   preflightTaskGoal,
@@ -72,6 +74,7 @@ import {
 } from "./cli-task-goal.ts";
 import { askOnTerminal, startInterface } from "./cli-terminal.ts";
 import { verifyBundle } from "./cli-verify.ts";
+import type { LoopEvent } from "./core/loop-events.ts";
 import type { StopReason } from "./core/termination.ts";
 import { readBundle } from "./evidence/bundle.ts";
 import { buildEvidenceDag } from "./evidence/dag.ts";
@@ -98,6 +101,7 @@ import {
 } from "./exec/child-home.ts";
 import { parseIsolationOption } from "./exec/isolation-option.ts";
 import { recordedContainerBackend } from "./exec/runtime-resource.ts";
+import { defaultDiffBudget } from "./gates/engine.ts";
 import { createFileSetRegistry } from "./gates/file-set.ts";
 import { requireBaseCommit } from "./gates/git-workspace.ts";
 import { summarizeRatchet } from "./gates/ratchet-summary.ts";
@@ -438,10 +442,35 @@ async function run(options: RunCommand): Promise<number> {
   // the workspace with read-only tools on a chain of its own; what it pins is sealed on this
   // chain below exactly as a supplied contract is, and stays labelled model-authored.
   let planning: PlanChecksOutcome | null = null;
-  if (options.planChecks === true && sealedGoal === undefined) {
+  if (options.planChecks === true && options.recovery === undefined) {
     const interactive =
       !options.json && process.stdout.isTTY === true && process.stdin.isTTY === true;
+    const supplied = sealedGoal;
     planning = await planChecks({
+      ...(supplied === undefined ? {} : { base: supplied }),
+      // Each planned check is run once on a fresh checkout of the base, on the planning chain,
+      // and admitted only where it does there what it says it does.
+      admit: (chain, contract, base) =>
+        admitPlannedChecks({
+          contract,
+          base,
+          evidence: chain,
+          verifyAtBase: (probe) =>
+            baseVerifier({
+              contract: probe,
+              workspace: options.workspace,
+              baseCommit,
+              evidence: chain,
+              clock,
+              signal: modelWork.signal,
+              isolation,
+              install: options.installDependencies === true,
+              ...(options.lockfile === undefined ? {} : { lockfile: options.lockfile }),
+              ...(Object.keys(settings.gateCommandOverrides).length === 0
+                ? {}
+                : { commandOverrides: settings.gateCommandOverrides }),
+            })(probe),
+        }),
       task: options.task,
       workspace: options.workspace,
       home: homedir(),
@@ -452,10 +481,21 @@ async function run(options: RunCommand): Promise<number> {
       clock,
       random,
       maxSteps: settings.maxSteps,
-      maxTokens: allowance,
-      maxWallMs: (settings.maxWallMinutes ?? 30) * 60_000,
+      // Planning is bounded to a share of the run, so a planner that cannot settle leaves the
+      // implementation, its repairs and the final verification the rest: one that spent 314 of
+      // a launch's 540 seconds and 938,575 tokens without pinning a check left nothing usable.
+      maxTokens: Math.floor(allowance * planningShare),
+      maxWallMs: Math.floor((settings.maxWallMinutes ?? 30) * 60_000 * planningShare),
       signal: modelWork.signal,
       note: (line) => process.stderr.write(`${line}\n`),
+      // On the machine stream like the implementation's own events, so a consumer that sums the
+      // stopped events counts planning: a launcher that did not was short 341,256 tokens.
+      ...(options.json
+        ? {
+            emit: (event: LoopEvent) =>
+              process.stdout.write(`${jsonEventLine(event, { runId: evidence.sessionId })}\n`),
+          }
+        : {}),
       ...(interactive ? { ask: askOnTerminal } : {}),
     });
     await evidence.record({
@@ -481,7 +521,13 @@ async function run(options: RunCommand): Promise<number> {
           : {}),
       },
     });
-    if (planning.kind !== "sealed") {
+    // With a supplied contract, planning only adds to it: a planner that adds nothing leaves the
+    // contract the user wrote, and the run goes on against it rather than ending unrun.
+    if (planning.kind === "unresolved" && supplied !== undefined)
+      process.stderr.write(
+        `no planned check was added (the planner stopped as ${planning.stopReason}); implementing against the supplied contract\n`,
+      );
+    else if (planning.kind !== "sealed") {
       const written = await writeBundle(evidence, options.bundleDirectory, clock, (line) =>
         process.stderr.write(`${line}\n`),
       );
@@ -513,8 +559,8 @@ async function run(options: RunCommand): Promise<number> {
       releaseRunChildHome(childHome, { keep: false });
       return planning.kind === "declined" ? exitCodes.cancelled : exitCodes.unavailable;
     }
-    sealedGoal = planning.contract;
-    if (planning.tasksProposed > 1)
+    if (planning.kind === "sealed") sealedGoal = planning.contract;
+    if (planning.kind === "sealed" && planning.tasksProposed > 1)
       process.stderr.write(
         `the planner would split this into ${planning.tasksProposed} tasks; this run does it as one. swarm parallel --goal runs them as separate workers.\n`,
       );
@@ -579,7 +625,17 @@ async function run(options: RunCommand): Promise<number> {
       : {}),
     ...(goalContext === undefined ? {} : { acceptanceGate: taskGoalGate(goalContext) }),
   };
-  const diffBudget = diffBudgetFrom(settings);
+  // An authorized upgrade regenerates its lockfile, and that file's size is not authored work:
+  // its lines are counted apart. The final verification still holds the change to the sealed
+  // dependency targets, and every other file, the manifest included, stays on the budget.
+  const configuredBudget = diffBudgetFrom(settings);
+  const diffBudget =
+    sealedGoal?.preset?.kind === "upgrade"
+      ? {
+          ...(configuredBudget ?? defaultDiffBudget),
+          generatedPaths: [sealedGoal.preset.lockfile],
+        }
+      : configuredBudget;
   // Off unless a destination is named. A telemetry pipeline that is on by default is a place
   // secrets end up somewhere nobody scrubs, and payload capture stays a second decision on top.
   const telemetry = createRunTelemetry(evidence.sessionId);
@@ -615,6 +671,7 @@ async function run(options: RunCommand): Promise<number> {
       repairFeedback?: string,
     ): Parameters<typeof runAgentTask>[0] => ({
       task: options.task,
+      ...(options.promptProfile === undefined ? {} : { promptProfile: options.promptProfile }),
       ...(repairFeedback === undefined ? {} : { repairFeedback }),
       ...(options.escalationModel === undefined
         ? {}
@@ -875,6 +932,8 @@ function describeError(cause: unknown): string {
 
 /** The run's default token allowance where none was named, the figure the spec seals. */
 const defaultTaskTokens = 1_000_000;
+/** The part of a run's wall and token allowance that authoring planned checks may spend. */
+const planningShare = 0.25;
 const execFileAsync = promisify(execFile);
 
 /**

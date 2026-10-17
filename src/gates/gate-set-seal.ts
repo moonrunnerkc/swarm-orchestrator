@@ -35,7 +35,11 @@ export const gateSetSealSchema = z.object({
       ]),
     }),
   ),
-  budgets: z.object({ maxChangedFiles: z.number(), maxAddedLines: z.number() }),
+  budgets: z.object({
+    maxChangedFiles: z.number(),
+    maxAddedLines: z.number(),
+    generatedPaths: z.array(z.string()).optional(),
+  }),
   attemptCap: z.number(),
   /** The measures the ratchet holds, by name, so an arm cannot be dropped after the fact. */
   ratchetArms: z.array(z.string()),

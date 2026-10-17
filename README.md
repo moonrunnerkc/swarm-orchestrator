@@ -121,9 +121,15 @@ swarm "make slugify collapse whitespace and strip punctuation" --plan-checks
 
 `--plan-checks` has the planner read the repository and author completion criteria from your
 sentence: requirements and executable checks, shown in plain language and sealed before the
-first edit, labelled model-authored on the chain and in the report. Without it a run is measured
-by the project's own checks only, and the outcome block says so; with a contract file of your
-own, pass `--goal-contract` instead ([docs/broad-use.md](docs/broad-use.md)). Node 22 or newer
+first edit, labelled model-authored on the chain and in the report. Each planned check is run
+once on the unchanged base and admitted only if it does there what it declares (fails a check of
+the change with a wrong answer, passes a check of behaviour that stays). Without it a run is
+measured by the project's own checks only, and the outcome block says so; with a contract file
+of your own, pass `--goal-contract`, alone or with `--plan-checks` to add planned checks to it
+([docs/broad-use.md](docs/broad-use.md)). On the one local model measured so far, planning added
+no admitted check in four development launches and cost three to four times the tokens
+([docs/evidence/2026-10-16/development/](docs/evidence/2026-10-16/development/README.md)), so it
+is not yet shown to help. Node 22 or newer
 is required and Node 24 is recommended; the model is a local server or a frontier key.
 
 Keys come from the environment or your OS keychain, never from `swarm.toml`: that file is
@@ -186,9 +192,16 @@ followed, a replay of its retained evidence through the repaired product, and a 
 diagnosis of the undelivered bug fix are in [docs/evidence/2026-10-15/](docs/evidence/2026-10-15/README.md).
 The four-task comparison that followed, without its calibration gate
 ([docs/evidence/2026-10-16/comparison/](docs/evidence/2026-10-16/comparison/README.md)), found no
-demonstrated benefit: both tools produced correct patches on all four tasks with no correction,
-OpenCode delivered four and Swarm three (it refused its own correct upgrade on a size-budget
-defect named there), and Swarm took more time and tokens per delivery.
+demonstrated benefit: both tools' patches passed the frozen oracle on all four tasks with no
+correction, OpenCode delivered four and Swarm three (it refused its own upgrade on a size-budget
+defect named there), and Swarm took more time and tokens per delivery. A later audit found both
+mime patches wrong on line-terminator cases the oracle never tried
+([amendment](docs/evidence/2026-10-16/comparison/correctness-amendment/README.md)). After the
+size-budget and verification defects it exposed were repaired, a fresh comparison on four new
+tasks, two runs per tool ([docs/evidence/2026-10-16/fresh-comparison/](docs/evidence/2026-10-16/fresh-comparison/README.md)),
+again found no demonstrated benefit: OpenCode delivered 8 of 8 and Swarm 7 of 8, with one false
+completion claim where its acceptance passed a patch the hidden check rejects, at about twice
+the time per delivery.
 Developer hours saved and real-world adoption are not measured there; the prepared, unrun
 protocol for five developers on their own tasks is [docs/human-trial-protocol.md](docs/human-trial-protocol.md).
 

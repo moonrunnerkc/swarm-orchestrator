@@ -49,6 +49,8 @@ export interface RunCommand {
    * and seal them. Model-authored checks stay labelled as such on the chain and in the report.
    */
   readonly planChecks?: boolean;
+  /** The worker's system prompt. Absent is the historical default, `legacy`. */
+  readonly promptProfile?: "legacy" | "concise";
   readonly installDependencies?: boolean;
   /** The lockfile `--install` reads where the tree holds several; refused rather than guessed. */
   readonly lockfile?: string;
@@ -341,8 +343,11 @@ export const usage = [
   "    --preset bugfix|refactor|upgrade                 a behavior policy the contract also names",
   "    --install [--lockfile <file>]                   install from the lockfile before the checks;",
   "                                                   name the lockfile where the tree holds several",
-  "    --plan-checks                                  author, show and seal model-labelled",
-  "                                                   criteria before implementation",
+  "    --plan-checks                                  author model-labelled behavior checks from",
+  "                                                   the task before implementation, admit each by",
+  "                                                   its result on the base, add them to any",
+  "                                                   --goal-contract, and repair against them",
+  "    --prompt-profile legacy|concise                 the worker's system prompt (default legacy)",
   "    --escalate-model <provider:id>                  authorize one bounded capability escalation",
   "    --challenges off|report|required [--strengthen [--strengthen-rounds <n>]]",
   "                                                   challenge the goal's checks; strengthen a gap",
@@ -637,10 +642,9 @@ export function parseCommandLine(
     throw invalid("--challenges must be off, report, or required");
   if (challenges !== undefined && goalContract === undefined)
     throw invalid("--challenges needs a --goal-contract whose checks it can challenge");
-  if (flags.has("plan-checks") && goalContract !== undefined)
-    throw invalid(
-      "--plan-checks authors the criteria and --goal-contract supplies them; pass one, not both",
-    );
+  const promptProfile = flags.get("prompt-profile");
+  if (promptProfile !== undefined && promptProfile !== "legacy" && promptProfile !== "concise")
+    throw invalid("--prompt-profile must be legacy or concise");
   const strengthen = flags.has("strengthen");
   if (strengthen && (challenges === undefined || challenges === "off"))
     throw invalid(
@@ -683,6 +687,7 @@ export function parseCommandLine(
         }),
     ...(lockfile === undefined ? {} : { lockfile }),
     ...(flags.has("plan-checks") ? { planChecks: true } : {}),
+    ...(promptProfile === undefined ? {} : { promptProfile }),
     ...(flags.has("escalate-model")
       ? { escalationModel: flags.get("escalate-model") as string }
       : {}),
