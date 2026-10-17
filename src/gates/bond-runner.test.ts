@@ -309,9 +309,8 @@ describe("bonding an inspection over a real workspace", () => {
 
     expect(outcome?.verdict).toBe("held");
     const [recorded] = await recordedBonds();
-    expect((recorded?.bond as { files: string[] }).files[0]).toMatch(
-      /^src\/swarm-falsification-bond/,
-    );
+    const placed = (recorded?.bond as { files: string[] } | undefined)?.files ?? [];
+    expect(placed[0]).toMatch(/^src\/swarm-falsification-bond/);
     expect((await probe.changes()).files.map((file) => file.path)).toEqual(["src/index.js"]);
   });
 });
