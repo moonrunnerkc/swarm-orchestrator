@@ -288,15 +288,18 @@ function plannedContract(
     author: "model" as const,
     exposure: "shared" as const,
   }));
-  const malformed = authored.filter(
-    (check) =>
-      check.behavior?.kind !== "cli" || check.atBase === undefined || check.artifacts.length > 0,
-  );
-  if (malformed.length > 0)
+  const problems = authored.flatMap((check) => {
+    const wrong = [
+      check.behavior?.kind === "cli" ? null : "behavior.kind must be cli",
+      check.atBase === undefined ? "atBase must be fails or passes" : null,
+      check.artifacts.length > 0 ? "artifacts must be empty (put the script inline in argv)" : null,
+    ].filter((one): one is string => one !== null);
+    return wrong.length === 0 ? [] : [`${check.id}: ${wrong.join(", ")}`];
+  });
+  if (problems.length > 0)
     throw new Error(
-      `${malformed.map((check) => check.id).join(", ")}: every planned check is a command-line ` +
-        "behavior check (behavior.kind cli) with its script inline in argv, no artifacts, and " +
-        "atBase set to fails or passes",
+      `every planned check is a command-line behavior check with its script inline in argv, no ` +
+        `artifacts, and atBase set; fix these and declare again: ${problems.join("; ")}`,
     );
   const taken = new Set([
     ...(base?.requirements ?? []).map((one) => one.id),

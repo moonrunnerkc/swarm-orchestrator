@@ -81,6 +81,9 @@ export type PlanChecksOutcome =
       readonly account: string;
     });
 
+/** What of the planning allowance the first round of planned checks may use; a revision gets the rest. */
+const firstRoundShare = 0.7;
+
 /** One clarification round, then the planner's account stands as the unresolved ambiguity. */
 const clarificationRounds = 1;
 
@@ -101,7 +104,9 @@ export async function planChecks(deps: PlanChecksDependencies): Promise<PlanChec
   let steps = 0;
   for (let round = 0; ; round += 1) {
     deps.note(round === 0 ? "planning the completion criteria" : "planning again with your answer");
-    const plan = (brief: string, base: GoalContract | undefined) =>
+    // The first round may spend most of the planning allowance, never all of it: a planner that
+    // used the whole share left the revision of its broken checks with no time at all.
+    const plan = (brief: string, base: GoalContract | undefined, share = 1) =>
       runPlanner({
         goal: brief,
         workspace: deps.workspace,
@@ -109,8 +114,11 @@ export async function planChecks(deps: PlanChecksDependencies): Promise<PlanChec
         model: deps.createModel(planning),
         requireGoalChecks: true,
         ...(deps.admit === undefined ? {} : { plannedChecks: base === undefined ? {} : { base } }),
-        maxTokens: Math.max(0, deps.maxTokens - tokensSpent(planning).spent),
-        maxWallTimeMs: Math.max(0, deps.maxWallMs - (deps.clock.now() - startedAt)),
+        maxTokens: Math.max(0, Math.floor(deps.maxTokens * share) - tokensSpent(planning).spent),
+        maxWallTimeMs: Math.max(
+          0,
+          Math.floor(deps.maxWallMs * share) - (deps.clock.now() - startedAt),
+        ),
         evidence: planning,
         clock: deps.clock,
         random: deps.random,
@@ -118,7 +126,7 @@ export async function planChecks(deps: PlanChecksDependencies): Promise<PlanChec
         maxSteps: deps.maxSteps,
         abortSignal: deps.signal,
       });
-    const outcome = await plan(goal, deps.base);
+    const outcome = await plan(goal, deps.base, deps.admit === undefined ? 1 : firstRoundShare);
     steps += outcome.steps;
     const declared = outcome.goalContract ?? null;
     let admission =

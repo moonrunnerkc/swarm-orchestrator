@@ -64,6 +64,7 @@ import {
 } from "./cli-task-contract.ts";
 import { logReward, priceTask } from "./cli-task-cost.ts";
 import {
+  baseVerifier,
   describeGoalPreflight,
   finalizeTaskGoal,
   preflightTaskGoal,
@@ -455,7 +456,7 @@ async function run(options: RunCommand): Promise<number> {
           base,
           evidence: chain,
           verifyAtBase: (probe) =>
-            probeVerifier({
+            baseVerifier({
               contract: probe,
               workspace: options.workspace,
               baseCommit,
@@ -468,7 +469,7 @@ async function run(options: RunCommand): Promise<number> {
               ...(Object.keys(settings.gateCommandOverrides).length === 0
                 ? {}
                 : { commandOverrides: settings.gateCommandOverrides }),
-            })("", probe),
+            })(probe),
         }),
       task: options.task,
       workspace: options.workspace,
