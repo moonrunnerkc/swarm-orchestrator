@@ -10,6 +10,50 @@ The ordinary task workflow: a task in words, sealed criteria, acceptance, repair
 verification on one path, with the run's outcome led by what was and was not established.
 Source on `v13-main`; not published until a release names it.
 
+### Fixed
+
+- **An advisory size budget no longer refuses work while saying it was accepted.** The verdict
+  and its stated reason now come from one list of unmet conditions, so a refusal names what
+  refused. An advisory gate that demands a justification gets one bounded turn with only the
+  claim tool once the work is otherwise acceptable, and acceptance waits on a verified claim
+  answering it. A justification never answers a blocking gate or the declared file set. New
+  assessments record `run-acceptance-v4`, which the bundled verifier re-derives; v1 and v2 keep
+  their meaning. An upgrade preset's regenerated lockfile is counted apart from the authored
+  lines. The 2026-10-16 csstree refusal is reproduced on the measured build and accepted here
+  (`docs/evidence/2026-10-16/development/csstree-lifecycle/`).
+- **Final verification on the host runs outside hidden directories.** A checkout under `~/.swarm`
+  made projects whose tools skip dot-named paths (css-select's and domutils' Biome configurations)
+  fail their lint and tests at the base, refusing correct changes.
+- **Bonds are placed where an inspection can see them.** In a repository that ignores its root
+  (node-tar), the file-set, placeholder and secret-scan bonds were never handed to those gates and
+  read as vacuous; they now move beside a changed file, or the gate is recorded as not bonded.
+- **The durable run journal scrubs only what an operation changed.** Every tool call's two
+  durable updates re-scrubbed the whole history: about 220 ms each on an eleven-thousand-operation
+  journal, now about 48 ms, with byte-identical output.
+- **`amend_file_set` before any declaration is refused at once** and names `declare_file_set`,
+  instead of being recorded while the next edit was still refused.
+- **A failing shared behavior check tells the worker what it expected and what it saw**, so a
+  repair brief carries something to repair from. Withheld checks keep their expectations hidden.
+
+### Changed
+
+- **`--plan-checks` admits each planned check by its result on the unchanged base** and combines
+  with `--goal-contract`:
+  - the planner writes command-line behavior checks, each declaring whether the base should fail
+    it (a check of the change) or pass it (behaviour that stays);
+  - a check is admitted only if a completed base run does what it declares, with the base run the
+    way acceptance runs it, and a planned requirement left with no check is dropped;
+  - checks that never ran get one revision with their recorded output;
+  - planning is bounded to a quarter of the run's wall and tokens, and its spend is on the event
+    stream;
+  - with a supplied contract, a planner that adds nothing leaves the run on that contract.
+
+  On this assignment's model the planner never had a check admitted in four development launches
+  on mime, at three to four times the default's tokens, so this is not claimed to help yet.
+- **`--prompt-profile legacy|concise`** selects the worker prompt from the ordinary command line.
+  The default stays the historical prompt. In two development launches the concise prompt did not
+  meet its registered rule.
+
 ### Added
 
 - **The comparison launcher stops when the experiment is invalid.** Before this the harness
