@@ -116,10 +116,8 @@ const plannerTurns: ScriptedTurnSource[] = [
     text: "Plan: pin the boundary, what stays, and two checks that should not survive.",
     toolCalls: [
       {
-        name: "declare_goal_contract",
+        name: "declare_planned_checks",
         input: {
-          version: 1,
-          goal: task,
           requirements: [
             {
               id: "boundary",
@@ -136,7 +134,6 @@ const plannerTurns: ScriptedTurnSource[] = [
             // Imports a module that does not exist: it fails on the base without completing.
             plannedCheck("broken", "fails", "import './missing.mjs';", '{"10":"small"}\n'),
           ],
-          immutablePaths: [],
         },
       },
     ],
@@ -160,64 +157,68 @@ const repairs: ScriptedTurnSource = (request) => {
   };
 };
 
+/** The ordinary command line, with a supplied contract and --plan-checks, on a scripted model. */
+async function swarm(
+  turns: readonly ScriptedTurnSource[],
+): Promise<{ endpoint: ScriptedEndpoint; stdout: string; code: number }> {
+  const endpoint = await startScriptedEndpoint({ modelId: "stub", turns });
+  endpoints.push(endpoint);
+  const { directory, base, contract } = await workspace();
+  let stdout = "";
+  let code = 0;
+  try {
+    const ran = await run(
+      process.execPath,
+      [
+        resolve("src/cli.ts"),
+        task,
+        "--model",
+        "local:stub",
+        "--local-endpoint",
+        endpoint.url,
+        "--workspace",
+        directory,
+        "--base",
+        base,
+        "--goal-contract",
+        contract,
+        "--plan-checks",
+        "--approve",
+        "auto",
+        "--no-tui",
+        "--no-open-evidence",
+        "--json",
+      ],
+      {
+        cwd: directory,
+        env: { PATH: process.env.PATH ?? "", HOME: home, NO_COLOR: "1" },
+        timeout: 180_000,
+      },
+    );
+    stdout = `${ran.stdout}\n${ran.stderr}`;
+  } catch (cause) {
+    const failed = cause as { code?: number; stdout?: string; stderr?: string };
+    code = failed.code ?? 1;
+    stdout = `${failed.stdout ?? ""}\n${failed.stderr ?? ""}`;
+  }
+  return { endpoint, stdout, code };
+}
+
 describe("planned checks through the ordinary command line", () => {
   it("admits checks by their base control and repairs a change against the one it broke", async () => {
-    const endpoint = await startScriptedEndpoint({
-      modelId: "stub",
-      turns: [
-        ...plannerTurns,
-        { text: "Plan: move the boundary.", toolCalls: [declare] },
-        // Wrong: the boundary moved too far, which breaks "11 and above stay big".
-        {
-          toolCalls: [
-            write("export function classify(n) {\n  return n <= 20 ? 'small' : 'big';\n}\n"),
-          ],
-        },
-        { text: "Done." },
-        repairs,
-        { text: "Repaired." },
-      ],
-    });
-    endpoints.push(endpoint);
-    const { directory, base, contract } = await workspace();
-    let stdout = "";
-    let code = 0;
-    try {
-      stdout = (
-        await run(
-          process.execPath,
-          [
-            resolve("src/cli.ts"),
-            task,
-            "--model",
-            "local:stub",
-            "--local-endpoint",
-            endpoint.url,
-            "--workspace",
-            directory,
-            "--base",
-            base,
-            "--goal-contract",
-            contract,
-            "--plan-checks",
-            "--approve",
-            "auto",
-            "--no-tui",
-            "--no-open-evidence",
-            "--json",
-          ],
-          {
-            cwd: directory,
-            env: { PATH: process.env.PATH ?? "", HOME: home, NO_COLOR: "1" },
-            timeout: 180_000,
-          },
-        )
-      ).stdout;
-    } catch (cause) {
-      const failed = cause as { code?: number; stdout?: string; stderr?: string };
-      code = failed.code ?? 1;
-      stdout = `${failed.stdout ?? ""}\n${failed.stderr ?? ""}`;
-    }
+    const { endpoint, stdout, code } = await swarm([
+      ...plannerTurns,
+      { text: "Plan: move the boundary.", toolCalls: [declare] },
+      // Wrong: the boundary moved too far, which breaks "11 and above stay big".
+      {
+        toolCalls: [
+          write("export function classify(n) {\n  return n <= 20 ? 'small' : 'big';\n}\n"),
+        ],
+      },
+      { text: "Done." },
+      repairs,
+      { text: "Repaired." },
+    ]);
 
     const result = stdout
       .split("\n")
@@ -269,5 +270,22 @@ describe("planned checks through the ordinary command line", () => {
     ]);
     // The repair turn was asked, and with the concrete mismatch: it is the turn that wrote the fix.
     expect(endpoint.played()).toBe(7);
+  }, 200_000);
+
+  it("goes on against the supplied contract when the planner adds nothing", async () => {
+    const { stdout, code } = await swarm([
+      { text: "I cannot pin checks for this." },
+      { text: "Plan: move the boundary.", toolCalls: [declare] },
+      {
+        toolCalls: [
+          write("export function classify(n) {\n  return n <= 10 ? 'small' : 'big';\n}\n"),
+        ],
+      },
+      { text: "Done." },
+    ]);
+
+    expect(stdout).toContain("no planned check was added");
+    expect(stdout).toContain("implementing against the supplied contract");
+    expect(code, stdout.slice(-3000)).toBe(0);
   }, 200_000);
 });

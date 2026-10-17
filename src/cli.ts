@@ -479,8 +479,11 @@ async function run(options: RunCommand): Promise<number> {
       clock,
       random,
       maxSteps: settings.maxSteps,
-      maxTokens: allowance,
-      maxWallMs: (settings.maxWallMinutes ?? 30) * 60_000,
+      // Planning is bounded to a share of the run, so a planner that cannot settle leaves the
+      // implementation, its repairs and the final verification the rest: one that spent 314 of
+      // a launch's 540 seconds and 938,575 tokens without pinning a check left nothing usable.
+      maxTokens: Math.floor(allowance * planningShare),
+      maxWallMs: Math.floor((settings.maxWallMinutes ?? 30) * 60_000 * planningShare),
       signal: modelWork.signal,
       note: (line) => process.stderr.write(`${line}\n`),
       ...(interactive ? { ask: askOnTerminal } : {}),
@@ -508,7 +511,13 @@ async function run(options: RunCommand): Promise<number> {
           : {}),
       },
     });
-    if (planning.kind !== "sealed") {
+    // With a supplied contract, planning only adds to it: a planner that adds nothing leaves the
+    // contract the user wrote, and the run goes on against it rather than ending unrun.
+    if (planning.kind === "unresolved" && supplied !== undefined)
+      process.stderr.write(
+        `no planned check was added (the planner stopped as ${planning.stopReason}); implementing against the supplied contract\n`,
+      );
+    else if (planning.kind !== "sealed") {
       const written = await writeBundle(evidence, options.bundleDirectory, clock, (line) =>
         process.stderr.write(`${line}\n`),
       );
@@ -540,8 +549,8 @@ async function run(options: RunCommand): Promise<number> {
       releaseRunChildHome(childHome, { keep: false });
       return planning.kind === "declined" ? exitCodes.cancelled : exitCodes.unavailable;
     }
-    sealedGoal = planning.contract;
-    if (planning.tasksProposed > 1)
+    if (planning.kind === "sealed") sealedGoal = planning.contract;
+    if (planning.kind === "sealed" && planning.tasksProposed > 1)
       process.stderr.write(
         `the planner would split this into ${planning.tasksProposed} tasks; this run does it as one. swarm parallel --goal runs them as separate workers.\n`,
       );
@@ -913,6 +922,8 @@ function describeError(cause: unknown): string {
 
 /** The run's default token allowance where none was named, the figure the spec seals. */
 const defaultTaskTokens = 1_000_000;
+/** The part of a run's wall and token allowance that authoring planned checks may spend. */
+const planningShare = 0.25;
 const execFileAsync = promisify(execFile);
 
 /**

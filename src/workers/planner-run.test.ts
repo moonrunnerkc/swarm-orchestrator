@@ -302,13 +302,10 @@ describe("planned checks", () => {
   });
   const declaring = (callId: string, extra: Record<string, unknown>) => ({
     callId,
-    toolName: "declare_goal_contract",
+    toolName: "declare_planned_checks",
     input: {
-      version: 1,
-      goal: "move the boundary",
       requirements: [{ id: "boundary", description: "10 is small", checks: ["boundary"] }],
       checks: [inline("boundary")],
-      immutablePaths: [],
       ...extra,
     },
   });
@@ -362,8 +359,8 @@ describe("planned checks", () => {
       .records()
       .filter((record) => record.type === "tool-call")
       .map((record) => JSON.stringify(evidence.payloads().get(record.payloadDigest)))
-      .filter((text) => text.includes("declare_goal_contract"));
-    expect(refusals.join("\n")).toMatch(/cannot declare a preset or challenges/);
+      .filter((text) => text.includes("declare_planned_checks"));
+    expect(refusals.join("\n")).toMatch(/challenges/);
     expect(refusals.join("\n")).toMatch(/no artifacts/);
     expect(refusals.join("\n")).toMatch(/already exist in the supplied contract/);
   });
