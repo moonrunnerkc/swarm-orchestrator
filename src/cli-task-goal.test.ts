@@ -5,7 +5,12 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createSystemClock } from "./cli-runtime-inputs.ts";
-import { preflightTaskGoal, type TaskGoalContext, verifyCandidateUnder } from "./cli-task-goal.ts";
+import {
+  preflightTaskGoal,
+  readAcceptance,
+  type TaskGoalContext,
+  verifyCandidateUnder,
+} from "./cli-task-goal.ts";
 import { freezeGoalContract } from "./evidence/goal-contract.ts";
 import { type EvidenceRecorder, openEvidenceSession } from "./evidence/session.ts";
 
@@ -196,4 +201,62 @@ describe("a bugfix's base control", () => {
       ),
     ).rejects.toThrow("base control was not established");
   }, 60_000);
+});
+
+describe("what the acceptance gate makes of a verification", () => {
+  const contract = freezeGoalContract({
+    version: 1,
+    goal: "g",
+    requirements: [
+      { id: "suite", description: "suite passes", checks: ["suite"] },
+      { id: "ten", description: "10 is small", checks: [], planned: { diagnostics: ["boundary"] } },
+    ],
+    checks: [
+      { id: "suite", command: "node --test", author: "user", exposure: "shared", artifacts: [] },
+      { id: "boundary", command: "planned", author: "model", exposure: "shared", artifacts: [] },
+    ],
+    immutablePaths: [],
+  }).contract;
+  const verification = (suite: string, boundary: string) => ({
+    verified: false,
+    unmeasured: false,
+    refusal: null,
+    regression: "pass",
+    goalAcceptance: {
+      obligations: [
+        { id: "suite", status: suite },
+        { id: "ten", status: "unjudged" },
+      ],
+      checkResults: [
+        { id: "suite", status: suite },
+        { id: "boundary", status: boundary },
+      ],
+    },
+  });
+
+  it("passes when every deciding check passes and no generated check disagrees, though a planned requirement stays unjudged", () => {
+    expect(readAcceptance(contract, verification("accepted", "accepted"))).toMatchObject({
+      passes: true,
+      unavailable: false,
+    });
+  });
+
+  it("asks for a repair when a generated check disagrees, without reading it as a setup problem", () => {
+    expect(readAcceptance(contract, verification("accepted", "rejected"))).toMatchObject({
+      passes: false,
+      unavailable: false,
+    });
+  });
+
+  it("fails on a deciding check, and reads a deciding check that could not run as unavailable", () => {
+    expect(readAcceptance(contract, verification("rejected", "accepted")).passes).toBe(false);
+    expect(readAcceptance(contract, verification("unjudged", "accepted"))).toMatchObject({
+      passes: false,
+      unavailable: true,
+    });
+  });
+
+  it("does not ask for a repair over a generated check that could not run", () => {
+    expect(readAcceptance(contract, verification("accepted", "unjudged")).passes).toBe(true);
+  });
 });

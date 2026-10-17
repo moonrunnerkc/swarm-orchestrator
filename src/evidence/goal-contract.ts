@@ -11,7 +11,30 @@ export const goalContractSchema = z.strictObject({
   goal: z.string().min(1),
   preset: taskPresetSchema.optional(),
   requirements: z
-    .array(z.strictObject({ id, description: z.string().min(1), checks: z.array(id) }))
+    .array(
+      z.strictObject({
+        id,
+        description: z.string().min(1),
+        /** The checks that decide this requirement. Empty leaves it unjudged. */
+        checks: z.array(id),
+        /**
+         * Present on a requirement a planner read from the task rather than one the user supplied.
+         * Its generated checks are diagnostics: they run wherever the contract is judged, their
+         * results are recorded and reported, and they drive repair, but they never decide the
+         * requirement. Nothing independent says their expected results are right: a base that
+         * fails a change check and passes a preserve check, a quote of the task and the planner's
+         * explanation each fall short of that, and a wrong expectation admitted on them refused
+         * correct work. Additive: a contract without it digests as before.
+         */
+        planned: z
+          .strictObject({
+            /** The task's own words the planner says this states; absent where it quoted none. */
+            quote: z.string().min(1).max(2000).optional(),
+            diagnostics: z.array(id),
+          })
+          .optional(),
+      }),
+    )
     .min(1)
     .max(128),
   checks: z
@@ -146,6 +169,18 @@ export function freezeGoalContract(value: unknown): { contract: GoalContract; di
       requirement.checks.some((name) => !contract.checks.some((check) => check.id === name))
     )
       throw new Error(`requirement ${requirement.id} names duplicate or undefined checks`);
+    const diagnostics = requirement.planned?.diagnostics ?? [];
+    if (
+      new Set(diagnostics).size !== diagnostics.length ||
+      diagnostics.some(
+        (name) =>
+          contract.checks.find((check) => check.id === name)?.author !== "model" ||
+          requirement.checks.includes(name),
+      )
+    )
+      throw new Error(
+        `requirement ${requirement.id} names diagnostics that are duplicate, undefined, not model-authored or also deciding it`,
+      );
   }
   const fixtures = contract.challenges?.fixtures ?? [];
   if (new Set(fixtures.map((fixture) => fixture.id)).size !== fixtures.length)
@@ -201,6 +236,11 @@ export async function declareGoalContract(
     payload: asJsonValue(frozen),
   });
   return frozen.contract;
+}
+
+/** The generated checks that inform the contract without deciding any of its requirements. */
+export function diagnosticChecks(contract: GoalContract): ReadonlySet<string> {
+  return new Set(contract.requirements.flatMap((one) => one.planned?.diagnostics ?? []));
 }
 
 export function goalImmutablePaths(contract: GoalContract): readonly string[] {
