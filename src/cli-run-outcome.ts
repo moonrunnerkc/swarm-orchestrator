@@ -293,6 +293,8 @@ function nextAction(input: RunOutcomeInput): string {
     return `review the size the ${owed.map((run) => run.gateId).join(", ")} gate asked to have justified; the change is in the bundle, and a smaller change or a justified one can be accepted`;
   if (input.gates.blockingFailures.length > 0)
     return `fix the failing ${input.gates.blockingFailures.map((run) => run.gateId).join(", ")} check(s) and run again, or review the bundle`;
+  if (input.lifecycle === "model-error")
+    return "the model could not be reached or answered with an error (the model error above names it); check that the server is running and that --model and --local-endpoint name it, then run again";
   if (input.changedFiles.length === 0)
     return "the run changed nothing; give it a more specific task or a stronger model";
   return "review the bundle; what the gates could not measure is named above";

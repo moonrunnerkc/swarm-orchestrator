@@ -24,17 +24,22 @@ export interface DefaultModelChoice {
 }
 
 export class NoDefaultModelError extends Error {
-  constructor(served: readonly DiscoveredLocalEndpoint[]) {
+  /** `asked` names where a local server was looked for: the pinned endpoint, or the default ports. */
+  constructor(served: readonly DiscoveredLocalEndpoint[], asked?: string) {
+    const where =
+      asked ??
+      `on the default ports (${defaultLocalEndpoints.map((one) => `${one.name} ${one.baseUrl}`).join(", ")})`;
     const serving =
       served.length === 0
-        ? "no local backend answered on the default ports"
+        ? `no local model server answered ${where}`
         : served
             .map((endpoint) => `${endpoint.name} serves ${endpoint.models.join(", ") || "nothing"}`)
             .join("; ");
     super(
       `no model to run: nothing pins one, no calibration has measured this machine, ${serving}, ` +
-        "and no ANTHROPIC_API_KEY, OPENAI_API_KEY or GOOGLE_GENERATIVE_AI_API_KEY is set. Pull a " +
-        "model (ollama pull <id>), set a key, or pass --model <provider:id>.",
+        "and no ANTHROPIC_API_KEY, OPENAI_API_KEY or GOOGLE_GENERATIVE_AI_API_KEY is set. Start " +
+        "Ollama or rapid-mlx with a model pulled and pass --model local:<id> (swarm select " +
+        "suggests one for this machine), or set a key.",
     );
     this.name = "NoDefaultModelError";
   }
@@ -97,7 +102,10 @@ export async function defaultModelFor(
       },
     };
   }
-  throw new NoDefaultModelError(served);
+  throw new NoDefaultModelError(
+    served,
+    settings.localEndpoint == null ? undefined : `at ${settings.localEndpoint.url}`,
+  );
 }
 
 function frontierWithKey(

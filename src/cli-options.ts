@@ -326,62 +326,66 @@ export type CommandLine =
   | ParallelCommand;
 
 export const usage = [
-  "swarm [--model <provider:id>] [--workspace <dir>] [--bundle <dir>] [--base <ref>]",
-  '  [--attempts <n>] [--max-steps <n>] [--max-tokens <n>] [--max-wall-minutes <n>] [--local-endpoint <url>] ["<task>"]',
+  'swarm "<task>" [options]                           make one change in this repository, check it, report',
+  "swarm                                              a session: type tasks, one after another",
   "",
-  "  swarm                                            a session: type tasks, one after another",
+  "options for a task:",
+  "  --model <provider:id>       the model, such as local:qwen3.6:35b-a3b or anthropic:<id>; without it",
+  "                              the best served local model, then a frontier key, is chosen and named",
+  "  --local-endpoint <url>      the local server (OpenAI-compatible), such as http://127.0.0.1:11434/v1",
+  "  --workspace <dir>           the repository to change (default: this directory); edits land in its",
+  "                              working tree, uncommitted",
+  "  --base <ref>                what the change is measured against (default: HEAD)",
+  "  --bundle <dir>              where the evidence bundle is written",
+  "  --attempts <n>              repair attempts after a failing check",
+  "  --max-steps <n>  --max-tokens <n>  --max-wall-minutes <n>    the run's budgets",
+  "  --goal-contract <file>      sealed requirements and checks the change must satisfy",
+  "  --preset bugfix|refactor|upgrade   a behavior policy the contract also names",
+  "  --install [--lockfile <file>]      install from the lockfile before the checks",
+  "  --plan-checks               have the planner write checks from the task before implementation; they",
+  "                              guide repair and are reported, but only a check you supply decides a",
+  "                              requirement",
+  "  --challenges off|report|required [--strengthen [--strengthen-rounds <n>]]",
+  "                              challenge the contract's checks; strengthen a gap with an admitted check",
+  "  --prompt-profile legacy|concise    the worker's system prompt (default legacy)",
+  "  --escalate-model <provider:id>     authorize one bounded capability escalation",
+  "  --approve ask|auto          auto answers shell-allowlist prompts itself and records each; a",
+  "                              derivation-heuristic prompt still asks either way",
+  "  --isolation <runtime[:image]>      run commands behind docker, podman or nerdctl (default: the host)",
+  "  --json                      line-delimited JSON on stdout: each event, then one result",
   "",
+  "other commands:",
   ...commandHelpLines,
-  "    --allowed-files <a,b>                          the scope you authorise; without it the",
-  "                                                   file-set gate reports observed scope only",
   '  swarm calibrate --add-case "<task>" --seed <a,b> --gate "<command>"',
   "  swarm --version                                  which build this is",
-  "    --redundancy <n>                               try each task n ways, land the best",
-  "    --concurrency <n>                              how many may hold a worktree at once",
-  "    --goal-contract <file>                         sealed requirements and checks the",
-  "                                                   worker must satisfy; no preset needed",
-  "    --preset bugfix|refactor|upgrade                 a behavior policy the contract also names",
-  "    --install [--lockfile <file>]                   install from the lockfile before the checks;",
-  "                                                   name the lockfile where the tree holds several",
-  "    --plan-checks                                  author model-labelled behavior checks from",
-  "                                                   the task before implementation, admit each by",
-  "                                                   its result on the base, add them to any",
-  "                                                   --goal-contract, and repair against them",
-  "    --prompt-profile legacy|concise                 the worker's system prompt (default legacy)",
-  "    --escalate-model <provider:id>                  authorize one bounded capability escalation",
-  "    --challenges off|report|required [--strengthen [--strengthen-rounds <n>]]",
-  "                                                   challenge the goal's checks; strengthen a gap",
-  "                                                   with an admitted check, then repair the code",
-  "    --package <dir>                                repeat for explicitly selected units",
-  "    --summary <file> --require-isolation            CI reviewer output and required boundary",
-  "    --bootstrap node                               establish Node 24 checks on an empty Git base",
   "",
-  "    [--immutable <a,b>] [--json]                   the base, trusting nothing that made it",
-  "    [--contract <file>] [--isolation <runtime[:image]>] [--bundle <dir>]",
-  "    [--agent-stream <file>]                        replay another agent's own event stream",
-  "    [--agent-format generic|claude-code]           beside it, so the record is not a guess",
-  "    [--install]                                    install the checkout's dependencies first,",
-  "                                                   without which a real project measures nothing",
-  "    [--lockfile <file>]                            which lockfile, where the tree holds several",
-  "    [--oracle <command>]                           what says the task was done; without it the",
-  "                                                   task is unjudged and nothing is verified",
+  "options of swarm parallel:",
+  "  --redundancy <n>            try each task n ways, land the best",
+  "  --concurrency <n>           how many may hold a worktree at once",
+  "  --bootstrap node            with --goal: establish Node 24 checks on an empty Git base",
   "",
-  "",
-  "  --json                         line-delimited JSON on stdout: one line per event, one",
-  "                                 result at the end, each naming its schema",
-  "  --isolation <runtime[:image]>  run commands behind a kernel-enforced boundary",
-  "                                 (docker, podman, nerdctl); default none, which is the host",
-  "  --approve ask|auto             auto answers shell-allowlist prompts itself and records",
-  "                                 each; a derivation-heuristic prompt still asks either way",
+  "options of swarm gates, check, init and ci:",
+  "  --allowed-files <a,b>       the scope you authorise; without it the file-set gate reports observed",
+  "                              scope only",
+  "  --package <dir>             repeat for explicitly selected units",
+  "  --summary <file> --require-isolation   CI reviewer output and required boundary",
+  "  --immutable <a,b>           paths the change may not touch",
+  "  --contract <file>           a sealed acceptance contract for the checkout",
+  "  --agent-stream <file> [--agent-format generic|claude-code]   another agent's own event stream,",
+  "                              replayed beside the record",
+  "  --oracle <command>          what says the task was done; without it the task is unjudged",
   "",
   "the screen:",
-  "  --no-tui                     plain lines even on a terminal",
-  "  --details                    parallel: include worker events and the full assurance report",
-  "  --color, --no-color          paint, or do not, whatever the terminal says",
-  "  --open-evidence              open the review page when the run finishes",
-  "  --no-open-evidence           never open it",
+  "  --no-tui                    plain lines even on a terminal",
+  "  --details                   parallel: include worker events and the full assurance report",
+  "  --color, --no-color         paint, or do not, whatever the terminal says",
+  "  --open-evidence             open the review page when the run finishes",
+  "  --no-open-evidence          never open it",
   "",
   "swarm.toml holds the same settings, plus [theme] and [keys]. Flags win over it.",
+  "A task's exit status: 0 accepted, or gates passed with nothing sealed; 1 not accepted, partially",
+  "checked or unresolved; 2 an invalid command line; 3 criteria declined; 4 no model, or no criteria",
+  "could be sealed; 130 interrupted. docs/cli.md lists every command's.",
 ].join("\n");
 
 /** Three is the floor: two repeats cannot show a spread, and a spread is the point. */
@@ -393,11 +397,53 @@ interface CommandLineContext {
 
 const invalid = (problem: string) => new InvalidCommandLineError(problem, usage);
 
+const documentedFlags = new Set(
+  [...usage.matchAll(/--([a-z][a-z0-9-]*)/g)].map((match) => match[1]),
+);
+
+/** A flag map that remembers which names the parser asked about. */
+class ReadFlags extends Map<string, string> {
+  readonly asked = new Set<string>();
+  override get(name: string): string | undefined {
+    this.asked.add(name);
+    return super.get(name);
+  }
+  override has(name: string): boolean {
+    this.asked.add(name);
+    return super.has(name);
+  }
+}
+
+/**
+ * The command a line asks for. A flag the chosen command never reads is refused by name: read as
+ * a flag with a value, a misspelt `--plan-check "fix it"` swallowed the task, and an older build's
+ * missing flag was ignored without a word.
+ */
 export function parseCommandLine(
   argv: readonly string[],
   context: CommandLineContext,
 ): CommandLine {
   const line = tokenizeCommandLine(argv, { ...context, usage });
+  const flags = new ReadFlags(line.flags);
+  const command = commandFrom({ words: line.words, flags }, context);
+  // Asking for help or the version must not be able to fail for the line's other words. A flag
+  // the help names is an option of this build even where the chosen command reads it only beside
+  // another (`--install` with `--lockfile`); one it never names and nothing read is not.
+  const unread =
+    command.command === "help" || command.command === "version"
+      ? []
+      : [...flags.keys()].filter((name) => !flags.asked.has(name) && !documentedFlags.has(name));
+  if (unread.length > 0)
+    throw invalid(
+      `${unread.map((name) => `--${name}`).join(", ")} ${unread.length === 1 ? "is not an option" : "are not options"} of this command; swarm --help lists them`,
+    );
+  return command;
+}
+
+function commandFrom(
+  line: { readonly words: readonly string[]; readonly flags: ReadonlyMap<string, string> },
+  context: CommandLineContext,
+): CommandLine {
   const { words, flags } = line;
 
   // Before anything else: asking for help must not be able to fail for the reason a person
