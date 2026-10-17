@@ -14,7 +14,7 @@ swarm --version                  # which build this is
 | flag | what it does |
 | --- | --- |
 | `--goal-contract <file>` | sealed requirements and checks, held outside the solver's reach, that the run must satisfy; a feature task needs no preset. The run establishes the checks on the base before the first model call, iterates against them as the blocking `task-acceptance` gate, repairs under the ratchet, and verifies the exact final tree in a fresh checkout |
-| `--plan-checks` | author checks from the task text before implementation: the planner reads the workspace with read-only tools and states requirements (a requirement of the change quotes the task) with checks, each a short program over the project, its input cases with their expected results, and whether it covers the change (the unchanged base must get a case wrong and one right) or behaviour that stays (the base must get every case right). The planner can run its checks on the base while it plans; the harness admits each by one run on a fresh checkout of the base prepared as acceptance prepares it; a check that does not load or run to completion is not admitted, and dropped checks get one revision when the planning allowance still fits it. With `--goal-contract` the admitted checks are added to the supplied contract, which stays as written. They stay labelled model-authored, and a planned requirement left with no admitted check is reported as unchecked. A planner that pins nothing usable stops the run before implementation spending with its own account (exit 4), unless a supplied contract carries the run on; a decline is exit 3 |
+| `--plan-checks` | have a planner write requirements and checks from the task before implementation. Each check is admitted by one run on a fresh checkout of the unchanged base (it must load, and tell the base from the change); an admitted check is a diagnostic that drives repair and is reported, and never decides a requirement, so a planned requirement stays unjudged. With `--goal-contract` the planner's checks sit beside yours, and yours decide. Exit 4 where nothing could be sealed, 3 on a decline. The whole workflow: [using.md](using.md#an-ordinary-task-start-to-finish) |
 | `--prompt-profile legacy\|concise` | the worker's system prompt. `legacy` (the default) is the historical prompt, unchanged; `concise` is shorter, offers the predicate vocabulary as a tool instead of inline, has the harness record routine facts as claims, and asks for batched independent calls, file-based checks and no reruns of unchanged checks |
 | `--preset bugfix\|refactor\|upgrade` | a behavior policy the contract also names: base controls for a bugfix or refactor, narrow scope and exact targets for an upgrade (with `--install`). Named in both places or in neither |
 | `--install [--lockfile <file>]` | install the checkout's dependencies from its lockfile before the checks run, with install scripts off. A tree that holds several lockfiles is refused rather than guessed: name the one to install from, or declare `packageManager` in package.json |
@@ -107,7 +107,7 @@ swarm gates                      # run the gates over a workspace
   --allowed-files <a,b>          # the scope you authorise, for the file-set check
 ```
 
-## Choosing a local model
+## Choosing a model
 
 ```
 swarm select                     # probe this machine, recommend a local model
@@ -115,20 +115,25 @@ swarm calibrate                  # measure candidate models on the golden set
 swarm routing                    # what the reward log adds up to
 ```
 
-With no model named and no calibration on this machine, a run discovers Ollama and rapid-mlx,
-keeps only the models they actually serve, ranks those by the shortlist's tier for the probed
-hardware, and takes the top one, printing the choice and its reason before the session opens and
-recording it as a `model-default` ledger record. A served model the shortlist does not know is
-taken only where nothing ranked is served, and is called unranked. A frontier key is used only
-where nothing local is served; with neither, the run stops and names the three remedies. This is
-a static fit, not learned routing: `--model`, `SWARM_MODEL`, `[models] pin` and a calibration
-pick all win over it.
+Which model a run uses, first match wins:
 
-With no model named, the router picks one from what the calibration measured on this machine.
-Learned routing is off by default and there is a bar under turning it on: held-out success
-non-inferior within five points judged by the whole interval, at least thirty tasks per arm, and
-cheaper or faster. Nothing has cleared it, so routing follows the calibration and the competency
-table.
+1. `--model <provider:id>`, `SWARM_MODEL` or `[models] pin` in `swarm.toml`;
+2. a calibration pick for this machine (`swarm calibrate`); learned routing is off by default,
+   behind a bar nothing has cleared (held-out success non-inferior within five points over the
+   whole interval, at least thirty tasks per arm, and cheaper or faster);
+3. the best model a local server actually serves: Ollama and rapid-mlx are found on their default
+   ports (`http://127.0.0.1:11434/v1`, `http://127.0.0.1:8000/v1`), ranked by the shortlist's tier
+   for the probed hardware, and a served model the shortlist does not know is taken only where
+   nothing ranked is served, and is called unranked;
+4. a frontier provider whose key is set;
+5. otherwise the run stops before anything is recorded, names where it looked and the remedies,
+   and exits 4.
+
+The choice and its reason are printed before the session opens and recorded as a `model-default`
+ledger record. A hosted model needs `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or
+`GOOGLE_GENERATIVE_AI_API_KEY` in the environment or the OS keychain, and is named as
+`anthropic:<id>`, `openai:<id>` or `google:<id>`. Any other OpenAI-compatible local server is
+`--local-endpoint <url>` with `--model local:<id>`.
 
 ## Several workers
 

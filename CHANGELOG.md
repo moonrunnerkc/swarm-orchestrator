@@ -12,6 +12,22 @@ Source on `v13-main`; not published until a release names it.
 
 ### Fixed
 
+- **A repair after a rolled-back repair is told what was rolled back.** It was handed the restored
+  cycle's old failure report, without the regression that caused the rollback: in a live mime
+  run, repair 3 was told "Prior checked attempt: 1" after repair 2 passed every planned check and
+  failed seven project tests. The brief now names the restored state and the rejected candidate
+  apart (the gates it fixed and broke, the ratchet's reason and record, its bounded failures), and
+  a `rejected-candidate-v1` record keeps that candidate's files after the rollback.
+- **The shell guard reads an interpreter's inline program as code.** `node -e '... /^.*\./.exec(s)
+  ...'` was denied as an outside access because the regular expression was offered as a path,
+  while `node -e "...readFileSync('.env')"` was allowed. Only path-shaped words and relative or
+  home literals of the program after `-e`/`--eval`/`-p`/`--print` or python's `-c` are offered
+  now: the probe runs and the credential read is denied.
+- **First-run errors name what is true.** No model to run names where it looked and the remedy,
+  and exits 4 as documented (it exited 1); a run whose model was unreachable is told so, not to
+  try "a stronger model"; a flag this build does not have is refused by name instead of taking the
+  next word as its value; the help is grouped by command; a source build's `--version` says it is
+  not the release.
 - **An advisory size budget no longer refuses work while saying it was accepted.** The verdict
   and its stated reason now come from one list of unmet conditions, so a refusal names what
   refused. An advisory gate that demands a justification gets one bounded turn with only the
@@ -40,6 +56,29 @@ Source on `v13-main`; not published until a release names it.
 
 ### Changed
 
+- **Generated checks are diagnostics; only a supplied check decides a requirement.** A planned
+  check admitted by its base control shows it runs and tells the base from the change, not that
+  its expectations are right: a check expecting 11 to become "small" in a task that keeps it "big"
+  holds that control, then refused the correct change. A planned requirement is now sealed with no
+  deciding check and its generated checks under `planned.diagnostics` (an additive contract field;
+  existing digests are unchanged). They run on every candidate, drive a bounded repair labelled as
+  the planner's reading of the task, and are reported, but a planned requirement stays unjudged.
+  Admission records each expectation's basis (`base-observed` or `model-asserted`) and how many
+  cases claim a change; a planned requirement quoting the task survives the loss of its checks,
+  one the planner invented is dropped as unsupported; a program that imports nothing from the
+  repository is refused. **Output change:** a `--plan-checks` run that used to end `accepted` on
+  its own checks now ends `partially-checked` (exit 1).
+- **One outcome status across the terminal, the JSON result and the exit code:** `accepted`,
+  `unjudged`, `partially-checked`, `unresolved` (a generated check disagrees with the final tree)
+  or `not-accepted`, as `outcome.status` (added). **Output change:** a run with nothing sealed now
+  reads `gates passed; the task itself was not judged` instead of `accepted`, still exit 0.
+  Requirements carry `source`, `quote` and `generatedChecks`; planning coverage adds
+  `quotedWithoutCheck`.
+- **`run_check` for the worker**, where a goal contract is sealed: reruns the sealed checks exactly
+  as the acceptance gate does and shows a named check's cases, or runs a diagnostic program over
+  the project through the planned-check runner, with nothing to write or clean up.
+- **The README is a short first-run guide** verified from the packed tarball; its measurements,
+  example run and version history moved to [docs/agent.md](docs/agent.md).
 - **`--plan-checks` admits each planned check by its result on the unchanged base** and combines
   with `--goal-contract`:
   - the planner declares one check per `declare_planned_check` call: its requirement (an id, the
