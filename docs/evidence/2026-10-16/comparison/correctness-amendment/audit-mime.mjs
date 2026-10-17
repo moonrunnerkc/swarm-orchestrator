@@ -13,7 +13,11 @@
  * every case, or the reading is wrong and the run says so.
  *
  *   node audit-mime.mjs --repo <git url or mirror path> --work <empty scratch directory>
- *     [--npm <npm binary>] [--npm-cache <directory>] > audit-mime.json
+ *     [--npm <npm binary>] [--npm-cache <directory>] [--candidate <name>=<patch file> ...]
+ *     > audit-mime.json
+ *
+ * `--candidate` adds a patch beside the two retained ones, under its own name, for a later
+ * launch's delivered change.
  */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -29,6 +33,7 @@ const { values } = parseArgs({
     work: { type: "string" },
     npm: { type: "string", default: "npm" },
     "npm-cache": { type: "string" },
+    candidate: { type: "string", multiple: true, default: [] },
   },
 });
 if (values.repo === undefined || values.work === undefined)
@@ -46,6 +51,13 @@ const variants = {
   swarm: { patch: join(patches, "mime-bugfix-gettype-line-terminators.swarm.patch") },
   opencode: { patch: join(patches, "mime-bugfix-gettype-line-terminators.opencode.patch") },
 };
+
+for (const entry of values.candidate) {
+  const [name, path] = entry.split("=");
+  if (!/^[a-z][a-z0-9-]*$/.test(name ?? "") || path === undefined || name in variants)
+    throw new Error(`--candidate takes <new name>=<patch file>, not ${entry}`);
+  variants[name] = { patch: resolve(path) };
+}
 
 const sh = (argv, cwd) => execFileSync(argv[0], argv.slice(1), { cwd, stdio: "pipe" }).toString();
 const npmFlags = values["npm-cache"] === undefined ? [] : ["--cache", values["npm-cache"], "--offline"];
