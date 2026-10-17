@@ -193,3 +193,52 @@ function withValueAt(root: unknown, path: readonly PathStep[], value: unknown): 
   }
   return root;
 }
+
+/**
+ * Why a field that arrived as a JSON string could not be read as the container the schema
+ * declares, one line per field: its JSON does not parse, it parses as another type, or it parses
+ * and its contents fail the schema there. Nothing is decoded by this; it explains a denial. A
+ * live planner sent its checks as a string holding `undefined`, and was told only that an array
+ * was expected, which gave it nothing to fix.
+ */
+export function explainUndecodedFields(input: unknown, schema: ZodType): readonly string[] {
+  const parsed = schema.safeParse(input);
+  if (parsed.success) return [];
+  const lines: string[] = [];
+  for (const issue of parsed.error.issues) {
+    const expected = typeExpectedBy(issue);
+    const path = pathOf(issue.path);
+    if (expected === null || path === null) continue;
+    const encoded = valueAt(input, path);
+    if (typeof encoded !== "string") continue;
+    const field = path.length === 0 ? wholeArgumentsField : path.join(".");
+    let decoded: unknown;
+    try {
+      decoded = JSON.parse(encoded);
+    } catch (cause) {
+      lines.push(
+        `${field} arrived as a string and is not valid JSON (${cause instanceof Error ? cause.message : String(cause)}); send it as ${article(expected)} itself, not as a string`,
+      );
+      continue;
+    }
+    if (!isOfType(decoded, expected)) {
+      lines.push(`${field} arrived as a string holding JSON that is not ${article(expected)}`);
+      continue;
+    }
+    const inner = schema.safeParse(withValueAt(input, path, decoded));
+    const within = inner.success
+      ? []
+      : inner.error.issues
+          .filter((one) => path.every((step, index) => one.path[index] === step))
+          .slice(0, 8)
+          .map((one) => `${one.path.join(".")}: ${one.message}`);
+    if (within.length > 0)
+      lines.push(
+        `${field} arrived as a string; read as JSON, its contents fail: ${within.join("; ")}`,
+      );
+  }
+  return lines;
+}
+
+const article = (type: DecodableType) =>
+  type === "array" || type === "object" ? `an ${type}` : `a ${type}`;

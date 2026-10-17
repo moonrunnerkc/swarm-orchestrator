@@ -23,6 +23,7 @@ import type { PolicyGuard } from "./policy-guard.ts";
 import {
   type DecodedToolArguments,
   decodeStringifiedToolArguments,
+  explainUndecodedFields,
 } from "./tool-argument-decoding.ts";
 import type { ToolDefinition, ToolKind, ToolOutput } from "./tool-definition.ts";
 
@@ -188,7 +189,14 @@ export function createToolChokepoint(deps: ChokepointDependencies): ToolInvoker 
 
       const parsed = definition.inputSchema.safeParse(decoded.input);
       if (!parsed.success) {
-        return settle("denied", `input rejected: ${parsed.error.message}`, "", {}, "invalid-input");
+        const undecoded = explainUndecodedFields(invocation.input, definition.inputSchema);
+        return settle(
+          "denied",
+          `input rejected: ${parsed.error.message}${undecoded.length === 0 ? "" : `\n${undecoded.join("\n")}`}`,
+          "",
+          {},
+          "invalid-input",
+        );
       }
 
       for (const path of definition.pathsFrom(parsed.data)) {
