@@ -23,7 +23,7 @@ is recorded once; failed, capped and infrastructure launches are retained.
   fail) and on its upstream reference (both pass), with no model, before the freeze.
 - [manifest.json](manifest.json): the frozen task set with full commit ids, the pins, the
   budgets and the launch order; its digest is on every record.
-- [records/](records): one JSON per launch, written once, with every command's argv and exit,
+- [records](packed-derived/records/inventory.json) (packed; restored by `node scripts/evidence-pack.mjs restore docs/evidence/2026-10-11/comparison/packed-derived/records`): one JSON per launch, written once, with every command's argv and exit,
   output by digest, the invocations and their visible verdicts, the corrections, the final
   patch digest and the hidden verdict. Output blobs and final patches are kept under
   `~/.cache/swarm-comparison/blobs/` by digest.
@@ -48,7 +48,7 @@ is recorded once; failed, capped and infrastructure launches are retained.
 | 2 | 2026-10-12 00:01 to 08:57 | all forty launches completed and scored; afterwards, eleven Swarm launches were found refused by Swarm's own preflight before any model call and four more ended on Swarm or harness defects. Eight Swarm defects and two harness defects fixed at the root | [results-pass2.md](results-pass2.md), [records-pass2.sha256](records-pass2.sha256) |
 | 3 | 2026-10-12 09:54 to 23:19 | all forty launches completed and scored; afterwards, every OpenCode launch was found to have lost the model endpoint mid-run (44 of 58 invocations), because the server died of GPU memory exhaustion whenever that arm's session-title call ran beside its first turn. Pass 2's OpenCode launches had the same failure, unseen at the time. Two harness defects fixed at the root, one OpenCode setting changed, the endpoint now watched | [results-pass3.md](results-pass3.md), [records-pass3.sha256](records-pass3.sha256) |
 | 4 | 2026-10-12 23:54 to 2026-10-13 01:0x | stopped after two launches: the OpenCode arm held the endpoint but its model was thinking to the output cap and answering nothing, because the server enables thinking unless a request turns it off and only Swarm did; it had been so in every pass. Thinking off and the server's default top_p set for the OpenCode arm | [records-pass4.sha256](records-pass4.sha256), [manifest-pass4.json](manifest-pass4.json) |
-| 5 | 2026-10-13 00:59 to 18:44 | all forty launches completed and scored, no infrastructure failure, one server process throughout, both arms with thinking off and the same output cap. This is the comparison | [results.md](results.md), [records/](records) |
+| 5 | 2026-10-13 00:59 to 18:44 | all forty launches completed and scored, no infrastructure failure, one server process throughout, both arms with thinking off and the same output cap. This is the comparison | [results.md](results.md), [records](packed-derived/records/inventory.json) |
 
 The reasons, the fixes and the rerun decisions are in [protocol.md](protocol.md), amendments 1
 to 3. Pass 5 is the comparison; passes 1 to 4 are reported because they happened.
