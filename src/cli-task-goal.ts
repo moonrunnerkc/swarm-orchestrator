@@ -248,6 +248,17 @@ export async function verifyCandidateUnder(
   return result;
 }
 
+/**
+ * A contract's checks on a fresh checkout of the unchanged base, after the repository's own
+ * checks, exactly as the acceptance gate and the final verification run them. A planned check is
+ * admitted by this, not by a probe that skips the build: one that imports the project's built
+ * output could not run under the probe and would have run under acceptance.
+ */
+export function baseVerifier(context: TaskGoalContext) {
+  return async (contract: GoalContract) =>
+    (await check(context, "", { contract, challengePolicy: "off" })).goalAcceptance;
+}
+
 /** One admission probe: a patch on a fresh checkout of the base, only the probe contract judged. */
 export function probeVerifier(context: TaskGoalContext) {
   return async (patch: string, contract: GoalContract) =>

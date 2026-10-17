@@ -44,7 +44,9 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
 const task = "make classify(n) call 10 small: every n up to and including 10 is small";
 
 /** classify calls n < 10 small; the task moves the boundary, and 11 and above stay big. */
-async function workspace(): Promise<{ directory: string; base: string; contract: string }> {
+async function workspace(
+  built = false,
+): Promise<{ directory: string; base: string; contract: string }> {
   const directory = join(scratch, "workspace");
   await mkdir(directory, { recursive: true });
   await writeFile(
@@ -53,9 +55,13 @@ async function workspace(): Promise<{ directory: string; base: string; contract:
       name: "sized",
       version: "1.0.0",
       type: "module",
-      scripts: { test: "node --test" },
+      // A project whose consumers import what its build writes, as mime's import dist/.
+      scripts: built
+        ? { build: "mkdir -p built && cp value.mjs built/value.mjs", test: "node --test" }
+        : { test: "node --test" },
     }),
   );
+  if (built) await writeFile(join(directory, ".gitignore"), "built/\n");
   await writeFile(
     join(directory, "value.mjs"),
     "export function classify(n) {\n  return n < 10 ? 'small' : 'big';\n}\n",
@@ -160,10 +166,11 @@ const repairs: ScriptedTurnSource = (request) => {
 /** The ordinary command line, with a supplied contract and --plan-checks, on a scripted model. */
 async function swarm(
   turns: readonly ScriptedTurnSource[],
+  built = false,
 ): Promise<{ endpoint: ScriptedEndpoint; stdout: string; code: number }> {
   const endpoint = await startScriptedEndpoint({ modelId: "stub", turns });
   endpoints.push(endpoint);
-  const { directory, base, contract } = await workspace();
+  const { directory, base, contract } = await workspace(built);
   let stdout = "";
   let code = 0;
   try {
@@ -356,5 +363,44 @@ describe("planned checks through the ordinary command line", () => {
       ["boundary-fixed", "accepted"],
     ]);
     expect(code).toBe(0);
+  }, 200_000);
+
+  it("admits a check of built output, because the base runs the project's build first as acceptance does", async () => {
+    const builtCheck = plannedCheck(
+      "built-boundary",
+      "fails",
+      "import { classify } from './built/value.mjs';\nconsole.log(JSON.stringify({ 10: classify(10) }));",
+      '{"10":"small"}\n',
+    );
+    const { stdout, code } = await swarm(
+      [
+        {
+          toolCalls: [
+            {
+              name: "declare_planned_checks",
+              input: {
+                requirements: [
+                  { id: "built-boundary", description: "10 is small", checks: ["built-boundary"] },
+                ],
+                checks: [builtCheck],
+              },
+            },
+          ],
+        },
+        { text: "Pinned." },
+        { text: "Plan: move the boundary.", toolCalls: [declare] },
+        {
+          toolCalls: [
+            write("export function classify(n) {\n  return n <= 10 ? 'small' : 'big';\n}\n"),
+          ],
+        },
+        { text: "Done." },
+      ],
+      true,
+    );
+
+    expect(stdout).toMatch(/admitted built-boundary \(should fail there\)/);
+    expect(stdout).not.toContain("revising the planned checks");
+    expect(code, stdout.slice(-3000)).toBe(0);
   }, 200_000);
 });
