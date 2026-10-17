@@ -208,6 +208,8 @@ describe("planned checks through the ordinary command line", () => {
   it("admits checks by their base control and repairs a change against the one it broke", async () => {
     const { endpoint, stdout, code } = await swarm([
       ...plannerTurns,
+      // The revision round for the check that never ran: the planner replaces nothing.
+      { text: "No replacement." },
       { text: "Plan: move the boundary.", toolCalls: [declare] },
       // Wrong: the boundary moved too far, which breaks "11 and above stay big".
       {
@@ -269,15 +271,15 @@ describe("planned checks through the ordinary command line", () => {
       ["above", "accepted", "model"],
     ]);
     // The repair turn was asked, and with the concrete mismatch: it is the turn that wrote the fix.
-    expect(endpoint.played()).toBe(7);
+    expect(endpoint.played()).toBe(8);
     // Planning's spend is on the machine stream with the implementation's and the repair's, where
-    // a launcher sums the stopped events: three loops, three stops.
+    // a launcher sums the stopped events: planning, its revision, implementation and repair.
     const stops = stdout
       .split("\n")
       .filter((line) => line.startsWith("{"))
       .map((line) => JSON.parse(line) as { event?: { type?: string; tokensUsed?: number } })
       .filter((line) => line.event?.type === "stopped");
-    expect(stops).toHaveLength(3);
+    expect(stops).toHaveLength(4);
     expect(stops.every((stop) => (stop.event?.tokensUsed ?? 0) > 0)).toBe(true);
   }, 200_000);
 
@@ -296,5 +298,63 @@ describe("planned checks through the ordinary command line", () => {
     expect(stdout).toContain("no planned check was added");
     expect(stdout).toContain("implementing against the supplied contract");
     expect(code, stdout.slice(-3000)).toBe(0);
+  }, 200_000);
+
+  it("shows a check that never ran its base output, and admits the replacement by the same control", async () => {
+    const declaring = (checks: unknown[], requirements: unknown[]) => ({
+      toolCalls: [{ name: "declare_planned_checks", input: { requirements, checks } }],
+    });
+    // Answers only when its brief carries the broken check's recorded base output.
+    const revises: ScriptedTurnSource = (request) =>
+      JSON.stringify(request).includes("Cannot find module")
+        ? declaring(
+            [
+              plannedCheck(
+                "boundary-fixed",
+                "fails",
+                printing([9, 10]),
+                '{"9":"small","10":"small"}\n',
+              ),
+            ],
+            [{ id: "boundary-fixed", description: "10 is small", checks: ["boundary-fixed"] }],
+          )
+        : { text: "The revision brief carried no base output." };
+    const { stdout, code } = await swarm([
+      declaring(
+        [plannedCheck("boundary", "fails", "import './built/value.mjs';", '{"10":"small"}\n')],
+        [{ id: "boundary", description: "10 is small", checks: ["boundary"] }],
+      ),
+      { text: "Pinned." },
+      revises,
+      { text: "Replaced." },
+      { text: "Plan: move the boundary.", toolCalls: [declare] },
+      {
+        toolCalls: [
+          write("export function classify(n) {\n  return n <= 10 ? 'small' : 'big';\n}\n"),
+        ],
+      },
+      { text: "Done." },
+    ]);
+
+    expect(stdout).toContain(
+      "revising the planned checks that did not run to completion on the base",
+    );
+    expect(stdout).toMatch(/admitted boundary-fixed \(should fail there\)/);
+    const result = stdout
+      .split("\n")
+      .filter((line) => line.startsWith("{"))
+      .map(
+        (line) =>
+          JSON.parse(line) as {
+            schema: string;
+            outcome?: { requirements?: { id: string; status: string }[] };
+          },
+      )
+      .find((line) => line.schema === "swarm.result.v1");
+    expect(result?.outcome?.requirements?.map((one) => [one.id, one.status])).toEqual([
+      ["suite", "accepted"],
+      ["boundary-fixed", "accepted"],
+    ]);
+    expect(code).toBe(0);
   }, 200_000);
 });

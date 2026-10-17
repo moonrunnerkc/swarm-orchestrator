@@ -449,10 +449,10 @@ async function run(options: RunCommand): Promise<number> {
       ...(supplied === undefined ? {} : { base: supplied }),
       // Each planned check is run once on a fresh checkout of the base, on the planning chain,
       // and admitted only where it does there what it says it does.
-      admit: (chain, contract) =>
+      admit: (chain, contract, base) =>
         admitPlannedChecks({
           contract,
-          base: supplied,
+          base,
           evidence: chain,
           verifyAtBase: (probe) =>
             probeVerifier({

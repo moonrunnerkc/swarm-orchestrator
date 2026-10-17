@@ -20,6 +20,13 @@ export interface PlannedCheckDecision {
   readonly observed: "accepted" | "rejected" | "unjudged" | "not-run";
   readonly admitted: boolean;
   readonly reason: string;
+  /**
+   * Dropped because it never produced a result to judge (it did not run to completion or could
+   * not be judged), which a revision can fix, as against a result that contradicts its claim.
+   */
+  readonly broken: boolean;
+  /** The start of what it printed on the base, where it did not complete; null otherwise. */
+  readonly excerpt: string | null;
   readonly record: string | null;
 }
 
@@ -34,6 +41,7 @@ interface ObservedCheck {
   readonly status: "accepted" | "rejected" | "unjudged";
   readonly completed: boolean;
   readonly unavailable: string | null;
+  readonly output: string;
   readonly record: string;
 }
 
@@ -117,6 +125,8 @@ function observedChecks(
             exitCode?: number;
             unavailable?: string | null;
             outputTruncated?: boolean;
+            stdout?: string;
+            stderr?: string;
           };
         }
       | undefined;
@@ -135,16 +145,29 @@ function observedChecks(
         payload.observation.outputTruncated !== true &&
         payload.observation.exitCode === payload.behavior?.exitCode,
       unavailable: payload.observation?.unavailable ?? null,
+      output: `exit ${payload.observation?.exitCode ?? "unknown"}; stderr: ${(payload.observation?.stderr ?? "").slice(0, excerptChars)}; stdout: ${(payload.observation?.stdout ?? "").slice(0, excerptChars)}`,
       record: record.payloadDigest,
     });
   }
   return found;
 }
 
+const excerptChars = 600;
+
 function decide(
   check: GoalContract["checks"][number],
   seen: ObservedCheck | undefined,
 ): PlannedCheckDecision {
+  const decision = judgeAtBase(check, seen);
+  const broken =
+    !decision.admitted && seen !== undefined && (seen.status === "unjudged" || !seen.completed);
+  return { ...decision, broken, excerpt: broken ? (seen?.output ?? null) : null };
+}
+
+function judgeAtBase(
+  check: GoalContract["checks"][number],
+  seen: ObservedCheck | undefined,
+): Omit<PlannedCheckDecision, "broken" | "excerpt"> {
   const atBase = check.atBase ?? null;
   const base = { check: check.id, atBase, record: seen?.record ?? null };
   if (seen === undefined)
