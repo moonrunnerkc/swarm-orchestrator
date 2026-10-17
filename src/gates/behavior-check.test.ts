@@ -191,4 +191,29 @@ describe("what a rejected command-line check tells the worker", () => {
     expect(described).toMatch(/^exit status 1, expected 0; stdout should equal /);
     expect(described).toContain("(5000 characters, truncated)");
   });
+
+  it("carries what a crashed check wrote to stderr, so a crash does not read as an empty answer", () => {
+    if (check.kind !== "cli") throw new Error("a cli check");
+    const described = describeCliMismatch(check, {
+      ...observation("", 3),
+      stderr: "the check program did not load: SyntaxError: Unexpected token in src/Mime.ts",
+    });
+    expect(described).toMatch(
+      /^exit status 3, expected 0; stderr: ".*SyntaxError: Unexpected token/,
+    );
+  });
+
+  it("names only the lines that differ where the expected output has several", () => {
+    const lines = behaviorCheckSchema.parse({
+      ...check,
+      stdout: [{ kind: "equals", value: "a\nb\nc\n" }],
+    });
+    if (lines.kind !== "cli") throw new Error("a cli check");
+    expect(describeCliMismatch(lines, observation("a\nB\nc\n"))).toBe(
+      'exit status 0 as expected; stdout differs from the expected 3 line(s): line 2 should be "b" but was "B"',
+    );
+    expect(describeCliMismatch(lines, observation("a\n"))).toContain(
+      'line 2 should be "b" but was ""; line 3 should be "c" but was absent',
+    );
+  });
 });

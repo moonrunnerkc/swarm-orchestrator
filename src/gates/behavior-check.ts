@@ -28,20 +28,46 @@ const matches = (
   );
 
 /**
+ * The lines of an expected multi-line output that the captured output does not reproduce, each
+ * named by its number beside what was there, at most `limit` of them. Empty where they agree.
+ */
+export function differingLines(expected: string, actual: string, limit = 8): readonly string[] {
+  const want = expected.split("\n");
+  const got = actual.split("\n");
+  const lines: string[] = [];
+  for (let index = 0; index < Math.max(want.length, got.length); index += 1) {
+    const wanted = want[index];
+    const found = got[index];
+    if (wanted === found) continue;
+    if (lines.length === limit) {
+      lines.push("further lines differ");
+      break;
+    }
+    lines.push(
+      `line ${index + 1} should be ${wanted === undefined ? "absent" : bound(wanted)} but was ${found === undefined ? "absent" : bound(found)}`,
+    );
+  }
+  return lines;
+}
+
+const bound = (text: string) =>
+  text.length <= mismatchExcerptChars
+    ? JSON.stringify(text)
+    : `${JSON.stringify(text.slice(0, mismatchExcerptChars))} (${text.length} characters, truncated)`;
+
+/**
  * What a rejected command-line check saw against what it expected, for a check the worker may
- * see: the exit status and each stream assertion that did not hold, with the captured text
- * beside it. Without this the repair brief said only that the assertions were evaluated, so the
- * worker had nothing to repair from. A withheld check never gets this: its expectations are the
- * part the worker must not see.
+ * see: the exit status, with what the process wrote to stderr where it was not the expected one,
+ * and each stream assertion that did not hold, with the captured text beside it, line by line
+ * where the expected text has several. Without this the repair brief said only that the
+ * assertions were evaluated, so the worker had nothing to repair from; and a check that crashed
+ * on the candidate read as an empty answer, with the crash itself left out. A withheld check
+ * never gets this: its expectations are the part the worker must not see.
  */
 export function describeCliMismatch(
   check: Extract<BehaviorCheck, { kind: "cli" }>,
   observation: GateObservation,
 ): string {
-  const bound = (text: string) =>
-    text.length <= mismatchExcerptChars
-      ? JSON.stringify(text)
-      : `${JSON.stringify(text.slice(0, mismatchExcerptChars))} (${text.length} characters, truncated)`;
   const streams = [
     { name: "stdout", actual: observation.stdout, assertions: check.stdout },
     { name: "stderr", actual: observation.stderr, assertions: check.stderr },
@@ -49,14 +75,16 @@ export function describeCliMismatch(
   const parts = [
     observation.exitCode === check.exitCode
       ? `exit status ${observation.exitCode} as expected`
-      : `exit status ${observation.exitCode}, expected ${check.exitCode}`,
+      : `exit status ${observation.exitCode}, expected ${check.exitCode}` +
+        (observation.stderr.trim().length === 0 ? "" : `; stderr: ${bound(observation.stderr)}`),
     ...streams.flatMap((stream) =>
       stream.assertions
         .filter((assertion) => !matches(stream.actual, [assertion]))
-        .map(
-          (assertion) =>
-            `${stream.name} ${assertion.kind === "equals" ? "should equal" : "should contain"} ` +
-            `${bound(assertion.value)} but was ${bound(stream.actual)}`,
+        .map((assertion) =>
+          assertion.kind === "equals" && assertion.value.trimEnd().includes("\n")
+            ? `${stream.name} differs from the expected ${assertion.value.trimEnd().split("\n").length} line(s): ${differingLines(assertion.value, stream.actual).join("; ")}`
+            : `${stream.name} ${assertion.kind === "equals" ? "should equal" : "should contain"} ` +
+              `${bound(assertion.value)} but was ${bound(stream.actual)}`,
         ),
     ),
   ];
