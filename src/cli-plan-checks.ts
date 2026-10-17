@@ -1,6 +1,7 @@
 import type { PlannedCheckAdmission } from "./cli-planned-checks.ts";
 import { tokensSpent } from "./cli-strengthen.ts";
 import type { Clock } from "./core/clock.ts";
+import type { LoopEvent } from "./core/loop-events.ts";
 import type { ModelClient } from "./core/model-client.ts";
 import type { RandomSource } from "./core/random-source.ts";
 import type { StopReason } from "./core/termination.ts";
@@ -40,6 +41,8 @@ export interface PlanChecksDependencies {
    * with its account rather than guessing.
    */
   readonly ask?: (question: string) => Promise<string>;
+  /** Where the planner's loop events go, so what planning spends is counted where the run's is. */
+  readonly emit?: (event: LoopEvent) => void;
   /**
    * A contract the user supplied: the planner adds checks to it and cannot change it. Absent,
    * the planner authors the whole contract, as it always has.
@@ -111,7 +114,7 @@ export async function planChecks(deps: PlanChecksDependencies): Promise<PlanChec
       evidence: planning,
       clock: deps.clock,
       random: deps.random,
-      emit: () => {},
+      emit: deps.emit ?? (() => {}),
       maxSteps: deps.maxSteps,
       abortSignal: deps.signal,
     });
