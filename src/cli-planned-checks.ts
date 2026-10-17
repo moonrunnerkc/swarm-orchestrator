@@ -1,6 +1,11 @@
+import type { BehaviorCheck } from "./evidence/behavior-check.ts";
 import { asJsonValue } from "./evidence/canonical-json.ts";
 import { freezeGoalContract, type GoalContract } from "./evidence/goal-contract.ts";
 import type { EvidenceRecorder } from "./evidence/session.ts";
+import { differingLines } from "./gates/behavior-check.ts";
+import { assembleGates, type GateSetOptions } from "./gates/default-gates.ts";
+import { createGitWorkspaceProbe } from "./gates/git-workspace.ts";
+import { detectProject } from "./gates/project-type.ts";
 
 /**
  * Admission of planned checks by their base control, before any implementation exists.
@@ -21,11 +26,16 @@ export interface PlannedCheckDecision {
   readonly admitted: boolean;
   readonly reason: string;
   /**
-   * Dropped because it never produced a result to judge (it did not run to completion or could
-   * not be judged), which a revision can fix, as against a result that contradicts its claim.
+   * Dropped because it never produced a result to judge (it did not run to completion, could
+   * not be judged, or threw on every case), as against a result that contradicts its claim.
    */
   readonly broken: boolean;
-  /** The start of what it printed on the base, where it did not complete; null otherwise. */
+  /**
+   * What the planner is shown to revise a dropped check: for a broken one, the start of what it
+   * printed on the base; for a preserve check the base got wrong, the cases it got wrong with
+   * what the base gave. Null for an admitted check, and for a change check the base already
+   * satisfies, whose base results are its own expectations and would only invite fitting them.
+   */
   readonly excerpt: string | null;
   readonly record: string | null;
 }
@@ -41,6 +51,7 @@ interface ObservedCheck {
   readonly status: "accepted" | "rejected" | "unjudged";
   readonly completed: boolean;
   readonly unavailable: string | null;
+  readonly stdout: string;
   readonly output: string;
   readonly record: string;
 }
@@ -145,6 +156,7 @@ function observedChecks(
         payload.observation.outputTruncated !== true &&
         payload.observation.exitCode === payload.behavior?.exitCode,
       unavailable: payload.observation?.unavailable ?? null,
+      stdout: payload.observation?.stdout ?? "",
       output: `exit ${payload.observation?.exitCode ?? "unknown"}; stderr: ${(payload.observation?.stderr ?? "").slice(0, excerptChars)}; stdout: ${(payload.observation?.stdout ?? "").slice(0, excerptChars)}`,
       record: record.payloadDigest,
     });
@@ -152,16 +164,66 @@ function observedChecks(
   return found;
 }
 
-const excerptChars = 600;
+const excerptChars = 1200;
+
+/** The one stdout equality a planned check is judged by, where it has one. */
+function expectedStdout(check: GoalContract["checks"][number]): string | null {
+  const behavior: BehaviorCheck | undefined = check.behavior;
+  if (behavior?.kind !== "cli") return null;
+  const [only] = behavior.stdout;
+  return behavior.stdout.length === 1 && only?.kind === "equals" ? only.value : null;
+}
+
+/**
+ * Every case of a change check came out wrong on the base. A check of the change is admitted by
+ * the base getting the change wrong, and a program that cannot call the project at all (it
+ * constructs the project's object wrongly, imports the wrong thing, or throws) gets every case
+ * wrong as well, so the two read alike. A live planner's checks built their own instance of the
+ * class wrongly, answered null for everything, were admitted, and refused every compliant
+ * implementation. A change check therefore also holds a case the task does not change, which the
+ * base must get right: its control that the program observes the project correctly.
+ */
+function wrongEverywhere(check: GoalContract["checks"][number], seen: ObservedCheck): boolean {
+  const expected = expectedStdout(check);
+  if (expected === null) return false;
+  const want = expected.split("\n").filter((line) => line.length > 0);
+  const got = seen.stdout.split("\n");
+  return want.length > 0 && want.every((line, index) => got[index] !== line);
+}
 
 function decide(
   check: GoalContract["checks"][number],
   seen: ObservedCheck | undefined,
 ): PlannedCheckDecision {
-  const decision = judgeAtBase(check, seen);
+  const uncontrolled =
+    seen !== undefined &&
+    check.atBase === "fails" &&
+    seen.completed &&
+    wrongEverywhere(check, seen);
+  const decision = uncontrolled
+    ? {
+        check: check.id,
+        atBase: "fails" as const,
+        record: seen.record,
+        observed: seen.status,
+        admitted: false,
+        reason:
+          "it gets every case wrong on the base, so nothing shows its program calls the project correctly; a change check also holds a case the task does not change, which the base gets right",
+      }
+    : judgeAtBase(check, seen);
   const broken =
-    !decision.admitted && seen !== undefined && (seen.status === "unjudged" || !seen.completed);
-  return { ...decision, broken, excerpt: broken ? (seen?.output ?? null) : null };
+    !decision.admitted &&
+    seen !== undefined &&
+    (seen.status === "unjudged" || !seen.completed || uncontrolled);
+  const expected = expectedStdout(check);
+  const excerpt = decision.admitted
+    ? null
+    : broken
+      ? (seen?.output ?? null)
+      : check.atBase === "passes" && seen !== undefined && expected !== null
+        ? differingLines(expected, seen.stdout).join("; ")
+        : null;
+  return { ...decision, broken, excerpt };
 }
 
 function judgeAtBase(
@@ -225,4 +287,40 @@ function judgeAtBase(
         };
   }
   return { ...base, observed, admitted: false, reason: "it declares no base expectation" };
+}
+
+/**
+ * What the harness does to a fresh checkout of the base before a planned check runs there, in a
+ * sentence the planner is given: the install and the repository checks the run is configured
+ * with, read from the base as the verifier reads them. The planner then knows whether the build
+ * output its program imports will exist, rather than arranging a build inside the check, which
+ * is what broke the checks of earlier launches.
+ */
+export async function describeCheckoutPreparation(input: {
+  readonly workspace: string;
+  readonly baseCommit: string;
+  readonly install: boolean;
+  readonly lockfile?: string;
+  readonly gateOptions: GateSetOptions;
+}): Promise<string> {
+  const probe = createGitWorkspaceProbe({
+    workspaceRoot: input.workspace,
+    baseRef: input.baseCommit,
+  });
+  const gates = assembleGates(
+    await detectProject((path) => probe.readBase(path)),
+    input.gateOptions,
+  ).flatMap((gate) =>
+    gate.source.kind === "command" ? [`${gate.id} (${gate.source.command})`] : [],
+  );
+  return [
+    "Before your checks run, the harness makes a fresh checkout of the unchanged base,",
+    input.install
+      ? `installs its dependencies${input.lockfile === undefined ? "" : ` from ${input.lockfile}`},`
+      : "installs nothing (the run was not given --install),",
+    gates.length === 0
+      ? "and runs no repository command first."
+      : `then runs the repository's checks, ${gates.join(", ")}, so whatever those commands build is in place when your program runs.`,
+    "The same preparation runs before every candidate is checked.",
+  ].join(" ");
 }

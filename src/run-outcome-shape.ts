@@ -43,4 +43,9 @@ export interface RunOutcomeReport {
   readonly interventions: InterventionCounts;
   readonly setup: SetupUsage | null;
   readonly resumable: boolean;
+  /**
+   * Planned requirements no admitted check covers. They were never sealed, so nothing judged
+   * them and the run cannot call them met; they are named so they cannot vanish either.
+   */
+  readonly uncheckedRequirements?: readonly { readonly id: string; readonly description: string }[];
 }

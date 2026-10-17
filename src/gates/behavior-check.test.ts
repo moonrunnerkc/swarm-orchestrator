@@ -177,18 +177,64 @@ describe("what a rejected command-line check tells the worker", () => {
     unavailable: null,
   });
 
-  it("names the expected output beside the output it captured", () => {
+  it("names the expected line beside the line it captured", () => {
     if (check.kind !== "cli") throw new Error("a cli check");
     expect(describeCliMismatch(check, observation('{"photo.png\\n.jpg":null}\n'))).toBe(
-      'exit status 0 as expected; stdout should equal "{\\"photo.png\\\\n.jpg\\":\\"image/jpeg\\"}\\n" ' +
-        'but was "{\\"photo.png\\\\n.jpg\\":null}\\n"',
+      "exit status 0 as expected; stdout differs from the expected 1 line(s): " +
+        'line 1 should be `{"photo.png\\n.jpg":"image/jpeg"}` but was `{"photo.png\\n.jpg":null}`',
     );
   });
 
   it("names a wrong exit status and bounds a long capture", () => {
     if (check.kind !== "cli") throw new Error("a cli check");
     const described = describeCliMismatch(check, observation("x".repeat(5000), 1));
-    expect(described).toMatch(/^exit status 1, expected 0; stdout should equal /);
+    expect(described).toMatch(
+      /^exit status 1, expected 0; stdout differs from the expected 1 line/,
+    );
     expect(described).toContain("(5000 characters, truncated)");
+  });
+
+  it("carries what a crashed check wrote to stderr, so a crash does not read as an empty answer", () => {
+    if (check.kind !== "cli") throw new Error("a cli check");
+    const described = describeCliMismatch(check, {
+      ...observation("", 3),
+      stderr: "the check program did not load: SyntaxError: Unexpected token in src/Mime.ts",
+    });
+    expect(described).toMatch(
+      /^exit status 3, expected 0; stderr: ".*SyntaxError: Unexpected token/,
+    );
+  });
+
+  it("names only the lines that differ where the expected output has several", () => {
+    const lines = behaviorCheckSchema.parse({
+      ...check,
+      stdout: [{ kind: "equals", value: "a\nb\nc\n" }],
+    });
+    if (lines.kind !== "cli") throw new Error("a cli check");
+    expect(describeCliMismatch(lines, observation("a\nB\nc\n"))).toBe(
+      "exit status 0 as expected; stdout differs from the expected 3 line(s): line 2 should be `b` but was `B`",
+    );
+    expect(describeCliMismatch(lines, observation("a\n"))).toContain(
+      "line 2 should be `b` but was ``; line 3 should be `c` but was absent",
+    );
+    // A JSON line reads as itself, with only the invisible characters escaped.
+    const json = behaviorCheckSchema.parse({
+      ...check,
+      stdout: [
+        {
+          kind: "equals",
+          value: '{"input":"a\\nb","result":"x"}\n{"input":"LS\u2028","result":1}\n',
+        },
+      ],
+    });
+    if (json.kind !== "cli") throw new Error("a cli check");
+    expect(
+      describeCliMismatch(
+        json,
+        observation('{"input":"a\\nb","result":null}\n{"input":"LS\u2028","result":2}\n'),
+      ),
+    ).toContain(
+      'line 1 should be `{"input":"a\\nb","result":"x"}` but was `{"input":"a\\nb","result":null}`; line 2 should be `{"input":"LS\\u2028","result":1}`',
+    );
   });
 });

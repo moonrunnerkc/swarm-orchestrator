@@ -89,60 +89,91 @@ async function workspace(
   return { directory, base: await git(directory, "rev-parse", "HEAD"), contract };
 }
 
-/** A planned check: an inline script printing classify over fixed inputs, compared as one JSON line. */
-function plannedCheck(id: string, atBase: "fails" | "passes", script: string, expected: string) {
-  const argv = ["node", "--input-type=module", "-e", script];
-  return {
-    id,
-    command: argv.join(" "),
-    author: "model",
-    exposure: "shared",
-    atBase,
-    artifacts: [],
-    behavior: {
-      kind: "cli",
-      cwd: ".",
-      timeoutMs: 10_000,
-      maxOutputBytes: 4096,
-      toolchain: "Node",
-      network: "inherit",
-      argv,
-      exitCode: 0,
-      stdout: [{ kind: "equals", value: expected }],
-      stderr: [],
-    },
-  };
+/** A planned check as the planner declares it: a program over classify, and its cases. */
+function plannedCheck(
+  id: string,
+  requirement: string,
+  purpose: "change" | "preserve",
+  cases: { input: number; expected: string }[],
+  program = classifying("./value.mjs"),
+) {
+  return { id, requirement, purpose, program, cases, why: "the task states the boundary" };
 }
 
-const printing = (inputs: number[]) =>
-  `import { classify } from './value.mjs';\nconsole.log(JSON.stringify(Object.fromEntries(${JSON.stringify(inputs)}.map((n) => [n, classify(n)]))));`;
+const classifying = (path: string) =>
+  `import { classify } from '${path}';\nexport default (n) => classify(n);\n`;
+const quote = "every n up to and including 10 is small";
+/** One declare_planned_check call per check, each naming its requirement's words beside it. */
+const declaring = (
+  requirements: { id: string; description: string; quote?: string }[],
+  checks: ReturnType<typeof plannedCheck>[],
+) => ({
+  toolCalls: checks.map((check) => {
+    const requirement = requirements.find((one) => one.id === check.requirement);
+    if (requirement === undefined) throw new Error(`no requirement ${check.requirement}`);
+    return {
+      name: "declare_planned_check",
+      input: {
+        ...check,
+        requirementId: check.requirement,
+        requirement: requirement.description,
+        ...(requirement.quote === undefined ? {} : { quote: requirement.quote }),
+      },
+    };
+  }),
+});
+
+/** Every brief the planner was sent, as text, for what it carried. */
+const plannerBriefs = (endpoint: ScriptedEndpoint) =>
+  endpoint.requests
+    .map((request) => JSON.stringify(request))
+    .filter((text) => text.includes("You write the acceptance checks"));
 
 const plannerTurns: ScriptedTurnSource[] = [
   {
     text: "Plan: pin the boundary, what stays, and two checks that should not survive.",
-    toolCalls: [
-      {
-        name: "declare_planned_checks",
-        input: {
-          requirements: [
-            {
-              id: "boundary",
-              description: "10 is small, and so is everything below it",
-              checks: ["boundary", "mislabelled", "broken"],
-            },
-            { id: "above", description: "11 and above stay big", checks: ["above"] },
+    ...declaring(
+      [
+        { id: "boundary", description: "10 is small, and so is everything below it", quote },
+        { id: "loads", description: "the module loads from its own path", quote },
+        { id: "above", description: "11 and above stay big" },
+      ],
+      [
+        plannedCheck("boundary", "boundary", "change", [
+          { input: 9, expected: "small" },
+          { input: 10, expected: "small" },
+        ]),
+        plannedCheck("above", "above", "preserve", [
+          { input: 11, expected: "big" },
+          { input: 50, expected: "big" },
+        ]),
+        // Says it detects the change, yet the base already gets it right.
+        plannedCheck("mislabelled", "boundary", "change", [{ input: 3, expected: "small" }]),
+        // Never calls the project at all: the base gets every case wrong, as the missing change
+        // would, and only the control case it lacks would have shown that.
+        plannedCheck(
+          "uncontrolled",
+          "boundary",
+          "change",
+          [
+            { input: 9, expected: "small" },
+            { input: 10, expected: "small" },
           ],
-          checks: [
-            plannedCheck("boundary", "fails", printing([9, 10]), '{"9":"small","10":"small"}\n'),
-            plannedCheck("above", "passes", printing([11, 50]), '{"11":"big","50":"big"}\n'),
-            // Says it detects the change, yet the base already gets it right.
-            plannedCheck("mislabelled", "fails", printing([3]), '{"3":"small"}\n'),
-            // Imports a module that does not exist: it fails on the base without completing.
-            plannedCheck("broken", "fails", "import './missing.mjs';", '{"10":"small"}\n'),
+          "export default () => null;\n",
+        ),
+        // Imports a module that does not exist: it never loads on the base.
+        plannedCheck(
+          "broken",
+          "loads",
+          "change",
+          [
+            { input: 9, expected: "small" },
+            { input: 10, expected: "small" },
           ],
-        },
-      },
-    ],
+          classifying("./missing.mjs"),
+        ),
+      ],
+    ),
   },
   { text: "Criteria pinned." },
 ];
@@ -153,10 +184,10 @@ const write = (source: string) => ({
   input: { path: "value.mjs", content: source },
 });
 
-/** The repair turn, which answers only if the brief carries the planned check's mismatch. */
+/** The repair turn, which answers only if the brief carries the planned check's line that differed. */
 const repairs: ScriptedTurnSource = (request) => {
   const text = JSON.stringify(request);
-  if (!text.includes("should equal") || !text.includes("above"))
+  if (!text.includes("line 1 should be") || !text.includes("above"))
     return { text: "The repair brief named no concrete failure." };
   return {
     toolCalls: [write("export function classify(n) {\n  return n <= 10 ? 'small' : 'big';\n}\n")],
@@ -211,11 +242,35 @@ async function swarm(
   return { endpoint, stdout, code };
 }
 
+interface ResultLine {
+  schema: string;
+  runId?: string;
+  verdict?: { acceptable?: boolean };
+  outcome?: {
+    requirements?: { id: string; status: string; authoredBy: string }[];
+    uncheckedRequirements?: { id: string }[];
+  };
+  plannedChecks?: {
+    outcome: string;
+    admitted: string[];
+    dropped: { check: string; reason: string }[];
+    revision: { outcome: string } | null;
+    coverage: { sentences: number; quotedByAdmitted: number[] } | null;
+  };
+}
+
+const resultOf = (stdout: string) =>
+  stdout
+    .split("\n")
+    .filter((line) => line.startsWith("{"))
+    .map((line) => JSON.parse(line) as ResultLine)
+    .find((line) => line.schema === "swarm.result.v1");
+
 describe("planned checks through the ordinary command line", () => {
   it("admits checks by their base control and repairs a change against the one it broke", async () => {
     const { endpoint, stdout, code } = await swarm([
       ...plannerTurns,
-      // The revision round for the check that never ran: the planner replaces nothing.
+      // The revision round for the two dropped checks: the planner replaces nothing.
       { text: "No replacement." },
       { text: "Plan: move the boundary.", toolCalls: [declare] },
       // Wrong: the boundary moved too far, which breaks "11 and above stay big".
@@ -229,19 +284,7 @@ describe("planned checks through the ordinary command line", () => {
       { text: "Repaired." },
     ]);
 
-    const result = stdout
-      .split("\n")
-      .filter((line) => line.startsWith("{"))
-      .map(
-        (line) =>
-          JSON.parse(line) as {
-            schema: string;
-            runId?: string;
-            verdict?: { acceptable?: boolean };
-            outcome?: { requirements?: { id: string; status: string; authoredBy: string }[] };
-          },
-      )
-      .find((line) => line.schema === "swarm.result.v1");
+    const result = resultOf(stdout);
     expect(result?.verdict?.acceptable, stdout.slice(-4000)).toBe(true);
     expect(code).toBe(0);
 
@@ -258,18 +301,60 @@ describe("planned checks through the ordinary command line", () => {
             readFileSync(join(planning, "blobs", `${record.payloadDigest.slice(7)}.json`), "utf8"),
           ) as {
             rule?: string;
-            decisions?: { check: string; admitted: boolean; reason: string }[];
+            decisions?: { check: string; admitted: boolean; reason: string; broken: boolean }[];
           },
       )
       .find((payload) => payload.rule === "planned-check-admission-v1");
     expect(
       Object.fromEntries((admission?.decisions ?? []).map((one) => [one.check, one.admitted])),
-    ).toEqual({ boundary: true, above: true, mislabelled: false, broken: false });
-    expect(admission?.decisions?.find((one) => one.check === "broken")?.reason).toContain(
-      "without completing",
-    );
+    ).toEqual({
+      boundary: true,
+      above: true,
+      mislabelled: false,
+      uncontrolled: false,
+      broken: false,
+    });
+    expect(admission?.decisions?.find((one) => one.check === "uncontrolled")).toMatchObject({
+      broken: true,
+      reason: expect.stringMatching(/gets every case wrong on the base/),
+    });
+    expect(admission?.decisions?.find((one) => one.check === "broken")?.broken).toBe(true);
+    expect(result?.plannedChecks).toEqual({
+      outcome: "sealed",
+      admitted: ["boundary", "above"],
+      dropped: [
+        {
+          check: "mislabelled",
+          reason: "it passes on the base, so it does not detect the requested change",
+        },
+        {
+          check: "uncontrolled",
+          reason:
+            "it gets every case wrong on the base, so nothing shows its program calls the project correctly; a change check also holds a case the task does not change, which the base gets right",
+        },
+        {
+          check: "broken",
+          reason:
+            "it fails on the base without completing, which shows a broken check rather than the missing change",
+        },
+      ],
+      revision: { outcome: "ran", admitted: [] },
+      coverage: { sentences: 1, quotedByAdmitted: [1] },
+    });
 
-    // Sealed: the supplied requirement and the two planned ones that kept a check.
+    // The revision brief carried the load failure and the program it came from, and not the base
+    // results of the change check the base already satisfies, which would only invite fitting them.
+    const revisionBrief = plannerBriefs(endpoint).find((text) =>
+      text.includes("Declare replacements"),
+    );
+    expect(revisionBrief).toContain("the check program did not load");
+    expect(revisionBrief).toContain("./missing.mjs");
+    // Each dropped check's inputs as read, so a planner can see what the harness received.
+    expect(revisionBrief).toContain("inputs as read: 3");
+    expect(revisionBrief).not.toMatch(/mislabelled[^-]*on the base:/);
+
+    // Sealed: the supplied requirement and the two planned ones that kept a check. The planned
+    // requirement whose only check never loaded is named as unchecked, not sealed and not met.
     expect(
       (result?.outcome?.requirements ?? []).map((one) => [one.id, one.status, one.authoredBy]),
     ).toEqual([
@@ -277,7 +362,9 @@ describe("planned checks through the ordinary command line", () => {
       ["boundary", "accepted", "model"],
       ["above", "accepted", "model"],
     ]);
-    // The repair turn was asked, and with the concrete mismatch: it is the turn that wrote the fix.
+    expect(result?.outcome?.uncheckedRequirements?.map((one) => one.id)).toEqual(["loads"]);
+    expect(stdout).toMatch(/unchecked loads: .*not sealed or judged/);
+    // The repair turn was asked, and with the line that differed: it is the turn that wrote the fix.
     expect(endpoint.played()).toBe(8);
     // Planning's spend is on the machine stream with the implementation's and the repair's, where
     // a launcher sums the stopped events: planning, its revision, implementation and repair.
@@ -290,7 +377,7 @@ describe("planned checks through the ordinary command line", () => {
     expect(stops.every((stop) => (stop.event?.tokensUsed ?? 0) > 0)).toBe(true);
   }, 200_000);
 
-  it("goes on against the supplied contract when the planner adds nothing", async () => {
+  it("goes on against the supplied contract when the planner adds nothing, and says so on the result", async () => {
     const { stdout, code } = await swarm([
       { text: "I cannot pin checks for this." },
       { text: "Plan: move the boundary.", toolCalls: [declare] },
@@ -304,32 +391,58 @@ describe("planned checks through the ordinary command line", () => {
 
     expect(stdout).toContain("no planned check was added");
     expect(stdout).toContain("implementing against the supplied contract");
+    expect(resultOf(stdout)?.plannedChecks).toEqual({
+      outcome: "unresolved",
+      admitted: [],
+      dropped: [],
+      revision: null,
+      coverage: null,
+    });
     expect(code, stdout.slice(-3000)).toBe(0);
   }, 200_000);
 
-  it("shows a check that never ran its base output, and admits the replacement by the same control", async () => {
-    const declaring = (checks: unknown[], requirements: unknown[]) => ({
-      toolCalls: [{ name: "declare_planned_checks", input: { requirements, checks } }],
-    });
-    // Answers only when its brief carries the broken check's recorded base output.
-    const revises: ScriptedTurnSource = (request) =>
-      JSON.stringify(request).includes("Cannot find module")
+  it("revises a check that never loaded and a preserved case the base contradicts, from what each did there", async () => {
+    // Answers only when its brief carries the load failure and the preserved case's base result.
+    const revises: ScriptedTurnSource = (request) => {
+      const text = JSON.stringify(request);
+      return text.includes("the check program did not load") &&
+        text.includes("line 1 should be") &&
+        text.includes("but was")
         ? declaring(
             [
-              plannedCheck(
-                "boundary-fixed",
-                "fails",
-                printing([9, 10]),
-                '{"9":"small","10":"small"}\n',
-              ),
+              { id: "boundary", description: "10 is small", quote },
+              { id: "above", description: "11 and above stay big" },
             ],
-            [{ id: "boundary-fixed", description: "10 is small", checks: ["boundary-fixed"] }],
+            [
+              plannedCheck("boundary", "boundary", "change", [
+                { input: 9, expected: "small" },
+                { input: 10, expected: "small" },
+              ]),
+              plannedCheck("above", "above", "preserve", [{ input: 11, expected: "big" }]),
+            ],
           )
         : { text: "The revision brief carried no base output." };
+    };
     const { stdout, code } = await swarm([
       declaring(
-        [plannedCheck("boundary", "fails", "import './built/value.mjs';", '{"10":"small"}\n')],
-        [{ id: "boundary", description: "10 is small", checks: ["boundary"] }],
+        [
+          { id: "boundary", description: "10 is small", quote },
+          { id: "above", description: "11 and above stay big" },
+        ],
+        [
+          plannedCheck(
+            "boundary",
+            "boundary",
+            "change",
+            [
+              { input: 9, expected: "small" },
+              { input: 10, expected: "small" },
+            ],
+            classifying("./built/value.mjs"),
+          ),
+          // A misreading of what the base already does: 11 is big there.
+          plannedCheck("above", "above", "preserve", [{ input: 11, expected: "small" }]),
+        ],
       ),
       { text: "Pinned." },
       revises,
@@ -343,50 +456,102 @@ describe("planned checks through the ordinary command line", () => {
       { text: "Done." },
     ]);
 
-    expect(stdout).toContain(
-      "revising the planned checks that did not run to completion on the base",
-    );
-    expect(stdout).toMatch(/admitted boundary-fixed \(should fail there\)/);
-    const result = stdout
-      .split("\n")
-      .filter((line) => line.startsWith("{"))
-      .map(
-        (line) =>
-          JSON.parse(line) as {
-            schema: string;
-            outcome?: { requirements?: { id: string; status: string }[] };
-          },
-      )
-      .find((line) => line.schema === "swarm.result.v1");
+    expect(stdout).toContain("revising the planned checks admission dropped");
+    expect(stdout).toMatch(/admitted boundary \(should fail there\)/);
+    expect(stdout).toMatch(/admitted above \(should pass there\)/);
+    const result = resultOf(stdout);
     expect(result?.outcome?.requirements?.map((one) => [one.id, one.status])).toEqual([
       ["suite", "accepted"],
-      ["boundary-fixed", "accepted"],
+      ["boundary", "accepted"],
+      ["above", "accepted"],
     ]);
+    expect(result?.plannedChecks?.revision).toEqual({
+      outcome: "ran",
+      admitted: ["boundary", "above"],
+    });
     expect(code).toBe(0);
   }, 200_000);
 
-  it("admits a check of built output, because the base runs the project's build first as acceptance does", async () => {
-    const builtCheck = plannedCheck(
-      "built-boundary",
-      "fails",
-      "import { classify } from './built/value.mjs';\nconsole.log(JSON.stringify({ 10: classify(10) }));",
-      '{"10":"small"}\n',
-    );
-    const { stdout, code } = await swarm(
-      [
-        {
-          toolCalls: [
-            {
-              name: "declare_planned_checks",
-              input: {
-                requirements: [
-                  { id: "built-boundary", description: "10 is small", checks: ["built-boundary"] },
-                ],
-                checks: [builtCheck],
-              },
-            },
+  it("lets the planner run its checks on the base inside its own loop, and admits what it finished on", async () => {
+    const requirements = [{ id: "boundary", description: "10 is small", quote }];
+    const good = plannedCheck("boundary", "boundary", "change", [
+      { input: 9, expected: "small" },
+      { input: 10, expected: "small" },
+    ]);
+    const trial = { toolCalls: [{ name: "run_planned_checks_on_base", input: {} }] };
+    // Replaces the broken check only when the in-loop run reported why it never loaded.
+    const replaces: ScriptedTurnSource = (request) =>
+      JSON.stringify(request).includes("the check program did not load")
+        ? declaring(requirements, [
+            plannedCheck("loads", "boundary", "change", [
+              { input: 9, expected: "small" },
+              { input: 10, expected: "small" },
+            ]),
+          ])
+        : { text: "The base run reported nothing to fix." };
+    const { endpoint, stdout, code } = await swarm([
+      declaring(requirements, [
+        good,
+        plannedCheck(
+          "loads",
+          "boundary",
+          "change",
+          [
+            { input: 9, expected: "small" },
+            { input: 10, expected: "small" },
           ],
-        },
+          classifying("./missing.mjs"),
+        ),
+      ]),
+      trial,
+      replaces,
+      trial,
+      { text: "Pinned and checked on the base." },
+      { text: "Plan: move the boundary.", toolCalls: [declare] },
+      {
+        toolCalls: [
+          write("export function classify(n) {\n  return n <= 10 ? 'small' : 'big';\n}\n"),
+        ],
+      },
+      { text: "Done." },
+    ]);
+
+    expect(code, stdout.slice(-3000)).toBe(0);
+    expect(stdout).toContain(
+      "admission reuses the planner's own last base run of these exact checks",
+    );
+    expect(resultOf(stdout)?.plannedChecks).toMatchObject({
+      outcome: "sealed",
+      admitted: ["boundary", "loads"],
+      dropped: [],
+      revision: { outcome: "not-needed" },
+    });
+    // The second in-loop run saw both checks hold their control.
+    expect(JSON.stringify(endpoint.requests)).toContain("Every check holds its base control");
+    // And at that point it is asked what of the task its cases do not yet exercise.
+    expect(JSON.stringify(endpoint.requests)).toContain(
+      "reread each sentence of the task that states a rule",
+    );
+  }, 200_000);
+
+  it("admits a check of built output, because the base runs the project's build first as acceptance does", async () => {
+    const { endpoint, stdout, code } = await swarm(
+      [
+        declaring(
+          [{ id: "built-boundary", description: "10 is small", quote }],
+          [
+            plannedCheck(
+              "built-boundary",
+              "built-boundary",
+              "change",
+              [
+                { input: 9, expected: "small" },
+                { input: 10, expected: "small" },
+              ],
+              classifying("./built/value.mjs"),
+            ),
+          ],
+        ),
         { text: "Pinned." },
         { text: "Plan: move the boundary.", toolCalls: [declare] },
         {
@@ -401,6 +566,8 @@ describe("planned checks through the ordinary command line", () => {
 
     expect(stdout).toMatch(/admitted built-boundary \(should fail there\)/);
     expect(stdout).not.toContain("revising the planned checks");
+    // The planner was told what the harness prepares, from the run's own configuration.
+    expect(plannerBriefs(endpoint)[0]).toMatch(/fresh checkout of the unchanged base.*build/);
     expect(code, stdout.slice(-3000)).toBe(0);
   }, 200_000);
 });
