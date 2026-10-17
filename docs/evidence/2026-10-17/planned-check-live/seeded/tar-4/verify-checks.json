@@ -1,0 +1,41 @@
+{
+ "schema": "swarm-planned-check-verification.v1",
+ "task": "tar-bugfix-negative-size",
+ "contractDigest": "sha256:9fcf66f1b4bb4b9009dda12826d5e8567fe022f35ee6efb77714b5e6cee19714",
+ "variants": {
+  "base": "base",
+  "upstream": "compliant",
+  "swarm-r1": "compliant",
+  "opencode-r1": "compliant",
+  "opencode-r2": "compliant",
+  "swarm-r2": "faulty"
+ },
+ "byCheck": {
+  "header-constructor-negative-is-ignored": {
+   "atBase": "fails",
+   "cases": 5,
+   "acceptsEveryCompliant": true,
+   "rejectsFaulty": [
+    {
+     "variant": "swarm-r2",
+     "rejected": false
+    }
+   ],
+   "base": "fails"
+  },
+  "header-positive-size-keeps-working": {
+   "atBase": "passes",
+   "cases": 3,
+   "acceptsEveryCompliant": true,
+   "rejectsFaulty": [
+    {
+     "variant": "swarm-r2",
+     "rejected": false
+    }
+   ],
+   "base": "passes"
+  }
+ },
+ "failures": [],
+ "note": "failures keep one wrong case each; verify-checks.mjs re-derives every row"
+}

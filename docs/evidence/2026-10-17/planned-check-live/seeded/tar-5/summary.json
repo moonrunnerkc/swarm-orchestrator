@@ -1,0 +1,151 @@
+{
+  "schema": "swarm-seeded-planned-repair.v1",
+  "kind": "seeded-candidate fault injection: live planning and live repair, injected first candidate",
+  "task": "tar-bugfix-negative-size",
+  "baseCommit": "e02a4e9e013c4be95302e2eb2047a942b883c27b",
+  "workspaceBase": "81e20b45911b05224bc3dfdfd9776ce21044ab28",
+  "swarmCli": "/Users/brad/.cache/swarm-comparison/tools/swarm-fa07401f7/dist/cli.js",
+  "model": "qwen3.6:35b-a3b",
+  "endpoint": "http://127.0.0.1:11434/v1",
+  "argv": [
+    "<task text>",
+    "--model",
+    "local:qwen3.6:35b-a3b",
+    "--local-endpoint",
+    "http://127.0.0.1:63651/v1",
+    "--workspace",
+    "/Users/brad/swarm-comparison-work/seeded-tar-gb84EM/workspace",
+    "--base",
+    "81e20b45911b05224bc3dfdfd9776ce21044ab28",
+    "--goal-contract",
+    "/Users/brad/swarm-comparison-work/seeded-tar-gb84EM/contract.json",
+    "--plan-checks",
+    "--install",
+    "--lockfile",
+    "package-lock.json",
+    "--max-tokens",
+    "8000000",
+    "--max-wall-minutes",
+    "14",
+    "--approve",
+    "auto",
+    "--no-tui",
+    "--no-open-evidence",
+    "--json"
+  ],
+  "startedAt": "2026-10-17T16:00:38.671Z",
+  "elapsedMs": 844533,
+  "killedAtDeadline": false,
+  "exitCode": 1,
+  "acceptable": false,
+  "plannedChecks": {
+    "outcome": "sealed",
+    "admitted": [
+      "header-negative-size-from-block",
+      "header-negative-size-from-constructor",
+      "header-negative-size-from-extended-header",
+      "header-keeps-positive-size-from-constructor",
+      "pax-parse-negative-size-ignored",
+      "pax-parse-non-numeric-size-ignored"
+    ],
+    "dropped": [
+      {
+        "check": "pax-parse-positive-size-kept-preserve",
+        "reason": "it fails on the base, so its expectation contradicts behaviour the task keeps"
+      },
+      {
+        "check": "pax-parse-positive-size-kept",
+        "reason": "it fails on the base, so its expectation contradicts behaviour the task keeps"
+      }
+    ],
+    "revision": {
+      "outcome": "withheld",
+      "remainingMs": -233,
+      "neededMs": 112703
+    },
+    "coverage": {
+      "sentences": 9,
+      "quotedByAdmitted": [
+        4,
+        5,
+        6
+      ]
+    }
+  },
+  "requirements": [
+    {
+      "id": "visible-check",
+      "description": "the visible acceptance check passes on a fresh checkout",
+      "status": "accepted",
+      "authoredBy": "user",
+      "detail": null
+    },
+    {
+      "id": "negative-block-size-becomes-undefined",
+      "description": "When a Header is decoded from a buffer, if the block's own size field decodes to a negative number, header.size becomes undefined. (the task: \"the size it computes (the extended header's size, else the global extended header's size, else the block's own size field) becomes undefined if it is negative\")",
+      "status": "rejected",
+      "authoredBy": "model",
+      "detail": "exit status 0 as expected; stdout differs from the expected 1 line(s): line 1 should be `{\"input\":{},\"result\":{\"size\":null}}` but was `{\"input\":{},\"result\":{}}`"
+    },
+    {
+      "id": "negative-constructor-size-ignored",
+      "description": "When a Header is constructed with { size: -1000 }, the size property stays undefined. (the task: \"header data whose size is negative when compared as a number, whether passed to the constructor (new Header({ size: -1000 })) or merged in from an extended header, is ignored, so header.size stays undefined\")",
+      "status": "rejected",
+      "authoredBy": "model",
+      "detail": "exit status 0 as expected; stdout differs from the expected 1 line(s): line 1 should be `{\"input\":{},\"result\":{\"size\":null}}` but was `{\"input\":{},\"result\":{}}`"
+    },
+    {
+      "id": "negative-extended-header-size-ignored",
+      "description": "When Header#decode merges pax extended header data with a negative size, or global extended header data with negative size, the negative size is ignored and header.size stays as it was (from earlier sources). (the task: \"header data whose size is negative when compared as a number, whether passed to the constructor (new Header({ size: -1000 })) or merged in from an extended header, is ignored, so header.size stays undefined\")",
+      "status": "accepted",
+      "authoredBy": "model",
+      "detail": null
+    },
+    {
+      "id": "positive-constructor-size-works",
+      "description": "A positive size passed to the Header constructor is respected. (the task: \"nothing else changes\")",
+      "status": "accepted",
+      "authoredBy": "model",
+      "detail": null
+    },
+    {
+      "id": "pax-negative-size-undefined",
+      "description": "In Pax.parse, a 'size=-1000' record leaves size undefined. (the task: \"'size=-1000' ... leave size undefined\")",
+      "status": "rejected",
+      "authoredBy": "model",
+      "detail": "exit status 0 as expected; stdout differs from the expected 1 line(s): line 1 should be `{\"input\":{},\"result\":{\"size\":null}}` but was `{\"input\":{},\"result\":{}}`"
+    },
+    {
+      "id": "pax-non-numeric-size-undefined",
+      "description": "In Pax.parse, a non-numeric 'size' value leaves size undefined. (the task: \"a non-numeric value leave size undefined\")",
+      "status": "rejected",
+      "authoredBy": "model",
+      "detail": "exit status 0 as expected; stdout differs from the expected 1 line(s): line 1 should be `{\"input\":{},\"result\":{\"size\":null}}` but was `{\"input\":{},\"result\":{}}`"
+    }
+  ],
+  "uncheckedRequirements": [
+    {
+      "id": "pax-no-other-change",
+      "description": "Pax.parse still correctly parses positive and zero sizes. (the task: \"nothing else changes\")"
+    }
+  ],
+  "repairAttempts": 3,
+  "setup": {
+    "tokensUsed": 597404,
+    "durationMs": 210238
+  },
+  "exchanges": {
+    "live": 81,
+    "seeded": 2
+  },
+  "liveTokens": {
+    "prompt": 2969837,
+    "completion": 22583,
+    "callsWithoutUsage": 0
+  },
+  "generatedChecksCaptured": true,
+  "sessions": [
+    "20261017T160039-95081c",
+    "20261017T160039-95081c-plan"
+  ]
+}

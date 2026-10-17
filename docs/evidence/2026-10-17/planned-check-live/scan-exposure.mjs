@@ -22,6 +22,7 @@ import { parseArgs } from "node:util";
 import { gunzipSync } from "node:zlib";
 import { mirrorOf } from "../../../../scripts/comparison/workspace.mjs";
 import { tasks } from "../../../../scripts/pilot/tasks-2026-10-17.mjs";
+import { expandExchanges } from "./seeded/exchange-record.mjs";
 
 const { values } = parseArgs({
   options: { task: { type: "string" }, record: { type: "string" }, out: { type: "string" } },
@@ -57,7 +58,9 @@ const markers = {
   ],
 };
 
-const exchanges = JSON.parse(gunzipSync(readFileSync(join(record, "exchanges.json.gz"))).toString("utf8"));
+const exchanges = expandExchanges(
+  JSON.parse(gunzipSync(readFileSync(join(record, "exchanges.json.gz"))).toString("utf8")),
+);
 const roleOf = (messages) => {
   const system = String(messages.find((one) => one.role === "system")?.content ?? "");
   const text = JSON.stringify(messages);
@@ -88,7 +91,21 @@ const result = {
   schema: "swarm-request-exposure-scan.v1",
   task: task.id,
   markers: Object.fromEntries(Object.entries(markers).map(([kind, list]) => [kind, list.length])),
-  requests,
+  // Per role: how many requests, and how many of them carried each kind of marker.
+  byRole: Object.fromEntries(
+    [...new Set(requests.map((one) => one.role))].map((role) => {
+      const mine = requests.filter((one) => one.role === role);
+      return [
+        role,
+        {
+          requests: mine.length,
+          ...Object.fromEntries(
+            Object.keys(markers).map((kind) => [kind, mine.filter((one) => one.found[kind].length > 0).length]),
+          ),
+        },
+      ];
+    }),
+  ),
   exposure: exposure.map((one) => ({ sequence: one.sequence, role: one.role, found: one.found })),
   verdict:
     exposure.length === 0

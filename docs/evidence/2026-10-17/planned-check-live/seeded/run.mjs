@@ -42,6 +42,7 @@ import {
   workRoot,
 } from "../../../../../scripts/comparison/workspace.mjs";
 import { tasks } from "../../../../../scripts/pilot/tasks-2026-10-17.mjs";
+import { compactExchanges } from "./exchange-record.mjs";
 
 const { values } = parseArgs({
   options: {
@@ -276,7 +277,7 @@ const usage = exchanges
     const last = [...one.response.matchAll(/"usage":(\{[^}]*\})/g)].at(-1);
     return last === undefined ? null : JSON.parse(last[1]);
   });
-writeFileSync(join(out, "exchanges.json.gz"), gzipSync(JSON.stringify(exchanges)));
+writeFileSync(join(out, "exchanges.json.gz"), gzipSync(JSON.stringify(compactExchanges(exchanges))));
 writeFileSync(join(out, "stdout.txt.gz"), gzipSync(stdout));
 writeFileSync(join(out, "stderr.txt.gz"), gzipSync(stderr));
 writeFileSync(join(out, "final.patch"), finalPatch.stdout.toString());

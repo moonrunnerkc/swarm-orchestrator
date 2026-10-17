@@ -1,0 +1,130 @@
+{
+  "schema": "swarm-seeded-planned-repair.v1",
+  "kind": "seeded-candidate fault injection: live planning and live repair, injected first candidate",
+  "task": "tar-bugfix-negative-size",
+  "baseCommit": "e02a4e9e013c4be95302e2eb2047a942b883c27b",
+  "workspaceBase": "762e4b2537822ce25ef7fe2161166ee72933afda",
+  "swarmCli": "/Users/brad/.cache/swarm-comparison/tools/swarm-7fada602d/dist/cli.js",
+  "model": "qwen3.6:35b-a3b",
+  "endpoint": "http://127.0.0.1:11434/v1",
+  "argv": [
+    "<task text>",
+    "--model",
+    "local:qwen3.6:35b-a3b",
+    "--local-endpoint",
+    "http://127.0.0.1:60548/v1",
+    "--workspace",
+    "/Users/brad/swarm-comparison-work/seeded-tar-bvXpQV/workspace",
+    "--base",
+    "762e4b2537822ce25ef7fe2161166ee72933afda",
+    "--goal-contract",
+    "/Users/brad/swarm-comparison-work/seeded-tar-bvXpQV/contract.json",
+    "--plan-checks",
+    "--install",
+    "--lockfile",
+    "package-lock.json",
+    "--max-tokens",
+    "8000000",
+    "--max-wall-minutes",
+    "14",
+    "--approve",
+    "auto",
+    "--no-tui",
+    "--no-open-evidence",
+    "--json"
+  ],
+  "startedAt": "2026-10-17T15:08:27.891Z",
+  "elapsedMs": 228793,
+  "killedAtDeadline": false,
+  "exitCode": 0,
+  "acceptable": true,
+  "plannedChecks": {
+    "outcome": "sealed",
+    "admitted": [],
+    "dropped": [
+      {
+        "check": "check-header-decode-positive-and-negative-size",
+        "reason": "it fails on the base without completing, which shows a broken check rather than the missing change"
+      },
+      {
+        "check": "check-header-constructor-negative-size",
+        "reason": "it fails on the base without completing, which shows a broken check rather than the missing change"
+      },
+      {
+        "check": "check-header-extended-merge-negative-size",
+        "reason": "it fails on the base without completing, which shows a broken check rather than the missing change"
+      },
+      {
+        "check": "check-pax-positive-and-zero",
+        "reason": "it does not run to completion on the base"
+      },
+      {
+        "check": "check-pax-negative-size",
+        "reason": "it fails on the base without completing, which shows a broken check rather than the missing change"
+      },
+      {
+        "check": "check-pax-non-numeric-size",
+        "reason": "it fails on the base without completing, which shows a broken check rather than the missing change"
+      }
+    ],
+    "revision": {
+      "outcome": "withheld",
+      "remainingMs": 57153,
+      "neededMs": 86821
+    }
+  },
+  "requirements": [
+    {
+      "id": "visible-check",
+      "description": "the visible acceptance check passes on a fresh checkout",
+      "status": "accepted",
+      "authoredBy": "user",
+      "detail": null
+    }
+  ],
+  "uncheckedRequirements": [
+    {
+      "id": "header-decode-negative-size",
+      "description": "When a Header is constructed from a buffer and the computed size (from any source) is negative, header.size becomes undefined. (the task: \"when a block is decoded, the size it computes (the extended header's size, else the global extended header's size, else the block's own size field) becomes undefined if it is negative\")"
+    },
+    {
+      "id": "header-constructor-negative-size",
+      "description": "When a Header is constructed with {size: -1000}, the negative size is ignored and header.size stays undefined. (the task: \"header data whose size is negative when compared as a number, whether passed to the constructor (new Header({ size: -1000 })) or merged in from an extended header, is ignored, so header.size stays undefined\")"
+    },
+    {
+      "id": "header-extended-negative-size",
+      "description": "When extended header data with negative size is merged into a Header, it is ignored and the existing size is preserved. (the task: \"merged in from an extended header, is ignored, so header.size stays undefined\")"
+    },
+    {
+      "id": "pax-size-positive",
+      "description": "In Pax.parse, a 'size' record whose numeric value is zero or greater is kept (positive test). (the task: \"while 'size=1000' gives 1000 and 'size=0' gives 0\")"
+    },
+    {
+      "id": "pax-size-negative",
+      "description": "In Pax.parse, a 'size' record with negative numeric value leaves size undefined. (the task: \"'size=-1000' and a non-numeric value leave size undefined\")"
+    },
+    {
+      "id": "pax-size-non-numeric",
+      "description": "In Pax.parse, a 'size' record with a non-numeric value leaves size undefined. (the task: \"'size=-1000' and a non-numeric value leave size undefined\")"
+    }
+  ],
+  "repairAttempts": 0,
+  "setup": {
+    "tokensUsed": 396866,
+    "durationMs": 152861
+  },
+  "exchanges": {
+    "live": 13,
+    "seeded": 2
+  },
+  "liveTokens": {
+    "prompt": 437230,
+    "completion": 7491,
+    "callsWithoutUsage": 0
+  },
+  "generatedChecksCaptured": true,
+  "sessions": [
+    "20261017T150828-d5b579",
+    "20261017T150828-d5b579-plan"
+  ]
+}

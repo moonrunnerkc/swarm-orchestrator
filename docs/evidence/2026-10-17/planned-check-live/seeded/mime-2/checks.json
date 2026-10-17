@@ -1,0 +1,162 @@
+{
+ "schema": "swarm-seeded-planned-checks.v1",
+ "task": "mime-bugfix-gettype-line-terminators",
+ "contractDigest": "sha256:52e5691509d1e340aa98f6afa7d12dea4445e0227888b1fe5c18b632abe2ab0e",
+ "admission": {
+  "outcome": "sealed",
+  "admitted": [
+   "term-gettype",
+   "term-dir",
+   "space-tab",
+   "normal-paths",
+   "null-params"
+  ],
+  "dropped": [
+   {
+    "check": "check-term-gettype",
+    "reason": "it fails on the base without completing, which shows a broken check rather than the missing change"
+   },
+   {
+    "check": "check-term-dir",
+    "reason": "it fails on the base without completing, which shows a broken check rather than the missing change"
+   },
+   {
+    "check": "check-space-tab",
+    "reason": "it does not run to completion on the base"
+   },
+   {
+    "check": "check-normal-paths",
+    "reason": "it does not run to completion on the base"
+   },
+   {
+    "check": "check-null-params",
+    "reason": "it does not run to completion on the base"
+   }
+  ],
+  "revision": {
+   "outcome": "ran",
+   "admitted": [
+    "term-gettype",
+    "term-dir",
+    "space-tab",
+    "normal-paths",
+    "null-params"
+   ]
+  }
+ },
+ "checks": [
+  {
+   "id": "term-gettype",
+   "purpose": "change",
+   "requirement": "getType strips directory part using a regex that matches line terminators (\\n, \\r, U+2028, U+2029), so names containing them are typed correctly. (the task: \"a file name that contains one is typed wrongly: getType('LINE\\nFEED.png') returns null instead of 'image/png', and the same happens for a carriage return (U+000D), a line separator (U+2028) and a paragraph separator (U+2029)\")",
+   "program": "import Mime from './dist/src/Mime.js';\nexport default f => {\n  const m = new Mime({'image/png':['png']});\n  return m.getType(f);\n}",
+   "expected": [
+    "{\"input\":\"LINE\\nFEED.png\",\"result\":\"image/png\"}",
+    "{\"input\":\"LINE\\rFEED.png\",\"result\":\"image/png\"}",
+    "{\"input\":\"LINE FEED.png\",\"result\":\"image/png\"}",
+    "{\"input\":\"LINE FEED.png\",\"result\":\"image/png\"}"
+   ],
+   "evaluator": {
+    "atBase": "fails",
+    "cases": 4,
+    "acceptsEveryCompliant": true,
+    "rejectsFaulty": [
+     {
+      "variant": "swarm-stage-a",
+      "rejected": false
+     }
+    ],
+    "base": "fails"
+   }
+  },
+  {
+   "id": "term-dir",
+   "purpose": "change",
+   "requirement": "getType treats line terminators like any other character when stripping the directory part, so paths with line terminators in them are typed correctly. (the task: \"with or without a directory part in front\")",
+   "program": "import Mime from './dist/src/Mime.js';\nexport default f => {\n  const m = new Mime({'image/png':['png']});\n  return m.getType(f);\n}",
+   "expected": [
+    "{\"input\":\"/path/to/LINE\\nFEED.png\",\"result\":\"image/png\"}",
+    "{\"input\":\"dir/LINE\\rFEED.png\",\"result\":\"image/png\"}"
+   ],
+   "evaluator": {
+    "atBase": "fails",
+    "cases": 2,
+    "acceptsEveryCompliant": true,
+    "rejectsFaulty": [
+     {
+      "variant": "swarm-stage-a",
+      "rejected": false
+     }
+    ],
+    "base": "fails"
+   }
+  },
+  {
+   "id": "space-tab",
+   "purpose": "preserve",
+   "requirement": "Spaces and tabs in file names already work and must keep working after the fix. (the task: \"a space or tab in the name already works and must keep working.\")",
+   "program": "import Mime from './dist/src/Mime.js';\nexport default f => {\n  const m = new Mime({'image/png':['png']});\n  return m.getType(f);\n}",
+   "expected": [
+    "{\"input\":\"file name.png\",\"result\":\"image/png\"}",
+    "{\"input\":\"file\\tname.png\",\"result\":\"image/png\"}"
+   ],
+   "evaluator": {
+    "atBase": "passes",
+    "cases": 2,
+    "acceptsEveryCompliant": true,
+    "rejectsFaulty": [
+     {
+      "variant": "swarm-stage-a",
+      "rejected": false
+     }
+    ],
+    "base": "passes"
+   }
+  },
+  {
+   "id": "normal-paths",
+   "purpose": "preserve",
+   "requirement": "Normal paths without line terminators continue to return the correct mime types as they do today. (the task: \"getExtension, define and the rest of the class stay as they are\")",
+   "program": "import Mime from './dist/src/Mime.js';\nexport default f => {\n  const m = new Mime({'text/plain':['txt'],'text/html':['html'],'application/json':['json']});\n  return m.getType(f);\n}",
+   "expected": [
+    "{\"input\":\"file.txt\",\"result\":\"text/plain\"}",
+    "{\"input\":\"/path/to/page.html\",\"result\":\"text/html\"}",
+    "{\"input\":\".config.json\",\"result\":\"application/json\"}"
+   ],
+   "evaluator": {
+    "atBase": "passes",
+    "cases": 3,
+    "acceptsEveryCompliant": true,
+    "rejectsFaulty": [
+     {
+      "variant": "swarm-stage-a",
+      "rejected": false
+     }
+    ],
+    "base": "passes"
+   }
+  },
+  {
+   "id": "null-params",
+   "purpose": "preserve",
+   "requirement": "getType still returns null for non-string inputs like null, numbers, etc. as it does today. (the task: \"The change belongs in src/Mime.ts only\")",
+   "program": "import Mime from './dist/src/Mime.js';\nexport default f => {\n  const m = new Mime({'text/plain':['txt']});\n  return m.getType(f);\n}",
+   "expected": [
+    "{\"input\":null,\"result\":null}",
+    "{\"input\":42,\"result\":null}"
+   ],
+   "evaluator": {
+    "atBase": "passes",
+    "cases": 2,
+    "acceptsEveryCompliant": true,
+    "rejectsFaulty": [
+     {
+      "variant": "swarm-stage-a",
+      "rejected": false
+     }
+    ],
+    "base": "passes"
+   }
+  }
+ ]
+}
