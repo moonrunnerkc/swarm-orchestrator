@@ -1,0 +1,107 @@
+{
+ "schema": "swarm-seeded-planned-checks.v1",
+ "task": "mime-bugfix-gettype-line-terminators",
+ "contractDigest": "sha256:31044b5a5433be127d30b6812a52c9a4993015dcdc75f9c721ae5f662253afcc",
+ "admission": {
+  "outcome": "sealed",
+  "admitted": [
+   "get-type-line-terminators-in-filename",
+   "get-type-preserve-space-tab-in-filename",
+   "get-type-line-terminators-at-extension-boundary"
+  ],
+  "dropped": [],
+  "revision": {
+   "outcome": "not-needed"
+  },
+  "coverage": {
+   "sentences": 6,
+   "quotedByAdmitted": [
+    2,
+    4
+   ]
+  }
+ },
+ "checks": [
+  {
+   "id": "get-type-line-terminators-in-filename",
+   "purpose": "change",
+   "requirement": "Mime.getType(path) must treat all line terminators (U+000A LF, U+000D CR, U+2028 Line Separator, U+2029 Paragraph Separator) like any other character when stripping the directory part and the extension prefix, so that file names containing them are typed correctly from the extension after the last dot of the last path segment. (the task: \"The two regular expressions that strip the directory part and the part before the extension do not match across line terminators, so a file name that contains one is typed wrongly: getType('LINE\\nFEED.png') returns null instead of 'image/png', and the same happens for a carriage return (U+000D), a line separator (U+2028) and a paragraph separator (U+2029), with or without a directory part in front.\")",
+   "program": "import Mime from './dist/src/Mime.js';\n\nconst mime = new Mime({ 'image/png': ['png'] });\n\nexport default function check(input) {\n  return mime.getType(input);\n}",
+   "expected": [
+    "{\"input\":\"LINE\\nFEED.png\",\"result\":\"image/png\"}",
+    "{\"input\":\"LINE\\rFEED.png\",\"result\":\"image/png\"}",
+    "{\"input\":\"LINE FEED.png\",\"result\":\"image/png\"}",
+    "{\"input\":\"LINE FEED.png\",\"result\":\"image/png\"}",
+    "{\"input\":\"/path/to/FILE\\nNAME.png\",\"result\":\"image/png\"}",
+    "{\"input\":\"/path/to/FILE\\rNAME.png\",\"result\":\"image/png\"}",
+    "{\"input\":\"/path/FILE NAME.png\",\"result\":\"image/png\"}",
+    "{\"input\":\"/path/FILE NAME.png\",\"result\":\"image/png\"}",
+    "{\"input\":\"file.txt\",\"result\":null}",
+    "{\"input\":\"\\tpath/to/file\\n.txt\",\"result\":null}"
+   ],
+   "evaluator": {
+    "atBase": "fails",
+    "cases": 10,
+    "acceptsEveryCompliant": true,
+    "rejectsFaulty": [
+     {
+      "variant": "swarm-stage-a",
+      "rejected": false
+     }
+    ],
+    "base": "fails"
+   }
+  },
+  {
+   "id": "get-type-preserve-space-tab-in-filename",
+   "purpose": "preserve",
+   "requirement": "A space or tab in the filename must continue to work correctly for getType, treating them like regular characters. (the task: \"a space or tab in the name already works and must keep working.\")",
+   "program": "import Mime from './dist/src/Mime.js';\n\nconst mime = new Mime({ 'image/png': ['png'], 'text/plain': ['txt'] });\n\nexport default function check(input) {\n  return mime.getType(input);\n}",
+   "expected": [
+    "{\"input\":\"file name.png\",\"result\":\"image/png\"}",
+    "{\"input\":\"file\\tname.png\",\"result\":\"image/png\"}",
+    "{\"input\":\"/path/to/file name.txt\",\"result\":\"text/plain\"}",
+    "{\"input\":\"/path/to/file\\tname.txt\",\"result\":\"text/plain\"}",
+    "{\"input\":\"bogus.bogus\",\"result\":null}"
+   ],
+   "evaluator": {
+    "atBase": "passes",
+    "cases": 5,
+    "acceptsEveryCompliant": true,
+    "rejectsFaulty": [
+     {
+      "variant": "swarm-stage-a",
+      "rejected": false
+     }
+    ],
+    "base": "passes"
+   }
+  },
+  {
+   "id": "get-type-line-terminators-at-extension-boundary",
+   "purpose": "change",
+   "requirement": "When a line terminator appears just before the dot in a filename (e.g., 'file.png' becomes 'file\\n.png'), getType must still correctly extract the extension and return the right mime type. (the task: \"Make getType treat every line terminator like any other character when it strips the directory part and the extension's prefix\")",
+   "program": "import Mime from './dist/src/Mime.js';\n\nconst mime = new Mime({ 'image/png': ['png'], 'text/html': ['html'], 'application/json': ['json'] });\n\nexport default function check(input) {\n  return mime.getType(input);\n}",
+   "expected": [
+    "{\"input\":\"file\\n.png\",\"result\":\"image/png\"}",
+    "{\"input\":\"file\\r.png\",\"result\":\"image/png\"}",
+    "{\"input\":\"file .png\",\"result\":\"image/png\"}",
+    "{\"input\":\"file .png\",\"result\":\"image/png\"}",
+    "{\"input\":\"file.txt\",\"result\":null}",
+    "{\"input\":\"noext\",\"result\":null}"
+   ],
+   "evaluator": {
+    "atBase": "fails",
+    "cases": 6,
+    "acceptsEveryCompliant": true,
+    "rejectsFaulty": [
+     {
+      "variant": "swarm-stage-a",
+      "rejected": true
+     }
+    ],
+    "base": "fails"
+   }
+  }
+ ]
+}

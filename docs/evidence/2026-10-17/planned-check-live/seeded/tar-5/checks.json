@@ -1,0 +1,170 @@
+{
+ "schema": "swarm-seeded-planned-checks.v1",
+ "task": "tar-bugfix-negative-size",
+ "contractDigest": "sha256:832433d11c0c46b0d61bb0122bfa5abe69101255a41d71df21dac522fac2f212",
+ "admission": {
+  "outcome": "sealed",
+  "admitted": [
+   "header-negative-size-from-block",
+   "header-negative-size-from-constructor",
+   "header-negative-size-from-extended-header",
+   "header-keeps-positive-size-from-constructor",
+   "pax-parse-negative-size-ignored",
+   "pax-parse-non-numeric-size-ignored"
+  ],
+  "dropped": [
+   {
+    "check": "pax-parse-positive-size-kept-preserve",
+    "reason": "it fails on the base, so its expectation contradicts behaviour the task keeps"
+   },
+   {
+    "check": "pax-parse-positive-size-kept",
+    "reason": "it fails on the base, so its expectation contradicts behaviour the task keeps"
+   }
+  ],
+  "revision": {
+   "outcome": "withheld",
+   "remainingMs": -233,
+   "neededMs": 112703
+  },
+  "coverage": {
+   "sentences": 9,
+   "quotedByAdmitted": [
+    4,
+    5,
+    6
+   ]
+  }
+ },
+ "checks": [
+  {
+   "id": "header-negative-size-from-block",
+   "purpose": "change",
+   "requirement": "When a Header is decoded from a buffer, if the block's own size field decodes to a negative number, header.size becomes undefined. (the task: \"the size it computes (the extended header's size, else the global extended header's size, else the block's own size field) becomes undefined if it is negative\")",
+   "program": "import { Header } from './dist/esm/header.js'\n\nexport default function caseFn(input) {\n  const buf = Buffer.alloc(512)\n  buf.write('a', 0, 100)\n  for (let i = 0; i < 12; i++) {\n    buf[124 + i] = 0xFF\n  }\n  buf[156] = '0'.charCodeAt(0)\n  buf.write('ustar\\u000000', 257, 8)\n  let sum = 0\n  for (let i = 0; i < 512; i++) {\n    if (i >= 148 && i < 160) {\n      sum += 0x20\n    } else {\n      sum += buf[i]\n    }\n  }\n  const cksumStr = Number(sum).toString(8).padStart(11, '0') + ' '\n  buf.write(cksumStr, 148, 12, 'ascii')\n  const h = new Header(buf)\n  return { size: h.size }\n}",
+   "expected": [
+    "{\"input\":{},\"result\":{\"size\":null}}"
+   ],
+   "evaluator": {
+    "atBase": "fails",
+    "cases": 1,
+    "acceptsEveryCompliant": false,
+    "rejectsFaulty": [
+     {
+      "variant": "swarm-r2",
+      "rejected": true
+     }
+    ],
+    "base": "fails"
+   }
+  },
+  {
+   "id": "header-negative-size-from-constructor",
+   "purpose": "change",
+   "requirement": "When a Header is constructed with { size: -1000 }, the size property stays undefined. (the task: \"header data whose size is negative when compared as a number, whether passed to the constructor (new Header({ size: -1000 })) or merged in from an extended header, is ignored, so header.size stays undefined\")",
+   "program": "import { Header } from './dist/esm/header.js'\n\nexport default function caseFn(input) {\n  const h = new Header({ path: 'test', size: -1000 })\n  return { size: h.size }\n}",
+   "expected": [
+    "{\"input\":{},\"result\":{\"size\":null}}"
+   ],
+   "evaluator": {
+    "atBase": "fails",
+    "cases": 1,
+    "acceptsEveryCompliant": false,
+    "rejectsFaulty": [
+     {
+      "variant": "swarm-r2",
+      "rejected": true
+     }
+    ],
+    "base": "fails"
+   }
+  },
+  {
+   "id": "header-negative-size-from-extended-header",
+   "purpose": "change",
+   "requirement": "When Header#decode merges pax extended header data with a negative size, or global extended header data with negative size, the negative size is ignored and header.size stays as it was (from earlier sources). (the task: \"header data whose size is negative when compared as a number, whether passed to the constructor (new Header({ size: -1000 })) or merged in from an extended header, is ignored, so header.size stays undefined\")",
+   "program": "import { Header } from './dist/esm/header.js'\n\nexport default function caseFn(input) {\n  if (input.type === 'ex-negative') {\n    const h = new Header({ path: 'test', size: 100 })\n    h.encode()\n    // Create a new header with the block and a negative-size extended header\n    const h2 = new Header(h.block, 0, { size: -50 }, undefined)\n    return { size: h2.size }\n  }\n  if (input.type === 'gex-negative') {\n    const h = new Header({ path: 'test', size: 100 })\n    h.encode()\n    // Create a new header with the block and a negative-size global extended header\n    const h2 = new Header(h.block, 0, undefined, { size: -50 })\n    return { size: h2.size }\n  }\n  if (input.type === 'gex-before-ex') {\n    // Global extended header sets positive size, then local ex with negative should not override\n    const h = new Header({ path: 'test', size: 100 })\n    h.encode()\n    const h2 = new Header(h.block, 0, { size: -50 }, { size: 200 })\n    return { size: h2.size }\n  }\n  if (input.type === 'ex-first-then-gex') {\n    // Global extended header sets negative size first, then local ex with positive should override it\n    const h = new Header({ path: 'test', size: 100 })\n    h.encode()\n    const h2 = new Header(h.block, 0, { size: 300 }, { size: -50 })\n    return { size: h2.size }\n  }\n}",
+   "expected": [
+    "{\"input\":{\"type\":\"ex-negative\"},\"result\":{\"size\":100}}",
+    "{\"input\":{\"type\":\"gex-negative\"},\"result\":{\"size\":100}}",
+    "{\"input\":{\"type\":\"ex-first-then-gex\"},\"result\":{\"size\":300}}",
+    "{\"input\":{\"type\":\"gex-before-ex\"},\"result\":{\"size\":200}}"
+   ],
+   "evaluator": {
+    "atBase": "fails",
+    "cases": 4,
+    "acceptsEveryCompliant": false,
+    "rejectsFaulty": [
+     {
+      "variant": "swarm-r2",
+      "rejected": true
+     }
+    ],
+    "base": "fails"
+   }
+  },
+  {
+   "id": "header-keeps-positive-size-from-constructor",
+   "purpose": "preserve",
+   "requirement": "A positive size passed to the Header constructor is respected. (the task: \"nothing else changes\")",
+   "program": "import { Header } from './dist/esm/header.js'\n\nexport default function caseFn(input) {\n  const h = new Header({ path: 'test', size: 100 })\n  return { size: h.size }\n}",
+   "expected": [
+    "{\"input\":{},\"result\":{\"size\":100}}"
+   ],
+   "evaluator": {
+    "atBase": "passes",
+    "cases": 1,
+    "acceptsEveryCompliant": true,
+    "rejectsFaulty": [
+     {
+      "variant": "swarm-r2",
+      "rejected": false
+     }
+    ],
+    "base": "passes"
+   }
+  },
+  {
+   "id": "pax-parse-negative-size-ignored",
+   "purpose": "change",
+   "requirement": "In Pax.parse, a 'size=-1000' record leaves size undefined. (the task: \"'size=-1000' ... leave size undefined\")",
+   "program": "import { Pax } from './dist/esm/pax.js'\n\nexport default function caseFn(input) {\n  const p = Pax.parse('12 size=-1000\\n')\n  return { size: p.size }\n}",
+   "expected": [
+    "{\"input\":{},\"result\":{\"size\":null}}"
+   ],
+   "evaluator": {
+    "atBase": "fails",
+    "cases": 1,
+    "acceptsEveryCompliant": false,
+    "rejectsFaulty": [
+     {
+      "variant": "swarm-r2",
+      "rejected": true
+     }
+    ],
+    "base": "fails"
+   }
+  },
+  {
+   "id": "pax-parse-non-numeric-size-ignored",
+   "purpose": "change",
+   "requirement": "In Pax.parse, a non-numeric 'size' value leaves size undefined. (the task: \"a non-numeric value leave size undefined\")",
+   "program": "import { Pax } from './dist/esm/pax.js'\n\nexport default function caseFn(input) {\n  const p = Pax.parse('10 size=abc\\n')\n  return { size: p.size }\n}",
+   "expected": [
+    "{\"input\":{},\"result\":{\"size\":null}}"
+   ],
+   "evaluator": {
+    "atBase": "fails",
+    "cases": 1,
+    "acceptsEveryCompliant": false,
+    "rejectsFaulty": [
+     {
+      "variant": "swarm-r2",
+      "rejected": true
+     }
+    ],
+    "base": "fails"
+   }
+  }
+ ]
+}

@@ -1,0 +1,79 @@
+{
+ "schema": "swarm-planned-check-verification.v1",
+ "task": "mime-bugfix-gettype-line-terminators",
+ "contractDigest": "sha256:559217a86f41f16b3ab09b9f6885db54a64ede477d304918a7d4e3f56da15059",
+ "variants": {
+  "base": "base",
+  "upstream": "compliant",
+  "swarm-stage-a": "faulty"
+ },
+ "byCheck": {
+  "gettype-line-terminator-handling": {
+   "atBase": "fails",
+   "cases": 6,
+   "acceptsEveryCompliant": false,
+   "rejectsFaulty": [
+    {
+     "variant": "swarm-stage-a",
+     "rejected": true
+    }
+   ],
+   "base": "fails"
+  },
+  "line-terminator-in-filename-handling": {
+   "atBase": "fails",
+   "cases": 7,
+   "acceptsEveryCompliant": false,
+   "rejectsFaulty": [
+    {
+     "variant": "swarm-stage-a",
+     "rejected": true
+    }
+   ],
+   "base": "fails"
+  }
+ },
+ "failures": [
+  {
+   "variant": "upstream",
+   "check": "gettype-line-terminator-handling",
+   "wrongCases": [
+    {
+     "expected": "{\"input\":\"LINE\\nFEED.png\",\"result\":\"image/png\"}",
+     "observed": "{\"input\":\"LINE\\nFEED.png\",\"result\":null}"
+    }
+   ]
+  },
+  {
+   "variant": "upstream",
+   "check": "line-terminator-in-filename-handling",
+   "wrongCases": [
+    {
+     "expected": "{\"input\":\"LINE\\nFEED.png\",\"result\":\"image/png\"}",
+     "observed": "{\"input\":\"LINE\\nFEED.png\",\"result\":null}"
+    }
+   ]
+  },
+  {
+   "variant": "swarm-stage-a",
+   "check": "gettype-line-terminator-handling",
+   "wrongCases": [
+    {
+     "expected": "{\"input\":\"LINE\\nFEED.png\",\"result\":\"image/png\"}",
+     "observed": "{\"input\":\"LINE\\nFEED.png\",\"result\":null}"
+    }
+   ]
+  },
+  {
+   "variant": "swarm-stage-a",
+   "check": "line-terminator-in-filename-handling",
+   "wrongCases": [
+    {
+     "expected": "{\"input\":\"LINE\\nFEED.png\",\"result\":\"image/png\"}",
+     "observed": "{\"input\":\"LINE\\nFEED.png\",\"result\":null}"
+    }
+   ]
+  }
+ ],
+ "note": "failures keep one wrong case each; verify-checks.mjs re-derives every row"
+}

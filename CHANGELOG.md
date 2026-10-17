@@ -33,23 +33,49 @@ Source on `v13-main`; not published until a release names it.
 - **`amend_file_set` before any declaration is refused at once** and names `declare_file_set`,
   instead of being recorded while the next edit was still refused.
 - **A failing shared behavior check tells the worker what it expected and what it saw**, so a
-  repair brief carries something to repair from. Withheld checks keep their expectations hidden.
+  repair brief carries something to repair from. Output made of lines is compared line by line
+  and shown as plain text, an unexpected exit status carries what the process wrote to stderr,
+  and the acceptance gate repeats each rejected check's detail as a plain line. Withheld checks
+  keep their expectations hidden.
 
 ### Changed
 
 - **`--plan-checks` admits each planned check by its result on the unchanged base** and combines
   with `--goal-contract`:
-  - the planner writes command-line behavior checks, each declaring whether the base should fail
-    it (a check of the change) or pass it (behaviour that stays);
-  - a check is admitted only if a completed base run does what it declares, with the base run the
-    way acceptance runs it, and a planned requirement left with no check is dropped;
-  - checks that never ran get one revision with their recorded output;
-  - planning is bounded to a quarter of the run's wall and tokens, and its spend is on the event
-    stream;
-  - with a supplied contract, a planner that adds nothing leaves the run on that contract.
+  - the planner declares one check per `declare_planned_check` call: its requirement (an id, the
+    words, and for a change the task's own words quoted, elisions allowed), a program whose
+    default export takes one case's input, the cases with expected results, whether it covers
+    the change or behaviour that stays, and why. The harness builds the contract's ordinary
+    behavior check from that: its runner, argv, limits, stdin and exact expected lines. A call
+    with the same id replaces that check before anything runs;
+  - each answer shows the inputs as read (warning where a line feed was escaped twice) and the
+    task sentences no requirement quotes yet; imports that leave the repository or name a `.js`
+    path where only TypeScript exists are refused; a refusal says why a field sent as a JSON
+    string could not be read;
+  - the planner is told the checkout preparation the run is configured with, and can run its
+    checks on the base inside its loop (`run_planned_checks_on_base`); admission prepares the
+    base as acceptance does and reuses that run when the planner finished on exactly those checks;
+  - a check is admitted only if a completed base run does what it declares: a change check gets
+    at least one case wrong and at least one right, a preserve check every case right. A program
+    that does not load, a timeout, or a change check the base gets wholly wrong is a check that
+    never ran. Results compare as JSON, with undefined read as null at every depth;
+  - one revision covers every dropped check, with its program, its inputs as read and what the
+    base did (per-case base results only for preserve checks). It is dispatched only when
+    admission's measured time and a minute still fit, and is withheld on the record otherwise;
+  - a planned requirement left with no admitted check is reported as unchecked on the outcome and
+    the result line, which also names the admitted and dropped checks, the revision and which
+    task sentences an admitted requirement quotes;
+  - planning, admission and the revision share at most two fifths of the run's wall and tokens
+    (a cap, raised from a quarter that ended every measured first round at its wall; what
+    planning leaves goes to implementation), and the planner's calls are cut at that cap even in
+    flight;
+  - with a supplied contract, a planner that adds nothing leaves the run on that contract, and the
+    result line says so.
 
-  On this assignment's model the planner never had a check admitted in four development launches
-  on mime, at three to four times the default's tokens, so this is not claimed to help yet.
+  Experimental. In eleven live development launches (`docs/evidence/2026-10-17/planned-check-live/`)
+  a planner once generated a check that caught a seeded omission; no repair from such a check
+  succeeded; admitted checks that were wrong made Swarm refuse or misrepair work. No benefit over
+  the default configuration is established.
 - **Comparison evidence is packed in place.** `scripts/evidence-pack.mjs` gains three lossless
   commands, in its existing format:
   - `pack-blobs` holds content-addressed blobs as their content under their digest;
@@ -60,10 +86,13 @@ Source on `v13-main`; not published until a release names it.
   packed, the analyzer re-derives every stage unchanged, and the tree keeps its required
   headroom.
 - **A fresh comparison on four new tasks, two runs per tool**, run once after the repairs above
-  (`docs/evidence/2026-10-16/fresh-comparison/`). It found no demonstrated benefit:
-  - OpenCode delivered 8 of 8 and Swarm 7 of 8;
+  (`docs/evidence/2026-10-16/fresh-comparison/`), with Swarm in its default configuration
+  (planned checks disabled). It found no demonstrated benefit:
+  - scored by the frozen oracle, OpenCode delivered 8 of 8 and Swarm 7 of 8;
   - Swarm made one false completion claim, where its acceptance passed a node-tar patch the hidden
     check rejects;
+  - a coverage audit after scoring found one more delivered css-select patch from each tool that
+    the task text refutes;
   - Swarm took about twice the end-to-end time per delivery.
 
   The comparison's checkouts now live outside hidden directories, a visible check is committed

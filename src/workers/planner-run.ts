@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { z } from "zod";
 import { assembleToolset } from "../agent-run.ts";
 import type { Clock } from "../core/clock.ts";
@@ -15,17 +16,36 @@ import type { EvidenceRecorder } from "../evidence/session.ts";
 import { defineTool } from "../tools/tool-definition.ts";
 import { createWorkspaceTools } from "../tools/workspace-tools.ts";
 import { createDeclareTaskGraphTool, type DeclaredGraph } from "./graph-tool.ts";
+import {
+  describeDeclaredCases,
+  describeUncoveredSentences,
+  type PlannedChecksDeclaration,
+  plannedCheckInput,
+  plannedContract,
+  withPlannedCheck,
+} from "./planned-check-program.ts";
 import type { TaskGraph } from "./task-graph.ts";
 
 export interface PlannerOptions {
   readonly requireGoalChecks?: boolean;
   /**
-   * The planned-check mode of `--plan-checks`: every check the planner authors is a command-line
-   * behavior check that says what it should do on the unchanged base, so it can be admitted by
-   * that control before anything is implemented. Where a supplied contract is named, the planner
-   * adds to it and cannot change what it already holds.
+   * The planned-check mode of `--plan-checks`: the planner states requirements and, for each, a
+   * program and cases that the harness turns into a behavior check with a base expectation, so it
+   * can be admitted by that control before anything is implemented. Where a supplied contract is
+   * named, the planner adds to it and cannot change what it already holds.
    */
-  readonly plannedChecks?: { readonly base?: GoalContract };
+  readonly plannedChecks?: {
+    readonly base?: GoalContract;
+    /** The task as the user gave it, which requirements quote; a revision's brief is not. */
+    readonly task: string;
+    /** What the harness does to a fresh checkout before a check runs, read from the run's settings. */
+    readonly preparation: string;
+    /**
+     * Admission's own base run of the checks pinned so far, offered to the planner as a tool so
+     * it sees what each did while it still holds its reasoning. Its answer is recorded output.
+     */
+    readonly tryOnBase?: (contract: GoalContract) => Promise<string>;
+  };
   readonly maxTokens?: number;
   readonly maxWallTimeMs?: number;
   readonly goal: string;
@@ -70,6 +90,8 @@ export interface PlannerOutcome {
   readonly steps: number;
   /** The model's last words where it finished without declaring: a question, or an account. Unverified. */
   readonly completionClaim: string;
+  /** What the planner declared in planned-check mode, as it declared it: its quotes live here. */
+  readonly plannedDeclaration?: PlannedChecksDeclaration | null;
 }
 
 /**
@@ -86,6 +108,7 @@ export interface PlannerOutcome {
 export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcome> {
   const declared: DeclaredGraph = { graph: null };
   let goalContract: GoalContract | null = null;
+  let plannedDeclaration: PlannedChecksDeclaration | null = null;
 
   const { definitions, toolInvoker } = assembleToolset({
     workspace: options.workspace,
@@ -131,28 +154,70 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
                   },
                 })
               : defineTool({
-                  name: "declare_planned_checks",
+                  name: "declare_planned_check",
                   description:
-                    "Pin the requirements and command-line behavior checks this task is implemented and repaired against. The goal is the task as given; declare only requirements, checks and any extra immutable paths. Each check is run once on the unchanged base before anything is implemented and admitted only if it does there what its atBase says.",
-                  inputSchema: plannedChecksInput,
+                    "Pin one acceptance check, with the requirement it covers; call once per check, and again with the same id to replace that check. program is a short ES module whose default export takes one case's input and returns what the project gives for it; cases are inputs with the expected result (or throws: true). The harness runs the program once per case in a fresh checkout of the unchanged base before anything is implemented, compares each result with the expected one as JSON, and admits a change check only if the base gets at least one case wrong and at least one right (a case the task does not change), a preserve check only if the base gets every case right. A requirement covered by a change check quotes the task's own words in quote.",
+                  inputSchema: plannedCheckInput,
                   kind: "evidence",
                   pathsFrom: () => [],
                   execute(input) {
-                    if (goalContract !== null)
-                      throw new Error(
-                        "planned checks already declared; their requirements cannot be overwritten",
-                      );
-                    goalContract = plannedContract(
-                      options.goal,
-                      input,
-                      options.plannedChecks?.base,
-                    );
+                    // Nothing has run yet, so a planner that finds a mistake in what it pinned may
+                    // replace it: refusing that spent two launches' remaining wall on re-declares.
+                    // The supplied contract is never part of what is replaced.
+                    const task = options.plannedChecks?.task ?? options.goal;
+                    const replacing =
+                      plannedDeclaration?.checks.some((one) => one.id === input.id) ?? false;
+                    const declaration = withPlannedCheck(plannedDeclaration, input);
+                    goalContract = plannedContract(task, declaration, options.plannedChecks?.base, {
+                      root: options.workspace,
+                      exists: existsSync,
+                    });
+                    plannedDeclaration = declaration;
+                    const pinned = declaration.checks.find((one) => one.id === input.id);
                     return Promise.resolve({
-                      text: "planned checks pinned; each now runs once on the unchanged base before implementation",
-                      facts: { requirements: goalContract.requirements.length },
+                      text: [
+                        `check ${input.id} pinned${replacing ? ", replacing the earlier one" : ""}; ${declaration.checks.length} planned check(s) so far (${declaration.checks.map((one) => one.id).join(", ")}), each run once on the unchanged base before implementation.`,
+                        ...describeDeclaredCases({
+                          requirements: [],
+                          checks: pinned === undefined ? [] : [pinned],
+                        }),
+                        ...describeUncoveredSentences(task, declaration),
+                        "When every input is what you meant and every behaviour the task states is covered, finish with a one-line summary and no tool calls.",
+                      ].join("\n"),
+                      facts: { checks: declaration.checks.length },
                     });
                   },
                 }),
+            ...(options.plannedChecks?.tryOnBase === undefined
+              ? []
+              : [
+                  defineTool({
+                    name: "run_planned_checks_on_base",
+                    description:
+                      "Run every check pinned so far once on a fresh checkout of the unchanged base, exactly as admission will when you finish, and see what each did there: admitted or dropped, why, and what a dropped one printed. It takes as long as the repository's preparation. Fix what it reports with declare_planned_check (the same id replaces a check) and run it again while time allows.",
+                    inputSchema: z.strictObject({}),
+                    kind: "evidence",
+                    pathsFrom: () => [],
+                    async execute() {
+                      const tryOnBase = options.plannedChecks?.tryOnBase;
+                      if (goalContract === null || tryOnBase === undefined)
+                        throw new Error("pin a check with declare_planned_check first");
+                      const task = options.plannedChecks?.task ?? options.goal;
+                      // Where the planner decides to stop: what its checks did, and what of the
+                      // task none of them yet exercises.
+                      return {
+                        text: [
+                          await tryOnBase(goalContract),
+                          ...(plannedDeclaration === null
+                            ? []
+                            : describeUncoveredSentences(task, plannedDeclaration)),
+                          "Before finishing, reread each sentence of the task that states a rule and ask whether a case exercises it where an implementation could get it wrong: the special input at the start or the end, repeated, next to the separators the rule names, or combined with another special input. Add such cases (the same id replaces a check) and run this again, or finish.",
+                        ].join("\n"),
+                        facts: {},
+                      };
+                    },
+                  }),
+                ]),
           ]),
     ],
   });
@@ -189,7 +254,7 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
     abortSignal: options.abortSignal,
     systemPrompt:
       options.plannedChecks !== undefined
-        ? plannedChecksPrompt(options.plannedChecks.base)
+        ? plannedChecksPrompt(options.plannedChecks)
         : options.requireGoalChecks === true
           ? `${plannerPrompt} Before finishing, also call declare_goal_contract with the supplied goal verbatim, every observable requirement and executable checks that cover their combined behavior. Author new check artifacts that can run from a fresh checkout. Do not require a reference implementation. Prefer one worker for a tiny or tightly coupled goal. Requirements without executable checks will remain unjudged.`
           : plannerPrompt,
@@ -215,42 +280,49 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
     steps: loop.steps,
     completionClaim: loop.completionClaim,
     ...(options.requireGoalChecks === true ? { goalContract } : {}),
+    ...(options.plannedChecks === undefined ? {} : { plannedDeclaration }),
   };
 }
 
 /**
  * How planned checks are written. Every rule here is about the shape of a check and where its
  * expected values come from, never about any particular task: the expectations come from the
- * task's own words and the project's documented or tested behaviour, each check says what it
- * should do on the unchanged base, and a check is a script the harness runs and compares.
+ * task's own words and the project's documented or tested behaviour, and the mechanics of
+ * running and comparing are the harness's, so the planner spends its effort on the task.
  */
-function plannedChecksPrompt(base: GoalContract | undefined): string {
+function plannedChecksPrompt(options: NonNullable<PlannerOptions["plannedChecks"]>): string {
+  const { base } = options;
   return [
     "You write the acceptance checks a coding task is implemented and repaired against, before",
     "any implementation exists. You do not implement the task. Read the relevant source, tests",
-    "and manifest with the read-only tools, then call declare_planned_checks once with",
-    "requirements and executable checks for the task's observable requirements; the goal is the",
-    "task as given and is not repeated. Then finish with a one-line summary and no tool calls. These checks are written before any",
-    "implementation exists and are what the implementation is repaired against, so derive every",
-    "expected value from the task text and the project's existing documented or tested behaviour,",
-    "never from a guess about how the change will be written.",
-    "Cover each stated rule where it is easy to get wrong: its boundaries, the combinations of the",
-    "special cases the task names (position, repetition, mixing with other inputs), and the",
-    "ordinary inputs the task says must keep working.",
-    "Each check is a command-line behavior check with no artifacts: behavior.argv is node,",
-    '--input-type=module, -e and the script itself, run from the repository root (cwd "."),',
-    "and command repeats that argv as text. The script imports the project's public entry point",
-    "with a path relative to the repository root, computes the results for a fixed list of inputs,",
-    "prints them as one JSON line and exits 0; behavior.stdout holds one equals assertion with",
-    "the exact expected line and a trailing newline, and behavior.exitCode is 0. If the project's",
-    "tests need a build first, run that build at the start of the script with execSync from",
-    "node:child_process and stdio ignored. Write inputs with JSON escapes so every character is",
-    "exact, and keep each script short.",
-    "Set atBase on every check: fails for a check of the requested change,",
-    "which the unchanged base must get wrong, and passes for a check of behaviour that must stay,",
-    "which the base already gets right. Keep the two kinds in separate checks.",
-    "A check whose base result does not match its atBase is dropped before implementation, so do",
-    "not put a preserved case in a fails check.",
+    "and manifest with the read-only tools, then call declare_planned_check once for each check",
+    "(several calls may go in one turn). Then call run_planned_checks_on_base to see what each",
+    "check does on the unchanged base, fix what it reports, and finish with a one-line summary and",
+    "no tool calls.",
+    "Derive every expected result from the task text and the project's existing documented or",
+    "tested behaviour, never from a guess about how the change will be written. Cover each rule",
+    "the task states where it is easy to get wrong: its boundaries, the combinations of the",
+    "special cases it names (position, repetition, mixing with other inputs), and the ordinary",
+    "inputs the task says must keep working. Do not add requirements the task does not state.",
+    "Each requirement has an id, a description and, when a change check covers it, a quote of",
+    "the task's own words that ask for it. Each check names its requirement and its purpose:",
+    "change for behaviour the task asks to change, which the unchanged base must get wrong on at",
+    "least one case, and preserve for behaviour the task keeps, which the base already gets right",
+    "on every case; keep the two kinds in separate checks. A change check also holds at least one",
+    "case the task does not change, which the base gets right: it shows the program calls the",
+    "project correctly. Its program is an ES module that",
+    "imports the project and default-exports a function of one case's input that returns a",
+    "JSON-compatible value (undefined reads as null); the program runs from the repository root,",
+    "so import project files with paths like ./src/... or ./dist/... relative to it. Do not",
+    "build, install or print anything in the program: the harness prepares the checkout first.",
+    options.preparation,
+    "Give each requirement one check of each purpose it needs, holding all of its cases, rather",
+    "than a check per case: every declaration costs a turn of the planning allowance.",
+    "Each case gives the input and the expected result, or throws: true where the call must",
+    "throw. The tool's arguments are JSON, so a line feed inside an input string is written \\n",
+    "with one backslash, exactly as in any JSON string; \\\\n would be a backslash followed by n.",
+    "The tool's answer shows every input as it was read and lists the task's sentences no",
+    "requirement quotes yet. In why, say how the expected results follow from the task.",
     ...(base === undefined
       ? []
       : [
@@ -259,65 +331,4 @@ function plannedChecksPrompt(base: GoalContract | undefined): string {
           "are. Declare only what you add, with new ids.",
         ]),
   ].join(" ");
-}
-
-/**
- * What a planner declares in planned-check mode: requirements and checks only. The goal and the
- * contract's version are the harness's to fill in; a planner asked to retype a long task text
- * verbatim failed at it more than twenty times and spent its whole step budget doing so.
- */
-const plannedChecksInput = z.strictObject({
-  requirements: goalContractSchema.shape.requirements,
-  checks: goalContractSchema.shape.checks,
-  immutablePaths: goalContractSchema.shape.immutablePaths.default([]),
-});
-
-/**
- * The planner's additions on top of a supplied contract, or the planner's contract alone. The
- * supplied goal, requirements, checks, preset and immutable paths stand unchanged; what the
- * planner adds must be command-line behavior checks with a declared base expectation, and it
- * cannot author a preset, challenge fixtures or references, which are what admission would trust.
- */
-function plannedContract(
-  goal: string,
-  input: z.infer<typeof plannedChecksInput>,
-  base: GoalContract | undefined,
-): GoalContract {
-  const authored = input.checks.map((check) => ({
-    ...check,
-    author: "model" as const,
-    exposure: "shared" as const,
-  }));
-  const problems = authored.flatMap((check) => {
-    const wrong = [
-      check.behavior?.kind === "cli" ? null : "behavior.kind must be cli",
-      check.atBase === undefined ? "atBase must be fails or passes" : null,
-      check.artifacts.length > 0 ? "artifacts must be empty (put the script inline in argv)" : null,
-    ].filter((one): one is string => one !== null);
-    return wrong.length === 0 ? [] : [`${check.id}: ${wrong.join(", ")}`];
-  });
-  if (problems.length > 0)
-    throw new Error(
-      `every planned check is a command-line behavior check with its script inline in argv, no ` +
-        `artifacts, and atBase set; fix these and declare again: ${problems.join("; ")}`,
-    );
-  const taken = new Set([
-    ...(base?.requirements ?? []).map((one) => one.id),
-    ...(base?.checks ?? []).map((one) => one.id),
-  ]);
-  const reused = [...input.requirements, ...authored].filter((one) => taken.has(one.id));
-  if (reused.length > 0)
-    throw new Error(
-      `${reused.map((one) => one.id).join(", ")} already exist in the supplied contract; use new ids`,
-    );
-  return freezeGoalContract({
-    version: 1,
-    goal: base?.goal ?? goal,
-    ...(base?.preset === undefined ? {} : { preset: base.preset }),
-    requirements: [...(base?.requirements ?? []), ...input.requirements],
-    checks: [...(base?.checks ?? []), ...authored],
-    immutablePaths: [...new Set([...(base?.immutablePaths ?? []), ...input.immutablePaths])],
-    ...(base === undefined ? {} : { selection: base.selection }),
-    ...(base?.challenges === undefined ? {} : { challenges: base.challenges }),
-  }).contract;
 }

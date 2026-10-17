@@ -1,0 +1,88 @@
+diff --git a/src/header.ts b/src/header.ts
+index 27503e4..611f0ab 100644
+--- a/src/header.ts
++++ b/src/header.ts
+@@ -103,10 +103,27 @@ export class Header implements HeaderData {
+       exForFields?.uid ?? gexForFields?.uid ?? decNumber(buf, off + 108, 8)
+     this.gid =
+       exForFields?.gid ?? gexForFields?.gid ?? decNumber(buf, off + 116, 8)
+-    this.size =
+-      exForFields?.size ??
+-      gexForFields?.size ??
+-      decNumber(buf, off + 124, 12)
++    // Compute size: extended header takes priority over global
++    // extended header, which takes priority over the block's
++    // own 12-byte size field. Negative values in any of these
++    // are treated as absent—never used to override a
++    // lower-priority source that will be considered next.
++    if (typeof exForFields?.size === 'number' && exForFields.size >= 0) {
++      this.size = exForFields.size
++    } else if (
++      typeof gexForFields?.size === 'number' &&
++      gexForFields.size >= 0
++    ) {
++      this.size = gexForFields.size
++    } else {
++      this.size = decNumber(buf, off + 124, 12)
++    }
++
++    // If the ultimately computed size is negative (e.g., no valid
++    // ex/gex override and block field itself is negative), clear it.
++    if (typeof this.size === 'number' && this.size < 0) {
++      this.size = undefined
++    }
+     this.mtime =
+       exForFields?.mtime ??
+       gexForFields?.mtime ??
+@@ -137,6 +154,10 @@ export class Header implements HeaderData {
+       this.size = 0
+     }
+ 
++    if (typeof this.size === 'number' && this.size < 0) {
++      this.size = undefined
++    }
++
+     this.linkpath = decString(buf, off + 157, 100)
+     if (
+       buf.subarray(off + 257, off + 265).toString() === 'ustar\u000000'
+@@ -199,13 +220,15 @@ export class Header implements HeaderData {
+         Object.entries(ex).filter(([k, v]) => {
+           // we slurp in everything except for the path attribute in
+           // a global extended header, because that's weird. Also, any
+-          // null/undefined values are ignored.
++          // null/undefined values are ignored. Also refuse negative
++          // sizes — they would cause the reader to miscount bytes.
+           return !(
+             v === null ||
+             v === undefined ||
+             (k === 'path' && gex) ||
+             (k === 'linkpath' && gex) ||
+-            k === 'global'
++            k === 'global' ||
++            (k === 'size' && typeof v === 'number' && v < 0)
+           )
+         }),
+       ),
+diff --git a/src/pax.ts b/src/pax.ts
+index 45fd605..19703e7 100644
+--- a/src/pax.ts
++++ b/src/pax.ts
+@@ -197,7 +197,17 @@ const parseKVLine = (
+     case 'dev':
+     case 'ino':
+     case 'nlink':
+-    case 'size':
++    case 'size': {
++      const n = Number(v)
++      if (!isNaN(n)) {
++        if (n >= 0) {
++          set[k] = n
++        }
++      } else {
++        set[k] = 'non-numeric'
++      }
++      break
++    }
+     case 'mode':
+       set[k] = +v
+       break

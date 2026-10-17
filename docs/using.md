@@ -74,7 +74,12 @@ swarm "add a --no-cache flag that disables the response cache, with a test" --pl
    agreeing to criteria is a person agreeing to be measured by them, not independent ground
    truth. If the planner cannot pin criteria it says why (often a question about the task) and
    the run stops before implementation; on a terminal you get one round to answer, with the
-   task text kept verbatim. With a contract of your own, pass `--goal-contract` instead.
+   task text kept verbatim. With a contract of your own, pass `--goal-contract` instead, or
+   both to add planned checks to it. A planned check is a short program over the project and
+   input cases with expected results; each is run once on a fresh checkout of the unchanged base
+   and admitted only if the base gets a case wrong (a check of the change) or every case right
+   (behaviour that stays). Dropped checks get one revision when the planning allowance still
+   fits it, and a planned requirement left with no admitted check is reported as unchecked.
 3. **Base check** of the sealed checks: a check that cannot run here stops the run with the
    remedy named; a check that already passes on the base is named as not evidence of change.
 4. **Implementation** through the one worker loop: declared files, the recording chokepoint,
@@ -83,7 +88,7 @@ swarm "add a --no-cache flag that disables the response cache, with a test" --pl
    stopped the second time, and the gates still run over the tree.
 5. **Final verification** of the exact tree in a fresh checkout, independent of the worker.
 6. **The outcome block**: the verdict and how the loop stopped; each requirement as met, unmet
-   or unjudged; the branch and the files the recorded diff touches; which checks ran over that
+   or unjudged, and any planned requirement that was never checked; the branch and the files the recorded diff touches; which checks ran over that
    tree and what they could not measure; time, tokens and cost with planning shown separately;
    interventions counted by who made them; and, when the run is not acceptable, what blocked it
    and one next action, including `swarm resume <run-id>` where it applies. The evidence panel

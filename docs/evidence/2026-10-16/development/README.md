@@ -1,5 +1,20 @@
 # Development launches and demonstrations of 2026-10-16: results
 
+> **Read with the 2026-10-17 follow-up.** Re-checked against the records on 2026-10-17:
+> - the four live planned-check launches (5 to 8) admitted no planned check: launch 5 never pinned
+>   a contract, launch 6 pinned none, and the checks pinned in launches 7 and 8 were all
+>   dropped at admission;
+> - repair 4 below (admission that builds the base first, and a revision share) was never
+>   exercised live: launch 8's revision began with no wall left and ran no step;
+> - the mime demonstration is scripted end to end: the planned checks, the wrong implementation
+>   and the corrected replacement all came from the script. It establishes the product's
+>   integration path, not autonomous discovery or live repair;
+> - the fresh comparison that followed ran Swarm's default configuration with planned checks
+>   disabled, so it did not evaluate this workflow either.
+>
+> The live demonstrations and the planned-check interface they required are in
+> [../../2026-10-17/planned-check-live/](../../2026-10-17/planned-check-live/README.md).
+
 The questions and rules were registered before any launch, in [protocol.md](protocol.md).
 
 - **Allowance:** all 8 model-powered launches were used, about 20 agent-minutes of the 60

@@ -13,7 +13,7 @@
  *   basis of the rejection kept, since a rejection for a lockfile left inconsistent does not
  *   establish that a declaration requirement is enforced.
  *
- *   node scripts/pilot/validate.mjs --out <file> [--only <task-id>] [--amended]
+ *   node scripts/pilot/validate.mjs --out <file> [--set <date>] [--stage <stage>] [--only <task-id>] [--amended]
  */
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -43,7 +43,7 @@ const rows = [];
 const tasks = amended
   ? amendedTasks
   : [
-      ...stageTasks("A"),
+      ...stageTasks(args.get("stage") ?? "A"),
       // A set that names its own stages has no calibration stage.
       ...(args.get("set") === undefined || stagePurposes !== undefined
         ? []

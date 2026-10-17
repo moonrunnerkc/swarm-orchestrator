@@ -1,0 +1,31 @@
+diff --git a/src/Mime.ts b/src/Mime.ts
+index a28323b..af11e86 100644
+--- a/src/Mime.ts
++++ b/src/Mime.ts
+@@ -72,11 +72,11 @@ export default class Mime {
+   getType(path: string) {
+     if (typeof path !== 'string') return null;
+ 
+-    // Remove chars preceeding `/` or `\`
+-    const last = path.replace(/^.*[/\\]/, '').toLowerCase();
++    // Remove chars preceeding `/` or `\` or line terminators
++    const last = path.replace(/^.*[/\\\r\n\u2028\u2029]/, '').toLowerCase();
+ 
+-    // Remove chars preceeding '.'
+-    const ext = last.replace(/^.*\./, '').toLowerCase();
++    // Remove chars preceeding '.' or line terminators
++    const ext = last.replace(/^.*[.\r\n\u2028\u2029]/, '').toLowerCase();
+ 
+     const hasPath = last.length < path.length;
+     const hasDot = ext.length < last.length - 1;
+@@ -116,7 +116,9 @@ export default class Mime {
+ 
+   _freeze() {
+     this.define = () => {
+-      throw new Error('define() not allowed for built-in Mime objects. See https://github.com/broofa/mime/blob/main/README.md#custom-mime-instances');
++      throw new Error(
++        'define() not allowed for built-in Mime objects. See https://github.com/broofa/mime/blob/main/README.md#custom-mime-instances',
++      );
+     };
+ 
+     Object.freeze(this);

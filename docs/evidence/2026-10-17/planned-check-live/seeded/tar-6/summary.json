@@ -1,0 +1,154 @@
+{
+  "schema": "swarm-seeded-planned-repair.v1",
+  "kind": "seeded-candidate fault injection: live planning and live repair, injected first candidate",
+  "task": "tar-bugfix-negative-size",
+  "baseCommit": "e02a4e9e013c4be95302e2eb2047a942b883c27b",
+  "workspaceBase": "e4adc946c5ae1f0eabde64f542a776d682561ea9",
+  "swarmCli": "/Users/brad/.cache/swarm-comparison/tools/swarm-4f447d4dd/dist/cli.js",
+  "model": "qwen3.6:35b-a3b",
+  "endpoint": "http://127.0.0.1:11434/v1",
+  "argv": [
+    "<task text>",
+    "--model",
+    "local:qwen3.6:35b-a3b",
+    "--local-endpoint",
+    "http://127.0.0.1:49758/v1",
+    "--workspace",
+    "/Users/brad/swarm-comparison-work/seeded-tar-MtS2xv/workspace",
+    "--base",
+    "e4adc946c5ae1f0eabde64f542a776d682561ea9",
+    "--goal-contract",
+    "/Users/brad/swarm-comparison-work/seeded-tar-MtS2xv/contract.json",
+    "--plan-checks",
+    "--install",
+    "--lockfile",
+    "package-lock.json",
+    "--max-tokens",
+    "8000000",
+    "--max-wall-minutes",
+    "14",
+    "--approve",
+    "auto",
+    "--no-tui",
+    "--no-open-evidence",
+    "--json"
+  ],
+  "startedAt": "2026-10-17T16:20:07.713Z",
+  "elapsedMs": 841156,
+  "killedAtDeadline": false,
+  "exitCode": 1,
+  "acceptable": false,
+  "plannedChecks": {
+    "outcome": "sealed",
+    "admitted": [
+      "header-constructor-negative-size-ignored",
+      "pax-parse-negative-size-ignored",
+      "header-decode-negative-size-becomes-undefined",
+      "header-ex-merge-negative-size-ignored",
+      "header-positive-block-with-negative-ex-preserved"
+    ],
+    "dropped": [
+      {
+        "check": "pax-parse-positive-size-preserved",
+        "reason": "it fails on the base, so its expectation contradicts behaviour the task keeps"
+      },
+      {
+        "check": "pax-other-fields-negative-preserved",
+        "reason": "it fails on the base, so its expectation contradicts behaviour the task keeps"
+      },
+      {
+        "check": "header-positive-size-preserved",
+        "reason": "it fails on the base, so its expectation contradicts behaviour the task keeps"
+      }
+    ],
+    "revision": {
+      "outcome": "withheld",
+      "remainingMs": 20602,
+      "neededMs": 91871
+    },
+    "coverage": {
+      "sentences": 9,
+      "quotedByAdmitted": [
+        4,
+        5
+      ]
+    }
+  },
+  "requirements": [
+    {
+      "id": "visible-check",
+      "description": "the visible acceptance check passes on a fresh checkout",
+      "status": "accepted",
+      "authoredBy": "user",
+      "detail": null
+    },
+    {
+      "id": "negative-size-decoded-undefined",
+      "description": "When a header block is decoded, if the computed size is negative it becomes undefined (the task: \"when a block is decoded, the size it computes ... becomes undefined if it is negative\")",
+      "status": "accepted",
+      "authoredBy": "model",
+      "detail": null
+    },
+    {
+      "id": "negative-size-constructor-undefined",
+      "description": "When Header data with negative size is passed to the constructor, header.size stays undefined (the task: \"header data whose size is negative when compared as a number, whether passed to the constructor (new Header({ size: -1000 })) or merged in from an extended header, is ignored, so header.size stays undefined.\")",
+      "status": "accepted",
+      "authoredBy": "model",
+      "detail": null
+    },
+    {
+      "id": "negative-size-ex-merged-undefined",
+      "description": "When extended header data with negative size is merged into a Header, it is ignored (the task: \"header data whose size is negative when compared as a number, whether passed to the constructor (new Header({ size: -1000 })) or merged in from an extended header, is ignored, so header.size stays undefined.\")",
+      "status": "rejected",
+      "authoredBy": "model",
+      "detail": "exit status 0 as expected; stdout differs from the expected 2 line(s): line 2 should be `{\"input\":{\"blockSize\":500,\"exSize\":-1000},\"result\":500}` but was `{\"input\":{\"blockSize\":500,\"exSize\":-1000},\"result\":320}`"
+    },
+    {
+      "id": "negative-size-pax-record-rejected",
+      "description": "In Pax.parse, a 'size' record is kept only when its numeric value is zero or greater; negative and non-numeric values leave size undefined (the task: \"a 'size' record is kept only when its numeric value is zero or greater: 'size=-1000' and a non-numeric value leave size undefined\")",
+      "status": "rejected",
+      "authoredBy": "model",
+      "detail": "exit status 0 as expected; stdout differs from the expected 2 line(s): line 2 should be `{\"input\":{\"body\":\"5 size=abc\\n\"},\"result\":\"non-numeric\"}` but was `{\"input\":{\"body\":\"5 size=abc\\n\"},\"result\":null}`"
+    },
+    {
+      "id": "positive-size-ex-merged",
+      "description": "When block has a positive size and extended header has negative size, the block's size is kept",
+      "status": "accepted",
+      "authoredBy": "model",
+      "detail": null
+    }
+  ],
+  "uncheckedRequirements": [
+    {
+      "id": "positive-size-preserved",
+      "description": "Normal positive sizes are still correctly decoded from header blocks"
+    },
+    {
+      "id": "positive-size-pax-record-kept",
+      "description": "Pax.parse correctly keeps 'size' records with zero or positive values"
+    },
+    {
+      "id": "other-fields-negatives-preserved",
+      "description": "Every other field (uid, gid, mode) keeps its current parsing with negative values included"
+    }
+  ],
+  "repairAttempts": 2,
+  "setup": {
+    "tokensUsed": 677805,
+    "durationMs": 189404
+  },
+  "exchanges": {
+    "live": 90,
+    "seeded": 2
+  },
+  "liveTokens": {
+    "prompt": 2653997,
+    "completion": 24761,
+    "callsWithoutUsage": 0
+  },
+  "generatedChecksCaptured": true,
+  "sessions": [
+    "20261017T162008-922af2",
+    "20261017T162008-922af2-plan"
+  ]
+}

@@ -1,0 +1,92 @@
+{
+ "schema": "swarm-seeded-planned-checks.v1",
+ "task": "tar-bugfix-negative-size",
+ "contractDigest": "sha256:9fcf66f1b4bb4b9009dda12826d5e8567fe022f35ee6efb77714b5e6cee19714",
+ "admission": {
+  "outcome": "sealed",
+  "admitted": [
+   "header-constructor-negative-is-ignored",
+   "header-positive-size-keeps-working"
+  ],
+  "dropped": [
+   {
+    "check": "header-decode-negative-size-becomes-undefined",
+    "reason": "every case threw on the base, which shows a program that cannot call the project rather than the missing change"
+   },
+   {
+    "check": "pax-parse-keeps-valid-sizes",
+    "reason": "it fails on the base, so its expectation contradicts behaviour the task keeps"
+   },
+   {
+    "check": "pax-parse-rejects-negative-size",
+    "reason": "it passes on the base, so it does not detect the requested change"
+   },
+   {
+    "check": "pax-parse-rejects-nonnumeric-size",
+    "reason": "it passes on the base, so it does not detect the requested change"
+   }
+  ],
+  "revision": {
+   "outcome": "withheld",
+   "remainingMs": 57094,
+   "neededMs": 86879
+  },
+  "coverage": {
+   "sentences": 9,
+   "quotedByAdmitted": [
+    4,
+    6
+   ]
+  }
+ },
+ "checks": [
+  {
+   "id": "header-constructor-negative-is-ignored",
+   "purpose": "change",
+   "requirement": "When a Header is constructed with an explicit negative size in its data object, that negative size should be ignored and remain undefined. (the task: \"header data whose size is negative when compared as a number, whether passed to the constructor (new Header({ size: -1000 })) or merged in from an extended header, is ignored, so header.size stays undefined\")",
+   "program": "\nimport { Header } from './dist/esm/header.js';\n\nexport default function check(input) {\n  const h = new Header(input);\n  return h.size;\n}\n",
+   "expected": [
+    "{\"input\":{\"size\":-1000},\"result\":null}",
+    "{\"input\":{\"size\":-1},\"result\":null}",
+    "{\"input\":{\"path\":\"test\",\"size\":-500},\"result\":null}",
+    "{\"input\":{\"size\":0},\"result\":0}",
+    "{\"input\":{\"size\":100},\"result\":100}"
+   ],
+   "evaluator": {
+    "atBase": "fails",
+    "cases": 5,
+    "acceptsEveryCompliant": true,
+    "rejectsFaulty": [
+     {
+      "variant": "swarm-r2",
+      "rejected": false
+     }
+    ],
+    "base": "fails"
+   }
+  },
+  {
+   "id": "header-positive-size-keeps-working",
+   "purpose": "preserve",
+   "requirement": "Header constructor with positive sizes should continue to work correctly. (the task: \"every other field (uid, gid, mode, the times and so on) keeps its current parsing, negative values included, and nothing else changes\")",
+   "program": "\nimport { Header } from './dist/esm/header.js';\n\nexport default function check(input) {\n  const h = new Header(input);\n  return h.size;\n}\n",
+   "expected": [
+    "{\"input\":{\"size\":0},\"result\":0}",
+    "{\"input\":{\"size\":100},\"result\":100}",
+    "{\"input\":{},\"result\":null}"
+   ],
+   "evaluator": {
+    "atBase": "passes",
+    "cases": 3,
+    "acceptsEveryCompliant": true,
+    "rejectsFaulty": [
+     {
+      "variant": "swarm-r2",
+      "rejected": false
+     }
+    ],
+    "base": "passes"
+   }
+  }
+ ]
+}

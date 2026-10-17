@@ -1,0 +1,95 @@
+{
+  "schema": "swarm-seeded-planned-repair.v1",
+  "kind": "scripted rehearsal of the seeded run: a scripted endpoint stood where the model server stands (seeded/rehearse.mjs); not a live launch",
+  "task": "tar-bugfix-negative-size",
+  "baseCommit": "e02a4e9e013c4be95302e2eb2047a942b883c27b",
+  "workspaceBase": "c7f11b46075b53b5c503a1b2918d0c35a20dfbf9",
+  "swarmCli": "/Users/brad/.cache/swarm-comparison/tools/swarm-bbfe2447f/dist/cli.js",
+  "model": "qwen3.6:35b-a3b",
+  "endpoint": "http://127.0.0.1:59175/v1",
+  "argv": [
+    "<task text>",
+    "--model",
+    "local:qwen3.6:35b-a3b",
+    "--local-endpoint",
+    "http://127.0.0.1:59177/v1",
+    "--workspace",
+    "/Users/brad/swarm-comparison-work/seeded-tar-J0TuQ3/workspace",
+    "--base",
+    "c7f11b46075b53b5c503a1b2918d0c35a20dfbf9",
+    "--goal-contract",
+    "/Users/brad/swarm-comparison-work/seeded-tar-J0TuQ3/contract.json",
+    "--plan-checks",
+    "--install",
+    "--lockfile",
+    "package-lock.json",
+    "--max-tokens",
+    "8000000",
+    "--max-wall-minutes",
+    "14",
+    "--approve",
+    "auto",
+    "--no-tui",
+    "--no-open-evidence",
+    "--json"
+  ],
+  "startedAt": "2026-10-17T14:29:04.016Z",
+  "elapsedMs": 134629,
+  "killedAtDeadline": false,
+  "exitCode": 0,
+  "acceptable": true,
+  "plannedChecks": {
+    "outcome": "sealed",
+    "admitted": [
+      "pax-size",
+      "other-fields"
+    ],
+    "dropped": [],
+    "revision": {
+      "outcome": "not-needed"
+    }
+  },
+  "requirements": [
+    {
+      "id": "visible-check",
+      "description": "the visible acceptance check passes on a fresh checkout",
+      "status": "accepted",
+      "authoredBy": "user",
+      "detail": null
+    },
+    {
+      "id": "pax-size",
+      "description": "a negative pax size is refused (the task: \"In Pax.parse, a 'size' record is kept only when its numeric value is zero or greater\")",
+      "status": "accepted",
+      "authoredBy": "model",
+      "detail": null
+    },
+    {
+      "id": "other-fields",
+      "description": "negative uid keeps parsing",
+      "status": "accepted",
+      "authoredBy": "model",
+      "detail": null
+    }
+  ],
+  "uncheckedRequirements": [],
+  "repairAttempts": 1,
+  "setup": {
+    "tokensUsed": 227,
+    "durationMs": 18842
+  },
+  "exchanges": {
+    "live": 4,
+    "seeded": 2
+  },
+  "liveTokens": {
+    "prompt": 400,
+    "completion": 76,
+    "callsWithoutUsage": 0
+  },
+  "generatedChecksCaptured": true,
+  "sessions": [
+    "20261017T142904-7a36f8",
+    "20261017T142904-7a36f8-plan"
+  ]
+}

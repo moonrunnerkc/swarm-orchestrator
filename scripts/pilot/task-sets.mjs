@@ -34,5 +34,22 @@ export async function taskSet(name) {
       },
     };
   }
-  throw new Error(`unknown task set ${name}; known: 2026-10-14, 2026-10-15, 2026-10-16`);
+  if (name === "2026-10-17") {
+    const module = await import("./tasks-2026-10-17.mjs");
+    return {
+      setName: "planned-check development 2026-10-17",
+      stageTasks: module.stageTasks,
+      wrongPatches: module.wrongPatches,
+      stagePurposes: module.stagePurposes,
+      repetitions: Object.fromEntries(
+        Object.keys(module.stagePurposes).map((stage) => [
+          stage,
+          { tasks: module.tasks.map((task) => task.id), suffixes: module.repetitions },
+        ]),
+      ),
+    };
+  }
+  throw new Error(
+    `unknown task set ${name}; known: 2026-10-14, 2026-10-15, 2026-10-16, 2026-10-17`,
+  );
 }
