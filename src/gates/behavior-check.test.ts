@@ -177,18 +177,20 @@ describe("what a rejected command-line check tells the worker", () => {
     unavailable: null,
   });
 
-  it("names the expected output beside the output it captured", () => {
+  it("names the expected line beside the line it captured", () => {
     if (check.kind !== "cli") throw new Error("a cli check");
     expect(describeCliMismatch(check, observation('{"photo.png\\n.jpg":null}\n'))).toBe(
-      'exit status 0 as expected; stdout should equal "{\\"photo.png\\\\n.jpg\\":\\"image/jpeg\\"}\\n" ' +
-        'but was "{\\"photo.png\\\\n.jpg\\":null}\\n"',
+      "exit status 0 as expected; stdout differs from the expected 1 line(s): " +
+        'line 1 should be `{"photo.png\\n.jpg":"image/jpeg"}` but was `{"photo.png\\n.jpg":null}`',
     );
   });
 
   it("names a wrong exit status and bounds a long capture", () => {
     if (check.kind !== "cli") throw new Error("a cli check");
     const described = describeCliMismatch(check, observation("x".repeat(5000), 1));
-    expect(described).toMatch(/^exit status 1, expected 0; stdout should equal /);
+    expect(described).toMatch(
+      /^exit status 1, expected 0; stdout differs from the expected 1 line/,
+    );
     expect(described).toContain("(5000 characters, truncated)");
   });
 
