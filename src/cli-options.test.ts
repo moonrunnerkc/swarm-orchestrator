@@ -777,3 +777,18 @@ describe("a goal contract on the ordinary task path", () => {
     );
   });
 });
+
+describe("a flag this build does not have", () => {
+  it("is refused by name, rather than taking the task as its value", () => {
+    expect(() => parseCommandLine(["--plan-check", "fix the parser"], context)).toThrow(
+      /--plan-check is not an option of this command; swarm --help lists them/,
+    );
+    expect(() =>
+      parseCommandLine(["fix the parser", "--plan-checks", "--colour", "x"], context),
+    ).toThrow(/--colour is not an option/);
+  });
+
+  it("does not stop help, which is what a person asks for when the line is wrong", () => {
+    expect(parseCommandLine(["--help", "--plan-check", "x"], context)).toEqual({ command: "help" });
+  });
+});

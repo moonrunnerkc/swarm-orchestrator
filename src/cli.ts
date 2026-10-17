@@ -14,7 +14,7 @@ import { summarizeEvidence } from "./cli-evidence-summary.ts";
 import { gates } from "./cli-gates.ts";
 import { approvalOfferOnDisk, offerApprovalMode, offerInit, offerNodeHarness } from "./cli-init.ts";
 import { resolveLocalBackend } from "./cli-local-backend.ts";
-import { defaultModelFor } from "./cli-model-default.ts";
+import { defaultModelFor, NoDefaultModelError } from "./cli-model-default.ts";
 import { preflightAll } from "./cli-model-preflight.ts";
 import {
   type CommandLine,
@@ -398,7 +398,7 @@ async function run(options: RunCommand): Promise<number> {
     usable.outcome === "substituted"
       ? `instead of ${usable.requested}: ${usable.reason}`
       : chosen !== null
-        ? chosen.reason
+        ? `${chosen.reason}; pass --model to choose another`
         : routed.modelSpec !== null
           ? "routed by calibration"
           : "pinned";
@@ -1191,9 +1191,14 @@ main().then(
   },
   (error: unknown) => {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-    // A command line this build cannot read is an invalid request (2), not work that failed (1).
+    // A command line this build cannot read is an invalid request (2), and a machine with no model
+    // to run is unavailable (4); neither is work that failed (1).
     process.exitCode =
-      error instanceof InvalidCommandLineError ? exitCodes.invalidRequest : exitCodes.notAcceptable;
+      error instanceof InvalidCommandLineError
+        ? exitCodes.invalidRequest
+        : error instanceof NoDefaultModelError
+          ? exitCodes.unavailable
+          : exitCodes.notAcceptable;
   },
 );
 

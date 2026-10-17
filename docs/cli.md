@@ -308,7 +308,15 @@ so the deadline costs that one tool call and the run carries on.
 ## Exit codes
 
 A taxonomy rather than zero-or-not: 0 acceptable, 1 not acceptable, 2 invalid request,
-3 cancelled, 4 unavailable or incomplete, 5 internal error. `swarm check` uses all of the first
+3 cancelled, 4 unavailable or incomplete, 5 internal error.
+
+A task run reads its exit status off the outcome status the outcome block and
+`outcome.status` in the JSON result also carry: 0 for `accepted`, and for `unjudged` (the gates
+passed and no requirement was sealed, so nothing says the task was done); 1 for `not-accepted`,
+`partially-checked` and `unresolved`. A run with no model to use (nothing pinned, no local server
+answering, no key) is 4, as is `--plan-checks` sealing nothing; declining the planned criteria is
+3; a run a person interrupts exits 130, the shell's own code for an interrupt, and a run that ends
+at `--max-wall-minutes` still reports its verdict, so it is 0 or 1. `swarm check` uses all of the first
 five: a regression-only pass is 0, a failed blocking check is 1, a command line the binary
 cannot read is 2, an interrupted run is 3, and a missing prerequisite, an ambiguous scope, a
 watch-mode script, a directory with no manifest or a suite that collected nothing is 4.

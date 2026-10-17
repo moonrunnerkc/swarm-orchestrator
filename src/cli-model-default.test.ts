@@ -104,6 +104,19 @@ describe("the model a run takes when nothing pins one", () => {
     const settings = resolveSettings({ flags: noFlags, env: {}, toml: null });
 
     await expect(defaultModelFor(settings, deps([]))).rejects.toThrow(NoDefaultModelError);
-    await expect(defaultModelFor(settings, deps([]))).rejects.toThrow(/ollama pull|--model/);
+    await expect(defaultModelFor(settings, deps([]))).rejects.toThrow(
+      /no local model server answered on the default ports \(ollama http:\/\/127\.0\.0\.1:11434\/v1, rapid-mlx http:\/\/127\.0\.0\.1:8000\/v1\).*Start Ollama or rapid-mlx/,
+    );
+  });
+
+  it("names the endpoint it was pointed at, not the default ports", async () => {
+    const settings = resolveSettings({
+      flags: { ...noFlags, localEndpoint: "http://127.0.0.1:9/v1" },
+      env: {},
+      toml: null,
+    });
+    await expect(defaultModelFor(settings, deps([]))).rejects.toThrow(
+      /no local model server answered at http:\/\/127\.0\.0\.1:9\/v1,/,
+    );
   });
 });

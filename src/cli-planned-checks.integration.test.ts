@@ -250,6 +250,7 @@ interface ResultLine {
   verdict?: { acceptable?: boolean; reasons?: Record<string, string> };
   outcome?: {
     status?: string;
+    changedFiles?: string[];
     requirements?: {
       id: string;
       status: string;
