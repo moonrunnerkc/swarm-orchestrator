@@ -402,7 +402,7 @@ function describeTrial(admission: PlannedCheckAdmission, contract: GoalContract)
         (one.excerpt === null ? "" : `; on the base: ${one.excerpt}`),
     ),
     admission.decisions.every((one) => one.admitted)
-      ? "Every check holds its base control. Finish if the checks cover the task."
+      ? "Every check holds its base control."
       : "A dropped check stays dropped unless you declare a replacement (the same id replaces it).",
   ].join("\n");
 }
