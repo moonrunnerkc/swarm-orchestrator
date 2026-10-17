@@ -50,6 +50,24 @@ Source on `v13-main`; not published until a release names it.
 
   On this assignment's model the planner never had a check admitted in four development launches
   on mime, at three to four times the default's tokens, so this is not claimed to help yet.
+- **Comparison evidence is packed in place.** `scripts/evidence-pack.mjs` gains three lossless
+  commands, in its existing format:
+  - `pack-blobs` holds content-addressed blobs as their content under their digest;
+  - `pack-gz` holds other gzip text files as their content;
+  - `pack-records` holds a stage's records byte for byte.
+
+  The analyzer and the replays read from the packs. The 2026-10-14 to 2026-10-16 evidence is
+  packed, the analyzer re-derives every stage unchanged, and the tree keeps its required
+  headroom.
+- **A fresh comparison on four new tasks, two runs per tool**, run once after the repairs above
+  (`docs/evidence/2026-10-16/fresh-comparison/`). It found no demonstrated benefit:
+  - OpenCode delivered 8 of 8 and Swarm 7 of 8;
+  - Swarm made one false completion claim, where its acceptance passed a node-tar patch the hidden
+    check rejects;
+  - Swarm took about twice the end-to-end time per delivery.
+
+  The comparison's checkouts now live outside hidden directories, a visible check is committed
+  with `--force`, and task-authored hidden checks are written after the project's own tests.
 - **`--prompt-profile legacy|concise`** selects the worker prompt from the ordinary command line.
   The default stays the historical prompt. In two development launches the concise prompt did not
   meet its registered rule.
