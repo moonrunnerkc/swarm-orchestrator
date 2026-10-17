@@ -15,6 +15,7 @@
  * published session's gate runs for the sealed contract digest; needs the local mirror of the
  * repository the comparison harness keeps, and network for the checkout's dependencies.
  */
+
 import { createHash } from "node:crypto";
 import {
   mkdirSync,
@@ -44,6 +45,7 @@ import {
   workRoot,
 } from "../comparison/workspace.mjs";
 import { developmentTasks } from "./amendments.mjs";
+import { readStageRecord } from "./stage-files.mjs";
 import { readSession } from "./swarm-session.mjs";
 
 const args = new Map();
@@ -86,9 +88,7 @@ function treeDigest(root) {
 // The retained inputs, each checked against the record that names it.
 const task = developmentTasks("dev").find((one) => one.id === taskId);
 if (task === undefined) throw new Error(`frozen task ${taskId} is not in the development stage`);
-const record = JSON.parse(
-  readFileSync(join(retainedRoot, "records", `${taskId}.swarm.json`), "utf8"),
-);
+const record = JSON.parse(readStageRecord(join(retainedRoot, "records", `${taskId}.swarm.json`)));
 const patch = readFileSync(join(retainedRoot, "patches", `${taskId}.swarm.patch`), "utf8");
 if (digestOf(patch) !== record.finalPatchDigest)
   throw new Error(

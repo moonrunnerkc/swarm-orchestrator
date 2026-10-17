@@ -27,10 +27,11 @@
  *   node scripts/pilot/analyze.mjs --evidence <stage dir> [--evidence-b <stage dir>] [--out <json>] [--markdown <md>]
  */
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { recordSchema } from "../comparison/schema.mjs";
+import { packedFiles, readStageRecord, stageRecordNames } from "./stage-files.mjs";
 
 export const analysisSchema = "swarm-real-task-pilot.analysis.v2";
 
@@ -59,38 +60,60 @@ export function citedDigests(record) {
 }
 
 /**
- * The evidence directory as a reader: every blob is read from `blobs/<hex>.gz`, decompressed
- * and checked against the digest it is filed under before a byte of it is used. A blob that is
- * absent or does not match reads as null, and is also reported by `validateStage`.
+ * The evidence directory as a reader: every blob is read from `blobs/<hex>.gz`, or, where the
+ * stage's blobs were packed (`node scripts/evidence-pack.mjs pack-blobs`), from the pack under
+ * `blobs/packed-derived/`, and checked against the digest it is filed under before a byte of it
+ * is used. A blob that is absent or does not match reads as null, and is also reported by
+ * `validateStage`.
  */
 export function evidenceReader(root) {
   const verified = new Map();
+  let packedBlobs = null;
+  const fromPack = (hex) => {
+    packedBlobs ??= packedFiles(join(root, "blobs"));
+    return packedBlobs.get(hex);
+  };
+  let packedGzip = null;
+  const fromGzipPack = (relativePath) => {
+    packedGzip ??= packedFiles(root);
+    return packedGzip.get(relativePath.replace(/\.gz$/, ""));
+  };
   return {
     root,
     blob(digest) {
       if (verified.has(digest)) return verified.get(digest);
       const path = join(root, "blobs", `${digest.slice(7)}.gz`);
-      let text = null;
-      if (existsSync(path)) {
-        try {
-          const bytes = gunzipSync(readFileSync(path));
-          if (digestOf(bytes) === digest) text = bytes.toString("utf8");
-        } catch {
-          text = null;
+      let bytes = null;
+      try {
+        if (existsSync(path)) bytes = gunzipSync(readFileSync(path));
+        else {
+          const content = fromPack(digest.slice(7));
+          if (content !== undefined) bytes = Buffer.from(content, "utf8");
         }
+      } catch {
+        bytes = null;
       }
+      const text = bytes !== null && digestOf(bytes) === digest ? bytes.toString("utf8") : null;
       verified.set(digest, text);
       return text;
     },
     blobState(digest) {
       const path = join(root, "blobs", `${digest.slice(7)}.gz`);
-      if (!existsSync(path)) return "missing";
+      if (!existsSync(path) && fromPack(digest.slice(7)) === undefined) return "missing";
       return this.blob(digest) === null ? "corrupt" : "verified";
     },
     /** An optional packaged file beside the records, parsed from its compressed JSON, or null. */
     json(relativePath) {
       const path = join(root, relativePath);
-      if (!existsSync(path)) return null;
+      if (!existsSync(path)) {
+        // Where the stage's gzip files were packed (`evidence-pack.mjs pack-gz`), the content.
+        const packed = relativePath.endsWith(".gz") ? fromGzipPack(relativePath) : undefined;
+        try {
+          return packed === undefined ? null : JSON.parse(packed);
+        } catch {
+          return null;
+        }
+      }
       try {
         return JSON.parse(
           path.endsWith(".gz")
@@ -912,10 +935,10 @@ export function readStage(root) {
   const manifest = JSON.parse(bytes);
   const digest = digestOf(bytes);
   const recordsDir = join(root, "records");
-  const names = existsSync(recordsDir) ? readdirSync(recordsDir).sort() : [];
+  const names = stageRecordNames(root);
   const records = names
     .filter(isLaunchRecord)
-    .map((name) => ({ name, ...JSON.parse(readFileSync(join(recordsDir, name), "utf8")) }));
+    .map((name) => ({ name, ...JSON.parse(readStageRecord(join(recordsDir, name))) }));
   const halts = names.filter((name) => /^halt-\d+\.json$/.test(name));
   const recoveries = names.filter((name) => /^recovery-\d+\.json$/.test(name));
   const validity = validateStage(evidence, manifest, digest, records);

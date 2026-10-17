@@ -57,6 +57,7 @@ import {
   workRoot,
 } from "../comparison/workspace.mjs";
 import { solverReference } from "./reference.mjs";
+import { readStageRecord } from "./stage-files.mjs";
 import { readSession } from "./swarm-session.mjs";
 import { taskSet } from "./task-sets.mjs";
 
@@ -135,7 +136,7 @@ async function candidateOf(scenario) {
       source: `the maintainer's change to ${task.hidden.allowedPaths.join(", ")}`,
     };
   const patch = readFileSync(scenario.patch, "utf8");
-  const record = JSON.parse(readFileSync(scenario.record, "utf8"));
+  const record = JSON.parse(readStageRecord(scenario.record));
   if (
     digestOf(patch) !== record.finalPatchDigest ||
     Buffer.byteLength(patch) !== record.finalPatchBytes
