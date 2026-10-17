@@ -149,12 +149,27 @@ const plannerTurns: ScriptedTurnSource[] = [
         ]),
         // Says it detects the change, yet the base already gets it right.
         plannedCheck("mislabelled", "boundary", "change", [{ input: 3, expected: "small" }]),
+        // Never calls the project at all: the base gets every case wrong, as the missing change
+        // would, and only the control case it lacks would have shown that.
+        plannedCheck(
+          "uncontrolled",
+          "boundary",
+          "change",
+          [
+            { input: 9, expected: "small" },
+            { input: 10, expected: "small" },
+          ],
+          "export default () => null;\n",
+        ),
         // Imports a module that does not exist: it never loads on the base.
         plannedCheck(
           "broken",
           "loads",
           "change",
-          [{ input: 10, expected: "small" }],
+          [
+            { input: 9, expected: "small" },
+            { input: 10, expected: "small" },
+          ],
           classifying("./missing.mjs"),
         ),
       ],
@@ -292,7 +307,17 @@ describe("planned checks through the ordinary command line", () => {
       .find((payload) => payload.rule === "planned-check-admission-v1");
     expect(
       Object.fromEntries((admission?.decisions ?? []).map((one) => [one.check, one.admitted])),
-    ).toEqual({ boundary: true, above: true, mislabelled: false, broken: false });
+    ).toEqual({
+      boundary: true,
+      above: true,
+      mislabelled: false,
+      uncontrolled: false,
+      broken: false,
+    });
+    expect(admission?.decisions?.find((one) => one.check === "uncontrolled")).toMatchObject({
+      broken: true,
+      reason: expect.stringMatching(/gets every case wrong on the base/),
+    });
     expect(admission?.decisions?.find((one) => one.check === "broken")?.broken).toBe(true);
     expect(result?.plannedChecks).toEqual({
       outcome: "sealed",
@@ -301,6 +326,11 @@ describe("planned checks through the ordinary command line", () => {
         {
           check: "mislabelled",
           reason: "it passes on the base, so it does not detect the requested change",
+        },
+        {
+          check: "uncontrolled",
+          reason:
+            "it gets every case wrong on the base, so nothing shows its program calls the project correctly; a change check also holds a case the task does not change, which the base gets right",
         },
         {
           check: "broken",
@@ -384,7 +414,10 @@ describe("planned checks through the ordinary command line", () => {
               { id: "above", description: "11 and above stay big" },
             ],
             [
-              plannedCheck("boundary", "boundary", "change", [{ input: 10, expected: "small" }]),
+              plannedCheck("boundary", "boundary", "change", [
+                { input: 9, expected: "small" },
+                { input: 10, expected: "small" },
+              ]),
               plannedCheck("above", "above", "preserve", [{ input: 11, expected: "big" }]),
             ],
           )
@@ -401,7 +434,10 @@ describe("planned checks through the ordinary command line", () => {
             "boundary",
             "boundary",
             "change",
-            [{ input: 10, expected: "small" }],
+            [
+              { input: 9, expected: "small" },
+              { input: 10, expected: "small" },
+            ],
             classifying("./built/value.mjs"),
           ),
           // A misreading of what the base already does: 11 is big there.
@@ -438,13 +474,19 @@ describe("planned checks through the ordinary command line", () => {
 
   it("lets the planner run its checks on the base inside its own loop, and admits what it finished on", async () => {
     const requirements = [{ id: "boundary", description: "10 is small", quote }];
-    const good = plannedCheck("boundary", "boundary", "change", [{ input: 10, expected: "small" }]);
+    const good = plannedCheck("boundary", "boundary", "change", [
+      { input: 9, expected: "small" },
+      { input: 10, expected: "small" },
+    ]);
     const trial = { toolCalls: [{ name: "run_planned_checks_on_base", input: {} }] };
     // Replaces the broken check only when the in-loop run reported why it never loaded.
     const replaces: ScriptedTurnSource = (request) =>
       JSON.stringify(request).includes("the check program did not load")
         ? declaring(requirements, [
-            plannedCheck("loads", "boundary", "change", [{ input: 10, expected: "small" }]),
+            plannedCheck("loads", "boundary", "change", [
+              { input: 9, expected: "small" },
+              { input: 10, expected: "small" },
+            ]),
           ])
         : { text: "The base run reported nothing to fix." };
     const { endpoint, stdout, code } = await swarm([
@@ -454,7 +496,10 @@ describe("planned checks through the ordinary command line", () => {
           "loads",
           "boundary",
           "change",
-          [{ input: 10, expected: "small" }],
+          [
+            { input: 9, expected: "small" },
+            { input: 10, expected: "small" },
+          ],
           classifying("./missing.mjs"),
         ),
       ]),
@@ -499,7 +544,10 @@ describe("planned checks through the ordinary command line", () => {
               "built-boundary",
               "built-boundary",
               "change",
-              [{ input: 10, expected: "small" }],
+              [
+                { input: 9, expected: "small" },
+                { input: 10, expected: "small" },
+              ],
               classifying("./built/value.mjs"),
             ),
           ],
