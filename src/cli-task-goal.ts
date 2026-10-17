@@ -1,6 +1,10 @@
 import type { Clock } from "./core/clock.ts";
 import { asJsonValue, digestOfBytes } from "./evidence/canonical-json.ts";
-import { freezeGoalContract, type GoalContract } from "./evidence/goal-contract.ts";
+import {
+  diagnosticChecks,
+  freezeGoalContract,
+  type GoalContract,
+} from "./evidence/goal-contract.ts";
 import { recordGoalAssessment } from "./evidence/run-assessment.ts";
 import type { EvidenceRecorder } from "./evidence/session.ts";
 import { harnessChildEnvironment } from "./exec/child-environment.ts";
@@ -316,22 +320,33 @@ export function taskGoalGate(context: TaskGoalContext): GateDefinition {
             status,
             detail,
           })) ?? [];
-        const unavailable = result.unmeasured || result.task === "unjudged";
+        const reading = readAcceptance(context.contract, result);
         // A refusal is a decision against the change and reads as one; an unmeasured setup is
         // something to prepare. The repair feedback is this text, so the two must not be confused.
         // The findings again as plain lines: inside the JSON above, a check's detail reaches the
         // repair brief escaped, and a worker reads the line it got wrong more easily here.
         const failed = findings
-          .filter((finding) => finding.status !== "accepted")
+          .filter((finding) => finding.status !== "accepted" && !reading.diagnostic.has(finding.id))
           .map((finding) => `check ${finding.id} ${finding.status}: ${finding.detail}`);
+        const disagreeing = findings
+          .filter((finding) => finding.status === "rejected" && reading.diagnostic.has(finding.id))
+          .map((finding) => `generated check ${finding.id} rejected: ${finding.detail}`);
         const stderr =
           result.refusal !== null && !result.unmeasured
             ? `refused: ${result.refusal}`
-            : unavailable
+            : reading.unavailable
               ? `setup unavailable: ${result.advice || result.refusal || "required acceptance instrument is unmeasured"}`
-              : failed.join("\n");
+              : [
+                  ...failed,
+                  ...(disagreeing.length === 0
+                    ? []
+                    : [
+                        "These generated checks disagree with the change. Their expected results are the planner's reading of the task, not established facts: change the code where the task supports the expectation, and where it does not, leave the code as it is and say which expectation the task contradicts.",
+                        ...disagreeing,
+                      ]),
+                ].join("\n");
         return {
-          exitCode: result.verified ? 0 : 1,
+          exitCode: reading.passes ? 0 : 1,
           unavailable: null,
           durationMs: context.clock.now() - started,
           stdout: JSON.stringify({ regression: result.regression, task: result.task, findings }),
@@ -339,5 +354,54 @@ export function taskGoalGate(context: TaskGoalContext): GateDefinition {
         };
       },
     },
+  };
+}
+
+/**
+ * What the acceptance gate makes of one verification, which is what repair answers to. A check
+ * that decides a requirement passes or refuses; a generated check that disagrees asks for a
+ * repair without becoming a verdict; a requirement no check decides is unjudged by design, which
+ * is neither something to fix nor a setup to prepare.
+ */
+export function readAcceptance(
+  contract: GoalContract,
+  result: {
+    readonly verified: boolean;
+    readonly unmeasured: boolean;
+    readonly refusal: string | null;
+    readonly regression: string;
+    readonly goalAcceptance?: {
+      readonly obligations: readonly { readonly id: string; readonly status: string }[];
+      readonly checkResults?: readonly { readonly id: string; readonly status: string }[];
+    };
+  },
+): {
+  readonly passes: boolean;
+  readonly unavailable: boolean;
+  readonly diagnostic: ReadonlySet<string>;
+} {
+  const diagnostic = diagnosticChecks(contract);
+  const decided = new Set(
+    contract.requirements.filter((one) => one.checks.length > 0).map((one) => one.id),
+  );
+  const obligations = (result.goalAcceptance?.obligations ?? []).filter((one) =>
+    decided.has(one.id),
+  );
+  const unavailable =
+    result.unmeasured ||
+    result.goalAcceptance === undefined ||
+    obligations.some((one) => one.status === "unjudged");
+  const disagreement = (result.goalAcceptance?.checkResults ?? []).some(
+    (one) => diagnostic.has(one.id) && one.status === "rejected",
+  );
+  return {
+    passes:
+      result.refusal === null &&
+      !unavailable &&
+      result.regression === "pass" &&
+      obligations.every((one) => one.status === "accepted") &&
+      !disagreement,
+    unavailable,
+    diagnostic,
   };
 }

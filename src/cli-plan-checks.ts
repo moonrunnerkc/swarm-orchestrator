@@ -9,7 +9,6 @@ import { freezeGoalContract, type GoalContract } from "./evidence/goal-contract.
 import { type EvidenceRecorder, openEvidenceSession } from "./evidence/session.ts";
 import {
   inputAsRead,
-  type PlannedChecksDeclaration,
   plannedInputs,
   plannedProgram,
   sentencesQuoted,
@@ -97,11 +96,16 @@ export interface AdmissionSummary {
     | { readonly outcome: "ran"; readonly admitted: readonly string[] }
     | { readonly outcome: "withheld"; readonly remainingMs: number; readonly neededMs: number };
   /**
-   * The task's sentences, numbered from 1, that an admitted planned requirement quotes, against
-   * all of them. A quote is the planner's claim of what a requirement covers, not proof that its
-   * checks test all of that sentence.
+   * The task's sentences, numbered from 1: those a planned requirement with an admitted check
+   * quotes, and those quoted only by a requirement whose checks were all dropped. A quote is the
+   * planner's claim of what a requirement covers, not proof that its checks test all of that
+   * sentence, and a sentence nobody quoted was not tracked at all.
    */
-  readonly coverage: { readonly sentences: number; readonly quotedByAdmitted: readonly number[] };
+  readonly coverage: {
+    readonly sentences: number;
+    readonly quotedByAdmitted: readonly number[];
+    readonly quotedWithoutCheck: readonly number[];
+  };
 }
 
 export type PlanChecksOutcome =
@@ -257,12 +261,6 @@ async function planWithin(
     // just took.
     let revisionOutcome: AdmissionSummary["revision"] = { outcome: "not-needed" };
     const declaredContracts = declared === null ? [] : [declared];
-    const quotes = new Map<string, string>();
-    const keepQuotes = (declaration: PlannedChecksDeclaration | null | undefined) => {
-      for (const requirement of declaration?.requirements ?? [])
-        if (requirement.quote !== undefined) quotes.set(requirement.id, requirement.quote);
-    };
-    keepQuotes(outcome.plannedDeclaration);
     const decisions = [...(admission?.decisions ?? [])];
     const dropped = decisions.filter((one) => !one.admitted);
     if (admission !== null && declared !== null && deps.admit !== undefined && dropped.length > 0) {
@@ -285,7 +283,10 @@ async function planWithin(
           },
         });
       } else {
-        const kept = admission.contract ?? deps.base;
+        // A requirement in the task's words whose checks were all dropped is what the revision is
+        // for, so it is reopened for the planner to declare again under its own id, and put back
+        // as it was if the revision does not.
+        const { kept, reopened } = reopenUnchecked(admission.contract ?? deps.base);
         deps.note("revising the planned checks admission dropped");
         const revision = await plan(
           revisionBrief(goal, declared, dropped),
@@ -294,7 +295,6 @@ async function planWithin(
         );
         steps += revision.steps;
         const revised = revision.goalContract ?? null;
-        keepQuotes(revision.plannedDeclaration);
         let admittedInRevision: readonly string[] = [];
         if (revised !== null) {
           declaredContracts.push(revised);
@@ -304,7 +304,8 @@ async function planWithin(
           admittedInRevision = second.decisions
             .filter((one) => one.admitted)
             .map((one) => one.check);
-          if (second.contract !== null) admission = second;
+          if (second.contract !== null)
+            admission = { ...second, contract: restoreUnchecked(second.contract, reopened) };
         }
         revisionOutcome = { outcome: "ran", admitted: admittedInRevision };
         await planning.record({
@@ -329,6 +330,22 @@ async function planWithin(
         for (const requirement of one.requirements)
           if (!sealed.has(requirement.id) && !supplied.has(requirement.id))
             unchecked.set(requirement.id, requirement.description);
+      // Where nothing was sealed, the quoted requirements are still the task's, and still unmet.
+      const tracked =
+        contract?.requirements ??
+        declaredContracts.at(-1)?.requirements.filter((one) => one.planned?.quote !== undefined) ??
+        [];
+      const quotedBy = (checked: boolean) =>
+        sentencesQuoted(
+          deps.task,
+          tracked.flatMap((one) =>
+            one.planned?.quote === undefined ||
+            (one.planned.diagnostics.length > 0 && contract !== null) !== checked
+              ? []
+              : [one.planned.quote],
+          ),
+        );
+      const quotedByAdmitted = quotedBy(true);
       summary = {
         admitted: decisions.filter((one) => one.admitted).map((one) => one.check),
         dropped: decisions
@@ -338,17 +355,17 @@ async function planWithin(
         revision: revisionOutcome,
         coverage: {
           sentences: taskSentences(deps.task).length,
-          quotedByAdmitted: sentencesQuoted(
-            deps.task,
-            [...sealed].flatMap((id) => {
-              const quote = quotes.get(id);
-              return quote === undefined || supplied.has(id) ? [] : [quote];
-            }),
-          ),
+          quotedByAdmitted,
+          quotedWithoutCheck: quotedBy(false).filter((one) => !quotedByAdmitted.includes(one)),
         },
       };
+      const withoutCheck = summary.coverage.quotedWithoutCheck;
       deps.note(
-        `task sentences an admitted planned requirement quotes: ${summary.coverage.quotedByAdmitted.length} of ${summary.coverage.sentences}${summary.coverage.quotedByAdmitted.length === 0 ? "" : ` (${summary.coverage.quotedByAdmitted.join(", ")})`}`,
+        `task sentences a planned requirement with an admitted check quotes: ${quotedByAdmitted.length} of ${summary.coverage.sentences}` +
+          (quotedByAdmitted.length === 0 ? "" : ` (${quotedByAdmitted.join(", ")})`) +
+          (withoutCheck.length === 0
+            ? ""
+            : `; quoted only by a requirement with no admitted check: ${withoutCheck.join(", ")}`),
       );
     }
     if (declared !== null && contract === null)
@@ -390,6 +407,39 @@ async function planWithin(
   }
 }
 
+/** The contract a revision builds on, without the planned requirements no check covers. */
+function reopenUnchecked(contract: GoalContract | undefined): {
+  readonly kept: GoalContract | undefined;
+  readonly reopened: readonly GoalContract["requirements"][number][];
+} {
+  if (contract === undefined) return { kept: undefined, reopened: [] };
+  const unchecked = (one: GoalContract["requirements"][number]) =>
+    one.planned !== undefined && one.planned.diagnostics.length === 0;
+  const reopened = contract.requirements.filter(unchecked);
+  const requirements = contract.requirements.filter((one) => !unchecked(one));
+  return {
+    kept:
+      requirements.length === 0
+        ? undefined
+        : freezeGoalContract({ ...contract, requirements }).contract,
+    reopened,
+  };
+}
+
+/** The revised contract with each reopened requirement the revision did not declare again. */
+function restoreUnchecked(
+  contract: GoalContract,
+  reopened: readonly GoalContract["requirements"][number][],
+): GoalContract {
+  const missing = reopened.filter(
+    (one) => !contract.requirements.some((requirement) => requirement.id === one.id),
+  );
+  return missing.length === 0
+    ? contract
+    : freezeGoalContract({ ...contract, requirements: [...contract.requirements, ...missing] })
+        .contract;
+}
+
 /** What the planner's in-loop base run found, as it reads it: each check's decision, with what a dropped one did. */
 function describeTrial(admission: PlannedCheckAdmission, contract: GoalContract): string {
   const purpose = (id: string) =>
@@ -411,12 +461,19 @@ function describeTrial(admission: PlannedCheckAdmission, contract: GoalContract)
 export function describeCriteria(contract: GoalContract): readonly string[] {
   const lines = [
     "",
-    "completion criteria (model-authored, sealed before implementation):",
+    "completion criteria (sealed before implementation):",
     `  goal: ${contract.goal.split("\n")[0]}`,
   ];
   contract.requirements.forEach((requirement, index) => {
-    lines.push(`  ${index + 1}. ${requirement.description}`);
-    if (requirement.checks.length === 0) lines.push("       no executable check: stays unjudged");
+    lines.push(
+      `  ${index + 1}. ${requirement.description}` +
+        (requirement.planned === undefined
+          ? ""
+          : requirement.planned.quote === undefined
+            ? " [planned; quotes no task sentence]"
+            : ` [planned from the task: "${requirement.planned.quote}"]`),
+    );
+    if (requirement.checks.length === 0) lines.push("       decided by no check: stays unjudged");
     for (const id of requirement.checks) {
       const check = contract.checks.find((one) => one.id === id);
       if (check === undefined) continue;
@@ -425,13 +482,17 @@ export function describeCriteria(contract: GoalContract): readonly string[] {
           (check.author === "model" ? " [model-authored]" : ""),
       );
     }
+    for (const id of requirement.planned?.diagnostics ?? [])
+      lines.push(`       generated check ${id}: diagnostic, expectations from the planner`);
   });
   if (contract.immutablePaths.length > 0)
     lines.push(`  immutable: ${contract.immutablePaths.join(", ")}`);
-  lines.push(
-    "  These checks are acceptance instruments the model wrote from the task and the repository.",
-    "  They are not independent ground truth; a requirement without an executable check stays unjudged.",
-  );
+  if (contract.requirements.some((one) => one.planned !== undefined))
+    lines.push(
+      "  Generated checks run on every candidate and drive repair, but they cannot establish that the",
+      "  task is done: nothing independent says their expected results are right. A planned",
+      "  requirement stays unjudged unless a supplied check decides it.",
+    );
   return lines;
 }
 
@@ -447,7 +508,12 @@ export function describeAdmission(admission: PlannedCheckAdmission): readonly st
     ...(admission.droppedRequirements.length === 0
       ? []
       : [
-          `  requirements left with no check, dropped: ${admission.droppedRequirements.join(", ")}`,
+          `  planned requirements with no quote of the task and no admitted check, dropped as unsupported: ${admission.droppedRequirements.join(", ")}`,
+        ]),
+    ...(admission.unverifiedRequirements.length === 0
+      ? []
+      : [
+          `  requirements in the task's words with no admitted check, kept and unjudged: ${admission.unverifiedRequirements.join(", ")}`,
         ]),
   ];
 }
