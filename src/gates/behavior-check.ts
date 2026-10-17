@@ -30,6 +30,8 @@ const matches = (
 /**
  * The lines of an expected multi-line output that the captured output does not reproduce, each
  * named by its number beside what was there, at most `limit` of them. Empty where they agree.
+ * Each line is shown as plain text, with only invisible characters escaped: quoted as a string,
+ * a JSON line came back to the worker escaped three times over and was hard to read at all.
  */
 export function differingLines(expected: string, actual: string, limit = 8): readonly string[] {
   const want = expected.split("\n");
@@ -44,11 +46,22 @@ export function differingLines(expected: string, actual: string, limit = 8): rea
       break;
     }
     lines.push(
-      `line ${index + 1} should be ${wanted === undefined ? "absent" : bound(wanted)} but was ${found === undefined ? "absent" : bound(found)}`,
+      `line ${index + 1} should be ${wanted === undefined ? "absent" : shown(wanted)} but was ${found === undefined ? "absent" : shown(found)}`,
     );
   }
   return lines;
 }
+
+/** A line as text, with control, line and paragraph separator characters written as escapes. */
+const shown = (text: string) => {
+  const visible = text.replace(
+    /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g,
+    (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  );
+  return visible.length <= mismatchExcerptChars
+    ? `\`${visible}\``
+    : `\`${visible.slice(0, mismatchExcerptChars)}\` (${visible.length} characters, truncated)`;
+};
 
 const bound = (text: string) =>
   text.length <= mismatchExcerptChars
