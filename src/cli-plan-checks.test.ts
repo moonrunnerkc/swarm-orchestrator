@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { describeCriteria, type PlanChecksDependencies, planChecks } from "./cli-plan-checks.ts";
 import { createFixedRandom } from "./core/test-doubles.ts";
 import { readSessionEvidence } from "./durable/session-evidence.ts";
+import { freezeGoalContract, type GoalContract } from "./evidence/goal-contract.ts";
 import { createRecordingModelClient } from "./evidence/model-call-recording.ts";
 import {
   createFixtureModelClient,
@@ -185,4 +186,124 @@ it("describes criteria with their author and the ones that stay unjudged", () =>
   expect(lines).toContain("       check ca: npm test [model-authored]");
   expect(lines).toContain("       no executable check: stays unjudged");
   expect(lines).toContain("  immutable: tests");
+});
+
+describe("the planned-check revision and its share of the planning allowance", () => {
+  const declaring = (ids: readonly string[]): FixtureTurn =>
+    respondWithToolCalls("pinning", [
+      {
+        callId: `declare-${ids.join("-")}`,
+        toolName: "declare_planned_checks",
+        input: {
+          requirements: ids.map((id) => ({
+            id: `r-${id}`,
+            description: `requirement ${id}`,
+            quote: "collapses whitespace",
+          })),
+          checks: ids.map((id) => ({
+            id,
+            requirement: `r-${id}`,
+            purpose: "change",
+            program: "import { slugify } from './slug.mjs';\nexport default slugify;\n",
+            cases: [{ input: "a  b", expected: "a-b" }],
+            why: "the task says runs of whitespace become one dash",
+          })),
+        },
+      },
+    ]);
+
+  /** Admission that takes `ms` of the planning clock, admits the checks named, and drops the rest. */
+  function admitting(admit: readonly string[], ms: () => number, advance: (by: number) => void) {
+    return (_chain: unknown, contract: GoalContract, base: GoalContract | undefined) => {
+      advance(ms());
+      const supplied = new Set((base?.checks ?? []).map((one) => one.id));
+      const planned = contract.checks.filter((one) => !supplied.has(one.id));
+      const kept = contract.checks.filter((one) => supplied.has(one.id) || admit.includes(one.id));
+      const requirements = contract.requirements.filter((one) =>
+        one.checks.some((check) => kept.some((k) => k.id === check)),
+      );
+      return Promise.resolve({
+        contract:
+          requirements.length === 0
+            ? null
+            : freezeGoalContract({ ...contract, requirements, checks: kept }).contract,
+        decisions: planned.map((one) => ({
+          check: one.id,
+          atBase: one.atBase ?? null,
+          observed: admit.includes(one.id) ? ("rejected" as const) : ("accepted" as const),
+          admitted: admit.includes(one.id),
+          reason: admit.includes(one.id) ? "admitted" : "it passes on the base",
+          broken: false,
+          excerpt: null,
+          record: null,
+        })),
+        droppedRequirements: [],
+      });
+    };
+  }
+
+  function controlled(admissionMs: number) {
+    let now = 0;
+    return {
+      clock: { now: () => now, sleep: () => Promise.resolve() },
+      advance: (by: number) => {
+        now += by;
+      },
+      admissionMs: () => admissionMs,
+    };
+  }
+
+  it("withholds the revision on the record when its re-admission would not fit", async () => {
+    const time = controlled(100_000);
+    const { planner, notes } = deps([declaring(["a", "b"]), respondWithText("pinned")], {
+      clock: time.clock,
+      maxWallMs: 200_000,
+      admit: admitting(["a"], time.admissionMs, time.advance),
+    });
+    const outcome = await planChecks(planner);
+    expect(outcome.kind).toBe("sealed");
+    expect(outcome.admission?.revision).toEqual({
+      outcome: "withheld",
+      remainingMs: 100_000,
+      neededMs: 160_000,
+    });
+    expect(outcome.admission?.uncheckedRequirements).toEqual([
+      { id: "r-b", description: 'requirement b (the task: "collapses whitespace")' },
+    ]);
+    expect(notes.join("\n")).toContain("no revision of the dropped planned checks: 100s");
+    const planning = await readSessionEvidence(join(root, "sessions"), "run-1-plan");
+    const revision = planning.records
+      .filter((record) => record.type === "verification-command")
+      .map((record) => planning.payloads.get(record.payloadDigest) as { rule?: string })
+      .find((payload) => payload.rule === "planned-check-revision-v1");
+    expect(revision).toMatchObject({ outcome: "withheld", remainingMs: 100_000 });
+  });
+
+  it("revises within what is left after reserving its re-admission, keeping what was admitted", async () => {
+    const time = controlled(20_000);
+    const { planner } = deps(
+      [
+        declaring(["a", "b"]),
+        respondWithText("pinned"),
+        declaring(["c"]),
+        respondWithText("replaced"),
+      ],
+      {
+        clock: time.clock,
+        maxWallMs: 200_000,
+        admit: admitting(["a", "c"], time.admissionMs, time.advance),
+      },
+    );
+    const outcome = await planChecks(planner);
+    if (outcome.kind !== "sealed") throw new Error(`sealed, not ${outcome.kind}`);
+    expect(outcome.contract.checks.map((one) => one.id)).toEqual(["a", "c"]);
+    expect(outcome.admission).toEqual({
+      admitted: ["a", "c"],
+      dropped: [{ check: "b", reason: "it passes on the base" }],
+      uncheckedRequirements: [
+        { id: "r-b", description: 'requirement b (the task: "collapses whitespace")' },
+      ],
+      revision: { outcome: "ran", admitted: ["c"] },
+    });
+  });
 });

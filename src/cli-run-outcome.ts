@@ -6,6 +6,7 @@ import type {
   FinalVerificationOutcome,
   InterventionCounts,
   RequirementOutcome,
+  RunOutcomeReport,
   SetupUsage,
 } from "./run-outcome-shape.ts";
 import { formatElapsed } from "./tui/elapsed.ts";
@@ -32,6 +33,7 @@ export interface RunOutcomeInput {
   readonly diffTruncated: boolean;
   readonly gates: GateCycle;
   readonly requirements: readonly RequirementOutcome[] | null;
+  readonly uncheckedRequirements?: RunOutcomeReport["uncheckedRequirements"];
   /** Null where no final independent verification ran. */
   readonly finalVerification: FinalVerificationOutcome | null;
   readonly usage: {
@@ -90,6 +92,10 @@ export function describeRunOutcome(input: RunOutcomeInput): readonly string[] {
       );
     }
   }
+  for (const requirement of input.uncheckedRequirements ?? [])
+    say(
+      `    unchecked ${requirement.id}: ${firstLine(requirement.description, 100)} [model-authored; no planned check held its base control, so it was not sealed or judged]`,
+    );
 
   say(
     `  tree: ${input.workspace}${input.branch === null ? "" : ` on ${input.branch}`}, measured against ${input.baseCommit.slice(0, 12)}`,
