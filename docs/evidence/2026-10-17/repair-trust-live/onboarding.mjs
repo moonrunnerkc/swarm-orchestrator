@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * The README's first run, walked as written in a disposable root: a private HOME and npm prefix,
- * the source cloned at one commit, `npm ci`, `npm install -g "$(npm pack --silent)"`, the version
+ * the source cloned at one commit, `npm ci`, `npm pack` and a global install of the tarball, the version
  * and help, two command lines the README's reader could get wrong, then the scratch repository and
  * the task, with the model the README names. Two departures, both forced: the clone is of this
  * local repository at the frozen commit (the branch is not published), and the scratch
@@ -72,7 +72,8 @@ function step(name, command, { cwd = root, timeoutMs = 600_000 } = {}) {
 const source = join(root, "swarm-orchestrator");
 step("clone", `git clone -q ${values.source} swarm-orchestrator && git -C swarm-orchestrator checkout -q ${values.commit}`);
 step("npm ci", "npm ci --no-audit --no-fund", { cwd: source });
-step("install the packed tarball", 'npm install -g "$(npm pack --silent)"', { cwd: source });
+step("pack", "npm pack", { cwd: source });
+step("install the packed tarball", "npm install -g ./swarm-orchestrator-*.tgz", { cwd: source });
 step("version", "swarm --version", { cwd: home });
 step("help", "swarm --help", { cwd: home });
 step("a misspelt flag", 'swarm --plan-check "fix the parser"', { cwd: home });
