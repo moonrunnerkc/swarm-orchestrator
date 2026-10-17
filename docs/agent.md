@@ -166,6 +166,11 @@ shown.
   a check that caught a seeded omission; no repair from such a check succeeded, and wrong admitted
   checks made Swarm refuse or rewrite correct work. That is why generated checks are now
   diagnostics that never decide a requirement.
+- **October 17 (evening), after that change**
+  ([development records](evidence/2026-10-17/repair-trust-live/README.md)): the README's first run
+  works from the packed tarball; in one seeded mime launch the planner's checks were right but
+  missed the omission, so no repair ran, and Swarm reported the faulty candidate
+  `partially-checked` rather than accepted. Live discovery and repair were not shown again.
 
 Developer hours saved and adoption are not measured; the prepared, unrun protocol for five
 developers on their own tasks is [human-trial-protocol.md](human-trial-protocol.md).
