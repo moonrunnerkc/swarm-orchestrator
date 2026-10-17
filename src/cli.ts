@@ -44,6 +44,7 @@ import {
   changedFilesOf,
   describeRunOutcome,
   interventionsOn,
+  outcomeStatus,
   type RunOutcomeInput,
   requirementOutcomes,
 } from "./cli-run-outcome.ts";
@@ -860,6 +861,9 @@ async function run(options: RunCommand): Promise<number> {
       },
     });
     keepChildHome = outcome.resumable;
+    // The terminal, the result line and the exit status read one status, so a run the outcome
+    // calls partially checked cannot exit as if it were accepted.
+    const status = outcomeStatus(outcome);
     for (const line of describeRunOutcome(outcome)) ui.note(line);
     await logReward({
       evidence,
@@ -896,7 +900,7 @@ async function run(options: RunCommand): Promise<number> {
         costUsd: cost.costUsd,
       }),
     );
-    const code = exitCodeFor(loop.stopReason, green);
+    const code = exitCodeFor(loop.stopReason, status === "accepted" || status === "unjudged");
     if (options.json) {
       process.stdout.write(
         `${jsonResultLine({
@@ -906,6 +910,7 @@ async function run(options: RunCommand): Promise<number> {
           exitCode: code,
           ...(strengthening === undefined ? {} : { strengthening }),
           outcome: {
+            status,
             lifecycle: outcome.lifecycle,
             requirements: outcome.requirements,
             changedFiles: outcome.changedFiles,

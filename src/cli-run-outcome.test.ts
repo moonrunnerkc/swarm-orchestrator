@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   changedFilesOf,
   describeRunOutcome,
+  outcomeStatus,
   type RunOutcomeInput,
   requirementOutcomes,
 } from "./cli-run-outcome.ts";
@@ -31,6 +32,7 @@ const run = (gateId: string, status: GateRun["status"]): GateRun =>
     gateId,
     status,
     severity: "blocking",
+    capability: gateId === "tests" || gateId === "task-acceptance" ? "dynamic" : "static",
     detail: `${gateId} ${status}`,
     record: "sha256:0",
   }) as unknown as GateRun;
@@ -140,7 +142,11 @@ describe("the run outcome block", () => {
       finalVerification: null,
       gates: cycle([run("tests", "passed")]),
     }).join("\n");
-    expect(text).toContain("outcome: accepted");
+    // Not "accepted": with nothing sealed, the gates passing is all that was established.
+    expect(text).toContain(
+      "outcome: gates passed; the task itself was not judged (no requirement was sealed)",
+    );
+    expect(text).not.toContain("outcome: accepted");
     expect(text).toContain(
       "requirements: none were sealed, so nothing here says the task was done",
     );
@@ -246,6 +252,7 @@ describe("reading the record", () => {
         status: "accepted",
         authoredBy: "user",
         detail: null,
+        source: "supplied",
       },
       {
         id: "strip",
@@ -253,6 +260,7 @@ describe("reading the record", () => {
         status: "rejected",
         authoredBy: "model",
         detail: "expected ab",
+        source: "supplied",
       },
       {
         id: "docs",
@@ -260,6 +268,7 @@ describe("reading the record", () => {
         status: "unjudged",
         authoredBy: "user",
         detail: null,
+        source: "supplied",
       },
     ]);
     // No verification at all: every requirement is unjudged rather than guessed.
@@ -268,5 +277,155 @@ describe("reading the record", () => {
       "unjudged",
       "unjudged",
     ]);
+  });
+});
+
+describe("the run's one status", () => {
+  const plannedContract = freezeGoalContract({
+    version: 1,
+    goal: "classify",
+    requirements: [
+      { id: "visible", description: "the supplied check passes", checks: ["visible"] },
+      {
+        id: "ten-is-small",
+        description: "10 is small",
+        checks: [],
+        planned: { quote: "change the classifier so 10 is small", diagnostics: ["boundary"] },
+      },
+      {
+        id: "above-ten-big",
+        description: "values above 10 stay big",
+        checks: [],
+        planned: { quote: "values above 10 remain big", diagnostics: [] },
+      },
+    ],
+    checks: [
+      { id: "visible", command: "node v.mjs", author: "user", exposure: "shared", artifacts: [] },
+      { id: "boundary", command: "planned", author: "model", exposure: "shared", artifacts: [] },
+    ],
+    immutablePaths: [],
+  }).contract;
+  const finished = (boundary: "accepted" | "rejected", visible: "accepted" | "rejected") =>
+    requirementOutcomes(plannedContract, {
+      goalAcceptance: {
+        obligations: [
+          { id: "visible", status: visible },
+          { id: "ten-is-small", status: "unjudged" },
+          { id: "above-ten-big", status: "unjudged" },
+        ],
+        checkResults: [
+          { id: "visible", status: visible, detail: visible === "accepted" ? "" : "exit 1" },
+          {
+            id: "boundary",
+            status: boundary,
+            detail: boundary === "accepted" ? "" : "line 3 should be small but was big",
+          },
+        ],
+      },
+    });
+  const unverifiedTask = {
+    ...verdict,
+    task: "unjudged" as const,
+    acceptable: false,
+    reasons: { assessment: "blocking gate(s) failed: task-acceptance" },
+  };
+
+  it("calls a correct candidate that a wrong generated expectation disagrees with unresolved, not rejected", () => {
+    const input = {
+      ...base,
+      verdict: unverifiedTask,
+      requirements: finished("rejected", "accepted"),
+      gates: cycle([run("tests", "passed"), run("task-acceptance", "failed")]),
+    };
+    expect(outcomeStatus(input)).toBe("unresolved");
+    const text = describeRunOutcome(input).join("\n");
+    expect(text).toContain("outcome: unresolved (a generated check disagrees with the change");
+    expect(text).toContain("DISPUTED ten-is-small: 10 is small");
+    expect(text).toContain(
+      "generated check boundary: disagrees (line 3 should be small but was big)",
+    );
+    expect(text).not.toContain("UNMET");
+    expect(text).not.toContain("blocked by");
+    expect(text).toContain("next: read the disputed requirement(s) ten-is-small against the task");
+  });
+
+  it("keeps a requirement in the task's words with no check visible, and the run partially checked", () => {
+    const input = {
+      ...base,
+      verdict: { ...unverifiedTask, reasons: { task: "pinned goal checks: unjudged" } },
+      requirements: finished("accepted", "accepted"),
+      gates: cycle([run("tests", "passed"), run("task-acceptance", "passed")]),
+    };
+    expect(outcomeStatus(input)).toBe("partially-checked");
+    const text = describeRunOutcome(input).join("\n");
+    expect(text).toContain("outcome: partially checked");
+    expect(text).toContain(
+      "requirements: 3 sealed, 1 met, 0 unmet, 2 unjudged; 2 read from the task",
+    );
+    expect(text).toContain(
+      'no check above-ten-big: values above 10 stay big [planned from the task: "values above 10 remain big"]',
+    );
+    expect(text).toContain("no generated check held its base control, so nothing exercised it");
+    expect(text).toContain(
+      "generated check boundary: agrees with the change; its expected results are the planner's",
+    );
+    expect(text).toContain(
+      "next: review the change against the requirement(s) nothing decided (ten-is-small, above-ten-big)",
+    );
+  });
+
+  it("lets a refusal by a supplied check win over any generated disagreement", () => {
+    expect(
+      outcomeStatus({
+        ...base,
+        verdict: { ...unverifiedTask, task: "rejected" },
+        requirements: finished("rejected", "rejected"),
+      }),
+    ).toBe("not-accepted");
+  });
+
+  it("names a supplied-only acceptance as the sealed requirements, not the whole task", () => {
+    const supplied = requirementOutcomes(
+      freezeGoalContract({
+        version: 1,
+        goal: "g",
+        requirements: [{ id: "visible", description: "the supplied check", checks: ["v"] }],
+        checks: [{ id: "v", command: "x", author: "user", exposure: "shared", artifacts: [] }],
+        immutablePaths: [],
+      }).contract,
+      { goalAcceptance: { obligations: [{ id: "visible", status: "accepted" }] } },
+    );
+    const input = {
+      ...base,
+      verdict: { ...verdict, task: "accepted" as const, acceptable: true, reasons: {} },
+      requirements: supplied,
+      gates: cycle([run("tests", "passed"), run("task-acceptance", "passed")]),
+    };
+    expect(outcomeStatus(input)).toBe("accepted");
+    expect(describeRunOutcome(input).join("\n")).toContain(
+      "scope: these are the requirements that were sealed; nothing checked the rest of the task's wording",
+    );
+  });
+
+  it("never reads acceptable for a status the bundle verdict refuses, or the reverse", () => {
+    const cases: RunOutcomeInput[] = [
+      base,
+      { ...base, verdict: { ...verdict, acceptable: true, task: "unjudged" }, requirements: null },
+      { ...base, verdict: unverifiedTask, requirements: finished("rejected", "accepted") },
+      { ...base, verdict: unverifiedTask, requirements: finished("accepted", "accepted") },
+      { ...base, verdict: { ...verdict, acceptable: false, task: "unjudged" }, requirements: null },
+      {
+        ...base,
+        lifecycle: "interrupted",
+        verdict: unverifiedTask,
+        requirements: finished("accepted", "accepted"),
+      },
+    ];
+    for (const one of cases) {
+      const status = outcomeStatus(one);
+      const exitsZero = status === "accepted" || status === "unjudged";
+      expect({ status, exitsZero }).toEqual({ status, exitsZero: one.verdict.acceptable });
+      if (status === "accepted") expect(one.verdict.task).not.toBe("rejected");
+    }
   });
 });
