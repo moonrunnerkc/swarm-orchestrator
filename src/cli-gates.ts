@@ -35,7 +35,7 @@ import {
   sealAssembledCriteria,
 } from "./gates/engine.ts";
 import { createFileSetRegistry } from "./gates/file-set.ts";
-import { citedRecords, outstandingJustifications } from "./gates/gate-runner.ts";
+import { justifiedRecords, outstandingJustifications } from "./gates/gate-runner.ts";
 import { resolveBaseCommit } from "./gates/git-workspace.ts";
 
 function writeOut(line: string): void {
@@ -219,7 +219,10 @@ async function gatesUnderCancellation(options: GatesCommand, signal: AbortSignal
     `project: ${run.detection.types.join(", ") || "no manifest detected"}\n\n` +
       `${describeCycle(run.outcome.firstCycle)}\n`,
   );
-  for (const gate of outstandingJustifications(run.outcome.firstCycle, citedRecords(evidence))) {
+  for (const gate of outstandingJustifications(
+    run.outcome.firstCycle,
+    justifiedRecords(evidence),
+  )) {
     process.stdout.write(`\nthe ${gate.gateId} gate asked for a justification: ${gate.detail}\n`);
   }
   reportBonds(run.bonds, writeOut);

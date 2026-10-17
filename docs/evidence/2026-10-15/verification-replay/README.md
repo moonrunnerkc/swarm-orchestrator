@@ -11,7 +11,7 @@ through the command line as a normal run is. Beside it, three controls.
 
 Produced by `node scripts/pilot/replay-feature-verification.mjs` (its own commit on this
 branch); every number below is derived from [manifest.json](manifest.json) and the per-scenario
-records under [scenarios/](scenarios/) (each run's ledger and the payloads of its envelope,
+records under [scenarios/](../packed-derived/gzip/) (packed in place; `node scripts/evidence-pack.mjs restore <that directory>` gives the files back) (each run's ledger and the payloads of its envelope,
 sealed gate set, goal contract and last independent verification), all gzip of the exact bytes.
 The runs' stdout and stderr streams and the harness's own command log are not published, to
 keep the repository under its weight ceiling; the manifest carries each stream's digest and

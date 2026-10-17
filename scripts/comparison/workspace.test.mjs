@@ -27,6 +27,24 @@ function workspace() {
 }
 
 describe("what each arm is configured with", () => {
+  it("writes a declared advisory gate with the product's own command, and refuses any other declaration", () => {
+    const task = {
+      id: "t-task",
+      projectTest: ["npm", "test"],
+    };
+    const lint = { command: "npm run --loglevel=error lint", severity: "advisory" };
+    const written = parseToml(swarmConfigurationText("http://e/v1", task, { lint }));
+    expect(written.gates).toEqual({ lint, tests: { command: "npm test" } });
+    for (const declared of [
+      { tests: { command: "npm test", severity: "advisory" } },
+      { lint: { ...lint, severity: "blocking" } },
+      { lint: { ...lint, command: "true" } },
+    ])
+      expect(() => swarmConfigurationText("http://e/v1", task, declared)).toThrow(
+        /not an advisory/,
+      );
+  });
+
   it("gives opencode the pinned endpoint and model for every call, with Swarm's output cap and thinking off", () => {
     const directory = workspace();
     writeArmConfiguration(directory, "opencode", "http://127.0.0.1:8000/v1", "qwen3.8:27b");

@@ -147,6 +147,13 @@ describe("taking an invocation's session out of the home it ran under", () => {
       provenance: ["tool-output"],
       payload: { stopReason: "max-steps" },
     });
+    // The turn that answers a justification demand comes after the loop and is not its stop.
+    await session.record({
+      type: "session-stopped",
+      actor: "harness",
+      provenance: ["model"],
+      payload: { stopReason: "justification", justification: true, outcome: "completed" },
+    });
     const kept = join(scratch, "kept");
     await mkdir(kept);
     const taken = await takeAgentSession({
@@ -158,7 +165,7 @@ describe("taking an invocation's session out of the home it ran under", () => {
     });
     expect(taken).toMatchObject({
       runId: "20260918T000000-aaaaaa",
-      ledgerRecords: 4,
+      ledgerRecords: 5,
       stopReason: "max-steps",
       usage: {
         modelCalls: 1,

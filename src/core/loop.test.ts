@@ -153,12 +153,19 @@ describe("runAgentLoop", () => {
     // The total is what was reported and no more, and the count says it is a lower bound.
     expect(outcome.tokensUsed).toBe(120);
     expect(outcome.callsWithUnknownUsage).toBe(1);
+    // The stream a supervisor reads says so too; a total there with no count read as measured.
+    expect(harness.events.at(-1)).toMatchObject({
+      type: "stopped",
+      tokensUsed: 120,
+      callsWithUnknownUsage: 1,
+    });
   });
 
   it("reports no unknown usage where every call reported", async () => {
     const harness = createHarness([respondWithText("done", { input: 5, output: 5 })]);
     const outcome = await runAgentLoop("one call", harness.deps);
     expect(outcome.callsWithUnknownUsage).toBe(0);
+    expect(harness.events.at(-1)).toMatchObject({ type: "stopped", callsWithUnknownUsage: 0 });
   });
 
   it("stops on max-tokens once the spend crosses the budget", async () => {

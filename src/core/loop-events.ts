@@ -87,6 +87,12 @@ export type LoopEvent =
       readonly tokensUsed: number;
       /** The spend by kind, where the loop measured it; a reader of an older stream sees none. */
       readonly usage?: LoopUsage;
+      /**
+       * Answered calls whose provider reported no usage, so `tokensUsed` is a lower bound where
+       * this is above zero. The loop always sets it; a reader of an older stream sees none and
+       * cannot tell a measured total from a lower bound.
+       */
+      readonly callsWithUnknownUsage?: number;
       /** Set where the loop stopped before a call because the next prompt could not fit: that prompt's size. */
       readonly reservedTokens?: number;
     }

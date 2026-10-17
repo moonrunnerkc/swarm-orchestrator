@@ -1,0 +1,664 @@
+{
+ "schema": "swarm-css-select-lang-audit.v1",
+ "base": "cd6625464a17281794a65cb034833c6e2f85856f",
+ "upstream": "b77508c9fa4523207628f07c5318ac1168a26eeb",
+ "cases": [
+  {
+   "id": "inherits",
+   "html": "<div lang=\"en-US\"><p id=\"a\"></p></div><p id=\"b\" lang=\"fr\"></p><p id=\"c\"></p>",
+   "selector": "p:lang(en)",
+   "expected": [
+    "a"
+   ],
+   "basis": "matches ... lang=\"en-US\" (and their descendants without their own lang)"
+  },
+  {
+   "id": "not-prefix-of-word",
+   "html": "<p id=\"a\" lang=\"eng\"></p><p id=\"b\" lang=\"en\"></p>",
+   "selector": "p:lang(en)",
+   "expected": [
+    "b"
+   ],
+   "basis": "but not lang=\"eng\""
+  },
+  {
+   "id": "extended",
+   "html": "<p id=\"a\" lang=\"de-DE\"></p><p id=\"b\" lang=\"de-Latn-DE\"></p><p id=\"c\" lang=\"de-Latn-DE-1996\"></p><p id=\"d\" lang=\"de\"></p>",
+   "selector": "p:lang(de-DE)",
+   "expected": [
+    "a",
+    "b",
+    "c"
+   ],
+   "basis": ":lang(de-DE) matches \"de-DE\", \"de-Latn-DE\" and \"de-Latn-DE-1996\""
+  },
+  {
+   "id": "singleton-stops",
+   "html": "<p id=\"a\" lang=\"de-x-DE\"></p><p id=\"b\" lang=\"de-Latn-DE\"></p>",
+   "selector": "p:lang(de-DE)",
+   "expected": [
+    "b"
+   ],
+   "basis": "reaching a one-character (singleton) subtag fails the match"
+  },
+  {
+   "id": "wildcard-first",
+   "html": "<p id=\"a\" lang=\"de-CH\"></p><p id=\"b\" lang=\"fr-CH\"></p><p id=\"c\" lang=\"fr-FR\"></p>",
+   "selector": "p:lang(\\*-CH)",
+   "expected": [
+    "a",
+    "b"
+   ],
+   "basis": ":lang(\\*-CH) matches \"de-CH\" and \"fr-CH\" but not \"fr-FR\""
+  },
+  {
+   "id": "list",
+   "html": "<p id=\"a\" lang=\"en\"></p><p id=\"b\" lang=\"fr\"></p><p id=\"c\" lang=\"de\"></p>",
+   "selector": "p:lang(en, fr)",
+   "expected": [
+    "a",
+    "b"
+   ],
+   "basis": ":lang(en, fr) matches either language"
+  },
+  {
+   "id": "quotes",
+   "html": "<p id=\"a\" lang=\"en\"></p><p id=\"b\" lang=\"fr\"></p>",
+   "selector": "p:lang(\"en\")",
+   "expected": [
+    "a"
+   ],
+   "basis": "surrounding single or double quotes are removed"
+  },
+  {
+   "id": "empty-entry",
+   "html": "<p id=\"a\" lang=\"en\"></p><p id=\"b\" lang=\"fr\"></p>",
+   "selector": "p:lang(en,,fr)",
+   "expected": [
+    "a",
+    "b"
+   ],
+   "basis": "an empty entry is ignored"
+  },
+  {
+   "id": "case",
+   "html": "<p id=\"a\" lang=\"EN-us\"></p>",
+   "selector": "p:lang(en-US)",
+   "expected": [
+    "a"
+   ],
+   "basis": "matching is case-insensitive"
+  },
+  {
+   "id": "xml-lang-first",
+   "html": "<p id=\"a\" xml:lang=\"fr\" lang=\"en\"></p>",
+   "selector": "p:lang(fr)",
+   "expected": [
+    "a"
+   ],
+   "basis": "its own xml:lang attribute if it has one, else its own lang attribute"
+  },
+  {
+   "id": "no-language",
+   "html": "<p id=\"a\"></p><p id=\"b\" lang=\"en\"></p>",
+   "selector": "p:lang(\"\")",
+   "expected": [
+    "a"
+   ],
+   "basis": "an element with no such attribute ... matches only an empty range"
+  },
+  {
+   "id": "no-language-not-en",
+   "html": "<p id=\"a\"></p>",
+   "selector": "p:lang(en)",
+   "expected": [],
+   "basis": "matches only an empty range"
+  },
+  {
+   "id": "empty-value",
+   "html": "<div lang=\"en\"><p id=\"a\" lang=\"\"></p></div>",
+   "selector": "p:lang(en)",
+   "expected": [],
+   "basis": "whose nearest value is the empty string (lang=\"\"), matches only an empty range"
+  },
+  {
+   "id": "empty-value-empty-range",
+   "html": "<div lang=\"en\"><p id=\"a\" lang=\"\"></p></div>",
+   "selector": "p:lang(\"\")",
+   "expected": [
+    "a"
+   ],
+   "basis": "matches only an empty range (such as :lang(\"\"))"
+  }
+ ],
+ "summary": {
+  "reference": {
+   "cases": 14,
+   "wrong": []
+  },
+  "swarm-r1": {
+   "cases": 14,
+   "wrong": []
+  },
+  "swarm-r2": {
+   "cases": 14,
+   "wrong": [
+    "no-language",
+    "empty-value",
+    "empty-value-empty-range"
+   ]
+  },
+  "opencode-r1": {
+   "cases": 14,
+   "wrong": []
+  },
+  "opencode-r2": {
+   "cases": 14,
+   "wrong": [
+    "no-language",
+    "empty-value-empty-range"
+   ]
+  }
+ },
+ "results": {
+  "reference": [
+   {
+    "id": "inherits",
+    "got": [
+     "a"
+    ],
+    "pass": true
+   },
+   {
+    "id": "not-prefix-of-word",
+    "got": [
+     "b"
+    ],
+    "pass": true
+   },
+   {
+    "id": "extended",
+    "got": [
+     "a",
+     "b",
+     "c"
+    ],
+    "pass": true
+   },
+   {
+    "id": "singleton-stops",
+    "got": [
+     "b"
+    ],
+    "pass": true
+   },
+   {
+    "id": "wildcard-first",
+    "got": [
+     "a",
+     "b"
+    ],
+    "pass": true
+   },
+   {
+    "id": "list",
+    "got": [
+     "a",
+     "b"
+    ],
+    "pass": true
+   },
+   {
+    "id": "quotes",
+    "got": [
+     "a"
+    ],
+    "pass": true
+   },
+   {
+    "id": "empty-entry",
+    "got": [
+     "a",
+     "b"
+    ],
+    "pass": true
+   },
+   {
+    "id": "case",
+    "got": [
+     "a"
+    ],
+    "pass": true
+   },
+   {
+    "id": "xml-lang-first",
+    "got": [
+     "a"
+    ],
+    "pass": true
+   },
+   {
+    "id": "no-language",
+    "got": [
+     "a"
+    ],
+    "pass": true
+   },
+   {
+    "id": "no-language-not-en",
+    "got": [],
+    "pass": true
+   },
+   {
+    "id": "empty-value",
+    "got": [],
+    "pass": true
+   },
+   {
+    "id": "empty-value-empty-range",
+    "got": [
+     "a"
+    ],
+    "pass": true
+   }
+  ],
+  "swarm-r1": [
+   {
+    "id": "inherits",
+    "got": [
+     "a"
+    ],
+    "pass": true
+   },
+   {
+    "id": "not-prefix-of-word",
+    "got": [
+     "b"
+    ],
+    "pass": true
+   },
+   {
+    "id": "extended",
+    "got": [
+     "a",
+     "b",
+     "c"
+    ],
+    "pass": true
+   },
+   {
+    "id": "singleton-stops",
+    "got": [
+     "b"
+    ],
+    "pass": true
+   },
+   {
+    "id": "wildcard-first",
+    "got": [
+     "a",
+     "b"
+    ],
+    "pass": true
+   },
+   {
+    "id": "list",
+    "got": [
+     "a",
+     "b"
+    ],
+    "pass": true
+   },
+   {
+    "id": "quotes",
+    "got": [
+     "a"
+    ],
+    "pass": true
+   },
+   {
+    "id": "empty-entry",
+    "got": [
+     "a",
+     "b"
+    ],
+    "pass": true
+   },
+   {
+    "id": "case",
+    "got": [
+     "a"
+    ],
+    "pass": true
+   },
+   {
+    "id": "xml-lang-first",
+    "got": [
+     "a"
+    ],
+    "pass": true
+   },
+   {
+    "id": "no-language",
+    "got": [
+     "a"
+    ],
+    "pass": true
+   },
+   {
+    "id": "no-language-not-en",
+    "got": [],
+    "pass": true
+   },
+   {
+    "id": "empty-value",
+    "got": [],
+    "pass": true
+   },
+   {
+    "id": "empty-value-empty-range",
+    "got": [
+     "a"
+    ],
+    "pass": true
+   }
+  ],
+  "swarm-r2": [
+   {
+    "id": "inherits",
+    "got": [
+     "a"
+    ],
+    "pass": true
+   },
+   {
+    "id": "not-prefix-of-word",
+    "got": [
+     "b"
+    ],
+    "pass": true
+   },
+   {
+    "id": "extended",
+    "got": [
+     "a",
+     "b",
+     "c"
+    ],
+    "pass": true
+   },
+   {
+    "id": "singleton-stops",
+    "got": [
+     "b"
+    ],
+    "pass": true
+   },
+   {
+    "id": "wildcard-first",
+    "got": [
+     "a",
+     "b"
+    ],
+    "pass": true
+   },
+   {
+    "id": "list",
+    "got": [
+     "a",
+     "b"
+    ],
+    "pass": true
+   },
+   {
+    "id": "quotes",
+    "got": [
+     "a"
+    ],
+    "pass": true
+   },
+   {
+    "id": "empty-entry",
+    "got": [
+     "a",
+     "b"
+    ],
+    "pass": true
+   },
+   {
+    "id": "case",
+    "got": [
+     "a"
+    ],
+    "pass": true
+   },
+   {
+    "id": "xml-lang-first",
+    "got": [
+     "a"
+    ],
+    "pass": true
+   },
+   {
+    "id": "no-language",
+    "got": [],
+    "pass": false
+   },
+   {
+    "id": "no-language-not-en",
+    "got": [],
+    "pass": true
+   },
+   {
+    "id": "empty-value",
+    "got": [
+     "a"
+    ],
+    "pass": false
+   },
+   {
+    "id": "empty-value-empty-range",
+    "got": [],
+    "pass": false
+   }
+  ],
+  "opencode-r1": [
+   {
+    "id": "inherits",
+    "got": [
+     "a"
+    ],
+    "pass": true
+   },
+   {
+    "id": "not-prefix-of-word",
+    "got": [
+     "b"
+    ],
+    "pass": true
+   },
+   {
+    "id": "extended",
+    "got": [
+     "a",
+     "b",
+     "c"
+    ],
+    "pass": true
+   },
+   {
+    "id": "singleton-stops",
+    "got": [
+     "b"
+    ],
+    "pass": true
+   },
+   {
+    "id": "wildcard-first",
+    "got": [
+     "a",
+     "b"
+    ],
+    "pass": true
+   },
+   {
+    "id": "list",
+    "got": [
+     "a",
+     "b"
+    ],
+    "pass": true
+   },
+   {
+    "id": "quotes",
+    "got": [
+     "a"
+    ],
+    "pass": true
+   },
+   {
+    "id": "empty-entry",
+    "got": [
+     "a",
+     "b"
+    ],
+    "pass": true
+   },
+   {
+    "id": "case",
+    "got": [
+     "a"
+    ],
+    "pass": true
+   },
+   {
+    "id": "xml-lang-first",
+    "got": [
+     "a"
+    ],
+    "pass": true
+   },
+   {
+    "id": "no-language",
+    "got": [
+     "a"
+    ],
+    "pass": true
+   },
+   {
+    "id": "no-language-not-en",
+    "got": [],
+    "pass": true
+   },
+   {
+    "id": "empty-value",
+    "got": [],
+    "pass": true
+   },
+   {
+    "id": "empty-value-empty-range",
+    "got": [
+     "a"
+    ],
+    "pass": true
+   }
+  ],
+  "opencode-r2": [
+   {
+    "id": "inherits",
+    "got": [
+     "a"
+    ],
+    "pass": true
+   },
+   {
+    "id": "not-prefix-of-word",
+    "got": [
+     "b"
+    ],
+    "pass": true
+   },
+   {
+    "id": "extended",
+    "got": [
+     "a",
+     "b",
+     "c"
+    ],
+    "pass": true
+   },
+   {
+    "id": "singleton-stops",
+    "got": [
+     "b"
+    ],
+    "pass": true
+   },
+   {
+    "id": "wildcard-first",
+    "got": [
+     "a",
+     "b"
+    ],
+    "pass": true
+   },
+   {
+    "id": "list",
+    "got": [
+     "a",
+     "b"
+    ],
+    "pass": true
+   },
+   {
+    "id": "quotes",
+    "got": [
+     "a"
+    ],
+    "pass": true
+   },
+   {
+    "id": "empty-entry",
+    "got": [
+     "a",
+     "b"
+    ],
+    "pass": true
+   },
+   {
+    "id": "case",
+    "got": [
+     "a"
+    ],
+    "pass": true
+   },
+   {
+    "id": "xml-lang-first",
+    "got": [
+     "a"
+    ],
+    "pass": true
+   },
+   {
+    "id": "no-language",
+    "got": [],
+    "pass": false
+   },
+   {
+    "id": "no-language-not-en",
+    "got": [],
+    "pass": true
+   },
+   {
+    "id": "empty-value",
+    "got": [],
+    "pass": true
+   },
+   {
+    "id": "empty-value-empty-range",
+    "got": [],
+    "pass": false
+   }
+  ]
+ }
+}

@@ -26,6 +26,18 @@ export { readControllerHistory };
 
 const GENESIS = "genesis";
 const COMPARISONS = ["==", "!=", ">=", "<=", ">", "<"];
+/** How a loop can stop, as run assessments name it (src/evidence/run-assessment.ts keeps the same list). */
+const loopLifecycles = [
+  "completed",
+  "interrupted",
+  "max-steps",
+  "max-tokens",
+  "max-wall-time",
+  "model-error",
+  "output-cap",
+  "empty-response",
+  "stalled",
+];
 
 // One record type covers many subjects: every gate writes a gate-run, every tool writes a
 // tool-call. A claim names the subject it asserts against, and this is how that name is
@@ -1320,7 +1332,9 @@ function collectChecks(directory) {
       record(
         `run assessment ${entry.sequence} re-derived`,
         previous?.payloadDigest === inputs.previousAssessment &&
-          ["run-acceptance-v1", "run-acceptance-v2"].includes(base?.inputs?.policy) &&
+          ["run-acceptance-v1", "run-acceptance-v2", "run-acceptance-v4"].includes(
+            base?.inputs?.policy,
+          ) &&
           verification !== undefined &&
           source !== undefined &&
           (observed?.certificationPolicy === "goal-obligations-v1" || refused) &&
@@ -1332,7 +1346,7 @@ function collectChecks(directory) {
       continue;
     }
     let consistent =
-      ["run-acceptance-v1", "run-acceptance-v2"].includes(inputs?.policy) &&
+      ["run-acceptance-v1", "run-acceptance-v2", "run-acceptance-v4"].includes(inputs?.policy) &&
       typeof verdict?.acceptable === "boolean";
     const prior = records.filter((candidate) => candidate.sequence < entry.sequence);
     const lookupKind = (digest, kind) =>
@@ -1357,7 +1371,14 @@ function collectChecks(directory) {
       [...latestGates.values()].every((digest) => gateRecords.includes(digest));
     const measured = Object.assign({}, ...gates.map((gate) => gate?.measures ?? {}));
     consistent &&= inputs?.changedFiles === (measured.changedFiles ?? 0);
-    const stop = thisRun.filter((candidate) => candidate.type === "session-stopped").at(-1);
+    // The last stop of a loop: a withheld repair attempt is recorded as a stop without one.
+    const stop = thisRun
+      .filter(
+        (candidate) =>
+          candidate.type === "session-stopped" &&
+          loopLifecycles.includes(payloads.get(candidate.payloadDigest)?.stopReason),
+      )
+      .at(-1);
     consistent &&=
       inputs?.lifecycleRecord === (stop?.payloadDigest ?? null) &&
       (stop === undefined
@@ -1382,8 +1403,11 @@ function collectChecks(directory) {
       )
       .map((bond) => bond.payload.gateId);
     consistent &&= JSON.stringify(blockingVacuous) === JSON.stringify(inputs?.vacuousBlockingBonds);
-    const requiredChecks = inputs?.policy === "run-acceptance-v2" ? inputs.requiredChecks : [];
-    if (inputs?.policy === "run-acceptance-v2") {
+    const contracted =
+      inputs?.policy === "run-acceptance-v2" ||
+      (inputs?.policy === "run-acceptance-v4" && inputs.contractRecord !== undefined);
+    const requiredChecks = contracted ? inputs.requiredChecks : [];
+    if (contracted) {
       const contract = payloads.get(inputs.contractRecord);
       consistent &&=
         lookupKind(inputs.contractRecord, "task-contract") &&
@@ -1397,8 +1421,38 @@ function collectChecks(directory) {
         gates.some((gate) => gate?.gateId === id && gate.status === "passed"),
       );
     const failed = gates.some((gate) => gate?.severity === "blocking" && gate.status === "failed");
+    // v4 only: an advisory gate whose own measure demanded a justification is answered by a
+    // worker claim, before this assessment, that cites the gate's record under its own kind,
+    // carries a narrative, and that this verifier evaluates as verified.
+    const justifications = inputs?.policy === "run-acceptance-v4" ? inputs.justifications : [];
+    consistent &&= Array.isArray(justifications);
+    const answered = new Set();
+    for (const one of Array.isArray(justifications) ? justifications : []) {
+      const gate = gates[gateRecords.indexOf(one?.gateRecord)];
+      const claimEntry = prior.find(
+        (candidate) => candidate.type === "claim" && candidate.payloadDigest === one?.claimRecord,
+      );
+      const claim = payloads.get(claimEntry?.payloadDigest);
+      const evaluated = verdicts.find((entry) => entry.sequence === claimEntry?.sequence);
+      const valid =
+        gate !== undefined &&
+        gate.severity === "advisory" &&
+        gate.measures?.justificationRequired === 1 &&
+        claimEntry !== undefined &&
+        claimEntry.actor !== "harness" &&
+        claim?.record === one.gateRecord &&
+        claim?.recordKind === `gate-run:${gate.gateId}` &&
+        typeof claim?.narrative === "string" &&
+        claim.narrative.trim().length > 0 &&
+        evaluated?.evaluation?.verdict === "verified";
+      consistent &&= valid && !answered.has(one.gateRecord);
+      if (valid) answered.add(one.gateRecord);
+    }
     const policyFailed = gates.some(
-      (gate) => gate?.capability === "policy" && gate.status === "failed",
+      (gate, index) =>
+        gate?.capability === "policy" &&
+        gate.status === "failed" &&
+        !answered.has(gateRecords[index]),
     );
     const dynamic = gates.filter((gate) => gate?.capability === "dynamic");
     const executed =

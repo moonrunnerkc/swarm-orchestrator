@@ -1,0 +1,22 @@
+{
+  "schema": "swarm-comparison.quality-review.v1",
+  "reviewedAt": "2026-10-16T20:55:00Z",
+  "method": "Executable checks first, by the projects' own commands where they pass at the base; then the protocol's anchored rubric (design and proportion, scope discipline, comment and documentation accuracy, each 1 to 3) applied by the reporting assistant to the final patches under letters from scripts/pilot/blind-patches.mjs (seed blind-review-2026-10-16), the key read after scoring. Limitation: the csstree pair was not blind, because the investigation of the Swarm launch's refusal had already compared its patch with the maintainer's. The rubric is discretionary and decides nothing in the spending rule.",
+  "executable": {
+    "security": "mime: the task's security property (the type comes from the extension after the last dot whatever line terminator precedes it, U+2028 and U+2029 included) is held by the hidden cases, and both arms' patches pass them; the deliberately partial fix (ASCII terminators only) is rejected by the same cases (validation-2026-10-16/). No other task declares a security property.",
+    "lint": "pako: lint and type-check are part of npm test, which both arms' final trees pass. csstree: npm run lint (eslint lib scripts and the project's two syntax lints) exits 0 on both final trees. mime: not applicable, lint (Prettier over the tree) already fails at the base.",
+    "fileScope": "Every patch stays inside the task's authorized paths (the hidden oracle fails any patch that does not).",
+    "dependencies": "csstree: in both final lockfiles all 190 packages other than esbuild keep their resolved version and flags; package.json scripts and dependencies unchanged (oracle). OpenCode's lockfile is rewritten from lockfileVersion 2 to 3; Swarm's keeps 2 and matches the maintainer's change line for line.",
+    "testsAndInstructions": "No patch touches a test, fixture, benchmark or the acceptance directory."
+  },
+  "rubric": [
+    { "letter": "A", "task": "pako-feature-inflate-push-after-end", "arm": "swarm", "design": 3, "scope": 3, "comments": 3, "note": "the one-line behaviour change, the property made public with JSDoc, push's JSDoc extended" },
+    { "letter": "E", "task": "pako-feature-inflate-push-after-end", "arm": "opencode", "design": 3, "scope": 2, "comments": 2, "note": "the same logic, but push's whole JSDoc block and signature line re-indented by one stray space, churn the task did not ask for" },
+    { "letter": "C", "task": "csstree-upgrade-esbuild-0-24", "arm": "swarm", "design": 3, "scope": 3, "comments": 3, "note": "declaration and lockfile as the maintainer's change; not delivered, because the product refused it (see the stage README)" },
+    { "letter": "F", "task": "csstree-upgrade-esbuild-0-24", "arm": "opencode", "design": 3, "scope": 2, "comments": 3, "note": "correct, with the lockfile format changed from v2 to v3 (2,689 lines removed) unasked" },
+    { "letter": "B", "task": "mime-bugfix-gettype-line-terminators", "arm": "swarm", "design": 2, "scope": 3, "comments": 3, "note": "line terminators treated as directory separators in the first regex and as dots in the second, rather than as any other character; passes every hidden case" },
+    { "letter": "H", "task": "mime-bugfix-gettype-line-terminators", "arm": "opencode", "design": 2, "scope": 3, "comments": 3, "note": "line terminators normalized to a separator before the first regex, the same reading of the task; passes every hidden case" },
+    { "letter": "D", "task": "pako-refactor-options-default-param", "arm": "swarm", "design": 3, "scope": 3, "comments": 3, "note": "byte-identical to G" },
+    { "letter": "G", "task": "pako-refactor-options-default-param", "arm": "opencode", "design": 3, "scope": 3, "comments": 3, "note": "byte-identical to D" }
+  ]
+}

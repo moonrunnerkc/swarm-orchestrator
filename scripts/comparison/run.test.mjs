@@ -101,12 +101,12 @@ function git(cwd, ...args) {
  * A task repository with a base that fails the visible check and the hidden oracle, and an
  * upstream commit (the base's child) that passes both, mirrored bare where the harness looks.
  */
-function mirrorTask(home, repository) {
+function mirrorTask(home, repository, manifest = {}) {
   const source = mkdtempSync(join(tmpdir(), "comparison-source-"));
   roots.push(source);
   writeFileSync(
     join(source, "package.json"),
-    '{ "name": "calc", "type": "module", "version": "1.0.0" }\n',
+    `${JSON.stringify({ name: "calc", type: "module", version: "1.0.0", ...manifest })}\n`,
   );
   writeFileSync(
     join(source, "calc.mjs"),
@@ -200,11 +200,15 @@ function stopEndpoint(endpoint) {
   return Date.now();
 }
 
-function writeManifest(home, { endpoint, tasks, budgets = {}, pins = {}, launchOverrides = {} }) {
+function writeManifest(
+  home,
+  { endpoint, tasks, budgets = {}, pins = {}, launchOverrides = {}, swarmGates },
+) {
   const manifest = {
     schema: "swarm-ordinary-comparison.manifest.v1",
     frozenAt: "2026-10-14T00:00:00.000Z",
     protocolDigest: null,
+    ...(swarmGates === undefined ? {} : { swarmGates }),
     pins: {
       model: "fixture-model",
       endpoint,
@@ -215,7 +219,13 @@ function writeManifest(home, { endpoint, tasks, budgets = {}, pins = {}, launchO
       harnessDigest: harnessDigest(),
       ...pins,
     },
-    budgets: { wallMsPerInvocation: 60_000, swarmTokenCap: 600_000, maxCorrections: 2, ...budgets },
+    // Five minutes, so a correction always has its minute left after a fixture's quick invocation.
+    budgets: {
+      wallMsPerInvocation: 300_000,
+      swarmTokenCap: 600_000,
+      maxCorrections: 2,
+      ...budgets,
+    },
     seed: "swarm-ordinary-comparison-2026-10-11",
     tasks,
     launches: launches(tasks.map((one) => one.id)).map((launch) => ({
@@ -297,12 +307,17 @@ async function heartbeatStopped(env, deadlineMs) {
   throw new Error("the owned child was still alive after the termination deadline");
 }
 
-async function setup({ tasks: build, endpoint: endpointOptions = {}, ...rest } = {}) {
+async function setup({
+  tasks: build,
+  endpoint: endpointOptions = {},
+  manifest: baseManifest = {},
+  ...rest
+} = {}) {
   const env = environment();
   const endpoint = endpointOptions.absent
     ? null
     : await startEndpoint(env.home, endpointOptions.model);
-  const commits = mirrorTask(env.home, "fixture/calc");
+  const commits = mirrorTask(env.home, "fixture/calc", baseManifest);
   const tasks = (
     build ??
     ((t) => [
@@ -565,6 +580,166 @@ describe("stopping the comparison when the experiment is invalid", () => {
     }
   });
 
+  it("kills the arm at the launch's deadline: the grace is cleanup, not more solving time", async () => {
+    const fixture = await setup({
+      tasks: (t, commits) => [t("calc-fix-add", "fixture/calc", commits)],
+      budgets: { wallMsPerInvocation: 2000, wallGraceMs: 30_000 },
+    });
+    const result = await runRunner(fixture.env, fixture.path, [], "hang");
+    expect(result.code).toBe(0);
+    for (const name of recordsOf(fixture.runs)) {
+      const record = readJson(join(fixture.runs, name));
+      const [only] = record.invocations;
+      expect(only.signal).toBe("SIGKILL(deadline)");
+      // Killed at two seconds and confirmed within the termination bound, never at 32.
+      expect(only.wallMs).toBeGreaterThanOrEqual(2000);
+      expect(only.wallMs).toBeLessThan(2000 + terminationDeadlineMs);
+      expect(only.termination.confirmed).toBe(true);
+      expect(record.cleanup.deadlineKills).toBe(1);
+      expect(record.cleanup.wallMs).toBeLessThanOrEqual(record.cleanup.limitMs);
+    }
+  });
+
+  it("halts, scoring nothing and dispatching nothing more, when a killed arm's end cannot be confirmed", async () => {
+    const fixture = await setup({ budgets: { wallMsPerInvocation: 1500, wallGraceMs: 2000 } });
+    const result = await runRunner(fixture.env, fixture.path, [], "escape");
+    try {
+      expect(result.code).toBe(3);
+      expect(launchLines(fixture.env)).toHaveLength(1);
+      const halt = readJson(join(fixture.runs, "halt-1.json"));
+      expect(halt.class).toBe("interrupted");
+      expect(halt.reason).toContain("not confirmed");
+      expect(halt.remaining).toHaveLength(3);
+      const attempt = readJson(join(fixture.runs, attemptsOf(fixture.runs)[0]));
+      expect(attempt.invocations[0].termination.confirmed).toBe(false);
+      expect(attempt.hidden.verdict).toBe("unjudgeable");
+      // The escaped process worked in the workspace, so the harness found and stopped it too.
+      expect(attempt.cleanup.strays.map((one) => one.outcome)).toEqual(["terminated"]);
+    } finally {
+      try {
+        process.kill(
+          Number(readFileSync(join(fixture.env.markers, "escaped.pid"), "utf8")),
+          "SIGKILL",
+        );
+      } catch {}
+    }
+  });
+
+  it("stops a process the arm detached in its directory before the tree is scored", async () => {
+    const fixture = await setup({
+      tasks: (t, commits) => [t("calc-fix-add", "fixture/calc", commits)],
+    });
+    const result = await runRunner(fixture.env, fixture.path, [], "detach");
+    expect(result.code).toBe(0);
+    expect(recordsOf(fixture.runs)).toHaveLength(2);
+    for (const name of recordsOf(fixture.runs)) {
+      const record = readJson(join(fixture.runs, name));
+      expect(record.cleanup.strays).toHaveLength(1);
+      expect(record.cleanup.strays[0].outcome).toBe("terminated");
+      expect(record.cleanup.strays[0].command).toContain("sleep");
+      expect(record.hidden.verdict).toBe("pass");
+    }
+    const detached = Number(readFileSync(join(fixture.env.markers, "detached.pid"), "utf8"));
+    expect(() => process.kill(detached, 0)).toThrow();
+  });
+
+  it("launches each correction with what is left of the token allowance and keeps Swarm's verification reserve inside the deadline", async () => {
+    const fixture = await setup({
+      tasks: (t, commits) => [t("calc-fix-add", "fixture/calc", commits)],
+      budgets: {
+        wallMsPerInvocation: 600_000,
+        swarmTokenCap: 600_000,
+        swarmVerificationReserveMs: 120_000,
+      },
+    });
+    const result = await runRunner(fixture.env, fixture.path, [], "wrong");
+    expect(result.code).toBe(0);
+    // What the arm process was actually started with, read from its own marker line.
+    const swarm = launchLines(fixture.env)
+      .filter((line) => line.startsWith("swarm "))
+      .map((line) => ({
+        tokens: Number(/max-tokens=(\d+)/.exec(line)?.[1]),
+        minutes: Number(/max-wall-minutes=(\d+)/.exec(line)?.[1]),
+      }));
+    // The fixture reports 1,234 tokens per invocation; nothing resets the launch's allowance.
+    expect(swarm.map((one) => one.tokens)).toEqual([600_000, 598_766, 597_532]);
+    // Ten minutes less the two reserved for verification, in the whole minutes the flag takes
+    // (eight where the invocation starts within the same millisecond, seven otherwise).
+    expect(swarm[0].minutes).toBeGreaterThanOrEqual(7);
+    for (const one of swarm) expect(one.minutes).toBeLessThanOrEqual(8);
+    const record = readJson(join(fixture.runs, "calc-fix-add.swarm.json"));
+    expect(record.invocations.map((one) => one.tokenAllowance)).toEqual([
+      600_000, 598_766, 597_532,
+    ]);
+  });
+
+  it("starts no correction without a minute left, and none for Swarm without its verification reserve on top", async () => {
+    const fixture = await setup({
+      tasks: (t, commits) => [t("calc-fix-add", "fixture/calc", commits)],
+      budgets: { wallMsPerInvocation: 100_000, swarmVerificationReserveMs: 60_000 },
+    });
+    const result = await runRunner(fixture.env, fixture.path, [], "wrong");
+    expect(result.code).toBe(0);
+    const swarm = readJson(join(fixture.runs, "calc-fix-add.swarm.json"));
+    expect(swarm.corrections).toBe(0);
+    expect(swarm.notes).toContain("the wall budget was spent before the corrections were");
+    const opencode = readJson(join(fixture.runs, "calc-fix-add.opencode.json"));
+    expect(opencode.corrections).toBe(2);
+  });
+
+  it("runs every command of a task, both arms included, with the npm release its base declares", async () => {
+    const fixture = await setup({
+      tasks: (t, commits) => [t("calc-fix-add", "fixture/calc", commits)],
+      manifest: { packageManager: "npm@9.9.9" },
+    });
+    const bin = join(fixture.env.home, ".cache/swarm-comparison/tools/npm-9.9.9/node_modules/.bin");
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(join(bin, "npm"), "#!/bin/sh\necho 9.9.9\n", { mode: 0o755 });
+    const result = await runRunner(fixture.env, fixture.path, [], "correct");
+    expect(result.code).toBe(0);
+    const lines = launchLines(fixture.env);
+    expect(lines).toHaveLength(2);
+    for (const line of lines) expect(line).toContain(`npm=${bin}`);
+    for (const name of recordsOf(fixture.runs))
+      expect(readJson(join(fixture.runs, name)).preparedState.declaredNpm).toBe("9.9.9");
+  });
+
+  it("dispatches nothing when the npm release a task's base declares is not provisioned", async () => {
+    const fixture = await setup({
+      tasks: (t, commits) => [t("calc-fix-add", "fixture/calc", commits)],
+      manifest: { packageManager: "npm@9.9.9" },
+    });
+    const result = await runRunner(fixture.env, fixture.path, [], "correct");
+    expect(result.code).toBe(3);
+    expect(launchLines(fixture.env)).toHaveLength(0);
+    const halt = readJson(join(fixture.runs, "halt-1.json"));
+    expect(halt.class).toBe("preparation");
+    expect(halt.reason).toContain("npm install --prefix");
+  });
+
+  it("writes a gate the manifest declares advisory into Swarm's configuration and stops before dispatch where the product's plan does not read it so", async () => {
+    const lint = { command: "npm run --loglevel=error lint", severity: "advisory" };
+    const honest = await setup({
+      tasks: (t, commits) => [t("calc-fix-add", "fixture/calc", commits)],
+      swarmGates: { "calc-fix-add": { lint } },
+    });
+    expect((await runRunner(honest.env, honest.path, [], "correct")).code).toBe(0);
+    const record = readJson(join(honest.runs, "calc-fix-add.swarm.json"));
+    expect(record.gatePlan.ok).toBe(true);
+    const ignored = await setup({
+      tasks: (t, commits) => [t("calc-fix-add", "fixture/calc", commits)],
+      swarmGates: { "calc-fix-add": { lint } },
+    });
+    const result = await runRunner(ignored.env, ignored.path, [], "correct", {
+      COMPARISON_FIXTURE_CHECK: "ignore-severity",
+    });
+    expect(result.code).toBe(3);
+    expect(launchLines(ignored.env).filter((line) => line.startsWith("swarm "))).toHaveLength(0);
+    const halt = readJson(join(ignored.runs, "halt-1.json"));
+    expect(halt.class).toBe("configuration");
+    expect(halt.reason).toContain("declares the lint gate advisory");
+  });
+
   it("halts when the arm's process ends on a signal the harness did not send", async () => {
     const fixture = await setup();
     const result = await runRunner(fixture.env, fixture.path, [], "external-kill");
@@ -744,7 +919,10 @@ describe("stopping the comparison when the experiment is invalid", () => {
     expect(attempt.gatePlan).toMatchObject({ ok: false, status: "failed" });
     // The home it was measured under is the launch's own, under its scratch, and is named.
     expect(halt.reason).toContain(attempt.preparedState.home);
-    expect(attempt.preparedState.home.startsWith(join(fixture.env.home, ".cache"))).toBe(true);
+    // Outside any hidden directory, where a project tool skipping dot paths still sees the tree.
+    expect(
+      attempt.preparedState.home.startsWith(join(fixture.env.home, "swarm-comparison-work")),
+    ).toBe(true);
   });
 
   it("gives every launch a fresh home of its own, so what one launch installs is absent for the next", async () => {

@@ -1,0 +1,56 @@
+{
+  "mime-bugfix-gettype-line-terminators": {
+    "build": "rm -fr dist && tsc",
+    "build:types": "node dist/scripts/build.js",
+    "build:watch": "npm run build -- --watch",
+    "lint": "prettier -c .",
+    "lint:fix": "prettier -w .",
+    "prepack": "npm run build",
+    "pretest": "npm run build",
+    "prepublishOnly": "npm test",
+    "test": "node --test && ./test/exports_test.sh",
+    "test:watch": "clear && node --enable-source-maps --test --watch test"
+  },
+  "pako-feature-inflate-push-after-end": {
+    "lint": "eslint .",
+    "type-check": "tsc --noEmit",
+    "test": "npm run lint && npm run build && npm run type-check && node --test",
+    "coverage": "npm run lint && c8 -r text -r html node --test",
+    "build": "node support/build-dist.mjs",
+    "build_fixtures": "node support/build_fixtures.mjs",
+    "doc": "typedoc",
+    "gh-doc": "npm run doc && gh-pages -d doc -f",
+    "prepack": "npm test && npm run build && npm run doc",
+    "postpublish": "npm run gh-doc"
+  },
+  "pako-refactor-options-default-param": {
+    "lint": "eslint .",
+    "type-check": "tsc --noEmit",
+    "test": "npm run lint && npm run build && npm run type-check && node --test",
+    "coverage": "npm run lint && c8 -r text -r html node --test",
+    "build": "node support/build-dist.mjs",
+    "build_fixtures": "node support/build_fixtures.mjs",
+    "doc": "typedoc",
+    "gh-doc": "npm run doc && gh-pages -d doc -f",
+    "prepack": "npm test && npm run build && npm run doc",
+    "postpublish": "npm run gh-doc"
+  },
+  "csstree-upgrade-esbuild-0-24": {
+    "watch": "npm run build -- --watch",
+    "build": "npm run bundle && npm run esm-to-cjs --",
+    "build-and-test": "npm run build && npm run test:dist && npm run test:cjs",
+    "bundle": "node scripts/bundle",
+    "bundle-and-test": "npm run bundle && npm run test:dist",
+    "esm-to-cjs": "node scripts/esm-to-cjs.cjs",
+    "esm-to-cjs-and-test": "npm run esm-to-cjs && npm run test:cjs",
+    "lint": "eslint lib scripts && node scripts/review-syntax-patch --lint && node scripts/update-docs --lint",
+    "lint-and-test": "npm run lint && npm test",
+    "update:docs": "node scripts/update-docs",
+    "review:syntax-patch": "node scripts/review-syntax-patch",
+    "test": "mocha lib/__tests --require lib/__tests/helpers/setup.js --reporter progress",
+    "test:cjs": "mocha cjs/__tests --require lib/__tests/helpers/setup.js --reporter progress",
+    "test:dist": "mocha dist/__tests --reporter progress",
+    "coverage": "c8 --exclude lib/__tests --reporter=lcovonly npm test",
+    "prepublishOnly": "npm run lint-and-test && npm run build-and-test"
+  }
+}

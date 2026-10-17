@@ -36,6 +36,15 @@ export const swarmTokenCap = 8_000_000;
 /** Less than one answer's worth of allowance left (the product's output cap) starts no correction. */
 export const minimumInvocationTokens = 8_192;
 export const maxCorrections = 2;
+/** A correction starts only with this much solving time left before the launch's deadline. */
+export const minimumCorrectionMs = 60_000;
+
+/**
+ * The part of the launch's deadline kept for Swarm's final verification of its tree: the
+ * product runs that verification after its own wall, so the wall it is given ends this long
+ * before the launch's deadline. Declared in the manifest; zero where a manifest predates it.
+ */
+export const verificationReserveMs = (budgets) => budgets.swarmVerificationReserveMs ?? 0;
 
 /**
  * The environment name the product reads for the HOME its child processes get
@@ -145,7 +154,34 @@ export function swarmArgv(
     "--no-tui",
     "--no-open-evidence",
     "--json",
+    // The product's own workflow flags, frozen in the manifest's pins: the same for every launch
+    // of a cohort, so a cohort measures one configuration of the product.
+    ...swarmWorkflowFlags(pins.swarmFlags ?? []),
   ];
+}
+
+/** The workflow flags a manifest may freeze for Swarm, each checked by name and value. */
+const workflowFlags = {
+  "--prompt-profile": ["legacy", "concise"],
+  "--plan-checks": null,
+};
+
+export function swarmWorkflowFlags(flags) {
+  const out = [];
+  for (let index = 0; index < flags.length; index += 1) {
+    const flag = flags[index];
+    if (!(flag in workflowFlags))
+      throw new Error(`${flag} is not a workflow flag a manifest may freeze`);
+    out.push(flag);
+    const values = workflowFlags[flag];
+    if (values === null) continue;
+    const value = flags[index + 1];
+    if (!values.includes(value))
+      throw new Error(`${flag} takes ${values.join(" or ")}, not ${value}`);
+    out.push(value);
+    index += 1;
+  }
+  return out;
 }
 
 /**
@@ -186,6 +222,20 @@ export function swarmResult(stdout) {
   return null;
 }
 
+/**
+ * Comparable token totals. Both arms are counted as the server counted them: every prompt token
+ * once (cached ones included) and every completion token once (reasoning included). The arms
+ * report the same quantity in different shapes, kept raw beside the total:
+ *
+ * - Swarm (the AI SDK's usage): input includes cached input, output includes reasoning; the
+ *   reasoning and cached figures are subsets, so its total is input plus output.
+ * - OpenCode 1.14: its step-finish parts split the SDK's figures into disjoint parts (input
+ *   without cache reads or writes, output without reasoning), so its total is the sum of all five.
+ *
+ * Calls the provider answered without usage are counted apart as unknown, never as zero, and a
+ * total with unknown calls is a lower bound.
+ */
+
 /** Tokens swarm's events report, input and output combined, over every loop; null where none. */
 export function swarmTokens(stdout) {
   let total = 0;
@@ -204,9 +254,10 @@ export function swarmTokens(stdout) {
 }
 
 /**
- * Swarm's spend by kind, summed over every loop's stopped event: prompt and answer apart, and
- * inside them what the provider called reasoning and cached. A kind no event reported is null,
- * never zero; a stream from a build before the events carried the breakdown reads as null whole.
+ * Swarm's spend by kind, summed over every loop's stopped event, with reasoning and cached as
+ * the subsets the SDK reports. A kind no event reported is null, never zero; a stream from a
+ * build before the events carried the breakdown reads as null whole, and one before they carried
+ * the unknown-usage count reads that count as null.
  */
 export function swarmUsage(stdout) {
   let total = null;
@@ -222,60 +273,81 @@ export function swarmUsage(stdout) {
         reasoning: usage.reasoningTokens,
         cacheRead: usage.cachedInputTokens,
         cacheWrite: null,
+        unknownCalls: parsed.event.callsWithUnknownUsage ?? null,
+        breakdown: "subsets",
       });
     } catch {}
   }
   return total;
 }
 
-/** OpenCode's spend by kind, summed over step-finish parts as it reports them. */
+/** OpenCode's spend by kind, summed over step-finish parts as it reports them (disjoint parts). */
 export function opencodeUsage(stdout) {
   let total = null;
+  for (const part of opencodeSteps(stdout)) {
+    total = addUsage(total, {
+      input: part.tokens.input ?? 0,
+      output: part.tokens.output ?? 0,
+      reasoning: part.tokens.reasoning ?? null,
+      cacheRead: part.tokens.cache?.read ?? null,
+      cacheWrite: part.tokens.cache?.write ?? null,
+      // OpenCode writes zeros where the provider sent no usage; its SDK's total is absent then.
+      unknownCalls: typeof part.tokens.total === "number" ? 0 : 1,
+      breakdown: "disjoint",
+    });
+  }
+  return total;
+}
+
+function* opencodeSteps(stdout) {
   for (const line of stdout.split("\n")) {
     if (!line.startsWith("{")) continue;
     try {
       const parsed = JSON.parse(line);
       const part = parsed.part ?? parsed;
-      if (part?.type !== "step-finish" || !part.tokens) continue;
-      total = addUsage(total, {
-        input: part.tokens.input ?? 0,
-        output: part.tokens.output ?? 0,
-        reasoning: part.tokens.reasoning ?? null,
-        cacheRead: part.tokens.cache?.read ?? null,
-        cacheWrite: part.tokens.cache?.write ?? null,
-      });
+      if (part?.type === "step-finish" && part.tokens) yield part;
     } catch {}
   }
-  return total;
 }
 
 function addUsage(total, part) {
   const add = (sum, value) => (value === null || value === undefined ? sum : (sum ?? 0) + value);
-  const base = total ?? { input: 0, output: 0, reasoning: null, cacheRead: null, cacheWrite: null };
+  const base = total ?? {
+    input: 0,
+    output: 0,
+    reasoning: null,
+    cacheRead: null,
+    cacheWrite: null,
+    unknownCalls: part.unknownCalls === null ? null : 0,
+    breakdown: part.breakdown,
+  };
   return {
     input: base.input + part.input,
     output: base.output + part.output,
     reasoning: add(base.reasoning, part.reasoning),
     cacheRead: add(base.cacheRead, part.cacheRead),
     cacheWrite: add(base.cacheWrite, part.cacheWrite),
+    unknownCalls:
+      base.unknownCalls === null || part.unknownCalls === null
+        ? null
+        : base.unknownCalls + part.unknownCalls,
+    breakdown: base.breakdown,
   };
 }
 
-/** Tokens OpenCode's JSON events report: the sum over step-finish parts of input plus output. */
+/** OpenCode's comparable total: the sum of its disjoint parts over every step-finish; null where none. */
 export function opencodeTokens(stdout) {
   let total = 0;
   let seen = false;
-  for (const line of stdout.split("\n")) {
-    if (!line.startsWith("{")) continue;
-    try {
-      const parsed = JSON.parse(line);
-      const part = parsed.part ?? parsed;
-      if (part?.type === "step-finish" && part.tokens) {
-        total +=
-          (part.tokens.input ?? 0) + (part.tokens.output ?? 0) + (part.tokens.reasoning ?? 0);
-        seen = true;
-      }
-    } catch {}
+  for (const part of opencodeSteps(stdout)) {
+    const t = part.tokens;
+    total +=
+      (t.input ?? 0) +
+      (t.output ?? 0) +
+      (t.reasoning ?? 0) +
+      (t.cache?.read ?? 0) +
+      (t.cache?.write ?? 0);
+    seen = true;
   }
   return seen ? total : null;
 }

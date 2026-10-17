@@ -19,15 +19,17 @@ import {
   cloneAtBase,
   commitVisibleCheck,
   comparisonRoot,
-  installEnvironment,
   mirrorOf,
   prepare,
   tail,
+  taskEnvironment,
+  workRoot,
   writeArmConfiguration,
 } from "./workspace.mjs";
 
 async function freshTree(log, task, base, patch, label) {
-  const scratch = mkdtempSync(join(comparisonRoot, "work", `${label}-${task.id}-`));
+  mkdirSync(workRoot, { recursive: true });
+  const scratch = mkdtempSync(join(workRoot, `${label}-${task.id}-`));
   const checkout = join(scratch, "checkout");
   await cloneAtBase(log, task, base, checkout);
   await commitVisibleCheck(log, task, checkout);
@@ -41,8 +43,8 @@ async function freshTree(log, task, base, patch, label) {
   return { scratch, checkout, prepared };
 }
 
-const run = (log, checkout, argv, timeoutMs = 900_000) =>
-  log.run(argv, { cwd: checkout, timeoutMs, env: installEnvironment() });
+const run = (log, task, checkout, argv, timeoutMs = 900_000) =>
+  log.run(argv, { cwd: checkout, timeoutMs, env: taskEnvironment(task) });
 
 /** The visible verdict and the text the supervisor hands back on failure. */
 export async function visibleVerdict(log, task, base, patch) {
@@ -55,8 +57,8 @@ export async function visibleVerdict(log, task, base, patch) {
         projectTestExit: null,
         detail: `preparation failed (${tree.prepared.failed.join(" ")}):\n${tree.prepared.detail}`,
       };
-    const check = await run(log, tree.checkout, ["sh", "-c", task.visible.command]);
-    const project = await run(log, tree.checkout, task.projectTest);
+    const check = await run(log, task, tree.checkout, ["sh", "-c", task.visible.command]);
+    const project = await run(log, task, tree.checkout, task.projectTest);
     const passed = check.exitCode === 0 && project.exitCode === 0;
     const detail = passed
       ? "visible check and project tests passed"
@@ -96,7 +98,7 @@ export async function lintVerdict(log, task, base) {
     if (typeof manifest.scripts?.lint !== "string")
       return { ok: true, applicable: false, detail: "the project declares no lint script" };
     const lint = ["npm", "run", "--loglevel=error", "lint"];
-    const withCheck = await run(log, tree.checkout, lint);
+    const withCheck = await run(log, task, tree.checkout, lint);
     if (withCheck.exitCode === 0)
       return {
         ok: true,
@@ -104,7 +106,7 @@ export async function lintVerdict(log, task, base) {
         detail: "lint passes with the visible check in the tree",
       };
     rmSync(join(tree.checkout, "acceptance"), { recursive: true, force: true });
-    const bare = await run(log, tree.checkout, lint);
+    const bare = await run(log, task, tree.checkout, lint);
     return bare.exitCode === 0
       ? {
           ok: false,
@@ -127,7 +129,7 @@ export async function lintVerdict(log, task, base) {
  * mismatch or a failing gate is the supervisor's configuration or environment, never the arm's
  * outcome, and stops the launch before it is dispatched.
  */
-export async function swarmGatePlanVerdict(log, task, base, pins, childHome) {
+export async function swarmGatePlanVerdict(log, task, base, pins, childHome, declaredGates = {}) {
   const expected = task.projectTest.join(" ");
   const verdict = (ok, detail, extra = {}) => ({
     ok,
@@ -145,7 +147,7 @@ export async function swarmGatePlanVerdict(log, task, base, pins, childHome) {
         false,
         `preparation failed (${tree.prepared.failed.join(" ")}):\n${tree.prepared.detail}`,
       );
-    writeArmConfiguration(tree.checkout, "swarm", pins.endpoint, pins.model, task);
+    writeArmConfiguration(tree.checkout, "swarm", pins.endpoint, pins.model, task, declaredGates);
     const written = readFileSync(join(tree.checkout, "swarm.toml"), "utf8");
     // Read back by the pinned build's own parser where the build carries one (the product's
     // dist does); a stand-in arm without one is read by the TOML library the product itself
@@ -175,7 +177,7 @@ export async function swarmGatePlanVerdict(log, task, base, pins, childHome) {
       {
         cwd: tree.checkout,
         timeoutMs: 900_000,
-        env: { ...installEnvironment(), [swarmChildHomeName]: childHome },
+        env: { ...taskEnvironment(task), [swarmChildHomeName]: childHome },
       },
     );
     const report = lastJsonLine(ran.stdout.toString(), "swarm.check.v1");
@@ -203,6 +205,18 @@ export async function swarmGatePlanVerdict(log, task, base, pins, childHome) {
         `the product's tests gate (${effective}) is ${status} on the prepared base under the launch's child HOME: ${tests.detail}${tests.output ? `\n${tests.output}` : ""}`,
         extra,
       );
+    // A gate the manifest declares advisory must read advisory in the product's own plan; the
+    // declaration is otherwise a sentence in a manifest and not the configuration that ran.
+    const checks = report.conclusions?.checks ?? [];
+    for (const [id, gate] of Object.entries(declaredGates)) {
+      const planned = checks.find((one) => one.id === id);
+      if (planned?.severity !== gate.severity)
+        return verdict(
+          false,
+          `the manifest declares the ${id} gate ${gate.severity}, and the product's plan reads it as ${planned?.severity ?? "absent"}`,
+          extra,
+        );
+    }
     return verdict(
       true,
       `the product runs ${effective} as its blocking tests gate and it passes on the base; the override was read back by ${pinnedParser ? "the pinned build's parser" : "the TOML library the product parses with"}`,
@@ -305,14 +319,8 @@ export async function hiddenVerdict(
       mkdirSync(dirname(target), { recursive: true });
       writeFileSync(target, shown.stdout);
     }
-    // Acceptance checks written for this task, held outside both arms' workspaces until now.
-    for (const file of task.hidden.files ?? []) {
-      const target = join(tree.checkout, file.path);
-      mkdirSync(dirname(target), { recursive: true });
-      writeFileSync(target, file.source);
-    }
     for (const argv of task.build) {
-      const built = await run(log, tree.checkout, argv);
+      const built = await run(log, task, tree.checkout, argv);
       if (built.exitCode !== 0)
         return {
           verdict: "fail",
@@ -400,15 +408,23 @@ export async function hiddenVerdict(
         };
       details.push(`structural /${structural.pattern}/ = ${count}`);
     }
-    const judged = await run(log, tree.checkout, task.hidden.argv, 1_200_000);
+    const judged = await run(log, task, tree.checkout, task.hidden.argv, 1_200_000);
     if (judged.exitCode !== 0)
       return {
         verdict: "fail",
         basis: `hidden tests (${task.hidden.argv.join(" ")}) exited ${judged.exitCode}`,
         detail: tail(judged, 120),
       };
+    // Acceptance checks written for this task, held outside both arms' workspaces until now and
+    // written only once the project's own tests have run: in the tree any earlier, they were
+    // linted by the project's own check (domutils' npm test runs eslint over the whole tree).
+    for (const file of task.hidden.files ?? []) {
+      const target = join(tree.checkout, file.path);
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, file.source);
+    }
     for (const argv of task.hidden.extraArgv ?? []) {
-      const extra = await run(log, tree.checkout, argv);
+      const extra = await run(log, task, tree.checkout, argv);
       if (extra.exitCode !== 0)
         return {
           verdict: "fail",
@@ -416,8 +432,10 @@ export async function hiddenVerdict(
           detail: tail(extra),
         };
     }
+    for (const file of task.hidden.files ?? [])
+      rmSync(join(tree.checkout, file.path), { force: true });
     if (task.hidden.argv.join(" ") !== task.projectTest.join(" ")) {
-      const project = await run(log, tree.checkout, task.projectTest, 1_200_000);
+      const project = await run(log, task, tree.checkout, task.projectTest, 1_200_000);
       if (project.exitCode !== 0)
         return {
           verdict: "fail",

@@ -10,6 +10,68 @@ The ordinary task workflow: a task in words, sealed criteria, acceptance, repair
 verification on one path, with the run's outcome led by what was and was not established.
 Source on `v13-main`; not published until a release names it.
 
+### Fixed
+
+- **An advisory size budget no longer refuses work while saying it was accepted.** The verdict
+  and its stated reason now come from one list of unmet conditions, so a refusal names what
+  refused. An advisory gate that demands a justification gets one bounded turn with only the
+  claim tool once the work is otherwise acceptable, and acceptance waits on a verified claim
+  answering it. A justification never answers a blocking gate or the declared file set. New
+  assessments record `run-acceptance-v4`, which the bundled verifier re-derives; v1 and v2 keep
+  their meaning. An upgrade preset's regenerated lockfile is counted apart from the authored
+  lines. The 2026-10-16 csstree refusal is reproduced on the measured build and accepted here
+  (`docs/evidence/2026-10-16/development/csstree-lifecycle/`).
+- **Final verification on the host runs outside hidden directories.** A checkout under `~/.swarm`
+  made projects whose tools skip dot-named paths (css-select's and domutils' Biome configurations)
+  fail their lint and tests at the base, refusing correct changes.
+- **Bonds are placed where an inspection can see them.** In a repository that ignores its root
+  (node-tar), the file-set, placeholder and secret-scan bonds were never handed to those gates and
+  read as vacuous; they now move beside a changed file, or the gate is recorded as not bonded.
+- **The durable run journal scrubs only what an operation changed.** Every tool call's two
+  durable updates re-scrubbed the whole history: about 220 ms each on an eleven-thousand-operation
+  journal, now about 48 ms, with byte-identical output.
+- **`amend_file_set` before any declaration is refused at once** and names `declare_file_set`,
+  instead of being recorded while the next edit was still refused.
+- **A failing shared behavior check tells the worker what it expected and what it saw**, so a
+  repair brief carries something to repair from. Withheld checks keep their expectations hidden.
+
+### Changed
+
+- **`--plan-checks` admits each planned check by its result on the unchanged base** and combines
+  with `--goal-contract`:
+  - the planner writes command-line behavior checks, each declaring whether the base should fail
+    it (a check of the change) or pass it (behaviour that stays);
+  - a check is admitted only if a completed base run does what it declares, with the base run the
+    way acceptance runs it, and a planned requirement left with no check is dropped;
+  - checks that never ran get one revision with their recorded output;
+  - planning is bounded to a quarter of the run's wall and tokens, and its spend is on the event
+    stream;
+  - with a supplied contract, a planner that adds nothing leaves the run on that contract.
+
+  On this assignment's model the planner never had a check admitted in four development launches
+  on mime, at three to four times the default's tokens, so this is not claimed to help yet.
+- **Comparison evidence is packed in place.** `scripts/evidence-pack.mjs` gains three lossless
+  commands, in its existing format:
+  - `pack-blobs` holds content-addressed blobs as their content under their digest;
+  - `pack-gz` holds other gzip text files as their content;
+  - `pack-records` holds a stage's records byte for byte.
+
+  The analyzer and the replays read from the packs. The 2026-10-14 to 2026-10-16 evidence is
+  packed, the analyzer re-derives every stage unchanged, and the tree keeps its required
+  headroom.
+- **A fresh comparison on four new tasks, two runs per tool**, run once after the repairs above
+  (`docs/evidence/2026-10-16/fresh-comparison/`). It found no demonstrated benefit:
+  - OpenCode delivered 8 of 8 and Swarm 7 of 8;
+  - Swarm made one false completion claim, where its acceptance passed a node-tar patch the hidden
+    check rejects;
+  - Swarm took about twice the end-to-end time per delivery.
+
+  The comparison's checkouts now live outside hidden directories, a visible check is committed
+  with `--force`, and task-authored hidden checks are written after the project's own tests.
+- **`--prompt-profile legacy|concise`** selects the worker prompt from the ordinary command line.
+  The default stays the historical prompt. In two development launches the concise prompt did not
+  meet its registered rule.
+
 ### Added
 
 - **The comparison launcher stops when the experiment is invalid.** Before this the harness
@@ -78,9 +140,43 @@ Source on `v13-main`; not published until a release names it.
   `docs/evidence/2026-10-15/comparison/`: both tools delivered the disposable smoke fix, neither
   delivered the calibration task in two attempts each, and the scored comparison was therefore
   not frozen or launched.
+- **The four-task comparison against OpenCode, run without the calibration gate.** Under an
+  amendment registered before any scored launch (`docs/evidence/2026-10-16/comparison/`), both
+  tools' patches passed the frozen hidden oracle on all four tasks with no correction and no
+  false completion claim under that oracle. A dated post hoc audit
+  (`docs/evidence/2026-10-16/comparison/correctness-amendment/`) found both mime patches wrong
+  on line-terminator cases the oracle never tried (Swarm 30 of 65, OpenCode 20 of 65); the
+  scores stand as recorded. OpenCode delivered four of four. Swarm delivered three, and refused its own correct
+  csstree upgrade because an advisory size budget it counts over the regenerated lockfile
+  demanded a justification the loop never asked for. Swarm took more time and tokens per
+  delivery, so there is no demonstrated benefit and the repetition stage did not run.
+
+  The launcher now:
+  - ends every invocation at the launch's deadline;
+  - halts on a kill it cannot confirm, and stops processes left in the launch's directory;
+  - keeps Swarm's verification inside the deadline;
+  - runs each task with the npm release its base declares;
+  - lets a manifest declare a gate advisory where the task's base already fails it;
+  - counts both arms' tokens as the server counted them.
+
+  The analyzer decides claims by a dated review of both tools' final reports. A proof through the
+  runner and the pinned build shows the token allowance and walls each Swarm session sealed.
 
 ### Fixed
 
+- **A build program's source files were counted as the instrument that measured them.** A check's
+  instrument is everything it loads that is not the tests or the source, but every string a
+  program run by the check held that named a file was followed into the closure. pako's build
+  hands vite `'src/index.ts'` by name, so its whole source counted as the build's instrument; the
+  final verification put it back to the base's and refused the maintainer's own fix. A program's
+  strings are now its input unless it starts processes or loads code by a computed name, and they
+  are recorded as a residual. Configuration strings and imports are followed as before.
+- **Every run that withheld a repair attempt was refused by its own bundle verifier.** The run
+  assessment named the withheld attempt's stop record, whose reason is not a lifecycle, as its
+  lifecycle record. Both the assessment and the bundled verifier now take the last stop of a
+  loop.
+- **A call with no reported usage read as a measured total.** The loop's `stopped` event now
+  carries `callsWithUnknownUsage`, and the scripted endpoint can report a turn's usage, or none.
 - **`--max-tokens` above 1,000,000 was silently clipped on a goal-contract run.** The sealed
   task contract names no token budget, and the default stood in for its silence, so a run asked
   for 8,000,000 tokens sealed 1,000,000 and stopped there three times in one launch with nothing

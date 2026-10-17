@@ -1,0 +1,420 @@
+{
+  "schema": "swarm-verification-replay.v2",
+  "recordedAt": "2026-10-16T18:44:06.390Z",
+  "purpose": "before the freeze, with no model: Swarm's final verification of the scored task's known-good reference and of its unchanged base under the launch configuration, to show the product's path accepts a correct change and refuses none, and to measure how long that verification takes",
+  "plan": {
+    "path": "docs/evidence/2026-10-16/comparison/preflight-replays/pako-feature-inflate-push-after-end/plan.json",
+    "digest": "sha256:53b924512c6caa321c41c1561162b702f1c72d09aaa56f906abb6145f54e75ac"
+  },
+  "product": {
+    "sourceCommit": "c4370c043a96e30ebeb3a9c8abeeb7cf13b55b73",
+    "cli": "/Users/brad/.cache/swarm-comparison/tools/swarm-c4370c043/dist/cli.js",
+    "cliDigest": "sha256:f14402355cbf92169f2fc1a59b521c2b362353ec860930e40a7c8d6d9940d61d",
+    "distTreeDigest": "sha256:c538ccae2b799bbb99dc054cba976a404000c6e1e6e099b917fd982894a44c88",
+    "node": "v24.15.0",
+    "platform": "darwin"
+  },
+  "task": {
+    "id": "pako-feature-inflate-push-after-end",
+    "set": "2026-10-15",
+    "stage": "A",
+    "repository": "nodeca/pako",
+    "base": "ef2f14af9b51376aa82215e68a3747a0faac62b7",
+    "upstream": "16fb5c47d936af5c88e943178c8e6f455e067128",
+    "projectTest": [
+      "npm",
+      "test"
+    ]
+  },
+  "contract": {
+    "regeneratedDigest": "sha256:cc6e9220bddcdd1bae98944f91d3ef99dd60b491f3c0cf6f9bd55c999f8ad0a0",
+    "sealedInRetainedSessions": []
+  },
+  "model": "scripted endpoint (src/providers/scripted-endpoint.ts): declares the patch's files and claims completion; generates no code",
+  "scenarios": [
+    {
+      "id": "reference",
+      "kind": "reference",
+      "purpose": "the maintainer's change to the task's authorized paths, which every verdict must accept",
+      "candidate": {
+        "source": "the maintainer's change to src/inflate.ts, CHANGELOG.md",
+        "record": null,
+        "patchDigest": "sha256:55a4b334e85f8a34f29ee6229839dc9aba8449e6e4a30a3f94cef6d5bdfb8ba6",
+        "patchBytes": 3139,
+        "paths": [
+          "CHANGELOG.md",
+          "src/inflate.ts"
+        ]
+      },
+      "base": "2a80db3c41eb34ced54e14f598ec15018c1bf358",
+      "visible": {
+        "passed": true,
+        "checkExit": 0,
+        "projectTestExit": 0,
+        "covers": "node acceptance/visible/check.mjs; then npm test",
+        "detailDigest": "sha256:9411893919bd418834ba645b1c91ea6ab220196289f3cb0dbc4ca3c33774bf54",
+        "detailTail": "visible check and project tests passed"
+      },
+      "swarm": {
+        "exitCode": 1,
+        "signal": null,
+        "acceptable": false,
+        "verdict": {
+          "version": 1,
+          "integrity": "unverified",
+          "signer": "untrusted",
+          "executionTrust": "restricted",
+          "policy": "pass",
+          "mechanical": "pass",
+          "behavioral": "pass",
+          "semantic": "unmeasured",
+          "task": "accepted",
+          "humanApproval": "not-required",
+          "reasons": {
+            "assessment": "the gates settled escalated; nothing changed",
+            "mechanical": "typecheck, lint passed",
+            "policy": "file-set, placeholder, secret-scan, diff-budget passed",
+            "behavioral": "tests, task-acceptance passed",
+            "semantic": "no check here judges whether the change means what the task asked for, and nothing in this system is allowed to: a model's opinion is not a verdict",
+            "task": "a check passes only with this patch's changes to the runner configuration (src/inflate.ts); with the base's configuration restored it does not pass, so it measured nothing the base's instrument would stand behind. The instrument comes from the base commit, as the commands do.",
+            "executionTrust": "commands ran under a lexical path and program policy, which is not containment",
+            "humanApproval": "this run did nothing that needs a person's decision",
+            "signer": "no expected signer was matched, so the signature shows the bundle is unchanged since it was written and not who wrote it"
+          },
+          "acceptable": false
+        },
+        "finalVerification": {
+          "refusal": null,
+          "regression": "pass",
+          "unmeasured": false,
+          "advice": "a check passes only with this patch's changes to the runner configuration (src/inflate.ts); with the base's configuration restored it does not pass, so it measured nothing the base's instrument would stand behind. The instrument comes from the base commit, as the commands do."
+        },
+        "requirements": [
+          {
+            "id": "visible-check",
+            "description": "the visible acceptance check passes on a fresh checkout",
+            "status": "accepted",
+            "authoredBy": "user",
+            "detail": null
+          }
+        ],
+        "covers": {
+          "sealedRequirements": [
+            "visible-check: the visible acceptance check passes on a fresh checkout"
+          ],
+          "sealedChecks": [
+            "visible-check: node acceptance/visible/check.mjs"
+          ],
+          "sealedGates": [
+            {
+              "id": "build",
+              "command": "npm run --loglevel=error build",
+              "severity": "blocking"
+            },
+            {
+              "id": "typecheck",
+              "command": "npm run --loglevel=error type-check",
+              "severity": "blocking"
+            },
+            {
+              "id": "lint",
+              "command": "npm run --loglevel=error lint",
+              "severity": "blocking"
+            },
+            {
+              "id": "format",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "tests",
+              "command": "npm test",
+              "severity": "blocking"
+            },
+            {
+              "id": "file-set",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "placeholder",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "secret-scan",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "behaviour-probe",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "diff-budget",
+              "command": null,
+              "severity": "advisory"
+            },
+            {
+              "id": "task-acceptance",
+              "command": null,
+              "severity": "blocking"
+            }
+          ]
+        },
+        "sessionId": "20261016T184017-062f13",
+        "contractDigest": "sha256:cc6e9220bddcdd1bae98944f91d3ef99dd60b491f3c0cf6f9bd55c999f8ad0a0",
+        "sealedTestsGate": "npm test",
+        "independentVerification": {
+          "record": "sha256:1b82a92337e7da268dd353fb27d4d4cbd577f2e9d49556cdf0e9aab1e7c1f39d",
+          "verified": true,
+          "regression": "pass",
+          "task": "accepted",
+          "unmeasured": false,
+          "refusal": null,
+          "advice": "a check passes only with this patch's changes to the runner configuration (src/inflate.ts); with the base's configuration restored it does not pass, so it measured nothing the base's instrument would stand behind. The instrument comes from the base commit, as the commands do.",
+          "checks": [
+            {
+              "id": "build",
+              "status": "passed",
+              "detail": "the runner reported a pass, but this change altered the instrument that measured it (src/inflate.ts), so the pass is the project's report, not evidence. `swarm-verify ci` reruns the check with the reference's instrument restored"
+            },
+            {
+              "id": "typecheck",
+              "status": "passed",
+              "detail": "the command exited 0"
+            },
+            {
+              "id": "lint",
+              "status": "passed",
+              "detail": "the command exited 0"
+            },
+            {
+              "id": "format",
+              "status": "not-applicable",
+              "detail": "package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging"
+            },
+            {
+              "id": "tests",
+              "status": "passed",
+              "detail": "231 collected, 231 passed, 0 failed, 0 skipped (exit 0)"
+            }
+          ],
+          "goalChecks": [
+            {
+              "id": "visible-check",
+              "status": "accepted",
+              "detail": "command exited 0"
+            }
+          ]
+        },
+        "timing": {
+          "productRunMs": 116135,
+          "runMs": 114303,
+          "afterLastModelCallMs": 37967,
+          "finalVerificationMs": 15846
+        },
+        "stdoutDigest": "sha256:bc6eb58d47b12b28a57e5b2214e9a9bb4216fa3c14f8c395e07e6f7dbeee3d51",
+        "stderrDigest": "sha256:dd8ea56ea8c1096a340caed9e9d0577d1512b5ec3464deef13bee2cc7e4f46b9"
+      },
+      "hidden": {
+        "verdict": "pass",
+        "basis": "hidden tests, project tests and every structural or version requirement passed",
+        "covers": "the upstream commit's test/inflate.test.mjs (node --test test/inflate.test.mjs), the authorized paths src/inflate.ts, CHANGELOG.md, and the project tests",
+        "detailTail": ""
+      }
+    },
+    {
+      "id": "unchanged-base",
+      "kind": "base",
+      "purpose": "the base with no change, which the sealed visible criterion must reject",
+      "candidate": {
+        "source": "no change",
+        "record": null,
+        "patchDigest": null,
+        "patchBytes": 0,
+        "paths": []
+      },
+      "base": "f18d321b0ba8e9a7cb590e2d3b5b606784ce6915",
+      "visible": {
+        "passed": false,
+        "checkExit": 1,
+        "projectTestExit": 0,
+        "covers": "node acceptance/visible/check.mjs; then npm test",
+        "detailDigest": "sha256:6ea637b77f3654fb32b1685bfa1d1b6c95cb10c544b2ca2b3051442fb97175df",
+        "detailTail": "    at ModuleJob.run (node:internal/modules/esm/module_job:437:25)\n    at async node:internal/modules/esm/loader:639:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {\n  generatedMessage: true,\n  code: 'ERR_ASSERTION',\n  actual: false,\n  expected: true,\n  operator: 'strictEqual',\n  diff: 'simple'\n}\n\nNode.js v24.15.0"
+      },
+      "swarm": {
+        "exitCode": 1,
+        "signal": null,
+        "acceptable": false,
+        "verdict": {
+          "version": 1,
+          "integrity": "unverified",
+          "signer": "untrusted",
+          "executionTrust": "restricted",
+          "policy": "pass",
+          "mechanical": "pass",
+          "behavioral": "fail",
+          "semantic": "unmeasured",
+          "task": "rejected",
+          "humanApproval": "not-required",
+          "reasons": {
+            "assessment": "required checks unmet: task-acceptance; the gates settled escalated; nothing changed",
+            "mechanical": "build, typecheck, lint passed",
+            "policy": "file-set, placeholder, secret-scan, diff-budget passed",
+            "behavioral": "task-acceptance failed",
+            "semantic": "no check here judges whether the change means what the task asked for, and nothing in this system is allowed to: a model's opinion is not a verdict",
+            "task": "pinned goal checks: rejected",
+            "executionTrust": "commands ran under a lexical path and program policy, which is not containment",
+            "humanApproval": "this run did nothing that needs a person's decision",
+            "signer": "no expected signer was matched, so the signature shows the bundle is unchanged since it was written and not who wrote it"
+          },
+          "acceptable": false
+        },
+        "finalVerification": {
+          "refusal": null,
+          "regression": "pass",
+          "unmeasured": false,
+          "advice": ""
+        },
+        "requirements": [
+          {
+            "id": "visible-check",
+            "description": "the visible acceptance check passes on a fresh checkout",
+            "status": "rejected",
+            "authoredBy": "user",
+            "detail": "command exited 1"
+          }
+        ],
+        "covers": {
+          "sealedRequirements": [
+            "visible-check: the visible acceptance check passes on a fresh checkout"
+          ],
+          "sealedChecks": [
+            "visible-check: node acceptance/visible/check.mjs"
+          ],
+          "sealedGates": [
+            {
+              "id": "build",
+              "command": "npm run --loglevel=error build",
+              "severity": "blocking"
+            },
+            {
+              "id": "typecheck",
+              "command": "npm run --loglevel=error type-check",
+              "severity": "blocking"
+            },
+            {
+              "id": "lint",
+              "command": "npm run --loglevel=error lint",
+              "severity": "blocking"
+            },
+            {
+              "id": "format",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "tests",
+              "command": "npm test",
+              "severity": "blocking"
+            },
+            {
+              "id": "file-set",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "placeholder",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "secret-scan",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "behaviour-probe",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "diff-budget",
+              "command": null,
+              "severity": "advisory"
+            },
+            {
+              "id": "task-acceptance",
+              "command": null,
+              "severity": "blocking"
+            }
+          ]
+        },
+        "sessionId": "20261016T184224-cb0de9",
+        "contractDigest": "sha256:cc6e9220bddcdd1bae98944f91d3ef99dd60b491f3c0cf6f9bd55c999f8ad0a0",
+        "sealedTestsGate": "npm test",
+        "independentVerification": {
+          "record": "sha256:3bc79a3996af69ccdb24ce42e30127a46a149f920774ea1b6efa5ea1da773636",
+          "verified": false,
+          "regression": "pass",
+          "task": "rejected",
+          "unmeasured": false,
+          "refusal": null,
+          "advice": "",
+          "checks": [
+            {
+              "id": "build",
+              "status": "passed",
+              "detail": "the command exited 0"
+            },
+            {
+              "id": "typecheck",
+              "status": "passed",
+              "detail": "the command exited 0"
+            },
+            {
+              "id": "lint",
+              "status": "passed",
+              "detail": "the command exited 0"
+            },
+            {
+              "id": "format",
+              "status": "not-applicable",
+              "detail": "package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging"
+            },
+            {
+              "id": "tests",
+              "status": "passed",
+              "detail": "231 collected, 231 passed, 0 failed, 0 skipped (exit 0)"
+            }
+          ],
+          "goalChecks": [
+            {
+              "id": "visible-check",
+              "status": "rejected",
+              "detail": "command exited 1"
+            }
+          ]
+        },
+        "timing": {
+          "productRunMs": 95312,
+          "runMs": 93509,
+          "afterLastModelCallMs": 29847,
+          "finalVerificationMs": 11744
+        },
+        "stdoutDigest": "sha256:d629da01d4f60d9404f3f0f1ff1f6e7e7972aa615c4f0a165faaf64f8f2c087d",
+        "stderrDigest": "sha256:f7838ea71c336e2663387d1af6f1b5c06f07d04dded0295449c49a96ccec80c7"
+      },
+      "hidden": {
+        "verdict": "fail",
+        "basis": "hidden tests (node --test test/inflate.test.mjs) exited 1",
+        "covers": "the upstream commit's test/inflate.test.mjs (node --test test/inflate.test.mjs), the authorized paths src/inflate.ts, CHANGELOG.md, and the project tests",
+        "detailTail": "ℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 66.423667\n\n✖ failing tests:\n\ntest at test/inflate.test.mjs:186:3\n✖ extra pushes after a finished stream return true and keep result (0.38625ms)\n  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n  \n  false !== true\n  \n      at TestContext.<anonymous> (file:///Users/brad/.cache/swarm-comparison/work/hidden-pako-feature-inflate-push-after-end-o5oK3x/checkout/test/inflate.test.mjs:197:12)\n      at Test.runInAsyncScope (node:async_hooks:227:14)\n      at Test.run (node:internal/test_runner/test:1201:25)\n      at Test.start (node:internal/test_runner/test:1096:17)\n      at node:internal/test_runner/test:1617:71\n      at node:internal/per_context/primordials:466:82\n      at new Promise (<anonymous>)\n      at new SafePromise (node:internal/per_context/primordials:435:3)\n      at node:internal/per_context/primordials:466:9\n      at Array.map (<anonymous>) {\n    generatedMessage: true,\n    code: 'ERR_ASSERTION',\n    actual: false,\n    expected: true,\n    operator: 'strictEqual',\n    diff: 'simple'\n  }"
+      }
+    }
+  ],
+  "harnessCommands": 72
+}

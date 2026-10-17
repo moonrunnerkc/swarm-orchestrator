@@ -1,0 +1,772 @@
+{
+  "schema": "swarm-verification-replay.v2",
+  "recordedAt": "2026-10-16T19:53:24.634Z",
+  "purpose": "verification replay of the two retained OpenCode argparse calibration patches through Swarm's final verification under the calibration's sealed criterion, with the unchanged base and the maintainer's reference as controls; no model generates anything",
+  "plan": {
+    "path": "docs/evidence/2026-10-16/comparison/replay-calibration/plan.json",
+    "digest": "sha256:023cc9a1c77836ed6cd9d69d43487ad71c718aca053c27bb34502914fda86293"
+  },
+  "product": {
+    "sourceCommit": "917312983a13784a47c2a9812f1d54859fbaedd4",
+    "cli": "/Users/brad/.cache/swarm-comparison/tools/swarm-917312983/dist/cli.js",
+    "cliDigest": "sha256:f14402355cbf92169f2fc1a59b521c2b362353ec860930e40a7c8d6d9940d61d",
+    "distTreeDigest": "sha256:f213f2f4d4e90b749d72ad295716ccad4acf0e285fad84ec73833e66cbd83c18",
+    "node": "v24.15.0",
+    "platform": "darwin"
+  },
+  "task": {
+    "id": "argparse-calibration-number-conversion",
+    "set": "2026-10-15",
+    "stage": "calibration",
+    "repository": "nodeca/argparse",
+    "base": "e9eb9de652dc3f101b7320ceb682c60f407e2af6",
+    "upstream": "28c7449992ea35368e29dab9add9b368f4cba7dc",
+    "projectTest": [
+      "npm",
+      "test"
+    ]
+  },
+  "contract": {
+    "regeneratedDigest": "sha256:9d3917887bf06b4b3862555d1c5ec96d4c6152b2a949bd5df8d3ca31d4295f4f",
+    "sealedInRetainedSessions": [
+      {
+        "path": "docs/evidence/2026-10-15/comparison/readiness/calibration-ollama/sessions/20261015T213600-bf833e/gate-runs.json.gz",
+        "digest": "sha256:9d3917887bf06b4b3862555d1c5ec96d4c6152b2a949bd5df8d3ca31d4295f4f"
+      },
+      {
+        "path": "docs/evidence/2026-10-15/comparison/readiness/calibration-ollama-2/sessions/20261015T214740-16b16f/gate-runs.json.gz",
+        "digest": "sha256:9d3917887bf06b4b3862555d1c5ec96d4c6152b2a949bd5df8d3ca31d4295f4f"
+      }
+    ]
+  },
+  "model": "scripted endpoint (src/providers/scripted-endpoint.ts): declares the patch's files and claims completion; generates no code",
+  "scenarios": [
+    {
+      "id": "opencode-calibration-1",
+      "kind": "patch",
+      "purpose": "OpenCode's final patch from calibration attempt 1, byte for byte",
+      "candidate": {
+        "source": "docs/evidence/2026-10-15/comparison/readiness/calibration-ollama/patches/argparse-calibration-number-conversion.opencode.patch",
+        "record": "docs/evidence/2026-10-15/comparison/readiness/calibration-ollama/records/argparse-calibration-number-conversion.opencode.json",
+        "patchDigest": "sha256:536a1e1fb1bd66c566c3f40ca39edabe54d15b8b28e044cf244ab8b9df2a339f",
+        "patchBytes": 3617,
+        "paths": [
+          "lib/argparse.js"
+        ]
+      },
+      "base": "a6167fb162e85ed177901101d854a30763dab0f2",
+      "visible": {
+        "passed": true,
+        "checkExit": 0,
+        "projectTestExit": 0,
+        "covers": "node acceptance/visible/check.mjs; then npm test",
+        "detailDigest": "sha256:9411893919bd418834ba645b1c91ea6ab220196289f3cb0dbc4ca3c33774bf54",
+        "detailTail": "visible check and project tests passed"
+      },
+      "swarm": {
+        "exitCode": 0,
+        "signal": null,
+        "acceptable": true,
+        "verdict": {
+          "version": 1,
+          "integrity": "unverified",
+          "signer": "untrusted",
+          "executionTrust": "restricted",
+          "policy": "pass",
+          "mechanical": "pass",
+          "behavioral": "pass",
+          "semantic": "unmeasured",
+          "task": "accepted",
+          "humanApproval": "not-required",
+          "reasons": {
+            "assessment": "final ratchet and bonds accepted the completed work",
+            "mechanical": "lint passed",
+            "policy": "file-set, placeholder, secret-scan, diff-budget passed",
+            "behavioral": "tests, task-acceptance passed",
+            "semantic": "no check here judges whether the change means what the task asked for, and nothing in this system is allowed to: a model's opinion is not a verdict",
+            "task": "pinned goal checks: accepted",
+            "executionTrust": "commands ran under a lexical path and program policy, which is not containment",
+            "humanApproval": "this run did nothing that needs a person's decision",
+            "signer": "no expected signer was matched, so the signature shows the bundle is unchanged since it was written and not who wrote it"
+          },
+          "acceptable": true
+        },
+        "finalVerification": {
+          "refusal": null,
+          "regression": "pass",
+          "unmeasured": false,
+          "advice": ""
+        },
+        "requirements": [
+          {
+            "id": "visible-check",
+            "description": "the visible acceptance check passes on a fresh checkout",
+            "status": "accepted",
+            "authoredBy": "user",
+            "detail": null
+          }
+        ],
+        "covers": {
+          "sealedRequirements": [
+            "visible-check: the visible acceptance check passes on a fresh checkout"
+          ],
+          "sealedChecks": [
+            "visible-check: node acceptance/visible/check.mjs"
+          ],
+          "sealedGates": [
+            {
+              "id": "typecheck",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "lint",
+              "command": "npm run --loglevel=error lint",
+              "severity": "blocking"
+            },
+            {
+              "id": "format",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "tests",
+              "command": "npm test",
+              "severity": "blocking"
+            },
+            {
+              "id": "file-set",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "placeholder",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "secret-scan",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "behaviour-probe",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "diff-budget",
+              "command": null,
+              "severity": "advisory"
+            },
+            {
+              "id": "task-acceptance",
+              "command": null,
+              "severity": "blocking"
+            }
+          ]
+        },
+        "sessionId": "20261016T195029-002123",
+        "contractDigest": "sha256:9d3917887bf06b4b3862555d1c5ec96d4c6152b2a949bd5df8d3ca31d4295f4f",
+        "sealedTestsGate": "npm test",
+        "independentVerification": {
+          "record": "sha256:6cc666ae4cef4296ba2aecfa80cb6a644c4fa4a3ae0acc162e3f39d0ba827a48",
+          "verified": true,
+          "regression": "pass",
+          "task": "accepted",
+          "unmeasured": false,
+          "refusal": null,
+          "advice": "",
+          "checks": [
+            {
+              "id": "typecheck",
+              "status": "not-applicable",
+              "detail": "package.json declares no typecheck script"
+            },
+            {
+              "id": "lint",
+              "status": "passed",
+              "detail": "the command exited 0"
+            },
+            {
+              "id": "format",
+              "status": "not-applicable",
+              "detail": "package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging"
+            },
+            {
+              "id": "tests",
+              "status": "passed",
+              "detail": "1830 collected, 1830 passed, 0 failed, 0 skipped (exit 0)"
+            }
+          ],
+          "goalChecks": [
+            {
+              "id": "visible-check",
+              "status": "accepted",
+              "detail": "command exited 0"
+            }
+          ]
+        },
+        "timing": {
+          "productRunMs": 30744,
+          "runMs": 29331,
+          "afterLastModelCallMs": 20851,
+          "finalVerificationMs": 7476
+        },
+        "stdoutDigest": "sha256:954f36e1d2fc056b835d3ae0e376f8d6792077deac607f6babc0b6f52bfe2ad3",
+        "stderrDigest": "sha256:503445b36006989a85b2bce9f4a09ea4e35128af29705e045c6414150f9d4ae0"
+      },
+      "hidden": {
+        "verdict": "fail",
+        "basis": "hidden tests (node --test test/test_port.js) exited 1",
+        "covers": "the upstream commit's test/test_port.js (node --test test/test_port.js), the authorized paths lib/argparse.js, and the project tests",
+        "detailTail": "  ✔ float(\"_1\") (0.066875ms)\n  ✔ float(\"1_\") (0.066458ms)\n  ✔ float(\"1_.5\") (0.064667ms)\n  ✔ float(\"1._5\") (0.0725ms)\n  ✔ float(\"0x1_0\") (0.072541ms)\n✖ type 'float' matches CPython (3.208083ms)\nℹ tests 72\nℹ suites 2\nℹ pass 71\nℹ fail 1\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 44.669583\n\n✖ failing tests:\n\ntest at test/test_port.js:72:13\n✖ float(\"5.\") (0.126208ms)\n  ArgumentError: argument --value: invalid 'float' value: '5.'\n      at ArgumentParser._get_value (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-SI9PAM/checkout/lib/argparse.js:3684:23)\n      at ArgumentParser._get_values (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-SI9PAM/checkout/lib/argparse.js:3621:26)\n      at take_action (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-SI9PAM/checkout/lib/argparse.js:3011:42)\n      at consume_optional (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-SI9PAM/checkout/lib/argparse.js:3136:17)\n      at ArgumentParser._parse_known_args (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-SI9PAM/checkout/lib/argparse.js:3224:27)\n      at ArgumentParser._parse_known_args2 (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-SI9PAM/checkout/lib/argparse.js:2940:38)\n      at ArgumentParser.parse_known_args (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-SI9PAM/checkout/lib/argparse.js:2895:21)\n      at ArgumentParser.parse_args (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-SI9PAM/checkout/lib/argparse.js:2882:29)\n      at parse (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-SI9PAM/checkout/test/test_port.js:62:19)\n      at TestContext.<anonymous> (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-SI9PAM/checkout/test/test_port.js:77:32)"
+      }
+    },
+    {
+      "id": "opencode-calibration-2",
+      "kind": "patch",
+      "purpose": "OpenCode's final patch from calibration attempt 2, byte for byte",
+      "candidate": {
+        "source": "docs/evidence/2026-10-15/comparison/readiness/calibration-ollama-2/patches/argparse-calibration-number-conversion.opencode.patch",
+        "record": "docs/evidence/2026-10-15/comparison/readiness/calibration-ollama-2/records/argparse-calibration-number-conversion.opencode.json",
+        "patchDigest": "sha256:760c969662ff48f0dbe0490edce2f7da7357a6004ed063faae6e156a98f73365",
+        "patchBytes": 2588,
+        "paths": [
+          "lib/argparse.js"
+        ]
+      },
+      "base": "1baa9f9e9d2fbe7e696ff93993b660e8c847fdd7",
+      "visible": {
+        "passed": true,
+        "checkExit": 0,
+        "projectTestExit": 0,
+        "covers": "node acceptance/visible/check.mjs; then npm test",
+        "detailDigest": "sha256:9411893919bd418834ba645b1c91ea6ab220196289f3cb0dbc4ca3c33774bf54",
+        "detailTail": "visible check and project tests passed"
+      },
+      "swarm": {
+        "exitCode": 0,
+        "signal": null,
+        "acceptable": true,
+        "verdict": {
+          "version": 1,
+          "integrity": "unverified",
+          "signer": "untrusted",
+          "executionTrust": "restricted",
+          "policy": "pass",
+          "mechanical": "pass",
+          "behavioral": "pass",
+          "semantic": "unmeasured",
+          "task": "accepted",
+          "humanApproval": "not-required",
+          "reasons": {
+            "assessment": "final ratchet and bonds accepted the completed work",
+            "mechanical": "lint passed",
+            "policy": "file-set, placeholder, secret-scan, diff-budget passed",
+            "behavioral": "tests, task-acceptance passed",
+            "semantic": "no check here judges whether the change means what the task asked for, and nothing in this system is allowed to: a model's opinion is not a verdict",
+            "task": "pinned goal checks: accepted",
+            "executionTrust": "commands ran under a lexical path and program policy, which is not containment",
+            "humanApproval": "this run did nothing that needs a person's decision",
+            "signer": "no expected signer was matched, so the signature shows the bundle is unchanged since it was written and not who wrote it"
+          },
+          "acceptable": true
+        },
+        "finalVerification": {
+          "refusal": null,
+          "regression": "pass",
+          "unmeasured": false,
+          "advice": ""
+        },
+        "requirements": [
+          {
+            "id": "visible-check",
+            "description": "the visible acceptance check passes on a fresh checkout",
+            "status": "accepted",
+            "authoredBy": "user",
+            "detail": null
+          }
+        ],
+        "covers": {
+          "sealedRequirements": [
+            "visible-check: the visible acceptance check passes on a fresh checkout"
+          ],
+          "sealedChecks": [
+            "visible-check: node acceptance/visible/check.mjs"
+          ],
+          "sealedGates": [
+            {
+              "id": "typecheck",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "lint",
+              "command": "npm run --loglevel=error lint",
+              "severity": "blocking"
+            },
+            {
+              "id": "format",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "tests",
+              "command": "npm test",
+              "severity": "blocking"
+            },
+            {
+              "id": "file-set",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "placeholder",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "secret-scan",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "behaviour-probe",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "diff-budget",
+              "command": null,
+              "severity": "advisory"
+            },
+            {
+              "id": "task-acceptance",
+              "command": null,
+              "severity": "blocking"
+            }
+          ]
+        },
+        "sessionId": "20261016T195105-273eef",
+        "contractDigest": "sha256:9d3917887bf06b4b3862555d1c5ec96d4c6152b2a949bd5df8d3ca31d4295f4f",
+        "sealedTestsGate": "npm test",
+        "independentVerification": {
+          "record": "sha256:b154e96c5c558140449e9eb6758b0136ba0456e830519acd5ebba106ea709501",
+          "verified": true,
+          "regression": "pass",
+          "task": "accepted",
+          "unmeasured": false,
+          "refusal": null,
+          "advice": "",
+          "checks": [
+            {
+              "id": "typecheck",
+              "status": "not-applicable",
+              "detail": "package.json declares no typecheck script"
+            },
+            {
+              "id": "lint",
+              "status": "passed",
+              "detail": "the command exited 0"
+            },
+            {
+              "id": "format",
+              "status": "not-applicable",
+              "detail": "package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging"
+            },
+            {
+              "id": "tests",
+              "status": "passed",
+              "detail": "1830 collected, 1830 passed, 0 failed, 0 skipped (exit 0)"
+            }
+          ],
+          "goalChecks": [
+            {
+              "id": "visible-check",
+              "status": "accepted",
+              "detail": "command exited 0"
+            }
+          ]
+        },
+        "timing": {
+          "productRunMs": 28541,
+          "runMs": 27199,
+          "afterLastModelCallMs": 19008,
+          "finalVerificationMs": 7361
+        },
+        "stdoutDigest": "sha256:367054a1b86551b3e1e13d545b68a47734368e6be7604424f46b895c5a5ea375",
+        "stderrDigest": "sha256:e154f7c1661d81a285356239d81637856e4980f201a71c331b7ad64e90272ccc"
+      },
+      "hidden": {
+        "verdict": "fail",
+        "basis": "hidden tests (node --test test/test_port.js) exited 1",
+        "covers": "the upstream commit's test/test_port.js (node --test test/test_port.js), the authorized paths lib/argparse.js, and the project tests",
+        "detailTail": "✖ float(\"-0\") (0.280542ms)\n  AssertionError [ERR_ASSERTION]: float(\"-0\") returned 0, expected 0\n      at TestContext.<anonymous> (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-A310My/checkout/test/test_port.js:78:24)\n      at Test.runInAsyncScope (node:async_hooks:227:14)\n      at Test.run (node:internal/test_runner/test:1201:25)\n      at Suite.processPendingSubtests (node:internal/test_runner/test:831:18)\n      at Test.postRun (node:internal/test_runner/test:1330:19)\n      at Test.run (node:internal/test_runner/test:1258:12)\n      at async Suite.processPendingSubtests (node:internal/test_runner/test:831:7) {\n    generatedMessage: false,\n    code: 'ERR_ASSERTION',\n    actual: false,\n    expected: true,\n    operator: '==',\n    diff: 'simple'\n  }\n\ntest at test/test_port.js:72:13\n✖ float(\"NaN\") (0.074542ms)\n  ArgumentError: argument --value: invalid 'float' value: 'NaN'\n      at ArgumentParser._get_value (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-A310My/checkout/lib/argparse.js:3665:23)\n      at ArgumentParser._get_values (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-A310My/checkout/lib/argparse.js:3602:26)\n      at take_action (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-A310My/checkout/lib/argparse.js:2992:42)\n      at consume_optional (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-A310My/checkout/lib/argparse.js:3117:17)\n      at ArgumentParser._parse_known_args (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-A310My/checkout/lib/argparse.js:3205:27)\n      at ArgumentParser._parse_known_args2 (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-A310My/checkout/lib/argparse.js:2921:38)\n      at ArgumentParser.parse_known_args (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-A310My/checkout/lib/argparse.js:2876:21)\n      at ArgumentParser.parse_args (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-A310My/checkout/lib/argparse.js:2863:29)\n      at parse (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-A310My/checkout/test/test_port.js:62:19)\n      at TestContext.<anonymous> (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-A310My/checkout/test/test_port.js:77:32)"
+      }
+    },
+    {
+      "id": "unchanged-base",
+      "kind": "base",
+      "purpose": "control: the base with no change, which the sealed visible criterion must reject",
+      "candidate": {
+        "source": "no change",
+        "record": null,
+        "patchDigest": null,
+        "patchBytes": 0,
+        "paths": []
+      },
+      "base": "408b0d8a224931bddebe3110482a44494484851e",
+      "visible": {
+        "passed": false,
+        "checkExit": 1,
+        "projectTestExit": 0,
+        "covers": "node acceptance/visible/check.mjs; then npm test",
+        "detailDigest": "sha256:9472d1b144073c4d507ca59eb5ca51cb534fc04c2c733a75347423e5d72e8c21",
+        "detailTail": "    at consume_optional (/Users/brad/.cache/swarm-comparison/work/visible-argparse-calibration-number-conversion-mSK3uq/checkout/lib/argparse.js:3095:17)\n    at ArgumentParser._parse_known_args (/Users/brad/.cache/swarm-comparison/work/visible-argparse-calibration-number-conversion-mSK3uq/checkout/lib/argparse.js:3183:27)\n    at ArgumentParser._parse_known_args2 (/Users/brad/.cache/swarm-comparison/work/visible-argparse-calibration-number-conversion-mSK3uq/checkout/lib/argparse.js:2899:38)\n    at ArgumentParser.parse_known_args (/Users/brad/.cache/swarm-comparison/work/visible-argparse-calibration-number-conversion-mSK3uq/checkout/lib/argparse.js:2854:21)\n    at ArgumentParser.parse_args (/Users/brad/.cache/swarm-comparison/work/visible-argparse-calibration-number-conversion-mSK3uq/checkout/lib/argparse.js:2841:29)\n    at parse (file:///Users/brad/.cache/swarm-comparison/work/visible-argparse-calibration-number-conversion-mSK3uq/checkout/acceptance/visible/check.mjs:9:17)\n    at file:///Users/brad/.cache/swarm-comparison/work/visible-argparse-calibration-number-conversion-mSK3uq/checkout/acceptance/visible/check.mjs:13:14 {\n  _argument_name: '--v',\n  _message: \"invalid 'float' value: 'inf'\"\n}\n\nNode.js v24.15.0"
+      },
+      "swarm": {
+        "exitCode": 1,
+        "signal": null,
+        "acceptable": false,
+        "verdict": {
+          "version": 1,
+          "integrity": "unverified",
+          "signer": "untrusted",
+          "executionTrust": "restricted",
+          "policy": "pass",
+          "mechanical": "pass",
+          "behavioral": "fail",
+          "semantic": "unmeasured",
+          "task": "rejected",
+          "humanApproval": "not-required",
+          "reasons": {
+            "assessment": "required checks unmet: task-acceptance; the gates settled escalated; nothing changed",
+            "mechanical": "lint passed",
+            "policy": "file-set, placeholder, secret-scan, diff-budget passed",
+            "behavioral": "task-acceptance failed",
+            "semantic": "no check here judges whether the change means what the task asked for, and nothing in this system is allowed to: a model's opinion is not a verdict",
+            "task": "pinned goal checks: rejected",
+            "executionTrust": "commands ran under a lexical path and program policy, which is not containment",
+            "humanApproval": "this run did nothing that needs a person's decision",
+            "signer": "no expected signer was matched, so the signature shows the bundle is unchanged since it was written and not who wrote it"
+          },
+          "acceptable": false
+        },
+        "finalVerification": {
+          "refusal": null,
+          "regression": "pass",
+          "unmeasured": false,
+          "advice": ""
+        },
+        "requirements": [
+          {
+            "id": "visible-check",
+            "description": "the visible acceptance check passes on a fresh checkout",
+            "status": "rejected",
+            "authoredBy": "user",
+            "detail": "command exited 1"
+          }
+        ],
+        "covers": {
+          "sealedRequirements": [
+            "visible-check: the visible acceptance check passes on a fresh checkout"
+          ],
+          "sealedChecks": [
+            "visible-check: node acceptance/visible/check.mjs"
+          ],
+          "sealedGates": [
+            {
+              "id": "typecheck",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "lint",
+              "command": "npm run --loglevel=error lint",
+              "severity": "blocking"
+            },
+            {
+              "id": "format",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "tests",
+              "command": "npm test",
+              "severity": "blocking"
+            },
+            {
+              "id": "file-set",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "placeholder",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "secret-scan",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "behaviour-probe",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "diff-budget",
+              "command": null,
+              "severity": "advisory"
+            },
+            {
+              "id": "task-acceptance",
+              "command": null,
+              "severity": "blocking"
+            }
+          ]
+        },
+        "sessionId": "20261016T195139-0a07ca",
+        "contractDigest": "sha256:9d3917887bf06b4b3862555d1c5ec96d4c6152b2a949bd5df8d3ca31d4295f4f",
+        "sealedTestsGate": "npm test",
+        "independentVerification": {
+          "record": "sha256:fac68ee3bf095f9f2642e0f792b87ea5ef851eedca656407005deef9eea70822",
+          "verified": false,
+          "regression": "pass",
+          "task": "rejected",
+          "unmeasured": false,
+          "refusal": null,
+          "advice": "",
+          "checks": [
+            {
+              "id": "typecheck",
+              "status": "not-applicable",
+              "detail": "package.json declares no typecheck script"
+            },
+            {
+              "id": "lint",
+              "status": "passed",
+              "detail": "the command exited 0"
+            },
+            {
+              "id": "format",
+              "status": "not-applicable",
+              "detail": "package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging"
+            },
+            {
+              "id": "tests",
+              "status": "passed",
+              "detail": "1830 collected, 1830 passed, 0 failed, 0 skipped (exit 0)"
+            }
+          ],
+          "goalChecks": [
+            {
+              "id": "visible-check",
+              "status": "rejected",
+              "detail": "command exited 1"
+            }
+          ]
+        },
+        "timing": {
+          "productRunMs": 61959,
+          "runMs": 60462,
+          "afterLastModelCallMs": 21309,
+          "finalVerificationMs": 8887
+        },
+        "stdoutDigest": "sha256:d857d8048de34a8e6eebd2be2a52b14be94c6303f642a15ff43d7e37a3ee5dfa",
+        "stderrDigest": "sha256:f7a228f50fc5119412b8ffc6c86e4a03080d81d14e38e6a552e209445f944610"
+      },
+      "hidden": {
+        "verdict": "fail",
+        "basis": "hidden tests (node --test test/test_port.js) exited 1",
+        "covers": "the upstream commit's test/test_port.js (node --test test/test_port.js), the authorized paths lib/argparse.js, and the project tests",
+        "detailTail": "test at test/test_port.js:72:13\n✖ float(\"NaN\") (0.074334ms)\n  ArgumentError: argument --value: invalid 'float' value: 'NaN'\n      at ArgumentParser._get_value (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-OXr6Nv/checkout/lib/argparse.js:3643:23)\n      at ArgumentParser._get_values (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-OXr6Nv/checkout/lib/argparse.js:3580:26)\n      at take_action (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-OXr6Nv/checkout/lib/argparse.js:2970:42)\n      at consume_optional (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-OXr6Nv/checkout/lib/argparse.js:3095:17)\n      at ArgumentParser._parse_known_args (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-OXr6Nv/checkout/lib/argparse.js:3183:27)\n      at ArgumentParser._parse_known_args2 (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-OXr6Nv/checkout/lib/argparse.js:2899:38)\n      at ArgumentParser.parse_known_args (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-OXr6Nv/checkout/lib/argparse.js:2854:21)\n      at ArgumentParser.parse_args (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-OXr6Nv/checkout/lib/argparse.js:2841:29)\n      at parse (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-OXr6Nv/checkout/test/test_port.js:62:19)\n      at TestContext.<anonymous> (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-OXr6Nv/checkout/test/test_port.js:77:32)\n\ntest at test/test_port.js:72:13\n✖ float(\"0x1_0\") (0.086416ms)\n  AssertionError [ERR_ASSERTION]: Missing expected exception (ArgumentError).\n      at TestContext.<anonymous> (/Users/brad/.cache/swarm-comparison/work/hidden-argparse-calibration-number-conversion-OXr6Nv/checkout/test/test_port.js:74:28)\n      at Test.runInAsyncScope (node:async_hooks:227:14)\n      at Test.run (node:internal/test_runner/test:1201:25)\n      at Suite.processPendingSubtests (node:internal/test_runner/test:831:18)\n      at Test.postRun (node:internal/test_runner/test:1330:19)\n      at Test.run (node:internal/test_runner/test:1258:12)\n      at async Suite.processPendingSubtests (node:internal/test_runner/test:831:7) {\n    generatedMessage: false,\n    code: 'ERR_ASSERTION',\n    actual: undefined,\n    operator: 'throws',\n    diff: 'simple'\n  }"
+      }
+    },
+    {
+      "id": "reference",
+      "kind": "reference",
+      "purpose": "control: the maintainer's change to lib/argparse.js, which every verdict must accept",
+      "candidate": {
+        "source": "the maintainer's change to lib/argparse.js",
+        "record": null,
+        "patchDigest": "sha256:df96ec5a0e19006ae3552c074a3dbb60ecf7b704d5c8b89725d41921299ce99b",
+        "patchBytes": 1442,
+        "paths": [
+          "lib/argparse.js"
+        ]
+      },
+      "base": "c6fac4eaabfaeb55fe0fdb06f46e4dfffe4d39f7",
+      "visible": {
+        "passed": true,
+        "checkExit": 0,
+        "projectTestExit": 0,
+        "covers": "node acceptance/visible/check.mjs; then npm test",
+        "detailDigest": "sha256:9411893919bd418834ba645b1c91ea6ab220196289f3cb0dbc4ca3c33774bf54",
+        "detailTail": "visible check and project tests passed"
+      },
+      "swarm": {
+        "exitCode": 0,
+        "signal": null,
+        "acceptable": true,
+        "verdict": {
+          "version": 1,
+          "integrity": "unverified",
+          "signer": "untrusted",
+          "executionTrust": "restricted",
+          "policy": "pass",
+          "mechanical": "pass",
+          "behavioral": "pass",
+          "semantic": "unmeasured",
+          "task": "accepted",
+          "humanApproval": "not-required",
+          "reasons": {
+            "assessment": "final ratchet and bonds accepted the completed work",
+            "mechanical": "lint passed",
+            "policy": "file-set, placeholder, secret-scan, diff-budget passed",
+            "behavioral": "tests, task-acceptance passed",
+            "semantic": "no check here judges whether the change means what the task asked for, and nothing in this system is allowed to: a model's opinion is not a verdict",
+            "task": "pinned goal checks: accepted",
+            "executionTrust": "commands ran under a lexical path and program policy, which is not containment",
+            "humanApproval": "this run did nothing that needs a person's decision",
+            "signer": "no expected signer was matched, so the signature shows the bundle is unchanged since it was written and not who wrote it"
+          },
+          "acceptable": true
+        },
+        "finalVerification": {
+          "refusal": null,
+          "regression": "pass",
+          "unmeasured": false,
+          "advice": ""
+        },
+        "requirements": [
+          {
+            "id": "visible-check",
+            "description": "the visible acceptance check passes on a fresh checkout",
+            "status": "accepted",
+            "authoredBy": "user",
+            "detail": null
+          }
+        ],
+        "covers": {
+          "sealedRequirements": [
+            "visible-check: the visible acceptance check passes on a fresh checkout"
+          ],
+          "sealedChecks": [
+            "visible-check: node acceptance/visible/check.mjs"
+          ],
+          "sealedGates": [
+            {
+              "id": "typecheck",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "lint",
+              "command": "npm run --loglevel=error lint",
+              "severity": "blocking"
+            },
+            {
+              "id": "format",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "tests",
+              "command": "npm test",
+              "severity": "blocking"
+            },
+            {
+              "id": "file-set",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "placeholder",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "secret-scan",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "behaviour-probe",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "diff-budget",
+              "command": null,
+              "severity": "advisory"
+            },
+            {
+              "id": "task-acceptance",
+              "command": null,
+              "severity": "blocking"
+            }
+          ]
+        },
+        "sessionId": "20261016T195246-d67d2e",
+        "contractDigest": "sha256:9d3917887bf06b4b3862555d1c5ec96d4c6152b2a949bd5df8d3ca31d4295f4f",
+        "sealedTestsGate": "npm test",
+        "independentVerification": {
+          "record": "sha256:8b32c34570aae3b48971b09164d3af55506f6fdba4327ac0b5e72f76d26f743f",
+          "verified": true,
+          "regression": "pass",
+          "task": "accepted",
+          "unmeasured": false,
+          "refusal": null,
+          "advice": "",
+          "checks": [
+            {
+              "id": "typecheck",
+              "status": "not-applicable",
+              "detail": "package.json declares no typecheck script"
+            },
+            {
+              "id": "lint",
+              "status": "passed",
+              "detail": "the command exited 0"
+            },
+            {
+              "id": "format",
+              "status": "not-applicable",
+              "detail": "package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging"
+            },
+            {
+              "id": "tests",
+              "status": "passed",
+              "detail": "1830 collected, 1830 passed, 0 failed, 0 skipped (exit 0)"
+            }
+          ],
+          "goalChecks": [
+            {
+              "id": "visible-check",
+              "status": "accepted",
+              "detail": "command exited 0"
+            }
+          ]
+        },
+        "timing": {
+          "productRunMs": 31930,
+          "runMs": 30503,
+          "afterLastModelCallMs": 22074,
+          "finalVerificationMs": 8530
+        },
+        "stdoutDigest": "sha256:76df37efb0513469e001cd2e673e50c5b31912f706c78124ba6f77856fc22030",
+        "stderrDigest": "sha256:392e4c402395dcdb485a8d9c7293dd45a62f1e5e5790559d917563d2738d8ef2"
+      },
+      "hidden": {
+        "verdict": "pass",
+        "basis": "hidden tests, project tests and every structural or version requirement passed",
+        "covers": "the upstream commit's test/test_port.js (node --test test/test_port.js), the authorized paths lib/argparse.js, and the project tests",
+        "detailTail": ""
+      }
+    }
+  ],
+  "harnessCommands": 142
+}

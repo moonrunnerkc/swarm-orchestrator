@@ -11,6 +11,7 @@ import {
   swarmTokenCap,
   swarmTokens,
   swarmUsage,
+  swarmWorkflowFlags,
   taskPrompt,
 } from "./arms.mjs";
 import { taskSchema } from "./schema.mjs";
@@ -155,6 +156,9 @@ describe("reading what the arms reported", () => {
       reasoning: 15,
       cacheRead: 30,
       cacheWrite: null,
+      // A stream that does not carry the unknown-usage count cannot say there were none.
+      unknownCalls: null,
+      breakdown: "subsets",
     });
     // A stream from a build whose stopped events carried only the total reads as no breakdown.
     expect(
@@ -181,8 +185,36 @@ describe("reading what the arms reported", () => {
       reasoning: 2,
       cacheRead: 7,
       cacheWrite: 1,
+      // Neither step carries the SDK's total, which OpenCode leaves out where nothing was reported.
+      unknownCalls: 2,
+      breakdown: "disjoint",
     });
     expect(opencodeUsage("")).toBeNull();
+  });
+
+  it("counts every token once in both arms' comparable totals, and unreported calls apart", () => {
+    // Swarm's figures are the SDK's: cached inside input and reasoning inside output.
+    const swarmOut = JSON.stringify({
+      schema: "swarm.event.v1",
+      event: {
+        type: "stopped",
+        tokensUsed: 110,
+        callsWithUnknownUsage: 1,
+        usage: { inputTokens: 100, outputTokens: 10, reasoningTokens: 4, cachedInputTokens: 30 },
+      },
+    });
+    expect(swarmTokens(swarmOut)).toBe(110);
+    expect(swarmUsage(swarmOut)?.unknownCalls).toBe(1);
+    // OpenCode 1.14 splits the same figures apart: input without the cache, output without reasoning.
+    const openOut = JSON.stringify({
+      type: "step_finish",
+      part: {
+        type: "step-finish",
+        tokens: { total: 110, input: 69, output: 6, reasoning: 4, cache: { read: 30, write: 1 } },
+      },
+    });
+    expect(opencodeTokens(openOut)).toBe(110);
+    expect(opencodeUsage(openOut)?.unknownCalls).toBe(0);
   });
 
   it("launches swarm with what the earlier invocations left of the launch's allowance", () => {
@@ -223,5 +255,25 @@ describe("reading what the arms reported", () => {
     expect(claimedSuccess("opencode", 0, [start, finish].join("\n"))).toBe(false);
     expect(claimedSuccess("opencode", 0, text)).toBe(false);
     expect(claimedSuccess("opencode", 0, "")).toBe(false);
+  });
+});
+
+describe("Swarm's frozen workflow flags", () => {
+  it("appends the manifest's workflow flags and refuses anything else", () => {
+    const task = { id: "t", workType: "bugfix", visible: { path: "acceptance/visible/check.mjs" } };
+    const argv = swarmArgv(
+      { ...defaultPins, swarmFlags: ["--prompt-profile", "concise", "--plan-checks"] },
+      task,
+      "/w",
+      "abc",
+      "PROMPT",
+      "/c.json",
+      10 * 60_000,
+    );
+    expect(argv.slice(-3)).toEqual(["--prompt-profile", "concise", "--plan-checks"]);
+    expect(() => swarmWorkflowFlags(["--max-tokens", "1"])).toThrow("not a workflow flag");
+    expect(() => swarmWorkflowFlags(["--prompt-profile", "terse"])).toThrow(
+      "takes legacy or concise",
+    );
   });
 });

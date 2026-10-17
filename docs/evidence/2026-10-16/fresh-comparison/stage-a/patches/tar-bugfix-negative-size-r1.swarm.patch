@@ -1,0 +1,50 @@
+diff --git a/src/header.ts b/src/header.ts
+index 27503e4..92a95f7 100644
+--- a/src/header.ts
++++ b/src/header.ts
+@@ -120,6 +120,11 @@ export class Header implements HeaderData {
+     if (gexForFields) this.#slurp(gexForFields, true)
+     if (exForFields) this.#slurp(exForFields)
+ 
++    // Refuse negative sizes: they cause byte-counting errors in the reader.
++    if (typeof this.size === 'number' && this.size < 0) {
++      this.size = undefined
++    }
++
+     // old tar versions marked dirs as a file with a trailing /
+     if (types.isCode(t)) {
+       this.#type = t || '0'
+@@ -210,6 +215,10 @@ export class Header implements HeaderData {
+         }),
+       ),
+     )
++    // Refuse negative sizes: they cause the reader to miscount bytes.
++    if (typeof this.size === 'number' && this.size < 0) {
++      this.size = undefined
++    }
+   }
+ 
+   encode(buf?: Buffer, off: number = 0) {
+diff --git a/src/pax.ts b/src/pax.ts
+index 45fd605..901ace3 100644
+--- a/src/pax.ts
++++ b/src/pax.ts
+@@ -197,10 +197,17 @@ const parseKVLine = (
+     case 'dev':
+     case 'ino':
+     case 'nlink':
+-    case 'size':
+     case 'mode':
+       set[k] = +v
+       break
++    case 'size': {
++      const n = +v
++      // Only keep non-negative sizes; negative and NaN are refused.
++      if (n >= 0 && !isNaN(n)) {
++        set[k] = n
++      }
++      break
++    }
+   }
+   return set
+ }

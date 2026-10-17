@@ -15,6 +15,7 @@
  * published session's gate runs for the sealed contract digest; needs the local mirror of the
  * repository the comparison harness keeps, and network for the checkout's dependencies.
  */
+
 import { createHash } from "node:crypto";
 import {
   mkdirSync,
@@ -41,8 +42,11 @@ import {
   prepare,
   resolveFull,
   swarmConfigurationText,
+  workRoot,
 } from "../comparison/workspace.mjs";
 import { developmentTasks } from "./amendments.mjs";
+import { readStageRecord } from "./stage-files.mjs";
+import { readSession } from "./swarm-session.mjs";
 
 const args = new Map();
 for (let index = 2; index < process.argv.length; index += 1) {
@@ -84,9 +88,7 @@ function treeDigest(root) {
 // The retained inputs, each checked against the record that names it.
 const task = developmentTasks("dev").find((one) => one.id === taskId);
 if (task === undefined) throw new Error(`frozen task ${taskId} is not in the development stage`);
-const record = JSON.parse(
-  readFileSync(join(retainedRoot, "records", `${taskId}.swarm.json`), "utf8"),
-);
+const record = JSON.parse(readStageRecord(join(retainedRoot, "records", `${taskId}.swarm.json`)));
 const patch = readFileSync(join(retainedRoot, "patches", `${taskId}.swarm.patch`), "utf8");
 if (digestOf(patch) !== record.finalPatchDigest)
   throw new Error(
@@ -169,7 +171,8 @@ const scenarios = [
 const results = [];
 for (const scenario of scenarios) {
   const startedAt = Date.now();
-  const scratch = mkdtempSync(join(comparisonRoot, "work", `replay-${scenario.id}-`));
+  mkdirSync(workRoot, { recursive: true });
+  const scratch = mkdtempSync(join(workRoot, `replay-${scenario.id}-`));
   const workspace = join(scratch, "workspace");
   const home = join(scratch, "home");
   mkdirSync(home, { recursive: true, mode: 0o700 });
@@ -308,59 +311,6 @@ for (const scenario of scenarios) {
     if (endpoint !== null) await endpoint.close();
     if (args.get("keep") !== "true") rmSync(scratch, { recursive: true, force: true });
   }
-}
-
-/** What the run put on its own chain: the envelope, the sealed gates, the contract, the last verification. */
-function readSession(directory) {
-  const records = readFileSync(join(directory, "ledger.jsonl"), "utf8")
-    .trim()
-    .split("\n")
-    .map((line) => JSON.parse(line));
-  const bytesOf = (digest) => readFileSync(join(directory, "blobs", `${digest.slice(7)}.json`));
-  const payload = (digest) => JSON.parse(bytesOf(digest).toString("utf8"));
-  const find = (type) => records.filter((one) => one.type === type);
-  const envelope = find("execution-envelope")[0];
-  const sealed = find("gate-set-sealed")[0];
-  const goal = find("goal-contract")[0];
-  const verification = find("independent-verification").at(-1);
-  const sealedPayload = sealed === undefined ? null : payload(sealed.payloadDigest);
-  const verificationPayload =
-    verification === undefined ? null : payload(verification.payloadDigest);
-  const retained = [envelope, sealed, goal, verification].filter(Boolean);
-  return {
-    envelope: envelope === undefined ? null : payload(envelope.payloadDigest),
-    sealedTestsGate:
-      sealedPayload === null
-        ? null
-        : (sealedPayload.gates.find((gate) => gate.id === "tests")?.command ?? null),
-    contractDigest: goal === undefined ? null : payload(goal.payloadDigest).digest,
-    lastVerification:
-      verificationPayload === null
-        ? null
-        : {
-            record: verification.payloadDigest,
-            verified: verificationPayload.verified,
-            regression: verificationPayload.regression,
-            task: verificationPayload.task,
-            unmeasured: verificationPayload.unmeasured,
-            refusal: verificationPayload.refusal,
-            advice: verificationPayload.advice,
-            checks: (verificationPayload.checks ?? []).map((check) => ({
-              id: check.id,
-              status: check.status,
-              detail: check.detail,
-            })),
-            goalChecks: (verificationPayload.goalAcceptance?.checkResults ?? []).map((check) => ({
-              id: check.id,
-              status: check.status,
-              detail: check.detail,
-            })),
-          },
-    retainedPayloads: retained.map((one) => ({
-      digest: one.payloadDigest,
-      bytes: bytesOf(one.payloadDigest),
-    })),
-  };
 }
 
 const manifest = {

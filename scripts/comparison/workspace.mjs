@@ -4,6 +4,7 @@
  * is not in the object store the agent can read; the remote is removed. The visible check is
  * committed on top of the base as acceptance material both arms see and neither may edit.
  */
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -11,6 +12,15 @@ import { dirname, join } from "node:path";
 import { stringify as stringifyToml } from "smol-toml";
 
 export const comparisonRoot = join(homedir(), ".cache/swarm-comparison");
+
+/**
+ * Where launch and scoring checkouts live: outside any hidden directory. A project's own tools
+ * may skip a dot-named path component anywhere in a file's absolute path (css-select's Biome
+ * configuration excludes every path matching `**\/.*`), and under ~/.cache that turned the
+ * project's lint into "no files were processed" and its test script into a failure at the base,
+ * for every arm, whatever the change.
+ */
+export const workRoot = join(homedir(), "swarm-comparison-work");
 
 /**
  * The one download cache every launch shares: npm's content-addressed store. A package tarball
@@ -99,7 +109,9 @@ export async function commitVisibleCheck(log, task, directory) {
   const path = join(directory, task.visible.path);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, task.visible.source);
-  await git(log, directory, "add", task.visible.path);
+  // Forced: the check is the harness's own file, and a repository whose .gitignore admits only
+  // listed paths (node-tar ignores every root entry it does not name) would otherwise refuse it.
+  await git(log, directory, "add", "--force", task.visible.path);
   const committed = await git(
     log,
     directory,
@@ -118,7 +130,7 @@ export async function commitVisibleCheck(log, task, directory) {
 /** The task's install argv list, in order; false with the failing step when one fails. */
 export async function prepare(log, task, directory, { timeoutMs = 900_000 } = {}) {
   for (const argv of task.install) {
-    const ran = await log.run(argv, { cwd: directory, timeoutMs, env: installEnvironment() });
+    const ran = await log.run(argv, { cwd: directory, timeoutMs, env: taskEnvironment(task) });
     if (ran.exitCode !== 0) return { ok: false, failed: argv, detail: tail(ran) };
   }
   return { ok: true, failed: null, detail: "" };
@@ -134,6 +146,49 @@ export function installEnvironment() {
     // The harness's own installs fill the same content-addressed store the launches read.
     npm_config_cache: sharedNpmCache,
   };
+}
+
+/** Where the harness keeps a package manager release a task's base declares. */
+export const npmToolchain = (version) => join(comparisonRoot, "tools", `npm-${version}`);
+
+const declaredNpmCache = new Map();
+
+/**
+ * The npm release a task's base declares in its manifest (`packageManager: "npm@11.2.0"`), read
+ * from the sealed mirror so no change an arm makes can move it; null where it declares none.
+ */
+export function declaredNpm(task) {
+  if (declaredNpmCache.has(task.id)) return declaredNpmCache.get(task.id);
+  const shown = spawnSync("git", ["show", `${task.baseCommit}:package.json`], {
+    cwd: mirrorOf(task.repository),
+    encoding: "utf8",
+  });
+  let version = null;
+  if (shown.status === 0) {
+    const declared = JSON.parse(shown.stdout).packageManager;
+    const match = typeof declared === "string" ? /^npm@(\d+\.\d+\.\d+)/.exec(declared) : null;
+    version = match?.[1] ?? null;
+  }
+  declaredNpmCache.set(task.id, version);
+  return version;
+}
+
+/**
+ * The environment every command of a task runs in, the arms' included: the install
+ * environment, with the npm release the base declares first on PATH where it declares one. A
+ * project that pins its package manager is prepared with that one; Swarm refuses to spend model
+ * calls in an environment other than the declared one, and both arms get the same.
+ */
+export function taskEnvironment(task) {
+  const environment = installEnvironment();
+  const version = declaredNpm(task);
+  if (version === null) return environment;
+  const bin = join(npmToolchain(version), "node_modules", ".bin");
+  if (!existsSync(join(bin, "npm")))
+    throw new Error(
+      `${task.id} declares npm@${version} and it is not provisioned; before freezing run: npm install --prefix ${npmToolchain(version)} --no-audit --no-fund npm@${version}`,
+    );
+  return { ...environment, PATH: `${bin}:${environment.PATH}` };
 }
 
 export function tail(ran, lines = 60) {
@@ -184,28 +239,55 @@ const plainArgvWord = /^[A-Za-z0-9_./:=@+-]+$/;
  * product assembled its own gate from the manifest's `test` script, and ran chai's browser
  * suite while the task named `npm run test-node`.
  */
-export function swarmGateOverrides(task) {
+export function swarmGateOverrides(task, declared = {}) {
   for (const word of task.projectTest)
     if (!plainArgvWord.test(word))
       throw new Error(
         `${task.id}: the project test word ${JSON.stringify(word)} cannot be written as a gate override; the frozen argv must be plain words`,
       );
-  return { tests: { command: task.projectTest.join(" ") } };
+  return { ...advisoryGates(task, declared), tests: { command: task.projectTest.join(" ") } };
+}
+
+/**
+ * Gates the manifest declares advisory for a task: a check the product would make blocking that
+ * the task's own base already fails (mime's Prettier lint), which the task does not hold either
+ * arm to. Only the severity changes; the command is the product's own, so the gate is still
+ * run and reported. Nothing else may be declared: not the tests gate, not a stricter severity,
+ * not a command the product would not run.
+ */
+function advisoryGates(task, declared) {
+  const gates = {};
+  for (const [id, gate] of Object.entries(declared)) {
+    if (
+      id === "tests" ||
+      gate.severity !== "advisory" ||
+      !gate.command.split(" ").every((word) => plainArgvWord.test(word)) ||
+      !/^npm run --loglevel=error [\w:.-]+$/.test(gate.command)
+    )
+      throw new Error(
+        `${task.id}: the declared gate ${id} ${JSON.stringify(gate)} is not an advisory product gate`,
+      );
+    gates[id] = { command: gate.command, severity: "advisory" };
+  }
+  return gates;
 }
 
 /** The swarm.toml an arm's workspace gets, serialized rather than concatenated. */
-export function swarmConfigurationText(endpoint, task) {
+export function swarmConfigurationText(endpoint, task, declared = {}) {
   const text = stringifyToml({
     providers: { local_endpoint: endpoint, local_thinking: false },
-    gates: swarmGateOverrides(task),
+    gates: swarmGateOverrides(task, declared),
   });
   return text.endsWith("\n") ? text : `${text}\n`;
 }
 
-/** Arm configuration the agent needs and the change must not carry. */
-export function writeArmConfiguration(directory, arm, endpoint, model, task) {
+/**
+ * Arm configuration the agent needs and the change must not carry. `declared` is the manifest's
+ * advisory gates for the task (Swarm only).
+ */
+export function writeArmConfiguration(directory, arm, endpoint, model, task, declared = {}) {
   if (arm === "swarm") {
-    writeFileSync(join(directory, "swarm.toml"), swarmConfigurationText(endpoint, task));
+    writeFileSync(join(directory, "swarm.toml"), swarmConfigurationText(endpoint, task, declared));
   } else {
     writeFileSync(
       join(directory, "opencode.json"),

@@ -11,7 +11,14 @@
  * the harness itself) halts the campaign before any later launch, with the affected attempt kept.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { digestOf } from "./arms.mjs";
 import { probeEndpoint } from "./endpoint.mjs";
@@ -66,6 +73,62 @@ export async function terminateGroup(pid, started, deadlineMs = terminationDeadl
     await sleep(100);
   }
   return { pid, started, outcome: "unconfirmed", wallMs: Date.now() - began };
+}
+
+/**
+ * Processes still working in a launch's directory after its arm has ended: their current
+ * directory is under it, or their command line names it. Killing the arm's process group stops
+ * everything that stayed in the group; a process the arm detached into a group of its own and
+ * that no longer holds the arm's output is found only this way.
+ */
+export function processesUnder(directory, { run = spawnSync, ownPid = process.pid } = {}) {
+  // The system reports resolved paths (on macOS /var is /private/var), so both spellings count.
+  const roots = [
+    ...new Set([directory, existsSync(directory) ? realpathSync(directory) : directory]),
+  ];
+  const found = new Set();
+  const cwd = run("lsof", ["-a", "-d", "cwd", "-F", "pn"], { encoding: "utf8" });
+  let pid = null;
+  for (const line of (cwd.stdout ?? "").split("\n")) {
+    if (line.startsWith("p")) pid = Number(line.slice(1));
+    else if (
+      line.startsWith("n") &&
+      pid !== null &&
+      roots.some((root) => isUnder(line.slice(1), root))
+    )
+      found.add(pid);
+  }
+  const listed = run("ps", ["-Ao", "pid=,command="], { encoding: "utf8" });
+  for (const line of (listed.stdout ?? "").split("\n")) {
+    const match = /^\s*(\d+)\s+(.*)$/.exec(line);
+    if (match && roots.some((root) => match[2].includes(root))) found.add(Number(match[1]));
+  }
+  found.delete(ownPid);
+  return [...found].sort((a, b) => a - b);
+}
+
+const isUnder = (path, directory) => path === directory || path.startsWith(`${directory}/`);
+
+/**
+ * Stop every process still working in the launch's directory and say what was found, how long
+ * it took and what could not be stopped. Before anything is scored or dispatched next.
+ */
+export async function stopStrays(directory, { find = processesUnder } = {}) {
+  const began = Date.now();
+  const strays = [];
+  for (const pid of find(directory)) {
+    const started = processStart(pid);
+    if (started === null) continue;
+    const command = spawnSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8" })
+      .stdout.trim()
+      .slice(0, 300);
+    strays.push({ ...(await terminateGroup(pid, started)), command });
+  }
+  return {
+    wallMs: Date.now() - began,
+    strays: strays.map(({ pid, command, outcome, wallMs }) => ({ pid, command, outcome, wallMs })),
+    unstopped: strays.filter((one) => one.outcome === "unconfirmed").map((one) => one.pid),
+  };
 }
 
 const numbered = (names, prefix) =>

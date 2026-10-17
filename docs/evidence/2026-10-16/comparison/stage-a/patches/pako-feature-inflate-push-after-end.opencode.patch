@@ -1,0 +1,83 @@
+diff --git a/src/inflate.ts b/src/inflate.ts
+index dffc133..bf97ba3 100644
+--- a/src/inflate.ts
++++ b/src/inflate.ts
+@@ -75,7 +75,12 @@ class Inflate {
+   /** Error message, if {@link Inflate.err} is not {@link Z_OK}. */
+   msg: string;
+ 
+-  private ended: boolean;
++  /**
++   * True when the compressed stream has ended (successfully or with error).
++   * After this point, {@link Inflate.push} becomes a no-op that returns the
++   * recorded outcome and leaves `err`, `msg`, and `result` unchanged.
++   */
++  ended: boolean;
+   private started: boolean;
+ 
+   /**
+@@ -178,35 +183,40 @@ class Inflate {
+   }
+ 
+   /**
+-   * Sends input data to inflate pipe, generating {@link Inflate.onData} calls with
+-   * new output chunks. Returns `true` on success. If end of stream detected,
+-   * {@link Inflate.onEnd} will be called.
+-   *
+-   * `flush_mode` is not needed for normal operation, because end of stream
+-   * detected automatically. You may try to use it for advanced things, but
+-   * this functionality was not tested.
+-   *
+-   * On fail call {@link Inflate.onEnd} with error code and return false.
+-   *
+-   * @param flush_mode 0..6 for corresponding {@link Z_NO_FLUSH}..{@link Z_TREES}
+-   *   flush modes. See constants. Skipped or `false` means {@link Z_NO_FLUSH},
+-   *   `true` means {@link Z_FINISH}.
+-   *
+-   * @example
+-   * ```javascript
+-   * push(chunk, false); // push one of data chunks
+-   * ...
+-   * push(chunk, true);  // push last chunk
+-   * ```
+-   */
+-  push(data: InflateInput, flush_mode: Z_FlushMode | boolean = false): boolean {
+-    const strm = this.strm;
++    * Sends input data to inflate pipe, generating {@link Inflate.onData} calls with
++    * new output chunks. Returns `true` on success. If end of stream detected,
++    * {@link Inflate.onEnd} will be called.
++    *
++    * `flush_mode` is not needed for normal operation, because end of stream
++    * detected automatically. You may try to use it for advanced things, but
++    * this functionality was not tested.
++    *
++    * On fail call {@link Inflate.onEnd} with error code and return false.
++    *
++    * Once the stream has ended (see {@link Inflate.ended}), `push` becomes a
++    * no-op: it returns `true` if the decode finished without error
++    * (`this.err === Z_OK`) and `false` otherwise, regardless of `data` or
++    * `flush_mode`, and leaves `err`, `msg`, and `result` unchanged.
++    *
++    * @param flush_mode 0..6 for corresponding {@link Z_NO_FLUSH}..{@link Z_TREES}
++    *   flush modes. See constants. Skipped or `false` means {@link Z_NO_FLUSH},
++    *   `true` means {@link Z_FINISH}.
++    *
++    * @example
++    * ```javascript
++    * push(chunk, false); // push one of data chunks
++    * ...
++    * push(chunk, true);  // push last chunk
++    * ```
++    */
++   push(data: InflateInput, flush_mode: Z_FlushMode | boolean = false): boolean {
++     const strm = this.strm;
+     const chunkSize = this.options.chunkSize;
+     let status: Z_CallStatus;
+     let _flush_mode: Z_FlushMode;
+     let last_avail_out: number;
+ 
+-    if (this.ended) return false;
++    if (this.ended) return this.err === Z_OK;
+ 
+     if (typeof flush_mode === 'number') _flush_mode = flush_mode;
+     else _flush_mode = flush_mode === true ? Z_FINISH : Z_NO_FLUSH;

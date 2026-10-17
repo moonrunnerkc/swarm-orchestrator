@@ -14,7 +14,7 @@ product answers it ([../../../2026-10-15/bugfix-diagnosis/protocol.md](../../../
 
 ## What the retained ledgers show, by record
 
-Session ids and record sequence numbers are the published ones under [dev-bugfix/sessions/](dev-bugfix/sessions/)
+Session ids and record sequence numbers are the published ones under [dev-bugfix/sessions/](dev-bugfix/packed-derived/gzip/) (packed in place; `node scripts/evidence-pack.mjs restore <that directory>` gives the files back)
 and the pilot's [../stage-a/](../stage-a/); the payloads are in the local session store they
 were packed from.
 

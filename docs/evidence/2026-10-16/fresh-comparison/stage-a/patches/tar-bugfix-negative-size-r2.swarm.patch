@@ -1,0 +1,52 @@
+diff --git a/src/header.ts b/src/header.ts
+index 27503e4..2ce29a2 100644
+--- a/src/header.ts
++++ b/src/header.ts
+@@ -137,6 +137,10 @@ export class Header implements HeaderData {
+       this.size = 0
+     }
+ 
++    if (typeof this.size === 'number' && this.size < 0) {
++      this.size = undefined
++    }
++
+     this.linkpath = decString(buf, off + 157, 100)
+     if (
+       buf.subarray(off + 257, off + 265).toString() === 'ustar\u000000'
+@@ -199,13 +203,15 @@ export class Header implements HeaderData {
+         Object.entries(ex).filter(([k, v]) => {
+           // we slurp in everything except for the path attribute in
+           // a global extended header, because that's weird. Also, any
+-          // null/undefined values are ignored.
++          // null/undefined values are ignored. Also refuse negative
++          // sizes — they would cause the reader to miscount bytes.
+           return !(
+             v === null ||
+             v === undefined ||
+             (k === 'path' && gex) ||
+             (k === 'linkpath' && gex) ||
+-            k === 'global'
++            k === 'global' ||
++            (k === 'size' && typeof v === 'number' && v < 0)
+           )
+         }),
+       ),
+diff --git a/src/pax.ts b/src/pax.ts
+index 45fd605..9afe90a 100644
+--- a/src/pax.ts
++++ b/src/pax.ts
+@@ -197,7 +197,13 @@ const parseKVLine = (
+     case 'dev':
+     case 'ino':
+     case 'nlink':
+-    case 'size':
++    case 'size': {
++      const n = Number(v)
++      if (!isNaN(n) && n >= 0) {
++        set[k] = n
++      }
++      break
++    }
+     case 'mode':
+       set[k] = +v
+       break

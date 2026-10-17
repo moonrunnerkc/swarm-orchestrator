@@ -1,0 +1,17 @@
+diff --git a/src/Mime.ts b/src/Mime.ts
+index a28323b..6fd12c0 100644
+--- a/src/Mime.ts
++++ b/src/Mime.ts
+@@ -73,10 +73,10 @@ export default class Mime {
+     if (typeof path !== 'string') return null;
+ 
+     // Remove chars preceeding `/` or `\`
+-    const last = path.replace(/^.*[/\\]/, '').toLowerCase();
++    const last = path.replace(/^[\s\S]*[/\\]/, '').toLowerCase();
+ 
+     // Remove chars preceeding '.'
+-    const ext = last.replace(/^.*\./, '').toLowerCase();
++    const ext = last.replace(/[\s\S]*\./, '').toLowerCase();
+ 
+     const hasPath = last.length < path.length;
+     const hasDot = ext.length < last.length - 1;

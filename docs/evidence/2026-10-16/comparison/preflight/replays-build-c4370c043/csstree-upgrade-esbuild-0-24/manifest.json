@@ -1,0 +1,388 @@
+{
+  "schema": "swarm-verification-replay.v2",
+  "recordedAt": "2026-10-16T18:49:04.656Z",
+  "purpose": "before the freeze, with no model: Swarm's final verification of the scored task's known-good reference and of its unchanged base under the launch configuration, to show the product's path accepts a correct change and refuses none, and to measure how long that verification takes",
+  "plan": {
+    "path": "docs/evidence/2026-10-16/comparison/preflight-replays/csstree-upgrade-esbuild-0-24/plan.json",
+    "digest": "sha256:9d955e9a6a3199f21ce4f302d0aa41ea8a89eea83bc342fab3713ab2abf00107"
+  },
+  "product": {
+    "sourceCommit": "c4370c043a96e30ebeb3a9c8abeeb7cf13b55b73",
+    "cli": "/Users/brad/.cache/swarm-comparison/tools/swarm-c4370c043/dist/cli.js",
+    "cliDigest": "sha256:f14402355cbf92169f2fc1a59b521c2b362353ec860930e40a7c8d6d9940d61d",
+    "distTreeDigest": "sha256:c538ccae2b799bbb99dc054cba976a404000c6e1e6e099b917fd982894a44c88",
+    "node": "v24.15.0",
+    "platform": "darwin"
+  },
+  "task": {
+    "id": "csstree-upgrade-esbuild-0-24",
+    "set": "2026-10-15",
+    "stage": "A",
+    "repository": "csstree/csstree",
+    "base": "eab1c8e7819786d0ec53a744271c3b90fb0b5659",
+    "upstream": "7cfec03270088f42ee40db1c744e00efe2bc219e",
+    "projectTest": [
+      "npm",
+      "test"
+    ]
+  },
+  "contract": {
+    "regeneratedDigest": "sha256:ffe10839af615c367ccd575b88d016d0d1982dc0024a25e00721dfd5cb4f33b5",
+    "sealedInRetainedSessions": []
+  },
+  "model": "scripted endpoint (src/providers/scripted-endpoint.ts): declares the patch's files and claims completion; generates no code",
+  "scenarios": [
+    {
+      "id": "reference",
+      "kind": "reference",
+      "purpose": "the maintainer's change to the task's authorized paths, which every verdict must accept",
+      "candidate": {
+        "source": "the maintainer's change to package.json, package-lock.json",
+        "record": null,
+        "patchDigest": "sha256:ae6dc9f78d702c86faef6679a88173e7607767ad1d51b3ddac2889297e01b7f6",
+        "patchBytes": 49934,
+        "paths": [
+          "package-lock.json",
+          "package.json"
+        ]
+      },
+      "base": "37932627c128e26e7038e6a36d715e7c83a40827",
+      "visible": {
+        "passed": true,
+        "checkExit": 0,
+        "projectTestExit": 0,
+        "covers": "node acceptance/visible/check.mjs; then npm test",
+        "detailDigest": "sha256:9411893919bd418834ba645b1c91ea6ab220196289f3cb0dbc4ca3c33774bf54",
+        "detailTail": "visible check and project tests passed"
+      },
+      "swarm": {
+        "exitCode": 0,
+        "signal": null,
+        "acceptable": true,
+        "verdict": {
+          "version": 1,
+          "integrity": "unverified",
+          "signer": "untrusted",
+          "executionTrust": "restricted",
+          "policy": "pass",
+          "mechanical": "pass",
+          "behavioral": "pass",
+          "semantic": "unmeasured",
+          "task": "accepted",
+          "humanApproval": "not-required",
+          "reasons": {
+            "assessment": "final ratchet and bonds accepted the completed work",
+            "mechanical": "build, lint passed",
+            "policy": "file-set, placeholder, secret-scan, diff-budget passed",
+            "behavioral": "tests, task-acceptance passed",
+            "semantic": "no check here judges whether the change means what the task asked for, and nothing in this system is allowed to: a model's opinion is not a verdict",
+            "task": "pinned goal checks: accepted",
+            "executionTrust": "commands ran under a lexical path and program policy, which is not containment",
+            "humanApproval": "this run did nothing that needs a person's decision",
+            "signer": "no expected signer was matched, so the signature shows the bundle is unchanged since it was written and not who wrote it"
+          },
+          "acceptable": true
+        },
+        "finalVerification": {
+          "refusal": null,
+          "regression": "pass",
+          "unmeasured": false,
+          "advice": ""
+        },
+        "requirements": [
+          {
+            "id": "visible-check",
+            "description": "the visible acceptance check passes on a fresh checkout",
+            "status": "accepted",
+            "authoredBy": "user",
+            "detail": null
+          }
+        ],
+        "covers": {
+          "sealedRequirements": [
+            "visible-check: the visible acceptance check passes on a fresh checkout"
+          ],
+          "sealedChecks": [
+            "visible-check: node acceptance/visible/check.mjs"
+          ],
+          "sealedGates": [
+            {
+              "id": "build",
+              "command": "npm run --loglevel=error build",
+              "severity": "blocking"
+            },
+            {
+              "id": "typecheck",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "lint",
+              "command": "npm run --loglevel=error lint",
+              "severity": "blocking"
+            },
+            {
+              "id": "format",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "tests",
+              "command": "npm test",
+              "severity": "blocking"
+            },
+            {
+              "id": "file-set",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "placeholder",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "secret-scan",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "behaviour-probe",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "diff-budget",
+              "command": null,
+              "severity": "advisory"
+            },
+            {
+              "id": "task-acceptance",
+              "command": null,
+              "severity": "blocking"
+            }
+          ]
+        },
+        "sessionId": "20261016T184759-5291ac",
+        "contractDigest": "sha256:ffe10839af615c367ccd575b88d016d0d1982dc0024a25e00721dfd5cb4f33b5",
+        "sealedTestsGate": "npm test",
+        "independentVerification": {
+          "record": "sha256:165e2558a060ba2301ffb3872b48356441bdce750a1686eb7fadf2d155cf2465",
+          "verified": true,
+          "regression": "pass",
+          "task": "accepted",
+          "unmeasured": false,
+          "refusal": null,
+          "advice": "",
+          "checks": [
+            {
+              "id": "build",
+              "status": "passed",
+              "detail": "the command exited 0"
+            },
+            {
+              "id": "typecheck",
+              "status": "not-applicable",
+              "detail": "package.json declares no typecheck script"
+            },
+            {
+              "id": "lint",
+              "status": "passed",
+              "detail": "the command exited 0"
+            },
+            {
+              "id": "format",
+              "status": "not-applicable",
+              "detail": "package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging"
+            },
+            {
+              "id": "tests",
+              "status": "passed",
+              "detail": "the command exited 0"
+            }
+          ],
+          "goalChecks": [
+            {
+              "id": "visible-check",
+              "status": "accepted",
+              "detail": "command exited 0"
+            }
+          ]
+        },
+        "timing": {
+          "productRunMs": 26716,
+          "runMs": 25698,
+          "afterLastModelCallMs": 24851,
+          "finalVerificationMs": 7451
+        },
+        "stdoutDigest": "sha256:54296e9eecada41bf42dbefaf7c0bb19fa914711de78988246dfd41e9f079e46",
+        "stderrDigest": "sha256:b70409524b20758d8e47bdb90ed3d0e4209575f8368ee1513937dae21a2e29cc"
+      },
+      "hidden": {
+        "verdict": "pass",
+        "basis": "hidden tests, project tests and every structural or version requirement passed",
+        "covers": "the upstream commit's suite (npm run build-and-test), the authorized paths package.json, package-lock.json, the locked, installed and declared versions, and the project tests",
+        "detailTail": "esbuild 0.24.0 locked and installed\nesbuild declared exactly 0.24.0 in package.json and the lockfile root\npackage.json scripts.build unchanged\npackage.json scripts.bundle unchanged\npackage.json scripts.esm-to-cjs unchanged\npackage.json scripts.test unchanged\npackage.json dependencies unchanged"
+      }
+    },
+    {
+      "id": "unchanged-base",
+      "kind": "base",
+      "purpose": "the base with no change, which the sealed visible criterion must reject",
+      "candidate": {
+        "source": "no change",
+        "record": null,
+        "patchDigest": null,
+        "patchBytes": 0,
+        "paths": []
+      },
+      "base": "c59fa70f93d308d2856d03900d3619be78c156ed",
+      "visible": {
+        "passed": false,
+        "checkExit": 1,
+        "projectTestExit": 0,
+        "covers": "node acceptance/visible/check.mjs; then npm test",
+        "detailDigest": "sha256:dad0d666a9eea64d644ae261da283ed46707ca9c340ac6d9c51c8dbd916e3ca2",
+        "detailTail": "    at ModuleJob.run (node:internal/modules/esm/module_job:437:25)\n    at async node:internal/modules/esm/loader:639:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: '^0.14.53',\n  expected: '0.24.0',\n  operator: 'strictEqual',\n  diff: 'simple'\n}\n\nNode.js v24.15.0"
+      },
+      "swarm": {
+        "exitCode": 1,
+        "signal": null,
+        "acceptable": false,
+        "verdict": {
+          "version": 1,
+          "integrity": "unverified",
+          "signer": "untrusted",
+          "executionTrust": "restricted",
+          "policy": "pass",
+          "mechanical": "pass",
+          "behavioral": "fail",
+          "semantic": "unmeasured",
+          "task": "unjudged",
+          "humanApproval": "not-required",
+          "reasons": {
+            "assessment": "required checks unmet: task-acceptance; the gates settled escalated; nothing changed",
+            "mechanical": "build, lint passed",
+            "policy": "file-set, placeholder, secret-scan, diff-budget passed",
+            "behavioral": "task-acceptance failed",
+            "semantic": "no check here judges whether the change means what the task asked for, and nothing in this system is allowed to: a model's opinion is not a verdict",
+            "task": "final verification refused: esbuild must target exactly 0.24.0",
+            "executionTrust": "commands ran under a lexical path and program policy, which is not containment",
+            "humanApproval": "this run did nothing that needs a person's decision",
+            "signer": "no expected signer was matched, so the signature shows the bundle is unchanged since it was written and not who wrote it"
+          },
+          "acceptable": false
+        },
+        "finalVerification": {
+          "refusal": "esbuild must target exactly 0.24.0",
+          "regression": "unmeasured",
+          "unmeasured": false,
+          "advice": ""
+        },
+        "requirements": [
+          {
+            "id": "visible-check",
+            "description": "the visible acceptance check passes on a fresh checkout",
+            "status": "unjudged",
+            "authoredBy": "user",
+            "detail": null
+          }
+        ],
+        "covers": {
+          "sealedRequirements": [
+            "visible-check: the visible acceptance check passes on a fresh checkout"
+          ],
+          "sealedChecks": [
+            "visible-check: node acceptance/visible/check.mjs"
+          ],
+          "sealedGates": [
+            {
+              "id": "build",
+              "command": "npm run --loglevel=error build",
+              "severity": "blocking"
+            },
+            {
+              "id": "typecheck",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "lint",
+              "command": "npm run --loglevel=error lint",
+              "severity": "blocking"
+            },
+            {
+              "id": "format",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "tests",
+              "command": "npm test",
+              "severity": "blocking"
+            },
+            {
+              "id": "file-set",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "placeholder",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "secret-scan",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "behaviour-probe",
+              "command": null,
+              "severity": "blocking"
+            },
+            {
+              "id": "diff-budget",
+              "command": null,
+              "severity": "advisory"
+            },
+            {
+              "id": "task-acceptance",
+              "command": null,
+              "severity": "blocking"
+            }
+          ]
+        },
+        "sessionId": "20261016T184834-16f476",
+        "contractDigest": "sha256:ffe10839af615c367ccd575b88d016d0d1982dc0024a25e00721dfd5cb4f33b5",
+        "sealedTestsGate": "npm test",
+        "independentVerification": {
+          "record": "sha256:cb805f0203d11f23b9811d9bc9d1101998b4f92e9057928914729fc8675bba08",
+          "verified": false,
+          "regression": "unmeasured",
+          "task": "unjudged",
+          "unmeasured": false,
+          "refusal": "esbuild must target exactly 0.24.0",
+          "advice": "",
+          "checks": [],
+          "goalChecks": []
+        },
+        "timing": {
+          "productRunMs": 26844,
+          "runMs": 25900,
+          "afterLastModelCallMs": 8462,
+          "finalVerificationMs": 285
+        },
+        "stdoutDigest": "sha256:e180b99782a8a71d96a8ed40e52b00d293e64a2f8407161c5684dda02d89fc50",
+        "stderrDigest": "sha256:5cb660624635f4fe44f1a20d28e718d839348db7f74b74d67e3fc9634e3cd02c"
+      },
+      "hidden": {
+        "verdict": "fail",
+        "basis": "lockfile resolves esbuild to 0.14.53, not 0.24.0",
+        "covers": "the upstream commit's suite (npm run build-and-test), the authorized paths package.json, package-lock.json, the locked, installed and declared versions, and the project tests",
+        "detailTail": ""
+      }
+    }
+  ],
+  "harnessCommands": 74
+}

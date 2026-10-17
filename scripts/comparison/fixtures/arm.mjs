@@ -20,8 +20,15 @@
  * - `exit-unavailable`: exits with Swarm's "could not proceed" status (4) after one event;
  * - `chmod-runs`: writes the fix, then removes write permission from COMPARISON_FIXTURE_RUNS_DIR
  *   so the harness cannot persist the record;
- * - `external-kill`: kills itself with SIGTERM, a signal the harness did not send.
+ * - `external-kill`: kills itself with SIGTERM, a signal the harness did not send;
+ * - `escape`: starts a process in a group of its own that keeps the arm's output open, then
+ *   hangs, so the kill at the deadline cannot be confirmed (its pid is in `escaped.pid`);
+ * - `detach`: writes the fix and leaves a process in a group of its own working in the
+ *   workspace with its output closed, so only a search of the launch's directory finds it
+ *   (its pid is in `detached.pid`).
  */
+
+import { spawn } from "node:child_process";
 import {
   appendFileSync,
   chmodSync,
@@ -47,7 +54,10 @@ const words = process.argv.slice(2);
  * - `ignore-override`: the gate is the manifest's own `npm run --loglevel=error test`, which is
  *   what the product did before overrides were written;
  * - `prerequisite-missing`: the gate is the override's command and it fails for a browser that
- *   is not installed under the home it was given.
+ *   is not installed under the home it was given;
+ * - `ignore-severity`: a lint gate the swarm.toml declares advisory is planned blocking anyway.
+ *
+ * A `[gates.lint]` table with `severity = "advisory"` is reported as an advisory lint gate.
  */
 if (words[0] === "check") {
   const workspace = words[words.indexOf("--workspace") + 1];
@@ -72,6 +82,20 @@ if (words[0] === "check") {
             output: `browserType.launch: Executable doesn't exist at ${home}/Library/Caches/ms-playwright/chromium_headless_shell-1194/chrome-mac/headless_shell`,
           }
         : { command: override, status: "passed", detail: "the command exited 0" };
+  const lintAdvisory =
+    fault !== "ignore-severity" && /\[gates\.lint\][^[]*severity = "advisory"/.test(toml);
+  const lint = /\[gates\.lint\]/.test(toml)
+    ? [
+        {
+          id: "lint",
+          severity: lintAdvisory ? "advisory" : "blocking",
+          measures: {},
+          command: "npm run --loglevel=error lint",
+          status: "failed",
+          detail: "the command exited 1",
+        },
+      ]
+    : [];
   const failed = tests.status !== "passed";
   console.log(
     JSON.stringify({
@@ -80,7 +104,7 @@ if (words[0] === "check") {
       tree: null,
       conclusions: {
         command: { status: "ran", detail: tests.detail },
-        checks: [{ id: "tests", severity: "blocking", measures: {}, ...tests }],
+        checks: [{ id: "tests", severity: "blocking", measures: {}, ...tests }, ...lint],
         executionTrust: { mode: "restricted", detail: "fixture" },
         requirements: { status: "unmeasured", detail: "fixture" },
         challenges: { status: "none", detail: "fixture" },
@@ -120,7 +144,7 @@ const sentinels = existsSync(home)
 writeFileSync(join(home, `installed-by-${process.pid}`), "");
 appendFileSync(
   join(markers, "launches.log"),
-  `${arm} ${kind} ${process.pid} ${Date.now()} home=${home} found=${sentinels}\n`,
+  `${arm} ${kind} ${process.pid} ${Date.now()} home=${home} found=${sentinels}${arm === "swarm" ? ` max-tokens=${flag("--max-tokens")} max-wall-minutes=${flag("--max-wall-minutes")}` : ""} npm=${(process.env.PATH ?? "").split(":").find((entry) => entry.includes("/tools/npm-")) ?? "system"}\n`,
 );
 const heartbeat = join(markers, "heartbeat");
 writeFileSync(heartbeat, "");
@@ -209,6 +233,22 @@ switch (behavior) {
   case "external-kill":
     process.kill(process.pid, "SIGTERM");
     break;
+  case "escape": {
+    const escaped = spawn("sleep", ["120"], {
+      detached: true,
+      stdio: ["ignore", "inherit", "inherit"],
+    });
+    writeFileSync(join(markers, "escaped.pid"), String(escaped.pid));
+    break;
+  }
+  case "detach": {
+    write("export const add = (a, b) => a + b;\nexport const mul = (a, b) => a * b;\n");
+    const detached = spawn("sleep", ["120"], { cwd: workspace, detached: true, stdio: "ignore" });
+    detached.unref();
+    writeFileSync(join(markers, "detached.pid"), String(detached.pid));
+    finish(true);
+    break;
+  }
   default:
     throw new Error(`unknown fixture behavior ${behavior}`);
 }

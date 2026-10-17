@@ -31,7 +31,7 @@ streams are the packed blobs the records cite).
 - The three loop repairs from the retained traces all engaged live in launch 1 and cost no
   correctness: the spiral cut-off, the already-answered notice, the stall stop.
 - In launch 1's first correction the model call ran 276 seconds without returning until the
-  wall ended it. The server's stream probe ([stream-probe.json.gz](stream-probe.json.gz))
+  wall ended it. The server's stream probe ([stream-probe.json.gz](../packed-derived/gzip/) (packed in place; `node scripts/evidence-pack.mjs restore <that directory>` gives the files back))
   shows why the watcher cannot see such a call: rapid-mlx with the `qwen3_coder_xml` parser
   emits a tool call's arguments as one chunk per parameter value, so a spiral inside one
   unterminated parameter produces no delta until the output cap. The watcher reads text,

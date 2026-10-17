@@ -1,27 +1,36 @@
 import { z } from "zod";
 import type { AgentLoopOutcome } from "../core/loop.ts";
 import type { GatesEngineRun } from "../gates/engine.ts";
+import { justifiedRecords } from "../gates/gate-runner.ts";
 import type { JsonValue } from "./canonical-json.ts";
 import { asJsonValue } from "./canonical-json.ts";
 import type { EvidenceRecorder } from "./session.ts";
 import type { TaskContract } from "./task-contract.ts";
 import { type RunVerdict, runVerdict, runVerdictSchema } from "./verdict.ts";
 
+/** How a loop can stop: the lifecycle an assessment names, and the stop records that are a loop's. */
+const loopLifecycles = [
+  "completed",
+  "interrupted",
+  "max-steps",
+  "max-tokens",
+  "max-wall-time",
+  "model-error",
+  "output-cap",
+  "empty-response",
+  "stalled",
+] as const;
+
+/**
+ * v1 and v2 are the recorded policies of earlier runs and keep their meaning: any failed policy
+ * gate refuses. v4 is v2 with the contract optional and one more input, the advisory demands a
+ * verified worker claim answered; the bundled verifier re-derives each by its own rule.
+ */
 export const assessmentInputsSchema = z.object({
-  policy: z.enum(["run-acceptance-v1", "run-acceptance-v2"]),
+  policy: z.enum(["run-acceptance-v1", "run-acceptance-v2", "run-acceptance-v4"]),
   requiredChecks: z.array(z.string().min(1)).optional(),
   contractRecord: z.string().optional(),
-  lifecycle: z.enum([
-    "completed",
-    "interrupted",
-    "max-steps",
-    "max-tokens",
-    "max-wall-time",
-    "model-error",
-    "output-cap",
-    "empty-response",
-    "stalled",
-  ]),
+  lifecycle: z.enum(loopLifecycles),
   cancelled: z.boolean(),
   settled: z.enum(["green", "escalated"]),
   baseRatchetAccepted: z.boolean(),
@@ -30,6 +39,9 @@ export const assessmentInputsSchema = z.object({
   gateRecords: z.array(z.string()),
   baseRatchetRecord: z.string(),
   lifecycleRecord: z.string().nullable(),
+  justifications: z
+    .array(z.strictObject({ gateRecord: z.string(), claimRecord: z.string() }))
+    .optional(),
 });
 
 export async function recordRunAssessment(
@@ -41,7 +53,7 @@ export async function recordRunAssessment(
   contract?: TaskContract,
 ): Promise<RunVerdict> {
   const inputs = assessmentInputsSchema.parse({
-    policy: contract === undefined ? "run-acceptance-v1" : "run-acceptance-v2",
+    policy: "run-acceptance-v4",
     ...(contract === undefined
       ? {}
       : {
@@ -55,9 +67,17 @@ export async function recordRunAssessment(
                   ?.phase === "effective",
             )?.payloadDigest,
         }),
+    // The last stop of a loop. A repair attempt withheld for want of budget is recorded as a
+    // stop too, but it never ran a loop and its reason is not a lifecycle; naming it here put a
+    // record beside a lifecycle it does not carry, and the bundle's own verifier refused it.
     lifecycleRecord:
-      evidence.records().findLast((entry) => entry.type === "session-stopped")?.payloadDigest ??
-      null,
+      evidence.records().findLast((entry) => {
+        if (entry.type !== "session-stopped") return false;
+        const stopReason = (
+          evidence.payloads().get(entry.payloadDigest) as { stopReason?: unknown }
+        )?.stopReason;
+        return (loopLifecycles as readonly unknown[]).includes(stopReason);
+      })?.payloadDigest ?? null,
     lifecycle,
     cancelled,
     settled: gates.outcome.settled,
@@ -68,6 +88,7 @@ export async function recordRunAssessment(
     changedFiles: gates.outcome.finalCycle.measures.changedFiles ?? 0,
     gateRecords: gates.outcome.finalCycle.runs.map((run) => run.record),
     baseRatchetRecord: gates.outcome.baseComparison.ratchetRecord,
+    justifications: justificationsFor(evidence, gates),
   });
   const verdict = runVerdict({
     cycle: gates.outcome.finalCycle,
@@ -83,6 +104,17 @@ export async function recordRunAssessment(
     payload: { inputs, verdict: { ...verdict } } as JsonValue,
   });
   return verdict;
+}
+
+/** The final cycle's advisory demands that a verified worker claim answers, in run order. */
+function justificationsFor(evidence: EvidenceRecorder, gates: GatesEngineRun) {
+  const justified = justifiedRecords(evidence);
+  return gates.outcome.finalCycle.advisoryFailures.flatMap((run) => {
+    const claimRecord = justified.get(run.record);
+    return run.measures.justificationRequired === 1 && claimRecord !== undefined
+      ? [{ gateRecord: run.record, claimRecord }]
+      : [];
+  });
 }
 
 /** Project final goal acceptance onto the recorded worker verdict without replacing its assurances. */
