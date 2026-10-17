@@ -156,7 +156,7 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
               : defineTool({
                   name: "declare_planned_check",
                   description:
-                    "Pin one acceptance check, with the requirement it covers; call once per check, and again with the same id to replace that check. program is a short ES module whose default export takes one case's input and returns what the project gives for it; cases are inputs with the expected result (or throws: true). The harness runs the program once per case in a fresh checkout of the unchanged base before anything is implemented, compares each result with the expected one as JSON, and admits a change check only if the base gets at least one case wrong, a preserve check only if the base gets every case right. A requirement covered by a change check quotes the task's own words in quote.",
+                    "Pin one acceptance check, with the requirement it covers; call once per check, and again with the same id to replace that check. program is a short ES module whose default export takes one case's input and returns what the project gives for it; cases are inputs with the expected result (or throws: true). The harness runs the program once per case in a fresh checkout of the unchanged base before anything is implemented, compares each result with the expected one as JSON, and admits a change check only if the base gets at least one case wrong and at least one right (a case the task does not change), a preserve check only if the base gets every case right. A requirement covered by a change check quotes the task's own words in quote.",
                   inputSchema: plannedCheckInput,
                   kind: "evidence",
                   pathsFrom: () => [],
@@ -308,7 +308,9 @@ function plannedChecksPrompt(options: NonNullable<PlannerOptions["plannedChecks"
     "the task's own words that ask for it. Each check names its requirement and its purpose:",
     "change for behaviour the task asks to change, which the unchanged base must get wrong on at",
     "least one case, and preserve for behaviour the task keeps, which the base already gets right",
-    "on every case; keep the two kinds in separate checks. Its program is an ES module that",
+    "on every case; keep the two kinds in separate checks. A change check also holds at least one",
+    "case the task does not change, which the base gets right: it shows the program calls the",
+    "project correctly. Its program is an ES module that",
     "imports the project and default-exports a function of one case's input that returns a",
     "JSON-compatible value (undefined reads as null); the program runs from the repository root,",
     "so import project files with paths like ./src/... or ./dist/... relative to it. Do not",

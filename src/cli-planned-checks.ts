@@ -175,36 +175,46 @@ function expectedStdout(check: GoalContract["checks"][number]): string | null {
 }
 
 /**
- * Every case threw on the base, where the check expects none to: a program that cannot call
- * the project the way it means to, which reads as broken rather than as the missing change.
+ * Every case of a change check came out wrong on the base. A check of the change is admitted by
+ * the base getting the change wrong, and a program that cannot call the project at all (it
+ * constructs the project's object wrongly, imports the wrong thing, or throws) gets every case
+ * wrong as well, so the two read alike. A live planner's checks built their own instance of the
+ * class wrongly, answered null for everything, were admitted, and refused every compliant
+ * implementation. A change check therefore also holds a case the task does not change, which the
+ * base must get right: its control that the program observes the project correctly.
  */
-function threwEverywhere(check: GoalContract["checks"][number], seen: ObservedCheck): boolean {
+function wrongEverywhere(check: GoalContract["checks"][number], seen: ObservedCheck): boolean {
   const expected = expectedStdout(check);
-  if (expected === null || expected.includes('"threw":true')) return false;
-  const lines = seen.stdout.split("\n").filter((line) => line.length > 0);
-  return lines.length > 0 && lines.every((line) => line.endsWith('"threw":true}'));
+  if (expected === null) return false;
+  const want = expected.split("\n").filter((line) => line.length > 0);
+  const got = seen.stdout.split("\n");
+  return want.length > 0 && want.every((line, index) => got[index] !== line);
 }
 
 function decide(
   check: GoalContract["checks"][number],
   seen: ObservedCheck | undefined,
 ): PlannedCheckDecision {
-  const decision =
-    seen !== undefined && check.atBase === "fails" && seen.completed && threwEverywhere(check, seen)
-      ? {
-          check: check.id,
-          atBase: check.atBase,
-          record: seen.record,
-          observed: seen.status,
-          admitted: false,
-          reason:
-            "every case threw on the base, which shows a program that cannot call the project rather than the missing change",
-        }
-      : judgeAtBase(check, seen);
+  const uncontrolled =
+    seen !== undefined &&
+    check.atBase === "fails" &&
+    seen.completed &&
+    wrongEverywhere(check, seen);
+  const decision = uncontrolled
+    ? {
+        check: check.id,
+        atBase: "fails" as const,
+        record: seen.record,
+        observed: seen.status,
+        admitted: false,
+        reason:
+          "it gets every case wrong on the base, so nothing shows its program calls the project correctly; a change check also holds a case the task does not change, which the base gets right",
+      }
+    : judgeAtBase(check, seen);
   const broken =
     !decision.admitted &&
     seen !== undefined &&
-    (seen.status === "unjudged" || !seen.completed || threwEverywhere(check, seen));
+    (seen.status === "unjudged" || !seen.completed || uncontrolled);
   const expected = expectedStdout(check);
   const excerpt = decision.admitted
     ? null
@@ -215,6 +225,7 @@ function decide(
         : null;
   return { ...decision, broken, excerpt };
 }
+
 function judgeAtBase(
   check: GoalContract["checks"][number],
   seen: ObservedCheck | undefined,
