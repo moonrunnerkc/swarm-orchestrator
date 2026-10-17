@@ -302,6 +302,8 @@ function plannedChecksPrompt(options: NonNullable<PlannerOptions["plannedChecks"
     "so import project files with paths like ./src/... or ./dist/... relative to it. Do not",
     "build, install or print anything in the program: the harness prepares the checkout first.",
     options.preparation,
+    "Give each requirement one check of each purpose it needs, holding all of its cases, rather",
+    "than a check per case: every declaration costs a turn of the planning allowance.",
     "Each case gives the input and the expected result, or throws: true where the call must",
     "throw. The tool's arguments are JSON, so a line feed inside an input string is written \\n",
     "with one backslash, exactly as in any JSON string; \\\\n would be a backslash followed by n.",

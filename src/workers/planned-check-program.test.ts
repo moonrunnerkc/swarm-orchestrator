@@ -106,7 +106,7 @@ describe("a planned check as the harness runs it", () => {
     expect(ran.stderr).toMatch(/case 1 threw: TypeError: not a number/);
   });
 
-  it("reads undefined as null", () => {
+  it("reads undefined as null at every depth, as the tool's description says", () => {
     const ran = run(
       built({
         program: "export default () => undefined;\n",
@@ -114,6 +114,15 @@ describe("a planned check as the harness runs it", () => {
       }),
     );
     expect(ran.stdout).toBe(ran.expected);
+    // A live planner returned { size: header.size } and expected { size: null } for an undefined
+    // size; with the key dropped instead, its checks rejected every compliant implementation.
+    const nested = run(
+      built({
+        program: "export default () => ({ size: undefined, list: [undefined] });\n",
+        cases: [{ input: 1, expected: { size: null, list: [null] } }],
+      }),
+    );
+    expect(nested.stdout).toBe(nested.expected);
   });
 
   it("exits with its own status when the program does not load, naming why", () => {
