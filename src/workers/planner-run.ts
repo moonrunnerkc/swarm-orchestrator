@@ -260,7 +260,7 @@ function plannedChecksPrompt(options: NonNullable<PlannerOptions["plannedChecks"
     "You write the acceptance checks a coding task is implemented and repaired against, before",
     "any implementation exists. You do not implement the task. Read the relevant source, tests",
     "and manifest with the read-only tools, then call declare_planned_check once for each check",
-    "and finish with a one-line summary and no tool calls.",
+    "(several calls may go in one turn) and finish with a one-line summary and no tool calls.",
     "Derive every expected result from the task text and the project's existing documented or",
     "tested behaviour, never from a guess about how the change will be written. Cover each rule",
     "the task states where it is easy to get wrong: its boundaries, the combinations of the",
