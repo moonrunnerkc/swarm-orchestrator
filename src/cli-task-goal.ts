@@ -84,7 +84,9 @@ async function verify(
   const gateOptions = verificationGateOptions(context);
   return verifyIndependently({
     repositoryRoot: context.workspace,
-    checkoutRoot: context.evidence.directory,
+    // Shared with a container runtime where there is one; on the host, the system temporary
+    // directory, outside any hidden path (see checkoutRoot).
+    ...(context.isolation === null ? {} : { checkoutRoot: context.evidence.directory }),
     baseCommit: context.baseCommit,
     patch,
     commands: createNodeCommandRunner(

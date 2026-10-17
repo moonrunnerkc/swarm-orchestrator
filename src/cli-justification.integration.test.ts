@@ -480,3 +480,48 @@ describe("an authorized upgrade's regenerated lockfile", () => {
     expect(ran.stdout).toMatch(/generated line\(s\) in package-lock\.json counted apart/);
   }, 200_000);
 });
+
+describe("a project whose own tools skip hidden paths", () => {
+  /**
+   * css-select and domutils exclude every path with a dot-named component from Biome, so in a
+   * final verification checkout under ~/.swarm their lint and npm test checked no files and
+   * failed at the base; a correct change was refused. On the host that checkout is now outside
+   * any hidden directory.
+   */
+  it("verifies the final tree in a checkout its tools can see", async () => {
+    const workspace = await sizedWorkspace();
+    const strict =
+      "node -e \"process.exit(process.cwd().split('/').some((part) => part.startsWith('.')) ? 1 : 0)\" && node --test";
+    const manifest = JSON.parse(readFileSync(join(workspace.directory, "package.json"), "utf8"));
+    await writeFile(
+      join(workspace.directory, "package.json"),
+      JSON.stringify({ ...manifest, scripts: { test: strict } }),
+    );
+    await writeFile(join(workspace.directory, "swarm.toml"), "");
+    await run(
+      "git",
+      ["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qam", "strict tests"],
+      {
+        cwd: workspace.directory,
+      },
+    );
+    const base = (
+      await run("git", ["rev-parse", "HEAD"], { cwd: workspace.directory })
+    ).stdout.trim();
+    const small: ScriptedTurnSource[] = [
+      edits[0] as ScriptedTurnSource,
+      {
+        toolCalls: [
+          { name: "write", input: { path: "value.mjs", content: "export const value = 2;\n" } },
+        ],
+      },
+      { text: "The value is 2." },
+    ];
+    const ran = await swarm({ ...workspace, base }, small);
+
+    expect(ran.stdout).toContain(
+      "final verification of the exact tree in a fresh checkout: regression pass",
+    );
+    expect(ran.code).toBe(0);
+  }, 200_000);
+});

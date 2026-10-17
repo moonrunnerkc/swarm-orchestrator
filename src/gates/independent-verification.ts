@@ -271,7 +271,13 @@ export interface IndependentVerificationOptions {
    * registry access and belongs on the chain whether or not a goal contract was supplied.
    */
   readonly evidence?: EvidenceRecorder;
-  /** A harness-owned root shared with the selected runtime, outside the producing workspace. */
+  /**
+   * A harness-owned root shared with the selected runtime, outside the producing workspace.
+   * Absent, the system temporary directory. On the host, callers leave it absent: a checkout
+   * under ~/.swarm sits inside a hidden directory, and a project whose own tools skip every
+   * dot-named path component (css-select's and domutils' Biome configurations exclude **\/.*)
+   * then checks no files and fails its lint and tests at the base, for any change.
+   */
   readonly checkoutRoot?: string;
   readonly baseCommit: string;
   readonly patch: string;
