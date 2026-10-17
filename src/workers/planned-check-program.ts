@@ -230,7 +230,10 @@ function contractCheck(check: PlannedChecksDeclaration["checks"][number]): GoalC
  * Planners quoting long sentences elided their middles, and a verbatim-only rule refused them.
  */
 function fragments(quote: string): readonly string[] {
+  // A quote wrapped in its own quotation marks is still the task's words: a live planner wrapped
+  // every quote so, and each was refused for the marks alone.
   return folded(quote)
+    .replace(/^["'`]+|["'`]+$/g, "")
     .split(/\s*(?:\.\.\.|\u2026)\s*/)
     .map((one) => one.trim())
     .filter((one) => one.length > 0);

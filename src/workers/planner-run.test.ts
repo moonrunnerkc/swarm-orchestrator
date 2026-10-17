@@ -287,7 +287,8 @@ describe("planned checks", () => {
     purpose: "change",
     requirement: "boundary",
     description: "10 is small",
-    quote: "every n up to ... including 10",
+    // Wrapped in its own quotation marks and elided, as live planners quoted.
+    quote: '"every n up to ... including 10"',
     program,
     cases: [{ input: 10, expected: "small" }],
     why: "the task says 10 is small",
