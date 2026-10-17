@@ -72,7 +72,7 @@ const bound = (text: string) =>
  * What a rejected command-line check saw against what it expected, for a check the worker may
  * see: the exit status, with what the process wrote to stderr where it was not the expected one,
  * and each stream assertion that did not hold, with the captured text beside it, line by line
- * where the expected text has several. Without this the repair brief said only that the
+ * where the expected text is made of lines. Without this the repair brief said only that the
  * assertions were evaluated, so the worker had nothing to repair from; and a check that crashed
  * on the candidate read as an empty answer, with the crash itself left out. A withheld check
  * never gets this: its expectations are the part the worker must not see.
@@ -94,8 +94,8 @@ export function describeCliMismatch(
       stream.assertions
         .filter((assertion) => !matches(stream.actual, [assertion]))
         .map((assertion) =>
-          assertion.kind === "equals" && assertion.value.trimEnd().includes("\n")
-            ? `${stream.name} differs from the expected ${assertion.value.trimEnd().split("\n").length} line(s): ${differingLines(assertion.value, stream.actual).join("; ")}`
+          assertion.kind === "equals" && assertion.value.includes("\n")
+            ? `${stream.name} differs from the expected ${assertion.value.replace(/\n$/, "").split("\n").length} line(s): ${differingLines(assertion.value, stream.actual).join("; ")}`
             : `${stream.name} ${assertion.kind === "equals" ? "should equal" : "should contain"} ` +
               `${bound(assertion.value)} but was ${bound(stream.actual)}`,
         ),
