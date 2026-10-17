@@ -144,7 +144,9 @@ type PlannedCase = z.infer<typeof caseSchema>;
  * What the program or the project prints is moved to stderr, so stdout carries only results. A
  * thrown case is a result, not a crash: it prints `threw` and its message goes to stderr. A
  * program that does not load exits 3, which the harness reads as a check that never ran rather
- * than as a wrong answer.
+ * than as a wrong answer. Undefined reads as null wherever it sits, as the tool's description
+ * says: dropped from an object instead, a live planner's `{ size: null }` met `{}` and its checks
+ * refused every compliant implementation.
  */
 export const plannedCheckRunner = [
   'import { rmSync, writeFileSync } from "node:fs";',
@@ -180,7 +182,7 @@ export const plannedCheckRunner = [
   "  let line;",
   "  try {",
   "    const result = await run(input);",
-  '    line = { input, result: JSON.parse(JSON.stringify(result === undefined ? null : result) ?? "null") };',
+  '    line = { input, result: JSON.parse(JSON.stringify(result, (key, value) => (value === undefined ? null : value)) ?? "null") };',
   "  } catch (error) {",
   '    console.error("case " + (index + 1) + " threw: " + (error?.stack ?? error));',
   "    line = { input, threw: true };",
