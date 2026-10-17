@@ -65,6 +65,7 @@ import {
 } from "./cli-task-contract.ts";
 import { logReward, priceTask } from "./cli-task-cost.ts";
 import {
+  acceptanceCheckTool,
   baseVerifier,
   describeGoalPreflight,
   finalizeTaskGoal,
@@ -761,6 +762,9 @@ async function run(options: RunCommand): Promise<number> {
       approvalMode: settings.approval,
       abortSignal: modelWork.signal,
       homeDir: homedir(),
+      ...(goalContext === undefined || goal === undefined
+        ? {}
+        : { checkTool: acceptanceCheckTool({ ...goalContext, contract: goal }) }),
       ...(gateOptions === undefined
         ? {}
         : {

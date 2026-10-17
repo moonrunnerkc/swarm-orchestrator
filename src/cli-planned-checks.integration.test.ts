@@ -426,6 +426,71 @@ describe("planned checks through the ordinary command line", () => {
     expect(code, stdout.slice(-3000)).toBe(0);
   }, 200_000);
 
+  it("lets a repair rerun the check that refused it and probe the project without writing a file", async () => {
+    const probe = "import { classify } from './value.mjs';\nexport default (n) => classify(n);\n";
+    const { endpoint, stdout } = await swarm(
+      [
+        declaring(
+          [
+            { id: "boundary", description: "10 is small", quote },
+            { id: "above", description: "11 and above stay big" },
+          ],
+          [
+            plannedCheck("boundary", "boundary", "change", [
+              { input: 9, expected: "small" },
+              { input: 10, expected: "small" },
+            ]),
+            plannedCheck("above", "above", "preserve", [
+              { input: 11, expected: "big" },
+              { input: 50, expected: "big" },
+            ]),
+          ],
+        ),
+        { text: "Pinned." },
+        { text: "Plan: move the boundary.", toolCalls: [declare] },
+        // Wrong: the boundary moved too far.
+        {
+          toolCalls: [
+            write("export function classify(n) {\n  return n <= 20 ? 'small' : 'big';\n}\n"),
+          ],
+        },
+        { text: "Done." },
+        { toolCalls: [{ name: "run_check", input: { check: "above" } }] },
+        { toolCalls: [{ name: "run_check", input: { program: probe, inputs: [10, 11, 21] } }] },
+        {
+          toolCalls: [
+            write("export function classify(n) {\n  return n <= 10 ? 'small' : 'big';\n}\n"),
+          ],
+        },
+        { text: "Repaired." },
+      ],
+      false,
+      ["--attempts", "1"],
+    );
+
+    const toolAnswers = endpoint.requests
+      .map((request) => JSON.stringify(request))
+      .filter((text) => text.includes("run_check"));
+    const rerun = toolAnswers.find((text) => text.includes("case by case"));
+    // The check exactly as the gate ran it, with the case that refused the change.
+    expect(rerun, stdout.slice(-3000)).toContain("generated check above: rejected");
+    expect(rerun).toMatch(
+      /input 11: expected \{\\"input\\":11,\\"result\\":\\"big\\"\}; got \{\\"input\\":11,\\"result\\":\\"small\\"\} {2}<- differs/,
+    );
+    // The probe's own results, with no file written or left behind.
+    const probed = toolAnswers.find((text) => text.includes("Your program over the project"));
+    // The wrong candidate's own answers: 11 small, which is the fault, and 21 big.
+    expect(probed).toContain('{\\"input\\":11,\\"result\\":\\"small\\"}');
+    expect(probed).toContain('{\\"input\\":21,\\"result\\":\\"big\\"}');
+    const result = resultOf(stdout);
+    expect(result?.outcome?.status).toBe("partially-checked");
+    expect(result?.outcome?.changedFiles).toEqual(["value.mjs"]);
+    const { stdout: left } = await run("git", ["status", "--porcelain", "--untracked-files=all"], {
+      cwd: join(scratch, "workspace"),
+    });
+    expect(left.trim()).toBe("M value.mjs");
+  }, 200_000);
+
   it("keeps a correct change that a wrong generated expectation disputes, and reports it unresolved, not refused", async () => {
     // The task keeps 11 big; the planner's check says 11 becomes small. The base gets 9 right and
     // 10 and 11 wrong, so the base control admits it: nothing there can tell its 11 is wrong.

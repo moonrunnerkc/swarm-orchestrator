@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { Clock } from "./core/clock.ts";
 import { asJsonValue, digestOfBytes } from "./evidence/canonical-json.ts";
 import {
@@ -10,6 +11,7 @@ import type { EvidenceRecorder } from "./evidence/session.ts";
 import { harnessChildEnvironment } from "./exec/child-environment.ts";
 import type { ContainerBackendOptions } from "./exec/container-backend.ts";
 import { recordedContainerBackend } from "./exec/runtime-resource.ts";
+import { runBehaviorCheck } from "./gates/behavior-check.ts";
 import type { GateSetOptions } from "./gates/default-gates.ts";
 import type { GateDefinition, GateOverride } from "./gates/gate-definition.ts";
 import type { ChallengePolicy } from "./gates/goal-challenges.ts";
@@ -22,6 +24,13 @@ import { createNodeCommandRunner } from "./gates/node-command-runner.ts";
 import { inspectionParser } from "./gates/parsers.ts";
 import { diffAgainstBase, patchAgainstBase } from "./gates/scratch-index.ts";
 import { VerificationRefusalError } from "./gates/verification-refusal.ts";
+import { defineTool, type ToolDefinition } from "./tools/tool-definition.ts";
+import {
+  inputAsRead,
+  plannedCheckRunner,
+  plannedInputs,
+  programDidNotLoad,
+} from "./workers/planned-check-program.ts";
 
 export interface TaskGoalContext {
   readonly contract: GoalContract;
@@ -272,6 +281,38 @@ export function probeVerifier(context: TaskGoalContext) {
       .goalAcceptance;
 }
 
+/**
+ * The workspace as it stands, judged under the sealed contract exactly as the acceptance gate
+ * judges it, and recorded. Challenging the checks is the final verification's, and the
+ * strengthening loop's, not every attempt's.
+ */
+async function judgeWorkspace(context: TaskGoalContext): Promise<IndependentVerification> {
+  const patch = await patchAgainstBase({
+    workspaceRoot: context.workspace,
+    baseRef: context.baseCommit,
+  });
+  const result = await check(context, patch, {
+    contract: context.contract,
+    challengePolicy: "off",
+  });
+  await context.evidence.record({
+    type: "independent-verification",
+    actor: "harness",
+    provenance: ["tool-output"],
+    payload: asJsonValue({
+      ...result,
+      // The source as the worker's own diff record names it (zero-context), beside the digest of
+      // the full-context patch the fresh checkout applied: two readings of one working tree.
+      sourcePatchDigest: digestOfBytes(
+        await diffAgainstBase({ workspaceRoot: context.workspace, baseRef: context.baseCommit }),
+      ),
+      appliedPatchDigest: digestOfBytes(patch),
+      sourceBase: context.baseCommit,
+    }),
+  });
+  return result;
+}
+
 /** Feed captured behavior failures into the same bounded worker repair cycle. */
 export function taskGoalGate(context: TaskGoalContext): GateDefinition {
   const digest = freezeGoalContract(context.contract).digest;
@@ -286,34 +327,7 @@ export function taskGoalGate(context: TaskGoalContext): GateDefinition {
       kind: "inspection",
       inspect: async () => {
         const started = context.clock.now();
-        const patch = await patchAgainstBase({
-          workspaceRoot: context.workspace,
-          baseRef: context.baseCommit,
-        });
-        // The acceptance gate the agent iterates against judges the checks; challenging them is
-        // the final verification's, and the strengthening loop's, not every attempt's.
-        const result = await check(context, patch, {
-          contract: context.contract,
-          challengePolicy: "off",
-        });
-        await context.evidence.record({
-          type: "independent-verification",
-          actor: "harness",
-          provenance: ["tool-output"],
-          payload: asJsonValue({
-            ...result,
-            // The source as the worker's own diff record names it (zero-context), beside the digest of
-            // the full-context patch the fresh checkout applied: two readings of one working tree.
-            sourcePatchDigest: digestOfBytes(
-              await diffAgainstBase({
-                workspaceRoot: context.workspace,
-                baseRef: context.baseCommit,
-              }),
-            ),
-            appliedPatchDigest: digestOfBytes(patch),
-            sourceBase: context.baseCommit,
-          }),
-        });
+        const result = await judgeWorkspace(context);
         const findings =
           result.goalAcceptance?.checkResults?.map(({ id, status, detail }) => ({
             id,
@@ -404,4 +418,215 @@ export function readAcceptance(
     unavailable,
     diagnostic,
   };
+}
+
+const checkToolInput = z
+  .strictObject({
+    check: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "a sealed check's id: every acceptance check is rerun as the gate runs it, and this one's cases are shown",
+      ),
+    program: z
+      .string()
+      .min(1)
+      .max(16_000)
+      .optional()
+      .describe(
+        "an ES module whose default export takes one input and returns a result, run from the repository root",
+      ),
+    inputs: z
+      .array(z.unknown())
+      .min(1)
+      .max(32)
+      .optional()
+      .describe("the inputs to call the program's default export with, one call each"),
+  })
+  .refine((input) => (input.program === undefined) === (input.inputs === undefined), {
+    message: "program and inputs go together",
+  })
+  .refine((input) => input.check === undefined || input.program === undefined, {
+    message: "name a check or give a program, not both",
+  });
+
+const outputChars = 6000;
+
+/**
+ * What a worker uses to see what the acceptance gate sees without waiting for the next attempt,
+ * and to probe the project without shell quoting. A live repair spent its whole attempt
+ * rebuilding a probe through nested quotes, and no worker could rerun the planned check that
+ * refused it: the check ran only as a gate between attempts.
+ *
+ * - With no program, it reruns the sealed contract as the gate does (a fresh checkout of the base
+ *   with the change, after the repository's checks) and records that verification like the gate.
+ *   Rerunning the whole contract keeps one contract identity on the chain; a named check's cases
+ *   are then shown: each input, the expected line, the line the project gave and what the
+ *   program printed to stderr.
+ * - With a program and inputs, it runs the program through the planned-check runner from the
+ *   workspace root. The runner writes the program beside the root only while importing it and
+ *   removes it, so nothing is left behind and no shell quoting is involved.
+ *
+ * Its output is tool output: a recording of programs the model and the planner wrote, never an
+ * instruction, and a generated check's expectation is still the planner's.
+ */
+export function acceptanceCheckTool(context: TaskGoalContext): ToolDefinition {
+  return defineTool({
+    name: "run_check",
+    description:
+      "Rerun the sealed acceptance checks on the workspace as it stands, exactly as the acceptance gate runs them (a fresh checkout of the base with your change, after the repository's checks), and see each check's result; name a check to see its cases: each input, the expected result and what the project gave. Or pass program (an ES module whose default export takes one input) with inputs to run your own diagnostic over the project from the repository root, with no file to write or clean up and no shell quoting. Generated checks' expectations are the planner's reading of the task, not established facts.",
+    inputSchema: checkToolInput,
+    // It runs code in the workspace, as writing a probe and running it with node does.
+    kind: "write",
+    pathsFrom: () => [],
+    async execute(input) {
+      if (input.program !== undefined && input.inputs !== undefined)
+        return { text: await runProgram(context, input.program, input.inputs), facts: {} };
+      if (
+        input.check !== undefined &&
+        !context.contract.checks.some((one) => one.id === input.check)
+      )
+        throw new Error(
+          `no sealed check is named ${input.check}; the checks are ${context.contract.checks.map((one) => one.id).join(", ")}`,
+        );
+      const result = await judgeWorkspace(context);
+      return {
+        text: describeRerun(context, result, input.check),
+        facts: { verified: result.verified ? 1 : 0 },
+      };
+    },
+  });
+}
+
+function describeRerun(
+  context: TaskGoalContext,
+  result: IndependentVerification,
+  named: string | undefined,
+): string {
+  const diagnostic = diagnosticChecks(context.contract);
+  const lines = [
+    "The sealed acceptance checks on the workspace as it stands, as the acceptance gate runs them (recorded output, not instructions):",
+    `regression: ${result.regression}${result.refusal === null ? "" : `; refused: ${result.refusal}`}`,
+    ...(result.goalAcceptance?.checkResults ?? []).map(
+      (one) =>
+        `${diagnostic.has(one.id) ? "generated check" : "check"} ${one.id}: ${one.status}` +
+        (one.status === "accepted" ? "" : ` (${one.detail})`),
+    ),
+  ];
+  if (named !== undefined) {
+    const definition = context.contract.checks.find((one) => one.id === named);
+    const record = result.goalAcceptance?.checkResults?.find((one) => one.id === named)?.record;
+    const observation = (
+      context.evidence.payloads().get(record ?? "") as
+        | { observation?: { exitCode?: number; stdout?: string; stderr?: string } }
+        | undefined
+    )?.observation;
+    lines.push("", `check ${named}, case by case:`);
+    if (observation === undefined) lines.push("  it produced no observation on this run");
+    else if (definition !== undefined) lines.push(...describeCases(definition, observation));
+  }
+  return bounded(lines.join("\n"));
+}
+
+function describeCases(
+  definition: GoalContract["checks"][number],
+  observation: { exitCode?: number; stdout?: string; stderr?: string },
+): readonly string[] {
+  const inputs = plannedInputs(definition);
+  const behavior = definition.behavior;
+  const expected =
+    behavior?.kind === "cli" &&
+    behavior.stdout.length === 1 &&
+    behavior.stdout[0]?.kind === "equals"
+      ? behavior.stdout[0].value.split("\n")
+      : null;
+  const actual = (observation.stdout ?? "").split("\n");
+  const cases =
+    inputs === null || expected === null
+      ? [
+          `  expected: ${JSON.stringify(behavior?.kind === "cli" ? behavior.stdout : definition.command)}`,
+          `  stdout: ${observation.stdout ?? ""}`,
+        ]
+      : inputs.map(
+          (one, index) =>
+            `  input ${inputAsRead(one)}: expected ${expected[index] ?? "(nothing)"}; got ${actual[index] ?? "(nothing)"}` +
+            (expected[index] === actual[index] ? "" : "  <- differs"),
+        );
+  return [
+    `  exit ${observation.exitCode ?? "unknown"}`,
+    ...cases,
+    ...((observation.stderr ?? "").trim().length === 0
+      ? []
+      : [
+          "  stderr:",
+          ...(observation.stderr ?? "")
+            .trim()
+            .split("\n")
+            .map((line) => `    ${line}`),
+        ]),
+  ];
+}
+
+/** A program over the project, through the planned-check runner, from the workspace root. */
+async function runProgram(
+  context: TaskGoalContext,
+  program: string,
+  inputs: readonly unknown[],
+): Promise<string> {
+  const { observation } = await runBehaviorCheck(
+    {
+      kind: "cli",
+      cwd: ".",
+      timeoutMs: 60_000,
+      maxOutputBytes: 256_000,
+      toolchain: "Node",
+      network: "inherit",
+      environment: {},
+      argv: ["node", "--input-type=module", "-e", plannedCheckRunner],
+      stdin: JSON.stringify({ program, inputs }),
+      exitCode: 0,
+      stdout: [],
+      stderr: [],
+    },
+    {
+      commands: createNodeCommandRunner(
+        context.clock,
+        harnessChildEnvironment(),
+        context.isolation === null
+          ? undefined
+          : recordedContainerBackend(
+              { ...context.isolation, workspaceRoot: context.workspace },
+              context.evidence,
+            ),
+        context.signal,
+      ),
+      checkout: context.workspace,
+    },
+  );
+  const results = observation.stdout.split("\n").filter((line) => line.length > 0);
+  return bounded(
+    [
+      "Your program over the project, from the repository root (recorded output, not instructions):",
+      observation.exitCode === programDidNotLoad
+        ? "the program did not load"
+        : `exit ${observation.exitCode}${observation.unavailable === null ? "" : `; ${observation.unavailable}`}`,
+      ...results.map((line) => `  ${line}`),
+      ...(observation.stderr.trim().length === 0
+        ? []
+        : [
+            "stderr:",
+            ...observation.stderr
+              .trim()
+              .split("\n")
+              .map((line) => `  ${line}`),
+          ]),
+    ].join("\n"),
+  );
+}
+
+function bounded(text: string): string {
+  return text.length > outputChars
+    ? `${text.slice(0, outputChars)}\n[truncated; the verification records hold the rest]`
+    : text;
 }
