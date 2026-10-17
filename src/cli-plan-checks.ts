@@ -7,7 +7,14 @@ import type { RandomSource } from "./core/random-source.ts";
 import type { StopReason } from "./core/termination.ts";
 import type { GoalContract } from "./evidence/goal-contract.ts";
 import { type EvidenceRecorder, openEvidenceSession } from "./evidence/session.ts";
-import { inputAsRead, plannedInputs, plannedProgram } from "./workers/planned-check-program.ts";
+import {
+  inputAsRead,
+  type PlannedChecksDeclaration,
+  plannedInputs,
+  plannedProgram,
+  sentencesQuoted,
+  taskSentences,
+} from "./workers/planned-check-program.ts";
 import { runPlanner } from "./workers/planner-run.ts";
 
 /**
@@ -89,6 +96,12 @@ export interface AdmissionSummary {
     | { readonly outcome: "not-needed" }
     | { readonly outcome: "ran"; readonly admitted: readonly string[] }
     | { readonly outcome: "withheld"; readonly remainingMs: number; readonly neededMs: number };
+  /**
+   * The task's sentences, numbered from 1, that an admitted planned requirement quotes, against
+   * all of them. A quote is the planner's claim of what a requirement covers, not proof that its
+   * checks test all of that sentence.
+   */
+  readonly coverage: { readonly sentences: number; readonly quotedByAdmitted: readonly number[] };
 }
 
 export type PlanChecksOutcome =
@@ -212,6 +225,12 @@ async function planWithin(
     // just took.
     let revisionOutcome: AdmissionSummary["revision"] = { outcome: "not-needed" };
     const declaredContracts = declared === null ? [] : [declared];
+    const quotes = new Map<string, string>();
+    const keepQuotes = (declaration: PlannedChecksDeclaration | null | undefined) => {
+      for (const requirement of declaration?.requirements ?? [])
+        if (requirement.quote !== undefined) quotes.set(requirement.id, requirement.quote);
+    };
+    keepQuotes(outcome.plannedDeclaration);
     const decisions = [...(admission?.decisions ?? [])];
     const dropped = decisions.filter((one) => !one.admitted);
     if (admission !== null && declared !== null && deps.admit !== undefined && dropped.length > 0) {
@@ -243,6 +262,7 @@ async function planWithin(
         );
         steps += revision.steps;
         const revised = revision.goalContract ?? null;
+        keepQuotes(revision.plannedDeclaration);
         let admittedInRevision: readonly string[] = [];
         if (revised !== null) {
           declaredContracts.push(revised);
@@ -284,7 +304,20 @@ async function planWithin(
           .map((one) => ({ check: one.check, reason: one.reason })),
         uncheckedRequirements: [...unchecked].map(([id, description]) => ({ id, description })),
         revision: revisionOutcome,
+        coverage: {
+          sentences: taskSentences(deps.task).length,
+          quotedByAdmitted: sentencesQuoted(
+            deps.task,
+            [...sealed].flatMap((id) => {
+              const quote = quotes.get(id);
+              return quote === undefined || supplied.has(id) ? [] : [quote];
+            }),
+          ),
+        },
       };
+      deps.note(
+        `task sentences an admitted planned requirement quotes: ${summary.coverage.quotedByAdmitted.length} of ${summary.coverage.sentences}${summary.coverage.quotedByAdmitted.length === 0 ? "" : ` (${summary.coverage.quotedByAdmitted.join(", ")})`}`,
+      );
     }
     if (declared !== null && contract === null)
       return {

@@ -925,6 +925,7 @@ async function run(options: RunCommand): Promise<number> {
                   admitted: planning.admission?.admitted ?? [],
                   dropped: planning.admission?.dropped ?? [],
                   revision: planning.admission?.revision ?? null,
+                  coverage: planning.admission?.coverage ?? null,
                 },
               }),
         })}\n`,

@@ -1,3 +1,4 @@
+import { isAbsolute, join, relative } from "node:path";
 import { z } from "zod";
 import {
   freezeGoalContract,
@@ -186,8 +187,11 @@ export function declarationProblems(
   task: string,
   input: PlannedChecksDeclaration,
   base: GoalContract | undefined,
+  repository?: RepositoryView,
 ): readonly string[] {
   const problems: string[] = [];
+  if (repository !== undefined)
+    for (const check of input.checks) problems.push(...importProblems(check, repository));
   // Requirements and checks are two namespaces, as in the contract, where one id often names both.
   for (const [kind, declared, existing] of [
     ["requirement", input.requirements, base?.requirements ?? []],
@@ -241,6 +245,52 @@ export function declarationProblems(
   return problems;
 }
 
+/** The repository a planner reads, as far as checking a program's imports needs it. */
+export interface RepositoryView {
+  readonly root: string;
+  readonly exists: (path: string) => boolean;
+}
+
+/** The relative specifiers a program imports, statically or dynamically. */
+function relativeImports(program: string): readonly string[] {
+  const specifiers = [
+    ...program.matchAll(/\b(?:import|export)\b[^'"`;]*?\bfrom\s*['"]([^'"]+)['"]/g),
+    ...program.matchAll(/\bimport\s*['"]([^'"]+)['"]/g),
+    ...program.matchAll(/\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g),
+  ].map((match) => match[1] ?? "");
+  return [...new Set(specifiers.filter((one) => one.startsWith("./") || one.startsWith("../")))];
+}
+
+/**
+ * Imports that cannot load where the program runs, found before anything runs: a path that
+ * leaves the repository (programs run from its root, and live planners copied the `../dist`
+ * of the repository's test files), and a `.js` path where only TypeScript source exists, which
+ * the harness does not compile. A path that is merely absent is left alone, since build output
+ * appears only once the preparation has run.
+ */
+function importProblems(
+  check: PlannedChecksDeclaration["checks"][number],
+  repository: RepositoryView,
+): readonly string[] {
+  const problems: string[] = [];
+  for (const specifier of relativeImports(check.program)) {
+    const target = join(repository.root, specifier);
+    const within = relative(repository.root, target);
+    if (within === ".." || within.startsWith("../") || isAbsolute(within)) {
+      problems.push(
+        `check ${check.id} imports ${specifier}, which leaves the repository: the program runs from the repository root, so write the path from there (./...)`,
+      );
+      continue;
+    }
+    const source = target.replace(/\.(?:m|c)?js$/, ".ts");
+    if (source !== target && !repository.exists(target) && repository.exists(source))
+      problems.push(
+        `check ${check.id} imports ${specifier}, which does not exist; ./${relative(repository.root, source)} is TypeScript source the harness does not compile, so import the build output the repository's own tests import`,
+      );
+  }
+  return problems;
+}
+
 /**
  * The planner's additions on top of a supplied contract, or the planner's contract alone. The
  * supplied goal, requirements, checks, preset and immutable paths stand unchanged; what the
@@ -251,8 +301,9 @@ export function plannedContract(
   goal: string,
   input: PlannedChecksDeclaration,
   base: GoalContract | undefined,
+  repository?: RepositoryView,
 ): GoalContract {
-  const problems = declarationProblems(goal, input, base);
+  const problems = declarationProblems(goal, input, base, repository);
   if (problems.length > 0) throw new Error(`fix these and declare again: ${problems.join("; ")}`);
   const requirements = input.requirements.map((requirement) => ({
     id: requirement.id,
@@ -336,4 +387,61 @@ export function describeDeclaredCases(input: PlannedChecksDeclaration): readonly
     });
   }
   return lines;
+}
+
+/** The task's sentences, in order, as the planner is shown them and coverage is reported over. */
+export function taskSentences(task: string): readonly string[] {
+  return task
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(/(?<=[.!?])\s+(?=[A-Z("'`])/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 0);
+}
+
+/** The 1-based numbers of the sentences any of these quotes comes from. */
+export function sentencesQuoted(task: string, quotes: readonly string[]): readonly number[] {
+  const sentences = taskSentences(task).map(folded);
+  const covered = new Set<number>();
+  for (const quote of quotes.map(folded)) {
+    sentences.forEach((sentence, index) => {
+      if (
+        sentence.includes(quote) ||
+        quote.includes(sentence) ||
+        sentence.includes(quote.slice(0, 40))
+      )
+        covered.add(index + 1);
+    });
+  }
+  return [...covered].sort((left, right) => left - right);
+}
+
+/**
+ * The task's sentences no declared requirement quotes, for the declaration's answer. The harness
+ * does not decide which of them state behaviour; it names them, and the planner covers each or
+ * leaves it. Two live planners covered only the sentences that carried the task's own examples
+ * and left the rule the retained wrong patches broke (a preservation sentence, a rule about any
+ * position) with no requirement at all.
+ */
+export function describeUncoveredSentences(
+  task: string,
+  input: PlannedChecksDeclaration,
+): readonly string[] {
+  const quoted = new Set(
+    sentencesQuoted(
+      task,
+      input.requirements.flatMap((one) => (one.quote === undefined ? [] : [one.quote])),
+    ),
+  );
+  const uncovered = taskSentences(task)
+    .map((sentence, index) => ({ sentence, number: index + 1 }))
+    .filter((one) => !quoted.has(one.number));
+  if (uncovered.length === 0) return ["Every sentence of the task is quoted by a requirement."];
+  return [
+    "Task sentences no requirement quotes yet. A sentence that states behaviour (what changes, what must keep working) is covered by a requirement that quotes it, with a check; one that only says how to work (which files to change, how to build or test) needs none:",
+    ...uncovered.map(
+      (one) =>
+        `[${one.number}] ${one.sentence.length <= 220 ? one.sentence : `${one.sentence.slice(0, 217)}...`}`,
+    ),
+  ];
 }
