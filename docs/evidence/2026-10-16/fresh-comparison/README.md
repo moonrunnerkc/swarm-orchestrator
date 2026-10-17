@@ -3,9 +3,18 @@
 **Decision under the frozen rule ([protocol.md](protocol.md)): no demonstrated benefit.** On
 every decision measure Swarm was behind or level:
 
-- **Deliveries:** OpenCode correctly delivered 8 of 8 launches and Swarm 7 of 8.
-- **False completion claims:** Swarm made one, on node-tar, where its own acceptance passed a
-  patch the hidden oracle rejects. OpenCode made none.
+- **Deliveries, scored by the frozen oracle:** OpenCode 8 of 8 launches, Swarm 7 of 8. These are
+  the scores and they stand. They are not counts of patches that meet the task: the coverage
+  audit below found one more delivered patch from each tool, css-select repetition 2, that the
+  task text refutes. Against the stated rules where audited, that is 7 of 8 for OpenCode and 6 of
+  8 for Swarm (Swarm's node-tar repetition 2 and css-select repetition 2; OpenCode's css-select
+  repetition 2). Only css-select was audited; the other counts are frozen-oracle passes.
+- **False completion claims, by the frozen oracle:** Swarm made one, on node-tar, where its own
+  acceptance passed a patch the hidden oracle rejects. OpenCode made none. Both css-select
+  repetition-2 reports also claimed completion over a patch the audit refutes; the count stays as
+  defined against the frozen oracle.
+- **Configuration:** Swarm ran its default configuration, with planned checks (`--plan-checks`)
+  disabled. This comparison did not evaluate the planned-check workflow.
 - **Cost:** Swarm took about twice the end-to-end time per correct delivery and about 17 per cent
   more tokens per correct delivery.
 - **Corrections and killed launches:** none for either tool.
@@ -35,8 +44,8 @@ in [stage-a/claims-review.json](stage-a/claims-review.json).
 | measure | Swarm | OpenCode | Swarm's result |
 | --- | --- | --- | --- |
 | correct patches (frozen oracle) | 7 of 8 | 8 of 8 | loss |
-| correctly delivered | 7 of 8 | 8 of 8 | loss |
-| false completion claims | 1 | 0 | loss |
+| correctly delivered (frozen oracle) | 7 of 8 | 8 of 8 | loss |
+| false completion claims (frozen oracle) | 1 | 0 | loss |
 | scripted corrections | 0 | 0 | tie |
 | launches killed at the wall | 0 | 0 | tie |
 | end-to-end minutes, all 8 launches | 27.1 | 16.1 | loss |
@@ -106,7 +115,9 @@ reading agrees with the maintainer.
 | OpenCode repetition 2 | 2 | no-language; `lang=""` did not match `:lang("")` |
 
 Both tools delivered one css-select patch that the frozen oracle accepts and the task text
-refutes. The scores stand as recorded, and these are reported as the oracle's gap.
+refutes. The scores stand as recorded, and these are reported as the oracle's gap. Those two
+deliveries are counted as correct only under the frozen oracle; neither meets the task's stated
+rules, and each tool's report claimed completion for it.
 
 ## Instrument notes
 
@@ -120,6 +131,16 @@ refutes. The scores stand as recorded, and these are reported as the oracle's ga
 - **Swarm's preparation** (1.7 minutes over 8 launches) includes its base preflight of the sealed
   check, which OpenCode does not run.
 - **No sandbox for either tool.** The security result is tar's tested property only.
+
+## What these failures do and do not show
+
+None of the failed or refuted deliveries is attributed to a limit of the model. Swarm's node-tar
+repetition 2 passed its own acceptance because that acceptance held no check of the other pax
+fields, which is a product gap the planned-check work of 2026-10-17 addresses
+([docs/evidence/2026-10-17/planned-check-live/](../../2026-10-17/planned-check-live/README.md)).
+The css-select gaps were in the frozen oracle. With one local model, two runs per task and those
+instrument gaps, the record cannot separate what the model could do from what the products and
+the oracle let through.
 
 ## What remains uncertain
 
