@@ -149,8 +149,8 @@ const plannerTurns: ScriptedTurnSource[] = [
         ]),
         // Says it detects the change, yet the base already gets it right.
         plannedCheck("mislabelled", "boundary", "change", [{ input: 3, expected: "small" }]),
-        // Never calls the project at all: the base gets every case wrong, as the missing change
-        // would, and only the control case it lacks would have shown that.
+        // Loads the project and never calls it: the base gets every case wrong, as the missing
+        // change would, and only the control case it lacks would have shown that.
         plannedCheck(
           "uncontrolled",
           "boundary",
@@ -159,7 +159,7 @@ const plannerTurns: ScriptedTurnSource[] = [
             { input: 9, expected: "small" },
             { input: 10, expected: "small" },
           ],
-          "export default () => null;\n",
+          "import { classify } from './value.mjs';\nexport default () => classify && null;\n",
         ),
         // Imports a module that does not exist: it never loads on the base.
         plannedCheck(
@@ -198,6 +198,7 @@ const repairs: ScriptedTurnSource = (request) => {
 async function swarm(
   turns: readonly ScriptedTurnSource[],
   built = false,
+  extraArgs: readonly string[] = [],
 ): Promise<{ endpoint: ScriptedEndpoint; stdout: string; code: number }> {
   const endpoint = await startScriptedEndpoint({ modelId: "stub", turns });
   endpoints.push(endpoint);
@@ -226,6 +227,7 @@ async function swarm(
         "--no-tui",
         "--no-open-evidence",
         "--json",
+        ...extraArgs,
       ],
       {
         cwd: directory,
@@ -245,9 +247,16 @@ async function swarm(
 interface ResultLine {
   schema: string;
   runId?: string;
-  verdict?: { acceptable?: boolean };
+  verdict?: { acceptable?: boolean; reasons?: Record<string, string> };
   outcome?: {
-    requirements?: { id: string; status: string; authoredBy: string }[];
+    status?: string;
+    requirements?: {
+      id: string;
+      status: string;
+      authoredBy: string;
+      source?: string;
+      generatedChecks?: { id: string; status: string }[];
+    }[];
     uncheckedRequirements?: { id: string }[];
   };
   plannedChecks?: {
@@ -255,7 +264,11 @@ interface ResultLine {
     admitted: string[];
     dropped: { check: string; reason: string }[];
     revision: { outcome: string } | null;
-    coverage: { sentences: number; quotedByAdmitted: number[] } | null;
+    coverage: {
+      sentences: number;
+      quotedByAdmitted: number[];
+      quotedWithoutCheck?: number[];
+    } | null;
   };
 }
 
@@ -285,8 +298,12 @@ describe("planned checks through the ordinary command line", () => {
     ]);
 
     const result = resultOf(stdout);
-    expect(result?.verdict?.acceptable, stdout.slice(-4000)).toBe(true);
-    expect(code).toBe(0);
+    // The repaired change is what the task asks, and the supplied suite decides its requirement.
+    // The planned requirements are exercised only by generated checks, which agree with it but
+    // cannot establish the task: partially checked, and the exit status says so.
+    expect(result?.outcome?.status, stdout.slice(-4000)).toBe("partially-checked");
+    expect(result?.verdict?.acceptable).toBe(false);
+    expect(code).toBe(1);
 
     // The planning chain holds the admission: two admitted, two dropped, each with its reason.
     const planning = join(home, ".swarm", "sessions", `${result?.runId}-plan`);
@@ -339,7 +356,7 @@ describe("planned checks through the ordinary command line", () => {
         },
       ],
       revision: { outcome: "ran", admitted: [] },
-      coverage: { sentences: 1, quotedByAdmitted: [1] },
+      coverage: { sentences: 1, quotedByAdmitted: [1], quotedWithoutCheck: [] },
     });
 
     // The revision brief carried the load failure and the program it came from, and not the base
@@ -353,17 +370,25 @@ describe("planned checks through the ordinary command line", () => {
     expect(revisionBrief).toContain("inputs as read: 3");
     expect(revisionBrief).not.toMatch(/mislabelled[^-]*on the base:/);
 
-    // Sealed: the supplied requirement and the two planned ones that kept a check. The planned
-    // requirement whose only check never loaded is named as unchecked, not sealed and not met.
+    // Sealed: the supplied requirement, decided by its check, and the planned ones, decided by
+    // none. The planned requirement whose only check never loaded quotes the task, so it stays
+    // sealed and visible with no check rather than vanishing with its check.
     expect(
-      (result?.outcome?.requirements ?? []).map((one) => [one.id, one.status, one.authoredBy]),
+      (result?.outcome?.requirements ?? []).map((one) => [
+        one.id,
+        one.status,
+        one.authoredBy,
+        one.source,
+        one.generatedChecks?.map((check) => [check.id, check.status]) ?? null,
+      ]),
     ).toEqual([
-      ["suite", "accepted", "user"],
-      ["boundary", "accepted", "model"],
-      ["above", "accepted", "model"],
+      ["suite", "accepted", "user", "supplied", null],
+      ["boundary", "unjudged", "model", "planned", [["boundary", "accepted"]]],
+      ["above", "unjudged", "model", "planned", [["above", "accepted"]]],
+      ["loads", "unjudged", "model", "planned", []],
     ]);
-    expect(result?.outcome?.uncheckedRequirements?.map((one) => one.id)).toEqual(["loads"]);
-    expect(stdout).toMatch(/unchecked loads: .*not sealed or judged/);
+    expect(result?.outcome?.uncheckedRequirements).toBeUndefined();
+    expect(stdout).toMatch(/no check +loads: .*\[planned from the task/);
     // The repair turn was asked, and with the line that differed: it is the turn that wrote the fix.
     expect(endpoint.played()).toBe(8);
     // Planning's spend is on the machine stream with the implementation's and the repair's, where
@@ -399,6 +424,59 @@ describe("planned checks through the ordinary command line", () => {
       coverage: null,
     });
     expect(code, stdout.slice(-3000)).toBe(0);
+  }, 200_000);
+
+  it("keeps a correct change that a wrong generated expectation disputes, and reports it unresolved, not refused", async () => {
+    // The task keeps 11 big; the planner's check says 11 becomes small. The base gets 9 right and
+    // 10 and 11 wrong, so the base control admits it: nothing there can tell its 11 is wrong.
+    const correct = "export function classify(n) {\n  return n <= 10 ? 'small' : 'big';\n}\n";
+    const keepsTheCode: ScriptedTurnSource = (request) =>
+      JSON.stringify(request).includes("These generated checks disagree with the change")
+        ? { text: "The task keeps 11 big, so the expectation for 11 is wrong; the code stays." }
+        : { text: "The brief did not say the check is the planner's reading." };
+    const { stdout, code } = await swarm(
+      [
+        declaring(
+          [{ id: "boundary", description: "10 is small", quote }],
+          [
+            plannedCheck("boundary", "boundary", "change", [
+              { input: 9, expected: "small" },
+              { input: 10, expected: "small" },
+              { input: 11, expected: "small" },
+            ]),
+          ],
+        ),
+        { text: "Pinned." },
+        { text: "Plan: move the boundary.", toolCalls: [declare] },
+        { toolCalls: [write(correct)] },
+        { text: "Done." },
+        keepsTheCode,
+      ],
+      false,
+      ["--attempts", "1"],
+    );
+
+    expect(stdout).toMatch(/admitted boundary \(should fail there\)/);
+    const result = resultOf(stdout);
+    expect(result?.outcome?.status, JSON.stringify(result?.verdict)).toBe("unresolved");
+    expect(code).toBe(1);
+    expect(
+      result?.outcome?.requirements?.map((one) => [
+        one.id,
+        one.status,
+        one.generatedChecks?.map((check) => check.status) ?? null,
+      ]),
+    ).toEqual([
+      ["suite", "accepted", null],
+      ["boundary", "unjudged", ["rejected"]],
+    ]);
+    // Not refused: no requirement is unmet, the outcome names the dispute, and the correct code
+    // was not rewritten to fit the expectation.
+    expect(stdout).not.toContain("UNMET");
+    expect(stdout).toMatch(/outcome: unresolved \(a generated check disagrees/);
+    expect(stdout).toMatch(/DISPUTED boundary: 10 is small/);
+    expect(stdout).toContain("next: read the disputed requirement(s) boundary against the task");
+    expect(readFileSync(join(scratch, "workspace", "value.mjs"), "utf8")).toBe(correct);
   }, 200_000);
 
   it("revises a check that never loaded and a preserved case the base contradicts, from what each did there", async () => {
@@ -460,16 +538,18 @@ describe("planned checks through the ordinary command line", () => {
     expect(stdout).toMatch(/admitted boundary \(should fail there\)/);
     expect(stdout).toMatch(/admitted above \(should pass there\)/);
     const result = resultOf(stdout);
+    // The revision declared the reopened requirement again under its own id.
     expect(result?.outcome?.requirements?.map((one) => [one.id, one.status])).toEqual([
       ["suite", "accepted"],
-      ["boundary", "accepted"],
-      ["above", "accepted"],
+      ["boundary", "unjudged"],
+      ["above", "unjudged"],
     ]);
     expect(result?.plannedChecks?.revision).toEqual({
       outcome: "ran",
       admitted: ["boundary", "above"],
     });
-    expect(code).toBe(0);
+    expect(result?.outcome?.status).toBe("partially-checked");
+    expect(code).toBe(1);
   }, 200_000);
 
   it("lets the planner run its checks on the base inside its own loop, and admits what it finished on", async () => {
@@ -516,7 +596,8 @@ describe("planned checks through the ordinary command line", () => {
       { text: "Done." },
     ]);
 
-    expect(code, stdout.slice(-3000)).toBe(0);
+    expect(code, stdout.slice(-3000)).toBe(1);
+    expect(resultOf(stdout)?.outcome?.status).toBe("partially-checked");
     expect(stdout).toContain(
       "admission reuses the planner's own last base run of these exact checks",
     );
@@ -568,6 +649,7 @@ describe("planned checks through the ordinary command line", () => {
     expect(stdout).not.toContain("revising the planned checks");
     // The planner was told what the harness prepares, from the run's own configuration.
     expect(plannerBriefs(endpoint)[0]).toMatch(/fresh checkout of the unchanged base.*build/);
-    expect(code, stdout.slice(-3000)).toBe(0);
+    expect(resultOf(stdout)?.outcome?.status, stdout.slice(-3000)).toBe("partially-checked");
+    expect(code).toBe(1);
   }, 200_000);
 });

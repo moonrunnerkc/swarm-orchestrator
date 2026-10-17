@@ -5,6 +5,7 @@ import type { GateCycle } from "./gates/gate-runner.ts";
 import type {
   FinalVerificationOutcome,
   InterventionCounts,
+  OutcomeStatus,
   RequirementOutcome,
   RunOutcomeReport,
   SetupUsage,
@@ -20,7 +21,10 @@ import { formatCost, formatTokens } from "./tui/evidence-panel.ts";
  * evidence panel that follows it is where the deeper record is; this is the summary a reader
  * should not have to assemble from it.
  */
-export type { RequirementOutcome } from "./run-outcome-shape.ts";
+export type { OutcomeStatus, RequirementOutcome } from "./run-outcome-shape.ts";
+
+/** The gate the sealed goal contract is judged through, whose requirements are reported apart. */
+export const acceptanceGateId = "task-acceptance";
 
 export interface RunOutcomeInput {
   readonly task: string;
@@ -49,12 +53,65 @@ export interface RunOutcomeInput {
   readonly resumable: boolean;
 }
 
+/**
+ * The run's one reading, from harness records only. A refusal by anything that decides comes
+ * first; a generated check's disagreement comes next and is named as unresolved, because nothing
+ * says whether the check or the change is wrong; a requirement nothing decided leaves the run
+ * partially checked. Only `accepted` and `unjudged` exit 0, and both need the verdict acceptable.
+ */
+export function outcomeStatus(
+  input: Pick<
+    RunOutcomeInput,
+    "verdict" | "lifecycle" | "gates" | "requirements" | "finalVerification" | "changedFiles"
+  >,
+): OutcomeStatus {
+  const requirements = input.requirements ?? [];
+  if (input.verdict.acceptable)
+    return input.requirements === null
+      ? "unjudged"
+      : requirements.every((one) => one.status === "accepted")
+        ? "accepted"
+        : "partially-checked";
+  const refusedByWhatDecides =
+    input.lifecycle === "interrupted" ||
+    requirements.some((one) => one.status === "rejected") ||
+    input.gates.blockingFailures.some((run) => run.gateId !== acceptanceGateId) ||
+    input.verdict.policy === "fail" ||
+    // Read off the gates rather than the verdict's behavioural dimension, which the acceptance
+    // gate is part of: a generated check's disagreement there is not "nothing executed it".
+    (input.changedFiles.length > 0 &&
+      !input.gates.runs.some(
+        (run) =>
+          run.capability === "dynamic" &&
+          run.status === "passed" &&
+          run.gateId !== acceptanceGateId,
+      )) ||
+    input.finalVerification?.refusal != null ||
+    input.finalVerification?.regression === "fail";
+  if (refusedByWhatDecides || input.requirements === null) return "not-accepted";
+  if (requirements.some((one) => one.generatedChecks?.some((check) => check.status === "rejected")))
+    return "unresolved";
+  if (requirements.some((one) => one.status === "unjudged")) return "partially-checked";
+  return "not-accepted";
+}
+
+const statusLine: Record<OutcomeStatus, string> = {
+  accepted: "accepted",
+  unjudged: "gates passed; the task itself was not judged (no requirement was sealed)",
+  "partially-checked":
+    "partially checked (nothing that decides refused it; not every requirement was established)",
+  unresolved:
+    "unresolved (a generated check disagrees with the change; nothing decides which is wrong)",
+  "not-accepted": "not accepted",
+};
+
 export function describeRunOutcome(input: RunOutcomeInput): readonly string[] {
   const lines: string[] = [];
   const say = (line = "") => lines.push(line);
-  const ok = input.verdict.acceptable;
+  const status = outcomeStatus(input);
+  const ok = status === "accepted" || status === "unjudged";
   say();
-  say(`outcome: ${ok ? "accepted" : "not accepted"}`);
+  say(`outcome: ${statusLine[status]}`);
   say(`  requested: ${firstLine(input.task, 160)}`);
   say(
     `  verdict: task ${input.verdict.task}, regression ${input.verdict.behavioral}, ` +
@@ -69,14 +126,21 @@ export function describeRunOutcome(input: RunOutcomeInput): readonly string[] {
     );
   } else {
     const counts = countBy(input.requirements, (one) => one.status);
+    const planned = input.requirements.filter((one) => one.source === "planned");
     say(
       `  requirements: ${input.requirements.length} sealed, ${counts.accepted ?? 0} met, ` +
         `${counts.rejected ?? 0} unmet, ${counts.unjudged ?? 0} unjudged` +
-        (input.requirements.some((one) => one.authoredBy === "model")
-          ? " (model-authored criteria are acceptance instruments, not independent ground truth)"
-          : ""),
+        (planned.length === 0
+          ? input.requirements.some((one) => one.authoredBy === "model")
+            ? " (model-authored criteria are acceptance instruments, not independent ground truth)"
+            : ""
+          : `; ${planned.length} read from the task by the planner, which only generated checks exercise`),
     );
     for (const requirement of input.requirements) {
+      if (requirement.source === "planned") {
+        describePlanned(requirement, say);
+        continue;
+      }
       const mark =
         requirement.status === "accepted"
           ? "met"
@@ -91,10 +155,15 @@ export function describeRunOutcome(input: RunOutcomeInput): readonly string[] {
             : ` (${firstLine(requirement.detail, 140)})`),
       );
     }
+    say(
+      planned.length === 0
+        ? "  scope: these are the requirements that were sealed; nothing checked the rest of the task's wording"
+        : "  scope: a task sentence no requirement quotes was not tracked, and a quote says what a requirement is about, not that its checks test all of it",
+    );
   }
   for (const requirement of input.uncheckedRequirements ?? [])
     say(
-      `    unchecked ${requirement.id}: ${firstLine(requirement.description, 100)} [model-authored; no planned check held its base control, so it was not sealed or judged]`,
+      `    unsupported ${requirement.id}: ${firstLine(requirement.description, 100)} [the planner's own, quoting no task sentence; no planned check held its base control, so it was not sealed]`,
     );
 
   say(
@@ -163,10 +232,34 @@ export function describeRunOutcome(input: RunOutcomeInput): readonly string[] {
   );
 
   if (!ok) {
-    say(`  blocked by: ${firstLine(blockingReason(input.verdict), 400)}`);
+    if (status === "not-accepted")
+      say(`  blocked by: ${firstLine(blockingReason(input.verdict), 400)}`);
     say(`  next: ${nextAction(input)}`);
   }
   return lines;
+}
+
+/** A planned requirement: what it quotes, and what its generated checks did, never a verdict. */
+function describePlanned(requirement: RequirementOutcome, say: (line: string) => void): void {
+  const checks = requirement.generatedChecks ?? [];
+  const disagreeing = checks.filter((one) => one.status === "rejected");
+  const mark = disagreeing.length > 0 ? "DISPUTED" : checks.length === 0 ? "no check" : "unjudged";
+  say(
+    `    ${mark.padEnd(8)} ${requirement.id}: ${firstLine(requirement.description, 100)}` +
+      (requirement.quote == null
+        ? " [planned; quotes no task sentence]"
+        : ` [planned from the task: "${firstLine(requirement.quote, 80)}"]`),
+  );
+  if (checks.length === 0) {
+    say("             no generated check held its base control, so nothing exercised it");
+    return;
+  }
+  for (const check of checks)
+    say(
+      `             generated check ${check.id}: ${check.status === "accepted" ? "agrees with the change" : check.status === "rejected" ? "disagrees" : check.status}` +
+        (check.status === "accepted" ? "" : ` (${firstLine(check.detail, 120)})`) +
+        "; its expected results are the planner's",
+    );
 }
 
 function nextAction(input: RunOutcomeInput): string {
@@ -175,6 +268,22 @@ function nextAction(input: RunOutcomeInput): string {
   const unmet = (input.requirements ?? []).filter((one) => one.status === "rejected");
   if (unmet.length > 0)
     return `review the change for ${unmet.map((one) => one.id).join(", ")}, then run the task again or finish it by hand; the sealed checks are in the bundle`;
+  const status = outcomeStatus(input);
+  const planned = (input.requirements ?? []).filter((one) => one.source === "planned");
+  if (status === "unresolved")
+    return `read the disputed requirement(s) ${planned
+      .filter((one) => one.generatedChecks?.some((check) => check.status === "rejected"))
+      .map((one) => one.id)
+      .join(
+        ", ",
+      )} against the task: either the generated check expects something the task does not ask for, or the change is incomplete; decide, then fix the code or keep it`;
+  if (status === "partially-checked")
+    return `review the change against the requirement(s) nothing decided (${(
+      input.requirements ?? []
+    )
+      .filter((one) => one.status === "unjudged")
+      .map((one) => one.id)
+      .join(", ")}); a check you supply in --goal-contract can decide them on a later run`;
   if (input.finalVerification?.refusal !== null && input.finalVerification !== null)
     return "fix what the refusal names (the environment, the lockfile or the path the run promised not to touch), then run again";
   const owed = input.gates.advisoryFailures.filter(
@@ -234,11 +343,15 @@ export function requirementOutcomes(
       .filter((check) => check.status !== "accepted")
       .map((check) => [check.id, check.detail]),
   );
+  const results = new Map(
+    (verification?.goalAcceptance?.checkResults ?? []).map((check) => [check.id, check]),
+  );
   return contract.requirements.map((requirement) => {
     const status = statuses.get(requirement.id);
     const detail = requirement.checks
       .map((id) => details.get(id))
       .find((one): one is string => typeof one === "string" && one.length > 0);
+    const planned = requirement.planned;
     return {
       id: requirement.id,
       description: requirement.description,
@@ -246,12 +359,29 @@ export function requirementOutcomes(
         status === "accepted" || status === "rejected" || status === "unjudged"
           ? status
           : "unjudged",
-      authoredBy: requirement.checks.some(
-        (id) => contract.checks.find((check) => check.id === id)?.author === "model",
-      )
-        ? "model"
-        : "user",
+      authoredBy:
+        planned !== undefined ||
+        requirement.checks.some(
+          (id) => contract.checks.find((check) => check.id === id)?.author === "model",
+        )
+          ? "model"
+          : "user",
       detail: detail ?? null,
+      ...(planned === undefined
+        ? { source: "supplied" as const }
+        : {
+            source: "planned" as const,
+            quote: planned.quote ?? null,
+            generatedChecks: planned.diagnostics.map((id) => {
+              const result = results.get(id);
+              const known = ["accepted", "rejected", "unjudged"] as const;
+              return {
+                id,
+                status: known.find((one) => one === result?.status) ?? ("not-run" as const),
+                detail: result?.detail ?? "no result was recorded for it",
+              };
+            }),
+          }),
     };
   });
 }
