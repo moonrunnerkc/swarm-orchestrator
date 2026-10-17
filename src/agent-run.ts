@@ -174,6 +174,12 @@ export interface AgentTaskOptions {
    * offered nothing, so the single-agent tool set is unchanged (phase 6 stays phase 6).
    */
   readonly trail?: ToolDefinition;
+  /**
+   * Reruns the sealed acceptance checks as the gate does, or a diagnostic program over the
+   * project, offered where a goal contract is sealed and the contract allows the shell, since it
+   * runs code in the workspace as a shell command would.
+   */
+  readonly checkTool?: ToolDefinition;
   readonly coordination?: readonly ToolDefinition[];
   /**
    * Set only where a task is being tried several ways at once, so the attempts can diverge
@@ -417,6 +423,10 @@ async function executeAgentTask(
       (options.contract !== undefined && !options.contract.allowedTools.includes("trail"))
         ? []
         : [options.trail]),
+      ...(options.checkTool === undefined ||
+      (options.contract !== undefined && !options.contract.allowedTools.includes("shell"))
+        ? []
+        : [options.checkTool]),
     ],
   });
 
@@ -1191,6 +1201,12 @@ async function resolveWithModel(
     // the same thing, and "prior checked attempt: 1" sent a repair back to a failure two attempts old.
     `The workspace is in the state gate cycle ${request.cycle.attempt} checked${request.rejected === null ? "" : `; attempt ${request.rejected.attempt} since then was rolled back`}. Remaining model allowance: ${loopDependencies.budget.maxTokens} tokens and ${loopDependencies.budget.maxWallTimeMs} ms.`,
     `Immutable requirements: ${JSON.stringify(options.contract?.immutablePaths ?? [])}.`,
+    ...(options.checkTool === undefined ||
+    (options.contract !== undefined && !options.contract.allowedTools.includes("shell"))
+      ? []
+      : [
+          "run_check reruns the acceptance checks exactly as the gate runs them and shows a named check's cases; given a program and inputs, it runs your own diagnostic over the project with no file to write and no shell quoting.",
+        ]),
     "",
     account,
     "",
