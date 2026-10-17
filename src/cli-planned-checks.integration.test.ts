@@ -224,6 +224,7 @@ interface ResultLine {
     admitted: string[];
     dropped: { check: string; reason: string }[];
     revision: { outcome: string } | null;
+    coverage: { sentences: number; quotedByAdmitted: number[] } | null;
   };
 }
 
@@ -292,6 +293,7 @@ describe("planned checks through the ordinary command line", () => {
         },
       ],
       revision: { outcome: "ran", admitted: [] },
+      coverage: { sentences: 1, quotedByAdmitted: [1] },
     });
 
     // The revision brief carried the load failure and the program it came from, and not the base
@@ -348,6 +350,7 @@ describe("planned checks through the ordinary command line", () => {
       admitted: [],
       dropped: [],
       revision: null,
+      coverage: null,
     });
     expect(code, stdout.slice(-3000)).toBe(0);
   }, 200_000);

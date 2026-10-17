@@ -5,10 +5,14 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
+  declarationProblems,
+  describeUncoveredSentences,
   type PlannedChecksDeclaration,
   plannedChecksInput,
   plannedContract,
   programDidNotLoad,
+  sentencesQuoted,
+  taskSentences,
 } from "./planned-check-program.ts";
 
 /**
@@ -151,4 +155,102 @@ it("offers the model a tool schema that admits object inputs and results", () =>
     ],
   });
   expect(parsed.success).toBe(true);
+});
+
+describe("the task's sentences and what the planner's quotes cover", () => {
+  // An excerpt of the node-tar development task's text, verbatim.
+  const tar = Promise.resolve(
+    "Refuse negative sizes in src/header.ts and src/pax.ts. In Pax.parse, a 'size' record is kept only when its numeric value is zero or greater: 'size=-1000' and a non-numeric value leave size undefined, while 'size=1000' gives 1000 and 'size=0' gives 0. Every other field (uid, gid, mode, the times and so on) keeps its current parsing, negative values included, and nothing else changes. Change only src/header.ts and src/pax.ts; do not edit tests.",
+  );
+
+  it("splits a task into its sentences without breaking at a dotted name", async () => {
+    const sentences = taskSentences(await tar);
+    expect(sentences.some((one) => one.startsWith("In Pax.parse, a 'size' record is kept"))).toBe(
+      true,
+    );
+    expect(
+      sentences.some((one) =>
+        one.startsWith(
+          "Every other field (uid, gid, mode, the times and so on) keeps its current parsing",
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it("names the sentences no requirement quotes, and counts the ones quotes cover", async () => {
+    const text = await tar;
+    const declaration: PlannedChecksDeclaration = {
+      requirements: [
+        {
+          id: "pax",
+          description: "pax size",
+          quote:
+            "In Pax.parse, a 'size' record is kept only when its numeric value is zero or greater",
+        },
+      ],
+      checks: [
+        {
+          id: "pax",
+          requirement: "pax",
+          purpose: "change",
+          program: "export default (x) => x;",
+          cases: [{ input: 1, expected: 1 }],
+          why: "w",
+        },
+      ],
+    };
+    const listed = describeUncoveredSentences(text, declaration).join("\n");
+    expect(listed).toMatch(/\[\d+\] Every other field \(uid, gid, mode/);
+    expect(listed).not.toMatch(/\[\d+\] In Pax\.parse/);
+    const index = taskSentences(text).findIndex((one) => one.startsWith("In Pax.parse")) + 1;
+    expect(sentencesQuoted(text, ["In Pax.parse, a 'size' record is kept"])).toEqual([index]);
+  });
+});
+
+describe("imports a program cannot load where it runs", () => {
+  const repository = (files: readonly string[]) => ({
+    root: "/repo",
+    exists: (path: string) => files.includes(path),
+  });
+  const declaring = (program: string): PlannedChecksDeclaration => ({
+    requirements: [{ id: "r", description: "d" }],
+    checks: [
+      {
+        id: "c",
+        requirement: "r",
+        purpose: "preserve",
+        program,
+        cases: [{ input: 1, expected: 1 }],
+        why: "w",
+      },
+    ],
+  });
+
+  it("refuses a path that leaves the repository and a .js path where only TypeScript exists", () => {
+    const problems = declarationProblems(
+      "t",
+      declaring(
+        "import { a } from '../dist/esm/a.js';\nimport b from './src/b.js';\nexport default () => 1;",
+      ),
+      undefined,
+      repository(["/repo/src/b.ts"]),
+    );
+    expect(problems).toEqual([
+      expect.stringMatching(/imports \.\.\/dist\/esm\/a\.js, which leaves the repository/),
+      expect.stringMatching(
+        /imports \.\/src\/b\.js, which does not exist; \.\/src\/b\.ts is TypeScript source/,
+      ),
+    ]);
+  });
+
+  it("leaves build output that does not exist yet alone", () => {
+    expect(
+      declarationProblems(
+        "t",
+        declaring("import a from './dist/src/a.js';\nexport default () => a;"),
+        undefined,
+        repository(["/repo/src/a.ts"]),
+      ),
+    ).toEqual([]);
+  });
 });

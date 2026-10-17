@@ -304,6 +304,7 @@ describe("the planned-check revision and its share of the planning allowance", (
         { id: "r-b", description: 'requirement b (the task: "collapses whitespace")' },
       ],
       revision: { outcome: "ran", admitted: ["c"] },
+      coverage: { sentences: 1, quotedByAdmitted: [1] },
     });
   });
 });

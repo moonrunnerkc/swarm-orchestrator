@@ -81,6 +81,11 @@ export interface MachineResult {
       | { readonly outcome: "ran"; readonly admitted: readonly string[] }
       | { readonly outcome: "withheld"; readonly remainingMs: number; readonly neededMs: number }
       | null;
+    /** The task's sentences an admitted planned requirement quotes, of how many; null where none was admitted by a control. */
+    readonly coverage: {
+      readonly sentences: number;
+      readonly quotedByAdmitted: readonly number[];
+    } | null;
   };
   /** Present only where criteria planning ended the run before implementation. */
   readonly planning?: {

@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { assembleToolset } from "../agent-run.ts";
 import type { Clock } from "../core/clock.ts";
 import { runAgentLoop } from "../core/loop.ts";
@@ -16,6 +17,8 @@ import { createWorkspaceTools } from "../tools/workspace-tools.ts";
 import { createDeclareTaskGraphTool, type DeclaredGraph } from "./graph-tool.ts";
 import {
   describeDeclaredCases,
+  describeUncoveredSentences,
+  type PlannedChecksDeclaration,
   plannedChecksInput,
   plannedContract,
 } from "./planned-check-program.ts";
@@ -80,6 +83,8 @@ export interface PlannerOutcome {
   readonly steps: number;
   /** The model's last words where it finished without declaring: a question, or an account. Unverified. */
   readonly completionClaim: string;
+  /** What the planner declared in planned-check mode, as it declared it: its quotes live here. */
+  readonly plannedDeclaration?: PlannedChecksDeclaration | null;
 }
 
 /**
@@ -96,6 +101,7 @@ export interface PlannerOutcome {
 export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcome> {
   const declared: DeclaredGraph = { graph: null };
   let goalContract: GoalContract | null = null;
+  let plannedDeclaration: PlannedChecksDeclaration | null = null;
 
   const { definitions, toolInvoker } = assembleToolset({
     workspace: options.workspace,
@@ -156,12 +162,18 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
                       options.plannedChecks?.task ?? options.goal,
                       input,
                       options.plannedChecks?.base,
+                      { root: options.workspace, exists: existsSync },
                     );
+                    plannedDeclaration = input;
                     return Promise.resolve({
                       text: [
                         `${input.checks.length} planned check(s) pinned${replacing ? ", replacing the earlier declaration" : ""}; each runs once on the unchanged base before implementation.`,
                         ...describeDeclaredCases(input),
-                        "If every input is what you meant, finish now with a one-line summary.",
+                        ...describeUncoveredSentences(
+                          options.plannedChecks?.task ?? options.goal,
+                          input,
+                        ),
+                        "If every input is what you meant and every behaviour the task states is covered, finish now with a one-line summary; otherwise declare again, which replaces this declaration.",
                       ].join("\n"),
                       facts: { requirements: goalContract.requirements.length },
                     });
@@ -229,6 +241,7 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
     steps: loop.steps,
     completionClaim: loop.completionClaim,
     ...(options.requireGoalChecks === true ? { goalContract } : {}),
+    ...(options.plannedChecks === undefined ? {} : { plannedDeclaration }),
   };
 }
 
@@ -263,8 +276,8 @@ function plannedChecksPrompt(options: NonNullable<PlannerOptions["plannedChecks"
     "Each case gives the input and the expected result, or throws: true where the call must",
     "throw. The tool's arguments are JSON, so a line feed inside an input string is written \\n",
     "with one backslash, exactly as in any JSON string; \\\\n would be a backslash followed by n.",
-    "The tool's answer shows every input as it was read. In why, say how the expected results",
-    "follow from the task.",
+    "The tool's answer shows every input as it was read and lists the task's sentences no",
+    "requirement quotes yet. In why, say how the expected results follow from the task.",
     ...(base === undefined
       ? []
       : [
