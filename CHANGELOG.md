@@ -42,34 +42,40 @@ Source on `v13-main`; not published until a release names it.
 
 - **`--plan-checks` admits each planned check by its result on the unchanged base** and combines
   with `--goal-contract`:
-  - the planner states requirements and, per check, a program whose default export takes one
-    case's input, the cases with their expected results, whether the check covers the requested
-    change or behaviour that stays, and why. A change requirement quotes the task, checked
-    against the task text. The harness builds the contract's ordinary behavior check from that:
-    its runner, argv, limits, stdin and exact expected lines. The planner no longer writes argv,
-    command text, toolchain, exposure or stdout, and may replace its declaration before anything
-    has run;
-  - the planner is told the checkout preparation the run is configured with (install, lockfile,
-    repository checks), and admission prepares the base as acceptance does;
-  - a check is admitted only if a completed base run does what it declares. A program that does
-    not load, a timeout, or a change check that throws on every case is a check that never ran;
-  - one revision covers every dropped check, with its program and what the base did (per-case
-    base results only for preserve checks). It is dispatched only when admission's measured time
-    and a minute still fit in the planning allowance, and is withheld on the record otherwise;
-  - a planned requirement left with no admitted check is reported as unchecked on the outcome
-    and the result line, which also names the admitted and dropped checks and the revision;
+  - the planner declares one check per `declare_planned_check` call: its requirement (an id, the
+    words, and for a change the task's own words quoted, elisions allowed), a program whose
+    default export takes one case's input, the cases with expected results, whether it covers
+    the change or behaviour that stays, and why. The harness builds the contract's ordinary
+    behavior check from that: its runner, argv, limits, stdin and exact expected lines. A call
+    with the same id replaces that check before anything runs;
+  - each answer shows the inputs as read (warning where a line feed was escaped twice) and the
+    task sentences no requirement quotes yet; imports that leave the repository or name a `.js`
+    path where only TypeScript exists are refused; a refusal says why a field sent as a JSON
+    string could not be read;
+  - the planner is told the checkout preparation the run is configured with, and can run its
+    checks on the base inside its loop (`run_planned_checks_on_base`); admission prepares the
+    base as acceptance does and reuses that run when the planner finished on exactly those checks;
+  - a check is admitted only if a completed base run does what it declares: a change check gets
+    at least one case wrong and at least one right, a preserve check every case right. A program
+    that does not load, a timeout, or a change check the base gets wholly wrong is a check that
+    never ran. Results compare as JSON, with undefined read as null at every depth;
+  - one revision covers every dropped check, with its program, its inputs as read and what the
+    base did (per-case base results only for preserve checks). It is dispatched only when
+    admission's measured time and a minute still fit, and is withheld on the record otherwise;
+  - a planned requirement left with no admitted check is reported as unchecked on the outcome and
+    the result line, which also names the admitted and dropped checks, the revision and which
+    task sentences an admitted requirement quotes;
   - planning, admission and the revision share at most two fifths of the run's wall and tokens
     (a cap, raised from a quarter that ended every measured first round at its wall; what
-    planning leaves goes to implementation), the planner's calls are cut at that cap even in
-    flight, and the spend is on the event stream;
-  - the planner can run its pinned checks on the base inside its own loop
-    (`run_planned_checks_on_base`), and admission reuses that run when the planner finished on
-    exactly those checks;
+    planning leaves goes to implementation), and the planner's calls are cut at that cap even in
+    flight;
   - with a supplied contract, a planner that adds nothing leaves the run on that contract, and the
     result line says so.
 
-  The live results are in `docs/evidence/2026-10-17/planned-check-live/`. This remains
-  experimental: no benefit over the default configuration is established.
+  Experimental. In eleven live development launches (`docs/evidence/2026-10-17/planned-check-live/`)
+  a planner once generated a check that caught a seeded omission; no repair from such a check
+  succeeded; admitted checks that were wrong made Swarm refuse or misrepair work. No benefit over
+  the default configuration is established.
 - **Comparison evidence is packed in place.** `scripts/evidence-pack.mjs` gains three lossless
   commands, in its existing format:
   - `pack-blobs` holds content-addressed blobs as their content under their digest;
