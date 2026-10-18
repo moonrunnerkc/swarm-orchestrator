@@ -18,6 +18,7 @@ import { createWorkspaceTools } from "../tools/workspace-tools.ts";
 import { createDeclareTaskGraphTool, type DeclaredGraph } from "./graph-tool.ts";
 import {
   describeDeclaredCases,
+  describeMissingRelation,
   describeUncoveredSentences,
   type PlannedCheckCall,
   type PlannedChecksDeclaration,
@@ -134,6 +135,7 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
           checks: pinned === undefined ? [] : [pinned],
         }),
         ...describeUncoveredSentences(task, declaration),
+        ...describeMissingRelation(declaration),
         "When every input is what you meant and every behaviour the task states is covered, finish with a one-line summary and no tool calls.",
       ].join("\n"),
       facts: { checks: declaration.checks.length },
@@ -227,8 +229,11 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
                           await tryOnBase(goalContract),
                           ...(plannedDeclaration === null
                             ? []
-                            : describeUncoveredSentences(task, plannedDeclaration)),
-                          "Before finishing, reread each sentence of the task that states a rule and ask whether a case exercises it where an implementation could get it wrong: the special input at the start or the end, repeated, next to the separators the rule names, or combined with another special input. Add such cases (the same id replaces a check) and run this again, or finish.",
+                            : [
+                                ...describeUncoveredSentences(task, plannedDeclaration),
+                                ...describeMissingRelation(plannedDeclaration),
+                              ]),
+                          "Before finishing, reread each sentence of the task that states a rule and ask whether a case exercises it where an implementation could get it wrong: the special input at the start or the end, repeated, next to the separators the rule names, or combined with another special input. Add such cases, or a relation where the rule says one text behaves like another (the same id replaces a check), and run this again, or finish.",
                         ].join("\n"),
                         facts: {},
                       };
