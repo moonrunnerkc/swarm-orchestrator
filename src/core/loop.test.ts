@@ -431,6 +431,30 @@ describe("a turn that carries nothing", () => {
     ]);
   });
 
+  it("samples again when the stream ended mid-answer, rather than reading its text as the model finishing", async () => {
+    // Launch 4 of the 2026-10-17 repair and detection runs: the server could not parse a tool
+    // call the planner wrote ("qwen tool call parsing failed") and ended the stream with the
+    // text so far, no tool call and no finish reason. Read as a completion, planning stopped
+    // with nothing declared and the run went on without the checks it was asked to plan.
+    const cut = respondWithText("The problem then is with `'LINE\\nFEED.png'.re");
+    if (cut.kind !== "response") throw new Error("a response");
+    // "other" is what the AI SDK's OpenAI-compatible adapter reports for a stream with no
+    // finish chunk (its default before any arrives).
+    const unfinished = { ...cut, response: { ...cut.response, finishReason: "other" } };
+    const harness = createHarness([unfinished, respondWithText("done")]);
+    const outcome = await runAgentLoop("do the thing", harness.deps);
+
+    expect(outcome.stopReason).toBe("completed");
+    expect(outcome.completionClaim).toBe("done");
+    expect(harness.events.filter((event) => event.type === "model-error")).toMatchObject([
+      { willRetry: true, message: expect.stringContaining("without a finish reason") },
+    ]);
+
+    // And where every sample ends that way, the run stops on the model failing, not as done.
+    const always = createHarness([unfinished, unfinished, unfinished]);
+    expect((await runAgentLoop("do the thing", always.deps)).stopReason).toBe("model-error");
+  });
+
   it("says the cap was hit when that is what happened, not that the turn was empty", async () => {
     // A live run against a local reasoning model stopped here twice, at the same step both
     // times, reported as an empty response. It had spent all 8192 output tokens thinking and
