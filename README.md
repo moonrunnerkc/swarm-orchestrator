@@ -13,8 +13,8 @@ swarm "make slugify in slug.js turn each run of spaces into one dash, and add a 
 ## Why use it
 
 Use it when "done" should be decided by checks, not by the model's summary. A repair may not
-delete tests to turn a check green, and a requirement no trustworthy check covers is reported as
-not established, never as passed.
+delete tests to turn a check green, and a requirement no trusted check covers is reported as not
+established, never as passed.
 
 ## What you need
 
@@ -25,7 +25,8 @@ not established, never as passed.
 
 ## Install
 
-The npm release (14.4.0) predates what this page describes, so build from source:
+`npm install -g swarm-orchestrator` installs release 14.4.0, which predates this page. Build the
+source instead:
 
 ```sh
 git clone https://github.com/moonrunnerkc/swarm-orchestrator.git
@@ -64,16 +65,19 @@ Swarm edits files in place and does not commit: review with `git diff`, then com
 `git restore .` (and delete any new files `git status` lists). The outcome block's first line
 is one of:
 
-- **accepted** (exit 0): every requirement you sealed was met by a check that decides it.
+- **accepted** (exit 0): every requirement you supplied in a
+  [goal contract](docs/broad-use.md) was met by its checks; the scope line says what they cover.
 - **gates passed; the task itself was not judged** (exit 0): your checks passed but nothing
-  tested the task, as in the plain run above. Supply a check in a
-  [goal contract](docs/broad-use.md) to have it judged.
-- **partially checked**, **unresolved** or **not accepted** (exit 1): something was not
-  established, a model-written check disagrees, or a check refused the change. The block names
-  which, and what to do next.
+  tested the task, as in the plain run above.
+- **partially checked**, **unresolved**, **not accepted** (exit 1) or **unverified** (exit 4):
+  a supplied requirement went undecided, a model-written check disagrees, a check refused the
+  change, or the model or verification environment was unavailable. The block says which, and
+  what to do next.
 
-The run ends by printing its evidence bundle's path; `node <bundle>/verify.mjs <bundle>` re-checks
-it anywhere, with nothing installed.
+The run ends by printing its evidence bundle's path. `node <bundle>/verify.mjs <bundle>` checks,
+with nothing installed, that the record is intact and its verdicts follow from it; it does not
+say the code is correct. If a first run fails, see
+[troubleshooting](docs/using.md#when-a-first-run-fails).
 
 ## Limitations
 

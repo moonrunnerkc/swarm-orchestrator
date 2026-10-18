@@ -16,8 +16,19 @@ Source on `v13-main`; not published until a release names it.
   cycle's old failure report, without the regression that caused the rollback: in a live mime
   run, repair 3 was told "Prior checked attempt: 1" after repair 2 passed every planned check and
   failed seven project tests. The brief now names the restored state and the rejected candidate
-  apart (the gates it fixed and broke, the ratchet's reason and record, its bounded failures), and
-  a `rejected-candidate-v1` record keeps that candidate's files after the rollback.
+  apart (the gates it fixed and broke, the ratchet's reason and record, its bounded failures, and
+  a bounded diff of the rejected change against the restored files, since no worker tool reads a
+  record), and a `rejected-candidate-v1` record keeps that candidate's files after the rollback.
+- **A repair is shown the change it is repairing.** Its brief named the current change against the
+  base only by a digest, which no worker can read, so a live repair of an injected mime candidate
+  took the candidate's design (line terminators as separators) for the project's own code and
+  repaired around it. The brief now carries a bounded diff of the current change against the base.
+- **A supplied command check that refused a change says why.** Its refusal reached the repair as
+  `command exited 1`; a shared check's refusal now carries the end of its own output, and a
+  withheld check's is still never quoted.
+- **`run_check` answers to the shell's path policy.** Its diagnostic program, and each string
+  input, are read as the shell reads the same program passed to `node -e`, so a program reading
+  `.env` is denied there too.
 - **The shell guard reads an interpreter's inline program as code.** `node -e '... /^.*\./.exec(s)
   ...'` was denied as an outside access because the regular expression was offered as a path,
   while `node -e "...readFileSync('.env')"` was allowed. Only path-shaped words and relative or
@@ -66,14 +77,30 @@ Source on `v13-main`; not published until a release names it.
   Admission records each expectation's basis (`base-observed` or `model-asserted`) and how many
   cases claim a change; a planned requirement quoting the task survives the loss of its checks,
   one the planner invented is dropped as unsupported; a program that imports nothing from the
-  repository is refused. **Output change:** a `--plan-checks` run that used to end `accepted` on
-  its own checks now ends `partially-checked` (exit 1).
+  repository is refused. A planned requirement is a hypothesis, not a goal obligation: the final
+  verification certifies only supplied requirements (the bundled verifier mirrors this), so a
+  supplied contract that passes ends `accepted` with the planner's requirements reported beside
+  it, and `--plan-checks` alone ends `unjudged`, exit 0, as the same run without it does.
+  **Output change:** a `--plan-checks` run that 14.4.0 accepted on its own checks now ends
+  `unjudged`; one whose generated check disagrees ends `unresolved` (exit 1).
 - **One outcome status across the terminal, the JSON result and the exit code:** `accepted`,
-  `unjudged`, `partially-checked`, `unresolved` (a generated check disagrees with the final tree)
-  or `not-accepted`, as `outcome.status` (added). **Output change:** a run with nothing sealed now
+  `unjudged`, `partially-checked`, `unresolved` (a generated check disagrees with the final tree),
+  `unverified` (the model or the final verification's environment was unavailable; exit 4, where
+  14.4.0 exited 1) or `not-accepted`, as `outcome.status` (added). The verdict no longer says
+  "nothing executed the change" for a gate that executed it and failed. **Output change:** a run with nothing sealed now
   reads `gates passed; the task itself was not judged` instead of `accepted`, still exit 0.
   Requirements carry `source`, `quote` and `generatedChecks`; planning coverage adds
   `quotedWithoutCheck`.
+- **`--plan-checks` can check an equivalence the task states, at every position.** A new planner
+  tool, `declare_planned_relation`, takes a few seed strings, a reference text and variants the
+  task says must behave like it; the harness inserts the reference and each variant at every
+  position of every seed, compares each variant's result with the reference's on the same tree
+  (reading the variant as the reference in string results), and reports per seed whether it held,
+  how many comparisons disagreed and the first two by position with both inputs and results. No
+  expected value is written and none comes from the base; a relation is admitted by its base
+  control like any planned check, and is a diagnostic like them. Live planners' example-shaped
+  cases missed the position an implementation got wrong; enumeration covers every position of the
+  seeds it is given and nothing else.
 - **`run_check` for the worker**, where a goal contract is sealed: reruns the sealed checks exactly
   as the acceptance gate does and shows a named check's cases, or runs a diagnostic program over
   the project through the planned-check runner, with nothing to write or clean up.
