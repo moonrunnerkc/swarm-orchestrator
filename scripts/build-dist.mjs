@@ -91,14 +91,23 @@ async function build() {
   stdout.write(`build: dist/ emitted, ${assets.length} asset(s) copied\n`);
 }
 
-/** `git describe` against the release tags, or null outside a git checkout. */
-function sourceDescription(directory) {
+/**
+ * `git describe` against the release tags, or null outside a git checkout. `--always` names the
+ * commit where no release tag is reachable: a shallow clone has none, and without it a build of
+ * source there reported "14.4.0", the release's own version line. A release is built from a full
+ * checkout at its tag (the publish workflow fetches every tag), which still describes as the tag.
+ */
+export function sourceDescription(directory) {
   try {
-    return execFileSync("git", ["describe", "--tags", "--match", "v[0-9]*", "--dirty"], {
-      cwd: directory,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
+    return execFileSync(
+      "git",
+      ["describe", "--tags", "--match", "v[0-9]*", "--dirty", "--always"],
+      {
+        cwd: directory,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      },
+    ).trim();
   } catch {
     return null;
   }
