@@ -125,3 +125,13 @@ packed rather than committed loose.
   in [relation-development-test.json](relation-development-test.json) by
   [validate-relation.mjs](validate-relation.mjs). A developer chose that relation and its seeds
   knowing the omission; it shows the mechanism works there, not that a planner will propose it.
+
+### 2. 2026-10-18, after launch 3, before launch 4
+
+- **D's second launch** runs on a build with the two corrections launch 3's trace justifies: a
+  relation's texts may be written as code points, so whitespace survives the local tool channel,
+  and the generated checks run as their own blocking gate, so a repair that breaks a supplied
+  check to satisfy one is rolled back. The task, the injected candidate, the supplied visible
+  check and every setting stay as they were.
+- **R is closed** after its two allocated launches: not shown. The remaining allocation is D's
+  second launch, O and C on their conditions, and the infrastructure reserve.

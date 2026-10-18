@@ -1,0 +1,1831 @@
+{
+  "capturedAt": "2026-10-18T03:13:14.914Z",
+  "chain": "20261018T031019-c1ca32-plan",
+  "declarations": [
+    {
+      "callId": "call_s1h6kpes",
+      "decision": "allowed",
+      "decodedFields": [],
+      "denial": null,
+      "derivation": {
+        "matched": false,
+        "method": "ngram",
+        "score": 0.004987531172069825,
+        "settings": {
+          "minSubstringLength": 12,
+          "ngramSize": 3,
+          "threshold": 0.6,
+          "windowSize": 8
+        },
+        "source": {
+          "digest": "sha256:af51aaffc8fd0c626e2a2c4dc50cb6d00bb24f1dffcac08a9f789cb91ad78a78",
+          "label": "read",
+          "tag": "file"
+        }
+      },
+      "detail": "1659 bytes returned",
+      "facts": {
+        "checks": 1
+      },
+      "input": {
+        "cases": [
+          {
+            "expected": "image/png",
+            "input": "LINE\nFEED.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "LINE\rFEED.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "LINE FEED.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "LINE FEED.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "dir/NAME\nFILE.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "dir\\NAME\rFILE.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "dir/NAME FILE.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "dir\\NAME FILE.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "\nNAME.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "\rNAME.png"
+          },
+          {
+            "expected": "image/png",
+            "input": " NAME.png"
+          },
+          {
+            "expected": "image/png",
+            "input": " NAME.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "file\n.png"
+          }
+        ],
+        "id": "line-terminator-directory-stripping",
+        "program": "import Mime from './dist/src/Mime.js';\nconst instance = new Mime();\n\nconst tests = [\n  // LINE FEED (U+000A) without directory - should strip nothing but still find .png through the dot regex\n  { input: 'LINE\\nFEED.png', expected: 'image/png' },\n  // Carriage return (U+000D) without directory\n  { input: 'LINE\\rFEED.png', expected: 'image/png' },\n  // Line separator (U+2028) without directory\n  { input: 'LINE\\u2028FEED.png', expected: 'image/png' },\n  // Paragraph separator (U+2029) without directory\n  { input: 'LINE\\u2029FEED.png', expected: 'image/png' },\n\n  // With a directory part before the line terminator\n  { input: 'dir/NAME\\nFILE.png', expected: 'image/png' },\n  { input: 'dir\\\\NAME\\rFILE.png', expected: 'image/png' },\n  { input: 'dir/NAME\\u2028FILE.png', expected: 'image/png' },\n  { input: 'dir\\\\NAME\\u2029FILE.png', expected: 'image/png' },\n\n  // Line terminator at the very beginning (no directory part, just starts with line terminator)\n  { input: '\\nNAME.png', expected: 'image/png' },\n  { input: '\\rNAME.png', expected: 'image/png' },\n  { input: '\\u2028NAME.png', expected: 'image/png' },\n  { input: '\\u2029NAME.png', expected: 'image/png' },\n\n  // Line terminator at position where extension would be parsed\n  { input: 'file\\n.png', expected: 'image/png' },\n];\n\nexport default function (input) {\n  return instance.getType(input);\n}\n",
+        "purpose": "change",
+        "quote": "Make getType treat every line terminator like any other character when it strips the directory part and the extension's prefix; a space or tab in the name already works and must keep working.",
+        "requirement": "getType treats every line terminator (\\\\n, \\\\r, U+2028, U+2029) like any other character when stripping the directory part and the extension prefix",
+        "requirementId": "line-terminator-handle",
+        "why": "The task states that file names containing line terminators should still have their type derived from the extension after the last dot of the last segment. The current regex ^.*[/\\\\] does not match line terminators, so 'LINE\\nFEED.png' doesn't get stripped properly - the first regex fails to strip anything and 'LINE\\nFEED.png' is considered as having directory part (since it's not pure extension), then the second regex looks for the last dot. Actually let me trace through: last = 'LINE\\nFEED.png' (no / or \\\\ found). ext = 'png'. hasDot = true. So should work... wait. Let me reconsider. The task says getType('LINE\\nFEED.png') returns null. Currently path='LINE\\nFEED.png', last='LINE\\nFEED.png' (no match for ^.*[/\\\\]). ext=last.replace(/^.*\\./, '') = 'png'. hasPath = false ('LINE\\nFEED.png'.length === 'IMAGE_PNG'. Actually hasPath = 'LINE\\nFEED.png'.length < 'LINE\\nFEED.png'.length which is false since they're equal. wait: last.length < path.length would be false because no match for the first regex. hasDot would be true (ext='png', last length > 4). But then we'd look up 'png' in #extensionToType... So currently does it work? The task specifically says it returns null, so maybe there's something else going on. The line terminator might cause a different issue. Let me just trust the task statement and test accordingly."
+      },
+      "kind": "evidence",
+      "output": "check line-terminator-directory-stripping pinned; 1 planned check(s) so far (line-terminator-directory-stripping), each run once on the unchanged base before implementation.\nline-terminator-directory-stripping inputs as read: \"LINE\\nFEED.png\", \"LINE\\rFEED.png\", \"LINE\\u2028FEED.png\", \"LINE\\u2029FEED.png\", \"dir/NAME\\nFILE.png\", \"dir\\\\NAME\\rFILE.png\", \"dir/NAME\\u2028FILE.png\", \"dir\\\\NAME\\u2029FILE.png\", \"\\nNAME.png\", \"\\rNAME.png\", \"\\u2028NAME.png\", \"\\u2029NAME.png\", \"file\\n.png\"\nTask sentences no requirement quotes yet. A sentence that states behaviour (what changes, what must keep working) is covered by a requirement that quotes it, with a check; one that only says how to work (which files to change, how to build or test) needs none:\n[1] Mime.getType(path) (src/Mime.ts) derives a type from the extension after the last dot of the last path segment.\n[2] The two regular expressions that strip the directory part and the part before the extension do not match across line terminators, so a file name that contains one is typed wrongly: getType('LINE\\nFEED.png') returns nu...\n[3] This matters where the file name comes from an untrusted source: a content type decided from it must come from the extension after the last dot of the last segment, whatever characters precede it, so that a name craft...\n[5] The change belongs in src/Mime.ts only.\n[6] Repository rules: keep the file's existing style, no new dependencies, no edits under test or types, and the whole suite (npm test, which builds first) must keep passing.\nWhen every input is what you meant and every behaviour the task states is covered, finish with a one-line summary and no tool calls.",
+      "outputBytes": 1659,
+      "toolName": "declare_planned_check"
+    },
+    {
+      "callId": "call_x8eoer8i",
+      "decision": "allowed",
+      "decodedFields": [],
+      "denial": null,
+      "derivation": {
+        "matched": false,
+        "method": "ngram",
+        "score": 0.23394495412844038,
+        "settings": {
+          "minSubstringLength": 12,
+          "ngramSize": 3,
+          "threshold": 0.6,
+          "windowSize": 8
+        },
+        "source": {
+          "digest": "sha256:af51aaffc8fd0c626e2a2c4dc50cb6d00bb24f1dffcac08a9f789cb91ad78a78",
+          "label": "read",
+          "tag": "file"
+        }
+      },
+      "detail": "2502 bytes returned",
+      "facts": {
+        "checks": 2
+      },
+      "input": {
+        "cases": [
+          {
+            "expected": "text/plain",
+            "input": "text.txt"
+          },
+          {
+            "expected": "text/plain",
+            "input": "TEXT.TXT"
+          },
+          {
+            "expected": "text/plain",
+            "input": "txt"
+          },
+          {
+            "expected": "text/plain",
+            "input": ".txt"
+          },
+          {
+            "expected": "text/plain",
+            "input": "dir/text.txt"
+          },
+          {
+            "expected": "text/plain",
+            "input": "dir\\text.txt"
+          },
+          {
+            "expected": "text/html",
+            "input": "/path/to/page.html"
+          },
+          {
+            "expected": "text/html",
+            "input": "c:\\path\\to\\page.html"
+          },
+          {
+            "expected": "application/json",
+            "input": ".config.json"
+          },
+          {
+            "expected": "text/plain",
+            "input": "file name.txt"
+          },
+          {
+            "expected": "text/plain",
+            "input": "file\tname.txt"
+          },
+          {
+            "expected": null,
+            "input": ".bogus"
+          },
+          {
+            "expected": null,
+            "input": "bogus"
+          },
+          {
+            "expected": null,
+            "input": "/txt"
+          },
+          {
+            "expected": null,
+            "input": "\\txt"
+          },
+          {
+            "expected": null,
+            "input": "text.nope"
+          }
+        ],
+        "id": "normal-paths-preserving-strings",
+        "program": "import Mime from './dist/src/Mime.js';\nconst instance = new Mime();\n\nconst tests = [\n  // Normal file paths (must keep working)\n  { input: 'text.txt', expected: 'text/plain' },\n  { input: 'TEXT.TXT', expected: 'text/plain' },\n  { input: 'txt', expected: 'text/plain' },\n  { input: '.txt', expected: 'text/plain' },\n  { input: 'dir/text.txt', expected: 'text/plain' },\n  { input: 'dir\\\\text.txt', expected: 'text/plain' },\n  { input: '/path/to/page.html', expected: 'text/html' },\n  { input: 'c:\\\\path\\\\to\\\\page.html', expected: 'text/html' },\n  { input: '.config.json', expected: 'application/json' },\n\n  // Space and tab already work (from the task)\n  { input: 'file name.txt', expected: 'text/plain' },\n  { input: 'file\\tname.txt', expected: 'text/plain' },\n\n  // Edge cases that should return null\n  { input: '.bogus', expected: null },\n  { input: 'bogus', expected: null },\n  { input: '/txt', expected: null },\n  { input: '\\\\txt', expected: null },\n  { input: 'text.nope', expected: null },\n\n  // Non-string inputs must return null (unchanged behavior)\n];\n\nexport default function (input) {\n  return instance.getType(input);\n}",
+        "purpose": "preserve",
+        "quote": "a space or tab in the name already works and must keep working.",
+        "requirement": "getType still correctly resolves types for normal paths, extensions, and edge cases",
+        "requirementId": "normal-type-resolution",
+        "why": "The task states that normal paths must keep working and specifically calls out 'space or tab in the name already works'. These tests cover the existing working cases: file extensions without paths, file extensions with directory parts (both / and \\\\), uppercase/lowercase, edge cases like '.txt' and bare extensions. The null-returning cases also must persist."
+      },
+      "kind": "evidence",
+      "output": "check normal-paths-preserving-strings pinned; 2 planned check(s) so far (line-terminator-directory-stripping, normal-paths-preserving-strings), each run once on the unchanged base before implementation.\nnormal-paths-preserving-strings inputs as read: \"text.txt\", \"TEXT.TXT\", \"txt\", \".txt\", \"dir/text.txt\", \"dir\\\\text.txt\", \"/path/to/page.html\", \"c:\\\\path\\\\to\\\\page.html\", \".config.json\", \"file name.txt\", \"file\\tname.txt\", \".bogus\", \"bogus\", \"/txt\", \"\\\\txt\", \"text.nope\"\nwarning: normal-paths-preserving-strings case 6 holds a backslash followed by t, which is two characters, not a line terminator or tab. If you meant the control character, write it inside the JSON string with one backslash (\\n) and declare again; if the backslash is meant, leave it.\nwarning: normal-paths-preserving-strings case 8 holds a backslash followed by t, which is two characters, not a line terminator or tab. If you meant the control character, write it inside the JSON string with one backslash (\\n) and declare again; if the backslash is meant, leave it.\nwarning: normal-paths-preserving-strings case 15 holds a backslash followed by t, which is two characters, not a line terminator or tab. If you meant the control character, write it inside the JSON string with one backslash (\\n) and declare again; if the backslash is meant, leave it.\nTask sentences no requirement quotes yet. A sentence that states behaviour (what changes, what must keep working) is covered by a requirement that quotes it, with a check; one that only says how to work (which files to change, how to build or test) needs none:\n[1] Mime.getType(path) (src/Mime.ts) derives a type from the extension after the last dot of the last path segment.\n[2] The two regular expressions that strip the directory part and the part before the extension do not match across line terminators, so a file name that contains one is typed wrongly: getType('LINE\\nFEED.png') returns nu...\n[3] This matters where the file name comes from an untrusted source: a content type decided from it must come from the extension after the last dot of the last segment, whatever characters precede it, so that a name craft...\n[5] The change belongs in src/Mime.ts only.\n[6] Repository rules: keep the file's existing style, no new dependencies, no edits under test or types, and the whole suite (npm test, which builds first) must keep passing.\nWhen every input is what you meant and every behaviour the task states is covered, finish with a one-line summary and no tool calls.",
+      "outputBytes": 2502,
+      "toolName": "declare_planned_check"
+    },
+    {
+      "callId": "call_h20op6pf",
+      "decision": "denied",
+      "decodedFields": [],
+      "denial": "invalid-input",
+      "derivation": {
+        "matched": false,
+        "method": "ngram",
+        "score": 0.025,
+        "settings": {
+          "minSubstringLength": 12,
+          "ngramSize": 3,
+          "threshold": 0.6,
+          "windowSize": 8
+        },
+        "source": {
+          "digest": "sha256:af51aaffc8fd0c626e2a2c4dc50cb6d00bb24f1dffcac08a9f789cb91ad78a78",
+          "label": "read",
+          "tag": "file"
+        }
+      },
+      "detail": "input rejected: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"reference\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"origin\": \"array\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"variants\"\n    ],\n    \"message\": \"Too small: expected array to have >=1 items\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"why\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  }\n]",
+      "facts": {},
+      "input": {
+        "id": "line-terminal-like-other-chars",
+        "program": "const tests = [\n  // Space-like behavior (must work, serves as control)\n];\n\nexport default function input {\n  const Mime = (await import('./dist/src/Mime.js')).default;\n  new Instance = new Mime();\n  return instance.getType(input);\n}",
+        "purpose": "change",
+        "quote": "Make getType treat every line terminator like any other character when it strips the directory part and the extension's prefix; a space or tab in the name already works and must keep working.",
+        "reference": "",
+        "requirement": "Line terminators behave like any other regular character in file names for type derivation",
+        "requirementId": "line-terminator-handle",
+        "seeds": [
+          "FILENAME.png",
+          "dir/FILENAME.png"
+        ],
+        "variants": [],
+        "why": ""
+      },
+      "kind": "evidence",
+      "output": "",
+      "outputBytes": 0,
+      "toolName": "declare_planned_relation"
+    },
+    {
+      "callId": "call_x0jw6nzq",
+      "decision": "denied",
+      "decodedFields": [],
+      "denial": "invalid-input",
+      "derivation": {
+        "matched": false,
+        "method": "ngram",
+        "score": 0.015873015873015872,
+        "settings": {
+          "minSubstringLength": 12,
+          "ngramSize": 3,
+          "threshold": 0.6,
+          "windowSize": 8
+        },
+        "source": {
+          "digest": "sha256:af51aaffc8fd0c626e2a2c4dc50cb6d00bb24f1dffcac08a9f789cb91ad78a78",
+          "label": "read",
+          "tag": "file"
+        }
+      },
+      "detail": "input rejected: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_big\",\n    \"maximum\": 4,\n    \"inclusive\": true,\n    \"path\": [\n      \"reference\"\n    ],\n    \"message\": \"Too big: expected string to have <=4 characters\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_big\",\n    \"maximum\": 4,\n    \"inclusive\": true,\n    \"path\": [\n      \"variants\",\n      0\n    ],\n    \"message\": \"Too big: expected string to have <=4 characters\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_big\",\n    \"maximum\": 4,\n    \"inclusive\": true,\n    \"path\": [\n      \"variants\",\n      1\n    ],\n    \"message\": \"Too big: expected string to have <=4 characters\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_big\",\n    \"maximum\": 4,\n    \"inclusive\": true,\n    \"path\": [\n      \"variants\",\n      2\n    ],\n    \"message\": \"Too big: expected string to have <=4 characters\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_big\",\n    \"maximum\": 4,\n    \"inclusive\": true,\n    \"path\": [\n      \"variants\",\n      3\n    ],\n    \"message\": \"Too big: expected string to have <=4 characters\"\n  }\n]",
+      "facts": {},
+      "input": {
+        "id": "line-terminal-like-other-chars",
+        "program": "export default function(input) {\n  const Mime = (await import('./dist/src/Mime.js')).default;\n  const instance = new Mime();\n  return instance.getType(input);\n}",
+        "purpose": "change",
+        "quote": "Make getType treat every line terminator like any other character when it strips the directory part and the extension's prefix; a space or tab in the name already works and must keep working.",
+        "reference": "LINEFEED.png",
+        "requirement": "Line terminators behave like regular characters for directory stripping and extension parsing",
+        "requirementId": "line-terminator-handle",
+        "seeds": [
+          "FILENAME.png",
+          "dir/FILENAME.png"
+        ],
+        "variants": [
+          "LINE\nFEED.png",
+          "LINE\rFEED.png",
+          "LINE FEED.png",
+          "LINE FEED.png"
+        ],
+        "why": "The task requires that every line terminator be treated like any other character for both directory stripping (first regex) and extension prefix removal (second regex). Since plain LINEFEED.png already works, the variants with line terminators inserted at various positions must produce the same result. The base currently fails on these variants because its regexes do not match line terminators."
+      },
+      "kind": "evidence",
+      "output": "",
+      "outputBytes": 0,
+      "toolName": "declare_planned_relation"
+    },
+    {
+      "callId": "call_rbtvb2fg",
+      "decision": "denied",
+      "decodedFields": [],
+      "denial": "invalid-input",
+      "derivation": {
+        "matched": false,
+        "method": "ngram",
+        "score": 0.03076923076923077,
+        "settings": {
+          "minSubstringLength": 12,
+          "ngramSize": 3,
+          "threshold": 0.6,
+          "windowSize": 8
+        },
+        "source": {
+          "digest": "sha256:af51aaffc8fd0c626e2a2c4dc50cb6d00bb24f1dffcac08a9f789cb91ad78a78",
+          "label": "read",
+          "tag": "file"
+        }
+      },
+      "detail": "input rejected: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"reference\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"origin\": \"array\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"variants\"\n    ],\n    \"message\": \"Too small: expected array to have >=1 items\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"why\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  }\n]",
+      "facts": {},
+      "input": {
+        "id": "line-terminal-like-other-chars",
+        "program": "export default function(input) {\n  const Mime = (await import('./dist/src/Mime.js')).default;\n  const instance = new Mime();\n  return instance.getType(input);\n}",
+        "purpose": "change",
+        "quote": "Make getType treat every line terminator like any other character when it strips the directory part and the extension's prefix; a space or tab in the name already works and must keep working.",
+        "reference": "",
+        "requirement": "Line terminators behave like regular characters for directory stripping and extension parsing",
+        "requirementId": "line-terminator-handle",
+        "seeds": [
+          "NAME.png",
+          "dir/NAME.png"
+        ],
+        "variants": [],
+        "why": ""
+      },
+      "kind": "evidence",
+      "output": "",
+      "outputBytes": 0,
+      "toolName": "declare_planned_relation"
+    },
+    {
+      "callId": "call_6m6hp161",
+      "decision": "denied",
+      "decodedFields": [],
+      "denial": "invalid-input",
+      "derivation": {
+        "matched": false,
+        "method": "ngram",
+        "score": 0.03076923076923077,
+        "settings": {
+          "minSubstringLength": 12,
+          "ngramSize": 3,
+          "threshold": 0.6,
+          "windowSize": 8
+        },
+        "source": {
+          "digest": "sha256:af51aaffc8fd0c626e2a2c4dc50cb6d00bb24f1dffcac08a9f789cb91ad78a78",
+          "label": "read",
+          "tag": "file"
+        }
+      },
+      "detail": "input rejected: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"reference\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"origin\": \"array\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"variants\"\n    ],\n    \"message\": \"Too small: expected array to have >=1 items\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"why\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  }\n]",
+      "facts": {},
+      "input": {
+        "id": "line-terminal-like-other-chars",
+        "program": "export default function(input) {\n  const Mime = (await import('./dist/src/Mime.js')).default;\n  const instance = new Mime();\n  return instance.getType(input);\n}",
+        "purpose": "change",
+        "quote": "Make getType treat every line terminator like any other character when it strips the directory part and the extension's prefix; a space or tab in the name already works and must keep working.",
+        "reference": "",
+        "requirement": "Line terminators behave like regular characters for directory stripping and extension parsing",
+        "requirementId": "line-terminator-handle",
+        "seeds": [
+          "NAME.png",
+          "dir/NAME.png"
+        ],
+        "variants": [],
+        "why": ""
+      },
+      "kind": "evidence",
+      "output": "",
+      "outputBytes": 0,
+      "toolName": "declare_planned_relation"
+    },
+    {
+      "callId": "call_3m3ryxv4",
+      "decision": "denied",
+      "decodedFields": [],
+      "denial": "invalid-input",
+      "derivation": {
+        "matched": false,
+        "method": "ngram",
+        "score": 0.03076923076923077,
+        "settings": {
+          "minSubstringLength": 12,
+          "ngramSize": 3,
+          "threshold": 0.6,
+          "windowSize": 8
+        },
+        "source": {
+          "digest": "sha256:af51aaffc8fd0c626e2a2c4dc50cb6d00bb24f1dffcac08a9f789cb91ad78a78",
+          "label": "read",
+          "tag": "file"
+        }
+      },
+      "detail": "input rejected: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"reference\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"origin\": \"array\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"variants\"\n    ],\n    \"message\": \"Too small: expected array to have >=1 items\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"why\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  }\n]",
+      "facts": {},
+      "input": {
+        "id": "line-terminal-like-other-chars",
+        "program": "export default function(input) {\n  const Mime = (await import('./dist/src/Mime.js')).default;\n  const instance = new Mime();\n  return instance.getType(input);\n}",
+        "purpose": "change",
+        "quote": "Make getType treat every line terminator like any other character when it strips the directory part and the extension's prefix; a space or tab in the name already works and must keep working.",
+        "reference": "",
+        "requirement": "Line terminators behave like regular characters for directory stripping and extension parsing",
+        "requirementId": "line-terminator-handle",
+        "seeds": [
+          "NAME.png",
+          "dir/NAME.png"
+        ],
+        "variants": [],
+        "why": ""
+      },
+      "kind": "evidence",
+      "output": "",
+      "outputBytes": 0,
+      "toolName": "declare_planned_relation"
+    },
+    {
+      "callId": "call_b908kowa",
+      "decision": "denied",
+      "decodedFields": [],
+      "denial": "invalid-input",
+      "derivation": {
+        "matched": false,
+        "method": "ngram",
+        "score": 0.029411764705882353,
+        "settings": {
+          "minSubstringLength": 12,
+          "ngramSize": 3,
+          "threshold": 0.6,
+          "windowSize": 8
+        },
+        "source": {
+          "digest": "sha256:af51aaffc8fd0c626e2a2c4dc50cb6d00bb24f1dffcac08a9f789cb91ad78a78",
+          "label": "read",
+          "tag": "file"
+        }
+      },
+      "detail": "input rejected: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"reference\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"why\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  }\n]",
+      "facts": {},
+      "input": {
+        "id": "line-terminal-like-other-chars",
+        "program": "export default function(input) {\n  const Mime = (await import('./dist/src/Mime.js')).default;\n  const instance = new Mime();\n  return instance.getType(input);\n}",
+        "purpose": "change",
+        "quote": "Make getType treat every line terminator like any other character when it strips the directory part and the extension's prefix; a space or tab in the name already works and must keep working.",
+        "reference": "",
+        "requirement": "Line terminators behave like regular characters for directory stripping and extension parsing",
+        "requirementId": "line-terminator-handle",
+        "seeds": [
+          "NAME.png",
+          "dir/NAME.png"
+        ],
+        "variants": [
+          "\u0000",
+          "￿",
+          " ",
+          "x"
+        ],
+        "why": ""
+      },
+      "kind": "evidence",
+      "output": "",
+      "outputBytes": 0,
+      "toolName": "declare_planned_relation"
+    },
+    {
+      "callId": "call_ferhyydz",
+      "decision": "denied",
+      "decodedFields": [],
+      "denial": "invalid-input",
+      "derivation": {
+        "matched": false,
+        "method": "ngram",
+        "score": 0.03076923076923077,
+        "settings": {
+          "minSubstringLength": 12,
+          "ngramSize": 3,
+          "threshold": 0.6,
+          "windowSize": 8
+        },
+        "source": {
+          "digest": "sha256:af51aaffc8fd0c626e2a2c4dc50cb6d00bb24f1dffcac08a9f789cb91ad78a78",
+          "label": "read",
+          "tag": "file"
+        }
+      },
+      "detail": "input rejected: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"reference\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"origin\": \"array\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"variants\"\n    ],\n    \"message\": \"Too small: expected array to have >=1 items\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"why\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  }\n]",
+      "facts": {},
+      "input": {
+        "id": "line-terminal-like-other-chars",
+        "program": "export default function(input) {\n  const Mime = (await import('./dist/src/Mime.js')).default;\n  const instance = new Mime();\n  return instance.getType(input);\n}",
+        "purpose": "change",
+        "quote": "Make getType treat every line terminator like any other character when it strips the directory part and the extension's prefix; a space or tab in the name already works and must keep working.",
+        "reference": "",
+        "requirement": "Line terminators behave like regular characters for directory stripping and extension parsing",
+        "requirementId": "line-terminator-handle",
+        "seeds": [
+          "NAME.png",
+          "dir/NAME.png"
+        ],
+        "variants": [],
+        "why": ""
+      },
+      "kind": "evidence",
+      "output": "",
+      "outputBytes": 0,
+      "toolName": "declare_planned_relation"
+    },
+    {
+      "callId": "call_6m01n3o2",
+      "decision": "denied",
+      "decodedFields": [],
+      "denial": "invalid-input",
+      "derivation": {
+        "matched": false,
+        "method": "ngram",
+        "score": 0.03076923076923077,
+        "settings": {
+          "minSubstringLength": 12,
+          "ngramSize": 3,
+          "threshold": 0.6,
+          "windowSize": 8
+        },
+        "source": {
+          "digest": "sha256:af51aaffc8fd0c626e2a2c4dc50cb6d00bb24f1dffcac08a9f789cb91ad78a78",
+          "label": "read",
+          "tag": "file"
+        }
+      },
+      "detail": "input rejected: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"reference\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"origin\": \"array\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"variants\"\n    ],\n    \"message\": \"Too small: expected array to have >=1 items\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"why\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  }\n]",
+      "facts": {},
+      "input": {
+        "id": "line-terminal-like-other-chars",
+        "program": "export default function(input) {\n  const Mime = (await import('./dist/src/Mime.js')).default;\n  const instance = new Mime();\n  return instance.getType(input);\n}",
+        "purpose": "change",
+        "quote": "Make getType treat every line terminator like any other character when it strips the directory part and the extension's prefix; a space or tab in the name already works and must keep working.",
+        "reference": "",
+        "requirement": "Line terminators behave like regular characters for directory stripping and extension parsing",
+        "requirementId": "line-terminator-handle",
+        "seeds": [
+          "NAME.png",
+          "dir/NAME.png"
+        ],
+        "variants": [],
+        "why": ""
+      },
+      "kind": "evidence",
+      "output": "",
+      "outputBytes": 0,
+      "toolName": "declare_planned_relation"
+    },
+    {
+      "callId": "call_5owc983l",
+      "decision": "denied",
+      "decodedFields": [],
+      "denial": "invalid-input",
+      "derivation": {
+        "matched": false,
+        "method": "ngram",
+        "score": 0.03076923076923077,
+        "settings": {
+          "minSubstringLength": 12,
+          "ngramSize": 3,
+          "threshold": 0.6,
+          "windowSize": 8
+        },
+        "source": {
+          "digest": "sha256:af51aaffc8fd0c626e2a2c4dc50cb6d00bb24f1dffcac08a9f789cb91ad78a78",
+          "label": "read",
+          "tag": "file"
+        }
+      },
+      "detail": "input rejected: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"reference\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"origin\": \"array\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"variants\"\n    ],\n    \"message\": \"Too small: expected array to have >=1 items\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"why\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  }\n]",
+      "facts": {},
+      "input": {
+        "id": "line-terminal-like-other-chars",
+        "program": "export default function(input) {\n  const Mime = (await import('./dist/src/Mime.js')).default;\n  const instance = new Mime();\n  return instance.getType(input);\n}",
+        "purpose": "change",
+        "quote": "Make getType treat every line terminator like any other character when it strips the directory part and the extension's prefix; a space or tab in the name already works and must keep working.",
+        "reference": "",
+        "requirement": "Line terminators behave like regular characters for directory stripping and extension parsing",
+        "requirementId": "line-terminator-handle",
+        "seeds": [
+          "NAME.png",
+          "dir/NAME.png"
+        ],
+        "variants": [],
+        "why": ""
+      },
+      "kind": "evidence",
+      "output": "",
+      "outputBytes": 0,
+      "toolName": "declare_planned_relation"
+    },
+    {
+      "callId": "call_i2eq7eo9",
+      "decision": "denied",
+      "decodedFields": [],
+      "denial": "invalid-input",
+      "derivation": {
+        "matched": false,
+        "method": "ngram",
+        "score": 0.03076923076923077,
+        "settings": {
+          "minSubstringLength": 12,
+          "ngramSize": 3,
+          "threshold": 0.6,
+          "windowSize": 8
+        },
+        "source": {
+          "digest": "sha256:af51aaffc8fd0c626e2a2c4dc50cb6d00bb24f1dffcac08a9f789cb91ad78a78",
+          "label": "read",
+          "tag": "file"
+        }
+      },
+      "detail": "input rejected: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"reference\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"origin\": \"array\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"variants\"\n    ],\n    \"message\": \"Too small: expected array to have >=1 items\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"why\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  }\n]",
+      "facts": {},
+      "input": {
+        "id": "line-terminal-like-other-chars",
+        "program": "export default function(input) {\n  const Mime = (await import('./dist/src/Mime.js')).default;\n  const instance = new Mime();\n  return instance.getType(input);\n}",
+        "purpose": "change",
+        "quote": "Make getType treat every line terminator like any other character when it strips the directory part and the extension's prefix; a space or tab in the name already works and must keep working.",
+        "reference": "",
+        "requirement": "Line terminators behave like regular characters for directory stripping and extension parsing",
+        "requirementId": "line-terminator-handle",
+        "seeds": [
+          "NAME.png",
+          "dir/NAME.png"
+        ],
+        "variants": [],
+        "why": ""
+      },
+      "kind": "evidence",
+      "output": "",
+      "outputBytes": 0,
+      "toolName": "declare_planned_relation"
+    },
+    {
+      "callId": "call_462n4oks",
+      "decision": "denied",
+      "decodedFields": [],
+      "denial": "invalid-input",
+      "derivation": {
+        "matched": false,
+        "method": "ngram",
+        "score": 0.03076923076923077,
+        "settings": {
+          "minSubstringLength": 12,
+          "ngramSize": 3,
+          "threshold": 0.6,
+          "windowSize": 8
+        },
+        "source": {
+          "digest": "sha256:af51aaffc8fd0c626e2a2c4dc50cb6d00bb24f1dffcac08a9f789cb91ad78a78",
+          "label": "read",
+          "tag": "file"
+        }
+      },
+      "detail": "input rejected: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"reference\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"origin\": \"array\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"variants\"\n    ],\n    \"message\": \"Too small: expected array to have >=1 items\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"why\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  }\n]",
+      "facts": {},
+      "input": {
+        "id": "line-terminal-like-other-chars",
+        "program": "export default function(input) {\n  const Mime = (await import('./dist/src/Mime.js')).default;\n  const instance = new Mime();\n  return instance.getType(input);\n}",
+        "purpose": "change",
+        "quote": "Make getType treat every line terminator like any other character when it strips the directory part and the extension's prefix; a space or tab in the name already works and must keep working.",
+        "reference": "",
+        "requirement": "Line terminators behave like regular characters for directory stripping and extension parsing",
+        "requirementId": "line-terminator-handle",
+        "seeds": [
+          "NAME.png",
+          "dir/NAME.png"
+        ],
+        "variants": [],
+        "why": ""
+      },
+      "kind": "evidence",
+      "output": "",
+      "outputBytes": 0,
+      "toolName": "declare_planned_relation"
+    },
+    {
+      "callId": "call_5nug8p31",
+      "decision": "failed",
+      "decodedFields": [],
+      "denial": null,
+      "derivation": {
+        "matched": false,
+        "method": "ngram",
+        "score": 0.02512562814070352,
+        "settings": {
+          "minSubstringLength": 12,
+          "ngramSize": 3,
+          "threshold": 0.6,
+          "windowSize": 8
+        },
+        "source": {
+          "digest": "sha256:af51aaffc8fd0c626e2a2c4dc50cb6d00bb24f1dffcac08a9f789cb91ad78a78",
+          "label": "read",
+          "tag": "file"
+        }
+      },
+      "detail": "fix these and declare again: check line-terminator-directory-stripping imports ./types/standard.js, which does not exist; ./types/standard.ts is TypeScript source the harness does not compile, so import the build output the repository's own tests import; check line-terminator-directory-stripping imports ./types/other.js, which does not exist; ./types/other.ts is TypeScript source the harness does not compile, so import the build output the repository's own tests import",
+      "facts": {},
+      "input": {
+        "cases": [
+          {
+            "expected": "image/png",
+            "input": "LINE\nFEED.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "LINE\rFEED.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "LINE FEED.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "LINE FEED.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "dir/NAME\nFILE.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "dir\\NAME\rFILE.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "dir/NAME FILE.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "dir\\NAME FILE.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "\nNAME.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "\rNAME.png"
+          },
+          {
+            "expected": "image/png",
+            "input": " NAME.png"
+          },
+          {
+            "expected": "image/png",
+            "input": " NAME.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "file\n.png"
+          }
+        ],
+        "id": "line-terminator-directory-stripping",
+        "program": "import Mime from './dist/src/Mime.js';\nimport standardTypes from './types/standard.js';\nimport otherTypes from './types/other.js';\n\nconst mime = new Mime(standardTypes, otherTypes)._freeze();\n\n// Cases the task changes: file names with line terminators should resolve to image/png now\nconst changeCases = [\n  { input: 'LINE\\nFEED.png', expected: 'image/png' },\n  { input: 'LINE\\rFEED.png', expected: 'image/png' },\n  { input: 'LINE\\u2028FEED.png', expected: 'image/png' },\n  { input: 'LINE\\u2029FEED.png', expected: 'image/png' },\n  { input: 'dir/NAME\\nFILE.png', expected: 'image/png' },\n  { input: 'dir\\\\NAME\\rFILE.png', expected: 'image/png' },\n  { input: 'dir/NAME\\u2028FILE.png', expected: 'image/png' },\n  { input: 'dir\\\\NAME\\u2029FILE.png', expected: 'image/png' },\n  { input: '\\nNAME.png', expected: 'image/png' },\n  { input: '\\rNAME.png', expected: 'image/png' },\n  { input: '\\u2028NAME.png', expected: 'image/png' },\n  { input: '\\u2029NAME.png', expected: 'image/png' },\n  { input: 'file\\n.png', expected: 'image/png' },\n];\n\nexport default function (input) {\n  return mime.getType(input);\n}",
+        "purpose": "change",
+        "quote": "Make getType treat every line terminator like any other character when it strips the directory part and the extension's prefix; a space or tab in the name already works and must keep working.",
+        "requirement": "getType treats every line terminator (\\\\n, \\\\r, U+2028, U+2029) like any other character when stripping the directory part and the extension prefix",
+        "requirementId": "line-terminator-handle",
+        "why": "The task states getType('LINE\\nFEED.png') returns null instead of 'image/png' and the same for other line terminators. After the fix, all should return 'image/png'. Includes cases with directory parts (/, \\\\) mixed with line terminators, line terminators at start, and in extension position."
+      },
+      "kind": "evidence",
+      "output": "",
+      "outputBytes": 0,
+      "toolName": "declare_planned_check"
+    },
+    {
+      "callId": "call_1n5p3bj3",
+      "decision": "allowed",
+      "decodedFields": [],
+      "denial": null,
+      "derivation": {
+        "matched": false,
+        "method": "none",
+        "score": 0,
+        "settings": {
+          "minSubstringLength": 12,
+          "ngramSize": 3,
+          "threshold": 0.6,
+          "windowSize": 8
+        },
+        "source": null
+      },
+      "detail": "1719 bytes returned",
+      "facts": {
+        "checks": 2
+      },
+      "input": {
+        "cases": [
+          {
+            "expected": "image/png",
+            "input": "LINE\nFEED.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "LINE\rFEED.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "LINE FEED.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "LINE FEED.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "dir/NAME\nFILE.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "dir\\NAME\rFILE.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "dir/NAME FILE.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "dir\\NAME FILE.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "\nNAME.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "\rNAME.png"
+          },
+          {
+            "expected": "image/png",
+            "input": " NAME.png"
+          },
+          {
+            "expected": "image/png",
+            "input": " NAME.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "file\n.png"
+          }
+        ],
+        "id": "line-terminator-directory-stripping",
+        "program": "import mimeInstance from './dist/src/index.js';\n\nexport default function (input) {\n  return mimeInstance.getType(input);\n}",
+        "purpose": "change",
+        "quote": "Make getType treat every line terminator like any other character when it strips the directory part and the extension's prefix; a space or tab in the name already works and must keep working.",
+        "requirement": "getType treats every line terminator (\\\\n, \\\\r, U+2028, U+2029) like any other character when stripping the directory part and the extension prefix",
+        "requirementId": "line-terminator-handle",
+        "why": "The task states getType('LINE\\nFEED.png') returns null instead of 'image/png' and the same for other line terminators. After the fix, all should return 'image/png'. Includes cases with directory parts (/, \\\\) mixed with line terminators, line terminators at start, and in extension position."
+      },
+      "kind": "evidence",
+      "output": "check line-terminator-directory-stripping pinned, replacing the earlier one; 2 planned check(s) so far (normal-paths-preserving-strings, line-terminator-directory-stripping), each run once on the unchanged base before implementation.\nline-terminator-directory-stripping inputs as read: \"LINE\\nFEED.png\", \"LINE\\rFEED.png\", \"LINE\\u2028FEED.png\", \"LINE\\u2029FEED.png\", \"dir/NAME\\nFILE.png\", \"dir\\\\NAME\\rFILE.png\", \"dir/NAME\\u2028FILE.png\", \"dir\\\\NAME\\u2029FILE.png\", \"\\nNAME.png\", \"\\rNAME.png\", \"\\u2028NAME.png\", \"\\u2029NAME.png\", \"file\\n.png\"\nTask sentences no requirement quotes yet. A sentence that states behaviour (what changes, what must keep working) is covered by a requirement that quotes it, with a check; one that only says how to work (which files to change, how to build or test) needs none:\n[1] Mime.getType(path) (src/Mime.ts) derives a type from the extension after the last dot of the last path segment.\n[2] The two regular expressions that strip the directory part and the part before the extension do not match across line terminators, so a file name that contains one is typed wrongly: getType('LINE\\nFEED.png') returns nu...\n[3] This matters where the file name comes from an untrusted source: a content type decided from it must come from the extension after the last dot of the last segment, whatever characters precede it, so that a name craft...\n[5] The change belongs in src/Mime.ts only.\n[6] Repository rules: keep the file's existing style, no new dependencies, no edits under test or types, and the whole suite (npm test, which builds first) must keep passing.\nWhen every input is what you meant and every behaviour the task states is covered, finish with a one-line summary and no tool calls.",
+      "outputBytes": 1719,
+      "toolName": "declare_planned_check"
+    },
+    {
+      "callId": "call_jw966oa6",
+      "decision": "allowed",
+      "decodedFields": [],
+      "denial": null,
+      "derivation": {
+        "matched": false,
+        "method": "none",
+        "score": 0,
+        "settings": {
+          "minSubstringLength": 12,
+          "ngramSize": 3,
+          "threshold": 0.6,
+          "windowSize": 8
+        },
+        "source": null
+      },
+      "detail": "2539 bytes returned",
+      "facts": {
+        "checks": 2
+      },
+      "input": {
+        "cases": [
+          {
+            "expected": "text/plain",
+            "input": "text.txt"
+          },
+          {
+            "expected": "text/plain",
+            "input": "TEXT.TXT"
+          },
+          {
+            "expected": "text/plain",
+            "input": "txt"
+          },
+          {
+            "expected": "text/plain",
+            "input": ".txt"
+          },
+          {
+            "expected": "text/plain",
+            "input": "dir/text.txt"
+          },
+          {
+            "expected": "text/plain",
+            "input": "dir\\\\text.txt"
+          },
+          {
+            "expected": "text/html",
+            "input": "/path/to/page.html"
+          },
+          {
+            "expected": "text/html",
+            "input": "c:\\\\path\\\\to\\\\page.html"
+          },
+          {
+            "expected": "application/json",
+            "input": ".config.json"
+          },
+          {
+            "expected": "text/plain",
+            "input": "file name.txt"
+          },
+          {
+            "expected": "text/plain",
+            "input": "file\tname.txt"
+          },
+          {
+            "expected": null,
+            "input": ".bogus"
+          },
+          {
+            "expected": null,
+            "input": "bogus"
+          },
+          {
+            "expected": null,
+            "input": "/txt"
+          },
+          {
+            "expected": null,
+            "input": "\\\\txt"
+          },
+          {
+            "expected": null,
+            "input": "text.nope"
+          }
+        ],
+        "id": "normal-paths-preserving-strings",
+        "program": "import mimeInstance from './dist/src/index.js';\n\nexport default function (input) {\n  return mimeInstance.getType(input);\n}",
+        "purpose": "preserve",
+        "quote": "a space or tab in the name already works and must keep working.",
+        "requirement": "getType still correctly resolves types for normal paths, bare extensions, and edge cases unchanged by the task",
+        "requirementId": "normal-type-resolution",
+        "why": "The task states that normal paths must keep working and specifically calls out 'space or tab in the name already works'. These tests cover: bare extensions, uppercase variants, directory paths (both / and \\\\ separators), dotted filenames like .config.json, edge cases with only a dot, non-string inputs, extension-less files, and unknown extensions."
+      },
+      "kind": "evidence",
+      "output": "check normal-paths-preserving-strings pinned, replacing the earlier one; 2 planned check(s) so far (line-terminator-directory-stripping, normal-paths-preserving-strings), each run once on the unchanged base before implementation.\nnormal-paths-preserving-strings inputs as read: \"text.txt\", \"TEXT.TXT\", \"txt\", \".txt\", \"dir/text.txt\", \"dir\\\\\\\\text.txt\", \"/path/to/page.html\", \"c:\\\\\\\\path\\\\\\\\to\\\\\\\\page.html\", \".config.json\", \"file name.txt\", \"file\\tname.txt\", \".bogus\", \"bogus\", \"/txt\", \"\\\\\\\\txt\", \"text.nope\"\nwarning: normal-paths-preserving-strings case 6 holds a backslash followed by t, which is two characters, not a line terminator or tab. If you meant the control character, write it inside the JSON string with one backslash (\\n) and declare again; if the backslash is meant, leave it.\nwarning: normal-paths-preserving-strings case 8 holds a backslash followed by t, which is two characters, not a line terminator or tab. If you meant the control character, write it inside the JSON string with one backslash (\\n) and declare again; if the backslash is meant, leave it.\nwarning: normal-paths-preserving-strings case 15 holds a backslash followed by t, which is two characters, not a line terminator or tab. If you meant the control character, write it inside the JSON string with one backslash (\\n) and declare again; if the backslash is meant, leave it.\nTask sentences no requirement quotes yet. A sentence that states behaviour (what changes, what must keep working) is covered by a requirement that quotes it, with a check; one that only says how to work (which files to change, how to build or test) needs none:\n[1] Mime.getType(path) (src/Mime.ts) derives a type from the extension after the last dot of the last path segment.\n[2] The two regular expressions that strip the directory part and the part before the extension do not match across line terminators, so a file name that contains one is typed wrongly: getType('LINE\\nFEED.png') returns nu...\n[3] This matters where the file name comes from an untrusted source: a content type decided from it must come from the extension after the last dot of the last segment, whatever characters precede it, so that a name craft...\n[5] The change belongs in src/Mime.ts only.\n[6] Repository rules: keep the file's existing style, no new dependencies, no edits under test or types, and the whole suite (npm test, which builds first) must keep passing.\nWhen every input is what you meant and every behaviour the task states is covered, finish with a one-line summary and no tool calls.",
+      "outputBytes": 2539,
+      "toolName": "declare_planned_check"
+    },
+    {
+      "callId": "call_1rx98krj",
+      "decision": "allowed",
+      "decodedFields": [],
+      "denial": null,
+      "derivation": {
+        "matched": false,
+        "method": "none",
+        "score": 0,
+        "settings": {
+          "minSubstringLength": 12,
+          "ngramSize": 3,
+          "threshold": 0.6,
+          "windowSize": 8
+        },
+        "source": null
+      },
+      "detail": "2511 bytes returned",
+      "facts": {
+        "checks": 2
+      },
+      "input": {
+        "cases": [
+          {
+            "expected": "text/plain",
+            "input": "text.txt"
+          },
+          {
+            "expected": "text/plain",
+            "input": "TEXT.TXT"
+          },
+          {
+            "expected": "text/plain",
+            "input": "txt"
+          },
+          {
+            "expected": "text/plain",
+            "input": ".txt"
+          },
+          {
+            "expected": "text/plain",
+            "input": "dir/text.txt"
+          },
+          {
+            "expected": "text/plain",
+            "input": "dir\\text.txt"
+          },
+          {
+            "expected": "text/html",
+            "input": "/path/to/page.html"
+          },
+          {
+            "expected": "text/html",
+            "input": "c:\\path\\to\\page.html"
+          },
+          {
+            "expected": "application/json",
+            "input": ".config.json"
+          },
+          {
+            "expected": "text/plain",
+            "input": "file name.txt"
+          },
+          {
+            "expected": null,
+            "input": ".bogus"
+          },
+          {
+            "expected": null,
+            "input": "bogus"
+          },
+          {
+            "expected": null,
+            "input": "/txt"
+          },
+          {
+            "expected": null,
+            "input": "\\txt"
+          },
+          {
+            "expected": null,
+            "input": "text.nope"
+          }
+        ],
+        "id": "normal-paths-preserving-strings",
+        "program": "import mimeInstance from './dist/src/index.js';\n\nexport default function (input) {\n  return mimeInstance.getType(input);\n}",
+        "purpose": "preserve",
+        "quote": "a space or tab in the name already works and must keep working.",
+        "requirement": "getType still correctly resolves types for normal paths, bare extensions, and edge cases unchanged by the task",
+        "requirementId": "normal-type-resolution",
+        "why": "The task states that normal paths must keep working and specifically calls out 'space or tab in the name already works'. These tests cover: bare extensions, uppercase variants, directory paths (both / and \\\\ separators), dotted filenames like .config.json, edge cases with only a dot, extension-less files, unknown extensions, and null-returning edge cases."
+      },
+      "kind": "evidence",
+      "output": "check normal-paths-preserving-strings pinned, replacing the earlier one; 2 planned check(s) so far (line-terminator-directory-stripping, normal-paths-preserving-strings), each run once on the unchanged base before implementation.\nnormal-paths-preserving-strings inputs as read: \"text.txt\", \"TEXT.TXT\", \"txt\", \".txt\", \"dir/text.txt\", \"dir\\\\text.txt\", \"/path/to/page.html\", \"c:\\\\path\\\\to\\\\page.html\", \".config.json\", \"file name.txt\", \".bogus\", \"bogus\", \"/txt\", \"\\\\txt\", \"text.nope\"\nwarning: normal-paths-preserving-strings case 6 holds a backslash followed by t, which is two characters, not a line terminator or tab. If you meant the control character, write it inside the JSON string with one backslash (\\n) and declare again; if the backslash is meant, leave it.\nwarning: normal-paths-preserving-strings case 8 holds a backslash followed by t, which is two characters, not a line terminator or tab. If you meant the control character, write it inside the JSON string with one backslash (\\n) and declare again; if the backslash is meant, leave it.\nwarning: normal-paths-preserving-strings case 14 holds a backslash followed by t, which is two characters, not a line terminator or tab. If you meant the control character, write it inside the JSON string with one backslash (\\n) and declare again; if the backslash is meant, leave it.\nTask sentences no requirement quotes yet. A sentence that states behaviour (what changes, what must keep working) is covered by a requirement that quotes it, with a check; one that only says how to work (which files to change, how to build or test) needs none:\n[1] Mime.getType(path) (src/Mime.ts) derives a type from the extension after the last dot of the last path segment.\n[2] The two regular expressions that strip the directory part and the part before the extension do not match across line terminators, so a file name that contains one is typed wrongly: getType('LINE\\nFEED.png') returns nu...\n[3] This matters where the file name comes from an untrusted source: a content type decided from it must come from the extension after the last dot of the last segment, whatever characters precede it, so that a name craft...\n[5] The change belongs in src/Mime.ts only.\n[6] Repository rules: keep the file's existing style, no new dependencies, no edits under test or types, and the whole suite (npm test, which builds first) must keep passing.\nWhen every input is what you meant and every behaviour the task states is covered, finish with a one-line summary and no tool calls.",
+      "outputBytes": 2511,
+      "toolName": "declare_planned_check"
+    },
+    {
+      "callId": "call_6811wrx5",
+      "decision": "allowed",
+      "decodedFields": [],
+      "denial": null,
+      "derivation": {
+        "matched": false,
+        "method": "none",
+        "score": 0,
+        "settings": {
+          "minSubstringLength": 12,
+          "ngramSize": 3,
+          "threshold": 0.6,
+          "windowSize": 8
+        },
+        "source": null
+      },
+      "detail": "2504 bytes returned",
+      "facts": {
+        "checks": 2
+      },
+      "input": {
+        "cases": [
+          {
+            "expected": "text/plain",
+            "input": "text.txt"
+          },
+          {
+            "expected": "text/plain",
+            "input": "TEXT.TXT"
+          },
+          {
+            "expected": "text/plain",
+            "input": "txt"
+          },
+          {
+            "expected": "text/plain",
+            "input": ".txt"
+          },
+          {
+            "expected": "text/plain",
+            "input": "dir/text.txt"
+          },
+          {
+            "expected": "text/plain",
+            "input": "dir\\\\text.txt"
+          },
+          {
+            "expected": "text/html",
+            "input": "/path/to/page.html"
+          },
+          {
+            "expected": "text/html",
+            "input": "c:\\\\path\\\\to\\\\page.html"
+          },
+          {
+            "expected": "application/json",
+            "input": ".config.json"
+          },
+          {
+            "expected": null,
+            "input": ".bogus"
+          },
+          {
+            "expected": null,
+            "input": "bogus"
+          },
+          {
+            "expected": null,
+            "input": "/txt"
+          },
+          {
+            "expected": null,
+            "input": "\\\\txt"
+          },
+          {
+            "expected": null,
+            "input": "text.nope"
+          }
+        ],
+        "id": "normal-paths-preserving-strings",
+        "program": "import mimeInstance from './dist/src/index.js';\n\nexport default function (input) {\n  return mimeInstance.getType(input);\n}",
+        "purpose": "preserve",
+        "quote": "a space or tab in the name already works and must keep working.",
+        "requirement": "getType still correctly resolves types for normal paths, bare extensions, and edge cases unchanged by the task",
+        "requirementId": "normal-type-resolution",
+        "why": "The task states that normal paths must keep working and specifically calls out 'space or tab in the name already works'. These tests cover: bare extensions, uppercase variants, directory paths (both / and \\\\ separators), dotted filenames like .config.json, edge cases with only a dot, non-string inputs, extension-less files, and unknown extensions."
+      },
+      "kind": "evidence",
+      "output": "check normal-paths-preserving-strings pinned, replacing the earlier one; 2 planned check(s) so far (line-terminator-directory-stripping, normal-paths-preserving-strings), each run once on the unchanged base before implementation.\nnormal-paths-preserving-strings inputs as read: \"text.txt\", \"TEXT.TXT\", \"txt\", \".txt\", \"dir/text.txt\", \"dir\\\\\\\\text.txt\", \"/path/to/page.html\", \"c:\\\\\\\\path\\\\\\\\to\\\\\\\\page.html\", \".config.json\", \".bogus\", \"bogus\", \"/txt\", \"\\\\\\\\txt\", \"text.nope\"\nwarning: normal-paths-preserving-strings case 6 holds a backslash followed by t, which is two characters, not a line terminator or tab. If you meant the control character, write it inside the JSON string with one backslash (\\n) and declare again; if the backslash is meant, leave it.\nwarning: normal-paths-preserving-strings case 8 holds a backslash followed by t, which is two characters, not a line terminator or tab. If you meant the control character, write it inside the JSON string with one backslash (\\n) and declare again; if the backslash is meant, leave it.\nwarning: normal-paths-preserving-strings case 13 holds a backslash followed by t, which is two characters, not a line terminator or tab. If you meant the control character, write it inside the JSON string with one backslash (\\n) and declare again; if the backslash is meant, leave it.\nTask sentences no requirement quotes yet. A sentence that states behaviour (what changes, what must keep working) is covered by a requirement that quotes it, with a check; one that only says how to work (which files to change, how to build or test) needs none:\n[1] Mime.getType(path) (src/Mime.ts) derives a type from the extension after the last dot of the last path segment.\n[2] The two regular expressions that strip the directory part and the part before the extension do not match across line terminators, so a file name that contains one is typed wrongly: getType('LINE\\nFEED.png') returns nu...\n[3] This matters where the file name comes from an untrusted source: a content type decided from it must come from the extension after the last dot of the last segment, whatever characters precede it, so that a name craft...\n[5] The change belongs in src/Mime.ts only.\n[6] Repository rules: keep the file's existing style, no new dependencies, no edits under test or types, and the whole suite (npm test, which builds first) must keep passing.\nWhen every input is what you meant and every behaviour the task states is covered, finish with a one-line summary and no tool calls.",
+      "outputBytes": 2504,
+      "toolName": "declare_planned_check"
+    },
+    {
+      "callId": "call_7fvxio2g",
+      "decision": "allowed",
+      "decodedFields": [],
+      "denial": null,
+      "derivation": {
+        "matched": false,
+        "method": "none",
+        "score": 0,
+        "settings": {
+          "minSubstringLength": 12,
+          "ngramSize": 3,
+          "threshold": 0.6,
+          "windowSize": 8
+        },
+        "source": null
+      },
+      "detail": "2494 bytes returned",
+      "facts": {
+        "checks": 2
+      },
+      "input": {
+        "cases": [
+          {
+            "expected": "text/plain",
+            "input": "text.txt"
+          },
+          {
+            "expected": "text/plain",
+            "input": "TEXT.TXT"
+          },
+          {
+            "expected": "text/plain",
+            "input": "txt"
+          },
+          {
+            "expected": "text/plain",
+            "input": ".txt"
+          },
+          {
+            "expected": "text/plain",
+            "input": "dir/text.txt"
+          },
+          {
+            "expected": "text/plain",
+            "input": "dir\\text.txt"
+          },
+          {
+            "expected": "text/html",
+            "input": "/path/to/page.html"
+          },
+          {
+            "expected": "text/html",
+            "input": "c:\\path\\to\\page.html"
+          },
+          {
+            "expected": "application/json",
+            "input": ".config.json"
+          },
+          {
+            "expected": null,
+            "input": ".bogus"
+          },
+          {
+            "expected": null,
+            "input": "bogus"
+          },
+          {
+            "expected": null,
+            "input": "/txt"
+          },
+          {
+            "expected": null,
+            "input": "\\txt"
+          },
+          {
+            "expected": null,
+            "input": "text.nope"
+          }
+        ],
+        "id": "normal-paths-preserving-strings",
+        "program": "import mimeInstance from './dist/src/index.js';\n\nexport default function (input) {\n  return mimeInstance.getType(input);\n}",
+        "purpose": "preserve",
+        "quote": "a space or tab in the name already works and must keep working.",
+        "requirement": "getType still correctly resolves types for normal paths, bare extensions, and edge cases unchanged by the task",
+        "requirementId": "normal-type-resolution",
+        "why": "The task states that normal paths must keep working and specifically calls out 'space or tab in the name already works'. These tests cover: bare extensions, uppercase variants, directory paths (both / and \\\\ separators), dotted filenames like .config.json, edge cases with only a dot, non-string inputs, extension-less files, and unknown extensions."
+      },
+      "kind": "evidence",
+      "output": "check normal-paths-preserving-strings pinned, replacing the earlier one; 2 planned check(s) so far (line-terminator-directory-stripping, normal-paths-preserving-strings), each run once on the unchanged base before implementation.\nnormal-paths-preserving-strings inputs as read: \"text.txt\", \"TEXT.TXT\", \"txt\", \".txt\", \"dir/text.txt\", \"dir\\\\text.txt\", \"/path/to/page.html\", \"c:\\\\path\\\\to\\\\page.html\", \".config.json\", \".bogus\", \"bogus\", \"/txt\", \"\\\\txt\", \"text.nope\"\nwarning: normal-paths-preserving-strings case 6 holds a backslash followed by t, which is two characters, not a line terminator or tab. If you meant the control character, write it inside the JSON string with one backslash (\\n) and declare again; if the backslash is meant, leave it.\nwarning: normal-paths-preserving-strings case 8 holds a backslash followed by t, which is two characters, not a line terminator or tab. If you meant the control character, write it inside the JSON string with one backslash (\\n) and declare again; if the backslash is meant, leave it.\nwarning: normal-paths-preserving-strings case 13 holds a backslash followed by t, which is two characters, not a line terminator or tab. If you meant the control character, write it inside the JSON string with one backslash (\\n) and declare again; if the backslash is meant, leave it.\nTask sentences no requirement quotes yet. A sentence that states behaviour (what changes, what must keep working) is covered by a requirement that quotes it, with a check; one that only says how to work (which files to change, how to build or test) needs none:\n[1] Mime.getType(path) (src/Mime.ts) derives a type from the extension after the last dot of the last path segment.\n[2] The two regular expressions that strip the directory part and the part before the extension do not match across line terminators, so a file name that contains one is typed wrongly: getType('LINE\\nFEED.png') returns nu...\n[3] This matters where the file name comes from an untrusted source: a content type decided from it must come from the extension after the last dot of the last segment, whatever characters precede it, so that a name craft...\n[5] The change belongs in src/Mime.ts only.\n[6] Repository rules: keep the file's existing style, no new dependencies, no edits under test or types, and the whole suite (npm test, which builds first) must keep passing.\nWhen every input is what you meant and every behaviour the task states is covered, finish with a one-line summary and no tool calls.",
+      "outputBytes": 2494,
+      "toolName": "declare_planned_check"
+    },
+    {
+      "callId": "call_ky2d94na",
+      "decision": "denied",
+      "decodedFields": [],
+      "denial": "invalid-input",
+      "derivation": {
+        "matched": false,
+        "method": "none",
+        "score": 0,
+        "settings": {
+          "minSubstringLength": 12,
+          "ngramSize": 3,
+          "threshold": 0.6,
+          "windowSize": 8
+        },
+        "source": null
+      },
+      "detail": "input rejected: [\n  {\n    \"expected\": \"array\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"cases\"\n    ],\n    \"message\": \"Invalid input: expected array, received string\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_big\",\n    \"maximum\": 32,\n    \"inclusive\": true,\n    \"path\": [\n      \"cases\"\n    ],\n    \"message\": \"Too big: expected string to have <=32 characters\"\n  }\n]\ncases arrived as a string and is not valid JSON (Unexpected token 'u', ...\"l,\"input\":undefined}\"... is not valid JSON); send it as an array itself, not as a string",
+      "facts": {},
+      "input": {
+        "cases": "[{\"expected\":null,\"input\":null},{\"expected\":null,\"input\":undefined},{\"expected\":null,\"input\":42},{\"expected\":null,\"input\":{}},{\"expected\":\"image/png\",\"input\":\"test.png\"}]",
+        "id": "non-string-inputs-return-null",
+        "program": "import mimeInstance from './dist/src/index.js';\n\nexport default function (input) {\n  return mimeInstance.getType(input);\n}",
+        "purpose": "preserve",
+        "quote": "a space or tab in the name already works and must keep working.",
+        "requirement": "getType returns null for non-string inputs (null, undefined, numbers, objects) and extension-less files",
+        "requirementId": "type-check-preserve",
+        "why": "The existing test suite already covers non-string inputs returning null. These must keep working: null, undefined, numbers, and objects should all return null via the typeof check. A valid extension (png) returns image/png to verify the function still works for normal input."
+      },
+      "kind": "evidence",
+      "output": "",
+      "outputBytes": 0,
+      "toolName": "declare_planned_check"
+    },
+    {
+      "callId": "call_r5ptnrdn",
+      "decision": "denied",
+      "decodedFields": [],
+      "denial": "invalid-input",
+      "derivation": {
+        "matched": false,
+        "method": "none",
+        "score": 0,
+        "settings": {
+          "minSubstringLength": 12,
+          "ngramSize": 3,
+          "threshold": 0.6,
+          "windowSize": 8
+        },
+        "source": null
+      },
+      "detail": "input rejected: [\n  {\n    \"expected\": \"array\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"cases\"\n    ],\n    \"message\": \"Invalid input: expected array, received string\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_big\",\n    \"maximum\": 32,\n    \"inclusive\": true,\n    \"path\": [\n      \"cases\"\n    ],\n    \"message\": \"Too big: expected string to have <=32 characters\"\n  }\n]\ncases arrived as a string and is not valid JSON (Unexpected token 'u', ...\"l,\"input\":undefined}\"... is not valid JSON); send it as an array itself, not as a string",
+      "facts": {},
+      "input": {
+        "cases": "[{\"expected\":null,\"input\":null},{\"expected\":null,\"input\":undefined},{\"expected\":null,\"input\":42},{\"expected\":\"image/png\",\"input\":\"test.png\"}]",
+        "id": "non-string-inputs-return-null",
+        "program": "import mimeInstance from './dist/src/index.js';\n\nexport default function (input) {\n  return mimeInstance.getType(input);\n}",
+        "purpose": "preserve",
+        "quote": "a space or tab in the name already works and must keep working.",
+        "requirement": "getType returns null for non-string inputs",
+        "requirementId": "type-check-preserve",
+        "why": "The existing test suite covers non-string inputs returning null. These must keep working: null, undefined, and numbers return null via the typeof check. Valid extension returns type to verify basic functionality still works."
+      },
+      "kind": "evidence",
+      "output": "",
+      "outputBytes": 0,
+      "toolName": "declare_planned_check"
+    },
+    {
+      "callId": "call_kerf7ea7",
+      "decision": "allowed",
+      "decodedFields": [],
+      "denial": null,
+      "derivation": {
+        "matched": false,
+        "method": "none",
+        "score": 0,
+        "settings": {
+          "minSubstringLength": 12,
+          "ngramSize": 3,
+          "threshold": 0.6,
+          "windowSize": 8
+        },
+        "source": null
+      },
+      "detail": "1479 bytes returned",
+      "facts": {
+        "checks": 3
+      },
+      "input": {
+        "cases": [
+          {
+            "expected": null,
+            "input": "null_str"
+          },
+          {
+            "expected": "image/png",
+            "input": "test.png"
+          }
+        ],
+        "id": "non-string-inputs-return-null",
+        "program": "import mimeInstance from './dist/src/index.js';\n\nexport default function (input) {\n  return mimeInstance.getType(input);\n}",
+        "purpose": "preserve",
+        "quote": "a space or tab in the name already works and must keep working.",
+        "requirement": "getType returns null for non-string inputs and extension-less files",
+        "requirementId": "type-check-preserve",
+        "why": "The existing test suite already covers non-string inputs returning null. A valid extension (png) returns image/png to verify the function still works for normal input through the project's built path."
+      },
+      "kind": "evidence",
+      "output": "check non-string-inputs-return-null pinned; 3 planned check(s) so far (line-terminator-directory-stripping, normal-paths-preserving-strings, non-string-inputs-return-null), each run once on the unchanged base before implementation.\nnon-string-inputs-return-null inputs as read: \"null_str\", \"test.png\"\nTask sentences no requirement quotes yet. A sentence that states behaviour (what changes, what must keep working) is covered by a requirement that quotes it, with a check; one that only says how to work (which files to change, how to build or test) needs none:\n[1] Mime.getType(path) (src/Mime.ts) derives a type from the extension after the last dot of the last path segment.\n[2] The two regular expressions that strip the directory part and the part before the extension do not match across line terminators, so a file name that contains one is typed wrongly: getType('LINE\\nFEED.png') returns nu...\n[3] This matters where the file name comes from an untrusted source: a content type decided from it must come from the extension after the last dot of the last segment, whatever characters precede it, so that a name craft...\n[5] The change belongs in src/Mime.ts only.\n[6] Repository rules: keep the file's existing style, no new dependencies, no edits under test or types, and the whole suite (npm test, which builds first) must keep passing.\nWhen every input is what you meant and every behaviour the task states is covered, finish with a one-line summary and no tool calls.",
+      "outputBytes": 1479,
+      "toolName": "declare_planned_check"
+    },
+    {
+      "callId": "call_dbyej6kh",
+      "decision": "allowed",
+      "decodedFields": [],
+      "denial": null,
+      "derivation": {
+        "matched": false,
+        "method": "none",
+        "score": 0,
+        "settings": {
+          "minSubstringLength": 12,
+          "ngramSize": 3,
+          "threshold": 0.6,
+          "windowSize": 8
+        },
+        "source": null
+      },
+      "detail": "1778 bytes returned",
+      "facts": {
+        "checks": 3
+      },
+      "input": {
+        "cases": [
+          {
+            "expected": "image/png",
+            "input": "LINE\nFEED.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "LINE\rFEED.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "LINE FEED.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "LINE FEED.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "dir/NAME\nFILE.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "dir\\NAME\rFILE.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "dir/NAME FILE.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "dir\\NAME FILE.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "\nNAME.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "\rNAME.png"
+          },
+          {
+            "expected": "image/png",
+            "input": " NAME.png"
+          },
+          {
+            "expected": "image/png",
+            "input": " NAME.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "file\n.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "test.png"
+          },
+          {
+            "expected": "text/plain",
+            "input": "dir/text.txt"
+          }
+        ],
+        "id": "line-terminator-directory-stripping",
+        "program": "import mimeInstance from './dist/src/index.js';\n\nexport default function (input) {\n  return mimeInstance.getType(input);\n}",
+        "purpose": "change",
+        "quote": "Make getType treat every line terminator like any other character when it strips the directory part and the extension's prefix; a space or tab in the name already works and must keep working.",
+        "requirement": "getType treats every line terminator (\\\\n, \\\\r, U+2028, U+2029) like any other character when stripping the directory part and the extension prefix",
+        "requirementId": "line-terminator-handle",
+        "why": "The task states getType('LINE\\nFEED.png') returns null instead of 'image/png' and the same for other line terminators. After the fix, all should return 'image/png'. The last two cases (test.png with directory) are unchanged behavior - they must keep working on the base."
+      },
+      "kind": "evidence",
+      "output": "check line-terminator-directory-stripping pinned, replacing the earlier one; 3 planned check(s) so far (normal-paths-preserving-strings, non-string-inputs-return-null, line-terminator-directory-stripping), each run once on the unchanged base before implementation.\nline-terminator-directory-stripping inputs as read: \"LINE\\nFEED.png\", \"LINE\\rFEED.png\", \"LINE\\u2028FEED.png\", \"LINE\\u2029FEED.png\", \"dir/NAME\\nFILE.png\", \"dir\\\\NAME\\rFILE.png\", \"dir/NAME\\u2028FILE.png\", \"dir\\\\NAME\\u2029FILE.png\", \"\\nNAME.png\", \"\\rNAME.png\", \"\\u2028NAME.png\", \"\\u2029NAME.png\", \"file\\n.png\", \"test.png\", \"dir/text.txt\"\nTask sentences no requirement quotes yet. A sentence that states behaviour (what changes, what must keep working) is covered by a requirement that quotes it, with a check; one that only says how to work (which files to change, how to build or test) needs none:\n[1] Mime.getType(path) (src/Mime.ts) derives a type from the extension after the last dot of the last path segment.\n[2] The two regular expressions that strip the directory part and the part before the extension do not match across line terminators, so a file name that contains one is typed wrongly: getType('LINE\\nFEED.png') returns nu...\n[3] This matters where the file name comes from an untrusted source: a content type decided from it must come from the extension after the last dot of the last segment, whatever characters precede it, so that a name craft...\n[5] The change belongs in src/Mime.ts only.\n[6] Repository rules: keep the file's existing style, no new dependencies, no edits under test or types, and the whole suite (npm test, which builds first) must keep passing.\nWhen every input is what you meant and every behaviour the task states is covered, finish with a one-line summary and no tool calls.",
+      "outputBytes": 1778,
+      "toolName": "declare_planned_check"
+    },
+    {
+      "callId": "call_2z31jzsv",
+      "decision": "denied",
+      "decodedFields": [],
+      "denial": "invalid-input",
+      "derivation": {
+        "matched": false,
+        "method": "none",
+        "score": 0,
+        "settings": {
+          "minSubstringLength": 12,
+          "ngramSize": 3,
+          "threshold": 0.6,
+          "windowSize": 8
+        },
+        "source": null
+      },
+      "detail": "input rejected: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"invalid_format\",\n    \"format\": \"regex\",\n    \"pattern\": \"/^[a-z][a-z0-9-]{0,63}$/\",\n    \"path\": [\n      \"requirementId\"\n    ],\n    \"message\": \"Invalid string: must match pattern /^[a-z][a-z0-9-]{0,63}$/\"\n  }\n]",
+      "facts": {},
+      "input": {
+        "cases": [
+          {
+            "expected": "html",
+            "input": {
+              "type": "text/html"
+            }
+          },
+          {
+            "expected": "test.png",
+            "input": {
+              "extension": "file name.png",
+              "type": null
+            }
+          },
+          {
+            "expected": "png",
+            "input": {
+              "type": "image/png"
+            }
+          }
+        ],
+        "id": "other-class-functions-unchanged",
+        "program": "import mimeInstance from './dist/src/index.js';\n\nexport default function ({ type, extension }) {\n  if (extension !== undefined) {\n    return mimeInstance.getType(extension);\n  }\n  return mimeInstance.getExtension(type);\n}",
+        "purpose": "preserve",
+        "quote": "getExtension, define and the rest of the class stay as they are.",
+        "requirement": "getExtension and define stay as they are",
+        "requirementId": "getExtension-define-preserve",
+        "why": "The task states getExtension and define stay as they are. These cases verify getExtension works correctly (with normal type, with null), and getType still works for filenames with spaces (already confirmed in other checks but included here too)."
+      },
+      "kind": "evidence",
+      "output": "",
+      "outputBytes": 0,
+      "toolName": "declare_planned_check"
+    }
+  ],
+  "verification": [
+    {
+      "at": 1792293088522,
+      "admittedContract": "sha256:1271969badec1c07f3ab9f725e136fb799c2f23a6a3ebe09fdc288203a9f191e",
+      "decisions": [
+        {
+          "admitted": false,
+          "atBase": "fails",
+          "basis": "model-asserted",
+          "broken": true,
+          "check": "line-terminator-directory-stripping",
+          "claimedChanges": {
+            "cases": 13,
+            "of": 13
+          },
+          "excerpt": "exit 0; stderr: ; stdout: {\"input\":\"LINE\\nFEED.png\",\"result\":null}\n{\"input\":\"LINE\\rFEED.png\",\"result\":null}\n{\"input\":\"LINE FEED.png\",\"result\":null}\n{\"input\":\"LINE FEED.png\",\"result\":null}\n{\"input\":\"dir/NAME\\nFILE.png\",\"result\":null}\n{\"input\":\"dir\\\\NAME\\rFILE.png\",\"result\":null}\n{\"input\":\"dir/NAME FILE.png\",\"result\":null}\n{\"input\":\"dir\\\\NAME FILE.png\",\"result\":null}\n{\"input\":\"\\nNAME.png\",\"result\":null}\n{\"input\":\"\\rNAME.png\",\"result\":null}\n{\"input\":\" NAME.png\",\"result\":null}\n{\"input\":\" NAME.png\",\"result\":null}\n{\"input\":\"file\\n.png\",\"result\":null}\n",
+          "observed": "rejected",
+          "reason": "it gets every case wrong on the base, so nothing shows its program calls the project correctly; a change check also holds a case the task does not change, which the base gets right",
+          "record": "sha256:562563d0ba633de34aa7233781def8b688b7ebb330f189d22e5c059ce8a45da9"
+        },
+        {
+          "admitted": false,
+          "atBase": "passes",
+          "basis": "base-observed",
+          "broken": false,
+          "check": "normal-paths-preserving-strings",
+          "claimedChanges": {
+            "cases": 11,
+            "of": 16
+          },
+          "excerpt": "line 1 should be `{\"input\":\"text.txt\",\"result\":\"text/plain\"}` but was `{\"input\":\"text.txt\",\"result\":null}`; line 2 should be `{\"input\":\"TEXT.TXT\",\"result\":\"text/plain\"}` but was `{\"input\":\"TEXT.TXT\",\"result\":null}`; line 3 should be `{\"input\":\"txt\",\"result\":\"text/plain\"}` but was `{\"input\":\"txt\",\"result\":null}`; line 4 should be `{\"input\":\".txt\",\"result\":\"text/plain\"}` but was `{\"input\":\".txt\",\"result\":null}`; line 5 should be `{\"input\":\"dir/text.txt\",\"result\":\"text/plain\"}` but was `{\"input\":\"dir/text.txt\",\"result\":null}`; line 6 should be `{\"input\":\"dir\\\\text.txt\",\"result\":\"text/plain\"}` but was `{\"input\":\"dir\\\\text.txt\",\"result\":null}`; line 7 should be `{\"input\":\"/path/to/page.html\",\"result\":\"text/html\"}` but was `{\"input\":\"/path/to/page.html\",\"result\":null}`; line 8 should be `{\"input\":\"c:\\\\path\\\\to\\\\page.html\",\"result\":\"text/html\"}` but was `{\"input\":\"c:\\\\path\\\\to\\\\page.html\",\"result\":null}`; further lines differ",
+          "observed": "rejected",
+          "reason": "it fails on the base, so its expectation contradicts behaviour the task keeps",
+          "record": "sha256:ae55116fc9f0906052ab0accc516af13b4a92eab50d856b54ea227f1d2471527"
+        }
+      ],
+      "droppedRequirements": [],
+      "rule": "planned-check-admission-v1",
+      "unverifiedRequirements": [
+        "line-terminator-handle",
+        "normal-type-resolution"
+      ]
+    },
+    {
+      "at": 1792293156907,
+      "admittedContract": "sha256:b58ab8bc6492165109eadebd8378e62a582311ec699d203defea01df1f3be8a8",
+      "decisions": [
+        {
+          "admitted": false,
+          "atBase": "fails",
+          "basis": "model-asserted",
+          "broken": true,
+          "check": "line-terminator-directory-stripping",
+          "claimedChanges": {
+            "cases": 13,
+            "of": 13
+          },
+          "excerpt": "exit 0; stderr: ; stdout: {\"input\":\"LINE\\nFEED.png\",\"result\":null}\n{\"input\":\"LINE\\rFEED.png\",\"result\":null}\n{\"input\":\"LINE FEED.png\",\"result\":null}\n{\"input\":\"LINE FEED.png\",\"result\":null}\n{\"input\":\"dir/NAME\\nFILE.png\",\"result\":null}\n{\"input\":\"dir\\\\NAME\\rFILE.png\",\"result\":null}\n{\"input\":\"dir/NAME FILE.png\",\"result\":null}\n{\"input\":\"dir\\\\NAME FILE.png\",\"result\":null}\n{\"input\":\"\\nNAME.png\",\"result\":null}\n{\"input\":\"\\rNAME.png\",\"result\":null}\n{\"input\":\" NAME.png\",\"result\":null}\n{\"input\":\" NAME.png\",\"result\":null}\n{\"input\":\"file\\n.png\",\"result\":null}\n",
+          "observed": "rejected",
+          "reason": "it gets every case wrong on the base, so nothing shows its program calls the project correctly; a change check also holds a case the task does not change, which the base gets right",
+          "record": "sha256:9b80ce0511a97abc4250c0822a9968d9ac650bb0fd124e37df9c5b45f3ef4b2b"
+        },
+        {
+          "admitted": true,
+          "atBase": "passes",
+          "basis": "base-observed",
+          "broken": false,
+          "check": "normal-paths-preserving-strings",
+          "claimedChanges": {
+            "cases": 0,
+            "of": 14
+          },
+          "excerpt": null,
+          "observed": "accepted",
+          "reason": "it passes on the base, which keeps the behaviour it checks",
+          "record": "sha256:d01a19f1438b606ebb208a7768bacd90674e65b60e6967d23ecf711e4b2b2ac7"
+        },
+        {
+          "admitted": true,
+          "atBase": "passes",
+          "basis": "base-observed",
+          "broken": false,
+          "check": "non-string-inputs-return-null",
+          "claimedChanges": {
+            "cases": 0,
+            "of": 2
+          },
+          "excerpt": null,
+          "observed": "accepted",
+          "reason": "it passes on the base, which keeps the behaviour it checks",
+          "record": "sha256:61c16444a8467403f89e5ccb273382b02069e4099960d6c4a4905509c8c07d1a"
+        }
+      ],
+      "droppedRequirements": [],
+      "rule": "planned-check-admission-v1",
+      "unverifiedRequirements": [
+        "line-terminator-handle"
+      ]
+    },
+    {
+      "at": 1792293176781,
+      "admittedContract": "sha256:669b040a81642ce637f801348ffc730dfdbc176fa5a2971e0dafbbe6462076d3",
+      "decisions": [
+        {
+          "admitted": true,
+          "atBase": "passes",
+          "basis": "base-observed",
+          "broken": false,
+          "check": "normal-paths-preserving-strings",
+          "claimedChanges": {
+            "cases": 0,
+            "of": 14
+          },
+          "excerpt": null,
+          "observed": "accepted",
+          "reason": "it passes on the base, which keeps the behaviour it checks",
+          "record": "sha256:f80add40fe58615b732048b57cdc754e633d3662612d3e4dc022a706859f785b"
+        },
+        {
+          "admitted": true,
+          "atBase": "passes",
+          "basis": "base-observed",
+          "broken": false,
+          "check": "non-string-inputs-return-null",
+          "claimedChanges": {
+            "cases": 0,
+            "of": 2
+          },
+          "excerpt": null,
+          "observed": "accepted",
+          "reason": "it passes on the base, which keeps the behaviour it checks",
+          "record": "sha256:74dc565ef12f2fffa967d0304eb87314d37f4b8fe2f825f7e029379fbcc4af59"
+        },
+        {
+          "admitted": true,
+          "atBase": "fails",
+          "basis": "model-asserted",
+          "broken": false,
+          "check": "line-terminator-directory-stripping",
+          "claimedChanges": {
+            "cases": 13,
+            "of": 15
+          },
+          "excerpt": null,
+          "observed": "rejected",
+          "reason": "it completes on the base with a wrong result, as a check of the change must",
+          "record": "sha256:5c37b1d73c57b6d9fd149f8263b05fd750c0559ea699874938c52e6fb2fb6195"
+        }
+      ],
+      "droppedRequirements": [],
+      "rule": "planned-check-admission-v1",
+      "unverifiedRequirements": []
+    }
+  ],
+  "sealed": [
+    {
+      "contract": {
+        "checks": [
+          {
+            "artifacts": [],
+            "author": "user",
+            "command": "npm run build && node acceptance/visible/check.mjs",
+            "exposure": "shared",
+            "id": "visible-check"
+          },
+          {
+            "artifacts": [],
+            "atBase": "passes",
+            "author": "model",
+            "behavior": {
+              "argv": [
+                "node",
+                "--input-type=module",
+                "-e",
+                "import { rmSync, writeFileSync } from \"node:fs\";\nimport { resolve } from \"node:path\";\nimport { pathToFileURL } from \"node:url\";\nconst write = process.stdout.write.bind(process.stdout);\nprocess.stdout.write = process.stderr.write.bind(process.stderr);\nconst plain = (value) =>\n  Array.isArray(value)\n    ? value.map(plain)\n    : value !== null && typeof value === \"object\"\n      ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, plain(value[key])]))\n      : value;\nlet text = \"\";\nfor await (const chunk of process.stdin) text += chunk;\nconst { program, inputs, relation } = JSON.parse(text);\nconst path = resolve(\".swarm-check-\" + process.pid + \".mjs\");\nlet run;\ntry {\n  writeFileSync(path, program, { flag: \"wx\" });\n  ({ default: run } = await import(pathToFileURL(path).href));\n} catch (error) {\n  console.error(\"the check program did not load: \" + (error?.stack ?? error));\n  process.exit(3);\n} finally {\n  rmSync(path, { force: true });\n}\nif (typeof run !== \"function\") {\n  console.error(\"the check program does not export a default function\");\n  process.exit(3);\n}\nconst call = async (input, label) => {\n  try {\n    const result = await run(input);\n    return { result: JSON.parse(JSON.stringify(result, (key, value) => (value === undefined ? null : value)) ?? \"null\") };\n  } catch (error) {\n    console.error(label + \" threw: \" + (error?.stack ?? error));\n    return { threw: true };\n  }\n};\nconst asReference = (value, variant, reference) =>\n  typeof value === \"string\"\n    ? value.split(variant).join(reference)\n    : Array.isArray(value)\n      ? value.map((one) => asReference(one, variant, reference))\n      : value !== null && typeof value === \"object\"\n        ? Object.fromEntries(Object.entries(value).map(([key, one]) => [key, asReference(one, variant, reference)]))\n        : value;\nif (relation === undefined) {\n  for (const [index, input] of inputs.entries())\n    write(JSON.stringify(plain({ input, ...(await call(input, \"case \" + (index + 1))) })) + \"\\n\");\n} else {\n  const { seeds, reference, variants } = relation;\n  for (const seed of seeds) {\n    let ran = 0;\n    let disagreements = 0;\n    const counterexamples = [];\n    for (let at = 0; at <= seed.length; at += 1) {\n      const place = (text) => seed.slice(0, at) + text + seed.slice(at);\n      const label = \"seed \" + JSON.stringify(seed) + \" at \" + at;\n      const expected = await call(place(reference), label);\n      ran += 1;\n      for (const variant of variants) {\n        const got = await call(place(variant), label);\n        ran += 1;\n        if (JSON.stringify(plain(asReference(got, variant, reference))) === JSON.stringify(plain(expected))) continue;\n        disagreements += 1;\n        if (counterexamples.length < 2)\n          counterexamples.push({ at, reference: { input: place(reference), ...expected }, variant: { input: place(variant), ...got } });\n      }\n    }\n    write(JSON.stringify(plain(disagreements === 0 ? { holds: true, ran, seed } : { counterexamples, disagreements, holds: false, ran, seed })) + \"\\n\");\n  }\n}"
+              ],
+              "cwd": ".",
+              "environment": {},
+              "exitCode": 0,
+              "kind": "cli",
+              "maxOutputBytes": 256000,
+              "network": "inherit",
+              "stderr": [],
+              "stdin": "{\"program\":\"import mimeInstance from './dist/src/index.js';\\n\\nexport default function (input) {\\n  return mimeInstance.getType(input);\\n}\",\"inputs\":[\"text.txt\",\"TEXT.TXT\",\"txt\",\".txt\",\"dir/text.txt\",\"dir\\\\text.txt\",\"/path/to/page.html\",\"c:\\\\path\\\\to\\\\page.html\",\".config.json\",\".bogus\",\"bogus\",\"/txt\",\"\\\\txt\",\"text.nope\"]}",
+              "stdout": [
+                {
+                  "kind": "equals",
+                  "value": "{\"input\":\"text.txt\",\"result\":\"text/plain\"}\n{\"input\":\"TEXT.TXT\",\"result\":\"text/plain\"}\n{\"input\":\"txt\",\"result\":\"text/plain\"}\n{\"input\":\".txt\",\"result\":\"text/plain\"}\n{\"input\":\"dir/text.txt\",\"result\":\"text/plain\"}\n{\"input\":\"dir\\\\text.txt\",\"result\":\"text/plain\"}\n{\"input\":\"/path/to/page.html\",\"result\":\"text/html\"}\n{\"input\":\"c:\\\\path\\\\to\\\\page.html\",\"result\":\"text/html\"}\n{\"input\":\".config.json\",\"result\":\"application/json\"}\n{\"input\":\".bogus\",\"result\":null}\n{\"input\":\"bogus\",\"result\":null}\n{\"input\":\"/txt\",\"result\":null}\n{\"input\":\"\\\\txt\",\"result\":null}\n{\"input\":\"text.nope\",\"result\":null}\n"
+                }
+              ],
+              "timeoutMs": 60000,
+              "toolchain": "Node"
+            },
+            "command": "planned check: 14 case(s) through the default export of its program",
+            "exposure": "shared",
+            "id": "normal-paths-preserving-strings"
+          },
+          {
+            "artifacts": [],
+            "atBase": "passes",
+            "author": "model",
+            "behavior": {
+              "argv": [
+                "node",
+                "--input-type=module",
+                "-e",
+                "import { rmSync, writeFileSync } from \"node:fs\";\nimport { resolve } from \"node:path\";\nimport { pathToFileURL } from \"node:url\";\nconst write = process.stdout.write.bind(process.stdout);\nprocess.stdout.write = process.stderr.write.bind(process.stderr);\nconst plain = (value) =>\n  Array.isArray(value)\n    ? value.map(plain)\n    : value !== null && typeof value === \"object\"\n      ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, plain(value[key])]))\n      : value;\nlet text = \"\";\nfor await (const chunk of process.stdin) text += chunk;\nconst { program, inputs, relation } = JSON.parse(text);\nconst path = resolve(\".swarm-check-\" + process.pid + \".mjs\");\nlet run;\ntry {\n  writeFileSync(path, program, { flag: \"wx\" });\n  ({ default: run } = await import(pathToFileURL(path).href));\n} catch (error) {\n  console.error(\"the check program did not load: \" + (error?.stack ?? error));\n  process.exit(3);\n} finally {\n  rmSync(path, { force: true });\n}\nif (typeof run !== \"function\") {\n  console.error(\"the check program does not export a default function\");\n  process.exit(3);\n}\nconst call = async (input, label) => {\n  try {\n    const result = await run(input);\n    return { result: JSON.parse(JSON.stringify(result, (key, value) => (value === undefined ? null : value)) ?? \"null\") };\n  } catch (error) {\n    console.error(label + \" threw: \" + (error?.stack ?? error));\n    return { threw: true };\n  }\n};\nconst asReference = (value, variant, reference) =>\n  typeof value === \"string\"\n    ? value.split(variant).join(reference)\n    : Array.isArray(value)\n      ? value.map((one) => asReference(one, variant, reference))\n      : value !== null && typeof value === \"object\"\n        ? Object.fromEntries(Object.entries(value).map(([key, one]) => [key, asReference(one, variant, reference)]))\n        : value;\nif (relation === undefined) {\n  for (const [index, input] of inputs.entries())\n    write(JSON.stringify(plain({ input, ...(await call(input, \"case \" + (index + 1))) })) + \"\\n\");\n} else {\n  const { seeds, reference, variants } = relation;\n  for (const seed of seeds) {\n    let ran = 0;\n    let disagreements = 0;\n    const counterexamples = [];\n    for (let at = 0; at <= seed.length; at += 1) {\n      const place = (text) => seed.slice(0, at) + text + seed.slice(at);\n      const label = \"seed \" + JSON.stringify(seed) + \" at \" + at;\n      const expected = await call(place(reference), label);\n      ran += 1;\n      for (const variant of variants) {\n        const got = await call(place(variant), label);\n        ran += 1;\n        if (JSON.stringify(plain(asReference(got, variant, reference))) === JSON.stringify(plain(expected))) continue;\n        disagreements += 1;\n        if (counterexamples.length < 2)\n          counterexamples.push({ at, reference: { input: place(reference), ...expected }, variant: { input: place(variant), ...got } });\n      }\n    }\n    write(JSON.stringify(plain(disagreements === 0 ? { holds: true, ran, seed } : { counterexamples, disagreements, holds: false, ran, seed })) + \"\\n\");\n  }\n}"
+              ],
+              "cwd": ".",
+              "environment": {},
+              "exitCode": 0,
+              "kind": "cli",
+              "maxOutputBytes": 256000,
+              "network": "inherit",
+              "stderr": [],
+              "stdin": "{\"program\":\"import mimeInstance from './dist/src/index.js';\\n\\nexport default function (input) {\\n  return mimeInstance.getType(input);\\n}\",\"inputs\":[\"null_str\",\"test.png\"]}",
+              "stdout": [
+                {
+                  "kind": "equals",
+                  "value": "{\"input\":\"null_str\",\"result\":null}\n{\"input\":\"test.png\",\"result\":\"image/png\"}\n"
+                }
+              ],
+              "timeoutMs": 60000,
+              "toolchain": "Node"
+            },
+            "command": "planned check: 2 case(s) through the default export of its program",
+            "exposure": "shared",
+            "id": "non-string-inputs-return-null"
+          },
+          {
+            "artifacts": [],
+            "atBase": "fails",
+            "author": "model",
+            "behavior": {
+              "argv": [
+                "node",
+                "--input-type=module",
+                "-e",
+                "import { rmSync, writeFileSync } from \"node:fs\";\nimport { resolve } from \"node:path\";\nimport { pathToFileURL } from \"node:url\";\nconst write = process.stdout.write.bind(process.stdout);\nprocess.stdout.write = process.stderr.write.bind(process.stderr);\nconst plain = (value) =>\n  Array.isArray(value)\n    ? value.map(plain)\n    : value !== null && typeof value === \"object\"\n      ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, plain(value[key])]))\n      : value;\nlet text = \"\";\nfor await (const chunk of process.stdin) text += chunk;\nconst { program, inputs, relation } = JSON.parse(text);\nconst path = resolve(\".swarm-check-\" + process.pid + \".mjs\");\nlet run;\ntry {\n  writeFileSync(path, program, { flag: \"wx\" });\n  ({ default: run } = await import(pathToFileURL(path).href));\n} catch (error) {\n  console.error(\"the check program did not load: \" + (error?.stack ?? error));\n  process.exit(3);\n} finally {\n  rmSync(path, { force: true });\n}\nif (typeof run !== \"function\") {\n  console.error(\"the check program does not export a default function\");\n  process.exit(3);\n}\nconst call = async (input, label) => {\n  try {\n    const result = await run(input);\n    return { result: JSON.parse(JSON.stringify(result, (key, value) => (value === undefined ? null : value)) ?? \"null\") };\n  } catch (error) {\n    console.error(label + \" threw: \" + (error?.stack ?? error));\n    return { threw: true };\n  }\n};\nconst asReference = (value, variant, reference) =>\n  typeof value === \"string\"\n    ? value.split(variant).join(reference)\n    : Array.isArray(value)\n      ? value.map((one) => asReference(one, variant, reference))\n      : value !== null && typeof value === \"object\"\n        ? Object.fromEntries(Object.entries(value).map(([key, one]) => [key, asReference(one, variant, reference)]))\n        : value;\nif (relation === undefined) {\n  for (const [index, input] of inputs.entries())\n    write(JSON.stringify(plain({ input, ...(await call(input, \"case \" + (index + 1))) })) + \"\\n\");\n} else {\n  const { seeds, reference, variants } = relation;\n  for (const seed of seeds) {\n    let ran = 0;\n    let disagreements = 0;\n    const counterexamples = [];\n    for (let at = 0; at <= seed.length; at += 1) {\n      const place = (text) => seed.slice(0, at) + text + seed.slice(at);\n      const label = \"seed \" + JSON.stringify(seed) + \" at \" + at;\n      const expected = await call(place(reference), label);\n      ran += 1;\n      for (const variant of variants) {\n        const got = await call(place(variant), label);\n        ran += 1;\n        if (JSON.stringify(plain(asReference(got, variant, reference))) === JSON.stringify(plain(expected))) continue;\n        disagreements += 1;\n        if (counterexamples.length < 2)\n          counterexamples.push({ at, reference: { input: place(reference), ...expected }, variant: { input: place(variant), ...got } });\n      }\n    }\n    write(JSON.stringify(plain(disagreements === 0 ? { holds: true, ran, seed } : { counterexamples, disagreements, holds: false, ran, seed })) + \"\\n\");\n  }\n}"
+              ],
+              "cwd": ".",
+              "environment": {},
+              "exitCode": 0,
+              "kind": "cli",
+              "maxOutputBytes": 256000,
+              "network": "inherit",
+              "stderr": [],
+              "stdin": "{\"program\":\"import mimeInstance from './dist/src/index.js';\\n\\nexport default function (input) {\\n  return mimeInstance.getType(input);\\n}\",\"inputs\":[\"LINE\\nFEED.png\",\"LINE\\rFEED.png\",\"LINE FEED.png\",\"LINE FEED.png\",\"dir/NAME\\nFILE.png\",\"dir\\\\NAME\\rFILE.png\",\"dir/NAME FILE.png\",\"dir\\\\NAME FILE.png\",\"\\nNAME.png\",\"\\rNAME.png\",\" NAME.png\",\" NAME.png\",\"file\\n.png\",\"test.png\",\"dir/text.txt\"]}",
+              "stdout": [
+                {
+                  "kind": "equals",
+                  "value": "{\"input\":\"LINE\\nFEED.png\",\"result\":\"image/png\"}\n{\"input\":\"LINE\\rFEED.png\",\"result\":\"image/png\"}\n{\"input\":\"LINE FEED.png\",\"result\":\"image/png\"}\n{\"input\":\"LINE FEED.png\",\"result\":\"image/png\"}\n{\"input\":\"dir/NAME\\nFILE.png\",\"result\":\"image/png\"}\n{\"input\":\"dir\\\\NAME\\rFILE.png\",\"result\":\"image/png\"}\n{\"input\":\"dir/NAME FILE.png\",\"result\":\"image/png\"}\n{\"input\":\"dir\\\\NAME FILE.png\",\"result\":\"image/png\"}\n{\"input\":\"\\nNAME.png\",\"result\":\"image/png\"}\n{\"input\":\"\\rNAME.png\",\"result\":\"image/png\"}\n{\"input\":\" NAME.png\",\"result\":\"image/png\"}\n{\"input\":\" NAME.png\",\"result\":\"image/png\"}\n{\"input\":\"file\\n.png\",\"result\":\"image/png\"}\n{\"input\":\"test.png\",\"result\":\"image/png\"}\n{\"input\":\"dir/text.txt\",\"result\":\"text/plain\"}\n"
+                }
+              ],
+              "timeoutMs": 60000,
+              "toolchain": "Node"
+            },
+            "command": "planned check: 15 case(s) through the default export of its program",
+            "exposure": "shared",
+            "id": "line-terminator-directory-stripping"
+          }
+        ],
+        "goal": "Mime.getType(path) (src/Mime.ts) derives a type from the extension after the last dot of the last path segment. The two regular expressions that strip the directory part and the part before the extension do not match across line terminators, so a file name that contains one is typed wrongly: getType('LINE\\nFEED.png') returns null instead of 'image/png', and the same happens for a carriage return (",
+        "immutablePaths": [
+          "acceptance/visible",
+          "test",
+          "types"
+        ],
+        "requirements": [
+          {
+            "checks": [
+              "visible-check"
+            ],
+            "description": "the visible acceptance check passes on a fresh checkout",
+            "id": "visible-check"
+          },
+          {
+            "checks": [],
+            "description": "getType treats every line terminator (\\\\n, \\\\r, U+2028, U+2029) like any other character when stripping the directory part and the extension prefix",
+            "id": "line-terminator-handle",
+            "planned": {
+              "diagnostics": [
+                "line-terminator-directory-stripping"
+              ],
+              "quote": "Make getType treat every line terminator like any other character when it strips the directory part and the extension's prefix; a space or tab in the name already works and must keep working."
+            }
+          },
+          {
+            "checks": [],
+            "description": "getType still correctly resolves types for normal paths, bare extensions, and edge cases unchanged by the task",
+            "id": "normal-type-resolution",
+            "planned": {
+              "diagnostics": [
+                "normal-paths-preserving-strings"
+              ],
+              "quote": "a space or tab in the name already works and must keep working."
+            }
+          },
+          {
+            "checks": [],
+            "description": "getType returns null for non-string inputs and extension-less files",
+            "id": "type-check-preserve",
+            "planned": {
+              "diagnostics": [
+                "non-string-inputs-return-null"
+              ],
+              "quote": "a space or tab in the name already works and must keep working."
+            }
+          }
+        ],
+        "selection": "stable",
+        "version": 1
+      },
+      "digest": "sha256:669b040a81642ce637f801348ffc730dfdbc176fa5a2971e0dafbbe6462076d3"
+    }
+  ]
+}

@@ -1,0 +1,65 @@
+diff --git a/src/Mime.ts b/src/Mime.ts
+index a28323b..98a88bd 100644
+--- a/src/Mime.ts
++++ b/src/Mime.ts
+@@ -72,17 +72,42 @@ export default class Mime {
+   getType(path: string) {
+     if (typeof path !== 'string') return null;
+ 
+-    // Remove chars preceeding `/` or `\`
+-    const last = path.replace(/^.*[/\\]/, '').toLowerCase();
++    // Remove directory part by stripping everything preceding the last / or \.
++    // Then strip leading line terminators from the file name so that names
++    // containing line terminators resolve to their extension correctly.
++    const trimmed = path
++      .replace(/^.*[\\/]/, '')
++      .replace(/^[\r\n\u2028\u2029]+/, '');
++
++    if (trimmed.length === 0) return null;
++
++    const last = trimmed.toLowerCase();
++    const ext = last.replace(/^.*[.]/, '').toLowerCase();
++    const hasPathSep = /[\\/]/.test(path);
++
++    // Extension found only when stripping before the dot actually consumed at
++    // least one character AND left a non-empty extension.  When strippedLen is 0,
++    // the regex matched zero chars before the dot (i.e., there WAS no dot to strip
++    // across and ext == last).  In that case we need to check if the original
++    // string contained a dot at all.
++    const hasDot = ext.length < last.length - 1;
++    // When strippedLen is 1 (regex only consumed a leading "."), we are NOT looking at a real extension.
++    // E.g. ".json" → ext="json", strippedLen=1, "stripping one char" means no content before the dot.
+ 
+-    // Remove chars preceeding '.'
+-    const ext = last.replace(/^.*\./, '').toLowerCase();
++    if (last.indexOf('.') < 0) {
++      // No dot in last — treat entire thing as a bare extension, stripping
++      // any leading dot first (e.g. ".txt" → "txt").
++      const bareExt = last.replace(/^\./, '');
++      if (!bareExt || /^[.\r\n\u2028\u2029]+$/.test(bareExt)) return null;
+ 
+-    const hasPath = last.length < path.length;
+-    const hasDot = ext.length < last.length - 1;
++      // Extension-less file: no meaningful dot and a path separator present.
++      if (hasPathSep) return null;
++
++      return this.#extensionToType.get(bareExt) ?? null;
++    }
+ 
+     // Extension-less file?
+-    if (!hasDot && hasPath) return null;
++    if (!hasDot && hasPathSep) return null;
+ 
+     return this.#extensionToType.get(ext) ?? null;
+   }
+@@ -116,7 +141,9 @@ export default class Mime {
+ 
+   _freeze() {
+     this.define = () => {
+-      throw new Error('define() not allowed for built-in Mime objects. See https://github.com/broofa/mime/blob/main/README.md#custom-mime-instances');
++      throw new Error(
++        'define() not allowed for built-in Mime objects. See https://github.com/broofa/mime/blob/main/README.md#custom-mime-instances',
++      );
+     };
+ 
+     Object.freeze(this);
