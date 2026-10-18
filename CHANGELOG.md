@@ -46,6 +46,12 @@ Source on `v13-main`; not published until a release names it.
   while `node -e "...readFileSync('.env')"` was allowed. Only path-shaped words and relative or
   home literals of the program after `-e`/`--eval`/`-p`/`--print` or python's `-c` are offered
   now: the probe runs and the credential read is denied.
+- **A remote install walk found three first-run defects.** A build of a shallow clone (no release
+  tag reachable) printed the release's own version line; it now names the commit as a source
+  build. A misspelt flag at the end of the line was told it "needs a value"; it is refused by name
+  as a flag this build does not have. A task run in a repository with no manifest exited 1, the
+  code for work that ran and was refused, where nothing had run; it exits 4, as `swarm check`
+  already did.
 - **First-run errors name what is true.** No model to run names where it looked and the remedy,
   and exits 4 as documented (it exited 1); a run whose model was unreachable is told so, not to
   try "a stronger model"; a flag this build does not have is refused by name instead of taking the

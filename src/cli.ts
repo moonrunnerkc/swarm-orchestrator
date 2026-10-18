@@ -13,7 +13,13 @@ import { describeRunningVersion } from "./build-version.ts";
 import { announceBundle, writeBundle } from "./cli-bundle.ts";
 import { summarizeEvidence } from "./cli-evidence-summary.ts";
 import { gates } from "./cli-gates.ts";
-import { approvalOfferOnDisk, offerApprovalMode, offerInit, offerNodeHarness } from "./cli-init.ts";
+import {
+  approvalOfferOnDisk,
+  NoManifestError,
+  offerApprovalMode,
+  offerInit,
+  offerNodeHarness,
+} from "./cli-init.ts";
 import { resolveLocalBackend } from "./cli-local-backend.ts";
 import { defaultModelFor, NoDefaultModelError } from "./cli-model-default.ts";
 import { preflightAll } from "./cli-model-preflight.ts";
@@ -1218,11 +1224,12 @@ main().then(
   (error: unknown) => {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     // A command line this build cannot read is an invalid request (2), and a machine with no model
-    // to run is unavailable (4); neither is work that failed (1).
+    // to run, or a repository with nothing to measure a change by, is unavailable (4), as `swarm
+    // check` already reports it; none of them is work that failed (1).
     process.exitCode =
       error instanceof InvalidCommandLineError
         ? exitCodes.invalidRequest
-        : error instanceof NoDefaultModelError
+        : error instanceof NoDefaultModelError || error instanceof NoManifestError
           ? exitCodes.unavailable
           : exitCodes.notAcceptable;
   },

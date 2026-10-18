@@ -320,8 +320,8 @@ A task run reads its exit status off the outcome status the outcome block and
 passed and no requirement was supplied, so nothing says the task was done; planned requirements
 are hypotheses and do not count); 1 for `not-accepted`, `partially-checked` and `unresolved`; 4
 for `unverified` (the model or the final verification's environment became unavailable). A run
-with no model to use (nothing pinned, no local server answering, no key) is 4, as is
-`--plan-checks` sealing nothing; declining the planned criteria is
+with no model to use (nothing pinned, no local server answering, no key) is 4, as is one in a
+repository with no manifest off a terminal, and `--plan-checks` sealing nothing; declining the planned criteria is
 3; a run a person interrupts exits 130, the shell's own code for an interrupt, and a run that ends
 at `--max-wall-minutes` still reports its verdict, so it is 0 or 1. `swarm check` uses all of the first
 five: a regression-only pass is 0, a failed blocking check is 1, a command line the binary
