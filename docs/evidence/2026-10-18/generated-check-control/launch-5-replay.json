@@ -1,0 +1,575 @@
+{
+  "schema": "swarm-launch-5-replay.v1",
+  "task": "mime-bugfix-gettype-line-terminators",
+  "baseCommit": "953ae3ebc59c387064f3760b73085eff6760a7f6",
+  "upstreamCommit": "d7871f3bac120df5e4776e7c395b39d0d8e7b562",
+  "contractDigest": "sha256:8bcaae3d2ed1bd428747a1947152ba81af59cac5d0d18b82c4fda56beed91095",
+  "edit": "program text: every `case_.input` written as `case_`; inputs, expected lines, argv and runner as sealed",
+  "node": "v24.15.0",
+  "summary": [
+    {
+      "variant": "base",
+      "check": "gettype-with-line-terminators",
+      "sealed": "2/7",
+      "wholeValue": "2/7"
+    },
+    {
+      "variant": "base",
+      "check": "gettype-line-terminators-fixed",
+      "sealed": "2/9",
+      "wholeValue": "2/9"
+    },
+    {
+      "variant": "base",
+      "check": "gettype-line-terminators-edge-cases",
+      "sealed": "1/3",
+      "wholeValue": "2/3"
+    },
+    {
+      "variant": "base",
+      "check": "terminator-like-space",
+      "sealed": "0/2"
+    },
+    {
+      "variant": "upstream",
+      "check": "gettype-with-line-terminators",
+      "sealed": "2/7",
+      "wholeValue": "7/7"
+    },
+    {
+      "variant": "upstream",
+      "check": "gettype-line-terminators-fixed",
+      "sealed": "2/9",
+      "wholeValue": "9/9"
+    },
+    {
+      "variant": "upstream",
+      "check": "gettype-line-terminators-edge-cases",
+      "sealed": "1/3",
+      "wholeValue": "3/3"
+    },
+    {
+      "variant": "upstream",
+      "check": "terminator-like-space",
+      "sealed": "2/2"
+    },
+    {
+      "variant": "swarm-stage-a",
+      "check": "gettype-with-line-terminators",
+      "sealed": "2/7",
+      "wholeValue": "7/7"
+    },
+    {
+      "variant": "swarm-stage-a",
+      "check": "gettype-line-terminators-fixed",
+      "sealed": "2/9",
+      "wholeValue": "8/9"
+    },
+    {
+      "variant": "swarm-stage-a",
+      "check": "gettype-line-terminators-edge-cases",
+      "sealed": "1/3",
+      "wholeValue": "3/3"
+    },
+    {
+      "variant": "swarm-stage-a",
+      "check": "terminator-like-space",
+      "sealed": "0/2"
+    }
+  ],
+  "rows": [
+    {
+      "variant": "base",
+      "check": "gettype-with-line-terminators",
+      "program": "import { default as Mime } from './dist/src/index.js';\n\nexport default function run(case_) {\n  return Mime.getType(case_.input);\n}",
+      "sealed": {
+        "exitCode": 0,
+        "passed": false,
+        "casesPassed": 2,
+        "cases": 7,
+        "wrong": [
+          {
+            "expected": "{\"input\":\"LINE\\nFEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE\\nFEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"LINE\\rFEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE\\rFEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"LINE FEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE FEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"LINE FEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE FEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"dir/LINE\\nFEED.txt\",\"result\":\"text/plain\"}",
+            "observed": "{\"input\":\"dir/LINE\\nFEED.txt\",\"result\":null}"
+          }
+        ],
+        "stderr": ""
+      },
+      "editedProgram": "import { default as Mime } from './dist/src/index.js';\n\nexport default function run(case_) {\n  return Mime.getType(case_);\n}",
+      "edited": {
+        "exitCode": 0,
+        "passed": false,
+        "casesPassed": 2,
+        "cases": 7,
+        "wrong": [
+          {
+            "expected": "{\"input\":\"LINE\\nFEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE\\nFEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"LINE\\rFEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE\\rFEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"LINE FEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE FEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"LINE FEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE FEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"dir/LINE\\nFEED.txt\",\"result\":\"text/plain\"}",
+            "observed": "{\"input\":\"dir/LINE\\nFEED.txt\",\"result\":null}"
+          }
+        ],
+        "stderr": ""
+      }
+    },
+    {
+      "variant": "base",
+      "check": "gettype-line-terminators-fixed",
+      "program": "import { default as Mime } from './dist/src/index.js';\n\nexport default function run(case_) {\n  return Mime.getType(case_.input);\n}",
+      "sealed": {
+        "exitCode": 0,
+        "passed": false,
+        "casesPassed": 2,
+        "cases": 9,
+        "wrong": [
+          {
+            "expected": "{\"input\":\"LINE\\nFEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE\\nFEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"LINE\\rFEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE\\rFEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"LINE FEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE FEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"LINE FEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE FEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"dir/LINE\\nFEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"dir/LINE\\nFEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"path\\n/to/file.txt\",\"result\":\"text/plain\"}",
+            "observed": "{\"input\":\"path\\n/to/file.txt\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"page\\n.html\",\"result\":\"text/html\"}",
+            "observed": "{\"input\":\"page\\n.html\",\"result\":null}"
+          }
+        ],
+        "stderr": ""
+      },
+      "editedProgram": "import { default as Mime } from './dist/src/index.js';\n\nexport default function run(case_) {\n  return Mime.getType(case_);\n}",
+      "edited": {
+        "exitCode": 0,
+        "passed": false,
+        "casesPassed": 2,
+        "cases": 9,
+        "wrong": [
+          {
+            "expected": "{\"input\":\"LINE\\nFEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE\\nFEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"LINE\\rFEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE\\rFEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"LINE FEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE FEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"LINE FEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE FEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"dir/LINE\\nFEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"dir/LINE\\nFEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"path\\n/to/file.txt\",\"result\":\"text/plain\"}",
+            "observed": "{\"input\":\"path\\n/to/file.txt\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"page\\n.html\",\"result\":\"text/html\"}",
+            "observed": "{\"input\":\"page\\n.html\",\"result\":null}"
+          }
+        ],
+        "stderr": ""
+      }
+    },
+    {
+      "variant": "base",
+      "check": "gettype-line-terminators-edge-cases",
+      "program": "import { default as Mime } from './dist/src/index.js';\n\nexport default function run(case_) {\n  return Mime.getType(case_.input);\n}",
+      "sealed": {
+        "exitCode": 0,
+        "passed": false,
+        "casesPassed": 1,
+        "cases": 3,
+        "wrong": [
+          {
+            "expected": "{\"input\":\"file.png\\n123.jpg\",\"result\":\"image/jpeg\"}",
+            "observed": "{\"input\":\"file.png\\n123.jpg\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"dir/last.txt\",\"result\":\"text/plain\"}",
+            "observed": "{\"input\":\"dir/last.txt\",\"result\":null}"
+          }
+        ],
+        "stderr": ""
+      },
+      "editedProgram": "import { default as Mime } from './dist/src/index.js';\n\nexport default function run(case_) {\n  return Mime.getType(case_);\n}",
+      "edited": {
+        "exitCode": 0,
+        "passed": false,
+        "casesPassed": 2,
+        "cases": 3,
+        "wrong": [
+          {
+            "expected": "{\"input\":\"file.png\\n123.jpg\",\"result\":\"image/jpeg\"}",
+            "observed": "{\"input\":\"file.png\\n123.jpg\",\"result\":null}"
+          }
+        ],
+        "stderr": ""
+      }
+    },
+    {
+      "variant": "base",
+      "check": "terminator-like-space",
+      "program": "import { default as mime } from './dist/src/index.js';\n\nexport default function run(input) {\n  return mime.getType(input);\n}",
+      "sealed": {
+        "exitCode": 0,
+        "passed": false,
+        "casesPassed": 0,
+        "cases": 2,
+        "wrong": [
+          {
+            "expected": "{\"holds\":true,\"ran\":45,\"seed\":\"name.txt\"}",
+            "observed": "{\"counterexamples\":[{\"at\":0,\"reference\":{\"input\":\" name.txt\",\"result\":\"text/plain\"},\"variant\":{\"input\":\"\\nname.txt\",\"result\":null}},{\"at\":0,\"reference\":{\"input\":\" name.txt\",\"result\":\"text/plain\"},\"variant\":{\"input\":\"\\rname.txt\",\"result\":null}}],\"disagreements\":20,\"holds\":false,\"ran\":45,\"seed\":\"name.txt\"}"
+          },
+          {
+            "expected": "{\"holds\":true,\"ran\":65,\"seed\":\"dir/name.txt\"}",
+            "observed": "{\"counterexamples\":[{\"at\":0,\"reference\":{\"input\":\" dir/name.txt\",\"result\":\"text/plain\"},\"variant\":{\"input\":\"\\ndir/name.txt\",\"result\":null}},{\"at\":0,\"reference\":{\"input\":\" dir/name.txt\",\"result\":\"text/plain\"},\"variant\":{\"input\":\"\\rdir/name.txt\",\"result\":null}}],\"disagreements\":36,\"holds\":false,\"ran\":65,\"seed\":\"dir/name.txt\"}"
+          }
+        ],
+        "stderr": ""
+      }
+    },
+    {
+      "variant": "upstream",
+      "check": "gettype-with-line-terminators",
+      "program": "import { default as Mime } from './dist/src/index.js';\n\nexport default function run(case_) {\n  return Mime.getType(case_.input);\n}",
+      "sealed": {
+        "exitCode": 0,
+        "passed": false,
+        "casesPassed": 2,
+        "cases": 7,
+        "wrong": [
+          {
+            "expected": "{\"input\":\"LINE\\nFEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE\\nFEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"LINE\\rFEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE\\rFEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"LINE FEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE FEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"LINE FEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE FEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"dir/LINE\\nFEED.txt\",\"result\":\"text/plain\"}",
+            "observed": "{\"input\":\"dir/LINE\\nFEED.txt\",\"result\":null}"
+          }
+        ],
+        "stderr": ""
+      },
+      "editedProgram": "import { default as Mime } from './dist/src/index.js';\n\nexport default function run(case_) {\n  return Mime.getType(case_);\n}",
+      "edited": {
+        "exitCode": 0,
+        "passed": true,
+        "casesPassed": 7,
+        "cases": 7,
+        "wrong": [],
+        "stderr": ""
+      }
+    },
+    {
+      "variant": "upstream",
+      "check": "gettype-line-terminators-fixed",
+      "program": "import { default as Mime } from './dist/src/index.js';\n\nexport default function run(case_) {\n  return Mime.getType(case_.input);\n}",
+      "sealed": {
+        "exitCode": 0,
+        "passed": false,
+        "casesPassed": 2,
+        "cases": 9,
+        "wrong": [
+          {
+            "expected": "{\"input\":\"LINE\\nFEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE\\nFEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"LINE\\rFEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE\\rFEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"LINE FEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE FEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"LINE FEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE FEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"dir/LINE\\nFEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"dir/LINE\\nFEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"path\\n/to/file.txt\",\"result\":\"text/plain\"}",
+            "observed": "{\"input\":\"path\\n/to/file.txt\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"page\\n.html\",\"result\":\"text/html\"}",
+            "observed": "{\"input\":\"page\\n.html\",\"result\":null}"
+          }
+        ],
+        "stderr": ""
+      },
+      "editedProgram": "import { default as Mime } from './dist/src/index.js';\n\nexport default function run(case_) {\n  return Mime.getType(case_);\n}",
+      "edited": {
+        "exitCode": 0,
+        "passed": true,
+        "casesPassed": 9,
+        "cases": 9,
+        "wrong": [],
+        "stderr": ""
+      }
+    },
+    {
+      "variant": "upstream",
+      "check": "gettype-line-terminators-edge-cases",
+      "program": "import { default as Mime } from './dist/src/index.js';\n\nexport default function run(case_) {\n  return Mime.getType(case_.input);\n}",
+      "sealed": {
+        "exitCode": 0,
+        "passed": false,
+        "casesPassed": 1,
+        "cases": 3,
+        "wrong": [
+          {
+            "expected": "{\"input\":\"file.png\\n123.jpg\",\"result\":\"image/jpeg\"}",
+            "observed": "{\"input\":\"file.png\\n123.jpg\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"dir/last.txt\",\"result\":\"text/plain\"}",
+            "observed": "{\"input\":\"dir/last.txt\",\"result\":null}"
+          }
+        ],
+        "stderr": ""
+      },
+      "editedProgram": "import { default as Mime } from './dist/src/index.js';\n\nexport default function run(case_) {\n  return Mime.getType(case_);\n}",
+      "edited": {
+        "exitCode": 0,
+        "passed": true,
+        "casesPassed": 3,
+        "cases": 3,
+        "wrong": [],
+        "stderr": ""
+      }
+    },
+    {
+      "variant": "upstream",
+      "check": "terminator-like-space",
+      "program": "import { default as mime } from './dist/src/index.js';\n\nexport default function run(input) {\n  return mime.getType(input);\n}",
+      "sealed": {
+        "exitCode": 0,
+        "passed": true,
+        "casesPassed": 2,
+        "cases": 2,
+        "wrong": [],
+        "stderr": ""
+      }
+    },
+    {
+      "variant": "swarm-stage-a",
+      "check": "gettype-with-line-terminators",
+      "program": "import { default as Mime } from './dist/src/index.js';\n\nexport default function run(case_) {\n  return Mime.getType(case_.input);\n}",
+      "sealed": {
+        "exitCode": 0,
+        "passed": false,
+        "casesPassed": 2,
+        "cases": 7,
+        "wrong": [
+          {
+            "expected": "{\"input\":\"LINE\\nFEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE\\nFEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"LINE\\rFEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE\\rFEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"LINE FEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE FEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"LINE FEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE FEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"dir/LINE\\nFEED.txt\",\"result\":\"text/plain\"}",
+            "observed": "{\"input\":\"dir/LINE\\nFEED.txt\",\"result\":null}"
+          }
+        ],
+        "stderr": ""
+      },
+      "editedProgram": "import { default as Mime } from './dist/src/index.js';\n\nexport default function run(case_) {\n  return Mime.getType(case_);\n}",
+      "edited": {
+        "exitCode": 0,
+        "passed": true,
+        "casesPassed": 7,
+        "cases": 7,
+        "wrong": [],
+        "stderr": ""
+      }
+    },
+    {
+      "variant": "swarm-stage-a",
+      "check": "gettype-line-terminators-fixed",
+      "program": "import { default as Mime } from './dist/src/index.js';\n\nexport default function run(case_) {\n  return Mime.getType(case_.input);\n}",
+      "sealed": {
+        "exitCode": 0,
+        "passed": false,
+        "casesPassed": 2,
+        "cases": 9,
+        "wrong": [
+          {
+            "expected": "{\"input\":\"LINE\\nFEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE\\nFEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"LINE\\rFEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE\\rFEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"LINE FEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE FEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"LINE FEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"LINE FEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"dir/LINE\\nFEED.png\",\"result\":\"image/png\"}",
+            "observed": "{\"input\":\"dir/LINE\\nFEED.png\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"path\\n/to/file.txt\",\"result\":\"text/plain\"}",
+            "observed": "{\"input\":\"path\\n/to/file.txt\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"page\\n.html\",\"result\":\"text/html\"}",
+            "observed": "{\"input\":\"page\\n.html\",\"result\":null}"
+          }
+        ],
+        "stderr": ""
+      },
+      "editedProgram": "import { default as Mime } from './dist/src/index.js';\n\nexport default function run(case_) {\n  return Mime.getType(case_);\n}",
+      "edited": {
+        "exitCode": 0,
+        "passed": false,
+        "casesPassed": 8,
+        "cases": 9,
+        "wrong": [
+          {
+            "expected": "{\"input\":\"page\\n.html\",\"result\":\"text/html\"}",
+            "observed": "{\"input\":\"page\\n.html\",\"result\":null}"
+          }
+        ],
+        "stderr": ""
+      }
+    },
+    {
+      "variant": "swarm-stage-a",
+      "check": "gettype-line-terminators-edge-cases",
+      "program": "import { default as Mime } from './dist/src/index.js';\n\nexport default function run(case_) {\n  return Mime.getType(case_.input);\n}",
+      "sealed": {
+        "exitCode": 0,
+        "passed": false,
+        "casesPassed": 1,
+        "cases": 3,
+        "wrong": [
+          {
+            "expected": "{\"input\":\"file.png\\n123.jpg\",\"result\":\"image/jpeg\"}",
+            "observed": "{\"input\":\"file.png\\n123.jpg\",\"result\":null}"
+          },
+          {
+            "expected": "{\"input\":\"dir/last.txt\",\"result\":\"text/plain\"}",
+            "observed": "{\"input\":\"dir/last.txt\",\"result\":null}"
+          }
+        ],
+        "stderr": ""
+      },
+      "editedProgram": "import { default as Mime } from './dist/src/index.js';\n\nexport default function run(case_) {\n  return Mime.getType(case_);\n}",
+      "edited": {
+        "exitCode": 0,
+        "passed": true,
+        "casesPassed": 3,
+        "cases": 3,
+        "wrong": [],
+        "stderr": ""
+      }
+    },
+    {
+      "variant": "swarm-stage-a",
+      "check": "terminator-like-space",
+      "program": "import { default as mime } from './dist/src/index.js';\n\nexport default function run(input) {\n  return mime.getType(input);\n}",
+      "sealed": {
+        "exitCode": 0,
+        "passed": false,
+        "casesPassed": 0,
+        "cases": 2,
+        "wrong": [
+          {
+            "expected": "{\"holds\":true,\"ran\":45,\"seed\":\"name.txt\"}",
+            "observed": "{\"counterexamples\":[{\"at\":4,\"reference\":{\"input\":\"name .txt\",\"result\":\"text/plain\"},\"variant\":{\"input\":\"name\\n.txt\",\"result\":null}},{\"at\":4,\"reference\":{\"input\":\"name .txt\",\"result\":\"text/plain\"},\"variant\":{\"input\":\"name\\r.txt\",\"result\":null}}],\"disagreements\":4,\"holds\":false,\"ran\":45,\"seed\":\"name.txt\"}"
+          },
+          {
+            "expected": "{\"holds\":true,\"ran\":65,\"seed\":\"dir/name.txt\"}",
+            "observed": "{\"counterexamples\":[{\"at\":8,\"reference\":{\"input\":\"dir/name .txt\",\"result\":\"text/plain\"},\"variant\":{\"input\":\"dir/name\\n.txt\",\"result\":null}},{\"at\":8,\"reference\":{\"input\":\"dir/name .txt\",\"result\":\"text/plain\"},\"variant\":{\"input\":\"dir/name\\r.txt\",\"result\":null}}],\"disagreements\":4,\"holds\":false,\"ran\":65,\"seed\":\"dir/name.txt\"}"
+          }
+        ],
+        "stderr": ""
+      }
+    }
+  ],
+  "scratch": "/Users/brad/swarm-comparison-work/replay-launch-5-sRgnIl"
+}

@@ -75,3 +75,61 @@ node run.mjs --swarm-cli <dist/cli.js> --mode supplied|seeded|ordinary --out <em
 node ../repair-trust-live/score.mjs --task mime --patch <final.patch> --out <file>
 node ../planned-check-live/verify-checks.mjs --task mime --generated <generated-checks.json> --out <file>
 ```
+
+## Correction, 2026-10-18: why launch 5's example checks rejected every implementation
+
+The account above (the table's third row and "Not corrected") says the three admitted example
+checks "built an empty `new Mime()`". That is wrong, and it is kept above as it was written. The
+sealed contract in launch 5's `generated-checks.json` (in the pack) holds, for
+`gettype-with-line-terminators`, `gettype-line-terminators-fixed` and
+`gettype-line-terminators-edge-cases`, the same program:
+
+```js
+import { default as Mime } from './dist/src/index.js';
+
+export default function run(case_) {
+  return Mime.getType(case_.input);
+}
+```
+
+It imports the package's default instance, which is correct. Its inputs are strings, and the
+runner calls `run(input)`, so `case_.input` is `undefined` for every case and `getType(undefined)`
+is `null`. The `new Mime.default()` programs the earlier account describes are the planner's
+earlier declarations 2 to 4, which never loaded (`Mime.default is not a constructor`, the first
+admission record) and were never sealed.
+
+Replayed through the product's runner on the real project, each prepared as the evaluator
+prepares it ([../../2026-10-18/generated-check-control/launch-5-replay.json](../../2026-10-18/generated-check-control/launch-5-replay.json),
+by [replay-launch-5.mjs](../../2026-10-18/generated-check-control/replay-launch-5.mjs)), with
+one change, `case_.input` written as `case_`, and the sealed inputs and expected lines unchanged:
+
+| check | upstream fix, as sealed | upstream fix, input passed | retained faulty patch, input passed |
+| --- | --- | --- | --- |
+| `gettype-with-line-terminators` | 2/7 | 7/7 | 7/7 |
+| `gettype-line-terminators-fixed` | 2/9 | 9/9 | 8/9 |
+| `gettype-line-terminators-edge-cases` | 1/3 | 3/3 | 3/3 |
+
+The two to three cases each passed as sealed are the ones expecting `null` (`noextension`,
+`bogus.missing`); they held on the base for the same reason, and admission took them as the
+control that the program calls the project. So the failure was an argument-shape mistake that
+admission accepted on an accidental null, not a fixture. With the argument corrected, two of the
+three would also have accepted the retained faulty patch; the relation `terminator-like-space`
+was the check that told the two apart.
+
+The run's mistakes, kept apart because each has its own remedy:
+
+- **Argument shape**: the three sealed example checks, and the preserve check
+  `gettype-space-tab-preserve` in its later versions, which admission dropped as "its expectation
+  contradicts behaviour the task keeps" when its program was what failed.
+- **Import**: declarations 0 and 1 imported `./src/Mime.js`, TypeScript source; refused before
+  running, as the import rule intends.
+- **Construction**: declarations 2 to 4 called `new Mime.default()` on the class's module and did
+  not load.
+- **Incorrect expectations**: none is established for the sealed checks; with the input passed,
+  every expectation holds on the upstream fix.
+
+The repair could not have seen this: `run_check` on `gettype-with-line-terminators` (the tool
+answer at `messages[187]` of launch 5's `exchanges.json`) showed each input and result and no
+program, after the worker had said the generated checks must "import from a different path".
+The corrections, each with a regression that fails on `e37d43005`, are in
+[../../2026-10-18/generated-check-control/](../../2026-10-18/generated-check-control/).
