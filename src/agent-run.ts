@@ -1176,15 +1176,19 @@ function measuredCycleMs(cycle: ResolveRequest["cycle"]): number {
  * Without it an attempt re-read the same files and searched again for a name the workspace
  * does not hold, until the token budget ended it with nothing changed.
  */
+const candidateDiffChars = 6000;
+
 async function resolveWithModel(
   request: ResolveRequest,
   options: AgentTaskOptions,
   account: string,
   loopDependencies: Parameters<typeof runAgentLoop>[1],
 ): Promise<AgentLoopOutcome> {
-  const candidateDigest = digestOfBytes(
-    await diffAgainstBase({ workspaceRoot: options.workspace, baseRef: options.baseRef }),
-  );
+  const candidateDiff = await diffAgainstBase({
+    workspaceRoot: options.workspace,
+    baseRef: options.baseRef,
+  });
+  const candidateDigest = digestOfBytes(candidateDiff);
   const brief = [
     `The task was: ${taskBrief(options.task, options.contract)}`,
     "",
@@ -1197,6 +1201,15 @@ async function resolveWithModel(
     // patch" it read as a thing to look for, and an attempt spent its budget searching the
     // workspace for one.
     `Base source: ${options.baseRef}. Your current change against it is recorded as ${candidateDigest}; it is the state of the workspace files now, not a file to find.`,
+    // The change itself, as well as its digest. Shown only the files, live repairs of an injected
+    // candidate took its design for the project's own code ("the regex already includes line
+    // terminators") and repaired around a premise the base never had; no worker reads a record.
+    "That change, as a diff against the base (lines marked - are the base's own; the files you read already hold the + lines):",
+    candidateDiff.trim().length === 0
+      ? "(no change yet: the files are the base's)"
+      : candidateDiff.length > candidateDiffChars
+        ? `${candidateDiff.slice(0, candidateDiffChars)}\n[diff truncated; git diff ${options.baseRef} shows the rest]`
+        : candidateDiff.trimEnd(),
     // The workspace's state and the last attempt are named apart: after a rollback they are not
     // the same thing, and "prior checked attempt: 1" sent a repair back to a failure two attempts old.
     `The workspace is in the state gate cycle ${request.cycle.attempt} checked${request.rejected === null ? "" : `; attempt ${request.rejected.attempt} since then was rolled back`}. Remaining model allowance: ${loopDependencies.budget.maxTokens} tokens and ${loopDependencies.budget.maxWallTimeMs} ms.`,

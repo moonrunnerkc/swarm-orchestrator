@@ -633,6 +633,9 @@ it("dispatches one explicit alternate after repeated observed failure and stops 
     .find((record) => record.type === "model-call" && record.actor === "fixture:alternate");
   const prompt = JSON.stringify(evidence.payloads().get(alternateCall?.payloadDigest ?? ""));
   expect(prompt).toContain("Your current change against it is recorded as sha256:");
+  // The change itself, so a repair can tell the candidate's lines from the base's own.
+  expect(prompt).toContain("That change, as a diff against the base");
+  expect(prompt).toContain("+export function greet() { return 'wrong'; }");
   expect(prompt).not.toContain("Candidate patch:");
   expect(prompt).toContain("Remaining model allowance:");
   expect(prompt).toContain("The workspace is in the state gate cycle");
