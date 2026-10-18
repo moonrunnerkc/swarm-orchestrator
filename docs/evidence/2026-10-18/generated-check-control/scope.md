@@ -76,3 +76,5 @@ No new file: the relation reminder lands in `src/workers/planned-check-program.t
 ### 7. The measurement history
 
 - `docs/agent.md`: one entry for this work beside 2026-10-17's, linking its README.
+- `scripts/check-doc-paths.mjs`: the protocol's one mention of a file in the mime repository,
+  named as such.
