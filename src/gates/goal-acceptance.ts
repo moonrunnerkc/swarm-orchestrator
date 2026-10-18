@@ -178,9 +178,14 @@ export async function verifyGoal(options: {
                   check.exposure === "shared" &&
                   check.behavior?.kind === "cli"
                 ? describeCliMismatch(check.behavior, observation)
-                : (behavior?.reading.detail ??
-                  observation.unavailable ??
-                  `command exited ${observation.exitCode}`),
+                : status === "rejected" &&
+                    check.exposure === "shared" &&
+                    check.behavior === undefined &&
+                    observation.unavailable === null
+                  ? describeCommandRefusal(observation)
+                  : (behavior?.reading.detail ??
+                    observation.unavailable ??
+                    `command exited ${observation.exitCode}`),
         });
       } finally {
         if (!pending) await snapshot.restore();
@@ -234,4 +239,23 @@ export async function verifyGoal(options: {
     payload: asJsonValue(verification),
   });
   return verification;
+}
+
+const commandOutputChars = 1500;
+
+/**
+ * A shared command check's refusal in its own words: the end of what it printed, where a failing
+ * assertion says which case and what it got. "command exited 1" was all a repair was told of a
+ * supplied check that refused it, so the worker could not see what to fix. A withheld check is
+ * never quoted: what it prints is what it withholds.
+ */
+function describeCommandRefusal(observation: {
+  readonly exitCode: number;
+  readonly stdout: string;
+  readonly stderr: string;
+}): string {
+  const output = `${observation.stdout}\n${observation.stderr}`.trim();
+  return output.length === 0
+    ? `command exited ${observation.exitCode}`
+    : `command exited ${observation.exitCode}; its output ends:\n${output.length > commandOutputChars ? `...${output.slice(-commandOutputChars)}` : output}`;
 }
