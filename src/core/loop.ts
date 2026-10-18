@@ -425,6 +425,25 @@ function arrivedEmpty(response: ModelResponse): boolean {
   return response.finishReason !== "length" && carriesNothing(response);
 }
 
+/** What a runtime reports when it says the turn is over: anything else is a stream cut short. */
+const finishedReasons: ReadonlySet<string> = new Set([
+  "stop",
+  "length",
+  "tool-calls",
+  "content-filter",
+]);
+
+/**
+ * A turn with no tool call that the runtime never said it finished: the stream ended mid-answer.
+ * Ollama does this when it cannot parse a tool call the model wrote ("qwen tool call parsing
+ * failed"): it ends the stream with the text so far and no finish reason, and a planner reading
+ * that text as its account of finishing stopped planning with nothing declared. It is the
+ * transport failing, sampled again as a dropped response is, and never read as a completion.
+ */
+function endedUnfinished(response: ModelResponse): boolean {
+  return response.toolCalls.length === 0 && !finishedReasons.has(response.finishReason);
+}
+
 /**
  * The wall budget ran out inside a call. Distinct from a failed call because it is not
  * retried and the loop stops for the budget's reason rather than the model's.
@@ -538,7 +557,15 @@ async function callModelWithRetry(
       // The last attempt's truncation or silence is returned rather than thrown, so the loop
       // stops as output-cap or empty-response and names which. A call-failed error there would
       // say less about more.
-      if (!(spentTheCapWithoutActing(response) || arrivedEmpty(response)) || !willRetry) {
+      const unfinished = !arrivedEmpty(response) && endedUnfinished(response);
+      const unfinishedMessage = `the runtime ended its answer without a finish reason and without a tool call (finish reason ${response.finishReason}, ${response.text.length} characters of text); a stream cut off mid-answer is not the model finishing`;
+      // Unlike a capped or empty turn, an unfinished one carries text the loop would read as a
+      // completion, so its last sample fails the call rather than being returned.
+      if (unfinished && !willRetry) throw new Error(unfinishedMessage);
+      if (
+        !(spentTheCapWithoutActing(response) || arrivedEmpty(response) || unfinished) ||
+        !willRetry
+      ) {
         return response;
       }
       deps.emit({
@@ -548,7 +575,9 @@ async function callModelWithRetry(
           ? `the model spent all ${response.outputTokens} output tokens without emitting text or a tool call`
           : spentTheCapWithoutActing(response)
             ? `the model was cut off at the ${response.outputTokens}-token output cap before it called a tool; a turn the cap cut off is not its account of finishing`
-            : `the runtime answered with neither text nor a tool call (finish reason ${response.finishReason})`,
+            : unfinished
+              ? unfinishedMessage
+              : `the runtime answered with neither text nor a tool call (finish reason ${response.finishReason})`,
         willRetry: true,
       });
     } catch (cause) {
