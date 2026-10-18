@@ -145,7 +145,7 @@ function captureGeneratedChecks() {
   const declarations = records
     .filter((record) => record.type === "tool-call")
     .map((record) => payload(record.payloadDigest))
-    .filter((call) => call.toolName?.startsWith("declare_planned_check") && call.decision !== "requested");
+    .filter((call) => call.toolName?.startsWith("declare_planned_") && call.decision !== "requested");
   const verification = records
     .filter((record) => record.type === "verification-command")
     .map((record) => ({ at: record.timestamp ?? null, ...payload(record.payloadDigest) }));

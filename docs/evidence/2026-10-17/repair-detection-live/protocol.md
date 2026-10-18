@@ -110,4 +110,18 @@ packed rather than committed loose.
 
 ## Amendments
 
-(none yet)
+### 1. 2026-10-18, after launch 1, before launch 2
+
+- **R's second launch** runs on a build whose only change touching a supplied-checks run is the
+  repair brief carrying a bounded diff of the current change against the base, the correction
+  launch 1's trace justifies ([launches.md](launches.md)). The supplied contract, the
+  counterexample and every setting stay as they were. The same build also carries the relation
+  check, which a run without `--plan-checks` never invokes.
+- **The driver** now copies the planner's `declare_planned_relation` calls with its
+  `declare_planned_check` calls when it captures the planning chain (`run.mjs`). Nothing it sends
+  to the product changed.
+- **The relation check's development tests** (no model) are recorded before D: the
+  assignment-parser fixture in `src/workers/planned-check-program.test.ts`, and the mime fixture
+  in [relation-development-test.json](relation-development-test.json) by
+  [validate-relation.mjs](validate-relation.mjs). A developer chose that relation and its seeds
+  knowing the omission; it shows the mechanism works there, not that a planner will propose it.
