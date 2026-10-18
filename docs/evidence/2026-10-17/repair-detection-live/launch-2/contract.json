@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "goal": "Mime.getType(path) (src/Mime.ts) derives a type from the extension after the last dot of the last path segment. The two regular expressions that strip the directory part and the part before the extension do not match across line terminators, so a file name that contains one is typed wrongly: getType('LINE\\nFEED.png') returns null instead of 'image/png', and the same happens for a carriage return (",
+  "requirements": [
+    {
+      "id": "visible-check",
+      "description": "the visible acceptance check passes on a fresh checkout",
+      "checks": [
+        "visible-check"
+      ]
+    },
+    {
+      "id": "earlier-extension",
+      "description": "a line terminator between two extensions does not make getType fail or pick the earlier one",
+      "checks": [
+        "counterexample"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "visible-check",
+      "command": "npm run build && node acceptance/visible/check.mjs",
+      "author": "user",
+      "exposure": "shared",
+      "artifacts": []
+    },
+    {
+      "id": "counterexample",
+      "command": "npm run build && node acceptance/counterexample/check.mjs",
+      "author": "user",
+      "exposure": "shared",
+      "artifacts": [
+        {
+          "path": "acceptance/counterexample/check.mjs",
+          "content": "import mime from '../../dist/src/index.js';\n\n// A line terminator is an ordinary character in a name: the type still comes from the extension\n// after the last dot, not from an earlier one and not from nothing.\nconst cases = [\n  ['notes.txt\\n.html', 'text/html'],\n  ['a/b.json\\u2029.png', 'image/png'],\n  ['c\\\\d.html\\r.txt', 'text/plain'],\n];\n// JSON.stringify leaves U+2028 and U+2029 as they are, which print as spaces.\nconst shown = (value) =>\n  JSON.stringify(value).replace(/[\\u2028\\u2029]/g, (c) => '\\\\u' + c.charCodeAt(0).toString(16));\nconst failed = cases.filter(([name, type]) => mime.getType(name) !== type);\nfor (const [name, type] of failed)\n  console.error(`getType(${shown(name)}) returned ${shown(mime.getType(name))}, expected ${shown(type)}`);\nif (failed.length > 0) process.exit(1);\nconsole.log('counterexample check passed');\n"
+        }
+      ]
+    }
+  ],
+  "immutablePaths": [
+    "acceptance/visible",
+    "test",
+    "types",
+    "acceptance/counterexample"
+  ]
+}
