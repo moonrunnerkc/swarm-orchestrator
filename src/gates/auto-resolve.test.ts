@@ -520,6 +520,23 @@ describe("the attempt after a rollback", () => {
     const brief = describeRejectedCandidate(second?.rejected as RejectedCandidate);
     expect(brief).toContain("Attempt 1 was rolled back");
     expect(brief).toContain("Gates it fixed: tests. Gates it broke: lint.");
+    // The rejected change itself, against the restored file the worker is editing, since a
+    // worker cannot read the evidence record the brief names.
+    expect(second?.rejected?.diff).toBe(
+      [
+        `--- ${sourcePath} (restored)`,
+        `+++ ${sourcePath} (rejected attempt)`,
+        "@@ -1,4 +1,5 @@",
+        " export function add(a: number, b: number): number {",
+        "-  return a - b;",
+        "+  var sum = a + b;",
+        "+  return sum;",
+        " }",
+        " ",
+      ].join("\n"),
+    );
+    expect(brief).toContain("The rejected change, against the files as they are now");
+    expect(brief).toContain("+  var sum = a + b;");
 
     // The rejected files stay retrievable after the workspace was put back.
     const kept = ledgerPayloads("verification-command").find(
