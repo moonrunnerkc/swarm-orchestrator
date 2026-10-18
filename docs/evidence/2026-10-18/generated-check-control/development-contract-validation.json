@@ -1,0 +1,215 @@
+{
+  "schema": "swarm-development-contract-validation.v1",
+  "kind": "developer-authored checks on an exposed task, validated with no model; engineered coverage, not discovery",
+  "task": "mime-bugfix-gettype-line-terminators",
+  "baseCommit": "953ae3ebc59c387064f3760b73085eff6760a7f6",
+  "upstreamCommit": "d7871f3bac120df5e4776e7c395b39d0d8e7b562",
+  "node": "v24.15.0",
+  "checks": [
+    {
+      "id": "visible-check",
+      "command": "npm run build && node acceptance/visible/check.mjs"
+    },
+    {
+      "id": "counterexample",
+      "command": "npm run build && node acceptance/development/counterexample.mjs"
+    },
+    {
+      "id": "terminator-like-space",
+      "command": "npm run build && node acceptance/development/relation.mjs"
+    },
+    {
+      "id": "preserved-behaviour",
+      "command": "npm run build && node acceptance/development/preserve.mjs"
+    },
+    {
+      "id": "project-suite",
+      "command": "npm test"
+    }
+  ],
+  "fileDigests": {
+    "acceptance/visible/check.mjs": "sha256:344bc14ec46de72f85e304b8bf39a6dffaca8bd5bf795471eefb876b0dd5f0c8",
+    "acceptance/development/counterexample.mjs": "sha256:df148ac39fe5ded6a4c0bfb36edbdcd70b0295850d92e2613fde1203b23eb17c",
+    "acceptance/development/relation.mjs": "sha256:f1613660533fe3a10b1a6465556d2ee3de1f122fdfcd5b138ca63c9f27a1d419",
+    "acceptance/development/preserve.mjs": "sha256:d10af9c878ffbfd1274cd0e2720468785f2fbe372d910a432b89a1c86a4f8af8"
+  },
+  "everyTreeAsStated": true,
+  "rows": [
+    {
+      "tree": "base",
+      "role": "original defect",
+      "patchDigest": null,
+      "must": "fail",
+      "contract": "fails",
+      "met": true,
+      "results": {
+        "visible-check": {
+          "passed": false,
+          "exitCode": 1,
+          "stderrTail": "  generatedMessage: true,\n  code: 'ERR_ASSERTION',\n  actual: null,\n  expected: 'image/png',\n  operator: 'strictEqual',\n  diff: 'simple'\n}\nNode.js v24.15.0"
+        },
+        "counterexample": {
+          "passed": false,
+          "exitCode": 1,
+          "stderrTail": "getType(\"notes.txt\\n.html\") returned null, expected \"text/html\"\ngetType(\"a/b.json\\u2029.png\") returned null, expected \"image/png\"\ngetType(\"c\\\\d.html\\r.txt\") returned null, expected \"text/plain\""
+        },
+        "terminator-like-space": {
+          "passed": false,
+          "exitCode": 1,
+          "stderrTail": "the relation runner exited 0\nseed \"LINEFEED.png\": 36 comparison(s) disagree\n  getType(\"\\nLINEFEED.png\") gave null, where getType(\" LINEFEED.png\") gave \"image/png\"\n  getType(\"\\rLINEFEED.png\") gave null, where getType(\" LINEFEED.png\") gave \"image/png\"\nseed \"dir/photo.png.jpg\": 56 comparison(s) disagree\n  getType(\"\\ndir/photo.png.jpg\") gave null, where getType(\" dir/photo.png.jpg\") gave \"image/jpeg\"\n  getType(\"\\rdir/photo.png.jpg\") gave null, where getType(\" dir/photo.png.jpg\") gave \"image/jpeg\""
+        },
+        "preserved-behaviour": {
+          "passed": true,
+          "exitCode": 0,
+          "stderrTail": ""
+        },
+        "project-suite": {
+          "passed": true,
+          "exitCode": 0,
+          "stderrTail": ""
+        }
+      }
+    },
+    {
+      "tree": "retained-faulty",
+      "role": "injected first candidate",
+      "patchDigest": "sha256:06282e598660d71a03abc2c7dd04df6da67674572d01430aa7f5a0a885071af2",
+      "must": "fail",
+      "contract": "fails",
+      "met": true,
+      "results": {
+        "visible-check": {
+          "passed": true,
+          "exitCode": 0,
+          "stderrTail": ""
+        },
+        "counterexample": {
+          "passed": false,
+          "exitCode": 1,
+          "stderrTail": "getType(\"notes.txt\\n.html\") returned null, expected \"text/html\"\ngetType(\"a/b.json\\u2029.png\") returned null, expected \"image/png\"\ngetType(\"c\\\\d.html\\r.txt\") returned null, expected \"text/plain\""
+        },
+        "terminator-like-space": {
+          "passed": false,
+          "exitCode": 1,
+          "stderrTail": "the relation runner exited 0\nseed \"LINEFEED.png\": 4 comparison(s) disagree\n  getType(\"LINEFEED\\n.png\") gave null, where getType(\"LINEFEED .png\") gave \"image/png\"\n  getType(\"LINEFEED\\r.png\") gave null, where getType(\"LINEFEED .png\") gave \"image/png\"\nseed \"dir/photo.png.jpg\": 4 comparison(s) disagree\n  getType(\"dir/photo.png\\n.jpg\") gave null, where getType(\"dir/photo.png .jpg\") gave \"image/jpeg\"\n  getType(\"dir/photo.png\\r.jpg\") gave null, where getType(\"dir/photo.png .jpg\") gave \"image/jpeg\""
+        },
+        "preserved-behaviour": {
+          "passed": true,
+          "exitCode": 0,
+          "stderrTail": ""
+        },
+        "project-suite": {
+          "passed": true,
+          "exitCode": 0,
+          "stderrTail": ""
+        }
+      }
+    },
+    {
+      "tree": "deletion-launch-1",
+      "role": "deletion-based repair",
+      "patchDigest": "sha256:1651bf04de44aa3380b0086a3ba34cb59690705b5759e4692c695b4ab3fffacf",
+      "must": "fail",
+      "contract": "fails",
+      "met": true,
+      "results": {
+        "visible-check": {
+          "passed": true,
+          "exitCode": 0,
+          "stderrTail": ""
+        },
+        "counterexample": {
+          "passed": true,
+          "exitCode": 0,
+          "stderrTail": ""
+        },
+        "terminator-like-space": {
+          "passed": false,
+          "exitCode": 1,
+          "stderrTail": "the relation runner exited 0\nseed \"LINEFEED.png\": 16 comparison(s) disagree\n  getType(\"LINEFEED.\\npng\") gave \"image/png\", where getType(\"LINEFEED. png\") gave null\n  getType(\"LINEFEED.\\rpng\") gave \"image/png\", where getType(\"LINEFEED. png\") gave null\nseed \"dir/photo.png.jpg\": 16 comparison(s) disagree\n  getType(\"dir/photo.png.\\njpg\") gave \"image/jpeg\", where getType(\"dir/photo.png. jpg\") gave null\n  getType(\"dir/photo.png.\\rjpg\") gave \"image/jpeg\", where getType(\"dir/photo.png. jpg\") gave null"
+        },
+        "preserved-behaviour": {
+          "passed": true,
+          "exitCode": 0,
+          "stderrTail": ""
+        },
+        "project-suite": {
+          "passed": true,
+          "exitCode": 0,
+          "stderrTail": ""
+        }
+      }
+    },
+    {
+      "tree": "deletion-launch-2",
+      "role": "deletion-based repair",
+      "patchDigest": "sha256:ea661aa2ffa30632fe7140ae84e97df6d909c28a99d0636646353022d321d8c9",
+      "must": "fail",
+      "contract": "fails",
+      "met": true,
+      "results": {
+        "visible-check": {
+          "passed": true,
+          "exitCode": 0,
+          "stderrTail": ""
+        },
+        "counterexample": {
+          "passed": true,
+          "exitCode": 0,
+          "stderrTail": ""
+        },
+        "terminator-like-space": {
+          "passed": false,
+          "exitCode": 1,
+          "stderrTail": "the relation runner exited 0\nseed \"LINEFEED.png\": 16 comparison(s) disagree\n  getType(\"LINEFEED.\\npng\") gave \"image/png\", where getType(\"LINEFEED. png\") gave null\n  getType(\"LINEFEED.\\rpng\") gave \"image/png\", where getType(\"LINEFEED. png\") gave null\nseed \"dir/photo.png.jpg\": 16 comparison(s) disagree\n  getType(\"dir/photo.png.\\njpg\") gave \"image/jpeg\", where getType(\"dir/photo.png. jpg\") gave null\n  getType(\"dir/photo.png.\\rjpg\") gave \"image/jpeg\", where getType(\"dir/photo.png. jpg\") gave null"
+        },
+        "preserved-behaviour": {
+          "passed": true,
+          "exitCode": 0,
+          "stderrTail": ""
+        },
+        "project-suite": {
+          "passed": true,
+          "exitCode": 0,
+          "stderrTail": ""
+        }
+      }
+    },
+    {
+      "tree": "upstream",
+      "role": "correct implementation",
+      "patchDigest": "sha256:cb3b427f17e3e3eacfcbdedb6b5c762becc9b34b143fe4aa9206a307de4e368c",
+      "must": "pass",
+      "contract": "passes",
+      "met": true,
+      "results": {
+        "visible-check": {
+          "passed": true,
+          "exitCode": 0,
+          "stderrTail": ""
+        },
+        "counterexample": {
+          "passed": true,
+          "exitCode": 0,
+          "stderrTail": ""
+        },
+        "terminator-like-space": {
+          "passed": true,
+          "exitCode": 0,
+          "stderrTail": ""
+        },
+        "preserved-behaviour": {
+          "passed": true,
+          "exitCode": 0,
+          "stderrTail": ""
+        },
+        "project-suite": {
+          "passed": true,
+          "exitCode": 0,
+          "stderrTail": ""
+        }
+      }
+    }
+  ],
+  "scratch": "/Users/brad/swarm-comparison-work/validate-development-OUIUfa"
+}
