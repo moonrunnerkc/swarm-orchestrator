@@ -91,8 +91,11 @@ swarm "add a --no-cache flag that disables the response cache, with a test" --pl
 3. **Base check** of the sealed checks: a check that cannot run here stops the run with the
    remedy named; a check that already passes on the base is named as not evidence of change.
 4. **Implementation** through the one worker loop: declared files, the recording chokepoint,
-   the gates with the sealed checks as the blocking `task-acceptance` gate, bounded repair under
-   the ratchet. A worker that repeats a tool call it has already been answered is told once and
+   the gates with the supplied checks as the blocking `task-acceptance` gate and the generated
+   ones, where there are any, as `task-diagnostics` beside it, bounded repair under the ratchet. A
+   repair that satisfies a generated check by breaking a supplied one is a passing gate
+   regressing, and is rolled back; one that a generated check alone asked for is named in the
+   outcome. A worker that repeats a tool call it has already been answered is told once and
    stopped the second time, and the gates still run over the tree.
 5. **Final verification** of the exact tree in a fresh checkout, independent of the worker.
 6. **The outcome block**, led by one status that the JSON result (`outcome.status`) and the
