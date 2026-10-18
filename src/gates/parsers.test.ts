@@ -175,6 +175,17 @@ describe("gate output parsers", () => {
 
     expect(inspectionParser(observed({ stdout: "not json" })).status).toBe("failed");
   });
+
+  it("reads the named parts an inspection reports, and only statuses it knows", () => {
+    const reading = inspectionParser(
+      observed({
+        exitCode: 1,
+        stdout: JSON.stringify({ parts: { ten: "failed", twelve: "passed", odd: "maybe", n: 1 } }),
+      }),
+    );
+    expect(reading.parts).toEqual({ ten: "failed", twelve: "passed" });
+    expect(inspectionParser(observed({ stdout: "{}" }))).not.toHaveProperty("parts");
+  });
 });
 
 describe("reading a coverage report", () => {

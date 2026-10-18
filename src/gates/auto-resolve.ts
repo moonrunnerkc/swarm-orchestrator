@@ -220,6 +220,8 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
     const input = {
       baselineGates: cycle.statuses,
       candidateGates: candidateCycle.statuses,
+      baselineParts: cycle.parts,
+      candidateParts: candidateCycle.parts,
       baseline,
       candidate,
       newSpecifications: clearedTests(respecification),
@@ -230,7 +232,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
       type: "ratchet-decision",
       actor: "harness",
       provenance: ["tool-output"],
-      payload: ratchetPayload("retry", attempt, input, decision, respecification),
+      payload: asJsonValue(ratchetPayload("retry", attempt, input, decision, respecification)),
     });
 
     deps.emit({
@@ -350,7 +352,7 @@ async function judgeAgainstBase(
     type: "ratchet-decision",
     actor: "harness",
     provenance: ["tool-output"],
-    payload: ratchetPayload("base", 0, input, decision, respecification),
+    payload: asJsonValue(ratchetPayload("base", 0, input, decision, respecification)),
   });
 
   return { decision, respecification, ratchetRecord: recorded.record.payloadDigest };
@@ -379,6 +381,8 @@ async function recordFailedAttempt(
   const input = {
     baselineGates: cycle.statuses,
     candidateGates: cycle.statuses,
+    baselineParts: cycle.parts,
+    candidateParts: cycle.parts,
     baseline,
     candidate: baseline,
     newSpecifications: new Set<string>(),
@@ -395,7 +399,7 @@ async function recordFailedAttempt(
     type: "ratchet-decision",
     actor: "harness",
     provenance: ["tool-output"],
-    payload: ratchetPayload("retry", attempt, input, decision, []),
+    payload: asJsonValue(ratchetPayload("retry", attempt, input, decision, [])),
   });
 
   deps.emit({
@@ -510,13 +514,29 @@ function gateMovement(
   candidate: GateCycle,
 ): Pick<RejectedCandidate, "improved" | "regressed"> {
   const ids = Object.keys(candidate.statuses).sort();
+  // A part is named with its gate, and only where the gate itself did not move the same way.
+  const parts = (from: "passed" | "failed", movedTo: (status: string | undefined) => boolean) =>
+    Object.entries(restored.parts)
+      .filter(([gateId]) => restored.statuses[gateId] === candidate.statuses[gateId])
+      .flatMap(([gateId, before]) =>
+        Object.entries(before)
+          .filter(([part, status]) => status === from && movedTo(candidate.parts[gateId]?.[part]))
+          .map(([part]) => `${gateId} (${part})`),
+      )
+      .sort();
   return {
-    improved: ids.filter(
-      (id) => restored.statuses[id] === "failed" && candidate.statuses[id] === "passed",
-    ),
-    regressed: ids.filter(
-      (id) => restored.statuses[id] === "passed" && candidate.statuses[id] !== "passed",
-    ),
+    improved: [
+      ...ids.filter(
+        (id) => restored.statuses[id] === "failed" && candidate.statuses[id] === "passed",
+      ),
+      ...parts("failed", (now) => now === "passed"),
+    ],
+    regressed: [
+      ...ids.filter(
+        (id) => restored.statuses[id] === "passed" && candidate.statuses[id] !== "passed",
+      ),
+      ...parts("passed", (now) => now !== undefined && now !== "passed"),
+    ],
   };
 }
 
