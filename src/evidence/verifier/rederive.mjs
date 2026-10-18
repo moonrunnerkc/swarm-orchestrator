@@ -229,6 +229,15 @@ export function rederiveRatchet(payload) {
     if (now === undefined) continue;
     if (now !== "passed") violations.push("gate-regressed");
   }
+  // A gate's named parts, each held as a gate is; a part reported on one side only abstains.
+  for (const [gateId, parts] of Object.entries(payload.parts?.before ?? {})) {
+    for (const [part, status] of Object.entries(parts)) {
+      if (status !== "passed") continue;
+      const now = payload.parts?.after?.[gateId]?.[part];
+      if (now === undefined) continue;
+      if (now !== "passed") violations.push("gate-part-regressed");
+    }
+  }
   if (after.testsDeclared < before.testsDeclared) violations.push("tests-declared-decreased");
   if (
     (payload.respecification ?? []).length === 0 &&

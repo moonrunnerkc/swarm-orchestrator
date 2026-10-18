@@ -179,6 +179,36 @@ describe("the re-derivation script agrees with the parsers it ships beside", () 
       "changed-line-coverage-decreased",
     ]);
   });
+
+  it("holds each part of a gate that failed before and after, as the engine's ratchet does", () => {
+    const unchanged = { testsCollected: 1, testsDeclared: 1, assertions: 1, skipMarkers: 0 };
+    const gates = { before: { acceptance: "failed" }, after: { acceptance: "failed" } };
+    const decision = (after: Record<string, string>) => ({
+      scope: "retry",
+      attempt: 1,
+      accepted: true,
+      violations: [],
+      respecification: [],
+      newSpecifications: [],
+      measures: { before: unchanged, after: unchanged },
+      gates,
+      parts: {
+        before: { acceptance: { ten: "failed", twelve: "passed" } },
+        after: { acceptance: after },
+      },
+    });
+
+    expect(
+      rederive.rederiveRatchet(decision({ ten: "failed", twelve: "failed" })).violations,
+    ).toEqual(["gate-part-regressed"]);
+    expect(
+      rederive.rederiveRatchet(decision({ ten: "passed", twelve: "passed" })).violations,
+    ).toEqual([]);
+    // A part the attempt did not report is not compared, by either reading.
+    expect(rederive.rederiveRatchet(decision({ ten: "failed" })).violations).toEqual([]);
+    const { parts: _parts, ...older } = decision({ ten: "failed", twelve: "failed" });
+    expect(rederive.rederiveRatchet(older).violations).toEqual([]);
+  });
 });
 
 describe("re-deriving a bundle the real engine produced", () => {

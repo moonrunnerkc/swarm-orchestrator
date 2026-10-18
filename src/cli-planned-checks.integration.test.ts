@@ -205,6 +205,7 @@ async function swarm(
   withContract = true,
   prepared: Promise<{ directory: string; base: string; contract: string }> = workspace(built),
   goal = task,
+  planChecks = true,
 ): Promise<{ endpoint: ScriptedEndpoint; stdout: string; code: number }> {
   const endpoint = await startScriptedEndpoint({ modelId: "stub", turns });
   endpoints.push(endpoint);
@@ -226,7 +227,7 @@ async function swarm(
         "--base",
         base,
         ...(withContract ? ["--goal-contract", contract] : []),
-        "--plan-checks",
+        ...(planChecks ? ["--plan-checks"] : []),
         "--approve",
         "auto",
         "--no-tui",
@@ -713,6 +714,109 @@ describe("planned checks through the ordinary command line", () => {
     expect(readFileSync(join(scratch, "workspace", "value.mjs"), "utf8")).toContain("n <= 10");
     // Attempt 1 was refused for the supplied check it broke; attempt 2 is the delivered one.
     expect(stdout).toMatch(/task-diagnostics/);
+  }, 200_000);
+
+  it("rolls back a repair that breaks one supplied check while another was already failing", async () => {
+    // The gate split above keeps generated checks apart from supplied ones. Within the supplied
+    // checks the acceptance gate is still one verdict: with `ten` failing before and after, a
+    // repair that also broke `twelve` left the gate failing exactly as before, so nothing the
+    // ratchet compared had moved. Each supplied check is now held to the no-regression rule.
+    const supplied = (id: string, n: number, want: string) => ({
+      id,
+      command: `node ${id}-check.mjs`,
+      author: "user",
+      exposure: "shared",
+      artifacts: [
+        {
+          path: `${id}-check.mjs`,
+          content: `import { classify } from './value.mjs';\nif (classify(${n}) !== '${want}') { console.error('classify(${n}) is ' + classify(${n})); process.exit(1); }\n`,
+        },
+      ],
+    });
+    const prepared = (async () => {
+      const ready = await workspace();
+      await writeFile(
+        ready.contract,
+        JSON.stringify({
+          version: 1,
+          goal: task,
+          requirements: [
+            { id: "suite", description: "the project's suite passes", checks: ["suite"] },
+            { id: "ten", description: "10 is small", checks: ["ten"] },
+            { id: "twelve", description: "12 stays big", checks: ["twelve"] },
+          ],
+          checks: [
+            {
+              id: "suite",
+              command: "node --test",
+              author: "user",
+              exposure: "shared",
+              artifacts: [],
+            },
+            supplied("ten", 10, "small"),
+            supplied("twelve", 12, "big"),
+          ],
+          immutablePaths: ["value.test.mjs", "ten-check.mjs", "twelve-check.mjs"],
+        }),
+      );
+      return ready;
+    })();
+    // Leaves 10 big, as before, and makes 12 small: one supplied check still failing, another newly so.
+    const breaksTwelve: ScriptedTurnSource = (request) =>
+      JSON.stringify(request).includes("check ten rejected")
+        ? {
+            toolCalls: [
+              write(
+                "export function classify(n) {\n  return n < 10 || n === 12 ? 'small' : 'big';\n}\n",
+              ),
+            ],
+          }
+        : { text: "The brief named no failing supplied check." };
+    // Answers only when told the rolled-back attempt broke `twelve`.
+    const right: ScriptedTurnSource = (request) => {
+      const text = JSON.stringify(request);
+      return text.includes("was rolled back") && text.includes("twelve")
+        ? {
+            toolCalls: [
+              write("export function classify(n) {\n  return n <= 10 ? 'small' : 'big';\n}\n"),
+            ],
+          }
+        : { text: "The brief did not say the last attempt broke twelve." };
+    };
+    const { stdout, code } = await swarm(
+      [
+        { text: "Plan: look at the boundary.", toolCalls: [declare] },
+        {
+          toolCalls: [
+            write("export function classify(n) {\n  return n < 10 ? 'small' : 'big';\n}\n"),
+          ],
+        },
+        { text: "Done." },
+        breaksTwelve,
+        { text: "Repaired." },
+        right,
+        { text: "Repaired." },
+      ],
+      false,
+      [],
+      true,
+      prepared,
+      task,
+      false,
+    );
+
+    const result = resultOf(stdout);
+    expect(result?.outcome?.status, stdout.slice(-4000)).toBe("accepted");
+    expect(code).toBe(0);
+    expect(readFileSync(join(scratch, "workspace", "value.mjs"), "utf8")).toContain("n <= 10");
+    // The bundle's own re-deriver reaches the same refusal from the recorded check results.
+    const bundle = result?.bundleDirectory ?? "";
+    expect((await verifyBundle(bundle)).code).toBe(0);
+    const rederived = await run(process.execPath, [join(bundle, "rederive.mjs"), bundle]);
+    expect(rederived.stdout).toMatch(
+      /AGREES +ratchet-decision \d+ \(retry, attempt 1\): rejected, gate-part-regressed/,
+    );
+    expect(rederived.stdout).not.toMatch(/DISAGREES/);
   }, 200_000);
 
   it("revises a check that never loaded and a preserved case the base contradicts, from what each did there", async () => {

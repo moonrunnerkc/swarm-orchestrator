@@ -73,6 +73,8 @@ interface GateRun {
   readonly status: GateStatus;
   readonly detail: string;
   readonly measures: GateMeasures;
+  /** The gate's named parts, where it reports any (see `GateReading.parts`). */
+  readonly parts: Readonly<Record<string, GateStatus>>;
   readonly observation: GateObservation;
   /** What this gate's runner wrote to the report path it was given, or null for neither. */
   readonly coverageReport: string | null;
@@ -88,6 +90,8 @@ export interface GateCycle {
   readonly attempt: number;
   readonly runs: readonly GateRun[];
   readonly statuses: Readonly<Record<string, GateStatus>>;
+  /** Each gate's named parts, by gate id, for the gates that report any. */
+  readonly parts: Readonly<Record<string, Readonly<Record<string, GateStatus>>>>;
   readonly blockingFailures: readonly GateRun[];
   readonly advisoryFailures: readonly GateRun[];
   /** Every gate's measures merged. Later gates win on a name collision, which is recorded. */
@@ -219,6 +223,7 @@ export async function runGateCycle(
       status: reading.status,
       detail: reading.detail,
       measures: reading.measures,
+      parts: reading.parts ?? {},
       observation,
       coverageReport,
       coverageUnmeasured: payload.coverageUnmeasured,
@@ -245,6 +250,9 @@ export async function runGateCycle(
     attempt,
     runs,
     statuses,
+    parts: Object.fromEntries(
+      runs.filter((run) => Object.keys(run.parts).length > 0).map((run) => [run.gateId, run.parts]),
+    ),
     blockingFailures: runs.filter((run) => run.status === "failed" && run.severity === "blocking"),
     advisoryFailures: runs.filter((run) => run.status === "failed" && run.severity === "advisory"),
     measures,

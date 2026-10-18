@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { acceptanceGateId, diagnosticsGateId } from "./cli-run-outcome.ts";
 import type { Clock } from "./core/clock.ts";
+import type { GateStatus } from "./core/loop-events.ts";
 import { asJsonValue, digestOfBytes } from "./evidence/canonical-json.ts";
 import {
   diagnosticChecks,
@@ -352,6 +353,8 @@ export function taskGoalGates(context: TaskGoalContext): {
     read: (result: IndependentVerification) => {
       readonly passes: boolean;
       readonly stderr: string;
+      /** The checks this gate decides, each as a part the ratchet holds on its own. */
+      readonly parts?: Readonly<Record<string, GateStatus>>;
     },
   ): GateDefinition => ({
     id,
@@ -376,7 +379,12 @@ export function taskGoalGates(context: TaskGoalContext): {
           exitCode: reading.passes ? 0 : 1,
           unavailable: null,
           durationMs: context.clock.now() - started,
-          stdout: JSON.stringify({ regression: result.regression, task: result.task, findings }),
+          stdout: JSON.stringify({
+            regression: result.regression,
+            task: result.task,
+            findings,
+            ...(reading.parts === undefined ? {} : { parts: reading.parts }),
+          }),
           stderr: reading.stderr,
         };
       },
@@ -391,8 +399,23 @@ export function taskGoalGates(context: TaskGoalContext): {
     const failed = (result.goalAcceptance?.checkResults ?? [])
       .filter((finding) => finding.status !== "accepted" && !reading.diagnostic.has(finding.id))
       .map((finding) => `check ${finding.id} ${finding.status}: ${finding.detail}`);
+    // Each supplied check is a part of this gate: a repair that leaves one failing check failing
+    // and breaks another passing one has regressed, though the gate failed before and after.
+    const parts = Object.fromEntries(
+      (result.goalAcceptance?.checkResults ?? [])
+        .filter((finding) => !reading.diagnostic.has(finding.id))
+        .map((finding) => [
+          finding.id,
+          finding.status === "accepted"
+            ? ("passed" as const)
+            : finding.status === "rejected"
+              ? ("failed" as const)
+              : ("not-applicable" as const),
+        ]),
+    );
     return {
       passes: reading.passes,
+      parts,
       stderr:
         result.refusal !== null && !result.unmeasured
           ? `refused: ${result.refusal}`

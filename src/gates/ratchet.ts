@@ -15,6 +15,7 @@ import { type RespecificationFinding, respecificationSchema } from "./respecific
 
 type RatchetViolationKind =
   | "gate-regressed"
+  | "gate-part-regressed"
   | "tests-collected-decreased"
   | "tests-declared-decreased"
   | "assertions-decreased"
@@ -64,6 +65,12 @@ export interface RatchetInput {
    * the harness's clock did. Omitted means every gate in the candidate ran.
    */
   readonly unmeasuredGates?: ReadonlyMap<string, string>;
+  /**
+   * The named parts of the gates that report them (`GateReading.parts`), by gate id, on each
+   * side. A part that passed before is held as a gate is. Omitted compares no part.
+   */
+  readonly baselineParts?: Readonly<Record<string, Readonly<Record<string, GateStatus>>>>;
+  readonly candidateParts?: Readonly<Record<string, Readonly<Record<string, GateStatus>>>>;
 }
 
 /**
@@ -111,6 +118,13 @@ const ratchetDecisionSchema = z.object({
     before: z.record(z.string(), z.string()),
     after: z.record(z.string(), z.string()),
   }),
+  /** Absent on decisions before parts were compared, and where no gate reported any. */
+  parts: z
+    .object({
+      before: z.record(z.string(), z.record(z.string(), z.string())),
+      after: z.record(z.string(), z.record(z.string(), z.string())),
+    })
+    .optional(),
 });
 
 type RatchetDecisionPayload = z.infer<typeof ratchetDecisionSchema>;
@@ -152,6 +166,34 @@ export function judgeRatchet(input: RatchetInput): RatchetDecision {
         after: 0,
         detail: `the ${gateId} gate passed before this attempt and now reports ${now}`,
       });
+    }
+  }
+
+  // Within a gate, each part that passed before is held as the gate is, whatever the gate's own
+  // status was: a gate failing for one part before and after hides a part a retry broke.
+  for (const [gateId, parts] of Object.entries(input.baselineParts ?? {})) {
+    const notRun =
+      input.unmeasuredGates?.get(gateId) ??
+      (input.candidateGates[gateId] === undefined ? "the gate did not run in this attempt" : null);
+    for (const [part, status] of Object.entries(parts)) {
+      if (status !== "passed") continue;
+      const now = input.candidateParts?.[gateId]?.[part];
+      if (notRun !== null || now === undefined) {
+        abstentions.push({
+          measure: `gate:${gateId}:${part}`,
+          reason:
+            notRun ??
+            "the gate did not report this part in this attempt, so it could not be compared",
+        });
+        continue;
+      }
+      if (now !== "passed")
+        violations.push({
+          kind: "gate-part-regressed",
+          before: 1,
+          after: 0,
+          detail: `${part} in the ${gateId} gate passed before this attempt and now reports ${now}`,
+        });
     }
   }
 
@@ -351,5 +393,8 @@ export function ratchetPayload(
       },
     },
     gates: { before: input.baselineGates, after: input.candidateGates },
+    ...(input.baselineParts === undefined && input.candidateParts === undefined
+      ? {}
+      : { parts: { before: input.baselineParts ?? {}, after: input.candidateParts ?? {} } }),
   });
 }

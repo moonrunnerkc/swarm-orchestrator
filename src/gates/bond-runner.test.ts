@@ -58,6 +58,7 @@ function cycleWhere(
     attempt: 0,
     runs: [],
     statuses,
+    parts: {},
     blockingFailures: [],
     advisoryFailures: [],
     measures,
