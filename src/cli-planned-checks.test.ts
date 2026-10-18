@@ -184,6 +184,99 @@ describe("admitting planned checks by their base control", () => {
     ]);
   });
 
+  it("names each kind of failure apart, and records the control an admitted check rests on", async () => {
+    // As the harness records them: a program that read input.input off a number (exit 4, every
+    // call given undefined, answered "big"), a preserve check whose program answers one value for
+    // everything, and a change check with a real control.
+    const runs: Record<string, { exitCode: number; answer: (n: number) => string }> = {
+      misread: { exitCode: 4, answer: () => "big" },
+      constant: { exitCode: 0, answer: () => "small" },
+      boundary: { exitCode: 0, answer: atBase },
+    };
+    const declared = plannedContract(
+      task,
+      {
+        requirements: [
+          { id: "ten", description: "10 is small", quote: "10 is small" },
+          { id: "above", description: "above 10 stays big", quote: "Values above 10 remain big" },
+        ],
+        checks: [
+          check("misread", "ten", "change", [
+            [9, "small"],
+            [10, "small"],
+          ]),
+          check("constant", "above", "preserve", [
+            [11, "big"],
+            [50, "big"],
+          ]),
+          check("boundary", "ten", "change", [
+            [9, "small"],
+            [10, "small"],
+            [12, "big"],
+          ]),
+        ],
+      },
+      supplied,
+    );
+    const admission = await admitPlannedChecks({
+      contract: declared,
+      base: supplied,
+      evidence,
+      verifyAtBase: async (contract) => {
+        for (const one of contract.checks) {
+          const ran = runs[one.id];
+          if (ran === undefined || one.behavior?.kind !== "cli") continue;
+          const { inputs } = JSON.parse(one.behavior.stdin) as { inputs: number[] };
+          const stdout = inputs
+            .map((n) => `${JSON.stringify({ input: n, result: ran.answer(n) })}\n`)
+            .join("");
+          await evidence.record({
+            type: "goal-check",
+            actor: "harness",
+            provenance: ["tool-output"],
+            payload: asJsonValue({
+              phase: "completed",
+              checkId: one.id,
+              status:
+                ran.exitCode === 0 && stdout === one.behavior.stdout[0]?.value
+                  ? "accepted"
+                  : "rejected",
+              behavior: { exitCode: 0 },
+              observation: {
+                exitCode: ran.exitCode,
+                unavailable: null,
+                outputTruncated: false,
+                stdout,
+                stderr:
+                  ran.exitCode === 4
+                    ? "the program read .input of the value it was called with"
+                    : "",
+              },
+            }),
+          });
+        }
+      },
+    });
+    const byCheck = new Map(admission.decisions.map((one) => [one.check, one]));
+    expect(byCheck.get("misread")).toMatchObject({
+      admitted: false,
+      broken: true,
+      finding: "argument-shape",
+      control: null,
+      reason: expect.stringContaining("called with each case's input itself"),
+    });
+    expect(byCheck.get("constant")).toMatchObject({
+      admitted: false,
+      finding: "no-control",
+      reason: expect.stringContaining("every case gave one and the same answer"),
+    });
+    expect(byCheck.get("boundary")).toMatchObject({
+      admitted: true,
+      finding: "admitted",
+      control: { source: "base-agreement", cases: [1, 3] },
+    });
+  });
+
   it("seals nothing when no contract was supplied and no check held its control", async () => {
     const declared = plannedContract(
       task,
