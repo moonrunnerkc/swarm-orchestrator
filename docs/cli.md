@@ -14,7 +14,7 @@ swarm --version                  # which build this is
 | flag | what it does |
 | --- | --- |
 | `--goal-contract <file>` | sealed requirements and checks, held outside the solver's reach, that the run must satisfy; a feature task needs no preset. The run establishes the checks on the base before the first model call, iterates against them as the blocking `task-acceptance` gate, repairs under the ratchet, and verifies the exact final tree in a fresh checkout |
-| `--plan-checks` | have a planner write requirements and checks from the task before implementation. Each check is admitted by one run on a fresh checkout of the unchanged base (it must load, and tell the base from the change); an admitted check is a diagnostic that drives repair and is reported, and never decides a requirement, so a planned requirement stays unjudged. With `--goal-contract` the planner's checks sit beside yours, and yours decide. Exit 4 where nothing could be sealed, 3 on a decline. The whole workflow: [using.md](using.md#an-ordinary-task-start-to-finish) |
+| `--plan-checks` | have a planner write requirements and checks from the task before implementation. Each check is admitted by one run on a fresh checkout of the unchanged base (it must load, and tell the base from the change); an admitted check is a diagnostic that drives repair and is reported, and never decides a requirement: a planned requirement is a hypothesis, neither met nor counted against the run, and a generated check that disagrees with the final tree leaves it `unresolved`. With `--goal-contract` the planner's checks sit beside yours, and yours decide. Exit 4 where nothing could be sealed, 3 on a decline. The whole workflow: [using.md](using.md#an-ordinary-task-start-to-finish) |
 | `--prompt-profile legacy\|concise` | the worker's system prompt. `legacy` (the default) is the historical prompt, unchanged; `concise` is shorter, offers the predicate vocabulary as a tool instead of inline, has the harness record routine facts as claims, and asks for batched independent calls, file-based checks and no reruns of unchanged checks |
 | `--preset bugfix\|refactor\|upgrade` | a behavior policy the contract also names: base controls for a bugfix or refactor, narrow scope and exact targets for an upgrade (with `--install`). Named in both places or in neither |
 | `--install [--lockfile <file>]` | install the checkout's dependencies from its lockfile before the checks run, with install scripts off. A tree that holds several lockfiles is refused rather than guessed: name the one to install from, or declare `packageManager` in package.json |
@@ -317,9 +317,11 @@ A taxonomy rather than zero-or-not: 0 acceptable, 1 not acceptable, 2 invalid re
 
 A task run reads its exit status off the outcome status the outcome block and
 `outcome.status` in the JSON result also carry: 0 for `accepted`, and for `unjudged` (the gates
-passed and no requirement was sealed, so nothing says the task was done); 1 for `not-accepted`,
-`partially-checked` and `unresolved`. A run with no model to use (nothing pinned, no local server
-answering, no key) is 4, as is `--plan-checks` sealing nothing; declining the planned criteria is
+passed and no requirement was supplied, so nothing says the task was done; planned requirements
+are hypotheses and do not count); 1 for `not-accepted`, `partially-checked` and `unresolved`; 4
+for `unverified` (the model or the final verification's environment became unavailable). A run
+with no model to use (nothing pinned, no local server answering, no key) is 4, as is
+`--plan-checks` sealing nothing; declining the planned criteria is
 3; a run a person interrupts exits 130, the shell's own code for an interrupt, and a run that ends
 at `--max-wall-minutes` still reports its verdict, so it is 0 or 1. `swarm check` uses all of the first
 five: a regression-only pass is 0, a failed blocking check is 1, a command line the binary

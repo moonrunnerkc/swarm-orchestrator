@@ -67,7 +67,9 @@ swarm "add a --no-cache flag that disables the response cache, with a test" --pl
    manifest is offered a harness first; a missing runtime stops the run here.
 2. **Criteria**, with `--plan-checks`: the planner reads the workspace with read-only tools and
    writes requirements, each quoting the task where it can, with checks: a short program over the
-   project and input cases with expected results. Each check is run once on a fresh checkout of
+   project and input cases with expected results, or, where the task says some text must behave
+   like other text, a relation: seed strings, a reference and variants, which the harness tries at
+   every position of every seed and compares with each other rather than with written answers. Each check is run once on a fresh checkout of
    the unchanged base and admitted only if it loads, runs, and tells the base from the change: a
    check of the change gets a case wrong and one right there, a check of behaviour that stays
    gets every case right, and a program that imports nothing from the repository is refused.
@@ -76,8 +78,9 @@ swarm "add a --no-cache flag that disables the response cache, with a test" --pl
    means, so an admitted check is a **diagnostic**: it runs on every candidate, its disagreement
    drives a bounded repair (the repair is told the expectation is the planner's reading of the
    task, which it may contradict), and its result is reported, but it never decides a
-   requirement. A planned requirement therefore stays unjudged, and only a check you supply, in
-   `--goal-contract`, decides one. A planned requirement that quotes the task is kept, unjudged
+   requirement. A planned requirement is therefore a hypothesis about the task: it is reported
+   with what its generated checks did, and it neither establishes the task nor counts against
+   it; only a requirement you supply, in `--goal-contract`, decides. A planned requirement that quotes the task is kept, unjudged
    and visible, even when every check for it is dropped; one the planner invented, with no quote
    and no admitted check, is dropped and reported as unsupported. The criteria are shown in plain
    language before implementation; on a terminal you are asked to seal them, and anything but `y`
@@ -94,17 +97,19 @@ swarm "add a --no-cache flag that disables the response cache, with a test" --pl
 5. **Final verification** of the exact tree in a fresh checkout, independent of the worker.
 6. **The outcome block**, led by one status that the JSON result (`outcome.status`) and the
    exit code share:
-   - `accepted` (exit 0): every sealed requirement was met by a check that decides it;
-   - `unjudged` (exit 0): the gates passed and no requirement was sealed, so nothing says the
-     task was done;
-   - `partially-checked` (exit 1): nothing that decides refused the change, but a sealed
-     requirement was not established (a planned requirement, or a supplied check that could not
-     run);
-   - `unresolved` (exit 1): as partially checked, and a generated check disagrees with the final
-     tree; either the check expects something the task does not ask for or the change is
-     incomplete, and nothing here can tell which;
-   - `not-accepted` (exit 1): a deciding check, a blocking gate, policy or the final
-     verification refused it, or the run was interrupted.
+   - `accepted` (exit 0): every requirement you supplied was met by a check that decides it, and
+     no generated check disagrees; the scope line says what those requirements cover;
+   - `unjudged` (exit 0): the gates passed and no requirement was supplied, so nothing says the
+     task was done (planned requirements whose generated checks agree leave a run here);
+   - `partially-checked` (exit 1): nothing refused the change, but a requirement you supplied was
+     decided by no check that ran;
+   - `unresolved` (exit 1): a generated check disagrees with the final tree and nothing that
+     decides refused it; either the check expects something the task does not ask for or the
+     change is incomplete, and nothing here can tell which;
+   - `unverified` (exit 4): the model or the final verification's environment was unavailable,
+     so nothing established the change either way;
+   - `not-accepted` (exit 1): a supplied check, a blocking gate, policy or the final
+     verification refused it, nothing executed it, or the run was interrupted.
 
    Then each requirement (met, unmet, unjudged; a planned one with the task words it quotes and
    what each generated check did), the scope of what was sealed, the branch and the files the
@@ -121,6 +126,26 @@ it broke and why it was refused, while it starts from the restored files.
 
 Planning and criteria authoring are part of what the task costs and are accounted against the
 run's token and wall allowances, not granted on top of them.
+
+## When a first run fails
+
+- **`no model to run: ...`, exit 4.** Nothing pinned a model and no local server answered where
+  the message says it looked. Start Ollama with a model pulled (`ollama pull qwen3.6:35b-a3b`) and
+  pass `--model local:qwen3.6:35b-a3b`; add `--local-endpoint <url>` if the server is not on its
+  default port. `swarm select` suggests a model for the machine.
+- **`--x is not an option of this command`, exit 2.** A misspelt flag is refused by name before
+  anything runs; `swarm --help` lists the flags.
+- **`swarm --version` does not say `source build`.** The installed `swarm` is the 14.4.0 npm
+  release, not the build of this source; reinstall the packed tarball as the README shows.
+- **The outcome reads `unverified`, exit 4.** The model stopped answering, or the final
+  verification could not prepare a fresh checkout (its line in the outcome block says why). The
+  edits are left in the working tree; fix what it names and run again.
+- **The model answers but nothing changes.** The outcome says `the run changed nothing`; a
+  smaller model often stops early. Give the task a file name and a concrete behaviour, or use a
+  stronger model.
+- **`swarm verify <bundle>` exits 1 with every check passing.** No `--signer` was named, so the
+  signer is untrusted by design; `node <bundle>/verify.mjs <bundle>` checks the record without
+  one ([verifying.md](verifying.md)).
 
 ## A session, or a single task
 
