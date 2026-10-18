@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createSystemClock } from "./cli-runtime-inputs.ts";
 import {
+  acceptanceCheckTool,
   preflightTaskGoal,
   readAcceptance,
   type TaskGoalContext,
@@ -13,6 +14,10 @@ import {
 } from "./cli-task-goal.ts";
 import { freezeGoalContract } from "./evidence/goal-contract.ts";
 import { type EvidenceRecorder, openEvidenceSession } from "./evidence/session.ts";
+import { createToolChokepoint } from "./tools/chokepoint.ts";
+import type { ChokepointRecord } from "./tools/chokepoint-record.ts";
+import { createDerivationHeuristic } from "./tools/derivation.ts";
+import { createPolicyGuard, defaultShellAllowlist } from "./tools/policy-guard.ts";
 
 const run = promisify(execFile);
 
@@ -258,5 +263,70 @@ describe("what the acceptance gate makes of a verification", () => {
 
   it("does not ask for a repair over a generated check that could not run", () => {
     expect(readAcceptance(contract, verification("accepted", "unjudged")).passes).toBe(true);
+  });
+});
+
+describe("run_check's own diagnostic program", () => {
+  async function invoke(input: Record<string, unknown>) {
+    const settled: ChokepointRecord[] = [];
+    const guard = createPolicyGuard({
+      workspaceRoot: workspace,
+      homeDir: join(scratch, "home"),
+      shellAllowlist: defaultShellAllowlist,
+      deniedRoots: [],
+    });
+    const chokepoint = createToolChokepoint({
+      definitions: [acceptanceCheckTool(await context())],
+      guard,
+      derivation: createDerivationHeuristic(),
+      confirm: () => Promise.resolve("yes"),
+      recorder: {
+        recordCall(entry) {
+          settled.push(entry);
+          return Promise.resolve(`sha256:${"ab".repeat(32)}`);
+        },
+        recordConfirmation: () => Promise.resolve(),
+        recordAllowance: () => Promise.resolve(),
+      },
+    });
+    const call = await chokepoint.invoke({
+      callId: "c",
+      toolName: "run_check",
+      input,
+      provenance: "model",
+    });
+    return { output: call.output, outcome: settled.find((one) => one.decision !== "requested") };
+  }
+
+  it("answers to the path policy the shell applies to the same program inline", async () => {
+    await write(".env", "API_KEY=not-a-real-key\n");
+    // Passed to `node -e`, this program is denied; through run_check it ran unchecked.
+    const literal = await invoke({
+      program:
+        "import { readFileSync } from 'node:fs';\nimport { greet } from './greet.mjs';\nexport default () => readFileSync('.env', 'utf8') + greet();\n",
+      inputs: [1],
+    });
+    expect(literal.outcome?.decision).toBe("denied");
+    expect(literal.outcome?.detail).toContain("credential denylist");
+    expect(literal.output).not.toContain("not-a-real-key");
+
+    // An input is a path the program may open, as a word after `node -e '...'` is.
+    const input = await invoke({
+      program:
+        "import { readFileSync } from 'node:fs';\nexport default (path) => readFileSync(path, 'utf8');\n",
+      inputs: ["~/.ssh/id_rsa"],
+    });
+    expect(input.outcome?.decision).toBe("denied");
+  });
+
+  it("still runs an ordinary probe, regular expressions and absolute names in its data included", async () => {
+    const probe = await invoke({
+      program:
+        "import { greet } from './greet.mjs';\nexport default (name) => [/^.*\\./.exec(name)?.[0] ?? null, greet()];\n",
+      inputs: ["/path/to/photo.png", "a.b"],
+    });
+    expect(probe.outcome?.decision, probe.output).toBe("allowed");
+    expect(probe.output).toContain('"/path/to/photo."');
+    expect(probe.output).toContain("goodbye");
   });
 });

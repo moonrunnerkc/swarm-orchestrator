@@ -24,6 +24,7 @@ import { createNodeCommandRunner } from "./gates/node-command-runner.ts";
 import { inspectionParser } from "./gates/parsers.ts";
 import { diffAgainstBase, patchAgainstBase } from "./gates/scratch-index.ts";
 import { VerificationRefusalError } from "./gates/verification-refusal.ts";
+import { pathsInlineCodeCouldOpen } from "./tools/shell-command.ts";
 import { defineTool, type ToolDefinition } from "./tools/tool-definition.ts";
 import {
   inputAsRead,
@@ -477,9 +478,20 @@ export function acceptanceCheckTool(context: TaskGoalContext): ToolDefinition {
     description:
       "Rerun the sealed acceptance checks on the workspace as it stands, exactly as the acceptance gate runs them (a fresh checkout of the base with your change, after the repository's checks), and see each check's result; name a check to see its cases: each input, the expected result and what the project gave. Or pass program (an ES module whose default export takes one input) with inputs to run your own diagnostic over the project from the repository root, with no file to write or clean up and no shell quoting. Generated checks' expectations are the planner's reading of the task, not established facts.",
     inputSchema: checkToolInput,
-    // It runs code in the workspace, as writing a probe and running it with node does.
+    // It runs code in the workspace, as writing a probe and running it with node does, so its
+    // program is ruled on as the shell rules on the same program passed to `node -e`, and each
+    // string input as a word after it, which the program may open. Reading code lexically sees
+    // literals, not paths the program builds; that residual is every allowed interpreter's.
     kind: "write",
-    pathsFrom: () => [],
+    pathsFrom: (input) =>
+      input.program === undefined
+        ? []
+        : [
+            ...pathsInlineCodeCouldOpen(input.program),
+            ...(input.inputs ?? []).flatMap((value) =>
+              typeof value === "string" ? pathsInlineCodeCouldOpen(JSON.stringify(value)) : [],
+            ),
+          ],
     async execute(input) {
       if (input.program !== undefined && input.inputs !== undefined)
         return { text: await runProgram(context, input.program, input.inputs), facts: {} };
