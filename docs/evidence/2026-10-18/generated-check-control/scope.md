@@ -67,3 +67,8 @@ stops by its classification instead. Added:
   read from a gate's `unrepairable` measure, which stops repair as setup failures do.
 - `src/cli-planned-checks.test.ts`, `src/cli-plan-checks.test.ts`: the admission findings and
   control in unit tests, and a fixture that gains the two new fields.
+
+### 6. After launch 3
+
+No new file: the relation reminder lands in `src/workers/planned-check-program.ts`,
+`src/workers/planner-run.ts` and their tests, declared above.

@@ -825,6 +825,20 @@ export function describeDeclaredCases(input: PlannedChecksDeclaration): readonly
   return lines;
 }
 
+/**
+ * For a declaration that holds no relation, the one tool that tries every position. A live planner
+ * reasoned that a line terminator at the start, middle and end of a name mattered, then wrote more
+ * examples at one position, because every answer it read asked for cases; the relation it never
+ * declared is what found the same omission in an earlier launch.
+ */
+export function describeMissingRelation(input: PlannedChecksDeclaration): readonly string[] {
+  return input.checks.some((one) => one.relation !== undefined)
+    ? []
+    : [
+        "No relation is declared. Where the task says some text must behave like other text (a character to be treated like one that already works), declare that rule with declare_planned_relation: it tries the reference and each variant at every position of its seeds, which examples at a few positions do not.",
+      ];
+}
+
 /** The task's sentences, in order, as the planner is shown them and coverage is reported over. */
 export function taskSentences(task: string): readonly string[] {
   return task

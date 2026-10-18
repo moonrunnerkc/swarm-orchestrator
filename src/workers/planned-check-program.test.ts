@@ -7,6 +7,7 @@ import { z } from "zod";
 import {
   declarationProblems,
   describeDeclaredCases,
+  describeMissingRelation,
   describeRelationRun,
   describeUncoveredSentences,
   type PlannedChecksDeclaration,
@@ -489,4 +490,33 @@ describe("a planned relation as the harness runs it", () => {
     );
     expect(problems({ seeds: ["a=b"], reference: " ", variants: ["\t"] })).toEqual([]);
   });
+});
+
+it("names the relation tool to a declaration that holds no relation, and only to one", () => {
+  const cases = {
+    id: "boundary",
+    requirement: "boundary",
+    purpose: "change" as const,
+    program: "export default (n) => n;",
+    cases: [{ input: 1, expected: 1 }],
+    why: "w",
+  };
+  const requirements = [{ id: "boundary", description: "d" }];
+  expect(describeMissingRelation({ requirements, checks: [cases] })).toEqual([
+    expect.stringContaining("declare that rule with declare_planned_relation"),
+  ]);
+  expect(
+    describeMissingRelation({
+      requirements,
+      checks: [
+        cases,
+        {
+          ...cases,
+          id: "alike",
+          cases: undefined,
+          relation: { seeds: ["ab"], reference: " ", variants: ["\t"] },
+        },
+      ],
+    }),
+  ).toEqual([]);
 });

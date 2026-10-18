@@ -962,6 +962,10 @@ describe("planned checks through the ordinary command line", () => {
     expect(JSON.stringify(endpoint.requests)).toContain(
       "reread each sentence of the task that states a rule",
     );
+    // With no relation declared, the answers name the tool that tries every position.
+    expect(JSON.stringify(endpoint.requests)).toContain(
+      "No relation is declared. Where the task says some text must behave like other text",
+    );
   }, 200_000);
 
   it("ends a run of the planner's hypotheses alone unjudged, exit 0, as the run without planning ends", async () => {
