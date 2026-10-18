@@ -358,6 +358,7 @@ describe("planned checks through the ordinary command line", () => {
     });
     expect(admission?.decisions?.find((one) => one.check === "uncontrolled")).toMatchObject({
       broken: true,
+      finding: "no-control",
       reason: expect.stringMatching(/gets every case wrong on the base/),
     });
     expect(admission?.decisions?.find((one) => one.check === "broken")?.broken).toBe(true);
@@ -499,6 +500,14 @@ describe("planned checks through the ordinary command line", () => {
     const rerun = toolAnswers.find((text) => text.includes("case by case"));
     // The check exactly as the gate ran it, with the case that refused the change.
     expect(rerun, stdout.slice(-3000)).toContain("generated check above: rejected");
+    // The planner's program, as the harness calls it, and what its expected results rest on.
+    expect(rerun).toContain(
+      "program (the planner's; the harness calls its default export once per case with that case's input itself)",
+    );
+    expect(rerun).toContain("export default (n) => classify(n);");
+    expect(rerun).toContain(
+      "expected results: what the unchanged base gave when the check was admitted",
+    );
     expect(rerun).toMatch(
       /input 11: expected \{\\"input\\":11,\\"result\\":\\"big\\"\}; got \{\\"input\\":11,\\"result\\":\\"small\\"\} {2}<- differs/,
     );
@@ -1158,6 +1167,304 @@ describe("planned checks through the ordinary command line", () => {
     // The planner was told what the harness prepares, from the run's own configuration.
     expect(plannerBriefs(endpoint)[0]).toMatch(/fresh checkout of the unchanged base.*build/);
     expect(resultOf(stdout)?.outcome?.status, stdout.slice(-3000)).toBe("accepted");
+    expect(code).toBe(0);
+  }, 200_000);
+});
+
+/**
+ * A lookup whose answer for anything it cannot read is null, as launch 5's project answered null
+ * for undefined. The task makes it ignore letter case; words it does not know stay null.
+ */
+const lookupTask =
+  "Make kindOf ignore letter case: kindOf('Apple') must give 'fruit', as kindOf('apple') already does. Words it does not know stay null.";
+const lookupQuote = "Make kindOf ignore letter case";
+const lookupSource = (key: string) =>
+  [
+    "export class Lookup {",
+    "  #table;",
+    "  constructor(entries = {}) {",
+    "    this.#table = new Map(Object.entries(entries));",
+    "  }",
+    "  kindOf(word) {",
+    "    if (typeof word !== 'string') return null;",
+    `    return this.#table.get(${key}) ?? null;`,
+    "  }",
+    "}",
+    "export default new Lookup({ apple: 'fruit', carrot: 'vegetable' });",
+    "",
+  ].join("\n");
+
+async function lookupWorkspace(): Promise<{ directory: string; base: string; contract: string }> {
+  const directory = join(scratch, "workspace");
+  await mkdir(directory, { recursive: true });
+  await writeFile(
+    join(directory, "package.json"),
+    JSON.stringify({
+      name: "lookup",
+      version: "1.0.0",
+      type: "module",
+      scripts: { test: "node --test" },
+    }),
+  );
+  await writeFile(join(directory, "lookup.mjs"), lookupSource("word"));
+  await writeFile(
+    join(directory, "lookup.test.mjs"),
+    "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport lookup from './lookup.mjs';\ntest('apple is a fruit', () => assert.equal(lookup.kindOf('apple'), 'fruit'));\n",
+  );
+  await git(directory, "init", "-q");
+  await git(directory, "add", "-A");
+  await git(directory, "commit", "-qm", "base");
+  const contract = join(scratch, "contract.json");
+  await writeFile(
+    contract,
+    JSON.stringify({
+      version: 1,
+      goal: lookupTask,
+      requirements: [{ id: "suite", description: "the project's suite passes", checks: ["suite"] }],
+      checks: [
+        { id: "suite", command: "node --test", author: "user", exposure: "shared", artifacts: [] },
+      ],
+      immutablePaths: ["lookup.test.mjs"],
+    }),
+  );
+  return { directory, base: await git(directory, "rev-parse", "HEAD"), contract };
+}
+
+/** One declare_planned_check call over the lookup, under the case requirement. */
+const lookupCheck = (
+  id: string,
+  program: string,
+  cases: { input: unknown; expected: unknown }[],
+) => ({
+  name: "declare_planned_check",
+  input: {
+    id,
+    purpose: "change",
+    requirementId: "case",
+    requirement: "kindOf ignores letter case",
+    quote: lookupQuote,
+    program,
+    cases,
+    why: "the task states the rule and its example",
+  },
+});
+const adapter =
+  "import lookup from './lookup.mjs';\nexport default function run(word) {\n  return lookup.kindOf(word);\n}\n";
+const lookupFix = {
+  toolCalls: [
+    { name: "declare_file_set", input: { files: ["lookup.mjs"] } },
+    { name: "write", input: { path: "lookup.mjs", content: lookupSource("word.toLowerCase()") } },
+  ],
+};
+
+describe("what admission accepts as a generated check's control", () => {
+  it("asks no repair of a generated check whose program misreads its input on the candidate, and leaves the run unresolved", async () => {
+    // Admitted on the base, where the program never takes the branch that reads input.input; the
+    // candidate's answer for 12 sends it there. That is the check's defect, shown by the harness on
+    // this tree, so no code change is asked for it; the run still ends unresolved, not accepted.
+    const program =
+      "import { classify } from './value.mjs';\nexport default (n) => (classify(n) === 'odd' ? n.input : classify(n));\n";
+    const { stdout, code } = await swarm(
+      [
+        declaring(
+          [{ id: "boundary", description: "10 is small", quote }],
+          [
+            plannedCheck(
+              "boundary",
+              "boundary",
+              "change",
+              [
+                { input: 9, expected: "small" },
+                { input: 10, expected: "small" },
+                { input: 12, expected: "big" },
+              ],
+              program,
+            ),
+          ],
+        ),
+        { text: "Pinned." },
+        { text: "Plan: move the boundary.", toolCalls: [declare] },
+        {
+          toolCalls: [
+            write(
+              "export function classify(n) {\n  return n <= 10 ? 'small' : n === 12 ? 'odd' : 'big';\n}\n",
+            ),
+          ],
+        },
+        { text: "Done." },
+        { text: "A repair was asked for." },
+      ],
+      false,
+      [],
+    );
+
+    const result = resultOf(stdout) as ResultLine & {
+      outcome?: { interventions?: { repairAttempts?: number } };
+    };
+    expect(result?.plannedChecks?.admitted, stdout.slice(-4000)).toEqual(["boundary"]);
+    expect(result?.outcome?.interventions?.repairAttempts).toBe(0);
+    expect(result?.outcome?.status, stdout.slice(-6000)).toBe("unresolved");
+    expect(
+      result?.outcome?.requirements?.find((one) => one.id === "boundary")?.generatedChecks,
+    ).toEqual([expect.objectContaining({ id: "boundary", status: "rejected" })]);
+    expect(code).toBe(1);
+  }, 200_000);
+
+  it("drops a program that takes each input for the case, naming the argument's shape, and admits its revision", async () => {
+    // Launch 5's sealed programs called run(case_) and passed case_.input, undefined for a string
+    // input, to a project that answers null to undefined; their null-expecting cases held on the
+    // base and were the only control. The planner sees why, and its revision is admitted.
+    const wrapped =
+      "import lookup from './lookup.mjs';\nexport default function run(case_) {\n  return lookup.kindOf(case_.input);\n}\n";
+    const revises: ScriptedTurnSource = (request) =>
+      JSON.stringify(request).includes("called with each case's input itself")
+        ? {
+            toolCalls: [
+              lookupCheck("case-rule", adapter, [
+                { input: "Apple", expected: "fruit" },
+                { input: "apple", expected: "fruit" },
+                { input: "pear", expected: null },
+              ]),
+            ],
+          }
+        : { text: "The revision brief did not say what the program is called with." };
+    const { endpoint, stdout, code } = await swarm(
+      [
+        {
+          toolCalls: [
+            lookupCheck("case-rule", wrapped, [
+              { input: "Apple", expected: "fruit" },
+              { input: "pear", expected: null },
+            ]),
+          ],
+        },
+        { text: "Pinned." },
+        revises,
+        { text: "Revised." },
+        { text: "Plan: lower the word before the lookup.", ...lookupFix },
+        { text: "Done." },
+      ],
+      false,
+      [],
+      true,
+      lookupWorkspace(),
+      lookupTask,
+    );
+
+    expect(stdout).toMatch(
+      /dropped +case-rule \(should fail there\): its program read a field of the value it was called with/,
+    );
+    // The planner's revision brief carries what the runner saw, with the input as it was given.
+    expect(plannerBriefs(endpoint).at(-1)).toContain('input itself, \\"Apple\\", a string');
+    const result = resultOf(stdout);
+    expect(result?.plannedChecks?.admitted, stdout.slice(-4000)).toEqual(["case-rule"]);
+    expect(result?.outcome?.status).toBe("accepted");
+    expect(
+      result?.outcome?.requirements?.find((one) => one.id === "case")?.generatedChecks,
+    ).toEqual([expect.objectContaining({ id: "case-rule", status: "accepted" })]);
+    expect(code).toBe(0);
+  }, 200_000);
+
+  it("drops programs whose agreeing cases agree by accident, as an unestablished control, not a project failure", async () => {
+    // An empty fixture and a call to a method the project does not have answer null for every
+    // input, so their null-expecting case agrees on the base exactly as the wrapped program's did.
+    const emptyFixture =
+      "import { Lookup } from './lookup.mjs';\nconst lookup = new Lookup();\nexport default (word) => lookup.kindOf(word);\n";
+    const wrongCall =
+      "import lookup from './lookup.mjs';\nexport default (word) => lookup.typeOf?.(word) ?? null;\n";
+    const cases = [
+      { input: "Apple", expected: "fruit" },
+      { input: "pear", expected: null },
+    ];
+    const { stdout } = await swarm(
+      [
+        {
+          toolCalls: [
+            lookupCheck("empty-fixture", emptyFixture, cases),
+            lookupCheck("wrong-call", wrongCall, cases),
+          ],
+        },
+        { text: "Pinned." },
+        { text: "No replacement." },
+        { text: "Plan: lower the word before the lookup.", ...lookupFix },
+        { text: "Done." },
+      ],
+      false,
+      [],
+      true,
+      lookupWorkspace(),
+      lookupTask,
+    );
+
+    const result = resultOf(stdout);
+    expect(result?.plannedChecks?.admitted, stdout.slice(-4000)).toEqual([]);
+    for (const id of ["empty-fixture", "wrong-call"])
+      expect(result?.plannedChecks?.dropped).toContainEqual({
+        check: id,
+        reason: expect.stringContaining("nothing shows its program reaches the project"),
+      });
+    // The run goes on against the supplied contract, which the fix satisfies.
+    expect(result?.outcome?.status).toBe("accepted");
+  }, 200_000);
+
+  it("admits a correct adapter with legitimate null answers and object inputs, and the change check passes on the fix", async () => {
+    // pear stays null, legitimately; apple is the known-working case that shows the program reaches
+    // the project. A check of null answers alone cannot show that, and is reported as such. Object
+    // inputs, including one with its own input field, reach the program as written.
+    const objects =
+      "import lookup from './lookup.mjs';\nexport default (query) => ({ word: query.input, kind: lookup.kindOf(query.input) });\n";
+    const { stdout, code } = await swarm(
+      [
+        {
+          toolCalls: [
+            lookupCheck("case-rule", adapter, [
+              { input: "Apple", expected: "fruit" },
+              { input: "apple", expected: "fruit" },
+              { input: "pear", expected: null },
+            ]),
+            lookupCheck("query-objects", objects, [
+              { input: { input: "Apple" }, expected: { word: "Apple", kind: "fruit" } },
+              { input: { input: "carrot" }, expected: { word: "carrot", kind: "vegetable" } },
+            ]),
+            lookupCheck("nulls-only", adapter, [
+              { input: "Apple", expected: "fruit" },
+              { input: "pear", expected: null },
+            ]),
+          ],
+        },
+        { text: "Pinned." },
+        { text: "No replacement." },
+        { text: "Plan: lower the word before the lookup.", ...lookupFix },
+        { text: "Done." },
+      ],
+      false,
+      [],
+      true,
+      lookupWorkspace(),
+      lookupTask,
+    );
+
+    const result = resultOf(stdout);
+    expect(result?.plannedChecks?.admitted, stdout.slice(-4000)).toEqual([
+      "case-rule",
+      "query-objects",
+    ]);
+    expect(result?.plannedChecks?.dropped).toEqual([
+      {
+        check: "nulls-only",
+        reason: expect.stringContaining(
+          "a known-working input from the task or the repository's tests",
+        ),
+      },
+    ]);
+    // Each admitted change check failed on the base and passes on the fix.
+    expect(
+      result?.outcome?.requirements?.find((one) => one.id === "case")?.generatedChecks,
+    ).toEqual([
+      expect.objectContaining({ id: "case-rule", status: "accepted" }),
+      expect.objectContaining({ id: "query-objects", status: "accepted" }),
+    ]);
+    expect(result?.outcome?.status).toBe("accepted");
     expect(code).toBe(0);
   }, 200_000);
 });

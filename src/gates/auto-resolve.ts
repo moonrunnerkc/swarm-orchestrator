@@ -167,7 +167,11 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
 
   while (!isGreen(cycle) && attempts.length < deps.cap && deps.abortSignal?.aborted !== true) {
     const classification = classifyRepair(cycle);
-    if (classification.kind === "setup" || classification.kind === "infrastructure") {
+    if (
+      classification.kind === "setup" ||
+      classification.kind === "infrastructure" ||
+      classification.kind === "instrument"
+    ) {
       await deps.evidence.record({
         type: "session-stopped",
         actor: "harness",

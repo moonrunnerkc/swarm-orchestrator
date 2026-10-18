@@ -561,7 +561,10 @@ function revisionBrief(
     ),
     "",
     "Declare replacements, fixing what stopped each one: an import path, a missing export, a",
-    "syntax error, or an expectation that misreads the base's existing behaviour. A preserve check",
+    "syntax error, a program that reads input off its parameter (the default export is called with",
+    "each case's input itself), an object built differently from the repository's own tests, a",
+    "missing case the base already answers, or an expectation that misreads the base's existing",
+    "behaviour. A preserve check",
     "keeps only behaviour the task does not change. You may reuse the ids of dropped checks and",
     "requirements; the checks that were admitted stay as they are.",
   ].join("\n");

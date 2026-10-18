@@ -238,6 +238,8 @@ describe("the planned-check revision and its share of the planning allowance", (
           record: null,
           basis: "model-asserted" as const,
           claimedChanges: null,
+          finding: admit.includes(one.id) ? ("admitted" as const) : ("does-not-detect" as const),
+          control: null,
         })),
         droppedRequirements: [],
         unverifiedRequirements: requirements

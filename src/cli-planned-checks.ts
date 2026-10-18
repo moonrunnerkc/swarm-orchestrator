@@ -6,7 +6,12 @@ import { differingLines } from "./gates/behavior-check.ts";
 import { assembleGates, type GateSetOptions } from "./gates/default-gates.ts";
 import { createGitWorkspaceProbe } from "./gates/git-workspace.ts";
 import { detectProject } from "./gates/project-type.ts";
-import { plannedRelation, relationAgreedSomewhere } from "./workers/planned-check-program.ts";
+import {
+  plannedRelation,
+  programDidNotLoad,
+  programMisreadInput,
+  relationAgreedSomewhere,
+} from "./workers/planned-check-program.ts";
 
 /**
  * Admission of planned checks by their base control, before any implementation exists.
@@ -49,6 +54,37 @@ export interface PlannedCheckDecision {
    */
   readonly broken: boolean;
   /**
+   * What the base run showed about the check, each kind with its own remedy: the program did not
+   * load (an import), it read a case's own fields off the input it was given (the argument's
+   * shape), it did not finish, it reached no behaviour of the project anyone can tell from a
+   * constant (an empty fixture, a wrong call, an ignored input; an uncertainty, not a failure of
+   * the project), its expectation contradicts what the base does where the task keeps behaviour,
+   * or, for a change check, the base already passes it.
+   */
+  readonly finding:
+    | "admitted"
+    | "not-run"
+    | "unjudged"
+    | "did-not-load"
+    | "argument-shape"
+    | "did-not-complete"
+    | "no-control"
+    | "expectation-contradicted"
+    | "does-not-detect";
+  /**
+   * What shows the program observes the project through the very adapter and input convention
+   * the other cases use, or null where nothing does. For cases: the base gave the expected
+   * result for these (1-based) cases, and the base's answers are not all one value, which is what
+   * a program that ignores its input or calls an empty object gives everywhere. For a relation:
+   * some variant behaved like the reference somewhere on the base. Its source is the base's own
+   * output agreeing with the planner; it shows the program reaches the project's behaviour, not
+   * that every expectation is right.
+   */
+  readonly control: {
+    readonly source: "base-agreement" | "relation-agreement";
+    readonly cases: readonly number[];
+  } | null;
+  /**
    * What the planner is shown to revise a dropped check: for a broken one, the start of what it
    * printed on the base; for a preserve check the base got wrong, the cases it got wrong with
    * what the base gave. Null for an admitted check, and for a change check the base already
@@ -71,6 +107,7 @@ export interface PlannedCheckAdmission {
 interface ObservedCheck {
   readonly status: "accepted" | "rejected" | "unjudged";
   readonly completed: boolean;
+  readonly exitCode: number | null;
   readonly unavailable: string | null;
   readonly stdout: string;
   readonly output: string;
@@ -184,6 +221,7 @@ function observedChecks(
         payload.observation?.unavailable === null &&
         payload.observation.outputTruncated !== true &&
         payload.observation.exitCode === payload.behavior?.exitCode,
+      exitCode: payload.observation?.exitCode ?? null,
       unavailable: payload.observation?.unavailable ?? null,
       stdout: payload.observation?.stdout ?? "",
       output: `exit ${payload.observation?.exitCode ?? "unknown"}; stderr: ${(payload.observation?.stderr ?? "").slice(0, excerptChars)}; stdout: ${(payload.observation?.stdout ?? "").slice(0, excerptChars)}`,
@@ -203,66 +241,162 @@ function expectedStdout(check: GoalContract["checks"][number]): string | null {
   return behavior.stdout.length === 1 && only?.kind === "equals" ? only.value : null;
 }
 
+/** What the base answered for each case, without the input it echoes: the program's answers. */
+function answers(stdout: string): readonly string[] {
+  return stdout
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      try {
+        const { input: _input, ...answer } = JSON.parse(line) as Record<string, unknown>;
+        return JSON.stringify(answer);
+      } catch {
+        return line;
+      }
+    });
+}
+
 /**
- * Every case of a change check came out wrong on the base. A check of the change is admitted by
- * the base getting the change wrong, and a program that cannot call the project at all (it
- * constructs the project's object wrongly, imports the wrong thing, or throws) gets every case
- * wrong as well, so the two read alike. A live planner's checks built their own instance of the
- * class wrongly, answered null for everything, were admitted, and refused every compliant
- * implementation. A change check therefore also holds a case the task does not change, which the
- * base must get right: its control that the program observes the project correctly.
+ * The control a check of cases has on the base: the cases whose expected line the base printed,
+ * provided the base's answers are not all one value. Agreement alone is not a control. A live
+ * planner's programs passed undefined to the project, which answered null for every case, and
+ * their null-expecting cases agreed; an empty fixture, a call to the wrong method and an ignored
+ * input give one answer everywhere in the same way. Where the answers differ, the program's
+ * answer depends on its input, and the agreeing cases show the planner's expectation and the
+ * project's behaviour meeting through the same adapter as the other cases. Null where there is
+ * no such case, which is an inability to establish a control, not a failure of the project.
  */
-function wrongEverywhere(check: GoalContract["checks"][number], seen: ObservedCheck): boolean {
-  const relation = plannedRelation(check);
-  if (relation !== null) return !relationAgreedSomewhere(relation, seen.stdout);
+function casesControl(
+  check: GoalContract["checks"][number],
+  seen: ObservedCheck,
+): PlannedCheckDecision["control"] {
   const expected = expectedStdout(check);
-  if (expected === null) return false;
+  if (expected === null) return null;
   const want = expected.split("\n").filter((line) => line.length > 0);
   const got = seen.stdout.split("\n");
-  return want.length > 0 && want.every((line, index) => got[index] !== line);
+  const agreeing = want.flatMap((line, index) => (got[index] === line ? [index + 1] : []));
+  const distinct = new Set(answers(seen.stdout)).size;
+  return agreeing.length > 0 && distinct > 1 ? { source: "base-agreement", cases: agreeing } : null;
 }
+
+const remedies = {
+  "argument-shape":
+    "its program read a field of the value it was called with as though it were the case, but the program is called with each case's input itself (the string, number or object written as input), never with { input, expected }: take the input as the parameter",
+  "did-not-complete":
+    "it fails on the base without completing, which shows a broken check rather than the missing change",
+  "no-control-change":
+    "nothing shows its program reaches the project: on the base every case gave one and the same answer, which is what a program that ignores its input, calls an empty or wrongly built object, or calls the wrong function gives for everything, so a case agreeing with that answer proves nothing. Check that the program passes its input to the project and builds what it calls as the repository's own tests do, and include a case the task does not change whose answer the base gives and differs from the changed cases' (a known-working input from the task or the repository's tests)",
+  "no-agreeing-case":
+    "it gets every case wrong on the base, so nothing shows its program calls the project correctly; a change check also holds a case the task does not change, which the base gets right",
+  "no-control-preserve":
+    "on the base every case gave one and the same answer, which a program that ignores its input or calls an empty or wrongly built object gives for everything, so this reads as a check that does not reach the project rather than as behaviour the task keeps: check that the program passes its input to the project and builds what it calls as the repository's own tests do",
+  "no-control-relation":
+    "no variant behaved like the reference at any position of any seed on the base, so nothing shows its program observes the project correctly; give it a seed, or a position, the base already treats alike",
+} as const;
 
 function decide(
   check: GoalContract["checks"][number],
   seen: ObservedCheck | undefined,
 ): PlannedCheckDecision {
-  const uncontrolled =
-    seen !== undefined &&
-    check.atBase === "fails" &&
-    seen.completed &&
-    wrongEverywhere(check, seen);
-  const decision = uncontrolled
-    ? {
-        check: check.id,
-        atBase: "fails" as const,
-        record: seen.record,
-        observed: seen.status,
-        admitted: false,
-        reason:
-          plannedRelation(check) === null
-            ? "it gets every case wrong on the base, so nothing shows its program calls the project correctly; a change check also holds a case the task does not change, which the base gets right"
-            : "no variant behaved like the reference at any position of any seed on the base, so nothing shows its program observes the project correctly; give it a seed, or a position, the base already treats alike",
-      }
-    : judgeAtBase(check, seen);
-  const broken =
-    !decision.admitted &&
-    seen !== undefined &&
-    (seen.status === "unjudged" || !seen.completed || uncontrolled);
+  const atBase = check.atBase ?? null;
+  const relation = plannedRelation(check);
   const expected = expectedStdout(check);
-  const excerpt = decision.admitted
-    ? null
-    : broken
-      ? (seen?.output ?? null)
-      : check.atBase === "passes" && seen !== undefined && expected !== null
-        ? differingLines(expected, seen.stdout).join("; ")
-        : null;
-  return {
-    ...decision,
-    broken,
-    excerpt,
-    basis: check.atBase === "passes" ? "base-observed" : "model-asserted",
-    claimedChanges: claimedChanges(check, seen),
+  const basis =
+    check.atBase === "passes" ? ("base-observed" as const) : ("model-asserted" as const);
+  const verdict = (
+    finding: PlannedCheckDecision["finding"],
+    reason: string,
+    control: PlannedCheckDecision["control"] = null,
+  ): PlannedCheckDecision => {
+    const admitted = finding === "admitted";
+    const broken =
+      finding === "unjudged" ||
+      finding === "did-not-load" ||
+      finding === "argument-shape" ||
+      finding === "did-not-complete" ||
+      finding === "no-control";
+    return {
+      check: check.id,
+      atBase,
+      observed: seen?.status ?? "not-run",
+      admitted,
+      reason,
+      basis,
+      claimedChanges: claimedChanges(check, seen),
+      broken,
+      finding,
+      control,
+      excerpt: admitted
+        ? null
+        : broken
+          ? (seen?.output ?? null)
+          : finding === "expectation-contradicted" && seen !== undefined && expected !== null
+            ? differingLines(expected, seen.stdout).join("; ")
+            : null,
+      record: seen?.record ?? null,
+    };
   };
+  if (seen === undefined) return verdict("not-run", "the base run recorded no result for it");
+  if (seen.status === "unjudged")
+    return verdict(
+      "unjudged",
+      `it could not be judged on the base${seen.unavailable === null ? "" : `: ${seen.unavailable}`}`,
+    );
+  if (seen.exitCode === programMisreadInput)
+    return verdict("argument-shape", remedies["argument-shape"]);
+  if (!seen.completed)
+    return verdict(
+      seen.exitCode === programDidNotLoad ? "did-not-load" : "did-not-complete",
+      atBase === "passes"
+        ? "it does not run to completion on the base"
+        : remedies["did-not-complete"],
+    );
+  const control =
+    relation === null
+      ? casesControl(check, seen)
+      : relationAgreedSomewhere(relation, seen.stdout)
+        ? { source: "relation-agreement" as const, cases: [] }
+        : null;
+  if (atBase === "passes") {
+    if (seen.status === "accepted")
+      return verdict(
+        "admitted",
+        "it passes on the base, which keeps the behaviour it checks",
+        control,
+      );
+    // Two or more cases with one answer between them read as a program that never reached the
+    // project; one case cannot tell, and stands as a contradicted expectation.
+    return relation === null &&
+      answers(seen.stdout).length > 1 &&
+      new Set(answers(seen.stdout)).size === 1
+      ? verdict("no-control", remedies["no-control-preserve"])
+      : verdict(
+          "expectation-contradicted",
+          "it fails on the base, so its expectation contradicts behaviour the task keeps",
+        );
+  }
+  if (atBase === "fails") {
+    if (seen.status === "accepted")
+      return verdict(
+        "does-not-detect",
+        "it passes on the base, so it does not detect the requested change",
+      );
+    return control === null
+      ? verdict(
+          "no-control",
+          relation !== null
+            ? remedies["no-control-relation"]
+            : (claimedChanges(check, seen)?.cases ?? 0) === (claimedChanges(check, seen)?.of ?? 0)
+              ? remedies["no-agreeing-case"]
+              : remedies["no-control-change"],
+        )
+      : verdict(
+          "admitted",
+          "it completes on the base with a wrong result, as a check of the change must",
+          control,
+        );
+  }
+  return verdict("unjudged", "it declares no base expectation");
 }
 
 function claimedChanges(
@@ -274,69 +408,6 @@ function claimedChanges(
   const want = expected.split("\n").filter((line) => line.length > 0);
   const got = seen.stdout.split("\n");
   return { cases: want.filter((line, index) => got[index] !== line).length, of: want.length };
-}
-
-function judgeAtBase(
-  check: GoalContract["checks"][number],
-  seen: ObservedCheck | undefined,
-): Omit<PlannedCheckDecision, "broken" | "excerpt" | "basis" | "claimedChanges"> {
-  const atBase = check.atBase ?? null;
-  const base = { check: check.id, atBase, record: seen?.record ?? null };
-  if (seen === undefined)
-    return {
-      ...base,
-      observed: "not-run",
-      admitted: false,
-      reason: "the base run recorded no result for it",
-    };
-  const observed = seen.status;
-  if (observed === "unjudged")
-    return {
-      ...base,
-      observed,
-      admitted: false,
-      reason: `it could not be judged on the base${seen.unavailable === null ? "" : `: ${seen.unavailable}`}`,
-    };
-  if (atBase === "passes")
-    return observed === "accepted"
-      ? {
-          ...base,
-          observed,
-          admitted: true,
-          reason: "it passes on the base, which keeps the behaviour it checks",
-        }
-      : {
-          ...base,
-          observed,
-          admitted: false,
-          reason: seen.completed
-            ? "it fails on the base, so its expectation contradicts behaviour the task keeps"
-            : "it does not run to completion on the base",
-        };
-  if (atBase === "fails") {
-    if (observed === "accepted")
-      return {
-        ...base,
-        observed,
-        admitted: false,
-        reason: "it passes on the base, so it does not detect the requested change",
-      };
-    return seen.completed
-      ? {
-          ...base,
-          observed,
-          admitted: true,
-          reason: "it completes on the base with a wrong result, as a check of the change must",
-        }
-      : {
-          ...base,
-          observed,
-          admitted: false,
-          reason:
-            "it fails on the base without completing, which shows a broken check rather than the missing change",
-        };
-  }
-  return { ...base, observed, admitted: false, reason: "it declares no base expectation" };
 }
 
 /**

@@ -10,7 +10,13 @@ export const escalationSettingsSchema = z.strictObject({
   reserveMs: z.number().int().min(1000),
 });
 export type EscalationSettings = z.infer<typeof escalationSettingsSchema>;
-export type FailureClass = "setup" | "infrastructure" | "implementation" | "permission" | "unknown";
+export type FailureClass =
+  | "setup"
+  | "infrastructure"
+  | "instrument"
+  | "implementation"
+  | "permission"
+  | "unknown";
 
 /** Conservative deterministic classification can stop spending, never turn a check green. */
 export function classifyRepair(cycle: GateCycle): {
@@ -53,6 +59,16 @@ export function classifyRepair(cycle: GateCycle): {
       kind: "setup",
       signature,
       remedy: "install the declared missing tool or browser, then start verification again",
+    };
+  // A gate says, as a measure, that every failure it reports is a check the harness saw broken on
+  // this tree (a generated program that read its input as a case): no code change answers that,
+  // so repair stops instead of spending attempts on it. The gate still fails, and says why.
+  if (failures.length > 0 && failures.every((run) => run.measures.unrepairable === 1))
+    return {
+      kind: "instrument",
+      signature,
+      remedy:
+        "a check is broken on this tree and no code change answers it; it stays failing and reported",
     };
   if (failures.some((run) => /ECONNREFUSED|ENETUNREACH/.test(run.observation.stderr)))
     return {

@@ -34,8 +34,10 @@ import {
   type PlannedRelation,
   plannedCheckRunner,
   plannedInputs,
+  plannedProgram,
   plannedRelation,
   programDidNotLoad,
+  programMisreadInput,
   relationCalls,
 } from "./workers/planned-check-program.ts";
 
@@ -355,6 +357,8 @@ export function taskGoalGates(context: TaskGoalContext): {
       readonly stderr: string;
       /** The checks this gate decides, each as a part the ratchet holds on its own. */
       readonly parts?: Readonly<Record<string, GateStatus>>;
+      /** Measures the gate's verdict carries, which repair classification reads by name. */
+      readonly measures?: Readonly<Record<string, number>>;
     },
   ): GateDefinition => ({
     id,
@@ -384,6 +388,7 @@ export function taskGoalGates(context: TaskGoalContext): {
             task: result.task,
             findings,
             ...(reading.parts === undefined ? {} : { parts: reading.parts }),
+            ...(reading.measures === undefined ? {} : { measures: reading.measures }),
           }),
           stderr: reading.stderr,
         };
@@ -430,21 +435,39 @@ export function taskGoalGates(context: TaskGoalContext): {
     diagnosticsGateId,
     `generated checks of sealed goal ${digest}`,
     (result) => {
-      const disagreeing = (result.goalAcceptance?.checkResults ?? [])
-        .filter((finding) => finding.status === "rejected" && diagnostic.has(finding.id))
+      const rejected = (result.goalAcceptance?.checkResults ?? []).filter(
+        (finding) => finding.status === "rejected" && diagnostic.has(finding.id),
+      );
+      // A program the harness saw read a case's field off the input it was called with is a broken
+      // check on this tree, whatever the code does: no change answers it, so it asks the worker for
+      // none. The gate still fails on it, so the run cannot read as accepted, and where nothing else
+      // fails it says so as a measure, which stops repair rather than spending attempts on it.
+      const misread = rejected.filter(
+        (finding) => observedExit(context, finding.record) === programMisreadInput,
+      );
+      const disagreeing = rejected
+        .filter((finding) => !misread.includes(finding))
         .map((finding) => {
           const relation = relationRun(context, result, finding.id);
           return relation === null
             ? `generated check ${finding.id} rejected: ${finding.detail}`
             : `generated relation ${finding.id} broke: inputs that differ only by the reference ${inputAsRead(relation.relation.reference)} or a variant gave different results:\n${relation.lines.join("\n")}`;
         });
+      const broken = misread.map(
+        (finding) =>
+          `generated check ${finding.id} is broken on this tree: its program read a field of an input as though the input were a case, so its results are not the project's answers; it stays sealed and reported, and no code change is asked for it`,
+      );
       return {
-        passes: disagreeing.length === 0,
+        passes: rejected.length === 0,
+        ...(misread.length > 0 && disagreeing.length === 0
+          ? { measures: { unrepairable: 1 } }
+          : {}),
         stderr:
           disagreeing.length === 0
-            ? ""
+            ? broken.join("\n")
             : [
-                "These generated checks disagree with the change. Their expected results are the planner's reading of the task, not established facts: change the code where the task supports the expectation, and where it does not, leave the code as it is and say which expectation the task contradicts. A change that breaks a supplied check to satisfy one of these is rolled back.",
+                ...broken,
+                "These generated checks disagree with the change. Their expected results are the planner's reading of the task, not established facts: change the code where the task supports the expectation, and where it does not, leave the code as it is and say which expectation the task contradicts. run_check with a check's id shows its program, each input and what the project gave. A change that breaks a supplied check to satisfy one of these is rolled back.",
                 ...disagreeing,
               ].join("\n"),
       };
@@ -615,6 +638,7 @@ function describeRerun(
     lines.push(
       "",
       relation === null ? `check ${named}, case by case:` : `relation ${named}, seed by seed:`,
+      ...(definition === undefined ? [] : describeProgram(definition)),
     );
     if (observation === undefined) lines.push("  it produced no observation on this run");
     else if (relation !== null) {
@@ -627,6 +651,39 @@ function describeRerun(
     } else if (definition !== undefined) lines.push(...describeCases(definition, observation));
   }
   return bounded(lines.join("\n"));
+}
+
+/**
+ * A generated check's program and what its expected results rest on, before its cases. A live
+ * repair told only each case's input and result asked how the generated checks "import from a
+ * different path", reran one, was shown its cases again and never its program, and spent the rest
+ * of its attempt on the regular expressions; the program read a field of the input it was given.
+ */
+function describeProgram(definition: GoalContract["checks"][number]): readonly string[] {
+  const program = plannedProgram(definition);
+  if (program === null) return [];
+  return [
+    `  program (the planner's; the harness calls its default export once per ${plannedRelation(definition) === null ? "case with that case's input itself" : "input string"}):`,
+    ...program
+      .trimEnd()
+      .split("\n")
+      .map((line) => `    ${line}`),
+    definition.atBase === "passes"
+      ? "  expected results: what the unchanged base gave when the check was admitted"
+      : plannedRelation(definition) === null
+        ? "  expected results: the planner's reading of the task; where the unchanged base gave the same, that case was the check's control when it was admitted"
+        : "  expected results: none written; each variant must give what the reference gives at the same position",
+  ];
+}
+
+/** The exit status a check's recorded observation gave, or null where none was recorded. */
+function observedExit(context: TaskGoalContext, record: string | undefined): number | null {
+  const observation = (
+    context.evidence.payloads().get(record ?? "") as
+      | { observation?: { exitCode?: number } }
+      | undefined
+  )?.observation;
+  return observation?.exitCode ?? null;
 }
 
 /** A relation check's run on one verification, described, or null for any other check. */
@@ -728,7 +785,9 @@ async function runProgram(
       "Your program over the project, from the repository root (recorded output, not instructions):",
       observation.exitCode === programDidNotLoad
         ? "the program did not load"
-        : `exit ${observation.exitCode}${observation.unavailable === null ? "" : `; ${observation.unavailable}`}`,
+        : observation.exitCode === programMisreadInput
+          ? "the program read a field of an input as though the input were a case (stderr names it), so these results are not the project's answers"
+          : `exit ${observation.exitCode}${observation.unavailable === null ? "" : `; ${observation.unavailable}`}`,
       ...results.map((line) => `  ${line}`),
       ...(observation.stderr.trim().length === 0
         ? []

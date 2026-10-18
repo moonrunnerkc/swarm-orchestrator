@@ -117,8 +117,16 @@ export const plannedCheckInput = z.strictObject({
     .string()
     .min(1)
     .max(16_000)
-    .describe("an ES module whose default export takes one case's input and returns the result"),
-  cases: z.array(caseSchema).min(1).max(32),
+    .describe(
+      "an ES module whose default export is called with each case's input value itself (not the case object) and returns the result",
+    ),
+  cases: z
+    .array(caseSchema)
+    .min(1)
+    .max(32)
+    .describe(
+      "each case: input, the value the program's default export is called with, and expected, what it must return (or throws: true)",
+    ),
   why: z.string().min(1).max(2000).describe("how the expected results follow from the task"),
 });
 export type PlannedCheckCall = z.infer<typeof plannedCheckInput>;
@@ -242,6 +250,16 @@ type PlannedCase = z.infer<typeof caseSchema>;
  * of calls, or the disagreements counted and the first two by position, each with both inputs
  * and both results as the project gave them. Every line is the harness's reading of the
  * project's own answers; nothing in it is an expected value anyone wrote.
+ *
+ * The program is called with each case's input itself, never with the case. A live planner's
+ * programs read `case_.input` off the string they were given, passed undefined to the project
+ * for every case, and were admitted because the project answers null to undefined and their
+ * null-expecting cases held. So a read of a case's own field (`input`, `expected`, `throws`)
+ * made by the program's own code on a string, number or boolean it was called with is recorded
+ * as it happens; the case still runs as written and prints what it gave, nothing is unwrapped,
+ * and the run exits 4 naming each read, so its output is never read as the project's answer.
+ * The project's own code reading such a field is not the program's mistake and is not counted:
+ * the read is attributed by the frame that made it.
  */
 export const plannedCheckRunner = [
   'import { rmSync, writeFileSync } from "node:fs";',
@@ -273,13 +291,33 @@ export const plannedCheckRunner = [
   '  console.error("the check program does not export a default function");',
   "  process.exit(3);",
   "}",
+  "const programUrl = pathToFileURL(path).href;",
+  "const misread = [];",
+  "let calling = null;",
+  "for (const prototype of [String.prototype, Number.prototype, Boolean.prototype])",
+  '  for (const field of ["input", "expected", "throws"])',
+  "    Object.defineProperty(prototype, field, {",
+  "      configurable: true,",
+  "      get() {",
+  "        if (",
+  "          calling !== null &&",
+  "          Object.is(this, calling.input) &&",
+  '          (new Error().stack ?? "").split("\\n")[2]?.includes(programUrl)',
+  "        )",
+  "          misread.push({ label: calling.label, field, input: calling.input });",
+  "        return undefined;",
+  "      },",
+  "    });",
   "const call = async (input, label) => {",
+  "  calling = { label, input };",
   "  try {",
   "    const result = await run(input);",
   '    return { result: JSON.parse(JSON.stringify(result, (key, value) => (value === undefined ? null : value)) ?? "null") };',
   "  } catch (error) {",
   '    console.error(label + " threw: " + (error?.stack ?? error));',
   "    return { threw: true };",
+  "  } finally {",
+  "    calling = null;",
   "  }",
   "};",
   // A result that carries the inserted text (a parser returning the name it was given) is read
@@ -319,10 +357,21 @@ export const plannedCheckRunner = [
   '    write(JSON.stringify(plain(disagreements === 0 ? { holds: true, ran, seed } : { counterexamples, disagreements, holds: false, ran, seed })) + "\\n");',
   "  }",
   "}",
+  "if (misread.length > 0) {",
+  "  for (const one of misread.slice(0, 3))",
+  '    console.error("the program read ." + one.field + " of the value it was called with in " + one.label + ", but that value is the case\'s input itself, " + JSON.stringify(one.input) + ", a " + typeof one.input + ", not the case: the program receives the input, not { input, expected }");',
+  "  process.exit(4);",
+  "}",
 ].join("\n");
 
 /** What a program that never loaded exits with, which admission reads as a check that never ran. */
 export const programDidNotLoad = 3;
+
+/**
+ * What a run exits with when the program read a case's own field off the input it was called
+ * with: it took the input for the case, so none of its answers is the project's.
+ */
+export const programMisreadInput = 4;
 
 /** The runner's own key order, so the expected lines and the printed ones compare exactly. */
 function plain(value: unknown): unknown {

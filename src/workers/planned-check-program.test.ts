@@ -15,6 +15,7 @@ import {
   plannedRelation,
   plannedRelationInput,
   programDidNotLoad,
+  programMisreadInput,
   relationAgreedSomewhere,
   relationText,
   sentencesQuoted,
@@ -144,6 +145,43 @@ describe("a planned check as the harness runs it", () => {
     const syntax = run(built({ program: "export default (n) => classify(n;\n" }));
     expect(syntax.exitCode).toBe(programDidNotLoad);
     expect(syntax.stderr).toMatch(/did not load: SyntaxError/);
+  });
+
+  it("names a program that reads the case's fields off the input it was called with, and unwraps nothing", () => {
+    // Launch 5: run(case_) returned mime.getType(case_.input) for string inputs, so every call
+    // passed undefined. Read by property or by destructuring, the run says so and exits 4.
+    for (const program of [
+      "import { classify } from './value.mjs';\nexport default function run(case_) {\n  return classify(case_.input);\n}\n",
+      "import { classify } from './value.mjs';\nexport default ({ input }) => classify(input);\n",
+    ]) {
+      const ran = run(built({ program, cases: [{ input: 3, expected: { n: 3, size: "small" } }] }));
+      expect(ran.exitCode).toBe(programMisreadInput);
+      // The case ran as written: the program's own answer is printed, not a rescued one.
+      expect(ran.stdout).toBe('{"input":3,"threw":true}\n');
+      expect(ran.stderr).toContain(
+        "the program read .input of the value it was called with in case 1, but that value is the case's input itself, 3, a number, not the case",
+      );
+    }
+  });
+
+  it("leaves object inputs, their own input fields and the project's own reads alone", () => {
+    writeFileSync(
+      join(project, "value.mjs"),
+      "export function classify(n) {\n  if (n.input !== undefined) return { size: 'odd', n };\n  return { size: n < 10 ? 'small' : 'big', n };\n}\n",
+    );
+    const objects = run(
+      built({
+        program:
+          "import { classify } from './value.mjs';\nexport default (query) => classify(query.input);\n",
+        cases: [{ input: { input: 3 }, expected: { n: 3, size: "small" } }],
+      }),
+    );
+    expect(objects.exitCode).toBe(0);
+    expect(objects.stdout).toBe(objects.expected);
+    // The project reads .input of the number it is given; that read is the project's, not the program's.
+    const own = run(built({ cases: [{ input: 3, expected: { n: 3, size: "small" } }] }));
+    expect(own.exitCode).toBe(0);
+    expect(own.stdout).toBe(own.expected);
   });
 });
 
