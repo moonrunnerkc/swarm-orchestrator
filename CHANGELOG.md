@@ -23,6 +23,18 @@ Source on `v13-main`; not published until a release names it.
   base only by a digest, which no worker can read, so a live repair of an injected mime candidate
   took the candidate's design (line terminators as separators) for the project's own code and
   repaired around it. The brief now carries a bounded diff of the current change against the base.
+- **A repair cannot trade a supplied check for a generated one.** Supplied and generated checks
+  shared the `task-acceptance` gate, so in a live mime run a repair that broke the supplied
+  visible check while chasing a generated check left that gate failing as before, the ratchet saw
+  no regression, and the broken candidate was delivered. Generated checks now run as their own
+  blocking gate, `task-diagnostics`, from the same verification per gate cycle; breaking a
+  supplied check is then a passing gate regressing, which the ratchet refuses. The outcome and
+  `outcome.repairsForGeneratedChecksOnly` name each accepted repair that only a generated check
+  asked for, since nothing independent says it was right.
+- **A relation's whitespace can be written as code points** (`U+0020`, `U+000D U+000A`): a live
+  planner's space and line terminators reached the harness as empty strings in eleven calls,
+  because the local server's tool-call parser trims a whitespace-only value. An empty or
+  whole-input text is refused with that remedy named.
 - **A supplied command check that refused a change says why.** Its refusal reached the repair as
   `command exited 1`; a shared check's refusal now carries the end of its own output, and a
   withheld check's is still never quoted.
