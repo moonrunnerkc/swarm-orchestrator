@@ -51,9 +51,19 @@ Five of eight launches, 44.9 of 120 agent minutes; the infrastructure reserve re
 
 The five launches' streams and per-launch records are in one pack,
 [packed-derived/launch-streams](packed-derived/launch-streams/inventory.json)
-(`node scripts/evidence-pack.mjs restore <that directory>`). Each stored stdout keeps only the
-run's result line; [stdout-trimmed.json](stdout-trimmed.json) gives each original stream's digest,
-size and line count.
+(`node scripts/evidence-pack.mjs restore <that directory>`). To stay within the tracked tree's
+headroom, each stored stdout keeps only the run's result line, and the planning chains' ledger
+copies (digests without their blobs; each launch's `generated-checks.json` holds those chains'
+content, decoded) were dropped; [stdout-trimmed.json](stdout-trimmed.json) gives the digest and
+size of everything dropped.
+
+## Install routes, walked from GitHub and the registry
+
+[remote-install.mjs](remote-install.mjs) walks them in a disposable root with its own HOME, npm
+prefix and cache, and reaches no model. Its first walk ([remote-install-before-fixes.json](remote-install-before-fixes.json),
+a shallow clone) found three first-run defects, since fixed: a shallow source build printed the
+release's version line, a misspelt last flag was told it "needs a value", and a repository with
+no manifest exited 1. The walk of the pushed head is [remote-install.json](remote-install.json).
 
 ```sh
 node validate-counterexample.mjs --out <file>

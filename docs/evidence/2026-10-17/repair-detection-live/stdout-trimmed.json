@@ -1,5 +1,5 @@
 {
-  "schema": "swarm-stream-trim.v2",
+  "schema": "swarm-stream-trim.v3",
   "rule": "stdout.txt keeps only the run's swarm.result.v1 line. The event stream around it (model-text deltas, tool calls, tool outcomes, gate summaries) is a projection of what exchanges.json and the ledger copy beside it hold, and was dropped to keep the tracked tree within its headroom; each original stream's digest, size and line count is below.",
   "launches": [
     {
@@ -47,5 +47,25 @@
       },
       "keptLines": 1
     }
-  ]
+  ],
+  "planLedgers": {
+    "rule": "the planning chains' ledger copies (record digests and order, without their blobs) were dropped to keep the tracked tree within its headroom; each launch's generated-checks.json holds those chains' declarations, admission records and sealed contract, decoded",
+    "dropped": [
+      {
+        "path": "launch-3/20261018T031019-c1ca32-plan.ledger.jsonl",
+        "bytes": 90836,
+        "digest": "sha256:62557a7e141663a00f8e12d055726d5d1e47f262c1fbfc184c0a1410e81bc576"
+      },
+      {
+        "path": "launch-4/20261018T034415-7180bf-plan.ledger.jsonl",
+        "bytes": 8327,
+        "digest": "sha256:c3617dcdd96bb8ebbdf2cda85cd147e89174453bb9017c05d52f6414b4dfe864"
+      },
+      {
+        "path": "launch-5/20261018T035456-28e958-plan.ledger.jsonl",
+        "bytes": 129337,
+        "digest": "sha256:87b749ca894f039b6bb37516bfadee0dc2f2bdae7f02b49030f7e397125dde49"
+      }
+    ]
+  }
 }
