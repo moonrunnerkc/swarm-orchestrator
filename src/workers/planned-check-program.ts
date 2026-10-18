@@ -41,6 +41,25 @@ const caseSchema = z.union([
   z.strictObject({ input: jsonValue, expected: jsonValue }),
   z.strictObject({ input: jsonValue, throws: z.literal(true) }),
 ]);
+/**
+ * A rule the task states as an equivalence, exercised systematically instead of by examples: an
+ * input holding a variant text must give the result the same input gives holding the reference
+ * text. The harness inserts the reference and every variant at every position of every seed and
+ * compares each variant's result with the reference's at that position, on the same tree, so no
+ * expected value is written down and none comes from the base. Live planners wrote cases shaped
+ * like the task's own example and missed the position an implementation got wrong; enumeration
+ * reaches every position of the seeds it is given and nothing beyond them.
+ */
+// Bounded by its shape: at most 6 seeds of 49 positions, each called with the reference and up
+// to 6 variants, is 2058 calls, and at most 6 output lines of two counterexamples each.
+const relationSchema = z.strictObject({
+  seeds: z.array(z.string().max(48)).min(1).max(6),
+  reference: z.string().min(1).max(4),
+  variants: z.array(z.string().min(1).max(4)).min(1).max(6),
+});
+export type PlannedRelation = z.infer<typeof relationSchema>;
+/** Counterexamples a failing seed reports: the first by position, enough to reproduce it. */
+export const relationCounterexamples = 2;
 export const plannedChecksInput = z.strictObject({
   requirements: z
     .array(
@@ -59,7 +78,9 @@ export const plannedChecksInput = z.strictObject({
         requirement: id,
         purpose: z.enum(["change", "preserve"]),
         program: z.string().min(1).max(16_000),
-        cases: z.array(caseSchema).min(1).max(32),
+        /** Cases with their expected results, or a relation the harness enumerates; one of the two. */
+        cases: z.array(caseSchema).min(1).max(32).optional(),
+        relation: relationSchema.optional(),
         why: z.string().min(1).max(2000),
       }),
     )
@@ -67,6 +88,7 @@ export const plannedChecksInput = z.strictObject({
     .max(16),
 });
 export type PlannedChecksDeclaration = z.infer<typeof plannedChecksInput>;
+type DeclaredCheck = PlannedChecksDeclaration["checks"][number];
 
 /**
  * One planned check per call, every field at the top level, the requirement named beside it.
@@ -101,20 +123,55 @@ export const plannedCheckInput = z.strictObject({
 });
 export type PlannedCheckCall = z.infer<typeof plannedCheckInput>;
 
+/** One planned relation per call, as one planned check per call, every field at the top level. */
+export const plannedRelationInput = z.strictObject({
+  id: slug("tab-like-space"),
+  purpose: z
+    .enum(["change", "preserve"])
+    .describe(
+      "change: the base does not yet treat the variants like the reference; preserve: it already does",
+    ),
+  requirementId: slug("separator-rule"),
+  requirement: z.string().min(1).max(2000).describe("the requirement this check covers, in words"),
+  quote: z
+    .string()
+    .min(1)
+    .max(2000)
+    .describe("the task's own words that say the variants behave like the reference"),
+  program: z
+    .string()
+    .min(1)
+    .max(16_000)
+    .describe("an ES module whose default export takes one input string and returns the result"),
+  seeds: relationSchema.shape.seeds.describe(
+    "ordinary input strings; the reference and each variant are inserted at every position of each",
+  ),
+  reference: relationSchema.shape.reference.describe(
+    "the text whose behaviour the variants must match, such as a character the task says already works",
+  ),
+  variants: relationSchema.shape.variants.describe(
+    "the texts the task says must behave like the reference",
+  ),
+  why: z.string().min(1).max(2000).describe("how the task establishes the equivalence"),
+});
+export type PlannedRelationCall = z.infer<typeof plannedRelationInput>;
+
 /**
  * The declaration so far with one call folded in: the check replaces any of the same id, and
  * the requirement it names takes the call's description, and its quote where the call gives one.
  */
 export function withPlannedCheck(
   declaration: PlannedChecksDeclaration | null,
-  call: PlannedCheckCall,
+  call: PlannedCheckCall | PlannedRelationCall,
 ): PlannedChecksDeclaration {
-  const check = {
+  const check: DeclaredCheck = {
     id: call.id,
     requirement: call.requirementId,
     purpose: call.purpose,
     program: call.program,
-    cases: call.cases,
+    ...("cases" in call
+      ? { cases: call.cases }
+      : { relation: { seeds: call.seeds, reference: call.reference, variants: call.variants } }),
     why: call.why,
   };
   const checks = [...(declaration?.checks ?? []).filter((one) => one.id !== call.id), check];
@@ -147,6 +204,12 @@ type PlannedCase = z.infer<typeof caseSchema>;
  * than as a wrong answer. Undefined reads as null wherever it sits, as the tool's description
  * says: dropped from an object instead, a live planner's `{ size: null }` met `{}` and its checks
  * refused every compliant implementation.
+ *
+ * Given a relation instead of inputs, it calls the program on the reference and on each variant
+ * inserted at every position of every seed, and prints one line per seed: `holds` with the number
+ * of calls, or the disagreements counted and the first two by position, each with both inputs
+ * and both results as the project gave them. Every line is the harness's reading of the
+ * project's own answers; nothing in it is an expected value anyone wrote.
  */
 export const plannedCheckRunner = [
   'import { rmSync, writeFileSync } from "node:fs";',
@@ -162,7 +225,7 @@ export const plannedCheckRunner = [
   "      : value;",
   'let text = "";',
   "for await (const chunk of process.stdin) text += chunk;",
-  "const { program, inputs } = JSON.parse(text);",
+  "const { program, inputs, relation } = JSON.parse(text);",
   'const path = resolve(".swarm-check-" + process.pid + ".mjs");',
   "let run;",
   "try {",
@@ -178,16 +241,51 @@ export const plannedCheckRunner = [
   '  console.error("the check program does not export a default function");',
   "  process.exit(3);",
   "}",
-  "for (const [index, input] of inputs.entries()) {",
-  "  let line;",
+  "const call = async (input, label) => {",
   "  try {",
   "    const result = await run(input);",
-  '    line = { input, result: JSON.parse(JSON.stringify(result, (key, value) => (value === undefined ? null : value)) ?? "null") };',
+  '    return { result: JSON.parse(JSON.stringify(result, (key, value) => (value === undefined ? null : value)) ?? "null") };',
   "  } catch (error) {",
-  '    console.error("case " + (index + 1) + " threw: " + (error?.stack ?? error));',
-  "    line = { input, threw: true };",
+  '    console.error(label + " threw: " + (error?.stack ?? error));',
+  "    return { threw: true };",
   "  }",
-  '  write(JSON.stringify(plain(line)) + "\\n");',
+  "};",
+  // A result that carries the inserted text (a parser returning the name it was given) is read
+  // with the variant written as the reference, so a correct implementation compares equal: the
+  // relation is that behaviour commutes with the substitution. Object keys are left as they are.
+  "const asReference = (value, variant, reference) =>",
+  '  typeof value === "string"',
+  "    ? value.split(variant).join(reference)",
+  "    : Array.isArray(value)",
+  "      ? value.map((one) => asReference(one, variant, reference))",
+  '      : value !== null && typeof value === "object"',
+  "        ? Object.fromEntries(Object.entries(value).map(([key, one]) => [key, asReference(one, variant, reference)]))",
+  "        : value;",
+  "if (relation === undefined) {",
+  "  for (const [index, input] of inputs.entries())",
+  '    write(JSON.stringify(plain({ input, ...(await call(input, "case " + (index + 1))) })) + "\\n");',
+  "} else {",
+  "  const { seeds, reference, variants } = relation;",
+  "  for (const seed of seeds) {",
+  "    let ran = 0;",
+  "    let disagreements = 0;",
+  "    const counterexamples = [];",
+  "    for (let at = 0; at <= seed.length; at += 1) {",
+  "      const place = (text) => seed.slice(0, at) + text + seed.slice(at);",
+  '      const label = "seed " + JSON.stringify(seed) + " at " + at;',
+  "      const expected = await call(place(reference), label);",
+  "      ran += 1;",
+  "      for (const variant of variants) {",
+  "        const got = await call(place(variant), label);",
+  "        ran += 1;",
+  "        if (JSON.stringify(plain(asReference(got, variant, reference))) === JSON.stringify(plain(expected))) continue;",
+  "        disagreements += 1;",
+  `        if (counterexamples.length < ${relationCounterexamples})`,
+  "          counterexamples.push({ at, reference: { input: place(reference), ...expected }, variant: { input: place(variant), ...got } });",
+  "      }",
+  "    }",
+  '    write(JSON.stringify(plain(disagreements === 0 ? { holds: true, ran, seed } : { counterexamples, disagreements, holds: false, ran, seed })) + "\\n");',
+  "  }",
   "}",
 ].join("\n");
 
@@ -213,11 +311,34 @@ function expectedLine(one: PlannedCase): string {
 const stdoutLimit = 64_000;
 const stdinLimit = 64_000;
 
-function contractCheck(check: PlannedChecksDeclaration["checks"][number]): GoalCheckDefinition {
+/** How many calls a relation makes: the reference and each variant at every position of each seed. */
+export function relationCalls(relation: PlannedRelation): number {
+  return relation.seeds.reduce(
+    (total, seed) => total + (seed.length + 1) * (relation.variants.length + 1),
+    0,
+  );
+}
+
+/** A relation's expected output: every seed holds, with the number of calls the runner makes. */
+function relationLines(relation: PlannedRelation): string {
+  return relation.seeds
+    .map(
+      (seed) =>
+        `${JSON.stringify(plain({ holds: true, ran: (seed.length + 1) * (relation.variants.length + 1), seed }))}\n`,
+    )
+    .join("");
+}
+
+function contractCheck(check: DeclaredCheck): GoalCheckDefinition {
+  const { relation } = check;
+  const cases = check.cases ?? [];
   return {
     id: check.id,
     // Shown where criteria are listed; the behavior below is what runs.
-    command: `planned check: ${check.cases.length} case(s) through the default export of its program`,
+    command:
+      relation === undefined
+        ? `planned check: ${cases.length} case(s) through the default export of its program`
+        : `planned relation: ${JSON.stringify(relation.reference)} and ${relation.variants.length} variant(s) at every position of ${relation.seeds.length} seed(s), ${relationCalls(relation)} call(s) through the default export of its program`,
     author: "model",
     exposure: "shared",
     atBase: check.purpose === "change" ? "fails" : "passes",
@@ -231,12 +352,19 @@ function contractCheck(check: PlannedChecksDeclaration["checks"][number]): GoalC
       network: "inherit",
       environment: {},
       argv: ["node", "--input-type=module", "-e", plannedCheckRunner],
-      stdin: JSON.stringify({
-        program: check.program,
-        inputs: check.cases.map((one) => one.input),
-      }),
+      stdin: JSON.stringify(
+        relation === undefined
+          ? { program: check.program, inputs: cases.map((one) => one.input) }
+          : { program: check.program, relation },
+      ),
       exitCode: 0,
-      stdout: [{ kind: "equals", value: check.cases.map(expectedLine).join("") }],
+      stdout: [
+        {
+          kind: "equals",
+          value:
+            relation === undefined ? cases.map(expectedLine).join("") : relationLines(relation),
+        },
+      ],
       stderr: [],
     },
   };
@@ -319,6 +447,17 @@ export function declarationProblems(
       );
   }
   for (const check of input.checks) {
+    if ((check.cases === undefined) === (check.relation === undefined))
+      problems.push(`check ${check.id}: give either cases or a relation, not both or neither`);
+    const relation = check.relation;
+    if (relation !== undefined) {
+      if (relation.variants.includes(relation.reference))
+        problems.push(
+          `check ${check.id}: a variant equals the reference, so it compares the reference with itself`,
+        );
+      if (new Set(relation.seeds).size !== relation.seeds.length)
+        problems.push(`check ${check.id}: a seed is listed twice`);
+    }
     if (!requirementIds.has(check.requirement))
       problems.push(
         `check ${check.id} names requirement ${check.requirement}, which this declaration does not declare`,
@@ -451,6 +590,83 @@ function carried(check: GoalCheckDefinition): { program?: unknown; inputs?: unkn
   }
 }
 
+/** The relation a built planned check enumerates, or null for a check of cases or any other check. */
+export function plannedRelation(check: GoalCheckDefinition): PlannedRelation | null {
+  const parsed = relationSchema.safeParse(
+    (carried(check) as { relation?: unknown } | null)?.relation,
+  );
+  return parsed.success ? parsed.data : null;
+}
+
+/**
+ * Whether any comparison of a relation agreed in a run's output: a seed that held, or one whose
+ * disagreements are fewer than its comparisons. A relation's control is that the base treats a
+ * variant like the reference somewhere, which a program that does not observe the project
+ * correctly (one that reports which text it was given, say) cannot show.
+ */
+export function relationAgreedSomewhere(relation: PlannedRelation, stdout: string): boolean {
+  return stdout
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .some((line) => {
+      try {
+        const read = JSON.parse(line) as {
+          holds?: unknown;
+          disagreements?: unknown;
+          seed?: unknown;
+        };
+        if (read.holds === true) return true;
+        const seed = typeof read.seed === "string" ? read.seed : null;
+        return (
+          seed !== null &&
+          typeof read.disagreements === "number" &&
+          read.disagreements < (seed.length + 1) * relation.variants.length
+        );
+      } catch {
+        return false;
+      }
+    });
+}
+
+/**
+ * A relation's run in words, for the worker it refused: each seed that broke the relation, how
+ * many comparisons disagreed, and its first counterexamples with both inputs and both results.
+ * Inputs are written with invisible characters escaped, as the harness read them.
+ */
+export function describeRelationRun(relation: PlannedRelation, stdout: string): readonly string[] {
+  const lines: string[] = [];
+  for (const text of stdout.split("\n").filter((line) => line.length > 0)) {
+    let read: {
+      holds?: unknown;
+      seed?: unknown;
+      disagreements?: unknown;
+      counterexamples?: readonly {
+        at?: unknown;
+        reference?: { input?: unknown; result?: unknown; threw?: unknown };
+        variant?: { input?: unknown; result?: unknown; threw?: unknown };
+      }[];
+    };
+    try {
+      read = JSON.parse(text);
+    } catch {
+      lines.push(`an output line the runner did not write: ${text.slice(0, 200)}`);
+      continue;
+    }
+    if (read.holds === true || typeof read.seed !== "string") continue;
+    const comparisons = (read.seed.length + 1) * relation.variants.length;
+    lines.push(
+      `seed ${inputAsRead(read.seed)}: ${String(read.disagreements)} of ${comparisons} comparisons disagreed`,
+    );
+    const answer = (side: { result?: unknown; threw?: unknown } | undefined) =>
+      side?.threw === true ? "threw" : `gave ${inputAsRead(side?.result ?? null)}`;
+    for (const one of read.counterexamples ?? [])
+      lines.push(
+        `  at position ${String(one.at)}: ${inputAsRead(one.variant?.input)} ${answer(one.variant)}, where ${inputAsRead(one.reference?.input)} ${answer(one.reference)}`,
+      );
+  }
+  return lines;
+}
+
 /** The program a built planned check carries, for showing it back to the planner that wrote it. */
 export function plannedProgram(check: GoalCheckDefinition): string | null {
   const program = carried(check)?.program;
@@ -489,16 +705,33 @@ function stringsIn(value: unknown): readonly string[] {
 export function describeDeclaredCases(input: PlannedChecksDeclaration): readonly string[] {
   const lines: string[] = [];
   for (const check of input.checks) {
+    const relation = check.relation;
+    const values: readonly { readonly label: string; readonly value: unknown }[] =
+      relation === undefined
+        ? (check.cases ?? []).map((one, index) => ({
+            label: `case ${index + 1}`,
+            value: one.input,
+          }))
+        : [
+            ...relation.seeds.map((seed, index) => ({ label: `seed ${index + 1}`, value: seed })),
+            { label: "the reference", value: relation.reference },
+            ...relation.variants.map((variant, index) => ({
+              label: `variant ${index + 1}`,
+              value: variant,
+            })),
+          ];
     lines.push(
-      `${check.id} inputs as read: ${check.cases.map((one) => inputAsRead(one.input)).join(", ")}`,
+      relation === undefined
+        ? `${check.id} inputs as read: ${values.map((one) => inputAsRead(one.value)).join(", ")}`
+        : `${check.id} as read: seeds ${relation.seeds.map(inputAsRead).join(", ")}; reference ${inputAsRead(relation.reference)}; variants ${relation.variants.map(inputAsRead).join(", ")}; ${relationCalls(relation)} call(s), each variant compared with the reference at every position of every seed`,
     );
-    check.cases.forEach((one, index) => {
-      const escaped = stringsIn(one.input).find((text) => /\\[nrtu]/.test(text));
+    for (const { label, value } of values) {
+      const escaped = stringsIn(value).find((text) => /\\[nrtu]/.test(text));
       if (escaped !== undefined)
         lines.push(
-          `warning: ${check.id} case ${index + 1} holds a backslash followed by ${/\\([nrtu])/.exec(escaped)?.[1]}, which is two characters, not a line terminator or tab. If you meant the control character, write it inside the JSON string with one backslash (\\n) and declare again; if the backslash is meant, leave it.`,
+          `warning: ${check.id} ${label} holds a backslash followed by ${/\\([nrtu])/.exec(escaped)?.[1]}, which is two characters, not a line terminator or tab. If you meant the control character, write it inside the JSON string with one backslash (\\n) and declare again; if the backslash is meant, leave it.`,
         );
-    });
+    }
   }
   return lines;
 }

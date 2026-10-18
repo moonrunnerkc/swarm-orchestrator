@@ -6,13 +6,18 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
   declarationProblems,
+  describeDeclaredCases,
+  describeRelationRun,
   describeUncoveredSentences,
   type PlannedChecksDeclaration,
   plannedChecksInput,
   plannedContract,
+  plannedRelation,
   programDidNotLoad,
+  relationAgreedSomewhere,
   sentencesQuoted,
   taskSentences,
+  withPlannedCheck,
 } from "./planned-check-program.ts";
 
 /**
@@ -281,5 +286,127 @@ describe("imports a program cannot load where it runs", () => {
         repository(["/repo/src/a.ts"]),
       ),
     ).toEqual([]);
+  });
+});
+
+/**
+ * A development fixture, structurally unlike mime's path parsing: an assignment parser whose
+ * task says a tab around the equals sign is ignored as a space already is. The faulty candidate
+ * handles a leading tab and misses a trailing one, which an example at one position can pass.
+ * These are development tests of the mechanism, not evidence it generalizes.
+ */
+describe("a planned relation as the harness runs it", () => {
+  const sources = {
+    base: "export const parse = (line) => { const [key, value = ''] = line.split('='); return { key: key.replace(/^ +| +$/g, ''), value: value.replace(/^ +| +$/g, '') }; };\n",
+    faulty:
+      "export const parse = (line) => { const [key, value = ''] = line.split('='); return { key: key.replace(/^[ \\t]+| +$/g, ''), value: value.replace(/^[ \\t]+| +$/g, '') }; };\n",
+    correct:
+      "export const parse = (line) => { const [key, value = ''] = line.split('='); return { key: key.replace(/^[ \\t]+|[ \\t]+$/g, ''), value: value.replace(/^[ \\t]+|[ \\t]+$/g, '') }; };\n",
+  };
+  const relationTask =
+    "Treat a tab around the equals sign like a space: a space there is already ignored.";
+  const declaration = withPlannedCheck(null, {
+    id: "tab-like-space",
+    purpose: "change",
+    requirementId: "tab-around-equals",
+    requirement: "a tab around = is ignored like a space",
+    quote: "Treat a tab around the equals sign like a space",
+    program: "import { parse } from './assign.mjs';\nexport default (line) => parse(line);\n",
+    seeds: ["key=value"],
+    reference: " ",
+    variants: ["\t"],
+    why: "the task says a tab is treated like a space",
+  });
+  const made = () => {
+    const contract = plannedContract(relationTask, declaration, undefined);
+    const [check] = contract.checks;
+    if (check?.behavior?.kind !== "cli") throw new Error("a command-line check");
+    return { check, behavior: check.behavior };
+  };
+  const runOn = (source: string) => {
+    writeFileSync(join(project, "assign.mjs"), source);
+    return run(made());
+  };
+
+  it("builds a check that carries the relation and expects every seed to hold, with its call count", () => {
+    const { check, behavior } = made();
+    expect(plannedRelation(check)).toEqual({
+      seeds: ["key=value"],
+      reference: " ",
+      variants: ["\t"],
+    });
+    // Ten positions in a nine-character seed, the reference and one variant at each.
+    expect(behavior.stdout[0]?.value).toBe('{"holds":true,"ran":20,"seed":"key=value"}\n');
+    expect(check.command).toBe(
+      'planned relation: " " and 1 variant(s) at every position of 1 seed(s), 20 call(s) through the default export of its program',
+    );
+    expect(describeDeclaredCases(declaration)[0]).toContain(
+      'reference " "; variants "\\t"; 20 call(s)',
+    );
+  });
+
+  it("finds the position the faulty candidate misses and returns the smallest case with both answers", () => {
+    const ran = runOn(sources.faulty);
+    expect(ran.exitCode).toBe(0);
+    expect(ran.stdout).not.toBe(ran.expected);
+    const [line] = ran.stdout
+      .trim()
+      .split("\n")
+      .map((one) => JSON.parse(one));
+    expect(line).toMatchObject({ holds: false, ran: 20, seed: "key=value" });
+    // A tab just before the equals sign, and just after the value: the trailing positions.
+    expect(line.counterexamples[0]).toEqual({
+      at: 3,
+      reference: { input: "key =value", result: { key: "key", value: "value" } },
+      variant: { input: "key\t=value", result: { key: "key\t", value: "value" } },
+    });
+    expect(line.disagreements).toBe(2);
+    // As the worker reads it: the seed, how much of it broke, and the case with both answers.
+    const relation = plannedRelation(made().check);
+    if (relation === null) throw new Error("a relation");
+    expect(describeRelationRun(relation, ran.stdout)).toEqual([
+      'seed "key=value": 2 of 10 comparisons disagreed',
+      '  at position 3: "key\\t=value" gave {"key":"key\\t","value":"value"}, where "key =value" gave {"key":"key","value":"value"}',
+      '  at position 9: "key=value\\t" gave {"key":"key","value":"value\\t"}, where "key=value " gave {"key":"key","value":"value"}',
+    ]);
+  });
+
+  it("holds on the correct implementation, including where the result carries the inserted text", () => {
+    // "ke\ty" is a key with a tab inside it, which the task leaves alone: read under the
+    // substitution it is "ke y", what the reference gives, so a correct parser holds.
+    const ran = runOn(sources.correct);
+    expect(ran.stdout).toBe(ran.expected);
+  });
+
+  it("is admitted against the base by a position the base already treats alike", () => {
+    const ran = runOn(sources.base);
+    expect(ran.stdout).not.toBe(ran.expected);
+    const relation = plannedRelation(made().check);
+    if (relation === null) throw new Error("a relation");
+    // Inside the key and the value a tab already reads like a space; at their edges it does not.
+    expect(relationAgreedSomewhere(relation, ran.stdout)).toBe(true);
+    // A program that reports which text it was given disagrees everywhere: no control.
+    expect(
+      relationAgreedSomewhere(
+        relation,
+        '{"counterexamples":[],"disagreements":10,"holds":false,"ran":20,"seed":"key=value"}\n',
+      ),
+    ).toBe(false);
+  });
+
+  it("refuses a relation that compares the reference with itself, or repeats a seed", () => {
+    const problems = (relation: { seeds: string[]; reference: string; variants: string[] }) =>
+      declarationProblems(
+        relationTask,
+        { ...declaration, checks: declaration.checks.map((one) => ({ ...one, relation })) },
+        undefined,
+      );
+    expect(problems({ seeds: ["a"], reference: " ", variants: [" ", "\t"] }).join()).toContain(
+      "a variant equals the reference",
+    );
+    expect(problems({ seeds: ["a", "a"], reference: " ", variants: ["\t"] }).join()).toContain(
+      "a seed is listed twice",
+    );
+    expect(problems({ seeds: ["a=b"], reference: " ", variants: ["\t"] })).toEqual([]);
   });
 });

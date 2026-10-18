@@ -6,6 +6,7 @@ import { differingLines } from "./gates/behavior-check.ts";
 import { assembleGates, type GateSetOptions } from "./gates/default-gates.ts";
 import { createGitWorkspaceProbe } from "./gates/git-workspace.ts";
 import { detectProject } from "./gates/project-type.ts";
+import { plannedRelation, relationAgreedSomewhere } from "./workers/planned-check-program.ts";
 
 /**
  * Admission of planned checks by their base control, before any implementation exists.
@@ -212,6 +213,8 @@ function expectedStdout(check: GoalContract["checks"][number]): string | null {
  * base must get right: its control that the program observes the project correctly.
  */
 function wrongEverywhere(check: GoalContract["checks"][number], seen: ObservedCheck): boolean {
+  const relation = plannedRelation(check);
+  if (relation !== null) return !relationAgreedSomewhere(relation, seen.stdout);
   const expected = expectedStdout(check);
   if (expected === null) return false;
   const want = expected.split("\n").filter((line) => line.length > 0);
@@ -236,7 +239,9 @@ function decide(
         observed: seen.status,
         admitted: false,
         reason:
-          "it gets every case wrong on the base, so nothing shows its program calls the project correctly; a change check also holds a case the task does not change, which the base gets right",
+          plannedRelation(check) === null
+            ? "it gets every case wrong on the base, so nothing shows its program calls the project correctly; a change check also holds a case the task does not change, which the base gets right"
+            : "no variant behaved like the reference at any position of any seed on the base, so nothing shows its program observes the project correctly; give it a seed, or a position, the base already treats alike",
       }
     : judgeAtBase(check, seen);
   const broken =

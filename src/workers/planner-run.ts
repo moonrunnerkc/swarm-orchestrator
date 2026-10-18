@@ -19,9 +19,12 @@ import { createDeclareTaskGraphTool, type DeclaredGraph } from "./graph-tool.ts"
 import {
   describeDeclaredCases,
   describeUncoveredSentences,
+  type PlannedCheckCall,
   type PlannedChecksDeclaration,
+  type PlannedRelationCall,
   plannedCheckInput,
   plannedContract,
+  plannedRelationInput,
   withPlannedCheck,
 } from "./planned-check-program.ts";
 import type { TaskGraph } from "./task-graph.ts";
@@ -110,6 +113,33 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
   let goalContract: GoalContract | null = null;
   let plannedDeclaration: PlannedChecksDeclaration | null = null;
 
+  // Nothing has run yet, so a planner that finds a mistake in what it pinned may replace it:
+  // refusing that spent two launches' remaining wall on re-declares. The supplied contract is
+  // never part of what is replaced.
+  const pinPlanned = (input: PlannedCheckCall | PlannedRelationCall) => {
+    const task = options.plannedChecks?.task ?? options.goal;
+    const replacing = plannedDeclaration?.checks.some((one) => one.id === input.id) ?? false;
+    const declaration = withPlannedCheck(plannedDeclaration, input);
+    goalContract = plannedContract(task, declaration, options.plannedChecks?.base, {
+      root: options.workspace,
+      exists: existsSync,
+    });
+    plannedDeclaration = declaration;
+    const pinned = declaration.checks.find((one) => one.id === input.id);
+    return {
+      text: [
+        `check ${input.id} pinned${replacing ? ", replacing the earlier one" : ""}; ${declaration.checks.length} planned check(s) so far (${declaration.checks.map((one) => one.id).join(", ")}), each run once on the unchanged base before implementation.`,
+        ...describeDeclaredCases({
+          requirements: [],
+          checks: pinned === undefined ? [] : [pinned],
+        }),
+        ...describeUncoveredSentences(task, declaration),
+        "When every input is what you meant and every behaviour the task states is covered, finish with a one-line summary and no tool calls.",
+      ].join("\n"),
+      facts: { checks: declaration.checks.length },
+    };
+  };
+
   const { definitions, toolInvoker } = assembleToolset({
     workspace: options.workspace,
     homeDir: options.homeDir,
@@ -160,41 +190,28 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
                   inputSchema: plannedCheckInput,
                   kind: "evidence",
                   pathsFrom: () => [],
-                  execute(input) {
-                    // Nothing has run yet, so a planner that finds a mistake in what it pinned may
-                    // replace it: refusing that spent two launches' remaining wall on re-declares.
-                    // The supplied contract is never part of what is replaced.
-                    const task = options.plannedChecks?.task ?? options.goal;
-                    const replacing =
-                      plannedDeclaration?.checks.some((one) => one.id === input.id) ?? false;
-                    const declaration = withPlannedCheck(plannedDeclaration, input);
-                    goalContract = plannedContract(task, declaration, options.plannedChecks?.base, {
-                      root: options.workspace,
-                      exists: existsSync,
-                    });
-                    plannedDeclaration = declaration;
-                    const pinned = declaration.checks.find((one) => one.id === input.id);
-                    return Promise.resolve({
-                      text: [
-                        `check ${input.id} pinned${replacing ? ", replacing the earlier one" : ""}; ${declaration.checks.length} planned check(s) so far (${declaration.checks.map((one) => one.id).join(", ")}), each run once on the unchanged base before implementation.`,
-                        ...describeDeclaredCases({
-                          requirements: [],
-                          checks: pinned === undefined ? [] : [pinned],
-                        }),
-                        ...describeUncoveredSentences(task, declaration),
-                        "When every input is what you meant and every behaviour the task states is covered, finish with a one-line summary and no tool calls.",
-                      ].join("\n"),
-                      facts: { checks: declaration.checks.length },
-                    });
-                  },
+                  execute: (input) => Promise.resolve(pinPlanned(input)),
                 }),
+            ...(options.plannedChecks === undefined
+              ? []
+              : [
+                  defineTool({
+                    name: "declare_planned_relation",
+                    description:
+                      "Pin one check of a rule the task states as an equivalence: some text must behave like another, such as a character the task says must be treated like one that already works. Give a few ordinary seed inputs, the reference text and the variants. The harness inserts the reference and each variant at every position of every seed, calls the program on each, and compares each variant's result with the reference's at the same position, so you write no expected results and every position is tried, not only the one an example shows. Include at least one seed the unchanged base already handles alike for every variant, as the control that the program observes the project. A change relation is admitted only if the base breaks it for some seed and keeps it for another; a preserve relation only if the base keeps it everywhere. Call again with the same id to replace it.",
+                    inputSchema: plannedRelationInput,
+                    kind: "evidence",
+                    pathsFrom: () => [],
+                    execute: (input) => Promise.resolve(pinPlanned(input)),
+                  }),
+                ]),
             ...(options.plannedChecks?.tryOnBase === undefined
               ? []
               : [
                   defineTool({
                     name: "run_planned_checks_on_base",
                     description:
-                      "Run every check pinned so far once on a fresh checkout of the unchanged base, exactly as admission will when you finish, and see what each did there: admitted or dropped, why, and what a dropped one printed. It takes as long as the repository's preparation. Fix what it reports with declare_planned_check (the same id replaces a check) and run it again while time allows.",
+                      "Run every check pinned so far once on a fresh checkout of the unchanged base, exactly as admission will when you finish, and see what each did there: admitted or dropped, why, and what a dropped one printed. It takes as long as the repository's preparation. Fix what it reports with declare_planned_check or declare_planned_relation (the same id replaces a check) and run it again while time allows.",
                     inputSchema: z.strictObject({}),
                     kind: "evidence",
                     pathsFrom: () => [],
@@ -304,6 +321,10 @@ function plannedChecksPrompt(options: NonNullable<PlannerOptions["plannedChecks"
     "the task states where it is easy to get wrong: its boundaries, the combinations of the",
     "special cases it names (position, repetition, mixing with other inputs), and the ordinary",
     "inputs the task says must keep working. Do not add requirements the task does not state.",
+    "Where the task says some text must behave like other text (a character to be treated like one",
+    "that already works, one spelling like another), also declare that rule with",
+    "declare_planned_relation: the harness tries the reference and each variant at every position",
+    "of your seeds, which a list of examples does not.",
     "Each requirement has an id, a description and, when a change check covers it, a quote of",
     "the task's own words that ask for it. Each check names its requirement and its purpose:",
     "change for behaviour the task asks to change, which the unchanged base must get wrong on at",
