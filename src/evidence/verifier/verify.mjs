@@ -957,11 +957,17 @@ function collectChecks(directory) {
       contract?.version === 1 &&
       sha256(canonicalJson(contract)) === reading?.contractDigest &&
       reading?.policy === "goal-obligations-v1";
-    const requirements = contract?.requirements ?? [];
+    // A planned requirement is a hypothesis and carries no obligation (src/gates/goal-acceptance.ts).
+    const requirements = (contract?.requirements ?? []).filter(
+      (requirement) => requirement.planned === undefined,
+    );
     const checks = contract?.checks ?? [];
     const obligations = reading?.obligations ?? [];
     consistent &&=
-      requirements.length > 0 &&
+      (contract?.requirements ?? []).length > 0 &&
+      (contract?.requirements ?? []).every(
+        (requirement) => requirement.planned === undefined || requirement.checks?.length === 0,
+      ) &&
       requirements.length === obligations.length &&
       new Set(requirements.map((requirement) => requirement.id)).size === requirements.length &&
       new Set(checks.map((check) => check.id)).size === checks.length;
@@ -1090,7 +1096,9 @@ function collectChecks(directory) {
     record(
       `goal obligations ${entry.sequence} re-derived`,
       consistent &&
-        reading?.accepted === obligations.every((obligation) => obligation.status === "accepted"),
+        reading?.accepted ===
+          (obligations.length > 0 &&
+            obligations.every((obligation) => obligation.status === "accepted")),
       "every pinned requirement is bound to its captured check observations",
     );
   }
@@ -1318,10 +1326,19 @@ function collectChecks(directory) {
         observed.verified === false &&
         observed.task === "unjudged";
       const task = observed?.task === "vacuous" ? "unjudged" : observed?.task;
+      // Mirrors hypothesesOnly in src/evidence/run-assessment.ts: a contract of planned
+      // hypotheses alone certifies nothing and is read on the fresh checkout's regression.
+      const hypothesesOnly =
+        observed?.certificationPolicy === "goal-obligations-v1" &&
+        observed?.refusal == null &&
+        observed?.regression === "pass" &&
+        Array.isArray(observed?.goalAcceptance?.obligations) &&
+        observed.goalAcceptance.obligations.length === 0;
       const expected = {
         ...base?.verdict,
         task,
-        acceptable: base?.verdict?.acceptable === true && observed?.verified === true,
+        acceptable:
+          base?.verdict?.acceptable === true && (observed?.verified === true || hypothesesOnly),
         reasons: {
           ...base?.verdict?.reasons,
           task: refused

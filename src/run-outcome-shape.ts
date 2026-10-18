@@ -27,22 +27,27 @@ export interface RequirementOutcome {
 
 /**
  * Added in 14.5.0: the one reading of a finished run that the terminal, the JSON result and the
- * exit status share.
- * - `accepted`: every sealed requirement was met by a check that decides it, and nothing refused.
- * - `unjudged`: nothing refused the change, and no requirement was sealed, so nothing says the
- *   task was done.
- * - `partially-checked`: nothing trusted refused the change, but at least one sealed requirement
- *   was not established by a check that decides it.
- * - `unresolved`: as partially checked, and a generated check disagrees with the final tree. The
- *   check may be wrong or the change may be; nothing here can tell which.
- * - `not-accepted`: a check that decides a requirement, a blocking gate, policy or the final
- *   verification refused it, or the run did not finish.
+ * exit status share. Supplied requirements (a goal contract) decide; requirements the planner read
+ * from the task are hypotheses and decide nothing (the table is on `outcomeStatus`).
+ * - `accepted` (exit 0): every supplied requirement was met by a check that decides it, nothing
+ *   refused, and no generated check disagrees.
+ * - `unjudged` (exit 0): nothing refused the change and no requirement was supplied, so nothing
+ *   says the task was done; planned hypotheses whose checks agree leave it here.
+ * - `partially-checked` (exit 1): nothing refused the change, but a supplied requirement was
+ *   decided by no check that ran.
+ * - `unresolved` (exit 1): a generated check disagrees with the final tree and nothing that decides
+ *   refused it. The check may be wrong or the change may be; nothing here can tell which.
+ * - `unverified` (exit 4): the model or the verification environment was unavailable, so the
+ *   change was established neither way.
+ * - `not-accepted` (exit 1): a supplied check, a blocking gate, policy or the final verification
+ *   refused it, nothing executed it, or the run did not finish.
  */
 export type OutcomeStatus =
   | "accepted"
   | "unjudged"
   | "partially-checked"
   | "unresolved"
+  | "unverified"
   | "not-accepted";
 
 export interface FinalVerificationOutcome {
@@ -69,7 +74,7 @@ export interface SetupUsage {
 }
 
 export interface RunOutcomeReport {
-  /** Added in 14.5.0; exit status 0 exactly when this is `accepted` or `unjudged`. */
+  /** Added in 14.5.0; exit status 0 exactly when this is `accepted` or `unjudged`, 4 for `unverified`. */
   readonly status: OutcomeStatus;
   readonly lifecycle: string;
   readonly requirements: readonly RequirementOutcome[] | null;

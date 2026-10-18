@@ -2,6 +2,7 @@ import type { GoalContract } from "./evidence/goal-contract.ts";
 import type { EvidenceRecorder } from "./evidence/session.ts";
 import { blockingReason, type RunVerdict } from "./evidence/verdict.ts";
 import type { GateCycle } from "./gates/gate-runner.ts";
+import { exitCodes } from "./machine-output.ts";
 import type {
   FinalVerificationOutcome,
   InterventionCounts,
@@ -54,10 +55,27 @@ export interface RunOutcomeInput {
 }
 
 /**
- * The run's one reading, from harness records only. A refusal by anything that decides comes
- * first; a generated check's disagreement comes next and is named as unresolved, because nothing
- * says whether the check or the change is wrong; a requirement nothing decided leaves the run
- * partially checked. Only `accepted` and `unjudged` exit 0, and both need the verdict acceptable.
+ * The run's one reading, from harness records only. Requirements are of two kinds: those supplied
+ * in a goal contract, which are the authorized acceptance criteria and are decided by their checks,
+ * and those the planner read from the task, which are hypotheses whose generated checks inform and
+ * drive repair and decide nothing in either direction.
+ *
+ * | the run                                                        | status              | exit |
+ * | -------------------------------------------------------------- | ------------------- | ---- |
+ * | acceptable, no supplied requirement (none sealed, or only      | `unjudged`          | 0    |
+ * |   planned ones whose generated checks did not disagree)        |                     |      |
+ * | acceptable, every supplied requirement met                     | `accepted`          | 0    |
+ * | a supplied check, a blocking gate, policy, the final           | `not-accepted`      | 1    |
+ * |   verification or the fresh checkout's suite refused it        |                     |      |
+ * | the model or the verification environment was unavailable     | `unverified`        | 4    |
+ * | a generated check disagrees and nothing above refused          | `unresolved`        | 1    |
+ * | a supplied requirement no check that ran decided               | `partially-checked` | 1    |
+ *
+ * A planned requirement with no generated check, and one the planner invented with no quote of
+ * the task, change no status: they are named, as a task sentence nobody tracked is not. Their
+ * uncertainty is the same an ordinary run carries unspoken, and naming it must not make the
+ * outcome worse than not looking. A generated check's disagreement is an observation a person
+ * has to settle, so it is never read as acceptance and never as a refusal.
  */
 export function outcomeStatus(
   input: Pick<
@@ -65,43 +83,58 @@ export function outcomeStatus(
     "verdict" | "lifecycle" | "gates" | "requirements" | "finalVerification" | "changedFiles"
   >,
 ): OutcomeStatus {
-  const requirements = input.requirements ?? [];
+  const supplied = (input.requirements ?? []).filter((one) => one.source !== "planned");
   if (input.verdict.acceptable)
-    return input.requirements === null
+    return supplied.length === 0
       ? "unjudged"
-      : requirements.every((one) => one.status === "accepted")
+      : supplied.every((one) => one.status === "accepted")
         ? "accepted"
         : "partially-checked";
   const refusedByWhatDecides =
     input.lifecycle === "interrupted" ||
-    requirements.some((one) => one.status === "rejected") ||
+    supplied.some((one) => one.status === "rejected") ||
     input.gates.blockingFailures.some((run) => run.gateId !== acceptanceGateId) ||
     input.verdict.policy === "fail" ||
-    // Read off the gates rather than the verdict's behavioural dimension, which the acceptance
-    // gate is part of: a generated check's disagreement there is not "nothing executed it".
+    // Nothing executed a change no dynamic gate ran over. A failed acceptance gate did execute
+    // it, whether a supplied check or a generated one refused.
     (input.changedFiles.length > 0 &&
       !input.gates.runs.some(
-        (run) =>
-          run.capability === "dynamic" &&
-          run.status === "passed" &&
-          run.gateId !== acceptanceGateId,
+        (run) => run.capability === "dynamic" && run.status !== "not-applicable",
       )) ||
     input.finalVerification?.refusal != null ||
     input.finalVerification?.regression === "fail";
-  if (refusedByWhatDecides || input.requirements === null) return "not-accepted";
-  if (requirements.some((one) => one.generatedChecks?.some((check) => check.status === "rejected")))
+  if (refusedByWhatDecides) return "not-accepted";
+  if (input.lifecycle === "model-error" || input.finalVerification?.unmeasured === true)
+    return "unverified";
+  if (
+    (input.requirements ?? []).some((one) =>
+      one.generatedChecks?.some((check) => check.status === "rejected"),
+    )
+  )
     return "unresolved";
-  if (requirements.some((one) => one.status === "unjudged")) return "partially-checked";
+  if (supplied.some((one) => one.status === "unjudged")) return "partially-checked";
   return "not-accepted";
 }
 
+/** What the process exits with for a status: the taxonomy in machine-output.ts, read one way. */
+export function exitCodeForStatus(status: OutcomeStatus): number {
+  return status === "accepted" || status === "unjudged"
+    ? exitCodes.acceptable
+    : status === "unverified"
+      ? exitCodes.unavailable
+      : exitCodes.notAcceptable;
+}
+
 const statusLine: Record<OutcomeStatus, string> = {
+  // The scope line below says what the supplied requirements covered.
   accepted: "accepted",
-  unjudged: "gates passed; the task itself was not judged (no requirement was sealed)",
+  unjudged: "gates passed; the task itself was not judged (no requirement was supplied)",
   "partially-checked":
-    "partially checked (nothing that decides refused it; not every requirement was established)",
+    "partially checked (nothing refused it; a requirement you supplied was decided by no check that ran)",
   unresolved:
     "unresolved (a generated check disagrees with the change; nothing decides which is wrong)",
+  unverified:
+    "unverified (the model or the verification environment was unavailable, so nothing established the change either way)",
   "not-accepted": "not accepted",
 };
 
@@ -109,7 +142,7 @@ export function describeRunOutcome(input: RunOutcomeInput): readonly string[] {
   const lines: string[] = [];
   const say = (line = "") => lines.push(line);
   const status = outcomeStatus(input);
-  const ok = status === "accepted" || status === "unjudged";
+  const ok = exitCodeForStatus(status) === exitCodes.acceptable;
   say();
   say(`outcome: ${statusLine[status]}`);
   say(`  requested: ${firstLine(input.task, 160)}`);
@@ -125,16 +158,18 @@ export function describeRunOutcome(input: RunOutcomeInput): readonly string[] {
         "only that nothing measured broke. Pass --goal-contract or --plan-checks to seal criteria.",
     );
   } else {
-    const counts = countBy(input.requirements, (one) => one.status);
     const planned = input.requirements.filter((one) => one.source === "planned");
+    const supplied = input.requirements.filter((one) => one.source !== "planned");
+    const counts = countBy(supplied, (one) => one.status);
     say(
-      `  requirements: ${input.requirements.length} sealed, ${counts.accepted ?? 0} met, ` +
+      `  requirements: ${supplied.length} supplied, ${counts.accepted ?? 0} met, ` +
         `${counts.rejected ?? 0} unmet, ${counts.unjudged ?? 0} unjudged` +
+        (supplied.some((one) => one.authoredBy === "model")
+          ? " (model-authored criteria are acceptance instruments, not independent ground truth)"
+          : "") +
         (planned.length === 0
-          ? input.requirements.some((one) => one.authoredBy === "model")
-            ? " (model-authored criteria are acceptance instruments, not independent ground truth)"
-            : ""
-          : `; ${planned.length} read from the task by the planner, which only generated checks exercise`),
+          ? ""
+          : `; ${planned.length} planned from the task, hypotheses that generated checks exercise and that decide nothing`),
     );
     for (const requirement of input.requirements) {
       if (requirement.source === "planned") {
@@ -158,7 +193,7 @@ export function describeRunOutcome(input: RunOutcomeInput): readonly string[] {
     say(
       planned.length === 0
         ? "  scope: these are the requirements that were sealed; nothing checked the rest of the task's wording"
-        : "  scope: a task sentence no requirement quotes was not tracked, and a quote says what a requirement is about, not that its checks test all of it",
+        : "  scope: only supplied requirements decide; a task sentence no requirement quotes was not tracked, and a quote says what a requirement is about, not that its checks test all of it",
     );
   }
   for (const requirement of input.uncheckedRequirements ?? [])
@@ -278,12 +313,14 @@ function nextAction(input: RunOutcomeInput): string {
         ", ",
       )} against the task: either the generated check expects something the task does not ask for, or the change is incomplete; decide, then fix the code or keep it`;
   if (status === "partially-checked")
-    return `review the change against the requirement(s) nothing decided (${(
-      input.requirements ?? []
-    )
-      .filter((one) => one.status === "unjudged")
+    return `give ${(input.requirements ?? [])
+      .filter((one) => one.source !== "planned" && one.status === "unjudged")
       .map((one) => one.id)
-      .join(", ")}); a check you supply in --goal-contract can decide them on a later run`;
+      .join(
+        ", ",
+      )} a check that decides it in --goal-contract and run again, or review the change against it by hand`;
+  if (status === "unverified" && input.lifecycle !== "model-error")
+    return "the final verification could not measure the change in a fresh checkout (its line above names why); prepare what it names, then run again";
   if (input.finalVerification?.refusal !== null && input.finalVerification !== null)
     return "fix what the refusal names (the environment, the lockfile or the path the run promised not to touch), then run again";
   const owed = input.gates.advisoryFailures.filter(

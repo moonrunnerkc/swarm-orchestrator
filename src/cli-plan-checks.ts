@@ -489,9 +489,10 @@ export function describeCriteria(contract: GoalContract): readonly string[] {
     lines.push(`  immutable: ${contract.immutablePaths.join(", ")}`);
   if (contract.requirements.some((one) => one.planned !== undefined))
     lines.push(
-      "  Generated checks run on every candidate and drive repair, but they cannot establish that the",
-      "  task is done: nothing independent says their expected results are right. A planned",
-      "  requirement stays unjudged unless a supplied check decides it.",
+      "  Planned requirements are hypotheses. Their generated checks run on every candidate and drive",
+      "  repair, and a disagreement leaves the run unresolved, but they decide nothing either way:",
+      "  nothing independent says their expected results are right. Only requirements supplied in",
+      "  --goal-contract decide acceptance.",
     );
   return lines;
 }

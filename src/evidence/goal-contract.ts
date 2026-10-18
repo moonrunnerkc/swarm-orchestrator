@@ -170,6 +170,12 @@ export function freezeGoalContract(value: unknown): { contract: GoalContract; di
     )
       throw new Error(`requirement ${requirement.id} names duplicate or undefined checks`);
     const diagnostics = requirement.planned?.diagnostics ?? [];
+    // A planned requirement is no obligation, so a check deciding it would decide nothing: the
+    // marker would strip a supplied criterion out of acceptance.
+    if (requirement.planned !== undefined && requirement.checks.length > 0)
+      throw new Error(
+        `requirement ${requirement.id} is planned and names checks that decide it; a planned requirement is decided by none`,
+      );
     if (
       new Set(diagnostics).size !== diagnostics.length ||
       diagnostics.some(

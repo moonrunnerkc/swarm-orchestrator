@@ -38,6 +38,32 @@ describe("ordinary pinned goal checks", () => {
     ).toThrow("duplicate requirement");
     expect(() => freezeGoalContract({ ...contract, checks: [] })).toThrow("undefined checks");
   });
+  it("refuses a planned requirement that names checks deciding it, which would strip a supplied criterion out of acceptance", () => {
+    // A planned requirement is no obligation, so the marker on a decided requirement would drop
+    // its supplied check from what the final verification certifies.
+    expect(() =>
+      freezeGoalContract({
+        ...contract,
+        requirements: [
+          { ...contract.requirements[0], planned: { quote: "page through", diagnostics: [] } },
+        ],
+      }),
+    ).toThrow("is planned and names checks that decide it");
+    expect(
+      freezeGoalContract({
+        ...contract,
+        requirements: [
+          ...contract.requirements,
+          {
+            id: "hypothesis",
+            description: "the planner's reading",
+            checks: [],
+            planned: { diagnostics: [] },
+          },
+        ],
+      }).contract.requirements.map((one) => one.planned === undefined),
+    ).toEqual([true, false]);
+  });
   it("refuses an artifact escape and duplicate aliases", () => {
     expect(() =>
       freezeGoalContract({
