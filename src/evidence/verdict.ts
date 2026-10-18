@@ -147,7 +147,13 @@ export function runVerdict(input: VerdictInput): RunVerdict {
           `blocking gate(s) failed: ${input.cycle.blockingFailures.map((run) => run.gateId).join(", ")}`,
         ]),
     ...policy.refusals,
-    ...(executed ? [] : [`nothing executed the change: ${behavioral.reason}`]),
+    // A dynamic gate that failed executed the change: "nothing executed the change: tests
+    // failed" told a reader, and a JSON consumer, the opposite of what happened.
+    ...(executed
+      ? []
+      : behavioral.answer === "fail"
+        ? [`the change was executed and failed: ${behavioral.reason}`]
+        : [`nothing executed the change: ${behavioral.reason}`]),
     ...(input.task === "rejected" ? ["the task oracle rejected the change"] : []),
     ...(approval === "required"
       ? [`approval still required: ${describeApprovals(input.approvals)}`]
