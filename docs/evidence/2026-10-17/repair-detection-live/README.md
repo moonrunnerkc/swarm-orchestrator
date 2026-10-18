@@ -63,7 +63,10 @@ size of everything dropped.
 prefix and cache, and reaches no model. Its first walk ([remote-install-before-fixes.json](remote-install-before-fixes.json),
 a shallow clone) found three first-run defects, since fixed: a shallow source build printed the
 release's version line, a misspelt last flag was told it "needs a value", and a repository with
-no manifest exited 1. The walk of the pushed head is [remote-install.json](remote-install.json).
+no manifest exited 1. The walk of the pushed head is [remote-install.json](remote-install.json):
+every route works, the source build names itself, the misspelt flag exits 2 by name and the
+unreachable model exits 4. The same walk of the default branch, which does not yet carry these
+fixes, is [remote-install-default.json](remote-install-default.json).
 
 ```sh
 node validate-counterexample.mjs --out <file>
