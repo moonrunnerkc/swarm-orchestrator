@@ -176,6 +176,12 @@ shown.
   counterexample, live repairs passed it by deleting line terminators, which the evaluator
   rejects, and were reported accepted against the supplied checks; a live planner's checks found
   the omission twice (once by the new relation check), and no live repair fixed it.
+- **October 18**
+  ([development records](evidence/2026-10-18/generated-check-control/README.md)): the night's
+  broken generated checks had misread their input; with that fixed and admission requiring a real
+  control, a live repair against supplied development checks, and once a live planner's relation
+  followed by a live repair, produced patches the evaluator accepts. The matched OpenCode run ended
+  on a rejected permission, and the ordinary run's patch was wrong and reported accepted.
 
 Developer hours saved and adoption are not measured; the prepared, unrun protocol for five
 developers on their own tasks is [human-trial-protocol.md](human-trial-protocol.md).
