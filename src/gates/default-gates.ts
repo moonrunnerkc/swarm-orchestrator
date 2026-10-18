@@ -142,6 +142,8 @@ const undetectedGates: readonly GateDefinition[] = (
 export interface GateSetOptions {
   /** A controller-supplied sealed acceptance instrument, never repository configuration. */
   readonly acceptanceGate?: GateDefinition;
+  /** Its generated checks, as a gate of their own beside it, where the contract has any. */
+  readonly diagnosticsGate?: GateDefinition;
   readonly packages?: readonly string[];
   /**
    * The lockfile dependency setup installs from where a unit holds several, as `--lockfile`

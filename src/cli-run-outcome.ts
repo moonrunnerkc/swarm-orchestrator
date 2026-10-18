@@ -1,6 +1,7 @@
 import type { GoalContract } from "./evidence/goal-contract.ts";
 import type { EvidenceRecorder } from "./evidence/session.ts";
 import { blockingReason, type RunVerdict } from "./evidence/verdict.ts";
+import type { AutoResolveOutcome } from "./gates/auto-resolve.ts";
 import type { GateCycle } from "./gates/gate-runner.ts";
 import { exitCodes } from "./machine-output.ts";
 import type {
@@ -24,11 +25,20 @@ import { formatCost, formatTokens } from "./tui/evidence-panel.ts";
  */
 export type { OutcomeStatus, RequirementOutcome } from "./run-outcome-shape.ts";
 
-/** The gate the sealed goal contract is judged through, whose requirements are reported apart. */
+/** The gate the sealed goal contract's supplied checks are judged through. */
 export const acceptanceGateId = "task-acceptance";
+/** The gate a contract's generated checks run through, where it has any. */
+export const diagnosticsGateId = "task-diagnostics";
+/** Their results are read off the requirements and the final verification, never as a gate failure. */
+const contractGates = new Set([acceptanceGateId, diagnosticsGateId]);
 
 export interface RunOutcomeInput {
   readonly task: string;
+  /**
+   * Accepted repair attempts that only generated checks asked for: nothing that decides was
+   * failing when they began. Their change rests on expectations nothing independent establishes.
+   */
+  readonly repairsForGeneratedChecksOnly?: readonly number[];
   readonly verdict: RunVerdict;
   readonly lifecycle: string;
   readonly workspace: string;
@@ -93,7 +103,7 @@ export function outcomeStatus(
   const refusedByWhatDecides =
     input.lifecycle === "interrupted" ||
     supplied.some((one) => one.status === "rejected") ||
-    input.gates.blockingFailures.some((run) => run.gateId !== acceptanceGateId) ||
+    input.gates.blockingFailures.some((run) => !contractGates.has(run.gateId)) ||
     input.verdict.policy === "fail" ||
     // Nothing executed a change no dynamic gate ran over. A failed acceptance gate did execute
     // it, whether a supplied check or a generated one refused.
@@ -265,6 +275,12 @@ export function describeRunOutcome(input: RunOutcomeInput): readonly string[] {
     `  interventions: ${external.length === 0 ? "none by a person" : external.join(", ")}; ` +
       `automatic: ${automatic.length === 0 ? "none" : automatic.join(", ")}`,
   );
+
+  const shaped = input.repairsForGeneratedChecksOnly ?? [];
+  if (shaped.length > 0)
+    say(
+      `  repaired for generated checks alone: attempt(s) ${shaped.join(", ")} changed the code when only a generated check disagreed; their expectations are the planner's, so review what those repairs changed against the task`,
+    );
 
   if (!ok) {
     if (status === "not-accepted")
@@ -474,4 +490,27 @@ export function interventionsOn(evidence: EvidenceRecorder): InterventionCounts 
     promptsPreApproved,
     promptsDeclined,
   };
+}
+
+/**
+ * The accepted repair attempts that began with nothing failing but generated checks: the
+ * diagnostics gate was the only blocking gate failing. Each attempt starts from the last accepted
+ * cycle, so that is the cycle read for it.
+ */
+export function repairsForGeneratedChecksOnly(
+  outcome: Pick<AutoResolveOutcome, "firstCycle" | "attempts">,
+): readonly number[] {
+  const asked: number[] = [];
+  let current = outcome.firstCycle;
+  for (const attempt of outcome.attempts) {
+    const failing = current.blockingFailures;
+    if (
+      attempt.decision.accepted &&
+      failing.length > 0 &&
+      failing.every((run) => run.gateId === diagnosticsGateId)
+    )
+      asked.push(attempt.attempt);
+    if (attempt.decision.accepted) current = attempt.cycle;
+  }
+  return asked;
 }

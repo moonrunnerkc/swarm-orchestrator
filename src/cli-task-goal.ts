@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { acceptanceGateId, diagnosticsGateId } from "./cli-run-outcome.ts";
 import type { Clock } from "./core/clock.ts";
 import { asJsonValue, digestOfBytes } from "./evidence/canonical-json.ts";
 import {
@@ -320,72 +321,120 @@ async function judgeWorkspace(context: TaskGoalContext): Promise<IndependentVeri
 
 /** Feed captured behavior failures into the same bounded worker repair cycle. */
 export function taskGoalGate(context: TaskGoalContext): GateDefinition {
+  return taskGoalGates(context).acceptanceGate;
+}
+
+/**
+ * The gates a sealed goal contract is judged through: one for the checks that decide its
+ * requirements, and one for the generated checks that only inform, where it has any. They are
+ * apart because the ratchet compares gates: in one gate, a live repair that answered a generated
+ * check by breaking a supplied one left that gate failing exactly as before, so nothing regressed
+ * by the ratchet's reading and the broken candidate was kept and delivered. Both read one
+ * verification of the workspace per gate cycle (the cycle's context is the key), so the checks run
+ * once a cycle, as they did with one gate, and nothing is reused across cycles.
+ */
+export function taskGoalGates(context: TaskGoalContext): {
+  readonly acceptanceGate: GateDefinition;
+  readonly diagnosticsGate: GateDefinition | null;
+} {
   const digest = freezeGoalContract(context.contract).digest;
-  return {
-    id: "task-acceptance",
-    title: `sealed goal ${digest}`,
+  const judged = new WeakMap<object, Promise<IndependentVerification>>();
+  const verificationFor = (cycle: object) => {
+    const known = judged.get(cycle);
+    if (known !== undefined) return known;
+    const started = judgeWorkspace(context);
+    judged.set(cycle, started);
+    return started;
+  };
+  const gate = (
+    id: string,
+    title: string,
+    read: (result: IndependentVerification) => {
+      readonly passes: boolean;
+      readonly stderr: string;
+    },
+  ): GateDefinition => ({
+    id,
+    title,
     severity: "blocking",
     capability: "dynamic",
     parserName: "inspection",
     parse: inspectionParser,
     source: {
       kind: "inspection",
-      inspect: async () => {
+      inspect: async (cycle) => {
         const started = context.clock.now();
-        const result = await judgeWorkspace(context);
+        const result = await verificationFor(cycle);
         const findings =
-          result.goalAcceptance?.checkResults?.map(({ id, status, detail }) => ({
-            id,
+          result.goalAcceptance?.checkResults?.map(({ id: check, status, detail }) => ({
+            id: check,
             status,
             detail,
           })) ?? [];
-        const reading = readAcceptance(context.contract, result);
-        // A refusal is a decision against the change and reads as one; an unmeasured setup is
-        // something to prepare. The repair feedback is this text, so the two must not be confused.
-        // The findings again as plain lines: inside the JSON above, a check's detail reaches the
-        // repair brief escaped, and a worker reads the line it got wrong more easily here.
-        const failed = findings
-          .filter((finding) => finding.status !== "accepted" && !reading.diagnostic.has(finding.id))
-          .map((finding) => `check ${finding.id} ${finding.status}: ${finding.detail}`);
-        const disagreeing = findings
-          .filter((finding) => finding.status === "rejected" && reading.diagnostic.has(finding.id))
-          .map((finding) => {
-            const relation = relationRun(context, result, finding.id);
-            return relation === null
-              ? `generated check ${finding.id} rejected: ${finding.detail}`
-              : `generated relation ${finding.id} broke: inputs that differ only by the reference ${inputAsRead(relation.relation.reference)} or a variant gave different results:\n${relation.lines.join("\n")}`;
-          });
-        const stderr =
-          result.refusal !== null && !result.unmeasured
-            ? `refused: ${result.refusal}`
-            : reading.unavailable
-              ? `setup unavailable: ${result.advice || result.refusal || "required acceptance instrument is unmeasured"}`
-              : [
-                  ...failed,
-                  ...(disagreeing.length === 0
-                    ? []
-                    : [
-                        "These generated checks disagree with the change. Their expected results are the planner's reading of the task, not established facts: change the code where the task supports the expectation, and where it does not, leave the code as it is and say which expectation the task contradicts.",
-                        ...disagreeing,
-                      ]),
-                ].join("\n");
+        const reading = read(result);
         return {
           exitCode: reading.passes ? 0 : 1,
           unavailable: null,
           durationMs: context.clock.now() - started,
           stdout: JSON.stringify({ regression: result.regression, task: result.task, findings }),
-          stderr,
+          stderr: reading.stderr,
         };
       },
     },
-  };
+  });
+  const acceptanceGate = gate(acceptanceGateId, `sealed goal ${digest}`, (result) => {
+    const reading = readAcceptance(context.contract, result);
+    // A refusal is a decision against the change and reads as one; an unmeasured setup is
+    // something to prepare. The repair feedback is this text, so the two must not be confused.
+    // The findings again as plain lines: inside the JSON above, a check's detail reaches the
+    // repair brief escaped, and a worker reads the line it got wrong more easily here.
+    const failed = (result.goalAcceptance?.checkResults ?? [])
+      .filter((finding) => finding.status !== "accepted" && !reading.diagnostic.has(finding.id))
+      .map((finding) => `check ${finding.id} ${finding.status}: ${finding.detail}`);
+    return {
+      passes: reading.passes,
+      stderr:
+        result.refusal !== null && !result.unmeasured
+          ? `refused: ${result.refusal}`
+          : reading.unavailable
+            ? `setup unavailable: ${result.advice || result.refusal || "required acceptance instrument is unmeasured"}`
+            : failed.join("\n"),
+    };
+  });
+  const diagnostic = diagnosticChecks(context.contract);
+  if (diagnostic.size === 0) return { acceptanceGate, diagnosticsGate: null };
+  const diagnosticsGate = gate(
+    diagnosticsGateId,
+    `generated checks of sealed goal ${digest}`,
+    (result) => {
+      const disagreeing = (result.goalAcceptance?.checkResults ?? [])
+        .filter((finding) => finding.status === "rejected" && diagnostic.has(finding.id))
+        .map((finding) => {
+          const relation = relationRun(context, result, finding.id);
+          return relation === null
+            ? `generated check ${finding.id} rejected: ${finding.detail}`
+            : `generated relation ${finding.id} broke: inputs that differ only by the reference ${inputAsRead(relation.relation.reference)} or a variant gave different results:\n${relation.lines.join("\n")}`;
+        });
+      return {
+        passes: disagreeing.length === 0,
+        stderr:
+          disagreeing.length === 0
+            ? ""
+            : [
+                "These generated checks disagree with the change. Their expected results are the planner's reading of the task, not established facts: change the code where the task supports the expectation, and where it does not, leave the code as it is and say which expectation the task contradicts. A change that breaks a supplied check to satisfy one of these is rolled back.",
+                ...disagreeing,
+              ].join("\n"),
+      };
+    },
+  );
+  return { acceptanceGate, diagnosticsGate };
 }
 
 /**
  * What the acceptance gate makes of one verification, which is what repair answers to. A check
- * that decides a requirement passes or refuses; a generated check that disagrees asks for a
- * repair without becoming a verdict; a requirement no check decides is unjudged by design, which
- * is neither something to fix nor a setup to prepare.
+ * that decides a requirement passes or refuses; a generated check is the diagnostics gate's and
+ * never this gate's; a requirement no check decides is unjudged by design, which is neither
+ * something to fix nor a setup to prepare.
  */
 export function readAcceptance(
   contract: GoalContract,
@@ -415,16 +464,12 @@ export function readAcceptance(
     result.unmeasured ||
     result.goalAcceptance === undefined ||
     obligations.some((one) => one.status === "unjudged");
-  const disagreement = (result.goalAcceptance?.checkResults ?? []).some(
-    (one) => diagnostic.has(one.id) && one.status === "rejected",
-  );
   return {
     passes:
       result.refusal === null &&
       !unavailable &&
       result.regression === "pass" &&
-      obligations.every((one) => one.status === "accepted") &&
-      !disagreement,
+      obligations.every((one) => one.status === "accepted"),
     unavailable,
     diagnostic,
   };

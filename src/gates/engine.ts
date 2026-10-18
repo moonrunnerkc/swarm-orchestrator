@@ -143,11 +143,13 @@ function withAcceptance(
   assembled: { detection: ProjectDetection; gates: readonly GateDefinition[] },
   options?: GateSetOptions,
 ) {
-  const acceptance = options?.acceptanceGate;
-  if (acceptance === undefined) return assembled;
-  if (assembled.gates.some((gate) => gate.id === acceptance.id))
-    throw new Error(`acceptance gate identity collides with configured gate: ${acceptance.id}`);
-  return { ...assembled, gates: [...assembled.gates, acceptance] };
+  const added = [options?.acceptanceGate, options?.diagnosticsGate].filter(
+    (gate): gate is GateDefinition => gate !== undefined,
+  );
+  for (const gate of added)
+    if (assembled.gates.some((one) => one.id === gate.id))
+      throw new Error(`acceptance gate identity collides with configured gate: ${gate.id}`);
+  return added.length === 0 ? assembled : { ...assembled, gates: [...assembled.gates, ...added] };
 }
 
 /**

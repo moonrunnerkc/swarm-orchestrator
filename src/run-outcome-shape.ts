@@ -90,4 +90,9 @@ export interface RunOutcomeReport {
    * even with no admitted check, and reported among `requirements` as unjudged.
    */
   readonly uncheckedRequirements?: readonly { readonly id: string; readonly description: string }[];
+  /**
+   * Added in 14.5.0: accepted repair attempts that began when only a generated check disagreed.
+   * A repair can satisfy a wrong expectation; nothing independent says these were right.
+   */
+  readonly repairsForGeneratedChecksOnly?: readonly number[];
 }
