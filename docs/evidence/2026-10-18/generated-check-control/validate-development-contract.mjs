@@ -14,8 +14,10 @@
  * | upstream fix | a correct implementation | pass it, preserved behaviour and suite included |
  *
  * The two deletion repairs are read from 2026-10-17's launch pack. Nothing here reaches a model.
+ * Given `--patch`, it runs the same commands on one delivered patch instead, which no expectation
+ * is stated for: what an arm delivered, read by the checks it was given.
  *
- *   node validate-development-contract.mjs --out <file>
+ *   node validate-development-contract.mjs --out <file> [--patch <final.patch> --name <label>]
  */
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -36,7 +38,9 @@ import {
 import { tasks } from "../../../../scripts/pilot/tasks-2026-10-17.mjs";
 import { developmentChecks, developmentFiles } from "./development-checks.mjs";
 
-const { values } = parseArgs({ options: { out: { type: "string" } } });
+const { values } = parseArgs({
+  options: { out: { type: "string" }, patch: { type: "string" }, name: { type: "string" } },
+});
 if (values.out === undefined) throw new Error("usage: validate-development-contract.mjs --out <file>");
 const task = tasks.find((one) => one.id === "mime-bugfix-gettype-line-terminators");
 const log = commandLog(join(comparisonRoot, "blobs"));
@@ -47,7 +51,11 @@ const pack = await unpackArchive(
     .pathname,
 );
 const packed = (path) => readFileSync(join(pack.directory, path), "utf8");
-const trees = [
+const delivered =
+  values.patch === undefined
+    ? null
+    : { name: values.name ?? "delivered", role: "delivered", must: null, patch: readFileSync(values.patch, "utf8") };
+const trees = delivered !== null ? [delivered] : [
   { name: "base", role: "original defect", must: "fail", patch: "" },
   {
     name: "retained-faulty",
@@ -113,7 +121,7 @@ for (const tree of trees) {
     patchDigest: tree.patch === "" ? null : `sha256:${createHashOf(tree.patch)}`,
     must: tree.must,
     contract: contractPassed ? "passes" : "fails",
-    met: (contractPassed ? "pass" : "fail") === tree.must,
+    met: tree.must === null ? null : (contractPassed ? "pass" : "fail") === tree.must,
     results,
   });
 }
@@ -133,7 +141,7 @@ const result = {
   fileDigests: Object.fromEntries(
     Object.entries(files).map(([path, content]) => [path, `sha256:${createHashOf(content)}`]),
   ),
-  everyTreeAsStated: rows.every((row) => row.met),
+  everyTreeAsStated: delivered === null ? rows.every((row) => row.met) : null,
   rows,
   scratch,
 };
