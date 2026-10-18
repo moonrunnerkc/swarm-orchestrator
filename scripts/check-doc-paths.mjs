@@ -92,6 +92,10 @@ const documentedAsRemoved = new Map([
   ],
   ["redteam/leep/", "removed by the 08-18 run, which the documents naming it record"],
   [
+    "campaign/corpus/local-ollama/refined-github__refined-github/",
+    "packed whole and losslessly into campaign/corpus/local-ollama/packed-derived/local-ollama-corpus, whose payloads were already outside the repository; restore gives the bundle back byte for byte",
+  ],
+  [
     "docs/evidence/2026-08-23/live-task.cast",
     "packed losslessly into docs/evidence/2026-08-23/packed-derived/terminal-recordings-2026-08; the record naming it stands",
   ],
