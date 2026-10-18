@@ -16,3 +16,4 @@ in 1.4 s.
 
 | # | experiment | build | configuration | started (UTC) | agent minutes | running total | usage | outcome and next |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | A, Swarm | `afd12a65f` (`~/.cache/swarm-comparison/tools/swarm-afd12a65f`, `npm ci`, `npm run build`); driver `9568820e1` | `run.mjs --arm swarm --mode development`; `qwen3.6:35b-a3b` (`096fdbd02fe6`, loaded with an empty request, no tokens generated); thinking off; injected faulty candidate; supplied visible check and the three development checks; no `--plan-checks`; `--max-wall-minutes 14`; 15-minute kill | | | | | |
