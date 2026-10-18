@@ -72,3 +72,7 @@ stops by its classification instead. Added:
 
 No new file: the relation reminder lands in `src/workers/planned-check-program.ts`,
 `src/workers/planner-run.ts` and their tests, declared above.
+
+### 7. The measurement history
+
+- `docs/agent.md`: one entry for this work beside 2026-10-17's, linking its README.
