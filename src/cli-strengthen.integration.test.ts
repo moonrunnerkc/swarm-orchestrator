@@ -101,15 +101,25 @@ it("names an admission cut off by SIGKILL once, never repeats it, and gives a re
       settle();
     }),
   );
-  // Watched through the blobs the child writes, never by opening its live session.
-  const blobs = join(root, "sessions", "killed", "blobs");
+  // Watched through the files the child writes, never by opening its live session. The intent's
+  // blob is written before the ledger line that records it, so the kill waits for that line: a
+  // kill between the two left no intent on the chain, and under load the window was wide enough
+  // for the gate run to land in it.
+  const session = join(root, "sessions", "killed");
+  const blobs = join(session, "blobs");
   const deadline = Date.now() + 60_000;
   for (;;) {
     const names = await readdir(blobs).catch(() => [] as string[]);
+    const ledger = await readFile(join(session, "ledger.jsonl"), "utf8").catch(() => "");
     let reached = false;
     for (const name of names) {
       const text = await readFile(join(blobs, name), "utf8").catch(() => "");
-      if (text.includes("check-admission-v1") && text.includes('"intent"')) reached = true;
+      if (
+        text.includes("check-admission-v1") &&
+        text.includes('"intent"') &&
+        ledger.includes(`sha256:${name.replace(/\.json$/, "")}`)
+      )
+        reached = true;
     }
     if (reached) break;
     if (exited || Date.now() > deadline)
