@@ -568,6 +568,153 @@ describe("planned checks through the ordinary command line", () => {
     expect(readFileSync(join(scratch, "workspace", "value.mjs"), "utf8")).toBe(correct);
   }, 200_000);
 
+  it("names a repair a wrong generated expectation alone asked for, when the repair gives in to it", async () => {
+    // As above, but the repair makes 11 small to satisfy the planner's wrong expectation. Nothing
+    // supplied covers 11, so the regression is delivered: what the outcome can do is say that this
+    // change was made for a generated check alone, so it is not accepted silently.
+    const correct = "export function classify(n) {\n  return n <= 10 ? 'small' : 'big';\n}\n";
+    const givesIn: ScriptedTurnSource = (request) =>
+      JSON.stringify(request).includes("These generated checks disagree with the change")
+        ? {
+            toolCalls: [
+              write("export function classify(n) {\n  return n <= 11 ? 'small' : 'big';\n}\n"),
+            ],
+          }
+        : { text: "The brief did not say the check is the planner's reading." };
+    const { stdout, code } = await swarm(
+      [
+        declaring(
+          [{ id: "boundary", description: "10 is small", quote }],
+          [
+            plannedCheck("boundary", "boundary", "change", [
+              { input: 9, expected: "small" },
+              { input: 10, expected: "small" },
+              { input: 11, expected: "small" },
+            ]),
+          ],
+        ),
+        { text: "Pinned." },
+        { text: "Plan: move the boundary.", toolCalls: [declare] },
+        { toolCalls: [write(correct)] },
+        { text: "Done." },
+        givesIn,
+        { text: "Repaired." },
+      ],
+      false,
+      ["--attempts", "1"],
+    );
+
+    const result = resultOf(stdout) as ResultLine & {
+      outcome?: { repairsForGeneratedChecksOnly?: number[] };
+    };
+    // The supplied suite still decides, and passes: accepted, with the repair named.
+    expect(result?.outcome?.status, stdout.slice(-3000)).toBe("accepted");
+    expect(code).toBe(0);
+    expect(result?.outcome?.repairsForGeneratedChecksOnly).toEqual([1]);
+    expect(stdout).toContain(
+      "repaired for generated checks alone: attempt(s) 1 changed the code when only a generated check disagreed",
+    );
+  }, 200_000);
+
+  it("rolls back a repair that satisfies a generated check by breaking a supplied one", async () => {
+    // Launch 3: a repair answered the generated check by breaking the supplied visible check.
+    // Both were in one acceptance gate that was failing before and after, so the ratchet kept
+    // the broken candidate. The generated checks now have their own gate, so breaking a supplied
+    // check is a passing gate regressing, which the ratchet refuses.
+    const prepared = (async () => {
+      const ready = await workspace();
+      await writeFile(
+        ready.contract,
+        JSON.stringify({
+          version: 1,
+          goal: task,
+          requirements: [
+            { id: "suite", description: "the project's suite passes", checks: ["suite"] },
+            { id: "twelve", description: "12 stays big", checks: ["twelve"] },
+          ],
+          checks: [
+            {
+              id: "suite",
+              command: "node --test",
+              author: "user",
+              exposure: "shared",
+              artifacts: [],
+            },
+            {
+              id: "twelve",
+              command: "node twelve-check.mjs",
+              author: "user",
+              exposure: "shared",
+              artifacts: [
+                {
+                  path: "twelve-check.mjs",
+                  content:
+                    "import { classify } from './value.mjs';\nif (classify(12) !== 'big') { console.error('classify(12) is ' + classify(12)); process.exit(1); }\n",
+                },
+              ],
+            },
+          ],
+          immutablePaths: ["value.test.mjs", "twelve-check.mjs"],
+        }),
+      );
+      return ready;
+    })();
+    const tooFar: ScriptedTurnSource = (request) =>
+      JSON.stringify(request).includes("These generated checks disagree with the change")
+        ? {
+            toolCalls: [
+              write("export function classify(n) {\n  return n <= 20 ? 'small' : 'big';\n}\n"),
+            ],
+          }
+        : { text: "The brief named no generated check." };
+    const right: ScriptedTurnSource = (request) =>
+      JSON.stringify(request).includes("Gates it broke: task-acceptance")
+        ? {
+            toolCalls: [
+              write("export function classify(n) {\n  return n <= 10 ? 'small' : 'big';\n}\n"),
+            ],
+          }
+        : { text: "The brief did not say what the rolled-back attempt broke." };
+    const { stdout, code } = await swarm(
+      [
+        declaring(
+          [{ id: "boundary", description: "10 is small", quote }],
+          [
+            plannedCheck("boundary", "boundary", "change", [
+              { input: 9, expected: "small" },
+              { input: 10, expected: "small" },
+            ]),
+          ],
+        ),
+        { text: "Pinned." },
+        { text: "Plan: look at the boundary.", toolCalls: [declare] },
+        {
+          toolCalls: [
+            write(
+              "export function classify(n) {\n  return n < 10 ? 'small' : 'big'; // boundary\n}\n",
+            ),
+          ],
+        },
+        { text: "Done." },
+        tooFar,
+        { text: "Repaired." },
+        right,
+        { text: "Repaired." },
+      ],
+      false,
+      [],
+      true,
+      prepared,
+    );
+
+    const result = resultOf(stdout);
+    expect(result?.outcome?.status, stdout.slice(-4000)).toBe("accepted");
+    expect(code).toBe(0);
+    expect(readFileSync(join(scratch, "workspace", "value.mjs"), "utf8")).toContain("n <= 10");
+    // Attempt 1 was refused for the supplied check it broke; attempt 2 is the delivered one.
+    expect(stdout).toMatch(/task-diagnostics/);
+  }, 200_000);
+
   it("revises a check that never loaded and a preserved case the base contradicts, from what each did there", async () => {
     // Answers only when its brief carries the load failure and the preserved case's base result.
     const revises: ScriptedTurnSource = (request) => {

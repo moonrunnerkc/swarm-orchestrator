@@ -49,6 +49,7 @@ import {
   type OutcomeStatus,
   outcomeStatus,
   type RunOutcomeInput,
+  repairsForGeneratedChecksOnly,
   requirementOutcomes,
 } from "./cli-run-outcome.ts";
 import { reportGates } from "./cli-run-report.ts";
@@ -74,7 +75,7 @@ import {
   finalizeTaskGoal,
   preflightTaskGoal,
   probeVerifier,
-  taskGoalGate,
+  taskGoalGates,
   verifyCandidateUnder,
 } from "./cli-task-goal.ts";
 import { askOnTerminal, startInterface } from "./cli-terminal.ts";
@@ -653,7 +654,7 @@ async function run(options: RunCommand): Promise<number> {
           authorizedInstrumentPaths: [sealedGoal.preset.manifest, sealedGoal.preset.lockfile],
         }
       : {}),
-    ...(goalContext === undefined ? {} : { acceptanceGate: taskGoalGate(goalContext) }),
+    ...(goalContext === undefined ? {} : goalGateOptions(goalContext)),
   };
   // An authorized upgrade regenerates its lockfile, and that file's size is not authored work:
   // its lines are counted apart. The final verification still holds the change to the sealed
@@ -785,10 +786,7 @@ async function run(options: RunCommand): Promise<number> {
             gateOptions:
               goalContext === undefined || goal === undefined || goal === sealedGoal
                 ? gateOptions
-                : {
-                    ...gateOptions,
-                    acceptanceGate: taskGoalGate({ ...goalContext, contract: goal }),
-                  },
+                : { ...gateOptions, ...goalGateOptions({ ...goalContext, contract: goal }) },
           }),
       ...(diffBudget === undefined ? {} : { diffBudget }),
     });
@@ -866,6 +864,7 @@ async function run(options: RunCommand): Promise<number> {
       gates: gates.outcome.finalCycle,
       contract: strengthening === undefined ? sealedGoal : (goalContext?.contract ?? sealedGoal),
       uncheckedRequirements: planning?.admission?.uncheckedRequirements ?? [],
+      repairsForGeneratedChecksOnly: repairsForGeneratedChecksOnly(gates.outcome),
       usage: {
         durationMs: clock.now() - startedAt,
         steps: loop.steps,
@@ -939,6 +938,9 @@ async function run(options: RunCommand): Promise<number> {
             ...(outcome.uncheckedRequirements === undefined
               ? {}
               : { uncheckedRequirements: outcome.uncheckedRequirements }),
+            ...(outcome.repairsForGeneratedChecksOnly === undefined
+              ? {}
+              : { repairsForGeneratedChecksOnly: outcome.repairsForGeneratedChecksOnly }),
           },
           ...(planning === null
             ? {}
@@ -999,6 +1001,12 @@ const execFileAsync = promisify(execFile);
  * model said: the recorded diff names the files, the last independent verification names the
  * requirements' statuses, the chain counts the interventions.
  */
+/** The sealed contract's gates as gate options: its acceptance gate, and its diagnostics gate. */
+function goalGateOptions(context: Parameters<typeof taskGoalGates>[0]) {
+  const { acceptanceGate, diagnosticsGate } = taskGoalGates(context);
+  return { acceptanceGate, ...(diagnosticsGate === null ? {} : { diagnosticsGate }) };
+}
+
 async function runOutcome(input: {
   readonly evidence: EvidenceRecorder;
   readonly task: string;
@@ -1009,6 +1017,7 @@ async function runOutcome(input: {
   readonly gates: RunOutcomeInput["gates"];
   readonly contract: GoalContract | undefined;
   readonly uncheckedRequirements: NonNullable<RunOutcomeInput["uncheckedRequirements"]>;
+  readonly repairsForGeneratedChecksOnly: readonly number[];
   readonly usage: RunOutcomeInput["usage"];
 }): Promise<RunOutcomeInput> {
   const { evidence } = input;
@@ -1057,6 +1066,9 @@ async function runOutcome(input: {
     ...(input.uncheckedRequirements.length === 0
       ? {}
       : { uncheckedRequirements: input.uncheckedRequirements }),
+    ...(input.repairsForGeneratedChecksOnly.length === 0
+      ? {}
+      : { repairsForGeneratedChecksOnly: input.repairsForGeneratedChecksOnly }),
     requirements:
       input.contract === undefined
         ? null

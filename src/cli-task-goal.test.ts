@@ -246,9 +246,11 @@ describe("what the acceptance gate makes of a verification", () => {
     });
   });
 
-  it("asks for a repair when a generated check disagrees, without reading it as a setup problem", () => {
+  it("leaves a generated check's disagreement to the diagnostics gate, and reads no setup problem in it", () => {
+    // The supplied checks' gate passes on them alone: a repair that broke a supplied check to
+    // satisfy a generated one then reads as this gate regressing, which the ratchet refuses.
     expect(readAcceptance(contract, verification("accepted", "rejected"))).toMatchObject({
-      passes: false,
+      passes: true,
       unavailable: false,
     });
   });
