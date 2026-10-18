@@ -104,3 +104,15 @@ Both results are reported, failures included.
 ---
 
 ## Amendments
+
+### 1. 2026-10-18, after launch 3, before launch 4
+
+- **The development-retry slot is spent on B once more**, on `2beb86532`, whose only change
+  touching a run is in the planner's answers: while no relation is declared, the declaration and
+  base-trial answers name `declare_planned_relation` for a rule that says one text behaves like
+  another. Launch 3's trace names the blocker ([launches.md](launches.md)). The task, the injected
+  candidate, the supplied visible check, the model and every setting stay as they were.
+- **A was run as registered**: launch 1 (Swarm) delivered a patch the evaluator accepts; launch 2
+  (OpenCode) ended on a rejected permission 34 s in. Neither is run again.
+- C and D stay conditional on B. After launch 4 the remaining slot is the infrastructure
+  replacement only.
