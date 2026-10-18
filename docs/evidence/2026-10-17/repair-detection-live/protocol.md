@@ -135,3 +135,13 @@ packed rather than committed loose.
   check and every setting stay as they were.
 - **R is closed** after its two allocated launches: not shown. The remaining allocation is D's
   second launch, O and C on their conditions, and the infrastructure reserve.
+
+### 3. 2026-10-18, after launch 4, before launch 5
+
+- **Launch 4 is invalid for an infrastructure reason**: the model server could not parse a tool
+  call the planner wrote and ended the stream with neither the call nor a finish reason, and
+  nothing about D was tested. It is counted and kept.
+- **Launch 5 replaces it from the infrastructure reserve**, on a build that also stops reading
+  such a cut-off turn as the model finishing (`e6683228a`): it is sampled again, and is a model
+  error if every sample ends that way. Nothing else changes. If launch 5 is invalid for an
+  infrastructure reason as well, no launch replaces it: the reserve is spent.
