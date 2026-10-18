@@ -13,8 +13,10 @@ import {
   plannedChecksInput,
   plannedContract,
   plannedRelation,
+  plannedRelationInput,
   programDidNotLoad,
   relationAgreedSomewhere,
+  relationText,
   sentencesQuoted,
   taskSentences,
   withPlannedCheck,
@@ -392,6 +394,46 @@ describe("a planned relation as the harness runs it", () => {
         '{"counterexamples":[],"disagreements":10,"holds":false,"ran":20,"seed":"key=value"}\n',
       ),
     ).toBe(false);
+  });
+
+  it("reads whitespace written as code points, which a local tool channel cannot carry as itself", () => {
+    // Launch 3: eleven calls whose reference was a space and whose variants were line terminators
+    // arrived as "" and [], because the server's tool-call parser trims a whitespace-only value.
+    expect(relationText("U+0020")).toBe(" ");
+    expect(relationText("U+000D U+000A")).toBe("\r\n");
+    expect(relationText(" ")).toBe(" ");
+    expect(relationText("U+")).toBe("U+");
+    const declared = withPlannedCheck(null, {
+      id: "terminator-like-space",
+      purpose: "change",
+      requirementId: "terminators",
+      requirement: "a line terminator behaves like a space",
+      quote: "Treat a tab around the equals sign like a space",
+      program: "import { parse } from './assign.mjs';\nexport default (line) => parse(line);\n",
+      seeds: ["key=value"],
+      reference: "U+0020",
+      variants: ["U+0009", "U+000A"],
+      why: "w",
+    });
+    expect(declared.checks[0]?.relation).toEqual({
+      seeds: ["key=value"],
+      reference: " ",
+      variants: ["\t", "\n"],
+    });
+    // What the planner is told when it arrives empty, or as a whole input.
+    const refused = plannedRelationInput.safeParse({
+      ...declared.checks[0],
+      requirementId: "terminators",
+      requirement: "r",
+      quote: "q",
+      seeds: ["key=value"],
+      reference: "",
+      variants: ["LINE\nFEED.png and more than thirty-two characters"],
+    });
+    expect(refused.success).toBe(false);
+    const messages = refused.error?.issues.map((issue) => issue.message).join(" | ") ?? "";
+    expect(messages).toContain("U+0020 for a space");
+    expect(messages).toContain("not a whole input");
   });
 
   it("refuses a relation that compares the reference with itself, or repeats a seed", () => {

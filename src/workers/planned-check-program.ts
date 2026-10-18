@@ -123,6 +123,28 @@ export const plannedCheckInput = z.strictObject({
 });
 export type PlannedCheckCall = z.infer<typeof plannedCheckInput>;
 
+/**
+ * A relation's text as a planner writes it: the text itself, or its code points ("U+0020", or
+ * "U+000D U+000A" for several). A live planner's space and line feeds reached the harness as
+ * empty strings eleven times in one launch: the local server's tool-call parser trims a value
+ * that is only whitespace, so a whitespace text has to be able to travel as something else.
+ */
+export function relationText(written: string): string {
+  const trimmed = written.trim();
+  return /^U\+[0-9A-Fa-f]{4,6}(?:\s+U\+[0-9A-Fa-f]{4,6})*$/.test(trimmed)
+    ? trimmed
+        .split(/\s+/)
+        .map((one) => String.fromCodePoint(Number.parseInt(one.slice(2), 16)))
+        .join("")
+    : written;
+}
+
+const emptyRelationText =
+  "is empty. A text of only whitespace can be dropped on its way here: write it as code points instead, U+0020 for a space, U+0009 for a tab, U+000A for a line feed";
+const longRelationText =
+  "is the short text inserted into every seed (a few characters, or their code points), not a whole input";
+const writtenRelationText = z.string().min(1, emptyRelationText).max(32, longRelationText);
+
 /** One planned relation per call, as one planned check per call, every field at the top level. */
 export const plannedRelationInput = z.strictObject({
   id: slug("tab-like-space"),
@@ -146,12 +168,16 @@ export const plannedRelationInput = z.strictObject({
   seeds: relationSchema.shape.seeds.describe(
     "ordinary input strings; the reference and each variant are inserted at every position of each",
   ),
-  reference: relationSchema.shape.reference.describe(
-    "the text whose behaviour the variants must match, such as a character the task says already works",
+  reference: writtenRelationText.describe(
+    "the short text whose behaviour the variants must match, such as a character the task says already works; whitespace as code points, U+0020 for a space",
   ),
-  variants: relationSchema.shape.variants.describe(
-    "the texts the task says must behave like the reference",
-  ),
+  variants: z
+    .array(writtenRelationText)
+    .min(1, "holds no variant: give the texts that must behave like the reference")
+    .max(6)
+    .describe(
+      "the short texts the task says must behave like the reference; whitespace and invisible characters as code points, such as U+000A",
+    ),
   why: z.string().min(1).max(2000).describe("how the task establishes the equivalence"),
 });
 export type PlannedRelationCall = z.infer<typeof plannedRelationInput>;
@@ -171,7 +197,13 @@ export function withPlannedCheck(
     program: call.program,
     ...("cases" in call
       ? { cases: call.cases }
-      : { relation: { seeds: call.seeds, reference: call.reference, variants: call.variants } }),
+      : {
+          relation: {
+            seeds: call.seeds,
+            reference: relationText(call.reference),
+            variants: call.variants.map(relationText),
+          },
+        }),
     why: call.why,
   };
   const checks = [...(declaration?.checks ?? []).filter((one) => one.id !== call.id), check];
@@ -451,6 +483,14 @@ export function declarationProblems(
       problems.push(`check ${check.id}: give either cases or a relation, not both or neither`);
     const relation = check.relation;
     if (relation !== undefined) {
+      for (const [label, text] of [
+        ["the reference", relation.reference],
+        ...relation.variants.map((one, index) => [`variant ${index + 1}`, one] as const),
+      ] as const)
+        if (text.length === 0 || text.length > 4)
+          problems.push(
+            `check ${check.id}: ${label} ${text.length === 0 ? emptyRelationText : `is ${text.length} characters as read; it ${longRelationText}`}`,
+          );
       if (relation.variants.includes(relation.reference))
         problems.push(
           `check ${check.id}: a variant equals the reference, so it compares the reference with itself`,
