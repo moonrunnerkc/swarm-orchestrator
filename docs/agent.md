@@ -171,6 +171,11 @@ shown.
   works from the packed tarball; in one seeded mime launch the planner's checks were right but
   missed the omission, so no repair ran, and Swarm reported the faulty candidate
   `partially-checked` rather than accepted. Live discovery and repair were not shown again.
+- **October 17 (night)**
+  ([development records](evidence/2026-10-17/repair-detection-live/README.md)): given a supplied
+  counterexample, live repairs passed it by deleting line terminators, which the evaluator
+  rejects, and were reported accepted against the supplied checks; a live planner's checks found
+  the omission twice (once by the new relation check), and no live repair fixed it.
 
 Developer hours saved and adoption are not measured; the prepared, unrun protocol for five
 developers on their own tasks is [human-trial-protocol.md](human-trial-protocol.md).
