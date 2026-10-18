@@ -19,11 +19,12 @@ change a record after the fact.
 **Upgrading from 12.x?** That was a pull-request auditor; 13 and later are a coding agent under
 the same package name, with no migration path. Stay on the `v12-final` tag, or pin the major.
 
-## Install
+## Install and a first run
 
-```sh
-npm install -g swarm-orchestrator
-```
+The [README](../README.md) has the one verified route: build from source and install the packed
+tarball, then a scratch repository to try it on. The npm release (`npm install -g
+swarm-orchestrator`, 14.4.0) predates the outcome statuses, the planned-check changes and the
+repairs described here; `swarm --version` says which one you have.
 
 It runs on Node 22 or newer, and every measurement runs on Node 22.8 or newer: the
 changed-line coverage measurement spawns node's test runner with process isolation named on
@@ -32,33 +33,40 @@ measurement reports unmeasured and never counts as a pass. `swarm doctor` says w
 found and what owns the `swarm` command, and `--fix` repairs an install that an older build is
 shadowing.
 
-## Try it
-
-```sh
-export ANTHROPIC_API_KEY=...       # or OPENAI_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY,
-                                   # or start Ollama and pass --model local:<id>
-cd your-repository
-swarm "make slugify collapse whitespace and strip punctuation" --plan-checks
-```
-
 Keys come from the environment or your OS keychain, never from `swarm.toml`: that file is
 committed and cloned, so a key in it has already been shared with everyone holding the
-repository. Every command and flag is in [cli.md](cli.md). The first run asks once how
-off-allowlist commands should be approved and records the answer in `swarm.toml`; `swarm init`
-configures a repository's declared checks without installing anything.
+repository. Every command and flag is in [cli.md](cli.md); `swarm init` configures a
+repository's declared checks without installing anything.
 
-`--plan-checks` has the planner author the completion criteria from the task text and seal them
-before implementation, labelled model-authored; `--goal-contract <file>` seals criteria you wrote,
-with or without a bugfix, refactor or upgrade preset, and the two combine: the planner's checks are
-added to yours. A planned check is admitted only if the unchanged base does what the check says it
-should (fails a check of the change by a wrong answer, passes a check of behaviour that stays), so
-an interpretation nothing executable supports does not become a requirement. It is the model's
-reading of the task: one base run is a control, not proof the check means what the task means. Either way the sealed checks are established
-on the base before the first model call, iterated against as the blocking acceptance gate, and
-the exact final tree is verified independently. The run ends on an outcome block that names each
-requirement as met, unmet or unjudged, the changed files, the checks and what they could not
-measure, time and tokens, the interventions, and the next action when it is not done. The whole
-workflow, step by step, is in [using.md](using.md#an-ordinary-task-start-to-finish).
+A plain run is judged by the project's own checks, and its outcome says the task itself was not
+judged. `--goal-contract <file>` seals checks you wrote, which decide your requirements.
+`--plan-checks` has a planner write checks from the task; they guide repair and are reported,
+but a check the model wrote cannot establish a requirement by itself
+([using.md](using.md#an-ordinary-task-start-to-finish)).
+
+## One task, done and shown
+
+On 2026-10-11, `swarm` was given this task on a checkout of
+[motdotla/dotenv-expand](https://github.com/motdotla/dotenv-expand) at `148488a4`, with the
+local model `qwen3.8:27b` served by rapid-mlx on one Mac:
+
+> Upgrade the devDependency @dotenvx/primitives, which dotenv-expand bundles into its build,
+> from 2.1.1 to exactly 3.0.3. package-lock.json is regenerated with npm so that `npm ci`
+> installs 3.0.3 from the npm registry. lib/main.js keeps working on top of 3.0.3. Do not
+> change the tests. `npm test` must still pass.
+
+| | |
+| --- | --- |
+| result | accepted: the sealed check (`primitives-3-0-3`, installed version and behaviour) passed in a fresh checkout, the project's own suite passed, 2 files changed, 8 insertions, 8 deletions ([the diff](evidence/2026-10-11/tool-stall/final.patch)) |
+| checks performed | build, lint, tests, file-set, placeholder, secret scan, diff budget, the sealed acceptance check; then the independent final verification of the exact tree |
+| elapsed | 12 min 25 s, 36 model calls, 350,648 tokens |
+| cost | no money: a local model; electricity only |
+| interventions | none by a person. Automatic: after the upgrade was in place the model repeated one cleanup command seven times; the harness told it once, stopped it, ran the gates, and one bounded repair removed the scratch files |
+| version | source commit `d690cf045` (14.4.0 plus that release's changes); the full account with record digests is [live-run.md](evidence/2026-10-11/tool-stall/live-run.md) |
+
+That goal is from the development set of the September comparison campaign, chosen because the
+September pilot had stalled on it; it is one run and an illustration of the workflow, not a
+rate.
 
 ## How it verifies
 
@@ -129,6 +137,61 @@ the list of things that may not be said, is [claims.md](claims.md).
 - **Of the gates this project agreed not to call itself production-ready without**, the
   historical assessment records eight passing, two partial, two unproven, and two reported
   rather than barred: [beta-gates.md](beta-gates.md).
+
+## Compared with another agent
+
+The product hypothesis is that Swarm completes real repository tasks with less supervision and
+rework than an ordinary coding agent. It is measured, not assumed, and so far it has not been
+shown.
+
+- **October 11, twenty mined tasks** ([comparison](evidence/2026-10-11/comparison/README.md)):
+  Swarm 5 of 20 correct, OpenCode 4 of 20 on the same local model, workspace, visible check and
+  wall, scored by sealed upstream tests. A one-task difference supports no claim of an advantage.
+  19 of OpenCode's 20 first invocations were killed at the 30-minute wall; every Swarm launch
+  returned with a verdict.
+- **October 14, four fresh tasks** ([pilot](evidence/2026-10-14/real-task-pilot/README.md)):
+  DO NOT PROCEED, with a setup failure of its own corrected the next day
+  ([repairs and replay](evidence/2026-10-15/README.md)).
+- **October 16, four tasks without the calibration gate**
+  ([comparison](evidence/2026-10-16/comparison/README.md)): no demonstrated benefit; OpenCode
+  delivered four, Swarm three, and a later audit found both mime patches wrong on cases the
+  oracle never tried ([amendment](evidence/2026-10-16/comparison/correctness-amendment/README.md)).
+- **October 16, four new tasks, two runs each**
+  ([fresh comparison](evidence/2026-10-16/fresh-comparison/README.md)): no demonstrated benefit.
+  OpenCode 8 of 8, Swarm 7 of 8 by the frozen oracle, with one false completion claim where
+  Swarm's acceptance passed a node-tar patch that broke an explicitly preserved field, at about
+  twice the time per delivery. Planned checks were off.
+- **October 17, planned checks on two exposed tasks**
+  ([development records](evidence/2026-10-17/planned-check-live/README.md)): a planner once wrote
+  a check that caught a seeded omission; no repair from such a check succeeded, and wrong admitted
+  checks made Swarm refuse or rewrite correct work. That is why generated checks are now
+  diagnostics that never decide a requirement.
+- **October 17 (evening), after that change**
+  ([development records](evidence/2026-10-17/repair-trust-live/README.md)): the README's first run
+  works from the packed tarball; in one seeded mime launch the planner's checks were right but
+  missed the omission, so no repair ran, and Swarm reported the faulty candidate
+  `partially-checked` rather than accepted. Live discovery and repair were not shown again.
+
+Developer hours saved and adoption are not measured; the prepared, unrun protocol for five
+developers on their own tasks is [human-trial-protocol.md](human-trial-protocol.md).
+
+## Versions
+
+The package name has carried three different programs, and the majors are the boundary:
+
+| Versions | What it was |
+| --- | --- |
+| 8.x | a contract-first coding orchestrator: a goal compiled to typed obligations, persona candidates raced per obligation, verifier-gated commits, a hash-chained ledger |
+| 10.x to 12.x | a pull-request auditor: static cheat-pattern detectors over AI-written diffs, advisory by default, with a merge gate. The last of that line is the `v12-final` tag |
+| 13.x and later | this coding agent, with no migration path from 12.x and nothing of its interface |
+| 14.1.0 | the verification path extracted as the `swarm-verify` package, the same code with none of the agent |
+| 14.3.0 | the README and repository description presented Swarm Verify as this repository's product and the agent as a beta mode; 14.4.0 restores the agent as the product of this repository and gives the verifier its own home |
+
+Pin a major. Each release names the verifier version it carries in
+[CHANGELOG.md](../CHANGELOG.md); the verifier's own changelog is
+[packages/swarm-verify/CHANGELOG.md](../packages/swarm-verify/CHANGELOG.md). The bundle format and
+what it proves (`node <bundle>/verify.mjs <bundle>` runs anywhere with nothing installed) are in
+[claims.md](claims.md).
 
 ## What is not claimed
 

@@ -9,12 +9,13 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { runAgentTask } from "./agent-run.ts";
+import { describeRunningVersion } from "./build-version.ts";
 import { announceBundle, writeBundle } from "./cli-bundle.ts";
 import { summarizeEvidence } from "./cli-evidence-summary.ts";
 import { gates } from "./cli-gates.ts";
 import { approvalOfferOnDisk, offerApprovalMode, offerInit, offerNodeHarness } from "./cli-init.ts";
 import { resolveLocalBackend } from "./cli-local-backend.ts";
-import { defaultModelFor } from "./cli-model-default.ts";
+import { defaultModelFor, NoDefaultModelError } from "./cli-model-default.ts";
 import { preflightAll } from "./cli-model-preflight.ts";
 import {
   type CommandLine,
@@ -44,6 +45,7 @@ import {
   changedFilesOf,
   describeRunOutcome,
   interventionsOn,
+  outcomeStatus,
   type RunOutcomeInput,
   requirementOutcomes,
 } from "./cli-run-outcome.ts";
@@ -64,6 +66,7 @@ import {
 } from "./cli-task-contract.ts";
 import { logReward, priceTask } from "./cli-task-cost.ts";
 import {
+  acceptanceCheckTool,
   baseVerifier,
   describeGoalPreflight,
   finalizeTaskGoal,
@@ -246,7 +249,18 @@ async function runningVersion(packageRoot: string): Promise<string> {
       manifest !== null && typeof manifest === "object"
         ? (manifest as { readonly version?: unknown }).version
         : undefined;
-    return typeof version === "string" ? version : "unknown";
+    if (typeof version !== "string") return "unknown";
+    let describe: string | null = null;
+    try {
+      const source: unknown = JSON.parse(
+        await readFile(join(import.meta.dirname, "source.json"), "utf8"),
+      );
+      const recorded = (source as { readonly describe?: unknown } | null)?.describe;
+      describe = typeof recorded === "string" ? recorded : null;
+    } catch {
+      // Run from source, or built before builds recorded their commit: the manifest's version is all there is.
+    }
+    return describeRunningVersion(version, describe);
   } catch {
     return "unknown";
   }
@@ -396,7 +410,7 @@ async function run(options: RunCommand): Promise<number> {
     usable.outcome === "substituted"
       ? `instead of ${usable.requested}: ${usable.reason}`
       : chosen !== null
-        ? chosen.reason
+        ? `${chosen.reason}; pass --model to choose another`
         : routed.modelSpec !== null
           ? "routed by calibration"
           : "pinned";
@@ -760,6 +774,9 @@ async function run(options: RunCommand): Promise<number> {
       approvalMode: settings.approval,
       abortSignal: modelWork.signal,
       homeDir: homedir(),
+      ...(goalContext === undefined || goal === undefined
+        ? {}
+        : { checkTool: acceptanceCheckTool({ ...goalContext, contract: goal }) }),
       ...(gateOptions === undefined
         ? {}
         : {
@@ -860,6 +877,9 @@ async function run(options: RunCommand): Promise<number> {
       },
     });
     keepChildHome = outcome.resumable;
+    // The terminal, the result line and the exit status read one status, so a run the outcome
+    // calls partially checked cannot exit as if it were accepted.
+    const status = outcomeStatus(outcome);
     for (const line of describeRunOutcome(outcome)) ui.note(line);
     await logReward({
       evidence,
@@ -896,7 +916,7 @@ async function run(options: RunCommand): Promise<number> {
         costUsd: cost.costUsd,
       }),
     );
-    const code = exitCodeFor(loop.stopReason, green);
+    const code = exitCodeFor(loop.stopReason, status === "accepted" || status === "unjudged");
     if (options.json) {
       process.stdout.write(
         `${jsonResultLine({
@@ -906,6 +926,7 @@ async function run(options: RunCommand): Promise<number> {
           exitCode: code,
           ...(strengthening === undefined ? {} : { strengthening }),
           outcome: {
+            status,
             lifecycle: outcome.lifecycle,
             requirements: outcome.requirements,
             changedFiles: outcome.changedFiles,
@@ -1182,9 +1203,14 @@ main().then(
   },
   (error: unknown) => {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-    // A command line this build cannot read is an invalid request (2), not work that failed (1).
+    // A command line this build cannot read is an invalid request (2), and a machine with no model
+    // to run is unavailable (4); neither is work that failed (1).
     process.exitCode =
-      error instanceof InvalidCommandLineError ? exitCodes.invalidRequest : exitCodes.notAcceptable;
+      error instanceof InvalidCommandLineError
+        ? exitCodes.invalidRequest
+        : error instanceof NoDefaultModelError
+          ? exitCodes.unavailable
+          : exitCodes.notAcceptable;
   },
 );
 

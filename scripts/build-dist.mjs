@@ -14,7 +14,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { copyFile, mkdir, readdir, rm } from "node:fs/promises";
+import { copyFile, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import { argv, exit, stdout } from "node:process";
 
@@ -82,7 +82,26 @@ async function build() {
     await mkdir(dirname(target), { recursive: true });
     await copyFile(join(source, asset), target);
   }
+  // Which commit this build is, so `swarm --version` can tell a release from a build of source
+  // ahead of it: both carry the manifest's version until a release names a new one.
+  await writeFile(
+    join(destination, "source.json"),
+    `${JSON.stringify({ describe: sourceDescription(root) })}\n`,
+  );
   stdout.write(`build: dist/ emitted, ${assets.length} asset(s) copied\n`);
+}
+
+/** `git describe` against the release tags, or null outside a git checkout. */
+function sourceDescription(directory) {
+  try {
+    return execFileSync("git", ["describe", "--tags", "--match", "v[0-9]*", "--dirty"], {
+      cwd: directory,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return null;
+  }
 }
 
 // Importable for its test without building, run for its effect from the command line.

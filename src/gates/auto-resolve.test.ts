@@ -5,7 +5,14 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { LoopEvent } from "../core/loop-events.ts";
 import { createTestClock } from "../core/test-doubles.ts";
 import { type EvidenceRecorder, openEvidenceSession } from "../evidence/session.ts";
-import { type AutoResolveOutcome, type ResolveAttempt, runAutoResolve } from "./auto-resolve.ts";
+import {
+  type AutoResolveOutcome,
+  describeRejectedCandidate,
+  type RejectedCandidate,
+  type ResolveAttempt,
+  type ResolveRequest,
+  runAutoResolve,
+} from "./auto-resolve.ts";
 import type { FileSetState } from "./file-set.ts";
 import type { DiffBudget, GateContext, GateDefinition } from "./gate-definition.ts";
 import { justifiedRecords, outstandingJustifications } from "./gate-runner.ts";
@@ -474,6 +481,84 @@ describe("the ratchet under an oscillation", () => {
     expect(escalation).toMatchObject({ gateId: "tests", attemptsUsed: 3, cap: 3 });
     expect((escalation?.history as unknown[]) ?? []).toHaveLength(3);
     expect(events.some((event) => event.type === "escalated")).toBe(true);
+  });
+});
+
+describe("the attempt after a rollback", () => {
+  it("is told what the rolled-back candidate fixed, broke and why it was refused, from the restored workspace", async () => {
+    const test = harness({ cap: 2 });
+    const requests: ResolveRequest[] = [];
+    const seenSource: (string | undefined)[] = [];
+
+    // Attempt 1 fixes the failing tests and breaks lint, as mime launch 11's second repair fixed
+    // the planned check and broke seven project tests. Attempt 2 then fixes it properly.
+    const outcome = await test.run((request) => {
+      requests.push(request);
+      seenSource.push(test.workspace.files.get(sourcePath));
+      test.workspace.write(sourcePath, request.attempt === 1 ? lintOffendingSource : fixedSource);
+      return Promise.resolve();
+    });
+
+    expect(outcome.settled).toBe("green");
+    expect(requests[0]?.rejected).toBeNull();
+    const second = requests[1];
+    // It starts from the restored workspace, and the restored cycle is still the one it is in.
+    expect(seenSource[1]).toBe(brokenSource);
+    expect(second?.cycle.attempt).toBe(0);
+    expect(second?.gateOutput).toContain("gate tests");
+    // And it is told about the regression the rejected candidate introduced.
+    expect(second?.rejected).toMatchObject({
+      attempt: 1,
+      improved: ["tests"],
+      regressed: ["lint"],
+      changedFiles: [sourcePath],
+    });
+    expect(second?.rejected?.reason).toBe(outcome.attempts[0]?.decision.detail);
+    expect(second?.rejected?.failures).toContain('"var" is not allowed');
+    expect(second?.rejected?.ratchetRecord).toBe(outcome.attempts[0]?.ratchetRecord);
+
+    const brief = describeRejectedCandidate(second?.rejected as RejectedCandidate);
+    expect(brief).toContain("Attempt 1 was rolled back");
+    expect(brief).toContain("Gates it fixed: tests. Gates it broke: lint.");
+
+    // The rejected files stay retrievable after the workspace was put back.
+    const kept = ledgerPayloads("verification-command").find(
+      (payload) => payload.rule === "rejected-candidate-v1",
+    );
+    expect(kept).toMatchObject({
+      attempt: 1,
+      ratchetRecord: second?.rejected?.ratchetRecord,
+      files: [{ path: sourcePath, contents: lintOffendingSource, truncated: false }],
+    });
+    expect(
+      evidence
+        .records()
+        .find(
+          (record) =>
+            record.type === "verification-command" &&
+            record.payloadDigest === second?.rejected?.candidateRecord,
+        ),
+    ).toBeDefined();
+  });
+
+  it("forgets the rolled-back candidate once a later attempt is accepted", async () => {
+    const test = harness({ cap: 3, gates: [testsGate, lintGate] });
+    const requests: ResolveRequest[] = [];
+    await test.run((request) => {
+      requests.push(request);
+      // 1: rejected (breaks lint). 2: accepted but still failing tests with lint clean. 3: fixed.
+      const next =
+        request.attempt === 1
+          ? lintOffendingSource
+          : request.attempt === 2
+            ? brokenSource.replace("a - b", "b - a")
+            : fixedSource;
+      test.workspace.write(sourcePath, next);
+      return Promise.resolve();
+    });
+    expect(requests[1]?.rejected?.attempt).toBe(1);
+    expect(requests[2]?.rejected).toBeNull();
+    expect(requests[2]?.cycle.attempt).toBe(2);
   });
 });
 

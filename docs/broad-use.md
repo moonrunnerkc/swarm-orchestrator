@@ -314,8 +314,10 @@ the ratchet, and the exact final tree is verified in a fresh checkout. A regress
 never stands in for the requirements: an implementation that meets one of two requirements is
 refused with the unmet one named, however green the project's own tests are.
 
-Without a contract file, `--plan-checks` has the planner author one from the task text
-([using.md](using.md#an-ordinary-task-start-to-finish)); the criteria stay labelled model-authored.
+Without a contract file, `--plan-checks` has the planner write requirements and checks from the
+task text ([using.md](using.md#an-ordinary-task-start-to-finish)). Those checks are diagnostics:
+they drive repair and are reported, but only a check in a contract you supply decides a
+requirement.
 
 ## Presets on the ordinary worker path
 

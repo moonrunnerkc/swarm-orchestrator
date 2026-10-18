@@ -337,10 +337,14 @@ describe("planned checks", () => {
       respondWithText("declared"),
     ]);
     const contract = outcome.goalContract;
-    expect(contract?.requirements.map((one) => [one.id, one.checks])).toEqual([
-      ["suite", ["suite"]],
-      ["boundary", ["boundary"]],
-      ["above", ["above"]],
+    // The supplied requirement is decided by its own check; the planned ones by none, their
+    // generated checks carried as diagnostics.
+    expect(
+      contract?.requirements.map((one) => [one.id, one.checks, one.planned?.diagnostics ?? null]),
+    ).toEqual([
+      ["suite", ["suite"], null],
+      ["boundary", [], ["boundary"]],
+      ["above", [], ["above"]],
     ]);
     const built = contract?.checks.find((one) => one.id === "boundary");
     expect([built?.author, built?.exposure, built?.atBase]).toEqual(["model", "shared", "fails"]);
@@ -354,7 +358,7 @@ describe("planned checks", () => {
     ]);
     expect(contract?.immutablePaths).toEqual(["value.test.mjs"]);
     // An elided quote is accepted part by part, and the requirement records it.
-    expect(contract?.requirements.find((one) => one.id === "boundary")?.description).toContain(
+    expect(contract?.requirements.find((one) => one.id === "boundary")?.planned?.quote).toContain(
       "every n up to ... including 10",
     );
   });

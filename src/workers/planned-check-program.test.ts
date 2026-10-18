@@ -252,6 +252,26 @@ describe("imports a program cannot load where it runs", () => {
     ]);
   });
 
+  it("refuses a program that loads nothing from the repository, which cannot observe the project", () => {
+    // A constant can get one base case right and another wrong, which is all admission asks of a
+    // change check, so the base control alone would have admitted it.
+    for (const program of [
+      "export default () => 'small';",
+      "import assert from 'node:assert';\nexport default (n) => (assert.ok(n), 'small');",
+    ])
+      expect(declarationProblems("t", declaring(program), undefined, repository([]))).toEqual([
+        expect.stringMatching(
+          /imports nothing from the repository, so it cannot observe the project/,
+        ),
+      ]);
+    // The repository's own package by name, or through require, is an import of the project.
+    for (const program of [
+      "import mime from 'mime';\nexport default (x) => mime.getType(x);",
+      "const { a } = require('./lib/a.js');\nexport default a;",
+    ])
+      expect(declarationProblems("t", declaring(program), undefined, repository([]))).toEqual([]);
+  });
+
   it("leaves build output that does not exist yet alone", () => {
     expect(
       declarationProblems(
