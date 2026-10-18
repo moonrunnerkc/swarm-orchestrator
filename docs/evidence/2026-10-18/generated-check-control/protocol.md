@@ -116,3 +116,9 @@ Both results are reported, failures included.
   (OpenCode) ended on a rejected permission 34 s in. Neither is run again.
 - C and D stay conditional on B. After launch 4 the remaining slot is the infrastructure
   replacement only.
+
+### 2. 2026-10-18, after launch 5: closed
+
+Five launches, 27.1 agent-minutes. C was not met, so D (the fresh paired comparison) is not run
+and no task was registered for it; the infrastructure slot was not needed. Nothing else will be
+launched under this protocol.

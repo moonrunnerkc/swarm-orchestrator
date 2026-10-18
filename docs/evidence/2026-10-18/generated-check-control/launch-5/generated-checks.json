@@ -1,0 +1,580 @@
+{
+  "capturedAt": "2026-10-18T15:53:48.090Z",
+  "chain": "20261018T155158-6a8297-plan",
+  "declarations": [
+    {
+      "callId": "call_xl4tbf3y",
+      "decision": "allowed",
+      "decodedFields": [],
+      "denial": null,
+      "derivation": {
+        "matched": false,
+        "method": "ngram",
+        "score": 0.03571428571428571,
+        "settings": {
+          "minSubstringLength": 12,
+          "ngramSize": 3,
+          "threshold": 0.6,
+          "windowSize": 8
+        },
+        "source": {
+          "digest": "sha256:af51aaffc8fd0c626e2a2c4dc50cb6d00bb24f1dffcac08a9f789cb91ad78a78",
+          "label": "read",
+          "tag": "file"
+        }
+      },
+      "detail": "1830 bytes returned",
+      "facts": {
+        "checks": 1
+      },
+      "input": {
+        "cases": [
+          {
+            "expected": "image/png",
+            "input": "LINE\nFEED.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "FILE\rNAME.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "file name.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "file name.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "/path/FILENAME\nFEED.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "dir\\FILE\rNAME.png"
+          },
+          {
+            "expected": null,
+            "input": "text.txt"
+          },
+          {
+            "expected": null,
+            "input": "a/b/c.html"
+          }
+        ],
+        "id": "line-terminator-handling",
+        "program": "import Mime from './src/Mime.ts';\n\nconst mime = new Mime({ 'image/png': ['png'] });\n\nexport default function(input) {\n  return mime.getType(input);\n}",
+        "purpose": "change",
+        "quote": "Make getType treat every line terminator like any other character when it strips the directory part and the extension's prefix",
+        "requirement": "getType must treat every line terminator (LF, CR, U+2028, U+2029) like any other character when stripping the directory part and the extension's prefix.",
+        "requirementId": "line-terminator-stripping",
+        "why": "The task says getType('LINE\\nFEED.png') returns null instead of 'image/png' for line terminators. The fix makes all four line terminator types handled correctly. Cases 7-8 keep working normally: 'text.txt' has no mapping in our minimal mime instance, and 'a/b/c.html' similarly has no .html mapping"
+      },
+      "kind": "evidence",
+      "output": "check line-terminator-handling pinned; 1 planned check(s) so far (line-terminator-handling), each run once on the unchanged base before implementation.\nline-terminator-handling inputs as read: \"LINE\\nFEED.png\", \"FILE\\rNAME.png\", \"file\\u2028name.png\", \"file\\u2029name.png\", \"/path/FILENAME\\nFEED.png\", \"dir\\\\FILE\\rNAME.png\", \"text.txt\", \"a/b/c.html\"\nTask sentences no requirement quotes yet. A sentence that states behaviour (what changes, what must keep working) is covered by a requirement that quotes it, with a check; one that only says how to work (which files to change, how to build or test) needs none:\n[1] Mime.getType(path) (src/Mime.ts) derives a type from the extension after the last dot of the last path segment.\n[2] The two regular expressions that strip the directory part and the part before the extension do not match across line terminators, so a file name that contains one is typed wrongly: getType('LINE\\nFEED.png') returns nu...\n[3] This matters where the file name comes from an untrusted source: a content type decided from it must come from the extension after the last dot of the last segment, whatever characters precede it, so that a name craft...\n[5] The change belongs in src/Mime.ts only.\n[6] Repository rules: keep the file's existing style, no new dependencies, no edits under test or types, and the whole suite (npm test, which builds first) must keep passing.\nNo relation is declared. Where the task says some text must behave like other text (a character to be treated like one that already works), declare that rule with declare_planned_relation: it tries the reference and each variant at every position of its seeds, which examples at a few positions do not.\nWhen every input is what you meant and every behaviour the task states is covered, finish with a one-line summary and no tool calls.",
+      "outputBytes": 1830,
+      "toolName": "declare_planned_check"
+    },
+    {
+      "callId": "call_8goopbxb",
+      "decision": "allowed",
+      "decodedFields": [],
+      "denial": null,
+      "derivation": {
+        "matched": false,
+        "method": "ngram",
+        "score": 0.03225806451612903,
+        "settings": {
+          "minSubstringLength": 12,
+          "ngramSize": 3,
+          "threshold": 0.6,
+          "windowSize": 8
+        },
+        "source": {
+          "digest": "sha256:af51aaffc8fd0c626e2a2c4dc50cb6d00bb24f1dffcac08a9f789cb91ad78a78",
+          "label": "read",
+          "tag": "file"
+        }
+      },
+      "detail": "1856 bytes returned",
+      "facts": {
+        "checks": 1
+      },
+      "input": {
+        "cases": [
+          {
+            "expected": "image/png",
+            "input": "LINE\nFEED.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "FILE\rNAME.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "file name.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "file name.png"
+          },
+          {
+            "expected": "text/plain",
+            "input": "/dir/FILE\nNAME.txt"
+          },
+          {
+            "expected": "text/plain",
+            "input": "dir\\file\rNAME.txt"
+          },
+          {
+            "expected": "image/png",
+            "input": "normal.png"
+          },
+          {
+            "expected": null,
+            "input": "notfound.jpg"
+          }
+        ],
+        "id": "line-terminator-handling",
+        "program": "import Mime from './src/Mime.ts';\n\nconst mime = new Mime({ 'image/png': ['png'], 'text/plain': ['txt'] });\n\nexport default function(input) {\n  return mime.getType(input);\n}",
+        "purpose": "change",
+        "quote": "Make getType treat every line terminator like any other character when it strips the directory part and the extension's prefix",
+        "requirement": "getType must treat every line terminator (LF, CR, U+2028, U+2029) like any other character when stripping the directory part and the extension's prefix.",
+        "requirementId": "line-terminator-stripping",
+        "why": "The task says getType('LINE\\nFEED.png') returns null instead of 'image/png' for line terminators. The fix makes all four line terminator types handled correctly (cases 1-4 return image/png, case 5-6 also do with directory parts). Cases 7-8 verify normal paths still work: 'normal.png' maps to 'image/png', 'notfound.jpg' returns null because jpg is not defined"
+      },
+      "kind": "evidence",
+      "output": "check line-terminator-handling pinned, replacing the earlier one; 1 planned check(s) so far (line-terminator-handling), each run once on the unchanged base before implementation.\nline-terminator-handling inputs as read: \"LINE\\nFEED.png\", \"FILE\\rNAME.png\", \"file\\u2028name.png\", \"file\\u2029name.png\", \"/dir/FILE\\nNAME.txt\", \"dir\\\\file\\rNAME.txt\", \"normal.png\", \"notfound.jpg\"\nTask sentences no requirement quotes yet. A sentence that states behaviour (what changes, what must keep working) is covered by a requirement that quotes it, with a check; one that only says how to work (which files to change, how to build or test) needs none:\n[1] Mime.getType(path) (src/Mime.ts) derives a type from the extension after the last dot of the last path segment.\n[2] The two regular expressions that strip the directory part and the part before the extension do not match across line terminators, so a file name that contains one is typed wrongly: getType('LINE\\nFEED.png') returns nu...\n[3] This matters where the file name comes from an untrusted source: a content type decided from it must come from the extension after the last dot of the last segment, whatever characters precede it, so that a name craft...\n[5] The change belongs in src/Mime.ts only.\n[6] Repository rules: keep the file's existing style, no new dependencies, no edits under test or types, and the whole suite (npm test, which builds first) must keep passing.\nNo relation is declared. Where the task says some text must behave like other text (a character to be treated like one that already works), declare that rule with declare_planned_relation: it tries the reference and each variant at every position of its seeds, which examples at a few positions do not.\nWhen every input is what you meant and every behaviour the task states is covered, finish with a one-line summary and no tool calls.",
+      "outputBytes": 1856,
+      "toolName": "declare_planned_check"
+    },
+    {
+      "callId": "call_hnv79pc9",
+      "decision": "allowed",
+      "decodedFields": [],
+      "denial": null,
+      "derivation": {
+        "matched": false,
+        "method": "ngram",
+        "score": 0.046511627906976744,
+        "settings": {
+          "minSubstringLength": 12,
+          "ngramSize": 3,
+          "threshold": 0.6,
+          "windowSize": 8
+        },
+        "source": {
+          "digest": "sha256:af51aaffc8fd0c626e2a2c4dc50cb6d00bb24f1dffcac08a9f789cb91ad78a78",
+          "label": "read",
+          "tag": "file"
+        }
+      },
+      "detail": "1757 bytes returned",
+      "facts": {
+        "checks": 2
+      },
+      "input": {
+        "cases": [
+          {
+            "expected": "text/plain",
+            "input": "my file.txt"
+          },
+          {
+            "expected": "text/plain",
+            "input": "my\tfile.txt"
+          },
+          {
+            "expected": "image/png",
+            "input": "normal.png"
+          },
+          {
+            "expected": null,
+            "input": "notfound.jpg"
+          }
+        ],
+        "id": "space-tab-already-works",
+        "program": "import Mime from './src/Mime.ts';\n\nconst mime = new Mime({ 'text/plain': ['txt'], 'image/png': ['png'] });\n\nexport default function(input) {\n  return mime.getType(input);\n}",
+        "purpose": "preserve",
+        "quote": "a space or tab in the name already works and must keep working",
+        "requirement": "A space or tab in the filename already works and must keep working.",
+        "requirementId": "space-tab-preservation",
+        "why": "The task says space and tab in the name already works. Cases 1-2 verify they keep working (the filename has an embedded space/tab but still extracts .txt correctly). Cases 3-4 are normal inputs that also work to show correct invocation"
+      },
+      "kind": "evidence",
+      "output": "check space-tab-already-works pinned; 2 planned check(s) so far (line-terminator-handling, space-tab-already-works), each run once on the unchanged base before implementation.\nspace-tab-already-works inputs as read: \"my file.txt\", \"my\\tfile.txt\", \"normal.png\", \"notfound.jpg\"\nTask sentences no requirement quotes yet. A sentence that states behaviour (what changes, what must keep working) is covered by a requirement that quotes it, with a check; one that only says how to work (which files to change, how to build or test) needs none:\n[1] Mime.getType(path) (src/Mime.ts) derives a type from the extension after the last dot of the last path segment.\n[2] The two regular expressions that strip the directory part and the part before the extension do not match across line terminators, so a file name that contains one is typed wrongly: getType('LINE\\nFEED.png') returns nu...\n[3] This matters where the file name comes from an untrusted source: a content type decided from it must come from the extension after the last dot of the last segment, whatever characters precede it, so that a name craft...\n[5] The change belongs in src/Mime.ts only.\n[6] Repository rules: keep the file's existing style, no new dependencies, no edits under test or types, and the whole suite (npm test, which builds first) must keep passing.\nNo relation is declared. Where the task says some text must behave like other text (a character to be treated like one that already works), declare that rule with declare_planned_relation: it tries the reference and each variant at every position of its seeds, which examples at a few positions do not.\nWhen every input is what you meant and every behaviour the task states is covered, finish with a one-line summary and no tool calls.",
+      "outputBytes": 1757,
+      "toolName": "declare_planned_check"
+    },
+    {
+      "callId": "call_xm64a54z",
+      "decision": "allowed",
+      "decodedFields": [],
+      "denial": null,
+      "derivation": {
+        "matched": false,
+        "method": "ngram",
+        "score": 0.0273972602739726,
+        "settings": {
+          "minSubstringLength": 12,
+          "ngramSize": 3,
+          "threshold": 0.6,
+          "windowSize": 8
+        },
+        "source": {
+          "digest": "sha256:af51aaffc8fd0c626e2a2c4dc50cb6d00bb24f1dffcac08a9f789cb91ad78a78",
+          "label": "read",
+          "tag": "file"
+        }
+      },
+      "detail": "1902 bytes returned",
+      "facts": {
+        "checks": 2
+      },
+      "input": {
+        "cases": [
+          {
+            "expected": "image/png",
+            "input": "LINE\nFEED.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "FILE\rNAME.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "file name.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "file name.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "/path/FILENAME\nFEED.png"
+          },
+          {
+            "expected": "image/png",
+            "input": "dir\\FILE\rNAME.png"
+          },
+          {
+            "expected": "text/plain",
+            "input": "DIR/PATH.TXT"
+          },
+          {
+            "expected": "image/png",
+            "input": "normal.png"
+          },
+          {
+            "expected": null,
+            "input": "notfound.jpg"
+          }
+        ],
+        "id": "line-terminator-handling",
+        "program": "import Mime from './src/Mime.ts';\n\nconst mime = new Mime({ 'image/png': ['png'], 'text/plain': ['txt'], 'text/html': ['html'] });\n\nexport default function(input) {\n  return mime.getType(input);\n}",
+        "purpose": "change",
+        "quote": "Make getType treat every line terminator like any other character when it strips the directory part and the extension's prefix",
+        "requirement": "getType must treat every line terminator (LF, CR, U+2028, U+2029) like any other character when stripping the directory part and the extension's prefix.",
+        "requirementId": "line-terminator-stripping",
+        "why": "The task says getType('LINE\\nFEED.png') returns null instead of 'image/png' for line terminators. Cases 1-4 test bare filenames with each of the four line terminator types (no directory part). Cases 5-6 test line terminators with a directory part in front. Case 7 verifies normal directory paths still work ('DIR/PATH.TXT' → text/plain). Cases 8-9 verify correct invocation for normal inputs: 'normal.png' maps to image/png, 'notfound.jpg' returns null because jpg has no mapping"
+      },
+      "kind": "evidence",
+      "output": "check line-terminator-handling pinned, replacing the earlier one; 2 planned check(s) so far (space-tab-already-works, line-terminator-handling), each run once on the unchanged base before implementation.\nline-terminator-handling inputs as read: \"LINE\\nFEED.png\", \"FILE\\rNAME.png\", \"file\\u2028name.png\", \"file\\u2029name.png\", \"/path/FILENAME\\nFEED.png\", \"dir\\\\FILE\\rNAME.png\", \"DIR/PATH.TXT\", \"normal.png\", \"notfound.jpg\"\nTask sentences no requirement quotes yet. A sentence that states behaviour (what changes, what must keep working) is covered by a requirement that quotes it, with a check; one that only says how to work (which files to change, how to build or test) needs none:\n[1] Mime.getType(path) (src/Mime.ts) derives a type from the extension after the last dot of the last path segment.\n[2] The two regular expressions that strip the directory part and the part before the extension do not match across line terminators, so a file name that contains one is typed wrongly: getType('LINE\\nFEED.png') returns nu...\n[3] This matters where the file name comes from an untrusted source: a content type decided from it must come from the extension after the last dot of the last segment, whatever characters precede it, so that a name craft...\n[5] The change belongs in src/Mime.ts only.\n[6] Repository rules: keep the file's existing style, no new dependencies, no edits under test or types, and the whole suite (npm test, which builds first) must keep passing.\nNo relation is declared. Where the task says some text must behave like other text (a character to be treated like one that already works), declare that rule with declare_planned_relation: it tries the reference and each variant at every position of its seeds, which examples at a few positions do not.\nWhen every input is what you meant and every behaviour the task states is covered, finish with a one-line summary and no tool calls.",
+      "outputBytes": 1902,
+      "toolName": "declare_planned_check"
+    }
+  ],
+  "verification": [
+    {
+      "at": 1792338777402,
+      "admittedContract": "sha256:c7a126ded7bda574ca0947b9c48fbbb10d0029dbb813583e1375af3cbe01d203",
+      "decisions": [
+        {
+          "admitted": true,
+          "atBase": "fails",
+          "basis": "model-asserted",
+          "broken": false,
+          "check": "line-terminator-handling",
+          "claimedChanges": {
+            "cases": 6,
+            "of": 8
+          },
+          "control": {
+            "cases": [
+              7,
+              8
+            ],
+            "source": "base-agreement"
+          },
+          "excerpt": null,
+          "finding": "admitted",
+          "observed": "rejected",
+          "reason": "it completes on the base with a wrong result, as a check of the change must",
+          "record": "sha256:e02abc794e657e1e354481923c474f3c58ccd492ac6fb803edabaf087857ce15"
+        },
+        {
+          "admitted": true,
+          "atBase": "passes",
+          "basis": "base-observed",
+          "broken": false,
+          "check": "space-tab-already-works",
+          "claimedChanges": {
+            "cases": 0,
+            "of": 4
+          },
+          "control": {
+            "cases": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "source": "base-agreement"
+          },
+          "excerpt": null,
+          "finding": "admitted",
+          "observed": "accepted",
+          "reason": "it passes on the base, which keeps the behaviour it checks",
+          "record": "sha256:512d35d259506c983ba3ebe7d9ef41438c242bf63f47911745917d4c48a8c648"
+        }
+      ],
+      "droppedRequirements": [],
+      "rule": "planned-check-admission-v1",
+      "unverifiedRequirements": []
+    },
+    {
+      "at": 1792338797366,
+      "admittedContract": "sha256:f49fcac26040056d610a506eb108376290ec171e58da8cadb7b3127157539c21",
+      "decisions": [
+        {
+          "admitted": true,
+          "atBase": "passes",
+          "basis": "base-observed",
+          "broken": false,
+          "check": "space-tab-already-works",
+          "claimedChanges": {
+            "cases": 0,
+            "of": 4
+          },
+          "control": {
+            "cases": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "source": "base-agreement"
+          },
+          "excerpt": null,
+          "finding": "admitted",
+          "observed": "accepted",
+          "reason": "it passes on the base, which keeps the behaviour it checks",
+          "record": "sha256:b78d90f96353f6cc7af53a21ce45820531756e124ff3e6fa9736b16fb98cae31"
+        },
+        {
+          "admitted": true,
+          "atBase": "fails",
+          "basis": "model-asserted",
+          "broken": false,
+          "check": "line-terminator-handling",
+          "claimedChanges": {
+            "cases": 6,
+            "of": 9
+          },
+          "control": {
+            "cases": [
+              7,
+              8,
+              9
+            ],
+            "source": "base-agreement"
+          },
+          "excerpt": null,
+          "finding": "admitted",
+          "observed": "rejected",
+          "reason": "it completes on the base with a wrong result, as a check of the change must",
+          "record": "sha256:bd6629bea0dfb9c6ed4a4bffd2188e2f1651949365b345712e4a3c3099be819c"
+        }
+      ],
+      "droppedRequirements": [],
+      "rule": "planned-check-admission-v1",
+      "unverifiedRequirements": []
+    },
+    {
+      "at": 1792338813490,
+      "admittedContract": "sha256:f49fcac26040056d610a506eb108376290ec171e58da8cadb7b3127157539c21",
+      "decisions": [
+        {
+          "admitted": true,
+          "atBase": "passes",
+          "basis": "base-observed",
+          "broken": false,
+          "check": "space-tab-already-works",
+          "claimedChanges": {
+            "cases": 0,
+            "of": 4
+          },
+          "control": {
+            "cases": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "source": "base-agreement"
+          },
+          "excerpt": null,
+          "finding": "admitted",
+          "observed": "accepted",
+          "reason": "it passes on the base, which keeps the behaviour it checks",
+          "record": "sha256:419851d992a1326340accd8db0d30e80775876de8e85b03bf875bf09a2225c6f"
+        },
+        {
+          "admitted": true,
+          "atBase": "fails",
+          "basis": "model-asserted",
+          "broken": false,
+          "check": "line-terminator-handling",
+          "claimedChanges": {
+            "cases": 6,
+            "of": 9
+          },
+          "control": {
+            "cases": [
+              7,
+              8,
+              9
+            ],
+            "source": "base-agreement"
+          },
+          "excerpt": null,
+          "finding": "admitted",
+          "observed": "rejected",
+          "reason": "it completes on the base with a wrong result, as a check of the change must",
+          "record": "sha256:f038f78c8d035a355963f4e8902fa1be2abde82c49ef99c1dfde0affba5765de"
+        }
+      ],
+      "droppedRequirements": [],
+      "rule": "planned-check-admission-v1",
+      "unverifiedRequirements": []
+    }
+  ],
+  "sealed": [
+    {
+      "contract": {
+        "checks": [
+          {
+            "artifacts": [],
+            "author": "user",
+            "command": "npm run build && node acceptance/visible/check.mjs",
+            "exposure": "shared",
+            "id": "visible-check"
+          },
+          {
+            "artifacts": [],
+            "atBase": "passes",
+            "author": "model",
+            "behavior": {
+              "argv": [
+                "node",
+                "--input-type=module",
+                "-e",
+                "import { rmSync, writeFileSync } from \"node:fs\";\nimport { resolve } from \"node:path\";\nimport { pathToFileURL } from \"node:url\";\nconst write = process.stdout.write.bind(process.stdout);\nprocess.stdout.write = process.stderr.write.bind(process.stderr);\nconst plain = (value) =>\n  Array.isArray(value)\n    ? value.map(plain)\n    : value !== null && typeof value === \"object\"\n      ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, plain(value[key])]))\n      : value;\nlet text = \"\";\nfor await (const chunk of process.stdin) text += chunk;\nconst { program, inputs, relation } = JSON.parse(text);\nconst path = resolve(\".swarm-check-\" + process.pid + \".mjs\");\nlet run;\ntry {\n  writeFileSync(path, program, { flag: \"wx\" });\n  ({ default: run } = await import(pathToFileURL(path).href));\n} catch (error) {\n  console.error(\"the check program did not load: \" + (error?.stack ?? error));\n  process.exit(3);\n} finally {\n  rmSync(path, { force: true });\n}\nif (typeof run !== \"function\") {\n  console.error(\"the check program does not export a default function\");\n  process.exit(3);\n}\nconst programUrl = pathToFileURL(path).href;\nconst misread = [];\nlet calling = null;\nfor (const prototype of [String.prototype, Number.prototype, Boolean.prototype])\n  for (const field of [\"input\", \"expected\", \"throws\"])\n    Object.defineProperty(prototype, field, {\n      configurable: true,\n      get() {\n        if (\n          calling !== null &&\n          Object.is(this, calling.input) &&\n          (new Error().stack ?? \"\").split(\"\\n\")[2]?.includes(programUrl)\n        )\n          misread.push({ label: calling.label, field, input: calling.input });\n        return undefined;\n      },\n    });\nconst call = async (input, label) => {\n  calling = { label, input };\n  try {\n    const result = await run(input);\n    return { result: JSON.parse(JSON.stringify(result, (key, value) => (value === undefined ? null : value)) ?? \"null\") };\n  } catch (error) {\n    console.error(label + \" threw: \" + (error?.stack ?? error));\n    return { threw: true };\n  } finally {\n    calling = null;\n  }\n};\nconst asReference = (value, variant, reference) =>\n  typeof value === \"string\"\n    ? value.split(variant).join(reference)\n    : Array.isArray(value)\n      ? value.map((one) => asReference(one, variant, reference))\n      : value !== null && typeof value === \"object\"\n        ? Object.fromEntries(Object.entries(value).map(([key, one]) => [key, asReference(one, variant, reference)]))\n        : value;\nif (relation === undefined) {\n  for (const [index, input] of inputs.entries())\n    write(JSON.stringify(plain({ input, ...(await call(input, \"case \" + (index + 1))) })) + \"\\n\");\n} else {\n  const { seeds, reference, variants } = relation;\n  for (const seed of seeds) {\n    let ran = 0;\n    let disagreements = 0;\n    const counterexamples = [];\n    for (let at = 0; at <= seed.length; at += 1) {\n      const place = (text) => seed.slice(0, at) + text + seed.slice(at);\n      const label = \"seed \" + JSON.stringify(seed) + \" at \" + at;\n      const expected = await call(place(reference), label);\n      ran += 1;\n      for (const variant of variants) {\n        const got = await call(place(variant), label);\n        ran += 1;\n        if (JSON.stringify(plain(asReference(got, variant, reference))) === JSON.stringify(plain(expected))) continue;\n        disagreements += 1;\n        if (counterexamples.length < 2)\n          counterexamples.push({ at, reference: { input: place(reference), ...expected }, variant: { input: place(variant), ...got } });\n      }\n    }\n    write(JSON.stringify(plain(disagreements === 0 ? { holds: true, ran, seed } : { counterexamples, disagreements, holds: false, ran, seed })) + \"\\n\");\n  }\n}\nif (misread.length > 0) {\n  for (const one of misread.slice(0, 3))\n    console.error(\"the program read .\" + one.field + \" of the value it was called with in \" + one.label + \", but that value is the case's input itself, \" + JSON.stringify(one.input) + \", a \" + typeof one.input + \", not the case: the program receives the input, not { input, expected }\");\n  process.exit(4);\n}"
+              ],
+              "cwd": ".",
+              "environment": {},
+              "exitCode": 0,
+              "kind": "cli",
+              "maxOutputBytes": 256000,
+              "network": "inherit",
+              "stderr": [],
+              "stdin": "{\"program\":\"import Mime from './src/Mime.ts';\\n\\nconst mime = new Mime({ 'text/plain': ['txt'], 'image/png': ['png'] });\\n\\nexport default function(input) {\\n  return mime.getType(input);\\n}\",\"inputs\":[\"my file.txt\",\"my\\tfile.txt\",\"normal.png\",\"notfound.jpg\"]}",
+              "stdout": [
+                {
+                  "kind": "equals",
+                  "value": "{\"input\":\"my file.txt\",\"result\":\"text/plain\"}\n{\"input\":\"my\\tfile.txt\",\"result\":\"text/plain\"}\n{\"input\":\"normal.png\",\"result\":\"image/png\"}\n{\"input\":\"notfound.jpg\",\"result\":null}\n"
+                }
+              ],
+              "timeoutMs": 60000,
+              "toolchain": "Node"
+            },
+            "command": "planned check: 4 case(s) through the default export of its program",
+            "exposure": "shared",
+            "id": "space-tab-already-works"
+          },
+          {
+            "artifacts": [],
+            "atBase": "fails",
+            "author": "model",
+            "behavior": {
+              "argv": [
+                "node",
+                "--input-type=module",
+                "-e",
+                "import { rmSync, writeFileSync } from \"node:fs\";\nimport { resolve } from \"node:path\";\nimport { pathToFileURL } from \"node:url\";\nconst write = process.stdout.write.bind(process.stdout);\nprocess.stdout.write = process.stderr.write.bind(process.stderr);\nconst plain = (value) =>\n  Array.isArray(value)\n    ? value.map(plain)\n    : value !== null && typeof value === \"object\"\n      ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, plain(value[key])]))\n      : value;\nlet text = \"\";\nfor await (const chunk of process.stdin) text += chunk;\nconst { program, inputs, relation } = JSON.parse(text);\nconst path = resolve(\".swarm-check-\" + process.pid + \".mjs\");\nlet run;\ntry {\n  writeFileSync(path, program, { flag: \"wx\" });\n  ({ default: run } = await import(pathToFileURL(path).href));\n} catch (error) {\n  console.error(\"the check program did not load: \" + (error?.stack ?? error));\n  process.exit(3);\n} finally {\n  rmSync(path, { force: true });\n}\nif (typeof run !== \"function\") {\n  console.error(\"the check program does not export a default function\");\n  process.exit(3);\n}\nconst programUrl = pathToFileURL(path).href;\nconst misread = [];\nlet calling = null;\nfor (const prototype of [String.prototype, Number.prototype, Boolean.prototype])\n  for (const field of [\"input\", \"expected\", \"throws\"])\n    Object.defineProperty(prototype, field, {\n      configurable: true,\n      get() {\n        if (\n          calling !== null &&\n          Object.is(this, calling.input) &&\n          (new Error().stack ?? \"\").split(\"\\n\")[2]?.includes(programUrl)\n        )\n          misread.push({ label: calling.label, field, input: calling.input });\n        return undefined;\n      },\n    });\nconst call = async (input, label) => {\n  calling = { label, input };\n  try {\n    const result = await run(input);\n    return { result: JSON.parse(JSON.stringify(result, (key, value) => (value === undefined ? null : value)) ?? \"null\") };\n  } catch (error) {\n    console.error(label + \" threw: \" + (error?.stack ?? error));\n    return { threw: true };\n  } finally {\n    calling = null;\n  }\n};\nconst asReference = (value, variant, reference) =>\n  typeof value === \"string\"\n    ? value.split(variant).join(reference)\n    : Array.isArray(value)\n      ? value.map((one) => asReference(one, variant, reference))\n      : value !== null && typeof value === \"object\"\n        ? Object.fromEntries(Object.entries(value).map(([key, one]) => [key, asReference(one, variant, reference)]))\n        : value;\nif (relation === undefined) {\n  for (const [index, input] of inputs.entries())\n    write(JSON.stringify(plain({ input, ...(await call(input, \"case \" + (index + 1))) })) + \"\\n\");\n} else {\n  const { seeds, reference, variants } = relation;\n  for (const seed of seeds) {\n    let ran = 0;\n    let disagreements = 0;\n    const counterexamples = [];\n    for (let at = 0; at <= seed.length; at += 1) {\n      const place = (text) => seed.slice(0, at) + text + seed.slice(at);\n      const label = \"seed \" + JSON.stringify(seed) + \" at \" + at;\n      const expected = await call(place(reference), label);\n      ran += 1;\n      for (const variant of variants) {\n        const got = await call(place(variant), label);\n        ran += 1;\n        if (JSON.stringify(plain(asReference(got, variant, reference))) === JSON.stringify(plain(expected))) continue;\n        disagreements += 1;\n        if (counterexamples.length < 2)\n          counterexamples.push({ at, reference: { input: place(reference), ...expected }, variant: { input: place(variant), ...got } });\n      }\n    }\n    write(JSON.stringify(plain(disagreements === 0 ? { holds: true, ran, seed } : { counterexamples, disagreements, holds: false, ran, seed })) + \"\\n\");\n  }\n}\nif (misread.length > 0) {\n  for (const one of misread.slice(0, 3))\n    console.error(\"the program read .\" + one.field + \" of the value it was called with in \" + one.label + \", but that value is the case's input itself, \" + JSON.stringify(one.input) + \", a \" + typeof one.input + \", not the case: the program receives the input, not { input, expected }\");\n  process.exit(4);\n}"
+              ],
+              "cwd": ".",
+              "environment": {},
+              "exitCode": 0,
+              "kind": "cli",
+              "maxOutputBytes": 256000,
+              "network": "inherit",
+              "stderr": [],
+              "stdin": "{\"program\":\"import Mime from './src/Mime.ts';\\n\\nconst mime = new Mime({ 'image/png': ['png'], 'text/plain': ['txt'], 'text/html': ['html'] });\\n\\nexport default function(input) {\\n  return mime.getType(input);\\n}\",\"inputs\":[\"LINE\\nFEED.png\",\"FILE\\rNAME.png\",\"file name.png\",\"file name.png\",\"/path/FILENAME\\nFEED.png\",\"dir\\\\FILE\\rNAME.png\",\"DIR/PATH.TXT\",\"normal.png\",\"notfound.jpg\"]}",
+              "stdout": [
+                {
+                  "kind": "equals",
+                  "value": "{\"input\":\"LINE\\nFEED.png\",\"result\":\"image/png\"}\n{\"input\":\"FILE\\rNAME.png\",\"result\":\"image/png\"}\n{\"input\":\"file name.png\",\"result\":\"image/png\"}\n{\"input\":\"file name.png\",\"result\":\"image/png\"}\n{\"input\":\"/path/FILENAME\\nFEED.png\",\"result\":\"image/png\"}\n{\"input\":\"dir\\\\FILE\\rNAME.png\",\"result\":\"image/png\"}\n{\"input\":\"DIR/PATH.TXT\",\"result\":\"text/plain\"}\n{\"input\":\"normal.png\",\"result\":\"image/png\"}\n{\"input\":\"notfound.jpg\",\"result\":null}\n"
+                }
+              ],
+              "timeoutMs": 60000,
+              "toolchain": "Node"
+            },
+            "command": "planned check: 9 case(s) through the default export of its program",
+            "exposure": "shared",
+            "id": "line-terminator-handling"
+          }
+        ],
+        "goal": "Mime.getType(path) (src/Mime.ts) derives a type from the extension after the last dot of the last path segment. The two regular expressions that strip the directory part and the part before the extension do not match across line terminators, so a file name that contains one is typed wrongly: getType('LINE\\nFEED.png') returns null instead of 'image/png', and the same happens for a carriage return (",
+        "immutablePaths": [
+          "acceptance/visible",
+          "test",
+          "types"
+        ],
+        "requirements": [
+          {
+            "checks": [
+              "visible-check"
+            ],
+            "description": "the visible acceptance check passes on a fresh checkout",
+            "id": "visible-check"
+          },
+          {
+            "checks": [],
+            "description": "getType must treat every line terminator (LF, CR, U+2028, U+2029) like any other character when stripping the directory part and the extension's prefix.",
+            "id": "line-terminator-stripping",
+            "planned": {
+              "diagnostics": [
+                "line-terminator-handling"
+              ],
+              "quote": "Make getType treat every line terminator like any other character when it strips the directory part and the extension's prefix"
+            }
+          },
+          {
+            "checks": [],
+            "description": "A space or tab in the filename already works and must keep working.",
+            "id": "space-tab-preservation",
+            "planned": {
+              "diagnostics": [
+                "space-tab-already-works"
+              ],
+              "quote": "a space or tab in the name already works and must keep working"
+            }
+          }
+        ],
+        "selection": "stable",
+        "version": 1
+      },
+      "digest": "sha256:f49fcac26040056d610a506eb108376290ec171e58da8cadb7b3127157539c21"
+    }
+  ]
+}
