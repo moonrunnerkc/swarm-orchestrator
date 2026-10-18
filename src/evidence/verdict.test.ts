@@ -155,6 +155,33 @@ describe("what a run establishes, as more than one answer", () => {
   });
 });
 
+describe("why an unexecuted change and a failed one are refused", () => {
+  it("says a failed dynamic gate executed the change, and keeps 'nothing executed' for a gate that stood down", () => {
+    const failed = runVerdict({
+      cycle: cycle([
+        { id: "tests", capability: "dynamic", status: "passed" },
+        { id: "task-acceptance", capability: "dynamic", status: "failed" },
+      ]),
+      integrity: "valid",
+      signer: "untrusted",
+      executionTrust: "restricted",
+    });
+    expect(failed.acceptable).toBe(false);
+    expect(failed.reasons.assessment).toContain(
+      "the change was executed and failed: task-acceptance failed",
+    );
+    expect(failed.reasons.assessment).not.toContain("nothing executed");
+
+    const stoodDown = runVerdict({
+      cycle: cycle([{ id: "tests", capability: "dynamic", status: "not-applicable" }]),
+      integrity: "valid",
+      signer: "untrusted",
+      executionTrust: "restricted",
+    });
+    expect(stoodDown.reasons.assessment).toContain("nothing executed the change");
+  });
+});
+
 describe("what a run still needs from a person", () => {
   const base = {
     cycle: cycle([{ id: "tests", capability: "dynamic", status: "passed" }]),
@@ -212,7 +239,7 @@ describe("what a refused assessment says", () => {
 
     expect(verdict.reasons.assessment).toBe(
       "the gates settled escalated; the run stopped as interrupted; the run was cancelled; " +
-        "blocking gate(s) failed: tests; nothing executed the change: tests failed",
+        "blocking gate(s) failed: tests; the change was executed and failed: tests failed",
     );
   });
 
@@ -235,7 +262,7 @@ describe("what a refused assessment says", () => {
 
     expect(verdict.reasons.assessment).toBe(
       "required checks unmet: tests; the base ratchet rejected the final state; vacuous blocking bonds: placeholder; " +
-        "blocking gate(s) failed: tests; nothing executed the change: tests failed",
+        "blocking gate(s) failed: tests; the change was executed and failed: tests failed",
     );
     expect(verdict.reasons.assessment).not.toContain("passed");
   });
