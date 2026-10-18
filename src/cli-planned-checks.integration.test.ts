@@ -203,10 +203,12 @@ async function swarm(
   built = false,
   extraArgs: readonly string[] = [],
   withContract = true,
+  prepared: Promise<{ directory: string; base: string; contract: string }> = workspace(built),
+  goal = task,
 ): Promise<{ endpoint: ScriptedEndpoint; stdout: string; code: number }> {
   const endpoint = await startScriptedEndpoint({ modelId: "stub", turns });
   endpoints.push(endpoint);
-  const { directory, base, contract } = await workspace(built);
+  const { directory, base, contract } = await prepared;
   let stdout = "";
   let code = 0;
   try {
@@ -214,7 +216,7 @@ async function swarm(
       process.execPath,
       [
         resolve("src/cli.ts"),
-        task,
+        goal,
         "--model",
         "local:stub",
         "--local-endpoint",
@@ -741,6 +743,133 @@ describe("planned checks through the ordinary command line", () => {
     const verified = await verifyBundle(result?.bundleDirectory ?? "");
     expect(verified.stdout).not.toMatch(/FAIL/);
     expect(verified.code).toBe(0);
+  }, 200_000);
+
+  it("checks an equivalence the task states at every position, and repairs the one the first change missed", async () => {
+    const slugTask =
+      "make slug(text) treat a tab like a space: a space already separates words, and so must a tab";
+    // Base: spaces separate words. The first change handles a lone tab and misses a tab beside a
+    // space, which a single example ("a\tb") passes.
+    const prepared = (async () => {
+      const directory = join(scratch, "workspace");
+      await mkdir(directory, { recursive: true });
+      await writeFile(
+        join(directory, "package.json"),
+        JSON.stringify({
+          name: "slugs",
+          version: "1.0.0",
+          type: "module",
+          scripts: { test: "node --test" },
+        }),
+      );
+      await writeFile(
+        join(directory, "slug.mjs"),
+        "export function slug(text) {\n  return text.trim().split(/ +/).join('-');\n}\n",
+      );
+      await writeFile(
+        join(directory, "slug.test.mjs"),
+        "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { slug } from './slug.mjs';\ntest('words', () => assert.equal(slug('a b'), 'a-b'));\n",
+      );
+      await git(directory, "init", "-q");
+      await git(directory, "add", "-A");
+      await git(directory, "commit", "-qm", "base");
+      const contract = join(scratch, "contract.json");
+      await writeFile(
+        contract,
+        JSON.stringify({
+          version: 1,
+          goal: slugTask,
+          requirements: [
+            { id: "suite", description: "the project's suite passes", checks: ["suite"] },
+          ],
+          checks: [
+            {
+              id: "suite",
+              command: "node --test",
+              author: "user",
+              exposure: "shared",
+              artifacts: [],
+            },
+          ],
+          immutablePaths: ["slug.test.mjs"],
+        }),
+      );
+      return { directory, base: await git(directory, "rev-parse", "HEAD"), contract };
+    })();
+    const writeSlug = (source: string) => ({
+      name: "write",
+      input: { path: "slug.mjs", content: source },
+    });
+    const repairOnRelation: ScriptedTurnSource = (request) => {
+      const text = JSON.stringify(request);
+      // Repairs only from the counterexample in words: the seed, the position and both answers.
+      if (
+        !text.includes("generated relation tab-like-space broke") ||
+        !text.includes("at position 5")
+      )
+        return { text: "The repair brief named no counterexample." };
+      return {
+        toolCalls: [
+          writeSlug(
+            "export function slug(text) {\n  return text.trim().split(/[ \\t]+/).join('-');\n}\n",
+          ),
+        ],
+      };
+    };
+    const { stdout, code } = await swarm(
+      [
+        {
+          toolCalls: [
+            {
+              name: "declare_planned_relation",
+              input: {
+                id: "tab-like-space",
+                purpose: "change",
+                requirementId: "tab-separates",
+                requirement: "a tab separates words as a space does",
+                quote: "treat a tab like a space",
+                program:
+                  "import { slug } from './slug.mjs';\nexport default (text) => slug(text);\n",
+                seeds: ["hello world"],
+                reference: " ",
+                variants: ["\t"],
+                why: "the task says a tab is treated like a space",
+              },
+            },
+          ],
+        },
+        { text: "Pinned." },
+        {
+          text: "Plan: split on tabs too.",
+          toolCalls: [{ name: "declare_file_set", input: { files: ["slug.mjs"] } }],
+        },
+        {
+          toolCalls: [
+            writeSlug(
+              "export function slug(text) {\n  return text.trim().split(/ +|\\t/).join('-');\n}\n",
+            ),
+          ],
+        },
+        { text: "Done." },
+        repairOnRelation,
+        { text: "Repaired." },
+      ],
+      false,
+      [],
+      true,
+      prepared,
+      slugTask,
+    );
+
+    const result = resultOf(stdout);
+    expect(stdout).toMatch(/admitted tab-like-space \(should fail there\)/);
+    expect(result?.outcome?.status, stdout.slice(-4000)).toBe("accepted");
+    expect(code).toBe(0);
+    expect(
+      result?.outcome?.requirements?.find((one) => one.id === "tab-separates")?.generatedChecks,
+    ).toEqual([expect.objectContaining({ id: "tab-like-space", status: "accepted" })]);
+    const { stdout: source } = await run("git", ["diff"], { cwd: join(scratch, "workspace") });
+    expect(source).toContain("split(/[ \\t]+/)");
   }, 200_000);
 
   it("admits a check of built output, because the base runs the project's build first as acceptance does", async () => {

@@ -27,10 +27,14 @@ import { VerificationRefusalError } from "./gates/verification-refusal.ts";
 import { pathsInlineCodeCouldOpen } from "./tools/shell-command.ts";
 import { defineTool, type ToolDefinition } from "./tools/tool-definition.ts";
 import {
+  describeRelationRun,
   inputAsRead,
+  type PlannedRelation,
   plannedCheckRunner,
   plannedInputs,
+  plannedRelation,
   programDidNotLoad,
+  relationCalls,
 } from "./workers/planned-check-program.ts";
 
 export interface TaskGoalContext {
@@ -345,7 +349,12 @@ export function taskGoalGate(context: TaskGoalContext): GateDefinition {
           .map((finding) => `check ${finding.id} ${finding.status}: ${finding.detail}`);
         const disagreeing = findings
           .filter((finding) => finding.status === "rejected" && reading.diagnostic.has(finding.id))
-          .map((finding) => `generated check ${finding.id} rejected: ${finding.detail}`);
+          .map((finding) => {
+            const relation = relationRun(context, result, finding.id);
+            return relation === null
+              ? `generated check ${finding.id} rejected: ${finding.detail}`
+              : `generated relation ${finding.id} broke: inputs that differ only by the reference ${inputAsRead(relation.relation.reference)} or a variant gave different results:\n${relation.lines.join("\n")}`;
+          });
         const stderr =
           result.refusal !== null && !result.unmeasured
             ? `refused: ${result.refusal}`
@@ -534,11 +543,40 @@ function describeRerun(
         | { observation?: { exitCode?: number; stdout?: string; stderr?: string } }
         | undefined
     )?.observation;
-    lines.push("", `check ${named}, case by case:`);
+    const relation = definition === undefined ? null : plannedRelation(definition);
+    lines.push(
+      "",
+      relation === null ? `check ${named}, case by case:` : `relation ${named}, seed by seed:`,
+    );
     if (observation === undefined) lines.push("  it produced no observation on this run");
-    else if (definition !== undefined) lines.push(...describeCases(definition, observation));
+    else if (relation !== null) {
+      const broken = describeRelationRun(relation, observation.stdout ?? "");
+      lines.push(
+        ...(broken.length === 0
+          ? [`  every seed held (${relationCalls(relation)} calls)`]
+          : broken.map((line) => `  ${line}`)),
+      );
+    } else if (definition !== undefined) lines.push(...describeCases(definition, observation));
   }
   return bounded(lines.join("\n"));
+}
+
+/** A relation check's run on one verification, described, or null for any other check. */
+function relationRun(
+  context: TaskGoalContext,
+  result: IndependentVerification,
+  id: string,
+): { readonly relation: PlannedRelation; readonly lines: readonly string[] } | null {
+  const definition = context.contract.checks.find((one) => one.id === id);
+  const relation = definition === undefined ? null : plannedRelation(definition);
+  if (relation === null) return null;
+  const record = result.goalAcceptance?.checkResults?.find((one) => one.id === id)?.record;
+  const stdout = (
+    context.evidence.payloads().get(record ?? "") as
+      | { observation?: { stdout?: string } }
+      | undefined
+  )?.observation?.stdout;
+  return stdout === undefined ? null : { relation, lines: describeRelationRun(relation, stdout) };
 }
 
 function describeCases(
