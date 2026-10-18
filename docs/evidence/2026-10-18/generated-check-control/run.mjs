@@ -312,7 +312,14 @@ if (arm === "swarm") {
 }
 
 const started = Date.now();
-const child = spawn(argv[0], argv.slice(1), { cwd: workspace, env, detached: true });
+// Stdin closed, as the comparison harness runs both arms: `opencode run` reads a piped stdin into
+// its message and waited on an open one, with no model request, until the dry run's kill.
+const child = spawn(argv[0], argv.slice(1), {
+  cwd: workspace,
+  env,
+  detached: true,
+  stdio: ["ignore", "pipe", "pipe"],
+});
 let stdout = "";
 let stderr = "";
 child.stdout.on("data", (chunk) => (stdout += chunk));
