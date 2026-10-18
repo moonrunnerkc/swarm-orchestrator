@@ -148,6 +148,8 @@ export async function recordGoalAssessment(
         refusal: z.null().optional(),
         verified: z.boolean(),
         task: z.enum(["accepted", "rejected", "unjudged", "vacuous"]),
+        regression: z.enum(["pass", "fail", "unmeasured"]).optional(),
+        goalAcceptance: z.object({ obligations: z.array(z.unknown()) }).optional(),
         advice: z.string(),
         sourcePatchDigest: z.string(),
         sourceBase: z.string(),
@@ -182,7 +184,7 @@ export async function recordGoalAssessment(
   const verdict: RunVerdict = {
     ...base.verdict,
     task: independent.task === "vacuous" ? "unjudged" : independent.task,
-    acceptable: base.verdict.acceptable && independent.verified,
+    acceptable: base.verdict.acceptable && (independent.verified || hypothesesOnly(independent)),
     reasons: {
       ...base.verdict.reasons,
       // Mirrored byte for byte by the bundled verifier's re-derivation of this record; a richer
@@ -209,4 +211,25 @@ export async function recordGoalAssessment(
     }),
   });
   return verdict;
+}
+
+/**
+ * A final verification of a contract that holds the planner's hypotheses and no supplied
+ * requirement: there was nothing authorized to certify, so certification refuses, and the run is
+ * read as one with no contract is, on whether the fresh checkout regressed. The task stays
+ * unjudged. Without this, planning checks made a run unacceptable that the same run without
+ * them accepted. Mirrored by the bundled verifier's re-derivation of this record.
+ */
+function hypothesesOnly(independent: {
+  readonly certificationPolicy?: string | undefined;
+  readonly refusal?: string | null | undefined;
+  readonly regression?: string | undefined;
+  readonly goalAcceptance?: { readonly obligations: readonly unknown[] } | undefined;
+}): boolean {
+  return (
+    independent.certificationPolicy === "goal-obligations-v1" &&
+    independent.refusal == null &&
+    independent.regression === "pass" &&
+    independent.goalAcceptance?.obligations.length === 0
+  );
 }

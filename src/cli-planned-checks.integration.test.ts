@@ -194,11 +194,15 @@ const repairs: ScriptedTurnSource = (request) => {
   };
 };
 
-/** The ordinary command line, with a supplied contract and --plan-checks, on a scripted model. */
+/**
+ * The ordinary command line, with --plan-checks and (unless told otherwise) a supplied contract,
+ * on a scripted model.
+ */
 async function swarm(
   turns: readonly ScriptedTurnSource[],
   built = false,
   extraArgs: readonly string[] = [],
+  withContract = true,
 ): Promise<{ endpoint: ScriptedEndpoint; stdout: string; code: number }> {
   const endpoint = await startScriptedEndpoint({ modelId: "stub", turns });
   endpoints.push(endpoint);
@@ -219,8 +223,7 @@ async function swarm(
         directory,
         "--base",
         base,
-        "--goal-contract",
-        contract,
+        ...(withContract ? ["--goal-contract", contract] : []),
         "--plan-checks",
         "--approve",
         "auto",
@@ -247,6 +250,7 @@ async function swarm(
 interface ResultLine {
   schema: string;
   runId?: string;
+  bundleDirectory?: string;
   verdict?: { acceptable?: boolean; reasons?: Record<string, string> };
   outcome?: {
     status?: string;
@@ -271,6 +275,17 @@ interface ResultLine {
       quotedWithoutCheck?: number[];
     } | null;
   };
+}
+
+/** The bundle's own verifier, run as a reviewer runs it, with nothing installed. */
+async function verifyBundle(directory: string): Promise<{ code: number; stdout: string }> {
+  return run(process.execPath, [join(directory, "verify.mjs"), directory]).then(
+    (ran) => ({ code: 0, stdout: ran.stdout }),
+    (failed: { code?: number; stdout?: string }) => ({
+      code: failed.code ?? 1,
+      stdout: failed.stdout ?? "",
+    }),
+  );
 }
 
 const resultOf = (stdout: string) =>
@@ -300,11 +315,17 @@ describe("planned checks through the ordinary command line", () => {
 
     const result = resultOf(stdout);
     // The repaired change is what the task asks, and the supplied suite decides its requirement.
-    // The planned requirements are exercised only by generated checks, which agree with it but
-    // cannot establish the task: partially checked, and the exit status says so.
-    expect(result?.outcome?.status, stdout.slice(-4000)).toBe("partially-checked");
-    expect(result?.verdict?.acceptable).toBe(false);
-    expect(code).toBe(1);
+    // The planned requirements are hypotheses: their generated checks drove the repair and agree
+    // with the result, and they decide nothing, so the supplied acceptance stands.
+    expect(result?.outcome?.status, stdout.slice(-4000)).toBe("accepted");
+    expect(result?.verdict?.acceptable).toBe(true);
+    expect(code).toBe(0);
+    // The bundled verifier re-derives the same reading: the supplied requirement is the only
+    // obligation, and the hypotheses beside it in the contract carry none.
+    const verified = await verifyBundle(result?.bundleDirectory ?? "");
+    expect(verified.stdout).toContain("goal obligations");
+    expect(verified.stdout).not.toMatch(/FAIL/);
+    expect(verified.code).toBe(0);
 
     // The planning chain holds the admission: two admitted, two dropped, each with its reason.
     const planning = join(home, ".swarm", "sessions", `${result?.runId}-plan`);
@@ -484,7 +505,7 @@ describe("planned checks through the ordinary command line", () => {
     expect(probed).toContain('{\\"input\\":11,\\"result\\":\\"small\\"}');
     expect(probed).toContain('{\\"input\\":21,\\"result\\":\\"big\\"}');
     const result = resultOf(stdout);
-    expect(result?.outcome?.status).toBe("partially-checked");
+    expect(result?.outcome?.status).toBe("accepted");
     expect(result?.outcome?.changedFiles).toEqual(["value.mjs"]);
     const { stdout: left } = await run("git", ["status", "--porcelain", "--untracked-files=all"], {
       cwd: join(scratch, "workspace"),
@@ -614,8 +635,8 @@ describe("planned checks through the ordinary command line", () => {
       outcome: "ran",
       admitted: ["boundary", "above"],
     });
-    expect(result?.outcome?.status).toBe("partially-checked");
-    expect(code).toBe(1);
+    expect(result?.outcome?.status).toBe("accepted");
+    expect(code).toBe(0);
   }, 200_000);
 
   it("lets the planner run its checks on the base inside its own loop, and admits what it finished on", async () => {
@@ -662,8 +683,8 @@ describe("planned checks through the ordinary command line", () => {
       { text: "Done." },
     ]);
 
-    expect(code, stdout.slice(-3000)).toBe(1);
-    expect(resultOf(stdout)?.outcome?.status).toBe("partially-checked");
+    expect(code, stdout.slice(-3000)).toBe(0);
+    expect(resultOf(stdout)?.outcome?.status).toBe("accepted");
     expect(stdout).toContain(
       "admission reuses the planner's own last base run of these exact checks",
     );
@@ -679,6 +700,47 @@ describe("planned checks through the ordinary command line", () => {
     expect(JSON.stringify(endpoint.requests)).toContain(
       "reread each sentence of the task that states a rule",
     );
+  }, 200_000);
+
+  it("ends a run of the planner's hypotheses alone unjudged, exit 0, as the run without planning ends", async () => {
+    const { stdout, code } = await swarm(
+      [
+        declaring(
+          [{ id: "boundary", description: "10 is small", quote }],
+          [
+            plannedCheck("boundary", "boundary", "change", [
+              { input: 9, expected: "small" },
+              { input: 10, expected: "small" },
+            ]),
+          ],
+        ),
+        { text: "Pinned." },
+        { text: "Plan: move the boundary.", toolCalls: [declare] },
+        {
+          toolCalls: [
+            write("export function classify(n) {\n  return n <= 10 ? 'small' : 'big';\n}\n"),
+          ],
+        },
+        { text: "Done." },
+      ],
+      false,
+      [],
+      false,
+    );
+
+    const result = resultOf(stdout);
+    // Nothing anyone authorized decided the task, and the generated check agrees: the gates
+    // passed and the task was not judged, which is exit 0 with or without --plan-checks.
+    expect(result?.outcome?.status, stdout.slice(-3000)).toBe("unjudged");
+    expect(code).toBe(0);
+    expect(result?.verdict?.acceptable).toBe(true);
+    expect(stdout).toContain("No requirement was supplied, so nothing here judged the task");
+    expect(result?.outcome?.requirements?.map((one) => [one.id, one.source, one.status])).toEqual([
+      ["boundary", "planned", "unjudged"],
+    ]);
+    const verified = await verifyBundle(result?.bundleDirectory ?? "");
+    expect(verified.stdout).not.toMatch(/FAIL/);
+    expect(verified.code).toBe(0);
   }, 200_000);
 
   it("admits a check of built output, because the base runs the project's build first as acceptance does", async () => {
@@ -715,7 +777,7 @@ describe("planned checks through the ordinary command line", () => {
     expect(stdout).not.toContain("revising the planned checks");
     // The planner was told what the harness prepares, from the run's own configuration.
     expect(plannerBriefs(endpoint)[0]).toMatch(/fresh checkout of the unchanged base.*build/);
-    expect(resultOf(stdout)?.outcome?.status, stdout.slice(-3000)).toBe("partially-checked");
-    expect(code).toBe(1);
+    expect(resultOf(stdout)?.outcome?.status, stdout.slice(-3000)).toBe("accepted");
+    expect(code).toBe(0);
   }, 200_000);
 });

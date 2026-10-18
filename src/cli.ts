@@ -44,7 +44,9 @@ import {
 import {
   changedFilesOf,
   describeRunOutcome,
+  exitCodeForStatus,
   interventionsOn,
+  type OutcomeStatus,
   outcomeStatus,
   type RunOutcomeInput,
   requirementOutcomes,
@@ -916,7 +918,7 @@ async function run(options: RunCommand): Promise<number> {
         costUsd: cost.costUsd,
       }),
     );
-    const code = exitCodeFor(loop.stopReason, status === "accepted" || status === "unjudged");
+    const code = exitCodeFor(loop.stopReason, status);
     if (options.json) {
       process.stdout.write(
         `${jsonResultLine({
@@ -1088,11 +1090,11 @@ async function runOutcome(input: {
  * the outcome claim do not care which happened, and the record says which it was.
  */
 /**
- * What the shell is told. Green is the gates' verdict on the tree, so that is the exit code,
- * and a run someone cancelled reports the code a shell reports for that rather than borrowing
- * the one that means the work was measured and found wanting.
+ * What the shell is told: the outcome status the terminal and the result line also carry, and
+ * for a run someone cancelled the code a shell reports for that rather than borrowing the one
+ * that means the work was measured and found wanting.
  */
-function exitCodeFor(stopReason: StopReason, green: boolean): number {
+function exitCodeFor(stopReason: StopReason, status: OutcomeStatus): number {
   // 128 + SIGINT, which is what every shell reports for a process a person stopped, and which
   // a shell will report for this process anyway. The taxonomy in machine-output.ts covers the
   // codes a caller branches on; this one is the convention.
@@ -1100,7 +1102,7 @@ function exitCodeFor(stopReason: StopReason, green: boolean): number {
   if (stopReason === "interrupted") {
     return cancelledBySignal;
   }
-  return green ? exitCodes.acceptable : exitCodes.notAcceptable;
+  return exitCodeForStatus(status);
 }
 
 async function routing(): Promise<number> {

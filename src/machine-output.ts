@@ -16,15 +16,26 @@ export const resultSchemaName = "swarm.result.v1";
  * tell a failing gate from a run that could not start is otherwise reading stderr.
  */
 export const exitCodes = {
-  /** Every blocking gate passed, no policy gate failed, and something executed the change. */
+  /**
+   * The outcome is `accepted` or `unjudged`: every blocking gate passed, no policy gate failed,
+   * something executed the change, and every supplied requirement was met or none was supplied.
+   */
   acceptable: 0,
-  /** The run finished and what it produced was not acceptable. */
+  /**
+   * The run finished and its outcome is `not-accepted`, `unresolved` or `partially-checked`: what it
+   * produced was refused, disputed by a generated check, or not established against a supplied
+   * requirement. `outcome.status` in the result says which.
+   */
   notAcceptable: 1,
   /** The command line, the configuration, or the workspace was wrong. Nothing ran. */
   invalidRequest: 2,
   /** A person or a supervisor stopped it, or it hit its wall budget. */
   cancelled: 3,
-  /** The run could not proceed: no model, no runtime, no repository. */
+  /**
+   * The run could not proceed: no model, no runtime, no repository. A run that started and then
+   * lost its model, or whose final verification could not measure the change, ends `unverified`
+   * with this code.
+   */
   unavailable: 4,
   /** The harness itself failed. A bug here, not in the work. */
   internalError: 5,

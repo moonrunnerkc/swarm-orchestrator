@@ -195,18 +195,24 @@ export async function verifyGoal(options: {
   } finally {
     if (!pending) await snapshot.dispose();
   }
-  const obligations = contract.requirements.map((requirement) => ({
-    id: requirement.id,
-    status:
-      options.presetControl?.accepted === false ||
-      requirement.checks.length === 0 ||
-      requirement.checks.some((id) => checks.get(id)?.status === "unjudged")
-        ? ("unjudged" as const)
-        : requirement.checks.every((id) => checks.get(id)?.status === "accepted")
-          ? ("accepted" as const)
-          : ("rejected" as const),
-    checks: requirement.checks.map((id) => checks.get(id)?.record ?? ""),
-  }));
+  // A planned requirement is the planner's hypothesis about the task, not a criterion anyone
+  // authorized, so it is no obligation: its generated checks run above and are reported in
+  // `checkResults`, and it neither certifies nor refuses. Counted as an unjudged obligation, it
+  // made every run that planned checks uncertifiable, whatever the supplied checks established.
+  const obligations = contract.requirements
+    .filter((requirement) => requirement.planned === undefined)
+    .map((requirement) => ({
+      id: requirement.id,
+      status:
+        options.presetControl?.accepted === false ||
+        requirement.checks.length === 0 ||
+        requirement.checks.some((id) => checks.get(id)?.status === "unjudged")
+          ? ("unjudged" as const)
+          : requirement.checks.every((id) => checks.get(id)?.status === "accepted")
+            ? ("accepted" as const)
+            : ("rejected" as const),
+      checks: requirement.checks.map((id) => checks.get(id)?.record ?? ""),
+    }));
   const verification: GoalVerification = {
     policy: "goal-obligations-v1",
     ...(contract.preset === undefined ? {} : { purpose: options.purpose ?? "candidate" }),
@@ -216,7 +222,10 @@ export async function verifyGoal(options: {
     tree: options.tree,
     obligations,
     checkResults: [...checks].map(([id, result]) => ({ id, ...result })),
-    accepted: obligations.every((requirement) => requirement.status === "accepted"),
+    // A contract of hypotheses alone has no obligation, which accepts nothing rather than all.
+    accepted:
+      obligations.length > 0 &&
+      obligations.every((requirement) => requirement.status === "accepted"),
   };
   await options.evidence.record({
     type: "goal-verification",
