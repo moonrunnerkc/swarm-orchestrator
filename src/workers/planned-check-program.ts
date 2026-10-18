@@ -347,14 +347,22 @@ export interface RepositoryView {
   readonly exists: (path: string) => boolean;
 }
 
+/** Every specifier a program imports, statically, dynamically or through require. */
+function importedSpecifiers(program: string): readonly string[] {
+  return [
+    ...new Set(
+      [
+        ...program.matchAll(/\b(?:import|export)\b[^'"`;]*?\bfrom\s*['"]([^'"]+)['"]/g),
+        ...program.matchAll(/\bimport\s*['"]([^'"]+)['"]/g),
+        ...program.matchAll(/\b(?:import|require)\s*\(\s*['"]([^'"]+)['"]\s*\)/g),
+      ].map((match) => match[1] ?? ""),
+    ),
+  ];
+}
+
 /** The relative specifiers a program imports, statically or dynamically. */
 function relativeImports(program: string): readonly string[] {
-  const specifiers = [
-    ...program.matchAll(/\b(?:import|export)\b[^'"`;]*?\bfrom\s*['"]([^'"]+)['"]/g),
-    ...program.matchAll(/\bimport\s*['"]([^'"]+)['"]/g),
-    ...program.matchAll(/\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g),
-  ].map((match) => match[1] ?? "");
-  return [...new Set(specifiers.filter((one) => one.startsWith("./") || one.startsWith("../")))];
+  return importedSpecifiers(program).filter((one) => one.startsWith("./") || one.startsWith("../"));
 }
 
 /**
@@ -369,6 +377,13 @@ function importProblems(
   repository: RepositoryView,
 ): readonly string[] {
   const problems: string[] = [];
+  // A program that loads nothing but the runtime's own modules cannot observe the project, so
+  // its results say nothing about any implementation: a constant program can still get one base
+  // case right and another wrong, which is all admission asks of a change check.
+  if (!importedSpecifiers(check.program).some((one) => !one.startsWith("node:")))
+    problems.push(
+      `check ${check.id} imports nothing from the repository, so it cannot observe the project: import the module the task changes (./path/from/the/root) and call it`,
+    );
   for (const specifier of relativeImports(check.program)) {
     const target = join(repository.root, specifier);
     const within = relative(repository.root, target);
@@ -401,15 +416,18 @@ export function plannedContract(
 ): GoalContract {
   const problems = declarationProblems(goal, input, base, repository);
   if (problems.length > 0) throw new Error(`fix these and declare again: ${problems.join("; ")}`);
+  // A planned requirement is decided by no check: its checks are diagnostics, so the run's own
+  // reading of the task never becomes the grounds for calling the task done.
   const requirements = input.requirements.map((requirement) => ({
     id: requirement.id,
-    description:
-      requirement.quote === undefined
-        ? requirement.description
-        : `${requirement.description} (the task: "${requirement.quote}")`,
-    checks: input.checks
-      .filter((check) => check.requirement === requirement.id)
-      .map((one) => one.id),
+    description: requirement.description,
+    checks: [],
+    planned: {
+      ...(requirement.quote === undefined ? {} : { quote: requirement.quote }),
+      diagnostics: input.checks
+        .filter((check) => check.requirement === requirement.id)
+        .map((one) => one.id),
+    },
   }));
   return freezeGoalContract({
     version: 1,

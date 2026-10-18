@@ -14,10 +14,15 @@ import { detectProject } from "./gates/project-type.ts";
  * needs no reference implementation: the unchanged base. A check that says it detects the
  * requested change must get the base wrong, by a completed run whose checked output differs,
  * never by failing to start; a check that says it preserves behaviour must pass there. What
- * does not hold is dropped, with the reason on the planning chain, and a planned requirement
- * left without a check goes with it: an interpretation nothing executable supports does not
- * become a requirement. One base and one wrong implementation is evidence, not proof that a
- * check means what the task means; a check can still be wrong in a way the base cannot show.
+ * does not hold is dropped, with the reason on the planning chain.
+ *
+ * Admission answers whether a check runs and whether it tells the base from the change. It does
+ * not answer whether its expectations are right: a preserve check's results are what the base
+ * printed, and a change check's results for the cases the base gets wrong are the planner's
+ * claim. So an admitted check is a diagnostic, never the grounds for a verdict (see `planned` in
+ * the goal contract). A planned requirement that quotes the task stays sealed when its checks are
+ * dropped, unjudged, since the user's words did not stop being a requirement; one the planner
+ * invented, with no quote and no admitted check, is dropped and reported as unsupported.
  */
 export interface PlannedCheckDecision {
   readonly check: string;
@@ -25,6 +30,18 @@ export interface PlannedCheckDecision {
   readonly observed: "accepted" | "rejected" | "unjudged" | "not-run";
   readonly admitted: boolean;
   readonly reason: string;
+  /**
+   * What its expected results rest on: the base's own output (a preserve check), or the
+   * planner's claim of what the change produces (a change check). Neither is independent
+   * evidence that the expectation is what the task means.
+   */
+  readonly basis: "base-observed" | "model-asserted";
+  /**
+   * Of a completed base run, how many of its cases expect something other than what the base
+   * printed: the cases whose expectation only the planner vouches for. Null where the base run
+   * did not complete or the check has no case-by-case output.
+   */
+  readonly claimedChanges: { readonly cases: number; readonly of: number } | null;
   /**
    * Dropped because it never produced a result to judge (it did not run to completion, could
    * not be judged, or threw on every case), as against a result that contradicts its claim.
@@ -44,7 +61,10 @@ export interface PlannedCheckAdmission {
   /** The supplied contract plus every admitted addition; null where nothing usable remains. */
   readonly contract: GoalContract | null;
   readonly decisions: readonly PlannedCheckDecision[];
+  /** Planned requirements dropped: invented, with no quote of the task and no admitted check. */
   readonly droppedRequirements: readonly string[];
+  /** Planned requirements in the task's words that kept no admitted check, sealed unjudged. */
+  readonly unverifiedRequirements: readonly string[];
 }
 
 interface ObservedCheck {
@@ -89,15 +109,22 @@ export async function admitPlannedChecks(input: {
   const kept = new Set([...supplied, ...admitted]);
   const suppliedRequirements = new Set((input.base?.requirements ?? []).map((one) => one.id));
   const requirements = input.contract.requirements.flatMap((requirement) => {
-    if (suppliedRequirements.has(requirement.id)) return [requirement];
-    const checks = requirement.checks.filter((id) => kept.has(id));
-    return checks.length === 0 ? [] : [{ ...requirement, checks }];
+    if (suppliedRequirements.has(requirement.id) || requirement.planned === undefined)
+      return [requirement];
+    const diagnostics = requirement.planned.diagnostics.filter((id) => kept.has(id));
+    if (diagnostics.length === 0 && requirement.planned.quote === undefined) return [];
+    return [{ ...requirement, planned: { ...requirement.planned, diagnostics } }];
   });
   const droppedRequirements = input.contract.requirements
     .filter((requirement) => !requirements.some((one) => one.id === requirement.id))
     .map((requirement) => requirement.id);
+  const unverifiedRequirements = requirements
+    .filter((one) => one.planned !== undefined && one.planned.diagnostics.length === 0)
+    .map((one) => one.id);
+  // Without a supplied contract and with nothing admitted there is nothing executable to implement
+  // against, which ends planning as it did; the quoted requirements are still named.
   const contract =
-    requirements.length === 0
+    requirements.length === 0 || (input.base === undefined && admitted.size === 0)
       ? null
       : freezeGoalContract({
           ...input.contract,
@@ -112,10 +139,11 @@ export async function admitPlannedChecks(input: {
       rule: "planned-check-admission-v1",
       decisions,
       droppedRequirements,
+      unverifiedRequirements,
       admittedContract: contract === null ? null : freezeGoalContract(contract).digest,
     }),
   });
-  return { contract, decisions, droppedRequirements };
+  return { contract, decisions, droppedRequirements, unverifiedRequirements };
 }
 
 /** The completed goal-check records the base run wrote after `mark`, by check id. */
@@ -223,13 +251,30 @@ function decide(
       : check.atBase === "passes" && seen !== undefined && expected !== null
         ? differingLines(expected, seen.stdout).join("; ")
         : null;
-  return { ...decision, broken, excerpt };
+  return {
+    ...decision,
+    broken,
+    excerpt,
+    basis: check.atBase === "passes" ? "base-observed" : "model-asserted",
+    claimedChanges: claimedChanges(check, seen),
+  };
+}
+
+function claimedChanges(
+  check: GoalContract["checks"][number],
+  seen: ObservedCheck | undefined,
+): PlannedCheckDecision["claimedChanges"] {
+  const expected = expectedStdout(check);
+  if (expected === null || seen === undefined || !seen.completed) return null;
+  const want = expected.split("\n").filter((line) => line.length > 0);
+  const got = seen.stdout.split("\n");
+  return { cases: want.filter((line, index) => got[index] !== line).length, of: want.length };
 }
 
 function judgeAtBase(
   check: GoalContract["checks"][number],
   seen: ObservedCheck | undefined,
-): Omit<PlannedCheckDecision, "broken" | "excerpt"> {
+): Omit<PlannedCheckDecision, "broken" | "excerpt" | "basis" | "claimedChanges"> {
   const atBase = check.atBase ?? null;
   const base = { check: check.id, atBase, record: seen?.record ?? null };
   if (seen === undefined)

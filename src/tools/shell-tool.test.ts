@@ -185,3 +185,43 @@ describe("what is left running after a command is stopped", () => {
     expect(existsSync(join(workspace, "orphan.txt"))).toBe(false);
   }, 20_000);
 });
+
+describe("a diagnostic program passed inline to an interpreter", () => {
+  it("runs the mime repair's regular expression probe, which was refused as an outside access", async () => {
+    // The command a live repair sent in mime launch 11, reduced to the probe: the guard read
+    // `/^.*\./.exec(test1);` as an absolute path and denied it before anything ran.
+    const { output, outcome } = await run(
+      "node --input-type=module -e 'const test1 = \"name.png\";\nconst m1 = /^.*\\./.exec(test1);\nconsole.log(m1[0]);'",
+    );
+
+    expect(outcome?.decision).toBe("allowed");
+    expect(output).toContain("exit code: 0");
+    expect(output).toContain("name.");
+  });
+
+  it("runs code with a comment and a URL in it, which were offered as paths too", async () => {
+    const { outcome } = await run(
+      "node -e 'let a = 1; // note\nconsole.log(new URL(\"https://example.com/x\").host)'",
+    );
+
+    expect(outcome?.decision).toBe("allowed");
+  });
+
+  it("still denies a credential the inline program names, in a literal or as a bare word", async () => {
+    const literal = await run(
+      'node -e \'console.log(require("fs").readFileSync(".env", "utf8"))\'',
+    );
+    expect(literal.outcome?.decision).toBe("denied");
+    expect(literal.outcome?.detail).toContain("credential denylist");
+
+    const bare = await run("python3 -c 'print(1)' ~/decoy-private-key");
+    expect(bare.outcome?.decision).toBe("denied");
+    expect(bare.outcome?.detail).toContain("outside the workspace");
+  });
+
+  it("still denies a script file outside the workspace, which is not inline code", async () => {
+    const { outcome } = await run("node ~/decoy-private-key");
+
+    expect(outcome?.decision).toBe("denied");
+  });
+});

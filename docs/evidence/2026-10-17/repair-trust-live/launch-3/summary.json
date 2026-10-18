@@ -1,0 +1,147 @@
+{
+  "schema": "swarm-live-development-launch.v1",
+  "mode": "seeded",
+  "kind": "seeded-candidate fault injection: live planning and live repair, injected first candidate",
+  "task": "mime-bugfix-gettype-line-terminators",
+  "baseCommit": "953ae3ebc59c387064f3760b73085eff6760a7f6",
+  "workspaceBase": "faceab725d0453db683d6383d142e2b46a6949b4",
+  "swarmCli": "/Users/brad/.cache/swarm-comparison/tools/swarm-df5fb0a01/dist/cli.js",
+  "model": "qwen3.6:35b-a3b",
+  "endpoint": "http://127.0.0.1:11434/v1",
+  "argv": [
+    "<task text>",
+    "--model",
+    "local:qwen3.6:35b-a3b",
+    "--local-endpoint",
+    "http://127.0.0.1:57200/v1",
+    "--workspace",
+    "/Users/brad/swarm-comparison-work/seeded-mime-GqmAgg/workspace",
+    "--base",
+    "faceab725d0453db683d6383d142e2b46a6949b4",
+    "--goal-contract",
+    "/Users/brad/swarm-comparison-work/seeded-mime-GqmAgg/contract.json",
+    "--plan-checks",
+    "--install",
+    "--lockfile",
+    "package-lock.json",
+    "--max-tokens",
+    "8000000",
+    "--max-wall-minutes",
+    "14",
+    "--approve",
+    "auto",
+    "--no-tui",
+    "--no-open-evidence",
+    "--json"
+  ],
+  "startedAt": "2026-10-17T23:25:59.535Z",
+  "elapsedMs": 129400,
+  "killedAtDeadline": false,
+  "exitCode": 1,
+  "acceptable": false,
+  "outcomeStatus": "partially-checked",
+  "finalVerification": {
+    "refusal": null,
+    "regression": "pass",
+    "unmeasured": false,
+    "advice": "at least one check fails at the base commit too, with this patch not applied, and every test it fails also failed there (or its output is the same), so it is reported as inherited rather than as a regression. A common cause is a project that builds on install: dependencies are installed with --ignore-scripts, because install scripts run whatever the registry serves, so a `prepare` step that generates what the tests import does not run."
+  },
+  "plannedChecks": {
+    "outcome": "sealed",
+    "admitted": [
+      "line-terminators-gtype-change",
+      "gettype-preserve-existing",
+      "gettype-space-tab-preserve"
+    ],
+    "dropped": [],
+    "revision": {
+      "outcome": "not-needed"
+    },
+    "coverage": {
+      "sentences": 6,
+      "quotedByAdmitted": [
+        4
+      ],
+      "quotedWithoutCheck": []
+    }
+  },
+  "requirements": [
+    {
+      "id": "visible-check",
+      "description": "the visible acceptance check passes on a fresh checkout",
+      "status": "accepted",
+      "authoredBy": "user",
+      "detail": null,
+      "source": "supplied"
+    },
+    {
+      "id": "gettype-line-terminator-fix",
+      "description": "getType must treat every line terminator (U+000A, U+000D, U+2028, U+2029) like any other character when stripping the directory part and the extension prefix, so filenames containing line terminators still derive the correct type from the extension after the last dot.",
+      "status": "unjudged",
+      "authoredBy": "model",
+      "detail": null,
+      "source": "planned",
+      "quote": "Make getType treat every line terminator like any other character when it strips the directory part and the extension's prefix; a space or tab in the name already works and must keep working.",
+      "generatedChecks": [
+        {
+          "id": "line-terminators-gtype-change",
+          "status": "accepted",
+          "detail": "expected exit status and bounded stream assertions evaluated over captured process output"
+        }
+      ]
+    },
+    {
+      "id": "gettype-normal-paths-unchanged",
+      "description": "getType continues to work correctly for normal inputs including bare extensions, paths with slashes, and non-string inputs.",
+      "status": "unjudged",
+      "authoredBy": "model",
+      "detail": null,
+      "source": "planned",
+      "quote": "a space or tab in the name already works and must keep working.",
+      "generatedChecks": [
+        {
+          "id": "gettype-preserve-existing",
+          "status": "accepted",
+          "detail": "expected exit status and bounded stream assertions evaluated over captured process output"
+        }
+      ]
+    },
+    {
+      "id": "gettype-space-tab-already-works",
+      "description": "A space or tab character in the filename must continue to work for getType, returning the correct type from the extension.",
+      "status": "unjudged",
+      "authoredBy": "model",
+      "detail": null,
+      "source": "planned",
+      "quote": "a space or tab in the name already works and must keep working.",
+      "generatedChecks": [
+        {
+          "id": "gettype-space-tab-preserve",
+          "status": "accepted",
+          "detail": "expected exit status and bounded stream assertions evaluated over captured process output"
+        }
+      ]
+    }
+  ],
+  "uncheckedRequirements": [],
+  "repairAttempts": 0,
+  "setup": {
+    "tokensUsed": 149173,
+    "durationMs": 85800
+  },
+  "exchanges": {
+    "live": 16,
+    "seeded": 2
+  },
+  "liveTokens": {
+    "prompt": 143300,
+    "completion": 5873,
+    "callsWithoutUsage": 0
+  },
+  "generatedChecksCaptured": true,
+  "sessions": [
+    "20261017T232559-1bca04",
+    "20261017T232559-1bca04-plan"
+  ],
+  "scratch": "/Users/brad/swarm-comparison-work/seeded-mime-GqmAgg"
+}

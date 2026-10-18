@@ -10,7 +10,40 @@ export interface RequirementOutcome {
   /** Model-authored criteria stay labelled, however many times a person has read them. */
   readonly authoredBy: "user" | "model";
   readonly detail: string | null;
+  /**
+   * Added in 14.5.0. Supplied by the user, or read from the task by the planner. A planned
+   * requirement is decided by no check, so it is unjudged however its generated checks came out.
+   */
+  readonly source?: "supplied" | "planned";
+  /** The task's own words a planned requirement quotes; null where it quotes none. */
+  readonly quote?: string | null;
+  /** A planned requirement's generated checks on the final tree, which inform and never decide. */
+  readonly generatedChecks?: readonly {
+    readonly id: string;
+    readonly status: "accepted" | "rejected" | "unjudged" | "not-run";
+    readonly detail: string;
+  }[];
 }
+
+/**
+ * Added in 14.5.0: the one reading of a finished run that the terminal, the JSON result and the
+ * exit status share.
+ * - `accepted`: every sealed requirement was met by a check that decides it, and nothing refused.
+ * - `unjudged`: nothing refused the change, and no requirement was sealed, so nothing says the
+ *   task was done.
+ * - `partially-checked`: nothing trusted refused the change, but at least one sealed requirement
+ *   was not established by a check that decides it.
+ * - `unresolved`: as partially checked, and a generated check disagrees with the final tree. The
+ *   check may be wrong or the change may be; nothing here can tell which.
+ * - `not-accepted`: a check that decides a requirement, a blocking gate, policy or the final
+ *   verification refused it, or the run did not finish.
+ */
+export type OutcomeStatus =
+  | "accepted"
+  | "unjudged"
+  | "partially-checked"
+  | "unresolved"
+  | "not-accepted";
 
 export interface FinalVerificationOutcome {
   readonly refusal: string | null;
@@ -36,6 +69,8 @@ export interface SetupUsage {
 }
 
 export interface RunOutcomeReport {
+  /** Added in 14.5.0; exit status 0 exactly when this is `accepted` or `unjudged`. */
+  readonly status: OutcomeStatus;
   readonly lifecycle: string;
   readonly requirements: readonly RequirementOutcome[] | null;
   readonly changedFiles: readonly string[];
@@ -44,8 +79,10 @@ export interface RunOutcomeReport {
   readonly setup: SetupUsage | null;
   readonly resumable: boolean;
   /**
-   * Planned requirements no admitted check covers. They were never sealed, so nothing judged
-   * them and the run cannot call them met; they are named so they cannot vanish either.
+   * Planned requirements the planner invented (they quote no task sentence) and no admitted check
+   * covers. They were never sealed, so nothing judged them and the run cannot call them met; they
+   * are named so they cannot vanish either. A planned requirement that quotes the task is sealed
+   * even with no admitted check, and reported among `requirements` as unjudged.
    */
   readonly uncheckedRequirements?: readonly { readonly id: string; readonly description: string }[];
 }

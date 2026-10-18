@@ -66,20 +66,25 @@ swarm "add a --no-cache flag that disables the response cache, with a test" --pl
    assemble from, the model and why it was chosen, the approval mode. A workspace with no
    manifest is offered a harness first; a missing runtime stops the run here.
 2. **Criteria**, with `--plan-checks`: the planner reads the workspace with read-only tools and
-   pins requirements and executable checks, which are shown in plain language, one line per
-   requirement with the check that measures it. On a terminal you are asked to seal them;
-   anything but `y` stops the run having spent only the planning tokens, which are reported.
-   Off a terminal the criteria are sealed as written. They are labelled model-authored on the
-   chain, in the report and on the screen, and they stay so after you have read them: a person
-   agreeing to criteria is a person agreeing to be measured by them, not independent ground
-   truth. If the planner cannot pin criteria it says why (often a question about the task) and
-   the run stops before implementation; on a terminal you get one round to answer, with the
-   task text kept verbatim. With a contract of your own, pass `--goal-contract` instead, or
-   both to add planned checks to it. A planned check is a short program over the project and
-   input cases with expected results; each is run once on a fresh checkout of the unchanged base
-   and admitted only if the base gets a case wrong (a check of the change) or every case right
-   (behaviour that stays). Dropped checks get one revision when the planning allowance still
-   fits it, and a planned requirement left with no admitted check is reported as unchecked.
+   writes requirements, each quoting the task where it can, with checks: a short program over the
+   project and input cases with expected results. Each check is run once on a fresh checkout of
+   the unchanged base and admitted only if it loads, runs, and tells the base from the change: a
+   check of the change gets a case wrong and one right there, a check of behaviour that stays
+   gets every case right, and a program that imports nothing from the repository is refused.
+   Dropped checks get one revision when the planning allowance still fits it. Admission shows a
+   check runs and discriminates; it cannot show that its expected results are what the task
+   means, so an admitted check is a **diagnostic**: it runs on every candidate, its disagreement
+   drives a bounded repair (the repair is told the expectation is the planner's reading of the
+   task, which it may contradict), and its result is reported, but it never decides a
+   requirement. A planned requirement therefore stays unjudged, and only a check you supply, in
+   `--goal-contract`, decides one. A planned requirement that quotes the task is kept, unjudged
+   and visible, even when every check for it is dropped; one the planner invented, with no quote
+   and no admitted check, is dropped and reported as unsupported. The criteria are shown in plain
+   language before implementation; on a terminal you are asked to seal them, and anything but `y`
+   stops the run having spent only the planning tokens. If the planner cannot pin criteria it
+   says why and the run stops before implementation; on a terminal you get one round to answer,
+   with the task text kept verbatim. With a contract of your own, pass `--goal-contract`
+   instead, or both: the planner's checks are added beside yours and yours still decide.
 3. **Base check** of the sealed checks: a check that cannot run here stops the run with the
    remedy named; a check that already passes on the base is named as not evidence of change.
 4. **Implementation** through the one worker loop: declared files, the recording chokepoint,
@@ -87,12 +92,32 @@ swarm "add a --no-cache flag that disables the response cache, with a test" --pl
    the ratchet. A worker that repeats a tool call it has already been answered is told once and
    stopped the second time, and the gates still run over the tree.
 5. **Final verification** of the exact tree in a fresh checkout, independent of the worker.
-6. **The outcome block**: the verdict and how the loop stopped; each requirement as met, unmet
-   or unjudged, and any planned requirement that was never checked; the branch and the files the recorded diff touches; which checks ran over that
-   tree and what they could not measure; time, tokens and cost with planning shown separately;
-   interventions counted by who made them; and, when the run is not acceptable, what blocked it
-   and one next action, including `swarm resume <run-id>` where it applies. The evidence panel
-   follows with the bundle, the review page and the verifier.
+6. **The outcome block**, led by one status that the JSON result (`outcome.status`) and the
+   exit code share:
+   - `accepted` (exit 0): every sealed requirement was met by a check that decides it;
+   - `unjudged` (exit 0): the gates passed and no requirement was sealed, so nothing says the
+     task was done;
+   - `partially-checked` (exit 1): nothing that decides refused the change, but a sealed
+     requirement was not established (a planned requirement, or a supplied check that could not
+     run);
+   - `unresolved` (exit 1): as partially checked, and a generated check disagrees with the final
+     tree; either the check expects something the task does not ask for or the change is
+     incomplete, and nothing here can tell which;
+   - `not-accepted` (exit 1): a deciding check, a blocking gate, policy or the final
+     verification refused it, or the run was interrupted.
+
+   Then each requirement (met, unmet, unjudged; a planned one with the task words it quotes and
+   what each generated check did), the scope of what was sealed, the branch and the files the
+   recorded diff touches (edits land in the working tree, uncommitted), which checks ran and
+   what they could not measure, time, tokens and cost with planning shown separately,
+   interventions counted by who made them, and, when the run is not accepted, one next action,
+   including `swarm resume <run-id>` where it applies. The evidence panel follows with the
+   bundle, the review page and the verifier.
+
+During repair the worker can call `run_check` to rerun the acceptance checks exactly as the gate
+runs them and see a failing check's cases, or to run a short diagnostic program over the project
+with no file to write. A repair after a rolled-back attempt is told what that attempt fixed, what
+it broke and why it was refused, while it starts from the restored files.
 
 Planning and criteria authoring are part of what the task costs and are accounted against the
 run's token and wall allowances, not granted on top of them.

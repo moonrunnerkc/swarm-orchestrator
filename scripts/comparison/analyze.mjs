@@ -4,8 +4,9 @@
  *
  *   node scripts/comparison/analyze.mjs --runs <directory> [--out <markdown file>]
  */
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { readdirSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
+import { readStageRecord, stageRecordNames } from "../pilot/stage-files.mjs";
 
 /** A launch record's file name: a cell's record or one of its failed attempts; not a halt or recovery. */
 export const isLaunchRecord = (name) =>
@@ -138,9 +139,15 @@ if (process.argv[1]?.endsWith("analyze.mjs")) {
     if (word.startsWith("--")) args.set(word.slice(2), process.argv[index + 1] ?? "true");
   }
   const directory = args.get("runs");
-  const records = readdirSync(directory)
+  // A published stage's records may be packed in place (evidence-pack.mjs pack-records), and are
+  // read from the pack where they are not in the tree.
+  const names =
+    basename(directory) === "records"
+      ? stageRecordNames(dirname(directory))
+      : readdirSync(directory);
+  const records = names
     .filter(isLaunchRecord)
-    .map((name) => JSON.parse(readFileSync(join(directory, name), "utf8")));
+    .map((name) => JSON.parse(readStageRecord(join(directory, name))));
   const summary = summarize(records);
   const markdown = renderMarkdown(summary);
   if (args.has("out")) writeFileSync(args.get("out"), `${markdown}\n`);

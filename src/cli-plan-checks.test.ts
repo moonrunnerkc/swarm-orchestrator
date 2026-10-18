@@ -113,9 +113,7 @@ describe("planning the completion criteria", () => {
     expect(outcome.planningSessionId).toBe("run-1-plan");
     const planning = await readSessionEvidence(join(root, "sessions"), "run-1-plan");
     expect(planning.records.filter((record) => record.type === "model-call")).toHaveLength(3);
-    expect(notes.join("\n")).toContain(
-      "completion criteria (model-authored, sealed before implementation)",
-    );
+    expect(notes.join("\n")).toContain("completion criteria (sealed before implementation)");
     expect(notes.join("\n")).toContain(
       "check collapse: node --test acceptance/collapse.test.mjs [model-authored]",
     );
@@ -184,7 +182,7 @@ it("describes criteria with their author and the ones that stay unjudged", () =>
   });
   expect(lines).toContain("  goal: g");
   expect(lines).toContain("       check ca: npm test [model-authored]");
-  expect(lines).toContain("       no executable check: stays unjudged");
+  expect(lines).toContain("       decided by no check: stays unjudged");
   expect(lines).toContain("  immutable: tests");
 });
 
@@ -215,9 +213,15 @@ describe("the planned-check revision and its share of the planning allowance", (
       const supplied = new Set((base?.checks ?? []).map((one) => one.id));
       const planned = contract.checks.filter((one) => !supplied.has(one.id));
       const kept = contract.checks.filter((one) => supplied.has(one.id) || admit.includes(one.id));
-      const requirements = contract.requirements.filter((one) =>
-        one.checks.some((check) => kept.some((k) => k.id === check)),
-      );
+      // As admission does: a planned requirement keeps its admitted diagnostics, and stays when it
+      // quotes the task even with none left.
+      const requirements = contract.requirements.flatMap((one) => {
+        if (one.planned === undefined) return [one];
+        const diagnostics = one.planned.diagnostics.filter((id) => kept.some((k) => k.id === id));
+        return diagnostics.length === 0 && one.planned.quote === undefined
+          ? []
+          : [{ ...one, planned: { ...one.planned, diagnostics } }];
+      });
       return Promise.resolve({
         contract:
           requirements.length === 0
@@ -232,8 +236,13 @@ describe("the planned-check revision and its share of the planning allowance", (
           broken: false,
           excerpt: null,
           record: null,
+          basis: "model-asserted" as const,
+          claimedChanges: null,
         })),
         droppedRequirements: [],
+        unverifiedRequirements: requirements
+          .filter((one) => one.planned?.diagnostics.length === 0)
+          .map((one) => one.id),
       });
     };
   }
@@ -263,9 +272,14 @@ describe("the planned-check revision and its share of the planning allowance", (
       remainingMs: 100_000,
       neededMs: 160_000,
     });
-    expect(outcome.admission?.uncheckedRequirements).toEqual([
-      { id: "r-b", description: 'requirement b (the task: "collapses whitespace")' },
-    ]);
+    // r-b quotes the task, so it stays sealed with no check rather than vanishing; nothing the
+    // planner invented was dropped.
+    expect(outcome.admission?.uncheckedRequirements).toEqual([]);
+    if (outcome.kind !== "sealed") throw new Error("unreachable");
+    expect(outcome.contract.requirements.find((one) => one.id === "r-b")).toMatchObject({
+      checks: [],
+      planned: { quote: "collapses whitespace", diagnostics: [] },
+    });
     expect(notes.join("\n")).toContain("no revision of the dropped planned checks: 100s");
     const planning = await readSessionEvidence(join(root, "sessions"), "run-1-plan");
     const revision = planning.records
@@ -273,6 +287,46 @@ describe("the planned-check revision and its share of the planning allowance", (
       .map((record) => planning.payloads.get(record.payloadDigest) as { rule?: string })
       .find((payload) => payload.rule === "planned-check-revision-v1");
     expect(revision).toMatchObject({ outcome: "withheld", remainingMs: 100_000 });
+  });
+
+  it("reports a task sentence quoted only by a requirement whose check was dropped as quoted, not checked", async () => {
+    const time = controlled(100_000);
+    const twoSentences = "slugify collapses whitespace to one dash. It keeps digits as they are.";
+    const declaringBoth: FixtureTurn = respondWithToolCalls(
+      "pinning",
+      [
+        ["a", "collapses whitespace"],
+        ["b", "It keeps digits as they are"],
+      ].map(([id, words]) => ({
+        callId: `declare-${id}`,
+        toolName: "declare_planned_check",
+        input: {
+          id,
+          purpose: "change",
+          requirementId: `r-${id}`,
+          requirement: `requirement ${id}`,
+          quote: words,
+          program: "import { slugify } from './slug.mjs';\nexport default slugify;\n",
+          cases: [{ input: "a  b", expected: "a-b" }],
+          why: "the task says so",
+        },
+      })),
+    );
+    const { planner, notes } = deps([declaringBoth, respondWithText("pinned")], {
+      task: twoSentences,
+      clock: time.clock,
+      maxWallMs: 200_000,
+      admit: admitting(["a"], time.admissionMs, time.advance),
+    });
+    const outcome = await planChecks(planner);
+    expect(outcome.admission?.coverage).toEqual({
+      sentences: 2,
+      quotedByAdmitted: [1],
+      quotedWithoutCheck: [2],
+    });
+    expect(notes.join("\n")).toContain(
+      "task sentences a planned requirement with an admitted check quotes: 1 of 2 (1); quoted only by a requirement with no admitted check: 2",
+    );
   });
 
   it("revises within what is left after reserving its re-admission, keeping what was admitted", async () => {
@@ -296,11 +350,9 @@ describe("the planned-check revision and its share of the planning allowance", (
     expect(outcome.admission).toEqual({
       admitted: ["a", "c"],
       dropped: [{ check: "b", reason: "it passes on the base" }],
-      uncheckedRequirements: [
-        { id: "r-b", description: 'requirement b (the task: "collapses whitespace")' },
-      ],
+      uncheckedRequirements: [],
       revision: { outcome: "ran", admitted: ["c"] },
-      coverage: { sentences: 1, quotedByAdmitted: [1] },
+      coverage: { sentences: 1, quotedByAdmitted: [1], quotedWithoutCheck: [] },
     });
   });
 });

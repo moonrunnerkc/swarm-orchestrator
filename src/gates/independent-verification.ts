@@ -924,12 +924,19 @@ export async function verifyIndependently(
                                 )
                                 .map((check) => `${check.id} (${check.detail})`)
                                 .join("; ")}. Nothing here says the suite passed.`
-                            : task === "unjudged"
-                              ? "the repository's own suite passed, which says nothing broke. It does not say the " +
-                                "task was done: a suite tests the behaviour a project already had, and a task adds " +
-                                "behaviour it did not. Pass --oracle <command> with a check that says whether the " +
-                                "task was done."
-                              : "",
+                            : task === "unjudged" && goalAcceptance !== undefined
+                              ? `the repository's own suite passed, and these sealed requirements are decided by no check that ran: ${goalAcceptance.obligations
+                                  .filter((one) => one.status === "unjudged")
+                                  .map((one) => one.id)
+                                  .join(", ")}. A requirement the planner read from the task is ` +
+                                "exercised only by generated checks, whose expected results nothing independent " +
+                                "establishes; a check you supply can decide it."
+                              : task === "unjudged"
+                                ? "the repository's own suite passed, which says nothing broke. It does not say the " +
+                                  "task was done: a suite tests the behaviour a project already had, and a task adds " +
+                                  "behaviour it did not. Pass --oracle <command> with a check that says whether the " +
+                                  "task was done."
+                                : "",
       install,
       checkoutPath: checkout,
     };
