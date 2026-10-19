@@ -12,6 +12,33 @@ Source on `v13-main`; not published until a release names it.
 
 ### Fixed
 
+- **A planned check runs in the language the project's users run.** Its runner put `input`,
+  `expected` and `throws` getters on the String, Number and Boolean prototypes to catch a program
+  reading `case_.input` off a string, so `"input" in Object("hello")` was true inside a check and
+  false everywhere else. The check's own run now adds nothing to the environment. A separate probe
+  run, whose answers are never compared, names the misread, and admission refuses a program only
+  where the probe saw the read and every answer was one value.
+- **Admission keeps a check whose base answers are one value**, its control recorded as
+  unestablished, instead of dropping it: a defect can be one answer for everything (a predicate
+  that is always false). Each case of a change check now says `changed: true` or `false`, and a
+  kept case must give its expected result on the base, so a live planner's `foo.txt` →
+  `text/html` case, which its own reasoning called preserved, is refused with the base's answer
+  instead of admitted as a claimed change. A control is the base agreeing with kept cases through
+  the same program and kind of input, or that of another planned check running the identical
+  program; each decision records what its control establishes and what stays unknown. **Output
+  change:** admission's record is `planned-check-admission-v2`, and a check of one answer that was
+  dropped is now sealed; one that still disagrees at the end leaves the run `unresolved`.
+- **A generated case the repair was told and left as it was is held.** A changed case's expected
+  result is the planner's claim. Where a repair answers it with the same result, no further repair
+  is asked for it, and where every failure of `task-diagnostics` is held, repair stops: the run
+  stays `unresolved`, with the candidate that passed everything else. A live mime run spent two of
+  its three repairs on such a case. A kept case's failure is never held.
+- **Planning asks for a coverage review of every requirement before it finishes.**
+  `declare_coverage_review` records, per behaviour, what changes, what stays, a plausible wrong
+  implementation the cases would pass, what tells it apart and what stays untested. A relation
+  given there is sealed and enumerated over the named check's program, with no separate
+  `declare_planned_relation` call; a planner that finishes without a review gets one bounded round
+  to give it. The harness checks that a review exists and resolves, not that what it says is right.
 - **A repair after a rolled-back repair is told what was rolled back.** It was handed the restored
   cycle's old failure report, without the regression that caused the rollback: in a live mime
   run, repair 3 was told "Prior checked attempt: 1" after repair 2 passed every planned check and
