@@ -11,6 +11,6 @@ fix/requirement-coverage-and-verification-reserve`, `v12-final` present), Node 2
 | `npm run check:packaged` | 0 | every documented command met its packaged behavioural contract ([packaged-4e6c4e510.log](verification/packaged-4e6c4e510.log)) |
 | `npm run fuzz:build` | 0 | [fuzz-4e6c4e510.log](verification/fuzz-4e6c4e510.log) |
 
-The 29 skipped tests and 5 skipped files are skipped on PR #89's head too; none was added here.
+The same 5 files and 29 tests were skipped in PR #89's recorded gates run ([gates-36772dda9.log](../repair-value/verification/gates-36772dda9.log): 462 files and 4,487 tests passed there); this work added 3 test files and 38 tests and no skip.
 The new regressions' results against PR #89's head are in [regressions-before.md](regressions-before.md).
 These are local results: nothing is pushed, and no CI ran on this branch.
