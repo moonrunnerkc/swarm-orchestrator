@@ -182,6 +182,15 @@ shown.
   control, a live repair against supplied development checks, and once a live planner's relation
   followed by a live repair, produced patches the evaluator accepts. The matched OpenCode run ended
   on a rejected permission, and the ordinary run's patch was wrong and reported accepted.
+- **October 18 (night)**
+  ([development records](evidence/2026-10-18/checking-semantics/README.md)): a planned check now
+  runs in the project's own language environment, a check whose base answers are one value is
+  kept with its control unestablished, kept cases must agree with the base, a wrong changed case
+  is held after one repair, and planning asks for a coverage review. Of two pre-registered
+  ordinary mime runs on one frozen build, one delivered a patch both evaluations accept and one
+  delivered a wrong patch, reported unresolved, after a repair broke a correct first change; so
+  ordinary completion is not shown and the comparison was not run. Launch 4's earlier passing
+  patch fails a custom-extension case the task supports.
 
 Developer hours saved and adoption are not measured; the prepared, unrun protocol for five
 developers on their own tasks is [human-trial-protocol.md](human-trial-protocol.md).
