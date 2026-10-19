@@ -57,6 +57,12 @@ export interface PlannerOptions {
      * its checks and reviews stand until replaced under their ids.
      */
     readonly initial?: PlannedChecksDeclaration;
+    /**
+     * A revision of checks this planning already declared and ran on the base. Its brief carries
+     * what it needs, so it is told to declare first rather than to read the repository again: a
+     * revision told to read first spent its whole allowance rereading and declared nothing.
+     */
+    readonly revision?: boolean;
   };
   readonly maxTokens?: number;
   readonly maxWallTimeMs?: number;
@@ -364,11 +370,21 @@ function plannedChecksPrompt(options: NonNullable<PlannerOptions["plannedChecks"
   const { base } = options;
   return [
     "You write the acceptance checks a coding task is implemented and repaired against, before",
-    "any implementation exists. You do not implement the task. Read the relevant source, tests",
-    "and manifest with the read-only tools, then call declare_planned_check once for each check",
-    "(several calls may go in one turn). Then call run_planned_checks_on_base to see what each",
-    "check does on the unchanged base, fix what it reports, and finish with a one-line summary and",
-    "no tool calls.",
+    "any implementation exists. You do not implement the task.",
+    ...(options.revision === true
+      ? [
+          "This is a revision: the repository was already read, the checks below were already",
+          "declared and run once on the unchanged base, and the brief shows what each did there.",
+          "Declare the replacements first with declare_planned_check (several calls may go in one",
+          "turn); read a file only where an expectation cannot be settled from the brief. Then",
+          "finish with a one-line summary and no tool calls.",
+        ]
+      : [
+          "Read the relevant source, tests and manifest with the read-only tools, then call",
+          "declare_planned_check once for each check (several calls may go in one turn). Then call",
+          "run_planned_checks_on_base to see what each check does on the unchanged base, fix what it",
+          "reports, and finish with a one-line summary and no tool calls.",
+        ]),
     "Derive every expected result from the task text and the project's existing documented or",
     "tested behaviour, never from a guess about how the change will be written. Cover each rule",
     "the task states where it is easy to get wrong: its boundaries, the combinations of the",
