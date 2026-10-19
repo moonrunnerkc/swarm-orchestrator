@@ -70,3 +70,10 @@ and nothing is relaunched.
 ---
 
 ## Amendments
+
+### 1. 2026-10-19, after the launch: closed
+
+One launch, 7.7 agent-minutes, no allowance left. The hidden oracle fails the delivered patch; the
+product reported `accepted`, scoped to the supplied contract, with seven unresolved outcomes;
+final verification completed. Nothing else will be launched under this protocol; see
+[launches.md](launches.md) and [README.md](README.md) section 5.

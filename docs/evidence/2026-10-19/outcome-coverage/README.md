@@ -141,8 +141,48 @@ four only on the new record field, behaviour deliberately kept.
 
 ## 5. One development launch (live-model)
 
-Registered in [protocol.md](protocol.md) before it starts; entered and recorded in
-[launches.md](launches.md).
+Registered in [protocol.md](protocol.md) before it started, entered in [launches.md](launches.md),
+run by the comparison runner unchanged from a fresh clone of the task's base with D1's limits and
+nothing but the task and the visible check given. Records: [launch/record.json](launch/record.json),
+the exact [launch/final.patch](launch/final.patch), and the stdout, stderr, oracle output and both
+session chains packed losslessly in [launch/packed-derived/launch-streams](launch/packed-derived/launch-streams/);
+[launch/reading.json](launch/reading.json) is [read-launch.mjs](read-launch.mjs) over those chains
+and re-derives identically from the restored pack.
+
+| reported separately | result |
+| --- | --- |
+| requested outcomes represented | yes: 11 outcomes recorded before admission; 7 unresolved after it, every one named in the brief, the report (with the fix of scope amendment 1, the example's own words too) and the JSON |
+| relevant checks executed correctly | no case threw. The scheme check's program matched `href="https:` in lower case, which a correct implementation (it keeps `hTtPS`) also fails; its cases moved to angle-bracket inputs the base fails too; refused, no check of the example survived |
+| final verification completed | yes, on the delivered tree: build, lint, tests, `task-acceptance`, `task-diagnostics`, independent verification (69.3 s of a measured 106.2 s reserve) |
+| delivered patch, hidden oracle | **fail** |
+| report matched the evidence | yes in scope: `accepted` (exit 0) is labelled the supplied contract's reading, with 7 outcomes exercised by no check; the two the oracle fails on are among them. The terminal report showed the example's outcome only by its requirement's words (fixed after the launch, amendment 1) |
+| wall, tokens, repair | 460.6 s agent wall (planning 271.8 s, seal 26.9 s, worker 92.3 s, final 69.3 s); 1,879,551 tokens (planning 1,177,097); no repair ran |
+
+**What the patch does** (confirmed on a fresh checkout with it applied, as a diagnosis; the
+frozen oracle's verdict stands): `Www.example.com` stays plain, `www.example.com`, `foo@bar.baz` and
+`HTTP://FOO.COM` link, `hTtPS://example.com/fhqwhgads.` at the start of a line links without the
+period, but `(See hTtPS://example.com/fhqwhgads.)` does not link (the inline-text rule is
+untouched, D1's miss), and `ftp://example.com/file` no longer links at all: the hand-written scheme
+class reads `[fF][pP][tT]`.
+
+**First concrete failure.** In planning, the first scheme check wrapped its inputs in `(See ...)`
+and the base answered no link for the task-named example; admission recorded the disagreement and
+said the task names the input, so the outcome may be the one it asks for. The planner then declared
+the check again as a change but with the base's answer as its expectation (`hasLink: false`), which
+the base passes, so it was refused as not detecting the change; it then moved the cases to
+angle-bracket inputs, which the base also fails, and the revision was withheld. The example's
+outcome reached the worker as unresolved, with "run the project on the task's own example
+yourself"; the worker did, saw `(See hTtPS://...)` give no link, attributed it to angle-bracket
+autolinks and finished with about six minutes of the launch's wall unused. The `ftp` regression sits under another
+unresolved outcome the brief named ("without changing how http://, https:// or ftp:// are
+detected"), which nothing checked.
+
+So this launch did not deliver a correct patch. The changes of this work kept the requested
+outcomes visible and scoped the report; they did not get a check of the example written, and a
+named, unresolved outcome in the brief did not stop the worker from finishing past evidence it had
+itself produced. Several of the seven unresolved outcomes are the planner's rewordings or a first
+declaration with no quote (`email-autolinks#1`, `www-case-sensitivity#4`): identity by quote
+fragments when the planner rewords, which adds noise to the brief.
 
 ## Remaining limitations
 
@@ -150,6 +190,11 @@ Registered in [protocol.md](protocol.md) before it starts; entered and recorded 
   for two behaviours, or misstates a role, merges them.
 - Where a throw was raised is not why: a program that passes the project a wrong argument reads as
   the project throwing, and a project hiding its own frames reads as the program throwing.
-- The revision's fixed minimum still withholds it when the first round uses its share (D1 and the
-  replays); the unresolved outcome then reaches the worker, but no check is written for it.
+- The revision's fixed minimum still withholds it when the first round uses its share (D1, the
+  replays and the launch); the unresolved outcome then reaches the worker, but no check is
+  written for it.
+- An unresolved outcome is information for the worker, not a gate: the launch's worker read it,
+  observed the example failing, and finished anyway.
+- Identity by quote fragments under rewording: the launch reported 7 unresolved outcomes, some of
+  them restatements of covered ones or a first declaration with no quote.
 - `accepted` keeps its meaning (the supplied contract); only its wording is scoped.
