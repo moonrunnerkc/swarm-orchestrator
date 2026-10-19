@@ -83,7 +83,17 @@ swarm "add a --no-cache flag that disables the response cache, with a test" --pl
    inputs the task names. Coverage is read from the checks admission kept: a coverage review that
    names a refused check covers nothing, and a requirement left with no check is reported as
    uncovered, with why and the next useful action, in the worker's brief, the outcome and the
-   JSON result (`plannedChecks.uncovered`). Admission shows a
+   JSON result (`plannedChecks.uncovered`). Coverage is also read per requested outcome: each
+   check records the task's words it quotes, and an outcome is its requirement, those words and
+   whether its cases change or keep behaviour. An outcome no retained check states stays
+   unresolved even when another check covers its requirement, and is named the same way
+   (`plannedChecks.unresolvedOutcomes`); where any is, an `accepted` run says that reading is
+   the supplied contract's only. The outcomes are the planner's own statements, so two it put in
+   one quote are one, and one it never stated is not tracked. A case that throws is read by where
+   it was thrown: in the check program's own code it observed nothing of the project, and the
+   check is refused for the revision with the message; in the project it is the project's answer
+   (a declared throw, or a diagnostic of a crashing base); where no stack frame names a file it is
+   read as the base's answer with that uncertainty recorded. Admission shows a
    check runs and discriminates; it cannot show that its expected results are what the task
    means, so an admitted check is a **diagnostic**: it runs on every candidate, its disagreement
    drives a bounded repair (the repair is told the expectation is the planner's reading of the
