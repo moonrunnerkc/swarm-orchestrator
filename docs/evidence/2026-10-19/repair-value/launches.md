@@ -14,7 +14,7 @@ reported apart. The allowance is five launches, 15 minutes each and 75 agent-min
 | 4 | C2, paired comparison, OpenCode arm | OpenCode 1.14.48 | the same manifest; `--arm opencode` | 2026-10-19 16:09:41 | 1.8 | 34.9 | 600,716 tokens | **Pass.** OpenCode exited 0 and claimed success; the hidden oracle accepts its exact patch ([records/](comparison/records/marked-bugfix-www-case.opencode.json)), which changes both the `url` and the `text` rules. **Next:** none. The comparison is complete, the infrastructure slot was not needed, and the protocol is closed. |
 
 **Correction to launch 3 (C1), appended after the follow-up:** "The worker then spent its remaining
-wall on full `npm test` runs" is corrected in [README.md](README.md#corrections-appended-after-the-follow-up-coverage-and-reserve):
+wall on full `npm test` runs" is corrected in [README.md](README.md) (its appended corrections):
 those runs took 13 s together; the loop's time went to six model calls resending one run's 113 KB
 output, and the final gates were refused by the wall's end aborting their command signal, a product
 defect since fixed. C1's outcome, its score and the protocol's reading stand.
