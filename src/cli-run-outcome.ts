@@ -336,6 +336,12 @@ function describePlanned(
       say(`             no generated check covers it: ${firstLine(uncovered.reason, 400)}`);
       say(`             next for it: ${firstLine(uncovered.nextAction, 400)}`);
     }
+    // Its outcomes' own words: the requirement's quote is whichever check declared it last, and
+    // the launch that found this lost the task's example sentence from the report that way.
+    for (const one of unresolved)
+      say(
+        `             NO CHECK ${one.role === "change" ? "change" : "kept behaviour"}${one.quote === null ? " (quoting nothing)" : ` "${firstLine(one.quote, 160)}"`}`,
+      );
     return;
   }
   for (const check of checks)

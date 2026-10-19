@@ -53,3 +53,15 @@ Documentation: `CHANGELOG.md` (14.5.0, unreleased) and `docs/using.md`, where th
 reader relies on changes. `README.md` is not expected to change.
 
 ## Amendments
+
+### 1. After the launch: the report's requirement with no check, before editing it
+
+The launch's report named the unresolved outcomes of requirements that kept a check, but for
+`scheme-insensitivity`, which kept none, it printed only the requirement-level reason and the
+requirement's quote, so the task's example sentence (`scheme-insensitivity#2`) was in the brief
+and the JSON but not in the terminal report. Files, both already declared:
+
+- `src/cli-run-outcome.ts`, `src/cli-run-outcome.test.ts`: a requirement with no generated check
+  also lists the words of each of its unresolved outcomes.
+
+This changes the product after the launch; the launch's own report is recorded as it was.

@@ -428,6 +428,22 @@ describe("the run's one status", () => {
     expect(below).toContain(
       `NO CHECK change "classify("10") is small too": string-ten: case 1 threw in the check program's own code on the base`,
     );
+    // A requirement with no check at all still shows each of its outcomes' own words.
+    const allRefused = describeRunOutcome({
+      ...input,
+      unresolvedOutcomes: [
+        {
+          id: "above-ten-big#2",
+          requirement: "above-ten-big",
+          quote: 'classify(11) must still give "big"',
+          role: "keep" as const,
+          reason: "eleven: case 1 threw in the check program's own code on the base",
+          nextAction: "implement it from the task's words",
+        },
+      ],
+    }).join("\n");
+    const noCheck = allRefused.slice(allRefused.indexOf("no check above-ten-big"));
+    expect(noCheck).toContain('NO CHECK kept behaviour "classify(11) must still give "big""');
     // Without one, the line reads as before.
     expect(describeRunOutcome({ ...input, unresolvedOutcomes: [] }).join("\n")).toContain(
       "outcome: accepted\n",
