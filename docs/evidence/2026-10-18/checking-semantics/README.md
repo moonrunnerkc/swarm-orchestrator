@@ -82,10 +82,64 @@ by hand.
 The custom-extension case is new exposed development material. The last column is a reading of
 the relation, not a requirement: a correct implementation breaks it under those types.
 
-## Live launches
+## Live launches: ordinary completion not shown
 
-Registered in [protocol.md](protocol.md) before the first launch; every launch is in
-[launches.md](launches.md).
+Registered in [protocol.md](protocol.md) before the first launch, on the frozen build `df2e3b619`
+(src identical to `7e802a360`, which passed `npm run gates`); every launch is in
+[launches.md](launches.md). Two of five launches, 14.8 of 75 agent-minutes; local
+`qwen3.6:35b-a3b`, thinking off, mime from a clean original base, nothing injected, the visible
+check only, `--plan-checks`. No request carried the faulty patch, the upstream change, the
+evaluator or the expanded audit ([launch-o1/exposure.json](launch-o1/exposure.json),
+[launch-o2/exposure.json](launch-o2/exposure.json)).
+
+| run | product reported | repairs | frozen evaluator on the exact patch | expanded audit (custom extension) | passes the expanded evaluation |
+| --- | --- | --- | --- | --- | --- |
+| O1 | `unresolved`, exit 1 | 3 (one rolled back) | fail: 5 of 113, a terminator after the extension | development contract fails; custom extension passes | no |
+| O2 | `accepted`, exit 0 | 0 | pass | development contract and custom extension pass | yes |
+
+**Ordinary completion is not demonstrated**: the protocol needs both pre-registered repetitions
+to pass, and O1 did not. The paired comparison was conditional on that and was not run; no task
+was registered for it. O2 is one passing observation of one build on an exposed task, and its
+examples alone agreed with a correct first change: nothing in it shows the review or a relation
+decided the outcome. O1, unlike 2026-10-18 launch 5, did not report a wrong patch as `accepted`.
+
+**O1's first concrete failure.** The first implementation was `[\s\S]*` in both expressions:
+byte for byte the file the first repair brief recorded (blob `54e61a8`), which the frozen
+evaluator accepts as reconstructed apart ([launch-o1/attempt-0.reconstructed-verdict.json](launch-o1/attempt-0.reconstructed-verdict.json);
+a reconstruction, never a delivered patch). Every generated check agreed with it except one
+changed case, `"/usr/local/bin/script.js\n"` → `text/html`, an expectation the task does not
+support. Repair 1 was told only that case and stripped trailing line terminators, which broke the
+planner's relation; the case was held from the next reading on, as designed, one attempt late.
+The ratchet kept repair 1 because the diagnostics gate failed before and after and reported no
+parts. In the same run the kept-case rule refused, before implementation, a check whose kept cases
+expected `text/html` where the base, through the same program, gives null: launch 4's kind of
+mistake, caught live.
+
+**Correction after O1, validated with no model only.** A relation and each check's kept cases are
+now parts of the diagnostics gate the ratchet holds; a changed case is not
+(`src/cli-task-goal.ts`, `6a85f27a9`). Its regression replays O1's shape on the slug fixture: the
+right first change passes the relation, a repair told a wrong changed case breaks it, and the
+ratchet now rolls that repair back and keeps the right change; with the parts removed the same
+test fails as O1 did. This build was never launched: the protocol is closed.
+
+## Remaining limitations
+
+- A changed case's expectation is the planner's claim; no base control can judge it, and a wrong
+  one still costs one directed repair before it is held. Parts now stop that repair from breaking
+  base-backed behaviour; they cannot stop it from changing behaviour no check covers.
+- A check kept with its control unestablished can leave a correct run `unresolved` when its
+  program never reaches the project (empty fixture, ignored input); it is reported as such and
+  held after one repair, not dropped.
+- The argument probe changes the language environment in its own run; a program that tests for
+  `input`, `expected` or `throws` on a primitive reads differently there. Its reading decides only
+  whether an already one-valued check is refused.
+- The coverage review is enforced to exist and to resolve, not to be right. O2's planner wrote
+  that no relation applied after five refused relation declarations; whether the review raises the
+  rate of useful relations is not measured here.
+- A relation is bounded by its fixture (the custom-extension reading above); the harness does not
+  check that bound.
+- Everything here is one exposed task (and node-tar for structure, without a model). Nothing
+  establishes general completion or comparative benefit.
 
 ## Reproduction
 
