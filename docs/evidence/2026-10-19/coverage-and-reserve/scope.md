@@ -71,3 +71,17 @@ declare_planned_check". A revision is told otherwise only if the planner knows i
 
 - `src/workers/planner-run.ts`: a revision round is told that the repository was already read and
   the checks already ran, and to declare its replacements first.
+
+### 2. The refusal's reason, recorded after the edit
+
+Added after it was edited, not before; the order is stated here as it happened. A gate command
+refused because a total allowance ended was described by a fixed "the run was cancelled", which
+reads as a cancellation somebody asked for. File added:
+
+- `src/exec/run-process.ts`: a refusal before spawn carries the abort signal's own reason where the
+  signal gives one in words, and the fixed wording otherwise. Its existing tests pass unchanged.
+
+### 3. The reserve policy's own test, before creating it
+
+- `src/cli-run-settings.test.ts` (new): the verification reserve's policy, with no measurement, with
+  C1's measured preflight, at its cap and at a one-minute total.
