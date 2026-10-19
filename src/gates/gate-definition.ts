@@ -39,6 +39,11 @@ export interface GateReading {
    * failing for one part says nothing about another part a retry broke beside it.
    */
   readonly parts?: Readonly<Record<string, GateStatus>>;
+  /**
+   * Which of those parts rest on nothing but the planner's claim of the change, which the ratchet
+   * lets yield to a restored part outside them (`RatchetInput.partClaims`). Absent names none.
+   */
+  readonly claims?: readonly string[];
 }
 
 /** The whole judgement step: bytes in, verdict and numbers out. No other input. */
