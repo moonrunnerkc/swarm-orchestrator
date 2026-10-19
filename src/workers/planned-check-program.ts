@@ -95,14 +95,40 @@ export const plannedChecksInput = z.strictObject({
         cases: z.array(caseSchema).min(1).max(32).optional(),
         relation: relationSchema.optional(),
         why: z.string().min(1).max(2000),
+        /**
+         * The task's words this check was declared with. Its requirement's quote is the latest
+         * call's, so it cannot say what an earlier check under the same requirement covered.
+         */
+        quote: z.string().min(1).max(2000).optional(),
       }),
     )
     .min(1)
     .max(16),
 });
-/** The checks and requirements, and the coverage reviews the planner declared over them. */
+/**
+ * A requested outcome as the planner's declarations identify it: under one requirement, the
+ * task's words a declared check quotes, and whether the cases declared for it change behaviour or
+ * keep it. D1's requirement `scheme-case-insensitive` held two: a scheme of any case still links
+ * (checked, and the base had it), and the task's own example `(See hTtPS://...)` links with its
+ * trailing period excluded (its one check refused); counted per requirement, the first made the
+ * second read as covered. An outcome is never removed once declared, so one stays in view when
+ * every check of it is refused or replaced by one that states other words. This is identity from
+ * the planner's own declarations, not an understanding of the task: two outcomes the planner
+ * stated in one quote with one role are one outcome here, and one it never stated is not here.
+ */
+export interface PlannedOutcome {
+  readonly requirementId: string;
+  /** The task's words, as the declaring check quoted them; null where it quoted none. */
+  readonly quote: string | null;
+  /** change: cases the task changes; keep: cases (or a preserve check) whose result stays. */
+  readonly role: "change" | "keep";
+  /** Every check declared for it, in any version, in the order first declared. */
+  readonly declaredBy: readonly string[];
+}
+/** The checks and requirements, the coverage reviews and the outcomes the planner declared. */
 export type PlannedChecksDeclaration = z.infer<typeof plannedChecksInput> & {
   readonly reviews?: readonly CoverageReviewCall[];
+  readonly outcomes?: readonly PlannedOutcome[];
 };
 type DeclaredCheck = PlannedChecksDeclaration["checks"][number];
 
@@ -230,9 +256,10 @@ export function withPlannedCheck(
         }),
     why: call.why,
   };
-  const checks = [...(declaration?.checks ?? []).filter((one) => one.id !== call.id), check];
   const previous = declaration?.requirements.find((one) => one.id === call.requirementId);
   const quote = call.quote ?? previous?.quote;
+  if (quote !== undefined) check.quote = quote;
+  const checks = [...(declaration?.checks ?? []).filter((one) => one.id !== call.id), check];
   const requirement = {
     id: call.requirementId,
     description: call.requirement,
@@ -249,7 +276,61 @@ export function withPlannedCheck(
   const reviews = (declaration?.reviews ?? []).filter((review) =>
     requirements.some((one) => one.id === review.requirementId),
   );
-  return { requirements, checks, ...(reviews.length === 0 ? {} : { reviews }) };
+  return {
+    requirements,
+    checks,
+    ...(reviews.length === 0 ? {} : { reviews }),
+    outcomes: withOutcomesOf(declaration?.outcomes ?? [], check),
+  };
+}
+
+/** The role each case of a declared check takes, as admission reads it from the contract. */
+function outcomeRoles(check: DeclaredCheck): readonly PlannedOutcome["role"][] {
+  if (check.cases === undefined) return [check.purpose === "change" ? "change" : "keep"];
+  const roles = check.cases.map((one) =>
+    check.purpose === "change" && one.changed === true ? ("change" as const) : ("keep" as const),
+  );
+  return [...new Set(roles)];
+}
+
+/**
+ * Two statements of one outcome compare equal however the quote was typed: case, whitespace,
+ * typographic quotation marks, wrapping marks and closing punctuation are folded.
+ */
+export function outcomeKey(
+  outcome: Pick<PlannedOutcome, "requirementId" | "quote" | "role">,
+): string {
+  const words =
+    outcome.quote === null
+      ? null
+      : folded(outcome.quote)
+          .replace(/^["'`]+|["'`]+$/g, "")
+          .replace(/[\s.,;:!]+$/, "");
+  return JSON.stringify([outcome.requirementId, words, outcome.role]);
+}
+
+/** The outcomes one declared check states, as keys. */
+export function checkOutcomeKeys(check: DeclaredCheck): readonly string[] {
+  return outcomeRoles(check).map((role) =>
+    outcomeKey({ requirementId: check.requirement, quote: check.quote ?? null, role }),
+  );
+}
+
+/** The outcomes so far with one more check's added: new ones appended, known ones naming it too. */
+function withOutcomesOf(
+  outcomes: readonly PlannedOutcome[],
+  check: DeclaredCheck,
+): readonly PlannedOutcome[] {
+  const next = [...outcomes];
+  for (const role of outcomeRoles(check)) {
+    const stated = { requirementId: check.requirement, quote: check.quote ?? null, role };
+    const at = next.findIndex((one) => outcomeKey(one) === outcomeKey(stated));
+    const known = next[at];
+    if (known === undefined) next.push({ ...stated, declaredBy: [check.id] });
+    else if (!known.declaredBy.includes(check.id))
+      next[at] = { ...known, declaredBy: [...known.declaredBy, check.id] };
+  }
+  return next;
 }
 
 const reviewText = (meaning: string) => z.string().min(1).max(1000).describe(meaning);
@@ -409,7 +490,16 @@ type PlannedCase = z.infer<typeof caseSchema>;
  * as long as it takes to import it (so `./` imports resolve from there, as they read), calls its
  * default export once per input, and prints one JSON line per input with object keys sorted.
  * What the program or the project prints is moved to stderr, so stdout carries only results. A
- * thrown case is a result, not a crash: it prints `threw` and its message goes to stderr. A
+ * thrown case is a result, not a crash: it prints `threw` and its message goes to stderr. Where
+ * it was thrown is part of the line when it says something about the check rather than the
+ * project: `thrownIn: "check-program"` where the innermost stack frame naming a file is the
+ * program's own module (D1's program applied `in` to the string the project returned, and its
+ * every case read as the base disagreeing), `thrownIn: "unattributed"` where no frame names a
+ * file (a thrown string, a stack the runner cannot read). A throw from any other file, the
+ * project or what it calls, keeps the plain line, which is what a declared throw expects. That is
+ * where the exception was raised, not whose fault it was: a program that passes the project a
+ * wrong argument gets the project's throw, and a project that hides its own frames
+ * (`Error.captureStackTrace` with a function) moves the frame to its caller. A
  * program that does not load exits 3, which the harness reads as a check that never ran rather
  * than as a wrong answer. Undefined reads as null wherever it sits, as the tool's description
  * says: dropped from an object instead, a live planner's `{ size: null }` met `{}` and its checks
@@ -418,7 +508,8 @@ type PlannedCase = z.infer<typeof caseSchema>;
  * Given a relation instead of inputs, it calls the program on the reference and on each variant
  * inserted at every position of every seed, and prints one line per seed: `holds` with the number
  * of calls, or the disagreements counted and the first two by position, each with both inputs
- * and both results as the project gave them. Every line is the harness's reading of the
+ * and both results as the project gave them, and `raisedInProgram` where any call threw in the
+ * program's own code. Every line is the harness's reading of the
  * project's own answers; nothing in it is an expected value anyone wrote.
  *
  * The program is called with each case's input itself, never with the case, and the runner adds
@@ -460,13 +551,28 @@ export const plannedCheckRunner = [
   '  console.error("the check program does not export a default function");',
   "  process.exit(3);",
   "}",
+  // Where a case threw, read off the innermost stack frame that names a file: outside the program
+  // (the project, its dependencies) is the legacy line, so a declared throw still compares equal;
+  // the program's own module, or no file frame at all, is named on the line.
+  'const programFile = "/.swarm-check-" + process.pid + ".mjs";',
+  "const thrownIn = (error) => {",
+  '  const stack = typeof error?.stack === "string" ? error.stack.split("\\n").slice(1) : [];',
+  "  for (const line of stack) {",
+  "    const found = /\\(((?:file:\\/\\/|\\/)[^()]+?):\\d+:\\d+\\)\\s*$|^\\s*at ((?:file:\\/\\/|\\/)\\S+?):\\d+:\\d+\\s*$/.exec(line);",
+  "    const file = found?.[1] ?? found?.[2];",
+  "    if (file === undefined) continue;",
+  '    if (file.endsWith(programFile)) return { thrownIn: "check-program" };',
+  '    return /\\[eval\\d*\\]$/.test(file) ? { thrownIn: "unattributed" } : {};',
+  "  }",
+  '  return { thrownIn: "unattributed" };',
+  "};",
   "const call = async (input, label) => {",
   "  try {",
   "    const result = await run(input);",
   '    return { result: JSON.parse(JSON.stringify(result, (key, value) => (value === undefined ? null : value)) ?? "null") };',
   "  } catch (error) {",
   '    console.error(label + " threw: " + (error?.stack ?? error));',
-  "    return { threw: true };",
+  "    return { threw: true, ...thrownIn(error) };",
   "  }",
   "};",
   // A result that carries the inserted text (a parser returning the name it was given) is read
@@ -488,22 +594,28 @@ export const plannedCheckRunner = [
   "  for (const seed of seeds) {",
   "    let ran = 0;",
   "    let disagreements = 0;",
+  // Calls thrown in the program's own code compare equal to each other, so a relation whose
+  // program throws everywhere would hold everywhere; their count is on the line where any were.
+  "    let raised = 0;",
   "    const counterexamples = [];",
   "    for (let at = 0; at <= seed.length; at += 1) {",
   "      const place = (text) => seed.slice(0, at) + text + seed.slice(at);",
   '      const label = "seed " + JSON.stringify(seed) + " at " + at;',
   "      const expected = await call(place(reference), label);",
   "      ran += 1;",
+  '      if (expected.thrownIn === "check-program") raised += 1;',
   "      for (const variant of variants) {",
   "        const got = await call(place(variant), label);",
   "        ran += 1;",
+  '        if (got.thrownIn === "check-program") raised += 1;',
   "        if (JSON.stringify(plain(asReference(got, variant, reference))) === JSON.stringify(plain(expected))) continue;",
   "        disagreements += 1;",
   `        if (counterexamples.length < ${relationCounterexamples})`,
   "          counterexamples.push({ at, reference: { input: place(reference), ...expected }, variant: { input: place(variant), ...got } });",
   "      }",
   "    }",
-  '    write(JSON.stringify(plain(disagreements === 0 ? { holds: true, ran, seed } : { counterexamples, disagreements, holds: false, ran, seed })) + "\\n");',
+  "    const counted = raised === 0 ? {} : { raisedInProgram: raised };",
+  '    write(JSON.stringify(plain(disagreements === 0 ? { holds: true, ran, seed, ...counted } : { counterexamples, disagreements, holds: false, ran, seed, ...counted })) + "\\n");',
   "  }",
   "}",
 ].join("\n");
@@ -619,6 +731,41 @@ function plain(value: unknown): unknown {
 
 function expectedLine(one: PlannedCase): string {
   return `${JSON.stringify(plain("throws" in one ? { input: one.input, threw: true } : { input: one.input, result: one.expected }))}\n`;
+}
+
+/** How many of a relation run's calls threw in the check program's own code, over every seed. */
+export function relationRaisedInProgram(stdout: string): number {
+  const counted = (line: string): number => {
+    try {
+      const read = JSON.parse(line) as { raisedInProgram?: unknown };
+      return typeof read.raisedInProgram === "number" ? read.raisedInProgram : 0;
+    } catch {
+      return 0;
+    }
+  };
+  return stdout
+    .split("\n")
+    .filter((one) => one.length > 0)
+    .reduce((total, line) => total + counted(line), 0);
+}
+
+/**
+ * Where the case a runner line reports was thrown, as the runner read its stack: in the check
+ * program's own module, outside it (the project or what it calls), or nowhere a frame names. Null
+ * for a line that reports an answer, or that the runner did not write.
+ */
+export function thrownIn(
+  line: string,
+): "check-program" | "outside-program" | "unattributed" | null {
+  try {
+    const read = JSON.parse(line) as { threw?: unknown; thrownIn?: unknown };
+    if (read.threw !== true) return null;
+    return read.thrownIn === "check-program" || read.thrownIn === "unattributed"
+      ? read.thrownIn
+      : "outside-program";
+  } catch {
+    return null;
+  }
 }
 
 const stdoutLimit = 64_000;
@@ -1012,8 +1159,8 @@ export function describeRelationRun(relation: PlannedRelation, stdout: string): 
       disagreements?: unknown;
       counterexamples?: readonly {
         at?: unknown;
-        reference?: { input?: unknown; result?: unknown; threw?: unknown };
-        variant?: { input?: unknown; result?: unknown; threw?: unknown };
+        reference?: { input?: unknown; result?: unknown; threw?: unknown; thrownIn?: unknown };
+        variant?: { input?: unknown; result?: unknown; threw?: unknown; thrownIn?: unknown };
       }[];
     };
     try {
@@ -1027,8 +1174,14 @@ export function describeRelationRun(relation: PlannedRelation, stdout: string): 
     lines.push(
       `seed ${inputAsRead(read.seed)}: ${String(read.disagreements)} of ${comparisons} comparisons disagreed`,
     );
-    const answer = (side: { result?: unknown; threw?: unknown } | undefined) =>
-      side?.threw === true ? "threw" : `gave ${inputAsRead(side?.result ?? null)}`;
+    const answer = (side: { result?: unknown; threw?: unknown; thrownIn?: unknown } | undefined) =>
+      side?.threw !== true
+        ? `gave ${inputAsRead(side?.result ?? null)}`
+        : side.thrownIn === "check-program"
+          ? "threw in the check program's own code"
+          : side.thrownIn === "unattributed"
+            ? "threw where no stack frame names a file"
+            : "threw";
     for (const one of read.counterexamples ?? [])
       lines.push(
         `  at position ${String(one.at)}: ${inputAsRead(one.variant?.input)} ${answer(one.variant)}, where ${inputAsRead(one.reference?.input)} ${answer(one.reference)}`,

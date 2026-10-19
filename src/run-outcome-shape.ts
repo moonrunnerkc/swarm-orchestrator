@@ -95,4 +95,21 @@ export interface RunOutcomeReport {
    * A repair can satisfy a wrong expectation; nothing independent says these were right.
    */
   readonly repairsForGeneratedChecksOnly?: readonly number[];
+  /**
+   * Added in 14.5.0: requested outcomes the planner identified from the task (a requirement, the
+   * words a check quoted, and whether its cases change or keep behaviour) that no check retained
+   * for the run states. Present only where there are some. A status of `accepted` beside these is
+   * the supplied contract's, never a reading that the whole task was done.
+   */
+  readonly unresolvedOutcomes?: readonly UnresolvedOutcomeReport[];
+}
+
+/** A requested outcome no retained check states, with why and the next useful action. */
+export interface UnresolvedOutcomeReport {
+  readonly id: string;
+  readonly requirement: string;
+  readonly quote: string | null;
+  readonly role: "change" | "keep";
+  readonly reason: string;
+  readonly nextAction: string;
 }

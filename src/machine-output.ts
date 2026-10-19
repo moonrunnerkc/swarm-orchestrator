@@ -126,6 +126,20 @@ export interface MachineResult {
       readonly reason: string;
       readonly nextAction: string;
     }[];
+    /**
+     * Added in 14.5.0: requested outcomes (a requirement, the task's words a check quoted, the role
+     * of its cases) no retained check states, each with the checks declared for it and why none
+     * does, and the next useful action; a requirement can be covered while one of these is not.
+     */
+    readonly unresolvedOutcomes?: readonly {
+      readonly id: string;
+      readonly requirement: string;
+      readonly quote: string | null;
+      readonly role: "change" | "keep";
+      readonly checks: readonly { readonly check: string; readonly reason: string }[];
+      readonly reason: string;
+      readonly nextAction: string;
+    }[];
   };
   /** Present only where criteria planning ended the run before implementation. */
   readonly planning?: {

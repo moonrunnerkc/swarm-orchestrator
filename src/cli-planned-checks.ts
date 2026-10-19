@@ -18,6 +18,8 @@ import {
   probeMisreads,
   programDidNotLoad,
   relationAgreedSomewhere,
+  relationRaisedInProgram,
+  thrownIn,
 } from "./workers/planned-check-program.ts";
 
 /**
@@ -43,8 +45,17 @@ import {
  * answer for every input (a predicate that is always false), and a program that varies can still
  * call the wrong interface. So a check whose base answers are one value is not refused for that:
  * it is kept with its control unestablished and the uncertainty recorded, unless something shows
- * the program itself broken (it did not load, did not complete, or a separate probe saw it read
- * the case's fields off the input it was given while every answer was the same).
+ * the program itself broken (it did not load, did not complete, threw in its own code, or a
+ * separate probe saw it read the case's fields off the input it was given while every answer was
+ * the same).
+ *
+ * A thrown case is read by where the runner saw it thrown. Thrown in the check program's own
+ * module, the case recorded no answer of the project's, so it is no observation of the base and
+ * the check is refused for a revision, however uniform or varied the other answers were: D1's
+ * one case applied `in` to the string the project returned and read as the base disagreeing with
+ * an input the task names. Thrown outside the program, it is the project's answer and stays one,
+ * as a diagnostic of a crashing base or as a declared throw met. Thrown where no frame names a
+ * file, it is read as the base's answer with that uncertainty recorded beside it.
  */
 /**
  * One case where the base's answer differs from what a check expects of behaviour it says stays:
@@ -93,7 +104,8 @@ export interface PlannedCheckDecision {
   /**
    * What the base run showed about the check, each kind with its own remedy: the program did not
    * load (an import), it read a case's own fields off the input it was given (the argument's
-   * shape, seen by the probe while every answer was one value), it did not finish, its control is
+   * shape, seen by the probe while every answer was one value), it did not finish, a case threw
+   * in the program's own code (so the case observed nothing of the project), its control is
    * unestablished (kept, an uncertainty rather than a failure of the project or the program), its
    * expectation contradicts what the base does where the task keeps behaviour, or, for a change
    * check, the base already passes it.
@@ -106,6 +118,7 @@ export interface PlannedCheckDecision {
     | "did-not-load"
     | "argument-shape"
     | "did-not-complete"
+    | "raised-in-program"
     | "expectation-contradicted"
     | "disagrees-with-base"
     | "reclassification-unsupported"
@@ -116,6 +129,18 @@ export interface PlannedCheckDecision {
    * disagreement shows the expectation and the base differ, not which of them the task backs.
    */
   readonly disagreements: readonly CaseDisagreement[] | null;
+  /**
+   * Of a check of cases, each case that threw on the base and where the runner saw it thrown: in
+   * the check program's own code, outside it (the project or what it calls), or where no stack
+   * frame names a file. Null where no case threw or nothing was compared. Where it was thrown, not
+   * whose fault it was: a program that passes the project a wrong argument gets the project's throw.
+   */
+  readonly thrown:
+    | readonly {
+        readonly case: number;
+        readonly in: "check-program" | "outside-program" | "unattributed";
+      }[]
+    | null;
   /**
    * Declared again as a change under the id of a preserve check the base disagreed with. Held to
    * the change control like any change check, and admitted only for changed cases whose inputs the
@@ -308,7 +333,7 @@ export async function admitPlannedChecks(input: {
     actor: "harness",
     provenance: ["tool-output"],
     payload: asJsonValue({
-      rule: "planned-check-admission-v3",
+      rule: "planned-check-admission-v4",
       decisions,
       droppedRequirements,
       unverifiedRequirements,
@@ -410,6 +435,7 @@ function caseRows(
   input: unknown;
   expected: string;
   base: string | null;
+  thrown: ReturnType<typeof thrownIn>;
 }[] {
   const expected = expectedStdout(check);
   const inputs = plannedInputs(check);
@@ -425,6 +451,7 @@ function caseRows(
     input: inputs[index],
     expected: resultText(line),
     base: got[index] === undefined || got[index] === "" ? null : resultText(got[index]),
+    thrown: got[index] === undefined ? null : thrownIn(got[index]),
   }));
 }
 
@@ -630,6 +657,12 @@ function decide(
   const basis =
     check.atBase === "passes" ? ("base-observed" as const) : ("model-asserted" as const);
   const notes: string[] = [];
+  const thrownCases =
+    seen === undefined || relation !== null
+      ? []
+      : caseRows(check, seen).flatMap((row) =>
+          row.thrown === null ? [] : [{ case: row.index, in: row.thrown }],
+        );
   const verdict = (
     finding: PlannedCheckDecision["finding"],
     reason: string,
@@ -642,7 +675,8 @@ function decide(
       finding === "unjudged" ||
       finding === "did-not-load" ||
       finding === "argument-shape" ||
-      finding === "did-not-complete";
+      finding === "did-not-complete" ||
+      finding === "raised-in-program";
     return {
       check: check.id,
       atBase,
@@ -657,6 +691,7 @@ function decide(
       ...(admitted ? controlWords(control, atBase) : { establishes: null, unknown: null }),
       notes,
       disagreements,
+      thrown: thrownCases.length === 0 ? null : thrownCases,
       reclassified: context.reclassified,
       excerpt: admitted
         ? null
@@ -702,6 +737,25 @@ function decide(
       `${describeMisreads(misread).join(" ")}; the check's own answers vary with its input, so the read is reported and decides nothing`,
     );
   }
+  const inProgram = thrownCases.filter((one) => one.in === "check-program").map((one) => one.case);
+  const relationRaised = relation === null ? 0 : relationRaisedInProgram(seen.stdout);
+  if (inProgram.length > 0 || relationRaised > 0)
+    return verdict(
+      "raised-in-program",
+      `${inProgram.length > 0 ? `case(s) ${inProgram.join(", ")} threw` : `${relationRaised} of its calls threw`} in the check program's own code on the base (the innermost stack frame naming a file is the program's module, not the project's), so ${inProgram.length > 0 ? "they" : "those calls"} recorded no answer of the project's: whatever the base does there, this run does not observe it. Fix the program so that it returns what the project gives rather than failing on it, as what it printed on the base shows; the behaviour the check was for stays in the work until a check of it runs`,
+    );
+  const outside = thrownCases.filter((one) => one.in === "outside-program").map((one) => one.case);
+  if (outside.length > 0)
+    notes.push(
+      `case(s) ${outside.join(", ")} threw outside the check program (in the project or what it calls), which is read as the project's answer there`,
+    );
+  const unattributed = thrownCases
+    .filter((one) => one.in === "unattributed")
+    .map((one) => one.case);
+  if (unattributed.length > 0)
+    notes.push(
+      `case(s) ${unattributed.join(", ")} threw where no stack frame names a file, so whether the program or the project threw is not known; read as the base's answer with that uncertainty`,
+    );
   if (atBase === "passes") {
     if (seen.status !== "accepted") {
       const disagreements =

@@ -791,6 +791,7 @@ async function run(options: RunCommand): Promise<number> {
               goal,
               task: options.task,
               uncovered: planning?.admission?.uncovered ?? [],
+              unresolvedOutcomes: planning?.admission?.unresolvedOutcomes ?? [],
               ...(options.recovery === undefined
                 ? {}
                 : { originalObjective: options.recovery.previousSpec.task }),
@@ -928,6 +929,16 @@ async function run(options: RunCommand): Promise<number> {
       contract: strengthening === undefined ? sealedGoal : (goalContext?.contract ?? sealedGoal),
       uncheckedRequirements: planning?.admission?.uncheckedRequirements ?? [],
       uncovered: planning?.admission?.uncovered ?? [],
+      unresolvedOutcomes: (planning?.admission?.unresolvedOutcomes ?? []).map(
+        ({ id, requirement, quote, role, reason, nextAction }) => ({
+          id,
+          requirement,
+          quote,
+          role,
+          reason,
+          nextAction,
+        }),
+      ),
       repairsForGeneratedChecksOnly: repairsForGeneratedChecksOnly(gates.outcome),
       usage: {
         durationMs: clock.now() - startedAt,
@@ -1002,6 +1013,9 @@ async function run(options: RunCommand): Promise<number> {
             ...(outcome.uncheckedRequirements === undefined
               ? {}
               : { uncheckedRequirements: outcome.uncheckedRequirements }),
+            ...(outcome.unresolvedOutcomes === undefined
+              ? {}
+              : { unresolvedOutcomes: outcome.unresolvedOutcomes }),
             ...(outcome.repairsForGeneratedChecksOnly === undefined
               ? {}
               : { repairsForGeneratedChecksOnly: outcome.repairsForGeneratedChecksOnly }),
@@ -1016,6 +1030,7 @@ async function run(options: RunCommand): Promise<number> {
                   revision: planning.admission?.revision ?? null,
                   coverage: planning.admission?.coverage ?? null,
                   uncovered: planning.admission?.uncovered ?? [],
+                  unresolvedOutcomes: planning.admission?.unresolvedOutcomes ?? [],
                 },
               }),
         })}\n`,
@@ -1090,6 +1105,7 @@ async function runOutcome(input: {
   readonly contract: GoalContract | undefined;
   readonly uncheckedRequirements: NonNullable<RunOutcomeInput["uncheckedRequirements"]>;
   readonly uncovered: NonNullable<RunOutcomeInput["uncovered"]>;
+  readonly unresolvedOutcomes: NonNullable<RunOutcomeInput["unresolvedOutcomes"]>;
   readonly repairsForGeneratedChecksOnly: readonly number[];
   readonly usage: RunOutcomeInput["usage"];
 }): Promise<RunOutcomeInput> {
@@ -1140,6 +1156,9 @@ async function runOutcome(input: {
       ? {}
       : { uncheckedRequirements: input.uncheckedRequirements }),
     ...(input.uncovered.length === 0 ? {} : { uncovered: input.uncovered }),
+    ...(input.unresolvedOutcomes.length === 0
+      ? {}
+      : { unresolvedOutcomes: input.unresolvedOutcomes }),
     ...(input.repairsForGeneratedChecksOnly.length === 0
       ? {}
       : { repairsForGeneratedChecksOnly: input.repairsForGeneratedChecksOnly }),

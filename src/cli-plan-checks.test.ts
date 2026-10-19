@@ -264,6 +264,7 @@ describe("the planned-check revision and its share of the planning allowance", (
           unknown: null,
           notes: [],
           disagreements: null,
+          thrown: null,
           reclassified: false,
           probeRecord: null,
         })),
@@ -719,7 +720,7 @@ describe("a requirement whose only generated check is rejected", () => {
       distinguishedBy: [],
       rejectedChecks: ["kept-forms"],
     });
-    const [reconciled] = await chainRule("planned-coverage-reconciled-v1");
+    const [reconciled] = await chainRule("planned-coverage-reconciled-v2");
     expect(reconciled).toMatchObject({
       requirements: [
         { id: "spaces", retained: ["dashes"], rejected: [], covered: true },
@@ -775,5 +776,185 @@ describe("a requirement whose only generated check is rejected", () => {
     expect(outcome.admission?.uncovered[0]?.reason).toContain(
       "the revision's allowance ended before it declared a replacement",
     );
+    expect(outcome.admission?.unresolvedOutcomes.map((one) => one.id)).toEqual(["kept#1"]);
+    expect(outcome.admission?.unresolvedOutcomes[0]?.reason).toContain(
+      "the revision's allowance ended before it declared a replacement",
+    );
+  });
+
+  // One requirement, two requested outcomes: a word without spaces comes back as it is (checked,
+  // and the base already does it), and "Hello World" reads "hello-world" (its only check refused).
+  const wordQuote = "A word without spaces must still come back as it is";
+  const siblings: FixtureTurn = respondWithToolCalls("pinning", [
+    declare(
+      "dashes",
+      "change",
+      "spaces",
+      "slugify turns spaces into dashes",
+      [
+        { input: "a b", expected: "a-b", changed: true },
+        { input: "plain", expected: "plain", changed: false },
+      ],
+      "the task says spaces become dashes",
+    ),
+    declare(
+      "words-kept",
+      "preserve",
+      "kept",
+      wordQuote,
+      [
+        { input: "plain", expected: "plain" },
+        { input: "word", expected: "word" },
+      ],
+      "the task says a word comes back as it is",
+    ),
+    declare(
+      "hello-kept",
+      "preserve",
+      "kept",
+      keptQuote,
+      [{ input: "Hello World", expected: "hello-world" }],
+      "the task says this still holds",
+    ),
+    reviewOf("spaces", ["dashes"]),
+    reviewOf("kept", ["words-kept", "hello-kept"]),
+  ]);
+
+  it("keeps an outcome unresolved when its check is refused and a sibling under the same requirement passes", async () => {
+    const { planner, model, notes } = planning([
+      siblings,
+      respondWithText("pinned"),
+      respondWithText("No replacement."),
+    ]);
+    const outcome = await planChecks(planner);
+    if (outcome.kind !== "sealed") throw new Error(`sealed, not ${outcome.kind}`);
+    // Per requirement, "kept" reads covered: words-kept is retained.
+    expect(outcome.admission?.uncovered).toEqual([]);
+    // Per outcome, the refused one stays in view, with what the base gave and what to do.
+    expect(outcome.admission?.unresolvedOutcomes).toEqual([
+      {
+        id: "kept#2",
+        requirement: "kept",
+        quote: keptQuote,
+        role: "keep",
+        checks: [
+          {
+            check: "hello-kept",
+            reason:
+              'the base gave "Hello World" for "Hello World", an input the task names, where the check expected "hello-world"',
+          },
+        ],
+        reason: expect.stringContaining("the revision declared no replacement"),
+        nextAction: expect.stringContaining('the task names "Hello World"'),
+      },
+    ]);
+    // Recorded before admission filtered anything, and reconciled after it.
+    const [declared] = await chainRule("planned-outcomes-v1");
+    expect(declared).toMatchObject({
+      round: "first",
+      outcomes: [
+        { id: "spaces#1", role: "change", declaredBy: ["dashes"] },
+        { id: "spaces#2", role: "keep", declaredBy: ["dashes"] },
+        { id: "kept#1", quote: wordQuote, role: "keep", declaredBy: ["words-kept"] },
+        { id: "kept#2", quote: keptQuote, role: "keep", declaredBy: ["hello-kept"] },
+      ],
+    });
+    const [reconciled] = await chainRule("planned-coverage-reconciled-v2");
+    expect(reconciled).toMatchObject({
+      requirements: expect.arrayContaining([
+        { id: "kept", retained: ["words-kept"], rejected: ["hello-kept"], covered: true },
+      ]),
+      outcomes: expect.arrayContaining([
+        expect.objectContaining({ id: "kept#1", covered: true, retained: ["words-kept"] }),
+        expect.objectContaining({ id: "kept#2", covered: false, retained: [] }),
+      ]),
+    });
+    // The bounded revision is told which outcome no admitted check states, not only which check fell.
+    const revisionBrief =
+      model.requests
+        .flatMap((request) => request.messages)
+        .flatMap((message) => (message.role === "user" ? [message.text] : []))
+        .find((text) => text.includes("were each run once on a fresh checkout")) ?? "";
+    expect(revisionBrief).toContain("Requested outcomes no admitted check states now");
+    expect(revisionBrief).toContain(
+      `- kept#2 (kept behaviour, quoting ${JSON.stringify(keptQuote)})`,
+    );
+    expect(notes.join("\n")).toContain("requested outcomes no retained check states: kept#2");
+  });
+
+  it("keeps an outcome unresolved when its revision is withheld for time", async () => {
+    let now = 0;
+    const { planner } = planning([siblings, respondWithText("pinned")], {
+      clock: { now: () => now, sleep: () => Promise.resolve() },
+      maxWallMs: 200_000,
+      admit: (chain, contract, base, options) => {
+        now += 100_000;
+        return realAdmission(chain, contract, base, options);
+      },
+    });
+    const outcome = await planChecks(planner);
+    expect(outcome.admission?.revision.outcome).toBe("withheld");
+    expect(outcome.admission?.uncovered).toEqual([]);
+    expect(outcome.admission?.unresolvedOutcomes.map((one) => one.id)).toEqual(["kept#2"]);
+    expect(outcome.admission?.unresolvedOutcomes[0]?.reason).toContain(
+      "no revision ran: too little planning time remained",
+    );
+  });
+
+  it("keeps an outcome unresolved when its check is declared again stating other words", async () => {
+    // D1's scheme check was first declared quoting the task's example, then replaced by one quoting
+    // only the general rule: the example's outcome had no check left, and nothing said so.
+    const { planner } = planning([
+      respondWithToolCalls("pinning", [
+        declare(
+          "dashes",
+          "change",
+          "spaces",
+          "slugify turns spaces into dashes",
+          [
+            { input: "a b", expected: "a-b", changed: true },
+            { input: "plain", expected: "plain", changed: false },
+          ],
+          "the task says spaces become dashes",
+        ),
+        declare(
+          "kept-forms",
+          "preserve",
+          "kept",
+          keptQuote,
+          [{ input: "Hello World", expected: "hello-world" }],
+          "the task says this still holds",
+        ),
+        declare(
+          "kept-forms",
+          "preserve",
+          "kept",
+          wordQuote,
+          [
+            { input: "plain", expected: "plain" },
+            { input: "word", expected: "word" },
+          ],
+          "the task says a word comes back as it is",
+        ),
+        reviewOf("spaces", ["dashes"]),
+        reviewOf("kept", ["kept-forms"]),
+      ]),
+      respondWithText("pinned"),
+    ]);
+    const outcome = await planChecks(planner);
+    if (outcome.kind !== "sealed") throw new Error(`sealed, not ${outcome.kind}`);
+    expect(outcome.admission?.uncovered).toEqual([]);
+    expect(outcome.admission?.unresolvedOutcomes).toEqual([
+      expect.objectContaining({
+        id: "kept#1",
+        quote: keptQuote,
+        checks: [
+          {
+            check: "kept-forms",
+            reason: `declared again quoting ${JSON.stringify(wordQuote)}, so it no longer states this outcome`,
+          },
+        ],
+      }),
+    ]);
   });
 });

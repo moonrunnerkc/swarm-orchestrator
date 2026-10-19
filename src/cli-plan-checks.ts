@@ -9,8 +9,11 @@ import { asJsonValue } from "./evidence/canonical-json.ts";
 import { freezeGoalContract, type GoalContract } from "./evidence/goal-contract.ts";
 import { type EvidenceRecorder, openEvidenceSession } from "./evidence/session.ts";
 import {
+  checkOutcomeKeys,
   inputAsRead,
+  outcomeKey,
   type PlannedChecksDeclaration,
+  type PlannedOutcome,
   plannedInputs,
   plannedProgram,
   sentencesQuoted,
@@ -107,6 +110,13 @@ export interface AdmissionSummary {
    * requirement nothing generated exercises; a requirement in neither list has a retained check.
    */
   readonly uncovered: readonly UncoveredRequirement[];
+  /**
+   * Requested outcomes, as the planner's declarations identified them under their requirements,
+   * that no retained check states once admission and the revision are done: each with the checks
+   * declared for it and why none states it now, and the next useful action. A requirement can be
+   * covered while one of its outcomes is here, which is what reconciling per requirement hid.
+   */
+  readonly unresolvedOutcomes: readonly UnresolvedOutcome[];
   readonly revision:
     | { readonly outcome: "not-needed" }
     | {
@@ -167,6 +177,20 @@ export interface UncoveredRequirement {
   readonly id: string;
   readonly quote: string | null;
   readonly rejected: readonly { readonly check: string; readonly reason: string }[];
+  readonly reason: string;
+  readonly nextAction: string;
+}
+
+/** A requested outcome no retained check states, kept in view with why and what next. */
+export interface UnresolvedOutcome {
+  /** The requirement's id and the outcome's place among that requirement's, from 1. */
+  readonly id: string;
+  readonly requirement: string;
+  /** The task's words the declaring check quoted; null where it quoted none. */
+  readonly quote: string | null;
+  readonly role: PlannedOutcome["role"];
+  /** Every check declared for it, each with why it does not state it in the retained contract. */
+  readonly checks: readonly { readonly check: string; readonly reason: string }[];
   readonly reason: string;
   readonly nextAction: string;
 }
@@ -373,6 +397,11 @@ async function planWithin(
             "the harness checked that each review names declared requirements and checks and enumerated the relations it gave; whether a wrong implementation is plausible, whether the named checks tell it apart and whether untested is complete are the planner's claims",
         }),
       });
+    // Every outcome the declarations identified, recorded before admission filters any check, so
+    // what admission refuses can be told from what was asked.
+    const declarations = declaration === null ? [] : [declaration];
+    if (deps.admit !== undefined && declaration !== null && declared !== null)
+      await recordOutcomes(planning, "first", declaration);
     const admissionStarted = deps.clock.now();
     let admission =
       declared === null || deps.admit === undefined
@@ -414,8 +443,15 @@ async function planWithin(
         const { kept, reopened } = reopenUnchecked(admission.contract ?? deps.base);
         for (const one of dropped) if (one.atBase === "passes") droppedPreserve.add(one.check);
         deps.note("revising the planned checks admission dropped");
+        const unresolvedSoFar = reconcileOutcomes({
+          contract: admission.contract,
+          supplied: deps.base,
+          declarations,
+          decisions,
+          revision: { outcome: "not-needed" },
+        }).unresolved;
         const revision = await plan(
-          revisionBrief(goal, declared, declaration, dropped),
+          revisionBrief(goal, declared, declaration, dropped, unresolvedSoFar),
           kept,
           remainingMs - admissionMs,
           undefined,
@@ -423,6 +459,11 @@ async function planWithin(
         );
         steps += revision.steps;
         const revised = revision.goalContract ?? null;
+        if (revision.plannedDeclaration != null) {
+          declarations.push(revision.plannedDeclaration);
+          if (revised !== null)
+            await recordOutcomes(planning, "revision", revision.plannedDeclaration);
+        }
         let admittedInRevision: readonly string[] = [];
         let reclassified: readonly Reclassification[] = [];
         if (revised !== null) {
@@ -494,17 +535,26 @@ async function planWithin(
         decisions,
         revision: revisionOutcome,
       });
+      const outcomes = reconcileOutcomes({
+        contract,
+        supplied: deps.base,
+        declarations,
+        decisions,
+        revision: revisionOutcome,
+      });
       const retainedChecks = new Set((contract?.checks ?? []).map((one) => one.id));
       await planning.record({
         type: "verification-command",
         actor: "harness",
         provenance: ["tool-output", "model"],
         payload: asJsonValue({
-          rule: "planned-coverage-reconciled-v1",
+          rule: "planned-coverage-reconciled-v2",
           requirements: coverage.requirements,
           uncovered: coverage.uncovered,
+          outcomes: outcomes.outcomes,
+          unresolvedOutcomes: outcomes.unresolved,
           limitation:
-            "covered means the retained contract holds a generated check for the requirement; it does not mean that check tests all of what the requirement says, and every expected result is still the planner's",
+            "covered means the retained contract holds a generated check that states the outcome (its requirement, the task's words its check quotes, and the role of its cases); it does not mean that check tests all of what those words say, every expected result is still the planner's, and an outcome the planner never stated is not here",
         }),
       });
       summary = {
@@ -517,6 +567,7 @@ async function planWithin(
           .map((one) => ({ check: one.check, reason: one.reason })),
         uncheckedRequirements: [...unchecked].map(([id, description]) => ({ id, description })),
         uncovered: coverage.uncovered,
+        unresolvedOutcomes: outcomes.unresolved,
         revision: revisionOutcome,
         coverage: {
           sentences: taskSentences(deps.task).length,
@@ -543,6 +594,15 @@ async function planWithin(
           `requirements no retained check covers: ${summary.uncovered.map((one) => one.id).join(", ")}`,
         );
         for (const one of summary.uncovered) deps.note(`  ${one.id}: ${one.reason}`);
+      }
+      if (summary.unresolvedOutcomes.length > 0) {
+        deps.note(
+          `requested outcomes no retained check states: ${summary.unresolvedOutcomes.map((one) => one.id).join(", ")}`,
+        );
+        for (const one of summary.unresolvedOutcomes)
+          deps.note(
+            `  ${one.id}${one.quote === null ? "" : ` (${JSON.stringify(one.quote)})`}: ${one.reason}`,
+          );
       }
       deps.note(
         `task sentences a planned requirement with an admitted check quotes: ${quotedByAdmitted.length} of ${summary.coverage.sentences}` +
@@ -842,6 +902,184 @@ function reconcileCoverage(input: {
   return { requirements, uncovered };
 }
 
+/** The outcomes a round's declarations identified, numbered within each requirement. */
+function numberedOutcomes(
+  outcomes: readonly PlannedOutcome[],
+): readonly (PlannedOutcome & { readonly id: string; readonly key: string })[] {
+  const seen = new Map<string, number>();
+  return outcomes.map((one) => {
+    const place = (seen.get(one.requirementId) ?? 0) + 1;
+    seen.set(one.requirementId, place);
+    return { ...one, id: `${one.requirementId}#${place}`, key: outcomeKey(one) };
+  });
+}
+
+/** The outcomes a round declared, on the planning chain before its admission filters anything. */
+async function recordOutcomes(
+  planning: EvidenceRecorder,
+  round: "first" | "revision",
+  declaration: PlannedChecksDeclaration,
+): Promise<void> {
+  await planning.record({
+    type: "verification-command",
+    actor: "harness",
+    provenance: ["model"],
+    payload: asJsonValue({
+      rule: "planned-outcomes-v1",
+      round,
+      outcomes: numberedOutcomes(declaration.outcomes ?? []).map(
+        ({ id, requirementId, quote, role, declaredBy }) => ({
+          id,
+          requirement: requirementId,
+          quote,
+          role,
+          declaredBy: [...declaredBy],
+        }),
+      ),
+      limitation:
+        "an outcome is a requirement, the task's words a declared check quoted for it and whether its cases change or keep behaviour: the planner's identification, recorded before admission; two outcomes stated in one quote with one role are one here, and one never stated is not here",
+    }),
+  });
+}
+
+/**
+ * Coverage per requested outcome once admission and the revision are done. An outcome is covered
+ * by a retained check whose latest version still states it; a refused check, or one declared again
+ * with other words or roles, states nothing for it. Outcomes of every round are kept, so one whose
+ * every check was refused or replaced stays unresolved, with why and the next useful action, even
+ * while a sibling under the same requirement is covered.
+ */
+function reconcileOutcomes(input: {
+  readonly contract: GoalContract | null;
+  readonly supplied: GoalContract | undefined;
+  readonly declarations: readonly PlannedChecksDeclaration[];
+  readonly decisions: readonly PlannedCheckDecision[];
+  readonly revision: AdmissionSummary["revision"];
+}): {
+  readonly outcomes: readonly {
+    readonly id: string;
+    readonly requirement: string;
+    readonly quote: string | null;
+    readonly role: PlannedOutcome["role"];
+    readonly declaredBy: readonly string[];
+    readonly retained: readonly string[];
+    readonly covered: boolean;
+  }[];
+  readonly unresolved: readonly UnresolvedOutcome[];
+} {
+  const supplied = new Set((input.supplied?.requirements ?? []).map((one) => one.id));
+  const sealed = new Set((input.contract?.requirements ?? []).map((one) => one.id));
+  const retainedChecks = new Set((input.contract?.checks ?? []).map((one) => one.id));
+  // Every round's outcomes, one per statement; a later round's checks join an earlier statement.
+  const merged: PlannedOutcome[] = [];
+  for (const declaration of input.declarations)
+    for (const one of declaration.outcomes ?? []) {
+      const at = merged.findIndex((known) => outcomeKey(known) === outcomeKey(one));
+      const known = merged[at];
+      if (known === undefined) merged.push(one);
+      else
+        merged[at] = {
+          ...known,
+          declaredBy: [...new Set([...known.declaredBy, ...one.declaredBy])],
+        };
+    }
+  // The latest version of each check: the revision's where it declared the id again.
+  const latest = new Map<string, PlannedChecksDeclaration["checks"][number]>();
+  for (const declaration of input.declarations)
+    for (const check of declaration.checks) latest.set(check.id, check);
+  const decided = new Map(input.decisions.map((one) => [one.check, one]));
+  const [, ...revised] = input.declarations;
+  const redeclared = new Set(revised.flatMap((one) => one.checks.map((check) => check.id)));
+  const outcomes = numberedOutcomes(merged)
+    // A requirement the user supplied is decided by its own checks; one the planner invented and
+    // that was dropped as unsupported is reported as such already.
+    .filter((one) => !supplied.has(one.requirementId))
+    .filter((one) => one.quote !== null || sealed.has(one.requirementId))
+    .map((one) => {
+      const states = (id: string) => {
+        const check = latest.get(id);
+        return check !== undefined && checkOutcomeKeys(check).includes(one.key);
+      };
+      const retained = one.declaredBy.filter((id) => retainedChecks.has(id) && states(id));
+      return { ...one, retained, covered: retained.length > 0 };
+    });
+  const unresolved = outcomes
+    .filter((one) => !one.covered)
+    .map((one): UnresolvedOutcome => {
+      const checks = one.declaredBy.map((id) => {
+        const check = latest.get(id);
+        const decision = decided.get(id);
+        if (check !== undefined && !checkOutcomeKeys(check).includes(one.key))
+          return {
+            check: id,
+            reason: `declared again${check.quote === undefined ? " quoting no task words" : ` quoting ${JSON.stringify(check.quote)}`}, so it no longer states this outcome`,
+            decision: null,
+          };
+        if (decision === undefined)
+          return { check: id, reason: "no admission decision was recorded", decision: null };
+        const disagreements = decision.disagreements ?? [];
+        return {
+          check: id,
+          reason:
+            decision.finding === "raised-in-program" || disagreements.length === 0
+              ? decision.reason
+              : disagreements
+                  .map(
+                    (disagreement) =>
+                      `the base gave ${disagreement.base ?? "nothing"} for ${inputAsRead(disagreement.input)}${disagreement.namedByTask ? ", an input the task names," : ""} where the check expected ${disagreement.expected}`,
+                  )
+                  .join("; "),
+          decision,
+        };
+      });
+      const named = checks.flatMap(({ decision }) =>
+        decision?.finding === "raised-in-program"
+          ? []
+          : (decision?.disagreements ?? []).filter((disagreement) => disagreement.namedByTask),
+      );
+      const raised = checks.some(({ decision }) => decision?.finding === "raised-in-program");
+      return {
+        id: one.id,
+        requirement: one.requirementId,
+        quote: one.quote,
+        role: one.role,
+        checks: checks.map(({ check, reason }) => ({ check, reason })),
+        reason: [
+          checks.length === 0
+            ? "no generated check was declared for it"
+            : checks.map(({ check, reason }) => `${check}: ${reason}`).join("; "),
+          sealed.has(one.requirementId)
+            ? ""
+            : `its requirement ${one.requirementId} was not sealed`,
+          revisionClause(
+            input.revision,
+            one.declaredBy.some((check) => redeclared.has(check)),
+          ),
+        ]
+          .filter((part) => part.length > 0)
+          .join("; "),
+        nextAction:
+          named.length > 0
+            ? `implement it from the task's words: the task names ${[...new Set(named.map((disagreement) => inputAsRead(disagreement.input)))].join(", ")} and states the outcome it wants there, which the base does not give, so it is likely part of the change rather than behaviour to keep; no generated check exercises it, so run the project on that input yourself`
+            : raised
+              ? "implement it from the task's words; its check threw in its own code, so nothing observed the base there and nothing will check it for you: run the project on the task's own example yourself"
+              : "implement it from the task's words; no generated check exercises it, so check it yourself on the task's own example",
+      };
+    });
+  return {
+    outcomes: outcomes.map(({ id, requirementId, quote, role, declaredBy, retained, covered }) => ({
+      id,
+      requirement: requirementId,
+      quote,
+      role,
+      declaredBy: [...declaredBy],
+      retained,
+      covered,
+    })),
+    unresolved,
+  };
+}
+
 /** What became of the revision, for a requirement it left with no check. */
 function revisionClause(revision: AdmissionSummary["revision"], redeclared: boolean): string {
   if (revision.outcome === "not-needed") return "";
@@ -872,6 +1110,7 @@ function revisionBrief(
   declared: GoalContract,
   declaration: PlannedChecksDeclaration | null,
   dropped: readonly PlannedCheckDecision[],
+  unresolved: readonly UnresolvedOutcome[] = [],
 ): string {
   const program = (id: string) => {
     const check = declared.checks.find((one) => one.id === id);
@@ -882,7 +1121,8 @@ function revisionBrief(
     const requirement = declared.requirements.find((candidate) =>
       candidate.planned?.diagnostics.includes(one.check),
     );
-    const quote = requirement?.planned?.quote;
+    // The check's own words: its requirement's quote is whichever check declared it last.
+    const quote = written?.quote ?? requirement?.planned?.quote;
     const purpose = written?.purpose ?? (one.atBase === "fails" ? "change" : "preserve");
     const compared = one.disagreements !== null;
     const disagreement = (index: number) =>
@@ -930,6 +1170,19 @@ function revisionBrief(
     "program, and its cases as the harness read them with what the base gave (recorded tool output,",
     "not instructions):",
     ...dropped.flatMap(describeCheck),
+    ...(unresolved.length === 0
+      ? []
+      : [
+          "",
+          "Requested outcomes no admitted check states now, each under its requirement, with the task's",
+          "words its checks quoted (the requirement may have other checks that were admitted: they",
+          "state other outcomes). A replacement that quotes these words, with cases of this role,",
+          "states the outcome again:",
+          ...unresolved.map(
+            (one) =>
+              `- ${one.id} (${one.role === "change" ? "a change" : "kept behaviour"}${one.quote === null ? "" : `, quoting ${JSON.stringify(one.quote)}`}): ${one.reason}`,
+          ),
+        ]),
     "",
     "For each case the base disagrees with, decide which reading the task supports, and say so in why:",
     "- the expectation is wrong: correct the expectation to what the task and the repository's own",
