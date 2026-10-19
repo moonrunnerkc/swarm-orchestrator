@@ -87,3 +87,11 @@ the refusal and its revision are admitted.
 No new file. `CHANGELOG.md` (declared in amendment 1 as one line) instead edits the two unreleased
 14.5.0 bullets whose behaviour this work changes: the argument probe's refusal and the held case,
 which now carries the stop's class and the relation's yield.
+
+### 5. The measurement history and the review description
+
+Added while launch R1 ran; no product file.
+
+- `docs/agent.md`: one entry in the measurement history, as each earlier piece of this work has.
+- `docs/evidence/2026-10-19/repair-value/pr-description.md` (in the declared directory): the
+  updated description of PR #89.

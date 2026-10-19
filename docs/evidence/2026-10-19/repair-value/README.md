@@ -71,9 +71,11 @@ only where it is read again on the very tree it was told to a repair on, that is
 left the code as it was, and the stop is `held-expectation`. The valid two-step repair is accepted
 after its second change; the wrong expectation is bounded by the attempt cap (three repairs, one
 rolled back for breaking a kept case) and the run is `unresolved`. The four classes stay apart: a
-checking-program defect (`instrument`, from the probe or a program that does not load), an
-expectation contradicted by the base (refused at admission), an unsuccessful repair (asked again
-until the cap), and a stopping decision (`held-expectation`, the cap, the budget). An unchanged
+demonstrated checking-program defect (refused at admission as did-not-load, did-not-complete or
+argument-shape; `instrument` stays the repair class for such a defect and nothing here files a
+held case under it), an expectation contradicted by the base (refused at admission), an
+unsuccessful repair (asked again until the cap), and a stopping decision (`held-expectation`, the
+cap, the budget). An unchanged
 answer is never read as the expectation shown wrong.
 
 **Relations and kept cases** ([policy-audit/relation-limit.mjs](policy-audit/relation-limit.mjs),
