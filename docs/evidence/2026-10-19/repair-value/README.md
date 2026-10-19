@@ -191,3 +191,26 @@ product-visible check says so, which no run here had.
   caught that through the supplied check.
 - The ordinary runs are one exposed task, and the comparison is one task; nothing establishes
   general completion or comparative benefit, and the one comparison favours OpenCode.
+
+## Corrections, appended after the follow-up ([../coverage-and-reserve/](../coverage-and-reserve/scope.md))
+
+Appended; the text above, the protocol, the verdicts and the scoring stand as written. The C1
+timeline, recomputed from C1's packed chains after verifying every hash and blob
+([c1-timeline.json](../coverage-and-reserve/c1-timeline.json)), corrects two statements about C1:
+
+- "The worker then spent its remaining wall on full `npm test` runs" and, under the limitations,
+  "C1's full `npm test` runs": the two `npm test` runs took 7.3 s and 5.3 s. Of the worker loop's
+  429 s, 365 s was model time, and 300.7 s of that was six calls that each resent the second run's
+  113 KB output (50.9K to 52.6K input tokens, 47 to 51 s to the first token); the first call after the
+  output left the compaction window took 5.5K tokens and seconds. The cost was the output resent to
+  the model, not the test command.
+- "the wall was spent and the final build, lint and tests gates were cancelled": the end of the
+  implementation's wall aborted the gates engine's command signal, so those gates were refused before
+  they spawned, about 16 s before the run's own deadline. That was a product defect, not a consequence
+  of the wall alone; it is fixed in the follow-up, where a run that spends its wall still has its
+  delivered tree measured.
+
+Two details of C1's planning, also from its chain: the email check's refusal came from a misspelt
+expected display string (`use.name+tag`), a genuinely wrong expectation; and the planning summary's
+empty `uncheckedRequirements` listed only unsealed requirements, while the two sealed requirements
+with no check went unreported to the worker. Neither changes C1's result.
