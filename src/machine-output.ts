@@ -89,7 +89,20 @@ export interface MachineResult {
     readonly dropped: readonly { readonly check: string; readonly reason: string }[];
     readonly revision:
       | { readonly outcome: "not-needed" }
-      | { readonly outcome: "ran"; readonly admitted: readonly string[] }
+      | {
+          readonly outcome: "ran";
+          readonly admitted: readonly string[];
+          /** Added in 14.5.0: checks the revision declared again as changes, with the planner's why. */
+          readonly reclassified?: readonly {
+            readonly check: string;
+            readonly requirement: string;
+            readonly from: "preserve";
+            readonly to: "change";
+            readonly justification: string;
+          }[];
+          /** Added in 14.5.0: how the revision's planner stopped. */
+          readonly stopReason?: string;
+        }
       | { readonly outcome: "withheld"; readonly remainingMs: number; readonly neededMs: number }
       | null;
     /**
@@ -102,6 +115,17 @@ export interface MachineResult {
       readonly quotedByAdmitted: readonly number[];
       readonly quotedWithoutCheck?: readonly number[];
     } | null;
+    /**
+     * Added in 14.5.0: sealed planned requirements no retained check covers once admission and
+     * the revision are done, each with the refused checks, why, and the next useful action.
+     */
+    readonly uncovered?: readonly {
+      readonly id: string;
+      readonly quote: string | null;
+      readonly rejected: readonly { readonly check: string; readonly reason: string }[];
+      readonly reason: string;
+      readonly nextAction: string;
+    }[];
   };
   /** Present only where criteria planning ended the run before implementation. */
   readonly planning?: {

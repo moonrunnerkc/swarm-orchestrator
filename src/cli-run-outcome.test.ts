@@ -377,6 +377,28 @@ describe("the run's one status", () => {
     expect(text).toContain("scope: only supplied requirements decide");
   });
 
+  it("gives a planned requirement with no check the reason planning recorded and the next action", () => {
+    const input = {
+      ...base,
+      verdict: certified,
+      requirements: finished("accepted", "accepted"),
+      gates: cycle([run("tests", "passed"), run("task-acceptance", "passed")]),
+      uncovered: [
+        {
+          id: "above-ten-big",
+          reason:
+            'above: the base gave "big" for 50 where the check expected "large"; the revision declared no replacement',
+          nextAction: "implement it from the task's words",
+        },
+      ],
+    };
+    const text = describeRunOutcome(input).join("\n");
+    expect(text).toContain(
+      'no generated check covers it: above: the base gave "big" for 50 where the check expected "large"; the revision declared no replacement',
+    );
+    expect(text).toContain("next for it: implement it from the task's words");
+  });
+
   it("leaves a run of hypotheses alone unjudged, as the same run without planning is", () => {
     const hypotheses = freezeGoalContract({
       ...plannedContract,
