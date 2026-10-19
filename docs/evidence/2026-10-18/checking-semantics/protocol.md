@@ -92,3 +92,11 @@ the expanded audit's reading. Streams, ledgers and blobs are packed losslessly
 ---
 
 ## Amendments
+
+### 1. 2026-10-19, after launch O2: closed
+
+Two launches, 14.8 agent-minutes. O1 failed the expanded external evaluation and O2 passed it, so
+ordinary completion is not demonstrated and C, the paired comparison, is not run: no task was
+registered for it. The infrastructure slot was not needed. Nothing else will be launched under
+this protocol. A product correction made after O1's trace (while O2 ran on the unchanged frozen
+build) is validated with no model only; see [launches.md](launches.md) and [README.md](README.md).
