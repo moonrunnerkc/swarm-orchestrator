@@ -61,3 +61,13 @@ Documentation: `CHANGELOG.md` (14.5.0, unreleased), and `docs/using.md` or `docs
 where the behaviour a reader relies on changes. `README.md` only if the ordinary workflow changes.
 
 ## Amendments
+
+### 1. The revision's own instructions, before editing the planner
+
+C1's revision session reread the repository for 45 s and was cut off 32 s into its next call with
+nothing declared. Its brief carried the dropped checks, but the planner's system prompt is the same
+for every round and opens with "Read the relevant source, tests and manifest ... then call
+declare_planned_check". A revision is told otherwise only if the planner knows it is one. File added:
+
+- `src/workers/planner-run.ts`: a revision round is told that the repository was already read and
+  the checks already ran, and to declare its replacements first.
