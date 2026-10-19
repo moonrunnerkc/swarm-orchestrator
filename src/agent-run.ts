@@ -154,6 +154,13 @@ export interface AgentTaskOptions {
   /** Whether shell-allowlist prompts are answered by the run. Absent asks (ADR 0011). */
   readonly approvalMode?: ApprovalMode;
   readonly abortSignal: AbortSignal;
+  /**
+   * What stops the gates' commands: the run's own cancellation and, where the caller holds a total
+   * allowance, its end. Never the end of the loop's or an attempt's wall: a loop that spent its wall
+   * still has its delivered tree measured. Absent is `abortSignal`, which a caller with no separate
+   * model-work deadline uses for both.
+   */
+  readonly verificationSignal?: AbortSignal;
   /** Denied to tools along with everything under it, since the session store lives there. */
   readonly homeDir: string;
   /** Earlier turns of the same session, so a follow-up task knows what was already done. */
@@ -335,6 +342,10 @@ export async function runAgentTask(input: AgentTaskOptions): Promise<AgentTaskRe
   const wall = createWallBudget(options);
   const cancellation = new AbortController();
   const stopping = AbortSignal.any([options.abortSignal, cancellation.signal]);
+  const verifying = AbortSignal.any([
+    options.verificationSignal ?? options.abortSignal,
+    cancellation.signal,
+  ]);
   const watcher =
     store === undefined
       ? null
@@ -347,7 +358,11 @@ export async function runAgentTask(input: AgentTaskOptions): Promise<AgentTaskRe
           }
         }, 200);
   try {
-    return await executeAgentTask({ ...options, abortSignal: stopping }, wall, store);
+    return await executeAgentTask(
+      { ...options, abortSignal: stopping, verificationSignal: verifying },
+      wall,
+      store,
+    );
   } finally {
     if (watcher !== null) clearInterval(watcher);
     wall.release();
@@ -653,9 +668,11 @@ async function executeAgentTask(
     clock: options.clock,
     emit: options.emit,
     cap: options.attempts,
-    // The resolve loop stops at the wall deadline as it stops at a cancellation; the run's
-    // own cancellation is still the only thing that makes the outcome not green.
+    // The resolve loop stops at the wall deadline as it stops at a cancellation. The commands that
+    // measure a cycle answer only to the run's cancellation and the end of its total allowance:
+    // C1's loop spent its wall, and that wall's end refused its final build, lint and tests.
     abortSignal: wall.stopAttemptsSignal(options.abortSignal),
+    commandSignal: options.verificationSignal ?? options.abortSignal,
     inherited,
     criteriaSealed,
     criteriaRef: criteriaRefOf(options),
@@ -892,8 +909,10 @@ async function executeAgentTask(
     gates,
     finalStopReason,
     envelope.mode,
-    options.abortSignal.aborted ||
-      (wall.deadlineMs !== null && options.clock.now() >= wall.deadlineMs),
+    // Cancelled is the run's cancellation, or a total allowance that ended before the checks
+    // finished. A loop that spent its own wall was not cancelled: its stop reason says so, and the
+    // verdict refuses that lifecycle on its own.
+    (options.verificationSignal ?? options.abortSignal).aborted,
     options.contract,
   );
   recordRunEnd(options, verdict.acceptable, store);

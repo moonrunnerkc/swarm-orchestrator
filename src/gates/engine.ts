@@ -69,6 +69,11 @@ interface GatesEngineOptions {
   /** Stops the resolve loop where the run was cancelled, rather than spending its attempts. */
   readonly abortSignal?: AbortSignal;
   /**
+   * Stops the gates' commands, which `abortSignal` does where this is absent. Kept apart so the end
+   * of an attempt's wall stops the attempts without refusing the checks of the tree they left.
+   */
+  readonly commandSignal?: AbortSignal;
+  /**
    * What already differed from the base when the run began. Those files are not attributed to
    * the run unless it went on to edit them, so a dirty workspace is not read as its work.
    */
@@ -201,7 +206,7 @@ export async function runGatesEngine(options: GatesEngineOptions): Promise<Gates
     options.clock,
     harnessChildEnvironment(),
     options.isolation,
-    options.abortSignal,
+    options.commandSignal ?? options.abortSignal,
     options.commandPool,
   );
   // Read from the base commit, falling back to the tree only where the base had no manifest at

@@ -148,6 +148,10 @@ export async function runAgentLoop(
   let lastInputTokens = 0;
   let reservedTokens = 0;
   let plan = "";
+  // An abort that lands once the loop is past its own wall is the end of that wall: the caller's
+  // backstop that cuts work still in flight fires as the wall ends, and it is no person's stop.
+  const stoppedByAbort = (): StopReason =>
+    deps.clock.now() >= deadline ? "max-wall-time" : "interrupted";
 
   const finish = (stopReason: StopReason, completionClaim: string): AgentLoopOutcome => {
     deps.emit({
@@ -179,7 +183,7 @@ export async function runAgentLoop(
         steps,
         tokensUsed,
         elapsedMs: deps.clock.now() - startedAt,
-        interrupted: deps.abortSignal.aborted,
+        interrupted: deps.abortSignal.aborted && deps.clock.now() < deadline,
       },
       deps.budget,
     );
@@ -245,7 +249,7 @@ export async function runAgentLoop(
       if (cause instanceof ModelCallDeadlineError) {
         return finish("max-wall-time", "");
       }
-      return finish(deps.abortSignal.aborted ? "interrupted" : "model-error", "");
+      return finish(deps.abortSignal.aborted ? stoppedByAbort() : "model-error", "");
     }
 
     steps += 1;
@@ -253,7 +257,7 @@ export async function runAgentLoop(
     if (answered) {
       answeredSteps += 1;
     }
-    if (deps.abortSignal.aborted) return finish("interrupted", "");
+    if (deps.abortSignal.aborted) return finish(stoppedByAbort(), "");
     if (deps.clock.now() >= deadline) return finish("max-wall-time", "");
     if (tokensUsed >= deps.budget.maxTokens) return finish("max-tokens", "");
     messages.push({
@@ -307,7 +311,7 @@ export async function runAgentLoop(
             })),
           ],
         });
-        return finish(deps.abortSignal.aborted ? "interrupted" : "max-wall-time", "");
+        return finish(deps.abortSignal.aborted ? stoppedByAbort() : "max-wall-time", "");
       }
       deps.emit({
         type: "tool-call",

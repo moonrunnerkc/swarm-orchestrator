@@ -1178,3 +1178,93 @@ describe("a verbose command in the worker's loop", () => {
     expect(result.green).toBe(true);
   });
 });
+
+describe("the gates after a loop that spent its wall", () => {
+  /** Declares, writes, then answers nothing within the wall: the loop stops at max-wall-time. */
+  function spendsItsWall(contents: string): ModelClient {
+    let calls = 0;
+    const fixture = createFixtureModelClient({
+      modelId: "fixture:worker",
+      turns: goodTurns(contents).slice(0, 2),
+    });
+    return {
+      modelId: fixture.modelId,
+      generate: (request) => {
+        calls += 1;
+        if (calls <= 2) return fixture.generate(request);
+        return new Promise((_resolve, reject) => {
+          request.abortSignal.addEventListener("abort", () => reject(request.abortSignal.reason), {
+            once: true,
+          });
+        });
+      },
+    };
+  }
+
+  it("still runs the required checks on the exact tree the loop delivered", async () => {
+    // C1: the loop spent its wall, and the end of that wall refused the build, lint and tests
+    // commands before they could spawn, so nothing measured the delivered change.
+    const result = await task([], {
+      model: createRecordingModelClient(spendsItsWall(stillGreen), evidence),
+      clock: createSystemClock(),
+      maxWallTimeMs: 2_000,
+    });
+    expect(result.loop.stopReason).toBe("max-wall-time");
+    const tests = result.gates.outcome.finalCycle.runs.find((run) => run.gateId === "tests");
+    expect(tests?.status).toBe("passed");
+    expect(JSON.stringify(result.gates.outcome.finalCycle.runs)).not.toContain(
+      "refused before spawn",
+    );
+    // The run did not finish its work in its allowance, and says so; it was not cancelled.
+    expect(result.green).toBe(false);
+    expect(Object.values(result.verdict.reasons).join(" ")).toContain(
+      "the run stopped as max-wall-time",
+    );
+    expect(Object.values(result.verdict.reasons).join(" ")).not.toContain("the run was cancelled");
+  }, 60_000);
+
+  it("refuses the checks when the run is cancelled, and says it was", async () => {
+    const cancel = new AbortController();
+    const result = await task([], {
+      model: createRecordingModelClient(spendsItsWall(stillGreen), evidence),
+      clock: createSystemClock(),
+      maxWallTimeMs: 60_000,
+      abortSignal: cancel.signal,
+      emit: (event) => {
+        if (event.type === "tool-outcome" && event.toolName === "write")
+          cancel.abort("cancelled from the keyboard");
+      },
+    });
+    const tests = result.gates.outcome.finalCycle.runs.find((run) => run.gateId === "tests");
+    expect(tests?.status).toBe("not-applicable");
+    expect(result.green).toBe(false);
+    expect(Object.values(result.verdict.reasons).join(" ")).toContain("the run was cancelled");
+  }, 60_000);
+
+  it("stops the checks it was given time for at the end of the verification allowance, and calls the run incomplete", async () => {
+    const verification = new AbortController();
+    const result = await task([], {
+      model: createRecordingModelClient(spendsItsWall(stillGreen), evidence),
+      clock: createSystemClock(),
+      maxWallTimeMs: 1_000,
+      verificationSignal: verification.signal,
+      gateOptions: {
+        commandOverrides: { ...gateOverrides, tests: 'node -e "setTimeout(() => {}, 30000)"' },
+      },
+      emit: (event) => {
+        if (event.type === "stopped")
+          setTimeout(
+            () =>
+              verification.abort(
+                "the run's total allowance ended before final verification finished",
+              ),
+            500,
+          );
+      },
+    });
+    const tests = result.gates.outcome.finalCycle.runs.find((run) => run.gateId === "tests");
+    expect(tests?.status).not.toBe("passed");
+    expect(result.green).toBe(false);
+    expect(Object.values(result.verdict.reasons).join(" ")).toContain("the run was cancelled");
+  }, 60_000);
+});

@@ -56,8 +56,12 @@ export function runProcessGroup(
   options: ProcessRunOptions,
 ): Promise<ProcessRunResult> {
   if (options.signal?.aborted || options.timeoutMs <= 0) {
+    // The signal's own reason where it gives one in words, so a refusal at the end of a total
+    // allowance does not read as a cancellation somebody asked for.
     const reason = options.signal?.aborted
-      ? "the run was cancelled"
+      ? typeof options.signal.reason === "string" && options.signal.reason.length > 0
+        ? options.signal.reason
+        : "the run was cancelled"
       : "no time remained in the wall budget";
     const refused = `${refusedBeforeSpawn}: ${reason}`;
     return Promise.resolve({

@@ -329,6 +329,45 @@ describe("runAgentLoop", () => {
     expect(outcome.steps).toBe(1);
   });
 
+  it("stops as max-wall-time when the abort arrives past its own wall, mid-tool", async () => {
+    // The backstop that ends model work fires as the loop's wall ends, to cut what is still in
+    // flight; a loop past its wall was stopped by its wall, not by a person.
+    const harness = createHarness([
+      respondWithToolCalls("starting", [{ callId: "a", toolName: "shell", input: {} }]),
+      respondWithText("never reached"),
+    ]);
+    harness.deps.toolInvoker.invoke = (invocation) => {
+      harness.clock.advance(generousBudget.maxWallTimeMs + 1_000);
+      harness.controller.abort("the model-work allowance is spent");
+      return Promise.resolve({
+        callId: invocation.callId,
+        toolName: invocation.toolName,
+        output: "cancelled",
+        failed: true,
+      });
+    };
+
+    const outcome = await runAgentLoop("run past the wall", harness.deps);
+
+    expect(outcome.stopReason).toBe("max-wall-time");
+  });
+
+  it("stops as max-wall-time when the abort arrives past its own wall, mid-call", async () => {
+    const harness = createHarness([respondWithText("never reached")]);
+    harness.deps.model.generate = (request) =>
+      new Promise((_resolve, reject) => {
+        request.abortSignal?.addEventListener("abort", () =>
+          reject(new DOMException("This operation was aborted", "AbortError")),
+        );
+        harness.clock.advance(generousBudget.maxWallTimeMs + 1_000);
+        harness.controller.abort("the model-work allowance is spent");
+      });
+
+    const outcome = await runAgentLoop("run past the wall", harness.deps);
+
+    expect(outcome.stopReason).toBe("max-wall-time");
+  });
+
   /**
    * A run stopped from the keyboard while the model was answering used to report
    * "model error: This operation was aborted", the transport's own words for a cancelled
