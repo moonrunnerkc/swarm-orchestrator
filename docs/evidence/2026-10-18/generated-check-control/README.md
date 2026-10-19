@@ -81,3 +81,29 @@ node ../../2026-10-17/repair-trust-live/score.mjs --task mime --patch <final.pat
 ```
 
 Declared files for this work, with amendments: [scope.md](scope.md).
+
+---
+
+## Correction appended 2026-10-18: launch 4's repair is not correct in full
+
+Appended by the [checking-semantics follow-up](../checking-semantics/README.md); everything above
+stands as written, and the frozen evaluator's verdict on launch 4 stays `pass`
+([launch-4/final-verdict.json](launch-4/final-verdict.json)).
+
+Launch 4's exact final patch (`sha256:6a51acbda267...`) turns every line terminator into a space
+before it strips the directory part and the extension's prefix. Through the public constructor,
+with `application/x-newline` registered for the extension `pn\ng` and `application/x-space` for
+`pn g`, `getType("file.pn\ng")` gives `application/x-newline` on the unchanged base and on the
+upstream fix, and `application/x-space` on launch 4's patch. The task supports the case: a type
+comes "from the extension after the last dot of the last segment, whatever characters precede
+it", getType treats "every line terminator like any other character", and `define` and the rest
+of the class "stay as they are". So where this record says launch 4's repair was correct ("the
+first repair fixed it", "autonomous detection and a correct repair", "repair made the correct
+change"), that holds for the frozen evaluator's cases and the development contract, not for this
+one. Launch 1's supplied-check repair passes it.
+
+The relation that found the omission is bounded by its fixture: under the default types a line
+terminator and a space give one answer, which stops holding where both are registered extensions,
+and there a correct implementation breaks the relation while the space normalization keeps it.
+The expanded audit and its readings on every tree are in
+[../checking-semantics/](../checking-semantics/README.md); it is exposed development material.
