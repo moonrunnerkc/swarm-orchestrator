@@ -1,0 +1,73 @@
+{
+  "schema": "swarm-ordinary-comparison.manifest.v1",
+  "frozenAt": "2026-10-19T22:06:30.512Z",
+  "protocolDigest": "sha256:1979e837930d7485c4a3503c28b1ab8abf7ae0548eb06091b751f7de7a9a5841",
+  "pins": {
+    "model": "qwen3.6:35b-a3b",
+    "endpoint": "http://127.0.0.1:11434/v1",
+    "swarmCli": "/Users/brad/.cache/swarm-comparison/tools/swarm-9a5052750/dist/cli.js",
+    "swarmRevision": "9a505275059259b79e129517315b8c822caddf13",
+    "swarmCliDigest": "sha256:da219bb91bf65023fe5a03c5f80f1ad17c836bb01a789b79d148e8681e3104e0",
+    "opencode": "1.14.48",
+    "node": "v24.15.0",
+    "harnessDigest": "sha256:21b410beead50a8ba196a24e782fdc8c76e6bc3273d1b3a26a9c265f10572c96",
+    "swarmFlags": []
+  },
+  "budgets": {
+    "wallMsPerInvocation": 840500,
+    "wallGraceMs": 59500,
+    "swarmTokenCap": 8000000,
+    "maxCorrections": 0,
+    "swarmVerificationReserveMs": 0
+  },
+  "seed": "swarm-ordinary-comparison-2026-10-11",
+  "tasks": [
+    {
+      "id": "fxp-bugfix-uint8array-utf8",
+      "repository": "NaturalIntelligence/fast-xml-parser",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ]
+      ],
+      "build": [],
+      "projectTest": [
+        "npm",
+        "test"
+      ],
+      "visiblePrefix": "",
+      "workType": "bugfix",
+      "baseCommit": "3617550adfb280989f482d662b7e9ece55a32a34",
+      "upstreamCommit": "bb2ec6ce4bfc3f62d621df6e6bf2b3152965175a",
+      "hidden": {
+        "testFiles": [
+          "spec/inputType_spec.js"
+        ],
+        "argv": [
+          "npx",
+          "jasmine",
+          "spec/inputType_spec.js"
+        ]
+      },
+      "immutable": [
+        "spec"
+      ],
+      "taskText": "XMLParser.parse() accepts non-string input that has a toString method, but when a plain Uint8Array (for example the output of TextEncoder.encode) is passed, the parser stringifies it as a comma-separated list of byte values instead of decoding the bytes, so parsing fails or produces garbage. Make parse() treat a Uint8Array as UTF-8 encoded XML text: multi-byte characters (accented letters, emoji) must round-trip correctly; only the bytes inside the given view must be decoded (respect byteOffset and length of a subarray); a leading UTF-8 byte order mark must be preserved in the decoded string so that captureMetaData startIndex values match those obtained when the equivalent string is parsed directly; validation (validator.validate) must accept the same bytes it would accept as a string and reject malformed XML. Node.js Buffer input must keep working exactly as before. Source is under src/; tests run with npm test (jasmine).",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "node acceptance/visible/check.mjs",
+        "source": "import assert from \"node:assert/strict\";\nimport { XMLParser } from \"../../src/fxp.js\";\nconst parsed = new XMLParser().parse(new TextEncoder().encode(\"<a>caf\\u00e9 \\u{1F600}</a>\"));\nassert.equal(parsed.a, \"caf\\u00e9 \\u{1F600}\");\nconsole.log(\"visible check passed\");\n"
+      }
+    }
+  ],
+  "launches": [
+    {
+      "task": "fxp-bugfix-uint8array-utf8",
+      "arm": "swarm",
+      "order": 2
+    }
+  ],
+  "purpose": "coverage-and-reserve protocol, amendment 1: the three-arm comparison on the task the registered rule selected; arm 2, Swarm without --plan-checks"
+}

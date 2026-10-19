@@ -114,3 +114,34 @@ campaign stops at this protocol's boundary.
 ---
 
 ## Amendments
+
+### 1. 2026-10-19, after D1 and before any arm of the comparison: the task and the manifests
+
+D1 ran and is recorded ([launches.md](launches.md), [d1/README.md](d1/README.md)): the hidden
+oracle fails its accepted patch, and two product defects are recorded. As registered, the product is
+not changed and the comparison runs on `9a5052750`.
+
+**The rule applied, in `scripts/comparison/tasks.mjs` order.** The four `marked-*` tasks are skipped
+(D1's repository). The next task, `fxp-bugfix-uint8array-utf8` (NaturalIntelligence/fast-xml-parser,
+`bugfix`), meets the rest:
+
+- **Wording.** Its one statement of kept behaviour is "Node.js Buffer input must keep working exactly
+  as before"; on a fresh checkout of its base `3617550a` with `npm ci --ignore-scripts`,
+  `new XMLParser().parse(Buffer.from("<a>café 😀</a>"))` gives `{"a":"café 😀"}`, so the base does
+  have it. Every other requirement (decoding a Uint8Array as UTF-8, multi-byte round trips, the bytes
+  of a subarray only, a preserved byte order mark with matching `startIndex`, the validator accepting
+  the same bytes) is stated as a change.
+- **Visible check.** On that checkout `node acceptance/visible/check.mjs` exits 1 (`undefined`
+  where `café 😀` is expected).
+
+It was launched in the 2026-10-11 comparison cohorts (three records per arm), so it is not unseen;
+it was not used to develop this work.
+
+**Evaluator, frozen with the task:** its hidden tests (`spec/inputType_spec.js` from the upstream
+commit `bb2ec6ce`, run with jasmine) through `hiddenVerdict`, as the runner freezes them.
+
+**Manifests,** frozen by [freeze.mjs](freeze.mjs) after this amendment, one per arm, launched in
+this order: (1) [comparison/arm1-swarm-planned.json](comparison/arm1-swarm-planned.json), Swarm
+with `--plan-checks`; (2) [comparison/arm2-swarm-ordinary.json](comparison/arm2-swarm-ordinary.json),
+Swarm with no workflow flag; (3) [comparison/arm3-opencode.json](comparison/arm3-opencode.json),
+OpenCode 1.14.48. Their digests are entered in [launches.md](launches.md) with each launch.
