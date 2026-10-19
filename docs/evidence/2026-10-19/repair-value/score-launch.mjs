@@ -14,7 +14,8 @@
  * 2. for a rolled-back candidate, the files its `rejected-candidate-v1` record keeps (the evidence
  *    scrubber can redact a credential-shaped token in them, which this check catches);
  * 3. for a kept candidate, the change the next repair's brief carries as its diff against the base;
- * 4. for the last kept candidate, the run's `workspace-diff` record.
+ * 4. for the last kept candidate, the run's `workspace-diff` record;
+ * 5. the base tree itself, for a repair that undid the whole change.
  *
  * A candidate none of these rebuilds is reported as not recovered, with its pinned tree, and is
  * not scored. The tree each stage starts from is the last kept candidate's, as the ratchet's own
@@ -180,6 +181,8 @@ for (const [index, stage] of stages.entries()) {
     const files = filesFromPatch(finalDiff, true);
     if (files !== null) candidates.push(["workspace-diff record", files]);
   }
+  // 5. a repair that undid the whole change left the base itself
+  candidates.push(["the base tree", new Map()]);
   for (const [source, files] of candidates) {
     if ([...files.values()].includes(undefined)) {
       tried.push({ source, outcome: "truncated" });
