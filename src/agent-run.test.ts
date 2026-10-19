@@ -365,6 +365,7 @@ describe("the trail tool a worker is given and the single-agent path is not", ()
       "search",
       "shell",
       "claim",
+      "read_recorded_output",
       "declare_file_set",
       "amend_file_set",
     ]);
@@ -386,7 +387,7 @@ describe("the trail tool a worker is given and the single-agent path is not", ()
 
     const names = spy.requests[0]?.tools.map((tool) => tool.name) ?? [];
     expect(names).toContain("read_trail");
-    expect(names).toHaveLength(10);
+    expect(names).toHaveLength(11);
   });
 
   it("sends no sampling settings when none are asked for", async () => {
@@ -1088,5 +1089,92 @@ describe("the token allowance under a contract that names no token budget", () =
   it("takes the smaller of the two where the contract does name a token budget", async () => {
     await task([respondWithText("done")], { contract: contractWith(500), maxTokens: 8_000_000 });
     expect(sealedBudget()).toBe(500);
+  });
+});
+
+describe("a verbose command in the worker's loop", () => {
+  // Three thousand lines with one failure in the middle and a non-zero exit, as a test runner
+  // prints them. Run for real, through the worker's own shell tool and chokepoint.
+  const verbose =
+    "node -e \"for (let i = 1; i <= 3000; i++) console.log(i === 1500 ? 'not ok ' + i + ' - the middle case fails' : 'ok ' + i + ' - a passing case with a description'); process.exit(1)\"";
+
+  it("is resent as a bounded view, its omitted lines come back by reference, and the gates decide as before", async () => {
+    const requests: ModelRequest[] = [];
+    const turn = (made: FixtureTurn) => {
+      if (made.kind !== "response") throw new Error("a scripted response");
+      return made.response;
+    };
+    const lastToolOutput = (request: ModelRequest) => {
+      const last = request.messages.at(-1);
+      return last?.role === "tool" ? (last.outcomes[0]?.output ?? "") : "";
+    };
+    const model: ModelClient = {
+      modelId: "fixture:worker",
+      generate: (request) => {
+        requests.push(request);
+        switch (requests.length) {
+          case 1:
+            return Promise.resolve(
+              turn(
+                respondWithToolCalls("testing", [
+                  { callId: "t", toolName: "shell", input: { command: verbose } },
+                ]),
+              ),
+            );
+          case 2: {
+            const record = /evidence record (sha256:[0-9a-f]{64})/.exec(
+              lastToolOutput(request),
+            )?.[1];
+            return Promise.resolve(
+              turn(
+                respondWithToolCalls("reading the failure", [
+                  {
+                    callId: "r",
+                    toolName: "read_recorded_output",
+                    input: { record, contains: "not ok" },
+                  },
+                ]),
+              ),
+            );
+          }
+          case 3:
+            return Promise.resolve(turn(goodTurns(stillGreen)[0] as FixtureTurn));
+          case 4:
+            return Promise.resolve(turn(goodTurns(stillGreen)[1] as FixtureTurn));
+          default:
+            return Promise.resolve(turn(respondWithText("done")));
+        }
+      },
+    };
+    const result = await task([], { model: createRecordingModelClient(model, evidence) });
+
+    const shown = lastToolOutput(requests[1] as ModelRequest);
+    expect(shown.length).toBeLessThan(14_000);
+    expect(shown).toContain(
+      "recorded status: exit code 1, not timed out, not cancelled, capture complete",
+    );
+    expect(shown).toMatch(/1,502: not ok 1500 - the middle case fails/);
+    // Every later request carries the view, not the output: one command no longer dominates them.
+    for (const request of requests.slice(1))
+      expect(JSON.stringify(request.messages).length).toBeLessThan(40_000);
+    expect(lastToolOutput(requests[2] as ModelRequest)).toContain(
+      "1,502: not ok 1500 - the middle case fails",
+    );
+    // The ledger keeps the output as captured.
+    const recorded = evidence
+      .records()
+      .filter((record) => record.type === "tool-call")
+      .map(
+        (record) =>
+          evidence.payloads().get(record.payloadDigest) as {
+            toolName?: string;
+            decision?: string;
+            output?: string;
+          },
+      )
+      .find((payload) => payload.toolName === "shell" && payload.decision === "allowed");
+    expect(recorded?.output?.length).toBeGreaterThan(100_000);
+    expect(result.gates.outcome.settled).toBe("green");
+    expect(result.green).toBe(true);
   });
 });

@@ -61,6 +61,7 @@ import {
   defaultShellAllowlist,
   type PolicyGuard,
 } from "./tools/policy-guard.ts";
+import { createRecordedOutputTool } from "./tools/recorded-output-tool.ts";
 import type { ToolDefinition } from "./tools/tool-definition.ts";
 import { createWorkspaceTools } from "./tools/workspace-tools.ts";
 
@@ -416,6 +417,8 @@ async function executeAgentTask(
         ? (options.coordination ?? [])
         : []),
       createClaimTool(options.evidence, options.model.modelId),
+      // A long command output is shown as a bounded view; this reads back what the view omitted.
+      createRecordedOutputTool(options.evidence),
       ...(options.promptProfile === "concise" ? [createClaimReferenceTool()] : []),
       createDeclareFileSetTool(options.fileSet, options.model.modelId),
       createAmendFileSetTool(options.fileSet, options.model.modelId),
