@@ -12,5 +12,7 @@ patches were scored afterwards, apart ([scores/](scores/scores.json)).
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | [df2e3b619/](df2e3b619/analysis.json) | O1's | O1's digest | kept | kept | rolled back | O1's patch, byte for byte | `unresolved`, 3 repairs | fail, pass |
 | [f556b6313/](f556b6313/analysis.json) | PR #89's last local commit | O1's digest | rolled back | kept, case 7 held | not asked | the first implementation | `unresolved`, 2 repairs, stop filed as `instrument` | pass, pass |
+| [e2b0fe77c/](e2b0fe77c/analysis.json) | the frozen build of this work, run before any live launch | O1's digest | rolled back | kept, case 7 held on the restored tree it was told on | not asked | the first implementation | `unresolved`, 2 repairs, stop `held-expectation` | pass, pass ([scores](e2b0fe77c/scores/scores-with-relation-limit.json)) |
 
-The frozen build of this work is added below once it is built, before any live launch.
+On every build the kept-candidate record holds the rolled-back file and the bundled verifier
+re-derives every ratchet decision in agreement (`rederive.mjs` in each run's bundle).

@@ -12,4 +12,7 @@
   the relation false in its own fixture, on the real mime project, through `f556b6313`'s build.
   The correct repair is rolled back and launch 4's space normalization is delivered; the frozen
   evaluator passes it and the custom-extension check fails it ([scores](relation-limit-f556b6313/scores/scores.json)).
-  The run through the frozen build of this work is added once that is built.
+  Through the frozen build of this work, [relation-limit-e2b0fe77c/](relation-limit-e2b0fe77c/analysis.json):
+  the claim relation yields to the restored kept case, the correct repair is kept and delivered
+  (`54e61a8`; both external readings pass), and the run reports `unresolved` because the false
+  relation keeps failing. The bundle's own verifier re-derives the yield in agreement.

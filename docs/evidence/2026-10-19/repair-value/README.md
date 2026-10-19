@@ -47,7 +47,7 @@ patch was scored apart ([analyze-replay.mjs](analyze-replay.mjs), [replay/](repl
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `df2e3b619` (O1's) | kept | kept | rolled back | `a88e54b`, raw patch `sha256:4f5a3be4...`, O1's delivered patch byte for byte | attempt cap | `unresolved` | fail |
 | `f556b6313` (PR #89's last local commit) | **rolled back**: both relations passed before and failed after | kept (no change), and case 7 held on the restored tree | not asked | `54e61a8`, the first implementation | every failure held (filed as `instrument`) | `unresolved` | **pass** |
-| the frozen build of this work | see [replay/](replay/README.md) | | | | | | |
+| `e2b0fe77c` (the frozen build of this work) | **rolled back** | kept (no change); case 7 held, being read on the restored tree it was told on | not asked | `54e61a8`, the first implementation | `held-expectation` | `unresolved` | **pass** |
 
 On `f556b6313` the second repair's brief names the rollback ("Attempt 1 was rolled back ... the
 rejected change is not in the files you will read"), the kept-candidate record holds repair 1's
