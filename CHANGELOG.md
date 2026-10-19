@@ -32,7 +32,10 @@ Source on `v13-main`; not published until a release names it.
   result is the planner's claim. Where a repair answers it with the same result, no further repair
   is asked for it, and where every failure of `task-diagnostics` is held, repair stops: the run
   stays `unresolved`, with the candidate that passed everything else. A live mime run spent two of
-  its three repairs on such a case. A kept case's failure is never held.
+  its three repairs on such a case. A kept case's failure is never held. A relation and each
+  check's kept cases are parts of `task-diagnostics` the ratchet holds, so a repair that breaks
+  one to satisfy a changed case is rolled back: in a live ordinary run, the first change was right
+  and the repair told one wrong changed case broke the relation, which the ratchet kept.
 - **Planning asks for a coverage review of every requirement before it finishes.**
   `declare_coverage_review` records, per behaviour, what changes, what stays, a plausible wrong
   implementation the cases would pass, what tells it apart and what stays untested. A relation
