@@ -148,3 +148,38 @@ node reproduce.mjs --out <file>            # SWARM_REPRODUCE_CASE_ROLES=1 on thi
 node validate-review-workflow.mjs --out <file>
 node validate-expanded-audit.mjs --out <file> [--patch <final.patch> --name <label>]
 ```
+
+---
+
+## Correction, 2026-10-19: O1's repairs, rebuilt from its records
+
+Appended after the protocol closed; the text above, the protocol and every frozen verdict stand as
+written. Every O1 candidate was rebuilt from the launch's packed ledger and bound to the tree the
+product's own checks pinned for it
+([../../2026-10-19/repair-value/o1/](../../2026-10-19/repair-value/o1/o1-candidates.json)), then
+scored apart by the frozen evaluator and the expanded audit. Three statements above are
+incomplete:
+
+- **Repair 2 changed no file.** It read, ran the formatter's check and stopped; its tree is repair
+  1's (`5a84034e`). The ratchet kept it because nothing moved.
+- **Repair 3's `src/Mime.ts` was right, and its candidate was still correctly refused.** It
+  removed the trailing-terminator strip and took the extension from the stripped name (blob
+  `c66bacc`), which restored both relations; that file alone passes the frozen evaluator and the
+  expanded audit ([diagnostic reading](../../2026-10-19/repair-value/o1/diagnostic/scores.json),
+  never a product candidate). But repair 3 also ran `npx prettier --write .`, which rewrote seven
+  files outside the declared set, `tsconfig.json` among them. The file-set gate failed and the
+  build gate read not-applicable (a changed build instrument), so the ratchet rolled it back. The
+  frozen evaluator refuses that candidate as well, on scope (the task allows `src/Mime.ts` only).
+  "Repair 3 was rolled back (build not applicable, file set)" is accurate; it omits that the
+  rollback discarded a correct source change together with the out-of-scope ones.
+- **"The case was held from the next reading on, as designed"** described the hold rule at
+  `df2e3b619`, under which an answer unchanged after any repair was held. Repair 1 had changed the
+  code. Under the rule at `10ee69729`, a case is held only where a repair left the tree as it was,
+  so that hold would not occur ([../../2026-10-19/repair-value/README.md](../../2026-10-19/repair-value/README.md)).
+
+The first correct-to-incorrect transition is repair 1. The product-visible observation that could
+have prevented it is the two relation checks, accepted on attempt 0 and rejected on repair 1,
+while the one changed case repair 1 was told stayed as it was. The current controller acts on
+exactly that: replayed through it with O1's recorded transitions, it rolls repair 1 back and
+delivers the first implementation (deterministic controller verification, no model; same
+README).
