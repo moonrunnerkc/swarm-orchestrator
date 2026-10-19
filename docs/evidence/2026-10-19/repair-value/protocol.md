@@ -102,3 +102,30 @@ audit's reading and the per-candidate scoring. Streams, ledgers and blobs are pa
 ---
 
 ## Amendments
+
+### 1. 2026-10-19, after R2 and before either arm of C: the comparison
+
+R1 and R2 both passed the expanded external evaluation (R1 reported `accepted`, R2 `unresolved`
+with a correct patch delivered; [launches.md](launches.md)), so C's condition is met. C is two
+launches, run with the comparison runner unchanged (`scripts/comparison/run.mjs --manifest`, its
+harness digest recorded in the manifest) on a manifest frozen by
+[freeze-comparison.mjs](freeze-comparison.mjs) before either arm:
+
+- **Task:** `marked-bugfix-www-case` (markedjs/marked at its frozen base), as registered above.
+  Both arms get the task text, the repository at its base with the visible check, and nothing
+  else; the upstream commit and the hidden tests are sealed from both.
+- **Arms, in the runner's own order rule** (`launches`, seeded): Swarm first, then OpenCode.
+- **Pins:** `qwen3.6:35b-a3b` at `http://127.0.0.1:11434/v1` for both; Swarm's frozen build
+  `e2b0fe77c` (`~/.cache/swarm-comparison/tools/swarm-e2b0fe77c/dist/cli.js`, its bytes digested)
+  with its ordinary workflow flag `--plan-checks` and the supplied contract holding the visible
+  check only (`swarmContract`); OpenCode 1.14.48 configured by the runner (`writeArmConfiguration`).
+- **Matched limits:** 14 minutes per invocation and a 1-minute grace, so each arm is killed at
+  15 minutes; Swarm's wall ends one minute earlier for its final verification, as stage A of
+  2026-10-16 froze it; no scripted correction for either arm (`maxCorrections: 0`), so each arm
+  runs once, unattended. Swarm's 8,000,000-token bound is a safety bound; OpenCode has none.
+- **Evaluation:** the task's frozen hidden oracle through the runner's own `hiddenVerdict`, on a
+  fresh checkout, for each arm's delivered patch. Where the Swarm arm repairs, each of its
+  candidates recovered by the per-candidate rebuild is scored by the same oracle; that is a
+  within-run reading, not part of the comparison.
+- **What it can show:** each arm's result on one task from a repository not used to develop this
+  work. One task cannot show superiority; a difference is reported as that, on that task.
