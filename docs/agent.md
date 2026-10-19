@@ -191,6 +191,15 @@ shown.
   delivered a wrong patch, reported unresolved, after a repair broke a correct first change; so
   ordinary completion is not shown and the comparison was not run. Launch 4's earlier passing
   patch fails a custom-extension case the task supports.
+- **October 19**
+  ([development records](evidence/2026-10-19/repair-value/README.md)): replayed with no model, the
+  night's controller already rolls back the repair that broke O1's correct first change. A
+  generated case is now held only where a repair left the code as it was, and a relation the base
+  did not hold yields to a repair that restores base-backed behaviour. Both pre-registered ordinary
+  mime runs on one frozen build delivered patches both evaluations accept (one reported
+  `accepted`, one `unresolved`). On one fresh paired marked task, OpenCode's patch passed the hidden
+  oracle and Swarm's did not, which Swarm reported as `not-accepted`. No repair in these runs
+  turned an incorrect candidate correct.
 
 Developer hours saved and adoption are not measured; the prepared, unrun protocol for five
 developers on their own tasks is [human-trial-protocol.md](human-trial-protocol.md).
