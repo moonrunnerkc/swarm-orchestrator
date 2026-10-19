@@ -73,7 +73,17 @@ swarm "add a --no-cache flag that disables the response cache, with a test" --pl
    the unchanged base and admitted only if it loads, runs, and tells the base from the change: a
    check of the change gets a case wrong and one right there, a check of behaviour that stays
    gets every case right, and a program that imports nothing from the repository is refused.
-   Dropped checks get one revision when the planning allowance still fits it. Admission shows a
+   A check of behaviour that stays which the base fails is recorded as a disagreement with the
+   base, case by case, with whether the task names that case's input; that shows the expectation
+   and the base differ, not that the task's request is wrong, since a task can describe as kept
+   an outcome the base does not give yet. Dropped checks get one revision when the planning
+   allowance still fits it: it is shown the task's words each check quotes, every case with what
+   the base gave, and the choice between correcting an expectation and declaring the check again
+   as a change with its reason, which is then held to the change control and admitted only for
+   inputs the task names. Coverage is read from the checks admission kept: a coverage review that
+   names a refused check covers nothing, and a requirement left with no check is reported as
+   uncovered, with why and the next useful action, in the worker's brief, the outcome and the
+   JSON result (`plannedChecks.uncovered`). Admission shows a
    check runs and discriminates; it cannot show that its expected results are what the task
    means, so an admitted check is a **diagnostic**: it runs on every candidate, its disagreement
    drives a bounded repair (the repair is told the expectation is the planner's reading of the
@@ -96,8 +106,17 @@ swarm "add a --no-cache flag that disables the response cache, with a test" --pl
    repair that satisfies a generated check by breaking a supplied one is a passing gate
    regressing, and is rolled back; one that a generated check alone asked for is named in the
    outcome. A worker that repeats a tool call it has already been answered is told once and
-   stopped the second time, and the gates still run over the tree.
-5. **Final verification** of the exact tree in a fresh checkout, independent of the worker.
+   stopped the second time, and the gates still run over the tree. A command output over 12,000
+   characters reaches the model as a bounded view: its first and last lines, the exit status and
+   timeout facts the harness measured, the omitted range, the omitted lines that mention a failure,
+   and the evidence record, from which `read_recorded_output` returns any omitted lines. The
+   ledger keeps the output as captured, and claims are evaluated against its recorded facts.
+5. **Final verification** of the exact tree in a fresh checkout, independent of the worker. It
+   has its own share of `--max-wall-minutes`, held back from planning, implementation and repair:
+   four times what the preflight's fresh checkout and base checks took, at least a minute, at
+   most a quarter of the total (the `verification-reserve-v1` record). When model work reaches
+   its share, the gates still run on the delivered tree; a check still running when the whole
+   allowance ends is stopped and reported as not run, never as a pass.
 6. **The outcome block**, led by one status that the JSON result (`outcome.status`) and the
    exit code share:
    - `accepted` (exit 0): every requirement you supplied was met by a check that decides it, and

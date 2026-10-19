@@ -12,6 +12,26 @@ Source on `v13-main`; not published until a release names it.
 
 ### Fixed
 
+- **A requested behaviour stays in the work when its generated check is refused.** A check of
+  behaviour that stays which the base fails was dropped as contradicting the task, and its
+  requirement went on with nothing covering it and nothing telling the worker. It is now a
+  disagreement with the base, case by case, with whether the task names the input; the revision
+  is shown the task's words, each case with the base's answer, and the choice between correcting
+  the expectation and reclassifying the check as a change with its reason (held to the change
+  control, and only for inputs the task names), and is told not to reread the repository.
+  Coverage is reconciled against the checks admission kept, and a requirement left with none is
+  named as uncovered, with why and the next action, in the worker's brief, the outcome and
+  `plannedChecks.uncovered`. The admission record is `planned-check-admission-v3`.
+- **The final checks run after the work spends its wall.** The end of the implementation's wall
+  refused the final build, lint and tests commands before they spawned, so a run that used its
+  allowance was reported with nothing measured. Gate commands now stop only for the run's
+  cancellation and the end of its total allowance, and final verification has a share of
+  `--max-wall-minutes` held back from planning, implementation and repair (four times the
+  measured preflight, at least a minute, at most a quarter). A run whose work stopped at its
+  wall is still not accepted, and is no longer reported as cancelled.
+- **One verbose command no longer fills every later request.** A command output over 12,000
+  characters reaches the model as a bounded view with its recorded status and evidence record;
+  `read_recorded_output` returns the omitted lines. The ledger keeps the captured output.
 - **A planned check runs in the language the project's users run.** Its runner put `input`,
   `expected` and `throws` getters on the String, Number and Boolean prototypes to catch a program
   reading `case_.input` off a string, so `"input" in Object("hello")` was true inside a check and
