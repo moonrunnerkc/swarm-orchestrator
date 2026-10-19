@@ -94,3 +94,14 @@ exit 0 on `4e6c4e510` in a clean full-history clone; 4,525 tests pass and 29 are
 - The reserve's multiple of the measured preflight is a policy, not a measurement of the final phase.
 - The comparison is one task with an easy one-line fix; it cannot show what planned checks or repair
   contribute where the first candidate is wrong.
+
+## Correction, appended 2026-10-19 (the scores above stand)
+
+From the follow-up in [../outcome-coverage/](../outcome-coverage/README.md). In section 4's
+comparison bullet, "for a result backed by a final independent verification" describes a
+capability, not a measured benefit: all three yargs-parser patches were the same and all three
+passed the independent hidden oracle, so the comparison establishes a correctness tie and no
+practical benefit from Swarm's internal verification records. Planned checks produced the same
+patch at substantially greater cost (4.5 times the wall, 3.0 times the tokens of ordinary Swarm)
+and are not shown to improve results. D1's two recorded defects (per-requirement coverage, and a
+throwing check read as a base disagreement) are addressed by that follow-up; see its README.

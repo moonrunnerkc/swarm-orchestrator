@@ -53,3 +53,19 @@ request was 43,367 input tokens in arm 1 and 44,885 in arm 2; arm 1's planner re
 completed inside their reserve, and the reserve came from the measured preflight in arm 1 and from
 the policy floor in arm 2. The requirement-coverage changes reported nothing uncovered, which on
 this task was correct by the oracle.
+
+## Correction, appended 2026-10-19 (after the comparison; the scores above stand)
+
+Appended by the follow-up in [../../outcome-coverage/](../../outcome-coverage/README.md); nothing
+above is rescored. Two readings above say more than the comparison shows:
+
+- **Correctness.** All three patches, identical byte for byte, passed the task's independent hidden
+  oracle. On correctness the arms tie. Swarm's `accepted` reading, its supplied check and its final
+  independent verification of the exact tree are records an additional capability produces; this
+  comparison did not establish any practical benefit from them, since the hidden oracle reached the
+  same verdict on OpenCode's patch, which had none. "A result backed by a final independent
+  verification" and "a difference in what each result rests on" describe that capability, not an
+  advantage the comparison measured.
+- **Planned checks.** `--plan-checks` did not improve the result on this task: arm 1 delivered the
+  same patch as arm 2 at 4.5 times the wall and 3.0 times the tokens. Nothing in this comparison
+  is evidence that planned checks improve results.
