@@ -170,7 +170,8 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
     if (
       classification.kind === "setup" ||
       classification.kind === "infrastructure" ||
-      classification.kind === "instrument"
+      classification.kind === "instrument" ||
+      classification.kind === "held-expectation"
     ) {
       await deps.evidence.record({
         type: "session-stopped",
@@ -226,6 +227,9 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
       candidateGates: candidateCycle.statuses,
       baselineParts: cycle.parts,
       candidateParts: candidateCycle.parts,
+      // The claims are the sealed contract's, the same on both sides; the candidate's reading
+      // names them for every part it reported.
+      partClaims: candidateCycle.claims ?? {},
       baseline,
       candidate,
       newSpecifications: clearedTests(respecification),

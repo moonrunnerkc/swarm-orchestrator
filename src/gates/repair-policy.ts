@@ -14,6 +14,7 @@ export type FailureClass =
   | "setup"
   | "infrastructure"
   | "instrument"
+  | "held-expectation"
   | "implementation"
   | "permission"
   | "unknown";
@@ -61,15 +62,17 @@ export function classifyRepair(cycle: GateCycle): {
       remedy: "install the declared missing tool or browser, then start verification again",
     };
   // A gate says, as a measure, that every failure it reports is held: a generated check whose
-  // expectation the repair was told and left giving the same answer, which is the planner's claim
-  // against the implementation's with nothing independent to settle it. Repair stops instead of
-  // spending attempts on it. The gate still fails, and says why.
+  // expectation a repair was told and answered by leaving the code as it was, which is the
+  // planner's claim against the implementation's with nothing independent to settle it. Repair
+  // stops instead of spending attempts on it. This is a stopping decision, not a finding about
+  // the check or the code, so it is not `instrument`, which names a defect in the checking itself.
+  // The gate still fails, and says why.
   if (failures.length > 0 && failures.every((run) => run.measures.unrepairable === 1))
     return {
-      kind: "instrument",
+      kind: "held-expectation",
       signature,
       remedy:
-        "every failing check is held on this tree and no code change is asked for it; it stays failing and reported",
+        "every failing check is a generated expectation a repair was told and answered by leaving the code as it was; neither it nor the code is shown wrong, so it stays failing and reported and no further change is asked for",
     };
   if (failures.some((run) => /ECONNREFUSED|ENETUNREACH/.test(run.observation.stderr)))
     return {

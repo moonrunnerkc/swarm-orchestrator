@@ -345,6 +345,25 @@ function gateStderr(runId: string | undefined, gateId: string): readonly string[
     .map((payload) => payload.stderr ?? "");
 }
 
+/** The payload of every record of one type on a run's own chain, in order. */
+function chainPayloads(
+  runId: string | undefined,
+  type: string,
+): readonly Record<string, unknown>[] {
+  const session = join(home, ".swarm", "sessions", runId ?? "");
+  return readFileSync(join(session, "ledger.jsonl"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as { type: string; payloadDigest: string })
+    .filter((record) => record.type === type)
+    .map(
+      (record) =>
+        JSON.parse(
+          readFileSync(join(session, "blobs", `${record.payloadDigest.slice(7)}.json`), "utf8"),
+        ) as Record<string, unknown>,
+    );
+}
+
 /** The bundle's own verifier, run as a reviewer runs it, with nothing installed. */
 async function verifyBundle(directory: string): Promise<{ code: number; stdout: string }> {
   return run(process.execPath, [join(directory, "verify.mjs"), directory]).then(
@@ -1430,6 +1449,14 @@ describe("planned checks through the ordinary command line", () => {
       accepted: false,
       detail: expect.stringContaining("tab-like-space in the task-diagnostics gate passed before"),
     });
+    // The relation failed on the base, so it is the planner's claim; it is still held here,
+    // since the repair restored nothing the base or a supplied check backs.
+    const diagnostics = chainPayloads(result?.runId, "gate-run").filter(
+      (one) => one.gateId === "task-diagnostics",
+    );
+    expect(
+      diagnostics.map((one) => (JSON.parse(String(one.stdout)) as { claims?: string[] }).claims),
+    ).toEqual(diagnostics.map(() => ["tab-like-space"]));
     const { stdout: source } = await run("git", ["diff"], { cwd: join(scratch, "workspace") });
     expect(source).toContain("text.trim().split(/[ \\t]+/)");
     expect(result?.outcome?.status).toBe("unresolved");
@@ -1670,15 +1697,154 @@ describe("what admission accepts as a generated check's control", () => {
     const readings = gateStderr(result?.runId, "task-diagnostics");
     expect(readings[0]).toContain("case(s) 4 are the planner's reading of the change");
     expect(readings.at(-1)).toContain(
-      "generated check boundary is held: case(s) 4 still give what they gave when the last repair was told them",
+      "generated check boundary is held: case(s) 4 were told to a repair on this very tree and give what they gave",
     );
     expect(stdout).not.toContain("A second repair was asked for.");
+    // The stop is the held expectation's, never a checking-program defect's.
+    expect(
+      chainPayloads(result?.runId, "session-stopped").filter(
+        (one) => one.stopReason === "repair-unavailable",
+      ),
+    ).toEqual([expect.objectContaining({ classification: "held-expectation" })]);
     expect(result?.outcome?.status, stdout.slice(-6000)).toBe("unresolved");
     expect(
       result?.outcome?.requirements?.find((one) => one.id === "boundary")?.generatedChecks,
     ).toEqual([expect.objectContaining({ id: "boundary", status: "rejected" })]);
     const { stdout: source } = await run("git", ["diff"], { cwd: join(scratch, "workspace") });
     expect(source).toContain("n <= 10");
+    expect(code).toBe(1);
+  }, 200_000);
+
+  it("keeps asking a repair that changed the code but has not yet moved a changed case, and accepts the second change", async () => {
+    // A valid expectation (10 small) whose repair takes two changes: the first adds a switch for
+    // the boundary and leaves it off, so the case still answers big though the code changed. An
+    // unchanged answer is not the expectation shown wrong, so the case is not held and the second
+    // repair, which turns the switch on, is asked for.
+    const step = (inclusive: boolean) =>
+      write(
+        `const limit = 10;\nconst inclusive = ${inclusive};\nexport function classify(n) {\n  return n < limit || (inclusive && n === limit) ? 'small' : 'big';\n}\n`,
+      );
+    const { stdout, code } = await swarm(
+      [
+        declaring(
+          [{ id: "boundary", description: "10 is small", quote }],
+          [
+            plannedCheck("boundary", "boundary", "change", [
+              { input: 9, expected: "small" },
+              { input: 10, expected: "small" },
+              { input: 12, expected: "big" },
+            ]),
+          ],
+        ),
+        { text: "Pinned." },
+        { text: "Plan: name the boundary first.", toolCalls: [declare] },
+        {
+          toolCalls: [
+            write(
+              "const limit = 10;\nexport function classify(n) {\n  return n < limit ? 'small' : 'big';\n}\n",
+            ),
+          ],
+        },
+        { text: "Done." },
+        { toolCalls: [step(false)] },
+        { text: "The switch is in; it is still off." },
+        { toolCalls: [step(true)] },
+        { text: "The boundary is inclusive now." },
+      ],
+      false,
+      [],
+    );
+
+    const result = resultOf(stdout) as ResultLine & {
+      outcome?: { interventions?: { repairAttempts?: number } };
+    };
+    expect(result?.plannedChecks?.admitted, stdout.slice(-4000)).toEqual(["boundary"]);
+    const readings = gateStderr(result?.runId, "task-diagnostics");
+    // After the first repair the case gives what it gave, on a changed tree: reported, not held.
+    expect(readings[1]).toContain("case(s) 2 are the planner's reading of the change");
+    expect(readings.join("\n")).not.toContain("is held");
+    expect(result?.outcome?.interventions?.repairAttempts).toBe(2);
+    expect(result?.outcome?.status, stdout.slice(-6000)).toBe("accepted");
+    expect(code).toBe(0);
+  }, 200_000);
+
+  it("bounds repeated code changes against a wrong expectation and leaves the run unresolved", async () => {
+    // A wrong changed case (13 small) the task does not support. Each repair changes the code:
+    // one rewrites it without moving the answer, one satisfies the case by breaking 12 (rolled
+    // back), one rewrites it again. None is held, since each changed the code; the attempt cap
+    // stops it, and the run is unresolved with the correct boundary in place.
+    const { stdout, code } = await swarm(
+      [
+        declaring(
+          [{ id: "boundary", description: "10 is small", quote }],
+          [
+            plannedCheck("boundary", "boundary", "change", [
+              { input: 9, expected: "small" },
+              { input: 10, expected: "small" },
+              { input: 12, expected: "big" },
+              { input: 13, expected: "small", changed: true },
+            ]),
+          ],
+        ),
+        { text: "Pinned." },
+        { text: "Plan: move the boundary.", toolCalls: [declare] },
+        {
+          toolCalls: [
+            write("export function classify(n) {\n  return n <= 10 ? 'small' : 'big';\n}\n"),
+          ],
+        },
+        { text: "Done." },
+        {
+          toolCalls: [
+            write(
+              "// Ten is the last small number.\nexport function classify(n) {\n  return n <= 10 ? 'small' : 'big';\n}\n",
+            ),
+          ],
+        },
+        { text: "Rewritten." },
+        {
+          toolCalls: [
+            write("export function classify(n) {\n  return n <= 13 ? 'small' : 'big';\n}\n"),
+          ],
+        },
+        { text: "Thirteen is small now." },
+        {
+          toolCalls: [
+            write(
+              "const last = 10;\nexport function classify(n) {\n  return n <= last ? 'small' : 'big';\n}\n",
+            ),
+          ],
+        },
+        { text: "Rewritten again." },
+        { text: "A fourth repair was asked for." },
+      ],
+      false,
+      [],
+    );
+
+    const result = resultOf(stdout) as ResultLine & {
+      outcome?: { interventions?: { repairAttempts?: number } };
+    };
+    expect(result?.plannedChecks?.admitted, stdout.slice(-4000)).toEqual(["boundary"]);
+    expect(gateStderr(result?.runId, "task-diagnostics").join("\n")).not.toContain("is held");
+    const decisions = chainPayloads(result?.runId, "ratchet-decision").filter(
+      (one) => one.scope === "retry",
+    );
+    expect(decisions.map((one) => [one.attempt, one.accepted])).toEqual([
+      [1, true],
+      [2, false],
+      [3, true],
+    ]);
+    expect(result?.outcome?.interventions?.repairAttempts).toBe(3);
+    expect(stdout).not.toContain("A fourth repair was asked for.");
+    expect(
+      chainPayloads(result?.runId, "session-stopped").filter(
+        (one) => one.stopReason === "repair-unavailable",
+      ),
+    ).toEqual([]);
+    expect(result?.outcome?.status, stdout.slice(-6000)).toBe("unresolved");
+    const { stdout: source } = await run("git", ["diff"], { cwd: join(scratch, "workspace") });
+    expect(source).toContain("n <= last");
     expect(code).toBe(1);
   }, 200_000);
 
@@ -1739,6 +1905,55 @@ describe("what admission accepts as a generated check's control", () => {
     expect(
       result?.outcome?.requirements?.find((one) => one.id === "case")?.generatedChecks,
     ).toEqual([expect.objectContaining({ id: "case-rule", status: "accepted" })]);
+    expect(code).toBe(0);
+  }, 200_000);
+
+  it("refuses a program that reads a case field and copes without it where its every answer is one value, saying why, and admits its revision", async () => {
+    // Unknown words stay null, so a preservation of them answers null throughout, legitimately.
+    // Its program reads word.input and falls back to the word itself, a valid program. On these
+    // cases no answer tells it from launch 5's program, which passed undefined: the project
+    // answers null both ways, and would also with the field given. Only tracing the project's
+    // calls could, which the probe does not do. So it is refused, the reason says the fallback is
+    // not told apart, and its revision, which takes the input, is admitted.
+    const copes =
+      "import lookup from './lookup.mjs';\nexport default (word) => lookup.kindOf(word.input ?? word);\n";
+    const unknownWords = (program: string) =>
+      lookupCheck(
+        "unknown-words",
+        program,
+        [
+          { input: "pear", expected: null },
+          { input: "banana", expected: null },
+        ],
+        "preserve",
+      );
+    // The revision round's request: the dropped check, revised to take the input.
+    const revises = { toolCalls: [unknownWords(adapter), lookupReview] };
+    const { stdout, code } = await swarm(
+      [
+        { toolCalls: [unknownWords(copes), lookupReview] },
+        { text: "Pinned." },
+        revises,
+        { text: "Revised." },
+        { text: "Plan: lower the word before the lookup.", ...lookupFix },
+        { text: "Done." },
+      ],
+      false,
+      [],
+      true,
+      lookupWorkspace(),
+      lookupTask,
+    );
+
+    expect(stdout).toMatch(
+      /dropped +unknown-words \(should pass there\): its program read a field/,
+    );
+    expect(stdout).toContain(
+      "nothing here tells the two apart and the check is refused rather than trusted",
+    );
+    const result = resultOf(stdout);
+    expect(result?.plannedChecks?.admitted, stdout.slice(-4000)).toEqual(["unknown-words"]);
+    expect(result?.outcome?.status).toBe("accepted");
     expect(code).toBe(0);
   }, 200_000);
 
