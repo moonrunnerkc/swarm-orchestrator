@@ -1,0 +1,24 @@
+diff --git a/src/Mime.ts b/src/Mime.ts
+index a28323b..2dbcdc3 100644
+--- a/src/Mime.ts
++++ b/src/Mime.ts
+@@ -72,13 +72,17 @@ export default class Mime {
+   getType(path: string) {
+     if (typeof path !== 'string') return null;
+ 
++    // Treat all line terminators as regular characters (like space/tab already work).
++    // Normalise them to spaces so the existing stripping logic works unchanged.
++    const normalised = path.replace(/[\r\n\u2028\u2029]/g, ' ');
++
+     // Remove chars preceeding `/` or `\`
+-    const last = path.replace(/^.*[/\\]/, '').toLowerCase();
++    const last = normalised.replace(/^.*[/\\]/, '').toLowerCase();
+ 
+     // Remove chars preceeding '.'
+     const ext = last.replace(/^.*\./, '').toLowerCase();
+ 
+-    const hasPath = last.length < path.length;
++    const hasPath = last.length < normalised.length;
+     const hasDot = ext.length < last.length - 1;
+ 
+     // Extension-less file?
