@@ -186,6 +186,20 @@ describe("gate output parsers", () => {
     expect(reading.parts).toEqual({ ten: "failed", twelve: "passed" });
     expect(inspectionParser(observed({ stdout: "{}" }))).not.toHaveProperty("parts");
   });
+
+  it("reads which named parts are claims, only among the parts it read", () => {
+    const reading = inspectionParser(
+      observed({
+        exitCode: 1,
+        stdout: JSON.stringify({
+          parts: { relation: "passed", "names: kept cases": "failed" },
+          claims: ["relation", "unreported", 3],
+        }),
+      }),
+    );
+    expect(reading.claims).toEqual(["relation"]);
+    expect(inspectionParser(observed({ stdout: "{}" }))).not.toHaveProperty("claims");
+  });
 });
 
 describe("reading a coverage report", () => {

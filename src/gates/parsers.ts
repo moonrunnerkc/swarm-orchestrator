@@ -315,6 +315,9 @@ export const inspectionParser: GateParser = (observation) => {
       }
     }
   }
+  const claims = Array.isArray(fields.claims)
+    ? fields.claims.filter((one): one is string => typeof one === "string" && one in parts)
+    : [];
   const measures: Record<string, number> = {};
   if (typeof fields.measures === "object" && fields.measures !== null) {
     for (const [key, value] of Object.entries(fields.measures)) {
@@ -329,6 +332,7 @@ export const inspectionParser: GateParser = (observation) => {
     detail: detail.length > 0 ? detail : `the inspection exited ${observation.exitCode}`,
     measures,
     ...(Object.keys(parts).length === 0 ? {} : { parts }),
+    ...(claims.length === 0 ? {} : { claims }),
   };
 };
 
