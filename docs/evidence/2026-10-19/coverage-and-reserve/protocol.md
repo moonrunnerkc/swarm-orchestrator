@@ -145,3 +145,45 @@ this order: (1) [comparison/arm1-swarm-planned.json](comparison/arm1-swarm-plann
 with `--plan-checks`; (2) [comparison/arm2-swarm-ordinary.json](comparison/arm2-swarm-ordinary.json),
 Swarm with no workflow flag; (3) [comparison/arm3-opencode.json](comparison/arm3-opencode.json),
 OpenCode 1.14.48. Their digests are entered in [launches.md](launches.md) with each launch.
+
+### 2. 2026-10-19, after launch 2 halted before reaching a model: the rule applied again
+
+Launch 2 (arm 1 on `fxp-bugfix-uint8array-utf8`) halted in the runner's gate-plan preflight, before
+any model call: the frozen build's `swarm check`, run by the preflight without `--lockfile`, refuses
+a repository with both `package-lock.json` and `yarn.lock`. PR #89's build refuses it the same way,
+and the runner's own `swarmGatePlanVerdict`, called directly with no model, reproduces it; it is
+deterministic and independent of the model and of this work. So the task does not have "an
+environment the runner prepares" (criterion 4), which amendment 1 had checked by hand rather than
+through the runner's preparation. Recorded, with the halt records, in [launches.md](launches.md) and
+[comparison/halted-fxp/](comparison/halted-fxp/).
+
+**Accounting.** Launch 2 is counted, with 0.0 agent minutes, and takes the infrastructure-
+replacement slot. Three launches remain, exactly the three arms; there is no replacement left. The
+product and the runner are not changed.
+
+**The rule, continued in file order.** Every `fxp-*` task is from the same repository and carries
+the same two lockfiles; the `fxp-feature-strict-reserved-names` and `fxp-refactor-unpaired-set`
+entries that follow are skipped for that reason (and the second is a refactor), as is
+`fxp-upgrade-strnum` (an upgrade). The next task, `yargs-parser-bugfix-count-sentinel`
+(yargs/yargs-parser, `bugfix`), meets every criterion, each checked on a fresh checkout of its base
+`b82ba0f9` with no model:
+
+- **Wording.** The task states two outcomes as existing: `parser("-x 3 -x 2")` "correctly returns
+  `{ x: [3, 2] }`", and options declared under `count` "keep incrementing" (`"-v -v -v"` with
+  `count: ["v"]` gives 3). After `npm ci --ignore-scripts` and `npx tsc -p tsconfig.test.json`, the
+  base gives `{"_":[],"x":[3,2]}` and `{"_":[],"v":3}`: both hold. The requested outcomes
+  (`"-x 3 -x 1"` gives `[3, 1]`, `"-x 1 -x 1"` gives `[1, 1]`, `"-x 1 -x 3"` gives `[1, 3]`) are stated
+  as what must hold; the base already gives `[1, 3]` for the last.
+- **Visible check.** `node acceptance/visible/check.mjs` exits 1 (the base gives `{ x: 4 }`).
+- **The runner's preparation.** Its `swarmGatePlanVerdict`, called directly: ok, the product runs
+  `npm test` as its blocking tests gate and it passes on the base.
+
+It was launched in the 2026-10-11 comparison cohorts (three records per arm); it was not used to
+develop this work. **Evaluator, frozen with the task:** its hidden tests from the upstream commit,
+through `hiddenVerdict`, as the runner freezes them.
+
+**Manifests,** frozen by [freeze.mjs](freeze.mjs) after this amendment, one per arm, in the
+registered order: [comparison/yargs-arm1-swarm-planned.json](comparison/yargs-arm1-swarm-planned.json),
+[comparison/yargs-arm2-swarm-ordinary.json](comparison/yargs-arm2-swarm-ordinary.json),
+[comparison/yargs-arm3-opencode.json](comparison/yargs-arm3-opencode.json). The three
+`fxp-bugfix-uint8array-utf8` manifests of amendment 1 stay as frozen; only arm 1's was launched.
