@@ -17,7 +17,9 @@ Source on `v13-main`; not published until a release names it.
   reading `case_.input` off a string, so `"input" in Object("hello")` was true inside a check and
   false everywhere else. The check's own run now adds nothing to the environment. A separate probe
   run, whose answers are never compared, names the misread, and admission refuses a program only
-  where the probe saw the read and every answer was one value.
+  where the probe saw the read and every answer was one value. A program that reads the field and
+  falls back to the value (`x.input ?? x`) is refused there too, since no answer on those cases
+  tells it from one that passed `undefined`, and the reason says so.
 - **Admission keeps a check whose base answers are one value**, its control recorded as
   unestablished, instead of dropping it: a defect can be one answer for everything (a predicate
   that is always false). Each case of a change check now says `changed: true` or `false`, and a
@@ -29,13 +31,21 @@ Source on `v13-main`; not published until a release names it.
   change:** admission's record is `planned-check-admission-v2`, and a check of one answer that was
   dropped is now sealed; one that still disagrees at the end leaves the run `unresolved`.
 - **A generated case the repair was told and left as it was is held.** A changed case's expected
-  result is the planner's claim. Where a repair answers it with the same result, no further repair
-  is asked for it, and where every failure of `task-diagnostics` is held, repair stops: the run
-  stays `unresolved`, with the candidate that passed everything else. A live mime run spent two of
-  its three repairs on such a case. A kept case's failure is never held. A relation and each
-  check's kept cases are parts of `task-diagnostics` the ratchet holds, so a repair that breaks
-  one to satisfy a changed case is rolled back: in a live ordinary run, the first change was right
-  and the repair told one wrong changed case broke the relation, which the ratchet kept.
+  result is the planner's claim. Where a repair told it leaves the code as it was (the case is read
+  again on the very tree it was told on), no further repair is asked for it, and where every
+  failure of `task-diagnostics` is held, repair stops: the run stays `unresolved`, with the
+  candidate that passed everything else. That stop is recorded as `held-expectation`, apart from
+  `instrument`, a defect in the checking itself. An unchanged answer after a repair that changed
+  the code is not held: a repair can take two changes before an answer moves, and the attempt cap
+  bounds a wrong expectation. A kept case's failure is never held. A relation and each check's
+  kept cases are parts of `task-diagnostics` the ratchet holds, so a repair that breaks one to
+  satisfy a changed case is rolled back: in a live ordinary run, the first change was right and the
+  repair told one wrong changed case broke the relation, which the ratchet kept. A relation the
+  base did not hold is the planner's claim of the change, so it yields to a repair that restores a
+  kept case or a supplied check and is held only against one that restores nothing: a relation
+  false in its own fixture had kept a wrong first change over the correct repair. **Output
+  change:** a ratchet decision records the claims (`parts.claims`) and each yield (`yielded`), and
+  the bundled verifier re-derives them; decisions recorded before claims re-derive as they did.
 - **Planning asks for a coverage review of every requirement before it finishes.**
   `declare_coverage_review` records, per behaviour, what changes, what stays, a plausible wrong
   implementation the cases would pass, what tells it apart and what stays untested. A relation
