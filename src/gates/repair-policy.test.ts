@@ -24,12 +24,16 @@ it("escalates exactly once for repeated observed failure, regardless of source c
   expect(decideEscalation({ ...observed, count: 1 })).toBe("stop");
   expect(decideEscalation({ ...observed, previousSignature: "another failure" })).toBe("continue");
 });
-it.each(["setup", "infrastructure", "instrument", "permission", "unknown"] as const)(
-  "does not spend escalation on %s",
-  (classification) => {
-    expect(decideEscalation({ ...observed, classification })).toBe("stop");
-  },
-);
+it.each([
+  "setup",
+  "infrastructure",
+  "instrument",
+  "held-expectation",
+  "permission",
+  "unknown",
+] as const)("does not spend escalation on %s", (classification) => {
+  expect(decideEscalation({ ...observed, classification })).toBe("stop");
+});
 it("reserves verification budget and refuses unknown usage", () => {
   expect(decideEscalation({ ...observed, remainingTokens: 4096 })).toBe("stop");
   expect(decideEscalation({ ...observed, remainingMs: 30000 })).toBe("stop");
@@ -56,8 +60,9 @@ it("stops repair where every failing gate says its failures are held checks", ()
   const cycle = (runs: GateCycle["runs"]) =>
     ({ runs, blockingFailures: runs }) as unknown as GateCycle;
 
+  // A stopping decision of its own, never the class of a defect in the checking itself.
   expect(classifyRepair(cycle([failing("diagnostics", { unrepairable: 1 })])).kind).toBe(
-    "instrument",
+    "held-expectation",
   );
   // Another failure beside it is still the implementation's to repair.
   expect(

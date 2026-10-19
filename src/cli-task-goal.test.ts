@@ -357,31 +357,47 @@ describe("which failing generated cases a repair is no longer asked about", () =
     got,
   });
 
-  it("holds a changed case the last repair was told and left giving the same answer", () => {
-    const told = new Map([[4, '{"input":13,"result":"big"}']]);
-    expect(
-      heldCases([failing(4, "changed", '{"input":13,"result":"big"}')], told, undefined),
-    ).toEqual([failing(4, "changed", '{"input":13,"result":"big"}')]);
-    // A different answer is the repair moving it, so it is reported again.
-    expect(
-      heldCases([failing(4, "changed", '{"input":13,"result":"odd"}')], told, undefined),
-    ).toEqual([]);
+  const big = '{"input":13,"result":"big"}';
+
+  it("holds a changed case a repair was told and answered by leaving the tree as it was", () => {
+    const told = new Map([["tree-a", new Map([[4, big]])]]);
+    expect(heldCases([failing(4, "changed", big)], "tree-a", told)).toEqual([
+      failing(4, "changed", big),
+    ]);
     // Nothing is held on the first reading, before any repair was told it.
-    expect(heldCases([failing(4, "changed", "x")], undefined, undefined)).toEqual([]);
+    expect(heldCases([failing(4, "changed", big)], "tree-a", new Map())).toEqual([]);
+  });
+
+  it("does not hold an unchanged answer on a changed tree: the repair may need a second change", () => {
+    const told = new Map([["tree-a", new Map([[4, big]])]]);
+    expect(heldCases([failing(4, "changed", big)], "tree-b", told)).toEqual([]);
+    // Nor a reading with no tree to compare.
+    expect(
+      heldCases([failing(4, "changed", big)], "", new Map([["", new Map([[4, big]])]])),
+    ).toEqual([]);
+  });
+
+  it("holds again on a tree a rollback restored, where a repair left the restored code as it was", () => {
+    // Read on tree a, repaired to tree b (rolled back), and the next repair left tree a as it was.
+    const told = new Map([
+      ["tree-a", new Map([[4, big]])],
+      ["tree-b", new Map([[4, big]])],
+    ]);
+    expect(heldCases([failing(4, "changed", big)], "tree-a", told)).toHaveLength(1);
   });
 
   it("never holds a kept case, or one whose role was never declared, however often it repeats", () => {
     const told = new Map([
-      [1, "same"],
-      [2, "same"],
+      [
+        "tree-a",
+        new Map([
+          [1, "same"],
+          [2, "same"],
+        ]),
+      ],
     ]);
-    expect(heldCases([failing(1, "kept", "same"), failing(2, null, "same")], told, told)).toEqual(
-      [],
-    );
-  });
-
-  it("keeps a held case held while its answer stays what it was", () => {
-    const held = new Map([[4, "same"]]);
-    expect(heldCases([failing(4, "changed", "same")], new Map(), held)).toHaveLength(1);
+    expect(
+      heldCases([failing(1, "kept", "same"), failing(2, null, "same")], "tree-a", told),
+    ).toEqual([]);
   });
 });

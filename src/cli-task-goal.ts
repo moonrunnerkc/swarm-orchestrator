@@ -360,6 +360,8 @@ export function taskGoalGates(context: TaskGoalContext): {
       readonly stderr: string;
       /** The checks this gate decides, each as a part the ratchet holds on its own. */
       readonly parts?: Readonly<Record<string, GateStatus>>;
+      /** Which parts rest on nothing but the planner's claim of the change. */
+      readonly claims?: readonly string[];
       /** Measures the gate's verdict carries, which repair classification reads by name. */
       readonly measures?: Readonly<Record<string, number>>;
     },
@@ -391,6 +393,9 @@ export function taskGoalGates(context: TaskGoalContext): {
             task: result.task,
             findings,
             ...(reading.parts === undefined ? {} : { parts: reading.parts }),
+            ...(reading.claims === undefined || reading.claims.length === 0
+              ? {}
+              : { claims: reading.claims }),
             ...(reading.measures === undefined ? {} : { measures: reading.measures }),
           }),
           stderr: reading.stderr,
@@ -434,10 +439,10 @@ export function taskGoalGates(context: TaskGoalContext): {
   });
   const diagnostic = diagnosticChecks(context.contract);
   if (diagnostic.size === 0) return { acceptanceGate, diagnosticsGate: null };
-  // By check, the changed cases the last reading reported to repair, each with the line it gave,
-  // and the ones held since: a planner's expectation the repair was told and left as it was.
-  const reported = new Map<string, ReadonlyMap<number, string>>();
-  const held = new Map<string, ReadonlyMap<number, string>>();
+  // By check, every failing case a reading found, by the tree it was read on, with the line it
+  // gave. Each reading briefs the repair after it, so a case found again on a tree it was already
+  // found on is one a repair was told and answered by leaving the project's code as it was.
+  const told = new Map<string, Map<string, Map<number, string>>>();
   const diagnosticsGate = gate(
     diagnosticsGateId,
     `generated checks of sealed goal ${digest}`,
@@ -454,33 +459,32 @@ export function taskGoalGates(context: TaskGoalContext): {
             line: `generated relation ${finding.id} broke: inputs that differ only by the reference ${inputAsRead(relation.relation.reference)} or a variant gave different results:\n${relation.lines.join("\n")}`,
           };
         const failures = caseFailures(context, finding.id, finding.record);
-        const heldNow = heldCases(failures, reported.get(finding.id), held.get(finding.id));
-        held.set(finding.id, new Map(heldNow.map((one) => [one.index, one.got])));
-        reported.set(
-          finding.id,
-          new Map(
-            failures.filter((one) => !heldNow.includes(one)).map((one) => [one.index, one.got]),
-          ),
-        );
+        const tree = result.goalAcceptance?.tree ?? "";
+        const byTree = told.get(finding.id) ?? new Map<string, Map<number, string>>();
+        const heldNow = heldCases(failures, tree, byTree);
+        if (tree !== "")
+          byTree.set(
+            tree,
+            new Map([
+              ...(byTree.get(tree) ?? []),
+              ...failures.map((one) => [one.index, one.got] as const),
+            ]),
+          );
+        told.set(finding.id, byTree);
         const wholly = failures.length > 0 && heldNow.length === failures.length;
         return {
           finding,
           wholly,
           line: wholly
-            ? `generated check ${finding.id} is held: case(s) ${heldNow.map((one) => one.index).join(", ")} still give what they gave when the last repair was told them, and their expected results are the planner's claim of the change (changed: true), not behaviour the base shows. The disagreement stays recorded, the check stays failing, and no code change is asked for it`
+            ? `generated check ${finding.id} is held: case(s) ${heldNow.map((one) => one.index).join(", ")} were told to a repair on this very tree and give what they gave, so the repair left the code as it was; their expected results are the planner's claim of the change (changed: true), not behaviour the base shows, and nothing here shows either the expectation or the code wrong. The disagreement stays recorded, the check stays failing, and no code change is asked for it`
             : `generated check ${finding.id} rejected: ${finding.detail}${describeFailureRoles(failures, heldNow)}`,
         };
       });
-      for (const id of [...reported.keys()])
-        if (!rejected.some((finding) => finding.id === id)) {
-          reported.delete(id);
-          held.delete(id);
-        }
       const holding = readings.filter((one) => one.wholly);
       const disagreeing = readings.filter((one) => !one.wholly);
       return {
         passes: rejected.length === 0,
-        parts: baseBackedParts(context, result, diagnostic),
+        ...ratchetParts(context, result, diagnostic),
         // Where every failure here is held, repair stops: the gate still fails, so the run cannot
         // read as accepted, and the best candidate so far is what remains.
         ...(holding.length > 0 && disagreeing.length === 0
@@ -502,38 +506,44 @@ export function taskGoalGates(context: TaskGoalContext): {
 
 /**
  * The failing cases held on this reading. A changed case's expectation is the planner's claim.
- * Told to the repair once, with the instruction to leave the code where the task does not support
- * it, and answered with the very line it gave before, it is a disagreement no further attempt is
- * asked to settle: a live run spent two repairs on one such case and each left it as it was. A
- * kept case is behaviour the base showed, so its failure is never held, however often it repeats;
- * nor is a case whose role was never declared.
+ * Told to a repair, with the instruction to leave the code where the task does not support it,
+ * and found again on the very tree it was found on, the repair left the code as it was: a
+ * disagreement no further attempt is asked to settle, and a stop, not a finding that the
+ * expectation is wrong. An unchanged answer on a changed tree is not held: a repair can take two
+ * changes before an answer moves, and live repairs that edited the code each time were held by an
+ * earlier reading of the answer alone. A kept case is behaviour the base showed, so its failure is
+ * never held, however often it repeats; nor is a case whose role was never declared.
  */
 export function heldCases(
   failures: readonly CaseFailure[],
-  reported: ReadonlyMap<number, string> | undefined,
-  held: ReadonlyMap<number, string> | undefined,
+  tree: string,
+  told: ReadonlyMap<string, ReadonlyMap<number, string>>,
 ): readonly CaseFailure[] {
-  return failures.filter(
-    (one) =>
-      one.role === "changed" &&
-      (reported?.get(one.index) === one.got || held?.get(one.index) === one.got),
-  );
+  const before = tree === "" ? undefined : told.get(tree);
+  return failures.filter((one) => one.role === "changed" && before?.get(one.index) === one.got);
 }
 
 /**
- * Each generated check's behaviour that rests on more than the planner's word, as a part of the
- * diagnostics gate the ratchet holds: a relation, which states no expected value, and a check's
- * kept cases, whose expectations the base gave. A changed case is the planner's claim and is not
- * a part. In a live ordinary run the first implementation passed the relation and failed one wrong
- * changed case; the repair told that case broke the relation, and with the gate failing before
- * and after, the ratchet kept the regression and the correct first change was lost.
+ * Each generated check's behaviour as a part of the diagnostics gate the ratchet holds: a
+ * relation, which states no expected value, and a check's kept cases, whose expectations the base
+ * gave. A changed case is the planner's claim and is not a part. In a live ordinary run the first
+ * implementation passed the relation and failed one wrong changed case; the repair told that case
+ * broke the relation, and with the gate failing before and after, the ratchet kept the regression
+ * and the correct first change was lost.
+ *
+ * A relation whose base control did not hold (a change relation) rests on nothing the base showed:
+ * the planner's reading of the task's own words, over its own fixture, where the equivalence can
+ * be false (a newline and a space are different extensions where both are registered). It is
+ * named a claim, so it yields to a repair that restores a kept case or a supplied check, and is
+ * held only against a repair that restores nothing. A part is never a requirement's verdict.
  */
-function baseBackedParts(
+function ratchetParts(
   context: TaskGoalContext,
   result: IndependentVerification,
   diagnostic: ReadonlySet<string>,
-): Readonly<Record<string, GateStatus>> {
+): { readonly parts: Readonly<Record<string, GateStatus>>; readonly claims: readonly string[] } {
   const parts: Record<string, GateStatus> = {};
+  const claims: string[] = [];
   for (const finding of result.goalAcceptance?.checkResults ?? []) {
     if (!diagnostic.has(finding.id)) continue;
     const definition = context.contract.checks.find((one) => one.id === finding.id);
@@ -546,6 +556,7 @@ function baseBackedParts(
           : "not-applicable";
     if (plannedRelation(definition) !== null) {
       parts[finding.id] = status;
+      if (definition.atBase !== "passes") claims.push(finding.id);
       continue;
     }
     if (!(plannedCaseRoles(definition) ?? []).includes("kept")) continue;
@@ -563,7 +574,7 @@ function baseBackedParts(
           ? "passed"
           : "failed";
   }
-  return parts;
+  return { parts, claims };
 }
 
 /** One failing case of a generated check of cases on a verification, with its declared role. */
@@ -629,7 +640,7 @@ function describeFailureRoles(
       : `; case(s) ${changed.join(", ")} are the planner's reading of the change`,
     heldNow.length === 0
       ? ""
-      : `; case(s) ${heldNow.map((one) => one.index).join(", ")} are held: they give what they gave when the last repair was told them, so no change is asked for them`,
+      : `; case(s) ${heldNow.map((one) => one.index).join(", ")} are held: told to a repair on this very tree, they give what they gave, so no change is asked for them`,
   ].join("");
 }
 

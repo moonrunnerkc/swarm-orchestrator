@@ -477,7 +477,7 @@ function controlWords(
 
 const remedies = {
   "argument-shape":
-    "its program read a field of the value it was called with as though it were the case, and every case gave the same answer, which is what passing undefined to the project gives; the program is called with each case's input itself (the string, number or object written as input), never with { input, expected }: take the input as the parameter",
+    "its program read a field of the value it was called with as though it were the case, and every case gave the same answer, which is what passing undefined to the project gives; a program that reads the field and falls back to the value (x.input ?? x) answers these cases the same way, so nothing here tells the two apart and the check is refused rather than trusted. The program is called with each case's input itself (the string, number or object written as input), never with { input, expected }: take the input as the parameter and read no field of it",
   "did-not-complete":
     "it fails on the base without completing, which shows a broken check rather than the missing change",
   "unestablished-change":
