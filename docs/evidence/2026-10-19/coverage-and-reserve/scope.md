@@ -85,3 +85,12 @@ reads as a cancellation somebody asked for. File added:
 
 - `src/cli-run-settings.test.ts` (new): the verification reserve's policy, with no measurement, with
   C1's measured preflight, at its cap and at a one-minute total.
+
+### 4. The loop's own stop past its wall, before editing it
+
+With model work ending a reserve before the deadline, the backstop that cuts work still in flight
+(a shell command, a requested check) fires as the loop's own wall ends, and the loop read the abort
+as `interrupted`, which the verdict reports as if a person had stopped it. Files added:
+
+- `src/core/loop.ts`, `src/core/loop.test.ts`: a loop already past its own wall when an abort arrives
+  stops as `max-wall-time`; an abort before the wall is still `interrupted`.
