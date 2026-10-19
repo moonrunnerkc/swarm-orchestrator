@@ -129,3 +129,10 @@ harness digest recorded in the manifest) on a manifest frozen by
   within-run reading, not part of the comparison.
 - **What it can show:** each arm's result on one task from a repository not used to develop this
   work. One task cannot show superiority; a difference is reported as that, on that task.
+
+### 2. 2026-10-19, after C2: closed
+
+Four launches, 34.9 agent-minutes: R1 and R2 passed the expanded external evaluation (R1 reported
+`accepted`, R2 `unresolved` with a correct patch), C1 (Swarm) failed the hidden oracle and reported
+`not-accepted`, and C2 (OpenCode) passed it. The infrastructure slot was not needed. Nothing else
+will be launched under this protocol; see [launches.md](launches.md) and [README.md](README.md).

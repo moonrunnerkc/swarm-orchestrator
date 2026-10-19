@@ -114,10 +114,55 @@ refusal stays, its reason now says the fallback is not told apart, and the revis
 ([after](policy-audit/probe-after.txt)). The constant-on-base defect remains usable: a check of one
 value is kept with its control recorded as unestablished, and that limitation is reported with it.
 
-## 4. Live launches
+## 4. Live launches (live-model)
 
-Registered in [protocol.md](protocol.md) before the first launch; none had run when this was
-written.
+Registered in [protocol.md](protocol.md) before the first launch, on the frozen build `e2b0fe77c`
+(product tree identical to `a1e6c9608`, [verified](verification.md)); every launch is in
+[launches.md](launches.md). Four of five launches, 34.9 of 75 agent-minutes, one at a time; local
+`qwen3.6:35b-a3b` on Ollama, thinking off; no paid API, no download. The ordinary runs are mime from
+a clean original base, nothing injected, the visible check only, `--plan-checks`; no request
+carried the faulty patch, the upstream change or the evaluator ([R1](launch-r1/exposure.json),
+[R2](launch-r2/exposure.json) and [its reading](launch-r2/exposure-reading.json)).
+
+| run | product reported | repairs | frozen evaluator | custom extension | passes the expanded evaluation |
+| --- | --- | --- | --- | --- | --- |
+| R1 | `accepted`, exit 0 | 0 | pass | pass | yes |
+| R2 | `unresolved`, exit 1 | 2 (one rolled back, one no change) | pass | pass | yes |
+| C1, Swarm (marked) | `not-accepted`, exit 1 | 0 | hidden oracle: fail | | no |
+| C2, OpenCode (marked) | success claimed, exit 0 | | hidden oracle: pass | | yes |
+
+- **Individual success:** R1 passed and the product said `accepted`. R2's delivered patch passed,
+  but the product said `unresolved`, because a generated case it could not settle
+  (`"file\n.txt.png"` → `text/plain`, which the task contradicts) kept failing.
+- **The two-run criterion, as registered, is met:** both ordinary runs delivered patches that pass
+  the frozen evaluator and the custom-extension check. This is two bounded observations of one
+  frozen build on an exposed task (the change is public and may be in the model's training data),
+  not general completion; and only one of the two ended `accepted`.
+- **Comparative benefit is not shown.** On the fresh paired task, OpenCode passed in 1.8 minutes and
+  Swarm failed in 13.5 ([comparison/](comparison/README.md)); Swarm reported its patch
+  `not-accepted` rather than claiming it. The first concrete failure is in Swarm's planning: the
+  task's scheme rule, which the task calls existing behaviour and the base does not satisfy, was
+  declared preserved, refused against the base, and left uncovered.
+
+## 5. What repair did (within-run, external scores)
+
+Every candidate rebuilt from its run's chain and kept only where its tree is the one the product
+pinned ([score-launch.mjs](score-launch.mjs)), then scored apart; nothing reached the product.
+O1 is the earlier frozen build's run (`df2e3b619`), rebuilt for section 1.
+
+| run | first candidate | delivered | incorrect → correct | correct → incorrect | no relevant change | not recovered | repair cost (calls, tokens, model time) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| O1 (`df2e3b619`) | correct | **incorrect** | 0 | 1 (repair 1, kept) | 1 (repair 2) | 0 (repair 3 rebuilt by its formatter command; incorrect, rolled back) | 103, 1,789,318, 294 s |
+| R1 | correct | correct | 0 | 0 | 0 | 0 | 0 (no repair) |
+| R2 | correct | correct | 0 | 1 (repair 1, rolled back) | 1 (repair 2) | 0 | 50, 1,139,381, 411 s |
+| C1 (marked) | incorrect (hidden oracle) | incorrect | 0 | 0 | 0 | 0 | 0 (no repair) |
+
+In these runs repair never turned an incorrect candidate into a correct one. On the frozen build,
+the one harmful repair (R2's, which reverted the change) was rolled back and the correct first
+candidate delivered; on O1's build the harmful repair was kept. Repair cost R2 1.14 million tokens
+and about 8.5 minutes of its loop wall for no change in correctness. This is a within-run reading
+of three runs; it says nothing about repair on tasks where the first candidate is wrong and a
+product-visible check says so, which no run here had.
 
 ## Remaining limitations
 
@@ -134,4 +179,15 @@ written.
   and keeps only exact rebuilds; a candidate changed by a shell command, or whose kept record the
   scrubber touched, is reported as not recovered ([o1/score-launch-validation.json](o1/score-launch-validation.json):
   O1's repair 3).
-- Everything is one exposed task; nothing establishes general completion or comparative benefit.
+- Where a task calls a behaviour existing that the base does not have (marked's "must still
+  produce a link" for a mixed-case scheme), a check of it declared as preserved is refused against
+  the base, which is right about the base, and nothing then covers that part of the change. The
+  refusal reason says the base contradicts it; it does not suggest that the task may be asking for
+  a change. That is C1's first concrete failure, and it is not fixed here.
+- A run that spends its wall inside the worker loop (C1's full `npm test` runs) ends with its final
+  gates cancelled and reports `not-accepted` with nothing measured, honestly but uninformatively.
+- A generated case that contradicts the task (R2's `"file\n.txt.png"` → `text/plain`) still costs a
+  repair and leaves a correct run `unresolved`. R2's repair reverted the whole change; the ratchet
+  caught that through the supplied check.
+- The ordinary runs are one exposed task, and the comparison is one task; nothing establishes
+  general completion or comparative benefit, and the one comparison favours OpenCode.
