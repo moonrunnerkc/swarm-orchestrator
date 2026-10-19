@@ -65,7 +65,7 @@ command line, with D1's flags, on a workspace the comparison runner's own helper
 frozen manifest, and admission runs the recorded programs on a real checkout of the marked base. A
 revision or review round D1 never had would be answered by a turn that declares nothing (none was
 asked for). **Disclosed adapter:** the worker's 40 steps are not replayed; it declares
-`src/Tokenizer.ts` and writes D1's delivered file whole, so the final checks run on D1's exact
+marked's tokenizer source file and writes D1's delivered version of it whole, so the final checks run on D1's exact
 patch (digest compared). This is a focused reproduction of planning, admission, the brief, the
 final checks and the report, not of the worker's search.
 
