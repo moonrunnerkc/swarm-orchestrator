@@ -49,6 +49,15 @@ export interface RunOutcomeInput {
   readonly gates: GateCycle;
   readonly requirements: readonly RequirementOutcome[] | null;
   readonly uncheckedRequirements?: RunOutcomeReport["uncheckedRequirements"];
+  /**
+   * Planned requirements planning left with no retained check, with why and the next useful action,
+   * as planning reconciled them. Shown beside the requirement rather than dropped from the report.
+   */
+  readonly uncovered?: readonly {
+    readonly id: string;
+    readonly reason: string;
+    readonly nextAction: string;
+  }[];
   /** Null where no final independent verification ran. */
   readonly finalVerification: FinalVerificationOutcome | null;
   readonly usage: {
@@ -183,7 +192,11 @@ export function describeRunOutcome(input: RunOutcomeInput): readonly string[] {
     );
     for (const requirement of input.requirements) {
       if (requirement.source === "planned") {
-        describePlanned(requirement, say);
+        describePlanned(
+          requirement,
+          say,
+          input.uncovered?.find((one) => one.id === requirement.id),
+        );
         continue;
       }
       const mark =
@@ -291,7 +304,11 @@ export function describeRunOutcome(input: RunOutcomeInput): readonly string[] {
 }
 
 /** A planned requirement: what it quotes, and what its generated checks did, never a verdict. */
-function describePlanned(requirement: RequirementOutcome, say: (line: string) => void): void {
+function describePlanned(
+  requirement: RequirementOutcome,
+  say: (line: string) => void,
+  uncovered?: NonNullable<RunOutcomeInput["uncovered"]>[number],
+): void {
   const checks = requirement.generatedChecks ?? [];
   const disagreeing = checks.filter((one) => one.status === "rejected");
   const mark = disagreeing.length > 0 ? "DISPUTED" : checks.length === 0 ? "no check" : "unjudged";
@@ -302,7 +319,12 @@ function describePlanned(requirement: RequirementOutcome, say: (line: string) =>
         : ` [planned from the task: "${firstLine(requirement.quote, 80)}"]`),
   );
   if (checks.length === 0) {
-    say("             no generated check held its base control, so nothing exercised it");
+    if (uncovered === undefined)
+      say("             no generated check held its base control, so nothing exercised it");
+    else {
+      say(`             no generated check covers it: ${firstLine(uncovered.reason, 400)}`);
+      say(`             next for it: ${firstLine(uncovered.nextAction, 400)}`);
+    }
     return;
   }
   for (const check of checks)

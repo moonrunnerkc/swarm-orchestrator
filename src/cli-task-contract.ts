@@ -14,6 +14,17 @@ export function presetTaskContract(options: {
   maxSteps: number;
   maxWallMs: number;
   network: "denied" | "unrestricted";
+  /**
+   * Planned requirements no retained generated check covers, as planning reconciled them. They
+   * stay in the brief with why and what to do: a rejected check is a rejected instrument, and the
+   * behaviour the task asked for is still part of the work. Labelled as the planner's reading.
+   */
+  uncovered?: readonly {
+    readonly id: string;
+    readonly quote: string | null;
+    readonly reason: string;
+    readonly nextAction: string;
+  }[];
 }): TaskContract {
   const { goal } = options;
   const upgrade = goal.preset?.kind === "upgrade" ? goal.preset : undefined;
@@ -23,7 +34,7 @@ export function presetTaskContract(options: {
     taskId: "preset",
     objective:
       options.originalObjective ??
-      `${options.task}\nSealed objective: ${goal.goal}\nRequired behavior: ${JSON.stringify(goal.requirements.map(({ id, description }) => ({ id, description })))}\nPreset: ${JSON.stringify(goal.preset ?? null)}`,
+      `${options.task}\nSealed objective: ${goal.goal}\nRequired behavior: ${JSON.stringify(goal.requirements.map(({ id, description }) => ({ id, description })))}\nPreset: ${JSON.stringify(goal.preset ?? null)}${uncoveredSection(options.uncovered ?? [])}`,
     dependsOn: [],
     allowedPaths:
       upgrade === undefined ? ["**"] : [upgrade.manifest, upgrade.lockfile, ...upgrade.sourcePaths],
@@ -35,6 +46,20 @@ export function presetTaskContract(options: {
     riskTier: "medium",
     scopeAuthority: "human",
   });
+}
+
+function uncoveredSection(
+  uncovered: NonNullable<Parameters<typeof presetTaskContract>[0]["uncovered"]>,
+): string {
+  if (uncovered.length === 0) return "";
+  return [
+    "",
+    "Requirements no generated check covers (the planner's reading of the task; nothing will exercise these for you):",
+    ...uncovered.map(
+      (one) =>
+        `- ${one.id}${one.quote === null ? "" : `, quoting the task: ${JSON.stringify(one.quote)}`}. Why: ${one.reason}. Next: ${one.nextAction}.`,
+    ),
+  ].join("\n");
 }
 
 /** The sealed contract a run was handed, or an error that names the file and what is wrong with it. */

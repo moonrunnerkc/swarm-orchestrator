@@ -135,3 +135,54 @@ it("names the contract file and what is wrong with it", async () => {
     await rm(root, { recursive: true, force: true });
   }
 });
+
+it("names each requirement no generated check covers in the worker's brief, with why and what to do", () => {
+  const goal = freezeGoalContract({
+    version: 1,
+    goal: 'slugify turns spaces into dashes, and "Hello World" must still read "hello-world"',
+    requirements: [
+      {
+        id: "kept",
+        description: "Hello World reads hello-world",
+        checks: [],
+        planned: { quote: '"Hello World" must still read "hello-world"', diagnostics: [] },
+      },
+    ],
+    checks: [],
+    immutablePaths: [],
+  }).contract;
+  const contract = presetTaskContract({
+    goal,
+    task: "slugify turns spaces into dashes",
+    maxSteps: 4,
+    maxWallMs: 60000,
+    network: "denied",
+    uncovered: [
+      {
+        id: "kept",
+        quote: '"Hello World" must still read "hello-world"',
+        reason:
+          'kept-forms: the base gave "Hello World" for "Hello World", an input the task names',
+        nextAction: "implement it from the task's words",
+      },
+    ],
+  });
+  expect(contract.objective).toContain(
+    "Requirements no generated check covers (the planner's reading of the task; nothing will exercise these for you):",
+  );
+  expect(contract.objective).toContain(
+    '- kept, quoting the task: "\\"Hello World\\" must still read \\"hello-world\\"". Why: kept-forms: the base gave "Hello World" for "Hello World", an input the task names. Next: implement it from the task\'s words.',
+  );
+});
+
+it("adds nothing to the brief when every planned requirement has a check", () => {
+  const contract = presetTaskContract({
+    goal: featureGoal,
+    task: "serve a --no-cache flag",
+    maxSteps: 4,
+    maxWallMs: 60000,
+    network: "denied",
+    uncovered: [],
+  });
+  expect(contract.objective).not.toContain("Requirements no generated check covers");
+});

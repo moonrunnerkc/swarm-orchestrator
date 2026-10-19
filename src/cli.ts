@@ -486,11 +486,15 @@ async function run(options: RunCommand): Promise<number> {
       }),
       // Each planned check is run once on a fresh checkout of the base, on the planning chain,
       // and admitted only where it does there what it says it does.
-      admit: (chain, contract, base) =>
+      admit: (chain, contract, base, admitting) =>
         admitPlannedChecks({
+          task: options.task,
           contract,
           base,
           evidence: chain,
+          ...(admitting?.reclassified === undefined
+            ? {}
+            : { reclassified: admitting.reclassified }),
           verifyAtBase: (probe) =>
             baseVerifier({
               contract: probe,
@@ -745,6 +749,7 @@ async function run(options: RunCommand): Promise<number> {
             contract: presetTaskContract({
               goal,
               task: options.task,
+              uncovered: planning?.admission?.uncovered ?? [],
               ...(options.recovery === undefined
                 ? {}
                 : { originalObjective: options.recovery.previousSpec.task }),
@@ -870,6 +875,7 @@ async function run(options: RunCommand): Promise<number> {
       gates: gates.outcome.finalCycle,
       contract: strengthening === undefined ? sealedGoal : (goalContext?.contract ?? sealedGoal),
       uncheckedRequirements: planning?.admission?.uncheckedRequirements ?? [],
+      uncovered: planning?.admission?.uncovered ?? [],
       repairsForGeneratedChecksOnly: repairsForGeneratedChecksOnly(gates.outcome),
       usage: {
         durationMs: clock.now() - startedAt,
@@ -957,6 +963,7 @@ async function run(options: RunCommand): Promise<number> {
                   dropped: planning.admission?.dropped ?? [],
                   revision: planning.admission?.revision ?? null,
                   coverage: planning.admission?.coverage ?? null,
+                  uncovered: planning.admission?.uncovered ?? [],
                 },
               }),
         })}\n`,
@@ -1023,6 +1030,7 @@ async function runOutcome(input: {
   readonly gates: RunOutcomeInput["gates"];
   readonly contract: GoalContract | undefined;
   readonly uncheckedRequirements: NonNullable<RunOutcomeInput["uncheckedRequirements"]>;
+  readonly uncovered: NonNullable<RunOutcomeInput["uncovered"]>;
   readonly repairsForGeneratedChecksOnly: readonly number[];
   readonly usage: RunOutcomeInput["usage"];
 }): Promise<RunOutcomeInput> {
@@ -1072,6 +1080,7 @@ async function runOutcome(input: {
     ...(input.uncheckedRequirements.length === 0
       ? {}
       : { uncheckedRequirements: input.uncheckedRequirements }),
+    ...(input.uncovered.length === 0 ? {} : { uncovered: input.uncovered }),
     ...(input.repairsForGeneratedChecksOnly.length === 0
       ? {}
       : { repairsForGeneratedChecksOnly: input.repairsForGeneratedChecksOnly }),
