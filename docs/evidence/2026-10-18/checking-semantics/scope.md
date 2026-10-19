@@ -3,7 +3,7 @@
 Declared before the first edit of this work, on `fix/repair-trust-and-first-run` at
 `c69e14d4af41597d3b32be1e5853a110b3bc47d5`. Additions are appended below as amendments, each
 naming every file it adds, before that file is edited. The main checkout's uncommitted work
-(`src/agent-instructions.ts`, the planner and controller edits on `v13-main`) is not part of
+(a new agent-instructions module and planner and controller edits on `v13-main`) is not part of
 this work and is not touched.
 
 ## Initial declaration
