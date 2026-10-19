@@ -187,3 +187,11 @@ registered order: [comparison/yargs-arm1-swarm-planned.json](comparison/yargs-ar
 [comparison/yargs-arm2-swarm-ordinary.json](comparison/yargs-arm2-swarm-ordinary.json),
 [comparison/yargs-arm3-opencode.json](comparison/yargs-arm3-opencode.json). The three
 `fxp-bugfix-uint8array-utf8` manifests of amendment 1 stay as frozen; only arm 1's was launched.
+
+### 3. 2026-10-19, after the comparison's third arm: closed
+
+Five launches, 20.3 agent-minutes, no allowance left. D1 failed the hidden oracle with the product
+reporting `accepted`; the first comparison start halted before any model call; on
+`yargs-parser-bugfix-count-sentinel` all three arms passed the hidden oracle with the same patch, byte
+for byte. Nothing else will be launched under this protocol; see [launches.md](launches.md),
+[d1/README.md](d1/README.md) and [comparison/README.md](comparison/README.md).
