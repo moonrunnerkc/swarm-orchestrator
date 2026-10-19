@@ -418,8 +418,8 @@ describe("admitting planned checks by their base control", () => {
     );
     expect(decisions.get("constant")).toMatchObject({
       admitted: false,
-      finding: "expectation-contradicted",
-      reason: expect.stringContaining("every case gave one and the same answer there"),
+      finding: "disagrees-with-base",
+      reason: expect.stringContaining("Every case gave one and the same answer there"),
     });
   });
 
@@ -467,5 +467,151 @@ describe("admitting planned checks by their base control", () => {
     });
     expect(admission.contract).toBeNull();
     expect(admission.unverifiedRequirements).toEqual(["ten"]);
+  });
+});
+
+/**
+ * A preserve check the base fails disagrees with the base. That shows the base and the expectation
+ * differ, not which one the task backs: the task can describe an outcome as one that must "still"
+ * hold when the base does not give it yet. Here the task names the string "010" and says it must
+ * still read as small; the base reads it as 10 and calls it big.
+ */
+describe("a preserve check the base fails", () => {
+  const stillTask =
+    'Change classify so 10 is small. A numeric string must still read as its number, so classify("010") must still give "small". Values above 10 remain big.';
+  const admitUnder = async (
+    checks: ReturnType<typeof check>[],
+    reclassified: ReadonlySet<string> = new Set(),
+  ) => {
+    const declared = plannedContract(
+      stillTask,
+      {
+        requirements: [
+          {
+            id: "numeric-strings",
+            description: "a numeric string reads as its number",
+            quote: 'so classify("010") must still give "small"',
+          },
+          { id: "above", description: "above 10 stays big", quote: "Values above 10 remain big" },
+        ].filter((one) => checks.some((named) => named.requirement === one.id)),
+        checks,
+      },
+      supplied,
+    );
+    return admitPlannedChecks({
+      task: stillTask,
+      contract: declared,
+      base: supplied,
+      evidence,
+      verifyAtBase: simulate(),
+      reclassified,
+    });
+  };
+
+  it("records a disagreement on an input the task names, not a finding that the requested behaviour is wrong", async () => {
+    const admission = await admitUnder([
+      check("numeric-strings-kept", "numeric-strings", "preserve", [
+        ["010", "small"],
+        ["3", "small"],
+      ]),
+    ]);
+    const [decision] = admission.decisions;
+    expect(decision).toMatchObject({
+      check: "numeric-strings-kept",
+      admitted: false,
+      finding: "disagrees-with-base",
+      disagreements: [
+        { case: 1, input: "010", expected: '"small"', base: '"big"', namedByTask: true },
+      ],
+    });
+    // The reason names both readings and does not call the task's words wrong.
+    expect(decision?.reason).toContain("disagreement with the base");
+    expect(decision?.reason).toContain("task names the input of case 1");
+    expect(decision?.reason).not.toContain("contradicts behaviour the task keeps");
+    // The requirement is the task's own words: it stays sealed, with no check.
+    expect(admission.unverifiedRequirements).toEqual(["numeric-strings"]);
+  });
+
+  it("records a genuinely wrong expectation on an input the task does not name as unnamed", async () => {
+    const admission = await admitUnder([
+      check("above-kept", "above", "preserve", [
+        [11, "big"],
+        [50, "large"],
+      ]),
+    ]);
+    expect(admission.decisions[0]).toMatchObject({
+      admitted: false,
+      finding: "disagrees-with-base",
+      disagreements: [
+        { case: 2, input: 50, expected: '"large"', base: '"big"', namedByTask: false },
+      ],
+    });
+    expect(admission.decisions[0]?.reason).toContain("task names none of these inputs");
+  });
+
+  it("admits a check reclassified to change only by the change control, for a case the task names", async () => {
+    const admission = await admitUnder(
+      [
+        {
+          ...check("numeric-strings-kept", "numeric-strings", "change", []),
+          cases: [
+            { input: "010", expected: "small", changed: true },
+            { input: "3", expected: "small", changed: false },
+            { input: "12", expected: "big", changed: false },
+          ],
+          why: 'the task asks for it: classify("010") must still give "small", and the base gives big',
+        },
+      ],
+      new Set(["numeric-strings-kept"]),
+    );
+    expect(admission.decisions[0]).toMatchObject({
+      admitted: true,
+      finding: "admitted",
+      reclassified: true,
+    });
+    expect(admission.unverifiedRequirements).toEqual([]);
+  });
+
+  it("refuses a reclassification whose changed case the task does not name, however it quotes the task", async () => {
+    const admission = await admitUnder(
+      [
+        {
+          ...check("above-kept", "above", "change", []),
+          cases: [
+            { input: 11, expected: "big", changed: false },
+            { input: 50, expected: "large", changed: true },
+          ],
+          why: "Values above 10 remain big",
+        },
+      ],
+      new Set(["above-kept"]),
+    );
+    expect(admission.decisions[0]).toMatchObject({
+      admitted: false,
+      finding: "reclassification-unsupported",
+      reclassified: true,
+    });
+    expect(admission.decisions[0]?.reason).toContain("case 2");
+    expect(admission.unverifiedRequirements).toEqual(["above"]);
+  });
+
+  it("still refuses a reclassified check whose kept case the base contradicts", async () => {
+    const admission = await admitUnder(
+      [
+        {
+          ...check("numeric-strings-kept", "numeric-strings", "change", []),
+          cases: [
+            { input: "010", expected: "small", changed: true },
+            { input: "3", expected: "medium", changed: false },
+          ],
+          why: 'the task says classify("010") must still give "small"',
+        },
+      ],
+      new Set(["numeric-strings-kept"]),
+    );
+    expect(admission.decisions[0]).toMatchObject({
+      admitted: false,
+      finding: "expectation-contradicted",
+    });
   });
 });

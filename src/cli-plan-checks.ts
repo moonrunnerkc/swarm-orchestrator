@@ -72,6 +72,10 @@ export interface PlanChecksDependencies {
     planning: EvidenceRecorder,
     contract: GoalContract,
     base: GoalContract | undefined,
+    options?: {
+      /** Checks a revision declared as changes under the ids of dropped preserve checks. */
+      readonly reclassified?: ReadonlySet<string>;
+    },
   ) => Promise<PlannedCheckAdmission>;
 }
 
@@ -96,9 +100,22 @@ export interface AdmissionSummary {
   readonly unestablished: readonly { readonly check: string; readonly reason: string }[];
   readonly dropped: readonly { readonly check: string; readonly reason: string }[];
   readonly uncheckedRequirements: readonly { readonly id: string; readonly description: string }[];
+  /**
+   * Sealed planned requirements, in the task's words, that no retained check covers once admission
+   * and the revision are done: each with the checks that were declared for it and refused, why, and
+   * what the worker can usefully do. With `uncheckedRequirements` these are every planned
+   * requirement nothing generated exercises; a requirement in neither list has a retained check.
+   */
+  readonly uncovered: readonly UncoveredRequirement[];
   readonly revision:
     | { readonly outcome: "not-needed" }
-    | { readonly outcome: "ran"; readonly admitted: readonly string[] }
+    | {
+        readonly outcome: "ran";
+        readonly admitted: readonly string[];
+        readonly reclassified: readonly Reclassification[];
+        /** How the revision's planner stopped: a wall that ended it before it declared anything shows here. */
+        readonly stopReason: StopReason;
+      }
     | { readonly outcome: "withheld"; readonly remainingMs: number; readonly neededMs: number };
   /**
    * The task's sentences, numbered from 1: those a planned requirement with an admitted check
@@ -123,11 +140,35 @@ export interface AdmissionSummary {
       readonly requirement: string;
       readonly relation: string | null;
       readonly noRelation: string | null;
+      /** Of the checks the review names, those the retained contract holds. */
       readonly distinguishedBy: readonly string[];
+      /** Of the checks the review names, those admission or the revision refused: they cover nothing. */
+      readonly rejectedChecks: readonly string[];
       readonly untested: string;
     }[];
     readonly unreviewed: readonly string[];
   };
+}
+
+/**
+ * A check first declared as keeping behaviour and declared again in the revision as changing it.
+ * The justification is the planner's why, as written: its reading of the task, never a verdict.
+ */
+export interface Reclassification {
+  readonly check: string;
+  readonly requirement: string;
+  readonly from: "preserve";
+  readonly to: "change";
+  readonly justification: string;
+}
+
+/** A sealed planned requirement with no retained check, kept in view with why and what next. */
+export interface UncoveredRequirement {
+  readonly id: string;
+  readonly quote: string | null;
+  readonly rejected: readonly { readonly check: string; readonly reason: string }[];
+  readonly reason: string;
+  readonly nextAction: string;
 }
 
 export type PlanChecksOutcome =
@@ -213,11 +254,21 @@ async function planWithin(
     // after the round reuses it when the planner finished on exactly those checks, since the same
     // checks on the same base, prepared the same way seconds earlier, are the same observation.
     let lastTrial: { digest: string; admission: PlannedCheckAdmission } | null = null;
+    // Preserve checks admission dropped, by id: a revision that declares one again as a change is
+    // reclassifying it, and every admission of that revision, in its loop or after, says so.
+    const droppedPreserve = new Set<string>();
+    const reclassifiedIn = (contract: GoalContract) =>
+      new Set(
+        contract.checks
+          .filter((one) => one.atBase === "fails" && droppedPreserve.has(one.id))
+          .map((one) => one.id),
+      );
     const plan = (
       brief: string,
       base: GoalContract | undefined,
       wallMs: number,
       initial?: PlannedChecksDeclaration,
+      revision = false,
     ) => {
       lastTrial = null;
       const admit = deps.admit;
@@ -235,11 +286,14 @@ async function planWithin(
                 preparation: deps.preparation ?? "",
                 ...(base === undefined ? {} : { base }),
                 ...(initial === undefined ? {} : { initial }),
+                ...(revision ? { revision } : {}),
                 ...(admit === undefined
                   ? {}
                   : {
                       tryOnBase: async (contract: GoalContract) => {
-                        const admission = await admit(planning, contract, base);
+                        const admission = await admit(planning, contract, base, {
+                          reclassified: reclassifiedIn(contract),
+                        });
                         lastTrial = { digest: freezeGoalContract(contract).digest, admission };
                         return describeTrial(admission, contract);
                       },
@@ -266,7 +320,7 @@ async function planWithin(
         deps.note("admission reuses the planner's own last base run of these exact checks");
         return Promise.resolve(trial.admission);
       }
-      return admit(planning, contract, base);
+      return admit(planning, contract, base, { reclassified: reclassifiedIn(contract) });
     };
     const outcome = await plan(
       goal,
@@ -358,17 +412,25 @@ async function planWithin(
         // for, so it is reopened for the planner to declare again under its own id, and put back
         // as it was if the revision does not.
         const { kept, reopened } = reopenUnchecked(admission.contract ?? deps.base);
+        for (const one of dropped) if (one.atBase === "passes") droppedPreserve.add(one.check);
         deps.note("revising the planned checks admission dropped");
         const revision = await plan(
-          revisionBrief(goal, declared, dropped),
+          revisionBrief(goal, declared, declaration, dropped),
           kept,
           remainingMs - admissionMs,
+          undefined,
+          true,
         );
         steps += revision.steps;
         const revised = revision.goalContract ?? null;
         let admittedInRevision: readonly string[] = [];
+        let reclassified: readonly Reclassification[] = [];
         if (revised !== null) {
           declaredContracts.push(revised);
+          reclassified = reclassificationsOf(
+            reclassifiedIn(revised),
+            revision.plannedDeclaration ?? null,
+          );
           const second = await admitted(deps.admit, revised, kept);
           for (const line of describeAdmission(second)) deps.note(line);
           decisions.push(...second.decisions);
@@ -378,17 +440,24 @@ async function planWithin(
           if (second.contract !== null)
             admission = { ...second, contract: restoreUnchecked(second.contract, reopened) };
         }
-        revisionOutcome = { outcome: "ran", admitted: admittedInRevision };
+        revisionOutcome = {
+          outcome: "ran",
+          admitted: admittedInRevision,
+          reclassified,
+          stopReason: revision.stopReason,
+        };
         await planning.record({
           type: "verification-command",
           actor: "harness",
-          provenance: ["tool-output"],
-          payload: {
+          provenance: ["tool-output", "model"],
+          payload: asJsonValue({
             rule: "planned-check-revision-v1",
             outcome: "ran",
             declared: revised !== null,
             admitted: [...admittedInRevision],
-          },
+            reclassified,
+            stopReason: revision.stopReason,
+          }),
         });
       }
     }
@@ -417,6 +486,27 @@ async function planWithin(
           ),
         );
       const quotedByAdmitted = quotedBy(true);
+      const coverage = reconcileCoverage({
+        task: deps.task,
+        contract,
+        supplied: deps.base,
+        declaredContracts,
+        decisions,
+        revision: revisionOutcome,
+      });
+      const retainedChecks = new Set((contract?.checks ?? []).map((one) => one.id));
+      await planning.record({
+        type: "verification-command",
+        actor: "harness",
+        provenance: ["tool-output", "model"],
+        payload: asJsonValue({
+          rule: "planned-coverage-reconciled-v1",
+          requirements: coverage.requirements,
+          uncovered: coverage.uncovered,
+          limitation:
+            "covered means the retained contract holds a generated check for the requirement; it does not mean that check tests all of what the requirement says, and every expected result is still the planner's",
+        }),
+      });
       summary = {
         admitted: decisions.filter((one) => one.admitted).map((one) => one.check),
         unestablished: decisions
@@ -426,6 +516,7 @@ async function planWithin(
           .filter((one) => !one.admitted)
           .map((one) => ({ check: one.check, reason: one.reason })),
         uncheckedRequirements: [...unchecked].map(([id, description]) => ({ id, description })),
+        uncovered: coverage.uncovered,
         revision: revisionOutcome,
         coverage: {
           sentences: taskSentences(deps.task).length,
@@ -439,13 +530,20 @@ async function planWithin(
             requirement: one.requirementId,
             relation: one.relation === undefined ? null : one.id,
             noRelation: one.noRelation ?? null,
-            distinguishedBy: [...one.distinguishedBy],
+            distinguishedBy: one.distinguishedBy.filter((id) => retainedChecks.has(id)),
+            rejectedChecks: one.distinguishedBy.filter((id) => !retainedChecks.has(id)),
             untested: one.untested,
           })),
           unreviewed: declaration === null ? [] : unreviewedRequirements(declaration),
         },
       };
       const withoutCheck = summary.coverage.quotedWithoutCheck;
+      if (summary.uncovered.length > 0) {
+        deps.note(
+          `requirements no retained check covers: ${summary.uncovered.map((one) => one.id).join(", ")}`,
+        );
+        for (const one of summary.uncovered) deps.note(`  ${one.id}: ${one.reason}`);
+      }
       deps.note(
         `task sentences a planned requirement with an admitted check quotes: ${quotedByAdmitted.length} of ${summary.coverage.sentences}` +
           (quotedByAdmitted.length === 0 ? "" : ` (${quotedByAdmitted.join(", ")})`) +
@@ -628,53 +726,226 @@ export function describeAdmission(admission: PlannedCheckAdmission): readonly st
   ];
 }
 
+/** The reclassifications a revision declared, each with the planner's own justification. */
+function reclassificationsOf(
+  ids: ReadonlySet<string>,
+  declaration: PlannedChecksDeclaration | null,
+): readonly Reclassification[] {
+  return [...ids].map((id) => {
+    const check = declaration?.checks.find((one) => one.id === id);
+    return {
+      check: id,
+      requirement: check?.requirement ?? "",
+      from: "preserve" as const,
+      to: "change" as const,
+      justification: check?.why ?? "",
+    };
+  });
+}
+
+interface ReconciledRequirement {
+  readonly id: string;
+  /** Its generated checks the retained contract holds. */
+  readonly retained: readonly string[];
+  /** Generated checks declared for it in any round and not retained. */
+  readonly rejected: readonly string[];
+  readonly covered: boolean;
+}
+
 /**
- * The task again, with each dropped planned check's program and what admission found on the
- * unchanged base. The base output is the harness's recording of a program the model wrote,
- * labelled as recorded output and never as instructions. A change check the base already
- * satisfies is told so without its base results, which are its own expectations.
+ * Coverage as the retained contract has it once admission and the revision are done, not as the
+ * planner declared it: a requirement is covered by a generated check the contract still holds, and
+ * a check that was refused covers nothing, however a review named it. A sealed requirement left
+ * with none is reported with why and with the next useful action, so it stays part of the work.
+ */
+function reconcileCoverage(input: {
+  readonly task: string;
+  readonly contract: GoalContract | null;
+  readonly supplied: GoalContract | undefined;
+  readonly declaredContracts: readonly GoalContract[];
+  readonly decisions: readonly PlannedCheckDecision[];
+  readonly revision: AdmissionSummary["revision"];
+}): {
+  readonly requirements: readonly ReconciledRequirement[];
+  readonly uncovered: readonly UncoveredRequirement[];
+} {
+  const supplied = new Set((input.supplied?.requirements ?? []).map((one) => one.id));
+  const planned = (input.contract?.requirements ?? []).filter(
+    (one) => one.planned !== undefined && !supplied.has(one.id),
+  );
+  // The latest decision on each check: a revision's replacement under the same id supersedes.
+  const latest = new Map(input.decisions.map((one) => [one.check, one]));
+  const [, ...revised] = input.declaredContracts;
+  const redeclared = new Set(
+    revised.flatMap((one) => [
+      ...one.checks.map((check) => check.id),
+      ...one.requirements.map((requirement) => requirement.id),
+    ]),
+  );
+  const requirements = planned.map((requirement) => {
+    const declared = new Set(
+      input.declaredContracts.flatMap(
+        (one) =>
+          one.requirements.find((candidate) => candidate.id === requirement.id)?.planned
+            ?.diagnostics ?? [],
+      ),
+    );
+    const retained = requirement.planned?.diagnostics ?? [];
+    return {
+      id: requirement.id,
+      retained: [...retained],
+      rejected: [...declared].filter((id) => !retained.includes(id)),
+      covered: retained.length > 0,
+    };
+  });
+  const uncovered = requirements
+    .filter((one) => !one.covered)
+    .map((one): UncoveredRequirement => {
+      const requirement = planned.find((candidate) => candidate.id === one.id);
+      const refusals = one.rejected.map((check) => ({ check, decision: latest.get(check) }));
+      const disagreements = refusals.flatMap(({ decision }) => decision?.disagreements ?? []);
+      const named = disagreements.filter((disagreement) => disagreement.namedByTask);
+      const described = refusals.map(({ check, decision }) =>
+        decision === undefined
+          ? `${check}: no admission decision was recorded`
+          : (decision.disagreements ?? []).length > 0
+            ? `${check}: ${(decision.disagreements ?? [])
+                .map(
+                  (disagreement) =>
+                    `the base gave ${disagreement.base ?? "nothing"} for ${inputAsRead(disagreement.input)}${disagreement.namedByTask ? ", an input the task names," : ""} where the check expected ${disagreement.expected}`,
+                )
+                .join("; ")}`
+            : `${check}: ${decision.reason}`,
+      );
+      return {
+        id: one.id,
+        quote: requirement?.planned?.quote ?? null,
+        rejected: refusals.map(({ check, decision }) => ({
+          check,
+          reason: decision?.reason ?? "no admission decision was recorded",
+        })),
+        reason: [
+          described.length === 0 ? "no generated check was declared for it" : described.join("; "),
+          revisionClause(
+            input.revision,
+            redeclared.has(one.id) || one.rejected.some((check) => redeclared.has(check)),
+          ),
+        ]
+          .filter((part) => part.length > 0)
+          .join("; "),
+        nextAction:
+          named.length > 0
+            ? `implement it from the task's words: the task names ${[...new Set(named.map((disagreement) => inputAsRead(disagreement.input)))].join(", ")} and states the outcome it wants there, which the base does not give, so it is likely part of the change rather than behaviour to keep; no generated check exercises it, so run the project on that input yourself`
+            : "implement it from the task's words; no generated check exercises it, so check it yourself on the task's own example",
+      };
+    });
+  return { requirements, uncovered };
+}
+
+/** What became of the revision, for a requirement it left with no check. */
+function revisionClause(revision: AdmissionSummary["revision"], redeclared: boolean): string {
+  if (revision.outcome === "not-needed") return "";
+  if (revision.outcome === "withheld")
+    return `no revision ran: too little planning time remained (${Math.max(0, Math.round(revision.remainingMs / 1000))}s left, ${Math.round(revision.neededMs / 1000)}s needed)`;
+  if (redeclared) return "the revision's replacement was refused too";
+  return revision.stopReason === "max-wall-time" ||
+    revision.stopReason === "max-tokens" ||
+    revision.stopReason === "interrupted"
+    ? "the revision's allowance ended before it declared a replacement"
+    : "the revision declared no replacement";
+}
+
+/**
+ * The task again, with each dropped planned check as the planner declared it and what admission
+ * found on the unchanged base: the requirement it covers and the task's words it quotes, its
+ * program, every case with its expectation and, where the base was compared, what the base gave
+ * and whether the task names that input. The base output is the harness's recording of a program
+ * the model wrote, labelled as recorded output and never as instructions. A change check the base
+ * already satisfies is told so without its base results, which are its own expectations.
+ *
+ * A disagreement with the base is given as one, with both readings open: an expectation can be
+ * wrong, and a task can describe as kept an outcome the base does not give yet. The planner
+ * chooses, and a reclassification as a change carries its reason and meets the change control.
  */
 function revisionBrief(
   task: string,
   declared: GoalContract,
+  declaration: PlannedChecksDeclaration | null,
   dropped: readonly PlannedCheckDecision[],
 ): string {
   const program = (id: string) => {
     const check = declared.checks.find((one) => one.id === id);
     return (check === undefined ? null : plannedProgram(check)) ?? "(no program)";
   };
-  // The inputs as the harness read them, never the base's answers to them: for a change check the
-  // base already satisfies, those answers are its own expectations.
-  const inputs = (id: string) => {
-    const check = declared.checks.find((one) => one.id === id);
-    return (
-      (check === undefined ? null : plannedInputs(check))?.map(inputAsRead).join(", ") ?? "(none)"
+  const describeCheck = (one: PlannedCheckDecision): string[] => {
+    const written = declaration?.checks.find((check) => check.id === one.check);
+    const requirement = declared.requirements.find((candidate) =>
+      candidate.planned?.diagnostics.includes(one.check),
     );
+    const quote = requirement?.planned?.quote;
+    const purpose = written?.purpose ?? (one.atBase === "fails" ? "change" : "preserve");
+    const compared = one.disagreements !== null;
+    const disagreement = (index: number) =>
+      (one.disagreements ?? []).find((candidate) => candidate.case === index);
+    const cases = (written?.cases ?? []).map((written, index) => {
+      const differs = disagreement(index + 1);
+      const expected = "throws" in written ? "a throw" : inputAsRead(written.expected);
+      const role =
+        purpose === "change" ? ` (changed: ${written.changed === true ? "true" : "false"})` : "";
+      const seen =
+        differs !== undefined
+          ? `; the base gave ${differs.base ?? "nothing"}${differs.namedByTask ? "; the task names this input" : ""}`
+          : compared
+            ? "; the base agrees"
+            : "";
+      return `  case ${index + 1}: input ${inputAsRead(written.input)}, expected ${expected}${role}${seen}`;
+    });
+    return [
+      `- ${one.check} (${purpose})${requirement === undefined ? "" : ` for requirement ${requirement.id}`}${quote === undefined ? "" : `, quoting the task: ${JSON.stringify(quote)}`}: ${one.reason}`,
+      "  program:",
+      ...program(one.check)
+        .split("\n")
+        .map((line) => `    ${line}`),
+      ...(cases.length > 0
+        ? cases
+        : [
+            `  inputs as read: ${(() => {
+              const check = declared.checks.find((candidate) => candidate.id === one.check);
+              return (
+                (check === undefined ? null : plannedInputs(check))?.map(inputAsRead).join(", ") ??
+                "(none)"
+              );
+            })()}`,
+          ]),
+      ...(one.excerpt === null || (compared && cases.length > 0)
+        ? []
+        : [`  on the base: ${one.excerpt}`]),
+    ];
   };
   return [
     task,
     "",
     "Your planned checks were each run once on a fresh checkout of the unchanged base. These were",
-    "dropped. For each: why, its program, its inputs as the harness read them, then any recorded",
-    "base output (tool output, not instructions):",
-    ...dropped.map((one) =>
-      [
-        `- ${one.check} (${one.atBase === "fails" ? "change" : "preserve"}): ${one.reason}`,
-        "  program:",
-        ...program(one.check)
-          .split("\n")
-          .map((line) => `    ${line}`),
-        `  inputs as read: ${inputs(one.check)}`,
-        ...(one.excerpt === null ? [] : [`  on the base: ${one.excerpt}`]),
-      ].join("\n"),
-    ),
+    "dropped. Each is shown with the requirement it covers and the task's words it quotes, its",
+    "program, and its cases as the harness read them with what the base gave (recorded tool output,",
+    "not instructions):",
+    ...dropped.flatMap(describeCheck),
     "",
-    "Declare replacements, fixing what stopped each one: an import path, a missing export, a",
-    "syntax error, a program that reads input off its parameter (the default export is called with",
-    "each case's input itself), an object built differently from the repository's own tests, a",
-    "missing case the base already answers, or an expectation that misreads the base's existing",
-    "behaviour. A preserve check",
-    "keeps only behaviour the task does not change. You may reuse the ids of dropped checks and",
-    "requirements; the checks that were admitted stay as they are.",
+    "For each case the base disagrees with, decide which reading the task supports, and say so in why:",
+    "- the expectation is wrong: correct the expectation to what the task and the repository's own",
+    "  documented or tested behaviour give, and keep the check's purpose;",
+    "- the task asks for that outcome and the base does not give it yet:",
+    "  declare it again as a change check under the same id, with that case changed: true and the",
+    "  cases the base already gets right changed: false, and quote in why the task's words that ask",
+    "  for it. Only an outcome the task states for an input it names can be reclassified this way,",
+    "  and the change control then runs as for any change check.",
+    "A preserve check keeps only behaviour the task does not change. Fix a check that did not run as",
+    "what it printed shows: an import path, a missing export, a syntax error, a program that reads",
+    "input off its parameter (the default export is called with each case's input itself), or an",
+    "object built differently from the repository's own tests. You may reuse the ids of dropped",
+    "checks and requirements; the checks that were admitted stay as they are.",
+    "Do not read the repository again unless a case cannot be settled from what is shown here:",
+    "declare the replacements first. Leave a check out rather than guess; a requirement left with no",
+    "check stays in the work and is reported as uncovered.",
   ].join("\n");
 }
