@@ -22,6 +22,29 @@ Source on `v13-main`; not published until a release names it.
   Coverage is reconciled against the checks admission kept, and a requirement left with none is
   named as uncovered, with why and the next action, in the worker's brief, the outcome and
   `plannedChecks.uncovered`. The admission record is `planned-check-admission-v3`.
+- **A requested outcome cannot disappear behind a sibling under the same requirement.** Coverage
+  was reconciled per requirement, so a requirement holding two outcomes read as covered while
+  the check of one was refused (D1: the task's own `(See hTtPS://...)` example had no check left,
+  and nothing told the worker). Each declared check now records the task's words it quotes, and
+  an outcome is a requirement, those words and whether the cases change or keep behaviour. Every
+  outcome a declaration names is recorded before admission (`planned-outcomes-v1`) and kept when
+  its checks are refused or replaced; coverage is reconciled per outcome
+  (`planned-coverage-reconciled-v2`), and one no retained check states is named, with why and
+  the next action, in the revision's brief, the worker's brief, the report and
+  `plannedChecks.unresolvedOutcomes` / `outcome.unresolvedOutcomes`. The identity is the
+  planner's own declarations: two outcomes stated in one quote with one role are one here.
+- **A check that throws in its own code is not read as the base's answer.** The runner records
+  where a thrown case was raised, by the innermost stack frame naming a file: in the check
+  program (`thrownIn: "check-program"`), where no frame names a file (`"unattributed"`), or
+  elsewhere, the project, which keeps the plain line a declared throw expects. A case thrown in
+  the program recorded nothing of the project's, so its check is refused as `raised-in-program`
+  with the message for the revision, instead of D1's "disagreement with the base"; a relation
+  counts such calls (`raisedInProgram`). A throw in the project stays an observation of it, and
+  an unattributed one is read as the base's answer with the uncertainty noted. The admission
+  record is `planned-check-admission-v4`, with each thrown case and where it was thrown.
+- **`accepted` says whose reading it is.** Where any requested outcome is unresolved, the status
+  line says it is the supplied contract's reading only and does not show the whole task done.
+  The status and exit code are unchanged.
 - **The final checks run after the work spends its wall.** The end of the implementation's wall
   refused the final build, lint and tests commands before they spawned, so a run that used its
   allowance was reported with nothing measured. Gate commands now stop only for the run's
