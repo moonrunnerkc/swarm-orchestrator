@@ -480,6 +480,7 @@ export function taskGoalGates(context: TaskGoalContext): {
       const disagreeing = readings.filter((one) => !one.wholly);
       return {
         passes: rejected.length === 0,
+        parts: baseBackedParts(context, result, diagnostic),
         // Where every failure here is held, repair stops: the gate still fails, so the run cannot
         // read as accepted, and the best candidate so far is what remains.
         ...(holding.length > 0 && disagreeing.length === 0
@@ -517,6 +518,52 @@ export function heldCases(
       one.role === "changed" &&
       (reported?.get(one.index) === one.got || held?.get(one.index) === one.got),
   );
+}
+
+/**
+ * Each generated check's behaviour that rests on more than the planner's word, as a part of the
+ * diagnostics gate the ratchet holds: a relation, which states no expected value, and a check's
+ * kept cases, whose expectations the base gave. A changed case is the planner's claim and is not
+ * a part. In a live ordinary run the first implementation passed the relation and failed one wrong
+ * changed case; the repair told that case broke the relation, and with the gate failing before
+ * and after, the ratchet kept the regression and the correct first change was lost.
+ */
+function baseBackedParts(
+  context: TaskGoalContext,
+  result: IndependentVerification,
+  diagnostic: ReadonlySet<string>,
+): Readonly<Record<string, GateStatus>> {
+  const parts: Record<string, GateStatus> = {};
+  for (const finding of result.goalAcceptance?.checkResults ?? []) {
+    if (!diagnostic.has(finding.id)) continue;
+    const definition = context.contract.checks.find((one) => one.id === finding.id);
+    if (definition === undefined) continue;
+    const status: GateStatus =
+      finding.status === "accepted"
+        ? "passed"
+        : finding.status === "rejected"
+          ? "failed"
+          : "not-applicable";
+    if (plannedRelation(definition) !== null) {
+      parts[finding.id] = status;
+      continue;
+    }
+    if (!(plannedCaseRoles(definition) ?? []).includes("kept")) continue;
+    const completed =
+      (
+        context.evidence.payloads().get(finding.record ?? "") as
+          | { observation?: { exitCode?: number } }
+          | undefined
+      )?.observation?.exitCode === 0;
+    parts[`${finding.id}: kept cases`] =
+      status !== "failed"
+        ? status
+        : completed &&
+            caseFailures(context, finding.id, finding.record).every((one) => one.role !== "kept")
+          ? "passed"
+          : "failed";
+  }
+  return parts;
 }
 
 /** One failing case of a generated check of cases on a verification, with its declared role. */
