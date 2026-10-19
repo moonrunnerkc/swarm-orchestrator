@@ -1,0 +1,559 @@
+{
+  "build": "/Users/brad/projects/swarm-orchestrator/.claude/worktrees/repair-trust/dist/cli.js",
+  "wallMs": 381461,
+  "exitCode": 0,
+  "turns": {
+    "planner": 40,
+    "revision": 0,
+    "review": 0,
+    "worker": 3,
+    "other": 0,
+    "recordedPlanner": 40
+  },
+  "patchMatchesD1": true,
+  "deliveredPatchDigest": "sha256:a8f585bcf11619e8403a1ec3c48c5f424019e278b910af3715d063a97e445912",
+  "status": "accepted",
+  "plannedChecks": {
+    "outcome": "sealed",
+    "admitted": [
+      "email-autolink-preserve",
+      "www-case-sensitive",
+      "scheme-autolink-case-insensitive"
+    ],
+    "dropped": [
+      {
+        "check": "https-mixed-case-link",
+        "reason": "case(s) 1 threw in the check program's own code on the base (the innermost stack frame naming a file is the program's module, not the project's), so they recorded no answer of the project's: whatever the base does there, this run does not observe it. Fix the program so that it returns what the project gives rather than failing on it, as what it printed on the base shows; the behaviour the check was for stays in the work until a check of it runs"
+      }
+    ],
+    "revision": {
+      "outcome": "withheld",
+      "remainingMs": 53632,
+      "neededMs": 96889
+    },
+    "coverage": {
+      "sentences": 6,
+      "quotedByAdmitted": [
+        2,
+        3,
+        4
+      ],
+      "quotedWithoutCheck": []
+    },
+    "uncovered": [],
+    "unresolvedOutcomes": [
+      {
+        "id": "scheme-case-insensitive#1",
+        "requirement": "scheme-case-insensitive",
+        "quote": "Scheme autolinks must remain case-insensitive for the scheme, so \"(See hTtPS://example.com/fhqwhgads.)\" must still produce a link with the trailing period excluded",
+        "role": "keep",
+        "checks": [
+          {
+            "check": "scheme-autolink-case-insensitive",
+            "reason": "declared again quoting \"Scheme autolinks must remain case-insensitive for the scheme\", so it no longer states this outcome"
+          },
+          {
+            "check": "https-mixed-case-link",
+            "reason": "case(s) 1 threw in the check program's own code on the base (the innermost stack frame naming a file is the program's module, not the project's), so they recorded no answer of the project's: whatever the base does there, this run does not observe it. Fix the program so that it returns what the project gives rather than failing on it, as what it printed on the base shows; the behaviour the check was for stays in the work until a check of it runs"
+          }
+        ],
+        "reason": "scheme-autolink-case-insensitive: declared again quoting \"Scheme autolinks must remain case-insensitive for the scheme\", so it no longer states this outcome; https-mixed-case-link: case(s) 1 threw in the check program's own code on the base (the innermost stack frame naming a file is the program's module, not the project's), so they recorded no answer of the project's: whatever the base does there, this run does not observe it. Fix the program so that it returns what the project gives rather than failing on it, as what it printed on the base shows; the behaviour the check was for stays in the work until a check of it runs; no revision ran: too little planning time remained (54s left, 97s needed)",
+        "nextAction": "implement it from the task's words; its check threw in its own code, so nothing observed the base there and nothing will check it for you: run the project on the task's own example yourself"
+      }
+    ]
+  },
+  "outcomeUnresolved": [
+    {
+      "id": "scheme-case-insensitive#1",
+      "requirement": "scheme-case-insensitive",
+      "quote": "Scheme autolinks must remain case-insensitive for the scheme, so \"(See hTtPS://example.com/fhqwhgads.)\" must still produce a link with the trailing period excluded",
+      "role": "keep",
+      "reason": "scheme-autolink-case-insensitive: declared again quoting \"Scheme autolinks must remain case-insensitive for the scheme\", so it no longer states this outcome; https-mixed-case-link: case(s) 1 threw in the check program's own code on the base (the innermost stack frame naming a file is the program's module, not the project's), so they recorded no answer of the project's: whatever the base does there, this run does not observe it. Fix the program so that it returns what the project gives rather than failing on it, as what it printed on the base shows; the behaviour the check was for stays in the work until a check of it runs; no revision ran: too little planning time remained (54s left, 97s needed)",
+      "nextAction": "implement it from the task's words; its check threw in its own code, so nothing observed the base there and nothing will check it for you: run the project on the task's own example yourself"
+    }
+  ],
+  "admissions": [
+    [
+      {
+        "check": "www-case-sensitive",
+        "finding": "unestablished-control",
+        "admitted": true,
+        "thrown": null,
+        "disagreements": null,
+        "reason": "kept with its control unestablished: on the base every case gave one and the same answer. That is what a defect that answers one value gives, and also what a program that ignores its input, builds an empty or wrongly built fixture, or calls the wrong function gives, and nothing here tells those apart. Where the defect is not one answer for everything, check that the program passes its input to the project and builds what it calls as the repository's own tests do, and add a kept case (changed: false) whose answer on the base differs from the changed cases' answers"
+      },
+      {
+        "check": "scheme-autolink-case-insensitive",
+        "finding": "disagrees-with-base",
+        "admitted": false,
+        "thrown": null,
+        "disagreements": [
+          {
+            "base": "false",
+            "case": 1,
+            "expected": "true",
+            "input": "hTtPS://example.com/fhqwhgads.",
+            "namedByTask": true
+          },
+          {
+            "base": "false",
+            "case": 3,
+            "expected": "true",
+            "input": "HTTP://FOO.COM",
+            "namedByTask": false
+          }
+        ],
+        "reason": "it fails on the base: case(s) 1, 3 do not give their expected results there. That is a disagreement with the base, not a finding that the requested behaviour is wrong: either an expectation misreads what the base does and is corrected, or the task asks for an outcome the base does not give yet, which makes the case a change (changed: true in a change check, with the task's words in why). The task names the input of case 1 itself, so the outcome it states there may be the one it asks for. Every case gave one and the same answer there, which a program that does not reach the project also gives, so check how it builds and calls the project."
+      },
+      {
+        "check": "https-mixed-case-link",
+        "finding": "raised-in-program",
+        "admitted": false,
+        "thrown": [
+          {
+            "case": 1,
+            "in": "check-program"
+          }
+        ],
+        "disagreements": null,
+        "reason": "case(s) 1 threw in the check program's own code on the base (the innermost stack frame naming a file is the program's module, not the project's), so they recorded no answer of the project's: whatever the base does there, this run does not observe it. Fix the program so that it returns what the project gives rather than failing on it, as what it printed on the base shows; the behaviour the check was for stays in the work until a check of it runs"
+      },
+      {
+        "check": "email-autolink-preserve",
+        "finding": "raised-in-program",
+        "admitted": false,
+        "thrown": [
+          {
+            "case": 1,
+            "in": "check-program"
+          },
+          {
+            "case": 2,
+            "in": "check-program"
+          }
+        ],
+        "disagreements": null,
+        "reason": "case(s) 1, 2 threw in the check program's own code on the base (the innermost stack frame naming a file is the program's module, not the project's), so they recorded no answer of the project's: whatever the base does there, this run does not observe it. Fix the program so that it returns what the project gives rather than failing on it, as what it printed on the base shows; the behaviour the check was for stays in the work until a check of it runs"
+      }
+    ],
+    [
+      {
+        "check": "https-mixed-case-link",
+        "finding": "raised-in-program",
+        "admitted": false,
+        "thrown": [
+          {
+            "case": 1,
+            "in": "check-program"
+          }
+        ],
+        "disagreements": null,
+        "reason": "case(s) 1 threw in the check program's own code on the base (the innermost stack frame naming a file is the program's module, not the project's), so they recorded no answer of the project's: whatever the base does there, this run does not observe it. Fix the program so that it returns what the project gives rather than failing on it, as what it printed on the base shows; the behaviour the check was for stays in the work until a check of it runs"
+      },
+      {
+        "check": "email-autolink-preserve",
+        "finding": "admitted",
+        "admitted": true,
+        "thrown": null,
+        "disagreements": null,
+        "reason": "it passes on the base, which keeps the behaviour it checks"
+      },
+      {
+        "check": "www-case-sensitive",
+        "finding": "unestablished-control",
+        "admitted": true,
+        "thrown": null,
+        "disagreements": null,
+        "reason": "kept with its control unestablished: on the base every case gave one and the same answer. That is what a defect that answers one value gives, and also what a program that ignores its input, builds an empty or wrongly built fixture, or calls the wrong function gives, and nothing here tells those apart. Where the defect is not one answer for everything, check that the program passes its input to the project and builds what it calls as the repository's own tests do, and add a kept case (changed: false) whose answer on the base differs from the changed cases' answers"
+      },
+      {
+        "check": "scheme-autolink-case-insensitive",
+        "finding": "unestablished-control",
+        "admitted": true,
+        "thrown": null,
+        "disagreements": null,
+        "reason": "kept with its control unestablished: it passes on the base, and every case gave one and the same answer there, which a program that ignores its input or builds an empty fixture also gives, so a pass shows little until something varies; a case whose kept answer differs, through the same program, would establish it"
+      }
+    ],
+    [
+      {
+        "check": "https-mixed-case-link",
+        "finding": "raised-in-program",
+        "admitted": false,
+        "thrown": [
+          {
+            "case": 1,
+            "in": "check-program"
+          }
+        ],
+        "disagreements": null,
+        "reason": "case(s) 1 threw in the check program's own code on the base (the innermost stack frame naming a file is the program's module, not the project's), so they recorded no answer of the project's: whatever the base does there, this run does not observe it. Fix the program so that it returns what the project gives rather than failing on it, as what it printed on the base shows; the behaviour the check was for stays in the work until a check of it runs"
+      },
+      {
+        "check": "email-autolink-preserve",
+        "finding": "admitted",
+        "admitted": true,
+        "thrown": null,
+        "disagreements": null,
+        "reason": "it passes on the base, which keeps the behaviour it checks"
+      },
+      {
+        "check": "www-case-sensitive",
+        "finding": "admitted",
+        "admitted": true,
+        "thrown": null,
+        "disagreements": null,
+        "reason": "it completes on the base with a wrong result where the task changes it, and its kept cases agree"
+      },
+      {
+        "check": "scheme-autolink-case-insensitive",
+        "finding": "admitted",
+        "admitted": true,
+        "thrown": null,
+        "disagreements": null,
+        "reason": "it passes on the base, which keeps the behaviour it checks"
+      }
+    ]
+  ],
+  "outcomesRecorded": [
+    {
+      "limitation": "an outcome is a requirement, the task's words a declared check quoted for it and whether its cases change or keep behaviour: the planner's identification, recorded before admission; two outcomes stated in one quote with one role are one here, and one never stated is not here",
+      "outcomes": [
+        {
+          "declaredBy": [
+            "www-case-sensitive"
+          ],
+          "id": "www-autolink-lowercase#1",
+          "quote": "a bare www autolink must start with lowercase \"www.\" exactly; mixed- or upper-case variants must stay plain text",
+          "requirement": "www-autolink-lowercase",
+          "role": "keep"
+        },
+        {
+          "declaredBy": [
+            "www-case-sensitive"
+          ],
+          "id": "www-autolink-lowercase#2",
+          "quote": "a bare www autolink must start with lowercase \"www.\" exactly; mixed- or upper-case variants must stay plain text",
+          "requirement": "www-autolink-lowercase",
+          "role": "change"
+        },
+        {
+          "declaredBy": [
+            "scheme-autolink-case-insensitive",
+            "https-mixed-case-link"
+          ],
+          "id": "scheme-case-insensitive#1",
+          "quote": "Scheme autolinks must remain case-insensitive for the scheme, so \"(See hTtPS://example.com/fhqwhgads.)\" must still produce a link with the trailing period excluded",
+          "requirement": "scheme-case-insensitive",
+          "role": "keep"
+        },
+        {
+          "declaredBy": [
+            "email-autolink-preserve"
+          ],
+          "id": "email-autolink-preserves#1",
+          "quote": "keep email autolinks working",
+          "requirement": "email-autolink-preserves",
+          "role": "keep"
+        },
+        {
+          "declaredBy": [
+            "scheme-autolink-case-insensitive"
+          ],
+          "id": "scheme-case-insensitive#2",
+          "quote": "Scheme autolinks must remain case-insensitive for the scheme",
+          "requirement": "scheme-case-insensitive",
+          "role": "keep"
+        }
+      ],
+      "round": "first",
+      "rule": "planned-outcomes-v1"
+    }
+  ],
+  "reconciled": {
+    "limitation": "covered means the retained contract holds a generated check that states the outcome (its requirement, the task's words its check quotes, and the role of its cases); it does not mean that check tests all of what those words say, every expected result is still the planner's, and an outcome the planner never stated is not here",
+    "outcomes": [
+      {
+        "covered": true,
+        "declaredBy": [
+          "www-case-sensitive"
+        ],
+        "id": "www-autolink-lowercase#1",
+        "quote": "a bare www autolink must start with lowercase \"www.\" exactly; mixed- or upper-case variants must stay plain text",
+        "requirement": "www-autolink-lowercase",
+        "retained": [
+          "www-case-sensitive"
+        ],
+        "role": "keep"
+      },
+      {
+        "covered": true,
+        "declaredBy": [
+          "www-case-sensitive"
+        ],
+        "id": "www-autolink-lowercase#2",
+        "quote": "a bare www autolink must start with lowercase \"www.\" exactly; mixed- or upper-case variants must stay plain text",
+        "requirement": "www-autolink-lowercase",
+        "retained": [
+          "www-case-sensitive"
+        ],
+        "role": "change"
+      },
+      {
+        "covered": false,
+        "declaredBy": [
+          "scheme-autolink-case-insensitive",
+          "https-mixed-case-link"
+        ],
+        "id": "scheme-case-insensitive#1",
+        "quote": "Scheme autolinks must remain case-insensitive for the scheme, so \"(See hTtPS://example.com/fhqwhgads.)\" must still produce a link with the trailing period excluded",
+        "requirement": "scheme-case-insensitive",
+        "retained": [],
+        "role": "keep"
+      },
+      {
+        "covered": true,
+        "declaredBy": [
+          "email-autolink-preserve"
+        ],
+        "id": "email-autolink-preserves#1",
+        "quote": "keep email autolinks working",
+        "requirement": "email-autolink-preserves",
+        "retained": [
+          "email-autolink-preserve"
+        ],
+        "role": "keep"
+      },
+      {
+        "covered": true,
+        "declaredBy": [
+          "scheme-autolink-case-insensitive"
+        ],
+        "id": "scheme-case-insensitive#2",
+        "quote": "Scheme autolinks must remain case-insensitive for the scheme",
+        "requirement": "scheme-case-insensitive",
+        "retained": [
+          "scheme-autolink-case-insensitive"
+        ],
+        "role": "keep"
+      }
+    ],
+    "requirements": [
+      {
+        "covered": true,
+        "id": "www-autolink-lowercase",
+        "rejected": [],
+        "retained": [
+          "www-case-sensitive"
+        ]
+      },
+      {
+        "covered": true,
+        "id": "scheme-case-insensitive",
+        "rejected": [
+          "https-mixed-case-link"
+        ],
+        "retained": [
+          "scheme-autolink-case-insensitive"
+        ]
+      },
+      {
+        "covered": true,
+        "id": "email-autolink-preserves",
+        "rejected": [],
+        "retained": [
+          "email-autolink-preserve"
+        ]
+      }
+    ],
+    "rule": "planned-coverage-reconciled-v2",
+    "uncovered": [],
+    "unresolvedOutcomes": [
+      {
+        "checks": [
+          {
+            "check": "scheme-autolink-case-insensitive",
+            "reason": "declared again quoting \"Scheme autolinks must remain case-insensitive for the scheme\", so it no longer states this outcome"
+          },
+          {
+            "check": "https-mixed-case-link",
+            "reason": "case(s) 1 threw in the check program's own code on the base (the innermost stack frame naming a file is the program's module, not the project's), so they recorded no answer of the project's: whatever the base does there, this run does not observe it. Fix the program so that it returns what the project gives rather than failing on it, as what it printed on the base shows; the behaviour the check was for stays in the work until a check of it runs"
+          }
+        ],
+        "id": "scheme-case-insensitive#1",
+        "nextAction": "implement it from the task's words; its check threw in its own code, so nothing observed the base there and nothing will check it for you: run the project on the task's own example yourself",
+        "quote": "Scheme autolinks must remain case-insensitive for the scheme, so \"(See hTtPS://example.com/fhqwhgads.)\" must still produce a link with the trailing period excluded",
+        "reason": "scheme-autolink-case-insensitive: declared again quoting \"Scheme autolinks must remain case-insensitive for the scheme\", so it no longer states this outcome; https-mixed-case-link: case(s) 1 threw in the check program's own code on the base (the innermost stack frame naming a file is the program's module, not the project's), so they recorded no answer of the project's: whatever the base does there, this run does not observe it. Fix the program so that it returns what the project gives rather than failing on it, as what it printed on the base shows; the behaviour the check was for stays in the work until a check of it runs; no revision ran: too little planning time remained (54s left, 97s needed)",
+        "requirement": "scheme-case-insensitive",
+        "role": "keep"
+      }
+    ]
+  },
+  "revision": [
+    {
+      "neededMs": 96889,
+      "outcome": "withheld",
+      "remainingMs": 53632,
+      "rule": "planned-check-revision-v1"
+    }
+  ],
+  "brief": "Sealed objective: With GFM autolinking enabled, marked currently turns any text starting with \"www.\" into a link regardless of letter case, so \"Www.example.com\" and \"WWW.example.com\" become links. Per the GFM spec a bare www autolink must start with lowercase \"www.\" exactly; mixed- or upper-case variants must stay plain text. Scheme autolinks must remain case-insensitive for the scheme, so \"(See hTtPS://example.com\nRequired behavior: [{\"id\":\"visible-check\",\"description\":\"the visible acceptance check passes on a fresh checkout\"},{\"id\":\"www-autolink-lowercase\",\"description\":\"GFM bare www autolinks must start with lowercase \\\"www.\\\" exactly; mixed- or upper-case variants must stay plain text\"},{\"id\":\"scheme-case-insensitive\",\"description\":\"Scheme autolinks for http://, https://, and ftp:// must remain case-insensitive for the scheme portion\"},{\"id\":\"email-autolink-preserves\",\"description\":\"Email autolinks must continue to work with @ address format as they do currently\"}]\nPreset: null\nRequested behaviour no generated check exercises (the planner's reading of the task; nothing will exercise these for you, and another check under the same requirement does not):\n- scheme-case-insensitive#1, behaviour to keep under requirement scheme-case-insensitive, quoting the task: \"Scheme autolinks must remain case-insensitive for the scheme, so \\\"(See hTtPS://example.com/fhqwhgads.)\\\" must still produce a link with the trailing period excluded\". Why: scheme-autolink-case-insensitive: declared again quoting \"Scheme autolinks must remain case-insensitive for the scheme\", so it no longer states this outcome; https-mixed-case-link: case(s) 1 threw in the check program's own code on the base (the innermost stack frame naming a file is the program's module, not the project's), so they recorded no answer of the project's: whatever the base does there, this run does not observe it. Fix the program so that it returns what the project gives rather than failing on it, as what it printed on the base shows; the behaviour the check was for stays in the work until a check of it runs; no revision ran: too little planning time remained (54s left, 97s needed). Next: implement it from the task's words; its check threw in its own code, so nothing observed the base there and nothing will check it for you: run the project on the task's own example yourself.",
+  "report": [
+    "outcome: accepted; this is the supplied contract's reading only: 1 requested outcome(s) read from the task were exercised by no check (below), so it does not show the whole task done",
+    "  requested: With GFM autolinking enabled, marked currently turns any text starting with \"www.\" into a link regardless of letter case, so \"Www.example.com\" and \"WWW.examp...",
+    "  verdict: task accepted, regression pass, policy pass, execution restricted; the loop stopped as completed",
+    "  requirements: 1 supplied, 1 met, 0 unmet, 0 unjudged; 3 planned from the task, hypotheses that generated checks exercise and that decide nothing",
+    "    met      visible-check: the visible acceptance check passes on a fresh checkout",
+    "    unjudged www-autolink-lowercase: GFM bare www autolinks must start with lowercase \"www.\" exactly; mixed- or upper-case variants mu... [planned from the task: \"a bare www autolink must start with lowercase \"www.\" exactly; mixed- or upper...\"]",
+    "             generated check www-case-sensitive: agrees with the change; its expected results are the planner's",
+    "    unjudged scheme-case-insensitive: Scheme autolinks for http://, https://, and ftp:// must remain case-insensitive for the scheme po... [planned from the task: \"Scheme autolinks must remain case-insensitive for the scheme\"]",
+    "             generated check scheme-autolink-case-insensitive: agrees with the change; its expected results are the planner's",
+    "             NO CHECK kept behaviour \"Scheme autolinks must remain case-insensitive for the scheme, so \"(See hTtPS://example.com/fhqwhg...\": scheme-autolink-case-insensitive: declared again quoting \"Scheme autolinks must remain case-insensitive for the scheme\", so it no longer states this outcome; https-mixed-case-link: case(s) 1 threw in the check program's own code on the base (the innermost stack frame naming a file is the program's module, not the project's), so they recorded no answer of the project's: whatever the base does th...",
+    "             next for it: implement it from the task's words; its check threw in its own code, so nothing observed the base there and nothing will check it for you: run the project on the task's own example yourself",
+    "    unjudged email-autolink-preserves: Email autolinks must continue to work with @ address format as they do currently [planned from the task: \"keep email autolinks working\"]",
+    "             generated check email-autolink-preserve: agrees with the change; its expected results are the planner's",
+    "  scope: only supplied requirements decide; a task sentence no requirement quotes was not tracked, and a quote says what a requirement is about, not that its checks test all of it",
+    "  tree: /var/folders/1q/2_tt_q515bs98g0f5v17_sdc0000gn/T/d1-replay-ThRriV/workspace on work, measured against 14446217f236",
+    "  changed: 1 file(s)",
+    "    src/Tokenizer.ts",
+    "  checks on that tree: 9 passed, 0 failed, 3 could not run (typecheck, format, behaviour-probe)",
+    "    final verification of the exact tree in a fresh checkout: regression pass",
+    "  used: 6m 20s, 3 steps, 371 tokens, $0.00; of which planning and criteria 4m 42s, 1,175,066 tokens",
+    "  interventions: none by a person; automatic: none",
+    "",
+    "routing reward: 0.240 (green with 0 retries, 381s, and $0.0000)",
+    "",
+    "evidence bundle: /Users/brad/.swarm/sessions/20261019T232535-6a5ef5/bundle",
+    "verify it anywhere: node /Users/brad/.swarm/sessions/20261019T232535-6a5ef5/bundle/verify.mjs /Users/brad/.swarm/sessions/20261019T232535-6a5ef5/bundle",
+    "review it: open /Users/brad/.swarm/sessions/20261019T232535-6a5ef5/bundle/review.html",
+    "what this run produced",
+    "",
+    "  the page a person reads: /Users/brad/.swarm/sessions/20261019T232535-6a5ef5/bundle/review.html",
+    "  the bundle a stranger verifies: /Users/brad/.swarm/sessions/20261019T232535-6a5ef5/bundle",
+    "  its own verifier, needing nothing installed: node /Users/brad/.swarm/sessions/20261019T232535-6a5ef5/bundle/verify.mjs /Users/brad/.swarm/sessions/20261019T232535-6a5ef5/bundle",
+    "  the chain every record is on: /Users/brad/.swarm/sessions/20261019T232535-6a5ef5/bundle/ledger.jsonl",
+    "",
+    "  100 records. The harness verified 0 claim(s) and refused 0.",
+    "  bundle verified in this run: verify.mjs exited 0",
+    "  the run took 6m 21s, 3 steps, 371 tokens, $0.00",
+    ""
+  ],
+  "reading": {
+    "runId": "20261019T232535-6a5ef5",
+    "record": null,
+    "planning": {
+      "outcome": "sealed",
+      "durationMs": 282424,
+      "tokensUsed": 1175066,
+      "admitted": [
+        "email-autolink-preserve",
+        "www-case-sensitive",
+        "scheme-autolink-case-insensitive"
+      ],
+      "dropped": [
+        {
+          "check": "https-mixed-case-link",
+          "reason": "case(s) 1 threw in the check program's own code on the base (the innermost stack frame naming a file is the program's module, not the project's), so they recorded no answer of the project's: whatever the base does there, this run does not observe it. Fix the program so that it returns what the project gives rather than failing on it, as what it printed on the base shows; the behaviour the check was for stays in the work until a check of it runs"
+        }
+      ],
+      "uncovered": [],
+      "revision": {
+        "neededMs": 96889,
+        "outcome": "withheld",
+        "remainingMs": 53632
+      },
+      "coverage": {
+        "quotedByAdmitted": [
+          2,
+          3,
+          4
+        ],
+        "quotedWithoutCheck": [],
+        "sentences": 6
+      }
+    },
+    "decisions": [],
+    "reconciled": null,
+    "briefNamesUncovered": false,
+    "reserve": {
+      "basis": "measured",
+      "capMs": 210000,
+      "deadline": 1792453175764,
+      "measuredMs": 26707,
+      "modelWorkEnds": 1792453068936,
+      "note": "the share of the total allowance held for the final gate cycle, acceptance and the final independent verification; model work ends at modelWorkEnds and the checks at the deadline, where any still running are stopped and reported as not run",
+      "reserveMs": 106828,
+      "rule": "verification-reserve-v1"
+    },
+    "loopStop": "completed",
+    "repairAttempts": null,
+    "finalGates": {
+      "build": {
+        "status": "passed",
+        "durationMs": 2364,
+        "detail": "the command exited 0"
+      },
+      "lint": {
+        "status": "passed",
+        "durationMs": 1491,
+        "detail": "the command exited 0"
+      },
+      "tests": {
+        "status": "passed",
+        "durationMs": 5302,
+        "detail": "1713 collected, 1713 passed, 0 failed, 0 skipped (exit 0)"
+      },
+      "task-acceptance": {
+        "status": "passed",
+        "durationMs": 27558,
+        "detail": "the inspection exited 0"
+      },
+      "task-diagnostics": {
+        "status": "passed",
+        "durationMs": 0,
+        "detail": "the inspection exited 0"
+      }
+    },
+    "finalIndependentVerification": {
+      "refusal": null,
+      "regression": "pass",
+      "appliedPatchDigest": "sha256:c37878d9f1512ce1a19ca3c1c32b24aa071195e2198849479f06847493cf47c0"
+    },
+    "assessment": {
+      "independentRecord": "sha256:e47db54ab1bdbfcb873278a719396bf0acb0aaeb4abd5517795e6fc7239dec36",
+      "policy": "run-acceptance-v3",
+      "previousAssessment": "sha256:c7f6cc5580d313bd3c20fcbf9af2c139d2b85149a12dae45945c39cc6053f089",
+      "sourceRecord": "sha256:9824551249a6d9d5a2e007c58d867f486acad0d1e5baa77d7e4fb5b78fcf2e8d"
+    },
+    "phases": {
+      "planning": {
+        "wallMs": 282400,
+        "modelMs": 168769,
+        "abortedInFlightMs": 0,
+        "toolMs": 74981,
+        "otherMs": 38650
+      },
+      "seal and preflight": {
+        "wallMs": 26968,
+        "modelMs": 0,
+        "abortedInFlightMs": 0,
+        "toolMs": 0,
+        "otherMs": 26968
+      },
+      "worker loop and repairs": {
+        "wallMs": 891,
+        "modelMs": 28,
+        "abortedInFlightMs": 0,
+        "toolMs": 132,
+        "otherMs": 731
+      },
+      "final gates, acceptance and verification": {
+        "wallMs": 70658,
+        "modelMs": 0,
+        "abortedInFlightMs": 0,
+        "toolMs": 0,
+        "otherMs": 70658
+      }
+    }
+  }
+}
