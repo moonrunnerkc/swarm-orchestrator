@@ -59,7 +59,12 @@ import {
   requirementOutcomes,
 } from "./cli-run-outcome.ts";
 import { reportGates } from "./cli-run-report.ts";
-import { diffBudgetFrom, gateOptionsFrom, settingsFor } from "./cli-run-settings.ts";
+import {
+  diffBudgetFrom,
+  gateOptionsFrom,
+  settingsFor,
+  verificationReserve,
+} from "./cli-run-settings.ts";
 import { createSystemClock, createSystemRandom } from "./cli-runtime-inputs.ts";
 import { chooseModel, select } from "./cli-select.ts";
 import {
@@ -448,11 +453,11 @@ async function run(options: RunCommand): Promise<number> {
       `continuation of ${options.recovery.source.sessionId}`,
     );
   const interruption = new AbortController();
-  // The deadline is the clock on model work: planning, the loop, repair and strengthening. The
-  // final verification of the tree they produced is not cut by it. A run whose loop ran to its
-  // wall budget was verified under thirty seconds of the same clock, and the verification's git
-  // commands were cancelled under it: the run ended with no result line at all. The final gates
-  // run after the budget is spent, as the budget record says they do, under their own timeouts.
+  // One total allowance from the run's start: planning, the loop, repair and strengthening are
+  // model work and end a reserve before the deadline; the final verification of the tree they
+  // produced runs in that reserve and ends at the deadline itself. Model work ending does not cut
+  // the checks: a run whose loop ran to its wall had its final build, lint and tests refused
+  // (C1), and earlier a run's verification git commands were cancelled and it printed no result.
   const modelWork = new AbortController();
   interruption.signal.addEventListener("abort", () => modelWork.abort(interruption.signal.reason), {
     once: true,
@@ -628,13 +633,22 @@ async function run(options: RunCommand): Promise<number> {
     (sealedGoal === undefined && settings.maxWallMinutes === null
       ? null
       : startedAt + (settings.maxWallMinutes ?? 30) * 60_000);
-  const deadlineTimer =
+  // What stops a check: the person's cancellation, or the end of the whole allowance.
+  const allowanceEnd = new AbortController();
+  const allowanceTimer =
     deadline === null
       ? null
       : setTimeout(
-          () => modelWork.abort("original task deadline reached"),
+          () =>
+            allowanceEnd.abort(
+              "the run's total allowance ended before final verification finished",
+            ),
           Math.max(0, deadline - clock.now()),
         );
+  const verifying = AbortSignal.any([interruption.signal, allowanceEnd.signal]);
+  // Armed once the reserve is known, after the preflight has measured what verification costs.
+  let modelWorkTimer: ReturnType<typeof setTimeout> | null = null;
+  let reserveMs = 0;
   const lockfile = options.recovery?.goal?.lockfile ?? options.lockfile;
   const goalContext =
     sealedGoal === undefined
@@ -645,7 +659,7 @@ async function run(options: RunCommand): Promise<number> {
           baseCommit,
           evidence,
           clock,
-          signal: interruption.signal,
+          signal: verifying,
           isolation,
           install: options.recovery?.goal?.install ?? options.installDependencies === true,
           ...(lockfile === undefined ? {} : { lockfile }),
@@ -699,11 +713,38 @@ async function run(options: RunCommand): Promise<number> {
         },
       });
     }
+    const preflightStarted = clock.now();
     if (goalContext !== undefined) {
       await preflightTaskGoal(goalContext);
       for (const line of describeGoalPreflight(evidence)) ui.note(line);
     }
-    if (goalContext !== undefined && deadline !== null && deadline - clock.now() <= 30_000)
+    if (deadline !== null) {
+      const reserve = verificationReserve(
+        (settings.maxWallMinutes ?? 30) * 60_000,
+        goalContext === undefined ? null : clock.now() - preflightStarted,
+      );
+      reserveMs = reserve.reserveMs;
+      await evidence.record({
+        type: "session-budget",
+        actor: "harness",
+        provenance: ["tool-output"],
+        payload: {
+          rule: "verification-reserve-v1",
+          ...reserve,
+          deadline,
+          modelWorkEnds: deadline - reserveMs,
+          note: "the share of the total allowance held for the final gate cycle, acceptance and the final independent verification; model work ends at modelWorkEnds and the checks at the deadline, where any still running are stopped and reported as not run",
+        },
+      });
+      modelWorkTimer = setTimeout(
+        () =>
+          modelWork.abort(
+            "the model-work allowance is spent; the rest is held for final verification",
+          ),
+        Math.max(0, deadline - reserveMs - clock.now()),
+      );
+    }
+    if (goalContext !== undefined && deadline !== null && deadline - clock.now() <= reserveMs)
       throw new Error(
         "preset preflight exhausted implementation allowance; final verification time stays reserved",
       );
@@ -767,11 +808,10 @@ async function run(options: RunCommand): Promise<number> {
       ...(deadline === null
         ? {}
         : {
-            maxWallTimeMs: Math.max(
-              0,
-              deadline - clock.now() - (goalContext === undefined ? 0 : 30_000),
-            ),
+            // A second short of the backstop, so the loop's own wall ends it and names its stop.
+            maxWallTimeMs: Math.max(0, deadline - clock.now() - reserveMs - backstopMarginMs),
           }),
+      verificationSignal: verifying,
       model,
       evidence,
       fileSet,
@@ -790,7 +830,14 @@ async function run(options: RunCommand): Promise<number> {
       homeDir: homedir(),
       ...(goalContext === undefined || goal === undefined
         ? {}
-        : { checkTool: acceptanceCheckTool({ ...goalContext, contract: goal }) }),
+        : {
+            // A check the worker asks for is model work, and ends with it rather than in the reserve.
+            checkTool: acceptanceCheckTool({
+              ...goalContext,
+              contract: goal,
+              signal: modelWork.signal,
+            }),
+          }),
       ...(gateOptions === undefined
         ? {}
         : {
@@ -824,7 +871,7 @@ async function run(options: RunCommand): Promise<number> {
               clock,
               signal: modelWork.signal,
               deadline,
-              reserveMs: 30_000,
+              reserveMs,
               remainingTokens: () => remainingTokenBudget(evidence, implementationTokens),
               verifyCandidate: (contract, policy) =>
                 verifyCandidateUnder(goalContext, contract, policy),
@@ -840,7 +887,12 @@ async function run(options: RunCommand): Promise<number> {
                   maxTokens: Math.max(0, implementationTokens - used.spent),
                   ...(deadline === null
                     ? {}
-                    : { maxWallTimeMs: Math.max(0, deadline - clock.now() - 30_000) }),
+                    : {
+                        maxWallTimeMs: Math.max(
+                          0,
+                          deadline - clock.now() - reserveMs - backstopMarginMs,
+                        ),
+                      }),
                 });
               },
             });
@@ -985,7 +1037,8 @@ async function run(options: RunCommand): Promise<number> {
     }
     throw cause;
   } finally {
-    if (deadlineTimer !== null) clearTimeout(deadlineTimer);
+    if (allowanceTimer !== null) clearTimeout(allowanceTimer);
+    if (modelWorkTimer !== null) clearTimeout(modelWorkTimer);
     await ui.stop();
     process.off("SIGINT", onInterrupt);
     process.off("SIGTERM", onInterrupt);
@@ -996,6 +1049,12 @@ async function run(options: RunCommand): Promise<number> {
 function describeError(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
+
+/**
+ * How much earlier than the model-work backstop the implementation's own wall ends: enough that the
+ * loop stops on its wall and reports it, and the backstop only cuts what is still in flight.
+ */
+const backstopMarginMs = 1_000;
 
 /** The run's default token allowance where none was named, the figure the spec seals. */
 const defaultTaskTokens = 1_000_000;
