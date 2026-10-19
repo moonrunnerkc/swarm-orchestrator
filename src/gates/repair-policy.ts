@@ -60,15 +60,16 @@ export function classifyRepair(cycle: GateCycle): {
       signature,
       remedy: "install the declared missing tool or browser, then start verification again",
     };
-  // A gate says, as a measure, that every failure it reports is a check the harness saw broken on
-  // this tree (a generated program that read its input as a case): no code change answers that,
-  // so repair stops instead of spending attempts on it. The gate still fails, and says why.
+  // A gate says, as a measure, that every failure it reports is held: a generated check whose
+  // expectation the repair was told and left giving the same answer, which is the planner's claim
+  // against the implementation's with nothing independent to settle it. Repair stops instead of
+  // spending attempts on it. The gate still fails, and says why.
   if (failures.length > 0 && failures.every((run) => run.measures.unrepairable === 1))
     return {
       kind: "instrument",
       signature,
       remedy:
-        "a check is broken on this tree and no code change answers it; it stays failing and reported",
+        "every failing check is held on this tree and no code change is asked for it; it stays failing and reported",
     };
   if (failures.some((run) => /ECONNREFUSED|ENETUNREACH/.test(run.observation.stderr)))
     return {

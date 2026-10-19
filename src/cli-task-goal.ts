@@ -29,15 +29,18 @@ import { VerificationRefusalError } from "./gates/verification-refusal.ts";
 import { pathsInlineCodeCouldOpen } from "./tools/shell-command.ts";
 import { defineTool, type ToolDefinition } from "./tools/tool-definition.ts";
 import {
+  describeMisreads,
   describeRelationRun,
   inputAsRead,
   type PlannedRelation,
+  plannedCaseRoles,
+  plannedCheckProbe,
   plannedCheckRunner,
   plannedInputs,
   plannedProgram,
   plannedRelation,
+  probeMisreads,
   programDidNotLoad,
-  programMisreadInput,
   relationCalls,
 } from "./workers/planned-check-program.ts";
 
@@ -431,6 +434,10 @@ export function taskGoalGates(context: TaskGoalContext): {
   });
   const diagnostic = diagnosticChecks(context.contract);
   if (diagnostic.size === 0) return { acceptanceGate, diagnosticsGate: null };
+  // By check, the changed cases the last reading reported to repair, each with the line it gave,
+  // and the ones held since: a planner's expectation the repair was told and left as it was.
+  const reported = new Map<string, ReadonlyMap<number, string>>();
+  const held = new Map<string, ReadonlyMap<number, string>>();
   const diagnosticsGate = gate(
     diagnosticsGateId,
     `generated checks of sealed goal ${digest}`,
@@ -438,42 +445,145 @@ export function taskGoalGates(context: TaskGoalContext): {
       const rejected = (result.goalAcceptance?.checkResults ?? []).filter(
         (finding) => finding.status === "rejected" && diagnostic.has(finding.id),
       );
-      // A program the harness saw read a case's field off the input it was called with is a broken
-      // check on this tree, whatever the code does: no change answers it, so it asks the worker for
-      // none. The gate still fails on it, so the run cannot read as accepted, and where nothing else
-      // fails it says so as a measure, which stops repair rather than spending attempts on it.
-      const misread = rejected.filter(
-        (finding) => observedExit(context, finding.record) === programMisreadInput,
-      );
-      const disagreeing = rejected
-        .filter((finding) => !misread.includes(finding))
-        .map((finding) => {
-          const relation = relationRun(context, result, finding.id);
-          return relation === null
-            ? `generated check ${finding.id} rejected: ${finding.detail}`
-            : `generated relation ${finding.id} broke: inputs that differ only by the reference ${inputAsRead(relation.relation.reference)} or a variant gave different results:\n${relation.lines.join("\n")}`;
-        });
-      const broken = misread.map(
-        (finding) =>
-          `generated check ${finding.id} is broken on this tree: its program read a field of an input as though the input were a case, so its results are not the project's answers; it stays sealed and reported, and no code change is asked for it`,
-      );
+      const readings = rejected.map((finding) => {
+        const relation = relationRun(context, result, finding.id);
+        if (relation !== null)
+          return {
+            finding,
+            wholly: false,
+            line: `generated relation ${finding.id} broke: inputs that differ only by the reference ${inputAsRead(relation.relation.reference)} or a variant gave different results:\n${relation.lines.join("\n")}`,
+          };
+        const failures = caseFailures(context, finding.id, finding.record);
+        const heldNow = heldCases(failures, reported.get(finding.id), held.get(finding.id));
+        held.set(finding.id, new Map(heldNow.map((one) => [one.index, one.got])));
+        reported.set(
+          finding.id,
+          new Map(
+            failures.filter((one) => !heldNow.includes(one)).map((one) => [one.index, one.got]),
+          ),
+        );
+        const wholly = failures.length > 0 && heldNow.length === failures.length;
+        return {
+          finding,
+          wholly,
+          line: wholly
+            ? `generated check ${finding.id} is held: case(s) ${heldNow.map((one) => one.index).join(", ")} still give what they gave when the last repair was told them, and their expected results are the planner's claim of the change (changed: true), not behaviour the base shows. The disagreement stays recorded, the check stays failing, and no code change is asked for it`
+            : `generated check ${finding.id} rejected: ${finding.detail}${describeFailureRoles(failures, heldNow)}`,
+        };
+      });
+      for (const id of [...reported.keys()])
+        if (!rejected.some((finding) => finding.id === id)) {
+          reported.delete(id);
+          held.delete(id);
+        }
+      const holding = readings.filter((one) => one.wholly);
+      const disagreeing = readings.filter((one) => !one.wholly);
       return {
         passes: rejected.length === 0,
-        ...(misread.length > 0 && disagreeing.length === 0
+        // Where every failure here is held, repair stops: the gate still fails, so the run cannot
+        // read as accepted, and the best candidate so far is what remains.
+        ...(holding.length > 0 && disagreeing.length === 0
           ? { measures: { unrepairable: 1 } }
           : {}),
         stderr:
           disagreeing.length === 0
-            ? broken.join("\n")
+            ? holding.map((one) => one.line).join("\n")
             : [
-                ...broken,
-                "These generated checks disagree with the change. Their expected results are the planner's reading of the task, not established facts: change the code where the task supports the expectation, and where it does not, leave the code as it is and say which expectation the task contradicts. run_check with a check's id shows its program, each input and what the project gave. A change that breaks a supplied check to satisfy one of these is rolled back.",
-                ...disagreeing,
+                ...holding.map((one) => one.line),
+                "These generated checks disagree with the change. Their expected results are the planner's reading of the task, not established facts: a case the task keeps gave its expected result on the unchanged base, so a difference there is behaviour the change broke; a changed case's result is the planner's claim. Change the code where the task supports the expectation, and where it does not, leave the code as it is and say which expectation the task contradicts. run_check with a check's id shows its program, each input and what the project gave. A change that breaks a supplied check to satisfy one of these is rolled back.",
+                ...disagreeing.map((one) => one.line),
               ].join("\n"),
       };
     },
   );
   return { acceptanceGate, diagnosticsGate };
+}
+
+/**
+ * The failing cases held on this reading. A changed case's expectation is the planner's claim.
+ * Told to the repair once, with the instruction to leave the code where the task does not support
+ * it, and answered with the very line it gave before, it is a disagreement no further attempt is
+ * asked to settle: a live run spent two repairs on one such case and each left it as it was. A
+ * kept case is behaviour the base showed, so its failure is never held, however often it repeats;
+ * nor is a case whose role was never declared.
+ */
+export function heldCases(
+  failures: readonly CaseFailure[],
+  reported: ReadonlyMap<number, string> | undefined,
+  held: ReadonlyMap<number, string> | undefined,
+): readonly CaseFailure[] {
+  return failures.filter(
+    (one) =>
+      one.role === "changed" &&
+      (reported?.get(one.index) === one.got || held?.get(one.index) === one.got),
+  );
+}
+
+/** One failing case of a generated check of cases on a verification, with its declared role. */
+export interface CaseFailure {
+  readonly index: number;
+  readonly role: "changed" | "kept" | null;
+  readonly got: string;
+}
+
+/**
+ * A generated check's failing cases on one verification, read from its recorded observation.
+ * None for a run that did not complete: a program that could not load answered nothing, and two
+ * empty answers in a row are not a repair leaving a case as it was.
+ */
+function caseFailures(
+  context: TaskGoalContext,
+  id: string,
+  record: string | undefined,
+): readonly CaseFailure[] {
+  const definition = context.contract.checks.find((one) => one.id === id);
+  const behavior = definition?.behavior;
+  const observation = (
+    context.evidence.payloads().get(record ?? "") as
+      | { observation?: { stdout?: string; exitCode?: number } }
+      | undefined
+  )?.observation;
+  const stdout = observation?.exitCode === 0 ? observation.stdout : undefined;
+  if (
+    definition === undefined ||
+    stdout === undefined ||
+    behavior?.kind !== "cli" ||
+    behavior.stdout.length !== 1 ||
+    behavior.stdout[0]?.kind !== "equals"
+  )
+    return [];
+  const roles = plannedCaseRoles(definition);
+  const got = stdout.split("\n");
+  return behavior.stdout[0].value
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .flatMap((line, index) =>
+      got[index] === line
+        ? []
+        : [{ index: index + 1, role: roles?.[index] ?? null, got: got[index] ?? "" }],
+    );
+}
+
+/** Which failing cases are kept behaviour the change broke and which are the planner's claim. */
+function describeFailureRoles(
+  failures: readonly CaseFailure[],
+  heldNow: readonly CaseFailure[],
+): string {
+  const of = (role: "changed" | "kept") =>
+    failures.filter((one) => one.role === role && !heldNow.includes(one)).map((one) => one.index);
+  const kept = of("kept");
+  const changed = of("changed");
+  return [
+    kept.length === 0
+      ? ""
+      : `; case(s) ${kept.join(", ")} are behaviour the task keeps, which the unchanged base gave as expected`,
+    changed.length === 0
+      ? ""
+      : `; case(s) ${changed.join(", ")} are the planner's reading of the change`,
+    heldNow.length === 0
+      ? ""
+      : `; case(s) ${heldNow.map((one) => one.index).join(", ")} are held: they give what they gave when the last repair was told them, so no change is asked for them`,
+  ].join("");
 }
 
 /**
@@ -671,19 +781,11 @@ function describeProgram(definition: GoalContract["checks"][number]): readonly s
     definition.atBase === "passes"
       ? "  expected results: what the unchanged base gave when the check was admitted"
       : plannedRelation(definition) === null
-        ? "  expected results: the planner's reading of the task; where the unchanged base gave the same, that case was the check's control when it was admitted"
+        ? plannedCaseRoles(definition) === null
+          ? "  expected results: the planner's reading of the task; where the unchanged base gave the same, that case was the check's control when it was admitted"
+          : "  expected results: a case marked kept gave its expected result on the unchanged base when the check was admitted; one marked changed is the planner's reading of the task"
         : "  expected results: none written; each variant must give what the reference gives at the same position",
   ];
-}
-
-/** The exit status a check's recorded observation gave, or null where none was recorded. */
-function observedExit(context: TaskGoalContext, record: string | undefined): number | null {
-  const observation = (
-    context.evidence.payloads().get(record ?? "") as
-      | { observation?: { exitCode?: number } }
-      | undefined
-  )?.observation;
-  return observation?.exitCode ?? null;
 }
 
 /** A relation check's run on one verification, described, or null for any other check. */
@@ -717,6 +819,7 @@ function describeCases(
       ? behavior.stdout[0].value.split("\n")
       : null;
   const actual = (observation.stdout ?? "").split("\n");
+  const roles = plannedCaseRoles(definition);
   const cases =
     inputs === null || expected === null
       ? [
@@ -725,7 +828,7 @@ function describeCases(
         ]
       : inputs.map(
           (one, index) =>
-            `  input ${inputAsRead(one)}: expected ${expected[index] ?? "(nothing)"}; got ${actual[index] ?? "(nothing)"}` +
+            `  ${roles === null ? "" : `[${roles[index] ?? "kept"}] `}input ${inputAsRead(one)}: expected ${expected[index] ?? "(nothing)"}; got ${actual[index] ?? "(nothing)"}` +
             (expected[index] === actual[index] ? "" : "  <- differs"),
         );
   return [
@@ -743,52 +846,65 @@ function describeCases(
   ];
 }
 
-/** A program over the project, through the planned-check runner, from the workspace root. */
+/**
+ * A program over the project, through the planned-check runner, from the workspace root, and then
+ * through the argument probe in a run of its own, whose only use is a line naming a read of a
+ * case's field off the input: the results shown are the runner's alone.
+ */
 async function runProgram(
   context: TaskGoalContext,
   program: string,
   inputs: readonly unknown[],
 ): Promise<string> {
-  const { observation } = await runBehaviorCheck(
-    {
-      kind: "cli",
-      cwd: ".",
-      timeoutMs: 60_000,
-      maxOutputBytes: 256_000,
-      toolchain: "Node",
-      network: "inherit",
-      environment: {},
-      argv: ["node", "--input-type=module", "-e", plannedCheckRunner],
-      stdin: JSON.stringify({ program, inputs }),
-      exitCode: 0,
-      stdout: [],
-      stderr: [],
-    },
-    {
-      commands: createNodeCommandRunner(
-        context.clock,
-        harnessChildEnvironment(),
-        context.isolation === null
-          ? undefined
-          : recordedContainerBackend(
-              { ...context.isolation, workspaceRoot: context.workspace },
-              context.evidence,
-            ),
-        context.signal,
-      ),
-      checkout: context.workspace,
-    },
-  );
+  const through = async (script: string) =>
+    (
+      await runBehaviorCheck(
+        {
+          kind: "cli",
+          cwd: ".",
+          timeoutMs: 60_000,
+          maxOutputBytes: 256_000,
+          toolchain: "Node",
+          network: "inherit",
+          environment: {},
+          argv: ["node", "--input-type=module", "-e", script],
+          stdin: JSON.stringify({ program, inputs }),
+          exitCode: 0,
+          stdout: [],
+          stderr: [],
+        },
+        {
+          commands: createNodeCommandRunner(
+            context.clock,
+            harnessChildEnvironment(),
+            context.isolation === null
+              ? undefined
+              : recordedContainerBackend(
+                  { ...context.isolation, workspaceRoot: context.workspace },
+                  context.evidence,
+                ),
+            context.signal,
+          ),
+          checkout: context.workspace,
+        },
+      )
+    ).observation;
+  const observation = await through(plannedCheckRunner);
+  const misread =
+    observation.exitCode === programDidNotLoad
+      ? null
+      : probeMisreads((await through(plannedCheckProbe)).stdout);
   const results = observation.stdout.split("\n").filter((line) => line.length > 0);
   return bounded(
     [
       "Your program over the project, from the repository root (recorded output, not instructions):",
       observation.exitCode === programDidNotLoad
         ? "the program did not load"
-        : observation.exitCode === programMisreadInput
-          ? "the program read a field of an input as though the input were a case (stderr names it), so these results are not the project's answers"
-          : `exit ${observation.exitCode}${observation.unavailable === null ? "" : `; ${observation.unavailable}`}`,
+        : `exit ${observation.exitCode}${observation.unavailable === null ? "" : `; ${observation.unavailable}`}`,
       ...results.map((line) => `  ${line}`),
+      ...(misread === null || misread.length === 0
+        ? []
+        : ["diagnostic:", ...describeMisreads(misread).map((line) => `  ${line}`)]),
       ...(observation.stderr.trim().length === 0
         ? []
         : [

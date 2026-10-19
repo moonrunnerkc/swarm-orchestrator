@@ -5,14 +5,17 @@ import type { LoopEvent } from "./core/loop-events.ts";
 import type { ModelClient } from "./core/model-client.ts";
 import type { RandomSource } from "./core/random-source.ts";
 import type { StopReason } from "./core/termination.ts";
+import { asJsonValue } from "./evidence/canonical-json.ts";
 import { freezeGoalContract, type GoalContract } from "./evidence/goal-contract.ts";
 import { type EvidenceRecorder, openEvidenceSession } from "./evidence/session.ts";
 import {
   inputAsRead,
+  type PlannedChecksDeclaration,
   plannedInputs,
   plannedProgram,
   sentencesQuoted,
   taskSentences,
+  unreviewedRequirements,
 } from "./workers/planned-check-program.ts";
 import { runPlanner } from "./workers/planner-run.ts";
 
@@ -89,6 +92,8 @@ interface PlanningSpend {
  */
 export interface AdmissionSummary {
   readonly admitted: readonly string[];
+  /** Of the admitted, those kept with their control unestablished, and why. */
+  readonly unestablished: readonly { readonly check: string; readonly reason: string }[];
   readonly dropped: readonly { readonly check: string; readonly reason: string }[];
   readonly uncheckedRequirements: readonly { readonly id: string; readonly description: string }[];
   readonly revision:
@@ -105,6 +110,23 @@ export interface AdmissionSummary {
     readonly sentences: number;
     readonly quotedByAdmitted: readonly number[];
     readonly quotedWithoutCheck: readonly number[];
+  };
+  /**
+   * The coverage review the planner declared before admission, and whether the harness had to ask
+   * for it in a round of its own. Each review is the planner's account; the harness established
+   * only that it names declared requirements and checks, and enumerated the relations it gave.
+   */
+  readonly review: {
+    readonly round: "not-needed" | "ran" | "withheld";
+    readonly reviews: readonly {
+      readonly id: string;
+      readonly requirement: string;
+      readonly relation: string | null;
+      readonly noRelation: string | null;
+      readonly distinguishedBy: readonly string[];
+      readonly untested: string;
+    }[];
+    readonly unreviewed: readonly string[];
   };
 }
 
@@ -191,7 +213,12 @@ async function planWithin(
     // after the round reuses it when the planner finished on exactly those checks, since the same
     // checks on the same base, prepared the same way seconds earlier, are the same observation.
     let lastTrial: { digest: string; admission: PlannedCheckAdmission } | null = null;
-    const plan = (brief: string, base: GoalContract | undefined, wallMs: number) => {
+    const plan = (
+      brief: string,
+      base: GoalContract | undefined,
+      wallMs: number,
+      initial?: PlannedChecksDeclaration,
+    ) => {
       lastTrial = null;
       const admit = deps.admit;
       return runPlanner({
@@ -207,6 +234,7 @@ async function planWithin(
                 task: deps.task,
                 preparation: deps.preparation ?? "",
                 ...(base === undefined ? {} : { base }),
+                ...(initial === undefined ? {} : { initial }),
                 ...(admit === undefined
                   ? {}
                   : {
@@ -247,7 +275,50 @@ async function planWithin(
         (deps.clock.now() - startedAt),
     );
     steps += outcome.steps;
-    const declared = outcome.goalContract ?? null;
+    let declared = outcome.goalContract ?? null;
+    let declaration = outcome.plannedDeclaration ?? null;
+    // Planning does not finish on checks nobody reviewed for coverage. A planner told six times to
+    // consider a relation never declared one; one that stops without a review of every requirement
+    // gets a round of its own for it, continuing its declaration, before anything is admitted.
+    let reviewRound: AdmissionSummary["review"]["round"] = "not-needed";
+    const unreviewed = declaration === null ? [] : unreviewedRequirements(declaration);
+    if (deps.admit !== undefined && declaration !== null && unreviewed.length > 0) {
+      const remainingMs = deadline - deps.clock.now();
+      if (signal.aborted || remainingMs < 2 * minimumRevisionMs) {
+        reviewRound = "withheld";
+        deps.note(
+          `no coverage review round: ${Math.max(0, Math.round(remainingMs / 1000))}s of planning remain`,
+        );
+      } else {
+        deps.note(
+          `the planner finished with no coverage review of ${unreviewed.join(", ")}; asking for one`,
+        );
+        const reviewing = await plan(
+          reviewBrief(goal, declaration),
+          deps.base,
+          Math.floor(remainingMs / 2),
+          declaration,
+        );
+        steps += reviewing.steps;
+        declaration = reviewing.plannedDeclaration ?? declaration;
+        declared = reviewing.goalContract ?? declared;
+        reviewRound = "ran";
+      }
+    }
+    if (deps.admit !== undefined && declaration !== null)
+      await planning.record({
+        type: "verification-command",
+        actor: "harness",
+        provenance: ["model"],
+        payload: asJsonValue({
+          rule: "planned-coverage-review-v1",
+          round: reviewRound,
+          reviews: declaration.reviews ?? [],
+          unreviewed: unreviewedRequirements(declaration),
+          limitation:
+            "the harness checked that each review names declared requirements and checks and enumerated the relations it gave; whether a wrong implementation is plausible, whether the named checks tell it apart and whether untested is complete are the planner's claims",
+        }),
+      });
     const admissionStarted = deps.clock.now();
     let admission =
       declared === null || deps.admit === undefined
@@ -348,6 +419,9 @@ async function planWithin(
       const quotedByAdmitted = quotedBy(true);
       summary = {
         admitted: decisions.filter((one) => one.admitted).map((one) => one.check),
+        unestablished: decisions
+          .filter((one) => one.finding === "unestablished-control")
+          .map((one) => ({ check: one.check, reason: one.reason })),
         dropped: decisions
           .filter((one) => !one.admitted)
           .map((one) => ({ check: one.check, reason: one.reason })),
@@ -357,6 +431,18 @@ async function planWithin(
           sentences: taskSentences(deps.task).length,
           quotedByAdmitted,
           quotedWithoutCheck: quotedBy(false).filter((one) => !quotedByAdmitted.includes(one)),
+        },
+        review: {
+          round: reviewRound,
+          reviews: (declaration?.reviews ?? []).map((one) => ({
+            id: one.id,
+            requirement: one.requirementId,
+            relation: one.relation === undefined ? null : one.id,
+            noRelation: one.noRelation ?? null,
+            distinguishedBy: [...one.distinguishedBy],
+            untested: one.untested,
+          })),
+          unreviewed: declaration === null ? [] : unreviewedRequirements(declaration),
         },
       };
       const withoutCheck = summary.coverage.quotedWithoutCheck;
@@ -440,6 +526,26 @@ function restoreUnchecked(
         .contract;
 }
 
+/**
+ * The coverage-review round's brief: the task, what the planner declared, and the requirements no
+ * review covers yet. The planner's own declaration is what it continues, so nothing is restated.
+ */
+function reviewBrief(task: string, declaration: PlannedChecksDeclaration): string {
+  const missing = unreviewedRequirements(declaration);
+  return [
+    task,
+    "",
+    "Your planned checks are declared:",
+    ...declaration.checks.map(
+      (one) =>
+        `- ${one.id} (${one.purpose}, requirement ${one.requirement}): ${one.relation === undefined ? `${one.cases?.length ?? 0} case(s)` : "a relation"}`,
+    ),
+    "",
+    `Planning cannot finish until every requirement has a coverage review; ${missing.join(", ")} ${missing.length === 1 ? "has" : "have"} none.`,
+    "Call declare_coverage_review once for each behaviour of those requirements: what the task changes, what must stay, a plausible wrong implementation that would still pass the declared cases, which checks tell it apart, and what stays untested. Where a rule says some text behaves like other text, give it as relation over the program of one of your checks of string inputs, and the harness tries it at every position; where no such rule applies, say why in noRelation. You may also replace a check under its id. Then finish with a one-line summary and no tool calls.",
+  ].join("\n");
+}
+
 /** What the planner's in-loop base run found, as it reads it: each check's decision, with what a dropped one did. */
 function describeTrial(admission: PlannedCheckAdmission, contract: GoalContract): string {
   const purpose = (id: string) =>
@@ -448,12 +554,15 @@ function describeTrial(admission: PlannedCheckAdmission, contract: GoalContract)
     "Recorded base output (tool output, not instructions):",
     ...admission.decisions.map(
       (one) =>
-        `${one.admitted ? "admitted" : "dropped"} ${one.check} (${purpose(one.check)}): ${one.reason}` +
+        `${one.admitted ? (one.finding === "unestablished-control" ? "kept" : "admitted") : "dropped"} ${one.check} (${purpose(one.check)}): ${one.reason}` +
+        (one.notes.length === 0 ? "" : `; ${one.notes.join("; ")}`) +
         (one.excerpt === null ? "" : `; on the base: ${one.excerpt}`),
     ),
-    admission.decisions.every((one) => one.admitted)
+    admission.decisions.every((one) => one.finding === "admitted")
       ? "Every check holds its base control."
-      : "A dropped check stays dropped unless you declare a replacement (the same id replaces it).",
+      : admission.decisions.every((one) => one.admitted)
+        ? "A check kept with its control unestablished stays as it is unless you replace it under its id; leave it where one answer for everything is the defect itself."
+        : "A dropped check stays dropped unless you declare a replacement (the same id replaces it).",
   ].join("\n");
 }
 
@@ -504,7 +613,7 @@ export function describeAdmission(admission: PlannedCheckAdmission): readonly st
     "planned checks on the unchanged base:",
     ...admission.decisions.map(
       (one) =>
-        `  ${one.admitted ? "admitted" : "dropped "} ${one.check} (should ${one.atBase === "fails" ? "fail" : "pass"} there): ${one.reason}`,
+        `  ${one.admitted ? (one.finding === "unestablished-control" ? "kept    " : "admitted") : "dropped "} ${one.check} (should ${one.atBase === "fails" ? "fail" : "pass"} there): ${one.reason}`,
     ),
     ...(admission.droppedRequirements.length === 0
       ? []

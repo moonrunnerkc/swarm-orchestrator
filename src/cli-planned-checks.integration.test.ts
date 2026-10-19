@@ -89,16 +89,48 @@ async function workspace(
   return { directory, base: await git(directory, "rev-parse", "HEAD"), contract };
 }
 
-/** A planned check as the planner declares it: a program over classify, and its cases. */
+/**
+ * A planned check as the planner declares it: a program over classify, and its cases. A change
+ * check's case is marked changed where the base (n < 10 is small) gives something else, unless
+ * the case says otherwise.
+ */
 function plannedCheck(
   id: string,
   requirement: string,
   purpose: "change" | "preserve",
-  cases: { input: number; expected: string }[],
+  cases: { input: number; expected: string; changed?: boolean }[],
   program = classifying("./value.mjs"),
 ) {
-  return { id, requirement, purpose, program, cases, why: "the task states the boundary" };
+  return {
+    id,
+    requirement,
+    purpose,
+    program,
+    cases:
+      purpose === "change"
+        ? cases.map((one) => ({
+            ...one,
+            changed: one.changed ?? one.expected !== (one.input < 10 ? "small" : "big"),
+          }))
+        : cases,
+    why: "the task states the boundary",
+  };
 }
+
+/** A coverage review of one requirement that gives no relation, as a numeric rule has none. */
+const reviewing = (requirementId: string, distinguishedBy: readonly string[] = []) => ({
+  name: "declare_coverage_review",
+  input: {
+    id: `${requirementId}-review`,
+    requirementId,
+    change: "the boundary the task states",
+    keeps: "everything the task does not name",
+    wrongImplementation: "a boundary moved one step too far",
+    distinguishedBy,
+    noRelation: "the rule is about numbers, not text behaving like other text",
+    untested: "none",
+  },
+});
 
 const classifying = (path: string) =>
   `import { classify } from '${path}';\nexport default (n) => classify(n);\n`;
@@ -108,7 +140,21 @@ const declaring = (
   requirements: { id: string; description: string; quote?: string }[],
   checks: ReturnType<typeof plannedCheck>[],
 ) => ({
-  toolCalls: checks.map((check) => {
+  toolCalls: [
+    ...declarations(requirements, checks),
+    ...requirements.map((one) =>
+      reviewing(
+        one.id,
+        checks.filter((check) => check.requirement === one.id).map((check) => check.id),
+      ),
+    ),
+  ],
+});
+const declarations = (
+  requirements: { id: string; description: string; quote?: string }[],
+  checks: ReturnType<typeof plannedCheck>[],
+) =>
+  checks.map((check) => {
     const requirement = requirements.find((one) => one.id === check.requirement);
     if (requirement === undefined) throw new Error(`no requirement ${check.requirement}`);
     return {
@@ -120,8 +166,7 @@ const declaring = (
         ...(requirement.quote === undefined ? {} : { quote: requirement.quote }),
       },
     };
-  }),
-});
+  });
 
 /** Every brief the planner was sent, as text, for what it carried. */
 const plannerBriefs = (endpoint: ScriptedEndpoint) =>
@@ -148,9 +193,11 @@ const plannerTurns: ScriptedTurnSource[] = [
           { input: 50, expected: "big" },
         ]),
         // Says it detects the change, yet the base already gets it right.
-        plannedCheck("mislabelled", "boundary", "change", [{ input: 3, expected: "small" }]),
+        plannedCheck("mislabelled", "boundary", "change", [
+          { input: 3, expected: "small", changed: true },
+        ]),
         // Loads the project and never calls it: the base gets every case wrong, as the missing
-        // change would, and only the control case it lacks would have shown that.
+        // change would, and its kept case is what shows that.
         plannedCheck(
           "uncontrolled",
           "boundary",
@@ -280,6 +327,24 @@ interface ResultLine {
   };
 }
 
+/** What one gate wrote to stderr on each attempt of a run, read from the run's own chain. */
+function gateStderr(runId: string | undefined, gateId: string): readonly string[] {
+  const session = join(home, ".swarm", "sessions", runId ?? "");
+  return readFileSync(join(session, "ledger.jsonl"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as { type: string; payloadDigest: string })
+    .filter((record) => record.type === "gate-run")
+    .map(
+      (record) =>
+        JSON.parse(
+          readFileSync(join(session, "blobs", `${record.payloadDigest.slice(7)}.json`), "utf8"),
+        ) as { gateId?: string; stderr?: string },
+    )
+    .filter((payload) => payload.gateId === gateId)
+    .map((payload) => payload.stderr ?? "");
+}
+
 /** The bundle's own verifier, run as a reviewer runs it, with nothing installed. */
 async function verifyBundle(directory: string): Promise<{ code: number; stdout: string }> {
   return run(process.execPath, [join(directory, "verify.mjs"), directory]).then(
@@ -297,6 +362,62 @@ const resultOf = (stdout: string) =>
     .filter((line) => line.startsWith("{"))
     .map((line) => JSON.parse(line) as ResultLine)
     .find((line) => line.schema === "swarm.result.v1");
+
+/**
+ * Base: spaces separate words. A first change that handles a lone tab and misses a tab beside a
+ * space passes a single example ("a\tb").
+ */
+async function slugWorkspace(
+  slugTask: string,
+): Promise<{ directory: string; base: string; contract: string }> {
+  const directory = join(scratch, "workspace");
+  await mkdir(directory, { recursive: true });
+  await writeFile(
+    join(directory, "package.json"),
+    JSON.stringify({
+      name: "slugs",
+      version: "1.0.0",
+      type: "module",
+      scripts: { test: "node --test" },
+    }),
+  );
+  await writeFile(
+    join(directory, "slug.mjs"),
+    "export function slug(text) {\n  return text.trim().split(/ +/).join('-');\n}\n",
+  );
+  await writeFile(
+    join(directory, "slug.test.mjs"),
+    "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { slug } from './slug.mjs';\ntest('words', () => assert.equal(slug('a b'), 'a-b'));\n",
+  );
+  await git(directory, "init", "-q");
+  await git(directory, "add", "-A");
+  await git(directory, "commit", "-qm", "base");
+  const contract = join(scratch, "contract.json");
+  await writeFile(
+    contract,
+    JSON.stringify({
+      version: 1,
+      goal: slugTask,
+      requirements: [{ id: "suite", description: "the project's suite passes", checks: ["suite"] }],
+      checks: [
+        {
+          id: "suite",
+          command: "node --test",
+          author: "user",
+          exposure: "shared",
+          artifacts: [],
+        },
+      ],
+      immutablePaths: ["slug.test.mjs"],
+    }),
+  );
+  return { directory, base: await git(directory, "rev-parse", "HEAD"), contract };
+}
+
+const writeSlug = (source: string) => ({
+  name: "write",
+  input: { path: "slug.mjs", content: source },
+});
 
 describe("planned checks through the ordinary command line", () => {
   it("admits checks by their base control and repairs a change against the one it broke", async () => {
@@ -346,7 +467,7 @@ describe("planned checks through the ordinary command line", () => {
             decisions?: { check: string; admitted: boolean; reason: string; broken: boolean }[];
           },
       )
-      .find((payload) => payload.rule === "planned-check-admission-v1");
+      .find((payload) => payload.rule === "planned-check-admission-v2");
     expect(
       Object.fromEntries((admission?.decisions ?? []).map((one) => [one.check, one.admitted])),
     ).toEqual({
@@ -357,9 +478,9 @@ describe("planned checks through the ordinary command line", () => {
       broken: false,
     });
     expect(admission?.decisions?.find((one) => one.check === "uncontrolled")).toMatchObject({
-      broken: true,
-      finding: "no-control",
-      reason: expect.stringMatching(/gets every case wrong on the base/),
+      broken: false,
+      finding: "expectation-contradicted",
+      reason: expect.stringMatching(/case\(s\) 1 are declared kept \(changed: false\)/),
     });
     expect(admission?.decisions?.find((one) => one.check === "broken")?.broken).toBe(true);
     expect(result?.plannedChecks).toEqual({
@@ -373,7 +494,7 @@ describe("planned checks through the ordinary command line", () => {
         {
           check: "uncontrolled",
           reason:
-            "it gets every case wrong on the base, so nothing shows its program calls the project correctly; a change check also holds a case the task does not change, which the base gets right",
+            "case(s) 1 are declared kept (changed: false), so the unchanged base must give their expected results, and it does not: either the task changes them (changed: true, with the task's words in why) or the expectation misreads what the base does",
         },
         {
           check: "broken",
@@ -962,9 +1083,9 @@ describe("planned checks through the ordinary command line", () => {
     expect(JSON.stringify(endpoint.requests)).toContain(
       "reread each sentence of the task that states a rule",
     );
-    // With no relation declared, the answers name the tool that tries every position.
+    // The review the first turn declared is acknowledged, not asked for again.
     expect(JSON.stringify(endpoint.requests)).toContain(
-      "No relation is declared. Where the task says some text must behave like other text",
+      "Coverage review: every requirement has one",
     );
   }, 200_000);
 
@@ -1014,56 +1135,7 @@ describe("planned checks through the ordinary command line", () => {
       "make slug(text) treat a tab like a space: a space already separates words, and so must a tab";
     // Base: spaces separate words. The first change handles a lone tab and misses a tab beside a
     // space, which a single example ("a\tb") passes.
-    const prepared = (async () => {
-      const directory = join(scratch, "workspace");
-      await mkdir(directory, { recursive: true });
-      await writeFile(
-        join(directory, "package.json"),
-        JSON.stringify({
-          name: "slugs",
-          version: "1.0.0",
-          type: "module",
-          scripts: { test: "node --test" },
-        }),
-      );
-      await writeFile(
-        join(directory, "slug.mjs"),
-        "export function slug(text) {\n  return text.trim().split(/ +/).join('-');\n}\n",
-      );
-      await writeFile(
-        join(directory, "slug.test.mjs"),
-        "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { slug } from './slug.mjs';\ntest('words', () => assert.equal(slug('a b'), 'a-b'));\n",
-      );
-      await git(directory, "init", "-q");
-      await git(directory, "add", "-A");
-      await git(directory, "commit", "-qm", "base");
-      const contract = join(scratch, "contract.json");
-      await writeFile(
-        contract,
-        JSON.stringify({
-          version: 1,
-          goal: slugTask,
-          requirements: [
-            { id: "suite", description: "the project's suite passes", checks: ["suite"] },
-          ],
-          checks: [
-            {
-              id: "suite",
-              command: "node --test",
-              author: "user",
-              exposure: "shared",
-              artifacts: [],
-            },
-          ],
-          immutablePaths: ["slug.test.mjs"],
-        }),
-      );
-      return { directory, base: await git(directory, "rev-parse", "HEAD"), contract };
-    })();
-    const writeSlug = (source: string) => ({
-      name: "write",
-      input: { path: "slug.mjs", content: source },
-    });
+    const prepared = slugWorkspace(slugTask);
     const repairOnRelation: ScriptedTurnSource = (request) => {
       const text = JSON.stringify(request);
       // Repairs only from the counterexample in words: the seed, the position and both answers.
@@ -1100,6 +1172,19 @@ describe("planned checks through the ordinary command line", () => {
                 why: "the task says a tab is treated like a space",
               },
             },
+            {
+              name: "declare_coverage_review",
+              input: {
+                id: "tab-review",
+                requirementId: "tab-separates",
+                change: "a tab separates words",
+                keeps: "a space separates words",
+                wrongImplementation: "split on a lone tab and miss one beside a space",
+                distinguishedBy: ["tab-like-space"],
+                noRelation: "the rule is declared as the relation tab-like-space",
+                untested: "none",
+              },
+            },
           ],
         },
         { text: "Pinned." },
@@ -1132,6 +1217,100 @@ describe("planned checks through the ordinary command line", () => {
     expect(
       result?.outcome?.requirements?.find((one) => one.id === "tab-separates")?.generatedChecks,
     ).toEqual([expect.objectContaining({ id: "tab-like-space", status: "accepted" })]);
+    const { stdout: source } = await run("git", ["diff"], { cwd: join(scratch, "workspace") });
+    expect(source).toContain("split(/[ \\t]+/)");
+  }, 200_000);
+
+  it("enumerates the relation a coverage review gives over an example check's program, with no relation tool called", async () => {
+    const slugTask =
+      "make slug(text) treat a tab like a space: a space already separates words, and so must a tab";
+    const adapter = "import { slug } from './slug.mjs';\nexport default (text) => slug(text);\n";
+    const repairs: ScriptedTurnSource = (request) =>
+      JSON.stringify(request).includes("generated relation tab-anywhere broke") &&
+      JSON.stringify(request).includes("at position 5")
+        ? {
+            toolCalls: [
+              writeSlug(
+                "export function slug(text) {\n  return text.trim().split(/[ \\t]+/).join('-');\n}\n",
+              ),
+            ],
+          }
+        : { text: "The repair brief named no counterexample." };
+    const { endpoint, stdout, code } = await swarm(
+      [
+        {
+          toolCalls: [
+            {
+              name: "declare_planned_check",
+              input: {
+                id: "tab-examples",
+                purpose: "change",
+                requirementId: "tab-separates",
+                requirement: "a tab separates words as a space does",
+                quote: "treat a tab like a space",
+                program: adapter,
+                cases: [
+                  { input: "a b", expected: "a-b", changed: false },
+                  { input: "a\tb", expected: "a-b", changed: true },
+                ],
+                why: "the task's own rule",
+              },
+            },
+            {
+              name: "declare_coverage_review",
+              input: {
+                id: "tab-anywhere",
+                requirementId: "tab-separates",
+                change: "a tab separates words",
+                keeps: "a space separates words",
+                wrongImplementation: "split on a lone tab and miss one beside a space",
+                distinguishedBy: ["tab-anywhere"],
+                relation: {
+                  purpose: "change",
+                  programFrom: "tab-examples",
+                  seeds: ["hello world"],
+                  reference: "U+0020",
+                  variants: ["U+0009"],
+                },
+                untested: "tabs at the very ends, which trim removes",
+              },
+            },
+          ],
+        },
+        { text: "Pinned." },
+        {
+          text: "Plan: split on tabs too.",
+          toolCalls: [{ name: "declare_file_set", input: { files: ["slug.mjs"] } }],
+        },
+        // Passes the example and misses a tab beside a space.
+        {
+          toolCalls: [
+            writeSlug(
+              "export function slug(text) {\n  return text.trim().split(/ +|\\t/).join('-');\n}\n",
+            ),
+          ],
+        },
+        { text: "Done." },
+        repairs,
+        { text: "Repaired." },
+      ],
+      false,
+      [],
+      true,
+      slugWorkspace(slugTask),
+      slugTask,
+    );
+
+    expect(stdout).toMatch(/admitted tab-anywhere \(should fail there\)/);
+    expect(stdout).toMatch(/admitted tab-examples \(should fail there\)/);
+    expect(resultOf(stdout)?.outcome?.status, stdout.slice(-4000)).toBe("accepted");
+    expect(code).toBe(0);
+    // No call ever named the relation tool: the review's relation is what ran.
+    expect(
+      endpoint.requests.some((request) =>
+        JSON.stringify(request).includes('"name":"declare_planned_relation","arguments"'),
+      ),
+    ).toBe(false);
     const { stdout: source } = await run("git", ["diff"], { cwd: join(scratch, "workspace") });
     expect(source).toContain("split(/[ \\t]+/)");
   }, 200_000);
@@ -1234,24 +1413,51 @@ async function lookupWorkspace(): Promise<{ directory: string; base: string; con
   return { directory, base: await git(directory, "rev-parse", "HEAD"), contract };
 }
 
-/** One declare_planned_check call over the lookup, under the case requirement. */
+/** What the base lookup answers: exact words only. */
+const lookupAtBase = (word: unknown) =>
+  typeof word === "string" ? ({ apple: "fruit", carrot: "vegetable" }[word] ?? null) : null;
+
+/**
+ * One declare_planned_check call over the lookup, under the case requirement. A string case is
+ * marked changed where the base lookup answers something else, unless the case says otherwise.
+ */
 const lookupCheck = (
   id: string,
   program: string,
-  cases: { input: unknown; expected: unknown }[],
+  cases: { input: unknown; expected: unknown; changed?: boolean }[],
+  purpose: "change" | "preserve" = "change",
 ) => ({
   name: "declare_planned_check",
   input: {
     id,
-    purpose: "change",
+    purpose,
     requirementId: "case",
     requirement: "kindOf ignores letter case",
     quote: lookupQuote,
     program,
-    cases,
+    cases:
+      purpose === "change"
+        ? cases.map((one) => ({
+            ...one,
+            changed: one.changed ?? one.expected !== lookupAtBase(one.input),
+          }))
+        : cases,
     why: "the task states the rule and its example",
   },
 });
+const lookupReview = {
+  name: "declare_coverage_review",
+  input: {
+    id: "case-review",
+    requirementId: "case",
+    change: "kindOf ignores letter case",
+    keeps: "unknown words stay null; exact words keep their kind",
+    wrongImplementation: "lower only the first letter",
+    distinguishedBy: [],
+    noRelation: "the rule is about letter case, which no text substitution expresses",
+    untested: "words with letters outside ASCII",
+  },
+};
 const adapter =
   "import lookup from './lookup.mjs';\nexport default function run(word) {\n  return lookup.kindOf(word);\n}\n";
 const lookupFix = {
@@ -1261,42 +1467,75 @@ const lookupFix = {
   ],
 };
 
+/** isPositive answers false for every input: the defect is one answer for everything. */
+async function signWorkspace(): Promise<{ directory: string; base: string; contract: string }> {
+  const directory = join(scratch, "workspace");
+  await mkdir(directory, { recursive: true });
+  await writeFile(
+    join(directory, "package.json"),
+    JSON.stringify({
+      name: "sign",
+      version: "1.0.0",
+      type: "module",
+      scripts: { test: "node --test" },
+    }),
+  );
+  await writeFile(
+    join(directory, "sign.mjs"),
+    "export function isPositive(n) {\n  return false;\n}\n",
+  );
+  await writeFile(
+    join(directory, "sign.test.mjs"),
+    "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { isPositive } from './sign.mjs';\ntest('zero is not positive', () => assert.equal(isPositive(0), false));\n",
+  );
+  await git(directory, "init", "-q");
+  await git(directory, "add", "-A");
+  await git(directory, "commit", "-qm", "base");
+  const contract = join(scratch, "contract.json");
+  await writeFile(
+    contract,
+    JSON.stringify({
+      version: 1,
+      goal: signTask,
+      requirements: [{ id: "suite", description: "the project's suite passes", checks: ["suite"] }],
+      checks: [
+        { id: "suite", command: "node --test", author: "user", exposure: "shared", artifacts: [] },
+      ],
+      immutablePaths: ["sign.test.mjs"],
+    }),
+  );
+  return { directory, base: await git(directory, "rev-parse", "HEAD"), contract };
+}
+const signTask = "Make isPositive return true for positive numbers and false otherwise.";
+
 describe("what admission accepts as a generated check's control", () => {
-  it("asks no repair of a generated check whose program misreads its input on the candidate, and leaves the run unresolved", async () => {
-    // Admitted on the base, where the program never takes the branch that reads input.input; the
-    // candidate's answer for 12 sends it there. That is the check's defect, shown by the harness on
-    // this tree, so no code change is asked for it; the run still ends unresolved, not accepted.
-    const program =
-      "import { classify } from './value.mjs';\nexport default (n) => (classify(n) === 'odd' ? n.input : classify(n));\n";
+  it("holds a changed expectation the repair left as it was, stops repair there, and leaves the run unresolved", async () => {
+    // Launch 4's shape: a correct change, and one generated case the task does not support (13
+    // small) marked changed. The repair is told it once; it leaves the code, and the case gives
+    // the same answer, so it is held: no further attempt is spent and the correct change stays.
     const { stdout, code } = await swarm(
       [
         declaring(
           [{ id: "boundary", description: "10 is small", quote }],
           [
-            plannedCheck(
-              "boundary",
-              "boundary",
-              "change",
-              [
-                { input: 9, expected: "small" },
-                { input: 10, expected: "small" },
-                { input: 12, expected: "big" },
-              ],
-              program,
-            ),
+            plannedCheck("boundary", "boundary", "change", [
+              { input: 9, expected: "small" },
+              { input: 10, expected: "small" },
+              { input: 12, expected: "big" },
+              { input: 13, expected: "small", changed: true },
+            ]),
           ],
         ),
         { text: "Pinned." },
         { text: "Plan: move the boundary.", toolCalls: [declare] },
         {
           toolCalls: [
-            write(
-              "export function classify(n) {\n  return n <= 10 ? 'small' : n === 12 ? 'odd' : 'big';\n}\n",
-            ),
+            write("export function classify(n) {\n  return n <= 10 ? 'small' : 'big';\n}\n"),
           ],
         },
         { text: "Done." },
-        { text: "A repair was asked for." },
+        { text: "The task keeps 13 big, so I leave the code as it is." },
+        { text: "A second repair was asked for." },
       ],
       false,
       [],
@@ -1306,18 +1545,28 @@ describe("what admission accepts as a generated check's control", () => {
       outcome?: { interventions?: { repairAttempts?: number } };
     };
     expect(result?.plannedChecks?.admitted, stdout.slice(-4000)).toEqual(["boundary"]);
-    expect(result?.outcome?.interventions?.repairAttempts).toBe(0);
+    expect(result?.outcome?.interventions?.repairAttempts).toBe(1);
+    // Told once, with the case's role; held on the next reading, which asks for no change.
+    const readings = gateStderr(result?.runId, "task-diagnostics");
+    expect(readings[0]).toContain("case(s) 4 are the planner's reading of the change");
+    expect(readings.at(-1)).toContain(
+      "generated check boundary is held: case(s) 4 still give what they gave when the last repair was told them",
+    );
+    expect(stdout).not.toContain("A second repair was asked for.");
     expect(result?.outcome?.status, stdout.slice(-6000)).toBe("unresolved");
     expect(
       result?.outcome?.requirements?.find((one) => one.id === "boundary")?.generatedChecks,
     ).toEqual([expect.objectContaining({ id: "boundary", status: "rejected" })]);
+    const { stdout: source } = await run("git", ["diff"], { cwd: join(scratch, "workspace") });
+    expect(source).toContain("n <= 10");
     expect(code).toBe(1);
   }, 200_000);
 
   it("drops a program that takes each input for the case, naming the argument's shape, and admits its revision", async () => {
     // Launch 5's sealed programs called run(case_) and passed case_.input, undefined for a string
     // input, to a project that answers null to undefined; their null-expecting cases held on the
-    // base and were the only control. The planner sees why, and its revision is admitted.
+    // base. The probe, in a run of its own, saw the read; the planner sees why, and its revision
+    // is admitted.
     const wrapped =
       "import lookup from './lookup.mjs';\nexport default function run(case_) {\n  return lookup.kindOf(case_.input);\n}\n";
     const revises: ScriptedTurnSource = (request) =>
@@ -1329,6 +1578,7 @@ describe("what admission accepts as a generated check's control", () => {
                 { input: "apple", expected: "fruit" },
                 { input: "pear", expected: null },
               ]),
+              lookupReview,
             ],
           }
         : { text: "The revision brief did not say what the program is called with." };
@@ -1340,6 +1590,7 @@ describe("what admission accepts as a generated check's control", () => {
               { input: "Apple", expected: "fruit" },
               { input: "pear", expected: null },
             ]),
+            lookupReview,
           ],
         },
         { text: "Pinned." },
@@ -1358,8 +1609,10 @@ describe("what admission accepts as a generated check's control", () => {
     expect(stdout).toMatch(
       /dropped +case-rule \(should fail there\): its program read a field of the value it was called with/,
     );
-    // The planner's revision brief carries what the runner saw, with the input as it was given.
+    // The planner's revision brief carries what the probe saw, with the input as it was given,
+    // and says what the probe is.
     expect(plannerBriefs(endpoint).at(-1)).toContain('input itself, \\"Apple\\", a string');
+    expect(plannerBriefs(endpoint).at(-1)).toContain("seen by a separate diagnostic run");
     const result = resultOf(stdout);
     expect(result?.plannedChecks?.admitted, stdout.slice(-4000)).toEqual(["case-rule"]);
     expect(result?.outcome?.status).toBe("accepted");
@@ -1369,29 +1622,35 @@ describe("what admission accepts as a generated check's control", () => {
     expect(code).toBe(0);
   }, 200_000);
 
-  it("drops programs whose agreeing cases agree by accident, as an unestablished control, not a project failure", async () => {
-    // An empty fixture and a call to a method the project does not have answer null for every
-    // input, so their null-expecting case agrees on the base exactly as the wrapped program's did.
+  it("keeps programs whose answers are one value with their control unestablished, and holds them once the repair leaves them", async () => {
+    // An empty fixture, a call to a method the project does not have and an imported project the
+    // program never calls all answer null for every input, as a defect that answers one value
+    // would. Nothing on the base tells those apart, so each is kept and reported, not refused;
+    // on the fix they still answer null, the repair is told once, and then they are held.
     const emptyFixture =
       "import { Lookup } from './lookup.mjs';\nconst lookup = new Lookup();\nexport default (word) => lookup.kindOf(word);\n";
     const wrongCall =
       "import lookup from './lookup.mjs';\nexport default (word) => lookup.typeOf?.(word) ?? null;\n";
+    const ignoredImport = "import lookup from './lookup.mjs';\nexport default (word) => null;\n";
     const cases = [
       { input: "Apple", expected: "fruit" },
       { input: "pear", expected: null },
     ];
-    const { stdout } = await swarm(
+    const { stdout, code } = await swarm(
       [
         {
           toolCalls: [
             lookupCheck("empty-fixture", emptyFixture, cases),
             lookupCheck("wrong-call", wrongCall, cases),
+            lookupCheck("ignored-import", ignoredImport, cases),
+            lookupReview,
           ],
         },
         { text: "Pinned." },
-        { text: "No replacement." },
         { text: "Plan: lower the word before the lookup.", ...lookupFix },
         { text: "Done." },
+        { text: "The project gives fruit for Apple now; these checks do not reach it." },
+        { text: "A second repair was asked for." },
       ],
       false,
       [],
@@ -1400,21 +1659,34 @@ describe("what admission accepts as a generated check's control", () => {
       lookupTask,
     );
 
-    const result = resultOf(stdout);
-    expect(result?.plannedChecks?.admitted, stdout.slice(-4000)).toEqual([]);
-    for (const id of ["empty-fixture", "wrong-call"])
-      expect(result?.plannedChecks?.dropped).toContainEqual({
-        check: id,
-        reason: expect.stringContaining("nothing shows its program reaches the project"),
-      });
-    // The run goes on against the supplied contract, which the fix satisfies.
-    expect(result?.outcome?.status).toBe("accepted");
+    const result = resultOf(stdout) as ResultLine & {
+      outcome?: { interventions?: { repairAttempts?: number } };
+    };
+    expect(result?.plannedChecks?.admitted, stdout.slice(-4000)).toEqual([
+      "empty-fixture",
+      "wrong-call",
+      "ignored-import",
+    ]);
+    expect(result?.plannedChecks?.dropped).toEqual([]);
+    const held = gateStderr(result?.runId, "task-diagnostics").at(-1) ?? "";
+    for (const id of ["empty-fixture", "wrong-call", "ignored-import"]) {
+      expect(stdout).toContain(
+        `kept     ${id} (should fail there): kept with its control unestablished`,
+      );
+      expect(held).toContain(`generated check ${id} is held`);
+    }
+    expect(result?.outcome?.interventions?.repairAttempts).toBe(1);
+    expect(stdout).not.toContain("A second repair was asked for.");
+    // The supplied contract's check passes; the kept checks leave the run unresolved, and say why.
+    expect(result?.outcome?.status).toBe("unresolved");
+    expect(code).toBe(1);
   }, 200_000);
 
-  it("admits a correct adapter with legitimate null answers and object inputs, and the change check passes on the fix", async () => {
+  it("admits a correct adapter with legitimate null answers, object inputs and a preservation of one value", async () => {
     // pear stays null, legitimately; apple is the known-working case that shows the program reaches
-    // the project. A check of null answers alone cannot show that, and is reported as such. Object
-    // inputs, including one with its own input field, reach the program as written.
+    // the project. A check of null answers alone, and a preservation whose every answer is null,
+    // take that control from the identical program. Object inputs, including one with its own
+    // input field, reach the program as written.
     const objects =
       "import lookup from './lookup.mjs';\nexport default (query) => ({ word: query.input, kind: lookup.kindOf(query.input) });\n";
     const { stdout, code } = await swarm(
@@ -1427,17 +1699,34 @@ describe("what admission accepts as a generated check's control", () => {
               { input: "pear", expected: null },
             ]),
             lookupCheck("query-objects", objects, [
-              { input: { input: "Apple" }, expected: { word: "Apple", kind: "fruit" } },
-              { input: { input: "carrot" }, expected: { word: "carrot", kind: "vegetable" } },
+              {
+                input: { input: "Apple" },
+                expected: { word: "Apple", kind: "fruit" },
+                changed: true,
+              },
+              {
+                input: { input: "carrot" },
+                expected: { word: "carrot", kind: "vegetable" },
+                changed: false,
+              },
             ]),
             lookupCheck("nulls-only", adapter, [
               { input: "Apple", expected: "fruit" },
               { input: "pear", expected: null },
             ]),
+            lookupCheck(
+              "unknown-words",
+              adapter,
+              [
+                { input: "pear", expected: null },
+                { input: "banana", expected: null },
+              ],
+              "preserve",
+            ),
+            lookupReview,
           ],
         },
         { text: "Pinned." },
-        { text: "No replacement." },
         { text: "Plan: lower the word before the lookup.", ...lookupFix },
         { text: "Done." },
       ],
@@ -1452,22 +1741,99 @@ describe("what admission accepts as a generated check's control", () => {
     expect(result?.plannedChecks?.admitted, stdout.slice(-4000)).toEqual([
       "case-rule",
       "query-objects",
+      "nulls-only",
+      "unknown-words",
     ]);
-    expect(result?.plannedChecks?.dropped).toEqual([
-      {
-        check: "nulls-only",
-        reason: expect.stringContaining(
-          "a known-working input from the task or the repository's tests",
-        ),
-      },
-    ]);
-    // Each admitted change check failed on the base and passes on the fix.
+    expect(result?.plannedChecks?.dropped).toEqual([]);
+    expect(stdout).toMatch(/admitted nulls-only .*its control is planned check case-rule's/);
+    expect(stdout).toMatch(/admitted unknown-words .*its control is planned check case-rule's/);
+    // Each admitted check passes on the fix.
     expect(
       result?.outcome?.requirements?.find((one) => one.id === "case")?.generatedChecks,
     ).toEqual([
       expect.objectContaining({ id: "case-rule", status: "accepted" }),
       expect.objectContaining({ id: "query-objects", status: "accepted" }),
+      expect.objectContaining({ id: "nulls-only", status: "accepted" }),
+      expect.objectContaining({ id: "unknown-words", status: "accepted" }),
     ]);
+    expect(result?.outcome?.status).toBe("accepted");
+    expect(code).toBe(0);
+  }, 200_000);
+
+  it("keeps a check whose defect is one answer for every input, and passes it on the fix", async () => {
+    // isPositive answers false for -1, 0 and 1 on the base. That one value is the defect, not a
+    // broken adapter: kept with its control unestablished, it fails on the base and passes on the
+    // correct implementation.
+    const { stdout, code } = await swarm(
+      [
+        {
+          toolCalls: [
+            {
+              name: "declare_planned_check",
+              input: {
+                id: "positive",
+                purpose: "change",
+                requirementId: "positive",
+                requirement: "true for positive numbers, false otherwise",
+                quote: "true for positive numbers and false otherwise",
+                program:
+                  "import { isPositive } from './sign.mjs';\nexport default function (n) {\n  return isPositive(n);\n}\n",
+                cases: [
+                  { input: -1, expected: false, changed: false },
+                  { input: 0, expected: false, changed: false },
+                  { input: 1, expected: true, changed: true },
+                ],
+                why: "the defect is that every input gives false",
+              },
+            },
+            {
+              name: "declare_coverage_review",
+              input: {
+                id: "positive-review",
+                requirementId: "positive",
+                change: "positive numbers give true",
+                keeps: "zero and negative numbers give false",
+                wrongImplementation: "n >= 0, which calls zero positive",
+                distinguishedBy: ["positive"],
+                noRelation: "a numeric rule has no text substitution",
+                untested: "non-integer and non-number inputs",
+              },
+            },
+          ],
+        },
+        { text: "Pinned." },
+        {
+          text: "Plan: compare with zero.",
+          toolCalls: [{ name: "declare_file_set", input: { files: ["sign.mjs"] } }],
+        },
+        {
+          toolCalls: [
+            {
+              name: "write",
+              input: {
+                path: "sign.mjs",
+                content: "export function isPositive(n) {\n  return n > 0;\n}\n",
+              },
+            },
+          ],
+        },
+        { text: "Done." },
+      ],
+      false,
+      [],
+      true,
+      signWorkspace(),
+      signTask,
+    );
+
+    expect(stdout).toMatch(
+      /kept +positive \(should fail there\): kept with its control unestablished/,
+    );
+    const result = resultOf(stdout);
+    expect(result?.plannedChecks?.admitted, stdout.slice(-4000)).toEqual(["positive"]);
+    expect(
+      result?.outcome?.requirements?.find((one) => one.id === "positive")?.generatedChecks,
+    ).toEqual([expect.objectContaining({ id: "positive", status: "accepted" })]);
     expect(result?.outcome?.status).toBe("accepted");
     expect(code).toBe(0);
   }, 200_000);

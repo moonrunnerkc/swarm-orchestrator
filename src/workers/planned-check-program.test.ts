@@ -6,21 +6,25 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
   declarationProblems,
+  describeCoverageReview,
   describeDeclaredCases,
-  describeMissingRelation,
   describeRelationRun,
   describeUncoveredSentences,
   type PlannedChecksDeclaration,
+  plannedCaseRoles,
+  plannedCheckProbe,
   plannedChecksInput,
   plannedContract,
   plannedRelation,
   plannedRelationInput,
+  probeMisreads,
   programDidNotLoad,
-  programMisreadInput,
   relationAgreedSomewhere,
   relationText,
   sentencesQuoted,
   taskSentences,
+  unreviewedRequirements,
+  withCoverageReview,
   withPlannedCheck,
 } from "./planned-check-program.ts";
 
@@ -52,7 +56,7 @@ function built(check: Partial<PlannedChecksDeclaration["checks"][number]>) {
         {
           id: "boundary",
           requirement: "boundary",
-          purpose: "change",
+          purpose: "preserve",
           program:
             "import { classify } from './value.mjs';\nconsole.log('noise');\nexport default (n) => classify(n);\n",
           cases: [{ input: 3, expected: { n: 3, size: "small" } }],
@@ -148,41 +152,100 @@ describe("a planned check as the harness runs it", () => {
     expect(syntax.stderr).toMatch(/did not load: SyntaxError/);
   });
 
-  it("names a program that reads the case's fields off the input it was called with, and unwraps nothing", () => {
+  it("runs the program in the language environment ordinary execution gives it", () => {
+    // The project reports what the language says about its argument. An earlier runner put input,
+    // expected and throws getters on the primitive prototypes, and under it "input" in
+    // Object("hello") was true where ordinary execution says false.
+    writeFileSync(
+      join(project, "describe.mjs"),
+      "export function describe(value) {\n  const boxed = Object(value);\n  return {\n    input: 'input' in boxed,\n    expected: 'expected' in boxed,\n    throws: 'throws' in boxed,\n    names: Object.getOwnPropertyNames(String.prototype).filter((name) => ['input', 'expected', 'throws'].includes(name)),\n    length: 'length' in boxed,\n    toUpperCase: 'toUpperCase' in boxed,\n    toFixed: 'toFixed' in boxed,\n    ownInput: Object.hasOwn(boxed, 'input'),\n  };\n}\n",
+    );
+    const program =
+      "import { describe } from './describe.mjs';\nexport default function (input) {\n  return describe(input);\n}\n";
+    const inputs = ["hello", 7, true, { input: "x" }, { name: "o" }];
+    writeFileSync(join(project, "program.mjs"), program);
+    const ordinary = spawnSync(
+      "node",
+      [
+        "--input-type=module",
+        "-e",
+        `import run from "./program.mjs"; for (const input of ${JSON.stringify(inputs)}) console.log(JSON.stringify(run(input)));`,
+      ],
+      { cwd: project, encoding: "utf8" },
+    );
+    const ran = run(built({ program, cases: inputs.map((input) => ({ input, expected: null })) }));
+    expect(ran.exitCode).toBe(0);
+    const read = (stdout: string) =>
+      stdout
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+    const viaRunner = read(ran.stdout).map((line) => line.result);
+    expect(viaRunner).toEqual(read(ordinary.stdout));
+    expect(viaRunner[0]).toMatchObject({ input: false, expected: false, names: [], length: true });
+    expect(viaRunner[3]).toMatchObject({ input: true, ownInput: true });
+  });
+
+  it("gives a program that reads case_.input exactly the answers ordinary execution gives it", () => {
     // Launch 5: run(case_) returned mime.getType(case_.input) for string inputs, so every call
-    // passed undefined. Read by property or by destructuring, the run says so and exits 4.
+    // passed undefined. The check's own run neither names nor rescues that: it gives the answers.
     for (const program of [
       "import { classify } from './value.mjs';\nexport default function run(case_) {\n  return classify(case_.input);\n}\n",
       "import { classify } from './value.mjs';\nexport default ({ input }) => classify(input);\n",
     ]) {
       const ran = run(built({ program, cases: [{ input: 3, expected: { n: 3, size: "small" } }] }));
-      expect(ran.exitCode).toBe(programMisreadInput);
-      // The case ran as written: the program's own answer is printed, not a rescued one.
+      expect(ran.exitCode).toBe(0);
       expect(ran.stdout).toBe('{"input":3,"threw":true}\n');
-      expect(ran.stderr).toContain(
-        "the program read .input of the value it was called with in case 1, but that value is the case's input itself, 3, a number, not the case",
-      );
+      expect(ran.stderr).toMatch(/case 1 threw: TypeError: not a number/);
     }
   });
+});
 
-  it("leaves object inputs, their own input fields and the project's own reads alone", () => {
+describe("the argument probe, apart from the check", () => {
+  const probe = (program: string, inputs: readonly unknown[]) => {
+    const ran = spawnSync("node", ["--input-type=module", "-e", plannedCheckProbe], {
+      cwd: project,
+      input: JSON.stringify({ program, inputs }),
+      encoding: "utf8",
+    });
+    return { exitCode: ran.status, misread: probeMisreads(ran.stdout) };
+  };
+
+  it("names a program that reads a case's field off the primitive it was called with", () => {
+    for (const program of [
+      "import { classify } from './value.mjs';\nexport default function run(case_) {\n  return classify(case_.input);\n}\n",
+      "import { classify } from './value.mjs';\nexport default ({ input }) => classify(input);\n",
+    ])
+      expect(probe(program, [3, "foo.png"])).toEqual({
+        exitCode: 0,
+        misread: [
+          { label: "case 1", field: "input", input: 3 },
+          { label: "case 2", field: "input", input: "foo.png" },
+        ],
+      });
+  });
+
+  it("leaves object inputs, a program that takes its input, and the project's own reads unnamed", () => {
     writeFileSync(
       join(project, "value.mjs"),
       "export function classify(n) {\n  if (n.input !== undefined) return { size: 'odd', n };\n  return { size: n < 10 ? 'small' : 'big', n };\n}\n",
     );
-    const objects = run(
-      built({
-        program:
-          "import { classify } from './value.mjs';\nexport default (query) => classify(query.input);\n",
-        cases: [{ input: { input: 3 }, expected: { n: 3, size: "small" } }],
-      }),
-    );
-    expect(objects.exitCode).toBe(0);
-    expect(objects.stdout).toBe(objects.expected);
-    // The project reads .input of the number it is given; that read is the project's, not the program's.
-    const own = run(built({ cases: [{ input: 3, expected: { n: 3, size: "small" } }] }));
-    expect(own.exitCode).toBe(0);
-    expect(own.stdout).toBe(own.expected);
+    expect(
+      probe("import { classify } from './value.mjs';\nexport default (q) => classify(q.input);\n", [
+        { input: 3 },
+      ]).misread,
+    ).toEqual([]);
+    expect(
+      probe("import { classify } from './value.mjs';\nexport default (n) => classify(n);\n", [3])
+        .misread,
+    ).toEqual([]);
+  });
+
+  it("says so where the program does not load, and prints no reading", () => {
+    expect(probe("import './missing.mjs';\nexport default () => 1;\n", [1])).toEqual({
+      exitCode: programDidNotLoad,
+      misread: null,
+    });
   });
 });
 
@@ -193,9 +256,13 @@ it("offers the model a tool schema that admits object inputs and results", () =>
     properties: { checks: { items: { properties: { cases: { items: { anyOf: unknown[] } } } } } };
   };
   const [valued] = rendered.properties.checks.items.properties.cases.items.anyOf as {
-    properties: { input: object; expected: object };
+    properties: { input: object; expected: object; changed: object };
   }[];
-  expect(valued?.properties).toEqual({ input: {}, expected: {} });
+  expect(valued?.properties).toMatchObject({
+    input: {},
+    expected: {},
+    changed: { type: "boolean" },
+  });
   const parsed = plannedChecksInput.safeParse({
     requirements: [{ id: "a", description: "d" }],
     checks: [
@@ -492,31 +559,243 @@ describe("a planned relation as the harness runs it", () => {
   });
 });
 
-it("names the relation tool to a declaration that holds no relation, and only to one", () => {
-  const cases = {
+describe("what each case of a change check says about the base", () => {
+  const program = "import { classify } from './value.mjs';\nexport default (n) => classify(n);\n";
+  const declaring = (checks: PlannedChecksDeclaration["checks"]): PlannedChecksDeclaration => ({
+    requirements: [{ id: "boundary", description: "10 is small", quote: task }],
+    checks,
+  });
+  const change = (cases: PlannedChecksDeclaration["checks"][number]["cases"]) => ({
     id: "boundary",
     requirement: "boundary",
     purpose: "change" as const,
-    program: "export default (n) => n;",
-    cases: [{ input: 1, expected: 1 }],
+    program,
+    cases,
     why: "w",
-  };
-  const requirements = [{ id: "boundary", description: "d" }];
-  expect(describeMissingRelation({ requirements, checks: [cases] })).toEqual([
-    expect.stringContaining("declare that rule with declare_planned_relation"),
-  ]);
-  expect(
-    describeMissingRelation({
-      requirements,
-      checks: [
-        cases,
+  });
+
+  it("asks a change check to say of every case whether the task changes it", () => {
+    expect(
+      declarationProblems(
+        task,
+        declaring([
+          change([
+            { input: 9, expected: "small" },
+            { input: 10, expected: "small", changed: true },
+          ]),
+        ]),
+        undefined,
+      ),
+    ).toEqual([expect.stringMatching(/say for case\(s\) 1 whether the task changes the result/)]);
+    expect(
+      declarationProblems(
+        task,
+        declaring([change([{ input: 9, expected: "small", changed: false }])]),
+        undefined,
+      ),
+    ).toEqual([expect.stringMatching(/no case the task changes \(changed: true\)/)]);
+    expect(
+      declarationProblems(
+        task,
+        declaring([
+          { ...change([{ input: 10, expected: "small", changed: true }]), purpose: "preserve" },
+        ]),
+        undefined,
+      ),
+    ).toEqual([expect.stringMatching(/a preserve check, which holds only cases the task keeps/)]);
+  });
+
+  it("carries the roles with the check, every preserve case kept", () => {
+    const contract = plannedContract(
+      task,
+      declaring([
+        change([
+          { input: 9, expected: "small", changed: false },
+          { input: 10, expected: "small", changed: true },
+        ]),
         {
-          ...cases,
-          id: "alike",
-          cases: undefined,
-          relation: { seeds: ["ab"], reference: " ", variants: ["\t"] },
+          id: "above",
+          requirement: "boundary",
+          purpose: "preserve",
+          program,
+          cases: [{ input: 11, expected: "big" }],
+          why: "w",
         },
-      ],
-    }),
-  ).toEqual([]);
+      ]),
+      undefined,
+    );
+    const [boundary, above] = contract.checks;
+    if (boundary === undefined || above === undefined) throw new Error("two checks");
+    expect(plannedCaseRoles(boundary)).toEqual(["kept", "changed"]);
+    expect(plannedCaseRoles(above)).toEqual(["kept"]);
+  });
+
+  it("refuses one input given two results through the same program", () => {
+    expect(
+      declarationProblems(
+        task,
+        declaring([
+          change([
+            { input: 9, expected: "small", changed: false },
+            { input: 10, expected: "small", changed: true },
+          ]),
+          {
+            id: "kept",
+            requirement: "boundary",
+            purpose: "preserve",
+            program,
+            cases: [{ input: 10, expected: "big" }],
+            why: "w",
+          },
+        ]),
+        undefined,
+      ),
+    ).toEqual([
+      expect.stringMatching(
+        /check kept case 1 expects \{"result":"big"\} for 10 through the same program/,
+      ),
+    ]);
+  });
+});
+
+describe("the coverage review", () => {
+  const relationTask =
+    "Treat a tab around the equals sign like a space: a space there is already ignored.";
+  const program = "import { parse } from './assign.mjs';\nexport default (line) => parse(line);\n";
+  const declared = withPlannedCheck(null, {
+    id: "tab-examples",
+    purpose: "change",
+    requirementId: "tab-around-equals",
+    requirement: "a tab around = is ignored like a space",
+    quote: "Treat a tab around the equals sign like a space",
+    program,
+    cases: [
+      { input: "key =value", expected: { key: "key", value: "value" }, changed: false },
+      { input: "\tkey=value", expected: { key: "key", value: "value" }, changed: true },
+    ],
+    why: "w",
+  });
+  const review = {
+    id: "tab-anywhere",
+    requirementId: "tab-around-equals",
+    change: "a tab around = is ignored",
+    keeps: "a space around = is ignored, a tab inside a key stays",
+    wrongImplementation: "strip a leading tab only",
+    distinguishedBy: ["tab-anywhere"],
+    untested: "tabs inside values",
+  };
+
+  it("lists the requirements no review covers, and finds none once each has one", () => {
+    expect(unreviewedRequirements(declared)).toEqual(["tab-around-equals"]);
+    expect(describeCoverageReview(declared)[0]).toContain(
+      "no review yet for requirement(s) tab-around-equals",
+    );
+    const reviewed = withCoverageReview(declared, {
+      ...review,
+      distinguishedBy: [],
+      noRelation: "n",
+    });
+    expect(unreviewedRequirements(reviewed)).toEqual([]);
+    expect(describeCoverageReview(reviewed)[0]).toContain(
+      "every requirement has one (tab-anywhere)",
+    );
+  });
+
+  it("seals the relation a review gives over the named check's own program, under the review's id", () => {
+    const reviewed = withCoverageReview(declared, {
+      ...review,
+      relation: {
+        purpose: "change",
+        programFrom: "tab-examples",
+        seeds: ["key=value"],
+        reference: "U+0020",
+        variants: ["U+0009"],
+      },
+    });
+    const relation = reviewed.checks.find((one) => one.id === "tab-anywhere");
+    expect(relation).toMatchObject({
+      requirement: "tab-around-equals",
+      purpose: "change",
+      program,
+      relation: { seeds: ["key=value"], reference: " ", variants: ["\t"] },
+    });
+    // It is an ordinary planned relation: the contract builds it and quotes the requirement.
+    const contract = plannedContract(relationTask, reviewed, undefined);
+    const sealed = contract.checks.find((one) => one.id === "tab-anywhere");
+    if (sealed === undefined) throw new Error("the review's relation is sealed");
+    expect(plannedRelation(sealed)).toEqual({
+      seeds: ["key=value"],
+      reference: " ",
+      variants: ["\t"],
+    });
+    // Reviewed again under its id with no relation, the relation it gave goes with it.
+    const again = withCoverageReview(reviewed, { ...review, distinguishedBy: [], noRelation: "n" });
+    expect(again.checks.map((one) => one.id)).toEqual(["tab-examples"]);
+    expect(again.reviews).toHaveLength(1);
+  });
+
+  it("names what a review rests on that does not resolve, and asks for a relation or a reason", () => {
+    const refused = (call: Parameters<typeof withCoverageReview>[1]) => {
+      try {
+        withCoverageReview(declared, call);
+        return "";
+      } catch (error) {
+        return (error as Error).message;
+      }
+    };
+    expect(refused({ ...review, distinguishedBy: ["nothing"], noRelation: "n" })).toContain(
+      "distinguishedBy names nothing, which is not a declared check",
+    );
+    expect(refused({ ...review, distinguishedBy: [] })).toContain("give relation or noRelation");
+    expect(
+      refused({
+        ...review,
+        relation: {
+          purpose: "change",
+          programFrom: "missing",
+          seeds: ["a"],
+          reference: " ",
+          variants: ["\t"],
+        },
+      }),
+    ).toContain("relation.programFrom names missing, which is not a declared check");
+    expect(
+      refused({
+        ...review,
+        id: "tab-examples",
+        relation: {
+          purpose: "change",
+          programFrom: "tab-examples",
+          seeds: ["a"],
+          reference: " ",
+          variants: ["\t"],
+        },
+      }),
+    ).toContain("has the id of a declared check");
+    expect(
+      refused({ ...review, requirementId: "other", distinguishedBy: [], noRelation: "n" }),
+    ).toContain("requirement other is not declared");
+    const numeric = withPlannedCheck(null, {
+      id: "sizes",
+      purpose: "preserve",
+      requirementId: "size",
+      requirement: "sizes",
+      program: "export default (n) => n;",
+      cases: [{ input: 1, expected: 1 }],
+      why: "w",
+    });
+    expect(() =>
+      withCoverageReview(numeric, {
+        ...review,
+        requirementId: "size",
+        relation: {
+          purpose: "preserve",
+          programFrom: "sizes",
+          seeds: ["a"],
+          reference: " ",
+          variants: ["\t"],
+        },
+      }),
+    ).toThrow(/whose inputs are not strings/);
+  });
 });
