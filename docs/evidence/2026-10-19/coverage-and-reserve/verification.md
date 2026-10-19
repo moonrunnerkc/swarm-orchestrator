@@ -14,3 +14,13 @@ fix/requirement-coverage-and-verification-reserve`, `v12-final` present), Node 2
 The same 5 files and 29 tests were skipped in PR #89's recorded gates run ([../repair-value/verification-final.md](../repair-value/verification-final.md): 462 files and 4,487 tests passed there); this work added 3 test files and 38 tests and no skip.
 The new regressions' results against PR #89's head are in [regressions-before.md](regressions-before.md).
 These are local results: nothing is pushed, and no CI ran on this branch.
+
+## After the launches
+
+`npm run gates` again on `d86dd8b81c8d99b91fd7f74dee3b87ddbc0acf22` (the branch head after every launch, record and correction; its
+`src/`, `scripts/` and lockfile are `4e6c4e510`'s), in a fresh clean full-history clone after
+`npm ci` (exit 0): **exit 0**; zero doc-path misses, 11.3 MB of weight headroom, every pack restores
+(the three added here included), 15 cited bundles verify; lint 28 warnings and 1 info, as before;
+465 test files passed and 5 skipped, 4,525 tests passed and 29 skipped
+([gates-d86dd8b81.txt](verification/gates-d86dd8b81.txt)). The only commit after it adds this
+paragraph and that log.
