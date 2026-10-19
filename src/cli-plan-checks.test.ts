@@ -186,11 +186,26 @@ it("describes criteria with their author and the ones that stay unjudged", () =>
   expect(lines).toContain("  immutable: tests");
 });
 
+/** The coverage review of one requirement, with no relation. */
+const review = (requirementId: string) => ({
+  callId: `review-${requirementId}`,
+  toolName: "declare_coverage_review",
+  input: {
+    id: `${requirementId}-review`,
+    requirementId,
+    change: "runs of whitespace become one dash",
+    keeps: "single words",
+    wrongImplementation: "replace each whitespace character with its own dash",
+    distinguishedBy: [],
+    noRelation: "covered by examples",
+    untested: "tabs",
+  },
+});
+
 describe("the planned-check revision and its share of the planning allowance", () => {
-  const declaring = (ids: readonly string[]): FixtureTurn =>
-    respondWithToolCalls(
-      "pinning",
-      ids.map((id) => ({
+  const declaring = (ids: readonly string[], reviewed = true): FixtureTurn =>
+    respondWithToolCalls("pinning", [
+      ...ids.map((id) => ({
         callId: `declare-${id}`,
         toolName: "declare_planned_check",
         input: {
@@ -200,11 +215,12 @@ describe("the planned-check revision and its share of the planning allowance", (
           requirement: `requirement ${id}`,
           quote: "collapses whitespace",
           program: "import { slugify } from './slug.mjs';\nexport default slugify;\n",
-          cases: [{ input: "a  b", expected: "a-b" }],
+          cases: [{ input: "a  b", expected: "a-b", changed: true }],
           why: "the task says runs of whitespace become one dash",
         },
       })),
-    );
+      ...(reviewed ? ids.map((id) => review(`r-${id}`)) : []),
+    ]);
 
   /** Admission that takes `ms` of the planning clock, admits the checks named, and drops the rest. */
   function admitting(admit: readonly string[], ms: () => number, advance: (by: number) => void) {
@@ -240,6 +256,10 @@ describe("the planned-check revision and its share of the planning allowance", (
           claimedChanges: null,
           finding: admit.includes(one.id) ? ("admitted" as const) : ("does-not-detect" as const),
           control: null,
+          establishes: null,
+          unknown: null,
+          notes: [],
+          probeRecord: null,
         })),
         droppedRequirements: [],
         unverifiedRequirements: requirements
@@ -294,9 +314,8 @@ describe("the planned-check revision and its share of the planning allowance", (
   it("reports a task sentence quoted only by a requirement whose check was dropped as quoted, not checked", async () => {
     const time = controlled(100_000);
     const twoSentences = "slugify collapses whitespace to one dash. It keeps digits as they are.";
-    const declaringBoth: FixtureTurn = respondWithToolCalls(
-      "pinning",
-      [
+    const declaringBoth: FixtureTurn = respondWithToolCalls("pinning", [
+      ...[
         ["a", "collapses whitespace"],
         ["b", "It keeps digits as they are"],
       ].map(([id, words]) => ({
@@ -309,11 +328,13 @@ describe("the planned-check revision and its share of the planning allowance", (
           requirement: `requirement ${id}`,
           quote: words,
           program: "import { slugify } from './slug.mjs';\nexport default slugify;\n",
-          cases: [{ input: "a  b", expected: "a-b" }],
+          cases: [{ input: "a  b", expected: "a-b", changed: true }],
           why: "the task says so",
         },
       })),
-    );
+      review("r-a"),
+      review("r-b"),
+    ]);
     const { planner, notes } = deps([declaringBoth, respondWithText("pinned")], {
       task: twoSentences,
       clock: time.clock,
@@ -349,12 +370,79 @@ describe("the planned-check revision and its share of the planning allowance", (
     const outcome = await planChecks(planner);
     if (outcome.kind !== "sealed") throw new Error(`sealed, not ${outcome.kind}`);
     expect(outcome.contract.checks.map((one) => one.id)).toEqual(["a", "c"]);
-    expect(outcome.admission).toEqual({
+    expect(outcome.admission).toMatchObject({
       admitted: ["a", "c"],
+      unestablished: [],
       dropped: [{ check: "b", reason: "it passes on the base" }],
       uncheckedRequirements: [],
       revision: { outcome: "ran", admitted: ["c"] },
       coverage: { sentences: 1, quotedByAdmitted: [1], quotedWithoutCheck: [] },
+      review: { round: "not-needed", unreviewed: [] },
+    });
+  });
+
+  it("asks for the coverage review in a round of its own where the planner finished without it", async () => {
+    const time = controlled(1_000);
+    const { planner, notes } = deps(
+      [
+        declaring(["a"], false),
+        respondWithText("pinned"),
+        respondWithToolCalls("reviewing", [review("r-a")]),
+        respondWithText("reviewed"),
+      ],
+      {
+        clock: time.clock,
+        maxWallMs: 600_000,
+        admit: admitting(["a"], time.admissionMs, time.advance),
+      },
+    );
+    const outcome = await planChecks(planner);
+    if (outcome.kind !== "sealed") throw new Error(`sealed, not ${outcome.kind}`);
+    expect(notes.join("\n")).toContain(
+      "the planner finished with no coverage review of r-a; asking for one",
+    );
+    expect(outcome.admission?.review).toEqual({
+      round: "ran",
+      reviews: [
+        {
+          id: "r-a-review",
+          requirement: "r-a",
+          relation: null,
+          noRelation: "covered by examples",
+          distinguishedBy: [],
+          untested: "tabs",
+        },
+      ],
+      unreviewed: [],
+    });
+    // The checks the first round declared stand: the round continued its declaration.
+    expect(outcome.contract.checks.map((one) => one.id)).toEqual(["a"]);
+    const planning = await readSessionEvidence(join(root, "sessions"), "run-1-plan");
+    const recorded = planning.records
+      .filter((record) => record.type === "verification-command")
+      .map(
+        (record) =>
+          planning.payloads.get(record.payloadDigest) as { rule?: string; limitation?: string },
+      )
+      .find((payload) => payload.rule === "planned-coverage-review-v1");
+    expect(recorded).toMatchObject({ round: "ran", unreviewed: [] });
+    expect(recorded?.limitation).toContain("are the planner's claims");
+  });
+
+  it("withholds the review round where too little planning remains, and seals with the gap named", async () => {
+    const time = controlled(1_000);
+    const { planner, notes } = deps([declaring(["a"], false), respondWithText("pinned")], {
+      clock: time.clock,
+      maxWallMs: 100_000,
+      admit: admitting(["a"], time.admissionMs, time.advance),
+    });
+    const outcome = await planChecks(planner);
+    expect(outcome.kind).toBe("sealed");
+    expect(notes.join("\n")).toContain("no coverage review round: 100s of planning remain");
+    expect(outcome.admission?.review).toEqual({
+      round: "withheld",
+      reviews: [],
+      unreviewed: ["r-a"],
     });
   });
 });

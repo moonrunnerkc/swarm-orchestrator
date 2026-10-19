@@ -40,7 +40,7 @@ it("rejects unsupported effort or an increased escalation cap", () => {
   expect(escalationSettingsSchema.safeParse({ ...settings, maximum: 2 }).success).toBe(false);
 });
 
-it("stops repair where every failing gate says its failures are checks broken on this tree", () => {
+it("stops repair where every failing gate says its failures are held checks", () => {
   const failing = (gateId: string, measures: Record<string, number>) =>
     ({
       gateId,

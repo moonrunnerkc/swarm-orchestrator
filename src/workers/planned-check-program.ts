@@ -37,9 +37,22 @@ const jsonValue = z.unknown().refine(
   },
   { message: "must be a JSON value: a string, number, boolean, null, array or object of those" },
 );
+/**
+ * Whether the task changes a case's result, in a change check. A case the task keeps must give its
+ * expected result on the unchanged base, which admission checks through the same program; a
+ * changed case's expectation is the planner's claim. Without the distinction a live planner's
+ * `foo.txt` case, which its own reasoning called "preserved", was read as a claimed change, and
+ * its wrong expectation drove two repairs.
+ */
+const changed = z
+  .boolean()
+  .optional()
+  .describe(
+    "in a change check: true where the task changes this case's result, false where the task keeps it (the unchanged base already gives the expected result)",
+  );
 const caseSchema = z.union([
-  z.strictObject({ input: jsonValue, expected: jsonValue }),
-  z.strictObject({ input: jsonValue, throws: z.literal(true) }),
+  z.strictObject({ input: jsonValue, expected: jsonValue, changed }),
+  z.strictObject({ input: jsonValue, throws: z.literal(true), changed }),
 ]);
 /**
  * A rule the task states as an equivalence, exercised systematically instead of by examples: an
@@ -87,7 +100,10 @@ export const plannedChecksInput = z.strictObject({
     .min(1)
     .max(16),
 });
-export type PlannedChecksDeclaration = z.infer<typeof plannedChecksInput>;
+/** The checks and requirements, and the coverage reviews the planner declared over them. */
+export type PlannedChecksDeclaration = z.infer<typeof plannedChecksInput> & {
+  readonly reviews?: readonly CoverageReviewCall[];
+};
 type DeclaredCheck = PlannedChecksDeclaration["checks"][number];
 
 /**
@@ -125,7 +141,7 @@ export const plannedCheckInput = z.strictObject({
     .min(1)
     .max(32)
     .describe(
-      "each case: input, the value the program's default export is called with, and expected, what it must return (or throws: true)",
+      "each case: input, the value the program's default export is called with, expected, what it must return (or throws: true), and in a change check changed: true or false",
     ),
   why: z.string().min(1).max(2000).describe("how the expected results follow from the task"),
 });
@@ -230,7 +246,161 @@ export function withPlannedCheck(
           one.id === call.requirementId ? requirement : one,
         )
   ).filter((one) => checks.some((check) => check.requirement === one.id));
-  return { requirements, checks };
+  const reviews = (declaration?.reviews ?? []).filter((review) =>
+    requirements.some((one) => one.id === review.requirementId),
+  );
+  return { requirements, checks, ...(reviews.length === 0 ? {} : { reviews }) };
+}
+
+const reviewText = (meaning: string) => z.string().min(1).max(1000).describe(meaning);
+
+/**
+ * One behaviour's coverage decision, made before planning finishes: what the task changes, what it
+ * keeps, a plausible wrong implementation the cases so far would pass, what tells it apart, and
+ * what stays untested. Planners asked six times in one launch to consider a relation wrote more
+ * examples at one position and never declared one; here the question is asked of every
+ * requirement, and a relation given in the answer is enumerated by the harness through the
+ * program of a declared check, so its execution depends on no further tool choice. Where no
+ * text-substitution rule applies, the answer says why instead, and none is forced on the task.
+ *
+ * The harness checks that a review exists for each requirement and that what it names resolves.
+ * It cannot check that the wrong implementation is plausible, that the named checks really tell
+ * it apart, or that "untested" is complete: those are the planner's words, recorded as such.
+ */
+export const coverageReviewInput = z.strictObject({
+  id: slug("terminator-anywhere"),
+  requirementId: slug("separator-rule").describe(
+    "the declared requirement this behaviour belongs to",
+  ),
+  change: reviewText("what the task asks to change in this behaviour; none where it only keeps it"),
+  keeps: reviewText("what in this behaviour must stay as it is"),
+  wrongImplementation: reviewText(
+    "a plausible wrong implementation that would still pass every case declared so far",
+  ),
+  distinguishedBy: z
+    .array(id)
+    .max(8)
+    .describe(
+      "ids of declared checks (or this review's own relation) that tell that wrong implementation apart; empty where none does",
+    ),
+  relation: z
+    .strictObject({
+      purpose: plannedRelationInput.shape.purpose,
+      programFrom: slug("gettype-terminators").describe(
+        "a declared check whose program takes one input string; the relation calls that same program, so the relation and the examples share one adapter and fixture",
+      ),
+      seeds: plannedRelationInput.shape.seeds,
+      reference: plannedRelationInput.shape.reference,
+      variants: plannedRelationInput.shape.variants,
+    })
+    .optional()
+    .describe(
+      "where the behaviour is a rule that some text behaves like other text: the harness inserts the reference and each variant at every position of each seed and compares their results, as declare_planned_relation does; the relation is sealed under this review's id",
+    ),
+  noRelation: reviewText(
+    "why no rule of some text behaving like other text applies to this behaviour",
+  ).optional(),
+  untested: reviewText("what of this behaviour no check exercises; none where nothing is left"),
+});
+export type CoverageReviewCall = z.infer<typeof coverageReviewInput>;
+
+/** What is wrong with a review against the declaration it reviews, each named. */
+function reviewProblems(
+  declaration: PlannedChecksDeclaration | null,
+  call: CoverageReviewCall,
+): readonly string[] {
+  if (declaration === null || declaration.checks.length === 0)
+    return ["declare the checks first; a review names the checks it rests on"];
+  const problems: string[] = [];
+  const own = declaration.reviews?.find((one) => one.id === call.id);
+  const derived = own?.relation === undefined ? null : own.id;
+  if (!declaration.requirements.some((one) => one.id === call.requirementId))
+    problems.push(`requirement ${call.requirementId} is not declared`);
+  for (const named of call.distinguishedBy)
+    if (
+      !declaration.checks.some((one) => one.id === named) &&
+      !(named === call.id && call.relation !== undefined)
+    )
+      problems.push(`distinguishedBy names ${named}, which is not a declared check`);
+  if ((call.relation === undefined) === (call.noRelation === undefined))
+    problems.push(
+      "give relation or noRelation: a relation the harness enumerates, or why no such rule applies",
+    );
+  const relation = call.relation;
+  if (relation !== undefined) {
+    const source = declaration.checks.find((one) => one.id === relation.programFrom);
+    if (source === undefined || source.id === derived)
+      problems.push(
+        `relation.programFrom names ${relation.programFrom}, which is not a declared check`,
+      );
+    else if ((source.cases ?? []).some((one) => typeof one.input !== "string"))
+      problems.push(
+        `relation.programFrom names ${source.id}, whose inputs are not strings; a relation calls its program with one input string`,
+      );
+    if (call.id !== derived && declaration.checks.some((one) => one.id === call.id))
+      problems.push(
+        `review ${call.id} has the id of a declared check, and its relation is sealed under the review's id: use another id`,
+      );
+  }
+  return problems;
+}
+
+/**
+ * The declaration with one review folded in, replacing any of the same id, and the relation it
+ * gives sealed as a planned relation under the review's id, over the named check's program.
+ */
+export function withCoverageReview(
+  declaration: PlannedChecksDeclaration | null,
+  call: CoverageReviewCall,
+): PlannedChecksDeclaration {
+  const problems = reviewProblems(declaration, call);
+  if (declaration === null || problems.length > 0)
+    throw new Error(`fix these and review again: ${problems.join("; ")}`);
+  const earlier = declaration.reviews?.find((one) => one.id === call.id);
+  const kept =
+    earlier?.relation === undefined
+      ? declaration
+      : { ...declaration, checks: declaration.checks.filter((one) => one.id !== call.id) };
+  const relation = call.relation;
+  const requirement = kept.requirements.find((one) => one.id === call.requirementId);
+  const source = kept.checks.find((one) => one.id === relation?.programFrom);
+  const withRelation =
+    relation === undefined || requirement === undefined || source === undefined
+      ? kept
+      : withPlannedCheck(kept, {
+          id: call.id,
+          purpose: relation.purpose,
+          requirementId: call.requirementId,
+          requirement: requirement.description,
+          ...(requirement.quote === undefined ? {} : { quote: requirement.quote }),
+          program: source.program,
+          seeds: relation.seeds,
+          reference: relation.reference,
+          variants: relation.variants,
+          why: `from coverage review ${call.id}: ${call.wrongImplementation}`.slice(0, 2000),
+        } as PlannedRelationCall);
+  return {
+    ...withRelation,
+    reviews: [...(withRelation.reviews ?? []).filter((one) => one.id !== call.id), call],
+  };
+}
+
+/** The requirements no review covers yet, in declaration order. */
+export function unreviewedRequirements(declaration: PlannedChecksDeclaration): readonly string[] {
+  const reviewed = new Set((declaration.reviews ?? []).map((one) => one.requirementId));
+  return declaration.requirements.filter((one) => !reviewed.has(one.id)).map((one) => one.id);
+}
+
+/** What the planner is told about its coverage review while it is incomplete, and once it is not. */
+export function describeCoverageReview(declaration: PlannedChecksDeclaration): readonly string[] {
+  const missing = unreviewedRequirements(declaration);
+  return missing.length === 0
+    ? [
+        `Coverage review: every requirement has one (${(declaration.reviews ?? []).map((one) => one.id).join(", ")}).`,
+      ]
+    : [
+        `A coverage review is required before planning finishes; no review yet for requirement(s) ${missing.join(", ")}. For each behaviour the task changes or keeps, call declare_coverage_review: what changes, what must stay, a plausible wrong implementation that would pass your cases, which check or relation tells it apart, and what stays untested. Where a rule says some text behaves like other text, give it as relation and the harness tries it at every position through the program of a check you declared; where no such rule applies, say why in noRelation.`,
+      ];
 }
 type PlannedCase = z.infer<typeof caseSchema>;
 
@@ -251,15 +421,14 @@ type PlannedCase = z.infer<typeof caseSchema>;
  * and both results as the project gave them. Every line is the harness's reading of the
  * project's own answers; nothing in it is an expected value anyone wrote.
  *
- * The program is called with each case's input itself, never with the case. A live planner's
- * programs read `case_.input` off the string they were given, passed undefined to the project
- * for every case, and were admitted because the project answers null to undefined and their
- * null-expecting cases held. So a read of a case's own field (`input`, `expected`, `throws`)
- * made by the program's own code on a string, number or boolean it was called with is recorded
- * as it happens; the case still runs as written and prints what it gave, nothing is unwrapped,
- * and the run exits 4 naming each read, so its output is never read as the project's answer.
- * The project's own code reading such a field is not the program's mistake and is not counted:
- * the read is attributed by the frame that made it.
+ * The program is called with each case's input itself, never with the case, and the runner adds
+ * nothing to the language environment the program and the project run in: no global, no
+ * prototype property. An earlier form put `input`, `expected` and `throws` getters on the
+ * String, Number and Boolean prototypes to catch a program reading `case_.input` off a string;
+ * under it `"input" in Object("hello")` was true where ordinary execution says false, so the
+ * check observed a different language than the project's users run. That mistake is diagnosed
+ * by `plannedCheckProbe`, a separate run whose answers are never compared. The one deliberate
+ * difference from a plain import is where output goes: what is printed moves to stderr.
  */
 export const plannedCheckRunner = [
   'import { rmSync, writeFileSync } from "node:fs";',
@@ -291,33 +460,13 @@ export const plannedCheckRunner = [
   '  console.error("the check program does not export a default function");',
   "  process.exit(3);",
   "}",
-  "const programUrl = pathToFileURL(path).href;",
-  "const misread = [];",
-  "let calling = null;",
-  "for (const prototype of [String.prototype, Number.prototype, Boolean.prototype])",
-  '  for (const field of ["input", "expected", "throws"])',
-  "    Object.defineProperty(prototype, field, {",
-  "      configurable: true,",
-  "      get() {",
-  "        if (",
-  "          calling !== null &&",
-  "          Object.is(this, calling.input) &&",
-  '          (new Error().stack ?? "").split("\\n")[2]?.includes(programUrl)',
-  "        )",
-  "          misread.push({ label: calling.label, field, input: calling.input });",
-  "        return undefined;",
-  "      },",
-  "    });",
   "const call = async (input, label) => {",
-  "  calling = { label, input };",
   "  try {",
   "    const result = await run(input);",
   '    return { result: JSON.parse(JSON.stringify(result, (key, value) => (value === undefined ? null : value)) ?? "null") };',
   "  } catch (error) {",
   '    console.error(label + " threw: " + (error?.stack ?? error));',
   "    return { threw: true };",
-  "  } finally {",
-  "    calling = null;",
   "  }",
   "};",
   // A result that carries the inserted text (a parser returning the name it was given) is read
@@ -357,21 +506,104 @@ export const plannedCheckRunner = [
   '    write(JSON.stringify(plain(disagreements === 0 ? { holds: true, ran, seed } : { counterexamples, disagreements, holds: false, ran, seed })) + "\\n");',
   "  }",
   "}",
-  "if (misread.length > 0) {",
-  "  for (const one of misread.slice(0, 3))",
-  '    console.error("the program read ." + one.field + " of the value it was called with in " + one.label + ", but that value is the case\'s input itself, " + JSON.stringify(one.input) + ", a " + typeof one.input + ", not the case: the program receives the input, not { input, expected }");',
-  "  process.exit(4);",
-  "}",
 ].join("\n");
 
 /** What a program that never loaded exits with, which admission reads as a check that never ran. */
 export const programDidNotLoad = 3;
 
 /**
- * What a run exits with when the program read a case's own field off the input it was called
- * with: it took the input for the case, so none of its answers is the project's.
+ * A diagnostic run of a planned check's program, apart from the check: did the program's own code
+ * read a case's field (`input`, `expected`, `throws`) off the string, number or boolean it was
+ * called with? A live planner's programs read `case_.input` off the string they were given and
+ * passed undefined to the project for every case. To see that read, this run puts getters for the
+ * three names on the String, Number and Boolean prototypes, which changes what the program and
+ * the project observe (`"input" in Object("x")` becomes true), so its answers are not the
+ * project's and are never compared with anything. It prints one line, the reads it saw, each
+ * attributed by the frame that made it (the program's module, not the project's), and exits 0.
+ * A program that reads the field and copes with its absence (`case_.input ?? case_`) is reported
+ * too; what the reading means is decided beside the check's own run, never by this one.
  */
-export const programMisreadInput = 4;
+export const plannedCheckProbe = [
+  'import { rmSync, writeFileSync } from "node:fs";',
+  'import { resolve } from "node:path";',
+  'import { pathToFileURL } from "node:url";',
+  "const write = process.stdout.write.bind(process.stdout);",
+  "process.stdout.write = process.stderr.write.bind(process.stderr);",
+  'let text = "";',
+  "for await (const chunk of process.stdin) text += chunk;",
+  "const { program, inputs, relation } = JSON.parse(text);",
+  'const path = resolve(".swarm-probe-" + process.pid + ".mjs");',
+  "let run;",
+  "try {",
+  '  writeFileSync(path, program, { flag: "wx" });',
+  "  ({ default: run } = await import(pathToFileURL(path).href));",
+  "} catch (error) {",
+  '  console.error("the check program did not load: " + (error?.stack ?? error));',
+  "  process.exit(3);",
+  "} finally {",
+  "  rmSync(path, { force: true });",
+  "}",
+  'if (typeof run !== "function") process.exit(3);',
+  "const programUrl = pathToFileURL(path).href;",
+  "const misread = [];",
+  "let calling = null;",
+  "for (const prototype of [String.prototype, Number.prototype, Boolean.prototype])",
+  '  for (const field of ["input", "expected", "throws"])',
+  "    Object.defineProperty(prototype, field, {",
+  "      configurable: true,",
+  "      get() {",
+  "        if (",
+  "          calling !== null &&",
+  "          Object.is(this, calling.input) &&",
+  '          (new Error().stack ?? "").split("\\n")[2]?.includes(programUrl)',
+  "        )",
+  "          misread.push({ label: calling.label, field, input: calling.input });",
+  "        return undefined;",
+  "      },",
+  "    });",
+  // A relation's program is called on its seeds as written, enough to see how it reads its input.
+  "const called = relation === undefined",
+  '  ? inputs.map((input, index) => ({ input, label: "case " + (index + 1) }))',
+  '  : relation.seeds.map((input) => ({ input, label: "seed " + JSON.stringify(input) }));',
+  "for (const one of called) {",
+  "  calling = one;",
+  "  try {",
+  "    await run(one.input);",
+  "  } catch {}",
+  "  calling = null;",
+  "}",
+  'write(JSON.stringify({ calls: called.length, misread: misread.slice(0, 8) }) + "\\n");',
+].join("\n");
+
+/** A read the probe saw the program make of a case's field off the primitive it was given. */
+export interface ProgramMisread {
+  readonly label: string;
+  readonly field: string;
+  readonly input: unknown;
+}
+
+/** The reads a probe's stdout reports, or null where it did not run to its report. */
+export function probeMisreads(stdout: string): readonly ProgramMisread[] | null {
+  try {
+    const read = JSON.parse(stdout.trim()) as { misread?: unknown };
+    return Array.isArray(read.misread) ? (read.misread as ProgramMisread[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Each probe read in words, with what the probe is, so a reader can weigh it. */
+export function describeMisreads(misread: readonly ProgramMisread[]): readonly string[] {
+  return [
+    ...misread
+      .slice(0, 3)
+      .map(
+        (one) =>
+          `the program read .${one.field} of the value it was called with in ${one.label}, but that value is the case's input itself, ${inputAsRead(one.input)}, a ${typeof one.input}, not the case: the program receives the input, not { input, expected }`,
+      ),
+    "(seen by a separate diagnostic run that adds getters for input, expected and throws to the String, Number and Boolean prototypes; its answers are never compared, and a program that tests for those properties behaves differently there)",
+  ];
+}
 
 /** The runner's own key order, so the expected lines and the printed ones compare exactly. */
 function plain(value: unknown): unknown {
@@ -433,9 +665,17 @@ function contractCheck(check: DeclaredCheck): GoalCheckDefinition {
       network: "inherit",
       environment: {},
       argv: ["node", "--input-type=module", "-e", plannedCheckRunner],
+      // A change check's case roles travel with its inputs, which the runner ignores, so the
+      // check's identity names them and admission and the gate read them from the check itself.
       stdin: JSON.stringify(
         relation === undefined
-          ? { program: check.program, inputs: cases.map((one) => one.input) }
+          ? {
+              program: check.program,
+              inputs: cases.map((one) => one.input),
+              ...(check.purpose === "change"
+                ? { changed: cases.map((one) => one.changed === true) }
+                : {}),
+            }
           : { program: check.program, relation },
       ),
       exitCode: 0,
@@ -547,6 +787,24 @@ export function declarationProblems(
       if (new Set(relation.seeds).size !== relation.seeds.length)
         problems.push(`check ${check.id}: a seed is listed twice`);
     }
+    const cases = check.cases ?? [];
+    if (check.purpose === "change" && cases.length > 0) {
+      const unstated = cases.flatMap((one, index) =>
+        one.changed === undefined ? [index + 1] : [],
+      );
+      if (unstated.length > 0)
+        problems.push(
+          `check ${check.id}: say for case(s) ${unstated.join(", ")} whether the task changes the result (changed: true) or keeps it, so the unchanged base already gives the expected result (changed: false)`,
+        );
+      else if (!cases.some((one) => one.changed === true))
+        problems.push(
+          `check ${check.id} is a change check with no case the task changes (changed: true); make it a preserve check or add one`,
+        );
+    }
+    if (check.purpose === "preserve" && cases.some((one) => one.changed === true))
+      problems.push(
+        `check ${check.id} is a preserve check, which holds only cases the task keeps; move the changed cases to a change check`,
+      );
     if (!requirementIds.has(check.requirement))
       problems.push(
         `check ${check.id} names requirement ${check.requirement}, which this declaration does not declare`,
@@ -566,6 +824,29 @@ export function declarationProblems(
     )
       problems.push(`check ${check.id}: its expected results are too large; use fewer cases`);
   }
+  problems.push(...conflictingExpectations(input));
+  return problems;
+}
+
+/**
+ * One input given two different expectations through the same program, which no implementation
+ * can satisfy: where one of them is a kept case, the other contradicts behaviour the task keeps.
+ */
+function conflictingExpectations(input: PlannedChecksDeclaration): readonly string[] {
+  const seen = new Map<string, { label: string; outcome: string }>();
+  const problems: string[] = [];
+  for (const check of input.checks)
+    (check.cases ?? []).forEach((one, index) => {
+      const key = JSON.stringify([check.program, one.input]);
+      const outcome = JSON.stringify("throws" in one ? { threw: true } : { result: one.expected });
+      const label = `check ${check.id} case ${index + 1}`;
+      const earlier = seen.get(key);
+      if (earlier === undefined) seen.set(key, { label, outcome });
+      else if (earlier.outcome !== outcome)
+        problems.push(
+          `${label} expects ${outcome} for ${inputAsRead(one.input)} through the same program for which ${earlier.label} expects ${earlier.outcome}; one input has one result`,
+        );
+    });
   return problems;
 }
 
@@ -768,6 +1049,23 @@ export function plannedInputs(check: GoalCheckDefinition): readonly unknown[] | 
   return Array.isArray(inputs) ? inputs : null;
 }
 
+/**
+ * Each case's declared role, in case order: whether the task changes its result. Every case of a
+ * preserve check is kept. Null for a relation, any other check, and a change check sealed before
+ * cases declared a role, whose cases were never told apart.
+ */
+export function plannedCaseRoles(
+  check: GoalCheckDefinition,
+): readonly ("changed" | "kept")[] | null {
+  const inputs = plannedInputs(check);
+  if (inputs === null) return null;
+  if (check.atBase === "passes") return inputs.map(() => "kept");
+  const roles = (carried(check) as { changed?: unknown } | null)?.changed;
+  return Array.isArray(roles) && roles.length === inputs.length
+    ? roles.map((one) => (one === true ? "changed" : "kept"))
+    : null;
+}
+
 /** A value as the harness read it, with line terminators and other invisible characters escaped. */
 export function inputAsRead(value: unknown): string {
   return (JSON.stringify(value) ?? "null").replace(
@@ -823,20 +1121,6 @@ export function describeDeclaredCases(input: PlannedChecksDeclaration): readonly
     }
   }
   return lines;
-}
-
-/**
- * For a declaration that holds no relation, the one tool that tries every position. A live planner
- * reasoned that a line terminator at the start, middle and end of a name mattered, then wrote more
- * examples at one position, because every answer it read asked for cases; the relation it never
- * declared is what found the same omission in an earlier launch.
- */
-export function describeMissingRelation(input: PlannedChecksDeclaration): readonly string[] {
-  return input.checks.some((one) => one.relation !== undefined)
-    ? []
-    : [
-        "No relation is declared. Where the task says some text must behave like other text (a character to be treated like one that already works), declare that rule with declare_planned_relation: it tries the reference and each variant at every position of its seeds, which examples at a few positions do not.",
-      ];
 }
 
 /** The task's sentences, in order, as the planner is shown them and coverage is reported over. */

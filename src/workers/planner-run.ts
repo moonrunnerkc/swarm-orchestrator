@@ -17,8 +17,10 @@ import { defineTool } from "../tools/tool-definition.ts";
 import { createWorkspaceTools } from "../tools/workspace-tools.ts";
 import { createDeclareTaskGraphTool, type DeclaredGraph } from "./graph-tool.ts";
 import {
+  type CoverageReviewCall,
+  coverageReviewInput,
+  describeCoverageReview,
   describeDeclaredCases,
-  describeMissingRelation,
   describeUncoveredSentences,
   type PlannedCheckCall,
   type PlannedChecksDeclaration,
@@ -26,6 +28,7 @@ import {
   plannedCheckInput,
   plannedContract,
   plannedRelationInput,
+  withCoverageReview,
   withPlannedCheck,
 } from "./planned-check-program.ts";
 import type { TaskGraph } from "./task-graph.ts";
@@ -49,6 +52,11 @@ export interface PlannerOptions {
      * it sees what each did while it still holds its reasoning. Its answer is recorded output.
      */
     readonly tryOnBase?: (contract: GoalContract) => Promise<string>;
+    /**
+     * The declaration an earlier round of this planning ended with, which this round continues:
+     * its checks and reviews stand until replaced under their ids.
+     */
+    readonly initial?: PlannedChecksDeclaration;
   };
   readonly maxTokens?: number;
   readonly maxWallTimeMs?: number;
@@ -112,7 +120,15 @@ export interface PlannerOutcome {
 export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcome> {
   const declared: DeclaredGraph = { graph: null };
   let goalContract: GoalContract | null = null;
-  let plannedDeclaration: PlannedChecksDeclaration | null = null;
+  let plannedDeclaration: PlannedChecksDeclaration | null = options.plannedChecks?.initial ?? null;
+  const repository = { root: options.workspace, exists: existsSync };
+  if (plannedDeclaration !== null)
+    goalContract = plannedContract(
+      options.plannedChecks?.task ?? options.goal,
+      plannedDeclaration,
+      options.plannedChecks?.base,
+      repository,
+    );
 
   // Nothing has run yet, so a planner that finds a mistake in what it pinned may replace it:
   // refusing that spent two launches' remaining wall on re-declares. The supplied contract is
@@ -121,10 +137,7 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
     const task = options.plannedChecks?.task ?? options.goal;
     const replacing = plannedDeclaration?.checks.some((one) => one.id === input.id) ?? false;
     const declaration = withPlannedCheck(plannedDeclaration, input);
-    goalContract = plannedContract(task, declaration, options.plannedChecks?.base, {
-      root: options.workspace,
-      exists: existsSync,
-    });
+    goalContract = plannedContract(task, declaration, options.plannedChecks?.base, repository);
     plannedDeclaration = declaration;
     const pinned = declaration.checks.find((one) => one.id === input.id);
     return {
@@ -135,10 +148,36 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
           checks: pinned === undefined ? [] : [pinned],
         }),
         ...describeUncoveredSentences(task, declaration),
-        ...describeMissingRelation(declaration),
-        "When every input is what you meant and every behaviour the task states is covered, finish with a one-line summary and no tool calls.",
+        ...describeCoverageReview(declaration),
+        "When every input is what you meant, every behaviour the task states is covered and every requirement has its coverage review, finish with a one-line summary and no tool calls.",
       ].join("\n"),
       facts: { checks: declaration.checks.length },
+    };
+  };
+
+  // A review's relation is sealed as a planned relation through withCoverageReview; the answer
+  // says what the harness made of it and which requirements still have no review.
+  const review = (input: CoverageReviewCall) => {
+    const task = options.plannedChecks?.task ?? options.goal;
+    const declaration = withCoverageReview(plannedDeclaration, input);
+    goalContract = plannedContract(task, declaration, options.plannedChecks?.base, repository);
+    plannedDeclaration = declaration;
+    const relation = declaration.checks.find(
+      (one) => one.id === input.id && one.relation !== undefined,
+    );
+    return {
+      text: [
+        `coverage review ${input.id} recorded for requirement ${input.requirementId}.`,
+        ...(relation === undefined
+          ? [`No relation: ${input.noRelation ?? ""}`]
+          : [
+              `Relation ${input.id} sealed over the program of ${input.relation?.programFrom ?? ""}; it runs on the unchanged base with the other checks.`,
+              ...describeDeclaredCases({ requirements: [], checks: [relation] }),
+            ]),
+        ...describeCoverageReview(declaration),
+        "The harness checks that each review names what it rests on. Whether the wrong implementation is plausible and whether the named checks tell it apart is your reading, recorded as yours.",
+      ].join("\n"),
+      facts: { reviews: declaration.reviews?.length ?? 0 },
     };
   };
 
@@ -188,7 +227,7 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
               : defineTool({
                   name: "declare_planned_check",
                   description:
-                    "Pin one acceptance check, with the requirement it covers; call once per check, and again with the same id to replace that check. program is a short ES module whose default export is called once per case with that case's input value itself (a string input arrives as that string, never as { input, expected }) and returns what the project gives for it; cases are inputs with the expected result (or throws: true). The harness runs the program once per case in a fresh checkout of the unchanged base before anything is implemented, compares each result with the expected one as JSON, and admits a change check only if the base gets at least one case wrong and at least one right (a case the task does not change) whose answer differs from the wrong cases' answers there, since one answer for every case is what a program that never reaches the project gives; a preserve check only if the base gets every case right. A requirement covered by a change check quotes the task's own words in quote.",
+                    "Pin one acceptance check, with the requirement it covers; call once per check, and again with the same id to replace that check. program is a short ES module whose default export is called once per case with that case's input value itself (a string input arrives as that string, never as { input, expected }) and returns what the project gives for it; cases are inputs with the expected result (or throws: true), and in a change check each case says changed: true where the task changes its result and changed: false where the task keeps it. The harness runs the program once per case in a fresh checkout of the unchanged base before anything is implemented and compares each result with the expected one as JSON. A change check is admitted only if every kept case gives its expected result there and some changed case does not; a preserve check only if the base gets every case right. Where the base's answers differ between cases, the kept cases are the check's control; where the base gives one answer for every case (which a defect that answers one value gives, and so does a program that ignores its input or builds an empty fixture) the check is kept with its control unestablished. A requirement covered by a change check quotes the task's own words in quote.",
                   inputSchema: plannedCheckInput,
                   kind: "evidence",
                   pathsFrom: () => [],
@@ -205,6 +244,15 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
                     kind: "evidence",
                     pathsFrom: () => [],
                     execute: (input) => Promise.resolve(pinPlanned(input)),
+                  }),
+                  defineTool({
+                    name: "declare_coverage_review",
+                    description:
+                      "Record the coverage decision for one behaviour of a declared requirement; every requirement needs at least one before planning finishes. Say what the task changes, what must stay, a plausible wrong implementation that would still pass the cases declared so far, which checks tell it apart, and what stays untested. Where the behaviour is a rule that some text behaves like other text, give relation: the harness inserts the reference and each variant at every position of each seed, calls the program of the check named in programFrom, and seals that relation under this review's id. Where no such rule applies, say why in noRelation. Call again with the same id to replace a review.",
+                    inputSchema: coverageReviewInput,
+                    kind: "evidence",
+                    pathsFrom: () => [],
+                    execute: (input) => Promise.resolve(review(input)),
                   }),
                 ]),
             ...(options.plannedChecks?.tryOnBase === undefined
@@ -231,9 +279,9 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
                             ? []
                             : [
                                 ...describeUncoveredSentences(task, plannedDeclaration),
-                                ...describeMissingRelation(plannedDeclaration),
+                                ...describeCoverageReview(plannedDeclaration),
                               ]),
-                          "Before finishing, reread each sentence of the task that states a rule and ask whether a case exercises it where an implementation could get it wrong: the special input at the start or the end, repeated, next to the separators the rule names, or combined with another special input. Add such cases, or a relation where the rule says one text behaves like another (the same id replaces a check), and run this again, or finish.",
+                          "Before finishing, reread each sentence of the task that states a rule and ask whether a case exercises it where an implementation could get it wrong: the special input at the start or the end, repeated, next to the separators the rule names, or combined with another special input. Add such cases (the same id replaces a check), record the decision in the coverage review, and run this again, or finish.",
                         ].join("\n"),
                         facts: {},
                       };
@@ -334,10 +382,12 @@ function plannedChecksPrompt(options: NonNullable<PlannerOptions["plannedChecks"
     "the task's own words that ask for it. Each check names its requirement and its purpose:",
     "change for behaviour the task asks to change, which the unchanged base must get wrong on at",
     "least one case, and preserve for behaviour the task keeps, which the base already gets right",
-    "on every case; keep the two kinds in separate checks. A change check also holds at least one",
-    "case the task does not change, which the base gets right with an answer unlike the changed",
-    "cases' answers there: it shows the program calls the project correctly, which a case the",
-    "base answers null, or the same as everything else, cannot show. Its program is an ES module",
+    "on every case; keep the two kinds in separate checks. In a change check mark every case:",
+    "changed: true where the task changes its result, changed: false where the task keeps it, so",
+    "the base must already give it. Include at least one kept case whose answer on the base differs",
+    "from the changed cases' answers there: it shows the program calls the project correctly, which",
+    "a case the base answers null, or the same as everything else, cannot show; where the defect",
+    "itself is one answer for every input, say so in why. Its program is an ES module",
     "that imports the project and default-exports a function the harness calls once per case with",
     "that case's input value itself, exactly what you wrote as input (a string stays a string),",
     "never with the case object: write export default function (input) { ... }, not",
@@ -353,6 +403,10 @@ function plannedChecksPrompt(options: NonNullable<PlannerOptions["plannedChecks"
     "with one backslash, exactly as in any JSON string; \\\\n would be a backslash followed by n.",
     "The tool's answer shows every input as it was read and lists the task's sentences no",
     "requirement quotes yet. In why, say how the expected results follow from the task.",
+    "Before finishing, call declare_coverage_review for every requirement: what the task changes,",
+    "what must stay, a plausible wrong implementation that would still pass your cases, which check",
+    "tells it apart, and what stays untested. Give a relation in the review where a rule says some",
+    "text behaves like other text, and the harness runs it; where no such rule applies, say why.",
     ...(base === undefined
       ? []
       : [

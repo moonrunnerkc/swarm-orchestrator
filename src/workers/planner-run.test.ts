@@ -290,7 +290,7 @@ describe("planned checks", () => {
     // Wrapped in its own quotation marks and elided, as live planners quoted.
     quote: '"every n up to ... including 10"',
     program,
-    cases: [{ input: 10, expected: "small" }],
+    cases: [{ input: 10, expected: "small", changed: true }],
     why: "the task says 10 is small",
   };
   const declaring = (callId: string, input: Record<string, unknown>) => ({
@@ -298,7 +298,10 @@ describe("planned checks", () => {
     toolName: "declare_planned_check",
     input: { ...check, ...input },
   });
-  const plan = (turns: Parameters<typeof createFixtureModelClient>[0]["turns"]) =>
+  const plan = (
+    turns: Parameters<typeof createFixtureModelClient>[0]["turns"],
+    initial?: NonNullable<Parameters<typeof runPlanner>[0]["plannedChecks"]>["initial"],
+  ) =>
     runPlanner({
       goal: `Revision brief with recorded output: "every n up to and including 99"\n${task}`,
       workspace,
@@ -309,7 +312,12 @@ describe("planned checks", () => {
       emit: () => {},
       maxSteps: 8,
       requireGoalChecks: true,
-      plannedChecks: { base, task, preparation: "The checkout is installed first." },
+      plannedChecks: {
+        base,
+        task,
+        preparation: "The checkout is installed first.",
+        ...(initial === undefined ? {} : { initial }),
+      },
       abortSignal: new AbortController().signal,
       model: createFixtureModelClient({ modelId: "fixture:planner", turns }),
     });
@@ -352,7 +360,7 @@ describe("planned checks", () => {
     expect(built?.artifacts).toEqual([]);
     if (built?.behavior?.kind !== "cli") throw new Error("a command-line behavior check");
     expect(built.behavior.argv.slice(0, 3)).toEqual(["node", "--input-type=module", "-e"]);
-    expect(JSON.parse(built.behavior.stdin)).toEqual({ program, inputs: [10] });
+    expect(JSON.parse(built.behavior.stdin)).toEqual({ program, inputs: [10], changed: [true] });
     expect(built.behavior.stdout).toEqual([
       { kind: "equals", value: '{"input":10,"result":"small"}\n' },
     ]);
@@ -404,8 +412,8 @@ describe("planned checks", () => {
         declaring("twice", {
           // What arrives when a model writes \\n in the tool's JSON: a backslash and an n.
           cases: [
-            { input: "LINE\\nFEED.png", expected: "image/png" },
-            { input: "LS\u2028.png", expected: "image/png" },
+            { input: "LINE\\nFEED.png", expected: "image/png", changed: true },
+            { input: "LS\u2028.png", expected: "image/png", changed: true },
           ],
         }),
       ]),
@@ -424,8 +432,8 @@ describe("planned checks", () => {
       respondWithToolCalls("a better one", [
         declaring("second", {
           cases: [
-            { input: 10, expected: "small" },
-            { input: 9, expected: "small" },
+            { input: 10, expected: "small", changed: true },
+            { input: 9, expected: "small", changed: false },
           ],
         }),
       ]),
@@ -437,5 +445,94 @@ describe("planned checks", () => {
       built[0]?.behavior?.kind === "cli" && JSON.parse(built[0].behavior.stdin).inputs,
     ).toEqual([10, 9]);
     expect(toolErrors()).toMatch(/replacing the earlier one/);
+  });
+
+  const words = {
+    id: "spelling",
+    purpose: "preserve",
+    requirementId: "spelling",
+    requirement: "a word's length decides its size",
+    program: "import { classify } from './value.mjs';\nexport default (s) => classify(s.length);\n",
+    cases: [{ input: "ab", expected: "small" }],
+    why: "the base already does this",
+  };
+  const reviewing = (callId: string, input: Record<string, unknown>) => ({
+    callId,
+    toolName: "declare_coverage_review",
+    input: {
+      id: "boundary-review",
+      requirementId: "boundary",
+      change: "10 becomes small",
+      keeps: "11 and above stay big",
+      wrongImplementation: "n <= 11",
+      distinguishedBy: ["boundary"],
+      noRelation: "a numeric boundary",
+      untested: "negative numbers",
+      ...input,
+    },
+  });
+  const answers = () =>
+    evidence
+      .records()
+      .filter((record) => record.type === "tool-call")
+      .map((record) => JSON.stringify(evidence.payloads().get(record.payloadDigest)))
+      .filter((text) => text.includes("declare_coverage_review"))
+      .join("\n");
+
+  it("records a coverage review per requirement, and seals the relation one gives over a declared check's program", async () => {
+    const outcome = await plan([
+      respondWithToolCalls("checks", [
+        declaring("valid", {}),
+        { callId: "words", toolName: "declare_planned_check", input: words },
+      ]),
+      respondWithToolCalls("reviews", [
+        reviewing("numeric", {}),
+        reviewing("strings", {
+          id: "letters-alike",
+          requirementId: "spelling",
+          distinguishedBy: ["letters-alike"],
+          noRelation: undefined,
+          relation: {
+            purpose: "preserve",
+            programFrom: "spelling",
+            seeds: ["abc"],
+            reference: "x",
+            variants: ["y"],
+          },
+        }),
+      ]),
+      respondWithText("reviewed"),
+    ]);
+    expect(outcome.plannedDeclaration?.reviews?.map((one) => one.id)).toEqual([
+      "boundary-review",
+      "letters-alike",
+    ]);
+    const relation = outcome.goalContract?.checks.find((one) => one.id === "letters-alike");
+    expect(relation?.atBase).toBe("passes");
+    expect(relation?.behavior?.kind === "cli" && JSON.parse(relation.behavior.stdin)).toEqual({
+      program: words.program,
+      relation: { seeds: ["abc"], reference: "x", variants: ["y"] },
+    });
+    // Before the second review the answer named the requirement still unreviewed.
+    expect(answers()).toContain("no review yet for requirement(s) spelling");
+    expect(answers()).toContain("Relation letters-alike sealed over the program of spelling");
+    expect(answers()).toContain("is your reading, recorded as yours");
+  });
+
+  it("continues the declaration an earlier round ended with, so a review needs nothing restated", async () => {
+    const first = await plan([
+      respondWithToolCalls("checks", [declaring("valid", {})]),
+      respondWithText("declared"),
+    ]);
+    const declaration = first.plannedDeclaration;
+    if (declaration === null || declaration === undefined) throw new Error("a declaration");
+    const second = await plan(
+      [respondWithToolCalls("review", [reviewing("numeric", {})]), respondWithText("reviewed")],
+      declaration,
+    );
+    expect(second.goalContract?.checks.map((one) => one.id)).toEqual(["suite", "boundary"]);
+    expect(second.plannedDeclaration?.reviews?.map((one) => one.requirementId)).toEqual([
+      "boundary",
+    ]);
   });
 });

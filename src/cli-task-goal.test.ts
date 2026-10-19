@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createSystemClock } from "./cli-runtime-inputs.ts";
 import {
   acceptanceCheckTool,
+  heldCases,
   preflightTaskGoal,
   readAcceptance,
   type TaskGoalContext,
@@ -330,5 +331,57 @@ describe("run_check's own diagnostic program", () => {
     expect(probe.outcome?.decision, probe.output).toBe("allowed");
     expect(probe.output).toContain('"/path/to/photo."');
     expect(probe.output).toContain("goodbye");
+    expect(probe.output).not.toContain("diagnostic:");
+  });
+
+  it("shows the program's own answers, and names a read of the case's field as a diagnostic beside them", async () => {
+    const misread = await invoke({
+      program:
+        "import { greet } from './greet.mjs';\nexport default (case_) => [case_.input ?? null, 'input' in Object(case_), greet()];\n",
+      inputs: ["photo.png"],
+    });
+    expect(misread.outcome?.decision, misread.output).toBe("allowed");
+    // The answer ordinary execution gives: no input field on a string, and no property either.
+    expect(misread.output).toContain('{"input":"photo.png","result":[null,false,"goodbye"]}');
+    expect(misread.output).toContain(
+      "diagnostic:\n  the program read .input of the value it was called with in case 1",
+    );
+    expect(misread.output).toContain("seen by a separate diagnostic run");
+  });
+});
+
+describe("which failing generated cases a repair is no longer asked about", () => {
+  const failing = (index: number, role: "changed" | "kept" | null, got: string) => ({
+    index,
+    role,
+    got,
+  });
+
+  it("holds a changed case the last repair was told and left giving the same answer", () => {
+    const told = new Map([[4, '{"input":13,"result":"big"}']]);
+    expect(
+      heldCases([failing(4, "changed", '{"input":13,"result":"big"}')], told, undefined),
+    ).toEqual([failing(4, "changed", '{"input":13,"result":"big"}')]);
+    // A different answer is the repair moving it, so it is reported again.
+    expect(
+      heldCases([failing(4, "changed", '{"input":13,"result":"odd"}')], told, undefined),
+    ).toEqual([]);
+    // Nothing is held on the first reading, before any repair was told it.
+    expect(heldCases([failing(4, "changed", "x")], undefined, undefined)).toEqual([]);
+  });
+
+  it("never holds a kept case, or one whose role was never declared, however often it repeats", () => {
+    const told = new Map([
+      [1, "same"],
+      [2, "same"],
+    ]);
+    expect(heldCases([failing(1, "kept", "same"), failing(2, null, "same")], told, told)).toEqual(
+      [],
+    );
+  });
+
+  it("keeps a held case held while its answer stays what it was", () => {
+    const held = new Map([[4, "same"]]);
+    expect(heldCases([failing(4, "changed", "same")], new Map(), held)).toHaveLength(1);
   });
 });
