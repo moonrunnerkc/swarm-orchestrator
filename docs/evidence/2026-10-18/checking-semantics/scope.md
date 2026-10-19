@@ -52,3 +52,10 @@ is left unchanged.
 
 - `CHANGELOG.md`: one entry under 14.5.0 (unreleased) for the `--plan-checks` behaviour this work
   changes: what admission keeps, the held case, the coverage review and the case role.
+
+### 3. After launch O1, while O2 ran on the frozen build
+
+No new file. The diagnostics gate in `src/cli-task-goal.ts` reports each generated check's
+base-backed behaviour (a relation, a check's kept cases) as a part the ratchet holds, with its
+regression in `src/cli-planned-checks.integration.test.ts`. The frozen build O2 runs is not
+touched; nothing here is launched under the registered protocol.

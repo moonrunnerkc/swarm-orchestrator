@@ -1315,6 +1315,126 @@ describe("planned checks through the ordinary command line", () => {
     expect(source).toContain("split(/[ \\t]+/)");
   }, 200_000);
 
+  it("rolls back a repair that breaks a generated relation that held, to satisfy a wrong changed case", async () => {
+    // Ordinary launch O1's shape: the first change is right and the relation holds; one changed
+    // case the task does not support ("a\t" gives "a-") fails. The repair told only that case
+    // satisfies it by breaking the relation. The relation is a part of the diagnostics gate, so
+    // the ratchet refuses that repair and the right first change is what remains.
+    const slugTask =
+      "make slug(text) treat a tab like a space: a space already separates words, and so must a tab";
+    const adapter = "import { slug } from './slug.mjs';\nexport default (text) => slug(text);\n";
+    const breaksRelation: ScriptedTurnSource = (request) =>
+      JSON.stringify(request).includes("slug-examples rejected")
+        ? {
+            toolCalls: [
+              writeSlug(
+                "export function slug(text) {\n  return text.replace(/^ +| +$/g, '').split(/[ \\t]+/).join('-');\n}\n",
+              ),
+            ],
+          }
+        : { text: "The repair brief named no failing case." };
+    const { stdout } = await swarm(
+      [
+        {
+          toolCalls: [
+            {
+              name: "declare_planned_relation",
+              input: {
+                id: "tab-like-space",
+                purpose: "change",
+                requirementId: "tab-separates",
+                requirement: "a tab separates words as a space does",
+                quote: "treat a tab like a space",
+                program: adapter,
+                seeds: ["hello world"],
+                reference: "U+0020",
+                variants: ["U+0009"],
+                why: "the task says a tab is treated like a space",
+              },
+            },
+            {
+              name: "declare_planned_check",
+              input: {
+                id: "slug-examples",
+                purpose: "change",
+                requirementId: "tab-separates",
+                requirement: "a tab separates words as a space does",
+                quote: "treat a tab like a space",
+                program: adapter,
+                cases: [
+                  { input: "a b", expected: "a-b", changed: false },
+                  { input: "a\tb", expected: "a-b", changed: true },
+                  { input: "a\t", expected: "a-", changed: true },
+                ],
+                why: "the planner's reading, the last case wrong",
+              },
+            },
+            {
+              name: "declare_coverage_review",
+              input: {
+                id: "tab-review",
+                requirementId: "tab-separates",
+                change: "a tab separates words",
+                keeps: "a space separates words",
+                wrongImplementation: "split on a lone tab only",
+                distinguishedBy: ["tab-like-space"],
+                noRelation: "declared as the relation tab-like-space",
+                untested: "none",
+              },
+            },
+          ],
+        },
+        { text: "Pinned." },
+        {
+          text: "Plan: split on tabs too.",
+          toolCalls: [{ name: "declare_file_set", input: { files: ["slug.mjs"] } }],
+        },
+        {
+          toolCalls: [
+            writeSlug(
+              "export function slug(text) {\n  return text.trim().split(/[ \\t]+/).join('-');\n}\n",
+            ),
+          ],
+        },
+        { text: "Done." },
+        breaksRelation,
+        { text: "Repaired." },
+        { text: "The task does not say a trailing tab leaves a dash; I leave the code." },
+        { text: "Still nothing to change." },
+        { text: "Nothing more." },
+      ],
+      false,
+      [],
+      true,
+      slugWorkspace(slugTask),
+      slugTask,
+    );
+
+    const result = resultOf(stdout);
+    const session = join(home, ".swarm", "sessions", result?.runId ?? "");
+    const decisions = readFileSync(join(session, "ledger.jsonl"), "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { type: string; payloadDigest: string })
+      .filter((record) => record.type === "ratchet-decision")
+      .map(
+        (record) =>
+          JSON.parse(
+            readFileSync(join(session, "blobs", `${record.payloadDigest.slice(7)}.json`), "utf8"),
+          ) as { attempt: number; accepted: boolean; detail: string },
+      );
+    expect(
+      decisions.find((one) => one.attempt === 1),
+      stdout.slice(-4000),
+    ).toMatchObject({
+      accepted: false,
+      detail: expect.stringContaining("tab-like-space in the task-diagnostics gate passed before"),
+    });
+    const { stdout: source } = await run("git", ["diff"], { cwd: join(scratch, "workspace") });
+    expect(source).toContain("text.trim().split(/[ \\t]+/)");
+    expect(result?.outcome?.status).toBe("unresolved");
+  }, 200_000);
+
   it("admits a check of built output, because the base runs the project's build first as acceptance does", async () => {
     const { endpoint, stdout, code } = await swarm(
       [
