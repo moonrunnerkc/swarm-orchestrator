@@ -168,7 +168,7 @@ it("names each requirement no generated check covers in the worker's brief, with
     ],
   });
   expect(contract.objective).toContain(
-    "Requirements no generated check covers (the planner's reading of the task; nothing will exercise these for you):",
+    "Requested behaviour no generated check exercises (the planner's reading of the task;",
   );
   expect(contract.objective).toContain(
     '- kept, quoting the task: "\\"Hello World\\" must still read \\"hello-world\\"". Why: kept-forms: the base gave "Hello World" for "Hello World", an input the task names. Next: implement it from the task\'s words.',
@@ -184,5 +184,54 @@ it("adds nothing to the brief when every planned requirement has a check", () =>
     network: "denied",
     uncovered: [],
   });
-  expect(contract.objective).not.toContain("Requirements no generated check covers");
+  expect(contract.objective).not.toContain("no generated check exercises");
+});
+
+it("names an unresolved outcome in the brief though another outcome of its requirement is checked", () => {
+  // csv-split: quoted fields keep their commas (checked), and an empty trailing field is kept
+  // (its only check refused). One requirement, two outcomes; the brief names the second alone.
+  const goal = freezeGoalContract({
+    version: 1,
+    goal: "split CSV lines",
+    requirements: [
+      {
+        id: "fields",
+        description: "split a line into fields",
+        checks: [],
+        planned: { quote: "a quoted field keeps its commas", diagnostics: ["quoted-commas"] },
+      },
+    ],
+    checks: [
+      {
+        id: "quoted-commas",
+        command: "planned check",
+        author: "model",
+        exposure: "shared",
+        artifacts: [],
+      },
+    ],
+    immutablePaths: [],
+  }).contract;
+  const contract = presetTaskContract({
+    goal,
+    task: "split CSV lines: a quoted field keeps its commas, and a trailing comma gives an empty last field",
+    maxSteps: 4,
+    maxWallMs: 60000,
+    network: "denied",
+    uncovered: [],
+    unresolvedOutcomes: [
+      {
+        id: "fields#2",
+        requirement: "fields",
+        quote: "a trailing comma gives an empty last field",
+        role: "change",
+        reason: "trailing-empty: case 1 threw in the check program's own code on the base",
+        nextAction: "implement it from the task's words",
+      },
+    ],
+  });
+  expect(contract.objective).toContain(
+    "- fields#2, a change under requirement fields, quoting the task: \"a trailing comma gives an empty last field\". Why: trailing-empty: case 1 threw in the check program's own code on the base. Next: implement it from the task's words.",
+  );
+  expect(contract.objective).not.toContain('a quoted field keeps its commas". Why');
 });

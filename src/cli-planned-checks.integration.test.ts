@@ -486,7 +486,7 @@ describe("planned checks through the ordinary command line", () => {
             decisions?: { check: string; admitted: boolean; reason: string; broken: boolean }[];
           },
       )
-      .find((payload) => payload.rule === "planned-check-admission-v3");
+      .find((payload) => payload.rule === "planned-check-admission-v4");
     expect(
       Object.fromEntries((admission?.decisions ?? []).map((one) => [one.check, one.admitted])),
     ).toEqual({
@@ -530,6 +530,15 @@ describe("planned checks through the ordinary command line", () => {
           rejected: [expect.objectContaining({ check: "broken" })],
           reason: expect.stringContaining("the revision declared no replacement"),
         }),
+      ],
+      // Its two outcomes, the change and the kept case, each with the check that never loaded.
+      unresolvedOutcomes: [
+        expect.objectContaining({
+          id: "loads#1",
+          role: "keep",
+          checks: [expect.objectContaining({ check: "broken" })],
+        }),
+        expect.objectContaining({ id: "loads#2", role: "change" }),
       ],
     });
 
@@ -597,6 +606,7 @@ describe("planned checks through the ordinary command line", () => {
       revision: null,
       coverage: null,
       uncovered: [],
+      unresolvedOutcomes: [],
     });
     expect(code, stdout.slice(-3000)).toBe(0);
   }, 200_000);
@@ -2272,8 +2282,10 @@ describe("a requested outcome the task describes as kept and the base does not g
       "the revision declared no replacement",
     );
     const brief = workerBrief(endpoint);
-    expect(brief).toContain("Requirements no generated check covers");
-    expect(brief).toContain("- numeric-strings, quoting the task:");
+    expect(brief).toContain("Requested behaviour no generated check exercises");
+    expect(brief).toContain(
+      "- numeric-strings#1, behaviour to keep under requirement numeric-strings, quoting the task:",
+    );
     // The requested behaviour was implemented by the worker; the supplied suite decides.
     expect(result?.outcome?.status).toBe("accepted");
     const planning = join(home, ".swarm", "sessions", `${result?.runId}-plan`);
@@ -2288,7 +2300,7 @@ describe("a requested outcome the task describes as kept and the base does not g
             readFileSync(join(planning, "blobs", `${record.payloadDigest.slice(7)}.json`), "utf8"),
           ) as { rule?: string; decisions?: { check: string; finding: string }[] },
       )
-      .find((payload) => payload.rule === "planned-check-admission-v3")?.decisions;
+      .find((payload) => payload.rule === "planned-check-admission-v4")?.decisions;
     expect(decisions?.find((one) => one.check === "strings-kept")?.finding).toBe(
       "disagrees-with-base",
     );
@@ -2342,5 +2354,88 @@ describe("a requested outcome the task describes as kept and the base does not g
       result?.outcome?.requirements?.find((one) => one.id === "numeric-strings")?.generatedChecks,
     ).toEqual([expect.objectContaining({ id: "strings-kept", status: "accepted" })]);
     expect(result?.outcome?.status).toBe("accepted");
+  }, 200_000);
+});
+
+/**
+ * D1's route on a project that is not marked: one requirement holds two outcomes the task states,
+ * the boundary (checked, admitted) and a value above it that stays big (its one check throws in
+ * its own code, the way D1's applied `in` to a string). Per requirement it read as covered and
+ * nothing told the worker or the reader; per outcome the second stays unresolved everywhere.
+ */
+describe("an outcome whose only check throws in its own code, beside a checked sibling", () => {
+  const siblingTask =
+    'make classify(n) call 10 small: every n up to and including 10 is small, and classify(11) must still give "big".';
+  const elevenQuote = 'classify(11) must still give "big"';
+  const turns: ScriptedTurnSource[] = [
+    {
+      text: "Plan: the boundary, and eleven staying big.",
+      toolCalls: [
+        ...declarations(
+          [{ id: "boundary", description: "10 is small, 11 stays big", quote }],
+          [
+            plannedCheck("boundary", "boundary", "change", [
+              { input: 9, expected: "small" },
+              { input: 10, expected: "small" },
+            ]),
+          ],
+        ),
+        ...declarations(
+          [{ id: "boundary", description: "10 is small, 11 stays big", quote: elevenQuote }],
+          [
+            plannedCheck(
+              "eleven-big",
+              "boundary",
+              "preserve",
+              [{ input: 11, expected: true }] as never,
+              "import { classify } from './value.mjs';\nexport default (n) => 'big' in classify(n);\n",
+            ),
+          ],
+        ),
+        reviewing("boundary", ["boundary", "eleven-big"]),
+      ],
+    },
+    { text: "Criteria pinned." },
+    { text: "No replacement." },
+    { text: "Plan: move the boundary.", toolCalls: [declare] },
+    {
+      toolCalls: [write("export function classify(n) {\n  return n <= 10 ? 'small' : 'big';\n}\n")],
+    },
+    { text: "Done." },
+  ];
+
+  it("names the unresolved outcome in the brief, the report and the JSON, and scopes accepted to the supplied contract", async () => {
+    const { endpoint, stdout } = await swarm(turns, false, [], true, workspace(), siblingTask);
+    const result = resultOf(stdout) as ResultLine & {
+      plannedChecks?: {
+        uncovered?: unknown[];
+        unresolvedOutcomes?: { id: string; quote: string; role: string; reason: string }[];
+      };
+      outcome?: { unresolvedOutcomes?: { id: string; reason: string }[] };
+    };
+    // Per requirement, boundary is covered; per outcome, eleven's is not.
+    expect(result?.plannedChecks?.uncovered, stdout.slice(-3000)).toEqual([]);
+    const unresolved = result?.plannedChecks?.unresolvedOutcomes ?? [];
+    expect(unresolved).toEqual([
+      expect.objectContaining({
+        id: "boundary#3",
+        quote: elevenQuote,
+        role: "keep",
+        reason: expect.stringContaining("threw in the check program's own code"),
+      }),
+    ]);
+    expect(result?.outcome?.unresolvedOutcomes?.map((one) => one.id)).toEqual(["boundary#3"]);
+    const brief =
+      endpoint.requests
+        .map((request) => JSON.stringify(request))
+        .find((text) => text.includes("Effective task contract")) ?? "";
+    expect(brief).toContain("boundary#3, behaviour to keep under requirement boundary");
+    expect(brief).toContain(JSON.stringify(JSON.stringify(elevenQuote)).slice(1, -1));
+    // The supplied suite decides, and the report says that is all accepted means here.
+    expect(result?.outcome?.status).toBe("accepted");
+    expect(stdout).toContain(
+      "this is the supplied contract's reading only: 1 requested outcome(s)",
+    );
+    expect(stdout).toContain(`NO CHECK kept behaviour "${elevenQuote}"`);
   }, 200_000);
 });

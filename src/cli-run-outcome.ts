@@ -11,6 +11,7 @@ import type {
   RequirementOutcome,
   RunOutcomeReport,
   SetupUsage,
+  UnresolvedOutcomeReport,
 } from "./run-outcome-shape.ts";
 import { formatElapsed } from "./tui/elapsed.ts";
 import { formatCost, formatTokens } from "./tui/evidence-panel.ts";
@@ -58,6 +59,8 @@ export interface RunOutcomeInput {
     readonly reason: string;
     readonly nextAction: string;
   }[];
+  /** Requested outcomes no retained check states, as planning reconciled them per outcome. */
+  readonly unresolvedOutcomes?: readonly UnresolvedOutcomeReport[];
   /** Null where no final independent verification ran. */
   readonly finalVerification: FinalVerificationOutcome | null;
   readonly usage: {
@@ -162,8 +165,14 @@ export function describeRunOutcome(input: RunOutcomeInput): readonly string[] {
   const say = (line = "") => lines.push(line);
   const status = outcomeStatus(input);
   const ok = exitCodeForStatus(status) === exitCodes.acceptable;
+  const unresolved = input.unresolvedOutcomes ?? [];
   say();
-  say(`outcome: ${statusLine[status]}`);
+  say(
+    `outcome: ${statusLine[status]}` +
+      (unresolved.length > 0 && ok
+        ? `; this is the supplied contract's reading only: ${unresolved.length} requested outcome(s) read from the task were exercised by no check (below), so it does not show the whole task done`
+        : ""),
+  );
   say(`  requested: ${firstLine(input.task, 160)}`);
   say(
     `  verdict: task ${input.verdict.task}, regression ${input.verdict.behavioral}, ` +
@@ -196,6 +205,7 @@ export function describeRunOutcome(input: RunOutcomeInput): readonly string[] {
           requirement,
           say,
           input.uncovered?.find((one) => one.id === requirement.id),
+          unresolved.filter((one) => one.requirement === requirement.id),
         );
         continue;
       }
@@ -308,6 +318,7 @@ function describePlanned(
   requirement: RequirementOutcome,
   say: (line: string) => void,
   uncovered?: NonNullable<RunOutcomeInput["uncovered"]>[number],
+  unresolved: readonly UnresolvedOutcomeReport[] = [],
 ): void {
   const checks = requirement.generatedChecks ?? [];
   const disagreeing = checks.filter((one) => one.status === "rejected");
@@ -333,6 +344,13 @@ function describePlanned(
         (check.status === "accepted" ? "" : ` (${firstLine(check.detail, 120)})`) +
         "; its expected results are the planner's",
     );
+  // The checks above state other outcomes of this requirement; these have none.
+  for (const one of unresolved) {
+    say(
+      `             NO CHECK ${one.role === "change" ? "change" : "kept behaviour"}${one.quote === null ? "" : ` "${firstLine(one.quote, 100)}"`}: ${firstLine(one.reason, 400)}`,
+    );
+    say(`             next for it: ${firstLine(one.nextAction, 400)}`);
+  }
 }
 
 function nextAction(input: RunOutcomeInput): string {

@@ -25,6 +25,18 @@ export function presetTaskContract(options: {
     readonly reason: string;
     readonly nextAction: string;
   }[];
+  /**
+   * Requested outcomes no retained generated check states, each under its requirement. A
+   * requirement can have a covered outcome beside an unresolved one; only the second is here.
+   */
+  unresolvedOutcomes?: readonly {
+    readonly id: string;
+    readonly requirement: string;
+    readonly quote: string | null;
+    readonly role: "change" | "keep";
+    readonly reason: string;
+    readonly nextAction: string;
+  }[];
 }): TaskContract {
   const { goal } = options;
   const upgrade = goal.preset?.kind === "upgrade" ? goal.preset : undefined;
@@ -34,7 +46,7 @@ export function presetTaskContract(options: {
     taskId: "preset",
     objective:
       options.originalObjective ??
-      `${options.task}\nSealed objective: ${goal.goal}\nRequired behavior: ${JSON.stringify(goal.requirements.map(({ id, description }) => ({ id, description })))}\nPreset: ${JSON.stringify(goal.preset ?? null)}${uncoveredSection(options.uncovered ?? [])}`,
+      `${options.task}\nSealed objective: ${goal.goal}\nRequired behavior: ${JSON.stringify(goal.requirements.map(({ id, description }) => ({ id, description })))}\nPreset: ${JSON.stringify(goal.preset ?? null)}${uncoveredSection(options.uncovered ?? [], options.unresolvedOutcomes ?? [])}`,
     dependsOn: [],
     allowedPaths:
       upgrade === undefined ? ["**"] : [upgrade.manifest, upgrade.lockfile, ...upgrade.sourcePaths],
@@ -50,12 +62,21 @@ export function presetTaskContract(options: {
 
 function uncoveredSection(
   uncovered: NonNullable<Parameters<typeof presetTaskContract>[0]["uncovered"]>,
+  outcomes: NonNullable<Parameters<typeof presetTaskContract>[0]["unresolvedOutcomes"]>,
 ): string {
-  if (uncovered.length === 0) return "";
+  // A requirement with no check at all is named once, by its outcomes where it has any.
+  const requirements = uncovered.filter(
+    (one) => !outcomes.some((outcome) => outcome.requirement === one.id),
+  );
+  if (requirements.length === 0 && outcomes.length === 0) return "";
   return [
     "",
-    "Requirements no generated check covers (the planner's reading of the task; nothing will exercise these for you):",
-    ...uncovered.map(
+    "Requested behaviour no generated check exercises (the planner's reading of the task; nothing will exercise these for you, and another check under the same requirement does not):",
+    ...outcomes.map(
+      (one) =>
+        `- ${one.id}, ${one.role === "change" ? "a change" : "behaviour to keep"} under requirement ${one.requirement}${one.quote === null ? "" : `, quoting the task: ${JSON.stringify(one.quote)}`}. Why: ${one.reason}. Next: ${one.nextAction}.`,
+    ),
+    ...requirements.map(
       (one) =>
         `- ${one.id}${one.quote === null ? "" : `, quoting the task: ${JSON.stringify(one.quote)}`}. Why: ${one.reason}. Next: ${one.nextAction}.`,
     ),

@@ -399,6 +399,41 @@ describe("the run's one status", () => {
     expect(text).toContain("next for it: implement it from the task's words");
   });
 
+  it("scopes an accepted run to the supplied contract and names an unresolved outcome under its covered requirement", () => {
+    // ten-is-small has a generated check that agrees, and a second outcome the planner read from
+    // the same requirement whose only check was refused: accepted stays the supplied contract's.
+    const input = {
+      ...base,
+      verdict: certified,
+      requirements: finished("accepted", "accepted"),
+      gates: cycle([run("tests", "passed"), run("task-acceptance", "passed")]),
+      unresolvedOutcomes: [
+        {
+          id: "ten-is-small#2",
+          requirement: "ten-is-small",
+          quote: 'classify("10") is small too',
+          role: "change" as const,
+          reason: "string-ten: case 1 threw in the check program's own code on the base",
+          nextAction: "implement it from the task's words",
+        },
+      ],
+    };
+    expect(outcomeStatus(input)).toBe("accepted");
+    const text = describeRunOutcome(input).join("\n");
+    expect(text).toContain(
+      "outcome: accepted; this is the supplied contract's reading only: 1 requested outcome(s) read from the task were exercised by no check (below), so it does not show the whole task done",
+    );
+    const below = text.slice(text.indexOf("ten-is-small: 10 is small"));
+    expect(below).toContain("generated check boundary: agrees with the change");
+    expect(below).toContain(
+      `NO CHECK change "classify("10") is small too": string-ten: case 1 threw in the check program's own code on the base`,
+    );
+    // Without one, the line reads as before.
+    expect(describeRunOutcome({ ...input, unresolvedOutcomes: [] }).join("\n")).toContain(
+      "outcome: accepted\n",
+    );
+  });
+
   it("leaves a run of hypotheses alone unjudged, as the same run without planning is", () => {
     const hypotheses = freezeGoalContract({
       ...plannedContract,
