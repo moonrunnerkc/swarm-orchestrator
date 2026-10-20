@@ -24,8 +24,12 @@ Source on `v13-main`; not published until a release names it.
   ran, not that what it examined was correct. The selection is the last three in call order; nothing
   selects by meaning and no model text travels. The worker does not ask for them: one matched
   development pair at that run's repair boundary (`docs/evidence/2026-10-20/repair-handoff/`)
-  delivered the same correct patch with and without them, which by the pair's pre-registered rule
-  is no demonstrated benefit, so they are not a default.
+  delivered the same patch with and without them, which by the pair's pre-registered rule is no
+  demonstrated benefit, so they are not a default. Both arms' patch fixed the known FTP defect and
+  passed the frozen evaluation; a later audit (`audit-url-scheme/`) found it also makes the URL
+  rule's scheme optional before `://`, autolinking `://example.com` where the base does not, which
+  the frozen evaluation did not try. The treatment's lower live token usage in that one pair is an
+  observation, not a benefit attributed to the account.
 
 ### Fixed
 
