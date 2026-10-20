@@ -307,6 +307,8 @@ async function planWithin(
   extend: (byMs: number) => void,
 ): Promise<PlanChecksOutcome> {
   let deadline = plannedDeadline;
+  // Borrowed from implementation once per run, whatever the clarification rounds.
+  let borrowedTotalMs = 0;
   let summary: AdmissionSummary | null = null;
   const spend = (steps: number): PlanningSpend => ({
     planningSessionId: planning.sessionId,
@@ -552,7 +554,8 @@ async function planWithin(
       // is the caller's to keep out of that limit, and the run's total stays as it was.
       const borrowLimitMs = Math.max(0, deps.revisionBorrowLimitMs ?? 0);
       const shortfallMs = Math.max(0, neededMs - remainingMs);
-      const borrowedMs = shortfallMs <= borrowLimitMs ? shortfallMs : 0;
+      const borrowableMs = Math.max(0, borrowLimitMs - borrowedTotalMs);
+      const borrowedMs = shortfallMs <= borrowableMs ? shortfallMs : 0;
       // Scheduling decisions, kept apart from the command time they rest on: admissionMs is what
       // the base run measured; the rest is the controller's arithmetic over the planning deadline.
       const schedule = {
@@ -563,7 +566,7 @@ async function planWithin(
         borrowLimitMs,
         firstRoundStoppedForReserve: stoppedForReserve !== null,
       };
-      if (signal.aborted || shortfallMs > borrowLimitMs) {
+      if (signal.aborted || shortfallMs > borrowableMs) {
         revisionOutcome = {
           outcome: "withheld",
           remainingMs,
@@ -591,6 +594,7 @@ async function planWithin(
         });
       } else {
         if (borrowedMs > 0) {
+          borrowedTotalMs += borrowedMs;
           deadline += borrowedMs;
           extend(deadline - plannedDeadline);
           deps.note(

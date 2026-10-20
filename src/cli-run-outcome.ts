@@ -515,6 +515,15 @@ export function interventionsOn(evidence: EvidenceRecorder): InterventionCounts 
   let promptsAnsweredByPerson = 0;
   let promptsPreApproved = 0;
   let promptsDeclined = 0;
+  // The follow-up owed once the gates were green is an attempt from the cap, and its candidate is
+  // judged as a repair's is, but nothing was failing: it is reported on its own line, not here.
+  const followUpAttempts = new Set(
+    evidence
+      .records()
+      .map((record) => payloads.get(record.payloadDigest) as { rule?: string; attempt?: unknown })
+      .filter((payload) => payload?.rule === "outcome-follow-up-v1")
+      .flatMap((payload) => (typeof payload.attempt === "number" ? [payload.attempt] : [])),
+  );
   for (const record of evidence.records()) {
     const payload = payloads.get(record.payloadDigest) as
       | {
@@ -524,9 +533,15 @@ export function interventionsOn(evidence: EvidenceRecorder): InterventionCounts 
           outcome?: string;
           decidedBy?: string;
           phase?: string;
+          attempt?: number;
         }
       | undefined;
-    if (record.type === "ratchet-decision" && payload?.scope === "retry") repairAttempts += 1;
+    if (
+      record.type === "ratchet-decision" &&
+      payload?.scope === "retry" &&
+      !followUpAttempts.has(payload.attempt ?? -1)
+    )
+      repairAttempts += 1;
     if (record.type === "session-budget" && payload?.rule === "tool-stall-v1") {
       if (payload.intervention === "feedback") stallNotices += 1;
       else if (payload.intervention === "stop") stallStops += 1;
