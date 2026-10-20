@@ -16,6 +16,16 @@ import type { StopReason } from "./termination.ts";
  * text, no judgement about what the model meant. It is bounded, attributed to the harness in its
  * own first line, and carried as tool-output provenance, so it instructs and authorizes nothing.
  * Pure text arithmetic over the transcript, which is why it lives in core (invariant 8).
+ *
+ * It also keeps the last few shell results that printed something and exited zero, as the loop
+ * saw them. The account kept only the commands that printed nothing or failed, so the one thing a
+ * diagnostic loop learns, what its probes printed, was dropped at the handoff: the first repair
+ * attempt of run 20261020T045117-41e2cc measured its own character class against the input three
+ * times (records 477, 483 and the step-40 call), read null each time, and the next attempt's
+ * account carried none of it. What travels is the command, its exit status, a bounded excerpt of
+ * what it printed and the record that holds the whole result, named as a historical observation
+ * of that loop's files; a zero exit status says the command ran, not that what it examined was
+ * right, and the text says so. Nothing selects by meaning: the last ones, in order.
  */
 
 export interface PriorLoopAccount {
@@ -30,11 +40,32 @@ export interface PriorLoopAccount {
     readonly times: number;
   }[];
   readonly emptyShell: readonly { readonly call: string; readonly times: number }[];
+  readonly recentShell: readonly RecentShellResult[];
+}
+
+/** A shell result the loop learned something from: it ran, exited zero and printed something. */
+export interface RecentShellResult {
+  readonly call: string;
+  readonly exitCode: 0;
+  /** What it printed, bounded to `maxResultLines` lines and `maxResultChars` characters. */
+  readonly output: string;
+  /** The evidence record holding the whole result, from the chokepoint's trailer; null if absent. */
+  readonly record: string | null;
+  /** Files a writing call of the same loop landed on after this result, so it predates them. */
+  readonly beforeLaterEdits: readonly string[];
 }
 
 /** How many entries of each kind the account keeps, and how long any one line may be. */
 const maxEntries = 24;
 const maxLineChars = 200;
+/**
+ * How many recent nonempty successful shell results travel, and how much of each. Fixed before
+ * any trial of them was read: three, the last ones in call order, eight lines or 480 characters
+ * of what each printed. Small so the account stays a record and not a transcript.
+ */
+export const maxRecentShellResults = 3;
+const maxResultLines = 8;
+const maxResultChars = 480;
 
 const bounded = (text: string): string =>
   text.length > maxLineChars ? `${text.slice(0, maxLineChars)}...` : text;
@@ -63,17 +94,44 @@ function spell(call: ModelToolCall): string {
   }
 }
 
-const evidenceTrailer = /\n\[evidence record sha256:[0-9a-f]{64} kind [^\]]*\]$/;
+const evidenceTrailer = /\n\[evidence record (sha256:[0-9a-f]{64}) kind [^\]]*\]$/;
 
 function strip(output: string): string {
   return output.replace(evidenceTrailer, "").trim();
 }
 
+function recordOf(output: string): string | null {
+  return evidenceTrailer.exec(output)?.[1] ?? null;
+}
+
+/** Whether a shell result shows a stdout or stderr section: the command printed something. */
+function shellPrinted(text: string): boolean {
+  return /\n(stdout|stderr):\n/.test(`\n${text}`);
+}
+
 /** A shell result the loop learned nothing from: it ran and printed nothing, or it did not run. */
 function shellWasEmpty(output: string): boolean {
   const text = strip(output);
-  const printedNothing = !/\n(stdout|stderr):\n/.test(`\n${text}`);
-  return printedNothing || /^exit code: [1-9]\d*\s*$/m.test(text);
+  return !shellPrinted(text) || /^exit code: [1-9]\d*\s*$/m.test(text);
+}
+
+/**
+ * A shell result that printed and whose recorded status is exit code 0, read from the shell
+ * tool's own first line or from the bounded view's status line. Anything else is not one.
+ */
+function shellPrintedAndExitedZero(output: string): boolean {
+  const text = strip(output);
+  return shellPrinted(text) && /^exit code: 0\s*$/m.test(text);
+}
+
+/** What a shell result printed, after its status lines, bounded. */
+function printedExcerpt(output: string): string {
+  const text = strip(output);
+  const printed = text.slice(text.search(/^(stdout|stderr):$/m));
+  const lines = printed.split("\n");
+  const kept = lines.slice(0, maxResultLines).join("\n");
+  const cut = kept.length > maxResultChars ? kept.slice(0, maxResultChars) : kept;
+  return cut.length < printed.length ? `${cut}...` : cut;
 }
 
 function count(into: Map<string, number>, key: string): void {
@@ -90,6 +148,7 @@ export function priorLoopAccount(
   const emptySearches = new Map<string, number>();
   const refused = new Map<string, { reason: string; times: number }>();
   const emptyShell = new Map<string, number>();
+  const recentShell: { result: RecentShellResult; beforeLaterEdits: string[] }[] = [];
 
   const callsById = new Map<string, ModelToolCall>();
   for (const message of messages)
@@ -115,6 +174,8 @@ export function priorLoopAccount(
       case "write":
       case "edit":
         edits.add(spelled);
+        for (const kept of recentShell)
+          if (!kept.beforeLaterEdits.includes(spelled)) kept.beforeLaterEdits.push(spelled);
         break;
       case "read":
         reads.add(spelled);
@@ -124,6 +185,19 @@ export function priorLoopAccount(
         break;
       case "shell":
         if (shellWasEmpty(outcome.output)) count(emptyShell, spelled);
+        else if (shellPrintedAndExitedZero(outcome.output)) {
+          recentShell.push({
+            result: {
+              call: spelled,
+              exitCode: 0,
+              output: printedExcerpt(outcome.output),
+              record: recordOf(outcome.output),
+              beforeLaterEdits: [],
+            },
+            beforeLaterEdits: [],
+          });
+          if (recentShell.length > maxRecentShellResults) recentShell.shift();
+        }
         break;
       default:
         break;
@@ -139,6 +213,10 @@ export function priorLoopAccount(
     emptySearches: take([...emptySearches].map(([call, times]) => ({ call, times }))),
     refused: take([...refused].map(([call, { reason, times }]) => ({ call, reason, times }))),
     emptyShell: take([...emptyShell].map(([call, times]) => ({ call, times }))),
+    recentShell: recentShell.map((kept) => ({
+      ...kept.result,
+      beforeLaterEdits: [...kept.beforeLaterEdits],
+    })),
   };
 }
 
@@ -171,5 +249,22 @@ export function describePriorLoop(account: PriorLoopAccount): string {
       "- calls that were refused: " +
         account.refused.map((one) => `${one.call}${times(one.times)}: ${one.reason}`).join("; "),
     );
+  if (account.recentShell.length > 0) {
+    lines.push(
+      `- the last ${account.recentShell.length} shell command(s) that printed something and exited 0, ` +
+        "as that loop saw them. These are historical observations of that loop's files at the " +
+        "time, not verification of the workspace now; an exit status of 0 says the command ran, " +
+        "not that what it examined was correct:",
+    );
+    account.recentShell.forEach((one, index) => {
+      const when =
+        one.beforeLaterEdits.length === 0
+          ? "on the files as that loop left them"
+          : `before that loop's later edit of ${one.beforeLaterEdits.join(", ")}`;
+      const record = one.record === null ? "" : `; record ${one.record}`;
+      lines.push(`  ${index + 1}. ${one.call} (exit ${one.exitCode}; ${when}${record}) printed:`);
+      for (const printed of one.output.split("\n")) lines.push(`     ${printed}`);
+    });
+  }
   return lines.join("\n");
 }
