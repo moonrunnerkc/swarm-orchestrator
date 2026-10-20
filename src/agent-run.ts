@@ -624,6 +624,17 @@ async function executeAgentTask(
   let messages = loop.messages;
   // The loop whose account the next repair attempt is handed: the first loop, then each attempt.
   let latestLoop: AgentLoopOutcome = loop;
+  // The run's account as it stood when the follow-up was given: a follow-up whose change is not
+  // kept leaves the tree, and so the lifecycle, of the work it followed up.
+  // Held in an object because the resolve callback sets it, out of the compiler's sight.
+  const followedUp: {
+    before: {
+      readonly stopReason: typeof finalStopReason;
+      readonly completionClaim: string;
+      readonly messages: typeof messages;
+      readonly latestLoop: AgentLoopOutcome;
+    } | null;
+  } = { before: null };
   remainingTokens -= loop.tokensUsed;
   let callsWithUnknownUsage = loop.callsWithUnknownUsage;
   await options.evidence.record({
@@ -744,6 +755,13 @@ async function executeAgentTask(
       const account = describePriorLoop(
         priorLoopAccount(latestLoop.messages, latestLoop.stopReason, latestLoop.steps),
       );
+      if (request.followUp !== undefined)
+        followedUp.before = {
+          stopReason: finalStopReason,
+          completionClaim,
+          messages,
+          latestLoop,
+        };
       const repair = await resolveWithModel(request, options, account, {
         ...loopDependencies,
         ...(alternate == null ? {} : { model: alternate }),
@@ -782,6 +800,18 @@ async function executeAgentTask(
       ? {}
       : { singleFileTestCommand: options.singleFileTestCommand }),
   });
+
+  // A follow-up given and not kept (rolled back, or nothing to judge) changed nothing delivered: a
+  // follow-up that ran out of its wall must not make a finished run read as stopped at its wall.
+  // What it spent stays spent.
+  const followUp = gates.outcome.followUp;
+  const restored = followedUp.before;
+  if (restored !== null && followUp?.state === "given" && followUp.accepted !== true) {
+    finalStopReason = restored.stopReason;
+    completionClaim = restored.completionClaim;
+    messages = restored.messages;
+    latestLoop = restored.latestLoop;
+  }
 
   // An advisory gate that demands a justification is owed one turn to answer it, once the work
   // is otherwise acceptable. Before this, nothing asked: the model was never told, no call

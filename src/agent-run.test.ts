@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -1266,5 +1267,50 @@ describe("the gates after a loop that spent its wall", () => {
     expect(tests?.status).not.toBe("passed");
     expect(result.green).toBe(false);
     expect(Object.values(result.verdict.reasons).join(" ")).toContain("the run was cancelled");
+  }, 60_000);
+});
+
+describe("a follow-up owed once the gates are green", () => {
+  it("leaves a finished run's lifecycle when the follow-up runs out of wall and its change is rolled back", async () => {
+    // The work completes green; the follow-up breaks greet and then answers nothing until its
+    // wall ends it. The ratchet rolls the broken change back, so what is delivered is the finished
+    // work, and the run is not read as stopped at its wall.
+    let calls = 0;
+    const fixture = createFixtureModelClient({
+      modelId: "fixture:worker",
+      turns: [
+        ...goodTurns(stillGreen),
+        respondWithToolCalls("following up", [
+          { callId: "f1", toolName: "write", input: { path: "src/greet.js", content: broken } },
+        ]),
+      ],
+    });
+    const model: ModelClient = {
+      modelId: fixture.modelId,
+      generate: (request) => {
+        calls += 1;
+        if (calls <= 4) return fixture.generate(request);
+        return new Promise((_resolve, reject) => {
+          request.abortSignal.addEventListener("abort", () => reject(request.abortSignal.reason), {
+            once: true,
+          });
+        });
+      },
+    };
+    const result = await task([], {
+      model: createRecordingModelClient(model, evidence),
+      clock: createSystemClock(),
+      attempts: 1,
+      maxWallTimeMs: 20_000,
+      followUp: { identity: "sha256:outcomes", brief: "Requested behaviour no check exercises." },
+    });
+    expect(result.gates.outcome.followUp).toMatchObject({
+      state: "given",
+      attempt: 1,
+      accepted: false,
+    });
+    expect(readFileSync(join(workspace, "src/greet.js"), "utf8")).toBe(stillGreen);
+    expect(result.loop.stopReason).toBe("completed");
+    expect(result.green).toBe(true);
   }, 60_000);
 });
