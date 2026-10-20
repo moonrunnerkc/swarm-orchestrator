@@ -1158,13 +1158,88 @@ describe("a requirement whose only generated check is rejected", () => {
     ]);
     const [reconciled] = await chainRule("planned-coverage-reconciled-v3");
     expect(reconciled?.interpretation).toContainEqual({
-      outcome: expect.any(String),
-      input: "Hello World",
+      requirement: "kept",
       check: "kept-forms",
+      input: "Hello World",
+      version: "2.1",
+      quote: keptQuote,
       from: '"hello-world"',
       to: '"Hello World"',
-      toBase: true,
+      base: '"Hello World"',
+      toRecordedBase: true,
     });
+  });
+
+  it("records the launch's sequence on one check: the example expected, then the base's answer as a change, then dropped", async () => {
+    const outcome = await unresolvedOf([
+      respondWithToolCalls("pinning", [
+        declare(
+          "dashes",
+          "change",
+          "spaces",
+          "slugify turns spaces into dashes",
+          [
+            { input: "a b", expected: "a-b", changed: true },
+            { input: "plain", expected: "plain", changed: false },
+          ],
+          "the task says spaces become dashes",
+        ),
+        declare(
+          "kept-forms",
+          "preserve",
+          "kept",
+          keptQuote,
+          [
+            { input: "plain", expected: "plain" },
+            { input: "Hello World", expected: "hello-world" },
+          ],
+          "the task says these still hold",
+        ),
+        {
+          ...declare(
+            "kept-forms",
+            "change",
+            "kept",
+            keptQuote,
+            [
+              { input: "Hello World", expected: "Hello World", changed: true },
+              { input: "plain", expected: "plain", changed: false },
+            ],
+            "it changes",
+          ),
+          callId: "declare-kept-forms-base",
+        },
+        {
+          ...declare(
+            "kept-forms",
+            "preserve",
+            "kept",
+            '"Hello World" must still read',
+            [
+              { input: "plain", expected: "plain" },
+              { input: "Hi there", expected: "Hi there" },
+            ],
+            "easier",
+          ),
+          callId: "declare-kept-forms-easier",
+        },
+        reviewOf("spaces", ["dashes"]),
+        reviewOf("kept", ["kept-forms"]),
+      ]),
+      respondWithText("pinned"),
+    ]);
+    // The task's example has no check that holds it as asked, whatever the last version admits.
+    expect(outcome.admission?.unresolvedOutcomes.some((one) => one.quote === keptQuote)).toBe(true);
+    const [reconciled] = await chainRule("planned-coverage-reconciled-v3");
+    const trail = (reconciled?.interpretation ?? []) as {
+      version: string;
+      from: string | null;
+      to: string | null;
+    }[];
+    expect(trail.map((one) => [one.version, one.from, one.to])).toEqual([
+      ["1.2", '"hello-world"', '"Hello World"'],
+      ["1.3", '"Hello World"', null],
+    ]);
   });
 
   it("keeps an outcome unresolved when a revision moves its check off the task's own input onto an easier one", async () => {
@@ -1239,12 +1314,15 @@ describe("a requirement whose only generated check is rejected", () => {
     expect(outcome.admission?.unresolvedOutcomes).toEqual([]);
     const [reconciled] = await chainRule("planned-coverage-reconciled-v3");
     expect(reconciled?.interpretation).toContainEqual({
-      outcome: expect.any(String),
-      input: "Hello World",
+      requirement: "kept",
       check: "kept-forms",
+      input: "Hello World",
+      version: "2.1",
+      quote: keptQuote,
       from: '"hello_world"',
       to: '"hello-world"',
-      toBase: false,
+      base: '"Hello World"',
+      toRecordedBase: false,
     });
   });
 

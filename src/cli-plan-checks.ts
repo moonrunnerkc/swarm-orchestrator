@@ -1190,6 +1190,88 @@ function taskInputsOf(
   return found;
 }
 
+/** One change of what a check expects for an input the task names, from one version to the next. */
+interface InterpretationChange {
+  readonly requirement: string;
+  readonly check: string;
+  readonly input: unknown;
+  /** The version that made the change: its planning round and its place among the check's, from 1. */
+  readonly version: string;
+  readonly quote: string | null;
+  /** The previous version's expectation, or null where it did not hold the input. */
+  readonly from: string | null;
+  /** This version's, or null where it no longer holds the input. */
+  readonly to: string | null;
+  /** What a base run gave for the input where it disputed an expectation, as recorded. */
+  readonly base: string | null;
+  /** Whether this version's expectation is exactly that recorded answer. */
+  readonly toRecordedBase: boolean;
+}
+
+/**
+ * Every change, version by version, of what each check expects for each input the task names:
+ * the check's successive programs and cases, whichever outcomes they stated. The launch after D1
+ * moved the task's example from a kept case expecting a link to a changed case expecting the base's
+ * no-link and then off the check; each step was a different outcome, and none of them said so.
+ */
+function interpretationChanges(
+  task: string,
+  declarations: readonly PlannedChecksDeclaration[],
+  contested: readonly ContestedInput[],
+): readonly InterpretationChange[] {
+  const versions = new Map<
+    string,
+    (OutcomeStatement & { readonly requirement: string; readonly round: number })[]
+  >();
+  declarations.forEach((declaration, round) => {
+    for (const outcome of declaration.outcomes ?? [])
+      for (const statement of outcome.statements ?? []) {
+        const known = versions.get(statement.check) ?? [];
+        if (!known.some((one) => one.round === round && one.version === statement.version))
+          known.push({ ...statement, requirement: outcome.requirementId, round });
+        versions.set(statement.check, known);
+      }
+  });
+  const changes: InterpretationChange[] = [];
+  for (const [check, unordered] of versions) {
+    const ordered = [...unordered].sort((a, b) => a.round - b.round || a.version - b.version);
+    const named = ordered
+      .flatMap((one) => one.cases.map((stated) => stated.input))
+      .filter(
+        (asked, at, all) =>
+          namedByTask(task, asked) && all.findIndex((other) => sameInput(other, asked)) === at,
+      );
+    for (const asked of named) {
+      let previous: string | null | undefined;
+      for (const one of ordered) {
+        const now = one.cases.find((stated) => sameInput(stated.input, asked))?.expected ?? null;
+        if (previous === undefined || now === previous) {
+          if (previous === undefined && now !== null) previous = now;
+          continue;
+        }
+        const base =
+          contested.find(
+            (disputed) =>
+              disputed.requirement === one.requirement && sameInput(disputed.input, asked),
+          )?.base ?? null;
+        changes.push({
+          requirement: one.requirement,
+          check,
+          input: asked,
+          version: `${one.round + 1}.${one.version}`,
+          quote: one.quote,
+          from: previous,
+          to: now,
+          base,
+          toRecordedBase: now !== null && now === base,
+        });
+        previous = now;
+      }
+    }
+  }
+  return changes;
+}
+
 /**
  * Coverage per requested outcome once admission and the revision are done. An outcome is covered
  * by a retained check whose latest version still states it and still holds every input the task
@@ -1221,15 +1303,7 @@ function reconcileOutcomes(input: {
     readonly retained: readonly string[];
     readonly covered: boolean;
   }[];
-  readonly interpretation: readonly {
-    readonly outcome: string;
-    readonly input: unknown;
-    readonly check: string;
-    readonly from: string;
-    /** Null where this version of the check no longer holds the input. */
-    readonly to: string | null;
-    readonly toBase: boolean;
-  }[];
+  readonly interpretation: readonly InterpretationChange[];
   readonly unresolved: readonly UnresolvedOutcome[];
 } {
   const supplied = new Set((input.supplied?.requirements ?? []).map((one) => one.id));
@@ -1277,14 +1351,7 @@ function reconcileOutcomes(input: {
   const decided = new Map(input.decisions.map((one) => [one.check, one]));
   const [, ...revised] = input.declarations;
   const redeclared = new Set(revised.flatMap((one) => one.checks.map((check) => check.id)));
-  const interpretation: {
-    outcome: string;
-    input: unknown;
-    check: string;
-    from: string;
-    to: string | null;
-    toBase: boolean;
-  }[] = [];
+  const interpretation = interpretationChanges(input.task, input.declarations, input.contested);
   const outcomes = numberedOutcomes(lineages)
     // A requirement the user supplied is decided by its own checks; one the planner invented and
     // that was dropped as unsupported is reported as such already.
@@ -1303,24 +1370,6 @@ function reconcileOutcomes(input: {
         input.contested,
         lineage.role,
       );
-      for (const asked of taskInputs) {
-        let current = asked.expected;
-        for (const statement of lineage.statements) {
-          const now =
-            statement.cases.find((candidate) => sameInput(candidate.input, asked.input))
-              ?.expected ?? null;
-          if (now === current) continue;
-          interpretation.push({
-            outcome: one.id,
-            input: asked.input,
-            check: statement.check,
-            from: current ?? "(not held)",
-            to: now,
-            toBase: now !== null && now === asked.base,
-          });
-          current = now ?? current;
-        }
-      }
       // Whether the latest version of a check holds a task-named input as it was asked, in either
       // role: a reclassification moves the input from a kept case to a changed one and keeps it.
       const holding = (id: string, asked: TaskInput): boolean => {

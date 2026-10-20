@@ -860,11 +860,13 @@ describe("the statements an outcome keeps", () => {
         statements: [
           {
             check: "example",
+            version: 1,
             quote: null,
             cases: [{ input: "(See hTtPS://x.)", expected: '{"hasLink":true}', role: "keep" }],
           },
           {
             check: "example",
+            version: 2,
             quote: null,
             cases: [{ input: "<hTtPS://x>", expected: '{"hasLink":true}', role: "keep" }],
           },
