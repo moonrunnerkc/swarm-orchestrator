@@ -1311,7 +1311,7 @@ describe("a requirement whose only generated check is rejected", () => {
     expect(outcome.admission?.unresolvedOutcomes).toEqual([]);
     const [reconciled] = await chainRule("planned-coverage-reconciled-v3");
     const restated = (
-      reconciled?.outcomes as { requirement: string; restatedAs: unknown[]; role: string }[]
+      (reconciled?.outcomes ?? []) as { requirement: string; restatedAs: unknown[]; role: string }[]
     )
       .filter((one) => one.requirement !== "spaces")
       .map((one) => [one.requirement, one.role, one.restatedAs.length]);
