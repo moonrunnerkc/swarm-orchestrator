@@ -978,6 +978,42 @@ describe("an answer the model already has", () => {
   });
 });
 
+describe("a call repeated after an edit", () => {
+  it("is answered through the chokepoint, not replaced by the notice, when the answer is unchanged", async () => {
+    // A listing whose answer the edit does not change: the file set is the same before and after.
+    const listing = (callId: string) =>
+      respondWithToolCalls("checking", [{ callId, toolName: "list", input: { path: "src" } }]);
+    const fixture = createFixtureModelClient({
+      modelId: "fixture:worker",
+      turns: [
+        respondWithToolCalls("declare", [
+          { callId: "declare", toolName: "declare_file_set", input: { files: ["src/greet.js"] } },
+        ]),
+        listing("before"),
+        respondWithToolCalls("change", [
+          {
+            callId: "edit",
+            toolName: "edit",
+            input: { path: "src/greet.js", find: "'hello'", replace: "'hi'" },
+          },
+        ]),
+        listing("after"),
+        respondWithText("done"),
+      ],
+    });
+    await task([], { maxSteps: 8, model: createRecordingModelClient(fixture, evidence) });
+    const lastToolOutput = (request: ModelRequest): string => {
+      const turn = request.messages.findLast((message) => message.role === "tool");
+      return turn?.role === "tool" ? (turn.outcomes[0]?.output ?? "") : "";
+    };
+    expect(lastToolOutput(fixture.requests[2] as ModelRequest)).toContain("greet.js");
+    expect(lastToolOutput(fixture.requests[4] as ModelRequest)).toContain("greet.js");
+    expect(lastToolOutput(fixture.requests[4] as ModelRequest)).not.toContain(
+      "[harness notice: already answered]",
+    );
+  });
+});
+
 describe("a repair attempt with no usable budget", () => {
   it("is withheld on the record and ends the attempts, rather than run empty and measured", async () => {
     const result = await task(

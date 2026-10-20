@@ -8,10 +8,15 @@
  * watches the sequence of tool calls for a call whose result the model has already seen.
  *
  * Progress is novelty: a call and result the recent window has not seen. A poll whose output
- * changes is novel every time. A reread after an edit is novel, because the edit was, and so is
- * the reread when the file changed. A denied call retried unchanged is not, and neither is the
- * same inspection repeated with the same answer. Nothing here reads the output's meaning; a
- * result is compared by a hash so no copy of it is retained (the ledger already holds it).
+ * changes is novel every time. A reread after an edit is novel, because the edit was: a call
+ * that writes and lands starts a new workspace, and an answer given about the old one is not an
+ * answer the model has about this one, even when the two happen to read the same. The repair
+ * attempt of 2026-10-20 (run 20261020T045117-41e2cc, records 530 to 598) was told its rerun of
+ * the build and check after an edit was already answered and that nothing had changed since; the
+ * edit had. A denied call retried unchanged is not novel, and neither is the same inspection
+ * repeated with the same answer and no write between, nor the same write repeated. Nothing here
+ * reads the output's meaning; a result is compared by a hash so no copy of it is retained (the
+ * ledger already holds it). Which calls write is the caller's to say: this module knows no tool.
  *
  * Pure text arithmetic, so it belongs in core and costs nothing ambient (invariant 8).
  */
@@ -35,6 +40,11 @@ export interface ToolObservation {
   readonly input: unknown;
   readonly failed: boolean;
   readonly output: string;
+  /**
+   * Whether this call changes workspace files when it succeeds, as the chokepoint classes it.
+   * Absent is false: the call is an inspection, answered about the workspace as it stands.
+   */
+  readonly writes?: boolean;
 }
 
 export interface StallDetected {
@@ -75,12 +85,17 @@ const evidenceTrailer = /\n\[evidence record sha256:[0-9a-f]{64} kind [^\]]*\]$/
 export function createStallTracker(policy: StallPolicy = defaultStallPolicy): StallTracker {
   const seen: string[] = [];
   let repeats = 0;
+  // Which workspace an inspection's answer is about. Every write that lands starts the next
+  // one, so an inspection repeated after it is compared with nothing from before it. A write
+  // is keyed without it: the same write repeated with the same answer is still a repeat.
+  let generation = 0;
   return {
     observe(observation) {
-      const key = observationKey(observation);
+      const key = observationKey(observation, observation.writes === true ? null : generation);
       const novel = !seen.includes(key);
       seen.push(key);
       if (seen.length > policy.window) seen.shift();
+      if (observation.writes === true && !observation.failed) generation += 1;
       if (novel) {
         repeats = 0;
         return null;
@@ -116,14 +131,15 @@ export function repeatedAnswerNotice(toolName: string, output: string, repeats: 
     `[harness notice: already answered] This ${toolName} call is identical to one answered ` +
     `earlier in this conversation (${repeats === 1 ? "once" : `${repeats} times`} now), and its ` +
     `result is unchanged; it began: ${JSON.stringify(excerpt(output))}. The full result is above. ` +
-    "Nothing in the workspace changed since. Act on the answer you have: make the edit it calls " +
+    "No writing tool call has landed since. Act on the answer you have: make the edit it calls " +
     "for, try a different approach, or finish with a summary that names exactly what is blocking you."
   );
 }
 
-function observationKey(observation: ToolObservation): string {
+function observationKey(observation: ToolObservation, generation: number | null): string {
   const output = observation.output.replace(evidenceTrailer, "");
   return [
+    generation === null ? "write" : String(generation),
     observation.toolName,
     stableJson(observation.input),
     observation.failed ? "failed" : "ok",
@@ -169,8 +185,8 @@ export const stallNoticePrefix = "[harness notice: repeated tool calls]";
 export function stallNotice(stall: StallDetected): string {
   return (
     `${stallNoticePrefix} The last ${stall.repeats + 1} ${stall.toolName} calls were calls ` +
-    "you had already made, with results you had already received, and nothing in the workspace " +
-    `changed between them. The repeated call was ${stall.toolName} ${stall.input} and its ` +
+    "you had already made, with results you had already received, and no writing tool call " +
+    `landed between them. The repeated call was ${stall.toolName} ${stall.input} and its ` +
     `answer each time began: ${JSON.stringify(stall.output)}. Repeating it again will not change ` +
     "the answer: a search that matched nothing names something that is not in this workspace, " +
     "so stop looking for it and work from the files you have already read. Act on the result " +

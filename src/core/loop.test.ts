@@ -827,6 +827,44 @@ describe("a loop that repeats itself", () => {
     expect(harness.events.some((event) => event.type === "stall")).toBe(false);
   });
 
+  it("answers a call repeated after an edit even when its answer is unchanged, and notices the one repeated with no edit between", async () => {
+    const check = (callId: string) =>
+      respondWithToolCalls("checking", [
+        { callId, toolName: "shell", input: { command: "npm run build && node check.mjs" } },
+      ]);
+    const harness = createHarness(
+      [
+        check("before"),
+        respondWithToolCalls("edit", [
+          {
+            callId: "w",
+            toolName: "edit",
+            input: { path: "src/rules.ts", find: "a", replace: "b" },
+          },
+        ]),
+        check("after"),
+        check("again"),
+        respondWithText("done"),
+      ],
+      {
+        toolInvoker: createRecordingToolInvoker((invocation) =>
+          invocation.toolName === "edit" ? "replaced 1 occurrence(s)" : unchanged(),
+        ),
+        stall: { writers: ["edit", "write"] },
+      },
+    );
+    const outcome = await runAgentLoop("fix the check", harness.deps);
+    expect(outcome.stopReason).toBe("completed");
+    const answers = outcome.messages
+      .filter((message) => message.role === "tool")
+      .map((message) => (message.role === "tool" ? (message.outcomes[0]?.output ?? "") : ""));
+    expect(answers[2]).toContain("exit code: 0");
+    expect(answers[2]).not.toContain("already answered");
+    expect(answers[3]).toContain("[harness notice: already answered]");
+    expect(answers[3]).toContain("No writing tool call has landed since");
+    expect(harness.events.some((event) => event.type === "stall")).toBe(false);
+  });
+
   it("grants no second notice to a run taken up again with the first in its history", async () => {
     const first = createHarness(
       Array.from({ length: 5 }, (_, index) => inspect(`c${index}`)),

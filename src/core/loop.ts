@@ -72,6 +72,12 @@ export interface AgentLoopDependencies {
     | {
         readonly policy?: StallPolicy;
         readonly observe?: (event: StallIntervention) => Promise<void>;
+        /**
+         * The tools whose successful call changes workspace files, by name, as the caller's
+         * chokepoint classes them. An inspection repeated after one of these has landed is a
+         * new question; absent, every call is read as an inspection.
+         */
+        readonly writers?: readonly string[];
       }
     | false;
 }
@@ -126,6 +132,7 @@ export async function runAgentLoop(
   const deadline = startedAt + deps.budget.maxWallTimeMs;
   const messages: ConversationMessage[] = [...(deps.history ?? []), { role: "user", text: task }];
   const stalls = deps.stall === false ? null : createStallTracker(deps.stall?.policy);
+  const writers = new Set(deps.stall === false ? [] : (deps.stall?.writers ?? []));
   // A notice given before a resume is still the one notice: the allowance travels with the
   // conversation, so taking a run up again does not grant it another round of repeats.
   let stallNotices = (deps.history ?? []).filter(
@@ -333,6 +340,7 @@ export async function runAgentLoop(
           input: call.input,
           failed: outcome.failed,
           output: outcome.output,
+          writes: writers.has(call.toolName),
         }) ?? stalled;
       // A call already made, with the answer already received: the model is handed the
       // notice in the answer's place rather than the answer again. The chokepoint ran the

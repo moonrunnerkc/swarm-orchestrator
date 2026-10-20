@@ -152,6 +152,64 @@ describe("the stall tracker", () => {
   });
 });
 
+describe("an answer given before an edit", () => {
+  const edit = (n: number, failed = false) => ({
+    toolName: "edit",
+    input: { path: "src/rules.ts", find: "a", replace: "b" },
+    failed,
+    output: failed
+      ? `no occurrence of the search text in src/rules.ts${trailer(n)}`
+      : `replaced 1 occurrence(s) in src/rules.ts${trailer(n)}`,
+    writes: true,
+  });
+
+  it("is not an answer the model has about the workspace after it, even when the answer is unchanged", () => {
+    // The planned-check trial of 2026-10-20 (run 20261020T045117-41e2cc, records 530, 591 and
+    // 597): the build and visible check ran, the file was edited, and the same build and check
+    // ran again with the same output. The second run was a new answer about a new workspace.
+    const tracker = createStallTracker();
+    expect(tracker.observe(inspection(1))).toBeNull();
+    expect(tracker.observe(edit(2))).toBeNull();
+    expect(tracker.observe(inspection(3))).toBeNull();
+    expect(tracker.repeats()).toBe(0);
+  });
+
+  it("stays an answer the model has when the edit between did not land", () => {
+    const tracker = createStallTracker();
+    tracker.observe(inspection(1));
+    tracker.observe(edit(2, true));
+    tracker.observe(inspection(3));
+    expect(tracker.repeats()).toBe(1);
+  });
+
+  it("still counts the same inspection repeated with no edit between, and the same edit repeated", () => {
+    const tracker = createStallTracker();
+    tracker.observe(edit(1));
+    for (let n = 2; n <= 4; n += 1) tracker.observe(inspection(n));
+    expect(tracker.repeats()).toBe(2);
+    // A write repeated byte for byte with the same answer is a repeat whatever it landed on:
+    // the alternative, forgetting everything at every write, would never count one.
+    const writes = createStallTracker();
+    writes.observe(edit(1));
+    writes.observe(edit(2));
+    expect(writes.repeats()).toBe(1);
+  });
+
+  it("names what the harness knows in the notice: no writing call has landed, not that nothing changed", () => {
+    const notice = repeatedAnswerNotice("shell", `exit code: 0${trailer(1)}`, 1);
+    expect(notice).toContain("No writing tool call has landed since");
+    expect(notice).not.toContain("Nothing in the workspace changed");
+    const stall = stallNotice({
+      toolName: "shell",
+      repeats: 3,
+      input: "{}",
+      output: "exit code: 0",
+    });
+    expect(stall).toContain("no writing tool call landed between them");
+    expect(stall).not.toContain("nothing in the workspace changed");
+  });
+});
+
 describe("what the tracker says between stalls", () => {
   it("counts the repeats as they happen, and forgets them all when told the answers are gone", () => {
     const tracker = createStallTracker();
