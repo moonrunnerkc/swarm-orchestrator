@@ -10,4 +10,4 @@ of [README.md](README.md) section 4 used no model and are not launches.
 
 | # | configuration | build | manifest | started (UTC) | readiness | agent minutes | usage | outcome |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | Swarm with `--plan-checks`, `marked-bugfix-www-case` | `826e60e83` (product source `005d5eb8d`; `~/.cache/swarm-comparison/tools/swarm-826e60e83`) | [manifest-plan-checks.json](manifest-plan-checks.json) | entered before the launch; filled in after | | | | |
+| 1 | Swarm with `--plan-checks`, `marked-bugfix-www-case` | `826e60e83` (product source `005d5eb8d`; `~/.cache/swarm-comparison/tools/swarm-826e60e83`) | [manifest-plan-checks.json](manifest-plan-checks.json) (`sha256:a440cbd13050...`, `dist/` tree `sha256:4a7d6f655d0c...`, 862 files) | entered 2026-10-20 ~05:00 before the launch; filled in after | | | | |
