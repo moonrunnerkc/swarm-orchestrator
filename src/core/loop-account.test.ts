@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describePriorLoop, priorLoopAccount } from "./loop-account.ts";
+import { describePriorLoop, maxRecentShellResults, priorLoopAccount } from "./loop-account.ts";
 import type { ConversationMessage } from "./model-client.ts";
 
 const trailer = (n: number) =>
@@ -186,7 +186,8 @@ describe("the recent shell results the account carries", () => {
         6,
       ),
     ];
-    const account = priorLoopAccount(messages, "max-steps", 6);
+    const carrying = { recentShellResults: maxRecentShellResults };
+    const account = priorLoopAccount(messages, "max-steps", 6, carrying);
     expect(account.recentShell.map((one) => one.call)).toEqual([
       "node -e \"console.log(/^[fF][pP]/.exec('ftp'))\"",
       "node -e \"console.log(/^[fF][pP][tT]/.exec('ftp'))\"",
@@ -236,7 +237,7 @@ describe("the recent shell results the account carries", () => {
       ),
       ...printed("b", "npm run build", "exit code: 0\nstdout:\nbuilt", 2),
     ];
-    const account = priorLoopAccount(messages, "completed", 4);
+    const account = priorLoopAccount(messages, "completed", 4, { recentShellResults: 3 });
     expect(account.recentShell.map((one) => one.beforeLaterEdits)).toEqual([["src/rules.ts"], []]);
     const first = account.recentShell[0]?.output ?? "";
     expect(first.split("\n").length).toBeLessThanOrEqual(9);
@@ -252,21 +253,45 @@ describe("the recent shell results the account carries", () => {
       "[output view: the full output is 25,049 characters in 53 lines, kept on evidence record sha256:" +
       `${"a".repeat(64)} (kind tool-call:shell); lines 14 to 49 omitted. recorded status: exit code 0, not timed out.]` +
       "\nexit code: 0\nstdout:\n> marked test\n[... lines 14 to 49 omitted ...]\n1713 passing";
-    const account = priorLoopAccount([...printed("v", "npm test", view, 9)], "completed", 1);
+    const account = priorLoopAccount([...printed("v", "npm test", view, 9)], "completed", 1, {
+      recentShellResults: 3,
+    });
     expect(account.recentShell).toHaveLength(1);
     expect(account.recentShell[0]?.output).toBe(
       "stdout:\n> marked test\n[... lines 14 to 49 omitted ...]\n1713 passing",
     );
     // The shared transcript's `echo rc=$?` printed and exited 0, so it qualifies; a loop whose
     // shell calls all failed or printed nothing carries no such line.
-    expect(describePriorLoop(priorLoopAccount(transcript, "stalled", 9))).toContain(
-      '1. grep -rn "emitWsNeeded" lib/; echo rc=$? (exit 0;',
-    );
+    expect(
+      describePriorLoop(priorLoopAccount(transcript, "stalled", 9, { recentShellResults: 3 })),
+    ).toContain('1. grep -rn "emitWsNeeded" lib/; echo rc=$? (exit 0;');
     const silent: ConversationMessage[] = [
       ...exchange("s", "shell", { command: "grep -rn x lib/" }, "exit code: 1"),
     ];
-    expect(describePriorLoop(priorLoopAccount(silent, "stalled", 1))).not.toContain(
+    expect(
+      describePriorLoop(priorLoopAccount(silent, "stalled", 1, { recentShellResults: 3 })),
+    ).not.toContain("printed something and exited 0");
+  });
+
+  it("carries none unless asked, which is the default the worker uses, and never more than three", () => {
+    // The matched pair of 2026-10-20 delivered the same correct patch with and without them, so
+    // the results are not a default; an experiment names the number it wants, bounded above.
+    expect(priorLoopAccount(transcript, "stalled", 9).recentShell).toEqual([]);
+    expect(describePriorLoop(priorLoopAccount(transcript, "stalled", 9))).not.toContain(
       "printed something and exited 0",
     );
+    const many: ConversationMessage[] = Array.from({ length: 6 }, (_, index) =>
+      exchange(
+        `m${index}`,
+        "shell",
+        { command: `echo ${index}` },
+        `exit code: 0\nstdout:\n${index}`,
+      ),
+    ).flat();
+    expect(
+      priorLoopAccount(many, "completed", 6, { recentShellResults: 10 }).recentShell.map(
+        (one) => one.call,
+      ),
+    ).toEqual(["echo 3", "echo 4", "echo 5"]);
   });
 });

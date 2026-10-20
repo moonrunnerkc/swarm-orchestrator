@@ -16,7 +16,11 @@
  * The reconstruction is checked: the control revision's text must equal, byte for byte, the
  * account the second attempt was actually handed (the brief at R 513), or this exits 2.
  *
- *   node account-from-records.mjs <restored sessions dir> --out <file> [--module <loop-account.ts>] [--check-against-brief]
+ *   node account-from-records.mjs <restored sessions dir> --out <file> [--module <loop-account.ts>]
+ *     [--recent-shell-results 3] [--check-against-brief]
+ *
+ * The treatment build afa2deedc carried the results by default; the builder after the pair carries
+ * them only when asked, so `--recent-shell-results 3` reproduces that build's account.
  */
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -29,6 +33,7 @@ const { values, positionals } = parseArgs({
   options: {
     out: { type: "string" },
     module: { type: "string", default: "../../../../src/core/loop-account.ts" },
+    "recent-shell-results": { type: "string", default: "0" },
     "check-against-brief": { type: "boolean", default: false },
   },
 });
@@ -101,7 +106,9 @@ if (stopped.stopReason !== "max-steps" || stopped.steps !== 40)
 
 const modulePath = resolve(import.meta.dirname, values.module);
 const { describePriorLoop, priorLoopAccount } = await import(pathToFileURL(modulePath).href);
-const account = priorLoopAccount(messages, stopped.stopReason, stopped.steps);
+const account = priorLoopAccount(messages, stopped.stopReason, stopped.steps, {
+  recentShellResults: Number(values["recent-shell-results"]),
+});
 const text = describePriorLoop(account);
 writeFileSync(values.out, `${text}\n`);
 
