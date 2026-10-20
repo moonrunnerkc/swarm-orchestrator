@@ -14,6 +14,35 @@ export function presetTaskContract(options: {
   maxSteps: number;
   maxWallMs: number;
   network: "denied" | "unrestricted";
+  /**
+   * Planned requirements no retained generated check covers, as planning reconciled them. They
+   * stay in the brief with why and what to do: a rejected check is a rejected instrument, and the
+   * behaviour the task asked for is still part of the work. Labelled as the planner's reading.
+   */
+  uncovered?: readonly {
+    readonly id: string;
+    readonly quote: string | null;
+    readonly reason: string;
+    readonly nextAction: string;
+  }[];
+  /**
+   * Requested outcomes no retained generated check states, each under its requirement. A
+   * requirement can have a covered outcome beside an unresolved one; only the second is here.
+   */
+  unresolvedOutcomes?: readonly {
+    readonly id: string;
+    readonly requirement: string;
+    readonly quote: string | null;
+    readonly role: "change" | "keep";
+    /** Inputs the task names that the outcome was stated with, and what was seen for each. */
+    readonly taskInputs?: readonly {
+      readonly input: unknown;
+      readonly expected: string;
+      readonly base: string | null;
+    }[];
+    readonly reason: string;
+    readonly nextAction: string;
+  }[];
 }): TaskContract {
   const { goal } = options;
   const upgrade = goal.preset?.kind === "upgrade" ? goal.preset : undefined;
@@ -23,7 +52,7 @@ export function presetTaskContract(options: {
     taskId: "preset",
     objective:
       options.originalObjective ??
-      `${options.task}\nSealed objective: ${goal.goal}\nRequired behavior: ${JSON.stringify(goal.requirements.map(({ id, description }) => ({ id, description })))}\nPreset: ${JSON.stringify(goal.preset ?? null)}`,
+      `${options.task}\nSealed objective: ${goal.goal}\nRequired behavior: ${JSON.stringify(goal.requirements.map(({ id, description }) => ({ id, description })))}\nPreset: ${JSON.stringify(goal.preset ?? null)}${uncoveredSection(options.uncovered ?? [], options.unresolvedOutcomes ?? [])}`,
     dependsOn: [],
     allowedPaths:
       upgrade === undefined ? ["**"] : [upgrade.manifest, upgrade.lockfile, ...upgrade.sourcePaths],
@@ -35,6 +64,35 @@ export function presetTaskContract(options: {
     riskTier: "medium",
     scopeAuthority: "human",
   });
+}
+
+function uncoveredSection(
+  uncovered: NonNullable<Parameters<typeof presetTaskContract>[0]["uncovered"]>,
+  outcomes: NonNullable<Parameters<typeof presetTaskContract>[0]["unresolvedOutcomes"]>,
+): string {
+  // A requirement with no check at all is named once, by its outcomes where it has any.
+  const requirements = uncovered.filter(
+    (one) => !outcomes.some((outcome) => outcome.requirement === one.id),
+  );
+  if (requirements.length === 0 && outcomes.length === 0) return "";
+  return [
+    "",
+    "Requested behaviour no generated check exercises (the planner's reading of the task; nothing will exercise these for you, and another check under the same requirement does not):",
+    ...outcomes.map(
+      (one) =>
+        `- ${one.id}, ${one.role === "change" ? "a change" : "behaviour to keep"} under requirement ${one.requirement}${one.quote === null ? "" : `, quoting the task: ${JSON.stringify(one.quote)}`}.` +
+        // The task's own input, by name: a requirement's description is whichever check declared it
+        // last, and the launch that found this told its worker about angle-bracket links instead.
+        ((one.taskInputs ?? []).length === 0
+          ? ""
+          : ` The task's own input: ${(one.taskInputs ?? []).map((asked) => `${JSON.stringify(asked.input)} (the planner first expected ${asked.expected}${asked.base === null ? "" : `; the unchanged base gives ${asked.base}`})`).join(", ")}.`) +
+        ` Why: ${one.reason}. Next: ${one.nextAction}.`,
+    ),
+    ...requirements.map(
+      (one) =>
+        `- ${one.id}${one.quote === null ? "" : `, quoting the task: ${JSON.stringify(one.quote)}`}. Why: ${one.reason}. Next: ${one.nextAction}.`,
+    ),
+  ].join("\n");
 }
 
 /** The sealed contract a run was handed, or an error that names the file and what is wrong with it. */

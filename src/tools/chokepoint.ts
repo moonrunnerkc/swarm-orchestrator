@@ -19,7 +19,9 @@ import {
   type DerivationAssessment,
   type DerivationHeuristic,
 } from "./derivation.ts";
+import { outputView } from "./output-view.ts";
 import type { PolicyGuard } from "./policy-guard.ts";
+import { recordedOutputToolName } from "./recorded-output-tool.ts";
 import {
   type DecodedToolArguments,
   decodeStringifiedToolArguments,
@@ -149,13 +151,22 @@ export function createToolChokepoint(deps: ChokepointDependencies): ToolInvoker 
           facts,
           derivation: assessment,
         });
-        const body = decision === "allowed" ? output : `${decision}: ${detail}`;
+        const recordKind = recordKindOf("tool-call", { toolName: invocation.toolName });
+        // The ledger holds the output as captured; a long command output reaches the model as a
+        // bounded view of it with the recorded status and this reference, so one verbose command
+        // is not resent whole on every later call. The omitted lines come back by reference.
+        const body =
+          decision !== "allowed"
+            ? `${decision}: ${detail}`
+            : ((kind === "shell"
+                ? outputView({ text: output, facts, record: digest, kind: recordKind })
+                : null) ?? output);
         return {
           callId: invocation.callId,
           toolName: invocation.toolName,
           // The digest trailer is how the model learns which record it may cite in a claim,
           // and the kind is how it learns what that record is allowed to be evidence of.
-          output: `${body}\n[evidence record ${digest} kind ${recordKindOf("tool-call", { toolName: invocation.toolName })}]`,
+          output: `${body}\n[evidence record ${digest} kind ${recordKind}]`,
           failed: decision !== "allowed",
         };
       };
@@ -321,7 +332,12 @@ function observeUntrusted(
   toolName: string,
   text: string,
 ): void {
-  if (definition.kind !== "read" && definition.kind !== "shell") {
+  // A recorded output read back is tool output again, as untrusted as when the command printed it.
+  if (
+    definition.kind !== "read" &&
+    definition.kind !== "shell" &&
+    definition.name !== recordedOutputToolName
+  ) {
     return;
   }
   derivation.observe(text, {

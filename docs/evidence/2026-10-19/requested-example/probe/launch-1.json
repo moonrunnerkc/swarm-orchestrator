@@ -1,0 +1,68 @@
+{
+  "tree": "base with the patch",
+  "commit": "e3c0d3e208c80daca2c9fbb68f125f060cd30fc3",
+  "patchDigest": "sha256:723f261ffb4db452eb73a5ff34fb27fc5505a0db6ac48838dbb89c15254d97d8",
+  "referenceDigest": "sha256:5a0cb1888b4a93fa168ecc282cc781cd50c799c685d4722d98138d906121a5cd",
+  "behaviours": [
+    {
+      "id": "example-mixed-case-scheme",
+      "input": "(See hTtPS://example.com/fhqwhgads.)",
+      "html": "<p>(See hTtPS://example.com/fhqwhgads.)</p>\n",
+      "matchesUpstream": false
+    },
+    {
+      "id": "ftp-bare",
+      "input": "ftp://example.com/file",
+      "html": "<p><a href=\"ftp://example.com/file\">ftp://example.com/file</a></p>\n",
+      "matchesUpstream": true
+    },
+    {
+      "id": "ftp-in-text",
+      "input": "Get it at ftp://files.example.com/a.txt today.",
+      "html": "<p>Get it at <a href=\"ftp://files.example.com/a.txt\">ftp://files.example.com/a.txt</a> today.</p>\n",
+      "matchesUpstream": true
+    },
+    {
+      "id": "http-in-text",
+      "input": "Read http://example.com/page now.",
+      "html": "<p>Read <a href=\"http://example.com/page\">http://example.com/page</a> now.</p>\n",
+      "matchesUpstream": true
+    },
+    {
+      "id": "https-upper-start",
+      "input": "HTTP://FOO.COM",
+      "html": "<p><a href=\"HTTP://FOO.COM\">HTTP://FOO.COM</a></p>\n",
+      "matchesUpstream": true
+    },
+    {
+      "id": "www-lower",
+      "input": "www.example.com",
+      "html": "<p><a href=\"http://www.example.com\">www.example.com</a></p>\n",
+      "matchesUpstream": true
+    },
+    {
+      "id": "www-mixed",
+      "input": "Www.example.com",
+      "html": "<p>Www.example.com</p>\n",
+      "matchesUpstream": true
+    },
+    {
+      "id": "www-upper",
+      "input": "WWW.example.com",
+      "html": "<p>WWW.example.com</p>\n",
+      "matchesUpstream": true
+    },
+    {
+      "id": "email",
+      "input": "foo@bar.baz",
+      "html": "<p><a href=\"mailto:foo@bar.baz\">foo@bar.baz</a></p>\n",
+      "matchesUpstream": true
+    },
+    {
+      "id": "angle-mixed-case-scheme",
+      "input": "<hTtPS://example.com/>",
+      "html": "<p><a href=\"hTtPS://example.com/\">hTtPS://example.com/</a></p>\n",
+      "matchesUpstream": true
+    }
+  ]
+}

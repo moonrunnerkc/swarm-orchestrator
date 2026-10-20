@@ -1,0 +1,299 @@
+{
+  "runId": "20261019T215306-b22bb8",
+  "record": {
+    "hidden": {
+      "verdict": "fail",
+      "basis": "hidden tests (node --test --test-reporter=spec --test-name-pattern=autolinks test/run-spec-tests.js) exited 1",
+      "detailDigest": "sha256:a66a8a1f395304e53960d403139d1b0b43ec081045296a92a791e4d91dfc48d1"
+    },
+    "claimedSuccess": true,
+    "exitCode": 0,
+    "wallMs": 567461,
+    "tokens": {
+      "agentWallMs": 567461,
+      "tokens": 2317080,
+      "tokensUnknownInvocations": 0
+    },
+    "finalPatchDigest": "sha256:a8f585bcf11619e8403a1ec3c48c5f424019e278b910af3715d063a97e445912"
+  },
+  "planning": {
+    "outcome": "sealed",
+    "durationMs": 283167,
+    "tokensUsed": 1175066,
+    "admitted": [
+      "email-autolink-preserve",
+      "www-case-sensitive",
+      "scheme-autolink-case-insensitive"
+    ],
+    "dropped": [
+      {
+        "check": "https-mixed-case-link",
+        "reason": "it fails on the base: case(s) 1 do not give their expected results there. That is a disagreement with the base, not a finding that the requested behaviour is wrong: either an expectation misreads what the base does and is corrected, or the task asks for an outcome the base does not give yet, which makes the case a change (changed: true in a change check, with the task's words in why). The task names the input of case 1 itself, so the outcome it states there may be the one it asks for."
+      }
+    ],
+    "uncovered": [],
+    "revision": {
+      "neededMs": 97524,
+      "outcome": "withheld",
+      "remainingMs": 52880
+    },
+    "coverage": {
+      "quotedByAdmitted": [
+        2,
+        3,
+        4
+      ],
+      "quotedWithoutCheck": [],
+      "sentences": 6
+    }
+  },
+  "decisions": [
+    {
+      "check": "www-case-sensitive",
+      "atBase": "fails",
+      "finding": "unestablished-control",
+      "reclassified": false,
+      "disagreements": null
+    },
+    {
+      "check": "scheme-autolink-case-insensitive",
+      "atBase": "passes",
+      "finding": "disagrees-with-base",
+      "reclassified": false,
+      "disagreements": [
+        {
+          "base": "false",
+          "case": 1,
+          "expected": "true",
+          "input": "hTtPS://example.com/fhqwhgads.",
+          "namedByTask": true
+        },
+        {
+          "base": "false",
+          "case": 3,
+          "expected": "true",
+          "input": "HTTP://FOO.COM",
+          "namedByTask": false
+        }
+      ]
+    },
+    {
+      "check": "https-mixed-case-link",
+      "atBase": "passes",
+      "finding": "disagrees-with-base",
+      "reclassified": false,
+      "disagreements": [
+        {
+          "base": "{\"threw\":true}",
+          "case": 1,
+          "expected": "true",
+          "input": "(See hTtPS://example.com/fhqwhgads.)",
+          "namedByTask": true
+        }
+      ]
+    },
+    {
+      "check": "email-autolink-preserve",
+      "atBase": "passes",
+      "finding": "disagrees-with-base",
+      "reclassified": false,
+      "disagreements": [
+        {
+          "base": "{\"threw\":true}",
+          "case": 1,
+          "expected": "true",
+          "input": "foo@bar.baz",
+          "namedByTask": false
+        },
+        {
+          "base": "{\"threw\":true}",
+          "case": 2,
+          "expected": "true",
+          "input": "hello+xyz@mail.example is valid.",
+          "namedByTask": false
+        }
+      ]
+    },
+    {
+      "check": "https-mixed-case-link",
+      "atBase": "passes",
+      "finding": "disagrees-with-base",
+      "reclassified": false,
+      "disagreements": [
+        {
+          "base": "{\"threw\":true}",
+          "case": 1,
+          "expected": "true",
+          "input": "(See hTtPS://example.com/fhqwhgads.)",
+          "namedByTask": true
+        }
+      ]
+    },
+    {
+      "check": "email-autolink-preserve",
+      "atBase": "passes",
+      "finding": "admitted",
+      "reclassified": false,
+      "disagreements": null
+    },
+    {
+      "check": "www-case-sensitive",
+      "atBase": "fails",
+      "finding": "unestablished-control",
+      "reclassified": false,
+      "disagreements": null
+    },
+    {
+      "check": "scheme-autolink-case-insensitive",
+      "atBase": "passes",
+      "finding": "unestablished-control",
+      "reclassified": false,
+      "disagreements": null
+    },
+    {
+      "check": "https-mixed-case-link",
+      "atBase": "passes",
+      "finding": "disagrees-with-base",
+      "reclassified": false,
+      "disagreements": [
+        {
+          "base": "{\"threw\":true}",
+          "case": 1,
+          "expected": "true",
+          "input": "(See hTtPS://example.com/fhqwhgads.)",
+          "namedByTask": true
+        }
+      ]
+    },
+    {
+      "check": "email-autolink-preserve",
+      "atBase": "passes",
+      "finding": "admitted",
+      "reclassified": false,
+      "disagreements": null
+    },
+    {
+      "check": "www-case-sensitive",
+      "atBase": "fails",
+      "finding": "admitted",
+      "reclassified": false,
+      "disagreements": null
+    },
+    {
+      "check": "scheme-autolink-case-insensitive",
+      "atBase": "passes",
+      "finding": "admitted",
+      "reclassified": false,
+      "disagreements": null
+    }
+  ],
+  "reconciled": [
+    {
+      "covered": true,
+      "id": "www-autolink-lowercase",
+      "rejected": [],
+      "retained": [
+        "www-case-sensitive"
+      ]
+    },
+    {
+      "covered": true,
+      "id": "scheme-case-insensitive",
+      "rejected": [
+        "https-mixed-case-link"
+      ],
+      "retained": [
+        "scheme-autolink-case-insensitive"
+      ]
+    },
+    {
+      "covered": true,
+      "id": "email-autolink-preserves",
+      "rejected": [],
+      "retained": [
+        "email-autolink-preserve"
+      ]
+    }
+  ],
+  "briefNamesUncovered": false,
+  "reserve": {
+    "basis": "measured",
+    "capMs": 210000,
+    "deadline": 1792447626837,
+    "measuredMs": 27663,
+    "modelWorkEnds": 1792447516185,
+    "note": "the share of the total allowance held for the final gate cycle, acceptance and the final independent verification; model work ends at modelWorkEnds and the checks at the deadline, where any still running are stopped and reported as not run",
+    "reserveMs": 110652,
+    "rule": "verification-reserve-v1"
+  },
+  "loopStop": "max-steps",
+  "repairAttempts": null,
+  "finalGates": {
+    "build": {
+      "status": "passed",
+      "durationMs": 2375,
+      "detail": "the command exited 0"
+    },
+    "lint": {
+      "status": "passed",
+      "durationMs": 1702,
+      "detail": "the command exited 0"
+    },
+    "tests": {
+      "status": "passed",
+      "durationMs": 5713,
+      "detail": "1713 collected, 1713 passed, 0 failed, 0 skipped (exit 0)"
+    },
+    "task-acceptance": {
+      "status": "passed",
+      "durationMs": 28103,
+      "detail": "the inspection exited 0"
+    },
+    "task-diagnostics": {
+      "status": "passed",
+      "durationMs": 0,
+      "detail": "the inspection exited 0"
+    }
+  },
+  "finalIndependentVerification": {
+    "refusal": null,
+    "regression": "pass",
+    "appliedPatchDigest": "sha256:c37878d9f1512ce1a19ca3c1c32b24aa071195e2198849479f06847493cf47c0"
+  },
+  "assessment": {
+    "independentRecord": "sha256:831642cce0ca9ebbf6e96ca981f5292601ab9baaf53b38821ae970c6d8611f10",
+    "policy": "run-acceptance-v3",
+    "previousAssessment": "sha256:2b3289cb98138055627defb48773460068a796d6328669b67a056064cf18858f",
+    "sourceRecord": "sha256:c8b85f58c843c0adc362480b91c6e954309bc514104177f4cdbf90c33e31565e"
+  },
+  "phases": {
+    "planning": {
+      "wallMs": 283143,
+      "modelMs": 168426,
+      "abortedInFlightMs": 0,
+      "toolMs": 75493,
+      "otherMs": 39224
+    },
+    "seal and preflight": {
+      "wallMs": 28012,
+      "modelMs": 0,
+      "abortedInFlightMs": 0,
+      "toolMs": 0,
+      "otherMs": 28012
+    },
+    "worker loop and repairs": {
+      "wallMs": 183058,
+      "modelMs": 142212,
+      "abortedInFlightMs": 0,
+      "toolMs": 36627,
+      "otherMs": 4219
+    },
+    "final gates, acceptance and verification": {
+      "wallMs": 72692,
+      "modelMs": 0,
+      "abortedInFlightMs": 0,
+      "toolMs": 0,
+      "otherMs": 72692
+    }
+  }
+}

@@ -1,0 +1,46 @@
+The task was: With GFM autolinking enabled, marked currently turns any text starting with "www." into a link regardless of letter case, so "Www.example.com" and "WWW.example.com" become links. Per the GFM spec a bare www autolink must start with lowercase "www." exactly; mixed- or upper-case variants must stay plain text. Scheme autolinks must remain case-insensitive for the scheme, so "(See hTtPS://example.com/fhqwhgads.)" must still produce a link with the trailing period excluded. Make "www." detection case-sensitive without changing how http://, https:// or ftp:// are detected, and keep email autolinks working. Source lives under src/ (TypeScript); the library is built with npm run build:esbuild before tests run.
+
+Visible acceptance check (it must pass; it is not the only criterion): npm run build:esbuild && node acceptance/visible/check.mjs
+The project's own tests run with: npm test
+Do not modify anything under acceptance/visible/.
+Sealed objective: With GFM autolinking enabled, marked currently turns any text starting with "www." into a link regardless of letter case, so "Www.example.com" and "WWW.example.com" become links. Per the GFM spec a bare www autolink must start with lowercase "www." exactly; mixed- or upper-case variants must stay plain text. Scheme autolinks must remain case-insensitive for the scheme, so "(See hTtPS://example.com
+Required behavior: [{"id":"visible-check","description":"the visible acceptance check passes on a fresh checkout"},{"id":"www-autolink-case-sensitive","description":"A bare www autolink must start with lowercase \"www.\" exactly; mixed- or upper-case variants must stay plain text."},{"id":"scheme-autolink-case-insensitive","description":"Scheme autolinks (http://, https://, ftp://) must remain case-insensitive so schemes in mixed case still produce links."},{"id":"email-autolink-working","description":"Email autolinks must continue to work correctly."}]
+Preset: null
+
+Effective task contract (declarations cannot enlarge this authority):
+{"taskId":"preset","dependsOn":[],"writable":"workspace, except immutable and policy-denied paths","immutable":["acceptance/visible","test"],"permittedTools":["read","write","edit","list","search","shell"],"requiredChecks":["task-acceptance"],"requestedExecution":"restricted","requestedNetwork":"unrestricted","budget":{"maxSteps":40,"maxWallMs":420000},"scopeAuthority":"human"}
+Read relevant source, keep maintained tests within this scope, and request a controller revision if required work cannot fit. This contract describes requested restrictions; the measured execution envelope records actual capability.
+
+A quality gate is failing. This is attempt 1 of 3.
+Fix the cause. Do not weaken the tests: removing a test, removing an assertion, adding a
+skip marker, or lowering coverage of the lines you changed will have the attempt rejected
+and will still cost you the attempt.
+
+Base source: fe15f51b11c3e8e4e68e2c51fcc64bb1c18f6417. Your current change against it is recorded as sha256:ed4bf32d0d8afcb182e64d4b9d458812f273ef65b5e5be71733e7e0812b827e1; it is the state of the workspace files now, not a file to find.
+That change, as a diff against the base (lines marked - are the base's own; the files you read already hold the + lines):
+diff --git a/src/rules.ts b/src/rules.ts
+index f05eedc..bfdaa6e 100644
+--- a/src/rules.ts
++++ b/src/rules.ts
+@@ -411 +411 @@ const inlineGfm: Record<InlineKeys, RegExp> = {
+-  url: edit(/^((?:ftp|https?):\/\/|www\.)(?:[a-zA-Z0-9\-]+\.?)+[^\s<]*|^email/, 'i')
++  url: edit(/^((?:[fF][pP][tT]|[hH][tT][tT][pP][sS]?)?:\/\/|www\.)(?:[a-zA-Z0-9\-]+\.?)+[^\s<]*|^email/)
+@@ -416 +416 @@ const inlineGfm: Record<InlineKeys, RegExp> = {
+-  text: /^([`~]+|[^`~])(?:(?= {2,}\n)|(?=[a-zA-Z0-9.!#$%&'*+\/=?_`{\|}~-]+@)|[\s\S]*?(?:(?=[\\<!\[`*~_]|\b_|https?:\/\/|ftp:\/\/|www\.|$)|[^ ](?= {2,}\n)|[^a-zA-Z0-9.!#$%&'*+\/=?_`{\|}~-](?=[a-zA-Z0-9.!#$%&'*+\/=?_`{\|}~-]+@)))/,
++  text: /^([`~]+|[^`~])(?:(?= {2,}\n)|(?=[a-zA-Z0-9.!#$%&'*+\/=?_`{\|}~-]+@)|[\s\S]*?(?:(?=[\\<!\[`*~_]|\b_|[hH][tT][tT][pP][sS]?:\/\/|[fF][pP][tT]:\/\/|www\.|$)|[^ ](?= {2,}\n)|[^a-zA-Z0-9.!#$%&'*+\/=?_`{\|}~-](?=[a-zA-Z0-9.!#$%&'*+\/=?_`{\|}~-]+@)))/,
+The workspace is in the state gate cycle 0 checked. Remaining model allowance: 7999630 tokens and 221020 ms.
+Immutable requirements: ["acceptance/visible","test"].
+run_check reruns the acceptance checks exactly as the gate runs them and shows a named check's cases; given a program and inputs, it runs your own diagnostic over the project with no file to write and no shell quoting.
+
+Account of the previous loop in this run, derived by the harness from its recorded tool calls and results. It is a record, not an instruction and not an authorization.
+- it stopped as completed after 3 step(s)
+- files it edited: src/rules.ts
+
+What the gates report on the workspace as it is now (cycle 0):
+gate task-diagnostics (generated checks of sealed goal sha256:904f8aae097097062b53d3ececc431170d517bf90cd43b6bcd7ac82b7e21af67) FAILED: the inspection exited 1
+evidence record: sha256:bbd60a1d16c1a9915809a8cea70099c6a09c16266c1755f216b87ec86cdf8bf0 kind gate-run:task-diagnostics
+stdout:
+{"regression":"pass","task":"accepted","findings":[{"id":"visible-check","status":"accepted","detail":"command exited 0"},{"id":"email-autolink-working","status":"accepted","detail":"expected exit status and bounded stream assertions evaluated over captured process output"},{"id":"scheme-autolink-case-insensitive","status":"rejected","detail":"exit status 0 as expected; stdout differs from the expected 4 line(s): line 3 should be `{\"input\":\"Ftp://ftp.example.net/file\",\"result\":\"linked\"}` but was `{\"input\":\"Ftp://ftp.example.net/file\",\"result\":\"not-linked\"}`"}],"parts":{"email-autolink-working: kept cases":"passed","scheme-autolink-case-insensitive: kept cases":"failed"}}
+stderr:
+These generated checks disagree with the change. Their expected results are the planner's reading of the task, not established facts: a case the task keeps gave its expected result on the unchanged base, so a difference there is behaviour the change broke; a changed case's result is the planner's claim. Change the code where the task supports the expectation, and where it does not, leave the code as it is and say which expectation the task contradicts. run_check with a check's id shows its program, each input and what the project gave. A change that breaks a supplied check to satisfy one of these is rolled back.
+generated check scheme-autolink-case-insensitive rejected: exit status 0 as expected; stdout differs from the expected 4 line(s): line 3 should be `{"input":"Ftp://ftp.example.net/file","result":"linked"}` but was `{"input":"Ftp://ftp.example.net/file","result":"not-linked"}`; case(s) 3 are behaviour the task keeps, which the unchanged base gave as expected

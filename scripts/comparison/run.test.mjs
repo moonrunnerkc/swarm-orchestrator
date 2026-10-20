@@ -183,17 +183,36 @@ function environment() {
   return { home, markers, bin };
 }
 
-async function startEndpoint(home, model = "fixture-model", port = 0) {
+/**
+ * The endpoint fixture, healthy unless a case says otherwise: the runner now dispatches nothing
+ * until the model has answered a chat and tool round trip, so every case that is not about
+ * readiness runs against a server that completes one. Its request log is where a case reads
+ * which requests reached the server and when.
+ */
+async function startEndpoint(home, model = "fixture-model", port = 0, behaviour = "healthy") {
   const ready = join(home, `endpoint-ready-${Date.now()}-${Math.random()}`);
-  const child = spawn("node", [join(fixtures, "endpoint-server.mjs"), ready, model, String(port)], {
-    stdio: "ignore",
-    detached: true,
-  });
+  const requestLog = join(home, `endpoint-requests-${Date.now()}-${Math.random()}.log`);
+  const child = spawn(
+    "node",
+    [join(fixtures, "endpoint-server.mjs"), ready, model, String(port), behaviour, requestLog],
+    { stdio: "ignore", detached: true },
+  );
   children.push(child);
   await until(() => existsSync(ready), { what: "the endpoint fixture to listen" });
   const { port: bound, pid } = JSON.parse(readFileSync(ready, "utf8"));
-  return { child, port: bound, pid, url: `http://127.0.0.1:${bound}/v1` };
+  return { child, port: bound, pid, url: `http://127.0.0.1:${bound}/v1`, requestLog };
 }
+
+const requestsSeen = (endpoint) =>
+  existsSync(endpoint.requestLog)
+    ? readFileSync(endpoint.requestLog, "utf8")
+        .trim()
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line))
+    : [];
+const chatRequestsSeen = (endpoint) =>
+  requestsSeen(endpoint).filter((one) => one.path === "/v1/chat/completions");
 
 function stopEndpoint(endpoint) {
   process.kill(endpoint.pid, "SIGKILL");
@@ -220,10 +239,15 @@ function writeManifest(
       ...pins,
     },
     // Five minutes, so a correction always has its minute left after a fixture's quick invocation.
+    // The request bounds are short: a fixture answers at once or never.
     budgets: {
       wallMsPerInvocation: 300_000,
       swarmTokenCap: 600_000,
       maxCorrections: 2,
+      inferenceDeadlineMs: 2_000,
+      readinessRequestDeadlineMs: 1_000,
+      readinessSequenceDeadlineMs: 3_000,
+      readinessSequences: 2,
       ...budgets,
     },
     seed: "swarm-ordinary-comparison-2026-10-11",
@@ -316,7 +340,7 @@ async function setup({
   const env = environment();
   const endpoint = endpointOptions.absent
     ? null
-    : await startEndpoint(env.home, endpointOptions.model);
+    : await startEndpoint(env.home, endpointOptions.model, 0, endpointOptions.behaviour);
   const commits = mirrorTask(env.home, "fixture/calc", baseManifest);
   const tasks = (
     build ??
@@ -979,5 +1003,259 @@ describe("stopping the comparison when the experiment is invalid", () => {
     const again = await runRunner(fixture.env, fixture.path);
     expect(again.code).toBe(0);
     expect(launchLines(fixture.env)).toHaveLength(4);
+  });
+});
+
+/**
+ * The endpoint exercised before dispatch and an arm's request watched during it. The launch of
+ * 2026-10-20 03:04 UTC was consumed by a server whose listing answered throughout while it
+ * completed no chat request; these cases hold that such a server is an endpoint failure, found
+ * before dispatch or within the declared deadline during it, never an arm's result.
+ */
+describe("readiness before dispatch and a request that stalls during a launch", () => {
+  const haltedBeforeDispatch = async (behaviour, more = {}) => {
+    const fixture = await setup({ endpoint: { behaviour }, ...more });
+    const began = Date.now();
+    const result = await runRunner(fixture.env, fixture.path);
+    const wallMs = Date.now() - began;
+    expect(result.code).toBe(3);
+    expect(launchLines(fixture.env)).toEqual([]);
+    expect(attemptsOf(fixture.runs)).toEqual([]);
+    expect(halts(fixture.runs)).toEqual(["halt-1.json"]);
+    const halt = readJson(join(fixture.runs, "halt-1.json"));
+    expect(halt.class).toBe("endpoint");
+    expect(halt.launch).toBeNull();
+    expect(halt.reason).toContain("did not complete inference for fixture-model before dispatch");
+    expect(halt.remaining).toHaveLength(4);
+    return { fixture, halt, result, wallMs };
+  };
+
+  it("launches nothing when the model lists but chat never answers: two bounded sequences, each ended at its request deadline, then an endpoint halt", async () => {
+    const { fixture, halt, wallMs } = await haltedBeforeDispatch("chat-never", {
+      budgets: { readinessRequestDeadlineMs: 500, readinessSequenceDeadlineMs: 1_500 },
+    });
+    expect(halt.probes).toHaveLength(2);
+    for (const sequence of halt.probes) {
+      expect(sequence.purpose).toBe("readiness");
+      expect(sequence.ok).toBe(false);
+      expect(sequence.requests).toHaveLength(1);
+      expect(sequence.requests[0]).toMatchObject({
+        kind: "chat",
+        outcome: "failed",
+        status: null,
+        problem: "no complete answer within 500 ms",
+      });
+      expect(sequence.requests[0].wallMs).toBeGreaterThanOrEqual(450);
+      expect(sequence.configuration).toMatchObject({
+        model: "fixture-model",
+        stream: true,
+        includeUsage: true,
+        thinking: false,
+        requestDeadlineMs: 500,
+      });
+    }
+    // Two sequences of one request each, well inside what the deadlines allow; the listing
+    // answered throughout and did not make the endpoint ready.
+    expect(wallMs).toBeLessThan(20_000);
+    expect(chatRequestsSeen(fixture.endpoint).map((one) => one.kind)).toEqual(["chat", "chat"]);
+    expect(
+      requestsSeen(fixture.endpoint).filter((one) => one.kind === "models").length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("launches nothing when plain chat works but the tool-call path does not", async () => {
+    const { fixture, halt } = await haltedBeforeDispatch("plain-only");
+    expect(halt.probes[0].requests.map((one) => [one.kind, one.outcome])).toEqual([
+      ["chat", "answered"],
+      ["tool-call", "failed"],
+    ]);
+    expect(halt.probes[0].problem).toMatch(
+      /^the tool-call request failed: the model answered without a tool call/,
+    );
+    expect(halt.reason).toContain("answered without a tool call");
+    expect(chatRequestsSeen(fixture.endpoint).map((one) => one.kind)).toEqual([
+      "chat",
+      "tool-call",
+      "chat",
+      "tool-call",
+    ]);
+  });
+
+  it("launches nothing on a stream cut before its terminator", async () => {
+    const { halt } = await haltedBeforeDispatch("cut");
+    expect(halt.probes[0].requests[0]).toMatchObject({
+      kind: "chat",
+      outcome: "failed",
+      status: 200,
+      problem: "the stream ended without [DONE]",
+    });
+  });
+
+  it("dispatches after a complete round trip, records the readiness and its spend apart from the task's, and a healthy model's wrong code stays the arm's result", async () => {
+    const fixture = await setup({
+      endpoint: { behaviour: "healthy" },
+      tasks: (t, commits) => [t("calc-fix-add", "fixture/calc", commits)],
+      budgets: { maxCorrections: 0 },
+    });
+    const result = await runRunner(fixture.env, fixture.path, [], "wrong");
+    expect(result.code).toBe(0);
+    expect(halts(fixture.runs)).toEqual([]);
+    expect(launchLines(fixture.env)).toHaveLength(2);
+    for (const name of recordsOf(fixture.runs)) {
+      const record = readJson(join(fixture.runs, name));
+      expect(record.infrastructureFailure).toBeNull();
+      expect(record.hidden.verdict).toBe("fail");
+      expect(record.probes).toHaveLength(1);
+      const [readiness] = record.probes;
+      expect(readiness.ok).toBe(true);
+      expect(readiness.purpose).toBe("readiness");
+      expect(readiness.requests.map((one) => [one.kind, one.outcome, one.status])).toEqual([
+        ["chat", "answered", 200],
+        ["tool-call", "answered", 200],
+        ["tool-result", "answered", 200],
+      ]);
+      for (const request of readiness.requests)
+        expect(request.usage).toEqual({ input: 20, output: 4 });
+      expect(record.totals.probes).toEqual({
+        probeRequests: 3,
+        probeRequestsWithoutUsage: 0,
+        probeTokens: 72,
+        probeWallMs: readiness.wallMs,
+      });
+      // The arm's own spend is unchanged by the probes'.
+      if (record.arm === "swarm") expect(record.totals.tokens).toBe(1234);
+    }
+    // Both launches' readiness ran before each arm started, and nothing during either.
+    const seen = chatRequestsSeen(fixture.endpoint);
+    expect(seen.map((one) => one.kind)).toEqual([
+      "chat",
+      "tool-call",
+      "tool-result",
+      "chat",
+      "tool-call",
+      "tool-result",
+    ]);
+    const starts = launchLines(fixture.env).map((line) => Number(line.split(" ")[3]));
+    expect(seen[2].at).toBeLessThanOrEqual(starts[0]);
+    expect(seen[3].at).toBeGreaterThanOrEqual(starts[0]);
+    expect(seen[5].at).toBeLessThanOrEqual(starts[1]);
+  });
+
+  it("reads a slow answer inside the declared request deadline as readiness", async () => {
+    const fixture = await setup({
+      endpoint: { behaviour: "slow:400" },
+      tasks: (t, commits) => [t("calc-fix-add", "fixture/calc", commits)],
+      budgets: { readinessRequestDeadlineMs: 2_000, readinessSequenceDeadlineMs: 8_000 },
+    });
+    const result = await runRunner(fixture.env, fixture.path, ["--arm", "swarm"]);
+    expect(result.code).toBe(0);
+    expect(halts(fixture.runs)).toEqual([]);
+    const record = readJson(join(fixture.runs, "calc-fix-add.swarm.json"));
+    expect(record.probes[0].ok).toBe(true);
+    for (const request of record.probes[0].requests) {
+      expect(request.firstByteMs).toBeGreaterThanOrEqual(350);
+      expect(request.wallMs).toBeLessThan(2_000);
+    }
+  });
+
+  it("stops the arm whose request has had no answer past the declared deadline after a successful preflight, probes once the arm is gone, halts, sends nothing beside the open request, and refuses to continue", async () => {
+    const fixture = await setup({
+      // Readiness' three requests are answered; the arm's, the fourth, never is, while the
+      // listing keeps answering throughout.
+      endpoint: { behaviour: "wedge-after:3" },
+      budgets: { inferenceDeadlineMs: 2_000, readinessRequestDeadlineMs: 500 },
+    });
+    const child = startRunner(fixture.env, fixture.path, [], "request");
+    await until(() => launchLines(fixture.env).length === 1, { what: "the first launch" });
+    const result = await child.done;
+    const stoppedAt = await heartbeatStopped(fixture.env, terminationDeadlineMs);
+    expect(result.code).toBe(3);
+    expect(launchLines(fixture.env)).toHaveLength(1);
+    expect(recordsOf(fixture.runs)).toEqual([]);
+    const halt = readJson(join(fixture.runs, "halt-1.json"));
+    expect(halt.class).toBe("endpoint");
+    expect(halt.reason).toMatch(
+      /^the arm's model call at step 1 has had no answer for \d+ s, past the declared request deadline of 2 s; the arm was stopped and the endpoint then failed a probe: the chat request failed: no complete answer within 500 ms$/,
+    );
+    expect(halt.reason).not.toMatch(/restarted|stopped answering/);
+    expect(halt.remaining).toHaveLength(3);
+    expect(halt.probes).toHaveLength(2);
+    expect(halt.probes.map((one) => [one.purpose, one.ok])).toEqual([
+      ["readiness", true],
+      ["after-stall", false],
+    ]);
+    const attempt = readJson(join(fixture.runs, attemptsOf(fixture.runs)[0]));
+    expect(attempt.invocations).toHaveLength(1);
+    expect(attempt.invocations[0].signal).toBe("SIGKILL(interrupted)");
+    expect(attempt.probes).toEqual(halt.probes);
+    expect(attempt.totals.probes).toMatchObject({ probeRequests: 4, probeRequestsWithoutUsage: 1 });
+    // The request opened when the arm said so, the stall was named within the deadline plus one
+    // poll, and the arm was gone within the termination bound.
+    const seen = chatRequestsSeen(fixture.endpoint);
+    expect(seen.map((one) => one.kind)).toEqual([
+      "chat",
+      "tool-call",
+      "tool-result",
+      "tool-call",
+      "chat",
+    ]);
+    const armRequestAt = seen[3].at;
+    const detectedAt = Date.parse(halt.detectedAt);
+    expect(detectedAt - armRequestAt).toBeGreaterThanOrEqual(2_000);
+    expect(detectedAt - armRequestAt).toBeLessThanOrEqual(2_000 + 2_000 + detectionDeadlineMs);
+    expect(stoppedAt - detectedAt).toBeLessThanOrEqual(terminationDeadlineMs);
+    // Nothing was sent to the endpoint between the arm's request and the arm's end; the probe
+    // after the stall came once the arm was stopped.
+    expect(seen[4].at).toBeGreaterThanOrEqual(stoppedAt - 1_000);
+    // The listing is still answering: a model-free endpoint staying healthy did not override
+    // the failed inference.
+    const listing = await fetch(`${fixture.endpoint.url}/models`);
+    expect(listing.ok).toBe(true);
+    // The campaign is halted: the same command dispatches nothing more.
+    const again = await runRunner(fixture.env, fixture.path, [], "correct");
+    expect(again.code).toBe(3);
+    expect(again.stderr).toContain("the campaign is halted");
+    expect(launchLines(fixture.env)).toHaveLength(1);
+    measurements.push({
+      fault: "the arm's request stalls after a successful preflight",
+      detectionMs: detectedAt - armRequestAt,
+      childStoppedMs: stoppedAt - armRequestAt,
+      cleanup: halt.cleanup,
+    });
+  });
+
+  it("recovers only once the endpoint completes inference again, not on its listing alone", async () => {
+    const { fixture } = await haltedBeforeDispatch("chat-never", {
+      budgets: { readinessRequestDeadlineMs: 300, readinessSequenceDeadlineMs: 1_000 },
+    });
+    const refused = await runRunner(fixture.env, fixture.path, [
+      "--recover",
+      "--justification",
+      "the server was restarted",
+    ]);
+    expect(refused.code).toBe(3);
+    expect(refused.stderr).toContain("the endpoint did not complete inference");
+    expect(files(fixture.runs).filter((name) => name.startsWith("recovery-"))).toEqual([]);
+    stopEndpoint(fixture.endpoint);
+    const healthy = await startEndpoint(
+      fixture.env.home,
+      "fixture-model",
+      fixture.endpoint.port,
+      "healthy",
+    );
+    const recovered = await runRunner(fixture.env, fixture.path, [
+      "--recover",
+      "--justification",
+      "the server was restarted",
+    ]);
+    expect(recovered.code).toBe(0);
+    const recovery = readJson(join(fixture.runs, "recovery-1.json"));
+    expect(recovery.probes).toHaveLength(1);
+    expect(recovery.probes[0]).toMatchObject({ purpose: "recovery", ok: true });
+    expect(chatRequestsSeen(healthy).map((one) => one.kind)).toEqual([
+      "chat",
+      "tool-call",
+      "tool-result",
+    ]);
   });
 });

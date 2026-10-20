@@ -1,0 +1,15 @@
+diff --git a/src/Tokenizer.ts b/src/Tokenizer.ts
+index 925074e..bcc3bef 100644
+--- a/src/Tokenizer.ts
++++ b/src/Tokenizer.ts
+@@ -833,6 +833,10 @@ export class _Tokenizer<ParserOutput = string, RendererOutput = string> {
+         text = cap[0];
+         href = 'mailto:' + text;
+       } else {
++        // bare www. autolinks must be strictly lowercase per GFM spec
++        if (cap[1] && cap[1].toLowerCase() === 'www.' && cap[1] !== 'www.') {
++          return undefined;
++        }
+         // do extended autolink path validation
+         let prevCapZero;
+         do {

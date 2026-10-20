@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -365,6 +366,7 @@ describe("the trail tool a worker is given and the single-agent path is not", ()
       "search",
       "shell",
       "claim",
+      "read_recorded_output",
       "declare_file_set",
       "amend_file_set",
     ]);
@@ -386,7 +388,7 @@ describe("the trail tool a worker is given and the single-agent path is not", ()
 
     const names = spy.requests[0]?.tools.map((tool) => tool.name) ?? [];
     expect(names).toContain("read_trail");
-    expect(names).toHaveLength(10);
+    expect(names).toHaveLength(11);
   });
 
   it("sends no sampling settings when none are asked for", async () => {
@@ -976,6 +978,136 @@ describe("an answer the model already has", () => {
   });
 });
 
+describe("a call repeated after an edit", () => {
+  it("is answered through the chokepoint, not replaced by the notice, when the answer is unchanged", async () => {
+    // A listing whose answer the edit does not change: the file set is the same before and after.
+    const listing = (callId: string) =>
+      respondWithToolCalls("checking", [{ callId, toolName: "list", input: { path: "src" } }]);
+    const fixture = createFixtureModelClient({
+      modelId: "fixture:worker",
+      turns: [
+        respondWithToolCalls("declare", [
+          { callId: "declare", toolName: "declare_file_set", input: { files: ["src/greet.js"] } },
+        ]),
+        listing("before"),
+        respondWithToolCalls("change", [
+          {
+            callId: "edit",
+            toolName: "edit",
+            input: { path: "src/greet.js", find: "'hello'", replace: "'hi'" },
+          },
+        ]),
+        listing("after"),
+        respondWithText("done"),
+      ],
+    });
+    await task([], { maxSteps: 8, model: createRecordingModelClient(fixture, evidence) });
+    const lastToolOutput = (request: ModelRequest): string => {
+      const turn = request.messages.findLast((message) => message.role === "tool");
+      return turn?.role === "tool" ? (turn.outcomes[0]?.output ?? "") : "";
+    };
+    expect(lastToolOutput(fixture.requests[2] as ModelRequest)).toContain("greet.js");
+    expect(lastToolOutput(fixture.requests[4] as ModelRequest)).toContain("greet.js");
+    expect(lastToolOutput(fixture.requests[4] as ModelRequest)).not.toContain(
+      "[harness notice: already answered]",
+    );
+  });
+});
+
+describe("a call repeated after a shell command that edited a file", () => {
+  // The chokepoint classes the shell tool as kind "shell", not "write", and the harness does not
+  // know what a command did once it ran. A command that edits a file is a write it cannot see,
+  // so the listing after it has to be answered as a new question, as it is after the edit tool.
+  const listing = (callId: string) =>
+    respondWithToolCalls("checking", [{ callId, toolName: "list", input: { path: "src" } }]);
+  const lastToolOutput = (request: ModelRequest): string => {
+    const turn = request.messages.findLast((message) => message.role === "tool");
+    return turn?.role === "tool" ? (turn.outcomes[0]?.output ?? "") : "";
+  };
+
+  it("is answered through the chokepoint, not replaced by the notice, when the listing is unchanged", async () => {
+    const fixture = createFixtureModelClient({
+      modelId: "fixture:worker",
+      turns: [
+        respondWithToolCalls("declare", [
+          { callId: "declare", toolName: "declare_file_set", input: { files: ["src/greet.js"] } },
+        ]),
+        listing("before"),
+        respondWithToolCalls("change", [
+          {
+            callId: "shell-edit",
+            toolName: "shell",
+            input: {
+              command: String.raw`node -e "require('fs').appendFileSync('src/greet.js', '// shout\n')"`,
+            },
+          },
+        ]),
+        listing("after"),
+        respondWithText("done"),
+      ],
+    });
+    await task([], {
+      maxSteps: 8,
+      approvalMode: "auto",
+      model: createRecordingModelClient(fixture, evidence),
+    });
+    // The edit landed: the file carries the appended line.
+    expect(readFileSync(join(workspace, "src/greet.js"), "utf8")).toContain("// shout");
+    expect(lastToolOutput(fixture.requests[3] as ModelRequest)).toContain("exit code: 0");
+    expect(lastToolOutput(fixture.requests[2] as ModelRequest)).toContain("greet.js");
+    expect(lastToolOutput(fixture.requests[4] as ModelRequest)).toContain("greet.js");
+    expect(lastToolOutput(fixture.requests[4] as ModelRequest)).not.toContain(
+      "[harness notice: already answered]",
+    );
+  });
+
+  it("is still a repeat when the same listing is made twice with nothing between", async () => {
+    const fixture = createFixtureModelClient({
+      modelId: "fixture:worker",
+      turns: [
+        respondWithToolCalls("declare", [
+          { callId: "declare", toolName: "declare_file_set", input: { files: ["src/greet.js"] } },
+        ]),
+        listing("once"),
+        listing("twice"),
+        respondWithText("done"),
+      ],
+    });
+    await task([], { maxSteps: 8, model: createRecordingModelClient(fixture, evidence) });
+    const repeated = lastToolOutput(fixture.requests[3] as ModelRequest);
+    expect(repeated).toContain("[harness notice: already answered]");
+    expect(repeated).toContain("No writing tool call has landed since");
+  });
+
+  it("tells a repeated successful write that it is repeated, without saying no writing call landed", async () => {
+    const content = "export function greet() {\n  return 'hello';\n}\nexport const shout = 1;\n";
+    const write = (callId: string) =>
+      respondWithToolCalls("writing", [
+        { callId, toolName: "write", input: { path: "src/greet.js", content } },
+      ]);
+    const fixture = createFixtureModelClient({
+      modelId: "fixture:worker",
+      turns: [
+        respondWithToolCalls("declare", [
+          { callId: "declare", toolName: "declare_file_set", input: { files: ["src/greet.js"] } },
+        ]),
+        write("first"),
+        write("second"),
+        respondWithText("done"),
+      ],
+    });
+    await task([], { maxSteps: 8, model: createRecordingModelClient(fixture, evidence) });
+    expect(readFileSync(join(workspace, "src/greet.js"), "utf8")).toBe(content);
+    const first = lastToolOutput(fixture.requests[2] as ModelRequest);
+    const second = lastToolOutput(fixture.requests[3] as ModelRequest);
+    expect(first).not.toContain("[harness notice");
+    // Both writes landed and were recorded; the second is a repeat of the first, and the notice
+    // standing in its answer's place says so without denying that writing calls landed.
+    expect(second).toContain("[harness notice: already answered]");
+    expect(second).not.toContain("No writing tool call has landed since");
+  });
+});
+
 describe("a repair attempt with no usable budget", () => {
   it("is withheld on the record and ends the attempts, rather than run empty and measured", async () => {
     const result = await task(
@@ -1089,4 +1221,293 @@ describe("the token allowance under a contract that names no token budget", () =
     await task([respondWithText("done")], { contract: contractWith(500), maxTokens: 8_000_000 });
     expect(sealedBudget()).toBe(500);
   });
+});
+
+describe("a verbose command in the worker's loop", () => {
+  // Three thousand lines with one failure in the middle and a non-zero exit, as a test runner
+  // prints them. Run for real, through the worker's own shell tool and chokepoint. The exit is
+  // set, not called: on Linux a pipe write past the kernel buffer is queued, and process.exit
+  // drops the queue (CI captured 697 of the 3,000 lines); the process ending on its own drains it.
+  const verbose =
+    "node -e \"for (let i = 1; i <= 3000; i++) console.log(i === 1500 ? 'not ok ' + i + ' - the middle case fails' : 'ok ' + i + ' - a passing case with a description'); process.exitCode = 1\"";
+
+  it("is resent as a bounded view, its omitted lines come back by reference, and the gates decide as before", async () => {
+    const requests: ModelRequest[] = [];
+    const turn = (made: FixtureTurn) => {
+      if (made.kind !== "response") throw new Error("a scripted response");
+      return made.response;
+    };
+    const lastToolOutput = (request: ModelRequest) => {
+      const last = request.messages.at(-1);
+      return last?.role === "tool" ? (last.outcomes[0]?.output ?? "") : "";
+    };
+    const model: ModelClient = {
+      modelId: "fixture:worker",
+      generate: (request) => {
+        requests.push(request);
+        switch (requests.length) {
+          case 1:
+            return Promise.resolve(
+              turn(
+                respondWithToolCalls("testing", [
+                  { callId: "t", toolName: "shell", input: { command: verbose } },
+                ]),
+              ),
+            );
+          case 2: {
+            const record = /evidence record (sha256:[0-9a-f]{64})/.exec(
+              lastToolOutput(request),
+            )?.[1];
+            return Promise.resolve(
+              turn(
+                respondWithToolCalls("reading the failure", [
+                  {
+                    callId: "r",
+                    toolName: "read_recorded_output",
+                    input: { record, contains: "not ok" },
+                  },
+                ]),
+              ),
+            );
+          }
+          case 3:
+            return Promise.resolve(turn(goodTurns(stillGreen)[0] as FixtureTurn));
+          case 4:
+            return Promise.resolve(turn(goodTurns(stillGreen)[1] as FixtureTurn));
+          default:
+            return Promise.resolve(turn(respondWithText("done")));
+        }
+      },
+    };
+    const result = await task([], { model: createRecordingModelClient(model, evidence) });
+
+    const shown = lastToolOutput(requests[1] as ModelRequest);
+    expect(shown.length).toBeLessThan(14_000);
+    expect(shown).toContain(
+      "recorded status: exit code 1, not timed out, not cancelled, capture complete",
+    );
+    expect(shown).toMatch(/1,502: not ok 1500 - the middle case fails/);
+    // Every later request carries the view, not the output: one command no longer dominates them.
+    for (const request of requests.slice(1))
+      expect(JSON.stringify(request.messages).length).toBeLessThan(40_000);
+    expect(lastToolOutput(requests[2] as ModelRequest)).toContain(
+      "1,502: not ok 1500 - the middle case fails",
+    );
+    // The ledger keeps the output as captured.
+    const recorded = evidence
+      .records()
+      .filter((record) => record.type === "tool-call")
+      .map(
+        (record) =>
+          evidence.payloads().get(record.payloadDigest) as {
+            toolName?: string;
+            decision?: string;
+            output?: string;
+          },
+      )
+      .find((payload) => payload.toolName === "shell" && payload.decision === "allowed");
+    expect(recorded?.output?.length).toBeGreaterThan(100_000);
+    expect(result.gates.outcome.settled).toBe("green");
+    expect(result.green).toBe(true);
+  });
+});
+
+describe("the gates after a loop that spent its wall", () => {
+  /** Declares, writes, then answers nothing within the wall: the loop stops at max-wall-time. */
+  function spendsItsWall(contents: string): ModelClient {
+    let calls = 0;
+    const fixture = createFixtureModelClient({
+      modelId: "fixture:worker",
+      turns: goodTurns(contents).slice(0, 2),
+    });
+    return {
+      modelId: fixture.modelId,
+      generate: (request) => {
+        calls += 1;
+        if (calls <= 2) return fixture.generate(request);
+        return new Promise((_resolve, reject) => {
+          request.abortSignal.addEventListener("abort", () => reject(request.abortSignal.reason), {
+            once: true,
+          });
+        });
+      },
+    };
+  }
+
+  it("still runs the required checks on the exact tree the loop delivered", async () => {
+    // C1: the loop spent its wall, and the end of that wall refused the build, lint and tests
+    // commands before they could spawn, so nothing measured the delivered change.
+    const result = await task([], {
+      model: createRecordingModelClient(spendsItsWall(stillGreen), evidence),
+      clock: createSystemClock(),
+      maxWallTimeMs: 2_000,
+    });
+    expect(result.loop.stopReason).toBe("max-wall-time");
+    const tests = result.gates.outcome.finalCycle.runs.find((run) => run.gateId === "tests");
+    expect(tests?.status).toBe("passed");
+    expect(JSON.stringify(result.gates.outcome.finalCycle.runs)).not.toContain(
+      "refused before spawn",
+    );
+    // The run did not finish its work in its allowance, and says so; it was not cancelled.
+    expect(result.green).toBe(false);
+    expect(Object.values(result.verdict.reasons).join(" ")).toContain(
+      "the run stopped as max-wall-time",
+    );
+    expect(Object.values(result.verdict.reasons).join(" ")).not.toContain("the run was cancelled");
+  }, 60_000);
+
+  it("refuses the checks when the run is cancelled, and says it was", async () => {
+    const cancel = new AbortController();
+    const result = await task([], {
+      model: createRecordingModelClient(spendsItsWall(stillGreen), evidence),
+      clock: createSystemClock(),
+      maxWallTimeMs: 60_000,
+      abortSignal: cancel.signal,
+      emit: (event) => {
+        if (event.type === "tool-outcome" && event.toolName === "write")
+          cancel.abort("cancelled from the keyboard");
+      },
+    });
+    const tests = result.gates.outcome.finalCycle.runs.find((run) => run.gateId === "tests");
+    expect(tests?.status).toBe("not-applicable");
+    expect(result.green).toBe(false);
+    expect(Object.values(result.verdict.reasons).join(" ")).toContain("the run was cancelled");
+  }, 60_000);
+
+  it("stops the checks it was given time for at the end of the verification allowance, and calls the run incomplete", async () => {
+    const verification = new AbortController();
+    const result = await task([], {
+      model: createRecordingModelClient(spendsItsWall(stillGreen), evidence),
+      clock: createSystemClock(),
+      maxWallTimeMs: 1_000,
+      verificationSignal: verification.signal,
+      gateOptions: {
+        commandOverrides: { ...gateOverrides, tests: 'node -e "setTimeout(() => {}, 30000)"' },
+      },
+      emit: (event) => {
+        if (event.type === "stopped")
+          setTimeout(
+            () =>
+              verification.abort(
+                "the run's total allowance ended before final verification finished",
+              ),
+            500,
+          );
+      },
+    });
+    const tests = result.gates.outcome.finalCycle.runs.find((run) => run.gateId === "tests");
+    expect(tests?.status).not.toBe("passed");
+    expect(result.green).toBe(false);
+    expect(Object.values(result.verdict.reasons).join(" ")).toContain("the run was cancelled");
+  }, 60_000);
+});
+
+describe("a follow-up owed once the gates are green", () => {
+  it("leaves a finished run's lifecycle when the follow-up runs out of wall and its change is rolled back", async () => {
+    // The work completes green; the follow-up breaks greet and then answers nothing until its
+    // wall ends it. The ratchet rolls the broken change back, so what is delivered is the finished
+    // work, and the run is not read as stopped at its wall.
+    let calls = 0;
+    const fixture = createFixtureModelClient({
+      modelId: "fixture:worker",
+      turns: [
+        ...goodTurns(stillGreen),
+        respondWithToolCalls("following up", [
+          { callId: "f1", toolName: "write", input: { path: "src/greet.js", content: broken } },
+        ]),
+      ],
+    });
+    const model: ModelClient = {
+      modelId: fixture.modelId,
+      generate: (request) => {
+        calls += 1;
+        if (calls <= 4) return fixture.generate(request);
+        return new Promise((_resolve, reject) => {
+          request.abortSignal.addEventListener("abort", () => reject(request.abortSignal.reason), {
+            once: true,
+          });
+        });
+      },
+    };
+    const result = await task([], {
+      model: createRecordingModelClient(model, evidence),
+      clock: createSystemClock(),
+      attempts: 1,
+      maxWallTimeMs: 20_000,
+      followUp: { identity: "sha256:outcomes", brief: "Requested behaviour no check exercises." },
+    });
+    expect(result.gates.outcome.followUp).toMatchObject({
+      state: "given",
+      attempt: 1,
+      accepted: false,
+    });
+    expect(readFileSync(join(workspace, "src/greet.js"), "utf8")).toBe(stillGreen);
+    expect(result.loop.stopReason).toBe("completed");
+    expect(result.green).toBe(true);
+    // The bundle's own verifier re-derives the assessment from the cycle the workspace was left in.
+    expect(await verifiedAssessment(result, "follow-up-bundle")).toMatch(
+      /PASS {2}run assessment \d+ re-derived/,
+    );
+  }, 60_000);
+});
+
+/** The bundle's own verifier over this run's chain: its lines about the run assessment. */
+async function verifiedAssessment(
+  result: Awaited<ReturnType<typeof runAgentTask>>,
+  name: string,
+): Promise<string> {
+  const spec = evidence.records().find((record) => record.type === "run-spec-sealed");
+  if (!spec) throw Error("missing run seal");
+  const key = createEphemeralSigningKey();
+  const destination = join(scratch, name);
+  await exportBundle({
+    source: bundleSourceFromRecorder(evidence),
+    destination,
+    signingKey: key,
+    clock: createTestClock(),
+    attestation: signAttestation(
+      buildAttestation({
+        runId: evidence.sessionId,
+        specDigest: spec.payloadDigest,
+        sourceCommit: "0".repeat(40),
+        patchDigest: digestOfBytes(""),
+        chainHead: evidence.head().hash,
+        toolVersion: "test",
+        executionMode: result.verdict.executionTrust,
+        verdict: { ...result.verdict },
+      }),
+      key,
+    ),
+  });
+  const verified = await run(process.execPath, [
+    join(destination, "verify.mjs"),
+    destination,
+  ]).catch((failure: { stdout: string }) => failure);
+  return verified.stdout
+    .split("\n")
+    .filter((line) => line.includes("run assessment"))
+    .join("\n");
+}
+
+describe("a run whose last repair is rolled back", () => {
+  it("verifies: the assessment names the gate runs of the cycle the workspace was left in", async () => {
+    // The work breaks greet; the one repair breaks the syntax as well, so lint regresses and the
+    // ratchet rolls it back. Its gate runs are the latest on the chain and describe an undone tree.
+    const unparsable = "export function greet( {\n";
+    const result = await task(
+      [
+        ...goodTurns(broken),
+        respondWithToolCalls("repairing", [
+          { callId: "r1", toolName: "write", input: { path: "src/greet.js", content: unparsable } },
+        ]),
+        respondWithText("repaired"),
+      ],
+      { attempts: 1 },
+    );
+    expect(result.gates.outcome.attempts.map((one) => one.decision.accepted)).toEqual([false]);
+    expect(readFileSync(join(workspace, "src/greet.js"), "utf8")).toBe(broken);
+    const lines = await verifiedAssessment(result, "rolled-back-bundle");
+    expect(lines).toMatch(/PASS {2}run assessment \d+ re-derived/);
+    expect(lines).not.toMatch(/FAIL {2}run assessment/);
+  }, 60_000);
 });

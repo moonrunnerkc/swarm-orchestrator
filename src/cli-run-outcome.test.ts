@@ -377,6 +377,126 @@ describe("the run's one status", () => {
     expect(text).toContain("scope: only supplied requirements decide");
   });
 
+  it("gives a planned requirement with no check the reason planning recorded and the next action", () => {
+    const input = {
+      ...base,
+      verdict: certified,
+      requirements: finished("accepted", "accepted"),
+      gates: cycle([run("tests", "passed"), run("task-acceptance", "passed")]),
+      uncovered: [
+        {
+          id: "above-ten-big",
+          reason:
+            'above: the base gave "big" for 50 where the check expected "large"; the revision declared no replacement',
+          nextAction: "implement it from the task's words",
+        },
+      ],
+    };
+    const text = describeRunOutcome(input).join("\n");
+    expect(text).toContain(
+      'no generated check covers it: above: the base gave "big" for 50 where the check expected "large"; the revision declared no replacement',
+    );
+    expect(text).toContain("next for it: implement it from the task's words");
+  });
+
+  it("scopes an accepted run to the supplied contract and names an unresolved outcome under its covered requirement", () => {
+    // ten-is-small has a generated check that agrees, and a second outcome the planner read from
+    // the same requirement whose only check was refused: accepted stays the supplied contract's.
+    const input = {
+      ...base,
+      verdict: certified,
+      requirements: finished("accepted", "accepted"),
+      gates: cycle([run("tests", "passed"), run("task-acceptance", "passed")]),
+      unresolvedOutcomes: [
+        {
+          id: "ten-is-small#2",
+          requirement: "ten-is-small",
+          quote: 'classify("10") is small too',
+          role: "change" as const,
+          reason: "string-ten: case 1 threw in the check program's own code on the base",
+          nextAction: "implement it from the task's words",
+        },
+      ],
+    };
+    expect(outcomeStatus(input)).toBe("accepted");
+    const text = describeRunOutcome(input).join("\n");
+    expect(text).toContain(
+      "outcome: accepted; this is the supplied contract's reading only: 1 requested outcome(s) read from the task were exercised by no check (below), so it does not show the whole task done",
+    );
+    const below = text.slice(text.indexOf("ten-is-small: 10 is small"));
+    expect(below).toContain("generated check boundary: agrees with the change");
+    expect(below).toContain(
+      `NO CHECK change "classify("10") is small too": string-ten: case 1 threw in the check program's own code on the base`,
+    );
+    // A requirement with no check at all still shows each of its outcomes' own words.
+    const allRefused = describeRunOutcome({
+      ...input,
+      unresolvedOutcomes: [
+        {
+          id: "above-ten-big#2",
+          requirement: "above-ten-big",
+          quote: 'classify(11) must still give "big"',
+          role: "keep" as const,
+          reason: "eleven: case 1 threw in the check program's own code on the base",
+          nextAction: "implement it from the task's words",
+        },
+      ],
+    }).join("\n");
+    const noCheck = allRefused.slice(allRefused.indexOf("no check above-ten-big"));
+    expect(noCheck).toContain('NO CHECK kept behaviour "classify(11) must still give "big""');
+    // Without one, the line reads as before.
+    expect(describeRunOutcome({ ...input, unresolvedOutcomes: [] }).join("\n")).toContain(
+      "outcome: accepted\n",
+    );
+  });
+
+  it("says whether the follow-up on unresolved outcomes ran and what the ratchet made of it, without resolving them", () => {
+    const input = {
+      ...base,
+      verdict: certified,
+      requirements: finished("accepted", "accepted"),
+      gates: cycle([run("tests", "passed"), run("task-acceptance", "passed")]),
+      unresolvedOutcomes: [
+        {
+          id: "ten-is-small#2",
+          requirement: "ten-is-small",
+          quote: 'classify("10") is small too',
+          role: "change" as const,
+          reason: "no admitted check holds the task's input",
+          nextAction: "run it yourself",
+        },
+      ],
+    };
+    const given = describeRunOutcome({
+      ...input,
+      outcomeFollowUp: {
+        state: "given",
+        attempt: 2,
+        accepted: false,
+        reason: "given once the gates were green",
+        record: "sha256:follow",
+      },
+    }).join("\n");
+    expect(given).toContain(
+      "follow-up on them: given once, as attempt 2; the ratchet rolled back what it left; they stay unresolved, since no sealed check states them",
+    );
+    // Status and exit code keep their meaning.
+    expect(outcomeStatus(input)).toBe("accepted");
+    const withheld = describeRunOutcome({
+      ...input,
+      outcomeFollowUp: {
+        state: "withheld",
+        attempt: null,
+        accepted: null,
+        reason: "no attempt was left under the cap of 1",
+        record: "sha256:follow",
+      },
+    }).join("\n");
+    expect(withheld).toContain(
+      "follow-up on them: withheld (no attempt was left under the cap of 1); they stay unresolved",
+    );
+  });
+
   it("leaves a run of hypotheses alone unjudged, as the same run without planning is", () => {
     const hypotheses = freezeGoalContract({
       ...plannedContract,

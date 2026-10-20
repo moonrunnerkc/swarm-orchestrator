@@ -1,0 +1,1045 @@
+{
+  "build": "/Users/brad/.cache/swarm-comparison/tools/swarm-b470b55e2/dist/cli.js",
+  "wallMs": 337947,
+  "exitCode": 0,
+  "turns": {
+    "planner": 36,
+    "revision": 1,
+    "review": 0,
+    "worker": 3,
+    "followUp": 1,
+    "other": 0,
+    "recordedPlanner": 40
+  },
+  "patchMatchesLaunch": true,
+  "deliveredPatchDigest": "sha256:3905e48f32392dd2895a5107c3d682314afe573954cee85a33c6cd84733e26dd",
+  "status": "accepted",
+  "plannedChecks": {
+    "outcome": "sealed",
+    "admitted": [
+      "www-case-sensitive",
+      "email-autolink-preserved",
+      "lowercase-www-links"
+    ],
+    "dropped": [
+      {
+        "check": "scheme-case-insensitive",
+        "reason": "it passes on the base, so it does not detect the requested change"
+      }
+    ],
+    "revision": {
+      "outcome": "ran",
+      "admitted": [],
+      "reclassified": [],
+      "stopReason": "completed"
+    },
+    "coverage": {
+      "sentences": 6,
+      "quotedByAdmitted": [
+        2,
+        4
+      ],
+      "quotedWithoutCheck": [
+        3
+      ]
+    },
+    "uncovered": [
+      {
+        "id": "scheme-insensitivity",
+        "quote": "Scheme autolinks must remain case-insensitive for the scheme, so \"(See hTtPS://example.com/fhqwhgads.)\" must still produce a link with the trailing period excluded",
+        "rejected": [
+          {
+            "check": "scheme-case-insensitive",
+            "reason": "it passes on the base, so it does not detect the requested change"
+          }
+        ],
+        "reason": "scheme-case-insensitive: it passes on the base, so it does not detect the requested change; the revision declared no replacement",
+        "nextAction": "implement it from the task's words; no generated check exercises it, so check it yourself on the task's own example"
+      }
+    ],
+    "unresolvedOutcomes": [
+      {
+        "id": "www-case-sensitivity#1",
+        "requirement": "www-case-sensitivity",
+        "quote": "Make \"www.\" detection case-sensitive without changing how http://, https:// or ftp:// are detected",
+        "role": "change",
+        "checks": [
+          {
+            "check": "www-case-sensitive",
+            "reason": "declared again quoting \"a bare www autolink must start with lowercase \\\"www.\\\" exactly; mixed- or upper-case variants must stay plain text\", so it no longer states this outcome"
+          }
+        ],
+        "taskInputs": [
+          {
+            "input": "WWW.example.com",
+            "expected": "{\"hasLink\":false,\"input\":\"WWW.example.com\"}",
+            "base": null
+          },
+          {
+            "input": "Www.example.com",
+            "expected": "{\"hasLink\":false,\"input\":\"Www.example.com\"}",
+            "base": null
+          }
+        ],
+        "reason": "www-case-sensitive: declared again quoting \"a bare www autolink must start with lowercase \\\"www.\\\" exactly; mixed- or upper-case variants must stay plain text\", so it no longer states this outcome; the revision declared no replacement",
+        "nextAction": "implement it from the task's words: the task names \"WWW.example.com\" (first expected {\"hasLink\":false,\"input\":\"WWW.example.com\"}), \"Www.example.com\" (first expected {\"hasLink\":false,\"input\":\"Www.example.com\"}) for it, and no admitted check exercises that input now, so run the project on it yourself and compare what it gives with what the task's words ask for, not with either expectation"
+      },
+      {
+        "id": "www-case-sensitivity#2",
+        "requirement": "www-case-sensitivity",
+        "quote": "Make \"www.\" detection case-sensitive without changing how http://, https:// or ftp:// are detected",
+        "role": "keep",
+        "checks": [
+          {
+            "check": "www-case-sensitive",
+            "reason": "declared again quoting \"a bare www autolink must start with lowercase \\\"www.\\\" exactly; mixed- or upper-case variants must stay plain text\", so it no longer states this outcome"
+          }
+        ],
+        "taskInputs": [],
+        "reason": "www-case-sensitive: declared again quoting \"a bare www autolink must start with lowercase \\\"www.\\\" exactly; mixed- or upper-case variants must stay plain text\", so it no longer states this outcome; the revision declared no replacement",
+        "nextAction": "implement it from the task's words; no generated check exercises it, so check it yourself on the task's own example"
+      },
+      {
+        "id": "scheme-insensitivity#1",
+        "requirement": "scheme-insensitivity",
+        "quote": null,
+        "role": "keep",
+        "checks": [
+          {
+            "check": "scheme-case-insensitive",
+            "reason": "declared again quoting \"Scheme autolinks must remain case-insensitive for the scheme, so \\\"(See hTtPS://example.com/fhqwhgads.)\\\" must still produce a link with the trailing period excluded\", so it no longer states this outcome"
+          }
+        ],
+        "taskInputs": [
+          {
+            "input": "hTtPS://example.com/fhqwhgads.",
+            "expected": "{\"hasLink\":true,\"input\":\"hTtPS://example.com/fhqwhgads.\"}",
+            "base": "{\"hasLink\":false,\"html\":\"<p>(See hTtPS://example.com/fhqwhgads.)</p>\\n\",\"input\":\"hTtPS://example.com/fhqwhgads.\"}"
+          }
+        ],
+        "reason": "scheme-case-insensitive: declared again quoting \"Scheme autolinks must remain case-insensitive for the scheme, so \\\"(See hTtPS://example.com/fhqwhgads.)\\\" must still produce a link with the trailing period excluded\", so it no longer states this outcome; the revision declared no replacement",
+        "nextAction": "implement it from the task's words: the task names \"hTtPS://example.com/fhqwhgads.\" (first expected {\"hasLink\":true,\"input\":\"hTtPS://example.com/fhqwhgads.\"}; the base gave {\"hasLink\":false,\"html\":\"<p>(See hTtPS://example.com/fhqwhgads.)</p>\\n\",\"input\":\"hTtPS://example.com/fhqwhgads.\"}) for it, and no admitted check exercises that input now, so run the project on it yourself and compare what it gives with what the task's words ask for, not with either expectation"
+      },
+      {
+        "id": "scheme-insensitivity#2",
+        "requirement": "scheme-insensitivity",
+        "quote": "Scheme autolinks must remain case-insensitive for the scheme, so \"(See hTtPS://example.com/fhqwhgads.)\" must still produce a link with the trailing period excluded",
+        "role": "change",
+        "checks": [
+          {
+            "check": "scheme-case-insensitive",
+            "reason": "it passes on the base, so it does not detect the requested change"
+          }
+        ],
+        "taskInputs": [
+          {
+            "input": "hTtPS://example.com/fhqwhgads.",
+            "expected": "{\"hasLink\":false}",
+            "base": "{\"hasLink\":false,\"html\":\"<p>(See hTtPS://example.com/fhqwhgads.)</p>\\n\",\"input\":\"hTtPS://example.com/fhqwhgads.\"}"
+          }
+        ],
+        "reason": "scheme-case-insensitive: it passes on the base, so it does not detect the requested change; the revision declared no replacement",
+        "nextAction": "implement it from the task's words: the task names \"hTtPS://example.com/fhqwhgads.\" (first expected {\"hasLink\":false}; the base gave {\"hasLink\":false,\"html\":\"<p>(See hTtPS://example.com/fhqwhgads.)</p>\\n\",\"input\":\"hTtPS://example.com/fhqwhgads.\"}) for it, and no admitted check exercises that input now, so run the project on it yourself and compare what it gives with what the task's words ask for, not with either expectation"
+      }
+    ]
+  },
+  "outcomeUnresolved": [
+    {
+      "id": "www-case-sensitivity#1",
+      "requirement": "www-case-sensitivity",
+      "quote": "Make \"www.\" detection case-sensitive without changing how http://, https:// or ftp:// are detected",
+      "role": "change",
+      "reason": "www-case-sensitive: declared again quoting \"a bare www autolink must start with lowercase \\\"www.\\\" exactly; mixed- or upper-case variants must stay plain text\", so it no longer states this outcome; the revision declared no replacement",
+      "nextAction": "implement it from the task's words: the task names \"WWW.example.com\" (first expected {\"hasLink\":false,\"input\":\"WWW.example.com\"}), \"Www.example.com\" (first expected {\"hasLink\":false,\"input\":\"Www.example.com\"}) for it, and no admitted check exercises that input now, so run the project on it yourself and compare what it gives with what the task's words ask for, not with either expectation"
+    },
+    {
+      "id": "www-case-sensitivity#2",
+      "requirement": "www-case-sensitivity",
+      "quote": "Make \"www.\" detection case-sensitive without changing how http://, https:// or ftp:// are detected",
+      "role": "keep",
+      "reason": "www-case-sensitive: declared again quoting \"a bare www autolink must start with lowercase \\\"www.\\\" exactly; mixed- or upper-case variants must stay plain text\", so it no longer states this outcome; the revision declared no replacement",
+      "nextAction": "implement it from the task's words; no generated check exercises it, so check it yourself on the task's own example"
+    },
+    {
+      "id": "scheme-insensitivity#1",
+      "requirement": "scheme-insensitivity",
+      "quote": null,
+      "role": "keep",
+      "reason": "scheme-case-insensitive: declared again quoting \"Scheme autolinks must remain case-insensitive for the scheme, so \\\"(See hTtPS://example.com/fhqwhgads.)\\\" must still produce a link with the trailing period excluded\", so it no longer states this outcome; the revision declared no replacement",
+      "nextAction": "implement it from the task's words: the task names \"hTtPS://example.com/fhqwhgads.\" (first expected {\"hasLink\":true,\"input\":\"hTtPS://example.com/fhqwhgads.\"}; the base gave {\"hasLink\":false,\"html\":\"<p>(See hTtPS://example.com/fhqwhgads.)</p>\\n\",\"input\":\"hTtPS://example.com/fhqwhgads.\"}) for it, and no admitted check exercises that input now, so run the project on it yourself and compare what it gives with what the task's words ask for, not with either expectation"
+    },
+    {
+      "id": "scheme-insensitivity#2",
+      "requirement": "scheme-insensitivity",
+      "quote": "Scheme autolinks must remain case-insensitive for the scheme, so \"(See hTtPS://example.com/fhqwhgads.)\" must still produce a link with the trailing period excluded",
+      "role": "change",
+      "reason": "scheme-case-insensitive: it passes on the base, so it does not detect the requested change; the revision declared no replacement",
+      "nextAction": "implement it from the task's words: the task names \"hTtPS://example.com/fhqwhgads.\" (first expected {\"hasLink\":false}; the base gave {\"hasLink\":false,\"html\":\"<p>(See hTtPS://example.com/fhqwhgads.)</p>\\n\",\"input\":\"hTtPS://example.com/fhqwhgads.\"}) for it, and no admitted check exercises that input now, so run the project on it yourself and compare what it gives with what the task's words ask for, not with either expectation"
+    }
+  ],
+  "admissions": [
+    [
+      {
+        "check": "www-case-sensitive",
+        "finding": "expectation-contradicted",
+        "admitted": false,
+        "thrown": null,
+        "disagreements": [
+          {
+            "base": "{\"hasLink\":true,\"html\":\"<p><a href=\\\"http://www.example.com\\\">www.example.com</a></p>\\n\",\"input\":\"www.example.com\"}",
+            "case": 4,
+            "expected": "{\"hasLink\":true,\"input\":\"www.example.com\"}",
+            "input": "www.example.com",
+            "namedByTask": false
+          }
+        ],
+        "reason": "case(s) 4 are declared kept (changed: false), so the unchanged base must give their expected results, and it does not: either the task changes them (changed: true, with the task's words in why) or the expectation misreads what the base does"
+      },
+      {
+        "check": "scheme-case-insensitive",
+        "finding": "disagrees-with-base",
+        "admitted": false,
+        "thrown": null,
+        "disagreements": [
+          {
+            "base": "{\"hasLink\":false,\"html\":\"<p>(See hTtPS://example.com/fhqwhgads.)</p>\\n\",\"input\":\"hTtPS://example.com/fhqwhgads.\"}",
+            "case": 1,
+            "expected": "{\"hasLink\":true,\"input\":\"hTtPS://example.com/fhqwhgads.\"}",
+            "input": "hTtPS://example.com/fhqwhgads.",
+            "namedByTask": true
+          },
+          {
+            "base": "{\"hasLink\":false,\"html\":\"<p>(See HTTPS://example.com/path)</p>\\n\",\"input\":\"HTTPS://example.com/path\"}",
+            "case": 2,
+            "expected": "{\"hasLink\":true,\"input\":\"HTTPS://example.com/path\"}",
+            "input": "HTTPS://example.com/path",
+            "namedByTask": false
+          },
+          {
+            "base": "{\"hasLink\":false,\"html\":\"<p>(See HTTP://Example.COM/page)</p>\\n\",\"input\":\"HTTP://Example.COM/page\"}",
+            "case": 3,
+            "expected": "{\"hasLink\":true,\"input\":\"HTTP://Example.COM/page\"}",
+            "input": "HTTP://Example.COM/page",
+            "namedByTask": false
+          }
+        ],
+        "reason": "it fails on the base: case(s) 1, 2, 3 do not give their expected results there. That is a disagreement with the base, not a finding that the requested behaviour is wrong: either an expectation misreads what the base does and is corrected, or the task asks for an outcome the base does not give yet, which makes the case a change (changed: true in a change check, with the task's words in why). The task names the input of case 1 itself, so the outcome it states there may be the one it asks for."
+      },
+      {
+        "check": "email-autolink-preserved",
+        "finding": "disagrees-with-base",
+        "admitted": false,
+        "thrown": null,
+        "disagreements": [
+          {
+            "base": "{\"hasLink\":true,\"html\":\"<p><a href=\\\"mailto:test@example.com\\\">test@example.com</a></p>\\n\",\"input\":\"test@example.com\"}",
+            "case": 1,
+            "expected": "{\"hasLink\":true,\"input\":\"test@example.com\"}",
+            "input": "test@example.com",
+            "namedByTask": false
+          },
+          {
+            "base": "{\"hasLink\":true,\"html\":\"<p><a href=\\\"mailto:user.name+tag@domain.org\\\">user.name+tag@domain.org</a></p>\\n\",\"input\":\"user.name+tag@domain.org\"}",
+            "case": 2,
+            "expected": "{\"hasLink\":true,\"input\":\"user.name+tag@domain.org\"}",
+            "input": "user.name+tag@domain.org",
+            "namedByTask": false
+          }
+        ],
+        "reason": "it fails on the base: case(s) 1, 2 do not give their expected results there. That is a disagreement with the base, not a finding that the requested behaviour is wrong: either an expectation misreads what the base does and is corrected, or the task asks for an outcome the base does not give yet, which makes the case a change (changed: true in a change check, with the task's words in why). The task names none of these inputs, so nothing but the planner's reading backs these expectations."
+      },
+      {
+        "check": "lowercase-www-links",
+        "finding": "disagrees-with-base",
+        "admitted": false,
+        "thrown": null,
+        "disagreements": [
+          {
+            "base": "{\"hasLink\":true,\"html\":\"<p><a href=\\\"http://www.example.com\\\">www.example.com</a></p>\\n\",\"input\":\"www.example.com\"}",
+            "case": 1,
+            "expected": "{\"hasLink\":true,\"input\":\"www.example.com\"}",
+            "input": "www.example.com",
+            "namedByTask": false
+          }
+        ],
+        "reason": "it fails on the base: case(s) 1 do not give their expected results there. That is a disagreement with the base, not a finding that the requested behaviour is wrong: either an expectation misreads what the base does and is corrected, or the task asks for an outcome the base does not give yet, which makes the case a change (changed: true in a change check, with the task's words in why). The task names none of these inputs, so nothing but the planner's reading backs these expectations."
+      }
+    ],
+    [
+      {
+        "check": "www-case-sensitive",
+        "finding": "unestablished-control",
+        "admitted": true,
+        "thrown": null,
+        "disagreements": null,
+        "reason": "kept with its control unestablished: on the base every case gave one and the same answer. That is what a defect that answers one value gives, and also what a program that ignores its input, builds an empty or wrongly built fixture, or calls the wrong function gives, and nothing here tells those apart. Where the defect is not one answer for everything, check that the program passes its input to the project and builds what it calls as the repository's own tests do, and add a kept case (changed: false) whose answer on the base differs from the changed cases' answers"
+      },
+      {
+        "check": "scheme-case-insensitive",
+        "finding": "does-not-detect",
+        "admitted": false,
+        "thrown": null,
+        "disagreements": null,
+        "reason": "it passes on the base, so it does not detect the requested change"
+      },
+      {
+        "check": "email-autolink-preserved",
+        "finding": "unestablished-control",
+        "admitted": true,
+        "thrown": null,
+        "disagreements": null,
+        "reason": "kept with its control unestablished: it passes on the base, and every case gave one and the same answer there, which a program that ignores its input or builds an empty fixture also gives, so a pass shows little until something varies; a case whose kept answer differs, through the same program, would establish it"
+      },
+      {
+        "check": "lowercase-www-links",
+        "finding": "unestablished-control",
+        "admitted": true,
+        "thrown": null,
+        "disagreements": null,
+        "reason": "kept with its control unestablished: it passes on the base, and every case gave one and the same answer there, which a program that ignores its input or builds an empty fixture also gives, so a pass shows little until something varies; a case whose kept answer differs, through the same program, would establish it"
+      }
+    ]
+  ],
+  "outcomesRecorded": [],
+  "reconciled": {
+    "contested": [
+      {
+        "base": "{\"hasLink\":false,\"html\":\"<p>(See hTtPS://example.com/fhqwhgads.)</p>\\n\",\"input\":\"hTtPS://example.com/fhqwhgads.\"}",
+        "check": "scheme-case-insensitive",
+        "expected": "{\"hasLink\":true,\"input\":\"hTtPS://example.com/fhqwhgads.\"}",
+        "input": "hTtPS://example.com/fhqwhgads.",
+        "requirement": "scheme-insensitivity"
+      }
+    ],
+    "interpretation": [
+      {
+        "base": null,
+        "check": "www-case-sensitive",
+        "from": "{\"hasLink\":false,\"input\":\"WWW.example.com\"}",
+        "input": "WWW.example.com",
+        "quote": "a bare www autolink must start with lowercase \"www.\" exactly; mixed- or upper-case variants must stay plain text",
+        "requirement": "www-case-sensitivity",
+        "to": "{\"hasLink\":false}",
+        "toRecordedBase": false,
+        "version": "1.2"
+      },
+      {
+        "base": null,
+        "check": "www-case-sensitive",
+        "from": "{\"hasLink\":false,\"input\":\"Www.example.com\"}",
+        "input": "Www.example.com",
+        "quote": "a bare www autolink must start with lowercase \"www.\" exactly; mixed- or upper-case variants must stay plain text",
+        "requirement": "www-case-sensitivity",
+        "to": "{\"hasLink\":false}",
+        "toRecordedBase": false,
+        "version": "1.2"
+      },
+      {
+        "base": "{\"hasLink\":false,\"html\":\"<p>(See hTtPS://example.com/fhqwhgads.)</p>\\n\",\"input\":\"hTtPS://example.com/fhqwhgads.\"}",
+        "check": "scheme-case-insensitive",
+        "from": "{\"hasLink\":true,\"input\":\"hTtPS://example.com/fhqwhgads.\"}",
+        "input": "hTtPS://example.com/fhqwhgads.",
+        "quote": "Scheme autolinks must remain case-insensitive for the scheme, so \"(See hTtPS://example.com/fhqwhgads.)\" must still produce a link with the trailing period excluded",
+        "requirement": "scheme-insensitivity",
+        "to": "{\"hasLink\":false}",
+        "toRecordedBase": false,
+        "version": "1.2"
+      }
+    ],
+    "limitation": "covered means the retained contract holds a generated check that states the outcome (its requirement, the task's words its check quotes, and the role of its cases), still holds every input the task names that the outcome was stated with, and does not expect there the base's answer a base run disputed; it does not mean that check tests all of what those words say, every expected result is still the planner's, and an outcome the planner never stated is not here. A restatement is the same check declared again keeping every word and task-named input of the earlier statement",
+    "outcomes": [
+      {
+        "covered": false,
+        "declaredBy": [
+          "www-case-sensitive"
+        ],
+        "id": "www-case-sensitivity#1",
+        "quote": "Make \"www.\" detection case-sensitive without changing how http://, https:// or ftp:// are detected",
+        "requirement": "www-case-sensitivity",
+        "restatedAs": [],
+        "retained": [],
+        "role": "change",
+        "taskInputs": [
+          {
+            "base": null,
+            "expected": "{\"hasLink\":false,\"input\":\"WWW.example.com\"}",
+            "input": "WWW.example.com"
+          },
+          {
+            "base": null,
+            "expected": "{\"hasLink\":false,\"input\":\"Www.example.com\"}",
+            "input": "Www.example.com"
+          }
+        ]
+      },
+      {
+        "covered": false,
+        "declaredBy": [
+          "www-case-sensitive"
+        ],
+        "id": "www-case-sensitivity#2",
+        "quote": "Make \"www.\" detection case-sensitive without changing how http://, https:// or ftp:// are detected",
+        "requirement": "www-case-sensitivity",
+        "restatedAs": [],
+        "retained": [],
+        "role": "keep",
+        "taskInputs": []
+      },
+      {
+        "covered": false,
+        "declaredBy": [
+          "scheme-case-insensitive"
+        ],
+        "id": "scheme-insensitivity#1",
+        "quote": null,
+        "requirement": "scheme-insensitivity",
+        "restatedAs": [],
+        "retained": [],
+        "role": "keep",
+        "taskInputs": [
+          {
+            "base": "{\"hasLink\":false,\"html\":\"<p>(See hTtPS://example.com/fhqwhgads.)</p>\\n\",\"input\":\"hTtPS://example.com/fhqwhgads.\"}",
+            "expected": "{\"hasLink\":true,\"input\":\"hTtPS://example.com/fhqwhgads.\"}",
+            "input": "hTtPS://example.com/fhqwhgads."
+          }
+        ]
+      },
+      {
+        "covered": true,
+        "declaredBy": [
+          "email-autolink-preserved"
+        ],
+        "id": "email-autolinks#1",
+        "quote": null,
+        "requirement": "email-autolinks",
+        "restatedAs": [
+          "keep email autolinks working"
+        ],
+        "retained": [
+          "email-autolink-preserved"
+        ],
+        "role": "keep",
+        "taskInputs": []
+      },
+      {
+        "covered": true,
+        "declaredBy": [
+          "lowercase-www-links"
+        ],
+        "id": "www-case-sensitivity#3",
+        "quote": "Per the GFM spec a bare www autolink must start with lowercase \"www.\" exactly",
+        "requirement": "www-case-sensitivity",
+        "restatedAs": [
+          "Per the GFM spec a bare www autolink must start with lowercase \"www.\" exactly; mixed- or upper-case variants must stay plain text."
+        ],
+        "retained": [
+          "lowercase-www-links"
+        ],
+        "role": "keep",
+        "taskInputs": []
+      },
+      {
+        "covered": true,
+        "declaredBy": [
+          "www-case-sensitive"
+        ],
+        "id": "www-case-sensitivity#4",
+        "quote": "a bare www autolink must start with lowercase \"www.\" exactly; mixed- or upper-case variants must stay plain text",
+        "requirement": "www-case-sensitivity",
+        "restatedAs": [],
+        "retained": [
+          "www-case-sensitive"
+        ],
+        "role": "change",
+        "taskInputs": [
+          {
+            "base": null,
+            "expected": "{\"hasLink\":false}",
+            "input": "WWW.example.com"
+          },
+          {
+            "base": null,
+            "expected": "{\"hasLink\":false}",
+            "input": "Www.example.com"
+          }
+        ]
+      },
+      {
+        "covered": true,
+        "declaredBy": [
+          "www-case-sensitive"
+        ],
+        "id": "www-case-sensitivity#5",
+        "quote": "a bare www autolink must start with lowercase \"www.\" exactly; mixed- or upper-case variants must stay plain text",
+        "requirement": "www-case-sensitivity",
+        "restatedAs": [],
+        "retained": [
+          "www-case-sensitive"
+        ],
+        "role": "keep",
+        "taskInputs": []
+      },
+      {
+        "covered": false,
+        "declaredBy": [
+          "scheme-case-insensitive"
+        ],
+        "id": "scheme-insensitivity#2",
+        "quote": "Scheme autolinks must remain case-insensitive for the scheme, so \"(See hTtPS://example.com/fhqwhgads.)\" must still produce a link with the trailing period excluded",
+        "requirement": "scheme-insensitivity",
+        "restatedAs": [],
+        "retained": [],
+        "role": "change",
+        "taskInputs": [
+          {
+            "base": "{\"hasLink\":false,\"html\":\"<p>(See hTtPS://example.com/fhqwhgads.)</p>\\n\",\"input\":\"hTtPS://example.com/fhqwhgads.\"}",
+            "expected": "{\"hasLink\":false}",
+            "input": "hTtPS://example.com/fhqwhgads."
+          }
+        ]
+      }
+    ],
+    "requirements": [
+      {
+        "covered": true,
+        "id": "www-case-sensitivity",
+        "rejected": [],
+        "retained": [
+          "www-case-sensitive",
+          "lowercase-www-links"
+        ]
+      },
+      {
+        "covered": false,
+        "id": "scheme-insensitivity",
+        "rejected": [
+          "scheme-case-insensitive"
+        ],
+        "retained": []
+      },
+      {
+        "covered": true,
+        "id": "email-autolinks",
+        "rejected": [],
+        "retained": [
+          "email-autolink-preserved"
+        ]
+      }
+    ],
+    "rule": "planned-coverage-reconciled-v3",
+    "uncovered": [
+      {
+        "id": "scheme-insensitivity",
+        "nextAction": "implement it from the task's words; no generated check exercises it, so check it yourself on the task's own example",
+        "quote": "Scheme autolinks must remain case-insensitive for the scheme, so \"(See hTtPS://example.com/fhqwhgads.)\" must still produce a link with the trailing period excluded",
+        "reason": "scheme-case-insensitive: it passes on the base, so it does not detect the requested change; the revision declared no replacement",
+        "rejected": [
+          {
+            "check": "scheme-case-insensitive",
+            "reason": "it passes on the base, so it does not detect the requested change"
+          }
+        ]
+      }
+    ],
+    "unresolvedOutcomes": [
+      {
+        "checks": [
+          {
+            "check": "www-case-sensitive",
+            "reason": "declared again quoting \"a bare www autolink must start with lowercase \\\"www.\\\" exactly; mixed- or upper-case variants must stay plain text\", so it no longer states this outcome"
+          }
+        ],
+        "id": "www-case-sensitivity#1",
+        "nextAction": "implement it from the task's words: the task names \"WWW.example.com\" (first expected {\"hasLink\":false,\"input\":\"WWW.example.com\"}), \"Www.example.com\" (first expected {\"hasLink\":false,\"input\":\"Www.example.com\"}) for it, and no admitted check exercises that input now, so run the project on it yourself and compare what it gives with what the task's words ask for, not with either expectation",
+        "quote": "Make \"www.\" detection case-sensitive without changing how http://, https:// or ftp:// are detected",
+        "reason": "www-case-sensitive: declared again quoting \"a bare www autolink must start with lowercase \\\"www.\\\" exactly; mixed- or upper-case variants must stay plain text\", so it no longer states this outcome; the revision declared no replacement",
+        "requirement": "www-case-sensitivity",
+        "role": "change",
+        "taskInputs": [
+          {
+            "base": null,
+            "expected": "{\"hasLink\":false,\"input\":\"WWW.example.com\"}",
+            "input": "WWW.example.com"
+          },
+          {
+            "base": null,
+            "expected": "{\"hasLink\":false,\"input\":\"Www.example.com\"}",
+            "input": "Www.example.com"
+          }
+        ]
+      },
+      {
+        "checks": [
+          {
+            "check": "www-case-sensitive",
+            "reason": "declared again quoting \"a bare www autolink must start with lowercase \\\"www.\\\" exactly; mixed- or upper-case variants must stay plain text\", so it no longer states this outcome"
+          }
+        ],
+        "id": "www-case-sensitivity#2",
+        "nextAction": "implement it from the task's words; no generated check exercises it, so check it yourself on the task's own example",
+        "quote": "Make \"www.\" detection case-sensitive without changing how http://, https:// or ftp:// are detected",
+        "reason": "www-case-sensitive: declared again quoting \"a bare www autolink must start with lowercase \\\"www.\\\" exactly; mixed- or upper-case variants must stay plain text\", so it no longer states this outcome; the revision declared no replacement",
+        "requirement": "www-case-sensitivity",
+        "role": "keep",
+        "taskInputs": []
+      },
+      {
+        "checks": [
+          {
+            "check": "scheme-case-insensitive",
+            "reason": "declared again quoting \"Scheme autolinks must remain case-insensitive for the scheme, so \\\"(See hTtPS://example.com/fhqwhgads.)\\\" must still produce a link with the trailing period excluded\", so it no longer states this outcome"
+          }
+        ],
+        "id": "scheme-insensitivity#1",
+        "nextAction": "implement it from the task's words: the task names \"hTtPS://example.com/fhqwhgads.\" (first expected {\"hasLink\":true,\"input\":\"hTtPS://example.com/fhqwhgads.\"}; the base gave {\"hasLink\":false,\"html\":\"<p>(See hTtPS://example.com/fhqwhgads.)</p>\\n\",\"input\":\"hTtPS://example.com/fhqwhgads.\"}) for it, and no admitted check exercises that input now, so run the project on it yourself and compare what it gives with what the task's words ask for, not with either expectation",
+        "quote": null,
+        "reason": "scheme-case-insensitive: declared again quoting \"Scheme autolinks must remain case-insensitive for the scheme, so \\\"(See hTtPS://example.com/fhqwhgads.)\\\" must still produce a link with the trailing period excluded\", so it no longer states this outcome; the revision declared no replacement",
+        "requirement": "scheme-insensitivity",
+        "role": "keep",
+        "taskInputs": [
+          {
+            "base": "{\"hasLink\":false,\"html\":\"<p>(See hTtPS://example.com/fhqwhgads.)</p>\\n\",\"input\":\"hTtPS://example.com/fhqwhgads.\"}",
+            "expected": "{\"hasLink\":true,\"input\":\"hTtPS://example.com/fhqwhgads.\"}",
+            "input": "hTtPS://example.com/fhqwhgads."
+          }
+        ]
+      },
+      {
+        "checks": [
+          {
+            "check": "scheme-case-insensitive",
+            "reason": "it passes on the base, so it does not detect the requested change"
+          }
+        ],
+        "id": "scheme-insensitivity#2",
+        "nextAction": "implement it from the task's words: the task names \"hTtPS://example.com/fhqwhgads.\" (first expected {\"hasLink\":false}; the base gave {\"hasLink\":false,\"html\":\"<p>(See hTtPS://example.com/fhqwhgads.)</p>\\n\",\"input\":\"hTtPS://example.com/fhqwhgads.\"}) for it, and no admitted check exercises that input now, so run the project on it yourself and compare what it gives with what the task's words ask for, not with either expectation",
+        "quote": "Scheme autolinks must remain case-insensitive for the scheme, so \"(See hTtPS://example.com/fhqwhgads.)\" must still produce a link with the trailing period excluded",
+        "reason": "scheme-case-insensitive: it passes on the base, so it does not detect the requested change; the revision declared no replacement",
+        "requirement": "scheme-insensitivity",
+        "role": "change",
+        "taskInputs": [
+          {
+            "base": "{\"hasLink\":false,\"html\":\"<p>(See hTtPS://example.com/fhqwhgads.)</p>\\n\",\"input\":\"hTtPS://example.com/fhqwhgads.\"}",
+            "expected": "{\"hasLink\":false}",
+            "input": "hTtPS://example.com/fhqwhgads."
+          }
+        ]
+      }
+    ]
+  },
+  "revision": [
+    {
+      "admissionMs": 0,
+      "admitted": [],
+      "borrowLimitMs": 84000,
+      "borrowedMs": 0,
+      "declared": false,
+      "firstRoundStoppedForReserve": true,
+      "longestTrialMs": 37931,
+      "minimumRevisionMs": 60000,
+      "neededMs": 60000,
+      "outcome": "ran",
+      "reclassified": [],
+      "remainingMs": 133030,
+      "reserveMs": 135862,
+      "rule": "planned-check-revision-v2",
+      "stopReason": "completed"
+    }
+  ],
+  "followUp": [
+    {
+      "accepted": true,
+      "attempt": 1,
+      "identity": "sha256:56a6ea426c5e2f246d8c699e2120e92bc6588a2fa126a69dd38d98de50dcafc3",
+      "limitation": "given means one attempt carried the brief and its candidate was judged as any repair's is; it does not settle the work it names, which no sealed check states",
+      "reason": "given once the gates were green",
+      "rule": "outcome-follow-up-v1",
+      "state": "given"
+    }
+  ],
+  "brief": "Sealed objective: With GFM autolinking enabled, marked currently turns any text starting with \"www.\" into a link regardless of letter case, so \"Www.example.com\" and \"WWW.example.com\" become links. Per the GFM spec a bare www autolink must start with lowercase \"www.\" exactly; mixed- or upper-case variants must stay plain text. Scheme autolinks must remain case-insensitive for the scheme, so \"(See hTtPS://example.com\nRequired behavior: [{\"id\":\"visible-check\",\"description\":\"the visible acceptance check passes on a fresh checkout\"},{\"id\":\"www-case-sensitivity\",\"description\":\"Bare www autolinks with exactly lowercase \\\"www.\\\" must still produce links as they do in the base\"},{\"id\":\"scheme-insensitivity\",\"description\":\"Scheme autolinks (http://, https://, ftp://) must remain case-insensitive - mixed case schemes still produce links for bare URLs and angle-bracketed autolinks\"},{\"id\":\"email-autolinks\",\"description\":\"Email autolinks (bare addresses with @) must continue to work as links\"}]\nPreset: null\nRequested behaviour no generated check exercises (the planner's reading of the task; nothing will exercise these for you, and another check under the same requirement does not):\n- www-case-sensitivity#1, a change under requirement www-case-sensitivity, quoting the task: \"Make \\\"www.\\\" detection case-sensitive without changing how http://, https:// or ftp:// are detected\". The task's own input: \"WWW.example.com\" (the planner first expected {\"hasLink\":false,\"input\":\"WWW.example.com\"}), \"Www.example.com\" (the planner first expected {\"hasLink\":false,\"input\":\"Www.example.com\"}). Why: www-case-sensitive: declared again quoting \"a bare www autolink must start with lowercase \\\"www.\\\" exactly; mixed- or upper-case variants must stay plain text\", so it no longer states this outcome; the revision declared no replacement. Next: implement it from the task's words: the task names \"WWW.example.com\" (first expected {\"hasLink\":false,\"input\":\"WWW.example.com\"}), \"Www.example.com\" (first expected {\"hasLink\":false,\"input\":\"Www.example.com\"}) for it, and no admitted check exercises that input now, so run the project on it yourself and compare what it gives with what the task's words ask for, not with either expectation.\n- www-case-sensitivity#2, behaviour to keep under requirement www-case-sensitivity, quoting the task: \"Make \\\"www.\\\" detection case-sensitive without changing how http://, https:// or ftp:// are detected\". Why: www-case-sensitive: declared again quoting \"a bare www autolink must start with lowercase \\\"www.\\\" exactly; mixed- or upper-case variants must stay plain text\", so it no longer states this outcome; the revision declared no replacement. Next: implement it from the task's words; no generated check exercises it, so check it yourself on the task's own example.\n- scheme-insensitivity#1, behaviour to keep under requirement scheme-insensitivity. The task's own input: \"hTtPS://example.com/fhqwhgads.\" (the planner first expected {\"hasLink\":true,\"input\":\"hTtPS://example.com/fhqwhgads.\"}; the unchanged base gives {\"hasLink\":false,\"html\":\"<p>(See hTtPS://example.com/fhqwhgads.)</p>\\n\",\"input\":\"hTtPS://example.com/fhqwhgads.\"}). Why: scheme-case-insensitive: declared again quoting \"Scheme autolinks must remain case-insensitive for the scheme, so \\\"(See hTtPS://example.com/fhqwhgads.)\\\" must still produce a link with the trailing period excluded\", so it no longer states this outcome; the revision declared no replacement. Next: implement it from the task's words: the task names \"hTtPS://example.com/fhqwhgads.\" (first expected {\"hasLink\":true,\"input\":\"hTtPS://example.com/fhqwhgads.\"}; the base gave {\"hasLink\":false,\"html\":\"<p>(See hTtPS://example.com/fhqwhgads.)</p>\\n\",\"input\":\"hTtPS://example.com/fhqwhgads.\"}) for it, and no admitted check exercises that input now, so run the project on it yourself and compare what it gives with what the task's words ask for, not with either expectation.\n- scheme-insensitivity#2, a change under requirement scheme-insensitivity, quoting the task: \"Scheme autolinks must remain case-insensitive for the scheme, so \\\"(See hTtPS://example.com/fhqwhgads.)\\\" must still produce a link with the trailing period excluded\". The task's own input: \"hTtPS://example.com/fhqwhgads.\" (the planner first expected {\"hasLink\":false}; the unchanged base gives {\"hasLink\":false,\"html\":\"<p>(See hTtPS://example.com/fhqwhgads.)</p>\\n\",\"input\":\"hTtPS://example.com/fhqwhgads.\"}). Why: scheme-case-insensitive: it passes on the base, so it does not detect the requested change; the revision declared no replacement. Next: implement it from the task's words: the task names \"hTtPS://example.com/fhqwhgads.\" (first expected {\"hasLink\":false}; the base gave {\"hasLink\":false,\"html\":\"<p>(See hTtPS://example.com/fhqwhgads.)</p>\\n\",\"input\":\"hTtPS://example.com/fhqwhgads.\"}) for it, and no admitted check exercises that input now, so run the project on it yourself and compare what it gives with what the task's words ask for, not with either expectation.",
+  "report": [
+    "outcome: accepted; this is the supplied contract's reading only: 4 requested outcome(s) read from the task were exercised by no check (below), so it does not show the whole task done",
+    "  follow-up on them: given once, as attempt 1; the ratchet accepted what it left; they stay unresolved, since no sealed check states them",
+    "  requested: With GFM autolinking enabled, marked currently turns any text starting with \"www.\" into a link regardless of letter case, so \"Www.example.com\" and \"WWW.examp...",
+    "  verdict: task accepted, regression pass, policy pass, execution restricted; the loop stopped as completed",
+    "  requirements: 1 supplied, 1 met, 0 unmet, 0 unjudged; 3 planned from the task, hypotheses that generated checks exercise and that decide nothing",
+    "    met      visible-check: the visible acceptance check passes on a fresh checkout",
+    "    unjudged www-case-sensitivity: Bare www autolinks with exactly lowercase \"www.\" must still produce links as they do in the base [planned from the task: \"Per the GFM spec a bare www autolink must start with lowercase \"www.\" exactly\"]",
+    "             generated check www-case-sensitive: agrees with the change; its expected results are the planner's",
+    "             generated check lowercase-www-links: agrees with the change; its expected results are the planner's",
+    "             NO CHECK change \"Make \"www.\" detection case-sensitive without changing how http://, https:// or ftp:// are detected\": www-case-sensitive: declared again quoting \"a bare www autolink must start with lowercase \\\"www.\\\" exactly; mixed- or upper-case variants must stay plain text\", so it no longer states this outcome; the revision declared no replacement",
+    "             next for it: implement it from the task's words: the task names \"WWW.example.com\" (first expected {\"hasLink\":false,\"input\":\"WWW.example.com\"}), \"Www.example.com\" (first expected {\"hasLink\":false,\"input\":\"Www.example.com\"}) for it, and no admitted check exercises that input now, so run the project on it yourself and compare what it gives with what the task's words ask for, not with either expectation",
+    "             NO CHECK kept behaviour \"Make \"www.\" detection case-sensitive without changing how http://, https:// or ftp:// are detected\": www-case-sensitive: declared again quoting \"a bare www autolink must start with lowercase \\\"www.\\\" exactly; mixed- or upper-case variants must stay plain text\", so it no longer states this outcome; the revision declared no replacement",
+    "             next for it: implement it from the task's words; no generated check exercises it, so check it yourself on the task's own example",
+    "    no check scheme-insensitivity: Scheme autolinks (http://, https://, ftp://) must remain case-insensitive - mixed case schemes st... [planned from the task: \"Scheme autolinks must remain case-insensitive for the scheme, so \"(See hTtPS:...\"]",
+    "             no generated check covers it: scheme-case-insensitive: it passes on the base, so it does not detect the requested change; the revision declared no replacement",
+    "             next for it: implement it from the task's words; no generated check exercises it, so check it yourself on the task's own example",
+    "             NO CHECK kept behaviour (quoting nothing)",
+    "             NO CHECK change \"Scheme autolinks must remain case-insensitive for the scheme, so \"(See hTtPS://example.com/fhqwhgads.)\" must still produce a link with the trailing period ex...\"",
+    "    unjudged email-autolinks: Email autolinks (bare addresses with @) must continue to work as links [planned from the task: \"keep email autolinks working\"]",
+    "             generated check email-autolink-preserved: agrees with the change; its expected results are the planner's",
+    "  scope: only supplied requirements decide; a task sentence no requirement quotes was not tracked, and a quote says what a requirement is about, not that its checks test all of it",
+    "  tree: /var/folders/1q/2_tt_q515bs98g0f5v17_sdc0000gn/T/launch-replay-E34tLE/workspace on work, measured against 70d6b9b78229",
+    "  changed: 1 file(s)",
+    "    src/rules.ts",
+    "  checks on that tree: 9 passed, 0 failed, 3 could not run (typecheck, format, behaviour-probe)",
+    "    final verification of the exact tree in a fresh checkout: regression pass",
+    "  used: 5m 37s, 4 steps, 538 tokens, $0.00; of which planning and criteria 3m 23s, 993,476 tokens",
+    "  interventions: none by a person; automatic: none",
+    "",
+    "routing reward: 0.175 (green with 1 retry, 337s, and $0.0000)",
+    "",
+    "evidence bundle: /Users/brad/.swarm/sessions/20261020T024314-5fb2a0/bundle",
+    "verify it anywhere: node /Users/brad/.swarm/sessions/20261020T024314-5fb2a0/bundle/verify.mjs /Users/brad/.swarm/sessions/20261020T024314-5fb2a0/bundle",
+    "review it: open /Users/brad/.swarm/sessions/20261020T024314-5fb2a0/bundle/review.html",
+    "what this run produced",
+    "",
+    "  the page a person reads: /Users/brad/.swarm/sessions/20261020T024314-5fb2a0/bundle/review.html",
+    "  the bundle a stranger verifies: /Users/brad/.swarm/sessions/20261020T024314-5fb2a0/bundle",
+    "  its own verifier, needing nothing installed: node /Users/brad/.swarm/sessions/20261020T024314-5fb2a0/bundle/verify.mjs /Users/brad/.swarm/sessions/20261020T024314-5fb2a0/bundle",
+    "  the chain every record is on: /Users/brad/.swarm/sessions/20261020T024314-5fb2a0/bundle/ledger.jsonl",
+    "",
+    "  130 records. The harness verified 0 claim(s) and refused 0.",
+    "  bundle verified in this run: verify.mjs exited 0",
+    "  the run took 5m 37s, 4 steps, 538 tokens, $0.00",
+    ""
+  ],
+  "reading": {
+    "runId": "20261020T024314-5fb2a0",
+    "record": null,
+    "planning": {
+      "outcome": "sealed",
+      "durationMs": 203016,
+      "tokensUsed": 993476,
+      "admitted": [
+        "www-case-sensitive",
+        "email-autolink-preserved",
+        "lowercase-www-links"
+      ],
+      "dropped": [
+        {
+          "check": "scheme-case-insensitive",
+          "reason": "it passes on the base, so it does not detect the requested change"
+        }
+      ],
+      "uncovered": [
+        {
+          "id": "scheme-insensitivity",
+          "nextAction": "implement it from the task's words; no generated check exercises it, so check it yourself on the task's own example",
+          "quote": "Scheme autolinks must remain case-insensitive for the scheme, so \"(See hTtPS://example.com/fhqwhgads.)\" must still produce a link with the trailing period excluded",
+          "reason": "scheme-case-insensitive: it passes on the base, so it does not detect the requested change; the revision declared no replacement",
+          "rejected": [
+            {
+              "check": "scheme-case-insensitive",
+              "reason": "it passes on the base, so it does not detect the requested change"
+            }
+          ]
+        }
+      ],
+      "unresolvedOutcomes": [
+        {
+          "checks": [
+            {
+              "check": "www-case-sensitive",
+              "reason": "declared again quoting \"a bare www autolink must start with lowercase \\\"www.\\\" exactly; mixed- or upper-case variants must stay plain text\", so it no longer states this outcome"
+            }
+          ],
+          "id": "www-case-sensitivity#1",
+          "nextAction": "implement it from the task's words: the task names \"WWW.example.com\" (first expected {\"hasLink\":false,\"input\":\"WWW.example.com\"}), \"Www.example.com\" (first expected {\"hasLink\":false,\"input\":\"Www.example.com\"}) for it, and no admitted check exercises that input now, so run the project on it yourself and compare what it gives with what the task's words ask for, not with either expectation",
+          "quote": "Make \"www.\" detection case-sensitive without changing how http://, https:// or ftp:// are detected",
+          "reason": "www-case-sensitive: declared again quoting \"a bare www autolink must start with lowercase \\\"www.\\\" exactly; mixed- or upper-case variants must stay plain text\", so it no longer states this outcome; the revision declared no replacement",
+          "requirement": "www-case-sensitivity",
+          "role": "change",
+          "taskInputs": [
+            {
+              "base": null,
+              "expected": "{\"hasLink\":false,\"input\":\"WWW.example.com\"}",
+              "input": "WWW.example.com"
+            },
+            {
+              "base": null,
+              "expected": "{\"hasLink\":false,\"input\":\"Www.example.com\"}",
+              "input": "Www.example.com"
+            }
+          ]
+        },
+        {
+          "checks": [
+            {
+              "check": "www-case-sensitive",
+              "reason": "declared again quoting \"a bare www autolink must start with lowercase \\\"www.\\\" exactly; mixed- or upper-case variants must stay plain text\", so it no longer states this outcome"
+            }
+          ],
+          "id": "www-case-sensitivity#2",
+          "nextAction": "implement it from the task's words; no generated check exercises it, so check it yourself on the task's own example",
+          "quote": "Make \"www.\" detection case-sensitive without changing how http://, https:// or ftp:// are detected",
+          "reason": "www-case-sensitive: declared again quoting \"a bare www autolink must start with lowercase \\\"www.\\\" exactly; mixed- or upper-case variants must stay plain text\", so it no longer states this outcome; the revision declared no replacement",
+          "requirement": "www-case-sensitivity",
+          "role": "keep",
+          "taskInputs": []
+        },
+        {
+          "checks": [
+            {
+              "check": "scheme-case-insensitive",
+              "reason": "declared again quoting \"Scheme autolinks must remain case-insensitive for the scheme, so \\\"(See hTtPS://example.com/fhqwhgads.)\\\" must still produce a link with the trailing period excluded\", so it no longer states this outcome"
+            }
+          ],
+          "id": "scheme-insensitivity#1",
+          "nextAction": "implement it from the task's words: the task names \"hTtPS://example.com/fhqwhgads.\" (first expected {\"hasLink\":true,\"input\":\"hTtPS://example.com/fhqwhgads.\"}; the base gave {\"hasLink\":false,\"html\":\"<p>(See hTtPS://example.com/fhqwhgads.)</p>\\n\",\"input\":\"hTtPS://example.com/fhqwhgads.\"}) for it, and no admitted check exercises that input now, so run the project on it yourself and compare what it gives with what the task's words ask for, not with either expectation",
+          "quote": null,
+          "reason": "scheme-case-insensitive: declared again quoting \"Scheme autolinks must remain case-insensitive for the scheme, so \\\"(See hTtPS://example.com/fhqwhgads.)\\\" must still produce a link with the trailing period excluded\", so it no longer states this outcome; the revision declared no replacement",
+          "requirement": "scheme-insensitivity",
+          "role": "keep",
+          "taskInputs": [
+            {
+              "base": "{\"hasLink\":false,\"html\":\"<p>(See hTtPS://example.com/fhqwhgads.)</p>\\n\",\"input\":\"hTtPS://example.com/fhqwhgads.\"}",
+              "expected": "{\"hasLink\":true,\"input\":\"hTtPS://example.com/fhqwhgads.\"}",
+              "input": "hTtPS://example.com/fhqwhgads."
+            }
+          ]
+        },
+        {
+          "checks": [
+            {
+              "check": "scheme-case-insensitive",
+              "reason": "it passes on the base, so it does not detect the requested change"
+            }
+          ],
+          "id": "scheme-insensitivity#2",
+          "nextAction": "implement it from the task's words: the task names \"hTtPS://example.com/fhqwhgads.\" (first expected {\"hasLink\":false}; the base gave {\"hasLink\":false,\"html\":\"<p>(See hTtPS://example.com/fhqwhgads.)</p>\\n\",\"input\":\"hTtPS://example.com/fhqwhgads.\"}) for it, and no admitted check exercises that input now, so run the project on it yourself and compare what it gives with what the task's words ask for, not with either expectation",
+          "quote": "Scheme autolinks must remain case-insensitive for the scheme, so \"(See hTtPS://example.com/fhqwhgads.)\" must still produce a link with the trailing period excluded",
+          "reason": "scheme-case-insensitive: it passes on the base, so it does not detect the requested change; the revision declared no replacement",
+          "requirement": "scheme-insensitivity",
+          "role": "change",
+          "taskInputs": [
+            {
+              "base": "{\"hasLink\":false,\"html\":\"<p>(See hTtPS://example.com/fhqwhgads.)</p>\\n\",\"input\":\"hTtPS://example.com/fhqwhgads.\"}",
+              "expected": "{\"hasLink\":false}",
+              "input": "hTtPS://example.com/fhqwhgads."
+            }
+          ]
+        }
+      ],
+      "revision": {
+        "admitted": [],
+        "outcome": "ran",
+        "reclassified": [],
+        "stopReason": "completed"
+      },
+      "coverage": {
+        "quotedByAdmitted": [
+          2,
+          4
+        ],
+        "quotedWithoutCheck": [
+          3
+        ],
+        "sentences": 6
+      }
+    },
+    "decisions": [
+      {
+        "check": "www-case-sensitive",
+        "atBase": "fails",
+        "finding": "expectation-contradicted",
+        "reclassified": false,
+        "thrown": null,
+        "disagreements": [
+          {
+            "base": "{\"hasLink\":true,\"html\":\"<p><a href=\\\"http://www.example.com\\\">www.example.com</a></p>\\n\",\"input\":\"www.example.com\"}",
+            "case": 4,
+            "expected": "{\"hasLink\":true,\"input\":\"www.example.com\"}",
+            "input": "www.example.com",
+            "namedByTask": false
+          }
+        ]
+      },
+      {
+        "check": "scheme-case-insensitive",
+        "atBase": "passes",
+        "finding": "disagrees-with-base",
+        "reclassified": false,
+        "thrown": null,
+        "disagreements": [
+          {
+            "base": "{\"hasLink\":false,\"html\":\"<p>(See hTtPS://example.com/fhqwhgads.)</p>\\n\",\"input\":\"hTtPS://example.com/fhqwhgads.\"}",
+            "case": 1,
+            "expected": "{\"hasLink\":true,\"input\":\"hTtPS://example.com/fhqwhgads.\"}",
+            "input": "hTtPS://example.com/fhqwhgads.",
+            "namedByTask": true
+          },
+          {
+            "base": "{\"hasLink\":false,\"html\":\"<p>(See HTTPS://example.com/path)</p>\\n\",\"input\":\"HTTPS://example.com/path\"}",
+            "case": 2,
+            "expected": "{\"hasLink\":true,\"input\":\"HTTPS://example.com/path\"}",
+            "input": "HTTPS://example.com/path",
+            "namedByTask": false
+          },
+          {
+            "base": "{\"hasLink\":false,\"html\":\"<p>(See HTTP://Example.COM/page)</p>\\n\",\"input\":\"HTTP://Example.COM/page\"}",
+            "case": 3,
+            "expected": "{\"hasLink\":true,\"input\":\"HTTP://Example.COM/page\"}",
+            "input": "HTTP://Example.COM/page",
+            "namedByTask": false
+          }
+        ]
+      },
+      {
+        "check": "email-autolink-preserved",
+        "atBase": "passes",
+        "finding": "disagrees-with-base",
+        "reclassified": false,
+        "thrown": null,
+        "disagreements": [
+          {
+            "base": "{\"hasLink\":true,\"html\":\"<p><a href=\\\"mailto:test@example.com\\\">test@example.com</a></p>\\n\",\"input\":\"test@example.com\"}",
+            "case": 1,
+            "expected": "{\"hasLink\":true,\"input\":\"test@example.com\"}",
+            "input": "test@example.com",
+            "namedByTask": false
+          },
+          {
+            "base": "{\"hasLink\":true,\"html\":\"<p><a href=\\\"mailto:user.name+tag@domain.org\\\">user.name+tag@domain.org</a></p>\\n\",\"input\":\"user.name+tag@domain.org\"}",
+            "case": 2,
+            "expected": "{\"hasLink\":true,\"input\":\"user.name+tag@domain.org\"}",
+            "input": "user.name+tag@domain.org",
+            "namedByTask": false
+          }
+        ]
+      },
+      {
+        "check": "lowercase-www-links",
+        "atBase": "passes",
+        "finding": "disagrees-with-base",
+        "reclassified": false,
+        "thrown": null,
+        "disagreements": [
+          {
+            "base": "{\"hasLink\":true,\"html\":\"<p><a href=\\\"http://www.example.com\\\">www.example.com</a></p>\\n\",\"input\":\"www.example.com\"}",
+            "case": 1,
+            "expected": "{\"hasLink\":true,\"input\":\"www.example.com\"}",
+            "input": "www.example.com",
+            "namedByTask": false
+          }
+        ]
+      },
+      {
+        "check": "www-case-sensitive",
+        "atBase": "fails",
+        "finding": "unestablished-control",
+        "reclassified": false,
+        "thrown": null,
+        "disagreements": null
+      },
+      {
+        "check": "scheme-case-insensitive",
+        "atBase": "fails",
+        "finding": "does-not-detect",
+        "reclassified": false,
+        "thrown": null,
+        "disagreements": null
+      },
+      {
+        "check": "email-autolink-preserved",
+        "atBase": "passes",
+        "finding": "unestablished-control",
+        "reclassified": false,
+        "thrown": null,
+        "disagreements": null
+      },
+      {
+        "check": "lowercase-www-links",
+        "atBase": "passes",
+        "finding": "unestablished-control",
+        "reclassified": false,
+        "thrown": null,
+        "disagreements": null
+      }
+    ],
+    "declaredOutcomes": [],
+    "reconciled": null,
+    "briefNamesUnresolved": [],
+    "reserve": {
+      "basis": "measured",
+      "capMs": 210000,
+      "deadline": 1792465034061,
+      "measuredMs": 26869,
+      "modelWorkEnds": 1792464926585,
+      "note": "the share of the total allowance held for the final gate cycle, acceptance and the final independent verification; model work ends at modelWorkEnds and the checks at the deadline, where any still running are stopped and reported as not run",
+      "reserveMs": 107476,
+      "rule": "verification-reserve-v1"
+    },
+    "loopStop": "completed",
+    "repairAttempts": null,
+    "finalGates": {
+      "build": {
+        "status": "passed",
+        "durationMs": 1604,
+        "detail": "the command exited 0"
+      },
+      "lint": {
+        "status": "passed",
+        "durationMs": 802,
+        "detail": "the command exited 0"
+      },
+      "tests": {
+        "status": "passed",
+        "durationMs": 5016,
+        "detail": "1713 collected, 1713 passed, 0 failed, 0 skipped (exit 0)"
+      },
+      "task-acceptance": {
+        "status": "passed",
+        "durationMs": 27619,
+        "detail": "the inspection exited 0"
+      },
+      "task-diagnostics": {
+        "status": "passed",
+        "durationMs": 0,
+        "detail": "the inspection exited 0"
+      }
+    },
+    "finalIndependentVerification": {
+      "refusal": null,
+      "regression": "pass",
+      "appliedPatchDigest": "sha256:171fd7d612c01c7b9de165189713bf4bd33016e0fb756a0e85b1fdbd4e67420a"
+    },
+    "assessment": {
+      "independentRecord": "sha256:4e43eac5baf997265be13299b35ef779cf1c8933ade13ca0ad2a230582c56d15",
+      "policy": "run-acceptance-v3",
+      "previousAssessment": "sha256:c9236950eec0d063d25205ec3f4e29848c3ff0c0f9384598c875818873028fe6",
+      "sourceRecord": "sha256:eda854c9270ceb1de5a7ab29fc6be698a913eb5b6e0817aa3e3b6e32317ea255"
+    },
+    "phases": {
+      "planning": {
+        "wallMs": 203011,
+        "modelMs": 126237,
+        "abortedInFlightMs": 0,
+        "toolMs": 75467,
+        "otherMs": 1307
+      },
+      "seal and preflight": {
+        "wallMs": 27104,
+        "modelMs": 0,
+        "abortedInFlightMs": 0,
+        "toolMs": 0,
+        "otherMs": 27104
+      },
+      "worker loop and repairs": {
+        "wallMs": 38766,
+        "modelMs": 35,
+        "abortedInFlightMs": 0,
+        "toolMs": 131,
+        "otherMs": 38600
+      },
+      "final gates, acceptance and verification": {
+        "wallMs": 68512,
+        "modelMs": 0,
+        "abortedInFlightMs": 0,
+        "toolMs": 0,
+        "otherMs": 68512
+      }
+    }
+  }
+}

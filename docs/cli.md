@@ -29,7 +29,7 @@ swarm --version                  # which build this is
 | `--base <ref>` | what the diff and the ratchet measure against |
 | `--attempts <n>` | how many times the ratchet may retry a gate |
 | `--max-steps <n>` | how long the loop may run before it stops |
-| `--max-wall-minutes <n>` | the whole run's clock: the loop and every retry together |
+| `--max-wall-minutes <n>` | the whole run's clock: planning, the loop and every retry, and the final verification's reserve within it (four times the measured preflight, at least a minute, at most a quarter); model work ends at its share and the checks of the delivered tree still run |
 | `--isolation <runtime[:image]>` | run commands behind a kernel-enforced boundary |
 | `--approve ask\|auto` | `auto` answers shell-allowlist prompts itself and records each; a derivation-heuristic prompt still asks |
 | `--bundle <dir>` | where to write the evidence bundle |
