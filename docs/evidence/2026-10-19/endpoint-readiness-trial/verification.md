@@ -15,3 +15,9 @@ tests (4,592 against the branch head's 4,570: 15 in the two new unit files, 7 th
 runner) and no skip. These are local results on an unpushed branch: no CI ran.
 [regressions-before.txt](regressions-before.txt) runs the new cases against the starting harness
 `28efda8d6`, read in [README.md](README.md) section 3.
+
+## After the trial
+
+| commit | command | exit | result |
+| --- | --- | --- | --- |
+| **`0f3210739`** (the branch head after the trial: the evidence of sections 5 to 7 above the tested harness; `src/` and `scripts/` unchanged since `826e60e83`) | `npm run gates`, in the worktree | **0** | zero doc-path misses, 8.5 MB of headroom (the trial's packed streams added 0.6 MB), every pack restores (the trial's, 1,075 files, included), cited bundles verify, CI verdicts re-derive; typecheck clean; lint 0 errors, 28 warnings and 1 info; **468 test files passed and 5 skipped, 4,592 tests passed and 29 skipped** ([gates-0f3210739.txt](verification/gates-0f3210739.txt)) |
