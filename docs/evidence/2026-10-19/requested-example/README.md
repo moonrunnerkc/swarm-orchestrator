@@ -23,7 +23,7 @@ sequences.
 | unresolved information given to the worker | P 310 `planned-coverage-reconciled-v2`; R 2 `plan-checks-v1`; R 18/19 brief | 7 unresolved outcomes, three of them the scheme behaviour (`#1` quoting nothing, `#2` the example sentence, `#3` the fragment) and two that are restatements; every one's next action "check it yourself on the task's own example". The brief's sealed "Required behavior" for the requirement read "mixed case schemes **in angle brackets** still produce links" (the last version's description). |
 | the worker runs the example | R 193 (shell), R 195 (result) | its own script prints `mixed case httpS link output: <p>(See hTtPS://example.com/fhqwhgads.)</p>`, no link. |
 | explanation and completion | R 199, R 205, R 249, R 250 | "test 6 shows that `(See hTtPS://...)` did NOT produce a link. That's because angle-bracket autolinks go through the `autolink()` method..."; then it tests only angle-bracket inputs, which link, and finishes: `session-stopped`, `completed`, a turn with no tool call. |
-| the FTP regression | `final.patch`, `src/rules.ts` `url` rule | the rule's `i` flag removed and the schemes spelled `(?:[fF][pP][tT]\|[hH][tT][tT][pP][sS]?)`: `[fF][pP][tT]` matches "fpt", so bare `ftp://` no longer links. No declared check had an ftp case; the worker's ftp tests used angle brackets, which another rule handles. |
+| the FTP regression | `final.patch`, the `url` rule of marked's rules file | the rule's `i` flag removed and the schemes spelled `(?:[fF][pP][tT]\|[hH][tT][tT][pP][sS]?)`: `[fF][pP][tT]` matches "fpt", so bare `ftp://` no longer links. No declared check had an ftp case; the worker's ftp tests used angle brackets, which another rule handles. |
 | final verification and status | R 252-256 build/lint/tests passed; R 274 `task-acceptance` passed; R 275 `task-diagnostics` passed; R 273/300 `independent-verification` passed; R 301 `run-assessment` | `outcome: accepted`, exit 0, scoped "the supplied contract's reading only: 7 requested outcome(s)...". The runner's hidden oracle: **fail**. |
 
 **Four conditions, kept apart.** An *unavailable* check (structured: `goal-check.observation.unavailable`,
@@ -46,7 +46,7 @@ planner responses in order, each held for its recorded response time, through th
 scripted endpoint; the build runs its ordinary command line with the launch's flags on a workspace
 the comparison runner's helpers prepare from the launch's frozen manifest; admission runs the
 recorded programs on a real checkout of the marked base. **Disclosed adapters:** the worker's
-steps are not replayed (it declares `src/rules.ts` and writes the launch's delivered version whole,
+steps are not replayed (it declares marked's rules file and writes the launch's delivered version whole,
 so the final checks run on the exact delivered patch, digest compared), and a revision, review or
 follow-up the build asks for that the launch never had is answered by a scripted turn that changes
 nothing. It reproduces planning, admission, the scheduling decision, the brief, the controller's
