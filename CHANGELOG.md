@@ -45,6 +45,35 @@ Source on `v13-main`; not published until a release names it.
 - **`accepted` says whose reading it is.** Where any requested outcome is unresolved, the status
   line says it is the supplied contract's reading only and does not show the whole task done.
   The status and exit code are unchanged.
+- **A check's revisions cannot replace the task's own example.** An outcome keeps every version of
+  the check that stated it, case by case, and is covered only while retained checks still hold
+  every input the task names that it was stated with: a launch's planner moved the task's
+  `(See hTtPS://...)` example to angle-bracket inputs under the same check. A check expecting the
+  base's answer for a task-named input after the base disputed an earlier expectation there is
+  refused (`adopts-base-answer`): the base is an observation, not the request, and nothing
+  separates a mistaken expectation from a base that lacks the requested behaviour, so the outcome
+  stays unresolved rather than held at the base's answer. Corrections that keep the input stay
+  admissible; every change of expectation for a task-named input is recorded. The same check
+  declared again, keeping every word and task-named input, is one outcome rather than two. The
+  worker's brief and `unresolvedOutcomes[].taskInputs` name each task input with what was expected
+  and what the base gave. Records: `planned-outcomes-v2`, `planned-coverage-reconciled-v3`.
+- **An unresolved outcome is followed up before the run is reported.** A worker that ran the task's
+  example, saw it fail and finished left every gate green, so nothing looked again. Requested
+  outcomes no sealed check states are now owed one attempt once the gates are green, from the
+  attempt cap and under the same ratchet, rollback and budget floor as a repair, with a brief from
+  the structured outcomes that allows leaving correct code as it is. It is given once
+  (`outcome-follow-up-v1`) and reported (`outcome.outcomeFollowUp`); the outcomes stay unresolved,
+  and the status and exit code keep their meaning.
+- **A revision of dropped checks is scheduled inside the run's total.** It was withheld whenever
+  the first round used its share (64 s left against 96 s needed in a launch with six minutes of the
+  run unused). The first round now stops after a base run once less remains than admission, a
+  revision and its re-admission need, measured on its own trials; the coverage review no longer
+  takes that time; and a revision that still does not fit may borrow the shortfall from
+  implementation, once and up to a tenth of the total, never from the verification reserve
+  (`planned-check-revision-v2`, with the measured admission beside the arithmetic).
+- **A throw in a check program is described as where it was raised.** Its refusal no longer says
+  the run observed nothing of the project: a program may be defective, or may have asserted on
+  what the project gave, and the stack does not say which. The refusal itself is unchanged.
 - **The final checks run after the work spends its wall.** The end of the implementation's wall
   refused the final build, lint and tests commands before they spawned, so a run that used its
   allowance was reported with nothing measured. Gate commands now stop only for the run's
