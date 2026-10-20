@@ -1131,9 +1131,11 @@ describe("the token allowance under a contract that names no token budget", () =
 
 describe("a verbose command in the worker's loop", () => {
   // Three thousand lines with one failure in the middle and a non-zero exit, as a test runner
-  // prints them. Run for real, through the worker's own shell tool and chokepoint.
+  // prints them. Run for real, through the worker's own shell tool and chokepoint. The exit is
+  // set, not called: on Linux a pipe write past the kernel buffer is queued, and process.exit
+  // drops the queue (CI captured 697 of the 3,000 lines); the process ending on its own drains it.
   const verbose =
-    "node -e \"for (let i = 1; i <= 3000; i++) console.log(i === 1500 ? 'not ok ' + i + ' - the middle case fails' : 'ok ' + i + ' - a passing case with a description'); process.exit(1)\"";
+    "node -e \"for (let i = 1; i <= 3000; i++) console.log(i === 1500 ? 'not ok ' + i + ' - the middle case fails' : 'ok ' + i + ' - a passing case with a description'); process.exitCode = 1\"";
 
   it("is resent as a bounded view, its omitted lines come back by reference, and the gates decide as before", async () => {
     const requests: ModelRequest[] = [];
