@@ -8,6 +8,7 @@ import type { ResourcePool } from "../exec/resource-pool.ts";
 import {
   type AutoResolveOutcome,
   defaultAttemptCap,
+  type OwedFollowUp,
   type ResolveAttempt,
   runAutoResolve,
 } from "./auto-resolve.ts";
@@ -58,6 +59,8 @@ interface GatesEngineOptions {
   readonly emit: (event: LoopEvent) => void;
   readonly resolve: ResolveAttempt;
   readonly cap?: number;
+  /** Owed one attempt from the cap once the gates are green; see the resolve loop. */
+  readonly followUp?: OwedFollowUp;
   readonly budgets?: DiffBudget;
   readonly gateOptions?: GateSetOptions;
   /**
@@ -259,6 +262,7 @@ export async function runGatesEngine(options: GatesEngineOptions): Promise<Gates
     gates,
     context,
     ...(options.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
+    ...(options.followUp === undefined ? {} : { followUp: options.followUp }),
     cycleDeps: {
       commands,
       evidence: options.evidence,

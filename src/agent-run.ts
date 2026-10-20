@@ -188,6 +188,11 @@ export interface AgentTaskOptions {
    * runs code in the workspace as a shell command would.
    */
   readonly checkTool?: ToolDefinition;
+  /**
+   * Work no gate measures that the run owes one bounded attempt once the gates are green, from the
+   * attempt cap and under the ratchet: requested outcomes no sealed check states. Absent is none.
+   */
+  readonly followUp?: import("./gates/auto-resolve.ts").OwedFollowUp;
   readonly coordination?: readonly ToolDefinition[];
   /**
    * Set only where a task is being tried several ways at once, so the attempts can diverge
@@ -668,6 +673,7 @@ async function executeAgentTask(
     clock: options.clock,
     emit: options.emit,
     cap: options.attempts,
+    ...(options.followUp === undefined ? {} : { followUp: options.followUp }),
     // The resolve loop stops at the wall deadline as it stops at a cancellation. The commands that
     // measure a cycle answer only to the run's cancellation and the end of its total allowance:
     // C1's loop spent its wall, and that wall's end refused its final build, lint and tests.
@@ -1214,8 +1220,12 @@ async function resolveWithModel(
   const brief = [
     `The task was: ${taskBrief(options.task, options.contract)}`,
     "",
-    `A quality gate is failing. This is attempt ${request.attempt} of ${request.cap}.`,
-    "Fix the cause. Do not weaken the tests: removing a test, removing an assertion, adding a",
+    request.followUp === undefined
+      ? `A quality gate is failing. This is attempt ${request.attempt} of ${request.cap}.`
+      : `Every gate passes. This is attempt ${request.attempt} of ${request.cap}, a follow-up the controller owes before the run is reported, given once: the work below is requested and no sealed check exercises it, so the gates passing says nothing about it.`,
+    request.followUp === undefined
+      ? "Fix the cause. Do not weaken the tests: removing a test, removing an assertion, adding a"
+      : "Do not weaken the tests: removing a test, removing an assertion, adding a",
     "skip marker, or lowering coverage of the lines you changed will have the attempt rejected",
     "and will still cost you the attempt.",
     "",
@@ -1246,10 +1256,14 @@ async function resolveWithModel(
     account,
     "",
     ...(request.rejected === null ? [] : [describeRejectedCandidate(request.rejected), ""]),
-    `What the gates report on the workspace as it is now (cycle ${request.cycle.attempt}):`,
-    request.gateOutput.length > 16000
-      ? `${request.gateOutput.slice(0, 16000)}\n[diagnostic excerpt truncated; consult the cited evidence records]`
-      : request.gateOutput,
+    ...(request.followUp === undefined
+      ? [
+          `What the gates report on the workspace as it is now (cycle ${request.cycle.attempt}):`,
+          request.gateOutput.length > 16000
+            ? `${request.gateOutput.slice(0, 16000)}\n[diagnostic excerpt truncated; consult the cited evidence records]`
+            : request.gateOutput,
+        ]
+      : [request.followUp]),
   ].join("\n");
 
   return runAgentLoop(brief, loopDependencies);
