@@ -25,7 +25,11 @@
  *   hangs, so the kill at the deadline cannot be confirmed (its pid is in `escaped.pid`);
  * - `detach`: writes the fix and leaves a process in a group of its own working in the
  *   workspace with its output closed, so only a search of the launch's directory finds it
- *   (its pid is in `detached.pid`).
+ *   (its pid is in `detached.pid`);
+ * - `request` (Swarm only): sends one real chat request to the endpoint it was given, in the
+ *   product's wire shape, printing the product's `model-call` event before it and a `tool-call`
+ *   event after the answer, then writes the fix; a server that never answers leaves it waiting
+ *   with the request open, which is the shape of the launch of 2026-10-20 03:04 UTC.
  */
 
 import { spawn } from "node:child_process";
@@ -120,7 +124,7 @@ if (words[0] === "check") {
 const arm = words[0] === "opencode" ? "opencode" : "swarm";
 // A behavior that only one product can exhibit leaves the other arm correct, so a test can
 // name the arm the halt should attribute it to.
-const swarmOnly = ["missing-evidence", "exit-unavailable"];
+const swarmOnly = ["missing-evidence", "exit-unavailable", "request"];
 const opencodeOnly = ["connect-error"];
 const requested = process.env.COMPARISON_FIXTURE_BEHAVIOR ?? "correct";
 const behavior =
@@ -247,6 +251,67 @@ switch (behavior) {
     detached.unref();
     writeFileSync(join(markers, "detached.pid"), String(detached.pid));
     finish(true);
+    break;
+  }
+  case "request": {
+    const endpoint = flag("--local-endpoint").replace(/\/$/, "");
+    const event = (body) =>
+      console.log(JSON.stringify({ schema: "swarm.event.v1", runId: "fixture", event: body }));
+    event({
+      type: "model-call",
+      step: 1,
+      modelId: `local:${flag("--model").replace(/^local:/, "")}`,
+    });
+    const started = Date.now();
+    fetch(`${endpoint}/chat/completions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: flag("--model").replace(/^local:/, ""),
+        max_tokens: 64,
+        enable_thinking: false,
+        chat_template_kwargs: { enable_thinking: false },
+        reasoning_effort: "none",
+        messages: [{ role: "user", content: prompt }],
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "write_fix",
+              description: "Writes the fix.",
+              parameters: {
+                type: "object",
+                properties: { word: { type: "string" } },
+                required: ["word"],
+              },
+            },
+          },
+        ],
+        tool_choice: "auto",
+        stream: true,
+        stream_options: { include_usage: true },
+      }),
+    })
+      .then(async (response) => {
+        const answer = await response.text();
+        event({
+          type: "tool-call",
+          callId: "fixture-1",
+          toolName: "write_fix",
+          input: { status: response.status, bytes: answer.length, wallMs: Date.now() - started },
+        });
+        write("export const add = (a, b) => a + b;\nexport const mul = (a, b) => a * b;\n");
+        finish(true);
+      })
+      .catch((cause) => {
+        event({
+          type: "model-error",
+          step: 1,
+          message: String(cause?.message ?? cause),
+          willRetry: false,
+        });
+        finish(false);
+      });
     break;
   }
   default:
