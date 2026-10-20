@@ -314,8 +314,132 @@ describe("the planned-check revision and its share of the planning allowance", (
     const revision = planning.records
       .filter((record) => record.type === "verification-command")
       .map((record) => planning.payloads.get(record.payloadDigest) as { rule?: string })
-      .find((payload) => payload.rule === "planned-check-revision-v1");
+      .find((payload) => payload.rule === "planned-check-revision-v2");
     expect(revision).toMatchObject({ outcome: "withheld", remainingMs: 100_000 });
+  });
+
+  /** The launch's planning, on an injected clock: the first round ends at `roundMs`. */
+  function launchTimed(
+    roundMs: number,
+    admissionMs: number,
+    extra: Partial<PlanChecksDependencies>,
+  ) {
+    let now = 0;
+    let calls = 0;
+    const scripted = createFixtureModelClient({
+      modelId: "fixture:plan",
+      turns: [declaring(["a", "b"]), respondWithText("pinned"), respondWithText("No replacement.")],
+    });
+    const timed = {
+      modelId: scripted.modelId,
+      generate: (request: Parameters<typeof scripted.generate>[0]) => {
+        calls += 1;
+        if (calls === 1) now += roundMs;
+        return scripted.generate(request);
+      },
+    };
+    return deps([], {
+      clock: { now: () => now, sleep: () => Promise.resolve() },
+      createModel: (chain) => createRecordingModelClient(timed as never, chain),
+      admit: admitting(
+        ["a"],
+        () => admissionMs,
+        (by) => {
+          now += by;
+        },
+      ),
+      ...extra,
+    });
+  }
+
+  it("withholds the revision at the launch's 64 s left and 96 s needed when nothing may be borrowed", async () => {
+    // The launch: a 336 s planning allowance, a first round ending at 235.3 s, admission 36.5 s.
+    const { planner } = launchTimed(235_284, 36_489, { maxWallMs: 336_000 });
+    const outcome = await planChecks(planner);
+    expect(outcome.admission?.revision).toEqual({
+      outcome: "withheld",
+      remainingMs: 64_227,
+      neededMs: 96_489,
+    });
+  });
+
+  it("dispatches that revision by borrowing the 32 s shortfall from implementation, within the limit", async () => {
+    const { planner, notes } = launchTimed(235_284, 36_489, {
+      maxWallMs: 336_000,
+      // A tenth of the launch's 14-minute total, as the command line sets it.
+      revisionBorrowLimitMs: 84_000,
+    });
+    const outcome = await planChecks(planner);
+    expect(outcome.admission?.revision).toMatchObject({ outcome: "ran", borrowedMs: 32_262 });
+    expect(notes.join("\n")).toContain("the revision borrows 32s of implementation time");
+    const planning = await readSessionEvidence(join(root, "sessions"), "run-1-plan");
+    const revision = planning.records
+      .filter((record) => record.type === "verification-command")
+      .map((record) => planning.payloads.get(record.payloadDigest) as { rule?: string })
+      .find((payload) => payload.rule === "planned-check-revision-v2");
+    // The command time it rests on and the controller's arithmetic, apart.
+    expect(revision).toMatchObject({
+      outcome: "ran",
+      remainingMs: 64_227,
+      neededMs: 96_489,
+      borrowedMs: 32_262,
+      admissionMs: 36_489,
+      minimumRevisionMs: 60_000,
+      borrowLimitMs: 84_000,
+    });
+  });
+
+  it("borrows a shortfall exactly at the limit and withholds one a millisecond over it", async () => {
+    const atLimit = launchTimed(235_284, 36_489, {
+      maxWallMs: 336_000,
+      revisionBorrowLimitMs: 32_262,
+    });
+    expect((await planChecks(atLimit.planner)).admission?.revision).toMatchObject({
+      outcome: "ran",
+      borrowedMs: 32_262,
+    });
+    await rm(join(root, "sessions"), { recursive: true, force: true });
+    const over = launchTimed(235_284, 36_489, {
+      maxWallMs: 336_000,
+      revisionBorrowLimitMs: 32_261,
+    });
+    expect((await planChecks(over.planner)).admission?.revision).toEqual({
+      outcome: "withheld",
+      remainingMs: 64_227,
+      neededMs: 96_489,
+      borrowLimitMs: 32_261,
+    });
+  });
+
+  it("stops the first round after a base run that leaves less than admission and a revision need", async () => {
+    let now = 0;
+    const trial: FixtureTurn = respondWithToolCalls("trying", [
+      { callId: "trial", toolName: "run_planned_checks_on_base", input: {} },
+    ]);
+    const { planner, notes } = deps(
+      [declaring(["a"]), trial, respondWithText("one more look"), respondWithText("pinned")],
+      {
+        clock: { now: () => now, sleep: () => Promise.resolve() },
+        maxWallMs: 300_000,
+        // The base run takes 100 s: admission and a revision's re-admission need 200 s of it again,
+        // with a minute for the revision, which is more than the quarter of the allowance left.
+        admit: admitting(
+          ["a"],
+          () => 100_000,
+          (by) => {
+            now += by;
+          },
+        ),
+      },
+    );
+    const outcome = await planChecks(planner);
+    expect(outcome.kind).toBe("sealed");
+    expect(notes.join("\n")).toContain(
+      "the first planning round stopped after a base run at 100s: the last 260s are held for admission and a revision",
+    );
+    // Admission reuses that very run, so the round's checks cost no second base run.
+    expect(notes.join("\n")).toContain("admission reuses the planner's own last base run");
+    expect(now).toBe(100_000);
   });
 
   it("reports a task sentence quoted only by a requirement whose check was dropped as quoted, not checked", async () => {
@@ -610,6 +734,7 @@ describe("a requirement whose only generated check is rejected", () => {
       evidence: chain,
       verifyAtBase: (probe) => simulatedBase(chain, probe),
       ...(options?.reclassified === undefined ? {} : { reclassified: options.reclassified }),
+      ...(options?.contested === undefined ? {} : { contested: options.contested }),
     });
 
   function planning(turns: readonly FixtureTurn[], extra: Partial<PlanChecksDependencies> = {}) {
@@ -670,7 +795,7 @@ describe("a requirement whose only generated check is rejected", () => {
       ],
     });
     expect(outcome.admission?.uncovered).toEqual([]);
-    const [revision] = await chainRule("planned-check-revision-v1");
+    const [revision] = await chainRule("planned-check-revision-v2");
     expect(revision).toMatchObject({ outcome: "ran", reclassified: [{ check: "kept-forms" }] });
   });
 
@@ -720,7 +845,7 @@ describe("a requirement whose only generated check is rejected", () => {
       distinguishedBy: [],
       rejectedChecks: ["kept-forms"],
     });
-    const [reconciled] = await chainRule("planned-coverage-reconciled-v2");
+    const [reconciled] = await chainRule("planned-coverage-reconciled-v3");
     expect(reconciled).toMatchObject({
       requirements: [
         { id: "spaces", retained: ["dashes"], rejected: [], covered: true },
@@ -844,12 +969,14 @@ describe("a requirement whose only generated check is rejected", () => {
               'the base gave "Hello World" for "Hello World", an input the task names, where the check expected "hello-world"',
           },
         ],
+        // The task's own input, with what was first expected and what the base gave there.
+        taskInputs: [{ input: "Hello World", expected: '"hello-world"', base: '"Hello World"' }],
         reason: expect.stringContaining("the revision declared no replacement"),
         nextAction: expect.stringContaining('the task names "Hello World"'),
       },
     ]);
     // Recorded before admission filtered anything, and reconciled after it.
-    const [declared] = await chainRule("planned-outcomes-v1");
+    const [declared] = await chainRule("planned-outcomes-v2");
     expect(declared).toMatchObject({
       round: "first",
       outcomes: [
@@ -859,7 +986,7 @@ describe("a requirement whose only generated check is rejected", () => {
         { id: "kept#2", quote: keptQuote, role: "keep", declaredBy: ["hello-kept"] },
       ],
     });
-    const [reconciled] = await chainRule("planned-coverage-reconciled-v2");
+    const [reconciled] = await chainRule("planned-coverage-reconciled-v3");
     expect(reconciled).toMatchObject({
       requirements: expect.arrayContaining([
         { id: "kept", retained: ["words-kept"], rejected: ["hello-kept"], covered: true },
@@ -956,5 +1083,342 @@ describe("a requirement whose only generated check is rejected", () => {
         ],
       }),
     ]);
+  });
+  // The requested example through a check's revisions. The base (slugify returns its input) gives
+  // "Hello World" back unchanged where the task says it must read "hello-world".
+  const keptFirst: FixtureTurn = respondWithToolCalls("pinning", [
+    declare(
+      "dashes",
+      "change",
+      "spaces",
+      "slugify turns spaces into dashes",
+      [
+        { input: "a b", expected: "a-b", changed: true },
+        { input: "plain", expected: "plain", changed: false },
+      ],
+      "the task says spaces become dashes",
+    ),
+    declare(
+      "kept-forms",
+      "preserve",
+      "kept",
+      keptQuote,
+      [
+        { input: "plain", expected: "plain" },
+        { input: "Hello World", expected: "hello-world" },
+      ],
+      "the task says these still hold",
+    ),
+    reviewOf("spaces", ["dashes"]),
+    reviewOf("kept", ["kept-forms"]),
+  ]);
+  const revising = (
+    cases: readonly { input: string; expected: string; changed?: boolean }[],
+    purpose: "change" | "preserve" = "preserve",
+  ): FixtureTurn =>
+    respondWithToolCalls("revising", [
+      declare("kept-forms", purpose, "kept", keptQuote, cases, "corrected from what the base gave"),
+    ]);
+  const unresolvedOf = async (turns: readonly FixtureTurn[]) => {
+    const { planner } = planning(turns);
+    const outcome = await planChecks(planner);
+    if (outcome.kind !== "sealed") throw new Error(`sealed, not ${outcome.kind}`);
+    return outcome;
+  };
+
+  it("refuses a revision that takes the base's answer for the task's own input, and keeps the outcome unresolved", async () => {
+    const outcome = await unresolvedOf([
+      keptFirst,
+      respondWithText("pinned"),
+      revising([
+        { input: "plain", expected: "plain" },
+        { input: "Hello World", expected: "Hello World" },
+      ]),
+      respondWithText("revised"),
+    ]);
+    expect(outcome.admission?.revision.outcome).toBe("ran");
+    const decisions = (await chainRule("planned-check-admission-v4")).flatMap(
+      (one) =>
+        one.decisions as { check: string; finding: string; admitted: boolean; reason: string }[],
+    );
+    expect(decisions.at(-1)).toMatchObject({
+      check: "kept-forms",
+      finding: "adopts-base-answer",
+      admitted: false,
+    });
+    expect(decisions.at(-1)?.reason).toContain("The base's answer is an observation");
+    expect(outcome.admission?.unresolvedOutcomes).toEqual([
+      expect.objectContaining({
+        requirement: "kept",
+        quote: keptQuote,
+        role: "keep",
+        taskInputs: [{ input: "Hello World", expected: '"hello-world"', base: '"Hello World"' }],
+        nextAction: expect.stringContaining('the task names "Hello World"'),
+      }),
+    ]);
+    const [reconciled] = await chainRule("planned-coverage-reconciled-v3");
+    expect(reconciled?.interpretation).toContainEqual({
+      outcome: expect.any(String),
+      input: "Hello World",
+      check: "kept-forms",
+      from: '"hello-world"',
+      to: '"Hello World"',
+      toBase: true,
+    });
+  });
+
+  it("keeps an outcome unresolved when a revision moves its check off the task's own input onto an easier one", async () => {
+    const outcome = await unresolvedOf([
+      keptFirst,
+      respondWithText("pinned"),
+      revising([
+        { input: "plain", expected: "plain" },
+        { input: "Hi there", expected: "Hi there" },
+      ]),
+      respondWithText("revised"),
+    ]);
+    // The replacement is a fine check of what it checks, and is admitted as one.
+    expect(outcome.admission?.revision).toMatchObject({ outcome: "ran", admitted: ["kept-forms"] });
+    expect(outcome.admission?.unresolvedOutcomes).toEqual([
+      expect.objectContaining({
+        quote: keptQuote,
+        taskInputs: [{ input: "Hello World", expected: '"hello-world"', base: '"Hello World"' }],
+        checks: [
+          {
+            check: "kept-forms",
+            reason: expect.stringContaining(
+              'its cases do not hold the task\'s own input "Hello World" (they are "plain", "Hi there" now)',
+            ),
+          },
+        ],
+      }),
+    ]);
+  });
+
+  it("covers the outcome when a wrong expectation is corrected on the task's own input, and records the correction", async () => {
+    const outcome = await unresolvedOf([
+      respondWithToolCalls("pinning", [
+        declare(
+          "dashes",
+          "change",
+          "spaces",
+          "slugify turns spaces into dashes",
+          [
+            { input: "a b", expected: "a-b", changed: true },
+            { input: "plain", expected: "plain", changed: false },
+          ],
+          "the task says spaces become dashes",
+        ),
+        // A misspelt expectation for the task's own input.
+        declare(
+          "kept-forms",
+          "preserve",
+          "kept",
+          keptQuote,
+          [
+            { input: "plain", expected: "plain" },
+            { input: "Hello World", expected: "hello_world" },
+          ],
+          "the task says these still hold",
+        ),
+        reviewOf("spaces", ["dashes"]),
+        reviewOf("kept", ["kept-forms"]),
+      ]),
+      respondWithText("pinned"),
+      // Corrected to the task's words and declared as the change the base does not give yet.
+      revising(
+        [
+          { input: "Hello World", expected: "hello-world", changed: true },
+          { input: "plain", expected: "plain", changed: false },
+        ],
+        "change",
+      ),
+      respondWithText("revised"),
+    ]);
+    expect(outcome.admission?.revision).toMatchObject({ outcome: "ran", admitted: ["kept-forms"] });
+    expect(outcome.admission?.unresolvedOutcomes).toEqual([]);
+    const [reconciled] = await chainRule("planned-coverage-reconciled-v3");
+    expect(reconciled?.interpretation).toContainEqual({
+      outcome: expect.any(String),
+      input: "Hello World",
+      check: "kept-forms",
+      from: '"hello_world"',
+      to: '"hello-world"',
+      toBase: false,
+    });
+  });
+
+  it("reads the same check declared again with its words kept and its inputs held as one outcome, not two", async () => {
+    const changed = [
+      { input: "Hello World", expected: "hello-world", changed: true },
+      { input: "plain", expected: "plain", changed: false },
+    ];
+    const wordQuote = "A word without spaces must still come back as it is";
+    const words = [
+      { input: "plain", expected: "plain" },
+      { input: "word", expected: "word" },
+    ];
+    const outcome = await unresolvedOf([
+      respondWithToolCalls("pinning", [
+        declare(
+          "dashes",
+          "change",
+          "spaces",
+          "slugify turns spaces into dashes",
+          [
+            { input: "a b", expected: "a-b", changed: true },
+            { input: "plain", expected: "plain", changed: false },
+          ],
+          "the task says spaces become dashes",
+        ),
+        // The quote, then the quote with the sentence around it.
+        declare("kept-forms", "change", "kept", keptQuote, changed, "the task names it"),
+        {
+          ...declare(
+            "kept-forms",
+            "change",
+            "kept",
+            `and ${keptQuote}.`,
+            changed,
+            "the task names it",
+          ),
+          callId: "declare-kept-forms-again",
+        },
+        // A preserve check first declared quoting nothing, then with the task's words.
+        {
+          callId: "declare-words-unquoted",
+          toolName: "declare_planned_check",
+          input: {
+            id: "words",
+            purpose: "preserve",
+            requirementId: "unchanged",
+            requirement: "a word comes back as it is",
+            program,
+            cases: words,
+            why: "the task keeps it",
+          },
+        },
+        {
+          ...declare("words", "preserve", "unchanged", wordQuote, words, "the task keeps it"),
+          callId: "declare-words-quoted",
+        },
+        reviewOf("spaces", ["dashes"]),
+        reviewOf("kept", ["kept-forms"]),
+        reviewOf("unchanged", ["words"]),
+      ]),
+      respondWithText("pinned"),
+    ]);
+    expect(outcome.admission?.unresolvedOutcomes).toEqual([]);
+    const [reconciled] = await chainRule("planned-coverage-reconciled-v3");
+    const restated = (
+      reconciled?.outcomes as { requirement: string; restatedAs: unknown[]; role: string }[]
+    )
+      .filter((one) => one.requirement !== "spaces")
+      .map((one) => [one.requirement, one.role, one.restatedAs.length]);
+    // One outcome per behaviour, each restated once, rather than two of each.
+    expect(restated).toEqual([
+      ["kept", "change", 1],
+      ["kept", "keep", 1],
+      ["unchanged", "keep", 1],
+    ]);
+  });
+
+  it("keeps an earlier statement when the check is declared again with words dropped", async () => {
+    const changed = [
+      { input: "Hello World", expected: "hello-world", changed: true },
+      { input: "plain", expected: "plain", changed: false },
+    ];
+    const outcome = await unresolvedOf([
+      respondWithToolCalls("pinning", [
+        declare(
+          "dashes",
+          "change",
+          "spaces",
+          "slugify turns spaces into dashes",
+          [
+            { input: "a b", expected: "a-b", changed: true },
+            { input: "plain", expected: "plain", changed: false },
+          ],
+          "the task says spaces become dashes",
+        ),
+        declare("kept-forms", "change", "kept", keptQuote, changed, "the task names it"),
+        {
+          ...declare(
+            "kept-forms",
+            "change",
+            "kept",
+            '"Hello World" must still read',
+            changed,
+            "the task names it",
+          ),
+          callId: "declare-kept-forms-shorter",
+        },
+        reviewOf("spaces", ["dashes"]),
+        reviewOf("kept", ["kept-forms"]),
+      ]),
+      respondWithText("pinned"),
+    ]);
+    expect(outcome.admission?.unresolvedOutcomes.map((one) => [one.quote, one.role])).toEqual([
+      [keptQuote, "change"],
+      [keptQuote, "keep"],
+    ]);
+  });
+
+  it("keeps two behaviours one quote states on two task inputs apart, when only one input is checked", async () => {
+    const twoInputs =
+      'slugify turns spaces into dashes: "Hello World" must read "hello-world" and "New York" must read "new-york".';
+    const sentence = twoInputs.slice(0, -1);
+    const { planner } = planning(
+      [
+        respondWithToolCalls("pinning", [
+          declare(
+            "hello",
+            "change",
+            "examples",
+            sentence,
+            [
+              { input: "Hello World", expected: "hello-world", changed: true },
+              { input: "plain", expected: "plain", changed: false },
+            ],
+            "the task names it",
+          ),
+          // Its kept case is wrong, so admission refuses it.
+          declare(
+            "new-york",
+            "change",
+            "examples",
+            sentence,
+            [
+              { input: "New York", expected: "new-york", changed: true },
+              { input: "word", expected: "WORD", changed: false },
+            ],
+            "the task names it",
+          ),
+          reviewOf("examples", ["hello", "new-york"]),
+        ]),
+        respondWithText("pinned"),
+        respondWithText("No replacement."),
+      ],
+      {
+        task: twoInputs,
+        admit: (chain, contract, base, options) =>
+          admitPlannedChecks({
+            task: twoInputs,
+            contract,
+            base,
+            evidence: chain,
+            verifyAtBase: (probe) => simulatedBase(chain, probe),
+            ...(options?.contested === undefined ? {} : { contested: options.contested }),
+          }),
+      },
+    );
+    const outcome = await planChecks(planner);
+    if (outcome.kind !== "sealed") throw new Error(`sealed, not ${outcome.kind}`);
+    const unresolved = outcome.admission?.unresolvedOutcomes ?? [];
+    expect(unresolved.map((one) => [one.requirement, one.role])).toEqual([["examples", "change"]]);
+    expect(unresolved[0]?.taskInputs.map((one) => one.input)).toEqual(["Hello World", "New York"]);
+    expect(unresolved[0]?.checks.find((one) => one.check === "hello")?.reason).toContain(
+      'its cases do not hold the task\'s own input "New York"',
+    );
   });
 });

@@ -124,6 +124,28 @@ export interface PlannedOutcome {
   readonly role: "change" | "keep";
   /** Every check declared for it, in any version, in the order first declared. */
   readonly declaredBy: readonly string[];
+  /**
+   * Each version of a check that stated it, in order, with the cases of this role it held then.
+   * The launch after D1 replaced the task's own example input with angle-bracket inputs under the
+   * same check; only the version that first stated the outcome still showed what was asked.
+   */
+  readonly statements?: readonly OutcomeStatement[];
+}
+
+/**
+ * One version of a declared check stating an outcome, and every case it held then, of either role:
+ * a version that moves the task's input from a kept case to a changed one still holds it.
+ */
+export interface OutcomeStatement {
+  readonly check: string;
+  readonly quote: string | null;
+  readonly cases: readonly {
+    readonly input: unknown;
+    /** The result as the runner prints it for comparison, `{"threw":true}` for a declared throw. */
+    readonly expected: string;
+    /** The role the case took in that version. */
+    readonly role: PlannedOutcome["role"];
+  }[];
 }
 /** The checks and requirements, the coverage reviews and the outcomes the planner declared. */
 export type PlannedChecksDeclaration = z.infer<typeof plannedChecksInput> & {
@@ -300,13 +322,16 @@ function outcomeRoles(check: DeclaredCheck): readonly PlannedOutcome["role"][] {
 export function outcomeKey(
   outcome: Pick<PlannedOutcome, "requirementId" | "quote" | "role">,
 ): string {
-  const words =
-    outcome.quote === null
-      ? null
-      : folded(outcome.quote)
-          .replace(/^["'`]+|["'`]+$/g, "")
-          .replace(/[\s.,;:!]+$/, "");
-  return JSON.stringify([outcome.requirementId, words, outcome.role]);
+  return JSON.stringify([outcome.requirementId, foldedQuote(outcome.quote), outcome.role]);
+}
+
+/** A quote as outcome identity compares it; null where there is none. */
+export function foldedQuote(quote: string | null): string | null {
+  return quote === null
+    ? null
+    : folded(quote)
+        .replace(/^["'`]+|["'`]+$/g, "")
+        .replace(/[\s.,;:!]+$/, "");
 }
 
 /** The outcomes one declared check states, as keys. */
@@ -314,6 +339,19 @@ export function checkOutcomeKeys(check: DeclaredCheck): readonly string[] {
   return outcomeRoles(check).map((role) =>
     outcomeKey({ requirementId: check.requirement, quote: check.quote ?? null, role }),
   );
+}
+
+/** A declared check's version as a statement of the outcomes it states. */
+function statementOf(check: DeclaredCheck): OutcomeStatement {
+  return {
+    check: check.id,
+    quote: check.quote ?? null,
+    cases: (check.cases ?? []).map((one) => ({
+      input: one.input,
+      expected: expectedResultText(one),
+      role: check.purpose === "change" && one.changed === true ? "change" : "keep",
+    })),
+  };
 }
 
 /** The outcomes so far with one more check's added: new ones appended, known ones naming it too. */
@@ -324,11 +362,22 @@ function withOutcomesOf(
   const next = [...outcomes];
   for (const role of outcomeRoles(check)) {
     const stated = { requirementId: check.requirement, quote: check.quote ?? null, role };
+    const statement = statementOf(check);
     const at = next.findIndex((one) => outcomeKey(one) === outcomeKey(stated));
     const known = next[at];
-    if (known === undefined) next.push({ ...stated, declaredBy: [check.id] });
-    else if (!known.declaredBy.includes(check.id))
-      next[at] = { ...known, declaredBy: [...known.declaredBy, check.id] };
+    if (known === undefined)
+      next.push({ ...stated, declaredBy: [check.id], statements: [statement] });
+    else {
+      const statements = known.statements ?? [];
+      const repeated = statements.some((one) => JSON.stringify(one) === JSON.stringify(statement));
+      next[at] = {
+        ...known,
+        declaredBy: known.declaredBy.includes(check.id)
+          ? known.declaredBy
+          : [...known.declaredBy, check.id],
+        statements: repeated ? statements : [...statements, statement],
+      };
+    }
   }
   return next;
 }
@@ -727,6 +776,16 @@ function plain(value: unknown): unknown {
         .map((key) => [key, plain((value as Record<string, unknown>)[key])]),
     );
   return value;
+}
+
+/**
+ * A case's expected result as admission reads a runner line: the result's JSON with the runner's
+ * key order, or `{"threw":true}`. The base's answer in a recorded disagreement is in this form.
+ */
+export function expectedResultText(one: PlannedCase): string {
+  return "throws" in one
+    ? JSON.stringify({ threw: true })
+    : (JSON.stringify(plain(one.expected)) ?? "null");
 }
 
 function expectedLine(one: PlannedCase): string {

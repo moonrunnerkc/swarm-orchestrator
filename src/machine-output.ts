@@ -137,6 +137,15 @@ export interface MachineResult {
       readonly quote: string | null;
       readonly role: "change" | "keep";
       readonly checks: readonly { readonly check: string; readonly reason: string }[];
+      /**
+       * The inputs the task names that the outcome was stated with, each with the result the
+       * planner first expected and the base's answer where a base run disputed it.
+       */
+      readonly taskInputs?: readonly {
+        readonly input: unknown;
+        readonly expected: string;
+        readonly base: string | null;
+      }[];
       readonly reason: string;
       readonly nextAction: string;
     }[];

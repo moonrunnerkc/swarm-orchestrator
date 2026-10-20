@@ -828,3 +828,48 @@ describe("the coverage review", () => {
     ).toThrow(/whose inputs are not strings/);
   });
 });
+
+describe("the statements an outcome keeps", () => {
+  it("keeps every version of a check that stated it, with each case's input, expectation and role", () => {
+    const call = {
+      id: "example",
+      purpose: "preserve" as const,
+      requirementId: "scheme",
+      requirement: "a scheme of any case links",
+      program: "import { parse } from './p.mjs';\nexport default (text) => parse(text);\n",
+      why: "the task names it",
+    };
+    const first = withPlannedCheck(null, {
+      ...call,
+      cases: [{ input: "(See hTtPS://x.)", expected: { hasLink: true } }],
+    });
+    // Declared again: the task's input moved to an easier one, the words unchanged.
+    const again = withPlannedCheck(first, {
+      ...call,
+      cases: [{ input: "<hTtPS://x>", expected: { hasLink: true } }],
+    });
+    expect(again.checks.map((one) => one.cases)).toEqual([
+      [{ input: "<hTtPS://x>", expected: { hasLink: true } }],
+    ]);
+    expect(again.outcomes).toEqual([
+      {
+        requirementId: "scheme",
+        quote: null,
+        role: "keep",
+        declaredBy: ["example"],
+        statements: [
+          {
+            check: "example",
+            quote: null,
+            cases: [{ input: "(See hTtPS://x.)", expected: '{"hasLink":true}', role: "keep" }],
+          },
+          {
+            check: "example",
+            quote: null,
+            cases: [{ input: "<hTtPS://x>", expected: '{"hasLink":true}', role: "keep" }],
+          },
+        ],
+      },
+    ]);
+  });
+});

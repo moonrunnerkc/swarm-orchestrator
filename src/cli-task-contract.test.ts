@@ -235,3 +235,49 @@ it("names an unresolved outcome in the brief though another outcome of its requi
   );
   expect(contract.objective).not.toContain('a quoted field keeps its commas". Why');
 });
+
+it("names the task's own input of an unresolved outcome, with what was expected and what the base gave", () => {
+  const goal = freezeGoalContract({
+    version: 1,
+    goal: "links",
+    requirements: [{ id: "visible", description: "the visible check", checks: ["visible"] }],
+    checks: [
+      {
+        id: "visible",
+        command: "node check.mjs",
+        author: "user",
+        exposure: "shared",
+        artifacts: [],
+      },
+    ],
+    immutablePaths: [],
+  }).contract;
+  const contract = presetTaskContract({
+    goal,
+    task: 'a scheme of any case links, so "(See hTtPS://example.com/x.)" must still produce a link',
+    maxSteps: 4,
+    maxWallMs: 60000,
+    network: "denied",
+    unresolvedOutcomes: [
+      {
+        id: "scheme#1",
+        requirement: "scheme",
+        quote: null,
+        role: "keep",
+        taskInputs: [
+          {
+            input: "(See hTtPS://example.com/x.)",
+            expected: '{"hasLink":true}',
+            base: '{"hasLink":false}',
+          },
+        ],
+        reason: "scheme-check: its cases do not hold the task's own input",
+        nextAction: "run the project on it yourself",
+      },
+    ],
+  });
+  // Named however the planner later described the requirement.
+  expect(contract.objective).toContain(
+    'The task\'s own input: "(See hTtPS://example.com/x.)" (the planner first expected {"hasLink":true}; the unchanged base gives {"hasLink":false}).',
+  );
+});

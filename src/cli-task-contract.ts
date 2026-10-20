@@ -34,6 +34,12 @@ export function presetTaskContract(options: {
     readonly requirement: string;
     readonly quote: string | null;
     readonly role: "change" | "keep";
+    /** Inputs the task names that the outcome was stated with, and what was seen for each. */
+    readonly taskInputs?: readonly {
+      readonly input: unknown;
+      readonly expected: string;
+      readonly base: string | null;
+    }[];
     readonly reason: string;
     readonly nextAction: string;
   }[];
@@ -74,7 +80,13 @@ function uncoveredSection(
     "Requested behaviour no generated check exercises (the planner's reading of the task; nothing will exercise these for you, and another check under the same requirement does not):",
     ...outcomes.map(
       (one) =>
-        `- ${one.id}, ${one.role === "change" ? "a change" : "behaviour to keep"} under requirement ${one.requirement}${one.quote === null ? "" : `, quoting the task: ${JSON.stringify(one.quote)}`}. Why: ${one.reason}. Next: ${one.nextAction}.`,
+        `- ${one.id}, ${one.role === "change" ? "a change" : "behaviour to keep"} under requirement ${one.requirement}${one.quote === null ? "" : `, quoting the task: ${JSON.stringify(one.quote)}`}.` +
+        // The task's own input, by name: a requirement's description is whichever check declared it
+        // last, and the launch that found this told its worker about angle-bracket links instead.
+        ((one.taskInputs ?? []).length === 0
+          ? ""
+          : ` The task's own input: ${(one.taskInputs ?? []).map((asked) => `${JSON.stringify(asked.input)} (the planner first expected ${asked.expected}${asked.base === null ? "" : `; the unchanged base gives ${asked.base}`})`).join(", ")}.`) +
+        ` Why: ${one.reason}. Next: ${one.nextAction}.`,
     ),
     ...requirements.map(
       (one) =>

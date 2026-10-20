@@ -723,6 +723,96 @@ describe("a case that throws on the base", () => {
     expect(decision?.excerpt).toContain("Cannot use 'in' operator");
   });
 
+  it("refuses a check whose program asserts on the project's answer, without reading the throw as a defective program", async () => {
+    // An intentional assertion: the program rejects an answer it considers wrong by throwing. It
+    // observed the project, and it still recorded no answer to compare; the stack says where.
+    const admission = await admitCsv([
+      {
+        id: "two-fields",
+        purpose: "preserve",
+        program:
+          "import { split } from './csv.mjs';\nexport default (line) => { const fields = split(line); if (fields.length !== 2) throw new Error('expected two fields, got ' + fields.length); return fields; };\n",
+        cases: [
+          { input: "a,b", expected: ["a", "b"] },
+          { input: "a,b,c", expected: ["a", "b", "c"] },
+        ],
+      },
+    ]);
+    const [decision] = admission.decisions;
+    expect(decision).toMatchObject({
+      admitted: false,
+      finding: "raised-in-program",
+      thrown: [{ case: 2, in: "check-program" }],
+    });
+    expect(decision?.reason).toContain("That is where the exception was raised, not why");
+    expect(decision?.reason).toContain("it may have asserted on what the project gave");
+    expect(decision?.reason).not.toContain("this run does not observe it");
+  });
+
+  it("refuses a check that takes the base's answer for an input the task names after the base disputed an earlier expectation there", async () => {
+    const declared = plannedContract(
+      csvTask,
+      {
+        requirements: [
+          {
+            id: "fields",
+            description: "split into fields",
+            quote: "Make split support quoted fields",
+          },
+        ],
+        checks: [
+          {
+            id: "quoted-throws",
+            requirement: "fields",
+            purpose: "preserve",
+            why: "the base throws on quotes",
+            program: splitting,
+            cases: [
+              { input: '"a,b",c', throws: true },
+              { input: "a,b", expected: ["a", "b"] },
+            ],
+          },
+        ] as never,
+      },
+      supplied,
+      undefined,
+    );
+    const contested = [
+      {
+        requirement: "fields",
+        check: "quoted",
+        input: '"a,b",c',
+        expected: JSON.stringify(["a,b", "c"]),
+        base: JSON.stringify({ threw: true }),
+      },
+    ];
+    const admission = await admitPlannedChecks({
+      task: csvTask,
+      contract: declared,
+      base: supplied,
+      evidence,
+      verifyAtBase: realBase,
+      contested,
+    });
+    expect(admission.decisions[0]).toMatchObject({
+      admitted: false,
+      finding: "adopts-base-answer",
+      broken: false,
+    });
+    expect(admission.decisions[0]?.reason).toContain(
+      'case 1 ("\\"a,b\\",c", an input the task names) it expects {"threw":true}, which is what the base gave there when quoted expected ["a,b","c"]',
+    );
+    // The same check with no disputed input behind it is an ordinary preserve check.
+    const unchallenged = await admitPlannedChecks({
+      task: csvTask,
+      contract: declared,
+      base: supplied,
+      evidence,
+      verifyAtBase: realBase,
+    });
+    expect(unchallenged.decisions[0]).toMatchObject({ admitted: true });
+  });
+
   it("refuses a check whose adapter throws before it reaches the project", async () => {
     // The fixture the program builds fails to parse; split is never called.
     const admission = await admitCsv([
