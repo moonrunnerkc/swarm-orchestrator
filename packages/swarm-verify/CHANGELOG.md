@@ -5,6 +5,20 @@ The standalone verifier, published to npm as `swarm-verify` and distributed as t
 14.2.0 on 2026-09-27) carried no changelog of their own. The coding agent that shares this
 verifier's implementation, `swarm-orchestrator`, keeps its own changelog at the repository root.
 
+## Unreleased
+
+### Fixed
+
+- **A run whose last attempt was rolled back verifies.** The run-assessment re-derivation required
+  the assessment to name the latest gate runs on the chain; after a rolled-back attempt those
+  measured a tree that was undone, and every such bundle failed its own check ("recorded false,
+  evidence implies false"). The gate runs an assessment must name are now those of the cycle the
+  ratchet decisions leave the workspace in: the last accepted retry, or the first cycle. A chain
+  whose gate runs name no cycle is read as before.
+- **A follow-up that was not kept is not the run's lifecycle.** The stop of an attempt marked
+  `followUp: true` is skipped when choosing the lifecycle record unless the run's
+  `outcome-follow-up-v1` record says its candidate was kept.
+
 ## 1.3.1 - 2026-10-08
 
 Identity and packaging only; the verification engine is 1.3.0's and no verdict changes.

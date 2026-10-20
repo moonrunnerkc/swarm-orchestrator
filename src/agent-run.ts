@@ -786,6 +786,8 @@ async function executeAgentTask(
           tokensUsed: repair.tokensUsed,
           ...usageFields(repair),
           repair: true,
+          // A follow-up's stop is the run's lifecycle only where its candidate is kept.
+          ...(request.followUp === undefined ? {} : { followUp: true }),
           // Held back from the attempt's wall so its candidate could be measured, and the
           // account of the previous loop it was handed, both on the record.
           reservedForGatesMs,
