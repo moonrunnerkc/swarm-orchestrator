@@ -1,0 +1,175 @@
+{
+  "tree": "base",
+  "commit": "ea94840326c3f40522f1b544bd2303024b0eec35",
+  "patchDigest": null,
+  "behaviours": [
+    {
+      "id": "requested-globstar-prefix-1",
+      "kind": "requested",
+      "code": "minimatch('/b/c/d/a', '/**/a/b/c', partial)",
+      "result": {
+        "value": false
+      }
+    },
+    {
+      "id": "requested-globstar-prefix-2",
+      "kind": "requested",
+      "code": "minimatch('/b/c/d/a', '/**/a/b/c/**', partial)",
+      "result": {
+        "value": false
+      }
+    },
+    {
+      "id": "requested-globstar-prefix-3",
+      "kind": "requested",
+      "code": "minimatch('a', 'a/**', partial)",
+      "result": {
+        "value": false
+      }
+    },
+    {
+      "id": "requested-globstar-prefix-4",
+      "kind": "requested",
+      "code": "minimatch('/b/c/d/a', '/**/a/**/b/c/**', partial)",
+      "result": {
+        "value": false
+      }
+    },
+    {
+      "id": "requested-globstar-prefix-5",
+      "kind": "requested",
+      "code": "minimatch('/b/c/d/a', '/**/a/**', partial)",
+      "result": {
+        "value": false
+      }
+    },
+    {
+      "id": "requested-instance-match",
+      "kind": "requested",
+      "code": "new Minimatch('/**/a/b/c').match('/b/c/d/a', true)",
+      "result": {
+        "value": false
+      }
+    },
+    {
+      "id": "negative-not-a-prefix",
+      "kind": "negative",
+      "code": "minimatch('b/a', 'a/**', partial)",
+      "result": {
+        "value": false
+      }
+    },
+    {
+      "id": "negative-non-partial-stays-false",
+      "kind": "negative",
+      "code": "minimatch('/b/c/d/a', '/**/a/b/c')",
+      "result": {
+        "value": false
+      }
+    },
+    {
+      "id": "negative-non-partial-globstar-tail",
+      "kind": "negative",
+      "code": "minimatch('/b/c/d/a', '/**/a/**/b/c/**')",
+      "result": {
+        "value": false
+      }
+    },
+    {
+      "id": "negative-wrong-prefix-after-globstar",
+      "kind": "negative",
+      "code": "minimatch('/b/c/d/x', '/**/a/b/c', partial) && minimatch('/x/y', 'a/**', partial)",
+      "result": {
+        "value": false
+      }
+    },
+    {
+      "id": "preserved-partial-without-globstar-true",
+      "kind": "preserved",
+      "code": "minimatch('/a/b', '/*/b/x/y/z', partial)",
+      "result": {
+        "value": true
+      }
+    },
+    {
+      "id": "preserved-partial-without-globstar-false",
+      "kind": "preserved",
+      "code": "minimatch('/a/b/c', '/*/b/x/y/z', partial)",
+      "result": {
+        "value": false
+      }
+    },
+    {
+      "id": "preserved-makere-partial-1",
+      "kind": "preserved",
+      "code": "makeRe('/*/b/x/y/z', partial).source",
+      "result": {
+        "value": "^(?:\\/|(?:|\\/(?!\\.)[^/]+?|\\/(?!\\.)[^/]+?\\/b|\\/(?!\\.)[^/]+?\\/b\\/x|\\/(?!\\.)[^/]+?\\/b\\/x\\/y|\\/(?!\\.)[^/]+?\\/b\\/x\\/y\\/z))$"
+      }
+    },
+    {
+      "id": "preserved-makere-partial-2",
+      "kind": "preserved",
+      "code": "makeRe('a/**', partial).source",
+      "result": {
+        "value": "^(?:\\/|(?:a(?:\\/|\\/(?:(?!(?:\\/|^)\\.).)*?)?))$"
+      }
+    },
+    {
+      "id": "preserved-makere-partial-3",
+      "kind": "preserved",
+      "code": "makeRe('/**/a/b/c', partial).source",
+      "result": {
+        "value": "^(?:\\/|(?:(?:\\/|\\/(?:(?!(?:\\/|^)\\.).)*?\\/)a|(?:\\/|\\/(?:(?!(?:\\/|^)\\.).)*?\\/)a\\/b|(?:\\/|\\/(?:(?!(?:\\/|^)\\.).)*?\\/)a\\/b\\/c))$"
+      }
+    },
+    {
+      "id": "preserved-makere-plain",
+      "kind": "preserved",
+      "code": "makeRe('/**/a/b/c').source",
+      "result": {
+        "value": "^(?:\\/|\\/(?:(?!(?:\\/|^)\\.).)*?\\/)a\\/b\\/c$"
+      }
+    },
+    {
+      "id": "preserved-non-partial-globstar-true",
+      "kind": "preserved",
+      "code": "minimatch('a/b/c', 'a/**') && minimatch('x/a/b/c', '**/a/b/c') && minimatch('/a/b/c', '/**/a/b/c')",
+      "result": {
+        "value": true
+      }
+    },
+    {
+      "id": "preserved-non-partial-globstar-false",
+      "kind": "preserved",
+      "code": "minimatch('a', 'a/**/b') || minimatch('a/b', '**/c')",
+      "result": {
+        "value": false
+      }
+    },
+    {
+      "id": "preserved-non-partial-plain",
+      "kind": "preserved",
+      "code": "minimatch('a/b/c', 'a/*/c') && !minimatch('a/b/c', 'a/*') && minimatch('.x', '.*') && !minimatch('.x', '*')",
+      "result": {
+        "value": true
+      }
+    },
+    {
+      "id": "observed-partial-dot-file-named",
+      "kind": "observed",
+      "code": "minimatch('.a', '**/.a', partial)",
+      "result": {
+        "value": true
+      }
+    },
+    {
+      "id": "observed-partial-dot-dir-prefix",
+      "kind": "observed",
+      "code": "minimatch('.a/b', '**/b', partial)",
+      "result": {
+        "value": false
+      }
+    }
+  ]
+}
