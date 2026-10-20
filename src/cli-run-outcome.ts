@@ -7,6 +7,7 @@ import { exitCodes } from "./machine-output.ts";
 import type {
   FinalVerificationOutcome,
   InterventionCounts,
+  OutcomeFollowUpReport,
   OutcomeStatus,
   RequirementOutcome,
   RunOutcomeReport,
@@ -61,6 +62,8 @@ export interface RunOutcomeInput {
   }[];
   /** Requested outcomes no retained check states, as planning reconciled them per outcome. */
   readonly unresolvedOutcomes?: readonly UnresolvedOutcomeReport[];
+  /** The follow-up owed on those outcomes and what became of it. */
+  readonly outcomeFollowUp?: OutcomeFollowUpReport;
   /** Null where no final independent verification ran. */
   readonly finalVerification: FinalVerificationOutcome | null;
   readonly usage: {
@@ -173,6 +176,21 @@ export function describeRunOutcome(input: RunOutcomeInput): readonly string[] {
         ? `; this is the supplied contract's reading only: ${unresolved.length} requested outcome(s) read from the task were exercised by no check (below), so it does not show the whole task done`
         : ""),
   );
+  const followUp = input.outcomeFollowUp;
+  if (unresolved.length > 0 && followUp !== undefined)
+    say(
+      `  follow-up on them: ${
+        followUp.state === "withheld"
+          ? `withheld (${firstLine(followUp.reason, 200)})`
+          : `given once, as attempt ${followUp.attempt}; ${
+              followUp.accepted === null
+                ? "it left nothing to judge"
+                : followUp.accepted
+                  ? "the ratchet accepted what it left"
+                  : "the ratchet rolled back what it left"
+            }`
+      }; they stay unresolved, since no sealed check states them`,
+    );
   say(`  requested: ${firstLine(input.task, 160)}`);
   say(
     `  verdict: task ${input.verdict.task}, regression ${input.verdict.behavioral}, ` +

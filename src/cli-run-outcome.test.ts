@@ -450,6 +450,53 @@ describe("the run's one status", () => {
     );
   });
 
+  it("says whether the follow-up on unresolved outcomes ran and what the ratchet made of it, without resolving them", () => {
+    const input = {
+      ...base,
+      verdict: certified,
+      requirements: finished("accepted", "accepted"),
+      gates: cycle([run("tests", "passed"), run("task-acceptance", "passed")]),
+      unresolvedOutcomes: [
+        {
+          id: "ten-is-small#2",
+          requirement: "ten-is-small",
+          quote: 'classify("10") is small too',
+          role: "change" as const,
+          reason: "no admitted check holds the task's input",
+          nextAction: "run it yourself",
+        },
+      ],
+    };
+    const given = describeRunOutcome({
+      ...input,
+      outcomeFollowUp: {
+        state: "given",
+        attempt: 2,
+        accepted: false,
+        reason: "given once the gates were green",
+        record: "sha256:follow",
+      },
+    }).join("\n");
+    expect(given).toContain(
+      "follow-up on them: given once, as attempt 2; the ratchet rolled back what it left; they stay unresolved, since no sealed check states them",
+    );
+    // Status and exit code keep their meaning.
+    expect(outcomeStatus(input)).toBe("accepted");
+    const withheld = describeRunOutcome({
+      ...input,
+      outcomeFollowUp: {
+        state: "withheld",
+        attempt: null,
+        accepted: null,
+        reason: "no attempt was left under the cap of 1",
+        record: "sha256:follow",
+      },
+    }).join("\n");
+    expect(withheld).toContain(
+      "follow-up on them: withheld (no attempt was left under the cap of 1); they stay unresolved",
+    );
+  });
+
   it("leaves a run of hypotheses alone unjudged, as the same run without planning is", () => {
     const hypotheses = freezeGoalContract({
       ...plannedContract,

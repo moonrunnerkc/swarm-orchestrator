@@ -454,6 +454,8 @@ describe("planned checks through the ordinary command line", () => {
       { text: "Done." },
       repairs,
       { text: "Repaired." },
+      // The requirement left with no check is followed up once, after the repair, from the cap.
+      { text: "Nothing in the task's words is left undone; the code stays as it is." },
     ]);
 
     const result = resultOf(stdout);
@@ -573,15 +575,20 @@ describe("planned checks through the ordinary command line", () => {
     expect(result?.outcome?.uncheckedRequirements).toBeUndefined();
     expect(stdout).toMatch(/no check +loads: .*\[planned from the task/);
     // The repair turn was asked, and with the line that differed: it is the turn that wrote the fix.
-    expect(endpoint.played()).toBe(8);
+    // Then the follow-up on the outcome no check states, once.
+    expect(endpoint.played()).toBe(9);
+    expect(
+      (result as { outcome?: { outcomeFollowUp?: unknown } } | undefined)?.outcome?.outcomeFollowUp,
+    ).toMatchObject({ state: "given", attempt: 2, accepted: true });
     // Planning's spend is on the machine stream with the implementation's and the repair's, where
-    // a launcher sums the stopped events: planning, its revision, implementation and repair.
+    // a launcher sums the stopped events: planning, its revision, implementation, repair and the
+    // follow-up.
     const stops = stdout
       .split("\n")
       .filter((line) => line.startsWith("{"))
       .map((line) => JSON.parse(line) as { event?: { type?: string; tokensUsed?: number } })
       .filter((line) => line.event?.type === "stopped");
-    expect(stops).toHaveLength(4);
+    expect(stops).toHaveLength(5);
     expect(stops.every((stop) => (stop.event?.tokensUsed ?? 0) > 0)).toBe(true);
   }, 200_000);
 
@@ -2437,5 +2444,138 @@ describe("an outcome whose only check throws in its own code, beside a checked s
       "this is the supplied contract's reading only: 1 requested outcome(s)",
     );
     expect(stdout).toContain(`NO CHECK kept behaviour "${elevenQuote}"`);
+  }, 200_000);
+});
+
+/**
+ * The follow-up an ordinary run owes on a requested outcome no sealed check states. The task names
+ * 1000 and says it is "huge"; the planner's check of it holds its control as behaviour to keep, the
+ * base disagrees, the revision replaces nothing, and the outcome reaches the worker unresolved. A
+ * worker that moves the boundary and says it is done is followed up once, as an attempt from the
+ * cap; what it does then is judged like a repair, and the outcome stays reported unresolved.
+ */
+describe("a worker that finishes with a requested outcome unresolved", () => {
+  const hugeTask =
+    'make classify(n) call 10 small: every n up to and including 10 is small, and classify(1000) must give "huge".';
+  const hugeQuote = 'classify(1000) must give "huge"';
+  const planning: ScriptedTurnSource[] = [
+    {
+      text: "Plan: the boundary, and a thousand.",
+      toolCalls: [
+        ...declarations(
+          [
+            { id: "boundary", description: "10 is small", quote },
+            { id: "thousand", description: "1000 is huge", quote: hugeQuote },
+          ],
+          [
+            plannedCheck("boundary", "boundary", "change", [
+              { input: 9, expected: "small" },
+              { input: 10, expected: "small" },
+            ]),
+            plannedCheck("thousand-huge", "thousand", "preserve", [
+              { input: 3, expected: "small" },
+              { input: 1000, expected: "huge" },
+            ]),
+          ],
+        ),
+        reviewing("boundary", ["boundary"]),
+        reviewing("thousand", ["thousand-huge"]),
+      ],
+    },
+    { text: "Criteria pinned." },
+    { text: "No replacement." },
+  ];
+  const boundaryOnly = "export function classify(n) {\n  return n <= 10 ? 'small' : 'big';\n}\n";
+  const withHuge =
+    "export function classify(n) {\n  if (n >= 1000) return 'huge';\n  return n <= 10 ? 'small' : 'big';\n}\n";
+  const worker: ScriptedTurnSource[] = [
+    { text: "Plan: move the boundary.", toolCalls: [declare] },
+    { toolCalls: [write(boundaryOnly)] },
+    // It ran the example, saw "big", and finished anyway.
+    { text: "classify(1000) gives big; that is the existing behaviour. Done." },
+  ];
+  // Each follow-up attempt, once: every turn of its loop carries the same opening brief.
+  const followedUp = (endpoint: ScriptedEndpoint) => [
+    ...new Set(
+      endpoint.requests
+        .map((request) => JSON.stringify(request))
+        .flatMap((text) => {
+          const at = text.indexOf("Every gate passes. This is attempt");
+          return at < 0 ? [] : [text.slice(at, text.indexOf("Why no check states it", at))];
+        }),
+    ),
+  ];
+
+  it("follows the worker up once with the task's own input, and keeps the correction it makes", async () => {
+    const { endpoint, stdout } = await swarm(
+      [
+        ...planning,
+        ...worker,
+        (request) =>
+          JSON.stringify(request).includes("a follow-up the controller owes")
+            ? { toolCalls: [write(withHuge)] }
+            : { text: "No follow-up was asked for." },
+        { text: "classify(1000) now gives huge, as the task says." },
+      ],
+      false,
+      [],
+      true,
+      workspace(),
+      hugeTask,
+    );
+    const result = resultOf(stdout) as ResultLine & {
+      outcome?: {
+        unresolvedOutcomes?: { id: string }[];
+        outcomeFollowUp?: { state: string; attempt: number | null; accepted: boolean | null };
+      };
+      plannedChecks?: { unresolvedOutcomes?: { taskInputs?: unknown[] }[] };
+    };
+    expect(result?.plannedChecks?.unresolvedOutcomes?.[0]?.taskInputs, stdout.slice(-3000)).toEqual(
+      [{ input: 1000, expected: '"huge"', base: '"big"' }],
+    );
+    const briefs = followedUp(endpoint);
+    expect(briefs).toHaveLength(1);
+    expect(briefs[0]).toContain("The task's own input: 1000 (the planner first expected");
+    expect(result?.outcome?.outcomeFollowUp).toMatchObject({
+      state: "given",
+      attempt: 1,
+      accepted: true,
+    });
+    // The correction is delivered; the outcome stays reported unresolved, with accepted scoped.
+    expect(readFileSync(join(scratch, "workspace", "value.mjs"), "utf8")).toBe(withHuge);
+    expect(result?.outcome?.status).toBe("accepted");
+    expect(result?.outcome?.unresolvedOutcomes?.length).toBe(1);
+    expect(stdout).toContain(
+      "follow-up on them: given once, as attempt 1; the ratchet accepted what it left",
+    );
+  }, 200_000);
+
+  it("lets the worker leave correct code as it is when the planner's expectation is the wrong one, and asks only once", async () => {
+    const { endpoint, stdout } = await swarm(
+      [
+        ...planning,
+        ...worker,
+        { text: "The task's words do not ask for that here; the code stays as it is." },
+        { text: "unexpected further request" },
+      ],
+      false,
+      [],
+      true,
+      workspace(),
+      hugeTask,
+    );
+    const result = resultOf(stdout) as ResultLine & {
+      outcome?: { outcomeFollowUp?: { state: string; attempt: number | null } };
+    };
+    expect(followedUp(endpoint), stdout.slice(-3000)).toHaveLength(1);
+    // One follow-up from a cap of three, and nothing after it: no second ask and no repair loop.
+    expect(
+      endpoint.requests.some((request) =>
+        JSON.stringify(request).includes("unexpected further request"),
+      ),
+    ).toBe(false);
+    expect(result?.outcome?.outcomeFollowUp).toMatchObject({ state: "given", attempt: 1 });
+    expect(readFileSync(join(scratch, "workspace", "value.mjs"), "utf8")).toBe(boundaryOnly);
+    expect(result?.outcome?.status).toBe("accepted");
   }, 200_000);
 });

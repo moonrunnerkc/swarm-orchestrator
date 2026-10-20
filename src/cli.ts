@@ -34,6 +34,7 @@ import {
   type RunCommand,
   usage,
 } from "./cli-options.ts";
+import { outcomeFollowUp } from "./cli-outcome-follow-up.ts";
 import { type PlanChecksOutcome, planChecks } from "./cli-plan-checks.ts";
 import { admitPlannedChecks, describeCheckoutPreparation } from "./cli-planned-checks.ts";
 import { describePreflight, manifestsIn } from "./cli-preflight.ts";
@@ -500,6 +501,7 @@ async function run(options: RunCommand): Promise<number> {
           ...(admitting?.reclassified === undefined
             ? {}
             : { reclassified: admitting.reclassified }),
+          ...(admitting?.contested === undefined ? {} : { contested: admitting.contested }),
           verifyAtBase: (probe) =>
             baseVerifier({
               contract: probe,
@@ -531,6 +533,11 @@ async function run(options: RunCommand): Promise<number> {
       // a launch's 540 seconds and 938,575 tokens without pinning a check left nothing usable.
       maxTokens: Math.floor(allowance * planningShare),
       maxWallMs: Math.floor((settings.maxWallMinutes ?? 30) * 60_000 * planningShare),
+      // Planning ends by half the total at most, and the verification reserve is at most a quarter,
+      // so the implementation keeps at least a quarter whatever the revision borrows.
+      revisionBorrowLimitMs: Math.floor(
+        (settings.maxWallMinutes ?? 30) * 60_000 * revisionBorrowShare,
+      ),
       signal: modelWork.signal,
       note: (line) => process.stderr.write(`${line}\n`),
       // On the machine stream like the implementation's own events, so a consumer that sums the
@@ -849,7 +856,12 @@ async function run(options: RunCommand): Promise<number> {
           }),
       ...(diffBudget === undefined ? {} : { diffBudget }),
     });
-    const taskRun = await runAgentTask(implementation(sealedGoal));
+    // Requested outcomes no sealed check states are owed one follow-up once the gates are green.
+    const followUp = outcomeFollowUp(planning?.admission?.unresolvedOutcomes ?? []);
+    const taskRun = await runAgentTask({
+      ...implementation(sealedGoal),
+      ...(followUp === null ? {} : { followUp }),
+    });
 
     const { loop, gates } = taskRun;
     let { green, verdict } = taskRun;
@@ -940,6 +952,7 @@ async function run(options: RunCommand): Promise<number> {
         }),
       ),
       repairsForGeneratedChecksOnly: repairsForGeneratedChecksOnly(gates.outcome),
+      outcomeFollowUp: gates.outcome.followUp ?? null,
       usage: {
         durationMs: clock.now() - startedAt,
         steps: loop.steps,
@@ -1016,6 +1029,9 @@ async function run(options: RunCommand): Promise<number> {
             ...(outcome.unresolvedOutcomes === undefined
               ? {}
               : { unresolvedOutcomes: outcome.unresolvedOutcomes }),
+            ...(outcome.outcomeFollowUp === undefined
+              ? {}
+              : { outcomeFollowUp: outcome.outcomeFollowUp }),
             ...(outcome.repairsForGeneratedChecksOnly === undefined
               ? {}
               : { repairsForGeneratedChecksOnly: outcome.repairsForGeneratedChecksOnly }),
@@ -1081,6 +1097,8 @@ const defaultTaskTokens = 1_000_000;
  * its checks in hand and the fix unwritten; implementation keeps at least three fifths.
  */
 const planningShare = 0.4;
+/** What of the total a revision of dropped planned checks may borrow from implementation, once. */
+const revisionBorrowShare = 0.1;
 const execFileAsync = promisify(execFile);
 
 /**
@@ -1107,6 +1125,7 @@ async function runOutcome(input: {
   readonly uncovered: NonNullable<RunOutcomeInput["uncovered"]>;
   readonly unresolvedOutcomes: NonNullable<RunOutcomeInput["unresolvedOutcomes"]>;
   readonly repairsForGeneratedChecksOnly: readonly number[];
+  readonly outcomeFollowUp: NonNullable<RunOutcomeInput["outcomeFollowUp"]> | null;
   readonly usage: RunOutcomeInput["usage"];
 }): Promise<RunOutcomeInput> {
   const { evidence } = input;
@@ -1159,6 +1178,7 @@ async function runOutcome(input: {
     ...(input.unresolvedOutcomes.length === 0
       ? {}
       : { unresolvedOutcomes: input.unresolvedOutcomes }),
+    ...(input.outcomeFollowUp === null ? {} : { outcomeFollowUp: input.outcomeFollowUp }),
     ...(input.repairsForGeneratedChecksOnly.length === 0
       ? {}
       : { repairsForGeneratedChecksOnly: input.repairsForGeneratedChecksOnly }),
