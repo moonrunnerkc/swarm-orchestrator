@@ -47,6 +47,13 @@ Documentation: `docs/claims.md` (the repeated-call row) and `docs/README.md` (th
 
 ## Amendments
 
-None. Of the declared files, `docs/README.md` was not changed: its evidence index lists the
+1. After the first push (`2be82e598`), CI's `gates (ubuntu-latest)` job failed in
+   `src/agent-run.test.ts` ("a verbose command in the worker's loop"), a test this branch added at
+   `334690806` and had never run on Linux: its fixture command printed 3,000 lines to a pipe and
+   called `process.exit(1)`, and Linux kept 697 of them. The fixture now sets the exit code and
+   lets the process end, so its output drains; nothing of the product changed. The file was
+   already declared; this names the second reason it was edited.
+
+Of the declared files, `docs/README.md` was not changed: its evidence index lists the
 dated directories up to 2026-10-15 and none since, so this one is reached from the claims row and
 from the trial it follows. No file outside the declaration was edited.

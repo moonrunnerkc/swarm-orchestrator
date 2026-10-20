@@ -28,4 +28,12 @@ since `e7c60c7a6`. Two full runs, recorded as they happened and not combined:
 | **`b51d4fe7d`** | `npm run gates`, run 2 | **0** | the same checks; **468 test files passed and 5 skipped, 4,598 tests passed and 29 skipped** ([gates-b51d4fe7d-run-2.txt](verification/gates-b51d4fe7d-run-2.txt)) |
 
 The timeout is a load-sensitive wall-clock case and not a behaviour of this change; it is named
-here rather than dropped. CI on the pushed branch is recorded in the pull request.
+here rather than dropped.
+
+## CI on the pushed branch
+
+| commit | run | result |
+| --- | --- | --- |
+| `2be82e598` (the first push; pull request #90) | `verifier matrix` 39440899162 and 39440928301 | success |
+| `2be82e598` | `gates` 39440899275 (push) and 39440928434 (pull request) | **failure** on `gates (ubuntu-latest)` only; `gates (macos-latest)`, `packaged (22)` and `packaged (24)` succeeded. The one failing test is `src/agent-run.test.ts` "a verbose command in the worker's loop": its fixture printed 3,000 lines to a pipe and called `process.exit(1)`, and the Linux runner captured 697 of them ("the full output is 29,797 characters in 697 lines"), so the bounded view had no line 1,502. The test was added on this branch at `334690806` and had not run on Linux before this push; its fixture now sets `process.exitCode` so the output drains. No product file changed. |
+| the push after that fix | `gates`, `verifier matrix` | recorded in the pull request's checks |
