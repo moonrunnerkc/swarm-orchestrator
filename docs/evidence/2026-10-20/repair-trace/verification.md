@@ -18,4 +18,14 @@ behaviour and one on wording, and the two guard cases pass on both.
 
 ## After the evidence
 
-Filled in below once the branch head carrying this evidence is gated.
+`b51d4fe7d` is the branch head carrying this evidence and the claims row; `src/` is unchanged
+since `e7c60c7a6`. Two full runs, recorded as they happened and not combined:
+
+| commit | command | exit | result |
+| --- | --- | --- | --- |
+| **`b51d4fe7d`** | `npm run gates`, run 1 | **1** | checks, typecheck and lint as above (8.3 MB of headroom); **467 test files passed, 1 failed, 5 skipped; 4,597 tests passed, 1 failed, 29 skipped.** The failure is one timeout: `src/agent-run.test.ts` "the gates after a loop that spent its wall > still runs the required checks on the exact tree the loop delivered", 60,098 ms against its 60 s limit. That case runs a real 2 s wall on the system clock and then real gates in a fresh checkout; the five-minute load average on the machine was 9.6 during the run (other sessions' work). It passed in the run on `e7c60c7a6` above, whose source is this commit's ([gates-b51d4fe7d-run-1.txt](verification/gates-b51d4fe7d-run-1.txt)) |
+| **`b51d4fe7d`** | that test group alone | **0** | 3 passed ([rerun-agent-run-b51d4fe7d.txt](verification/rerun-agent-run-b51d4fe7d.txt)) |
+| **`b51d4fe7d`** | `npm run gates`, run 2 | **0** | the same checks; **468 test files passed and 5 skipped, 4,598 tests passed and 29 skipped** ([gates-b51d4fe7d-run-2.txt](verification/gates-b51d4fe7d-run-2.txt)) |
+
+The timeout is a load-sensitive wall-clock case and not a behaviour of this change; it is named
+here rather than dropped. CI on the pushed branch is recorded in the pull request.
