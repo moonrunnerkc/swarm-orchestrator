@@ -184,7 +184,7 @@ export class InvalidCommandLineError extends Error {
 }
 
 /** The flags that are their own value. Everything else takes the word after it. */
-const switchFlags = new Set([
+export const switchFlags = new Set([
   "help",
   "explain",
   "describe",

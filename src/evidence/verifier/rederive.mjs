@@ -229,6 +229,29 @@ export function rederiveRatchet(payload) {
     if (now === undefined) continue;
     if (now !== "passed") violations.push("gate-regressed");
   }
+  // A gate's named parts, each held as a gate is; a part reported on one side only abstains.
+  // A part the decision names as a claim (the planner's alone) yields where the attempt turned a
+  // failing part outside the claims into a pass. A decision that names no claims, as every
+  // decision recorded before claims did, holds every part.
+  const claims = payload.parts?.claims ?? {};
+  const claimed = (gateId, part) => (claims[gateId] ?? []).includes(part);
+  const restored = Object.entries(payload.parts?.before ?? {}).some(([gateId, parts]) =>
+    Object.entries(parts).some(
+      ([part, status]) =>
+        status === "failed" &&
+        !claimed(gateId, part) &&
+        payload.parts?.after?.[gateId]?.[part] === "passed",
+    ),
+  );
+  for (const [gateId, parts] of Object.entries(payload.parts?.before ?? {})) {
+    for (const [part, status] of Object.entries(parts)) {
+      if (status !== "passed") continue;
+      const now = payload.parts?.after?.[gateId]?.[part];
+      if (now === undefined) continue;
+      if (now !== "passed" && !(claimed(gateId, part) && restored))
+        violations.push("gate-part-regressed");
+    }
+  }
   if (after.testsDeclared < before.testsDeclared) violations.push("tests-declared-decreased");
   if (
     (payload.respecification ?? []).length === 0 &&

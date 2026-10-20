@@ -72,6 +72,12 @@ export interface AgentLoopDependencies {
     | {
         readonly policy?: StallPolicy;
         readonly observe?: (event: StallIntervention) => Promise<void>;
+        /**
+         * The tools whose successful call may change workspace files, by name, as the caller's
+         * chokepoint classes them. An inspection repeated after one of these has landed is a
+         * new question; absent, every call is read as an inspection.
+         */
+        readonly writers?: readonly string[];
       }
     | false;
 }
@@ -126,6 +132,7 @@ export async function runAgentLoop(
   const deadline = startedAt + deps.budget.maxWallTimeMs;
   const messages: ConversationMessage[] = [...(deps.history ?? []), { role: "user", text: task }];
   const stalls = deps.stall === false ? null : createStallTracker(deps.stall?.policy);
+  const writers = new Set(deps.stall === false ? [] : (deps.stall?.writers ?? []));
   // A notice given before a resume is still the one notice: the allowance travels with the
   // conversation, so taking a run up again does not grant it another round of repeats.
   let stallNotices = (deps.history ?? []).filter(
@@ -148,6 +155,10 @@ export async function runAgentLoop(
   let lastInputTokens = 0;
   let reservedTokens = 0;
   let plan = "";
+  // An abort that lands once the loop is past its own wall is the end of that wall: the caller's
+  // backstop that cuts work still in flight fires as the wall ends, and it is no person's stop.
+  const stoppedByAbort = (): StopReason =>
+    deps.clock.now() >= deadline ? "max-wall-time" : "interrupted";
 
   const finish = (stopReason: StopReason, completionClaim: string): AgentLoopOutcome => {
     deps.emit({
@@ -179,7 +190,7 @@ export async function runAgentLoop(
         steps,
         tokensUsed,
         elapsedMs: deps.clock.now() - startedAt,
-        interrupted: deps.abortSignal.aborted,
+        interrupted: deps.abortSignal.aborted && deps.clock.now() < deadline,
       },
       deps.budget,
     );
@@ -245,7 +256,7 @@ export async function runAgentLoop(
       if (cause instanceof ModelCallDeadlineError) {
         return finish("max-wall-time", "");
       }
-      return finish(deps.abortSignal.aborted ? "interrupted" : "model-error", "");
+      return finish(deps.abortSignal.aborted ? stoppedByAbort() : "model-error", "");
     }
 
     steps += 1;
@@ -253,7 +264,7 @@ export async function runAgentLoop(
     if (answered) {
       answeredSteps += 1;
     }
-    if (deps.abortSignal.aborted) return finish("interrupted", "");
+    if (deps.abortSignal.aborted) return finish(stoppedByAbort(), "");
     if (deps.clock.now() >= deadline) return finish("max-wall-time", "");
     if (tokensUsed >= deps.budget.maxTokens) return finish("max-tokens", "");
     messages.push({
@@ -307,7 +318,7 @@ export async function runAgentLoop(
             })),
           ],
         });
-        return finish(deps.abortSignal.aborted ? "interrupted" : "max-wall-time", "");
+        return finish(deps.abortSignal.aborted ? stoppedByAbort() : "max-wall-time", "");
       }
       deps.emit({
         type: "tool-call",
@@ -329,6 +340,7 @@ export async function runAgentLoop(
           input: call.input,
           failed: outcome.failed,
           output: outcome.output,
+          writes: writers.has(call.toolName),
         }) ?? stalled;
       // A call already made, with the answer already received: the model is handed the
       // notice in the answer's place rather than the answer again. The chokepoint ran the
@@ -338,7 +350,12 @@ export async function runAgentLoop(
       const repeats = stalls?.repeats() ?? 0;
       outcomes.push(
         repeats > 0
-          ? { ...outcome, output: repeatedAnswerNotice(call.toolName, outcome.output, repeats) }
+          ? {
+              ...outcome,
+              output: repeatedAnswerNotice(call.toolName, outcome.output, repeats, {
+                writes: writers.has(call.toolName),
+              }),
+            }
           : outcome,
       );
     }
@@ -423,6 +440,25 @@ function spentTheCapWithoutActing(response: ModelResponse): boolean {
  */
 function arrivedEmpty(response: ModelResponse): boolean {
   return response.finishReason !== "length" && carriesNothing(response);
+}
+
+/** What a runtime reports when it says the turn is over: anything else is a stream cut short. */
+const finishedReasons: ReadonlySet<string> = new Set([
+  "stop",
+  "length",
+  "tool-calls",
+  "content-filter",
+]);
+
+/**
+ * A turn with no tool call that the runtime never said it finished: the stream ended mid-answer.
+ * Ollama does this when it cannot parse a tool call the model wrote ("qwen tool call parsing
+ * failed"): it ends the stream with the text so far and no finish reason, and a planner reading
+ * that text as its account of finishing stopped planning with nothing declared. It is the
+ * transport failing, sampled again as a dropped response is, and never read as a completion.
+ */
+function endedUnfinished(response: ModelResponse): boolean {
+  return response.toolCalls.length === 0 && !finishedReasons.has(response.finishReason);
 }
 
 /**
@@ -538,7 +574,15 @@ async function callModelWithRetry(
       // The last attempt's truncation or silence is returned rather than thrown, so the loop
       // stops as output-cap or empty-response and names which. A call-failed error there would
       // say less about more.
-      if (!(spentTheCapWithoutActing(response) || arrivedEmpty(response)) || !willRetry) {
+      const unfinished = !arrivedEmpty(response) && endedUnfinished(response);
+      const unfinishedMessage = `the runtime ended its answer without a finish reason and without a tool call (finish reason ${response.finishReason}, ${response.text.length} characters of text); a stream cut off mid-answer is not the model finishing`;
+      // Unlike a capped or empty turn, an unfinished one carries text the loop would read as a
+      // completion, so its last sample fails the call rather than being returned.
+      if (unfinished && !willRetry) throw new Error(unfinishedMessage);
+      if (
+        !(spentTheCapWithoutActing(response) || arrivedEmpty(response) || unfinished) ||
+        !willRetry
+      ) {
         return response;
       }
       deps.emit({
@@ -548,7 +592,9 @@ async function callModelWithRetry(
           ? `the model spent all ${response.outputTokens} output tokens without emitting text or a tool call`
           : spentTheCapWithoutActing(response)
             ? `the model was cut off at the ${response.outputTokens}-token output cap before it called a tool; a turn the cap cut off is not its account of finishing`
-            : `the runtime answered with neither text nor a tool call (finish reason ${response.finishReason})`,
+            : unfinished
+              ? unfinishedMessage
+              : `the runtime answered with neither text nor a tool call (finish reason ${response.finishReason})`,
         willRetry: true,
       });
     } catch (cause) {

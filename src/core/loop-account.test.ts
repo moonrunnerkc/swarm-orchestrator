@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describePriorLoop, priorLoopAccount } from "./loop-account.ts";
+import { describePriorLoop, maxRecentShellResults, priorLoopAccount } from "./loop-account.ts";
 import type { ConversationMessage } from "./model-client.ts";
 
 const trailer = (n: number) =>
@@ -132,5 +132,166 @@ describe("the account of a previous loop", () => {
     const text = describePriorLoop(priorLoopAccount([], "empty-response", 0));
     expect(text.split("\n")).toHaveLength(3);
     expect(text).toContain("files it edited: none");
+  });
+});
+
+describe("the recent shell results the account carries", () => {
+  const printed = (callId: string, command: string, output: string, n = 7) =>
+    exchange(callId, "shell", { command }, output, false).map((message) =>
+      message.role === "tool"
+        ? {
+            ...message,
+            outcomes: message.outcomes.map((one) => ({
+              ...one,
+              output: `${output}${trailer(n)}`,
+            })),
+          }
+        : message,
+    );
+
+  it("keeps the last three that printed and exited 0, in order, with command, status, excerpt and record", () => {
+    // The first repair attempt of run 20261020T045117-41e2cc: probes of the class against the
+    // input, each printing null and exiting 0, which the account used to drop entirely.
+    const messages: ConversationMessage[] = [
+      { role: "user", text: "fix the regex" },
+      ...printed(
+        "a",
+        "node -e \"console.log(/^[fF]/.exec('ftp'))\"",
+        "exit code: 0\nstdout:\n[ 'f' ]",
+        1,
+      ),
+      ...printed(
+        "b",
+        "node -e \"require('./lib/marked.cjs')\"",
+        "exit code: 1\nstdout:\nError: Cannot find module",
+        2,
+      ),
+      ...printed("c", 'node -e "process.exit(0)"', "exit code: 0", 3),
+      ...printed(
+        "d",
+        "node -e \"console.log(/^[fF][pP]/.exec('ftp'))\"",
+        "exit code: 0\nstdout:\nnull",
+        4,
+      ),
+      ...printed(
+        "e",
+        "node -e \"console.log(/^[fF][pP][tT]/.exec('ftp'))\"",
+        "exit code: 0\nstdout:\nnull",
+        5,
+      ),
+      ...printed(
+        "f",
+        "node -e \"console.log(/^[fF][pP]/.test('ftp'))\"",
+        "exit code: 0\nstdout:\nfalse",
+        6,
+      ),
+    ];
+    const carrying = { recentShellResults: maxRecentShellResults };
+    const account = priorLoopAccount(messages, "max-steps", 6, carrying);
+    expect(account.recentShell.map((one) => one.call)).toEqual([
+      "node -e \"console.log(/^[fF][pP]/.exec('ftp'))\"",
+      "node -e \"console.log(/^[fF][pP][tT]/.exec('ftp'))\"",
+      "node -e \"console.log(/^[fF][pP]/.test('ftp'))\"",
+    ]);
+    expect(account.recentShell[0]).toEqual({
+      call: "node -e \"console.log(/^[fF][pP]/.exec('ftp'))\"",
+      exitCode: 0,
+      output: "stdout:\nnull",
+      record: `sha256:${(4).toString(16).padStart(64, "0")}`,
+      beforeLaterEdits: [],
+    });
+    // The failed one and the one that printed nothing stay where they were: in the empty list.
+    expect(account.emptyShell.map((one) => one.call)).toEqual([
+      "node -e \"require('./lib/marked.cjs')\"",
+      'node -e "process.exit(0)"',
+    ]);
+    const text = describePriorLoop(account);
+    expect(text).toContain("the last 3 shell command(s) that printed something and exited 0");
+    expect(text).toContain("historical observations of that loop's files at the time");
+    expect(text).toContain("not that what it examined was correct");
+    expect(text).toContain(
+      `  1. node -e "console.log(/^[fF][pP]/.exec('ftp'))" (exit 0; on the files as that loop left them; record sha256:${(4).toString(16).padStart(64, "0")}) printed:\n     stdout:\n     null`,
+    );
+    expect(text).not.toContain("[ 'f' ]");
+  });
+
+  it("names the loop's later edits, so a result is read as predating them, and bounds what it printed", () => {
+    const long = Array.from(
+      { length: 12 },
+      (_, index) => `line ${index + 1} ${"x".repeat(60)}`,
+    ).join("\n");
+    const messages: ConversationMessage[] = [
+      ...printed("a", "npm test", `exit code: 0\nstdout:\n${long}`, 1),
+      ...exchange(
+        "w",
+        "edit",
+        { path: "src/rules.ts", find: "a", replace: "b" },
+        "replaced 1 occurrence(s) in src/rules.ts",
+      ),
+      ...exchange(
+        "x",
+        "edit",
+        { path: "src/other.ts", find: "a", replace: "b" },
+        "no occurrence of the search text in src/other.ts",
+        true,
+      ),
+      ...printed("b", "npm run build", "exit code: 0\nstdout:\nbuilt", 2),
+    ];
+    const account = priorLoopAccount(messages, "completed", 4, { recentShellResults: 3 });
+    expect(account.recentShell.map((one) => one.beforeLaterEdits)).toEqual([["src/rules.ts"], []]);
+    const first = account.recentShell[0]?.output ?? "";
+    expect(first.split("\n").length).toBeLessThanOrEqual(9);
+    expect(first.length).toBeLessThanOrEqual(484);
+    expect(first.endsWith("...")).toBe(true);
+    const text = describePriorLoop(account);
+    expect(text).toContain("(exit 0; before that loop's later edit of src/rules.ts;");
+    expect(text).toContain("npm run build (exit 0; on the files as that loop left them;");
+  });
+
+  it("reads the status of a bounded output view, and says nothing when no result qualifies", () => {
+    const view =
+      "[output view: the full output is 25,049 characters in 53 lines, kept on evidence record sha256:" +
+      `${"a".repeat(64)} (kind tool-call:shell); lines 14 to 49 omitted. recorded status: exit code 0, not timed out.]` +
+      "\nexit code: 0\nstdout:\n> marked test\n[... lines 14 to 49 omitted ...]\n1713 passing";
+    const account = priorLoopAccount([...printed("v", "npm test", view, 9)], "completed", 1, {
+      recentShellResults: 3,
+    });
+    expect(account.recentShell).toHaveLength(1);
+    expect(account.recentShell[0]?.output).toBe(
+      "stdout:\n> marked test\n[... lines 14 to 49 omitted ...]\n1713 passing",
+    );
+    // The shared transcript's `echo rc=$?` printed and exited 0, so it qualifies; a loop whose
+    // shell calls all failed or printed nothing carries no such line.
+    expect(
+      describePriorLoop(priorLoopAccount(transcript, "stalled", 9, { recentShellResults: 3 })),
+    ).toContain('1. grep -rn "emitWsNeeded" lib/; echo rc=$? (exit 0;');
+    const silent: ConversationMessage[] = [
+      ...exchange("s", "shell", { command: "grep -rn x lib/" }, "exit code: 1"),
+    ];
+    expect(
+      describePriorLoop(priorLoopAccount(silent, "stalled", 1, { recentShellResults: 3 })),
+    ).not.toContain("printed something and exited 0");
+  });
+
+  it("carries none unless asked, which is the default the worker uses, and never more than three", () => {
+    // The matched pair of 2026-10-20 delivered the same correct patch with and without them, so
+    // the results are not a default; an experiment names the number it wants, bounded above.
+    expect(priorLoopAccount(transcript, "stalled", 9).recentShell).toEqual([]);
+    expect(describePriorLoop(priorLoopAccount(transcript, "stalled", 9))).not.toContain(
+      "printed something and exited 0",
+    );
+    const many: ConversationMessage[] = Array.from({ length: 6 }, (_, index) =>
+      exchange(
+        `m${index}`,
+        "shell",
+        { command: `echo ${index}` },
+        `exit code: 0\nstdout:\n${index}`,
+      ),
+    ).flat();
+    expect(
+      priorLoopAccount(many, "completed", 6, { recentShellResults: 10 }).recentShell.map(
+        (one) => one.call,
+      ),
+    ).toEqual(["echo 3", "echo 4", "echo 5"]);
   });
 });

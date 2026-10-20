@@ -113,7 +113,7 @@ function inlineProgram(executable: string, argumentsOf: readonly string[], index
  * code, and a path built inside the code was never visible to this reader, which is the residual
  * the guard names for every allowed interpreter.
  */
-function pathsInlineCodeCouldOpen(code: string): readonly string[] {
+export function pathsInlineCodeCouldOpen(code: string): readonly string[] {
   const pathShaped = (text: string) =>
     /^[\p{L}\p{N}._~/@+-]+$/u.test(text) && /[\p{L}\p{N}]/u.test(text);
   const pieces = code.split(/\s+/).filter((piece) => pathShaped(piece) && !piece.startsWith("//"));

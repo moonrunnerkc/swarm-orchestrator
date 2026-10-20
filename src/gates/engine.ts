@@ -8,6 +8,7 @@ import type { ResourcePool } from "../exec/resource-pool.ts";
 import {
   type AutoResolveOutcome,
   defaultAttemptCap,
+  type OwedFollowUp,
   type ResolveAttempt,
   runAutoResolve,
 } from "./auto-resolve.ts";
@@ -58,6 +59,8 @@ interface GatesEngineOptions {
   readonly emit: (event: LoopEvent) => void;
   readonly resolve: ResolveAttempt;
   readonly cap?: number;
+  /** Owed one attempt from the cap once the gates are green; see the resolve loop. */
+  readonly followUp?: OwedFollowUp;
   readonly budgets?: DiffBudget;
   readonly gateOptions?: GateSetOptions;
   /**
@@ -68,6 +71,11 @@ interface GatesEngineOptions {
   readonly singleFileTestCommand?: SingleFileCommand;
   /** Stops the resolve loop where the run was cancelled, rather than spending its attempts. */
   readonly abortSignal?: AbortSignal;
+  /**
+   * Stops the gates' commands, which `abortSignal` does where this is absent. Kept apart so the end
+   * of an attempt's wall stops the attempts without refusing the checks of the tree they left.
+   */
+  readonly commandSignal?: AbortSignal;
   /**
    * What already differed from the base when the run began. Those files are not attributed to
    * the run unless it went on to edit them, so a dirty workspace is not read as its work.
@@ -143,11 +151,13 @@ function withAcceptance(
   assembled: { detection: ProjectDetection; gates: readonly GateDefinition[] },
   options?: GateSetOptions,
 ) {
-  const acceptance = options?.acceptanceGate;
-  if (acceptance === undefined) return assembled;
-  if (assembled.gates.some((gate) => gate.id === acceptance.id))
-    throw new Error(`acceptance gate identity collides with configured gate: ${acceptance.id}`);
-  return { ...assembled, gates: [...assembled.gates, acceptance] };
+  const added = [options?.acceptanceGate, options?.diagnosticsGate].filter(
+    (gate): gate is GateDefinition => gate !== undefined,
+  );
+  for (const gate of added)
+    if (assembled.gates.some((one) => one.id === gate.id))
+      throw new Error(`acceptance gate identity collides with configured gate: ${gate.id}`);
+  return added.length === 0 ? assembled : { ...assembled, gates: [...assembled.gates, ...added] };
 }
 
 /**
@@ -199,7 +209,7 @@ export async function runGatesEngine(options: GatesEngineOptions): Promise<Gates
     options.clock,
     harnessChildEnvironment(),
     options.isolation,
-    options.abortSignal,
+    options.commandSignal ?? options.abortSignal,
     options.commandPool,
   );
   // Read from the base commit, falling back to the tree only where the base had no manifest at
@@ -252,6 +262,7 @@ export async function runGatesEngine(options: GatesEngineOptions): Promise<Gates
     gates,
     context,
     ...(options.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
+    ...(options.followUp === undefined ? {} : { followUp: options.followUp }),
     cycleDeps: {
       commands,
       evidence: options.evidence,

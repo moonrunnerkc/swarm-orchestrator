@@ -1,7 +1,10 @@
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { assetsUnder, compilerPath } from "./build-dist.mjs";
+import { assetsUnder, compilerPath, sourceDescription } from "./build-dist.mjs";
 
 const src = join(import.meta.dirname, "..", "src");
 
@@ -117,5 +120,33 @@ describe("what the dist build has to carry beyond compiled JavaScript", () => {
 
   it("emits no TypeScript, since tsc is what turns those into the files beside them", async () => {
     expect((await assetsUnder(src)).filter((asset) => asset.endsWith(".ts"))).toEqual([]);
+  });
+});
+
+describe("what a build records about the source it came from", () => {
+  it("names the commit where no release tag is reachable, and the tag where one is", () => {
+    // A shallow clone of the branch reported "14.4.0" on a remote install walk: describe found
+    // no tag, the build recorded nothing, and the version line read as the release.
+    const repository = mkdtempSync(join(tmpdir(), "swarm-describe-"));
+    try {
+      const git = (...args) =>
+        execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", ...args], {
+          cwd: repository,
+          encoding: "utf8",
+        }).trim();
+      git("init", "-q");
+      writeFileSync(join(repository, "a.txt"), "a\n");
+      git("add", "a.txt");
+      git("commit", "-qm", "a");
+      const commit = git("rev-parse", "--short", "HEAD");
+      expect(sourceDescription(repository)).toBe(commit);
+      git("tag", "v1.2.3");
+      expect(sourceDescription(repository)).toBe("v1.2.3");
+      writeFileSync(join(repository, "a.txt"), "b\n");
+      expect(sourceDescription(repository)).toBe("v1.2.3-dirty");
+    } finally {
+      rmSync(repository, { recursive: true, force: true });
+    }
+    expect(sourceDescription(tmpdir())).toBeNull();
   });
 });

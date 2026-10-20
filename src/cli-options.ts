@@ -12,6 +12,7 @@ import {
   type McpCommand,
   type PreCommitCommand,
   parseVerifyOnlyCommand,
+  switchFlags,
   tokenizeCommandLine,
   type VerdictCommand,
   type VerifyCommand,
@@ -423,6 +424,17 @@ export function parseCommandLine(
   argv: readonly string[],
   context: CommandLineContext,
 ): CommandLine {
+  // A flag this build does not have, with no word after it, reached the tokenizer's "needs a
+  // value" first and was described as if it existed.
+  const misspelt = argv.find(
+    (word, index) =>
+      word.startsWith("--") &&
+      !documentedFlags.has(word.slice(2)) &&
+      !switchFlags.has(word.slice(2)) &&
+      (argv[index + 1] === undefined || argv[index + 1]?.startsWith("--")),
+  );
+  if (misspelt !== undefined && !argv.includes("--help") && !argv.includes("--version"))
+    throw invalid(`${misspelt} is not an option of this command; swarm --help lists them`);
   const line = tokenizeCommandLine(argv, { ...context, usage });
   const flags = new ReadFlags(line.flags);
   const command = commandFrom({ words: line.words, flags }, context);

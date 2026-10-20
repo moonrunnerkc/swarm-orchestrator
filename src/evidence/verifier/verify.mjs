@@ -957,11 +957,17 @@ function collectChecks(directory) {
       contract?.version === 1 &&
       sha256(canonicalJson(contract)) === reading?.contractDigest &&
       reading?.policy === "goal-obligations-v1";
-    const requirements = contract?.requirements ?? [];
+    // A planned requirement is a hypothesis and carries no obligation (src/gates/goal-acceptance.ts).
+    const requirements = (contract?.requirements ?? []).filter(
+      (requirement) => requirement.planned === undefined,
+    );
     const checks = contract?.checks ?? [];
     const obligations = reading?.obligations ?? [];
     consistent &&=
-      requirements.length > 0 &&
+      (contract?.requirements ?? []).length > 0 &&
+      (contract?.requirements ?? []).every(
+        (requirement) => requirement.planned === undefined || requirement.checks?.length === 0,
+      ) &&
       requirements.length === obligations.length &&
       new Set(requirements.map((requirement) => requirement.id)).size === requirements.length &&
       new Set(checks.map((check) => check.id)).size === checks.length;
@@ -1090,7 +1096,9 @@ function collectChecks(directory) {
     record(
       `goal obligations ${entry.sequence} re-derived`,
       consistent &&
-        reading?.accepted === obligations.every((obligation) => obligation.status === "accepted"),
+        reading?.accepted ===
+          (obligations.length > 0 &&
+            obligations.every((obligation) => obligation.status === "accepted")),
       "every pinned requirement is bound to its captured check observations",
     );
   }
@@ -1318,10 +1326,19 @@ function collectChecks(directory) {
         observed.verified === false &&
         observed.task === "unjudged";
       const task = observed?.task === "vacuous" ? "unjudged" : observed?.task;
+      // Mirrors hypothesesOnly in src/evidence/run-assessment.ts: a contract of planned
+      // hypotheses alone certifies nothing and is read on the fresh checkout's regression.
+      const hypothesesOnly =
+        observed?.certificationPolicy === "goal-obligations-v1" &&
+        observed?.refusal == null &&
+        observed?.regression === "pass" &&
+        Array.isArray(observed?.goalAcceptance?.obligations) &&
+        observed.goalAcceptance.obligations.length === 0;
       const expected = {
         ...base?.verdict,
         task,
-        acceptable: base?.verdict?.acceptable === true && observed?.verified === true,
+        acceptable:
+          base?.verdict?.acceptable === true && (observed?.verified === true || hypothesesOnly),
         reasons: {
           ...base?.verdict?.reasons,
           task: refused
@@ -1357,9 +1374,32 @@ function collectChecks(directory) {
     const previousAssessment =
       prior.filter((candidate) => candidate.type === "run-assessment").at(-1)?.sequence ?? -1;
     const thisRun = prior.filter((candidate) => candidate.sequence > previousAssessment);
+    // The cycle the workspace was left in: the last retry the ratchet accepted, or the first cycle.
+    // A rolled-back attempt's gate runs come later on the chain and measured a tree that was undone,
+    // so they are not what the assessment rests on. A chain whose gate runs name no cycle keeps
+    // reading the latest runs, as it always did.
+    const runsOfThisRun = thisRun.filter((candidate) => candidate.type === "gate-run");
+    const cycled = runsOfThisRun.some(
+      (candidate) => typeof payloads.get(candidate.payloadDigest)?.attempt === "number",
+    );
+    const settledCycle = Math.max(
+      0,
+      ...thisRun
+        .filter((candidate) => candidate.type === "ratchet-decision")
+        .map((candidate) => payloads.get(candidate.payloadDigest))
+        .filter(
+          (decision) =>
+            decision?.scope === "retry" &&
+            decision.accepted === true &&
+            typeof decision.attempt === "number",
+        )
+        .map((decision) => decision.attempt),
+    );
     const latestGates = new Map(
-      thisRun
-        .filter((candidate) => candidate.type === "gate-run")
+      runsOfThisRun
+        .filter(
+          (candidate) => !cycled || payloads.get(candidate.payloadDigest)?.attempt === settledCycle,
+        )
         .map((candidate) => [
           payloads.get(candidate.payloadDigest)?.gateId,
           candidate.payloadDigest,
@@ -1371,11 +1411,18 @@ function collectChecks(directory) {
       [...latestGates.values()].every((digest) => gateRecords.includes(digest));
     const measured = Object.assign({}, ...gates.map((gate) => gate?.measures ?? {}));
     consistent &&= inputs?.changedFiles === (measured.changedFiles ?? 0);
-    // The last stop of a loop: a withheld repair attempt is recorded as a stop without one.
+    // The last stop of a loop: a withheld repair attempt is recorded as a stop without one, and a
+    // follow-up whose candidate was not kept changed nothing delivered, so its stop is not it.
+    const followUp = thisRun
+      .map((candidate) => payloads.get(candidate.payloadDigest))
+      .filter((payload) => payload?.rule === "outcome-follow-up-v1")
+      .at(-1);
+    const followUpKept = followUp?.state === "given" && followUp.accepted === true;
     const stop = thisRun
       .filter(
         (candidate) =>
           candidate.type === "session-stopped" &&
+          !(payloads.get(candidate.payloadDigest)?.followUp === true && !followUpKept) &&
           loopLifecycles.includes(payloads.get(candidate.payloadDigest)?.stopReason),
       )
       .at(-1);

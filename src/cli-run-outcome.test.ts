@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   changedFilesOf,
   describeRunOutcome,
+  exitCodeForStatus,
   outcomeStatus,
   type RunOutcomeInput,
   requirementOutcomes,
@@ -111,7 +112,7 @@ describe("the run outcome block", () => {
     );
     expect(text).not.toContain("second line");
     expect(text).toContain(
-      "requirements: 2 sealed, 1 met, 1 unmet, 0 unjudged (model-authored criteria",
+      "requirements: 2 supplied, 1 met, 1 unmet, 0 unjudged (model-authored criteria",
     );
     expect(text).toContain("met      collapse: runs of whitespace become one dash");
     expect(text).toContain(
@@ -144,7 +145,7 @@ describe("the run outcome block", () => {
     }).join("\n");
     // Not "accepted": with nothing sealed, the gates passing is all that was established.
     expect(text).toContain(
-      "outcome: gates passed; the task itself was not judged (no requirement was sealed)",
+      "outcome: gates passed; the task itself was not judged (no requirement was supplied)",
     );
     expect(text).not.toContain("outcome: accepted");
     expect(text).toContain(
@@ -305,14 +306,12 @@ describe("the run's one status", () => {
     ],
     immutablePaths: [],
   }).contract;
+  // As the final verification records it: a planned requirement is no obligation, so only the
+  // supplied one is judged, and the generated checks are results beside it.
   const finished = (boundary: "accepted" | "rejected", visible: "accepted" | "rejected") =>
     requirementOutcomes(plannedContract, {
       goalAcceptance: {
-        obligations: [
-          { id: "visible", status: visible },
-          { id: "ten-is-small", status: "unjudged" },
-          { id: "above-ten-big", status: "unjudged" },
-        ],
+        obligations: [{ id: "visible", status: visible }],
         checkResults: [
           { id: "visible", status: visible, detail: visible === "accepted" ? "" : "exit 1" },
           {
@@ -329,6 +328,7 @@ describe("the run's one status", () => {
     acceptable: false,
     reasons: { assessment: "blocking gate(s) failed: task-acceptance" },
   };
+  const certified = { ...verdict, task: "accepted" as const, acceptable: true, reasons: {} };
 
   it("calls a correct candidate that a wrong generated expectation disagrees with unresolved, not rejected", () => {
     const input = {
@@ -349,19 +349,24 @@ describe("the run's one status", () => {
     expect(text).toContain("next: read the disputed requirement(s) ten-is-small against the task");
   });
 
-  it("keeps a requirement in the task's words with no check visible, and the run partially checked", () => {
+  it("accepts a run the supplied checks accept, with the planner's hypotheses named and deciding nothing", () => {
+    // The contradiction this replaces: the supplied check passed and every generated check
+    // agreed, yet the run could never be accepted, because the planner's requirements were
+    // obligations nothing could meet, and running the same task without --plan-checks was accepted.
     const input = {
       ...base,
-      verdict: { ...unverifiedTask, reasons: { task: "pinned goal checks: unjudged" } },
+      verdict: certified,
       requirements: finished("accepted", "accepted"),
       gates: cycle([run("tests", "passed"), run("task-acceptance", "passed")]),
     };
-    expect(outcomeStatus(input)).toBe("partially-checked");
+    expect(outcomeStatus(input)).toBe("accepted");
+    expect(exitCodeForStatus("accepted")).toBe(0);
     const text = describeRunOutcome(input).join("\n");
-    expect(text).toContain("outcome: partially checked");
+    expect(text).toContain("outcome: accepted\n");
     expect(text).toContain(
-      "requirements: 3 sealed, 1 met, 0 unmet, 2 unjudged; 2 read from the task",
+      "requirements: 1 supplied, 1 met, 0 unmet, 0 unjudged; 2 planned from the task, hypotheses that generated checks exercise and that decide nothing",
     );
+    // Not erased: the hypothesis with no admitted check is still named as unexercised.
     expect(text).toContain(
       'no check above-ten-big: values above 10 stay big [planned from the task: "values above 10 remain big"]',
     );
@@ -369,9 +374,218 @@ describe("the run's one status", () => {
     expect(text).toContain(
       "generated check boundary: agrees with the change; its expected results are the planner's",
     );
+    expect(text).toContain("scope: only supplied requirements decide");
+  });
+
+  it("gives a planned requirement with no check the reason planning recorded and the next action", () => {
+    const input = {
+      ...base,
+      verdict: certified,
+      requirements: finished("accepted", "accepted"),
+      gates: cycle([run("tests", "passed"), run("task-acceptance", "passed")]),
+      uncovered: [
+        {
+          id: "above-ten-big",
+          reason:
+            'above: the base gave "big" for 50 where the check expected "large"; the revision declared no replacement',
+          nextAction: "implement it from the task's words",
+        },
+      ],
+    };
+    const text = describeRunOutcome(input).join("\n");
     expect(text).toContain(
-      "next: review the change against the requirement(s) nothing decided (ten-is-small, above-ten-big)",
+      'no generated check covers it: above: the base gave "big" for 50 where the check expected "large"; the revision declared no replacement',
     );
+    expect(text).toContain("next for it: implement it from the task's words");
+  });
+
+  it("scopes an accepted run to the supplied contract and names an unresolved outcome under its covered requirement", () => {
+    // ten-is-small has a generated check that agrees, and a second outcome the planner read from
+    // the same requirement whose only check was refused: accepted stays the supplied contract's.
+    const input = {
+      ...base,
+      verdict: certified,
+      requirements: finished("accepted", "accepted"),
+      gates: cycle([run("tests", "passed"), run("task-acceptance", "passed")]),
+      unresolvedOutcomes: [
+        {
+          id: "ten-is-small#2",
+          requirement: "ten-is-small",
+          quote: 'classify("10") is small too',
+          role: "change" as const,
+          reason: "string-ten: case 1 threw in the check program's own code on the base",
+          nextAction: "implement it from the task's words",
+        },
+      ],
+    };
+    expect(outcomeStatus(input)).toBe("accepted");
+    const text = describeRunOutcome(input).join("\n");
+    expect(text).toContain(
+      "outcome: accepted; this is the supplied contract's reading only: 1 requested outcome(s) read from the task were exercised by no check (below), so it does not show the whole task done",
+    );
+    const below = text.slice(text.indexOf("ten-is-small: 10 is small"));
+    expect(below).toContain("generated check boundary: agrees with the change");
+    expect(below).toContain(
+      `NO CHECK change "classify("10") is small too": string-ten: case 1 threw in the check program's own code on the base`,
+    );
+    // A requirement with no check at all still shows each of its outcomes' own words.
+    const allRefused = describeRunOutcome({
+      ...input,
+      unresolvedOutcomes: [
+        {
+          id: "above-ten-big#2",
+          requirement: "above-ten-big",
+          quote: 'classify(11) must still give "big"',
+          role: "keep" as const,
+          reason: "eleven: case 1 threw in the check program's own code on the base",
+          nextAction: "implement it from the task's words",
+        },
+      ],
+    }).join("\n");
+    const noCheck = allRefused.slice(allRefused.indexOf("no check above-ten-big"));
+    expect(noCheck).toContain('NO CHECK kept behaviour "classify(11) must still give "big""');
+    // Without one, the line reads as before.
+    expect(describeRunOutcome({ ...input, unresolvedOutcomes: [] }).join("\n")).toContain(
+      "outcome: accepted\n",
+    );
+  });
+
+  it("says whether the follow-up on unresolved outcomes ran and what the ratchet made of it, without resolving them", () => {
+    const input = {
+      ...base,
+      verdict: certified,
+      requirements: finished("accepted", "accepted"),
+      gates: cycle([run("tests", "passed"), run("task-acceptance", "passed")]),
+      unresolvedOutcomes: [
+        {
+          id: "ten-is-small#2",
+          requirement: "ten-is-small",
+          quote: 'classify("10") is small too',
+          role: "change" as const,
+          reason: "no admitted check holds the task's input",
+          nextAction: "run it yourself",
+        },
+      ],
+    };
+    const given = describeRunOutcome({
+      ...input,
+      outcomeFollowUp: {
+        state: "given",
+        attempt: 2,
+        accepted: false,
+        reason: "given once the gates were green",
+        record: "sha256:follow",
+      },
+    }).join("\n");
+    expect(given).toContain(
+      "follow-up on them: given once, as attempt 2; the ratchet rolled back what it left; they stay unresolved, since no sealed check states them",
+    );
+    // Status and exit code keep their meaning.
+    expect(outcomeStatus(input)).toBe("accepted");
+    const withheld = describeRunOutcome({
+      ...input,
+      outcomeFollowUp: {
+        state: "withheld",
+        attempt: null,
+        accepted: null,
+        reason: "no attempt was left under the cap of 1",
+        record: "sha256:follow",
+      },
+    }).join("\n");
+    expect(withheld).toContain(
+      "follow-up on them: withheld (no attempt was left under the cap of 1); they stay unresolved",
+    );
+  });
+
+  it("leaves a run of hypotheses alone unjudged, as the same run without planning is", () => {
+    const hypotheses = freezeGoalContract({
+      ...plannedContract,
+      requirements: plannedContract.requirements.filter((one) => one.planned !== undefined),
+      checks: plannedContract.checks.filter((one) => one.author === "model"),
+    }).contract;
+    const requirements = requirementOutcomes(hypotheses, {
+      goalAcceptance: {
+        obligations: [],
+        checkResults: [{ id: "boundary", status: "accepted", detail: "" }],
+      },
+    });
+    const agreeing = {
+      ...base,
+      verdict: { ...verdict, task: "unjudged" as const, acceptable: true, reasons: {} },
+      requirements,
+      gates: cycle([run("tests", "passed"), run("task-acceptance", "passed")]),
+    };
+    expect(outcomeStatus(agreeing)).toBe("unjudged");
+    expect(outcomeStatus({ ...agreeing, requirements: null })).toBe("unjudged");
+    expect(describeRunOutcome(agreeing).join("\n")).toContain(
+      "outcome: gates passed; the task itself was not judged (no requirement was supplied)",
+    );
+  });
+
+  it("keeps a supplied requirement no check decided partially checked", () => {
+    const contract = freezeGoalContract({
+      version: 1,
+      goal: "g",
+      requirements: [
+        { id: "visible", description: "the supplied check", checks: ["v"] },
+        { id: "docs", description: "documented", checks: [] },
+      ],
+      checks: [{ id: "v", command: "x", author: "user", exposure: "shared", artifacts: [] }],
+      immutablePaths: [],
+    }).contract;
+    const input = {
+      ...base,
+      verdict: { ...unverifiedTask, reasons: { task: "pinned goal checks: unjudged" } },
+      requirements: requirementOutcomes(contract, {
+        goalAcceptance: {
+          obligations: [
+            { id: "visible", status: "accepted" },
+            { id: "docs", status: "unjudged" },
+          ],
+        },
+      }),
+      gates: cycle([run("tests", "passed"), run("task-acceptance", "passed")]),
+    };
+    expect(outcomeStatus(input)).toBe("partially-checked");
+    expect(exitCodeForStatus("partially-checked")).toBe(1);
+    expect(describeRunOutcome(input).join("\n")).toContain(
+      "next: give docs a check that decides it in --goal-contract and run again",
+    );
+  });
+
+  it("calls a run whose model or final verification was unavailable unverified, exit 4", () => {
+    const lostModel = {
+      ...base,
+      lifecycle: "model-error",
+      verdict: { ...unverifiedTask, reasons: { assessment: "the gates settled escalated" } },
+      requirements: finished("accepted", "accepted").map((one) =>
+        one.source === "planned" ? one : { ...one, status: "unjudged" as const },
+      ),
+      gates: cycle([run("tests", "passed"), run("task-acceptance", "passed")]),
+    };
+    expect(outcomeStatus(lostModel)).toBe("unverified");
+    expect(exitCodeForStatus("unverified")).toBe(4);
+    const noSetup = {
+      ...lostModel,
+      lifecycle: "completed",
+      finalVerification: {
+        refusal: null,
+        regression: "unmeasured",
+        unmeasured: true,
+        advice: "setup unavailable: the fresh checkout could not install",
+      },
+    };
+    expect(outcomeStatus(noSetup)).toBe("unverified");
+    expect(describeRunOutcome(noSetup).join("\n")).toContain(
+      "next: the final verification could not measure the change in a fresh checkout",
+    );
+    // A refusal by what decides is still a refusal, whatever else was unavailable.
+    expect(
+      outcomeStatus({
+        ...lostModel,
+        requirements: finished("accepted", "rejected"),
+      }),
+    ).toBe("not-accepted");
   });
 
   it("lets a refusal by a supplied check win over any generated disagreement", () => {
@@ -423,7 +637,7 @@ describe("the run's one status", () => {
     ];
     for (const one of cases) {
       const status = outcomeStatus(one);
-      const exitsZero = status === "accepted" || status === "unjudged";
+      const exitsZero = exitCodeForStatus(status) === 0;
       expect({ status, exitsZero }).toEqual({ status, exitsZero: one.verdict.acceptable });
       if (status === "accepted") expect(one.verdict.task).not.toBe("rejected");
     }

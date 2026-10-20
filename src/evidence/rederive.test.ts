@@ -179,6 +179,79 @@ describe("the re-derivation script agrees with the parsers it ships beside", () 
       "changed-line-coverage-decreased",
     ]);
   });
+
+  it("holds each part of a gate that failed before and after, as the engine's ratchet does", () => {
+    const unchanged = { testsCollected: 1, testsDeclared: 1, assertions: 1, skipMarkers: 0 };
+    const gates = { before: { acceptance: "failed" }, after: { acceptance: "failed" } };
+    const decision = (after: Record<string, string>) => ({
+      scope: "retry",
+      attempt: 1,
+      accepted: true,
+      violations: [],
+      respecification: [],
+      newSpecifications: [],
+      measures: { before: unchanged, after: unchanged },
+      gates,
+      parts: {
+        before: { acceptance: { ten: "failed", twelve: "passed" } },
+        after: { acceptance: after },
+      },
+    });
+
+    expect(
+      rederive.rederiveRatchet(decision({ ten: "failed", twelve: "failed" })).violations,
+    ).toEqual(["gate-part-regressed"]);
+    expect(
+      rederive.rederiveRatchet(decision({ ten: "passed", twelve: "passed" })).violations,
+    ).toEqual([]);
+    // A part the attempt did not report is not compared, by either reading.
+    expect(rederive.rederiveRatchet(decision({ ten: "failed" })).violations).toEqual([]);
+    const { parts: _parts, ...older } = decision({ ten: "failed", twelve: "failed" });
+    expect(rederive.rederiveRatchet(older).violations).toEqual([]);
+  });
+
+  it("lets a claim part yield only to a part outside the claims that the attempt fixed", () => {
+    const unchanged = { testsCollected: 1, testsDeclared: 1, assertions: 1, skipMarkers: 0 };
+    const decision = (
+      before: Record<string, string>,
+      after: Record<string, string>,
+      claims?: readonly string[],
+    ) => ({
+      scope: "retry",
+      attempt: 1,
+      accepted: true,
+      violations: [],
+      respecification: [],
+      newSpecifications: [],
+      measures: { before: unchanged, after: unchanged },
+      gates: { before: { diagnostics: "failed" }, after: { diagnostics: "failed" } },
+      parts: {
+        before: { diagnostics: before },
+        after: { diagnostics: after },
+        ...(claims === undefined ? {} : { claims: { diagnostics: claims } }),
+      },
+    });
+    const restores = [
+      { relation: "passed", kept: "failed" },
+      { relation: "failed", kept: "passed" },
+    ] as const;
+
+    expect(rederive.rederiveRatchet(decision(...restores, ["relation"])).violations).toEqual([]);
+    // Without the claim recorded, as every decision before claims was, the part is held.
+    expect(rederive.rederiveRatchet(decision(...restores)).violations).toEqual([
+      "gate-part-regressed",
+    ]);
+    expect(
+      rederive.rederiveRatchet(
+        decision({ relation: "passed", kept: "passed" }, { relation: "failed", kept: "passed" }, [
+          "relation",
+        ]),
+      ).violations,
+    ).toEqual(["gate-part-regressed"]);
+    expect(
+      rederive.rederiveRatchet(decision(...restores, ["relation", "kept"])).violations,
+    ).toEqual(["gate-part-regressed"]);
+  });
 });
 
 describe("re-deriving a bundle the real engine produced", () => {

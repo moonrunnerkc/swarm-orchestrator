@@ -17,11 +17,18 @@ import { defineTool } from "../tools/tool-definition.ts";
 import { createWorkspaceTools } from "../tools/workspace-tools.ts";
 import { createDeclareTaskGraphTool, type DeclaredGraph } from "./graph-tool.ts";
 import {
+  type CoverageReviewCall,
+  coverageReviewInput,
+  describeCoverageReview,
   describeDeclaredCases,
   describeUncoveredSentences,
+  type PlannedCheckCall,
   type PlannedChecksDeclaration,
+  type PlannedRelationCall,
   plannedCheckInput,
   plannedContract,
+  plannedRelationInput,
+  withCoverageReview,
   withPlannedCheck,
 } from "./planned-check-program.ts";
 import type { TaskGraph } from "./task-graph.ts";
@@ -45,6 +52,17 @@ export interface PlannerOptions {
      * it sees what each did while it still holds its reasoning. Its answer is recorded output.
      */
     readonly tryOnBase?: (contract: GoalContract) => Promise<string>;
+    /**
+     * The declaration an earlier round of this planning ended with, which this round continues:
+     * its checks and reviews stand until replaced under their ids.
+     */
+    readonly initial?: PlannedChecksDeclaration;
+    /**
+     * A revision of checks this planning already declared and ran on the base. Its brief carries
+     * what it needs, so it is told to declare first rather than to read the repository again: a
+     * revision told to read first spent its whole allowance rereading and declared nothing.
+     */
+    readonly revision?: boolean;
   };
   readonly maxTokens?: number;
   readonly maxWallTimeMs?: number;
@@ -108,7 +126,66 @@ export interface PlannerOutcome {
 export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcome> {
   const declared: DeclaredGraph = { graph: null };
   let goalContract: GoalContract | null = null;
-  let plannedDeclaration: PlannedChecksDeclaration | null = null;
+  let plannedDeclaration: PlannedChecksDeclaration | null = options.plannedChecks?.initial ?? null;
+  const repository = { root: options.workspace, exists: existsSync };
+  if (plannedDeclaration !== null)
+    goalContract = plannedContract(
+      options.plannedChecks?.task ?? options.goal,
+      plannedDeclaration,
+      options.plannedChecks?.base,
+      repository,
+    );
+
+  // Nothing has run yet, so a planner that finds a mistake in what it pinned may replace it:
+  // refusing that spent two launches' remaining wall on re-declares. The supplied contract is
+  // never part of what is replaced.
+  const pinPlanned = (input: PlannedCheckCall | PlannedRelationCall) => {
+    const task = options.plannedChecks?.task ?? options.goal;
+    const replacing = plannedDeclaration?.checks.some((one) => one.id === input.id) ?? false;
+    const declaration = withPlannedCheck(plannedDeclaration, input);
+    goalContract = plannedContract(task, declaration, options.plannedChecks?.base, repository);
+    plannedDeclaration = declaration;
+    const pinned = declaration.checks.find((one) => one.id === input.id);
+    return {
+      text: [
+        `check ${input.id} pinned${replacing ? ", replacing the earlier one" : ""}; ${declaration.checks.length} planned check(s) so far (${declaration.checks.map((one) => one.id).join(", ")}), each run once on the unchanged base before implementation.`,
+        ...describeDeclaredCases({
+          requirements: [],
+          checks: pinned === undefined ? [] : [pinned],
+        }),
+        ...describeUncoveredSentences(task, declaration),
+        ...describeCoverageReview(declaration),
+        "When every input is what you meant, every behaviour the task states is covered and every requirement has its coverage review, finish with a one-line summary and no tool calls.",
+      ].join("\n"),
+      facts: { checks: declaration.checks.length },
+    };
+  };
+
+  // A review's relation is sealed as a planned relation through withCoverageReview; the answer
+  // says what the harness made of it and which requirements still have no review.
+  const review = (input: CoverageReviewCall) => {
+    const task = options.plannedChecks?.task ?? options.goal;
+    const declaration = withCoverageReview(plannedDeclaration, input);
+    goalContract = plannedContract(task, declaration, options.plannedChecks?.base, repository);
+    plannedDeclaration = declaration;
+    const relation = declaration.checks.find(
+      (one) => one.id === input.id && one.relation !== undefined,
+    );
+    return {
+      text: [
+        `coverage review ${input.id} recorded for requirement ${input.requirementId}.`,
+        ...(relation === undefined
+          ? [`No relation: ${input.noRelation ?? ""}`]
+          : [
+              `Relation ${input.id} sealed over the program of ${input.relation?.programFrom ?? ""}; it runs on the unchanged base with the other checks.`,
+              ...describeDeclaredCases({ requirements: [], checks: [relation] }),
+            ]),
+        ...describeCoverageReview(declaration),
+        "The harness checks that each review names what it rests on. Whether the wrong implementation is plausible and whether the named checks tell it apart is your reading, recorded as yours.",
+      ].join("\n"),
+      facts: { reviews: declaration.reviews?.length ?? 0 },
+    };
+  };
 
   const { definitions, toolInvoker } = assembleToolset({
     workspace: options.workspace,
@@ -156,45 +233,41 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
               : defineTool({
                   name: "declare_planned_check",
                   description:
-                    "Pin one acceptance check, with the requirement it covers; call once per check, and again with the same id to replace that check. program is a short ES module whose default export takes one case's input and returns what the project gives for it; cases are inputs with the expected result (or throws: true). The harness runs the program once per case in a fresh checkout of the unchanged base before anything is implemented, compares each result with the expected one as JSON, and admits a change check only if the base gets at least one case wrong and at least one right (a case the task does not change), a preserve check only if the base gets every case right. A requirement covered by a change check quotes the task's own words in quote.",
+                    "Pin one acceptance check, with the requirement it covers; call once per check, and again with the same id to replace that check. program is a short ES module whose default export is called once per case with that case's input value itself (a string input arrives as that string, never as { input, expected }) and returns what the project gives for it; cases are inputs with the expected result (or throws: true), and in a change check each case says changed: true where the task changes its result and changed: false where the task keeps it. The harness runs the program once per case in a fresh checkout of the unchanged base before anything is implemented and compares each result with the expected one as JSON. A change check is admitted only if every kept case gives its expected result there and some changed case does not; a preserve check only if the base gets every case right. Where the base's answers differ between cases, the kept cases are the check's control; where the base gives one answer for every case (which a defect that answers one value gives, and so does a program that ignores its input or builds an empty fixture) the check is kept with its control unestablished. A requirement covered by a change check quotes the task's own words in quote.",
                   inputSchema: plannedCheckInput,
                   kind: "evidence",
                   pathsFrom: () => [],
-                  execute(input) {
-                    // Nothing has run yet, so a planner that finds a mistake in what it pinned may
-                    // replace it: refusing that spent two launches' remaining wall on re-declares.
-                    // The supplied contract is never part of what is replaced.
-                    const task = options.plannedChecks?.task ?? options.goal;
-                    const replacing =
-                      plannedDeclaration?.checks.some((one) => one.id === input.id) ?? false;
-                    const declaration = withPlannedCheck(plannedDeclaration, input);
-                    goalContract = plannedContract(task, declaration, options.plannedChecks?.base, {
-                      root: options.workspace,
-                      exists: existsSync,
-                    });
-                    plannedDeclaration = declaration;
-                    const pinned = declaration.checks.find((one) => one.id === input.id);
-                    return Promise.resolve({
-                      text: [
-                        `check ${input.id} pinned${replacing ? ", replacing the earlier one" : ""}; ${declaration.checks.length} planned check(s) so far (${declaration.checks.map((one) => one.id).join(", ")}), each run once on the unchanged base before implementation.`,
-                        ...describeDeclaredCases({
-                          requirements: [],
-                          checks: pinned === undefined ? [] : [pinned],
-                        }),
-                        ...describeUncoveredSentences(task, declaration),
-                        "When every input is what you meant and every behaviour the task states is covered, finish with a one-line summary and no tool calls.",
-                      ].join("\n"),
-                      facts: { checks: declaration.checks.length },
-                    });
-                  },
+                  execute: (input) => Promise.resolve(pinPlanned(input)),
                 }),
+            ...(options.plannedChecks === undefined
+              ? []
+              : [
+                  defineTool({
+                    name: "declare_planned_relation",
+                    description:
+                      "Pin one check of a rule the task states as an equivalence: some text must behave like another, such as a character the task says must be treated like one that already works. Give a few ordinary seed inputs, the reference text and the variants. The harness inserts the reference and each variant at every position of every seed, calls the program on each, and compares each variant's result with the reference's at the same position, so you write no expected results and every position is tried, not only the one an example shows. Write a whitespace or invisible text as code points: reference U+0020 with variants [U+0009] checks that a tab behaves like a space. Include at least one seed the unchanged base already handles alike for every variant, as the control that the program observes the project. A change relation is admitted only if the base breaks it for some seed and keeps it for another; a preserve relation only if the base keeps it everywhere. Call again with the same id to replace it.",
+                    inputSchema: plannedRelationInput,
+                    kind: "evidence",
+                    pathsFrom: () => [],
+                    execute: (input) => Promise.resolve(pinPlanned(input)),
+                  }),
+                  defineTool({
+                    name: "declare_coverage_review",
+                    description:
+                      "Record the coverage decision for one behaviour of a declared requirement; every requirement needs at least one before planning finishes. Say what the task changes, what must stay, a plausible wrong implementation that would still pass the cases declared so far, which checks tell it apart, and what stays untested. Where the behaviour is a rule that some text behaves like other text, give relation: the harness inserts the reference and each variant at every position of each seed, calls the program of the check named in programFrom, and seals that relation under this review's id. Where no such rule applies, say why in noRelation. Call again with the same id to replace a review.",
+                    inputSchema: coverageReviewInput,
+                    kind: "evidence",
+                    pathsFrom: () => [],
+                    execute: (input) => Promise.resolve(review(input)),
+                  }),
+                ]),
             ...(options.plannedChecks?.tryOnBase === undefined
               ? []
               : [
                   defineTool({
                     name: "run_planned_checks_on_base",
                     description:
-                      "Run every check pinned so far once on a fresh checkout of the unchanged base, exactly as admission will when you finish, and see what each did there: admitted or dropped, why, and what a dropped one printed. It takes as long as the repository's preparation. Fix what it reports with declare_planned_check (the same id replaces a check) and run it again while time allows.",
+                      "Run every check pinned so far once on a fresh checkout of the unchanged base, exactly as admission will when you finish, and see what each did there: admitted or dropped, why, and what a dropped one printed. It takes as long as the repository's preparation. Fix what it reports with declare_planned_check or declare_planned_relation (the same id replaces a check) and run it again while time allows.",
                     inputSchema: z.strictObject({}),
                     kind: "evidence",
                     pathsFrom: () => [],
@@ -210,8 +283,11 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
                           await tryOnBase(goalContract),
                           ...(plannedDeclaration === null
                             ? []
-                            : describeUncoveredSentences(task, plannedDeclaration)),
-                          "Before finishing, reread each sentence of the task that states a rule and ask whether a case exercises it where an implementation could get it wrong: the special input at the start or the end, repeated, next to the separators the rule names, or combined with another special input. Add such cases (the same id replaces a check) and run this again, or finish.",
+                            : [
+                                ...describeUncoveredSentences(task, plannedDeclaration),
+                                ...describeCoverageReview(plannedDeclaration),
+                              ]),
+                          "Before finishing, reread each sentence of the task that states a rule and ask whether a case exercises it where an implementation could get it wrong: the special input at the start or the end, repeated, next to the separators the rule names, or combined with another special input. Add such cases (the same id replaces a check), record the decision in the coverage review, and run this again, or finish.",
                         ].join("\n"),
                         facts: {},
                       };
@@ -294,24 +370,44 @@ function plannedChecksPrompt(options: NonNullable<PlannerOptions["plannedChecks"
   const { base } = options;
   return [
     "You write the acceptance checks a coding task is implemented and repaired against, before",
-    "any implementation exists. You do not implement the task. Read the relevant source, tests",
-    "and manifest with the read-only tools, then call declare_planned_check once for each check",
-    "(several calls may go in one turn). Then call run_planned_checks_on_base to see what each",
-    "check does on the unchanged base, fix what it reports, and finish with a one-line summary and",
-    "no tool calls.",
+    "any implementation exists. You do not implement the task.",
+    ...(options.revision === true
+      ? [
+          "This is a revision: the repository was already read, the checks below were already",
+          "declared and run once on the unchanged base, and the brief shows what each did there.",
+          "Declare the replacements first with declare_planned_check (several calls may go in one",
+          "turn); read a file only where an expectation cannot be settled from the brief. Then",
+          "finish with a one-line summary and no tool calls.",
+        ]
+      : [
+          "Read the relevant source, tests and manifest with the read-only tools, then call",
+          "declare_planned_check once for each check (several calls may go in one turn). Then call",
+          "run_planned_checks_on_base to see what each check does on the unchanged base, fix what it",
+          "reports, and finish with a one-line summary and no tool calls.",
+        ]),
     "Derive every expected result from the task text and the project's existing documented or",
     "tested behaviour, never from a guess about how the change will be written. Cover each rule",
     "the task states where it is easy to get wrong: its boundaries, the combinations of the",
     "special cases it names (position, repetition, mixing with other inputs), and the ordinary",
     "inputs the task says must keep working. Do not add requirements the task does not state.",
+    "Where the task says some text must behave like other text (a character to be treated like one",
+    "that already works, one spelling like another), also declare that rule with",
+    "declare_planned_relation: the harness tries the reference and each variant at every position",
+    "of your seeds, which a list of examples does not.",
     "Each requirement has an id, a description and, when a change check covers it, a quote of",
     "the task's own words that ask for it. Each check names its requirement and its purpose:",
     "change for behaviour the task asks to change, which the unchanged base must get wrong on at",
     "least one case, and preserve for behaviour the task keeps, which the base already gets right",
-    "on every case; keep the two kinds in separate checks. A change check also holds at least one",
-    "case the task does not change, which the base gets right: it shows the program calls the",
-    "project correctly. Its program is an ES module that",
-    "imports the project and default-exports a function of one case's input that returns a",
+    "on every case; keep the two kinds in separate checks. In a change check mark every case:",
+    "changed: true where the task changes its result, changed: false where the task keeps it, so",
+    "the base must already give it. Include at least one kept case whose answer on the base differs",
+    "from the changed cases' answers there: it shows the program calls the project correctly, which",
+    "a case the base answers null, or the same as everything else, cannot show; where the defect",
+    "itself is one answer for every input, say so in why. Its program is an ES module",
+    "that imports the project and default-exports a function the harness calls once per case with",
+    "that case's input value itself, exactly what you wrote as input (a string stays a string),",
+    "never with the case object: write export default function (input) { ... }, not",
+    "(case_) => case_.input. It returns a",
     "JSON-compatible value (undefined reads as null); the program runs from the repository root,",
     "so import project files with paths like ./src/... or ./dist/... relative to it. Do not",
     "build, install or print anything in the program: the harness prepares the checkout first.",
@@ -323,6 +419,10 @@ function plannedChecksPrompt(options: NonNullable<PlannerOptions["plannedChecks"
     "with one backslash, exactly as in any JSON string; \\\\n would be a backslash followed by n.",
     "The tool's answer shows every input as it was read and lists the task's sentences no",
     "requirement quotes yet. In why, say how the expected results follow from the task.",
+    "Before finishing, call declare_coverage_review for every requirement: what the task changes,",
+    "what must stay, a plausible wrong implementation that would still pass your cases, which check",
+    "tells it apart, and what stays untested. Give a relation in the review where a rule says some",
+    "text behaves like other text, and the harness runs it; where no such rule applies, say why.",
     ...(base === undefined
       ? []
       : [

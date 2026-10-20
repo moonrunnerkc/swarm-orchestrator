@@ -8,6 +8,7 @@ import { type EvidenceRecorder, openEvidenceSession } from "../evidence/session.
 import {
   type AutoResolveOutcome,
   describeRejectedCandidate,
+  type OwedFollowUp,
   type RejectedCandidate,
   type ResolveAttempt,
   type ResolveRequest,
@@ -173,6 +174,7 @@ function harness(
     gates?: readonly GateDefinition[];
     /** What the base tree prints for a gate, or null where nothing can measure it. */
     atBase?: (gate: GateDefinition) => { exitCode: number; stdout: string } | null;
+    followUp?: OwedFollowUp;
   } = {},
 ): Harness {
   const workspace = createMemoryWorkspace({
@@ -214,6 +216,7 @@ function harness(
           events.push(event);
         },
         cap: options.cap ?? 3,
+        ...(options.followUp === undefined ? {} : { followUp: options.followUp }),
         ...(options.atBase === undefined
           ? {}
           : {
@@ -520,6 +523,23 @@ describe("the attempt after a rollback", () => {
     const brief = describeRejectedCandidate(second?.rejected as RejectedCandidate);
     expect(brief).toContain("Attempt 1 was rolled back");
     expect(brief).toContain("Gates it fixed: tests. Gates it broke: lint.");
+    // The rejected change itself, against the restored file the worker is editing, since a
+    // worker cannot read the evidence record the brief names.
+    expect(second?.rejected?.diff).toBe(
+      [
+        `--- ${sourcePath} (restored)`,
+        `+++ ${sourcePath} (rejected attempt)`,
+        "@@ -1,4 +1,5 @@",
+        " export function add(a: number, b: number): number {",
+        "-  return a - b;",
+        "+  var sum = a + b;",
+        "+  return sum;",
+        " }",
+        " ",
+      ].join("\n"),
+    );
+    expect(brief).toContain("The rejected change, against the files as they are now");
+    expect(brief).toContain("+  var sum = a + b;");
 
     // The rejected files stay retrievable after the workspace was put back.
     const kept = ledgerPayloads("verification-command").find(
@@ -867,5 +887,99 @@ describe("a gate that fails at the base commit too", () => {
 
     expect(outcome.escalation?.failingAtBase).toEqual([]);
     expect(evidence.records().some((record) => record.type === "gate-baseline")).toBe(false);
+  });
+});
+
+describe("a follow-up owed on work no gate measures", () => {
+  const owed: OwedFollowUp = {
+    identity: "sha256:outcomes",
+    brief: "Requested behaviour no sealed check exercises: add(2, 3) gives 5.",
+  };
+  const followUps = () =>
+    ledgerPayloads("verification-command").filter((one) => one.rule === "outcome-follow-up-v1");
+
+  it("is given once, as an attempt, when the gates are already green, and never again", async () => {
+    const test = harness({ followUp: owed });
+    test.workspace.write(sourcePath, fixedSource);
+    const requests: ResolveRequest[] = [];
+    const outcome = await test.run((request) => {
+      requests.push(request);
+      return Promise.resolve();
+    });
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({ attempt: 1, followUp: owed.brief, gateOutput: "" });
+    expect(outcome.settled).toBe("green");
+    expect(outcome.followUp).toMatchObject({
+      identity: owed.identity,
+      state: "given",
+      attempt: 1,
+      accepted: true,
+    });
+    expect(followUps()).toEqual([
+      expect.objectContaining({ state: "given", attempt: 1, accepted: true }),
+    ]);
+  });
+
+  it("comes after the repairs the gates asked for, from the same cap", async () => {
+    const test = harness({ followUp: owed });
+    const requests: ResolveRequest[] = [];
+    const outcome = await test.run((request) => {
+      requests.push(request);
+      if (request.attempt === 1) test.workspace.write(sourcePath, fixedSource);
+      return Promise.resolve();
+    });
+    expect(requests.map((one) => one.followUp === undefined)).toEqual([true, false]);
+    expect(outcome.followUp).toMatchObject({ state: "given", attempt: 2 });
+  });
+
+  it("rolls back a follow-up that breaks a passing gate, and leaves the run green on the state before it", async () => {
+    const test = harness({ followUp: owed });
+    test.workspace.write(sourcePath, fixedSource);
+    const outcome = await test.run(() => {
+      test.workspace.write(sourcePath, brokenSource);
+      return Promise.resolve();
+    });
+    expect(outcome.followUp).toMatchObject({ state: "given", attempt: 1, accepted: false });
+    expect(test.workspace.files.get(sourcePath)).toBe(fixedSource);
+    expect(outcome.settled).toBe("green");
+    expect(outcome.attempts).toHaveLength(1);
+  });
+
+  it("is withheld, and says why, when the cap was spent on what the gates measured", async () => {
+    const test = harness({ cap: 1, followUp: owed });
+    const outcome = await test.run(() => {
+      test.workspace.write(sourcePath, fixedSource);
+      return Promise.resolve();
+    });
+    expect(outcome.settled).toBe("green");
+    expect(outcome.followUp).toMatchObject({
+      state: "withheld",
+      attempt: null,
+      reason: "no attempt was left under the cap of 1",
+    });
+  });
+
+  it("is withheld when the gates never went green, rather than spending an attempt beside a failure", async () => {
+    const test = harness({ cap: 2, followUp: owed });
+    const outcome = await test.run(() => Promise.resolve());
+    expect(outcome.settled).toBe("escalated");
+    expect(outcome.followUp).toMatchObject({
+      state: "withheld",
+      reason: expect.stringContaining("the gates were not green"),
+    });
+  });
+
+  it("is withheld with the budget's own reason when too little remains for an attempt", async () => {
+    const test = harness({ followUp: owed });
+    test.workspace.write(sourcePath, fixedSource);
+    const outcome = await test.run(() =>
+      Promise.reject(new Error("repair stopped: no usable budget remains for attempt 1")),
+    );
+    expect(outcome.followUp).toMatchObject({
+      state: "withheld",
+      attempt: null,
+      reason: expect.stringContaining("no usable budget remains"),
+    });
+    expect(outcome.settled).toBe("green");
   });
 });
