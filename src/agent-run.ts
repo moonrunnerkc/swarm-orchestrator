@@ -61,6 +61,7 @@ import {
   defaultShellAllowlist,
   type PolicyGuard,
 } from "./tools/policy-guard.ts";
+import { createRecordedOutputTool } from "./tools/recorded-output-tool.ts";
 import type { ToolDefinition } from "./tools/tool-definition.ts";
 import { createWorkspaceTools } from "./tools/workspace-tools.ts";
 
@@ -153,6 +154,13 @@ export interface AgentTaskOptions {
   /** Whether shell-allowlist prompts are answered by the run. Absent asks (ADR 0011). */
   readonly approvalMode?: ApprovalMode;
   readonly abortSignal: AbortSignal;
+  /**
+   * What stops the gates' commands: the run's own cancellation and, where the caller holds a total
+   * allowance, its end. Never the end of the loop's or an attempt's wall: a loop that spent its wall
+   * still has its delivered tree measured. Absent is `abortSignal`, which a caller with no separate
+   * model-work deadline uses for both.
+   */
+  readonly verificationSignal?: AbortSignal;
   /** Denied to tools along with everything under it, since the session store lives there. */
   readonly homeDir: string;
   /** Earlier turns of the same session, so a follow-up task knows what was already done. */
@@ -180,6 +188,11 @@ export interface AgentTaskOptions {
    * runs code in the workspace as a shell command would.
    */
   readonly checkTool?: ToolDefinition;
+  /**
+   * Work no gate measures that the run owes one bounded attempt once the gates are green, from the
+   * attempt cap and under the ratchet: requested outcomes no sealed check states. Absent is none.
+   */
+  readonly followUp?: import("./gates/auto-resolve.ts").OwedFollowUp;
   readonly coordination?: readonly ToolDefinition[];
   /**
    * Set only where a task is being tried several ways at once, so the attempts can diverge
@@ -334,6 +347,10 @@ export async function runAgentTask(input: AgentTaskOptions): Promise<AgentTaskRe
   const wall = createWallBudget(options);
   const cancellation = new AbortController();
   const stopping = AbortSignal.any([options.abortSignal, cancellation.signal]);
+  const verifying = AbortSignal.any([
+    options.verificationSignal ?? options.abortSignal,
+    cancellation.signal,
+  ]);
   const watcher =
     store === undefined
       ? null
@@ -346,7 +363,11 @@ export async function runAgentTask(input: AgentTaskOptions): Promise<AgentTaskRe
           }
         }, 200);
   try {
-    return await executeAgentTask({ ...options, abortSignal: stopping }, wall, store);
+    return await executeAgentTask(
+      { ...options, abortSignal: stopping, verificationSignal: verifying },
+      wall,
+      store,
+    );
   } finally {
     if (watcher !== null) clearInterval(watcher);
     wall.release();
@@ -416,6 +437,8 @@ async function executeAgentTask(
         ? (options.coordination ?? [])
         : []),
       createClaimTool(options.evidence, options.model.modelId),
+      // A long command output is shown as a bounded view; this reads back what the view omitted.
+      createRecordedOutputTool(options.evidence),
       ...(options.promptProfile === "concise" ? [createClaimReferenceTool()] : []),
       createDeclareFileSetTool(options.fileSet, options.model.modelId),
       createAmendFileSetTool(options.fileSet, options.model.modelId),
@@ -562,6 +585,17 @@ async function executeAgentTask(
       maxWallTimeMs: wall.loopBudgetMs(),
     },
     stall: {
+      // The tools whose successful call may change workspace files: the ones the chokepoint
+      // classes as writing, and the shell, since the harness cannot see what a command did once
+      // it ran and a command that edited a file is a write it did not see (the second repair
+      // attempt of run 20261020T045117-41e2cc would have been told its rerun after a shell edit
+      // was already answered). A call repeated after one of them landed is answered, not told it
+      // already was (the loop names no tool itself). The cost is one repeat's sensitivity: an
+      // inspection alternated with a shell command is read as new each time, on the side of
+      // answering; the shell command itself repeated is still a repeat.
+      writers: definitions
+        .filter((tool) => tool.kind === "write" || tool.kind === "shell")
+        .map((tool) => tool.name),
       // On the chain before the loop goes on, as the escalation controller records its own
       // decisions: a notice the model was given and a stop are both harness policy events.
       observe: async (event: StallIntervention) => {
@@ -601,6 +635,17 @@ async function executeAgentTask(
   let messages = loop.messages;
   // The loop whose account the next repair attempt is handed: the first loop, then each attempt.
   let latestLoop: AgentLoopOutcome = loop;
+  // The run's account as it stood when the follow-up was given: a follow-up whose change is not
+  // kept leaves the tree, and so the lifecycle, of the work it followed up.
+  // Held in an object because the resolve callback sets it, out of the compiler's sight.
+  const followedUp: {
+    before: {
+      readonly stopReason: typeof finalStopReason;
+      readonly completionClaim: string;
+      readonly messages: typeof messages;
+      readonly latestLoop: AgentLoopOutcome;
+    } | null;
+  } = { before: null };
   remainingTokens -= loop.tokensUsed;
   let callsWithUnknownUsage = loop.callsWithUnknownUsage;
   await options.evidence.record({
@@ -650,9 +695,12 @@ async function executeAgentTask(
     clock: options.clock,
     emit: options.emit,
     cap: options.attempts,
-    // The resolve loop stops at the wall deadline as it stops at a cancellation; the run's
-    // own cancellation is still the only thing that makes the outcome not green.
+    ...(options.followUp === undefined ? {} : { followUp: options.followUp }),
+    // The resolve loop stops at the wall deadline as it stops at a cancellation. The commands that
+    // measure a cycle answer only to the run's cancellation and the end of its total allowance:
+    // C1's loop spent its wall, and that wall's end refused its final build, lint and tests.
     abortSignal: wall.stopAttemptsSignal(options.abortSignal),
+    commandSignal: options.verificationSignal ?? options.abortSignal,
     inherited,
     criteriaSealed,
     criteriaRef: criteriaRefOf(options),
@@ -718,6 +766,13 @@ async function executeAgentTask(
       const account = describePriorLoop(
         priorLoopAccount(latestLoop.messages, latestLoop.stopReason, latestLoop.steps),
       );
+      if (request.followUp !== undefined)
+        followedUp.before = {
+          stopReason: finalStopReason,
+          completionClaim,
+          messages,
+          latestLoop,
+        };
       const repair = await resolveWithModel(request, options, account, {
         ...loopDependencies,
         ...(alternate == null ? {} : { model: alternate }),
@@ -742,6 +797,8 @@ async function executeAgentTask(
           tokensUsed: repair.tokensUsed,
           ...usageFields(repair),
           repair: true,
+          // A follow-up's stop is the run's lifecycle only where its candidate is kept.
+          ...(request.followUp === undefined ? {} : { followUp: true }),
           // Held back from the attempt's wall so its candidate could be measured, and the
           // account of the previous loop it was handed, both on the record.
           reservedForGatesMs,
@@ -756,6 +813,18 @@ async function executeAgentTask(
       ? {}
       : { singleFileTestCommand: options.singleFileTestCommand }),
   });
+
+  // A follow-up given and not kept (rolled back, or nothing to judge) changed nothing delivered: a
+  // follow-up that ran out of its wall must not make a finished run read as stopped at its wall.
+  // What it spent stays spent.
+  const followUp = gates.outcome.followUp;
+  const restored = followedUp.before;
+  if (restored !== null && followUp?.state === "given" && followUp.accepted !== true) {
+    finalStopReason = restored.stopReason;
+    completionClaim = restored.completionClaim;
+    messages = restored.messages;
+    latestLoop = restored.latestLoop;
+  }
 
   // An advisory gate that demands a justification is owed one turn to answer it, once the work
   // is otherwise acceptable. Before this, nothing asked: the model was never told, no call
@@ -889,8 +958,10 @@ async function executeAgentTask(
     gates,
     finalStopReason,
     envelope.mode,
-    options.abortSignal.aborted ||
-      (wall.deadlineMs !== null && options.clock.now() >= wall.deadlineMs),
+    // Cancelled is the run's cancellation, or a total allowance that ended before the checks
+    // finished. A loop that spent its own wall was not cancelled: its stop reason says so, and the
+    // verdict refuses that lifecycle on its own.
+    (options.verificationSignal ?? options.abortSignal).aborted,
     options.contract,
   );
   recordRunEnd(options, verdict.acceptable, store);
@@ -1192,8 +1263,12 @@ async function resolveWithModel(
   const brief = [
     `The task was: ${taskBrief(options.task, options.contract)}`,
     "",
-    `A quality gate is failing. This is attempt ${request.attempt} of ${request.cap}.`,
-    "Fix the cause. Do not weaken the tests: removing a test, removing an assertion, adding a",
+    request.followUp === undefined
+      ? `A quality gate is failing. This is attempt ${request.attempt} of ${request.cap}.`
+      : `Every gate passes. This is attempt ${request.attempt} of ${request.cap}, a follow-up the controller owes before the run is reported, given once: the work below is requested and no sealed check exercises it, so the gates passing says nothing about it.`,
+    request.followUp === undefined
+      ? "Fix the cause. Do not weaken the tests: removing a test, removing an assertion, adding a"
+      : "Do not weaken the tests: removing a test, removing an assertion, adding a",
     "skip marker, or lowering coverage of the lines you changed will have the attempt rejected",
     "and will still cost you the attempt.",
     "",
@@ -1224,10 +1299,14 @@ async function resolveWithModel(
     account,
     "",
     ...(request.rejected === null ? [] : [describeRejectedCandidate(request.rejected), ""]),
-    `What the gates report on the workspace as it is now (cycle ${request.cycle.attempt}):`,
-    request.gateOutput.length > 16000
-      ? `${request.gateOutput.slice(0, 16000)}\n[diagnostic excerpt truncated; consult the cited evidence records]`
-      : request.gateOutput,
+    ...(request.followUp === undefined
+      ? [
+          `What the gates report on the workspace as it is now (cycle ${request.cycle.attempt}):`,
+          request.gateOutput.length > 16000
+            ? `${request.gateOutput.slice(0, 16000)}\n[diagnostic excerpt truncated; consult the cited evidence records]`
+            : request.gateOutput,
+        ]
+      : [request.followUp]),
   ].join("\n");
 
   return runAgentLoop(brief, loopDependencies);

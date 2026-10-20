@@ -454,6 +454,8 @@ describe("planned checks through the ordinary command line", () => {
       { text: "Done." },
       repairs,
       { text: "Repaired." },
+      // The requirement left with no check is followed up once, after the repair, from the cap.
+      { text: "Nothing in the task's words is left undone; the code stays as it is." },
     ]);
 
     const result = resultOf(stdout);
@@ -486,7 +488,7 @@ describe("planned checks through the ordinary command line", () => {
             decisions?: { check: string; admitted: boolean; reason: string; broken: boolean }[];
           },
       )
-      .find((payload) => payload.rule === "planned-check-admission-v2");
+      .find((payload) => payload.rule === "planned-check-admission-v4");
     expect(
       Object.fromEntries((admission?.decisions ?? []).map((one) => [one.check, one.admitted])),
     ).toEqual({
@@ -521,19 +523,36 @@ describe("planned checks through the ordinary command line", () => {
             "it fails on the base without completing, which shows a broken check rather than the missing change",
         },
       ],
-      revision: { outcome: "ran", admitted: [] },
+      revision: { outcome: "ran", admitted: [], reclassified: [], stopReason: "completed" },
       coverage: { sentences: 1, quotedByAdmitted: [1], quotedWithoutCheck: [] },
+      // The requirement whose only check never loaded stays in view, with why and what to do.
+      uncovered: [
+        expect.objectContaining({
+          id: "loads",
+          rejected: [expect.objectContaining({ check: "broken" })],
+          reason: expect.stringContaining("the revision declared no replacement"),
+        }),
+      ],
+      // Its two outcomes, the change and the kept case, each with the check that never loaded.
+      unresolvedOutcomes: [
+        expect.objectContaining({
+          id: "loads#1",
+          role: "keep",
+          checks: [expect.objectContaining({ check: "broken" })],
+        }),
+        expect.objectContaining({ id: "loads#2", role: "change" }),
+      ],
     });
 
     // The revision brief carried the load failure and the program it came from, and not the base
     // results of the change check the base already satisfies, which would only invite fitting them.
     const revisionBrief = plannerBriefs(endpoint).find((text) =>
-      text.includes("Declare replacements"),
+      text.includes("were each run once on a fresh checkout"),
     );
     expect(revisionBrief).toContain("the check program did not load");
     expect(revisionBrief).toContain("./missing.mjs");
-    // Each dropped check's inputs as read, so a planner can see what the harness received.
-    expect(revisionBrief).toContain("inputs as read: 3");
+    // Each dropped check's cases as read, so a planner can see what the harness received.
+    expect(revisionBrief).toContain("case 1: input 3, expected");
     expect(revisionBrief).not.toMatch(/mislabelled[^-]*on the base:/);
 
     // Sealed: the supplied requirement, decided by its check, and the planned ones, decided by
@@ -556,15 +575,20 @@ describe("planned checks through the ordinary command line", () => {
     expect(result?.outcome?.uncheckedRequirements).toBeUndefined();
     expect(stdout).toMatch(/no check +loads: .*\[planned from the task/);
     // The repair turn was asked, and with the line that differed: it is the turn that wrote the fix.
-    expect(endpoint.played()).toBe(8);
+    // Then the follow-up on the outcome no check states, once.
+    expect(endpoint.played()).toBe(9);
+    expect(
+      (result as { outcome?: { outcomeFollowUp?: unknown } } | undefined)?.outcome?.outcomeFollowUp,
+    ).toMatchObject({ state: "given", attempt: 2, accepted: true });
     // Planning's spend is on the machine stream with the implementation's and the repair's, where
-    // a launcher sums the stopped events: planning, its revision, implementation and repair.
+    // a launcher sums the stopped events: planning, its revision, implementation, repair and the
+    // follow-up.
     const stops = stdout
       .split("\n")
       .filter((line) => line.startsWith("{"))
       .map((line) => JSON.parse(line) as { event?: { type?: string; tokensUsed?: number } })
       .filter((line) => line.event?.type === "stopped");
-    expect(stops).toHaveLength(4);
+    expect(stops).toHaveLength(5);
     expect(stops.every((stop) => (stop.event?.tokensUsed ?? 0) > 0)).toBe(true);
   }, 200_000);
 
@@ -588,6 +612,8 @@ describe("planned checks through the ordinary command line", () => {
       dropped: [],
       revision: null,
       coverage: null,
+      uncovered: [],
+      unresolvedOutcomes: [],
     });
     expect(code, stdout.slice(-3000)).toBe(0);
   }, 200_000);
@@ -973,8 +999,8 @@ describe("planned checks through the ordinary command line", () => {
     const revises: ScriptedTurnSource = (request) => {
       const text = JSON.stringify(request);
       return text.includes("the check program did not load") &&
-        text.includes("line 1 should be") &&
-        text.includes("but was")
+        text.includes("case 1: input 11, expected") &&
+        text.includes("the base gave")
         ? declaring(
             [
               { id: "boundary", description: "10 is small", quote },
@@ -1036,6 +1062,8 @@ describe("planned checks through the ordinary command line", () => {
     expect(result?.plannedChecks?.revision).toEqual({
       outcome: "ran",
       admitted: ["boundary", "above"],
+      reclassified: [],
+      stopReason: "completed",
     });
     expect(result?.outcome?.status).toBe("accepted");
     expect(code).toBe(0);
@@ -2171,5 +2199,388 @@ describe("what admission accepts as a generated check's control", () => {
     ).toEqual([expect.objectContaining({ id: "positive", status: "accepted" })]);
     expect(result?.outcome?.status).toBe("accepted");
     expect(code).toBe(0);
+  }, 200_000);
+});
+
+/**
+ * A task that describes an outcome as one that must "still" hold, for an input it names, where the
+ * unchanged base does not give it: classify("010") reads as big on the base (n < 10), and the task
+ * says it must still give "small". The planner takes the task's wording and calls the check
+ * preserve; admission drops it. The requested behaviour must not leave the work with the check.
+ */
+describe("a requested outcome the task describes as kept and the base does not give", () => {
+  const stillTask =
+    'make classify(n) call 10 small: every n up to and including 10 is small. A numeric string must still read as its number, so classify("010") must still give "small".';
+  const stringsQuote = 'so classify("010") must still give "small"';
+  const requirements = [
+    { id: "boundary", description: "10 is small, and so is everything below it", quote },
+    {
+      id: "numeric-strings",
+      description: "a numeric string reads as its number",
+      quote: stringsQuote,
+    },
+  ];
+  const stringCheck = (
+    purpose: "change" | "preserve",
+    cases: { input: string; expected: string; changed?: boolean }[],
+    why: string,
+  ) => ({
+    id: "strings-kept",
+    requirement: "numeric-strings",
+    purpose,
+    program: classifying("./value.mjs"),
+    cases,
+    why,
+  });
+  const firstRound: ScriptedTurnSource[] = [
+    {
+      text: "Plan: pin the boundary and the numeric strings the task says still read as numbers.",
+      ...declaring(requirements, [
+        plannedCheck("boundary", "boundary", "change", [
+          { input: 9, expected: "small" },
+          { input: 10, expected: "small" },
+          { input: 11, expected: "big" },
+        ]),
+        stringCheck(
+          "preserve",
+          [
+            { input: "010", expected: "small" },
+            { input: "3", expected: "small" },
+          ],
+          "the task says these still hold",
+        ) as unknown as ReturnType<typeof plannedCheck>,
+      ]),
+    },
+    { text: "Criteria pinned." },
+  ];
+  const implementing: ScriptedTurnSource[] = [
+    { text: "Plan: move the boundary.", toolCalls: [declare] },
+    {
+      toolCalls: [write("export function classify(n) {\n  return n <= 10 ? 'small' : 'big';\n}\n")],
+    },
+    { text: "Done." },
+  ];
+  /** The worker's first request: the one that carries the effective task contract. */
+  const workerBrief = (endpoint: ScriptedEndpoint) =>
+    endpoint.requests
+      .map((request) => JSON.stringify(request))
+      .find((text) => text.includes("Effective task contract")) ?? "";
+
+  it("keeps the requirement in the worker's brief and the result when the revision replaces nothing", async () => {
+    const { endpoint, stdout } = await swarm(
+      [...firstRound, { text: "No replacement." }, ...implementing],
+      false,
+      [],
+      true,
+      workspace(),
+      stillTask,
+    );
+    const result = resultOf(stdout) as ResultLine & {
+      plannedChecks?: { uncovered?: { id: string; reason: string; nextAction: string }[] };
+    };
+    expect(result?.plannedChecks?.uncovered, stdout.slice(-3000)).toEqual([
+      expect.objectContaining({
+        id: "numeric-strings",
+        reason: expect.stringContaining('the base gave "big" for "010", an input the task names'),
+        nextAction: expect.stringContaining('the task names "010"'),
+      }),
+    ]);
+    expect(result?.plannedChecks?.uncovered?.[0]?.reason).toContain(
+      "the revision declared no replacement",
+    );
+    const brief = workerBrief(endpoint);
+    expect(brief).toContain("Requested behaviour no generated check exercises");
+    expect(brief).toContain(
+      "- numeric-strings#1, behaviour to keep under requirement numeric-strings, quoting the task:",
+    );
+    // The requested behaviour was implemented by the worker; the supplied suite decides.
+    expect(result?.outcome?.status).toBe("accepted");
+    const planning = join(home, ".swarm", "sessions", `${result?.runId}-plan`);
+    const decisions = readFileSync(join(planning, "ledger.jsonl"), "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { type: string; payloadDigest: string })
+      .filter((record) => record.type === "verification-command")
+      .map(
+        (record) =>
+          JSON.parse(
+            readFileSync(join(planning, "blobs", `${record.payloadDigest.slice(7)}.json`), "utf8"),
+          ) as { rule?: string; decisions?: { check: string; finding: string }[] },
+      )
+      .find((payload) => payload.rule === "planned-check-admission-v4")?.decisions;
+    expect(decisions?.find((one) => one.check === "strings-kept")?.finding).toBe(
+      "disagrees-with-base",
+    );
+  }, 200_000);
+
+  it("admits the planner's reclassification as a change, with its justification, by the change control", async () => {
+    const reclassify: ScriptedTurnSource = (request) => {
+      const text = JSON.stringify(request);
+      // Answers only where the brief gave the disagreement as one, with the task's own input named.
+      if (!text.includes("the task names this input") || !text.includes("quoting the task"))
+        return { text: "The revision brief named no disagreement." };
+      return {
+        toolCalls: declarations(requirements, [
+          stringCheck(
+            "change",
+            [
+              { input: "010", expected: "small", changed: true },
+              { input: "3", expected: "small", changed: false },
+              { input: "12", expected: "big", changed: false },
+            ],
+            'the task asks for it: classify("010") must still give "small", and the base gives big',
+          ) as unknown as ReturnType<typeof plannedCheck>,
+        ]).filter((call) => call.input.id === "strings-kept"),
+      };
+    };
+    const { endpoint, stdout } = await swarm(
+      [...firstRound, reclassify, { text: "Revised." }, ...implementing],
+      false,
+      [],
+      true,
+      workspace(),
+      stillTask,
+    );
+    const result = resultOf(stdout) as ResultLine & {
+      plannedChecks?: {
+        uncovered?: unknown[];
+        revision: { reclassified?: { check: string; justification: string }[] } | null;
+      };
+    };
+    expect(result?.plannedChecks?.revision?.reclassified, stdout.slice(-3000)).toEqual([
+      expect.objectContaining({
+        check: "strings-kept",
+        justification: expect.stringContaining("the base gives big"),
+      }),
+    ]);
+    expect(result?.plannedChecks?.admitted).toContain("strings-kept");
+    expect(result?.plannedChecks?.uncovered).toEqual([]);
+    expect(workerBrief(endpoint)).not.toContain("Requirements no generated check covers");
+    // The reclassified check is a diagnostic: it agrees with the correct change and decides nothing.
+    expect(
+      result?.outcome?.requirements?.find((one) => one.id === "numeric-strings")?.generatedChecks,
+    ).toEqual([expect.objectContaining({ id: "strings-kept", status: "accepted" })]);
+    expect(result?.outcome?.status).toBe("accepted");
+  }, 200_000);
+});
+
+/**
+ * D1's route on a project that is not marked: one requirement holds two outcomes the task states,
+ * the boundary (checked, admitted) and a value above it that stays big (its one check throws in
+ * its own code, the way D1's applied `in` to a string). Per requirement it read as covered and
+ * nothing told the worker or the reader; per outcome the second stays unresolved everywhere.
+ */
+describe("an outcome whose only check throws in its own code, beside a checked sibling", () => {
+  const siblingTask =
+    'make classify(n) call 10 small: every n up to and including 10 is small, and classify(11) must still give "big".';
+  const elevenQuote = 'classify(11) must still give "big"';
+  const turns: ScriptedTurnSource[] = [
+    {
+      text: "Plan: the boundary, and eleven staying big.",
+      toolCalls: [
+        ...declarations(
+          [{ id: "boundary", description: "10 is small, 11 stays big", quote }],
+          [
+            plannedCheck("boundary", "boundary", "change", [
+              { input: 9, expected: "small" },
+              { input: 10, expected: "small" },
+            ]),
+          ],
+        ),
+        ...declarations(
+          [{ id: "boundary", description: "10 is small, 11 stays big", quote: elevenQuote }],
+          [
+            plannedCheck(
+              "eleven-big",
+              "boundary",
+              "preserve",
+              [{ input: 11, expected: true }] as never,
+              "import { classify } from './value.mjs';\nexport default (n) => 'big' in classify(n);\n",
+            ),
+          ],
+        ),
+        reviewing("boundary", ["boundary", "eleven-big"]),
+      ],
+    },
+    { text: "Criteria pinned." },
+    { text: "No replacement." },
+    { text: "Plan: move the boundary.", toolCalls: [declare] },
+    {
+      toolCalls: [write("export function classify(n) {\n  return n <= 10 ? 'small' : 'big';\n}\n")],
+    },
+    { text: "Done." },
+  ];
+
+  it("names the unresolved outcome in the brief, the report and the JSON, and scopes accepted to the supplied contract", async () => {
+    const { endpoint, stdout } = await swarm(turns, false, [], true, workspace(), siblingTask);
+    const result = resultOf(stdout) as ResultLine & {
+      plannedChecks?: {
+        uncovered?: unknown[];
+        unresolvedOutcomes?: { id: string; quote: string; role: string; reason: string }[];
+      };
+      outcome?: { unresolvedOutcomes?: { id: string; reason: string }[] };
+    };
+    // Per requirement, boundary is covered; per outcome, eleven's is not.
+    expect(result?.plannedChecks?.uncovered, stdout.slice(-3000)).toEqual([]);
+    const unresolved = result?.plannedChecks?.unresolvedOutcomes ?? [];
+    expect(unresolved).toEqual([
+      expect.objectContaining({
+        id: "boundary#3",
+        quote: elevenQuote,
+        role: "keep",
+        reason: expect.stringContaining("threw in the check program's own code"),
+      }),
+    ]);
+    expect(result?.outcome?.unresolvedOutcomes?.map((one) => one.id)).toEqual(["boundary#3"]);
+    const brief =
+      endpoint.requests
+        .map((request) => JSON.stringify(request))
+        .find((text) => text.includes("Effective task contract")) ?? "";
+    expect(brief).toContain("boundary#3, behaviour to keep under requirement boundary");
+    expect(brief).toContain(JSON.stringify(JSON.stringify(elevenQuote)).slice(1, -1));
+    // The supplied suite decides, and the report says that is all accepted means here.
+    expect(result?.outcome?.status).toBe("accepted");
+    expect(stdout).toContain(
+      "this is the supplied contract's reading only: 1 requested outcome(s)",
+    );
+    expect(stdout).toContain(`NO CHECK kept behaviour "${elevenQuote}"`);
+  }, 200_000);
+});
+
+/**
+ * The follow-up an ordinary run owes on a requested outcome no sealed check states. The task names
+ * 1000 and says it is "huge"; the planner's check of it holds its control as behaviour to keep, the
+ * base disagrees, the revision replaces nothing, and the outcome reaches the worker unresolved. A
+ * worker that moves the boundary and says it is done is followed up once, as an attempt from the
+ * cap; what it does then is judged like a repair, and the outcome stays reported unresolved.
+ */
+describe("a worker that finishes with a requested outcome unresolved", () => {
+  const hugeTask =
+    'make classify(n) call 10 small: every n up to and including 10 is small, and classify(1000) must give "huge".';
+  const hugeQuote = 'classify(1000) must give "huge"';
+  const planning: ScriptedTurnSource[] = [
+    {
+      text: "Plan: the boundary, and a thousand.",
+      toolCalls: [
+        ...declarations(
+          [
+            { id: "boundary", description: "10 is small", quote },
+            { id: "thousand", description: "1000 is huge", quote: hugeQuote },
+          ],
+          [
+            plannedCheck("boundary", "boundary", "change", [
+              { input: 9, expected: "small" },
+              { input: 10, expected: "small" },
+            ]),
+            plannedCheck("thousand-huge", "thousand", "preserve", [
+              { input: 3, expected: "small" },
+              { input: 1000, expected: "huge" },
+            ]),
+          ],
+        ),
+        reviewing("boundary", ["boundary"]),
+        reviewing("thousand", ["thousand-huge"]),
+      ],
+    },
+    { text: "Criteria pinned." },
+    { text: "No replacement." },
+  ];
+  const boundaryOnly = "export function classify(n) {\n  return n <= 10 ? 'small' : 'big';\n}\n";
+  const withHuge =
+    "export function classify(n) {\n  if (n >= 1000) return 'huge';\n  return n <= 10 ? 'small' : 'big';\n}\n";
+  const worker: ScriptedTurnSource[] = [
+    { text: "Plan: move the boundary.", toolCalls: [declare] },
+    { toolCalls: [write(boundaryOnly)] },
+    // It ran the example, saw "big", and finished anyway.
+    { text: "classify(1000) gives big; that is the existing behaviour. Done." },
+  ];
+  // Each follow-up attempt, once: every turn of its loop carries the same opening brief.
+  const followedUp = (endpoint: ScriptedEndpoint) => [
+    ...new Set(
+      endpoint.requests
+        .map((request) => JSON.stringify(request))
+        .flatMap((text) => {
+          const at = text.indexOf("Every gate passes. This is attempt");
+          return at < 0 ? [] : [text.slice(at, text.indexOf("Why no check states it", at))];
+        }),
+    ),
+  ];
+
+  it("follows the worker up once with the task's own input, and keeps the correction it makes", async () => {
+    const { endpoint, stdout } = await swarm(
+      [
+        ...planning,
+        ...worker,
+        (request) =>
+          JSON.stringify(request).includes("a follow-up the controller owes")
+            ? { toolCalls: [write(withHuge)] }
+            : { text: "No follow-up was asked for." },
+        { text: "classify(1000) now gives huge, as the task says." },
+      ],
+      false,
+      [],
+      true,
+      workspace(),
+      hugeTask,
+    );
+    const result = resultOf(stdout) as ResultLine & {
+      outcome?: {
+        unresolvedOutcomes?: { id: string }[];
+        outcomeFollowUp?: { state: string; attempt: number | null; accepted: boolean | null };
+      };
+      plannedChecks?: { unresolvedOutcomes?: { taskInputs?: unknown[] }[] };
+    };
+    expect(result?.plannedChecks?.unresolvedOutcomes?.[0]?.taskInputs, stdout.slice(-3000)).toEqual(
+      [{ input: 1000, expected: '"huge"', base: '"big"' }],
+    );
+    const briefs = followedUp(endpoint);
+    expect(briefs).toHaveLength(1);
+    expect(briefs[0]).toContain("The task's own input: 1000 (the planner first expected");
+    expect(result?.outcome?.outcomeFollowUp).toMatchObject({
+      state: "given",
+      attempt: 1,
+      accepted: true,
+    });
+    // The correction is delivered; the outcome stays reported unresolved, with accepted scoped.
+    expect(readFileSync(join(scratch, "workspace", "value.mjs"), "utf8")).toBe(withHuge);
+    expect(result?.outcome?.status).toBe("accepted");
+    expect(result?.outcome?.unresolvedOutcomes?.length).toBe(1);
+    expect(stdout).toContain(
+      "follow-up on them: given once, as attempt 1; the ratchet accepted what it left",
+    );
+    // Nothing was failing: the follow-up is not counted as a repair.
+    expect(
+      (result?.outcome as { interventions?: { repairAttempts?: number } } | undefined)
+        ?.interventions?.repairAttempts,
+    ).toBe(0);
+  }, 200_000);
+
+  it("lets the worker leave correct code as it is when the planner's expectation is the wrong one, and asks only once", async () => {
+    const { endpoint, stdout } = await swarm(
+      [
+        ...planning,
+        ...worker,
+        { text: "The task's words do not ask for that here; the code stays as it is." },
+        { text: "unexpected further request" },
+      ],
+      false,
+      [],
+      true,
+      workspace(),
+      hugeTask,
+    );
+    const result = resultOf(stdout) as ResultLine & {
+      outcome?: { outcomeFollowUp?: { state: string; attempt: number | null } };
+    };
+    expect(followedUp(endpoint), stdout.slice(-3000)).toHaveLength(1);
+    // One follow-up from a cap of three, and nothing after it: no second ask and no repair loop.
+    expect(
+      endpoint.requests.some((request) =>
+        JSON.stringify(request).includes("unexpected further request"),
+      ),
+    ).toBe(false);
+    expect(result?.outcome?.outcomeFollowUp).toMatchObject({ state: "given", attempt: 1 });
+    expect(readFileSync(join(scratch, "workspace", "value.mjs"), "utf8")).toBe(boundaryOnly);
+    expect(result?.outcome?.status).toBe("accepted");
   }, 200_000);
 });

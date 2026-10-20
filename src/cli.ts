@@ -34,6 +34,7 @@ import {
   type RunCommand,
   usage,
 } from "./cli-options.ts";
+import { outcomeFollowUp } from "./cli-outcome-follow-up.ts";
 import { type PlanChecksOutcome, planChecks } from "./cli-plan-checks.ts";
 import { admitPlannedChecks, describeCheckoutPreparation } from "./cli-planned-checks.ts";
 import { describePreflight, manifestsIn } from "./cli-preflight.ts";
@@ -59,7 +60,12 @@ import {
   requirementOutcomes,
 } from "./cli-run-outcome.ts";
 import { reportGates } from "./cli-run-report.ts";
-import { diffBudgetFrom, gateOptionsFrom, settingsFor } from "./cli-run-settings.ts";
+import {
+  diffBudgetFrom,
+  gateOptionsFrom,
+  settingsFor,
+  verificationReserve,
+} from "./cli-run-settings.ts";
 import { createSystemClock, createSystemRandom } from "./cli-runtime-inputs.ts";
 import { chooseModel, select } from "./cli-select.ts";
 import {
@@ -448,11 +454,11 @@ async function run(options: RunCommand): Promise<number> {
       `continuation of ${options.recovery.source.sessionId}`,
     );
   const interruption = new AbortController();
-  // The deadline is the clock on model work: planning, the loop, repair and strengthening. The
-  // final verification of the tree they produced is not cut by it. A run whose loop ran to its
-  // wall budget was verified under thirty seconds of the same clock, and the verification's git
-  // commands were cancelled under it: the run ended with no result line at all. The final gates
-  // run after the budget is spent, as the budget record says they do, under their own timeouts.
+  // One total allowance from the run's start: planning, the loop, repair and strengthening are
+  // model work and end a reserve before the deadline; the final verification of the tree they
+  // produced runs in that reserve and ends at the deadline itself. Model work ending does not cut
+  // the checks: a run whose loop ran to its wall had its final build, lint and tests refused
+  // (C1), and earlier a run's verification git commands were cancelled and it printed no result.
   const modelWork = new AbortController();
   interruption.signal.addEventListener("abort", () => modelWork.abort(interruption.signal.reason), {
     once: true,
@@ -486,11 +492,16 @@ async function run(options: RunCommand): Promise<number> {
       }),
       // Each planned check is run once on a fresh checkout of the base, on the planning chain,
       // and admitted only where it does there what it says it does.
-      admit: (chain, contract, base) =>
+      admit: (chain, contract, base, admitting) =>
         admitPlannedChecks({
+          task: options.task,
           contract,
           base,
           evidence: chain,
+          ...(admitting?.reclassified === undefined
+            ? {}
+            : { reclassified: admitting.reclassified }),
+          ...(admitting?.contested === undefined ? {} : { contested: admitting.contested }),
           verifyAtBase: (probe) =>
             baseVerifier({
               contract: probe,
@@ -522,6 +533,11 @@ async function run(options: RunCommand): Promise<number> {
       // a launch's 540 seconds and 938,575 tokens without pinning a check left nothing usable.
       maxTokens: Math.floor(allowance * planningShare),
       maxWallMs: Math.floor((settings.maxWallMinutes ?? 30) * 60_000 * planningShare),
+      // Planning ends by half the total at most, and the verification reserve is at most a quarter,
+      // so the implementation keeps at least a quarter whatever the revision borrows.
+      revisionBorrowLimitMs: Math.floor(
+        (settings.maxWallMinutes ?? 30) * 60_000 * revisionBorrowShare,
+      ),
       signal: modelWork.signal,
       note: (line) => process.stderr.write(`${line}\n`),
       // On the machine stream like the implementation's own events, so a consumer that sums the
@@ -624,13 +640,22 @@ async function run(options: RunCommand): Promise<number> {
     (sealedGoal === undefined && settings.maxWallMinutes === null
       ? null
       : startedAt + (settings.maxWallMinutes ?? 30) * 60_000);
-  const deadlineTimer =
+  // What stops a check: the person's cancellation, or the end of the whole allowance.
+  const allowanceEnd = new AbortController();
+  const allowanceTimer =
     deadline === null
       ? null
       : setTimeout(
-          () => modelWork.abort("original task deadline reached"),
+          () =>
+            allowanceEnd.abort(
+              "the run's total allowance ended before final verification finished",
+            ),
           Math.max(0, deadline - clock.now()),
         );
+  const verifying = AbortSignal.any([interruption.signal, allowanceEnd.signal]);
+  // Armed once the reserve is known, after the preflight has measured what verification costs.
+  let modelWorkTimer: ReturnType<typeof setTimeout> | null = null;
+  let reserveMs = 0;
   const lockfile = options.recovery?.goal?.lockfile ?? options.lockfile;
   const goalContext =
     sealedGoal === undefined
@@ -641,7 +666,7 @@ async function run(options: RunCommand): Promise<number> {
           baseCommit,
           evidence,
           clock,
-          signal: interruption.signal,
+          signal: verifying,
           isolation,
           install: options.recovery?.goal?.install ?? options.installDependencies === true,
           ...(lockfile === undefined ? {} : { lockfile }),
@@ -695,11 +720,38 @@ async function run(options: RunCommand): Promise<number> {
         },
       });
     }
+    const preflightStarted = clock.now();
     if (goalContext !== undefined) {
       await preflightTaskGoal(goalContext);
       for (const line of describeGoalPreflight(evidence)) ui.note(line);
     }
-    if (goalContext !== undefined && deadline !== null && deadline - clock.now() <= 30_000)
+    if (deadline !== null) {
+      const reserve = verificationReserve(
+        (settings.maxWallMinutes ?? 30) * 60_000,
+        goalContext === undefined ? null : clock.now() - preflightStarted,
+      );
+      reserveMs = reserve.reserveMs;
+      await evidence.record({
+        type: "session-budget",
+        actor: "harness",
+        provenance: ["tool-output"],
+        payload: {
+          rule: "verification-reserve-v1",
+          ...reserve,
+          deadline,
+          modelWorkEnds: deadline - reserveMs,
+          note: "the share of the total allowance held for the final gate cycle, acceptance and the final independent verification; model work ends at modelWorkEnds and the checks at the deadline, where any still running are stopped and reported as not run",
+        },
+      });
+      modelWorkTimer = setTimeout(
+        () =>
+          modelWork.abort(
+            "the model-work allowance is spent; the rest is held for final verification",
+          ),
+        Math.max(0, deadline - reserveMs - clock.now()),
+      );
+    }
+    if (goalContext !== undefined && deadline !== null && deadline - clock.now() <= reserveMs)
       throw new Error(
         "preset preflight exhausted implementation allowance; final verification time stays reserved",
       );
@@ -745,6 +797,8 @@ async function run(options: RunCommand): Promise<number> {
             contract: presetTaskContract({
               goal,
               task: options.task,
+              uncovered: planning?.admission?.uncovered ?? [],
+              unresolvedOutcomes: planning?.admission?.unresolvedOutcomes ?? [],
               ...(options.recovery === undefined
                 ? {}
                 : { originalObjective: options.recovery.previousSpec.task }),
@@ -762,11 +816,10 @@ async function run(options: RunCommand): Promise<number> {
       ...(deadline === null
         ? {}
         : {
-            maxWallTimeMs: Math.max(
-              0,
-              deadline - clock.now() - (goalContext === undefined ? 0 : 30_000),
-            ),
+            // A second short of the backstop, so the loop's own wall ends it and names its stop.
+            maxWallTimeMs: Math.max(0, deadline - clock.now() - reserveMs - backstopMarginMs),
           }),
+      verificationSignal: verifying,
       model,
       evidence,
       fileSet,
@@ -785,7 +838,14 @@ async function run(options: RunCommand): Promise<number> {
       homeDir: homedir(),
       ...(goalContext === undefined || goal === undefined
         ? {}
-        : { checkTool: acceptanceCheckTool({ ...goalContext, contract: goal }) }),
+        : {
+            // A check the worker asks for is model work, and ends with it rather than in the reserve.
+            checkTool: acceptanceCheckTool({
+              ...goalContext,
+              contract: goal,
+              signal: modelWork.signal,
+            }),
+          }),
       ...(gateOptions === undefined
         ? {}
         : {
@@ -796,7 +856,12 @@ async function run(options: RunCommand): Promise<number> {
           }),
       ...(diffBudget === undefined ? {} : { diffBudget }),
     });
-    const taskRun = await runAgentTask(implementation(sealedGoal));
+    // Requested outcomes no sealed check states are owed one follow-up once the gates are green.
+    const followUp = outcomeFollowUp(planning?.admission?.unresolvedOutcomes ?? []);
+    const taskRun = await runAgentTask({
+      ...implementation(sealedGoal),
+      ...(followUp === null ? {} : { followUp }),
+    });
 
     const { loop, gates } = taskRun;
     let { green, verdict } = taskRun;
@@ -819,7 +884,7 @@ async function run(options: RunCommand): Promise<number> {
               clock,
               signal: modelWork.signal,
               deadline,
-              reserveMs: 30_000,
+              reserveMs,
               remainingTokens: () => remainingTokenBudget(evidence, implementationTokens),
               verifyCandidate: (contract, policy) =>
                 verifyCandidateUnder(goalContext, contract, policy),
@@ -835,7 +900,12 @@ async function run(options: RunCommand): Promise<number> {
                   maxTokens: Math.max(0, implementationTokens - used.spent),
                   ...(deadline === null
                     ? {}
-                    : { maxWallTimeMs: Math.max(0, deadline - clock.now() - 30_000) }),
+                    : {
+                        maxWallTimeMs: Math.max(
+                          0,
+                          deadline - clock.now() - reserveMs - backstopMarginMs,
+                        ),
+                      }),
                 });
               },
             });
@@ -870,7 +940,19 @@ async function run(options: RunCommand): Promise<number> {
       gates: gates.outcome.finalCycle,
       contract: strengthening === undefined ? sealedGoal : (goalContext?.contract ?? sealedGoal),
       uncheckedRequirements: planning?.admission?.uncheckedRequirements ?? [],
+      uncovered: planning?.admission?.uncovered ?? [],
+      unresolvedOutcomes: (planning?.admission?.unresolvedOutcomes ?? []).map(
+        ({ id, requirement, quote, role, reason, nextAction }) => ({
+          id,
+          requirement,
+          quote,
+          role,
+          reason,
+          nextAction,
+        }),
+      ),
       repairsForGeneratedChecksOnly: repairsForGeneratedChecksOnly(gates.outcome),
+      outcomeFollowUp: gates.outcome.followUp ?? null,
       usage: {
         durationMs: clock.now() - startedAt,
         steps: loop.steps,
@@ -944,6 +1026,12 @@ async function run(options: RunCommand): Promise<number> {
             ...(outcome.uncheckedRequirements === undefined
               ? {}
               : { uncheckedRequirements: outcome.uncheckedRequirements }),
+            ...(outcome.unresolvedOutcomes === undefined
+              ? {}
+              : { unresolvedOutcomes: outcome.unresolvedOutcomes }),
+            ...(outcome.outcomeFollowUp === undefined
+              ? {}
+              : { outcomeFollowUp: outcome.outcomeFollowUp }),
             ...(outcome.repairsForGeneratedChecksOnly === undefined
               ? {}
               : { repairsForGeneratedChecksOnly: outcome.repairsForGeneratedChecksOnly }),
@@ -957,6 +1045,8 @@ async function run(options: RunCommand): Promise<number> {
                   dropped: planning.admission?.dropped ?? [],
                   revision: planning.admission?.revision ?? null,
                   coverage: planning.admission?.coverage ?? null,
+                  uncovered: planning.admission?.uncovered ?? [],
+                  unresolvedOutcomes: planning.admission?.unresolvedOutcomes ?? [],
                 },
               }),
         })}\n`,
@@ -978,7 +1068,8 @@ async function run(options: RunCommand): Promise<number> {
     }
     throw cause;
   } finally {
-    if (deadlineTimer !== null) clearTimeout(deadlineTimer);
+    if (allowanceTimer !== null) clearTimeout(allowanceTimer);
+    if (modelWorkTimer !== null) clearTimeout(modelWorkTimer);
     await ui.stop();
     process.off("SIGINT", onInterrupt);
     process.off("SIGTERM", onInterrupt);
@@ -990,6 +1081,12 @@ function describeError(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
+/**
+ * How much earlier than the model-work backstop the implementation's own wall ends: enough that the
+ * loop stops on its wall and reports it, and the backstop only cuts what is still in flight.
+ */
+const backstopMarginMs = 1_000;
+
 /** The run's default token allowance where none was named, the figure the spec seals. */
 const defaultTaskTokens = 1_000_000;
 /**
@@ -1000,6 +1097,8 @@ const defaultTaskTokens = 1_000_000;
  * its checks in hand and the fix unwritten; implementation keeps at least three fifths.
  */
 const planningShare = 0.4;
+/** What of the total a revision of dropped planned checks may borrow from implementation, once. */
+const revisionBorrowShare = 0.1;
 const execFileAsync = promisify(execFile);
 
 /**
@@ -1023,7 +1122,10 @@ async function runOutcome(input: {
   readonly gates: RunOutcomeInput["gates"];
   readonly contract: GoalContract | undefined;
   readonly uncheckedRequirements: NonNullable<RunOutcomeInput["uncheckedRequirements"]>;
+  readonly uncovered: NonNullable<RunOutcomeInput["uncovered"]>;
+  readonly unresolvedOutcomes: NonNullable<RunOutcomeInput["unresolvedOutcomes"]>;
   readonly repairsForGeneratedChecksOnly: readonly number[];
+  readonly outcomeFollowUp: NonNullable<RunOutcomeInput["outcomeFollowUp"]> | null;
   readonly usage: RunOutcomeInput["usage"];
 }): Promise<RunOutcomeInput> {
   const { evidence } = input;
@@ -1072,6 +1174,11 @@ async function runOutcome(input: {
     ...(input.uncheckedRequirements.length === 0
       ? {}
       : { uncheckedRequirements: input.uncheckedRequirements }),
+    ...(input.uncovered.length === 0 ? {} : { uncovered: input.uncovered }),
+    ...(input.unresolvedOutcomes.length === 0
+      ? {}
+      : { unresolvedOutcomes: input.unresolvedOutcomes }),
+    ...(input.outcomeFollowUp === null ? {} : { outcomeFollowUp: input.outcomeFollowUp }),
     ...(input.repairsForGeneratedChecksOnly.length === 0
       ? {}
       : { repairsForGeneratedChecksOnly: input.repairsForGeneratedChecksOnly }),

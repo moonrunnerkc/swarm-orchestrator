@@ -7,10 +7,12 @@ import { exitCodes } from "./machine-output.ts";
 import type {
   FinalVerificationOutcome,
   InterventionCounts,
+  OutcomeFollowUpReport,
   OutcomeStatus,
   RequirementOutcome,
   RunOutcomeReport,
   SetupUsage,
+  UnresolvedOutcomeReport,
 } from "./run-outcome-shape.ts";
 import { formatElapsed } from "./tui/elapsed.ts";
 import { formatCost, formatTokens } from "./tui/evidence-panel.ts";
@@ -49,6 +51,19 @@ export interface RunOutcomeInput {
   readonly gates: GateCycle;
   readonly requirements: readonly RequirementOutcome[] | null;
   readonly uncheckedRequirements?: RunOutcomeReport["uncheckedRequirements"];
+  /**
+   * Planned requirements planning left with no retained check, with why and the next useful action,
+   * as planning reconciled them. Shown beside the requirement rather than dropped from the report.
+   */
+  readonly uncovered?: readonly {
+    readonly id: string;
+    readonly reason: string;
+    readonly nextAction: string;
+  }[];
+  /** Requested outcomes no retained check states, as planning reconciled them per outcome. */
+  readonly unresolvedOutcomes?: readonly UnresolvedOutcomeReport[];
+  /** The follow-up owed on those outcomes and what became of it. */
+  readonly outcomeFollowUp?: OutcomeFollowUpReport;
   /** Null where no final independent verification ran. */
   readonly finalVerification: FinalVerificationOutcome | null;
   readonly usage: {
@@ -153,8 +168,29 @@ export function describeRunOutcome(input: RunOutcomeInput): readonly string[] {
   const say = (line = "") => lines.push(line);
   const status = outcomeStatus(input);
   const ok = exitCodeForStatus(status) === exitCodes.acceptable;
+  const unresolved = input.unresolvedOutcomes ?? [];
   say();
-  say(`outcome: ${statusLine[status]}`);
+  say(
+    `outcome: ${statusLine[status]}` +
+      (unresolved.length > 0 && ok
+        ? `; this is the supplied contract's reading only: ${unresolved.length} requested outcome(s) read from the task were exercised by no check (below), so it does not show the whole task done`
+        : ""),
+  );
+  const followUp = input.outcomeFollowUp;
+  if (unresolved.length > 0 && followUp !== undefined)
+    say(
+      `  follow-up on them: ${
+        followUp.state === "withheld"
+          ? `withheld (${firstLine(followUp.reason, 200)})`
+          : `given once, as attempt ${followUp.attempt}; ${
+              followUp.accepted === null
+                ? "it left nothing to judge"
+                : followUp.accepted
+                  ? "the ratchet accepted what it left"
+                  : "the ratchet rolled back what it left"
+            }`
+      }; they stay unresolved, since no sealed check states them`,
+    );
   say(`  requested: ${firstLine(input.task, 160)}`);
   say(
     `  verdict: task ${input.verdict.task}, regression ${input.verdict.behavioral}, ` +
@@ -183,7 +219,12 @@ export function describeRunOutcome(input: RunOutcomeInput): readonly string[] {
     );
     for (const requirement of input.requirements) {
       if (requirement.source === "planned") {
-        describePlanned(requirement, say);
+        describePlanned(
+          requirement,
+          say,
+          input.uncovered?.find((one) => one.id === requirement.id),
+          unresolved.filter((one) => one.requirement === requirement.id),
+        );
         continue;
       }
       const mark =
@@ -291,7 +332,12 @@ export function describeRunOutcome(input: RunOutcomeInput): readonly string[] {
 }
 
 /** A planned requirement: what it quotes, and what its generated checks did, never a verdict. */
-function describePlanned(requirement: RequirementOutcome, say: (line: string) => void): void {
+function describePlanned(
+  requirement: RequirementOutcome,
+  say: (line: string) => void,
+  uncovered?: NonNullable<RunOutcomeInput["uncovered"]>[number],
+  unresolved: readonly UnresolvedOutcomeReport[] = [],
+): void {
   const checks = requirement.generatedChecks ?? [];
   const disagreeing = checks.filter((one) => one.status === "rejected");
   const mark = disagreeing.length > 0 ? "DISPUTED" : checks.length === 0 ? "no check" : "unjudged";
@@ -302,7 +348,18 @@ function describePlanned(requirement: RequirementOutcome, say: (line: string) =>
         : ` [planned from the task: "${firstLine(requirement.quote, 80)}"]`),
   );
   if (checks.length === 0) {
-    say("             no generated check held its base control, so nothing exercised it");
+    if (uncovered === undefined)
+      say("             no generated check held its base control, so nothing exercised it");
+    else {
+      say(`             no generated check covers it: ${firstLine(uncovered.reason, 400)}`);
+      say(`             next for it: ${firstLine(uncovered.nextAction, 400)}`);
+    }
+    // Its outcomes' own words: the requirement's quote is whichever check declared it last, and
+    // the launch that found this lost the task's example sentence from the report that way.
+    for (const one of unresolved)
+      say(
+        `             NO CHECK ${one.role === "change" ? "change" : "kept behaviour"}${one.quote === null ? " (quoting nothing)" : ` "${firstLine(one.quote, 160)}"`}`,
+      );
     return;
   }
   for (const check of checks)
@@ -311,6 +368,13 @@ function describePlanned(requirement: RequirementOutcome, say: (line: string) =>
         (check.status === "accepted" ? "" : ` (${firstLine(check.detail, 120)})`) +
         "; its expected results are the planner's",
     );
+  // The checks above state other outcomes of this requirement; these have none.
+  for (const one of unresolved) {
+    say(
+      `             NO CHECK ${one.role === "change" ? "change" : "kept behaviour"}${one.quote === null ? "" : ` "${firstLine(one.quote, 100)}"`}: ${firstLine(one.reason, 400)}`,
+    );
+    say(`             next for it: ${firstLine(one.nextAction, 400)}`);
+  }
 }
 
 function nextAction(input: RunOutcomeInput): string {
@@ -451,6 +515,15 @@ export function interventionsOn(evidence: EvidenceRecorder): InterventionCounts 
   let promptsAnsweredByPerson = 0;
   let promptsPreApproved = 0;
   let promptsDeclined = 0;
+  // The follow-up owed once the gates were green is an attempt from the cap, and its candidate is
+  // judged as a repair's is, but nothing was failing: it is reported on its own line, not here.
+  const followUpAttempts = new Set(
+    evidence
+      .records()
+      .map((record) => payloads.get(record.payloadDigest) as { rule?: string; attempt?: unknown })
+      .filter((payload) => payload?.rule === "outcome-follow-up-v1")
+      .flatMap((payload) => (typeof payload.attempt === "number" ? [payload.attempt] : [])),
+  );
   for (const record of evidence.records()) {
     const payload = payloads.get(record.payloadDigest) as
       | {
@@ -460,9 +533,15 @@ export function interventionsOn(evidence: EvidenceRecorder): InterventionCounts 
           outcome?: string;
           decidedBy?: string;
           phase?: string;
+          attempt?: number;
         }
       | undefined;
-    if (record.type === "ratchet-decision" && payload?.scope === "retry") repairAttempts += 1;
+    if (
+      record.type === "ratchet-decision" &&
+      payload?.scope === "retry" &&
+      !followUpAttempts.has(payload.attempt ?? -1)
+    )
+      repairAttempts += 1;
     if (record.type === "session-budget" && payload?.rule === "tool-stall-v1") {
       if (payload.intervention === "feedback") stallNotices += 1;
       else if (payload.intervention === "stop") stallStops += 1;

@@ -329,6 +329,45 @@ describe("runAgentLoop", () => {
     expect(outcome.steps).toBe(1);
   });
 
+  it("stops as max-wall-time when the abort arrives past its own wall, mid-tool", async () => {
+    // The backstop that ends model work fires as the loop's wall ends, to cut what is still in
+    // flight; a loop past its wall was stopped by its wall, not by a person.
+    const harness = createHarness([
+      respondWithToolCalls("starting", [{ callId: "a", toolName: "shell", input: {} }]),
+      respondWithText("never reached"),
+    ]);
+    harness.deps.toolInvoker.invoke = (invocation) => {
+      harness.clock.advance(generousBudget.maxWallTimeMs + 1_000);
+      harness.controller.abort("the model-work allowance is spent");
+      return Promise.resolve({
+        callId: invocation.callId,
+        toolName: invocation.toolName,
+        output: "cancelled",
+        failed: true,
+      });
+    };
+
+    const outcome = await runAgentLoop("run past the wall", harness.deps);
+
+    expect(outcome.stopReason).toBe("max-wall-time");
+  });
+
+  it("stops as max-wall-time when the abort arrives past its own wall, mid-call", async () => {
+    const harness = createHarness([respondWithText("never reached")]);
+    harness.deps.model.generate = (request) =>
+      new Promise((_resolve, reject) => {
+        request.abortSignal?.addEventListener("abort", () =>
+          reject(new DOMException("This operation was aborted", "AbortError")),
+        );
+        harness.clock.advance(generousBudget.maxWallTimeMs + 1_000);
+        harness.controller.abort("the model-work allowance is spent");
+      });
+
+    const outcome = await runAgentLoop("run past the wall", harness.deps);
+
+    expect(outcome.stopReason).toBe("max-wall-time");
+  });
+
   /**
    * A run stopped from the keyboard while the model was answering used to report
    * "model error: This operation was aborted", the transport's own words for a cancelled
@@ -728,6 +767,7 @@ describe("a loop that repeats itself", () => {
         repeats: 3,
         input: '{"command":"cat package.json"}',
         output: "exit code: 0",
+        writes: false,
         intervention: "feedback",
       },
       {
@@ -737,6 +777,7 @@ describe("a loop that repeats itself", () => {
         repeats: 3,
         input: '{"command":"cat package.json"}',
         output: "exit code: 0",
+        writes: false,
         intervention: "stop",
       },
     ]);
@@ -786,6 +827,66 @@ describe("a loop that repeats itself", () => {
     const outcome = await runAgentLoop("watch the build", harness.deps);
     expect(outcome.stopReason).toBe("completed");
     expect(harness.events.some((event) => event.type === "stall")).toBe(false);
+  });
+
+  it("answers a call repeated after an edit even when its answer is unchanged, and notices the one repeated with no edit between", async () => {
+    const check = (callId: string) =>
+      respondWithToolCalls("checking", [
+        { callId, toolName: "shell", input: { command: "npm run build && node check.mjs" } },
+      ]);
+    const harness = createHarness(
+      [
+        check("before"),
+        respondWithToolCalls("edit", [
+          {
+            callId: "w",
+            toolName: "edit",
+            input: { path: "src/rules.ts", find: "a", replace: "b" },
+          },
+        ]),
+        check("after"),
+        check("again"),
+        respondWithText("done"),
+      ],
+      {
+        toolInvoker: createRecordingToolInvoker((invocation) =>
+          invocation.toolName === "edit" ? "replaced 1 occurrence(s)" : unchanged(),
+        ),
+        stall: { writers: ["edit", "write"] },
+      },
+    );
+    const outcome = await runAgentLoop("fix the check", harness.deps);
+    expect(outcome.stopReason).toBe("completed");
+    const answers = outcome.messages
+      .filter((message) => message.role === "tool")
+      .map((message) => (message.role === "tool" ? (message.outcomes[0]?.output ?? "") : ""));
+    expect(answers[2]).toContain("exit code: 0");
+    expect(answers[2]).not.toContain("already answered");
+    expect(answers[3]).toContain("[harness notice: already answered]");
+    expect(answers[3]).toContain("No writing tool call has landed since");
+    expect(harness.events.some((event) => event.type === "stall")).toBe(false);
+  });
+
+  it("tells a repeated successful write that it is repeated, without saying no writing call landed", async () => {
+    // Two writing calls landed, the second a byte-for-byte repeat of the first with the same
+    // answer. It is a repeat, and the notice in its answer's place may not deny what the loop
+    // itself classed as writing.
+    const write = (callId: string) =>
+      respondWithToolCalls("writing", [
+        { callId, toolName: "write", input: { path: "src/rules.ts", content: "a" } },
+      ]);
+    const harness = createHarness([write("first"), write("second"), respondWithText("done")], {
+      toolInvoker: createRecordingToolInvoker(() => "wrote 1 byte to src/rules.ts"),
+      stall: { writers: ["edit", "write"] },
+    });
+    const outcome = await runAgentLoop("fix the check", harness.deps);
+    expect(outcome.stopReason).toBe("completed");
+    const answers = outcome.messages
+      .filter((message) => message.role === "tool")
+      .map((message) => (message.role === "tool" ? (message.outcomes[0]?.output ?? "") : ""));
+    expect(answers[0]).toContain("wrote 1 byte");
+    expect(answers[1]).toContain("[harness notice: already answered]");
+    expect(answers[1]).not.toContain("No writing tool call has landed since");
   });
 
   it("grants no second notice to a run taken up again with the first in its history", async () => {

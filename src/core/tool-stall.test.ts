@@ -121,6 +121,7 @@ describe("the stall tracker", () => {
       repeats: 3,
       input: '{"path":".","pattern":"emitWsNeeded"}',
       output: "no match for /emitWsNeeded/",
+      writes: false,
     });
     expect(notice.startsWith(stallNoticePrefix)).toBe(true);
     expect(notice).toContain("The last 4 search calls");
@@ -149,6 +150,122 @@ describe("the stall tracker", () => {
     expect(stall?.input.startsWith('{"path":".","pattern":"xxx')).toBe(true);
     expect(stall?.output.length).toBeLessThanOrEqual(243);
     expect(stall?.output).not.toContain("evidence record");
+  });
+});
+
+describe("an answer given before an edit", () => {
+  const edit = (n: number, failed = false) => ({
+    toolName: "edit",
+    input: { path: "src/rules.ts", find: "a", replace: "b" },
+    failed,
+    output: failed
+      ? `no occurrence of the search text in src/rules.ts${trailer(n)}`
+      : `replaced 1 occurrence(s) in src/rules.ts${trailer(n)}`,
+    writes: true,
+  });
+
+  it("is not an answer the model has about the workspace after it, even when the answer is unchanged", () => {
+    // The planned-check trial of 2026-10-20 (run 20261020T045117-41e2cc, records 530, 591 and
+    // 597): the build and visible check ran, the file was edited, and the same build and check
+    // ran again with the same output. The second run was a new answer about a new workspace.
+    const tracker = createStallTracker();
+    expect(tracker.observe(inspection(1))).toBeNull();
+    expect(tracker.observe(edit(2))).toBeNull();
+    expect(tracker.observe(inspection(3))).toBeNull();
+    expect(tracker.repeats()).toBe(0);
+  });
+
+  it("stays an answer the model has when the edit between did not land", () => {
+    const tracker = createStallTracker();
+    tracker.observe(inspection(1));
+    tracker.observe(edit(2, true));
+    tracker.observe(inspection(3));
+    expect(tracker.repeats()).toBe(1);
+  });
+
+  it("still counts the same inspection repeated with no edit between, and the same edit repeated", () => {
+    const tracker = createStallTracker();
+    tracker.observe(edit(1));
+    for (let n = 2; n <= 4; n += 1) tracker.observe(inspection(n));
+    expect(tracker.repeats()).toBe(2);
+    // A write repeated byte for byte with the same answer is a repeat whatever it landed on:
+    // the alternative, forgetting everything at every write, would never count one.
+    const writes = createStallTracker();
+    writes.observe(edit(1));
+    writes.observe(edit(2));
+    expect(writes.repeats()).toBe(1);
+  });
+
+  it("names what the harness knows in the notice: no writing call has landed, not that nothing changed", () => {
+    const notice = repeatedAnswerNotice("shell", `exit code: 0${trailer(1)}`, 1);
+    expect(notice).toContain("No writing tool call has landed since");
+    expect(notice).not.toContain("Nothing in the workspace changed");
+    const stall = stallNotice({
+      toolName: "shell",
+      repeats: 3,
+      input: "{}",
+      output: "exit code: 0",
+      writes: false,
+    });
+    expect(stall).toContain("no writing tool call landed between them");
+    expect(stall).not.toContain("nothing in the workspace changed");
+  });
+});
+
+describe("a repeated call that may write", () => {
+  const write = (n: number) => ({
+    toolName: "write",
+    input: { path: "src/rules.ts", content: "export const a = 1;\n" },
+    failed: false,
+    output: `wrote 20 bytes to src/rules.ts${trailer(n)}`,
+    writes: true,
+  });
+
+  it("is still a repeat when its call and answer are the same, and the stall says it may write", () => {
+    // Repeated successful writes of the same bytes are one more thing the model is doing again;
+    // the detection stays. What may not be said of them is that no writing call landed.
+    const tracker = createStallTracker();
+    let stall = null;
+    for (let n = 1; n <= 4; n += 1) stall = tracker.observe(write(n));
+    expect(tracker.repeats()).toBe(3);
+    expect(stall).toMatchObject({ toolName: "write", repeats: 3, writes: true });
+    const inspections = createStallTracker();
+    for (let n = 1; n <= 4; n += 1) stall = inspections.observe(inspection(n));
+    expect(stall).toMatchObject({ toolName: "shell", repeats: 3, writes: false });
+  });
+
+  it("is told its result is unchanged, not that no writing tool call has landed since", () => {
+    // Writing calls had landed: the repeated call is one of them. The notice for an inspection
+    // may say no writing call landed since, because the tracker's generation shows it; the
+    // notice for a call that may write says only what is known of it.
+    const repeatedWrite = repeatedAnswerNotice("write", `wrote 20 bytes${trailer(1)}`, 1, {
+      writes: true,
+    });
+    expect(repeatedWrite).toContain("[harness notice: already answered]");
+    expect(repeatedWrite).toContain("its result is unchanged");
+    expect(repeatedWrite).not.toContain("No writing tool call has landed since");
+    const repeatedInspection = repeatedAnswerNotice("read", `import x${trailer(2)}`, 1, {
+      writes: false,
+    });
+    expect(repeatedInspection).toContain("No writing tool call has landed since");
+    const stalledWrites = stallNotice({
+      toolName: "shell",
+      repeats: 3,
+      input: String.raw`{"command":"node -e \"require('fs').writeFileSync('a','1')\""}`,
+      output: "exit code: 0",
+      writes: true,
+    });
+    expect(stalledWrites).toContain("The last 4 shell calls");
+    expect(stalledWrites).toContain("results you had already received");
+    expect(stalledWrites).not.toContain("no writing tool call landed between them");
+    const stalledInspections = stallNotice({
+      toolName: "read",
+      repeats: 3,
+      input: '{"path":"a"}',
+      output: "1",
+      writes: false,
+    });
+    expect(stalledInspections).toContain("no writing tool call landed between them");
   });
 });
 

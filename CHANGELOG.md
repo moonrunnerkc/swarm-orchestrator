@@ -10,8 +10,125 @@ The ordinary task workflow: a task in words, sealed criteria, acceptance, repair
 verification on one path, with the run's outcome led by what was and was not established.
 Source on `v13-main`; not published until a release names it.
 
+### Added
+
+- **Experimental, off by default: the account handed to a repair attempt can carry the previous
+  loop's last three shell results that printed something and exited 0.** The account kept the
+  commands that printed nothing or failed and dropped the ones that printed, so what a diagnostic
+  loop learned from its probes did not reach the next attempt (run `20261020T045117-41e2cc`,
+  records 477, 483 and the step-40 call: the class tested against the input, null each time, none of
+  it in the second attempt's brief). When a caller asks for them (`recentShellResults`), each result
+  travels with its command, exit status, a bounded excerpt of what it printed (eight lines or 480
+  characters), the evidence record holding the whole result and the loop's later edits it predates,
+  named as a historical observation of that loop's files whose zero exit status says the command
+  ran, not that what it examined was correct. The selection is the last three in call order; nothing
+  selects by meaning and no model text travels. The worker does not ask for them: one matched
+  development pair at that run's repair boundary (`docs/evidence/2026-10-20/repair-handoff/`)
+  delivered the same correct patch with and without them, which by the pair's pre-registered rule
+  is no demonstrated benefit, so they are not a default.
+
 ### Fixed
 
+- **A shell command counts as a possible edit, and a repeated write is not told that no write
+  landed.** The worker named as writers only the tools the chokepoint classes as `write`, so a
+  shell command that edited a file did not start a new workspace for the repeated-call tracker and
+  a check rerun after it could still be replaced by the "already answered" notice; and a successful
+  writing call repeated byte for byte was told "No writing tool call has landed since" although
+  writing calls had landed. The shell tool is now named as a tool whose successful call may change
+  files, since the harness cannot see what a command did once it ran, and both notices say of a
+  repeated inspection that no call which may write landed since, and of a repeated call that may
+  write only that it was made before with the same answer. Repeated-call detection is kept: a shell
+  command repeated with the same answer, an inspection repeated with nothing between and a write
+  repeated are still repeats; an inspection alternated with a shell command is read as new each
+  time, on the side of answering. Reproduced through the real chokepoint on a git workspace before
+  the change (`docs/evidence/2026-10-20/repair-handoff/regressions-before.txt`). These corrections
+  are not evidence of any improved repair.
+- **A call repeated after an edit is answered, not told it already was.** The repeated-call
+  tracker compared a call and its answer with the recent window alone, so a build or check rerun
+  after an edit, whose answer happened to be unchanged, was replaced by the "already answered"
+  notice, which told the model that nothing in the workspace had changed since its own edit. The
+  loop now names the tools the chokepoint classes as writing, and the tracker reads a successful
+  one as a new workspace: an inspection repeated after it is a new question, the same inspection
+  repeated with no write between and the same write repeated stay repeats, and both notices say
+  what the harness knows, that no writing call has landed. Seen in the planned-check trial of
+  2026-10-20 (run `20261020T045117-41e2cc`, records 530 to 598); it cost that repair one step and
+  was not what kept it from the fix.
+- **A requested behaviour stays in the work when its generated check is refused.** A check of
+  behaviour that stays which the base fails was dropped as contradicting the task, and its
+  requirement went on with nothing covering it and nothing telling the worker. It is now a
+  disagreement with the base, case by case, with whether the task names the input; the revision
+  is shown the task's words, each case with the base's answer, and the choice between correcting
+  the expectation and reclassifying the check as a change with its reason (held to the change
+  control, and only for inputs the task names), and is told not to reread the repository.
+  Coverage is reconciled against the checks admission kept, and a requirement left with none is
+  named as uncovered, with why and the next action, in the worker's brief, the outcome and
+  `plannedChecks.uncovered`. The admission record is `planned-check-admission-v3`.
+- **A requested outcome cannot disappear behind a sibling under the same requirement.** Coverage
+  was reconciled per requirement, so a requirement holding two outcomes read as covered while
+  the check of one was refused (D1: the task's own `(See hTtPS://...)` example had no check left,
+  and nothing told the worker). Each declared check now records the task's words it quotes, and
+  an outcome is a requirement, those words and whether the cases change or keep behaviour. Every
+  outcome a declaration names is recorded before admission (`planned-outcomes-v1`) and kept when
+  its checks are refused or replaced; coverage is reconciled per outcome
+  (`planned-coverage-reconciled-v2`), and one no retained check states is named, with why and
+  the next action, in the revision's brief, the worker's brief, the report and
+  `plannedChecks.unresolvedOutcomes` / `outcome.unresolvedOutcomes`. The identity is the
+  planner's own declarations: two outcomes stated in one quote with one role are one here.
+- **A check that throws in its own code is not read as the base's answer.** The runner records
+  where a thrown case was raised, by the innermost stack frame naming a file: in the check
+  program (`thrownIn: "check-program"`), where no frame names a file (`"unattributed"`), or
+  elsewhere, the project, which keeps the plain line a declared throw expects. A case thrown in
+  the program recorded nothing of the project's, so its check is refused as `raised-in-program`
+  with the message for the revision, instead of D1's "disagreement with the base"; a relation
+  counts such calls (`raisedInProgram`). A throw in the project stays an observation of it, and
+  an unattributed one is read as the base's answer with the uncertainty noted. The admission
+  record is `planned-check-admission-v4`, with each thrown case and where it was thrown.
+- **`accepted` says whose reading it is.** Where any requested outcome is unresolved, the status
+  line says it is the supplied contract's reading only and does not show the whole task done.
+  The status and exit code are unchanged.
+- **A check's revisions cannot replace the task's own example.** An outcome keeps every version of
+  the check that stated it, case by case, and is covered only while retained checks still hold
+  every input the task names that it was stated with: a launch's planner moved the task's
+  `(See hTtPS://...)` example to angle-bracket inputs under the same check. A check expecting the
+  base's answer for a task-named input after the base disputed an earlier expectation there is
+  refused (`adopts-base-answer`): the base is an observation, not the request, and nothing
+  separates a mistaken expectation from a base that lacks the requested behaviour, so the outcome
+  stays unresolved rather than held at the base's answer. Corrections that keep the input stay
+  admissible; every change of expectation for a task-named input is recorded. The same check
+  declared again, keeping every word and task-named input, is one outcome rather than two. The
+  worker's brief and `unresolvedOutcomes[].taskInputs` name each task input with what was expected
+  and what the base gave. Records: `planned-outcomes-v2`, `planned-coverage-reconciled-v3`.
+- **An unresolved outcome is followed up before the run is reported.** A worker that ran the task's
+  example, saw it fail and finished left every gate green, so nothing looked again. Requested
+  outcomes no sealed check states are now owed one attempt once the gates are green, from the
+  attempt cap and under the same ratchet, rollback and budget floor as a repair, with a brief from
+  the structured outcomes that allows leaving correct code as it is. It is given once
+  (`outcome-follow-up-v1`) and reported (`outcome.outcomeFollowUp`); the outcomes stay unresolved,
+  and the status and exit code keep their meaning.
+- **A revision of dropped checks is scheduled inside the run's total.** It was withheld whenever
+  the first round used its share (64 s left against 96 s needed in a launch with six minutes of the
+  run unused). The first round now stops after a base run once less remains than admission, a
+  revision and its re-admission need, measured on its own trials; the coverage review no longer
+  takes that time; and a revision that still does not fit may borrow the shortfall from
+  implementation, once and up to a tenth of the total, never from the verification reserve
+  (`planned-check-revision-v2`, with the measured admission beside the arithmetic).
+- **A run whose last attempt was rolled back passes its own bundle verifier.** The verifier
+  required the latest gate runs on the chain, which after a rollback measured an undone tree; it now
+  requires those of the cycle the workspace was left in, and a follow-up that was not kept is not
+  the run's lifecycle (see the `swarm-verify` changelog).
+- **A throw in a check program is described as where it was raised.** Its refusal no longer says
+  the run observed nothing of the project: a program may be defective, or may have asserted on
+  what the project gave, and the stack does not say which. The refusal itself is unchanged.
+- **The final checks run after the work spends its wall.** The end of the implementation's wall
+  refused the final build, lint and tests commands before they spawned, so a run that used its
+  allowance was reported with nothing measured. Gate commands now stop only for the run's
+  cancellation and the end of its total allowance, and final verification has a share of
+  `--max-wall-minutes` held back from planning, implementation and repair (four times the
+  measured preflight, at least a minute, at most a quarter). A run whose work stopped at its
+  wall is still not accepted, and is no longer reported as cancelled.
+- **One verbose command no longer fills every later request.** A command output over 12,000
+  characters reaches the model as a bounded view with its recorded status and evidence record;
+  `read_recorded_output` returns the omitted lines. The ledger keeps the captured output.
 - **A planned check runs in the language the project's users run.** Its runner put `input`,
   `expected` and `throws` getters on the String, Number and Boolean prototypes to catch a program
   reading `case_.input` off a string, so `"input" in Object("hello")` was true inside a check and

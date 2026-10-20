@@ -8,6 +8,7 @@ import { createGitWorkspaceProbe } from "./gates/git-workspace.ts";
 import { detectProject } from "./gates/project-type.ts";
 import {
   describeMisreads,
+  inputAsRead,
   type ProgramMisread,
   plannedCaseRoles,
   plannedCheckProbe,
@@ -18,6 +19,8 @@ import {
   probeMisreads,
   programDidNotLoad,
   relationAgreedSomewhere,
+  relationRaisedInProgram,
+  thrownIn,
 } from "./workers/planned-check-program.ts";
 
 /**
@@ -43,9 +46,37 @@ import {
  * answer for every input (a predicate that is always false), and a program that varies can still
  * call the wrong interface. So a check whose base answers are one value is not refused for that:
  * it is kept with its control unestablished and the uncertainty recorded, unless something shows
- * the program itself broken (it did not load, did not complete, or a separate probe saw it read
- * the case's fields off the input it was given while every answer was the same).
+ * the program itself broken (it did not load, did not complete, threw in its own code, or a
+ * separate probe saw it read the case's fields off the input it was given while every answer was
+ * the same).
+ *
+ * A thrown case is read by where the runner saw it thrown. Thrown in the check program's own
+ * module, the case recorded no answer of the project's, so it is no observation of the base and
+ * the check is refused for a revision, however uniform or varied the other answers were: D1's
+ * one case applied `in` to the string the project returned and read as the base disagreeing with
+ * an input the task names. Thrown outside the program, it is the project's answer and stays one,
+ * as a diagnostic of a crashing base or as a declared throw met. Thrown where no frame names a
+ * file, it is read as the base's answer with that uncertainty recorded beside it.
  */
+/**
+ * One case where the base's answer differs from what a check expects of behaviour it says stays:
+ * every case of a preserve check, a kept case of a change check. The expectation and the answer are
+ * each the result as JSON text, null where the base printed nothing for the case.
+ */
+export interface CaseDisagreement {
+  /** 1-based, in the check's own order. */
+  readonly case: number;
+  readonly input: unknown;
+  readonly expected: string;
+  readonly base: string | null;
+  /**
+   * Whether the task's own text names this input verbatim. Where it does, the task may be stating
+   * the outcome it wants for that input, which the base can lack; where it does not, nothing but
+   * the planner's reading backs the expectation. Either way it is a reading, never a verdict.
+   */
+  readonly namedByTask: boolean;
+}
+
 export interface PlannedCheckDecision {
   readonly check: string;
   readonly atBase: "fails" | "passes" | null;
@@ -74,7 +105,8 @@ export interface PlannedCheckDecision {
   /**
    * What the base run showed about the check, each kind with its own remedy: the program did not
    * load (an import), it read a case's own fields off the input it was given (the argument's
-   * shape, seen by the probe while every answer was one value), it did not finish, its control is
+   * shape, seen by the probe while every answer was one value), it did not finish, a case threw
+   * in the program's own code (so the case observed nothing of the project), its control is
    * unestablished (kept, an uncertainty rather than a failure of the project or the program), its
    * expectation contradicts what the base does where the task keeps behaviour, or, for a change
    * check, the base already passes it.
@@ -87,8 +119,36 @@ export interface PlannedCheckDecision {
     | "did-not-load"
     | "argument-shape"
     | "did-not-complete"
+    | "raised-in-program"
     | "expectation-contradicted"
-    | "does-not-detect";
+    | "disagrees-with-base"
+    | "reclassification-unsupported"
+    | "does-not-detect"
+    | "adopts-base-answer";
+  /**
+   * The cases where the base disagrees with what the check expects of behaviour that stays, each
+   * with whether the task names its input; null where no case-by-case comparison was made. A
+   * disagreement shows the expectation and the base differ, not which of them the task backs.
+   */
+  readonly disagreements: readonly CaseDisagreement[] | null;
+  /**
+   * Of a check of cases, each case that threw on the base and where the runner saw it thrown: in
+   * the check program's own code, outside it (the project or what it calls), or where no stack
+   * frame names a file. Null where no case threw or nothing was compared. Where it was thrown, not
+   * whose fault it was: a program that passes the project a wrong argument gets the project's throw.
+   */
+  readonly thrown:
+    | readonly {
+        readonly case: number;
+        readonly in: "check-program" | "outside-program" | "unattributed";
+      }[]
+    | null;
+  /**
+   * Declared again as a change under the id of a preserve check the base disagreed with. Held to
+   * the change control like any change check, and admitted only for changed cases whose inputs the
+   * task names: the planner's justification is in the check's why, recorded with the revision.
+   */
+  readonly reclassified: boolean;
   /**
    * What shows the program observes the project through the very adapter, fixture and input
    * convention the changed cases use, or null where nothing does. Base agreement: the base gave
@@ -119,6 +179,20 @@ export interface PlannedCheckDecision {
   readonly record: string | null;
   /** The argument probe's record beside the check's own, where one ran. */
   readonly probeRecord: string | null;
+}
+
+/**
+ * An input the task names on which a base run disagreed with what a check of the requirement
+ * expected: the base's answer there and the expectation it contradicted. A later check that expects
+ * the base's answer for that input would hold the base's behaviour where the task names the input,
+ * and nothing here tells whether the first expectation or the base is what the task asks for.
+ */
+export interface ContestedInput {
+  readonly requirement: string;
+  readonly check: string;
+  readonly input: unknown;
+  readonly expected: string;
+  readonly base: string;
 }
 
 export interface PlannedCheckAdmission {
@@ -185,13 +259,24 @@ function argumentProbes(
 }
 
 export async function admitPlannedChecks(input: {
+  /** The task in the user's words, which a case's input may name; the contract's goal where absent. */
+  readonly task?: string;
   readonly contract: GoalContract;
   readonly base: GoalContract | undefined;
   /** The planning chain, which the base run writes its check records to. */
   readonly evidence: EvidenceRecorder;
   /** Runs a contract's checks on a fresh checkout of the unchanged base. */
   readonly verifyAtBase: (contract: GoalContract) => Promise<unknown>;
+  /** Planned checks a revision declared as changes under the ids of dropped preserve checks. */
+  readonly reclassified?: ReadonlySet<string>;
+  /** Task-named inputs earlier base runs of this planning disagreed on, by requirement. */
+  readonly contested?: readonly ContestedInput[];
 }): Promise<PlannedCheckAdmission> {
+  const task = input.task ?? input.contract.goal;
+  const requirementOf = (check: string) =>
+    input.contract.requirements.find(
+      (one) => one.planned?.diagnostics.includes(check) === true || one.checks.includes(check),
+    )?.id;
   const supplied = new Set((input.base?.checks ?? []).map((check) => check.id));
   const planned = input.contract.checks.filter((check) => !supplied.has(check.id));
   const probes = argumentProbes(planned);
@@ -232,7 +317,15 @@ export async function admitPlannedChecks(input: {
   };
   const decisions = withSharedPrograms(
     planned,
-    planned.map((check) => decide(check, observed.get(check.id), probeOf(check.id))),
+    planned.map((check) =>
+      decide(check, observed.get(check.id), probeOf(check.id), {
+        task,
+        reclassified: input.reclassified?.has(check.id) === true,
+        contested: (input.contested ?? []).filter(
+          (one) => one.requirement === requirementOf(check.id),
+        ),
+      }),
+    ),
   );
   const admitted = new Set(decisions.filter((one) => one.admitted).map((one) => one.check));
   const kept = new Set([...supplied, ...admitted]);
@@ -265,7 +358,7 @@ export async function admitPlannedChecks(input: {
     actor: "harness",
     provenance: ["tool-output"],
     payload: asJsonValue({
-      rule: "planned-check-admission-v2",
+      rule: "planned-check-admission-v4",
       decisions,
       droppedRequirements,
       unverifiedRequirements,
@@ -359,7 +452,16 @@ function kindOf(value: unknown): string {
 function caseRows(
   check: GoalContract["checks"][number],
   seen: ObservedCheck,
-): readonly { index: number; agrees: boolean; role: "changed" | "kept" | null; kind: string }[] {
+): readonly {
+  index: number;
+  agrees: boolean;
+  role: "changed" | "kept" | null;
+  kind: string;
+  input: unknown;
+  expected: string;
+  base: string | null;
+  thrown: ReturnType<typeof thrownIn>;
+}[] {
   const expected = expectedStdout(check);
   const inputs = plannedInputs(check);
   if (expected === null || inputs === null) return [];
@@ -371,7 +473,85 @@ function caseRows(
     agrees: got[index] === line,
     role: roles?.[index] ?? null,
     kind: kindOf(inputs[index]),
+    input: inputs[index],
+    expected: resultText(line),
+    base: got[index] === undefined || got[index] === "" ? null : resultText(got[index]),
+    thrown: got[index] === undefined ? null : thrownIn(got[index]),
   }));
+}
+
+/** A case's line as its result alone, without the input it echoes: `"big"` for `{"input":50,"result":"big"}`. */
+function resultText(line: string): string {
+  try {
+    const { input: _input, ...rest } = JSON.parse(line) as Record<string, unknown>;
+    const keys = Object.keys(rest);
+    return keys.length === 1 && keys[0] === "result"
+      ? (JSON.stringify(rest.result) ?? "null")
+      : JSON.stringify(rest);
+  } catch {
+    return line;
+  }
+}
+
+/**
+ * Whether the task's text names this input verbatim, as a whole token: a string or number of at
+ * least three characters, not inside a longer word or number. Shorter inputs ("10", "a") occur in
+ * almost any text, so they are never read as named.
+ */
+export function namedByTask(task: string, input: unknown): boolean {
+  const text =
+    typeof input === "string"
+      ? input
+      : typeof input === "number" && Number.isFinite(input)
+        ? String(input)
+        : null;
+  if (text === null || text.trim().length < 3) return false;
+  const wordy = (character: string | undefined) =>
+    character !== undefined && /[\p{L}\p{N}_]/u.test(character);
+  for (let at = task.indexOf(text); at >= 0; at = task.indexOf(text, at + 1)) {
+    const opensOnWord = wordy(text[0]) && wordy(task[at - 1]);
+    const closesOnWord = wordy(text.at(-1)) && wordy(task[at + text.length]);
+    if (!opensOnWord && !closesOnWord) return true;
+  }
+  return false;
+}
+
+/** The disagreeing rows of a comparison, as the decision records them. */
+function disagreementsOf(
+  rows: ReturnType<typeof caseRows>,
+  task: string,
+): readonly CaseDisagreement[] {
+  return rows
+    .filter((row) => !row.agrees)
+    .map((row) => ({
+      case: row.index,
+      input: row.input,
+      expected: row.expected,
+      base: row.base,
+      namedByTask: namedByTask(task, row.input),
+    }));
+}
+
+/**
+ * Why a preserve check the base fails is dropped, without reading the failure as the requested
+ * behaviour being wrong: the base and the expectation differ, and the task decides which is meant.
+ */
+function preserveDisagreement(disagreements: readonly CaseDisagreement[]): string {
+  const cases = disagreements.map((one) => one.case);
+  const named = disagreements.filter((one) => one.namedByTask).map((one) => one.case);
+  return [
+    cases.length === 0
+      ? "it fails on the base."
+      : `it fails on the base: case(s) ${cases.join(", ")} do not give their expected results there.`,
+    "That is a disagreement with the base, not a finding that the requested behaviour is wrong: either an expectation misreads what the base does and is corrected, or the task asks for an outcome the base does not give yet, which makes the case a change (changed: true in a change check, with the task's words in why).",
+    cases.length === 0
+      ? ""
+      : named.length > 0
+        ? `The task names the input of case ${named.join(", ")} itself, so the outcome it states there may be the one it asks for.`
+        : "The task names none of these inputs, so nothing but the planner's reading backs these expectations.",
+  ]
+    .filter((part) => part.length > 0)
+    .join(" ");
 }
 
 /**
@@ -494,6 +674,11 @@ function decide(
   check: GoalContract["checks"][number],
   seen: ObservedCheck | undefined,
   probe: { readonly misread: readonly ProgramMisread[] | null; readonly record: string | null },
+  context: {
+    readonly task: string;
+    readonly reclassified: boolean;
+    readonly contested?: readonly ContestedInput[];
+  },
 ): PlannedCheckDecision {
   const atBase = check.atBase ?? null;
   const relation = plannedRelation(check);
@@ -501,18 +686,26 @@ function decide(
   const basis =
     check.atBase === "passes" ? ("base-observed" as const) : ("model-asserted" as const);
   const notes: string[] = [];
+  const thrownCases =
+    seen === undefined || relation !== null
+      ? []
+      : caseRows(check, seen).flatMap((row) =>
+          row.thrown === null ? [] : [{ case: row.index, in: row.thrown }],
+        );
   const verdict = (
     finding: PlannedCheckDecision["finding"],
     reason: string,
     control: PlannedCheckDecision["control"] = null,
     excerpt: string | null = null,
+    disagreements: readonly CaseDisagreement[] | null = null,
   ): PlannedCheckDecision => {
     const admitted = finding === "admitted" || finding === "unestablished-control";
     const broken =
       finding === "unjudged" ||
       finding === "did-not-load" ||
       finding === "argument-shape" ||
-      finding === "did-not-complete";
+      finding === "did-not-complete" ||
+      finding === "raised-in-program";
     return {
       check: check.id,
       atBase,
@@ -526,12 +719,17 @@ function decide(
       control,
       ...(admitted ? controlWords(control, atBase) : { establishes: null, unknown: null }),
       notes,
+      disagreements,
+      thrown: thrownCases.length === 0 ? null : thrownCases,
+      reclassified: context.reclassified,
       excerpt: admitted
         ? null
         : (excerpt ??
           (broken
             ? (seen?.output ?? null)
-            : finding === "expectation-contradicted" && seen !== undefined && expected !== null
+            : (finding === "expectation-contradicted" || finding === "disagrees-with-base") &&
+                seen !== undefined &&
+                expected !== null
               ? differingLines(expected, seen.stdout).join("; ")
               : null)),
       record: seen?.record ?? null,
@@ -568,12 +766,73 @@ function decide(
       `${describeMisreads(misread).join(" ")}; the check's own answers vary with its input, so the read is reported and decides nothing`,
     );
   }
-  if (atBase === "passes") {
-    if (seen.status !== "accepted")
-      return verdict(
-        "expectation-contradicted",
-        `it fails on the base, so its expectation contradicts behaviour the task keeps${oneAnswer && answers(seen.stdout).length > 1 ? "; every case gave one and the same answer there, which a program that does not reach the project also gives, so check how it builds and calls the project" : ""}`,
+  const inProgram = thrownCases.filter((one) => one.in === "check-program").map((one) => one.case);
+  const relationRaised = relation === null ? 0 : relationRaisedInProgram(seen.stdout);
+  if (inProgram.length > 0 || relationRaised > 0)
+    return verdict(
+      "raised-in-program",
+      `${inProgram.length > 0 ? `case(s) ${inProgram.join(", ")} threw` : `${relationRaised} of its calls threw`} in the check program's own code on the base (the innermost stack frame naming a file is the program's module, not the project's), so ${inProgram.length > 0 ? "they" : "those calls"} recorded no answer to compare: a check reports the project's answer by returning it. That is where the exception was raised, not why: the program may be defective (one applying \`in\` to a string the project returned), or it may have asserted on what the project gave, and which is not established here. Return the project's answer, or a value read from it, instead of throwing, as what it printed on the base shows; the behaviour the check was for stays in the work until a check of it runs`,
+    );
+  const outside = thrownCases.filter((one) => one.in === "outside-program").map((one) => one.case);
+  if (outside.length > 0)
+    notes.push(
+      `case(s) ${outside.join(", ")} threw outside the check program (in the project or what it calls), which is read as the project's answer there`,
+    );
+  const unattributed = thrownCases
+    .filter((one) => one.in === "unattributed")
+    .map((one) => one.case);
+  if (unattributed.length > 0)
+    notes.push(
+      `case(s) ${unattributed.join(", ")} threw where no stack frame names a file, so whether the program or the project threw is not known; read as the base's answer with that uncertainty`,
+    );
+  // For an input the task names, an expectation that is now the base's answer where an earlier
+  // expectation of this requirement disagreed with the base: the launch after D1 declared the task's
+  // example again expecting the base's no-link, and the base's behaviour is an observation, not the
+  // request. Admitted, it would ask a repair to keep the base's answer for the task's own input.
+  const contested = context.contested ?? [];
+  const adopted =
+    relation !== null || contested.length === 0
+      ? []
+      : caseRows(check, seen).filter(
+          (row) =>
+            namedByTask(context.task, row.input) &&
+            contested.some(
+              (one) =>
+                JSON.stringify(one.input) === JSON.stringify(row.input) &&
+                one.base === row.expected &&
+                one.expected !== row.expected,
+            ),
+        );
+  if (adopted.length > 0) {
+    const earlier = (row: (typeof adopted)[number]) =>
+      contested.find(
+        (one) =>
+          JSON.stringify(one.input) === JSON.stringify(row.input) && one.base === row.expected,
       );
+    return verdict(
+      "adopts-base-answer",
+      `for ${adopted
+        .map(
+          (row) =>
+            `case ${row.index} (${inputAsRead(row.input)}, an input the task names) it expects ${row.expected}, which is what the base gave there when ${earlier(row)?.check ?? "an earlier check"} expected ${earlier(row)?.expected ?? "something else"}`,
+        )
+        .join(
+          "; ",
+        )}. The base's answer is an observation of the code before the change, not the task's request, and nothing here tells whether the earlier expectation or the base is what the task asks for that input; a check holding the base's answer would ask a repair to keep it. It is refused, and the outcome stays unresolved for the worker: keep the task's outcome for its own input (declared as a change, with the task's words in why, where the base does not give it), or leave that input out`,
+    );
+  }
+  if (atBase === "passes") {
+    if (seen.status !== "accepted") {
+      const disagreements =
+        relation === null ? disagreementsOf(caseRows(check, seen), context.task) : null;
+      return verdict(
+        "disagrees-with-base",
+        `${preserveDisagreement(disagreements ?? [])}${oneAnswer && answers(seen.stdout).length > 1 ? " Every case gave one and the same answer there, which a program that does not reach the project also gives, so check how it builds and calls the project." : ""}`,
+        null,
+        null,
+        disagreements,
+      );
+    }
     const control =
       relation === null
         ? casesControl(check, seen)
@@ -609,8 +868,21 @@ function decide(
         lines.length > 0
           ? lines.join("; ")
           : differingLines(expected ?? "", seen.stdout).join("; "),
+        disagreementsOf(contradicted, context.task),
       );
     }
+    // A check first declared as keeping behaviour, now declared as changing it: the planner's own
+    // reclassification, which is admitted only where the task itself names each changed input.
+    // Otherwise any expectation the base contradicted could be relabelled as a change and drive
+    // repair toward an outcome nothing in the task states.
+    const unnamed = context.reclassified
+      ? rows.filter((row) => row.role === "changed" && !namedByTask(context.task, row.input))
+      : [];
+    if (unnamed.length > 0)
+      return verdict(
+        "reclassification-unsupported",
+        `it was declared as keeping behaviour, then again as a change, and the task does not name the input of case ${unnamed.map((row) => row.index).join(", ")}: a check is reclassified as a change only for outcomes the task states for inputs it names, so this expectation stays the planner's and the check is refused`,
+      );
     const alreadyGiven = rows.filter((row) => row.role === "changed" && row.agrees);
     if (alreadyGiven.length > 0)
       notes.push(

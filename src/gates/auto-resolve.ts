@@ -45,6 +45,33 @@ export interface ResolveRequest {
    * repair handed only that output was told the old failure again and repeated the regression.
    */
   readonly rejected: RejectedCandidate | null;
+  /**
+   * Set where this attempt is the follow-up the controller owes on work no gate measures, given
+   * once the gates are green: its brief, in place of a failure to fix.
+   */
+  readonly followUp?: string;
+}
+
+/**
+ * Work the gates do not measure that the controller owes one bounded attempt before the run is
+ * reported: requested outcomes no sealed check states. Its identity names what it covers, so the
+ * same work is never followed up twice however it is worded.
+ */
+export interface OwedFollowUp {
+  readonly identity: string;
+  readonly brief: string;
+}
+
+/** What became of an owed follow-up, from the loop's own records. */
+export interface FollowUpOutcome {
+  readonly identity: string;
+  readonly state: "given" | "withheld";
+  /** The attempt it was given as; null where it was withheld. */
+  readonly attempt: number | null;
+  /** The ratchet's decision on its candidate; null where none was judged. */
+  readonly accepted: boolean | null;
+  readonly reason: string;
+  readonly record: string;
 }
 
 /** A rolled-back candidate, read off its own gate cycle and ratchet decision. */
@@ -104,6 +131,12 @@ interface AutoResolveDependencies {
    * fix. Three attempts were spent saying the same thing about a run that was already over.
    */
   readonly abortSignal?: AbortSignal;
+  /**
+   * Owed one attempt once the gates are green, from the same cap. A worker that ran the task's own
+   * example, saw it fail and said it was done finished a launch with every gate green: nothing a
+   * gate measures was failing, so the loop that repairs failures never looked again.
+   */
+  readonly followUp?: OwedFollowUp;
 }
 
 interface AutoResolveAttempt {
@@ -131,6 +164,8 @@ export interface AutoResolveOutcome {
   readonly attempts: readonly AutoResolveAttempt[];
   readonly baseComparison: BaseComparison;
   readonly escalation: EscalationPayload | null;
+  /** Null where nothing was owed. */
+  readonly followUp?: FollowUpOutcome | null;
 }
 
 export const defaultAttemptCap = 3;
@@ -164,14 +199,21 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
 
   const attempts: AutoResolveAttempt[] = [];
   let rejected: RejectedCandidate | null = null;
+  // The owed follow-up: pending until an attempt carries it, then given once and never again.
+  let followUp: { state: "pending" } | Omit<FollowUpOutcome, "record"> | null =
+    deps.followUp === undefined ? null : { state: "pending" };
 
-  while (!isGreen(cycle) && attempts.length < deps.cap && deps.abortSignal?.aborted !== true) {
-    const classification = classifyRepair(cycle);
+  while (attempts.length < deps.cap && deps.abortSignal?.aborted !== true) {
+    const owed: OwedFollowUp | undefined =
+      isGreen(cycle) && followUp?.state === "pending" ? deps.followUp : undefined;
+    if (isGreen(cycle) && owed === undefined) break;
+    const classification = owed === undefined ? classifyRepair(cycle) : null;
     if (
-      classification.kind === "setup" ||
-      classification.kind === "infrastructure" ||
-      classification.kind === "instrument" ||
-      classification.kind === "held-expectation"
+      classification !== null &&
+      (classification.kind === "setup" ||
+        classification.kind === "infrastructure" ||
+        classification.kind === "instrument" ||
+        classification.kind === "held-expectation")
     ) {
       await deps.evidence.record({
         type: "session-stopped",
@@ -192,10 +234,24 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
     const failure = await tryResolve(deps, {
       attempt,
       cap: deps.cap,
-      gateOutput: describeFailuresForModel(cycle, failingAtBase),
+      gateOutput: owed === undefined ? describeFailuresForModel(cycle, failingAtBase) : "",
       cycle,
       rejected,
+      ...(owed === undefined ? {} : { followUp: owed.brief }),
     });
+    if (owed !== undefined)
+      followUp = {
+        identity: owed.identity,
+        state: failure?.includes("repair stopped:") === true ? "withheld" : "given",
+        attempt: failure?.includes("repair stopped:") === true ? null : attempt,
+        accepted: null,
+        reason:
+          failure === null
+            ? "given once the gates were green"
+            : failure.includes("repair stopped:")
+              ? failure
+              : `given, and the attempt produced nothing to judge: ${failure}`,
+      };
 
     if (failure !== null) {
       // The workspace is in an unknown state after a failed attempt, so it goes back to the
@@ -258,6 +314,8 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
       respecification,
       ratchetRecord: recorded.record.payloadDigest,
     });
+    if (owed !== undefined && followUp !== null && followUp.state === "given")
+      followUp = { ...followUp, accepted: decision.accepted };
 
     if (!decision.accepted) {
       const kept = await keepRejectedCandidate(
@@ -286,6 +344,27 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
     rejected = null;
   }
 
+  const followUpOutcome =
+    deps.followUp === undefined || followUp === null
+      ? null
+      : await recordFollowUp(
+          deps,
+          followUp.state === "pending"
+            ? {
+                identity: deps.followUp.identity,
+                state: "withheld",
+                attempt: null,
+                accepted: null,
+                reason:
+                  deps.abortSignal?.aborted === true
+                    ? "model work ended before it could be given"
+                    : !isGreen(cycle)
+                      ? "the gates were not green when the attempts ended, so the attempts went to what they measured"
+                      : `no attempt was left under the cap of ${deps.cap}`,
+              }
+            : followUp,
+        );
+
   const baseComparison = await judgeAgainstBase(deps, cycle, baseline);
 
   if (isGreen(cycle) && baseComparison.decision.accepted) {
@@ -297,6 +376,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
       attempts,
       baseComparison,
       escalation: null,
+      followUp: followUpOutcome,
     };
   }
 
@@ -309,6 +389,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
     attempts,
     baseComparison,
     escalation,
+    followUp: followUpOutcome,
   };
 
   async function snapshot(
@@ -364,6 +445,25 @@ async function judgeAgainstBase(
   });
 
   return { decision, respecification, ratchetRecord: recorded.record.payloadDigest };
+}
+
+/** What became of the owed follow-up, on the chain; the brief it was given is the attempt's own. */
+async function recordFollowUp(
+  deps: AutoResolveDependencies,
+  outcome: Omit<FollowUpOutcome, "record">,
+): Promise<FollowUpOutcome> {
+  const recorded = await deps.evidence.record({
+    type: "verification-command",
+    actor: "harness",
+    provenance: ["tool-output"],
+    payload: asJsonValue({
+      rule: "outcome-follow-up-v1",
+      ...outcome,
+      limitation:
+        "given means one attempt carried the brief and its candidate was judged as any repair's is; it does not settle the work it names, which no sealed check states",
+    }),
+  });
+  return { ...outcome, record: recorded.record.payloadDigest };
 }
 
 async function tryResolve(

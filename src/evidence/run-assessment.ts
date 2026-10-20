@@ -70,13 +70,16 @@ export async function recordRunAssessment(
     // The last stop of a loop. A repair attempt withheld for want of budget is recorded as a
     // stop too, but it never ran a loop and its reason is not a lifecycle; naming it here put a
     // record beside a lifecycle it does not carry, and the bundle's own verifier refused it.
+    // A follow-up given once the gates were green, whose candidate was not kept, changed nothing
+    // delivered, so its stop is not the run's lifecycle either.
     lifecycleRecord:
       evidence.records().findLast((entry) => {
         if (entry.type !== "session-stopped") return false;
-        const stopReason = (
-          evidence.payloads().get(entry.payloadDigest) as { stopReason?: unknown }
-        )?.stopReason;
-        return (loopLifecycles as readonly unknown[]).includes(stopReason);
+        const stopped = evidence.payloads().get(entry.payloadDigest) as
+          | { stopReason?: unknown; followUp?: unknown }
+          | undefined;
+        if (stopped?.followUp === true && !followUpKept(evidence)) return false;
+        return (loopLifecycles as readonly unknown[]).includes(stopped?.stopReason);
       })?.payloadDigest ?? null,
     lifecycle,
     cancelled,
@@ -232,4 +235,18 @@ function hypothesesOnly(independent: {
     independent.regression === "pass" &&
     independent.goalAcceptance?.obligations.length === 0
   );
+}
+
+/** Whether the run's follow-up, where one was given, left a candidate the ratchet kept. */
+function followUpKept(evidence: EvidenceRecorder): boolean {
+  const recorded = evidence
+    .records()
+    .map(
+      (entry) =>
+        evidence.payloads().get(entry.payloadDigest) as
+          | { rule?: unknown; state?: unknown; accepted?: unknown }
+          | undefined,
+    )
+    .findLast((payload) => payload?.rule === "outcome-follow-up-v1");
+  return recorded?.state === "given" && recorded.accepted === true;
 }

@@ -23,6 +23,7 @@ import {
   relationText,
   sentencesQuoted,
   taskSentences,
+  thrownIn,
   unreviewedRequirements,
   withCoverageReview,
   withPlannedCheck,
@@ -117,6 +118,34 @@ describe("a planned check as the harness runs it", () => {
     expect(ran.stdout).toBe(ran.expected);
     expect(ran.stdout.split("\n")[0]).toBe('{"input":"x","threw":true}');
     expect(ran.stderr).toMatch(/case 1 threw: TypeError: not a number/);
+  });
+
+  it("names a case thrown in the program's own code, or where no frame names a file, on its line", () => {
+    // The project's own throw keeps the plain line a declared throw expects; the program's does not.
+    const ran = run(
+      built({
+        program:
+          "import { classify } from './value.mjs';\nexport default (n) => {\n  if (n === 1) throw 'a string';\n  if (n === 2) return 'size' in classify(n).size;\n  return classify(n);\n};\n",
+        cases: [
+          { input: "x", throws: true },
+          { input: 2, throws: true },
+          { input: 1, throws: true },
+        ],
+      }),
+    );
+    expect(ran.exitCode).toBe(0);
+    expect(ran.stdout.split("\n").slice(0, 3)).toEqual([
+      '{"input":"x","threw":true}',
+      '{"input":2,"threw":true,"thrownIn":"check-program"}',
+      '{"input":1,"threw":true,"thrownIn":"unattributed"}',
+    ]);
+    expect(ran.stdout.split("\n").map(thrownIn).slice(0, 3)).toEqual([
+      "outside-program",
+      "check-program",
+      "unattributed",
+    ]);
+    expect(thrownIn('{"input":3,"result":"small"}')).toBeNull();
+    expect(ran.stdout).not.toBe(ran.expected);
   });
 
   it("reads undefined as null at every depth, as the tool's description says", () => {
@@ -797,5 +826,52 @@ describe("the coverage review", () => {
         },
       }),
     ).toThrow(/whose inputs are not strings/);
+  });
+});
+
+describe("the statements an outcome keeps", () => {
+  it("keeps every version of a check that stated it, with each case's input, expectation and role", () => {
+    const call = {
+      id: "example",
+      purpose: "preserve" as const,
+      requirementId: "scheme",
+      requirement: "a scheme of any case links",
+      program: "import { parse } from './p.mjs';\nexport default (text) => parse(text);\n",
+      why: "the task names it",
+    };
+    const first = withPlannedCheck(null, {
+      ...call,
+      cases: [{ input: "(See hTtPS://x.)", expected: { hasLink: true } }],
+    });
+    // Declared again: the task's input moved to an easier one, the words unchanged.
+    const again = withPlannedCheck(first, {
+      ...call,
+      cases: [{ input: "<hTtPS://x>", expected: { hasLink: true } }],
+    });
+    expect(again.checks.map((one) => one.cases)).toEqual([
+      [{ input: "<hTtPS://x>", expected: { hasLink: true } }],
+    ]);
+    expect(again.outcomes).toEqual([
+      {
+        requirementId: "scheme",
+        quote: null,
+        role: "keep",
+        declaredBy: ["example"],
+        statements: [
+          {
+            check: "example",
+            version: 1,
+            quote: null,
+            cases: [{ input: "(See hTtPS://x.)", expected: '{"hasLink":true}', role: "keep" }],
+          },
+          {
+            check: "example",
+            version: 2,
+            quote: null,
+            cases: [{ input: "<hTtPS://x>", expected: '{"hasLink":true}', role: "keep" }],
+          },
+        ],
+      },
+    ]);
   });
 });

@@ -1374,9 +1374,32 @@ function collectChecks(directory) {
     const previousAssessment =
       prior.filter((candidate) => candidate.type === "run-assessment").at(-1)?.sequence ?? -1;
     const thisRun = prior.filter((candidate) => candidate.sequence > previousAssessment);
+    // The cycle the workspace was left in: the last retry the ratchet accepted, or the first cycle.
+    // A rolled-back attempt's gate runs come later on the chain and measured a tree that was undone,
+    // so they are not what the assessment rests on. A chain whose gate runs name no cycle keeps
+    // reading the latest runs, as it always did.
+    const runsOfThisRun = thisRun.filter((candidate) => candidate.type === "gate-run");
+    const cycled = runsOfThisRun.some(
+      (candidate) => typeof payloads.get(candidate.payloadDigest)?.attempt === "number",
+    );
+    const settledCycle = Math.max(
+      0,
+      ...thisRun
+        .filter((candidate) => candidate.type === "ratchet-decision")
+        .map((candidate) => payloads.get(candidate.payloadDigest))
+        .filter(
+          (decision) =>
+            decision?.scope === "retry" &&
+            decision.accepted === true &&
+            typeof decision.attempt === "number",
+        )
+        .map((decision) => decision.attempt),
+    );
     const latestGates = new Map(
-      thisRun
-        .filter((candidate) => candidate.type === "gate-run")
+      runsOfThisRun
+        .filter(
+          (candidate) => !cycled || payloads.get(candidate.payloadDigest)?.attempt === settledCycle,
+        )
         .map((candidate) => [
           payloads.get(candidate.payloadDigest)?.gateId,
           candidate.payloadDigest,
@@ -1388,11 +1411,18 @@ function collectChecks(directory) {
       [...latestGates.values()].every((digest) => gateRecords.includes(digest));
     const measured = Object.assign({}, ...gates.map((gate) => gate?.measures ?? {}));
     consistent &&= inputs?.changedFiles === (measured.changedFiles ?? 0);
-    // The last stop of a loop: a withheld repair attempt is recorded as a stop without one.
+    // The last stop of a loop: a withheld repair attempt is recorded as a stop without one, and a
+    // follow-up whose candidate was not kept changed nothing delivered, so its stop is not it.
+    const followUp = thisRun
+      .map((candidate) => payloads.get(candidate.payloadDigest))
+      .filter((payload) => payload?.rule === "outcome-follow-up-v1")
+      .at(-1);
+    const followUpKept = followUp?.state === "given" && followUp.accepted === true;
     const stop = thisRun
       .filter(
         (candidate) =>
           candidate.type === "session-stopped" &&
+          !(payloads.get(candidate.payloadDigest)?.followUp === true && !followUpKept) &&
           loopLifecycles.includes(payloads.get(candidate.payloadDigest)?.stopReason),
       )
       .at(-1);

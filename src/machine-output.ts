@@ -89,7 +89,20 @@ export interface MachineResult {
     readonly dropped: readonly { readonly check: string; readonly reason: string }[];
     readonly revision:
       | { readonly outcome: "not-needed" }
-      | { readonly outcome: "ran"; readonly admitted: readonly string[] }
+      | {
+          readonly outcome: "ran";
+          readonly admitted: readonly string[];
+          /** Added in 14.5.0: checks the revision declared again as changes, with the planner's why. */
+          readonly reclassified?: readonly {
+            readonly check: string;
+            readonly requirement: string;
+            readonly from: "preserve";
+            readonly to: "change";
+            readonly justification: string;
+          }[];
+          /** Added in 14.5.0: how the revision's planner stopped. */
+          readonly stopReason?: string;
+        }
       | { readonly outcome: "withheld"; readonly remainingMs: number; readonly neededMs: number }
       | null;
     /**
@@ -102,6 +115,40 @@ export interface MachineResult {
       readonly quotedByAdmitted: readonly number[];
       readonly quotedWithoutCheck?: readonly number[];
     } | null;
+    /**
+     * Added in 14.5.0: sealed planned requirements no retained check covers once admission and
+     * the revision are done, each with the refused checks, why, and the next useful action.
+     */
+    readonly uncovered?: readonly {
+      readonly id: string;
+      readonly quote: string | null;
+      readonly rejected: readonly { readonly check: string; readonly reason: string }[];
+      readonly reason: string;
+      readonly nextAction: string;
+    }[];
+    /**
+     * Added in 14.5.0: requested outcomes (a requirement, the task's words a check quoted, the role
+     * of its cases) no retained check states, each with the checks declared for it and why none
+     * does, and the next useful action; a requirement can be covered while one of these is not.
+     */
+    readonly unresolvedOutcomes?: readonly {
+      readonly id: string;
+      readonly requirement: string;
+      readonly quote: string | null;
+      readonly role: "change" | "keep";
+      readonly checks: readonly { readonly check: string; readonly reason: string }[];
+      /**
+       * The inputs the task names that the outcome was stated with, each with the result the
+       * planner first expected and the base's answer where a base run disputed it.
+       */
+      readonly taskInputs?: readonly {
+        readonly input: unknown;
+        readonly expected: string;
+        readonly base: string | null;
+      }[];
+      readonly reason: string;
+      readonly nextAction: string;
+    }[];
   };
   /** Present only where criteria planning ended the run before implementation. */
   readonly planning?: {
