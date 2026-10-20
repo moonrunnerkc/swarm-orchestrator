@@ -767,7 +767,7 @@ describe("a loop that repeats itself", () => {
         repeats: 3,
         input: '{"command":"cat package.json"}',
         output: "exit code: 0",
-        writes: false,
+        landed: false,
         intervention: "feedback",
       },
       {
@@ -777,7 +777,7 @@ describe("a loop that repeats itself", () => {
         repeats: 3,
         input: '{"command":"cat package.json"}',
         output: "exit code: 0",
-        writes: false,
+        landed: false,
         intervention: "stop",
       },
     ]);
@@ -886,7 +886,49 @@ describe("a loop that repeats itself", () => {
       .map((message) => (message.role === "tool" ? (message.outcomes[0]?.output ?? "") : ""));
     expect(answers[0]).toContain("wrote 1 byte");
     expect(answers[1]).toContain("[harness notice: already answered]");
+    expect(answers[1]).toContain("No other writing tool call has landed between the two");
     expect(answers[1]).not.toContain("No writing tool call has landed since");
+  });
+
+  it("answers a shell check repeated after an edit, with the shell named as a tool that may write", async () => {
+    // The worker names the shell among the tools whose call may write. That classes the check,
+    // not the state its answer concerns: run again after an edit landed, it is a new question
+    // and is answered; run a third time with nothing else between, it is a repeat of a call that
+    // landed, and the notice says no other writing call landed between the two.
+    const check = (callId: string) =>
+      respondWithToolCalls("checking", [
+        { callId, toolName: "shell", input: { command: "node --check src/rules.ts" } },
+      ]);
+    const harness = createHarness(
+      [
+        check("before"),
+        respondWithToolCalls("edit", [
+          {
+            callId: "w",
+            toolName: "edit",
+            input: { path: "src/rules.ts", find: "a", replace: "b" },
+          },
+        ]),
+        check("after"),
+        check("again"),
+        respondWithText("done"),
+      ],
+      {
+        toolInvoker: createRecordingToolInvoker((invocation) =>
+          invocation.toolName === "edit" ? "replaced 1 occurrence(s)" : "exit code: 0",
+        ),
+        stall: { writers: ["edit", "write", "shell"] },
+      },
+    );
+    const outcome = await runAgentLoop("fix the check", harness.deps);
+    expect(outcome.stopReason).toBe("completed");
+    const answers = outcome.messages
+      .filter((message) => message.role === "tool")
+      .map((message) => (message.role === "tool" ? (message.outcomes[0]?.output ?? "") : ""));
+    expect(answers[2]).toBe("exit code: 0");
+    expect(answers[3]).toContain("[harness notice: already answered]");
+    expect(answers[3]).toContain("No other writing tool call has landed between the two");
+    expect(harness.events.some((event) => event.type === "stall")).toBe(false);
   });
 
   it("grants no second notice to a run taken up again with the first in its history", async () => {
