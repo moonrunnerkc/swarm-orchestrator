@@ -1,0 +1,69 @@
+diff --git a/src/index.ts b/src/index.ts
+index a532468..4cdef9d 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -972,8 +972,12 @@ export class Minimatch {
+     // check the tail
+     let fileTailMatch: number = 0
+     if (tail.length) {
+-      // if head + tail > file, then we cannot possibly match
+-      if (tail.length + fileIndex > file.length) return false
++      // partial: if we don't have enough file for head + tail, the path could
++      // still extend to become a valid match, so return true in partial mode.
++      if (tail.length > 0 && tail.length > file.length - fileIndex) {
++        if (partial) return true
++        return false
++      }
+ 
+       // try to match the tail
+       let tailStart = file.length - tail.length
+@@ -987,10 +991,14 @@ export class Minimatch {
+           file[file.length - 1] !== '' ||
+           fileIndex + tail.length === file.length
+         ) {
++          // If partial, the tail could be satisfied by future path segments
++          if (partial) return true
+           return false
+         }
+         tailStart--
+         if (!this.#matchOne(file, tail, partial, tailStart, 0)) {
++          // same: in partial mode allow it
++          if (partial) return true
+           return false
+         }
+         fileTailMatch = tail.length + 1
+@@ -1018,6 +1026,9 @@ export class Minimatch {
+           return false
+         }
+       }
++      // partial: head matched but we ran out of file before body/tail fully
++      // resolved. The path could extend to make this valid.
++      if (!sawSome && partial) return true
+       return sawSome
+     }
+ 
+@@ -1047,7 +1058,7 @@ export class Minimatch {
+       b[1] = fileLength - ((nonGsPartsSums[i--] as number) + b[0].length)
+     }
+ 
+-    return !!this.#matchGlobStarBodySections(
++    const sub = this.#matchGlobStarBodySections(
+       file,
+       bodySegments,
+       fileIndex,
+@@ -1056,6 +1067,15 @@ export class Minimatch {
+       0,
+       !!fileTailMatch,
+     )
++    if (sub !== null && sub !== false) {
++      return true
++    }
++    // In partial mode: the head matched, but we ran out of file segments to
++    // match body/tail. The path could still extend further and make this valid.
++    // Only return false if we found a contradictionary dot in the unconsumed
++    // portion or there are actual contradiction markers.
++    if (partial) return true
++    return false
+   }
+ 
+   // return false for "nope, not matching"

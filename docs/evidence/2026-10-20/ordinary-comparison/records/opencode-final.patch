@@ -1,0 +1,90 @@
+diff --git a/src/index.ts b/src/index.ts
+index a532468..eaed3d7 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -973,7 +973,24 @@ export class Minimatch {
+     let fileTailMatch: number = 0
+     if (tail.length) {
+       // if head + tail > file, then we cannot possibly match
+-      if (tail.length + fileIndex > file.length) return false
++      if (tail.length + fileIndex > file.length) {
++        // In partial mode, if there's not enough file content for the full tail,
++        // check if the present segments are valid prefix candidates.
++        if (partial) {
++          for (let i = fileIndex; i < file.length; i++) {
++            const f = String(file[i])
++            if (
++              f === '.' ||
++              f === '..' ||
++              (!this.options.dot && f.startsWith('.'))
++            ) {
++              return false
++            }
++          }
++          return true
++        }
++        return false
++      }
+ 
+       // try to match the tail
+       let tailStart = file.length - tail.length
+@@ -987,6 +1004,21 @@ export class Minimatch {
+           file[file.length - 1] !== '' ||
+           fileIndex + tail.length === file.length
+         ) {
++          // In partial mode, if the tail can't match at the end, check if
++          // the present segments could be a valid prefix.
++          if (partial) {
++            for (let i = fileIndex; i < file.length - fileTailMatch; i++) {
++              const f = String(file[i])
++              if (
++                f === '.' ||
++                f === '..' ||
++                (!this.options.dot && f.startsWith('.'))
++              ) {
++                return false
++              }
++            }
++            return true
++          }
+           return false
+         }
+         tailStart--
+@@ -1018,6 +1050,12 @@ export class Minimatch {
+           return false
+         }
+       }
++      // In partial mode, if we don't have a tail match but the file
++      // has segments after the head that are all valid (no dots etc.),
++      // then this could be a prefix of a valid match.
++      if (!sawSome && partial) {
++        return true
++      }
+       return sawSome
+     }
+ 
+@@ -1093,6 +1131,12 @@ export class Minimatch {
+           return false
+         }
+       }
++      // In partial mode, remaining segments that pass the dot check
++      // can be considered a valid prefix even if we haven't seen a tail match
++      // and haven't matched any segments yet.
++      if (!sawTail && partial) {
++        return true
++      }
+       return sawTail
+     }
+ 
+@@ -1134,7 +1178,10 @@ export class Minimatch {
+ 
+       fileIndex++
+     }
+-    // walked off. no point continuing
++    // walked off. In partial mode with valid segments, this can still be a match.
++    if (partial) {
++      return true
++    }
+     return null
+   }
+ 

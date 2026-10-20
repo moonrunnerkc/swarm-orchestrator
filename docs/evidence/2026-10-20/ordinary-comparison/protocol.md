@@ -100,3 +100,13 @@ above, the costs, the limits of one pair, and the exact commits.
 ---
 
 ## Amendments
+
+### 1. 2026-10-20, after the second launch: closed
+
+Two launches, 11.2 of the 20 minutes of arm wall, no allowance left; nothing else will be
+launched under this protocol. Neither arm delivered a correct change under the frozen rule: both
+exact trees pass the hidden test file, the visible check and every scored probe row, and both fail
+the project's `npm test` on tap's 100% coverage rule, which the task text names. By the rule fixed
+above there is **no demonstrated advantage**. Nothing in the product changed during either launch;
+no planning rule is added and nothing is rerun. See [launches.md](launches.md) and
+[README.md](README.md).
