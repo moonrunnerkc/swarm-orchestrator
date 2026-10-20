@@ -2548,6 +2548,11 @@ describe("a worker that finishes with a requested outcome unresolved", () => {
     expect(stdout).toContain(
       "follow-up on them: given once, as attempt 1; the ratchet accepted what it left",
     );
+    // Nothing was failing: the follow-up is not counted as a repair.
+    expect(
+      (result?.outcome as { interventions?: { repairAttempts?: number } } | undefined)
+        ?.interventions?.repairAttempts,
+    ).toBe(0);
   }, 200_000);
 
   it("lets the worker leave correct code as it is when the planner's expectation is the wrong one, and asks only once", async () => {
