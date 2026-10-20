@@ -107,3 +107,13 @@ rerun on the strength of this result.
 ---
 
 ## Amendments
+
+### 1. 2026-10-20, after the launch: closed
+
+One launch, 13.0 agent-minutes, one readiness sequence, 13.1 of the 20 minutes used; no allowance
+remains and nothing else will be launched under this protocol. The launch is a valid product
+result: the server completed every request (149 in the window, all HTTP 200, the longest 47.1 s),
+readiness admitted it in 3.1 s, no request stalled and nothing was halted. The patch passes the
+frozen hidden oracle and fails the task's own words on `ftp://`, which the product's generated
+check detected and the product reported; see [launches.md](launches.md) and [README.md](README.md)
+section 6. Nothing in the product changed during or after the launch.

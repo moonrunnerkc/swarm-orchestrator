@@ -154,3 +154,102 @@ Whether the restart was needed is not established: the wedged runner had already
 whether the server's Go layer would have dispatched the next request is unknown. The restart is
 recorded as the one authorized recovery, and the readiness sequence of the trial is the first
 inference after it.
+
+## 6. The trial (live model)
+
+[protocol.md](protocol.md), registered at `964f7c721`; the manifest frozen at `ebbc24c4f`;
+[launches.md](launches.md). One launch of Swarm with `--plan-checks` on build `826e60e83`, the
+same base, task text, visible check, model and limits as the earlier trial's launches; not given
+the reference, the hidden evaluator, an earlier candidate or a developer-written check. Records:
+[launch-1/record.json](launch-1/record.json) (the runner's, with the readiness sequence and the
+probe totals), [launch-1/final.patch](launch-1/final.patch), [probe-launch-1.json](probe-launch-1.json)
+(the frozen behaviour probe on the exact patch), and the product's stdout, stderr and both session
+chains, restorable with `node scripts/evidence-pack.mjs restore launch-1/packed-derived/launch-1-streams`.
+**P** is the planning chain `20261020T045117-41e2cc-plan`, **R** the run chain; times are seconds
+from the run's first record.
+
+**Inference was restored.** The readiness sequence, the first inference after the server's
+recovery, completed in 3.1 s: the chat request answered in 2.41 s (the runner loading the model
+inside it), the tool-call request in 0.47 s with a well-formed call of the probe's tool, the
+tool-result request in 0.26 s; 753 tokens, recorded apart from the task's. During the launch the
+server answered all 146 of the product's requests (149 chat completions in the window, every one
+HTTP 200, median 1.8 s, p95 9.4 s, the longest 47.1 s, which was the planner's last call, closed by
+the planning wall at 47.2 s) and logged no parse failure. The lease was held throughout, the stall
+watch ran on the arm's stream and never found an open request quiet past 180 s, and no halt was
+recorded. These are the pass paths; the detecting paths were exercised on fixtures only (section 3).
+
+**The delivered patch** removes the `i` flag from the GFM `url` rule and spells the schemes
+`(?:[fF][pP][tT]|[hH][tT][tT][pP][sS]?)?`, and does the same in the `text` rule's lookahead.
+`[fF][pP][tT]` matches "fpt", so bare `ftp://` no longer links. Scored on the exact bytes:
+
+| | result |
+| --- | --- |
+| the task's example `(See hTtPS://example.com/fhqwhgads.)` | **linked, trailing period excluded**, as upstream |
+| `www.` (lower links; `Www.`, `WWW.` plain) | as upstream |
+| email, inline `http://`, `HTTP://FOO.COM`, `<hTtPS://example.com/>` | as upstream |
+| bare `ftp://example.com/file`, inline `ftp://files.example.com/a.txt` | **not linked**; upstream links both |
+| project test suite | 1,713 of 1,713 pass (the runner's visible verdict and the product's `tests` gate) |
+| visible check | passes |
+| hidden oracle (upstream autolink spec examples) | **pass**: the spec examples hold no `ftp://` case |
+| the product | **`not accepted`, exit 1**: "blocking gate(s) failed: task-diagnostics; the change was executed and failed"; verdict `task: accepted` (the pinned goal checks), `behavioral: fail` |
+
+So by the frozen oracle the patch passes, and by the task's own words ("without changing how
+http://, https:// or ftp:// are detected") it does not. The oracle's gap on `ftp://` is the same
+one the earlier trial's launch 1 found and the probe exists for. The product's own report is the
+accurate one: it did not accept the patch, and said why.
+
+**What the planning did, record by record** (P 0 to P 424, R 2 `plan-checks-v1`, R 12 the brief):
+
+| step | what the records hold |
+| --- | --- |
+| first round | 33 steps, ended at its share of the wall (252 s, `max-wall-time`) with three checks declared: `email-autolink-working` (admitted, control unestablished: every case gave the same answer on the base), `www-case-sensitive` (refused `does-not-detect`: it passes on the base), `scheme-autolink-case-insensitive` version 1 (refused `disagrees-with-base`: case 1, the task's own example, expected linked, the base gave not-linked), then re-declared quoting only "Scheme autolinks must remain case-insensitive for the scheme" with four kept cases (`https://example.com`, `HTTP://example.com`, `Ftp://ftp.example.net/file`, `hTtP://Mixed.Example.com/path`), admitted. |
+| the requested example | **kept as an outcome, not as a check.** `scheme-autolink-case-insensitive#1` (quoting the task's sentence with the example) stays unresolved: its task input `(See hTtPS://example.com/fhqwhgads.)` with the first expectation `linked` and the base's answer `not-linked`; the interpretation trail records version 1.3 dropping that input (`from: "linked", to: null`). `#2` (the shorter quote, no task input) is covered by the admitted version. The brief given to the worker names the input, the first expectation and the base's answer, and says to run the project on it and compare with the task's words. |
+| revision | **ran**: `planned-check-revision-v2` `outcome: ran`, 84.0 s remaining against 60 s needed, nothing borrowed (limit 84 s), the measured admission 0 ms (the round's last base run was reused), the longest trial 32.4 s, the reserve 124.8 s. It stopped at `max-wall-time` after 28 steps having declared nothing: the `www` outcome stays uncovered ("the revision's allowance ended before it declared a replacement"). The coverage review was withheld. Planning: 336 s, 61 steps, 1,717,899 tokens. |
+| implementation | 27 steps, 474,190 tokens, completed at R 197 (+444 s) with the claim above. The worker's own runs of the task's example linked it. |
+| the generated check at work | every gate cycle: `task-acceptance` (the visible check) passed and **`task-diagnostics` failed**: "generated check scheme-autolink-case-insensitive rejected ... line 3 should be `{"input":"Ftp://ftp.example.net/file","result":"linked"}` but was `... "not-linked"`; case(s) 3 are behaviour the task keeps, which the unchanged base gave as expected". A live detection of the regression, by a kept case of an admitted check. |
+| repair | attempt 1 (R 197 to R 489, +627 s): 40 steps, `max-steps`, 906,557 tokens; the ratchet accepted the candidate (one file, two lines, as before); diagnostics failed identically. Attempt 2 (to R 609, +712 s): 16 steps, `max-wall-time`, 291,211 tokens; its first words name the `[fF][pP][tT]` class as the problem; the ratchet accepted; diagnostics failed identically. Escalated at 2 of 3 attempts: the run's wall ended. **No repair improved correctness**: the final bytes carry the same class. |
+| follow-up | **withheld**: `outcome-follow-up-v1` `state: "withheld"`, "model work ended before it could be given". It is owed once the gates are green, and they never were. |
+| final verification | completed on the delivered tree: the last cycle's gates (R 609 to R 635), independent verification, two run assessments (R 647, R 658), exit 1 at +780 s; the bundle's own verifier passes every check. |
+
+**Exercised live, with what each showed:** readiness admission (pass path); the lease and the
+stall watch (running, nothing to find); the task-input anchoring (the example kept as an outcome
+with its first expectation and the base's answer, the drop recorded, the brief naming it); revision
+scheduling (the revision ran inside the allowance without borrowing); live detection by a
+generated check of a kept behaviour the change broke; the repair loop under the ratchet; accurate
+reporting. **Not exercised live:** the follow-up (withheld: never green); a stall, its halt and the
+probe after it; a readiness refusal; recovery; a revision that declares a replacement; a repair
+that improves correctness; `adopts-base-answer`.
+
+**The earliest concrete product failure** is in implementation: the worker rewrote the scheme
+class as `[fF][pP][tT]`, the same transposition as the earlier trial's ordinary launch, and its own
+checks did not run bare `ftp://` through the rule it changed. Planning did its part this time: the
+admitted check held a kept `Ftp://` case that failed on the candidate. The repair did not do its
+part: 56 steps and 148 s across two attempts did not change the two characters, though attempt 2
+had named them.
+
+**Wall and tokens.** Probes: 3.1 s, 753 tokens. Task: 779.9 s (planning 336 s, implementation 108 s,
+repairs and gates 335 s), 3,389,857 tokens (planning 1,717,899; implementation 474,190; repairs
+1,197,768), 146 calls, none with unknown usage. Preparation 21.4 s and scoring apart.
+
+## 7. Remaining limitations
+
+- The detecting paths (a stall, the halt, the after-stall probe, a readiness refusal, recovery)
+  are shown on fixtures through the real runner; no live server failed under the new harness.
+- The stall watch reads the Swarm arm's stream only; OpenCode's names no requests, so for that arm
+  the wall is still the only bound on a request.
+- The request deadline is a declared number from recorded latencies, not a property of the
+  server: a healthy request above 180 s on another model or prompt would be read as a stall.
+- The readiness tool call asks the model to call a tool; a model that answers in prose fails
+  readiness, which is the intended reading of the tool path but can refuse a working server on a
+  flaky answer. Two sequences are allowed for that reason.
+- The hidden oracle does not cover `ftp://`; the frozen behaviour probe does. The product's own
+  generated check did too, this time; that it will on another launch is not established.
+- The restart's necessity is not established (section 5).
+- Whether the parse failure of the earlier launch caused its wedge is not established (section 1).
+
+## Next action
+
+Read the repair's two attempts on this launch (R 197 to R 609: what the worker ran, what it edited,
+why 40 steps and then the wall passed with the two characters named and unchanged), and from that
+record decide what, if anything, the repair brief or its step budget should carry before any
+further launch; no planning rule is added on this result.

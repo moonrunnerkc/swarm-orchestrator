@@ -64,4 +64,7 @@ is not expected to change.
 
 ## Amendments
 
-(none yet)
+None. Of the declared files, `scripts/comparison/control.mjs`, `scripts/comparison/endpoint.test.mjs`
+and `scripts/comparison/control.test.mjs` were not changed: the recovery's readiness sits in
+`run.mjs` beside the dispatch's, and the endpoint and control modules' behaviour did not change.
+No file outside the declaration was edited.
