@@ -18,10 +18,12 @@
  * reads the output's meaning; a result is compared by a hash so no copy of it is retained (the
  * ledger already holds it). Which calls write is the caller's to say: this module knows no tool,
  * and "may write" is all it is told, since the harness cannot see what a shell command did once
- * it ran. So the notices claim only what the tracker knows: of a repeated inspection, that no
- * call that may write has landed since (its generation shows it); of a repeated call that may
- * write, only that it was made before with the same answer. The same run's second attempt was
- * handed the first wording for a repeated write, and it was false of it.
+ * it ran. That fact decides only whether a call that lands starts a new workspace; which
+ * workspace a call's answer is about is the generation it ran against, whatever the call could
+ * have changed. So a shell check repeated after an edit is a new question, as it is after the
+ * edit tool, while the same command repeated with nothing else landing between is a repeat. The
+ * notices claim only what a repeat establishes: of a call that did not land, that no writing
+ * call has landed since; of a call that landed, that no other one landed between the two.
  *
  * Pure text arithmetic, so it belongs in core and costs nothing ambient (invariant 8).
  */
@@ -60,8 +62,12 @@ export interface StallDetected {
   readonly input: string;
   /** The first line of the answer it kept getting, bounded, so the notice can name that too. */
   readonly output: string;
-  /** Whether the repeated call may change workspace files, as the caller classed it. */
-  readonly writes: boolean;
+  /**
+   * Whether the repeated call landed as one that may change workspace files: a successful call
+   * the caller classed as one that may write. A repeat of one establishes that no other such
+   * call landed between the two; a repeat of any other call, that none landed at all.
+   */
+  readonly landed: boolean;
 }
 
 /** How much of a repeated call and its answer a notice quotes back. */
@@ -92,17 +98,23 @@ const evidenceTrailer = /\n\[evidence record sha256:[0-9a-f]{64} kind [^\]]*\]$/
 export function createStallTracker(policy: StallPolicy = defaultStallPolicy): StallTracker {
   const seen: string[] = [];
   let repeats = 0;
-  // Which workspace an inspection's answer is about. Every write that lands starts the next
-  // one, so an inspection repeated after it is compared with nothing from before it. A write
-  // is keyed without it: the same write repeated with the same answer is still a repeat.
+  // Which workspace an answer is about. Every call that may write and lands starts the next
+  // one. An observation is looked up under the generation its call ran against and remembered
+  // under the one it left behind, so a later identical call is a repeat exactly when nothing
+  // else that may write landed between the two: an inspection or a denied call leaves the
+  // generation as it found it, and a call that landed is its own successor's only predecessor.
+  // Whether a call may write and which workspace its answer concerns are two facts; keying a
+  // call that may write without the generation conflated them, and a shell check repeated after
+  // an edit was compared with its answer from before the edit (33fbf1693).
   let generation = 0;
   return {
     observe(observation) {
-      const key = observationKey(observation, observation.writes === true ? null : generation);
-      const novel = !seen.includes(key);
-      seen.push(key);
+      const landed = observation.writes === true && !observation.failed;
+      const content = observationContent(observation);
+      const novel = !seen.includes(`${generation}\u0000${content}`);
+      if (landed) generation += 1;
+      seen.push(`${generation}\u0000${content}`);
       if (seen.length > policy.window) seen.shift();
-      if (observation.writes === true && !observation.failed) generation += 1;
       if (novel) {
         repeats = 0;
         return null;
@@ -114,7 +126,7 @@ export function createStallTracker(policy: StallPolicy = defaultStallPolicy): St
             repeats,
             input: excerpt(stableJson(observation.input) ?? "null"),
             output: excerpt(observation.output),
-            writes: observation.writes === true,
+            landed,
           }
         : null;
     },
@@ -132,30 +144,32 @@ export function createStallTracker(policy: StallPolicy = defaultStallPolicy): St
 /**
  * What the model is handed in place of an answer it already has. The answer's first line is
  * quoted so the two can be matched by eye, and the count says how long this has gone on. The
- * ledger holds the full result of every call, this one included. Of an inspection the notice
- * can add that no call which may write has landed since, because that is why it is a repeat; of
- * a call that may write, it cannot, since that call is one.
+ * ledger holds the full result of every call, this one included. The notice adds what the repeat
+ * establishes: of a call that did not land, that no writing call has landed since; of a call
+ * that landed, which is itself a writing call, that no other one landed between the two.
  */
 export function repeatedAnswerNotice(
   toolName: string,
   output: string,
   repeats: number,
-  repeated: { readonly writes: boolean } = { writes: false },
+  repeated: { readonly landed: boolean } = { landed: false },
 ): string {
   return (
     `[harness notice: already answered] This ${toolName} call is identical to one answered ` +
     `earlier in this conversation (${repeats === 1 ? "once" : `${repeats} times`} now), and its ` +
     `result is unchanged; it began: ${JSON.stringify(excerpt(output))}. The full result is above. ` +
-    (repeated.writes ? "" : "No writing tool call has landed since. ") +
+    (repeated.landed
+      ? "No other writing tool call has landed between the two. "
+      : "No writing tool call has landed since. ") +
     "Act on the answer you have: make the edit it calls for, try a different approach, or finish " +
     "with a summary that names exactly what is blocking you."
   );
 }
 
-function observationKey(observation: ToolObservation, generation: number | null): string {
+/** The call and its answer, without the generation: what two observations are compared on. */
+function observationContent(observation: ToolObservation): string {
   const output = observation.output.replace(evidenceTrailer, "");
   return [
-    generation === null ? "write" : String(generation),
     observation.toolName,
     stableJson(observation.input),
     observation.failed ? "failed" : "ok",
@@ -201,8 +215,8 @@ export const stallNoticePrefix = "[harness notice: repeated tool calls]";
 export function stallNotice(stall: StallDetected): string {
   return (
     `${stallNoticePrefix} The last ${stall.repeats + 1} ${stall.toolName} calls were calls ` +
-    "you had already made, with results you had already received" +
-    (stall.writes ? "" : ", and no writing tool call landed between them") +
+    "you had already made, with results you had already received, and no " +
+    `${stall.landed ? "other " : ""}writing tool call landed between them` +
     `. The repeated call was ${stall.toolName} ${stall.input} and its ` +
     `answer each time began: ${JSON.stringify(stall.output)}. Repeating it again will not change ` +
     "the answer: a search that matched nothing names something that is not in this workspace, " +

@@ -121,7 +121,7 @@ describe("the stall tracker", () => {
       repeats: 3,
       input: '{"path":".","pattern":"emitWsNeeded"}',
       output: "no match for /emitWsNeeded/",
-      writes: false,
+      landed: false,
     });
     expect(notice.startsWith(stallNoticePrefix)).toBe(true);
     expect(notice).toContain("The last 4 search calls");
@@ -205,14 +205,18 @@ describe("an answer given before an edit", () => {
       repeats: 3,
       input: "{}",
       output: "exit code: 0",
-      writes: false,
+      landed: false,
     });
     expect(stall).toContain("no writing tool call landed between them");
     expect(stall).not.toContain("nothing in the workspace changed");
   });
 });
 
-describe("a repeated call that may write", () => {
+describe("the state an answer concerns, apart from whether the call may write", () => {
+  // The shell is named as a tool whose call may write, since the harness cannot see what a
+  // command did. That says nothing about which workspace a command's answer is about: a check
+  // run before an edit answered about the workspace before it, and the same check after the edit
+  // is a new question, whatever the check itself could have changed.
   const write = (n: number) => ({
     toolName: "write",
     input: { path: "src/rules.ts", content: "export const a = 1;\n" },
@@ -220,52 +224,104 @@ describe("a repeated call that may write", () => {
     output: `wrote 20 bytes to src/rules.ts${trailer(n)}`,
     writes: true,
   });
+  const check = (n: number) => ({
+    toolName: "shell",
+    input: { command: "node --check src/rules.ts" },
+    failed: false,
+    output: `exit code: 0${trailer(n)}`,
+    writes: true,
+  });
+  const read = (n: number) => ({
+    toolName: "read",
+    input: { path: "src/rules.ts" },
+    failed: false,
+    output: `export const a = 1;${trailer(n)}`,
+  });
 
-  it("is still a repeat when its call and answer are the same, and the stall says it may write", () => {
-    // Repeated successful writes of the same bytes are one more thing the model is doing again;
-    // the detection stays. What may not be said of them is that no writing call landed.
+  it("answers a shell check repeated after an edit that landed, though the check may write", () => {
+    // 33fbf1693 keyed every call that may write without the generation, so this check was
+    // compared with its answer from before the edit and its fresh result was withheld.
+    const tracker = createStallTracker();
+    expect(tracker.observe(check(1))).toBeNull();
+    expect(tracker.observe(write(2))).toBeNull();
+    expect(tracker.observe(check(3))).toBeNull();
+    expect(tracker.repeats()).toBe(0);
+  });
+
+  it("answers an inspection repeated after a shell command that landed", () => {
+    const tracker = createStallTracker();
+    expect(tracker.observe(read(1))).toBeNull();
+    expect(tracker.observe(check(2))).toBeNull();
+    expect(tracker.observe(read(3))).toBeNull();
+    expect(tracker.repeats()).toBe(0);
+  });
+
+  it("still counts an inspection repeated with nothing between", () => {
+    const tracker = createStallTracker();
+    for (let n = 1; n <= 3; n += 1) tracker.observe(read(n));
+    expect(tracker.repeats()).toBe(2);
+  });
+
+  it("still counts a successful call that may write repeated with nothing else between, and says it landed", () => {
+    // Repeated successful writes of the same bytes, or the same shell command with the same
+    // answer, are one more thing the model is doing again; the detection stays. What a repeat
+    // of one establishes is that no other call that may write landed between the two.
     const tracker = createStallTracker();
     let stall = null;
     for (let n = 1; n <= 4; n += 1) stall = tracker.observe(write(n));
     expect(tracker.repeats()).toBe(3);
-    expect(stall).toMatchObject({ toolName: "write", repeats: 3, writes: true });
+    expect(stall).toMatchObject({ toolName: "write", repeats: 3, landed: true });
+    const commands = createStallTracker();
+    for (let n = 1; n <= 4; n += 1) stall = commands.observe(check(n));
+    expect(stall).toMatchObject({ toolName: "shell", repeats: 3, landed: true });
     const inspections = createStallTracker();
     for (let n = 1; n <= 4; n += 1) stall = inspections.observe(inspection(n));
-    expect(stall).toMatchObject({ toolName: "shell", repeats: 3, writes: false });
+    expect(stall).toMatchObject({ toolName: "shell", repeats: 3, landed: false });
   });
 
-  it("is told its result is unchanged, not that no writing tool call has landed since", () => {
-    // Writing calls had landed: the repeated call is one of them. The notice for an inspection
-    // may say no writing call landed since, because the tracker's generation shows it; the
-    // notice for a call that may write says only what is known of it.
+  it("counts a denied call repeated unchanged, as one that did not land", () => {
+    const tracker = createStallTracker();
+    const denied = (n: number) => ({ ...check(n), failed: true, output: `denied${trailer(n)}` });
+    let stall = null;
+    for (let n = 1; n <= 4; n += 1) stall = tracker.observe(denied(n));
+    expect(tracker.repeats()).toBe(3);
+    expect(stall).toMatchObject({ toolName: "shell", repeats: 3, landed: false });
+  });
+
+  it("says in the notices what a repeat establishes: no other writing call landed between", () => {
+    // A repeat of a call that landed is one of the writing calls, so "no writing call landed
+    // since" would be false of it; what the same generation shows is that no other one did. A
+    // repeat of a call that did not land, denied or an inspection, shows none landed at all.
     const repeatedWrite = repeatedAnswerNotice("write", `wrote 20 bytes${trailer(1)}`, 1, {
-      writes: true,
+      landed: true,
     });
     expect(repeatedWrite).toContain("[harness notice: already answered]");
     expect(repeatedWrite).toContain("its result is unchanged");
+    expect(repeatedWrite).toContain("No other writing tool call has landed between the two");
     expect(repeatedWrite).not.toContain("No writing tool call has landed since");
     const repeatedInspection = repeatedAnswerNotice("read", `import x${trailer(2)}`, 1, {
-      writes: false,
+      landed: false,
     });
     expect(repeatedInspection).toContain("No writing tool call has landed since");
+    expect(repeatedInspection).not.toContain("No other writing tool call");
     const stalledWrites = stallNotice({
       toolName: "shell",
       repeats: 3,
       input: String.raw`{"command":"node -e \"require('fs').writeFileSync('a','1')\""}`,
       output: "exit code: 0",
-      writes: true,
+      landed: true,
     });
     expect(stalledWrites).toContain("The last 4 shell calls");
     expect(stalledWrites).toContain("results you had already received");
-    expect(stalledWrites).not.toContain("no writing tool call landed between them");
+    expect(stalledWrites).toContain("no other writing tool call landed between them");
     const stalledInspections = stallNotice({
       toolName: "read",
       repeats: 3,
       input: '{"path":"a"}',
       output: "1",
-      writes: false,
+      landed: false,
     });
-    expect(stalledInspections).toContain("no writing tool call landed between them");
+    expect(stalledInspections).toContain(", and no writing tool call landed between them");
   });
 });
 

@@ -1102,9 +1102,94 @@ describe("a call repeated after a shell command that edited a file", () => {
     const second = lastToolOutput(fixture.requests[3] as ModelRequest);
     expect(first).not.toContain("[harness notice");
     // Both writes landed and were recorded; the second is a repeat of the first, and the notice
-    // standing in its answer's place says so without denying that writing calls landed.
+    // standing in its answer's place says what the repeat establishes: no other writing call
+    // landed between the two.
     expect(second).toContain("[harness notice: already answered]");
+    expect(second).toContain("No other writing tool call has landed between the two");
     expect(second).not.toContain("No writing tool call has landed since");
+  });
+});
+
+describe("a shell check repeated after an edit", () => {
+  // The shell is named as a tool whose call may write, which 33fbf1693 keyed without the
+  // workspace generation: a check run before an edit and again after it was compared with its
+  // own earlier answer, and the fresh result was replaced by the "already answered" notice. The
+  // command ran both times and both results are on the ledger; what the model lost was the
+  // second answer and its evidence reference.
+  const check = (callId: string) =>
+    respondWithToolCalls("checking", [
+      { callId, toolName: "shell", input: { command: "node --check src/greet.js" } },
+    ]);
+  const lastToolOutput = (request: ModelRequest): string => {
+    const turn = request.messages.findLast((message) => message.role === "tool");
+    return turn?.role === "tool" ? (turn.outcomes[0]?.output ?? "") : "";
+  };
+  const evidenceReference = /\[evidence record sha256:[0-9a-f]{64} kind tool-call:shell\]/;
+
+  it("hands the model the fresh result and its evidence reference, not the notice", async () => {
+    const fixture = createFixtureModelClient({
+      modelId: "fixture:worker",
+      turns: [
+        respondWithToolCalls("declare", [
+          { callId: "declare", toolName: "declare_file_set", input: { files: ["src/greet.js"] } },
+        ]),
+        check("before"),
+        respondWithToolCalls("change", [
+          {
+            callId: "edit",
+            toolName: "edit",
+            input: { path: "src/greet.js", find: "'hello'", replace: "'hi'" },
+          },
+        ]),
+        check("after"),
+        respondWithText("done"),
+      ],
+    });
+    await task([], {
+      maxSteps: 8,
+      approvalMode: "auto",
+      model: createRecordingModelClient(fixture, evidence),
+    });
+    // The edit landed and kept the file valid, so the check's answer is unchanged.
+    expect(readFileSync(join(workspace, "src/greet.js"), "utf8")).toContain("'hi'");
+    const before = lastToolOutput(fixture.requests[2] as ModelRequest);
+    const after = lastToolOutput(fixture.requests[4] as ModelRequest);
+    expect(before).toContain("exit code: 0");
+    expect(before).toMatch(evidenceReference);
+    expect(after).toContain("exit code: 0");
+    expect(after).toMatch(evidenceReference);
+    expect(after).not.toContain("[harness notice");
+    // Two distinct records: the second check was run and recorded, not answered from the first.
+    expect(after.match(evidenceReference)?.[0]).not.toBe(before.match(evidenceReference)?.[0]);
+  });
+
+  it("tells a denied call repeated unchanged only what is known: nothing landed", async () => {
+    // The guard denies a credential path before anything runs, so the command is denied both
+    // times. The repeat is counted, and the notice may say no writing call landed, since none did.
+    const denied = (callId: string) =>
+      respondWithToolCalls("peeking", [
+        { callId, toolName: "shell", input: { command: "cat .env" } },
+      ]);
+    const fixture = createFixtureModelClient({
+      modelId: "fixture:worker",
+      turns: [
+        respondWithToolCalls("declare", [
+          { callId: "declare", toolName: "declare_file_set", input: { files: ["src/greet.js"] } },
+        ]),
+        denied("once"),
+        denied("twice"),
+        respondWithText("done"),
+      ],
+    });
+    await task([], { maxSteps: 8, model: createRecordingModelClient(fixture, evidence) });
+    const first = lastToolOutput(fixture.requests[2] as ModelRequest);
+    const second = lastToolOutput(fixture.requests[3] as ModelRequest);
+    expect(first).toContain("denied");
+    expect(first).not.toContain("[harness notice");
+    expect(second).toContain("[harness notice: already answered]");
+    expect(second).toContain("No writing tool call has landed since");
+    expect(second).not.toContain("No other writing tool call");
+    expect(readFileSync(join(workspace, "src/greet.js"), "utf8")).toContain("'hello'");
   });
 });
 
