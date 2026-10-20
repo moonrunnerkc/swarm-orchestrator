@@ -89,3 +89,14 @@ rolled-back follow-up would be too. One file not declared before:
 
 This changes the verifier after the trial's build was frozen; the trial's records are read as they
 are, with this correction appended.
+
+### 2. The lifecycle a rolled-back follow-up leaves
+
+The product names the work's own stop as the lifecycle when a follow-up is not kept, but the
+assessment's lifecycle record, and the verifier, took the last loop stop on the chain, the
+follow-up's. One file not declared before:
+
+- `src/evidence/run-assessment.ts`: a follow-up's stop (marked `followUp: true` on its
+  `session-stopped` record by `src/agent-run.ts`, declared) is not the lifecycle record unless the
+  `outcome-follow-up-v1` record says its candidate was kept; `src/evidence/verifier/verify.mjs`
+  (amendment 1) applies the same rule.
