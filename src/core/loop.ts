@@ -73,7 +73,7 @@ export interface AgentLoopDependencies {
         readonly policy?: StallPolicy;
         readonly observe?: (event: StallIntervention) => Promise<void>;
         /**
-         * The tools whose successful call changes workspace files, by name, as the caller's
+         * The tools whose successful call may change workspace files, by name, as the caller's
          * chokepoint classes them. An inspection repeated after one of these has landed is a
          * new question; absent, every call is read as an inspection.
          */
@@ -350,7 +350,12 @@ export async function runAgentLoop(
       const repeats = stalls?.repeats() ?? 0;
       outcomes.push(
         repeats > 0
-          ? { ...outcome, output: repeatedAnswerNotice(call.toolName, outcome.output, repeats) }
+          ? {
+              ...outcome,
+              output: repeatedAnswerNotice(call.toolName, outcome.output, repeats, {
+                writes: writers.has(call.toolName),
+              }),
+            }
           : outcome,
       );
     }
