@@ -13,8 +13,10 @@ fix/requirement-coverage-and-verification-reserve`, `v12-final` present), Node 2
 | `16ec1a7e6` | `npm run build`, `npm run check:packaged`, `npm run fuzz:build` | 0, 0, 0 | [build](verification/build-16ec1a7e6.txt), [packaged](verification/packaged-16ec1a7e6.txt), [fuzz](verification/fuzz-16ec1a7e6.txt) |
 | **`b470b55e2`** | `npm run gates` | **0** | zero doc-path misses, 10.3 MB of headroom, all 103 packs restore, cited bundles verify, CI verdicts re-derive; typecheck clean; lint 0 errors, 28 warnings and 1 info; **466 test files passed and 5 skipped, 4,569 tests passed and 29 skipped** ([gates-b470b55e2.txt](verification/gates-b470b55e2.txt)) |
 | **`b470b55e2`** | `npm run build`, `npm run check:packaged`, `npm run fuzz:build` | **0, 0, 0** | [build](verification/build-b470b55e2.txt), [packaged](verification/packaged-b470b55e2.txt), [fuzz](verification/fuzz-b470b55e2.txt). This is the trial's frozen build. |
+| `005d5eb8d` | `npm run gates` | 1 | stopped at the doc-path check: the README named marked's rules file as a repository path; reworded. Build, packaged and fuzz exited 0; logs not kept. |
+| **`d491a54cd`** (branch head; its `src/` is `005d5eb8d`'s, with the verifier fix found by launch 1) | `npm run gates`, `build`, `check:packaged`, `fuzz:build` | **0, 0, 0, 0** | zero doc-path misses, 9.3 MB of headroom, all 105 packs restore, cited bundles verify, CI verdicts re-derive; typecheck clean; lint 0 errors, 28 warnings and 1 info; **466 test files passed and 5 skipped, 4,570 tests passed and 29 skipped** ([gates](verification/gates-d491a54cd.txt), [build](verification/build-d491a54cd.txt), [packaged](verification/packaged-d491a54cd.txt), [fuzz](verification/fuzz-d491a54cd.txt)) |
 
 The 29 skipped tests and 5 skipped files are the ones skipped on `8b17304d9` (4,541 passed there);
-this work added 28 tests (4,569 against 4,541) and no skip. These are local results on an unpushed branch: no CI ran.
+this work added 29 tests by the head (4,570 against 4,541) and no skip. These are local results on an unpushed branch: no CI ran.
 The new regressions' results against the starting implementation `544f643a3` are in
 [regressions-before.txt](regressions-before.txt) and read in [README.md](README.md) section 4.

@@ -119,8 +119,8 @@ the same but for the empty trail, which `b470b55e2` fixed.
 
 [verification.md](verification.md): on `b470b55e2`, the trial's build, `npm run gates`, `build`,
 `check:packaged` and `fuzz:build` exit 0 in a clean full-history clone; 4,569 tests pass and 29 are
-skipped (the same skips as before). The final product commit `005d5eb8d` (the verifier fix, after
-launch 1) has its own row there. Earlier runs are recorded with their failures: a lint error on
+skipped (the same skips as before). The branch head `d491a54cd`, whose product is `005d5eb8d` (the verifier fix found
+by launch 1), passes the same set: 4,570 tests pass and 29 are skipped. Earlier runs are recorded with their failures: a lint error on
 `100306e86`, a run stopped by hand when a review found two defects.
 
 [regressions-before.txt](regressions-before.txt) runs the new and changed regressions against the
