@@ -95,7 +95,7 @@ This proves information delivery only. Whether a repair uses it is section 5's q
 line, starting at the documented repair boundary: the run's recorded sealed goal contract (so the
 gates are the trial's: `task-acceptance` and `task-diagnostics` of sealed goal `sha256:904f8aae...`,
 the digest the product recomputed in every run below), a three-step scripted worker that declares
-`src/rules.ts` and writes the candidate's exact bytes, attempt 1's forty recorded responses
+the task's `rules.ts` and writes the candidate's exact bytes, attempt 1's forty recorded responses
 replayed in order through the real chokepoint, and every later chat completion handed to the live
 server through a proxy. The planning and implementation of the original run are not replayed.
 Both rehearsals ([rehearsal-control/record.json](rehearsal-control/record.json),

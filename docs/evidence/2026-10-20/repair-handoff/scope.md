@@ -63,4 +63,8 @@ rewritten). `README.md` at the repository root is not expected to change.
 
 ## Amendments
 
-(none yet)
+1. `scripts/check-doc-paths.mjs`: one known-path entry, `src/rules.ts`, a file of the marked task's
+   repository that [protocol.md](protocol.md) names in describing the scripted worker. The protocol
+   is not edited after its first launch, so the mention is declared known with its reason, as the
+   mime task's `src/Mime.ts` is for the 2026-10-18 protocol. Found by the first `npm run gates` on
+   `6504522be`, which stopped at the documentation-path check ([verification.md](verification.md)).
