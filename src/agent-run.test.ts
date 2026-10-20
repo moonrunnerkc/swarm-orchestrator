@@ -1312,5 +1312,70 @@ describe("a follow-up owed once the gates are green", () => {
     expect(readFileSync(join(workspace, "src/greet.js"), "utf8")).toBe(stillGreen);
     expect(result.loop.stopReason).toBe("completed");
     expect(result.green).toBe(true);
+    // The bundle's own verifier re-derives the assessment from the cycle the workspace was left in.
+    expect(await verifiedAssessment(result, "follow-up-bundle")).toMatch(
+      /PASS {2}run assessment \d+ re-derived/,
+    );
+  }, 60_000);
+});
+
+/** The bundle's own verifier over this run's chain: its lines about the run assessment. */
+async function verifiedAssessment(
+  result: Awaited<ReturnType<typeof runAgentTask>>,
+  name: string,
+): Promise<string> {
+  const spec = evidence.records().find((record) => record.type === "run-spec-sealed");
+  if (!spec) throw Error("missing run seal");
+  const key = createEphemeralSigningKey();
+  const destination = join(scratch, name);
+  await exportBundle({
+    source: bundleSourceFromRecorder(evidence),
+    destination,
+    signingKey: key,
+    clock: createTestClock(),
+    attestation: signAttestation(
+      buildAttestation({
+        runId: evidence.sessionId,
+        specDigest: spec.payloadDigest,
+        sourceCommit: "0".repeat(40),
+        patchDigest: digestOfBytes(""),
+        chainHead: evidence.head().hash,
+        toolVersion: "test",
+        executionMode: result.verdict.executionTrust,
+        verdict: { ...result.verdict },
+      }),
+      key,
+    ),
+  });
+  const verified = await run(process.execPath, [
+    join(destination, "verify.mjs"),
+    destination,
+  ]).catch((failure: { stdout: string }) => failure);
+  return verified.stdout
+    .split("\n")
+    .filter((line) => line.includes("run assessment"))
+    .join("\n");
+}
+
+describe("a run whose last repair is rolled back", () => {
+  it("verifies: the assessment names the gate runs of the cycle the workspace was left in", async () => {
+    // The work breaks greet; the one repair breaks the syntax as well, so lint regresses and the
+    // ratchet rolls it back. Its gate runs are the latest on the chain and describe an undone tree.
+    const unparsable = "export function greet( {\n";
+    const result = await task(
+      [
+        ...goodTurns(broken),
+        respondWithToolCalls("repairing", [
+          { callId: "r1", toolName: "write", input: { path: "src/greet.js", content: unparsable } },
+        ]),
+        respondWithText("repaired"),
+      ],
+      { attempts: 1 },
+    );
+    expect(result.gates.outcome.attempts.map((one) => one.decision.accepted)).toEqual([false]);
+    expect(readFileSync(join(workspace, "src/greet.js"), "utf8")).toBe(broken);
+    const lines = await verifiedAssessment(result, "rolled-back-bundle");
+    expect(lines).toMatch(/PASS {2}run assessment \d+ re-derived/);
+    expect(lines).not.toMatch(/FAIL {2}run assessment/);
   }, 60_000);
 });

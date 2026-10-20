@@ -71,6 +71,10 @@ Source on `v13-main`; not published until a release names it.
   takes that time; and a revision that still does not fit may borrow the shortfall from
   implementation, once and up to a tenth of the total, never from the verification reserve
   (`planned-check-revision-v2`, with the measured admission beside the arithmetic).
+- **A run whose last attempt was rolled back passes its own bundle verifier.** The verifier
+  required the latest gate runs on the chain, which after a rollback measured an undone tree; it now
+  requires those of the cycle the workspace was left in, and a follow-up that was not kept is not
+  the run's lifecycle (see the `swarm-verify` changelog).
 - **A throw in a check program is described as where it was raised.** Its refusal no longer says
   the run observed nothing of the project: a program may be defective, or may have asserted on
   what the project gave, and the stack does not say which. The refusal itself is unchanged.

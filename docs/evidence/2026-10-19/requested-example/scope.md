@@ -100,3 +100,8 @@ follow-up's. One file not declared before:
   `session-stopped` record by `src/agent-run.ts`, declared) is not the lifecycle record unless the
   `outcome-follow-up-v1` record says its candidate was kept; `src/evidence/verifier/verify.mjs`
   (amendment 1) applies the same rule.
+
+### 3. The verifier's changelog
+
+- `packages/swarm-verify/CHANGELOG.md`: an unreleased entry for amendments 1 and 2, since they
+  change what the standalone verifier accepts.
