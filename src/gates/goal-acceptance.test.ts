@@ -385,3 +385,50 @@ it("prepares trusted artifacts in an owned checkout nested beneath evidence stor
   expect(result.task).toBe("accepted");
   expect(result.verified).toBe(true);
 });
+
+it("tells a repair what a shared command check printed when it refused, and keeps a withheld one's output back", async () => {
+  const setup = await fixture();
+  const check = goal.checks[0];
+  if (check === undefined) throw new Error("fixture requires a check");
+  const refusing = (exposure: "shared" | "withheld"): GoalContract => ({
+    ...goal,
+    checks: [
+      {
+        ...check,
+        exposure,
+        artifacts: [
+          {
+            path: "acceptance.mjs",
+            content:
+              "import assert from 'node:assert/strict'; import {feature} from './feature.js'; assert.equal(feature, 2, 'feature for case seven');\n",
+          },
+        ],
+      },
+    ],
+  });
+  const detailFor = async (contract: GoalContract) => {
+    // One contract per session, as a run pins one: each reading gets a fresh session.
+    const evidence = await openEvidenceSession({
+      root: join(setup.root, "sessions"),
+      sessionId: `verify-${contract.checks[0]?.exposure}`,
+      clock: setup.clock,
+    });
+    await declareGoalContract(evidence, contract);
+    const observed = await verifyIndependently({
+      repositoryRoot: setup.repository,
+      baseCommit: setup.baseCommit,
+      patch: setup.patch,
+      clock: setup.clock,
+      commands: setup.commands,
+      goal: { contract, evidence, tree: setup.tree },
+    });
+    expect(observed.goalAcceptance?.obligations.map((entry) => entry.status)).toEqual(["rejected"]);
+    return observed.goalAcceptance?.checkResults?.[0]?.detail ?? "";
+  };
+  // Shared: the assertion that refused, in the check's own words, reaches the brief.
+  const shared = await detailFor(refusing("shared"));
+  expect(shared).toMatch(/^command exited 1; its output ends:/);
+  expect(shared).toContain("feature for case seven");
+  // Withheld: nothing it printed leaves the verifier.
+  expect(await detailFor(refusing("withheld"))).toBe("command exited 1");
+});

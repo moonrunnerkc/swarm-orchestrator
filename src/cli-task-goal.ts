@@ -1,5 +1,7 @@
 import { z } from "zod";
+import { acceptanceGateId, diagnosticsGateId } from "./cli-run-outcome.ts";
 import type { Clock } from "./core/clock.ts";
+import type { GateStatus } from "./core/loop-events.ts";
 import { asJsonValue, digestOfBytes } from "./evidence/canonical-json.ts";
 import {
   diagnosticChecks,
@@ -24,12 +26,22 @@ import { createNodeCommandRunner } from "./gates/node-command-runner.ts";
 import { inspectionParser } from "./gates/parsers.ts";
 import { diffAgainstBase, patchAgainstBase } from "./gates/scratch-index.ts";
 import { VerificationRefusalError } from "./gates/verification-refusal.ts";
+import { pathsInlineCodeCouldOpen } from "./tools/shell-command.ts";
 import { defineTool, type ToolDefinition } from "./tools/tool-definition.ts";
 import {
+  describeMisreads,
+  describeRelationRun,
   inputAsRead,
+  type PlannedRelation,
+  plannedCaseRoles,
+  plannedCheckProbe,
   plannedCheckRunner,
   plannedInputs,
+  plannedProgram,
+  plannedRelation,
+  probeMisreads,
   programDidNotLoad,
+  relationCalls,
 } from "./workers/planned-check-program.ts";
 
 export interface TaskGoalContext {
@@ -315,67 +327,328 @@ async function judgeWorkspace(context: TaskGoalContext): Promise<IndependentVeri
 
 /** Feed captured behavior failures into the same bounded worker repair cycle. */
 export function taskGoalGate(context: TaskGoalContext): GateDefinition {
+  return taskGoalGates(context).acceptanceGate;
+}
+
+/**
+ * The gates a sealed goal contract is judged through: one for the checks that decide its
+ * requirements, and one for the generated checks that only inform, where it has any. They are
+ * apart because the ratchet compares gates: in one gate, a live repair that answered a generated
+ * check by breaking a supplied one left that gate failing exactly as before, so nothing regressed
+ * by the ratchet's reading and the broken candidate was kept and delivered. Both read one
+ * verification of the workspace per gate cycle (the cycle's context is the key), so the checks run
+ * once a cycle, as they did with one gate, and nothing is reused across cycles.
+ */
+export function taskGoalGates(context: TaskGoalContext): {
+  readonly acceptanceGate: GateDefinition;
+  readonly diagnosticsGate: GateDefinition | null;
+} {
   const digest = freezeGoalContract(context.contract).digest;
-  return {
-    id: "task-acceptance",
-    title: `sealed goal ${digest}`,
+  const judged = new WeakMap<object, Promise<IndependentVerification>>();
+  const verificationFor = (cycle: object) => {
+    const known = judged.get(cycle);
+    if (known !== undefined) return known;
+    const started = judgeWorkspace(context);
+    judged.set(cycle, started);
+    return started;
+  };
+  const gate = (
+    id: string,
+    title: string,
+    read: (result: IndependentVerification) => {
+      readonly passes: boolean;
+      readonly stderr: string;
+      /** The checks this gate decides, each as a part the ratchet holds on its own. */
+      readonly parts?: Readonly<Record<string, GateStatus>>;
+      /** Which parts rest on nothing but the planner's claim of the change. */
+      readonly claims?: readonly string[];
+      /** Measures the gate's verdict carries, which repair classification reads by name. */
+      readonly measures?: Readonly<Record<string, number>>;
+    },
+  ): GateDefinition => ({
+    id,
+    title,
     severity: "blocking",
     capability: "dynamic",
     parserName: "inspection",
     parse: inspectionParser,
     source: {
       kind: "inspection",
-      inspect: async () => {
+      inspect: async (cycle) => {
         const started = context.clock.now();
-        const result = await judgeWorkspace(context);
+        const result = await verificationFor(cycle);
         const findings =
-          result.goalAcceptance?.checkResults?.map(({ id, status, detail }) => ({
-            id,
+          result.goalAcceptance?.checkResults?.map(({ id: check, status, detail }) => ({
+            id: check,
             status,
             detail,
           })) ?? [];
-        const reading = readAcceptance(context.contract, result);
-        // A refusal is a decision against the change and reads as one; an unmeasured setup is
-        // something to prepare. The repair feedback is this text, so the two must not be confused.
-        // The findings again as plain lines: inside the JSON above, a check's detail reaches the
-        // repair brief escaped, and a worker reads the line it got wrong more easily here.
-        const failed = findings
-          .filter((finding) => finding.status !== "accepted" && !reading.diagnostic.has(finding.id))
-          .map((finding) => `check ${finding.id} ${finding.status}: ${finding.detail}`);
-        const disagreeing = findings
-          .filter((finding) => finding.status === "rejected" && reading.diagnostic.has(finding.id))
-          .map((finding) => `generated check ${finding.id} rejected: ${finding.detail}`);
-        const stderr =
-          result.refusal !== null && !result.unmeasured
-            ? `refused: ${result.refusal}`
-            : reading.unavailable
-              ? `setup unavailable: ${result.advice || result.refusal || "required acceptance instrument is unmeasured"}`
-              : [
-                  ...failed,
-                  ...(disagreeing.length === 0
-                    ? []
-                    : [
-                        "These generated checks disagree with the change. Their expected results are the planner's reading of the task, not established facts: change the code where the task supports the expectation, and where it does not, leave the code as it is and say which expectation the task contradicts.",
-                        ...disagreeing,
-                      ]),
-                ].join("\n");
+        const reading = read(result);
         return {
           exitCode: reading.passes ? 0 : 1,
           unavailable: null,
           durationMs: context.clock.now() - started,
-          stdout: JSON.stringify({ regression: result.regression, task: result.task, findings }),
-          stderr,
+          stdout: JSON.stringify({
+            regression: result.regression,
+            task: result.task,
+            findings,
+            ...(reading.parts === undefined ? {} : { parts: reading.parts }),
+            ...(reading.claims === undefined || reading.claims.length === 0
+              ? {}
+              : { claims: reading.claims }),
+            ...(reading.measures === undefined ? {} : { measures: reading.measures }),
+          }),
+          stderr: reading.stderr,
         };
       },
     },
-  };
+  });
+  const acceptanceGate = gate(acceptanceGateId, `sealed goal ${digest}`, (result) => {
+    const reading = readAcceptance(context.contract, result);
+    // A refusal is a decision against the change and reads as one; an unmeasured setup is
+    // something to prepare. The repair feedback is this text, so the two must not be confused.
+    // The findings again as plain lines: inside the JSON above, a check's detail reaches the
+    // repair brief escaped, and a worker reads the line it got wrong more easily here.
+    const failed = (result.goalAcceptance?.checkResults ?? [])
+      .filter((finding) => finding.status !== "accepted" && !reading.diagnostic.has(finding.id))
+      .map((finding) => `check ${finding.id} ${finding.status}: ${finding.detail}`);
+    // Each supplied check is a part of this gate: a repair that leaves one failing check failing
+    // and breaks another passing one has regressed, though the gate failed before and after.
+    const parts = Object.fromEntries(
+      (result.goalAcceptance?.checkResults ?? [])
+        .filter((finding) => !reading.diagnostic.has(finding.id))
+        .map((finding) => [
+          finding.id,
+          finding.status === "accepted"
+            ? ("passed" as const)
+            : finding.status === "rejected"
+              ? ("failed" as const)
+              : ("not-applicable" as const),
+        ]),
+    );
+    return {
+      passes: reading.passes,
+      parts,
+      stderr:
+        result.refusal !== null && !result.unmeasured
+          ? `refused: ${result.refusal}`
+          : reading.unavailable
+            ? `setup unavailable: ${result.advice || result.refusal || "required acceptance instrument is unmeasured"}`
+            : failed.join("\n"),
+    };
+  });
+  const diagnostic = diagnosticChecks(context.contract);
+  if (diagnostic.size === 0) return { acceptanceGate, diagnosticsGate: null };
+  // By check, every failing case a reading found, by the tree it was read on, with the line it
+  // gave. Each reading briefs the repair after it, so a case found again on a tree it was already
+  // found on is one a repair was told and answered by leaving the project's code as it was.
+  const told = new Map<string, Map<string, Map<number, string>>>();
+  const diagnosticsGate = gate(
+    diagnosticsGateId,
+    `generated checks of sealed goal ${digest}`,
+    (result) => {
+      const rejected = (result.goalAcceptance?.checkResults ?? []).filter(
+        (finding) => finding.status === "rejected" && diagnostic.has(finding.id),
+      );
+      const readings = rejected.map((finding) => {
+        const relation = relationRun(context, result, finding.id);
+        if (relation !== null)
+          return {
+            finding,
+            wholly: false,
+            line: `generated relation ${finding.id} broke: inputs that differ only by the reference ${inputAsRead(relation.relation.reference)} or a variant gave different results:\n${relation.lines.join("\n")}`,
+          };
+        const failures = caseFailures(context, finding.id, finding.record);
+        const tree = result.goalAcceptance?.tree ?? "";
+        const byTree = told.get(finding.id) ?? new Map<string, Map<number, string>>();
+        const heldNow = heldCases(failures, tree, byTree);
+        if (tree !== "")
+          byTree.set(
+            tree,
+            new Map([
+              ...(byTree.get(tree) ?? []),
+              ...failures.map((one) => [one.index, one.got] as const),
+            ]),
+          );
+        told.set(finding.id, byTree);
+        const wholly = failures.length > 0 && heldNow.length === failures.length;
+        return {
+          finding,
+          wholly,
+          line: wholly
+            ? `generated check ${finding.id} is held: case(s) ${heldNow.map((one) => one.index).join(", ")} were told to a repair on this very tree and give what they gave, so the repair left the code as it was; their expected results are the planner's claim of the change (changed: true), not behaviour the base shows, and nothing here shows either the expectation or the code wrong. The disagreement stays recorded, the check stays failing, and no code change is asked for it`
+            : `generated check ${finding.id} rejected: ${finding.detail}${describeFailureRoles(failures, heldNow)}`,
+        };
+      });
+      const holding = readings.filter((one) => one.wholly);
+      const disagreeing = readings.filter((one) => !one.wholly);
+      return {
+        passes: rejected.length === 0,
+        ...ratchetParts(context, result, diagnostic),
+        // Where every failure here is held, repair stops: the gate still fails, so the run cannot
+        // read as accepted, and the best candidate so far is what remains.
+        ...(holding.length > 0 && disagreeing.length === 0
+          ? { measures: { unrepairable: 1 } }
+          : {}),
+        stderr:
+          disagreeing.length === 0
+            ? holding.map((one) => one.line).join("\n")
+            : [
+                ...holding.map((one) => one.line),
+                "These generated checks disagree with the change. Their expected results are the planner's reading of the task, not established facts: a case the task keeps gave its expected result on the unchanged base, so a difference there is behaviour the change broke; a changed case's result is the planner's claim. Change the code where the task supports the expectation, and where it does not, leave the code as it is and say which expectation the task contradicts. run_check with a check's id shows its program, each input and what the project gave. A change that breaks a supplied check to satisfy one of these is rolled back.",
+                ...disagreeing.map((one) => one.line),
+              ].join("\n"),
+      };
+    },
+  );
+  return { acceptanceGate, diagnosticsGate };
+}
+
+/**
+ * The failing cases held on this reading. A changed case's expectation is the planner's claim.
+ * Told to a repair, with the instruction to leave the code where the task does not support it,
+ * and found again on the very tree it was found on, the repair left the code as it was: a
+ * disagreement no further attempt is asked to settle, and a stop, not a finding that the
+ * expectation is wrong. An unchanged answer on a changed tree is not held: a repair can take two
+ * changes before an answer moves, and live repairs that edited the code each time were held by an
+ * earlier reading of the answer alone. A kept case is behaviour the base showed, so its failure is
+ * never held, however often it repeats; nor is a case whose role was never declared.
+ */
+export function heldCases(
+  failures: readonly CaseFailure[],
+  tree: string,
+  told: ReadonlyMap<string, ReadonlyMap<number, string>>,
+): readonly CaseFailure[] {
+  const before = tree === "" ? undefined : told.get(tree);
+  return failures.filter((one) => one.role === "changed" && before?.get(one.index) === one.got);
+}
+
+/**
+ * Each generated check's behaviour as a part of the diagnostics gate the ratchet holds: a
+ * relation, which states no expected value, and a check's kept cases, whose expectations the base
+ * gave. A changed case is the planner's claim and is not a part. In a live ordinary run the first
+ * implementation passed the relation and failed one wrong changed case; the repair told that case
+ * broke the relation, and with the gate failing before and after, the ratchet kept the regression
+ * and the correct first change was lost.
+ *
+ * A relation whose base control did not hold (a change relation) rests on nothing the base showed:
+ * the planner's reading of the task's own words, over its own fixture, where the equivalence can
+ * be false (a newline and a space are different extensions where both are registered). It is
+ * named a claim, so it yields to a repair that restores a kept case or a supplied check, and is
+ * held only against a repair that restores nothing. A part is never a requirement's verdict.
+ */
+function ratchetParts(
+  context: TaskGoalContext,
+  result: IndependentVerification,
+  diagnostic: ReadonlySet<string>,
+): { readonly parts: Readonly<Record<string, GateStatus>>; readonly claims: readonly string[] } {
+  const parts: Record<string, GateStatus> = {};
+  const claims: string[] = [];
+  for (const finding of result.goalAcceptance?.checkResults ?? []) {
+    if (!diagnostic.has(finding.id)) continue;
+    const definition = context.contract.checks.find((one) => one.id === finding.id);
+    if (definition === undefined) continue;
+    const status: GateStatus =
+      finding.status === "accepted"
+        ? "passed"
+        : finding.status === "rejected"
+          ? "failed"
+          : "not-applicable";
+    if (plannedRelation(definition) !== null) {
+      parts[finding.id] = status;
+      if (definition.atBase !== "passes") claims.push(finding.id);
+      continue;
+    }
+    if (!(plannedCaseRoles(definition) ?? []).includes("kept")) continue;
+    const completed =
+      (
+        context.evidence.payloads().get(finding.record ?? "") as
+          | { observation?: { exitCode?: number } }
+          | undefined
+      )?.observation?.exitCode === 0;
+    parts[`${finding.id}: kept cases`] =
+      status !== "failed"
+        ? status
+        : completed &&
+            caseFailures(context, finding.id, finding.record).every((one) => one.role !== "kept")
+          ? "passed"
+          : "failed";
+  }
+  return { parts, claims };
+}
+
+/** One failing case of a generated check of cases on a verification, with its declared role. */
+export interface CaseFailure {
+  readonly index: number;
+  readonly role: "changed" | "kept" | null;
+  readonly got: string;
+}
+
+/**
+ * A generated check's failing cases on one verification, read from its recorded observation.
+ * None for a run that did not complete: a program that could not load answered nothing, and two
+ * empty answers in a row are not a repair leaving a case as it was.
+ */
+function caseFailures(
+  context: TaskGoalContext,
+  id: string,
+  record: string | undefined,
+): readonly CaseFailure[] {
+  const definition = context.contract.checks.find((one) => one.id === id);
+  const behavior = definition?.behavior;
+  const observation = (
+    context.evidence.payloads().get(record ?? "") as
+      | { observation?: { stdout?: string; exitCode?: number } }
+      | undefined
+  )?.observation;
+  const stdout = observation?.exitCode === 0 ? observation.stdout : undefined;
+  if (
+    definition === undefined ||
+    stdout === undefined ||
+    behavior?.kind !== "cli" ||
+    behavior.stdout.length !== 1 ||
+    behavior.stdout[0]?.kind !== "equals"
+  )
+    return [];
+  const roles = plannedCaseRoles(definition);
+  const got = stdout.split("\n");
+  return behavior.stdout[0].value
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .flatMap((line, index) =>
+      got[index] === line
+        ? []
+        : [{ index: index + 1, role: roles?.[index] ?? null, got: got[index] ?? "" }],
+    );
+}
+
+/** Which failing cases are kept behaviour the change broke and which are the planner's claim. */
+function describeFailureRoles(
+  failures: readonly CaseFailure[],
+  heldNow: readonly CaseFailure[],
+): string {
+  const of = (role: "changed" | "kept") =>
+    failures.filter((one) => one.role === role && !heldNow.includes(one)).map((one) => one.index);
+  const kept = of("kept");
+  const changed = of("changed");
+  return [
+    kept.length === 0
+      ? ""
+      : `; case(s) ${kept.join(", ")} are behaviour the task keeps, which the unchanged base gave as expected`,
+    changed.length === 0
+      ? ""
+      : `; case(s) ${changed.join(", ")} are the planner's reading of the change`,
+    heldNow.length === 0
+      ? ""
+      : `; case(s) ${heldNow.map((one) => one.index).join(", ")} are held: told to a repair on this very tree, they give what they gave, so no change is asked for them`,
+  ].join("");
 }
 
 /**
  * What the acceptance gate makes of one verification, which is what repair answers to. A check
- * that decides a requirement passes or refuses; a generated check that disagrees asks for a
- * repair without becoming a verdict; a requirement no check decides is unjudged by design, which
- * is neither something to fix nor a setup to prepare.
+ * that decides a requirement passes or refuses; a generated check is the diagnostics gate's and
+ * never this gate's; a requirement no check decides is unjudged by design, which is neither
+ * something to fix nor a setup to prepare.
  */
 export function readAcceptance(
   contract: GoalContract,
@@ -405,16 +678,12 @@ export function readAcceptance(
     result.unmeasured ||
     result.goalAcceptance === undefined ||
     obligations.some((one) => one.status === "unjudged");
-  const disagreement = (result.goalAcceptance?.checkResults ?? []).some(
-    (one) => diagnostic.has(one.id) && one.status === "rejected",
-  );
   return {
     passes:
       result.refusal === null &&
       !unavailable &&
       result.regression === "pass" &&
-      obligations.every((one) => one.status === "accepted") &&
-      !disagreement,
+      obligations.every((one) => one.status === "accepted"),
     unavailable,
     diagnostic,
   };
@@ -477,9 +746,20 @@ export function acceptanceCheckTool(context: TaskGoalContext): ToolDefinition {
     description:
       "Rerun the sealed acceptance checks on the workspace as it stands, exactly as the acceptance gate runs them (a fresh checkout of the base with your change, after the repository's checks), and see each check's result; name a check to see its cases: each input, the expected result and what the project gave. Or pass program (an ES module whose default export takes one input) with inputs to run your own diagnostic over the project from the repository root, with no file to write or clean up and no shell quoting. Generated checks' expectations are the planner's reading of the task, not established facts.",
     inputSchema: checkToolInput,
-    // It runs code in the workspace, as writing a probe and running it with node does.
+    // It runs code in the workspace, as writing a probe and running it with node does, so its
+    // program is ruled on as the shell rules on the same program passed to `node -e`, and each
+    // string input as a word after it, which the program may open. Reading code lexically sees
+    // literals, not paths the program builds; that residual is every allowed interpreter's.
     kind: "write",
-    pathsFrom: () => [],
+    pathsFrom: (input) =>
+      input.program === undefined
+        ? []
+        : [
+            ...pathsInlineCodeCouldOpen(input.program),
+            ...(input.inputs ?? []).flatMap((value) =>
+              typeof value === "string" ? pathsInlineCodeCouldOpen(JSON.stringify(value)) : [],
+            ),
+          ],
     async execute(input) {
       if (input.program !== undefined && input.inputs !== undefined)
         return { text: await runProgram(context, input.program, input.inputs), facts: {} };
@@ -522,11 +802,66 @@ function describeRerun(
         | { observation?: { exitCode?: number; stdout?: string; stderr?: string } }
         | undefined
     )?.observation;
-    lines.push("", `check ${named}, case by case:`);
+    const relation = definition === undefined ? null : plannedRelation(definition);
+    lines.push(
+      "",
+      relation === null ? `check ${named}, case by case:` : `relation ${named}, seed by seed:`,
+      ...(definition === undefined ? [] : describeProgram(definition)),
+    );
     if (observation === undefined) lines.push("  it produced no observation on this run");
-    else if (definition !== undefined) lines.push(...describeCases(definition, observation));
+    else if (relation !== null) {
+      const broken = describeRelationRun(relation, observation.stdout ?? "");
+      lines.push(
+        ...(broken.length === 0
+          ? [`  every seed held (${relationCalls(relation)} calls)`]
+          : broken.map((line) => `  ${line}`)),
+      );
+    } else if (definition !== undefined) lines.push(...describeCases(definition, observation));
   }
   return bounded(lines.join("\n"));
+}
+
+/**
+ * A generated check's program and what its expected results rest on, before its cases. A live
+ * repair told only each case's input and result asked how the generated checks "import from a
+ * different path", reran one, was shown its cases again and never its program, and spent the rest
+ * of its attempt on the regular expressions; the program read a field of the input it was given.
+ */
+function describeProgram(definition: GoalContract["checks"][number]): readonly string[] {
+  const program = plannedProgram(definition);
+  if (program === null) return [];
+  return [
+    `  program (the planner's; the harness calls its default export once per ${plannedRelation(definition) === null ? "case with that case's input itself" : "input string"}):`,
+    ...program
+      .trimEnd()
+      .split("\n")
+      .map((line) => `    ${line}`),
+    definition.atBase === "passes"
+      ? "  expected results: what the unchanged base gave when the check was admitted"
+      : plannedRelation(definition) === null
+        ? plannedCaseRoles(definition) === null
+          ? "  expected results: the planner's reading of the task; where the unchanged base gave the same, that case was the check's control when it was admitted"
+          : "  expected results: a case marked kept gave its expected result on the unchanged base when the check was admitted; one marked changed is the planner's reading of the task"
+        : "  expected results: none written; each variant must give what the reference gives at the same position",
+  ];
+}
+
+/** A relation check's run on one verification, described, or null for any other check. */
+function relationRun(
+  context: TaskGoalContext,
+  result: IndependentVerification,
+  id: string,
+): { readonly relation: PlannedRelation; readonly lines: readonly string[] } | null {
+  const definition = context.contract.checks.find((one) => one.id === id);
+  const relation = definition === undefined ? null : plannedRelation(definition);
+  if (relation === null) return null;
+  const record = result.goalAcceptance?.checkResults?.find((one) => one.id === id)?.record;
+  const stdout = (
+    context.evidence.payloads().get(record ?? "") as
+      | { observation?: { stdout?: string } }
+      | undefined
+  )?.observation?.stdout;
+  return stdout === undefined ? null : { relation, lines: describeRelationRun(relation, stdout) };
 }
 
 function describeCases(
@@ -542,6 +877,7 @@ function describeCases(
       ? behavior.stdout[0].value.split("\n")
       : null;
   const actual = (observation.stdout ?? "").split("\n");
+  const roles = plannedCaseRoles(definition);
   const cases =
     inputs === null || expected === null
       ? [
@@ -550,7 +886,7 @@ function describeCases(
         ]
       : inputs.map(
           (one, index) =>
-            `  input ${inputAsRead(one)}: expected ${expected[index] ?? "(nothing)"}; got ${actual[index] ?? "(nothing)"}` +
+            `  ${roles === null ? "" : `[${roles[index] ?? "kept"}] `}input ${inputAsRead(one)}: expected ${expected[index] ?? "(nothing)"}; got ${actual[index] ?? "(nothing)"}` +
             (expected[index] === actual[index] ? "" : "  <- differs"),
         );
   return [
@@ -568,42 +904,54 @@ function describeCases(
   ];
 }
 
-/** A program over the project, through the planned-check runner, from the workspace root. */
+/**
+ * A program over the project, through the planned-check runner, from the workspace root, and then
+ * through the argument probe in a run of its own, whose only use is a line naming a read of a
+ * case's field off the input: the results shown are the runner's alone.
+ */
 async function runProgram(
   context: TaskGoalContext,
   program: string,
   inputs: readonly unknown[],
 ): Promise<string> {
-  const { observation } = await runBehaviorCheck(
-    {
-      kind: "cli",
-      cwd: ".",
-      timeoutMs: 60_000,
-      maxOutputBytes: 256_000,
-      toolchain: "Node",
-      network: "inherit",
-      environment: {},
-      argv: ["node", "--input-type=module", "-e", plannedCheckRunner],
-      stdin: JSON.stringify({ program, inputs }),
-      exitCode: 0,
-      stdout: [],
-      stderr: [],
-    },
-    {
-      commands: createNodeCommandRunner(
-        context.clock,
-        harnessChildEnvironment(),
-        context.isolation === null
-          ? undefined
-          : recordedContainerBackend(
-              { ...context.isolation, workspaceRoot: context.workspace },
-              context.evidence,
-            ),
-        context.signal,
-      ),
-      checkout: context.workspace,
-    },
-  );
+  const through = async (script: string) =>
+    (
+      await runBehaviorCheck(
+        {
+          kind: "cli",
+          cwd: ".",
+          timeoutMs: 60_000,
+          maxOutputBytes: 256_000,
+          toolchain: "Node",
+          network: "inherit",
+          environment: {},
+          argv: ["node", "--input-type=module", "-e", script],
+          stdin: JSON.stringify({ program, inputs }),
+          exitCode: 0,
+          stdout: [],
+          stderr: [],
+        },
+        {
+          commands: createNodeCommandRunner(
+            context.clock,
+            harnessChildEnvironment(),
+            context.isolation === null
+              ? undefined
+              : recordedContainerBackend(
+                  { ...context.isolation, workspaceRoot: context.workspace },
+                  context.evidence,
+                ),
+            context.signal,
+          ),
+          checkout: context.workspace,
+        },
+      )
+    ).observation;
+  const observation = await through(plannedCheckRunner);
+  const misread =
+    observation.exitCode === programDidNotLoad
+      ? null
+      : probeMisreads((await through(plannedCheckProbe)).stdout);
   const results = observation.stdout.split("\n").filter((line) => line.length > 0);
   return bounded(
     [
@@ -612,6 +960,9 @@ async function runProgram(
         ? "the program did not load"
         : `exit ${observation.exitCode}${observation.unavailable === null ? "" : `; ${observation.unavailable}`}`,
       ...results.map((line) => `  ${line}`),
+      ...(misread === null || misread.length === 0
+        ? []
+        : ["diagnostic:", ...describeMisreads(misread).map((line) => `  ${line}`)]),
       ...(observation.stderr.trim().length === 0
         ? []
         : [

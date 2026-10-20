@@ -1,0 +1,26 @@
+diff --git a/src/Mime.ts b/src/Mime.ts
+index a28323b..a88e54b 100644
+--- a/src/Mime.ts
++++ b/src/Mime.ts
+@@ -72,13 +72,16 @@ export default class Mime {
+   getType(path: string) {
+     if (typeof path !== 'string') return null;
+ 
+-    // Remove chars preceeding `/` or `\`
+-    const last = path.replace(/^.*[/\\]/, '').toLowerCase();
++    // Remove chars preceeding `/` or `\`, stripping across line terminators
++    const lastPath = path.replace(/^[\s\S]*[/\\]/, '');
++    const hasPath = lastPath.length < path.length;
+ 
+-    // Remove chars preceeding '.'
+-    const ext = last.replace(/^.*\./, '').toLowerCase();
++    // Strip trailing line terminators from the file name before extension lookup
++    const last = lastPath.replace(/[\r\n\u2028\u2029]+$/, '').toLowerCase();
++
++    // Remove chars preceeding '.' (stripping across line terminators)
++    const ext = last.replace(/^[\s\S]*\./, '').toLowerCase();
+ 
+-    const hasPath = last.length < path.length;
+     const hasDot = ext.length < last.length - 1;
+ 
+     // Extension-less file?

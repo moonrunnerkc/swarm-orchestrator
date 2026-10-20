@@ -10,7 +10,14 @@ export const escalationSettingsSchema = z.strictObject({
   reserveMs: z.number().int().min(1000),
 });
 export type EscalationSettings = z.infer<typeof escalationSettingsSchema>;
-export type FailureClass = "setup" | "infrastructure" | "implementation" | "permission" | "unknown";
+export type FailureClass =
+  | "setup"
+  | "infrastructure"
+  | "instrument"
+  | "held-expectation"
+  | "implementation"
+  | "permission"
+  | "unknown";
 
 /** Conservative deterministic classification can stop spending, never turn a check green. */
 export function classifyRepair(cycle: GateCycle): {
@@ -53,6 +60,19 @@ export function classifyRepair(cycle: GateCycle): {
       kind: "setup",
       signature,
       remedy: "install the declared missing tool or browser, then start verification again",
+    };
+  // A gate says, as a measure, that every failure it reports is held: a generated check whose
+  // expectation a repair was told and answered by leaving the code as it was, which is the
+  // planner's claim against the implementation's with nothing independent to settle it. Repair
+  // stops instead of spending attempts on it. This is a stopping decision, not a finding about
+  // the check or the code, so it is not `instrument`, which names a defect in the checking itself.
+  // The gate still fails, and says why.
+  if (failures.length > 0 && failures.every((run) => run.measures.unrepairable === 1))
+    return {
+      kind: "held-expectation",
+      signature,
+      remedy:
+        "every failing check is a generated expectation a repair was told and answered by leaving the code as it was; neither it nor the code is shown wrong, so it stays failing and reported and no further change is asked for",
     };
   if (failures.some((run) => /ECONNREFUSED|ENETUNREACH/.test(run.observation.stderr)))
     return {

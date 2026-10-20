@@ -29,6 +29,9 @@ export function storeBlob(blobDirectory, bytes) {
  * the group can hold the output pipes open after the leader is dead, and a caller that has to
  * stop promptly cannot wait on them. Past that bound the result is returned with the output seen
  * so far and `termination.confirmed` false; the pipes are left to the process's exit.
+ *
+ * `onStdout` is called with each chunk of standard output as it arrives, for a caller that
+ * watches the command while it runs; the recorded output is unchanged by it.
  */
 export function runCommand(
   argv,
@@ -40,6 +43,7 @@ export function runCommand(
     signal = null,
     killConfirmMs = null,
     onSpawn = null,
+    onStdout = null,
   },
 ) {
   return new Promise((resolve) => {
@@ -54,7 +58,12 @@ export function runCommand(
     if (child.pid !== undefined) onSpawn?.(child.pid);
     const stdout = [];
     const stderr = [];
-    child.stdout.on("data", (chunk) => stdout.push(chunk));
+    child.stdout.on("data", (chunk) => {
+      stdout.push(chunk);
+      // A caller watching the command as it runs (the comparison's stall watch) sees each chunk
+      // as it arrives; the whole output is still kept and recorded exactly as before.
+      onStdout?.(chunk);
+    });
     child.stderr.on("data", (chunk) => stderr.push(chunk));
     if (input !== null) child.stdin.end(input);
     let timedOut = false;

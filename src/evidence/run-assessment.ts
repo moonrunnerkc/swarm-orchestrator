@@ -70,13 +70,16 @@ export async function recordRunAssessment(
     // The last stop of a loop. A repair attempt withheld for want of budget is recorded as a
     // stop too, but it never ran a loop and its reason is not a lifecycle; naming it here put a
     // record beside a lifecycle it does not carry, and the bundle's own verifier refused it.
+    // A follow-up given once the gates were green, whose candidate was not kept, changed nothing
+    // delivered, so its stop is not the run's lifecycle either.
     lifecycleRecord:
       evidence.records().findLast((entry) => {
         if (entry.type !== "session-stopped") return false;
-        const stopReason = (
-          evidence.payloads().get(entry.payloadDigest) as { stopReason?: unknown }
-        )?.stopReason;
-        return (loopLifecycles as readonly unknown[]).includes(stopReason);
+        const stopped = evidence.payloads().get(entry.payloadDigest) as
+          | { stopReason?: unknown; followUp?: unknown }
+          | undefined;
+        if (stopped?.followUp === true && !followUpKept(evidence)) return false;
+        return (loopLifecycles as readonly unknown[]).includes(stopped?.stopReason);
       })?.payloadDigest ?? null,
     lifecycle,
     cancelled,
@@ -148,6 +151,8 @@ export async function recordGoalAssessment(
         refusal: z.null().optional(),
         verified: z.boolean(),
         task: z.enum(["accepted", "rejected", "unjudged", "vacuous"]),
+        regression: z.enum(["pass", "fail", "unmeasured"]).optional(),
+        goalAcceptance: z.object({ obligations: z.array(z.unknown()) }).optional(),
         advice: z.string(),
         sourcePatchDigest: z.string(),
         sourceBase: z.string(),
@@ -182,7 +187,7 @@ export async function recordGoalAssessment(
   const verdict: RunVerdict = {
     ...base.verdict,
     task: independent.task === "vacuous" ? "unjudged" : independent.task,
-    acceptable: base.verdict.acceptable && independent.verified,
+    acceptable: base.verdict.acceptable && (independent.verified || hypothesesOnly(independent)),
     reasons: {
       ...base.verdict.reasons,
       // Mirrored byte for byte by the bundled verifier's re-derivation of this record; a richer
@@ -209,4 +214,39 @@ export async function recordGoalAssessment(
     }),
   });
   return verdict;
+}
+
+/**
+ * A final verification of a contract that holds the planner's hypotheses and no supplied
+ * requirement: there was nothing authorized to certify, so certification refuses, and the run is
+ * read as one with no contract is, on whether the fresh checkout regressed. The task stays
+ * unjudged. Without this, planning checks made a run unacceptable that the same run without
+ * them accepted. Mirrored by the bundled verifier's re-derivation of this record.
+ */
+function hypothesesOnly(independent: {
+  readonly certificationPolicy?: string | undefined;
+  readonly refusal?: string | null | undefined;
+  readonly regression?: string | undefined;
+  readonly goalAcceptance?: { readonly obligations: readonly unknown[] } | undefined;
+}): boolean {
+  return (
+    independent.certificationPolicy === "goal-obligations-v1" &&
+    independent.refusal == null &&
+    independent.regression === "pass" &&
+    independent.goalAcceptance?.obligations.length === 0
+  );
+}
+
+/** Whether the run's follow-up, where one was given, left a candidate the ratchet kept. */
+function followUpKept(evidence: EvidenceRecorder): boolean {
+  const recorded = evidence
+    .records()
+    .map(
+      (entry) =>
+        evidence.payloads().get(entry.payloadDigest) as
+          | { rule?: unknown; state?: unknown; accepted?: unknown }
+          | undefined,
+    )
+    .findLast((payload) => payload?.rule === "outcome-follow-up-v1");
+  return recorded?.state === "given" && recorded.accepted === true;
 }

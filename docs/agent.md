@@ -171,6 +171,35 @@ shown.
   works from the packed tarball; in one seeded mime launch the planner's checks were right but
   missed the omission, so no repair ran, and Swarm reported the faulty candidate
   `partially-checked` rather than accepted. Live discovery and repair were not shown again.
+- **October 17 (night)**
+  ([development records](evidence/2026-10-17/repair-detection-live/README.md)): given a supplied
+  counterexample, live repairs passed it by deleting line terminators, which the evaluator
+  rejects, and were reported accepted against the supplied checks; a live planner's checks found
+  the omission twice (once by the new relation check), and no live repair fixed it.
+- **October 18**
+  ([development records](evidence/2026-10-18/generated-check-control/README.md)): the night's
+  broken generated checks had misread their input; with that fixed and admission requiring a real
+  control, a live repair against supplied development checks, and once a live planner's relation
+  followed by a live repair, produced patches the evaluator accepts. The matched OpenCode run ended
+  on a rejected permission, and the ordinary run's patch was wrong and reported accepted.
+- **October 18 (night)**
+  ([development records](evidence/2026-10-18/checking-semantics/README.md)): a planned check now
+  runs in the project's own language environment, a check whose base answers are one value is
+  kept with its control unestablished, kept cases must agree with the base, a wrong changed case
+  is held after one repair, and planning asks for a coverage review. Of two pre-registered
+  ordinary mime runs on one frozen build, one delivered a patch both evaluations accept and one
+  delivered a wrong patch, reported unresolved, after a repair broke a correct first change; so
+  ordinary completion is not shown and the comparison was not run. Launch 4's earlier passing
+  patch fails a custom-extension case the task supports.
+- **October 19**
+  ([development records](evidence/2026-10-19/repair-value/README.md)): replayed with no model, the
+  night's controller already rolls back the repair that broke O1's correct first change. A
+  generated case is now held only where a repair left the code as it was, and a relation the base
+  did not hold yields to a repair that restores base-backed behaviour. Both pre-registered ordinary
+  mime runs on one frozen build delivered patches both evaluations accept (one reported
+  `accepted`, one `unresolved`). On one fresh paired marked task, OpenCode's patch passed the hidden
+  oracle and Swarm's did not, which Swarm reported as `not-accepted`. No repair in these runs
+  turned an incorrect candidate correct.
 
 Developer hours saved and adoption are not measured; the prepared, unrun protocol for five
 developers on their own tasks is [human-trial-protocol.md](human-trial-protocol.md).

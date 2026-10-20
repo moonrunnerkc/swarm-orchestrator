@@ -1,0 +1,818 @@
+{
+  "schema": "repair-boundary-launch.v1",
+  "arm": "treatment",
+  "mode": "rehearsal",
+  "build": "afa2deedc",
+  "model": "qwen3.6:35b-a3b",
+  "startedAt": "2026-10-20T21:03:03.842Z",
+  "wallMinutes": 7,
+  "launchCapMs": 600000,
+  "notes": [],
+  "recordedGoalContractDigest": "sha256:904f8aae097097062b53d3ececc431170d517bf90cd43b6bcd7ac82b7e21af67",
+  "replayedAttemptOneTurns": 40,
+  "scratch": "/Users/brad/swarm-comparison-work/repair-handoff-treatment-y3EFRs",
+  "base": "fe15f51b11c3e8e4e68e2c51fcc64bb1c18f6417",
+  "candidateFileDigest": "sha256:c695f84b80871fe4f1863a363f1d3cc56228c7ca2bcca6ca7b1a72b9d633533d",
+  "endpoint": {
+    "proxy": "http://127.0.0.1:49537/v1",
+    "scripted": "http://127.0.0.1:49535/v1",
+    "upstream": "http://127.0.0.1:49536/v1",
+    "scriptedTurns": 43
+  },
+  "swarmCliDigest": "sha256:2bb07c9a9bf46cda45759455c27f21d8336fe0d3dc6d20e4e5461bfc026ea6e0",
+  "argv": [
+    "node",
+    "/Users/brad/.cache/swarm-comparison/tools/swarm-afa2deedc/dist/cli.js",
+    "<prompt>",
+    "--model",
+    "local:qwen3.6:35b-a3b",
+    "--local-endpoint",
+    "http://127.0.0.1:49537/v1",
+    "--workspace",
+    "/Users/brad/swarm-comparison-work/repair-handoff-treatment-y3EFRs/workspace",
+    "--base",
+    "fe15f51b11c3e8e4e68e2c51fcc64bb1c18f6417",
+    "--goal-contract",
+    "/Users/brad/swarm-comparison-work/repair-handoff-treatment-y3EFRs/contract.json",
+    "--install",
+    "--lockfile",
+    "package-lock.json",
+    "--max-tokens",
+    "8000000",
+    "--max-wall-minutes",
+    "7",
+    "--approve",
+    "auto",
+    "--no-tui",
+    "--no-open-evidence",
+    "--json"
+  ],
+  "invocation": {
+    "exitCode": 1,
+    "signal": null,
+    "wallMs": 228460,
+    "tokens": 907159,
+    "usage": {
+      "input": 898303,
+      "output": 8856,
+      "reasoning": 0,
+      "cacheRead": 0,
+      "cacheWrite": null,
+      "unknownCalls": 0,
+      "breakdown": "subsets"
+    },
+    "result": {
+      "schema": "swarm.result.v1",
+      "runId": "20261020T210306-6af6d4",
+      "verdict": {
+        "version": 1,
+        "integrity": "unverified",
+        "signer": "untrusted",
+        "executionTrust": "restricted",
+        "policy": "pass",
+        "mechanical": "pass",
+        "behavioral": "fail",
+        "semantic": "unmeasured",
+        "task": "accepted",
+        "humanApproval": "not-required",
+        "reasons": {
+          "assessment": "the gates settled escalated; blocking gate(s) failed: task-diagnostics; the change was executed and failed: task-diagnostics failed",
+          "mechanical": "build, lint passed",
+          "policy": "file-set, placeholder, secret-scan, diff-budget passed",
+          "behavioral": "task-diagnostics failed",
+          "semantic": "no check here judges whether the change means what the task asked for, and nothing in this system is allowed to: a model's opinion is not a verdict",
+          "task": "pinned goal checks: accepted",
+          "executionTrust": "commands ran under a lexical path and program policy, which is not containment",
+          "humanApproval": "this run did nothing that needs a person's decision",
+          "signer": "no expected signer was matched, so the signature shows the bundle is unchanged since it was written and not who wrote it"
+        },
+        "acceptable": false
+      },
+      "bundleDirectory": "/Users/brad/.swarm/sessions/20261020T210306-6af6d4/bundle",
+      "exitCode": 1,
+      "outcome": {
+        "status": "unresolved",
+        "lifecycle": "completed",
+        "requirements": [
+          {
+            "id": "visible-check",
+            "description": "the visible acceptance check passes on a fresh checkout",
+            "status": "accepted",
+            "authoredBy": "user",
+            "detail": null,
+            "source": "supplied"
+          },
+          {
+            "id": "www-autolink-case-sensitive",
+            "description": "A bare www autolink must start with lowercase \"www.\" exactly; mixed- or upper-case variants must stay plain text.",
+            "status": "unjudged",
+            "authoredBy": "model",
+            "detail": null,
+            "source": "planned",
+            "quote": "Per the GFM spec a bare www autolink must start with lowercase \"www.\" exactly; mixed- or upper-case variants must stay plain text.",
+            "generatedChecks": []
+          },
+          {
+            "id": "scheme-autolink-case-insensitive",
+            "description": "Scheme autolinks (http://, https://, ftp://) must remain case-insensitive so schemes in mixed case still produce links.",
+            "status": "unjudged",
+            "authoredBy": "model",
+            "detail": null,
+            "source": "planned",
+            "quote": "Scheme autolinks must remain case-insensitive for the scheme",
+            "generatedChecks": [
+              {
+                "id": "scheme-autolink-case-insensitive",
+                "status": "rejected",
+                "detail": "exit status 0 as expected; stdout differs from the expected 4 line(s): line 3 should be `{\"input\":\"Ftp://ftp.example.net/file\",\"result\":\"linked\"}` but was `{\"input\":\"Ftp://ftp.example.net/file\",\"result\":\"not-linked\"}`"
+              }
+            ]
+          },
+          {
+            "id": "email-autolink-working",
+            "description": "Email autolinks must continue to work correctly.",
+            "status": "unjudged",
+            "authoredBy": "model",
+            "detail": null,
+            "source": "planned",
+            "quote": "keep email autolinks working",
+            "generatedChecks": [
+              {
+                "id": "email-autolink-working",
+                "status": "accepted",
+                "detail": "expected exit status and bounded stream assertions evaluated over captured process output"
+              }
+            ]
+          }
+        ],
+        "changedFiles": [
+          "src/rules.ts"
+        ],
+        "finalVerification": {
+          "refusal": null,
+          "regression": "pass",
+          "unmeasured": false,
+          "advice": ""
+        },
+        "interventions": {
+          "repairAttempts": 3,
+          "stallNotices": 0,
+          "stallStops": 0,
+          "escalations": 0,
+          "promptsAnsweredByPerson": 0,
+          "promptsPreApproved": 19,
+          "promptsDeclined": 0
+        },
+        "setup": null,
+        "resumable": false,
+        "repairsForGeneratedChecksOnly": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    "stalled": null,
+    "termination": null
+  },
+  "proxy": {
+    "routed": [
+      {
+        "sequence": null,
+        "path": "/v1/models",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:03:06.042Z",
+        "status": 200,
+        "firstByteMs": 6,
+        "wallMs": 8
+      },
+      {
+        "sequence": 1,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:03:32.192Z",
+        "status": 200,
+        "firstByteMs": 3,
+        "wallMs": 3
+      },
+      {
+        "sequence": 2,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:03:32.375Z",
+        "status": 200,
+        "firstByteMs": 1,
+        "wallMs": 1
+      },
+      {
+        "sequence": 3,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:03:32.526Z",
+        "status": 200,
+        "firstByteMs": 0,
+        "wallMs": 1
+      },
+      {
+        "sequence": 4,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:08.540Z",
+        "status": 200,
+        "firstByteMs": 1,
+        "wallMs": 1
+      },
+      {
+        "sequence": 5,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:08.714Z",
+        "status": 200,
+        "firstByteMs": 1,
+        "wallMs": 1
+      },
+      {
+        "sequence": 6,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:08.895Z",
+        "status": 200,
+        "firstByteMs": 1,
+        "wallMs": 1
+      },
+      {
+        "sequence": 7,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:34.561Z",
+        "status": 200,
+        "firstByteMs": 2,
+        "wallMs": 2
+      },
+      {
+        "sequence": 8,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:34.712Z",
+        "status": 200,
+        "firstByteMs": 1,
+        "wallMs": 1
+      },
+      {
+        "sequence": 9,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:34.859Z",
+        "status": 200,
+        "firstByteMs": 0,
+        "wallMs": 0
+      },
+      {
+        "sequence": 10,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:35.023Z",
+        "status": 200,
+        "firstByteMs": 1,
+        "wallMs": 1
+      },
+      {
+        "sequence": 11,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:35.223Z",
+        "status": 200,
+        "firstByteMs": 1,
+        "wallMs": 1
+      },
+      {
+        "sequence": 12,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:35.482Z",
+        "status": 200,
+        "firstByteMs": 1,
+        "wallMs": 1
+      },
+      {
+        "sequence": 13,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:35.652Z",
+        "status": 200,
+        "firstByteMs": 1,
+        "wallMs": 1
+      },
+      {
+        "sequence": 14,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:35.802Z",
+        "status": 200,
+        "firstByteMs": 1,
+        "wallMs": 1
+      },
+      {
+        "sequence": 15,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:35.972Z",
+        "status": 200,
+        "firstByteMs": 1,
+        "wallMs": 1
+      },
+      {
+        "sequence": 16,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:36.149Z",
+        "status": 200,
+        "firstByteMs": 1,
+        "wallMs": 1
+      },
+      {
+        "sequence": 17,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:36.301Z",
+        "status": 200,
+        "firstByteMs": 1,
+        "wallMs": 1
+      },
+      {
+        "sequence": 18,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:36.473Z",
+        "status": 200,
+        "firstByteMs": 1,
+        "wallMs": 1
+      },
+      {
+        "sequence": 19,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:36.686Z",
+        "status": 200,
+        "firstByteMs": 1,
+        "wallMs": 1
+      },
+      {
+        "sequence": 20,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:36.826Z",
+        "status": 200,
+        "firstByteMs": 0,
+        "wallMs": 0
+      },
+      {
+        "sequence": 21,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:36.976Z",
+        "status": 200,
+        "firstByteMs": 1,
+        "wallMs": 1
+      },
+      {
+        "sequence": 22,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:37.178Z",
+        "status": 200,
+        "firstByteMs": 1,
+        "wallMs": 1
+      },
+      {
+        "sequence": 23,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:37.365Z",
+        "status": 200,
+        "firstByteMs": 1,
+        "wallMs": 1
+      },
+      {
+        "sequence": 24,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:37.570Z",
+        "status": 200,
+        "firstByteMs": 0,
+        "wallMs": 0
+      },
+      {
+        "sequence": 25,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:37.776Z",
+        "status": 200,
+        "firstByteMs": 0,
+        "wallMs": 0
+      },
+      {
+        "sequence": 26,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:37.984Z",
+        "status": 200,
+        "firstByteMs": 0,
+        "wallMs": 0
+      },
+      {
+        "sequence": 27,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:38.172Z",
+        "status": 200,
+        "firstByteMs": 1,
+        "wallMs": 1
+      },
+      {
+        "sequence": 28,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:38.394Z",
+        "status": 200,
+        "firstByteMs": 1,
+        "wallMs": 1
+      },
+      {
+        "sequence": 29,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:38.581Z",
+        "status": 200,
+        "firstByteMs": 0,
+        "wallMs": 0
+      },
+      {
+        "sequence": 30,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:38.756Z",
+        "status": 200,
+        "firstByteMs": 0,
+        "wallMs": 0
+      },
+      {
+        "sequence": 31,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:38.937Z",
+        "status": 200,
+        "firstByteMs": 1,
+        "wallMs": 1
+      },
+      {
+        "sequence": 32,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:39.109Z",
+        "status": 200,
+        "firstByteMs": 1,
+        "wallMs": 1
+      },
+      {
+        "sequence": 33,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:39.287Z",
+        "status": 200,
+        "firstByteMs": 1,
+        "wallMs": 1
+      },
+      {
+        "sequence": 34,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:39.507Z",
+        "status": 200,
+        "firstByteMs": 0,
+        "wallMs": 0
+      },
+      {
+        "sequence": 35,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:39.727Z",
+        "status": 200,
+        "firstByteMs": 0,
+        "wallMs": 0
+      },
+      {
+        "sequence": 36,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:39.918Z",
+        "status": 200,
+        "firstByteMs": 1,
+        "wallMs": 1
+      },
+      {
+        "sequence": 37,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:40.092Z",
+        "status": 200,
+        "firstByteMs": 1,
+        "wallMs": 1
+      },
+      {
+        "sequence": 38,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:40.272Z",
+        "status": 200,
+        "firstByteMs": 0,
+        "wallMs": 1
+      },
+      {
+        "sequence": 39,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:40.465Z",
+        "status": 200,
+        "firstByteMs": 0,
+        "wallMs": 0
+      },
+      {
+        "sequence": 40,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:40.644Z",
+        "status": 200,
+        "firstByteMs": 1,
+        "wallMs": 1
+      },
+      {
+        "sequence": 41,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:40.827Z",
+        "status": 200,
+        "firstByteMs": 1,
+        "wallMs": 1
+      },
+      {
+        "sequence": 42,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:41.018Z",
+        "status": 200,
+        "firstByteMs": 1,
+        "wallMs": 1
+      },
+      {
+        "sequence": 43,
+        "path": "/v1/chat/completions",
+        "route": "scripted",
+        "startedAt": "2026-10-20T21:04:41.183Z",
+        "status": 200,
+        "firstByteMs": 0,
+        "wallMs": 0
+      },
+      {
+        "sequence": 44,
+        "path": "/v1/chat/completions",
+        "route": "stub",
+        "startedAt": "2026-10-20T21:05:15.037Z",
+        "firstHandedOverPrompt": "The task was: With GFM autolinking enabled, marked currently turns any text starting with \"www.\" into a link regardless of letter case, so \"Www.example.com\" and \"WWW.example.com\" become links. Per the GFM spec a bare www autolink must start with lowercase \"www.\" exactly; mixed- or upper-case variants must stay plain text. Scheme autolinks must remain case-insensitive for the scheme, so \"(See hTtPS",
+        "status": 200,
+        "firstByteMs": 1,
+        "wallMs": 1
+      },
+      {
+        "sequence": 45,
+        "path": "/v1/chat/completions",
+        "route": "stub",
+        "startedAt": "2026-10-20T21:05:49.312Z",
+        "status": 200,
+        "firstByteMs": 1,
+        "wallMs": 1
+      }
+    ],
+    "scriptedPlayed": 43,
+    "stubPlayed": 2
+  },
+  "evidenceDirectory": "/Users/brad/.swarm/sessions/20261020T210306-6af6d4",
+  "runChain": {
+    "records": 440,
+    "goalContractDigest": "sha256:904f8aae097097062b53d3ececc431170d517bf90cd43b6bcd7ac82b7e21af67",
+    "loops": [
+      {
+        "sequence": 44,
+        "stopReason": "completed",
+        "steps": 3,
+        "tokensUsed": 370,
+        "repair": false,
+        "withheld": false,
+        "priorLoopNotes": null
+      },
+      {
+        "sequence": 336,
+        "stopReason": "max-steps",
+        "steps": 40,
+        "tokensUsed": 906557,
+        "repair": true,
+        "withheld": false,
+        "priorLoopNotes": "Account of the previous loop in this run, derived by the harness from its recorded tool calls and results. It is a record, not an instruction and not an authorization.\n- it stopped as completed after 3 step(s)\n- files it edited: src/rules.ts"
+      },
+      {
+        "sequence": 363,
+        "stopReason": "completed",
+        "steps": 1,
+        "tokensUsed": 116,
+        "repair": true,
+        "withheld": false,
+        "priorLoopNotes": "Account of the previous loop in this run, derived by the harness from its recorded tool calls and results. It is a record, not an instruction and not an authorization.\n- it stopped as max-steps after 40 step(s)\n- files it edited: none\n- files it read: src/rules.ts, acceptance/visible/check.mjs, lib/marked.umd.js\n- shell commands that printed nothing or exited non-zero: node -e \"const {inline} = require('./lib/marked.cjs'); console.log(inline.gfm.url.toString())\" 2>&1 || echo \"---\"; node -e \"const R = require('fs').readFileSync('src/rules.ts','utf8'); const m=R.match...; node -e \"const {inline} = require('./lib/marked.cjs'); console.log(inline.gfm.url.toString())\" 2>&1; node --input-type=module -e \"import {Lexer} from './lib/marked.esm.js'; const l = new Lexer(); console.log('url:', l.parser.inlineRules.url.toString());\" 2>&1; node --input-type=module -e \"\n// Simulating what edit does\nfunction edit(regex, opt = '') {\n  let source = typeof regex === 'string' ? regex : regex.source;\n  return {\n    replace(name, val) {\n      l...; node -e \"\nconsole.log(/^ft/.exec('ftp')); // Should be ['ft']\nconsole.log(/^[fp]/.exec('ftp')); // Should be ['f'] \nconsole.log(RegExp('^([fF][pP][tT]') );\nconsole.log(/^([fF][pP][tT])$/.test('ftp'));...\n- the last 3 shell command(s) that printed something and exited 0, as that loop saw them. These are historical observations of that loop's files at the time, not verification of the workspace now; an exit status of 0 says the command ran, not that what it examined was correct:\n  1. node -e \"\n// Debug step by step\nconsole.log('Testing [fF]:', /^([fF])/.exec('ftp'));\nconsole.log('Testing [fF][pP]:', /^([fF][pP])/.exec('ftp'));\nconsole.log('Testing [fF][pP][tT]:', /^([fF][pP][tT])/... (exit 0; on the files as that loop left them; record sha256:53eda9e87d6a73fd360b0cde961f90be799f0a236350660b5cbc610432bed5e3) printed:\n     stdout:\n     Testing [fF]: [ 'f', 'f', index: 0, input: 'ftp', groups: undefined ]\n     Testing [fF][pP]: null\n     Testing [fF][pP][tT]: null\n     f char: f 70\n     Line length: 16\n     Found at: -1\n  2. node -e \"console.log('Testing [fF][pP]:', /^([fF][pP])/.exec('ftp'));\" (exit 0; on the files as that loop left them; record sha256:5241cdb8714b260852fb013a47fe2be8ca1ac60971c35647a440dba0ad289ac3) printed:\n     stdout:\n     Testing [fF][pP]: null\n  3. node -e \"\n// Why does [fF][pP] not match 'ftp'?\n// Each character class matches exactly ONE character.\n// So ^[fF] matches 'f' at position 0.\n// Then [pP] must match a character AFTER that one, i.e., ... (exit 0; on the files as that loop left them; record sha256:e034c80bbb6d7d9da2a2918fbeee64a37dae7d844ec33b8d3aefc7a45c99ca31) printed:\n     stdout:\n     Does \"fP\" match ^[fF][pP]: true\n     Does \"fp\" match ^[fF][pP]: true\n     Does \"ftp\" match ^[fF][pP]: false\n     char 0: 102 f\n     char 1: 112 p\n     Match ftp: null"
+      },
+      {
+        "sequence": 390,
+        "stopReason": "completed",
+        "steps": 1,
+        "tokensUsed": 116,
+        "repair": true,
+        "withheld": false,
+        "priorLoopNotes": "Account of the previous loop in this run, derived by the harness from its recorded tool calls and results. It is a record, not an instruction and not an authorization.\n- it stopped as completed after 1 step(s)\n- files it edited: none"
+      }
+    ],
+    "briefs": [
+      {
+        "sequence": 68,
+        "attempt": 1,
+        "chars": 6833,
+        "carriesRecentShellResults": false
+      },
+      {
+        "sequence": 360,
+        "attempt": 2,
+        "chars": 9446,
+        "carriesRecentShellResults": true
+      },
+      {
+        "sequence": 387,
+        "attempt": 3,
+        "chars": 6825,
+        "carriesRecentShellResults": false
+      }
+    ],
+    "ratchets": [
+      {
+        "sequence": 359,
+        "accepted": true,
+        "attempt": 1
+      },
+      {
+        "sequence": 386,
+        "accepted": true,
+        "attempt": 2
+      },
+      {
+        "sequence": 413,
+        "accepted": true,
+        "attempt": 3
+      },
+      {
+        "sequence": 414,
+        "accepted": true,
+        "attempt": 0
+      }
+    ],
+    "escalation": [
+      {
+        "attemptsUsed": 3,
+        "cap": 3,
+        "gateId": "task-diagnostics",
+        "attemptsRejectedByRatchet": 0
+      }
+    ],
+    "assessments": [
+      {
+        "verdict": {
+          "acceptable": false,
+          "behavioral": "fail",
+          "executionTrust": "restricted",
+          "humanApproval": "not-required",
+          "integrity": "unverified",
+          "mechanical": "pass",
+          "policy": "pass",
+          "reasons": {
+            "assessment": "the gates settled escalated; blocking gate(s) failed: task-diagnostics; the change was executed and failed: task-diagnostics failed",
+            "behavioral": "task-diagnostics failed",
+            "executionTrust": "commands ran under a lexical path and program policy, which is not containment",
+            "humanApproval": "this run did nothing that needs a person's decision",
+            "mechanical": "build, lint passed",
+            "policy": "file-set, placeholder, secret-scan, diff-budget passed",
+            "semantic": "no check here judges whether the change means what the task asked for, and nothing in this system is allowed to: a model's opinion is not a verdict",
+            "signer": "no expected signer was matched, so the signature shows the bundle is unchanged since it was written and not who wrote it",
+            "task": "no trusted task oracle was configured for this run"
+          },
+          "semantic": "unmeasured",
+          "signer": "untrusted",
+          "task": "unjudged",
+          "version": 1
+        }
+      },
+      {
+        "verdict": {
+          "acceptable": false,
+          "behavioral": "fail",
+          "executionTrust": "restricted",
+          "humanApproval": "not-required",
+          "integrity": "unverified",
+          "mechanical": "pass",
+          "policy": "pass",
+          "reasons": {
+            "assessment": "the gates settled escalated; blocking gate(s) failed: task-diagnostics; the change was executed and failed: task-diagnostics failed",
+            "behavioral": "task-diagnostics failed",
+            "executionTrust": "commands ran under a lexical path and program policy, which is not containment",
+            "humanApproval": "this run did nothing that needs a person's decision",
+            "mechanical": "build, lint passed",
+            "policy": "file-set, placeholder, secret-scan, diff-budget passed",
+            "semantic": "no check here judges whether the change means what the task asked for, and nothing in this system is allowed to: a model's opinion is not a verdict",
+            "signer": "no expected signer was matched, so the signature shows the bundle is unchanged since it was written and not who wrote it",
+            "task": "pinned goal checks: accepted"
+          },
+          "semantic": "unmeasured",
+          "signer": "untrusted",
+          "task": "accepted",
+          "version": 1
+        }
+      }
+    ],
+    "edits": [
+      {
+        "toolName": "write",
+        "path": "src/rules.ts",
+        "output": "wrote 17175 bytes to src/rules.ts"
+      }
+    ],
+    "modelCalls": 45
+  },
+  "finalPatch": {
+    "digest": "sha256:8efc2f36d0eff9a9e95eba5e66238c828951be56f9adaad62fd3cfd895077c1b",
+    "bytes": 1264,
+    "sameAsCandidate": true
+  },
+  "visible": {
+    "passed": true,
+    "checkExit": 0,
+    "projectTestExit": 0,
+    "detail": "visible check and project tests passed"
+  },
+  "hidden": {
+    "verdict": "pass",
+    "basis": "hidden tests, project tests and every structural or version requirement passed",
+    "detail": ""
+  },
+  "probe": {
+    "exitCode": 0,
+    "stderr": "",
+    "summary": [
+      {
+        "id": "example-mixed-case-scheme",
+        "matchesUpstream": true
+      },
+      {
+        "id": "ftp-bare",
+        "matchesUpstream": false
+      },
+      {
+        "id": "ftp-in-text",
+        "matchesUpstream": false
+      },
+      {
+        "id": "http-in-text",
+        "matchesUpstream": true
+      },
+      {
+        "id": "https-upper-start",
+        "matchesUpstream": true
+      },
+      {
+        "id": "www-lower",
+        "matchesUpstream": true
+      },
+      {
+        "id": "www-mixed",
+        "matchesUpstream": true
+      },
+      {
+        "id": "www-upper",
+        "matchesUpstream": true
+      },
+      {
+        "id": "email",
+        "matchesUpstream": true
+      },
+      {
+        "id": "angle-mixed-case-scheme",
+        "matchesUpstream": true
+      }
+    ]
+  },
+  "endedAt": "2026-10-20T21:07:16.850Z",
+  "outcome": "launched"
+}

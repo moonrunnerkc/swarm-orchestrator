@@ -133,6 +133,54 @@ export const invocationSchema = z.strictObject({
   }),
 });
 
+/**
+ * One probe sequence of the endpoint in the product's wire shape (inference.mjs): before a
+ * launch (`readiness`), after an arm's request stalled and the arm was stopped (`after-stall`),
+ * or before a recovery (`recovery`). Each request is kept with its outcome, timing and usage;
+ * a `refused` request was never sent (an invocation held the endpoint).
+ */
+export const probeSequenceSchema = z.strictObject({
+  purpose: z.enum(["readiness", "after-stall", "recovery"]),
+  startedAt: z.string(),
+  wallMs: z.number().int().nonnegative(),
+  ok: z.boolean(),
+  problem: z.string().nullable(),
+  configuration: z.strictObject({
+    endpoint: z.string(),
+    model: z.string(),
+    stream: z.literal(true),
+    includeUsage: z.literal(true),
+    thinking: z.literal(false),
+    maxTokens: z.number().int().positive(),
+    requestDeadlineMs: z.number().int().positive(),
+    sequenceDeadlineMs: z.number().int().positive(),
+  }),
+  requests: z.array(
+    z.strictObject({
+      kind: z.enum(["chat", "tool-call", "tool-result"]),
+      wallMs: z.number().int().nonnegative(),
+      firstByteMs: z.number().int().nonnegative().nullable(),
+      status: z.number().int().nullable(),
+      outcome: z.enum(["answered", "failed", "refused"]),
+      problem: z.string().nullable(),
+      usage: z
+        .strictObject({
+          input: z.number().int().nonnegative(),
+          output: z.number().int().nonnegative(),
+        })
+        .nullable(),
+    }),
+  ),
+});
+
+/** The probes' spend, apart from the task's: a lower bound where a request answered without usage or never answered. */
+export const probeTotalsSchema = z.strictObject({
+  probeRequests: z.number().int().nonnegative(),
+  probeRequestsWithoutUsage: z.number().int().nonnegative(),
+  probeTokens: z.number().int().nonnegative(),
+  probeWallMs: z.number().int().nonnegative(),
+});
+
 export const recordSchema = z.strictObject({
   schema: z.literal("swarm-ordinary-comparison.record.v1"),
   manifestDigest: digest,
@@ -170,7 +218,14 @@ export const recordSchema = z.strictObject({
     agentWallMs: z.number().int().nonnegative(),
     tokens: z.number().int().nonnegative().nullable(),
     tokensUnknownInvocations: z.number().int().nonnegative(),
+    /** The probes' spend, kept apart from the task's and absent on records written before probes. */
+    probes: probeTotalsSchema.optional(),
   }),
+  /**
+   * Every probe sequence of this launch, in order: the readiness that admitted it and any probe
+   * after a stalled request. Absent on records written before the endpoint was exercised.
+   */
+  probes: z.array(probeSequenceSchema).optional(),
   infrastructureFailure: z.string().nullable(),
   notes: z.array(z.string()),
   /**
@@ -265,6 +320,8 @@ export const haltSchema = z.strictObject({
   }),
   runner: z.strictObject({ pid: z.number().int(), started: z.string().nullable() }),
   notes: z.array(z.string()),
+  /** The probe sequences that led to or followed this halt, where the endpoint was exercised. */
+  probes: z.array(probeSequenceSchema).optional(),
 });
 
 export const recoverySchema = z.strictObject({
@@ -286,4 +343,6 @@ export const recoverySchema = z.strictObject({
   }),
   completed: z.number().int().nonnegative(),
   remaining: z.array(launchRef),
+  /** The readiness the recovery established, where the harness exercised the endpoint. */
+  probes: z.array(probeSequenceSchema).optional(),
 });

@@ -92,6 +92,18 @@ const documentedAsRemoved = new Map([
   ],
   ["redteam/leep/", "removed by the 08-18 run, which the documents naming it record"],
   [
+    "src/Mime.ts",
+    "a file of the mime task's repository, which the 2026-10-18 generated-check protocol names; that protocol is not edited after its first launch",
+  ],
+  [
+    "src/rules.ts",
+    "a file of the marked task's repository, which the 2026-10-20 repair-handoff protocol names; that protocol is not edited after its first launch",
+  ],
+  [
+    "campaign/corpus/local-ollama/refined-github__refined-github/",
+    "packed whole and losslessly into campaign/corpus/local-ollama/packed-derived/local-ollama-corpus, whose payloads were already outside the repository; restore gives the bundle back byte for byte",
+  ],
+  [
     "docs/evidence/2026-08-23/live-task.cast",
     "packed losslessly into docs/evidence/2026-08-23/packed-derived/terminal-recordings-2026-08; the record naming it stands",
   ],

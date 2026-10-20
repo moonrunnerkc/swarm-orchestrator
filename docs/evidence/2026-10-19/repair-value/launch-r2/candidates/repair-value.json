@@ -1,0 +1,163 @@
+{
+  "schema": "swarm-launch-repair-value.v1",
+  "kind": "external evaluation after the launch finished; never given to the product",
+  "task": "mime-bugfix-gettype-line-terminators",
+  "baseCommit": "953ae3ebc59c387064f3760b73085eff6760a7f6",
+  "session": "20261019T153624-b6c99e",
+  "rows": [
+    {
+      "stage": "attempt-0",
+      "attempt": 0,
+      "pinnedTree": "7aacfc2f59f6847fc29c77172a0681bae003b7b7",
+      "recovered": "tool calls",
+      "tried": [
+        {
+          "source": "tool calls",
+          "tree": "7aacfc2f59f6847fc29c77172a0681bae003b7b7"
+        }
+      ],
+      "patch": "candidates/attempt-0.patch",
+      "ratchet": null,
+      "keptByProduct": true,
+      "model": {
+        "calls": 22,
+        "callsWithoutUsage": 0,
+        "inputTokens": 249983,
+        "outputTokens": 6074,
+        "responseMs": 73445,
+        "loopWallMs": 78056,
+        "steps": 22,
+        "stopReason": "completed"
+      }
+    },
+    {
+      "stage": "repair-1",
+      "attempt": 1,
+      "pinnedTree": "f6960f20bffc5cc1eab9e25bdbd1b20b6f95f03b",
+      "recovered": "the base tree",
+      "tried": [
+        {
+          "source": "tool calls",
+          "tree": "420bec9170831fa5c6aede6a459d300e13ca5b58"
+        },
+        {
+          "source": "rejected-candidate record",
+          "tree": "02548000377fec58393d9b79c28862aa1125577b"
+        },
+        {
+          "source": "the base tree",
+          "tree": "f6960f20bffc5cc1eab9e25bdbd1b20b6f95f03b"
+        }
+      ],
+      "patch": "candidates/repair-1.patch",
+      "ratchet": {
+        "accepted": false,
+        "detail": "the ratchet rejected the attempt: the task-acceptance gate passed before this attempt and now reports failed; visible-check in the task-acceptance gate passed before this attempt and now reports failed; line-terminators-like-space in the task-diagnostics gate passed before this attempt and now reports failed; coverage-get-type-line-terminators in the task-diagnostics gate passed before this attempt and now reports failed"
+      },
+      "keptByProduct": false,
+      "model": {
+        "calls": 40,
+        "callsWithoutUsage": 0,
+        "inputTokens": 1013389,
+        "outputTokens": 25518,
+        "responseMs": 398014,
+        "loopWallMs": 448818,
+        "steps": 40,
+        "stopReason": "max-steps"
+      }
+    },
+    {
+      "stage": "repair-2",
+      "attempt": 2,
+      "pinnedTree": "7aacfc2f59f6847fc29c77172a0681bae003b7b7",
+      "recovered": "tool calls",
+      "tried": [
+        {
+          "source": "tool calls",
+          "tree": "7aacfc2f59f6847fc29c77172a0681bae003b7b7"
+        }
+      ],
+      "patch": "candidates/repair-2.patch",
+      "ratchet": {
+        "accepted": true,
+        "detail": "the ratchet accepted the attempt: no measure moved the wrong way (not compared: testsCollected, changedLineCoverage)"
+      },
+      "keptByProduct": true,
+      "model": {
+        "calls": 10,
+        "callsWithoutUsage": 0,
+        "inputTokens": 99919,
+        "outputTokens": 555,
+        "responseMs": 13422,
+        "loopWallMs": 63041,
+        "steps": 9,
+        "stopReason": "max-wall-time"
+      }
+    }
+  ],
+  "correctness": "a candidate is correct where the frozen evaluator passes and the custom-extension check passes",
+  "firstCandidate": {
+    "stage": "attempt-0",
+    "correct": true,
+    "score": {
+      "candidate": "attempt-0",
+      "patchDigest": "sha256:a69c926d68206a60fdf92f9766be3e9b06917730aba140d00a695c6014534c03",
+      "evaluator": "pass",
+      "evaluatorBasis": "hidden tests, project tests and every structural or version requirement passed",
+      "developmentContract": "passes",
+      "customExtension": "passes",
+      "relationBound": "relation breaks",
+      "projectSuite": "passes",
+      "expandedPasses": true
+    }
+  },
+  "deliveredCandidate": {
+    "stage": "repair-2",
+    "correct": true,
+    "score": {
+      "candidate": "repair-2",
+      "patchDigest": "sha256:a69c926d68206a60fdf92f9766be3e9b06917730aba140d00a695c6014534c03",
+      "evaluator": "pass",
+      "evaluatorBasis": "hidden tests, project tests and every structural or version requirement passed",
+      "developmentContract": "passes",
+      "customExtension": "passes",
+      "relationBound": "relation breaks",
+      "projectSuite": "passes",
+      "expandedPasses": true
+    },
+    "matchesDriverFinalPatch": true
+  },
+  "transitions": [
+    {
+      "repair": "repair-1",
+      "startedFrom": "attempt-0",
+      "before": true,
+      "after": false,
+      "kind": "correct to incorrect",
+      "keptByProduct": false
+    },
+    {
+      "repair": "repair-2",
+      "startedFrom": "attempt-0",
+      "before": true,
+      "after": true,
+      "kind": "no change: the repair left the tree as it was",
+      "keptByProduct": true
+    }
+  ],
+  "counts": {
+    "repairs": 2,
+    "incorrectToCorrect": 0,
+    "correctToIncorrect": 1,
+    "noRelevantChange": 1,
+    "unknown": 0
+  },
+  "repairUsage": {
+    "calls": 50,
+    "inputTokens": 1113308,
+    "outputTokens": 26073,
+    "responseMs": 411436,
+    "loopWallMs": 511859
+  },
+  "scratch": "/Users/brad/swarm-comparison-work/score-launch-wTrmv2"
+}

@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "goal": "Mime.getType(path) (src/Mime.ts) derives a type from the extension after the last dot of the last path segment. The two regular expressions that strip the directory part and the part before the extension do not match across line terminators, so a file name that contains one is typed wrongly: getType('LINE\\nFEED.png') returns null instead of 'image/png', and the same happens for a carriage return (",
+  "requirements": [
+    {
+      "id": "visible-check",
+      "description": "the visible acceptance check passes on a fresh checkout",
+      "checks": [
+        "visible-check"
+      ]
+    },
+    {
+      "id": "earlier-extension",
+      "description": "a line terminator between two extensions does not make getType fail or pick the earlier one",
+      "checks": [
+        "counterexample"
+      ]
+    },
+    {
+      "id": "terminators-ordinary",
+      "description": "a line terminator in a name behaves like a space, at every position",
+      "checks": [
+        "terminator-like-space"
+      ]
+    },
+    {
+      "id": "kept-behaviour",
+      "description": "spaces, tabs, directory parts, case, unknown extensions and getExtension stay as they are",
+      "checks": [
+        "preserved-behaviour"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "visible-check",
+      "command": "npm run build && node acceptance/visible/check.mjs",
+      "author": "user",
+      "exposure": "shared",
+      "artifacts": []
+    },
+    {
+      "id": "counterexample",
+      "command": "npm run build && node acceptance/development/counterexample.mjs",
+      "author": "user",
+      "exposure": "shared",
+      "artifacts": []
+    },
+    {
+      "id": "terminator-like-space",
+      "command": "npm run build && node acceptance/development/relation.mjs",
+      "author": "user",
+      "exposure": "shared",
+      "artifacts": []
+    },
+    {
+      "id": "preserved-behaviour",
+      "command": "npm run build && node acceptance/development/preserve.mjs",
+      "author": "user",
+      "exposure": "shared",
+      "artifacts": []
+    }
+  ],
+  "immutablePaths": [
+    "acceptance/visible",
+    "test",
+    "types",
+    "acceptance/development"
+  ]
+}

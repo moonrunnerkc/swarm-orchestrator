@@ -1,0 +1,147 @@
+{
+  "schema": "swarm-generated-check-control-launch.v1",
+  "arm": "swarm",
+  "mode": "seeded",
+  "kind": "seeded-candidate fault injection: live planning and live repair, injected first candidate, ordinary visible check",
+  "task": "mime-bugfix-gettype-line-terminators",
+  "baseCommit": "953ae3ebc59c387064f3760b73085eff6760a7f6",
+  "workspaceBase": "3a7824ca578590c41aee1b5c654ec30602b23b7d",
+  "swarmCli": "/Users/brad/.cache/swarm-comparison/tools/swarm-2beb86532/dist/cli.js",
+  "opencode": null,
+  "model": "qwen3.6:35b-a3b",
+  "endpoint": "http://127.0.0.1:11434/v1",
+  "argv": [
+    "/Users/brad/.cache/swarm-comparison/tools/swarm-2beb86532/dist/cli.js",
+    "<task text>",
+    "--model",
+    "local:qwen3.6:35b-a3b",
+    "--local-endpoint",
+    "http://127.0.0.1:59415/v1",
+    "--workspace",
+    "/Users/brad/swarm-comparison-work/generated-check-control-swarm-seeded-o6KskF/workspace",
+    "--base",
+    "3a7824ca578590c41aee1b5c654ec30602b23b7d",
+    "--goal-contract",
+    "/Users/brad/swarm-comparison-work/generated-check-control-swarm-seeded-o6KskF/contract.json",
+    "--plan-checks",
+    "--install",
+    "--lockfile",
+    "package-lock.json",
+    "--max-tokens",
+    "8000000",
+    "--max-wall-minutes",
+    "14",
+    "--approve",
+    "auto",
+    "--no-tui",
+    "--no-open-evidence",
+    "--json"
+  ],
+  "startedAt": "2026-10-18T15:39:19.873Z",
+  "elapsedMs": 676283,
+  "killedAtDeadline": false,
+  "exitCode": 1,
+  "acceptanceTouched": null,
+  "acceptable": false,
+  "outcomeStatus": "unresolved",
+  "finalVerification": {
+    "refusal": null,
+    "regression": "pass",
+    "unmeasured": false,
+    "advice": "at least one check fails at the base commit too, with this patch not applied, and every test it fails also failed there (or its output is the same), so it is reported as inherited rather than as a regression. A common cause is a project that builds on install: dependencies are installed with --ignore-scripts, because install scripts run whatever the registry serves, so a `prepare` step that generates what the tests import does not run."
+  },
+  "plannedChecks": {
+    "outcome": "sealed",
+    "admitted": [
+      "gettype-line-terminator-in-filename",
+      "gettype-ordinary-paths-preserved",
+      "line-terminator-like-space",
+      "gettype-line-terminator-boundary-cases"
+    ],
+    "dropped": [],
+    "revision": {
+      "outcome": "not-needed"
+    },
+    "coverage": {
+      "sentences": 6,
+      "quotedByAdmitted": [
+        3,
+        5
+      ],
+      "quotedWithoutCheck": []
+    }
+  },
+  "requirements": [
+    {
+      "id": "visible-check",
+      "description": "the visible acceptance check passes on a fresh checkout",
+      "status": "accepted",
+      "authoredBy": "user",
+      "detail": null,
+      "source": "supplied"
+    },
+    {
+      "id": "line-terminator-behave-like-other",
+      "description": "GetType must correctly resolve extensions when filename has multiple dots with line terminators",
+      "status": "unjudged",
+      "authoredBy": "model",
+      "detail": null,
+      "source": "planned",
+      "quote": "a content type decided from it must come from the extension after the last dot of the last segment, whatever characters precede it, so that a name crafted with a line terminator cannot make the lookup fail or pick an earlier extension.",
+      "generatedChecks": [
+        {
+          "id": "gettype-line-terminator-in-filename",
+          "status": "rejected",
+          "detail": "exit status 0 as expected; stdout differs from the expected 10 line(s): line 10 should be `{\"input\":\"foo.txt\",\"result\":\"text/html\"}` but was `{\"input\":\"foo.txt\",\"result\":null}`"
+        },
+        {
+          "id": "line-terminator-like-space",
+          "status": "accepted",
+          "detail": "expected exit status and bounded stream assertions evaluated over captured process output"
+        },
+        {
+          "id": "gettype-line-terminator-boundary-cases",
+          "status": "accepted",
+          "detail": "expected exit status and bounded stream assertions evaluated over captured process output"
+        }
+      ]
+    },
+    {
+      "id": "preserve-ordinary-gettype",
+      "description": "GetType returns correct types for ordinary filesystem paths already handled correctly",
+      "status": "unjudged",
+      "authoredBy": "model",
+      "detail": null,
+      "source": "planned",
+      "quote": "getExtension, define and the rest of the class stay as they are. The change belongs in src/Mime.ts only.",
+      "generatedChecks": [
+        {
+          "id": "gettype-ordinary-paths-preserved",
+          "status": "accepted",
+          "detail": "expected exit status and bounded stream assertions evaluated over captured process output"
+        }
+      ]
+    }
+  ],
+  "repairAttempts": 3,
+  "setup": {
+    "tokensUsed": 306791,
+    "durationMs": 160148
+  },
+  "opencodeUsage": null,
+  "exchanges": {
+    "live": 128,
+    "seeded": 2
+  },
+  "liveTokens": {
+    "prompt": 1878117,
+    "completion": 31407,
+    "callsWithoutUsage": 0
+  },
+  "generatedChecksCaptured": true,
+  "sessions": [
+    "20261018T153920-8316c8",
+    "20261018T153920-8316c8-plan"
+  ],
+  "scratch": "/Users/brad/swarm-comparison-work/generated-check-control-swarm-seeded-o6KskF"
+}

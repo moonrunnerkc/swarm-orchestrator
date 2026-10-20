@@ -33,6 +33,17 @@ export interface GateReading {
   readonly status: GateStatus;
   readonly detail: string;
   readonly measures: GateMeasures;
+  /**
+   * Named results inside the one verdict, where a gate aggregates several (the acceptance gate's
+   * supplied checks). The ratchet holds each to the rule it holds the gate to: a gate already
+   * failing for one part says nothing about another part a retry broke beside it.
+   */
+  readonly parts?: Readonly<Record<string, GateStatus>>;
+  /**
+   * Which of those parts rest on nothing but the planner's claim of the change, which the ratchet
+   * lets yield to a restored part outside them (`RatchetInput.partClaims`). Absent names none.
+   */
+  readonly claims?: readonly string[];
 }
 
 /** The whole judgement step: bytes in, verdict and numbers out. No other input. */

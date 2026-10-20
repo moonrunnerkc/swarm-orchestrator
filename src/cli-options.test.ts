@@ -788,6 +788,18 @@ describe("a flag this build does not have", () => {
     ).toThrow(/--colour is not an option/);
   });
 
+  it("is refused by name when nothing follows it, rather than as a flag that needs a value", () => {
+    // A remote install walk typed the task first: `swarm "make a change" --plan-check` was told
+    // "--plan-check needs a value", which names a flag that does not exist as if it did.
+    expect(() => parseCommandLine(["make a change", "--plan-check"], context)).toThrow(
+      /--plan-check is not an option of this command; swarm --help lists them/,
+    );
+    // A flag the build has, with nothing after it, still needs its value.
+    expect(() => parseCommandLine(["make a change", "--model"], context)).toThrow(
+      "--model needs a value",
+    );
+  });
+
   it("does not stop help, which is what a person asks for when the line is wrong", () => {
     expect(parseCommandLine(["--help", "--plan-check", "x"], context)).toEqual({ command: "help" });
   });

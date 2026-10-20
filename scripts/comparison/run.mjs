@@ -11,9 +11,13 @@
  * launch and holds the task set, the pins, the budgets, the protocol digest and the order.
  *
  * The campaign stops, before any later launch, when the experiment rather than an arm fails: the
- * endpoint dies or restarts (watched during every invocation), the frozen configuration is not
- * what is installed, a task environment cannot be prepared, the scorer cannot judge, a record
- * cannot be validated, written or backed by its evidence, or the runner is interrupted. The stop
+ * endpoint dies or restarts (watched during every invocation), the endpoint does not complete a
+ * bounded chat and tool round trip in the product's own wire shape before a launch (readiness,
+ * inference.mjs), the Swarm arm's model request has had no answer past the declared request
+ * deadline (stall.mjs; the arm is stopped and the endpoint probed again, and both are recorded),
+ * the frozen configuration is not what is installed, a task environment cannot be prepared, the
+ * scorer cannot judge, a record cannot be validated, written or backed by its evidence, or the
+ * runner is interrupted. No probe is sent while an arm's request is in flight. The stop
  * is a `halt-N.json` beside the records, the affected attempt is kept as
  * `<task>.<arm>.halted-N.json`, and the same command refuses to continue until `--recover` has
  * revalidated the pins and recorded why. Exit statuses: 0 done or nothing to do; 2 usage or an
@@ -68,8 +72,18 @@ import {
 } from "./control.mjs";
 import { endpointPort, instanceChange, probeEndpoint, watchInstance } from "./endpoint.mjs";
 import { harnessDigest } from "./harness-identity.mjs";
+import {
+  createInferenceLease,
+  establishReadiness,
+  probeInference,
+  probeTotals,
+  readinessRequestDeadlineMs,
+  readinessSequenceDeadlineMs,
+  readinessSequences,
+} from "./inference.mjs";
 import { launches, seed } from "./order.mjs";
 import { recordSchema, taskSchema } from "./schema.mjs";
+import { createStallWatch, inferenceDeadlineMs, pollStallWatch } from "./stall.mjs";
 import { tasks as allTasks } from "./tasks.mjs";
 import {
   browserCacheIn,
@@ -132,6 +146,13 @@ async function freeze(outPath) {
       wallGraceMs: 60_000,
       swarmTokenCap,
       maxCorrections,
+      // The request bounds: how long the Swarm arm's open model request may stay quiet, and
+      // what one readiness sequence before dispatch may spend. Declared here so a launch
+      // carries them, and read with these defaults where a manifest leaves them out.
+      inferenceDeadlineMs,
+      readinessRequestDeadlineMs,
+      readinessSequenceDeadlineMs,
+      readinessSequences,
     },
     seed,
     tasks: allTasks.map((task) => ({
@@ -165,10 +186,26 @@ const interruptedExit = () => (interruption.signal === "SIGINT" ? 130 : 143);
 const interrupted = () =>
   interruption.signal === null ? null : interruption.controller.signal.reason;
 
+/** Who holds the endpoint for inference: an invocation while it runs, a probe while it asks. */
+const inferenceLease = createInferenceLease();
+
+/** The probe's options from the manifest, with the declared defaults where it says nothing. */
+const probeOptions = (manifest, purpose) => ({
+  endpoint: manifest.pins.endpoint,
+  model: manifest.pins.model,
+  purpose,
+  lease: inferenceLease,
+  requestDeadlineMs: manifest.budgets.readinessRequestDeadlineMs ?? readinessRequestDeadlineMs,
+  sequenceDeadlineMs: manifest.budgets.readinessSequenceDeadlineMs ?? readinessSequenceDeadlineMs,
+});
+
 /**
  * One invocation of the arm, watched. The endpoint's listener is read every poll interval while
  * the arm runs; the arm is killed as soon as the listener is gone or replaced, and the fatal
- * failure is returned beside the invocation so the caller keeps both.
+ * failure is returned beside the invocation so the caller keeps both. The Swarm arm's own event
+ * stream is read as it arrives, and a model request quiet past the declared deadline ends the
+ * invocation the same way; `stalled` carries that reason so the caller can probe the endpoint
+ * once the arm is gone. The lease is held throughout: no probe runs beside the arm.
  */
 async function invokeArm(log, launch, pins, budgets, task, workspace, base, turn, scratch) {
   const { prompt, kind, correction, deadlineMs, instance, onChild, home, tokenAllowance } = turn;
@@ -199,6 +236,21 @@ async function invokeArm(log, launch, pins, budgets, task, workspace, base, turn
       : watchInstance(endpointPort(pins.endpoint), instance, {
           onChange: (reason, at) => watch.abort(new FatalError("endpoint", reason, at)),
         });
+  let stalled = null;
+  const stallWatch =
+    launch.arm === "swarm"
+      ? createStallWatch({ deadlineMs: budgets.inferenceDeadlineMs ?? inferenceDeadlineMs })
+      : null;
+  const stopStallWatch =
+    stallWatch === null
+      ? null
+      : pollStallWatch(stallWatch, {
+          onStall: (reason, at) => {
+            stalled = reason;
+            watch.abort(new FatalError("endpoint", reason, at));
+          },
+        });
+  const releaseLease = inferenceLease.hold(`${launch.arm} ${kind} invocation of ${launch.task}`);
   let ran;
   try {
     ran = await log.run(argv, {
@@ -207,6 +259,7 @@ async function invokeArm(log, launch, pins, budgets, task, workspace, base, turn
       killConfirmMs: Math.min(terminationDeadlineMs, budgets.wallGraceMs ?? 60_000),
       signal: watch.signal,
       onSpawn: onChild,
+      onStdout: stallWatch === null ? null : (chunk) => stallWatch.observe(chunk),
       // PWD follows the cwd: a spawned process inherits the launcher's, and OpenCode reads it.
       // Each arm's processes get the launch's own home: Swarm builds its children's environment
       // and reads the name for the HOME it gives them; OpenCode and everything it runs inherit
@@ -223,6 +276,8 @@ async function invokeArm(log, launch, pins, budgets, task, workspace, base, turn
     });
   } finally {
     stopWatch?.();
+    stopStallWatch?.();
+    releaseLease();
   }
   const stdout = ran.stdout.toString();
   const blobs = join(comparisonRoot, "blobs");
@@ -248,6 +303,7 @@ async function invokeArm(log, launch, pins, budgets, task, workspace, base, turn
     evidence: launch.arm === "swarm" ? swarmEvidenceDirectory(stdout) : null,
     stdout,
     fatal: watch.signal.aborted ? watch.signal.reason : interrupted(),
+    stalled,
     ran,
   };
 }
@@ -332,6 +388,20 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory, owner)
   if (validation.problems.length > 0)
     return halt(new FatalError(validation.class, validation.problems.join("; ")), { launch: null });
   const probe = validation.probe;
+  // The listing answered; now the model itself must, in the product's own wire shape, within
+  // the readiness allowance. A launch is not dispatched on the strength of a listing.
+  const readiness = await establishReadiness(
+    probeOptions(manifest, "readiness"),
+    manifest.budgets.readinessSequences ?? readinessSequences,
+  );
+  if (!readiness.ok)
+    return halt(
+      new FatalError(
+        "endpoint",
+        `the endpoint ${pins.endpoint} did not complete inference for ${pins.model} before dispatch: ${readiness.sequences.map((one, index) => `sequence ${index + 1}: ${one.problem}`).join("; ")}`,
+      ),
+      { launch: null, probes: readiness.sequences },
+    );
   const blobs = join(comparisonRoot, "blobs");
   const log = commandLog(blobs, { signal: interruption.controller.signal });
   const startedAt = new Date().toISOString();
@@ -369,6 +439,7 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory, owner)
     hidden: { verdict: "unjudgeable", basis: "not scored", detailDigest: null },
     oracleExposure: "not scanned",
     totals: { agentWallMs: 0, tokens: null, tokensUnknownInvocations: 0 },
+    probes: readiness.sequences,
     infrastructureFailure: null,
     notes,
   };
@@ -486,6 +557,19 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory, owner)
       if (invoked.ran.termination !== null) {
         record.cleanup.deadlineKills += 1;
         record.cleanup.wallMs += invoked.ran.termination.ms ?? terminationDeadlineMs;
+      }
+      // A request that stalled is an endpoint failure whatever the server answers afterwards:
+      // the launch was ended by the harness. With the arm gone, one probe says whether the
+      // server completes inference now, and is recorded beside the halt either way; it does not
+      // revive the launch, and it is not sent while the arm's own request was open.
+      if (invoked.stalled !== null) {
+        const after = await probeInference(probeOptions(manifest, "after-stall"));
+        record.probes.push(after);
+        throw new FatalError(
+          "endpoint",
+          `${invoked.stalled}; the arm was stopped and the endpoint ${after.ok ? `then completed a probe round trip in ${after.wallMs} ms` : `then failed a probe: ${after.problem}`}`,
+          invoked.fatal?.detectedAt ?? new Date(),
+        );
       }
       if (invoked.fatal !== null) throw invoked.fatal;
       // A kill at the deadline whose end was not confirmed may have left a process of the
@@ -627,6 +711,7 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory, owner)
         ? null
         : record.invocations.reduce((sum, one) => sum + (one.tokens ?? 0), 0),
     tokensUnknownInvocations: record.invocations.filter((one) => one.tokens === null).length,
+    probes: probeTotals(record.probes),
   };
   try {
     writeFileSync(join(scratch, "commands.json"), JSON.stringify(log.commands, null, 2));
@@ -686,6 +771,7 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory, owner)
     attemptRecord,
     scratch,
     haltName,
+    probes: record.probes,
     cleanup:
       termination === null
         ? noCleanup()
@@ -732,6 +818,7 @@ function recordHalt(runsDirectory, manifest, manifestDigest, owner, outcome, rem
     },
     runner: { pid: owner.pid, started: owner.started },
     notes: outcome.notes ?? [],
+    ...(outcome.probes === undefined ? {} : { probes: outcome.probes }),
   };
   let where;
   try {
@@ -763,6 +850,17 @@ async function recover(manifest, manifestDigest, runsDirectory, selected) {
     );
     return 3;
   }
+  // A listing that answers is not a recovered endpoint; the model must complete inference.
+  const readiness = await establishReadiness(
+    probeOptions(manifest, "recovery"),
+    manifest.budgets.readinessSequences ?? readinessSequences,
+  );
+  if (!readiness.ok) {
+    console.error(
+      `recovery refused; the endpoint did not complete inference:\n  ${readiness.sequences.map((one) => one.problem).join("\n  ")}`,
+    );
+    return 3;
+  }
   const remaining = remainingLaunches(selected, runsDirectory);
   const name = writeRecovery(runsDirectory, {
     schema: "swarm-ordinary-comparison.recovery.v1",
@@ -774,6 +872,7 @@ async function recover(manifest, manifestDigest, runsDirectory, selected) {
     revalidation: { problems: [], ...validation.observed },
     completed: selected.length - remaining.length,
     remaining,
+    probes: readiness.sequences,
   });
   console.log(
     `recovered: ${name} clears ${state.lastHalt}; ${remaining.length} launch(es) remain; run the same command without --recover to continue`,

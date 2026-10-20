@@ -1,0 +1,64 @@
+describe("regressions of the checking-semantics follow-up, on the prior implementation", () => {
+  it("REGRESSION hold: a wrong changed expectation the repair leaves as it was costs one repair", async () => {
+    const { stdout } = await swarm(
+      [
+        declaring(
+          [{ id: "boundary", description: "10 is small", quote }],
+          [
+            plannedCheck("boundary", "boundary", "change", [
+              { input: 9, expected: "small" },
+              { input: 10, expected: "small" },
+              { input: 12, expected: "big" },
+              { input: 13, expected: "small" },
+            ]),
+          ],
+        ),
+        { text: "Pinned." },
+        { text: "Plan: move the boundary.", toolCalls: [declare] },
+        { toolCalls: [write("export function classify(n) {\n  return n <= 10 ? 'small' : 'big';\n}\n")] },
+        { text: "Done." },
+        { text: "The task keeps 13 big, so I leave the code as it is." },
+        { text: "A second repair was asked for." },
+        { text: "A third repair was asked for." },
+      ],
+      false,
+      [],
+    );
+    const result = resultOf(stdout) as ResultLine & { outcome?: { interventions?: { repairAttempts?: number } } };
+    console.log(`PRIOR hold: repairAttempts=${result?.outcome?.interventions?.repairAttempts} status=${result?.outcome?.status}`);
+    expect(result?.outcome?.interventions?.repairAttempts).toBe(1);
+  }, 200_000);
+
+  it("REGRESSION constant defect: a check whose defect is one answer for every input is kept", async () => {
+    const directory = join(scratch, "workspace");
+    await mkdir(directory, { recursive: true });
+    await writeFile(join(directory, "package.json"), JSON.stringify({ name: "sign", version: "1.0.0", type: "module", scripts: { test: "node --test" } }));
+    await writeFile(join(directory, "sign.mjs"), "export function isPositive(n) {\n  return false;\n}\n");
+    await writeFile(join(directory, "sign.test.mjs"), "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { isPositive } from './sign.mjs';\ntest('zero', () => assert.equal(isPositive(0), false));\n");
+    await git(directory, "init", "-q");
+    await git(directory, "add", "-A");
+    await git(directory, "commit", "-qm", "base");
+    const signTask = "Make isPositive return true for positive numbers and false otherwise.";
+    const contract = join(scratch, "contract.json");
+    await writeFile(contract, JSON.stringify({ version: 1, goal: signTask, requirements: [{ id: "suite", description: "suite", checks: ["suite"] }], checks: [{ id: "suite", command: "node --test", author: "user", exposure: "shared", artifacts: [] }], immutablePaths: ["sign.test.mjs"] }));
+    const prepared = Promise.resolve({ directory, base: await git(directory, "rev-parse", "HEAD"), contract });
+    const { stdout } = await swarm(
+      [
+        { toolCalls: [{ name: "declare_planned_check", input: { id: "positive", purpose: "change", requirementId: "positive", requirement: "true for positive numbers", quote: "true for positive numbers and false otherwise", program: "import { isPositive } from './sign.mjs';\nexport default function (n) {\n  return isPositive(n);\n}\n", cases: [{ input: -1, expected: false }, { input: 0, expected: false }, { input: 1, expected: true }], why: "w" } }] },
+        { text: "Pinned." },
+        { text: "No replacement." },
+        { text: "Plan.", toolCalls: [{ name: "declare_file_set", input: { files: ["sign.mjs"] } }] },
+        { toolCalls: [{ name: "write", input: { path: "sign.mjs", content: "export function isPositive(n) {\n  return n > 0;\n}\n" } }] },
+        { text: "Done." },
+      ],
+      false,
+      [],
+      true,
+      prepared,
+      signTask,
+    );
+    const result = resultOf(stdout);
+    console.log(`PRIOR constant defect: admitted=${JSON.stringify(result?.plannedChecks?.admitted)} dropped=${JSON.stringify(result?.plannedChecks?.dropped)}`);
+    expect(result?.plannedChecks?.admitted).toEqual(["positive"]);
+  }, 200_000);
+});

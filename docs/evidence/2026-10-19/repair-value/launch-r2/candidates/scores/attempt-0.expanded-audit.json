@@ -1,0 +1,110 @@
+{
+  "schema": "swarm-expanded-audit-validation.v1",
+  "kind": "developer-authored audit on an exposed task, validated with no model; exposed development material, not unseen evaluation",
+  "product": "764f524c16da83e03e3ea24f7dd8bd5c3201ea99",
+  "task": "mime-bugfix-gettype-line-terminators",
+  "baseCommit": "953ae3ebc59c387064f3760b73085eff6760a7f6",
+  "upstreamCommit": "d7871f3bac120df5e4776e7c395b39d0d8e7b562",
+  "node": "v24.15.0",
+  "checks": [
+    {
+      "id": "visible-check",
+      "group": "original development contract",
+      "command": "npm run build && node acceptance/visible/check.mjs"
+    },
+    {
+      "id": "counterexample",
+      "group": "original development contract",
+      "command": "npm run build && node acceptance/development/counterexample.mjs"
+    },
+    {
+      "id": "terminator-like-space",
+      "group": "original development contract",
+      "command": "npm run build && node acceptance/development/relation.mjs"
+    },
+    {
+      "id": "preserved-behaviour",
+      "group": "original development contract",
+      "command": "npm run build && node acceptance/development/preserve.mjs"
+    },
+    {
+      "id": "custom-extension",
+      "group": "expanded audit (requirement)",
+      "command": "npm run build && node acceptance/development-audit/custom-extension.mjs"
+    },
+    {
+      "id": "relation-bound",
+      "group": "expanded audit (probe of the relation)",
+      "command": "npm run build && node acceptance/development-audit/relation-bound.mjs"
+    },
+    {
+      "id": "project-suite",
+      "group": "project",
+      "command": "npm test"
+    }
+  ],
+  "fileDigests": {
+    "acceptance/visible/check.mjs": "sha256:344bc14ec46de72f85e304b8bf39a6dffaca8bd5bf795471eefb876b0dd5f0c8",
+    "acceptance/development/counterexample.mjs": "sha256:df148ac39fe5ded6a4c0bfb36edbdcd70b0295850d92e2613fde1203b23eb17c",
+    "acceptance/development/relation.mjs": "sha256:c64927eab53e7e2ebd38b97db54ea6dc5773a90604849326936596781734632f",
+    "acceptance/development/preserve.mjs": "sha256:d10af9c878ffbfd1274cd0e2720468785f2fbe372d910a432b89a1c86a4f8af8",
+    "acceptance/development-audit/custom-extension.mjs": "sha256:3c2625766fd842967654b5c31dc2f9b7ca8e9e91af7bc4c8dc0dbae63e8ff72d",
+    "acceptance/development-audit/relation-bound.mjs": "sha256:598db75ca99f7828634c602883f817e38d84733c78b50f77e1f94561989e3093"
+  },
+  "rows": [
+    {
+      "tree": "attempt-0",
+      "patchDigest": "sha256:a69c926d68206a60fdf92f9766be3e9b06917730aba140d00a695c6014534c03",
+      "originalEvaluator": null,
+      "originalDevelopmentContract": "passes",
+      "customExtension": "passes",
+      "relationBound": "relation breaks",
+      "projectSuite": "passes",
+      "results": {
+        "visible-check": {
+          "passed": true,
+          "exitCode": 0,
+          "stdoutTail": "> mime@4.0.6 build\n> rm -fr dist && tsc\nvisible check passed",
+          "stderrTail": ""
+        },
+        "counterexample": {
+          "passed": true,
+          "exitCode": 0,
+          "stdoutTail": "> mime@4.0.6 build\n> rm -fr dist && tsc\ncounterexample check passed",
+          "stderrTail": ""
+        },
+        "terminator-like-space": {
+          "passed": true,
+          "exitCode": 0,
+          "stdoutTail": "> mime@4.0.6 build\n> rm -fr dist && tsc\nrelation holds: every variant gives what a space gives at every position",
+          "stderrTail": ""
+        },
+        "preserved-behaviour": {
+          "passed": true,
+          "exitCode": 0,
+          "stdoutTail": "> mime@4.0.6 build\n> rm -fr dist && tsc\npreserved behaviour holds",
+          "stderrTail": ""
+        },
+        "custom-extension": {
+          "passed": true,
+          "exitCode": 0,
+          "stdoutTail": "> mime@4.0.6 build\n> rm -fr dist && tsc\ncustom extensions keep their own types",
+          "stderrTail": ""
+        },
+        "relation-bound": {
+          "passed": false,
+          "exitCode": 1,
+          "stdoutTail": "> mime@4.0.6 build\n> rm -fr dist && tsc\n{\"counterexamples\":[{\"at\":6,\"reference\":{\"input\":\"file.p ng\",\"result\":\"application/x-space\"},\"variant\":{\"input\":\"file.p\\nng\",\"result\":\"application/x-newline\"}}],\"disagreements\":1,\"holds\":false,\"ran\":18,\"seed\":\"file.png\"}",
+          "stderrTail": ""
+        },
+        "project-suite": {
+          "passed": true,
+          "exitCode": 0,
+          "stdoutTail": "... testing imports\n... cleanup\n... done",
+          "stderrTail": ""
+        }
+      }
+    }
+  ],
+  "scratch": "/Users/brad/swarm-comparison-work/expanded-audit-sRKdPL"
+}

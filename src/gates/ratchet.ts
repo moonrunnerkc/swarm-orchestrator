@@ -15,6 +15,7 @@ import { type RespecificationFinding, respecificationSchema } from "./respecific
 
 type RatchetViolationKind =
   | "gate-regressed"
+  | "gate-part-regressed"
   | "tests-collected-decreased"
   | "tests-declared-decreased"
   | "assertions-decreased"
@@ -40,6 +41,8 @@ export interface RatchetDecision {
   readonly abstentions: readonly RatchetAbstention[];
   /** Tests the escape hatch cleared, as `file::test`. Reported so an exemption is visible. */
   readonly newSpecifications: readonly string[];
+  /** Claim parts that regressed and yielded, each with what it yielded to (see `partClaims`). */
+  readonly yielded?: readonly RatchetAbstention[];
   readonly detail: string;
 }
 
@@ -64,6 +67,19 @@ export interface RatchetInput {
    * the harness's clock did. Omitted means every gate in the candidate ran.
    */
   readonly unmeasuredGates?: ReadonlyMap<string, string>;
+  /**
+   * The named parts of the gates that report them (`GateReading.parts`), by gate id, on each
+   * side. A part that passed before is held as a gate is. Omitted compares no part.
+   */
+  readonly baselineParts?: Readonly<Record<string, Readonly<Record<string, GateStatus>>>>;
+  readonly candidateParts?: Readonly<Record<string, Readonly<Record<string, GateStatus>>>>;
+  /**
+   * The parts, by gate id, that rest on nothing but the planner's claim of the change: a
+   * generated relation whose base control did not hold. Such a part yields to an attempt that
+   * turns a failing part outside the claims into a pass; otherwise it is held as any part is.
+   * Omitted names no claim, which is the stricter reading.
+   */
+  readonly partClaims?: Readonly<Record<string, readonly string[]>>;
 }
 
 /**
@@ -111,6 +127,17 @@ const ratchetDecisionSchema = z.object({
     before: z.record(z.string(), z.string()),
     after: z.record(z.string(), z.string()),
   }),
+  /** Absent on decisions before parts were compared, and where no gate reported any. */
+  parts: z
+    .object({
+      before: z.record(z.string(), z.record(z.string(), z.string())),
+      after: z.record(z.string(), z.record(z.string(), z.string())),
+      /** Absent where no gate named a claim part, as on every decision before claims existed. */
+      claims: z.record(z.string(), z.array(z.string())).optional(),
+    })
+    .optional(),
+  /** Absent where no claim part yielded. */
+  yielded: z.array(z.object({ measure: z.string(), reason: z.string() })).optional(),
 });
 
 type RatchetDecisionPayload = z.infer<typeof ratchetDecisionSchema>;
@@ -152,6 +179,60 @@ export function judgeRatchet(input: RatchetInput): RatchetDecision {
         after: 0,
         detail: `the ${gateId} gate passed before this attempt and now reports ${now}`,
       });
+    }
+  }
+
+  // A part that rests on nothing but the planner's claim of the change yields to an attempt that
+  // turned a failing part outside the claims, one the base or a supplied check backs, into a
+  // pass: a claim that passed first does not outrank behaviour the base showed. Without that, a
+  // generated relation false in its own fixture kept a wrong first change over the repair that
+  // restored a case the base gives. Where nothing outside the claims improved, it is held.
+  const claimed = (gateId: string, part: string) =>
+    input.partClaims?.[gateId]?.includes(part) === true;
+  const restored = Object.entries(input.baselineParts ?? {}).flatMap(([gateId, parts]) =>
+    Object.entries(parts)
+      .filter(
+        ([part, status]) =>
+          status === "failed" &&
+          !claimed(gateId, part) &&
+          input.candidateParts?.[gateId]?.[part] === "passed",
+      )
+      .map(([part]) => `${gateId} (${part})`),
+  );
+  const yielded: RatchetAbstention[] = [];
+
+  // Within a gate, each part that passed before is held as the gate is, whatever the gate's own
+  // status was: a gate failing for one part before and after hides a part a retry broke.
+  for (const [gateId, parts] of Object.entries(input.baselineParts ?? {})) {
+    const notRun =
+      input.unmeasuredGates?.get(gateId) ??
+      (input.candidateGates[gateId] === undefined ? "the gate did not run in this attempt" : null);
+    for (const [part, status] of Object.entries(parts)) {
+      if (status !== "passed") continue;
+      const now = input.candidateParts?.[gateId]?.[part];
+      if (notRun !== null || now === undefined) {
+        abstentions.push({
+          measure: `gate:${gateId}:${part}`,
+          reason:
+            notRun ??
+            "the gate did not report this part in this attempt, so it could not be compared",
+        });
+        continue;
+      }
+      if (now !== "passed" && claimed(gateId, part) && restored.length > 0) {
+        yielded.push({
+          measure: `gate:${gateId}:${part}`,
+          reason: `${part} in the ${gateId} gate rests on the planner's claim of the change and yields to ${restored.join(", ")}, which this attempt turned from failed to passed`,
+        });
+        continue;
+      }
+      if (now !== "passed")
+        violations.push({
+          kind: "gate-part-regressed",
+          before: 1,
+          after: 0,
+          detail: `${part} in the ${gateId} gate passed before this attempt and now reports ${now}`,
+        });
     }
   }
 
@@ -234,13 +315,15 @@ export function judgeRatchet(input: RatchetInput): RatchetDecision {
     violations,
     abstentions,
     newSpecifications: [...newSpecifications].sort(),
+    yielded,
     detail: accepted
       ? "the ratchet accepted the attempt: no measure moved the wrong way" +
         // Named, not counted. An abstention that reads as a pass is the defect: a reviewer
         // has to be able to see which arm measured nothing without opening the payload.
         (abstentions.length > 0
           ? ` (not compared: ${abstentions.map((abstention) => abstention.measure).join(", ")})`
-          : "")
+          : "") +
+        (yielded.length > 0 ? `; ${yielded.map((one) => one.reason).join("; ")}` : "")
       : `the ratchet rejected the attempt: ${violations.map((violation) => violation.detail).join("; ")}`,
   };
 }
@@ -351,5 +434,17 @@ export function ratchetPayload(
       },
     },
     gates: { before: input.baselineGates, after: input.candidateGates },
+    ...(input.baselineParts === undefined && input.candidateParts === undefined
+      ? {}
+      : {
+          parts: {
+            before: input.baselineParts ?? {},
+            after: input.candidateParts ?? {},
+            ...(Object.keys(input.partClaims ?? {}).length === 0
+              ? {}
+              : { claims: input.partClaims }),
+          },
+        }),
+    ...((decision.yielded ?? []).length === 0 ? {} : { yielded: decision.yielded }),
   });
 }

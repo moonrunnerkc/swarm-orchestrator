@@ -10,19 +10,205 @@ The ordinary task workflow: a task in words, sealed criteria, acceptance, repair
 verification on one path, with the run's outcome led by what was and was not established.
 Source on `v13-main`; not published until a release names it.
 
+### Added
+
+- **Experimental, off by default: the account handed to a repair attempt can carry the previous
+  loop's last three shell results that printed something and exited 0.** The account kept the
+  commands that printed nothing or failed and dropped the ones that printed, so what a diagnostic
+  loop learned from its probes did not reach the next attempt (run `20261020T045117-41e2cc`,
+  records 477, 483 and the step-40 call: the class tested against the input, null each time, none of
+  it in the second attempt's brief). When a caller asks for them (`recentShellResults`), each result
+  travels with its command, exit status, a bounded excerpt of what it printed (eight lines or 480
+  characters), the evidence record holding the whole result and the loop's later edits it predates,
+  named as a historical observation of that loop's files whose zero exit status says the command
+  ran, not that what it examined was correct. The selection is the last three in call order; nothing
+  selects by meaning and no model text travels. The worker does not ask for them: one matched
+  development pair at that run's repair boundary (`docs/evidence/2026-10-20/repair-handoff/`)
+  delivered the same correct patch with and without them, which by the pair's pre-registered rule
+  is no demonstrated benefit, so they are not a default.
+
 ### Fixed
 
+- **A shell command counts as a possible edit, and a repeated write is not told that no write
+  landed.** The worker named as writers only the tools the chokepoint classes as `write`, so a
+  shell command that edited a file did not start a new workspace for the repeated-call tracker and
+  a check rerun after it could still be replaced by the "already answered" notice; and a successful
+  writing call repeated byte for byte was told "No writing tool call has landed since" although
+  writing calls had landed. The shell tool is now named as a tool whose successful call may change
+  files, since the harness cannot see what a command did once it ran, and both notices say of a
+  repeated inspection that no call which may write landed since, and of a repeated call that may
+  write only that it was made before with the same answer. Repeated-call detection is kept: a shell
+  command repeated with the same answer, an inspection repeated with nothing between and a write
+  repeated are still repeats; an inspection alternated with a shell command is read as new each
+  time, on the side of answering. Reproduced through the real chokepoint on a git workspace before
+  the change (`docs/evidence/2026-10-20/repair-handoff/regressions-before.txt`). These corrections
+  are not evidence of any improved repair.
+- **A call repeated after an edit is answered, not told it already was.** The repeated-call
+  tracker compared a call and its answer with the recent window alone, so a build or check rerun
+  after an edit, whose answer happened to be unchanged, was replaced by the "already answered"
+  notice, which told the model that nothing in the workspace had changed since its own edit. The
+  loop now names the tools the chokepoint classes as writing, and the tracker reads a successful
+  one as a new workspace: an inspection repeated after it is a new question, the same inspection
+  repeated with no write between and the same write repeated stay repeats, and both notices say
+  what the harness knows, that no writing call has landed. Seen in the planned-check trial of
+  2026-10-20 (run `20261020T045117-41e2cc`, records 530 to 598); it cost that repair one step and
+  was not what kept it from the fix.
+- **A requested behaviour stays in the work when its generated check is refused.** A check of
+  behaviour that stays which the base fails was dropped as contradicting the task, and its
+  requirement went on with nothing covering it and nothing telling the worker. It is now a
+  disagreement with the base, case by case, with whether the task names the input; the revision
+  is shown the task's words, each case with the base's answer, and the choice between correcting
+  the expectation and reclassifying the check as a change with its reason (held to the change
+  control, and only for inputs the task names), and is told not to reread the repository.
+  Coverage is reconciled against the checks admission kept, and a requirement left with none is
+  named as uncovered, with why and the next action, in the worker's brief, the outcome and
+  `plannedChecks.uncovered`. The admission record is `planned-check-admission-v3`.
+- **A requested outcome cannot disappear behind a sibling under the same requirement.** Coverage
+  was reconciled per requirement, so a requirement holding two outcomes read as covered while
+  the check of one was refused (D1: the task's own `(See hTtPS://...)` example had no check left,
+  and nothing told the worker). Each declared check now records the task's words it quotes, and
+  an outcome is a requirement, those words and whether the cases change or keep behaviour. Every
+  outcome a declaration names is recorded before admission (`planned-outcomes-v1`) and kept when
+  its checks are refused or replaced; coverage is reconciled per outcome
+  (`planned-coverage-reconciled-v2`), and one no retained check states is named, with why and
+  the next action, in the revision's brief, the worker's brief, the report and
+  `plannedChecks.unresolvedOutcomes` / `outcome.unresolvedOutcomes`. The identity is the
+  planner's own declarations: two outcomes stated in one quote with one role are one here.
+- **A check that throws in its own code is not read as the base's answer.** The runner records
+  where a thrown case was raised, by the innermost stack frame naming a file: in the check
+  program (`thrownIn: "check-program"`), where no frame names a file (`"unattributed"`), or
+  elsewhere, the project, which keeps the plain line a declared throw expects. A case thrown in
+  the program recorded nothing of the project's, so its check is refused as `raised-in-program`
+  with the message for the revision, instead of D1's "disagreement with the base"; a relation
+  counts such calls (`raisedInProgram`). A throw in the project stays an observation of it, and
+  an unattributed one is read as the base's answer with the uncertainty noted. The admission
+  record is `planned-check-admission-v4`, with each thrown case and where it was thrown.
+- **`accepted` says whose reading it is.** Where any requested outcome is unresolved, the status
+  line says it is the supplied contract's reading only and does not show the whole task done.
+  The status and exit code are unchanged.
+- **A check's revisions cannot replace the task's own example.** An outcome keeps every version of
+  the check that stated it, case by case, and is covered only while retained checks still hold
+  every input the task names that it was stated with: a launch's planner moved the task's
+  `(See hTtPS://...)` example to angle-bracket inputs under the same check. A check expecting the
+  base's answer for a task-named input after the base disputed an earlier expectation there is
+  refused (`adopts-base-answer`): the base is an observation, not the request, and nothing
+  separates a mistaken expectation from a base that lacks the requested behaviour, so the outcome
+  stays unresolved rather than held at the base's answer. Corrections that keep the input stay
+  admissible; every change of expectation for a task-named input is recorded. The same check
+  declared again, keeping every word and task-named input, is one outcome rather than two. The
+  worker's brief and `unresolvedOutcomes[].taskInputs` name each task input with what was expected
+  and what the base gave. Records: `planned-outcomes-v2`, `planned-coverage-reconciled-v3`.
+- **An unresolved outcome is followed up before the run is reported.** A worker that ran the task's
+  example, saw it fail and finished left every gate green, so nothing looked again. Requested
+  outcomes no sealed check states are now owed one attempt once the gates are green, from the
+  attempt cap and under the same ratchet, rollback and budget floor as a repair, with a brief from
+  the structured outcomes that allows leaving correct code as it is. It is given once
+  (`outcome-follow-up-v1`) and reported (`outcome.outcomeFollowUp`); the outcomes stay unresolved,
+  and the status and exit code keep their meaning.
+- **A revision of dropped checks is scheduled inside the run's total.** It was withheld whenever
+  the first round used its share (64 s left against 96 s needed in a launch with six minutes of the
+  run unused). The first round now stops after a base run once less remains than admission, a
+  revision and its re-admission need, measured on its own trials; the coverage review no longer
+  takes that time; and a revision that still does not fit may borrow the shortfall from
+  implementation, once and up to a tenth of the total, never from the verification reserve
+  (`planned-check-revision-v2`, with the measured admission beside the arithmetic).
+- **A run whose last attempt was rolled back passes its own bundle verifier.** The verifier
+  required the latest gate runs on the chain, which after a rollback measured an undone tree; it now
+  requires those of the cycle the workspace was left in, and a follow-up that was not kept is not
+  the run's lifecycle (see the `swarm-verify` changelog).
+- **A throw in a check program is described as where it was raised.** Its refusal no longer says
+  the run observed nothing of the project: a program may be defective, or may have asserted on
+  what the project gave, and the stack does not say which. The refusal itself is unchanged.
+- **The final checks run after the work spends its wall.** The end of the implementation's wall
+  refused the final build, lint and tests commands before they spawned, so a run that used its
+  allowance was reported with nothing measured. Gate commands now stop only for the run's
+  cancellation and the end of its total allowance, and final verification has a share of
+  `--max-wall-minutes` held back from planning, implementation and repair (four times the
+  measured preflight, at least a minute, at most a quarter). A run whose work stopped at its
+  wall is still not accepted, and is no longer reported as cancelled.
+- **One verbose command no longer fills every later request.** A command output over 12,000
+  characters reaches the model as a bounded view with its recorded status and evidence record;
+  `read_recorded_output` returns the omitted lines. The ledger keeps the captured output.
+- **A planned check runs in the language the project's users run.** Its runner put `input`,
+  `expected` and `throws` getters on the String, Number and Boolean prototypes to catch a program
+  reading `case_.input` off a string, so `"input" in Object("hello")` was true inside a check and
+  false everywhere else. The check's own run now adds nothing to the environment. A separate probe
+  run, whose answers are never compared, names the misread, and admission refuses a program only
+  where the probe saw the read and every answer was one value. A program that reads the field and
+  falls back to the value (`x.input ?? x`) is refused there too, since no answer on those cases
+  tells it from one that passed `undefined`, and the reason says so.
+- **Admission keeps a check whose base answers are one value**, its control recorded as
+  unestablished, instead of dropping it: a defect can be one answer for everything (a predicate
+  that is always false). Each case of a change check now says `changed: true` or `false`, and a
+  kept case must give its expected result on the base, so a live planner's `foo.txt` →
+  `text/html` case, which its own reasoning called preserved, is refused with the base's answer
+  instead of admitted as a claimed change. A control is the base agreeing with kept cases through
+  the same program and kind of input, or that of another planned check running the identical
+  program; each decision records what its control establishes and what stays unknown. **Output
+  change:** admission's record is `planned-check-admission-v2`, and a check of one answer that was
+  dropped is now sealed; one that still disagrees at the end leaves the run `unresolved`.
+- **A generated case the repair was told and left as it was is held.** A changed case's expected
+  result is the planner's claim. Where a repair told it leaves the code as it was (the case is read
+  again on the very tree it was told on), no further repair is asked for it, and where every
+  failure of `task-diagnostics` is held, repair stops: the run stays `unresolved`, with the
+  candidate that passed everything else. That stop is recorded as `held-expectation`, apart from
+  `instrument`, a defect in the checking itself. An unchanged answer after a repair that changed
+  the code is not held: a repair can take two changes before an answer moves, and the attempt cap
+  bounds a wrong expectation. A kept case's failure is never held. A relation and each check's
+  kept cases are parts of `task-diagnostics` the ratchet holds, so a repair that breaks one to
+  satisfy a changed case is rolled back: in a live ordinary run, the first change was right and the
+  repair told one wrong changed case broke the relation, which the ratchet kept. A relation the
+  base did not hold is the planner's claim of the change, so it yields to a repair that restores a
+  kept case or a supplied check and is held only against one that restores nothing: a relation
+  false in its own fixture had kept a wrong first change over the correct repair. **Output
+  change:** a ratchet decision records the claims (`parts.claims`) and each yield (`yielded`), and
+  the bundled verifier re-derives them; decisions recorded before claims re-derive as they did.
+- **Planning asks for a coverage review of every requirement before it finishes.**
+  `declare_coverage_review` records, per behaviour, what changes, what stays, a plausible wrong
+  implementation the cases would pass, what tells it apart and what stays untested. A relation
+  given there is sealed and enumerated over the named check's program, with no separate
+  `declare_planned_relation` call; a planner that finishes without a review gets one bounded round
+  to give it. The harness checks that a review exists and resolves, not that what it says is right.
 - **A repair after a rolled-back repair is told what was rolled back.** It was handed the restored
   cycle's old failure report, without the regression that caused the rollback: in a live mime
   run, repair 3 was told "Prior checked attempt: 1" after repair 2 passed every planned check and
   failed seven project tests. The brief now names the restored state and the rejected candidate
-  apart (the gates it fixed and broke, the ratchet's reason and record, its bounded failures), and
-  a `rejected-candidate-v1` record keeps that candidate's files after the rollback.
+  apart (the gates it fixed and broke, the ratchet's reason and record, its bounded failures, and
+  a bounded diff of the rejected change against the restored files, since no worker tool reads a
+  record), and a `rejected-candidate-v1` record keeps that candidate's files after the rollback.
+- **A repair is shown the change it is repairing.** Its brief named the current change against the
+  base only by a digest, which no worker can read, so a live repair of an injected mime candidate
+  took the candidate's design (line terminators as separators) for the project's own code and
+  repaired around it. The brief now carries a bounded diff of the current change against the base.
+- **A repair cannot trade a supplied check for a generated one.** Supplied and generated checks
+  shared the `task-acceptance` gate, so in a live mime run a repair that broke the supplied
+  visible check while chasing a generated check left that gate failing as before, the ratchet saw
+  no regression, and the broken candidate was delivered. Generated checks now run as their own
+  blocking gate, `task-diagnostics`, from the same verification per gate cycle; breaking a
+  supplied check is then a passing gate regressing, which the ratchet refuses. The outcome and
+  `outcome.repairsForGeneratedChecksOnly` name each accepted repair that only a generated check
+  asked for, since nothing independent says it was right.
+- **A relation's whitespace can be written as code points** (`U+0020`, `U+000D U+000A`): a live
+  planner's space and line terminators reached the harness as empty strings in eleven calls,
+  because the local server's tool-call parser trims a whitespace-only value. An empty or
+  whole-input text is refused with that remedy named.
+- **A supplied command check that refused a change says why.** Its refusal reached the repair as
+  `command exited 1`; a shared check's refusal now carries the end of its own output, and a
+  withheld check's is still never quoted.
+- **`run_check` answers to the shell's path policy.** Its diagnostic program, and each string
+  input, are read as the shell reads the same program passed to `node -e`, so a program reading
+  `.env` is denied there too.
 - **The shell guard reads an interpreter's inline program as code.** `node -e '... /^.*\./.exec(s)
   ...'` was denied as an outside access because the regular expression was offered as a path,
   while `node -e "...readFileSync('.env')"` was allowed. Only path-shaped words and relative or
   home literals of the program after `-e`/`--eval`/`-p`/`--print` or python's `-c` are offered
   now: the probe runs and the credential read is denied.
+- **A remote install walk found three first-run defects.** A build of a shallow clone (no release
+  tag reachable) printed the release's own version line; it now names the commit as a source
+  build. A misspelt flag at the end of the line was told it "needs a value"; it is refused by name
+  as a flag this build does not have. A task run in a repository with no manifest exited 1, the
+  code for work that ran and was refused, where nothing had run; it exits 4, as `swarm check`
+  already did.
 - **First-run errors name what is true.** No model to run names where it looked and the remedy,
   and exits 4 as documented (it exited 1); a run whose model was unreachable is told so, not to
   try "a stronger model"; a flag this build does not have is refused by name instead of taking the
@@ -66,14 +252,30 @@ Source on `v13-main`; not published until a release names it.
   Admission records each expectation's basis (`base-observed` or `model-asserted`) and how many
   cases claim a change; a planned requirement quoting the task survives the loss of its checks,
   one the planner invented is dropped as unsupported; a program that imports nothing from the
-  repository is refused. **Output change:** a `--plan-checks` run that used to end `accepted` on
-  its own checks now ends `partially-checked` (exit 1).
+  repository is refused. A planned requirement is a hypothesis, not a goal obligation: the final
+  verification certifies only supplied requirements (the bundled verifier mirrors this), so a
+  supplied contract that passes ends `accepted` with the planner's requirements reported beside
+  it, and `--plan-checks` alone ends `unjudged`, exit 0, as the same run without it does.
+  **Output change:** a `--plan-checks` run that 14.4.0 accepted on its own checks now ends
+  `unjudged`; one whose generated check disagrees ends `unresolved` (exit 1).
 - **One outcome status across the terminal, the JSON result and the exit code:** `accepted`,
-  `unjudged`, `partially-checked`, `unresolved` (a generated check disagrees with the final tree)
-  or `not-accepted`, as `outcome.status` (added). **Output change:** a run with nothing sealed now
+  `unjudged`, `partially-checked`, `unresolved` (a generated check disagrees with the final tree),
+  `unverified` (the model or the final verification's environment was unavailable; exit 4, where
+  14.4.0 exited 1) or `not-accepted`, as `outcome.status` (added). The verdict no longer says
+  "nothing executed the change" for a gate that executed it and failed. **Output change:** a run with nothing sealed now
   reads `gates passed; the task itself was not judged` instead of `accepted`, still exit 0.
   Requirements carry `source`, `quote` and `generatedChecks`; planning coverage adds
   `quotedWithoutCheck`.
+- **`--plan-checks` can check an equivalence the task states, at every position.** A new planner
+  tool, `declare_planned_relation`, takes a few seed strings, a reference text and variants the
+  task says must behave like it; the harness inserts the reference and each variant at every
+  position of every seed, compares each variant's result with the reference's on the same tree
+  (reading the variant as the reference in string results), and reports per seed whether it held,
+  how many comparisons disagreed and the first two by position with both inputs and results. No
+  expected value is written and none comes from the base; a relation is admitted by its base
+  control like any planned check, and is a diagnostic like them. Live planners' example-shaped
+  cases missed the position an implementation got wrong; enumeration covers every position of the
+  seeds it is given and nothing else.
 - **`run_check` for the worker**, where a goal contract is sealed: reruns the sealed checks exactly
   as the acceptance gate does and shows a named check's cases, or runs a diagnostic program over
   the project through the planned-check runner, with nothing to write or clean up.

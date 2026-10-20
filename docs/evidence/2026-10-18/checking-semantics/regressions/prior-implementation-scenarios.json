@@ -1,0 +1,18 @@
+{
+  "schema": "swarm-prior-implementation-regressions.v1",
+  "implementation": "c69e14d4af41597d3b32be1e5853a110b3bc47d5",
+  "scenarios": "regressions/prior-implementation-scenarios.test.ts.txt, appended to that commit's src/cli-planned-checks.integration.test.ts and run with -t REGRESSION; the same scenarios with case roles and reviews are the hold and constant-defect tests in src/cli-planned-checks.integration.test.ts, which pass on the new implementation",
+  "expectedOnNewImplementation": {
+    "hold": "repairAttempts 1, unresolved",
+    "constantDefect": "admitted with its control unestablished, accepted on the fix"
+  },
+  "observedOnPrior": [
+    "PRIOR hold: repairAttempts=3 status=unresolved",
+    "PRIOR constant defect: admitted=[] dropped=[{\"check\":\"positive\",\"reason\":\"nothing shows its program reaches the project: on the base every case gave one and the same answer, which is what a program that ignores its input, calls an empty or wrongly built object, or calls the wrong function gives for everything, so a case agreeing with that answer proves nothing. Check that the program passes its input to the project and builds what it calls as the repository's own tests do, and include a case the task does not change whose answer the base gives and differs from the changed cases' (a known-working input from the task or the repository's tests)\"}]",
+    "AssertionError: expected 3 to be 1 // Object.is equality",
+    "1503|     console.log(`PRIOR hold: repairAttempts=${result?.outcome?.interve…",
+    "AssertionError: expected [] to deeply equal [ 'positive' ]",
+    "1536|     console.log(`PRIOR constant defect: admitted=${JSON.stringify(resu…",
+    "Tests  2 failed | 16 skipped (18)"
+  ]
+}

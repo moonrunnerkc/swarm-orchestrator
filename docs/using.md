@@ -67,17 +67,50 @@ swarm "add a --no-cache flag that disables the response cache, with a test" --pl
    manifest is offered a harness first; a missing runtime stops the run here.
 2. **Criteria**, with `--plan-checks`: the planner reads the workspace with read-only tools and
    writes requirements, each quoting the task where it can, with checks: a short program over the
-   project and input cases with expected results. Each check is run once on a fresh checkout of
+   project and input cases with expected results, or, where the task says some text must behave
+   like other text, a relation: seed strings, a reference and variants, which the harness tries at
+   every position of every seed and compares with each other rather than with written answers. Each check is run once on a fresh checkout of
    the unchanged base and admitted only if it loads, runs, and tells the base from the change: a
    check of the change gets a case wrong and one right there, a check of behaviour that stays
    gets every case right, and a program that imports nothing from the repository is refused.
-   Dropped checks get one revision when the planning allowance still fits it. Admission shows a
+   A check of behaviour that stays which the base fails is recorded as a disagreement with the
+   base, case by case, with whether the task names that case's input; that shows the expectation
+   and the base differ, not that the task's request is wrong, since a task can describe as kept
+   an outcome the base does not give yet. Dropped checks get one revision when the planning
+   allowance still fits it (the first round stops after a base run once less remains than
+   admission, a revision and its re-admission need, and a revision that still does not fit may
+   borrow the shortfall from implementation, up to a tenth of the total and never from the
+   verification reserve): it is shown the task's words each check quotes, every case with what
+   the base gave, and the choice between correcting an expectation and declaring the check again
+   as a change with its reason, which is then held to the change control and admitted only for
+   inputs the task names. Coverage is read from the checks admission kept: a coverage review that
+   names a refused check covers nothing, and a requirement left with no check is reported as
+   uncovered, with why and the next useful action, in the worker's brief, the outcome and the
+   JSON result (`plannedChecks.uncovered`). Coverage is also read per requested outcome: each
+   check records the task's words it quotes, and an outcome is its requirement, those words and
+   whether its cases change or keep behaviour. An outcome no retained check states stays
+   unresolved even when another check covers its requirement, and is named the same way
+   (`plannedChecks.unresolvedOutcomes`); where any is, an `accepted` run says that reading is
+   the supplied contract's only. The outcomes are the planner's own statements, so two it put in
+   one quote are one, and one it never stated is not tracked. An outcome also keeps the inputs the
+   task itself names that it was stated with: it is covered only while the retained checks still
+   hold them, so a revision that moves a check off the task's example onto an easier input leaves
+   it unresolved, and a check that expects the base's answer for such an input after the base
+   disputed an earlier expectation there is refused, since nothing tells a mistaken expectation
+   from a base that lacks the requested behaviour. The same check declared again with every word
+   and named input kept is one outcome, not two. A case that throws is read by where
+   it was thrown: in the check program's own code it recorded no answer to compare (whether the
+   program is defective or asserted on what the project gave is not established), and the check is
+   refused for the revision with the message; in the project it is the project's answer
+   (a declared throw, or a diagnostic of a crashing base); where no stack frame names a file it is
+   read as the base's answer with that uncertainty recorded. Admission shows a
    check runs and discriminates; it cannot show that its expected results are what the task
    means, so an admitted check is a **diagnostic**: it runs on every candidate, its disagreement
    drives a bounded repair (the repair is told the expectation is the planner's reading of the
    task, which it may contradict), and its result is reported, but it never decides a
-   requirement. A planned requirement therefore stays unjudged, and only a check you supply, in
-   `--goal-contract`, decides one. A planned requirement that quotes the task is kept, unjudged
+   requirement. A planned requirement is therefore a hypothesis about the task: it is reported
+   with what its generated checks did, and it neither establishes the task nor counts against
+   it; only a requirement you supply, in `--goal-contract`, decides. A planned requirement that quotes the task is kept, unjudged
    and visible, even when every check for it is dropped; one the planner invented, with no quote
    and no admitted check, is dropped and reported as unsupported. The criteria are shown in plain
    language before implementation; on a terminal you are asked to seal them, and anything but `y`
@@ -88,23 +121,41 @@ swarm "add a --no-cache flag that disables the response cache, with a test" --pl
 3. **Base check** of the sealed checks: a check that cannot run here stops the run with the
    remedy named; a check that already passes on the base is named as not evidence of change.
 4. **Implementation** through the one worker loop: declared files, the recording chokepoint,
-   the gates with the sealed checks as the blocking `task-acceptance` gate, bounded repair under
-   the ratchet. A worker that repeats a tool call it has already been answered is told once and
-   stopped the second time, and the gates still run over the tree.
-5. **Final verification** of the exact tree in a fresh checkout, independent of the worker.
+   the gates with the supplied checks as the blocking `task-acceptance` gate and the generated
+   ones, where there are any, as `task-diagnostics` beside it, bounded repair under the ratchet. A
+   repair that satisfies a generated check by breaking a supplied one is a passing gate
+   regressing, and is rolled back; one that a generated check alone asked for is named in the
+   outcome. When the gates are green and a requested outcome is still unresolved, the worker is
+   followed up once, as an attempt from the same cap and under the same ratchet, with the task's
+   words and its own inputs, what the planner expected and what the base gave, and the choice to
+   leave correct code as it is; the outcomes stay reported unresolved either way
+   (`outcome.outcomeFollowUp`). A worker that repeats a tool call it has already been answered is told once and
+   stopped the second time, and the gates still run over the tree. A command output over 12,000
+   characters reaches the model as a bounded view: its first and last lines, the exit status and
+   timeout facts the harness measured, the omitted range, the omitted lines that mention a failure,
+   and the evidence record, from which `read_recorded_output` returns any omitted lines. The
+   ledger keeps the output as captured, and claims are evaluated against its recorded facts.
+5. **Final verification** of the exact tree in a fresh checkout, independent of the worker. It
+   has its own share of `--max-wall-minutes`, held back from planning, implementation and repair:
+   four times what the preflight's fresh checkout and base checks took, at least a minute, at
+   most a quarter of the total (the `verification-reserve-v1` record). When model work reaches
+   its share, the gates still run on the delivered tree; a check still running when the whole
+   allowance ends is stopped and reported as not run, never as a pass.
 6. **The outcome block**, led by one status that the JSON result (`outcome.status`) and the
    exit code share:
-   - `accepted` (exit 0): every sealed requirement was met by a check that decides it;
-   - `unjudged` (exit 0): the gates passed and no requirement was sealed, so nothing says the
-     task was done;
-   - `partially-checked` (exit 1): nothing that decides refused the change, but a sealed
-     requirement was not established (a planned requirement, or a supplied check that could not
-     run);
-   - `unresolved` (exit 1): as partially checked, and a generated check disagrees with the final
-     tree; either the check expects something the task does not ask for or the change is
-     incomplete, and nothing here can tell which;
-   - `not-accepted` (exit 1): a deciding check, a blocking gate, policy or the final
-     verification refused it, or the run was interrupted.
+   - `accepted` (exit 0): every requirement you supplied was met by a check that decides it, and
+     no generated check disagrees; the scope line says what those requirements cover;
+   - `unjudged` (exit 0): the gates passed and no requirement was supplied, so nothing says the
+     task was done (planned requirements whose generated checks agree leave a run here);
+   - `partially-checked` (exit 1): nothing refused the change, but a requirement you supplied was
+     decided by no check that ran;
+   - `unresolved` (exit 1): a generated check disagrees with the final tree and nothing that
+     decides refused it; either the check expects something the task does not ask for or the
+     change is incomplete, and nothing here can tell which;
+   - `unverified` (exit 4): the model or the final verification's environment was unavailable,
+     so nothing established the change either way;
+   - `not-accepted` (exit 1): a supplied check, a blocking gate, policy or the final
+     verification refused it, nothing executed it, or the run was interrupted.
 
    Then each requirement (met, unmet, unjudged; a planned one with the task words it quotes and
    what each generated check did), the scope of what was sealed, the branch and the files the
@@ -121,6 +172,26 @@ it broke and why it was refused, while it starts from the restored files.
 
 Planning and criteria authoring are part of what the task costs and are accounted against the
 run's token and wall allowances, not granted on top of them.
+
+## When a first run fails
+
+- **`no model to run: ...`, exit 4.** Nothing pinned a model and no local server answered where
+  the message says it looked. Start Ollama with a model pulled (`ollama pull qwen3.6:35b-a3b`) and
+  pass `--model local:qwen3.6:35b-a3b`; add `--local-endpoint <url>` if the server is not on its
+  default port. `swarm select` suggests a model for the machine.
+- **`--x is not an option of this command`, exit 2.** A misspelt flag is refused by name before
+  anything runs; `swarm --help` lists the flags.
+- **`swarm --version` does not say `source build`.** The installed `swarm` is the 14.4.0 npm
+  release, not the build of this source; reinstall the packed tarball as the README shows.
+- **The outcome reads `unverified`, exit 4.** The model stopped answering, or the final
+  verification could not prepare a fresh checkout (its line in the outcome block says why). The
+  edits are left in the working tree; fix what it names and run again.
+- **The model answers but nothing changes.** The outcome says `the run changed nothing`; a
+  smaller model often stops early. Give the task a file name and a concrete behaviour, or use a
+  stronger model.
+- **`swarm verify <bundle>` exits 1 with every check passing.** No `--signer` was named, so the
+  signer is untrusted by design; `node <bundle>/verify.mjs <bundle>` checks the record without
+  one ([verifying.md](verifying.md)).
 
 ## A session, or a single task
 

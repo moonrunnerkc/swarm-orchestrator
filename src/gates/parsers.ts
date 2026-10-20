@@ -1,4 +1,5 @@
 import { normalize, resolve } from "node:path";
+import type { GateStatus } from "../core/loop-events.ts";
 import type { GateObservation, GateParser, GateReading } from "./gate-definition.ts";
 import { readRunnerResult } from "./runner-results.ts";
 
@@ -306,6 +307,17 @@ export const inspectionParser: GateParser = (observation) => {
 
   const fields = (parsed ?? {}) as { readonly [key: string]: unknown };
   const detail = typeof fields.detail === "string" ? fields.detail : "";
+  const parts: Record<string, GateStatus> = {};
+  if (typeof fields.parts === "object" && fields.parts !== null) {
+    for (const [key, value] of Object.entries(fields.parts)) {
+      if (value === "passed" || value === "failed" || value === "not-applicable") {
+        parts[key] = value;
+      }
+    }
+  }
+  const claims = Array.isArray(fields.claims)
+    ? fields.claims.filter((one): one is string => typeof one === "string" && one in parts)
+    : [];
   const measures: Record<string, number> = {};
   if (typeof fields.measures === "object" && fields.measures !== null) {
     for (const [key, value] of Object.entries(fields.measures)) {
@@ -319,6 +331,8 @@ export const inspectionParser: GateParser = (observation) => {
     status: observation.exitCode === 0 ? "passed" : "failed",
     detail: detail.length > 0 ? detail : `the inspection exited ${observation.exitCode}`,
     measures,
+    ...(Object.keys(parts).length === 0 ? {} : { parts }),
+    ...(claims.length === 0 ? {} : { claims }),
   };
 };
 

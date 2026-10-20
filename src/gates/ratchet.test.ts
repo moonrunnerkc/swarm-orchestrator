@@ -383,6 +383,148 @@ describe("the ratchet escape hatch, per test rather than per file", () => {
   });
 });
 
+describe("the parts of one gate", () => {
+  const failing: Record<string, GateStatus> = { tests: "passed", acceptance: "failed" };
+  const judged = (after: Record<string, GateStatus>) =>
+    input({
+      baselineGates: failing,
+      candidateGates: failing,
+      baselineParts: { acceptance: { ten: "failed", twelve: "passed" } },
+      candidateParts: { acceptance: after },
+    });
+
+  it("rejects a retry that breaks a passing part while the gate was failing before and after", () => {
+    const decision = judgeRatchet(judged({ ten: "failed", twelve: "failed" }));
+
+    expect(decision.accepted).toBe(false);
+    expect(decision.violations).toEqual([
+      expect.objectContaining({
+        kind: "gate-part-regressed",
+        detail: "twelve in the acceptance gate passed before this attempt and now reports failed",
+      }),
+    ]);
+  });
+
+  it("accepts a retry that fixes a failing part and keeps the passing one", () => {
+    expect(judgeRatchet(judged({ ten: "passed", twelve: "passed" })).accepted).toBe(true);
+  });
+
+  it("abstains by name on a part the attempt did not report, and on every part of a gate it could not run", () => {
+    const missing = judgeRatchet(judged({ ten: "failed" }));
+    expect(missing.accepted).toBe(true);
+    expect(missing.abstentions.map((one) => one.measure)).toContain("gate:acceptance:twelve");
+
+    const notRun = judgeRatchet({
+      ...judged({ ten: "failed", twelve: "failed" }),
+      unmeasuredGates: new Map([["acceptance", "the wall budget was spent"]]),
+    });
+    expect(notRun.accepted).toBe(true);
+    expect(notRun.abstentions).toContainEqual({
+      measure: "gate:acceptance:twelve",
+      reason: "the wall budget was spent",
+    });
+  });
+
+  describe("a part that rests on the planner's claim of the change", () => {
+    const failingBoth: Record<string, GateStatus> = { acceptance: "failed", diagnostics: "failed" };
+    const claimed = (
+      before: Record<string, Record<string, GateStatus>>,
+      after: Record<string, Record<string, GateStatus>>,
+      claims: Record<string, readonly string[]> = { diagnostics: ["relation"] },
+    ) =>
+      input({
+        baselineGates: failingBoth,
+        candidateGates: failingBoth,
+        baselineParts: before,
+        candidateParts: after,
+        partClaims: claims,
+      });
+
+    it("yields to an attempt that restores a failing part the base backs", () => {
+      const decision = judgeRatchet(
+        claimed(
+          { diagnostics: { relation: "passed", "names: kept cases": "failed" } },
+          { diagnostics: { relation: "failed", "names: kept cases": "passed" } },
+        ),
+      );
+      expect(decision.accepted).toBe(true);
+      expect(decision.yielded).toEqual([
+        {
+          measure: "gate:diagnostics:relation",
+          reason:
+            "relation in the diagnostics gate rests on the planner's claim of the change and yields to diagnostics (names: kept cases), which this attempt turned from failed to passed",
+        },
+      ]);
+    });
+
+    it("yields to an attempt that makes a supplied check pass", () => {
+      const decision = judgeRatchet(
+        claimed(
+          { acceptance: { visible: "failed" }, diagnostics: { relation: "passed" } },
+          { acceptance: { visible: "passed" }, diagnostics: { relation: "failed" } },
+        ),
+      );
+      expect(decision.accepted).toBe(true);
+    });
+
+    it("is held where the attempt restores nothing the base or a supplied check backs", () => {
+      // A live run's shape: the repair broke the relation and fixed nothing else.
+      const decision = judgeRatchet(
+        claimed(
+          { diagnostics: { relation: "passed", "names: kept cases": "passed" } },
+          { diagnostics: { relation: "failed", "names: kept cases": "passed" } },
+        ),
+      );
+      expect(decision.accepted).toBe(false);
+      expect(decision.violations.map((one) => one.kind)).toEqual(["gate-part-regressed"]);
+      expect(decision.yielded).toEqual([]);
+    });
+
+    it("does not yield to another claim", () => {
+      const decision = judgeRatchet(
+        claimed(
+          { diagnostics: { relation: "passed", other: "failed" } },
+          { diagnostics: { relation: "failed", other: "passed" } },
+          { diagnostics: ["relation", "other"] },
+        ),
+      );
+      expect(decision.accepted).toBe(false);
+    });
+
+    it("never excuses a part the base backs, whatever else improved", () => {
+      const decision = judgeRatchet(
+        claimed(
+          { diagnostics: { relation: "failed", "names: kept cases": "passed" } },
+          { diagnostics: { relation: "passed", "names: kept cases": "failed" } },
+        ),
+      );
+      expect(decision.accepted).toBe(false);
+    });
+
+    it("records the claims beside the parts, and each yield", () => {
+      const sides = claimed(
+        { diagnostics: { relation: "passed", "names: kept cases": "failed" } },
+        { diagnostics: { relation: "failed", "names: kept cases": "passed" } },
+      );
+      const payload = ratchetPayload("retry", 1, sides, judgeRatchet(sides), []);
+      expect(payload.parts?.claims).toEqual({ diagnostics: ["relation"] });
+      expect(payload.yielded).toHaveLength(1);
+    });
+  });
+
+  it("records both sides of every part it compared", () => {
+    const sides = judged({ ten: "failed", twelve: "failed" });
+    const payload = ratchetPayload("retry", 1, sides, judgeRatchet(sides), []);
+    expect(payload.parts).toEqual({
+      before: { acceptance: { ten: "failed", twelve: "passed" } },
+      after: { acceptance: { ten: "failed", twelve: "failed" } },
+    });
+    expect(ratchetPayload("retry", 1, input({}), judgeRatchet(input({})), [])).not.toHaveProperty(
+      "parts",
+    );
+  });
+});
+
 describe("the ratchet's own record", () => {
   it("carries both sides of every measure it compared", () => {
     const judged = input({

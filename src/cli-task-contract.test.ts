@@ -135,3 +135,149 @@ it("names the contract file and what is wrong with it", async () => {
     await rm(root, { recursive: true, force: true });
   }
 });
+
+it("names each requirement no generated check covers in the worker's brief, with why and what to do", () => {
+  const goal = freezeGoalContract({
+    version: 1,
+    goal: 'slugify turns spaces into dashes, and "Hello World" must still read "hello-world"',
+    requirements: [
+      {
+        id: "kept",
+        description: "Hello World reads hello-world",
+        checks: [],
+        planned: { quote: '"Hello World" must still read "hello-world"', diagnostics: [] },
+      },
+    ],
+    checks: [],
+    immutablePaths: [],
+  }).contract;
+  const contract = presetTaskContract({
+    goal,
+    task: "slugify turns spaces into dashes",
+    maxSteps: 4,
+    maxWallMs: 60000,
+    network: "denied",
+    uncovered: [
+      {
+        id: "kept",
+        quote: '"Hello World" must still read "hello-world"',
+        reason:
+          'kept-forms: the base gave "Hello World" for "Hello World", an input the task names',
+        nextAction: "implement it from the task's words",
+      },
+    ],
+  });
+  expect(contract.objective).toContain(
+    "Requested behaviour no generated check exercises (the planner's reading of the task;",
+  );
+  expect(contract.objective).toContain(
+    '- kept, quoting the task: "\\"Hello World\\" must still read \\"hello-world\\"". Why: kept-forms: the base gave "Hello World" for "Hello World", an input the task names. Next: implement it from the task\'s words.',
+  );
+});
+
+it("adds nothing to the brief when every planned requirement has a check", () => {
+  const contract = presetTaskContract({
+    goal: featureGoal,
+    task: "serve a --no-cache flag",
+    maxSteps: 4,
+    maxWallMs: 60000,
+    network: "denied",
+    uncovered: [],
+  });
+  expect(contract.objective).not.toContain("no generated check exercises");
+});
+
+it("names an unresolved outcome in the brief though another outcome of its requirement is checked", () => {
+  // csv-split: quoted fields keep their commas (checked), and an empty trailing field is kept
+  // (its only check refused). One requirement, two outcomes; the brief names the second alone.
+  const goal = freezeGoalContract({
+    version: 1,
+    goal: "split CSV lines",
+    requirements: [
+      {
+        id: "fields",
+        description: "split a line into fields",
+        checks: [],
+        planned: { quote: "a quoted field keeps its commas", diagnostics: ["quoted-commas"] },
+      },
+    ],
+    checks: [
+      {
+        id: "quoted-commas",
+        command: "planned check",
+        author: "model",
+        exposure: "shared",
+        artifacts: [],
+      },
+    ],
+    immutablePaths: [],
+  }).contract;
+  const contract = presetTaskContract({
+    goal,
+    task: "split CSV lines: a quoted field keeps its commas, and a trailing comma gives an empty last field",
+    maxSteps: 4,
+    maxWallMs: 60000,
+    network: "denied",
+    uncovered: [],
+    unresolvedOutcomes: [
+      {
+        id: "fields#2",
+        requirement: "fields",
+        quote: "a trailing comma gives an empty last field",
+        role: "change",
+        reason: "trailing-empty: case 1 threw in the check program's own code on the base",
+        nextAction: "implement it from the task's words",
+      },
+    ],
+  });
+  expect(contract.objective).toContain(
+    "- fields#2, a change under requirement fields, quoting the task: \"a trailing comma gives an empty last field\". Why: trailing-empty: case 1 threw in the check program's own code on the base. Next: implement it from the task's words.",
+  );
+  expect(contract.objective).not.toContain('a quoted field keeps its commas". Why');
+});
+
+it("names the task's own input of an unresolved outcome, with what was expected and what the base gave", () => {
+  const goal = freezeGoalContract({
+    version: 1,
+    goal: "links",
+    requirements: [{ id: "visible", description: "the visible check", checks: ["visible"] }],
+    checks: [
+      {
+        id: "visible",
+        command: "node check.mjs",
+        author: "user",
+        exposure: "shared",
+        artifacts: [],
+      },
+    ],
+    immutablePaths: [],
+  }).contract;
+  const contract = presetTaskContract({
+    goal,
+    task: 'a scheme of any case links, so "(See hTtPS://example.com/x.)" must still produce a link',
+    maxSteps: 4,
+    maxWallMs: 60000,
+    network: "denied",
+    unresolvedOutcomes: [
+      {
+        id: "scheme#1",
+        requirement: "scheme",
+        quote: null,
+        role: "keep",
+        taskInputs: [
+          {
+            input: "(See hTtPS://example.com/x.)",
+            expected: '{"hasLink":true}',
+            base: '{"hasLink":false}',
+          },
+        ],
+        reason: "scheme-check: its cases do not hold the task's own input",
+        nextAction: "run the project on it yourself",
+      },
+    ],
+  });
+  // Named however the planner later described the requirement.
+  expect(contract.objective).toContain(
+    'The task\'s own input: "(See hTtPS://example.com/x.)" (the planner first expected {"hasLink":true}; the unchanged base gives {"hasLink":false}).',
+  );
+});

@@ -1,0 +1,361 @@
+{
+  "schema": "swarm-o1-candidates.v1",
+  "task": "mime-bugfix-gettype-line-terminators",
+  "baseCommit": "953ae3ebc59c387064f3760b73085eff6760a7f6",
+  "launch": "docs/evidence/2026-10-18/checking-semantics/launch-o1",
+  "session": "20261019T004042-a05716",
+  "node": "v24.15.0",
+  "rows": [
+    {
+      "stage": "attempt-0",
+      "attempt": 0,
+      "file": {
+        "path": "src/Mime.ts",
+        "blob": "54e61a86d40dac3f364055c5004348ec6e8d83dd",
+        "recordedBlob": "54e61a8"
+      },
+      "patch": {
+        "file": "candidates/attempt-0.patch",
+        "digest": "sha256:713e69d5f95b6ec98bf37bf7349a8e24c6b15e11652b8b24db836224a551b42b",
+        "files": [
+          "src/Mime.ts"
+        ]
+      },
+      "workspaceTree": {
+        "recorded": "cde62f185147d8ac5b76940280fa43828b9a32a0",
+        "rebuilt": "cde62f185147d8ac5b76940280fa43828b9a32a0",
+        "matches": true
+      },
+      "suppliedCheck": {
+        "id": "visible-check",
+        "status": "accepted",
+        "detail": "command exited 0"
+      },
+      "generatedChecks": [
+        {
+          "id": "line-terminator-treat-like-other-char",
+          "status": "accepted",
+          "detail": "expected exit status and bounded stream assertions evaluated over captured process output"
+        },
+        {
+          "id": "line-terminators-handled",
+          "status": "rejected",
+          "detail": "exit status 0 as expected; stdout differs from the expected 11 line(s): line 7 should be `{\"input\":\"/usr/local/bin/script.js\\n\",\"result\":\"text/html\"}` but was `{\"input\":\"/usr/local/bin/script.js\\n\",\"result\":null}`"
+        },
+        {
+          "id": "ordinary-path-preserve",
+          "status": "accepted",
+          "detail": "expected exit status and bounded stream assertions evaluated over captured process output"
+        },
+        {
+          "id": "line-terminator-ignore",
+          "status": "accepted",
+          "detail": "expected exit status and bounded stream assertions evaluated over captured process output"
+        }
+      ],
+      "diagnosticsBrief": "These generated checks disagree with the change. Their expected results are the planner's reading of the task, not established facts: a case the task keeps gave its expected result on the unchanged base, so a difference there is behaviour the change broke; a changed case's result is the planner's claim. Change the code where the task supports the expectation, and where it does not, leave the code as it is and say which expectation the task contradicts. run_check with a check's id shows its program, each input and what the project gave. A change that breaks a supplied check to satisfy one of these is rolled back.\ngenerated check line-terminators-handled rejected: exit status 0 as expected; stdout differs from the expected 11 line(s): line 7 should be `{\"input\":\"/usr/local/bin/script.js\\n\",\"result\":\"text/html\"}` but was `{\"input\":\"/usr/local/bin/script.js\\n\",\"result\":null}`; case(s) 7 are the planner's reading of the change",
+      "gates": {
+        "build": "passed",
+        "typecheck": "not-applicable",
+        "lint": "failed",
+        "format": "not-applicable",
+        "tests": "passed",
+        "file-set": "passed",
+        "placeholder": "passed",
+        "secret-scan": "passed",
+        "behaviour-probe": "not-applicable",
+        "diff-budget": "passed",
+        "task-acceptance": "passed",
+        "task-diagnostics": "failed"
+      },
+      "ratchet": null,
+      "model": {
+        "calls": 14,
+        "callsWithoutUsage": 0,
+        "inputTokens": 114732,
+        "outputTokens": 2287,
+        "responseMs": 27656,
+        "loopWallMs": 31270,
+        "steps": 14,
+        "stopReason": "completed"
+      }
+    },
+    {
+      "stage": "repair-1",
+      "attempt": 1,
+      "file": {
+        "path": "src/Mime.ts",
+        "blob": "a88e54be48d3685e566217ad6b4804c47a988e5c",
+        "recordedBlob": "a88e54b"
+      },
+      "patch": {
+        "file": "candidates/repair-1.patch",
+        "digest": "sha256:1ee7f3ef645eb57803b36197a86f00bc6f7712abe723e39c1f1891bd2aed2445",
+        "files": [
+          "src/Mime.ts"
+        ]
+      },
+      "workspaceTree": {
+        "recorded": "5a84034e46092cf0e878915001568b9d8b96fdce",
+        "rebuilt": "5a84034e46092cf0e878915001568b9d8b96fdce",
+        "matches": true
+      },
+      "suppliedCheck": {
+        "id": "visible-check",
+        "status": "accepted",
+        "detail": "command exited 0"
+      },
+      "generatedChecks": [
+        {
+          "id": "line-terminator-treat-like-other-char",
+          "status": "rejected",
+          "detail": "exit status 0 as expected; stdout differs from the expected 2 line(s): line 1 should be `{\"holds\":true,\"ran\":60,\"seed\":\"foo bar.png\"}` but was `{\"counterexamples\":[{\"at\":11,\"reference\":{\"input\":\"foo bar.png \",\"result\":null},\"variant\":{\"input\":\"foo bar.png\\n\",\"result\":\"image/png\"}},{\"at\":11,\"reference\":{\"input\":\"foo bar.png \",\"result\":null},\"variant\":{\"input\":\"foo bar.png\\r\",\"result\":\"image/png\"}}],\"disagreements\":4,\"holds\":false,\"ran\":60,\"seed\":\"foo bar.png\"}`; line 2 should be `{\"holds\":true,\"ran\":85,\"seed\":\"/dir/foo bar.png\"}` but was `{\"counterexamples\":[{\"at\":16,\"reference\":{\"input\":\"/dir/foo bar.png \",\"result\":null},\"variant\":{\"input\":\"/dir/foo bar.png\\n\",\"result\":\"image/png\"}},{\"at\":16,\"reference\":{\"input\":\"/dir/foo bar.png \",\"result\":null},\"variant\":{\"input\":\"/dir/foo bar.png\\r\",\"result\":\"image/png\"}}],\"disagreements\":4,\"holds\":false,\"ran\":85,\"seed\":\"/dir/foo bar.png\"}`"
+        },
+        {
+          "id": "line-terminators-handled",
+          "status": "rejected",
+          "detail": "exit status 0 as expected; stdout differs from the expected 11 line(s): line 7 should be `{\"input\":\"/usr/local/bin/script.js\\n\",\"result\":\"text/html\"}` but was `{\"input\":\"/usr/local/bin/script.js\\n\",\"result\":null}`"
+        },
+        {
+          "id": "ordinary-path-preserve",
+          "status": "accepted",
+          "detail": "expected exit status and bounded stream assertions evaluated over captured process output"
+        },
+        {
+          "id": "line-terminator-ignore",
+          "status": "rejected",
+          "detail": "exit status 0 as expected; stdout differs from the expected 2 line(s): line 1 should be `{\"holds\":true,\"ran\":60,\"seed\":\"foo bar.png\"}` but was `{\"counterexamples\":[{\"at\":11,\"reference\":{\"input\":\"foo bar.png \",\"result\":null},\"variant\":{\"input\":\"foo bar.png\\n\",\"result\":\"image/png\"}},{\"at\":11,\"reference\":{\"input\":\"foo bar.png \",\"result\":null},\"variant\":{\"input\":\"foo bar.png\\r\",\"result\":\"image/png\"}}],\"disagreements\":4,\"holds\":false,\"ran\":60,\"seed\":\"foo bar.png\"}`; line 2 should be `{\"holds\":true,\"ran\":85,\"seed\":\"/dir/foo bar.png\"}` but was `{\"counterexamples\":[{\"at\":16,\"reference\":{\"input\":\"/dir/foo bar.png \",\"result\":null},\"variant\":{\"input\":\"/dir/foo bar.png\\n\",\"result\":\"image/png\"}},{\"at\":16,\"reference\":{\"input\":\"/dir/foo bar.png \",\"result\":null},\"variant\":{\"input\":\"/dir/foo bar.png\\r\",\"result\":\"image/png\"}}],\"disagreements\":4,\"holds\":false,\"ran\":85,\"seed\":\"/dir/foo bar.png\"}`"
+        }
+      ],
+      "diagnosticsBrief": "generated check line-terminators-handled is held: case(s) 7 still give what they gave when the last repair was told them, and their expected results are the planner's claim of the change (changed: true), not behaviour the base shows. The disagreement stays recorded, the check stays failing, and no code change is asked for it\nThese generated checks disagree with the change. Their expected results are the planner's reading of the task, not established facts: a case the task keeps gave its expected result on the unchanged base, so a difference there is behaviour the change broke; a changed case's result is the planner's claim. Change the code where the task supports the expectation, and where it does not, leave the code as it is and say which expectation the task contradicts. run_check with a check's id shows its program, each input and what the project gave. A change that breaks a supplied check to satisfy one of these is rolled back.\ngenerated relation line-terminator-treat-like-other-char broke: inputs that differ only by the reference \" \" or a variant gave different results:\nseed \"foo bar.png\": 4 of 48 comparisons disagreed\n  at position 11: \"foo bar.png\\n\" gave \"image/png\", where \"foo bar.png \" gave null\n  at position 11: \"foo bar.png\\r\" gave \"image/png\", where \"foo bar.png \" gave null\nseed \"/dir/foo bar.png\": 4 of 68 comparisons disagreed\n  at position 16: \"/dir/foo bar.png\\n\" gave \"image/png\", where \"/dir/foo bar.png \" gave null\n  at position 16: \"/dir/foo bar.png\\r\" gave \"image/png\", where \"/dir/foo bar.png \" gave null\ngenerated relation line-terminator-ignore broke: inputs that differ only by the reference \" \" or a variant gave different results:\nseed \"foo bar.png\": 4 of 48 comparisons disagreed\n  at position 11: \"foo bar.png\\n\" gave \"image/png\", where \"foo bar.png \" gave null\n  at position 11: \"foo bar.png\\r\" gave \"image/png\", where \"foo bar.png \" gave null\nseed \"/dir/foo bar.png\": 4 of 68 comparisons disagreed\n  at position 16: \"/dir/foo bar.png\\n\" gave \"image/png\", where \"/dir/foo bar.png \" gave null\n  at position 16: \"/dir/foo bar.png\\r\" gave \"image/png\", where \"/dir/foo bar.png \" gave null",
+      "gates": {
+        "build": "passed",
+        "typecheck": "not-applicable",
+        "lint": "failed",
+        "format": "not-applicable",
+        "tests": "passed",
+        "file-set": "passed",
+        "placeholder": "passed",
+        "secret-scan": "passed",
+        "behaviour-probe": "not-applicable",
+        "diff-budget": "passed",
+        "task-acceptance": "passed",
+        "task-diagnostics": "failed"
+      },
+      "ratchet": {
+        "accepted": true,
+        "detail": "the ratchet accepted the attempt: no measure moved the wrong way (not compared: testsCollected, changedLineCoverage)",
+        "parts": {
+          "after": {
+            "task-acceptance": {
+              "visible-check": "passed"
+            }
+          },
+          "before": {
+            "task-acceptance": {
+              "visible-check": "passed"
+            }
+          }
+        }
+      },
+      "model": {
+        "calls": 30,
+        "callsWithoutUsage": 0,
+        "inputTokens": 521031,
+        "outputTokens": 10157,
+        "responseMs": 120128,
+        "loopWallMs": 127151,
+        "steps": 30,
+        "stopReason": "completed"
+      }
+    },
+    {
+      "stage": "repair-2",
+      "attempt": 2,
+      "file": {
+        "path": "src/Mime.ts",
+        "blob": "a88e54be48d3685e566217ad6b4804c47a988e5c",
+        "recordedBlob": "a88e54b"
+      },
+      "patch": {
+        "file": "candidates/repair-2.patch",
+        "digest": "sha256:1ee7f3ef645eb57803b36197a86f00bc6f7712abe723e39c1f1891bd2aed2445",
+        "files": [
+          "src/Mime.ts"
+        ]
+      },
+      "workspaceTree": {
+        "recorded": "5a84034e46092cf0e878915001568b9d8b96fdce",
+        "rebuilt": "5a84034e46092cf0e878915001568b9d8b96fdce",
+        "matches": true
+      },
+      "suppliedCheck": {
+        "id": "visible-check",
+        "status": "accepted",
+        "detail": "command exited 0"
+      },
+      "generatedChecks": [
+        {
+          "id": "line-terminator-treat-like-other-char",
+          "status": "rejected",
+          "detail": "exit status 0 as expected; stdout differs from the expected 2 line(s): line 1 should be `{\"holds\":true,\"ran\":60,\"seed\":\"foo bar.png\"}` but was `{\"counterexamples\":[{\"at\":11,\"reference\":{\"input\":\"foo bar.png \",\"result\":null},\"variant\":{\"input\":\"foo bar.png\\n\",\"result\":\"image/png\"}},{\"at\":11,\"reference\":{\"input\":\"foo bar.png \",\"result\":null},\"variant\":{\"input\":\"foo bar.png\\r\",\"result\":\"image/png\"}}],\"disagreements\":4,\"holds\":false,\"ran\":60,\"seed\":\"foo bar.png\"}`; line 2 should be `{\"holds\":true,\"ran\":85,\"seed\":\"/dir/foo bar.png\"}` but was `{\"counterexamples\":[{\"at\":16,\"reference\":{\"input\":\"/dir/foo bar.png \",\"result\":null},\"variant\":{\"input\":\"/dir/foo bar.png\\n\",\"result\":\"image/png\"}},{\"at\":16,\"reference\":{\"input\":\"/dir/foo bar.png \",\"result\":null},\"variant\":{\"input\":\"/dir/foo bar.png\\r\",\"result\":\"image/png\"}}],\"disagreements\":4,\"holds\":false,\"ran\":85,\"seed\":\"/dir/foo bar.png\"}`"
+        },
+        {
+          "id": "line-terminators-handled",
+          "status": "rejected",
+          "detail": "exit status 0 as expected; stdout differs from the expected 11 line(s): line 7 should be `{\"input\":\"/usr/local/bin/script.js\\n\",\"result\":\"text/html\"}` but was `{\"input\":\"/usr/local/bin/script.js\\n\",\"result\":null}`"
+        },
+        {
+          "id": "ordinary-path-preserve",
+          "status": "accepted",
+          "detail": "expected exit status and bounded stream assertions evaluated over captured process output"
+        },
+        {
+          "id": "line-terminator-ignore",
+          "status": "rejected",
+          "detail": "exit status 0 as expected; stdout differs from the expected 2 line(s): line 1 should be `{\"holds\":true,\"ran\":60,\"seed\":\"foo bar.png\"}` but was `{\"counterexamples\":[{\"at\":11,\"reference\":{\"input\":\"foo bar.png \",\"result\":null},\"variant\":{\"input\":\"foo bar.png\\n\",\"result\":\"image/png\"}},{\"at\":11,\"reference\":{\"input\":\"foo bar.png \",\"result\":null},\"variant\":{\"input\":\"foo bar.png\\r\",\"result\":\"image/png\"}}],\"disagreements\":4,\"holds\":false,\"ran\":60,\"seed\":\"foo bar.png\"}`; line 2 should be `{\"holds\":true,\"ran\":85,\"seed\":\"/dir/foo bar.png\"}` but was `{\"counterexamples\":[{\"at\":16,\"reference\":{\"input\":\"/dir/foo bar.png \",\"result\":null},\"variant\":{\"input\":\"/dir/foo bar.png\\n\",\"result\":\"image/png\"}},{\"at\":16,\"reference\":{\"input\":\"/dir/foo bar.png \",\"result\":null},\"variant\":{\"input\":\"/dir/foo bar.png\\r\",\"result\":\"image/png\"}}],\"disagreements\":4,\"holds\":false,\"ran\":85,\"seed\":\"/dir/foo bar.png\"}`"
+        }
+      ],
+      "diagnosticsBrief": "generated check line-terminators-handled is held: case(s) 7 still give what they gave when the last repair was told them, and their expected results are the planner's claim of the change (changed: true), not behaviour the base shows. The disagreement stays recorded, the check stays failing, and no code change is asked for it\nThese generated checks disagree with the change. Their expected results are the planner's reading of the task, not established facts: a case the task keeps gave its expected result on the unchanged base, so a difference there is behaviour the change broke; a changed case's result is the planner's claim. Change the code where the task supports the expectation, and where it does not, leave the code as it is and say which expectation the task contradicts. run_check with a check's id shows its program, each input and what the project gave. A change that breaks a supplied check to satisfy one of these is rolled back.\ngenerated relation line-terminator-treat-like-other-char broke: inputs that differ only by the reference \" \" or a variant gave different results:\nseed \"foo bar.png\": 4 of 48 comparisons disagreed\n  at position 11: \"foo bar.png\\n\" gave \"image/png\", where \"foo bar.png \" gave null\n  at position 11: \"foo bar.png\\r\" gave \"image/png\", where \"foo bar.png \" gave null\nseed \"/dir/foo bar.png\": 4 of 68 comparisons disagreed\n  at position 16: \"/dir/foo bar.png\\n\" gave \"image/png\", where \"/dir/foo bar.png \" gave null\n  at position 16: \"/dir/foo bar.png\\r\" gave \"image/png\", where \"/dir/foo bar.png \" gave null\ngenerated relation line-terminator-ignore broke: inputs that differ only by the reference \" \" or a variant gave different results:\nseed \"foo bar.png\": 4 of 48 comparisons disagreed\n  at position 11: \"foo bar.png\\n\" gave \"image/png\", where \"foo bar.png \" gave null\n  at position 11: \"foo bar.png\\r\" gave \"image/png\", where \"foo bar.png \" gave null\nseed \"/dir/foo bar.png\": 4 of 68 comparisons disagreed\n  at position 16: \"/dir/foo bar.png\\n\" gave \"image/png\", where \"/dir/foo bar.png \" gave null\n  at position 16: \"/dir/foo bar.png\\r\" gave \"image/png\", where \"/dir/foo bar.png \" gave null",
+      "gates": {
+        "build": "passed",
+        "typecheck": "not-applicable",
+        "lint": "failed",
+        "format": "not-applicable",
+        "tests": "passed",
+        "file-set": "passed",
+        "placeholder": "passed",
+        "secret-scan": "passed",
+        "behaviour-probe": "not-applicable",
+        "diff-budget": "passed",
+        "task-acceptance": "passed",
+        "task-diagnostics": "failed"
+      },
+      "ratchet": {
+        "accepted": true,
+        "detail": "the ratchet accepted the attempt: no measure moved the wrong way (not compared: testsCollected, changedLineCoverage)",
+        "parts": {
+          "after": {
+            "task-acceptance": {
+              "visible-check": "passed"
+            }
+          },
+          "before": {
+            "task-acceptance": {
+              "visible-check": "passed"
+            }
+          }
+        }
+      },
+      "model": {
+        "calls": 33,
+        "callsWithoutUsage": 0,
+        "inputTokens": 509312,
+        "outputTokens": 5324,
+        "responseMs": 73147,
+        "loopWallMs": 81143,
+        "steps": 33,
+        "stopReason": "completed"
+      }
+    },
+    {
+      "stage": "repair-3",
+      "attempt": 3,
+      "file": {
+        "path": "src/Mime.ts",
+        "blob": "c66bacc9b97f36addc150eeb9eb02723dea0e342",
+        "recordedBlob": "c66bacc"
+      },
+      "patch": {
+        "file": "candidates/repair-3.patch",
+        "digest": "sha256:807a9d5f076183d872f4fdbddc0c3f70d1502855eda626e773d60a1b4ecca59c",
+        "files": [
+          ".vscode/extensions.json",
+          ".vscode/settings.json",
+          ".vscode/tasks.json",
+          "CHANGELOG.md",
+          "README.md",
+          "docs/README_js.md",
+          "src/Mime.ts",
+          "tsconfig.json"
+        ],
+        "reconstruction": "src/Mime.ts from the recorded git diff; the other files by rerunning the recorded formatter command",
+        "otherFilesMatchRecordedFileSetGate": true
+      },
+      "workspaceTree": {
+        "recorded": "ce43b39259228ea087b62004b94ad6129da8b31a",
+        "rebuilt": "ce43b39259228ea087b62004b94ad6129da8b31a",
+        "matches": true
+      },
+      "suppliedCheck": {
+        "id": "visible-check",
+        "status": "accepted",
+        "detail": "command exited 0"
+      },
+      "generatedChecks": [
+        {
+          "id": "line-terminator-treat-like-other-char",
+          "status": "accepted",
+          "detail": "expected exit status and bounded stream assertions evaluated over captured process output"
+        },
+        {
+          "id": "line-terminators-handled",
+          "status": "rejected",
+          "detail": "exit status 0 as expected; stdout differs from the expected 11 line(s): line 7 should be `{\"input\":\"/usr/local/bin/script.js\\n\",\"result\":\"text/html\"}` but was `{\"input\":\"/usr/local/bin/script.js\\n\",\"result\":null}`"
+        },
+        {
+          "id": "ordinary-path-preserve",
+          "status": "accepted",
+          "detail": "expected exit status and bounded stream assertions evaluated over captured process output"
+        },
+        {
+          "id": "line-terminator-ignore",
+          "status": "accepted",
+          "detail": "expected exit status and bounded stream assertions evaluated over captured process output"
+        }
+      ],
+      "diagnosticsBrief": "generated check line-terminators-handled is held: case(s) 7 still give what they gave when the last repair was told them, and their expected results are the planner's claim of the change (changed: true), not behaviour the base shows. The disagreement stays recorded, the check stays failing, and no code change is asked for it",
+      "gates": {
+        "build": "not-applicable",
+        "typecheck": "not-applicable",
+        "lint": "passed",
+        "format": "not-applicable",
+        "tests": "passed",
+        "file-set": "failed",
+        "placeholder": "passed",
+        "secret-scan": "passed",
+        "behaviour-probe": "not-applicable",
+        "diff-budget": "passed",
+        "task-acceptance": "passed",
+        "task-diagnostics": "failed"
+      },
+      "ratchet": {
+        "accepted": false,
+        "detail": "the ratchet rejected the attempt: the build gate passed before this attempt and now reports not-applicable; the file-set gate passed before this attempt and now reports failed",
+        "parts": {
+          "after": {
+            "task-acceptance": {
+              "visible-check": "passed"
+            }
+          },
+          "before": {
+            "task-acceptance": {
+              "visible-check": "passed"
+            }
+          }
+        }
+      },
+      "model": {
+        "calls": 40,
+        "callsWithoutUsage": 0,
+        "inputTokens": 736470,
+        "outputTokens": 7024,
+        "responseMs": 100276,
+        "loopWallMs": 162617,
+        "steps": 40,
+        "stopReason": "max-steps"
+      }
+    }
+  ],
+  "scratch": "/Users/brad/swarm-comparison-work/reconstruct-o1-fhZoiY"
+}
