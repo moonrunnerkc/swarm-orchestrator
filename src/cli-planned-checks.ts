@@ -8,6 +8,7 @@ import { createGitWorkspaceProbe } from "./gates/git-workspace.ts";
 import { detectProject } from "./gates/project-type.ts";
 import {
   describeMisreads,
+  inputAsRead,
   type ProgramMisread,
   plannedCaseRoles,
   plannedCheckProbe,
@@ -122,7 +123,8 @@ export interface PlannedCheckDecision {
     | "expectation-contradicted"
     | "disagrees-with-base"
     | "reclassification-unsupported"
-    | "does-not-detect";
+    | "does-not-detect"
+    | "adopts-base-answer";
   /**
    * The cases where the base disagrees with what the check expects of behaviour that stays, each
    * with whether the task names its input; null where no case-by-case comparison was made. A
@@ -177,6 +179,20 @@ export interface PlannedCheckDecision {
   readonly record: string | null;
   /** The argument probe's record beside the check's own, where one ran. */
   readonly probeRecord: string | null;
+}
+
+/**
+ * An input the task names on which a base run disagreed with what a check of the requirement
+ * expected: the base's answer there and the expectation it contradicted. A later check that expects
+ * the base's answer for that input would hold the base's behaviour where the task names the input,
+ * and nothing here tells whether the first expectation or the base is what the task asks for.
+ */
+export interface ContestedInput {
+  readonly requirement: string;
+  readonly check: string;
+  readonly input: unknown;
+  readonly expected: string;
+  readonly base: string;
 }
 
 export interface PlannedCheckAdmission {
@@ -253,8 +269,14 @@ export async function admitPlannedChecks(input: {
   readonly verifyAtBase: (contract: GoalContract) => Promise<unknown>;
   /** Planned checks a revision declared as changes under the ids of dropped preserve checks. */
   readonly reclassified?: ReadonlySet<string>;
+  /** Task-named inputs earlier base runs of this planning disagreed on, by requirement. */
+  readonly contested?: readonly ContestedInput[];
 }): Promise<PlannedCheckAdmission> {
   const task = input.task ?? input.contract.goal;
+  const requirementOf = (check: string) =>
+    input.contract.requirements.find(
+      (one) => one.planned?.diagnostics.includes(check) === true || one.checks.includes(check),
+    )?.id;
   const supplied = new Set((input.base?.checks ?? []).map((check) => check.id));
   const planned = input.contract.checks.filter((check) => !supplied.has(check.id));
   const probes = argumentProbes(planned);
@@ -299,6 +321,9 @@ export async function admitPlannedChecks(input: {
       decide(check, observed.get(check.id), probeOf(check.id), {
         task,
         reclassified: input.reclassified?.has(check.id) === true,
+        contested: (input.contested ?? []).filter(
+          (one) => one.requirement === requirementOf(check.id),
+        ),
       }),
     ),
   );
@@ -649,7 +674,11 @@ function decide(
   check: GoalContract["checks"][number],
   seen: ObservedCheck | undefined,
   probe: { readonly misread: readonly ProgramMisread[] | null; readonly record: string | null },
-  context: { readonly task: string; readonly reclassified: boolean },
+  context: {
+    readonly task: string;
+    readonly reclassified: boolean;
+    readonly contested?: readonly ContestedInput[];
+  },
 ): PlannedCheckDecision {
   const atBase = check.atBase ?? null;
   const relation = plannedRelation(check);
@@ -742,7 +771,7 @@ function decide(
   if (inProgram.length > 0 || relationRaised > 0)
     return verdict(
       "raised-in-program",
-      `${inProgram.length > 0 ? `case(s) ${inProgram.join(", ")} threw` : `${relationRaised} of its calls threw`} in the check program's own code on the base (the innermost stack frame naming a file is the program's module, not the project's), so ${inProgram.length > 0 ? "they" : "those calls"} recorded no answer of the project's: whatever the base does there, this run does not observe it. Fix the program so that it returns what the project gives rather than failing on it, as what it printed on the base shows; the behaviour the check was for stays in the work until a check of it runs`,
+      `${inProgram.length > 0 ? `case(s) ${inProgram.join(", ")} threw` : `${relationRaised} of its calls threw`} in the check program's own code on the base (the innermost stack frame naming a file is the program's module, not the project's), so ${inProgram.length > 0 ? "they" : "those calls"} recorded no answer to compare: a check reports the project's answer by returning it. That is where the exception was raised, not why: the program may be defective (one applying \`in\` to a string the project returned), or it may have asserted on what the project gave, and which is not established here. Return the project's answer, or a value read from it, instead of throwing, as what it printed on the base shows; the behaviour the check was for stays in the work until a check of it runs`,
     );
   const outside = thrownCases.filter((one) => one.in === "outside-program").map((one) => one.case);
   if (outside.length > 0)
@@ -756,6 +785,42 @@ function decide(
     notes.push(
       `case(s) ${unattributed.join(", ")} threw where no stack frame names a file, so whether the program or the project threw is not known; read as the base's answer with that uncertainty`,
     );
+  // For an input the task names, an expectation that is now the base's answer where an earlier
+  // expectation of this requirement disagreed with the base: the launch after D1 declared the task's
+  // example again expecting the base's no-link, and the base's behaviour is an observation, not the
+  // request. Admitted, it would ask a repair to keep the base's answer for the task's own input.
+  const contested = context.contested ?? [];
+  const adopted =
+    relation !== null || contested.length === 0
+      ? []
+      : caseRows(check, seen).filter(
+          (row) =>
+            namedByTask(context.task, row.input) &&
+            contested.some(
+              (one) =>
+                JSON.stringify(one.input) === JSON.stringify(row.input) &&
+                one.base === row.expected &&
+                one.expected !== row.expected,
+            ),
+        );
+  if (adopted.length > 0) {
+    const earlier = (row: (typeof adopted)[number]) =>
+      contested.find(
+        (one) =>
+          JSON.stringify(one.input) === JSON.stringify(row.input) && one.base === row.expected,
+      );
+    return verdict(
+      "adopts-base-answer",
+      `for ${adopted
+        .map(
+          (row) =>
+            `case ${row.index} (${inputAsRead(row.input)}, an input the task names) it expects ${row.expected}, which is what the base gave there when ${earlier(row)?.check ?? "an earlier check"} expected ${earlier(row)?.expected ?? "something else"}`,
+        )
+        .join(
+          "; ",
+        )}. The base's answer is an observation of the code before the change, not the task's request, and nothing here tells whether the earlier expectation or the base is what the task asks for that input; a check holding the base's answer would ask a repair to keep it. It is refused, and the outcome stays unresolved for the worker: keep the task's outcome for its own input (declared as a change, with the task's words in why, where the base does not give it), or leave that input out`,
+    );
+  }
   if (atBase === "passes") {
     if (seen.status !== "accepted") {
       const disagreements =
