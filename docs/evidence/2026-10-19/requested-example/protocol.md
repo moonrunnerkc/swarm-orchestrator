@@ -92,3 +92,12 @@ compared and no quality advantage is claimed.
 ---
 
 ## Amendments
+
+### 1. 2026-10-20, after the second launch: closed
+
+Two launches, 26.9 agent-minutes, no allowance left. Launch 1 (ordinary) is a valid failure;
+launch 2 (`--plan-checks`) is an infrastructure failure of the model server and, as registered, is
+not replaced. Between the launches nothing in the product changed; after launch 1 the bundle
+verifier was corrected (scope amendments 1 and 2), which does not touch either launch's records.
+Nothing else will be launched under this protocol; see [launches.md](launches.md) and
+[README.md](README.md) section 6.

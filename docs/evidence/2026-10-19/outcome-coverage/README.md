@@ -198,3 +198,20 @@ fragments when the planner rewords, which adds noise to the brief.
 - Identity by quote fragments under rewording: the launch reported 7 unresolved outcomes, some of
   them restatements of covered ones or a first declaration with no quote.
 - `accepted` keeps its meaning (the supplied contract); only its wording is scoped.
+
+## Corrections appended 2026-10-20
+
+Read again from the restored chains in [../requested-example/](../requested-example/README.md)
+section 1; the launch's results above stand.
+
+- The worker's brief was misleading as well as incomplete: its sealed "Required behavior" described
+  `scheme-insensitivity` as "mixed case schemes in angle brackets still produce links", the last
+  version's description, while the task's example appeared only among the unresolved outcomes.
+- `www-case-sensitivity#4` was not a declaration with no quote: it quoted a longer form of the
+  sentence `#3` quotes. `email-autolinks#1` was the one with none.
+- The revision was withheld at 64.2 s left of a 336 s planning allowance while the whole run still
+  had 568 s to its deadline; whether a revision would have produced a correct check or patch is not
+  established.
+- The 16ec1a7e6/b470b55e2 work that follows reads the bundle-verifier failure of a run whose last
+  attempt was rolled back as a verifier defect; this launch's bundle verified, since its last
+  attempt was not rolled back.
