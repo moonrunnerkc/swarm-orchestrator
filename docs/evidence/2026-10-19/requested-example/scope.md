@@ -73,3 +73,19 @@ Documentation: `CHANGELOG.md` (14.5.0, unreleased) and `docs/using.md`, where th
 reader relies on changes. `README.md` is not expected to change.
 
 ## Amendments
+
+### 1. After launch 1: the bundle verifier and a rolled-back last attempt
+
+Launch 1's bundle failed its own verifier (`FAIL run assessment ... re-derived: recorded false,
+evidence implies false`): the assessment names the gate runs of the cycle the workspace was left
+in, and the verifier required the latest gate runs on the chain, which belong to a later attempt the
+ratchet rolled back. Every run whose last judged attempt is rolled back is refused that way, and a
+rolled-back follow-up would be too. One file not declared before:
+
+- `src/evidence/verifier/verify.mjs`: the gate runs an assessment must name are those of the cycle
+  the ratchet decisions leave the workspace in.
+- `src/agent-run.test.ts` (declared): a run whose last attempt is rolled back, and a rolled-back
+  follow-up, verify through the bundle's own verifier.
+
+This changes the verifier after the trial's build was frozen; the trial's records are read as they
+are, with this correction appended.
