@@ -59,13 +59,21 @@ export interface RecentShellResult {
 const maxEntries = 24;
 const maxLineChars = 200;
 /**
- * How many recent nonempty successful shell results travel, and how much of each. Fixed before
- * any trial of them was read: three, the last ones in call order, eight lines or 480 characters
- * of what each printed. Small so the account stays a record and not a transcript.
+ * How many recent nonempty successful shell results travel when a caller asks for them, and how
+ * much of each. Fixed before any trial of them was read: three, the last ones in call order, eight
+ * lines or 480 characters of what each printed. Small so the account stays a record and not a
+ * transcript. Off by default: the one matched pair of 2026-10-20 (docs/evidence/2026-10-20/
+ * repair-handoff) delivered the same correct patch with and without them, so they are not a
+ * default; they stay available to an experiment that asks for them by name.
  */
 export const maxRecentShellResults = 3;
 const maxResultLines = 8;
 const maxResultChars = 480;
+
+export interface PriorLoopAccountOptions {
+  /** How many recent nonempty successful shell results to carry; absent or 0 carries none. */
+  readonly recentShellResults?: number;
+}
 
 const bounded = (text: string): string =>
   text.length > maxLineChars ? `${text.slice(0, maxLineChars)}...` : text;
@@ -142,7 +150,12 @@ export function priorLoopAccount(
   messages: readonly ConversationMessage[],
   stopReason: StopReason,
   steps: number,
+  options: PriorLoopAccountOptions = {},
 ): PriorLoopAccount {
+  const recentShellLimit = Math.min(
+    maxRecentShellResults,
+    Math.max(0, options.recentShellResults ?? 0),
+  );
   const edits = new Set<string>();
   const reads = new Set<string>();
   const emptySearches = new Map<string, number>();
@@ -185,7 +198,7 @@ export function priorLoopAccount(
         break;
       case "shell":
         if (shellWasEmpty(outcome.output)) count(emptyShell, spelled);
-        else if (shellPrintedAndExitedZero(outcome.output)) {
+        else if (recentShellLimit > 0 && shellPrintedAndExitedZero(outcome.output)) {
           recentShell.push({
             result: {
               call: spelled,
@@ -196,7 +209,7 @@ export function priorLoopAccount(
             },
             beforeLaterEdits: [],
           });
-          if (recentShell.length > maxRecentShellResults) recentShell.shift();
+          if (recentShell.length > recentShellLimit) recentShell.shift();
         }
         break;
       default:

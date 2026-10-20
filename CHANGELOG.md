@@ -12,19 +12,20 @@ Source on `v13-main`; not published until a release names it.
 
 ### Added
 
-- **Experimental: the account handed to a repair attempt carries the previous loop's last three
-  shell results that printed something and exited 0.** The account kept the commands that printed
-  nothing or failed and dropped the ones that printed, so what a diagnostic loop learned from its
-  probes did not reach the next attempt (run `20261020T045117-41e2cc`, records 477, 483 and the
-  step-40 call: the class tested against the input, null each time, none of it in the second
-  attempt's brief). Each result travels with its command, exit status, a bounded excerpt of what it
-  printed (eight lines or 480 characters), the evidence record holding the whole result and the
-  loop's later edits it predates, named as a historical observation of that loop's files whose
-  zero exit status says the command ran, not that what it examined was correct. The selection is
-  the last three in call order; nothing selects by meaning and no model text travels. Built by the
-  production account builder from the recorded attempt, deterministically
-  (`docs/evidence/2026-10-20/repair-handoff/`); whether a repair uses it is the question of that
-  directory's one matched development pair, and this entry does not claim it does.
+- **Experimental, off by default: the account handed to a repair attempt can carry the previous
+  loop's last three shell results that printed something and exited 0.** The account kept the
+  commands that printed nothing or failed and dropped the ones that printed, so what a diagnostic
+  loop learned from its probes did not reach the next attempt (run `20261020T045117-41e2cc`,
+  records 477, 483 and the step-40 call: the class tested against the input, null each time, none of
+  it in the second attempt's brief). When a caller asks for them (`recentShellResults`), each result
+  travels with its command, exit status, a bounded excerpt of what it printed (eight lines or 480
+  characters), the evidence record holding the whole result and the loop's later edits it predates,
+  named as a historical observation of that loop's files whose zero exit status says the command
+  ran, not that what it examined was correct. The selection is the last three in call order; nothing
+  selects by meaning and no model text travels. The worker does not ask for them: one matched
+  development pair at that run's repair boundary (`docs/evidence/2026-10-20/repair-handoff/`)
+  delivered the same correct patch with and without them, which by the pair's pre-registered rule
+  is no demonstrated benefit, so they are not a default.
 
 ### Fixed
 
