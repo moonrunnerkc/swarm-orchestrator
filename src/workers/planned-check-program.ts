@@ -138,6 +138,11 @@ export interface PlannedOutcome {
  */
 export interface OutcomeStatement {
   readonly check: string;
+  /**
+   * Which declaration of the check this is within its planning round, from 1: the versions of one
+   * check, in order, are its successive programs and cases, whichever outcomes each stated.
+   */
+  readonly version: number;
   readonly quote: string | null;
   readonly cases: readonly {
     readonly input: unknown;
@@ -342,9 +347,10 @@ export function checkOutcomeKeys(check: DeclaredCheck): readonly string[] {
 }
 
 /** A declared check's version as a statement of the outcomes it states. */
-function statementOf(check: DeclaredCheck): OutcomeStatement {
+function statementOf(check: DeclaredCheck, version: number): OutcomeStatement {
   return {
     check: check.id,
+    version,
     quote: check.quote ?? null,
     cases: (check.cases ?? []).map((one) => ({
       input: one.input,
@@ -360,9 +366,19 @@ function withOutcomesOf(
   check: DeclaredCheck,
 ): readonly PlannedOutcome[] {
   const next = [...outcomes];
+  const version =
+    1 +
+    Math.max(
+      0,
+      ...outcomes.flatMap((one) =>
+        (one.statements ?? [])
+          .filter((stated) => stated.check === check.id)
+          .map((stated) => stated.version),
+      ),
+    );
   for (const role of outcomeRoles(check)) {
     const stated = { requirementId: check.requirement, quote: check.quote ?? null, role };
-    const statement = statementOf(check);
+    const statement = statementOf(check, version);
     const at = next.findIndex((one) => outcomeKey(one) === outcomeKey(stated));
     const known = next[at];
     if (known === undefined)
