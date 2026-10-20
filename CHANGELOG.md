@@ -10,6 +10,22 @@ The ordinary task workflow: a task in words, sealed criteria, acceptance, repair
 verification on one path, with the run's outcome led by what was and was not established.
 Source on `v13-main`; not published until a release names it.
 
+### Added
+
+- **Experimental: the account handed to a repair attempt carries the previous loop's last three
+  shell results that printed something and exited 0.** The account kept the commands that printed
+  nothing or failed and dropped the ones that printed, so what a diagnostic loop learned from its
+  probes did not reach the next attempt (run `20261020T045117-41e2cc`, records 477, 483 and the
+  step-40 call: the class tested against the input, null each time, none of it in the second
+  attempt's brief). Each result travels with its command, exit status, a bounded excerpt of what it
+  printed (eight lines or 480 characters), the evidence record holding the whole result and the
+  loop's later edits it predates, named as a historical observation of that loop's files whose
+  zero exit status says the command ran, not that what it examined was correct. The selection is
+  the last three in call order; nothing selects by meaning and no model text travels. Built by the
+  production account builder from the recorded attempt, deterministically
+  (`docs/evidence/2026-10-20/repair-handoff/`); whether a repair uses it is the question of that
+  directory's one matched development pair, and this entry does not claim it does.
+
 ### Fixed
 
 - **A shell command counts as a possible edit, and a repeated write is not told that no write
