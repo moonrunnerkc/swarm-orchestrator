@@ -270,3 +270,35 @@ branch head after this evidence, and the regressions above against `d6972897e`.
 - The second attempt's 50 s and 16 steps are too few to say what it would have done with the
   first attempt's allowance; nothing here says that more wall would have produced the fix, and
   attempt 1 had 227 s and produced no edit.
+
+## 10. Corrections, appended later on 2026-10-20
+
+Written after the work in [../repair-handoff/](../repair-handoff/README.md), which re-read these
+records; the sections above are left as they were written, and these notes say where their reading
+was incomplete.
+
+1. **The account omitted three decisive measurements, not two.** Section 4's table for attempt 1
+   ends at R 483. The step-40 call (R 486 requested, R 487 confirmed, R 488 allowed) ran a script
+   whose comments ask why `[fF][pP]` does not match `ftp` and printed `Does "ftp" match ^[fF][pP]:
+   false` and `Match ftp: null`, exit code 0. No model turn followed it inside the attempt (R 489 is
+   the stop at the step cap), so it has no transcript component, but it is in the conversation the
+   account builder read, and `../repair-handoff/account-from-records.mjs` shows the builder of this
+   branch's head reproducing R 513's account byte for byte from that conversation. So the account
+   handed to attempt 2 lacked R 477, R 483 and the step-40 result, and section 6's "R 477, R 483"
+   is short by one.
+2. **Section 5's fix left two gaps.** `e7c60c7a6` named as writers the tools the chokepoint classes
+   as kind `write`; the shell tool is kind `shell`, so a shell command that edits a file did not
+   start a new workspace for the tracker and a check repeated after that edit could still be told
+   it was already answered. And a writing call is keyed without the generation, so a successful
+   write repeated byte for byte was told "No writing tool call has landed since", which was false of
+   it. Both are reproduced on the real loop and chokepoint and corrected in `c538331f0`
+   ([../repair-handoff/regressions-before.txt](../repair-handoff/regressions-before.txt)). Neither
+   occurred in this run's records: attempt 2 edited through the `edit` tool and its repeated call
+   was an inspection, so nothing above changes for this run.
+3. **Causal wording.** Section 1 ("a different brief could not help" is not said, but section 7's
+   "A simpler or longer brief does not change how a model spells `ftp`" and section 9's "the trace
+   says it would not have changed this one") state hypotheses about runs that did not happen as if
+   the records established them. The records establish what this model did under the brief it had,
+   seven times against its own measurements. Whether a brief carrying those measurements changes
+   what a fresh attempt does is a question, asked once in [../repair-handoff/](../repair-handoff/README.md)
+   with one matched pair; one pair answers it for that pair only.
