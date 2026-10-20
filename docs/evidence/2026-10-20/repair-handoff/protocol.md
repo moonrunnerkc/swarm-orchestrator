@@ -144,4 +144,15 @@ Then the decision above, what remains unproven, and the exact commits.
 
 ## Amendments
 
-(none)
+### 1. 2026-10-20, after both launches: closed
+
+Two launches, both dispatched after one readiness sequence each, both completing inside their 10
+minutes (351.5 s and 346.5 s), 11.6 of the 20 minutes used; no allowance remains and nothing else
+will be launched under this protocol. Both arms delivered the same correct patch, byte for byte
+(`sha256:32788e7d...`): oracle pass, every behaviour-probe row matching upstream, the supplied check
+and the project's tests passing. By the decision rule fixed above that is **no demonstrated
+benefit**: the treatment did not do what the control did not. The product's own reports differ
+(control `accepted`; treatment `not accepted`, its live attempt ended by the wall after its edits
+and checks, before it claimed), which the rule does not score and [README.md](README.md) section 5
+reports. The handoff is kept available by name and not made a default
+([README.md](README.md) section 6). Nothing in the product changed during either launch.
