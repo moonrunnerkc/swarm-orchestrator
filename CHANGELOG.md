@@ -12,6 +12,16 @@ Source on `v13-main`; not published until a release names it.
 
 ### Fixed
 
+- **A call repeated after an edit is answered, not told it already was.** The repeated-call
+  tracker compared a call and its answer with the recent window alone, so a build or check rerun
+  after an edit, whose answer happened to be unchanged, was replaced by the "already answered"
+  notice, which told the model that nothing in the workspace had changed since its own edit. The
+  loop now names the tools the chokepoint classes as writing, and the tracker reads a successful
+  one as a new workspace: an inspection repeated after it is a new question, the same inspection
+  repeated with no write between and the same write repeated stay repeats, and both notices say
+  what the harness knows, that no writing call has landed. Seen in the planned-check trial of
+  2026-10-20 (run `20261020T045117-41e2cc`, records 530 to 598); it cost that repair one step and
+  was not what kept it from the fix.
 - **A requested behaviour stays in the work when its generated check is refused.** A check of
   behaviour that stays which the base fails was dropped as contradicting the task, and its
   requirement went on with nothing covering it and nothing telling the worker. It is now a

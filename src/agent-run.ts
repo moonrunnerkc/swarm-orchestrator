@@ -585,6 +585,9 @@ async function executeAgentTask(
       maxWallTimeMs: wall.loopBudgetMs(),
     },
     stall: {
+      // The tools the chokepoint classes as writing: a call repeated after one of them landed
+      // is answered, not told it already was (the loop names no tool itself).
+      writers: definitions.filter((tool) => tool.kind === "write").map((tool) => tool.name),
       // On the chain before the loop goes on, as the escalation controller records its own
       // decisions: a notice the model was given and a stop are both harness policy events.
       observe: async (event: StallIntervention) => {
