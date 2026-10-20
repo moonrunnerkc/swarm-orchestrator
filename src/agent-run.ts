@@ -585,9 +585,17 @@ async function executeAgentTask(
       maxWallTimeMs: wall.loopBudgetMs(),
     },
     stall: {
-      // The tools the chokepoint classes as writing: a call repeated after one of them landed
-      // is answered, not told it already was (the loop names no tool itself).
-      writers: definitions.filter((tool) => tool.kind === "write").map((tool) => tool.name),
+      // The tools whose successful call may change workspace files: the ones the chokepoint
+      // classes as writing, and the shell, since the harness cannot see what a command did once
+      // it ran and a command that edited a file is a write it did not see (the second repair
+      // attempt of run 20261020T045117-41e2cc would have been told its rerun after a shell edit
+      // was already answered). A call repeated after one of them landed is answered, not told it
+      // already was (the loop names no tool itself). The cost is one repeat's sensitivity: an
+      // inspection alternated with a shell command is read as new each time, on the side of
+      // answering; the shell command itself repeated is still a repeat.
+      writers: definitions
+        .filter((tool) => tool.kind === "write" || tool.kind === "shell")
+        .map((tool) => tool.name),
       // On the chain before the loop goes on, as the escalation controller records its own
       // decisions: a notice the model was given and a stop are both harness policy events.
       observe: async (event: StallIntervention) => {

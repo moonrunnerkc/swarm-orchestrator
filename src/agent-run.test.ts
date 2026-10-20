@@ -1014,6 +1014,100 @@ describe("a call repeated after an edit", () => {
   });
 });
 
+describe("a call repeated after a shell command that edited a file", () => {
+  // The chokepoint classes the shell tool as kind "shell", not "write", and the harness does not
+  // know what a command did once it ran. A command that edits a file is a write it cannot see,
+  // so the listing after it has to be answered as a new question, as it is after the edit tool.
+  const listing = (callId: string) =>
+    respondWithToolCalls("checking", [{ callId, toolName: "list", input: { path: "src" } }]);
+  const lastToolOutput = (request: ModelRequest): string => {
+    const turn = request.messages.findLast((message) => message.role === "tool");
+    return turn?.role === "tool" ? (turn.outcomes[0]?.output ?? "") : "";
+  };
+
+  it("is answered through the chokepoint, not replaced by the notice, when the listing is unchanged", async () => {
+    const fixture = createFixtureModelClient({
+      modelId: "fixture:worker",
+      turns: [
+        respondWithToolCalls("declare", [
+          { callId: "declare", toolName: "declare_file_set", input: { files: ["src/greet.js"] } },
+        ]),
+        listing("before"),
+        respondWithToolCalls("change", [
+          {
+            callId: "shell-edit",
+            toolName: "shell",
+            input: {
+              command: String.raw`node -e "require('fs').appendFileSync('src/greet.js', '// shout\n')"`,
+            },
+          },
+        ]),
+        listing("after"),
+        respondWithText("done"),
+      ],
+    });
+    await task([], {
+      maxSteps: 8,
+      approvalMode: "auto",
+      model: createRecordingModelClient(fixture, evidence),
+    });
+    // The edit landed: the file carries the appended line.
+    expect(readFileSync(join(workspace, "src/greet.js"), "utf8")).toContain("// shout");
+    expect(lastToolOutput(fixture.requests[3] as ModelRequest)).toContain("exit code: 0");
+    expect(lastToolOutput(fixture.requests[2] as ModelRequest)).toContain("greet.js");
+    expect(lastToolOutput(fixture.requests[4] as ModelRequest)).toContain("greet.js");
+    expect(lastToolOutput(fixture.requests[4] as ModelRequest)).not.toContain(
+      "[harness notice: already answered]",
+    );
+  });
+
+  it("is still a repeat when the same listing is made twice with nothing between", async () => {
+    const fixture = createFixtureModelClient({
+      modelId: "fixture:worker",
+      turns: [
+        respondWithToolCalls("declare", [
+          { callId: "declare", toolName: "declare_file_set", input: { files: ["src/greet.js"] } },
+        ]),
+        listing("once"),
+        listing("twice"),
+        respondWithText("done"),
+      ],
+    });
+    await task([], { maxSteps: 8, model: createRecordingModelClient(fixture, evidence) });
+    const repeated = lastToolOutput(fixture.requests[3] as ModelRequest);
+    expect(repeated).toContain("[harness notice: already answered]");
+    expect(repeated).toContain("No writing tool call has landed since");
+  });
+
+  it("tells a repeated successful write that it is repeated, without saying no writing call landed", async () => {
+    const content = "export function greet() {\n  return 'hello';\n}\nexport const shout = 1;\n";
+    const write = (callId: string) =>
+      respondWithToolCalls("writing", [
+        { callId, toolName: "write", input: { path: "src/greet.js", content } },
+      ]);
+    const fixture = createFixtureModelClient({
+      modelId: "fixture:worker",
+      turns: [
+        respondWithToolCalls("declare", [
+          { callId: "declare", toolName: "declare_file_set", input: { files: ["src/greet.js"] } },
+        ]),
+        write("first"),
+        write("second"),
+        respondWithText("done"),
+      ],
+    });
+    await task([], { maxSteps: 8, model: createRecordingModelClient(fixture, evidence) });
+    expect(readFileSync(join(workspace, "src/greet.js"), "utf8")).toBe(content);
+    const first = lastToolOutput(fixture.requests[2] as ModelRequest);
+    const second = lastToolOutput(fixture.requests[3] as ModelRequest);
+    expect(first).not.toContain("[harness notice");
+    // Both writes landed and were recorded; the second is a repeat of the first, and the notice
+    // standing in its answer's place says so without denying that writing calls landed.
+    expect(second).toContain("[harness notice: already answered]");
+    expect(second).not.toContain("No writing tool call has landed since");
+  });
+});
+
 describe("a repair attempt with no usable budget", () => {
   it("is withheld on the record and ends the attempts, rather than run empty and measured", async () => {
     const result = await task(

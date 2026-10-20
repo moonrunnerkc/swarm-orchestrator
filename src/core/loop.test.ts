@@ -767,6 +767,7 @@ describe("a loop that repeats itself", () => {
         repeats: 3,
         input: '{"command":"cat package.json"}',
         output: "exit code: 0",
+        writes: false,
         intervention: "feedback",
       },
       {
@@ -776,6 +777,7 @@ describe("a loop that repeats itself", () => {
         repeats: 3,
         input: '{"command":"cat package.json"}',
         output: "exit code: 0",
+        writes: false,
         intervention: "stop",
       },
     ]);
@@ -863,6 +865,28 @@ describe("a loop that repeats itself", () => {
     expect(answers[3]).toContain("[harness notice: already answered]");
     expect(answers[3]).toContain("No writing tool call has landed since");
     expect(harness.events.some((event) => event.type === "stall")).toBe(false);
+  });
+
+  it("tells a repeated successful write that it is repeated, without saying no writing call landed", async () => {
+    // Two writing calls landed, the second a byte-for-byte repeat of the first with the same
+    // answer. It is a repeat, and the notice in its answer's place may not deny what the loop
+    // itself classed as writing.
+    const write = (callId: string) =>
+      respondWithToolCalls("writing", [
+        { callId, toolName: "write", input: { path: "src/rules.ts", content: "a" } },
+      ]);
+    const harness = createHarness([write("first"), write("second"), respondWithText("done")], {
+      toolInvoker: createRecordingToolInvoker(() => "wrote 1 byte to src/rules.ts"),
+      stall: { writers: ["edit", "write"] },
+    });
+    const outcome = await runAgentLoop("fix the check", harness.deps);
+    expect(outcome.stopReason).toBe("completed");
+    const answers = outcome.messages
+      .filter((message) => message.role === "tool")
+      .map((message) => (message.role === "tool" ? (message.outcomes[0]?.output ?? "") : ""));
+    expect(answers[0]).toContain("wrote 1 byte");
+    expect(answers[1]).toContain("[harness notice: already answered]");
+    expect(answers[1]).not.toContain("No writing tool call has landed since");
   });
 
   it("grants no second notice to a run taken up again with the first in its history", async () => {

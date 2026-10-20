@@ -12,6 +12,20 @@ Source on `v13-main`; not published until a release names it.
 
 ### Fixed
 
+- **A shell command counts as a possible edit, and a repeated write is not told that no write
+  landed.** The worker named as writers only the tools the chokepoint classes as `write`, so a
+  shell command that edited a file did not start a new workspace for the repeated-call tracker and
+  a check rerun after it could still be replaced by the "already answered" notice; and a successful
+  writing call repeated byte for byte was told "No writing tool call has landed since" although
+  writing calls had landed. The shell tool is now named as a tool whose successful call may change
+  files, since the harness cannot see what a command did once it ran, and both notices say of a
+  repeated inspection that no call which may write landed since, and of a repeated call that may
+  write only that it was made before with the same answer. Repeated-call detection is kept: a shell
+  command repeated with the same answer, an inspection repeated with nothing between and a write
+  repeated are still repeats; an inspection alternated with a shell command is read as new each
+  time, on the side of answering. Reproduced through the real chokepoint on a git workspace before
+  the change (`docs/evidence/2026-10-20/repair-handoff/regressions-before.txt`). These corrections
+  are not evidence of any improved repair.
 - **A call repeated after an edit is answered, not told it already was.** The repeated-call
   tracker compared a call and its answer with the recent window alone, so a build or check rerun
   after an edit, whose answer happened to be unchanged, was replaced by the "already answered"
