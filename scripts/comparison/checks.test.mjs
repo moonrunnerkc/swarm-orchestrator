@@ -141,6 +141,21 @@ describe("hidden evaluation material", () => {
     expect(verdict.policy.ok).toBe(true);
   });
 
+  it("carries the policy verdict and the displaced files on a failing reading too", async () => {
+    const repository = unique();
+    const commits = mirrorTask(repository);
+    const one = task("calc-add", repository, commits);
+    // A change that leaves the defect: the hidden tests fail, and the record still says what
+    // the policy made of the patch (the dotenv records of 2026-10-21 lacked it).
+    const cosmetic =
+      "diff --git a/calc.mjs b/calc.mjs\n--- a/calc.mjs\n+++ b/calc.mjs\n@@ -1,2 +1,3 @@\n+// not yet\n export const add = (a, b) => a - b;\n export const mul = (a, b) => a * b;\n";
+    const verdict = await hiddenVerdict(log(), one, commits.base, commits.upstream, cosmetic);
+    expect(verdict.verdict).toBe("fail");
+    expect(verdict.basis).toContain("hidden tests (node test/add.test.mjs) exited 1");
+    expect(verdict.policy).toMatchObject({ ok: true, addedAssertions: 0 });
+    expect(verdict.displaced).toEqual([]);
+  });
+
   it("rejects a patch under the allowed-change policy before any test runs, naming the rule", async () => {
     const repository = unique();
     const commits = mirrorTask(repository);

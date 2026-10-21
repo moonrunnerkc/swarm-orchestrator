@@ -334,6 +334,8 @@ export async function hiddenVerdict(
         displaced,
       };
     const details = [describePolicy(policy)];
+    // Every reading from here carries the policy verdict and the displaced files, pass or fail.
+    const withPolicy = (reading) => ({ ...reading, policy, displaced });
     if (displaced.length > 0)
       details.push(
         `the patch wrote ${displaced.join(", ")} and the sealed overlay displaced it: the project-test result here is the overlaid tree's, not the delivered tree's`,
@@ -341,11 +343,11 @@ export async function hiddenVerdict(
     for (const path of task.hidden.testFiles) {
       const shown = await sealedFile(log, task, upstream, path);
       if (shown.exitCode !== 0)
-        return {
+        return withPolicy({
           verdict: "unjudgeable",
           basis: `sealed file ${path} is not at the upstream commit`,
           detail: tail(shown),
-        };
+        });
       const target = join(tree.checkout, path);
       mkdirSync(dirname(target), { recursive: true });
       writeFileSync(target, shown.stdout);
@@ -353,30 +355,30 @@ export async function hiddenVerdict(
     for (const argv of task.build) {
       const built = await run(log, task, tree.checkout, argv);
       if (built.exitCode !== 0)
-        return {
+        return withPolicy({
           verdict: "fail",
           basis: `build ${argv.join(" ")} exited ${built.exitCode}`,
           detail: tail(built),
-        };
+        });
     }
     const upgrade = task.hidden.upgrade ?? [];
     for (const dependency of upgrade) {
       const lock = JSON.parse(readFileSync(join(tree.checkout, "package-lock.json"), "utf8"));
       const installed = lock.packages?.[`node_modules/${dependency.name}`]?.version;
       if (installed !== dependency.version)
-        return {
+        return withPolicy({
           verdict: "fail",
           basis: `lockfile resolves ${dependency.name} to ${installed ?? "nothing"}, not ${dependency.version}`,
           detail: "",
-        };
+        });
       const onDisk = join(tree.checkout, "node_modules", dependency.name, "package.json");
       const present = existsSync(onDisk) ? JSON.parse(readFileSync(onDisk, "utf8")).version : null;
       if (present !== dependency.version)
-        return {
+        return withPolicy({
           verdict: "fail",
           basis: `installed ${dependency.name} is ${present ?? "absent"}, not ${dependency.version}`,
           detail: "",
-        };
+        });
       details.push(`${dependency.name} ${dependency.version} locked and installed`);
       // The declaration itself, where the task fixes its spelling: a range that resolves to the
       // right version installs the right version and still is not what was asked for.
@@ -389,11 +391,11 @@ export async function hiddenVerdict(
           ["the lockfile's root package entry", inLockRoot],
         ])
           if (found !== dependency.declared)
-            return {
+            return withPolicy({
               verdict: "fail",
               basis: `${where} declares ${dependency.name} as ${JSON.stringify(found ?? null)}, not exactly ${JSON.stringify(dependency.declared)}`,
               detail: "",
-            };
+            });
         details.push(
           `${dependency.name} declared exactly ${dependency.declared} in package.json and the lockfile root`,
         );
@@ -404,22 +406,22 @@ export async function hiddenVerdict(
     for (const path of task.hidden.unchanged ?? []) {
       const shown = await sealedFile(log, task, base, "package.json");
       if (shown.exitCode !== 0)
-        return {
+        return withPolicy({
           verdict: "unjudgeable",
           basis: "package.json is not at the base commit",
           detail: tail(shown),
-        };
+        });
       const before = valueAt(JSON.parse(shown.stdout.toString()), path);
       const after = valueAt(
         JSON.parse(readFileSync(join(tree.checkout, "package.json"), "utf8")),
         path,
       );
       if (JSON.stringify(before) !== JSON.stringify(after))
-        return {
+        return withPolicy({
           verdict: "fail",
           basis: `package.json ${path} changed from ${JSON.stringify(before)} to ${JSON.stringify(after)}; the task requires it unchanged`,
           detail: "",
-        };
+        });
       details.push(`package.json ${path} unchanged`);
     }
     for (const structural of task.hidden.structural ?? []) {
@@ -432,20 +434,20 @@ export async function hiddenVerdict(
         .join("\n");
       const count = (text.match(new RegExp(structural.pattern, "g")) ?? []).length;
       if (count !== structural.count)
-        return {
+        return withPolicy({
           verdict: "fail",
           basis: `structural: /${structural.pattern}/ occurs ${count} time(s) in ${structural.files.join(", ")}, expected ${structural.count}`,
           detail: "",
-        };
+        });
       details.push(`structural /${structural.pattern}/ = ${count}`);
     }
     const judged = await run(log, task, tree.checkout, task.hidden.argv, 1_200_000);
     if (judged.exitCode !== 0)
-      return {
+      return withPolicy({
         verdict: "fail",
         basis: `hidden tests (${task.hidden.argv.join(" ")}) exited ${judged.exitCode}`,
         detail: tail(judged, 120),
-      };
+      });
     // Acceptance checks written for this task, held outside both arms' workspaces until now and
     // written only once the project's own tests have run: in the tree any earlier, they were
     // linted by the project's own check (domutils' npm test runs eslint over the whole tree).
@@ -457,30 +459,30 @@ export async function hiddenVerdict(
     for (const argv of task.hidden.extraArgv ?? []) {
       const extra = await run(log, task, tree.checkout, argv);
       if (extra.exitCode !== 0)
-        return {
+        return withPolicy({
           verdict: "fail",
           basis: `${argv.join(" ")} exited ${extra.exitCode}`,
           detail: tail(extra),
-        };
+        });
     }
     for (const file of task.hidden.files ?? [])
       rmSync(join(tree.checkout, file.path), { force: true });
     if (task.hidden.argv.join(" ") !== task.projectTest.join(" ")) {
       const project = await run(log, task, tree.checkout, task.projectTest, 1_200_000);
       if (project.exitCode !== 0)
-        return {
+        return withPolicy({
           verdict: "fail",
           basis: `project tests (${task.projectTest.join(" ")}) exited ${project.exitCode}`,
           detail: tail(project),
-        };
+        });
     }
-    return {
+    return withPolicy({
       verdict: "pass",
       basis: "hidden tests, project tests and every structural or version requirement passed",
       detail: details.join("\n"),
       policy,
       displaced,
-    };
+    });
   } finally {
     rmSync(tree.scratch, { recursive: true, force: true });
   }
