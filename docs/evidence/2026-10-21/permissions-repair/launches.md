@@ -24,4 +24,24 @@ model and are not launches.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1 | Swarm, ordinary configuration, no workflow flag, handoff off; development launch 1 of at most 2 | `96b20a89c` (`~/.cache/swarm-comparison/tools/swarm-96b20a89c`, `dist/` tree `sha256:d2c614e8495e...`) | 2026-10-21 03:04:16 (runner), 03:04:20 (launch); arm spawned after preparation and the gate-plan preflight | 1 sequence of 2, 3.1 s, `ok`: chat, tool-call and tool-result all answered; 753 tokens, apart from the task's | **490.9 s (8.2 min)**; loop 1 stopped `max-steps` after 40 steps at 03:10:14, repair loop stopped `max-wall-time` after 14 steps at 03:12:13; cleanup 0.19 s, no deadline kill | **1,992,179 tokens** (1,970,267 input, 21,912 output), every call reporting usage | **Not delivered: the delivered tree is the base.** Exit 1, `not accepted`, no completion claim. The obstruction is gone: the file set `src/index.ts` and `test/partial-globstar.js` was declared and accepted (record 166), and every `node -e` diagnostic ran (seven, exit 0; no shell denial; one `read` denied on `/src/index.ts`, an absolute path the model typed). First implementation (four edits to `src/index.ts`, [development/first-implementation.patch](development/first-implementation.patch), reconstructed from the recorded edits): the tests gate failed on 16 existing subtests (dot-file patterns such as `.x/**/*`), the visible check failed on its non-partial case (`minimatch("/b/c/d/a", "/**/a/b/c")` came back true), the frozen probe differs on two scored rows (both non-partial matches loosened), and the declared test file was never written. Repair attempt 1: the model wrote "The current changes are broken. Let me reset to base" and ran `git checkout HEAD -- src/index.ts` (record 351), then its wall ran out; the ratchet accepted that attempt (tests pass on the base, acceptance still failing), attempt 2 was withheld with 0 ms left. Repair **damaged** the candidate: a wrong implementation became no implementation. Hidden oracle: fail, "the final tree is the base". Records: [records/minimatch-bugfix-partial-globstar.swarm.json](records/minimatch-bugfix-partial-globstar.swarm.json), [development/launch-1-trace.txt](development/launch-1-trace.txt), session `20261021T030431-6350fc`. |
 
+## Comparative stage ([comparison/protocol.md](comparison/protocol.md))
+
+Before the first launch, with no model: the three tasks validated under the policy with the
+base's checks executed ([comparison/validation.json](comparison/validation.json)); the manifest
+([comparison/manifest.json](comparison/manifest.json), `sha256:914841de5a97...`) freezes six
+launches in the runner's counterbalanced order: `sinon-bugfix-mock-oncall-expectations` Swarm
+then OpenCode, `dotenv-bugfix-fast-parser-line-ends` OpenCode then Swarm,
+`sinon-bugfix-stub-accessor-calls` Swarm then OpenCode; Swarm's gate-plan preflight on each base
+([comparison/preflight.json](comparison/preflight.json)); `opencode --version` 1.14.48. One
+runner invocation for all six, entered here before it starts: launches 2 to 7 below.
+
+| # | order | task | arm | started (UTC) | arm wall | usage | outcome |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 2 | 0 | `sinon-bugfix-mock-oncall-expectations` | Swarm | (filled in after) | | | |
+| 3 | 1 | `sinon-bugfix-mock-oncall-expectations` | OpenCode | | | | |
+| 4 | 2 | `dotenv-bugfix-fast-parser-line-ends` | OpenCode | | | | |
+| 5 | 3 | `dotenv-bugfix-fast-parser-line-ends` | Swarm | | | | |
+| 6 | 4 | `sinon-bugfix-stub-accessor-calls` | Swarm | | | | |
+| 7 | 5 | `sinon-bugfix-stub-accessor-calls` | OpenCode | | | | |
+
 **Development allowance after launch 1:** 8.2 of the 90 agent-minutes used (8.2 min arm wall, 3.1 s readiness). No second development launch: the earliest actionable failure is the model's own implementation (it loosened non-partial matching inside its first 40 steps) and nothing in the harness or product caused it, so no correction is named and a second launch of the same configuration is not made ([protocol.md](protocol.md), "If it fails").
