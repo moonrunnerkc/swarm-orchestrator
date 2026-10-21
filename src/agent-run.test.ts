@@ -1763,6 +1763,57 @@ describe("a task loop that stopped at its step limit (the launch 2 shape)", () =
     );
   }, 60_000);
 
+  it("tells a repair that called no tool so, once, inside the same attempt, and leaves the continuation its attempt", async () => {
+    // Development launch 1 of the continuation's trial: two repair attempts answered "Let me read
+    // the current state of the files first" with no tool call, each counted and measured over an
+    // unchanged tree, and the third fixed lint; no attempt was left for the continuation.
+    const result = await task(
+      [
+        ...interrupted,
+        respondWithText("Let me read the current state of the files first."),
+        ...lintRepair,
+        ...writesTheTest,
+      ],
+      { maxSteps: 3, attempts: 3, gateOptions: { commandOverrides: lintRule } },
+    );
+    expect(result.gates.outcome.attempts.map((one) => one.attempt)).toEqual([1, 2]);
+    expect(result.gates.outcome.continuation).toMatchObject({
+      state: "given",
+      attempt: 2,
+      accepted: true,
+    });
+    expect(readFileSync(join(workspace, "src/greet.test.js"), "utf8")).toBe(testWithShout);
+    const notices = evidence
+      .records()
+      .filter((record) => record.type === "session-budget")
+      .map((record) => evidence.payloads().get(record.payloadDigest) as Record<string, unknown>)
+      .filter((payload) => payload.rule === "no-action-notice-v1");
+    expect(notices).toEqual([
+      expect.objectContaining({
+        attempt: 1,
+        step: 1,
+        answer: "Let me read the current state of the files first.",
+      }),
+    ]);
+    // The repair's stop counts both parts of the one attempt, and its brief reached the model as
+    // a user message in the same conversation.
+    expect(stops()[1]).toMatchObject({
+      stopReason: "completed",
+      repair: true,
+      attempt: 1,
+      steps: 3,
+    });
+    const prompts = evidence
+      .records()
+      .filter((record) => record.type === "model-call")
+      .map((record) => JSON.stringify(evidence.payloads().get(record.payloadDigest)));
+    expect(
+      prompts.filter((prompt) => prompt.includes("[harness notice: no tool call]")),
+    ).not.toHaveLength(0);
+    expect(result.loop.stopReason).toBe("completed");
+    expect(result.green).toBe(true);
+  }, 60_000);
+
   it("gives a task that finished on its own no continuation", async () => {
     const result = await task(goodTurns(stillGreen), { attempts: 3 });
     expect(result.loop.stopReason).toBe("completed");
