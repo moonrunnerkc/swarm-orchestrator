@@ -5,6 +5,7 @@
 // file over the base's source (the differential reading of its tests).
 //
 //   node check-trees.mjs --patches <dir from reconstruct-launches.mjs> --out <json> [--mirror <bare clone>]
+//   node check-trees.mjs --tree <name>=<patch file> [--tree ...] --out <json> [--mirror <bare clone>]
 import { execFileSync, spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,9 +15,16 @@ import { tasks } from "../../../../scripts/comparison/tasks.mjs";
 import { cloneBase, digestOf, ensureMirror, git, resetTree, upstream } from "./replay-edits.mjs";
 import { readFileSync } from "node:fs";
 
-const { values } = parseArgs({ options: { patches: { type: "string" }, out: { type: "string" }, mirror: { type: "string" } } });
-if (values.patches === undefined || values.out === undefined)
-  throw new Error("usage: check-trees.mjs --patches <dir> --out <json> [--mirror <bare clone>]");
+const { values } = parseArgs({
+  options: {
+    patches: { type: "string" },
+    tree: { type: "string", multiple: true },
+    out: { type: "string" },
+    mirror: { type: "string" },
+  },
+});
+if ((values.patches === undefined && values.tree === undefined) || values.out === undefined)
+  throw new Error("usage: check-trees.mjs (--patches <dir> | --tree <name>=<patch> ...) --out <json> [--mirror <bare clone>]");
 const out = resolve(values.out);
 if (existsSync(out)) throw new Error(`${out} exists; a record is never overwritten`);
 const task = tasks.find((one) => one.id === "sinon-bugfix-stub-accessor-calls-v2");
@@ -40,16 +48,19 @@ const run = (argv) => {
     tail: text.slice(-1200),
   };
 };
-const trees = {
-  "launch-1 first": "launch-1/first.patch",
-  "launch-1 repair-1": "launch-1/repair-1.patch",
-  "launch-1 repair-2": "launch-1/repair-2.patch",
-  "launch-2 first": "launch-2/first.patch",
-  "launch-2 final": "launch-2/repair-1.patch",
-};
+const trees =
+  values.tree === undefined
+    ? {
+        "launch-1 first": "launch-1/first.patch",
+        "launch-1 repair-1": "launch-1/repair-1.patch",
+        "launch-1 repair-2": "launch-1/repair-2.patch",
+        "launch-2 first": "launch-2/first.patch",
+        "launch-2 final": "launch-2/repair-1.patch",
+      }
+    : Object.fromEntries(values.tree.map((entry) => [entry.slice(0, entry.indexOf("=")), resolve(entry.slice(entry.indexOf("=") + 1))]));
 const results = {};
 for (const [name, relative] of Object.entries(trees)) {
-  const patch = join(resolve(values.patches), relative);
+  const patch = values.tree === undefined ? join(resolve(values.patches), relative) : relative;
   resetTree(tree);
   git(tree, "apply", patch);
   const result = { patch: relative, patchDigest: digestOf(readFileSync(patch)) };

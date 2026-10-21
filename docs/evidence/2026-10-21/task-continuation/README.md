@@ -116,7 +116,7 @@ adds no test). The product's report said the loop stopped as `completed` and not
 stopped at its step limit (the launch 2 shape)") replay the sequence with a scripted model: a loop
 that reaches a step cap of 3 with a lint error and no test, a narrow repair that fixes lint and
 finishes, every gate green, no test written. On `fb02cae05` they fail
-([regressions-on-fb02cae05/agent-run.log](regressions-on-fb02cae05/agent-run.log)): no
+([regressions-on-fb02cae05/agent-run.txt](regressions-on-fb02cae05/agent-run.txt)): no
 continuation exists, and the run's lifecycle reads `completed`.
 
 **The resetBehavior failure, reproduced apart from any worker** ([checks.json](checks.json),
@@ -181,3 +181,29 @@ claim. Not delivered (item 5): the test deliverable is absent and the lifecycle 
 `completed`. Earliest actionable failure: a repair attempt that calls no tool changes nothing and
 still consumed an attempt; corrected in `cbf9544b4` (amendment 1), with its regression failing
 on `87b6f294e` ([regressions-on-87b6f294e/](regressions-on-87b6f294e/)).
+
+**Launch 2** (`cbf9544b4`, 488.0 s, 2,826,981 tokens): the first loop stopped at its cap with
+the source written and the test file begun; repair attempt 1 spent its 40 steps fixing lint;
+repair attempt 2 fixed the tests and was cut by the wall after 26 steps, its candidate measured
+green and kept. The delivered tree is complete and correct under the frozen evaluator: the sealed
+tests, the API check and the suite pass; 8 cases and 26 assertions were added, pass on the
+delivered tree, and 6 of them fail over the base's source ([checks-trial.json](checks-trial.json)).
+The product refused it: its last loop stopped at the wall, which the verdict policy refuses on
+its own, so it exited 1 with no claim and offered `swarm resume`. Not delivered by item 5. Repair
+improved the artifact here: cycle 0 failed lint and tests, and the kept tree passes everything.
+No continuation ran in either launch (withheld both times: the cap in launch 1, the wall in
+launch 2), so the continuation's own value is shown only by the regression tests.
+
+## Plain answers
+
+- **Did Swarm deliver a complete correct change?** Launch 2's tree is complete and correct by
+  every frozen check, and the product refused it as unfinished because its allowance ran out
+  mid-repair. Launch 1's source was correct with no test. Neither is a delivery under the rule.
+- **Did the controller retain useful work and finish interrupted work?** Retained: yes, in both
+  launches every accepted repair stood and the corrected measure kept a repaired candidate in the
+  replay. Finished: not shown live; the continuation was withheld both times.
+- **Did repair improve the delivered artifact?** In launch 2, yes (lint, then the tests). In
+  launch 1 the no-tool attempts changed nothing until the third.
+- **Did Swarm outperform OpenCode?** Not measured: the fresh pairs were conditioned on a delivery.
+- **Unproven:** that the continuation writes a missing test live; that 40 steps and 9 minutes
+  suffice for this task's source and tests together on this model.

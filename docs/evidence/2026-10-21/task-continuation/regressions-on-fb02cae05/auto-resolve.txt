@@ -1,0 +1,161 @@
+
+ RUN  v4.1.11 /Users/brad/projects/swarm-orchestrator/.claude/worktrees/accessor-audit-2026-10-21
+
+ ❯ |suite| src/gates/auto-resolve.test.ts (39 tests | 6 failed) 2265ms
+     × is given once the gates are green, as an attempt from the cap, before any outcome follow-up 61ms
+     × comes after the narrow repair the gates asked for, from the same cap 41ms
+     × keeps a continuation that adds a test the base lacks, and accounts for the added test from the harness's own measures 24ms
+     × says when no test file changed, and when nothing can run the added tests on the base's source 22ms
+     × rolls back a continuation that weakens the tests, and leaves the run green on the state before it 21ms
+     × is withheld, and says why, when the cap was spent on repairs or the gates never went green 39ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |suite| src/gates/auto-resolve.test.ts > the continuation owed to a task loop that stopped at its step limit > is given once the gates are green, as an attempt from the cap, before any outcome follow-up
+AssertionError: expected [ [ 1, undefined, …(1) ] ] to deeply equal [ [ 1, 'continuation', …(1) ], …(1) ]
+
+- Expected
++ Received
+
+  [
+    [
+      1,
+-     "continuation",
+-     "The task's first loop stopped at its step limit before it reported the task done; finish what the task still requires.",
+-   ],
+-   [
+-     2,
+-     "outcomes",
++     undefined,
+      "Requested behaviour no sealed check exercises: add(2, 3) gives 5.",
+    ],
+  ]
+
+ ❯ src/gates/auto-resolve.test.ts:1073:82
+    1071|       return Promise.resolve();
+    1072|     });
+    1073|     expect(requests.map((one) => [one.attempt, one.followUpKind, one.f…
+       |                                                                                  ^
+    1074|       [1, "continuation", owedContinuation.brief],
+    1075|       [2, "outcomes", owedOutcomes.brief],
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  |suite| src/gates/auto-resolve.test.ts > the continuation owed to a task loop that stopped at its step limit > comes after the narrow repair the gates asked for, from the same cap
+AssertionError: expected [ 'repair' ] to deeply equal [ 'repair', 'continuation' ]
+
+- Expected
++ Received
+
+  [
+    "repair",
+-   "continuation",
+  ]
+
+ ❯ src/gates/auto-resolve.test.ts:1098:65
+    1096|       return Promise.resolve();
+    1097|     });
+    1098|     expect(requests.map((one) => one.followUpKind ?? "repair")).toEqua…
+       |                                                                 ^
+    1099|     expect(outcome.continuation).toMatchObject({ state: "given", attem…
+    1100|     expect(outcome.settled).toBe("green");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+ FAIL  |suite| src/gates/auto-resolve.test.ts > the continuation owed to a task loop that stopped at its step limit > keeps a continuation that adds a test the base lacks, and accounts for the added test from the harness's own measures
+AssertionError: expected undefined to match object { state: 'given', attempt: 1, …(1) }
+
+- Expected:
+{
+  "accepted": true,
+  "attempt": 1,
+  "state": "given",
+}
+
++ Received:
+undefined
+
+ ❯ src/gates/auto-resolve.test.ts:1118:34
+    1116|       })),
+    1117|     );
+    1118|     expect(outcome.continuation).toMatchObject({ state: "given", attem…
+       |                                  ^
+    1119|     expect(test.workspace.files.get(testPath)).toBe(added);
+    1120|     expect(outcome.regressionTests).toMatchObject({
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯
+
+ FAIL  |suite| src/gates/auto-resolve.test.ts > the continuation owed to a task loop that stopped at its step limit > says when no test file changed, and when nothing can run the added tests on the base's source
+AssertionError: expected undefined to match object { files: [], testsGate: 'passed' }
+
+- Expected:
+{
+  "files": [],
+  "testsGate": "passed",
+}
+
++ Received:
+undefined
+
+ ❯ src/gates/auto-resolve.test.ts:1141:39
+    1139|     test.workspace.write(sourcePath, fixedSource);
+    1140|     const untouched = await test.run(() => Promise.resolve());
+    1141|     expect(untouched.regressionTests).toMatchObject({ files: [], tests…
+       |                                       ^
+    1142|     const again = harness({ continuation: owedContinuation });
+    1143|     again.workspace.write(sourcePath, fixedSource);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/6]⎯
+
+ FAIL  |suite| src/gates/auto-resolve.test.ts > the continuation owed to a task loop that stopped at its step limit > rolls back a continuation that weakens the tests, and leaves the run green on the state before it
+AssertionError: expected undefined to match object { state: 'given', attempt: 1, …(1) }
+
+- Expected:
+{
+  "accepted": false,
+  "attempt": 1,
+  "state": "given",
+}
+
++ Received:
+undefined
+
+ ❯ src/gates/auto-resolve.test.ts:1163:34
+    1161|       return Promise.resolve();
+    1162|     });
+    1163|     expect(outcome.continuation).toMatchObject({ state: "given", attem…
+       |                                  ^
+    1164|     expect(test.workspace.files.get(testPath)).toBe(originalTests);
+    1165|     expect(outcome.settled).toBe("green");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯
+
+ FAIL  |suite| src/gates/auto-resolve.test.ts > the continuation owed to a task loop that stopped at its step limit > is withheld, and says why, when the cap was spent on repairs or the gates never went green
+AssertionError: expected undefined to match object { state: 'withheld', …(2) }
+
+- Expected:
+{
+  "attempt": null,
+  "reason": "no attempt was left under the cap of 1",
+  "state": "withheld",
+}
+
++ Received:
+undefined
+
+ ❯ src/gates/auto-resolve.test.ts:1176:32
+    1174|     });
+    1175|     expect(first.settled).toBe("green");
+    1176|     expect(first.continuation).toMatchObject({
+       |                                ^
+    1177|       state: "withheld",
+    1178|       attempt: null,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/6]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  6 failed | 33 passed (39)
+   Start at  10:14:22
+   Duration  2.44s (transform 87ms, setup 0ms, import 124ms, tests 2.26s, environment 0ms)
+

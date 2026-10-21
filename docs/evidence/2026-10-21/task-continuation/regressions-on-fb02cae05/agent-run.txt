@@ -1,0 +1,133 @@
+
+ RUN  v4.1.11 /Users/brad/projects/swarm-orchestrator/.claude/worktrees/accessor-audit-2026-10-21
+
+ ❯ |suite| src/agent-run.test.ts (53 tests | 5 failed | 48 skipped) 9760ms
+     × is owed one continuation once the narrow repair turned the gates green, and the continuation can add and keep the missing test 2276ms
+     × is not read as completed when the cap left no continuation: the repair's finish is the repair's, not the task's 2314ms
+     × rolls back a continuation that breaks a passing check, and the run's lifecycle is the interrupted loop's 2364ms
+     × gives a task that finished on its own no continuation 1570ms
+     × withholds the continuation when the run is cancelled, and the run is refused as cancelled 1236ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |suite| src/agent-run.test.ts > a task loop that stopped at its step limit (the launch 2 shape) > is owed one continuation once the narrow repair turned the gates green, and the continuation can add and keep the missing test
+AssertionError: expected [ [ 'max-steps', false, false ], …(1) ] to deeply equal [ [ 'max-steps', false, false ], …(2) ]
+
+- Expected
++ Received
+
+@@ -7,11 +7,6 @@
+    [
+      "completed",
+      true,
+      false,
+    ],
+-   [
+-     "completed",
+-     true,
+-     true,
+-   ],
+  ]
+
+ ❯ src/agent-run.test.ts:1669:104
+    1667|     });
+    1668|     // The first loop stopped at its limit; the repair finished; the c…
+    1669|     expect(stops().map((stop) => [stop.stopReason, stop.repair ?? fals…
+       |                                                                                                        ^
+    1670|       ["max-steps", false, false],
+    1671|       ["completed", true, false],
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  |suite| src/agent-run.test.ts > a task loop that stopped at its step limit (the launch 2 shape) > is not read as completed when the cap left no continuation: the repair's finish is the repair's, not the task's
+AssertionError: expected undefined to match object { state: 'withheld', …(1) }
+
+- Expected:
+{
+  "reason": "no attempt was left under the cap of 1",
+  "state": "withheld",
+}
+
++ Received:
+undefined
+
+ ❯ src/agent-run.test.ts:1710:47
+    1708|     });
+    1709|     expect(result.gates.outcome.settled).toBe("green");
+    1710|     expect(result.gates.outcome.continuation).toMatchObject({
+       |                                               ^
+    1711|       state: "withheld",
+    1712|       reason: "no attempt was left under the cap of 1",
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  |suite| src/agent-run.test.ts > a task loop that stopped at its step limit (the launch 2 shape) > rolls back a continuation that breaks a passing check, and the run's lifecycle is the interrupted loop's
+AssertionError: expected undefined to match object { state: 'given', attempt: 2, …(1) }
+
+- Expected:
+{
+  "accepted": false,
+  "attempt": 2,
+  "state": "given",
+}
+
++ Received:
+undefined
+
+ ❯ src/agent-run.test.ts:1741:47
+    1739|       { maxSteps: 3, attempts: 3, gateOptions: { commandOverrides: lin…
+    1740|     );
+    1741|     expect(result.gates.outcome.continuation).toMatchObject({ state: "…
+       |                                               ^
+    1742|     expect(readFileSync(join(workspace, "src/greet.js"), "utf8")).toBe…
+    1743|     expect(result.loop.stopReason).toBe("max-steps");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  |suite| src/agent-run.test.ts > a task loop that stopped at its step limit (the launch 2 shape) > gives a task that finished on its own no continuation
+AssertionError: expected undefined to be null
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ src/agent-run.test.ts:1753:47
+    1751|     const result = await task(goodTurns(stillGreen), { attempts: 3 });
+    1752|     expect(result.loop.stopReason).toBe("completed");
+    1753|     expect(result.gates.outcome.continuation).toBeNull();
+       |                                               ^
+    1754|     expect(result.gates.outcome.attempts).toHaveLength(0);
+    1755|     expect(evidence.records().filter((record) => record.type === "mode…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  |suite| src/agent-run.test.ts > a task loop that stopped at its step limit (the launch 2 shape) > withholds the continuation when the run is cancelled, and the run is refused as cancelled
+AssertionError: expected undefined to match object { state: 'withheld', …(1) }
+
+- Expected:
+{
+  "reason": "model work ended before it could be given",
+  "state": "withheld",
+}
+
++ Received:
+undefined
+
+ ❯ src/agent-run.test.ts:1768:47
+    1766|       },
+    1767|     });
+    1768|     expect(result.gates.outcome.continuation).toMatchObject({
+       |                                               ^
+    1769|       state: "withheld",
+    1770|       reason: "model work ended before it could be given",
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  5 failed | 48 skipped (53)
+   Start at  10:14:25
+   Duration  10.25s (transform 339ms, setup 0ms, import 444ms, tests 9.76s, environment 0ms)
+
