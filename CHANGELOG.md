@@ -33,6 +33,24 @@ Source on `v13-main`; not published until a release names it.
 
 ### Fixed
 
+- **A run whose model work was cut before its deadline is decided by the checks of the tree it
+  delivered.** A run with a total allowance ends model work a reserve before its deadline so the
+  final checks have time; a loop cut there stopped as `max-wall-time`, and the assessment refused
+  that lifecycle on its own, so a tree whose final cycle and independent verification had both
+  passed inside the allowance was refused (launch 2 of 2026-10-21: the repair cut at 17:00:59.529,
+  verification complete at 17:01:57.313, deadline 17:02:50.410). The worker assessment is now
+  `run-acceptance-v5`: a wall stop recorded before the deadline the run's reserve names, with every
+  write and shell call settled before the cutoff, is not refused for the cut, as a step-limit stop
+  is not. The lifecycle stays `max-wall-time`, no completion claim is read into it, and the report
+  says the acceptance is the checks' reading. A stop at the deadline, cancellation, an allowance
+  that ended before the checks finished, a failed or unrun required check, a final verification of
+  another patch, and a write still in flight at the cutoff refuse as before; earlier records keep
+  their meaning.
+- **A model call cut off, cancelled or failed after it was sent counts as unknown usage.** Only
+  answered calls were counted, so a run whose wall cancelled a request mid-flight settled "0
+  unknown" over a record saying its usage was unknown, and its token total read as complete. The
+  total is now a lower bound whenever such a call exists, as it already was for an answer that
+  reported no usage.
 - **A shell check repeated after an edit is answered again, with the shell still counted as a
   possible edit.** Naming the shell as a tool whose call may write (below) keyed every shell
   command the way a writing call was keyed, without the workspace generation, so a check run
