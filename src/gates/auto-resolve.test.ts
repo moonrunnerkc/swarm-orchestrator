@@ -15,7 +15,12 @@ import {
   runAutoResolve,
 } from "./auto-resolve.ts";
 import type { FileSetState } from "./file-set.ts";
-import type { DiffBudget, GateContext, GateDefinition } from "./gate-definition.ts";
+import type {
+  DiffBudget,
+  GateContext,
+  GateDefinition,
+  GateObservation,
+} from "./gate-definition.ts";
 import { justifiedRecords, outstandingJustifications } from "./gate-runner.ts";
 import { diffBudgetGate } from "./inspection-gates.ts";
 import { measureTestFile } from "./measures.ts";
@@ -141,6 +146,8 @@ interface Harness {
   run(resolve: ResolveAttempt, baseControl?: BaseControlRunner | null): Promise<AutoResolveOutcome>;
   /** From now on every command is refused before it spawns, as a spent wall budget does. */
   refuseCommandsFromNow(): void;
+  /** What one command answers from now on, in place of the stub's own reading. */
+  respond(command: string, observation: Partial<GateObservation>): void;
 }
 
 const refusal =
@@ -182,7 +189,26 @@ function harness(
     current: { [sourcePath]: brokenSource, [testPath]: originalTests },
   });
   const refusing = { refuse: false };
-  const commands = refusable(stubCommands(workspace), refusing);
+  const scripted = new Map<string, Partial<GateObservation>>();
+  const stub = stubCommands(workspace);
+  const commands = refusable(
+    {
+      commands: stub.commands,
+      run: (command, options) => {
+        const answer = scripted.get(command);
+        if (answer === undefined) return stub.run(command, options);
+        return Promise.resolve({
+          exitCode: answer.exitCode ?? 0,
+          stdout: answer.stdout ?? "",
+          stderr: answer.stderr ?? "",
+          durationMs: answer.durationMs ?? 1,
+          unavailable: answer.unavailable ?? null,
+        });
+      },
+      runVouched: (argv, options) => stub.runVouched(argv, options),
+    },
+    refusing,
+  );
 
   const context = async (): Promise<GateContext> => ({
     workspaceRoot: "/workspace",
@@ -196,6 +222,9 @@ function harness(
     workspace,
     refuseCommandsFromNow: () => {
       refusing.refuse = true;
+    },
+    respond: (command, observation) => {
+      scripted.set(command, observation);
     },
     run: (resolve, baseControl = null) =>
       runAutoResolve({
@@ -395,6 +424,41 @@ describe("the ratchet against the base commit", () => {
 
     const decision = ledgerPayloads("ratchet-decision")[0];
     expect(decision?.detail).toContain("not compared: testsCollected, changedLineCoverage");
+  });
+});
+
+describe("a gate that withheld its pass", () => {
+  /**
+   * The sinon launch of 2026-10-21: every gate passed or stood down, lint's pass withheld
+   * because the change had altered what the closure read as its instrument, so the cycle was
+   * never green, the owed follow-up and a third attempt were spent on nothing, and the
+   * escalation named an "unknown" gate with "a blocking failure that is no longer in the final
+   * cycle" over a tree with no failure in it. The gate that withheld its pass is the one to name.
+   */
+  it("escalates naming that gate and its reason, not an unknown gate", async () => {
+    const withheld =
+      "the runner reported a pass, but this change altered the instrument that measured it (src/math.ts), so the pass is the project's report, not evidence";
+    const withholdingLint: GateDefinition = {
+      ...lintGate,
+      source: { kind: "command", command: "run-withheld-lint" },
+    };
+    const test = harness({ cap: 1, gates: [testsGate, withholdingLint] });
+    test.respond("run-withheld-lint", { exitCode: 0, unavailable: withheld });
+
+    const outcome = await test.run(() => {
+      test.workspace.write(sourcePath, fixedSource);
+      return Promise.resolve();
+    });
+
+    expect(outcome.settled).toBe("escalated");
+    expect(outcome.finalCycle.blockingFailures).toEqual([]);
+    expect(outcome.finalCycle.statuses).toEqual({ tests: "passed", lint: "not-applicable" });
+    expect(outcome.escalation).toMatchObject({
+      gateId: "lint",
+      title: "lint withheld its pass",
+      attemptsUsed: 1,
+    });
+    expect(outcome.escalation?.reason).toBe(withheld);
   });
 });
 
