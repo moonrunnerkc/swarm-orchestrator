@@ -1411,20 +1411,31 @@ function collectChecks(directory) {
       [...latestGates.values()].every((digest) => gateRecords.includes(digest));
     const measured = Object.assign({}, ...gates.map((gate) => gate?.measures ?? {}));
     consistent &&= inputs?.changedFiles === (measured.changedFiles ?? 0);
-    // The last stop of a loop: a withheld repair attempt is recorded as a stop without one, and a
-    // follow-up whose candidate was not kept changed nothing delivered, so its stop is not it.
-    const followUp = thisRun
+    // The last stop of a loop that worked the task: a withheld repair attempt is recorded as a
+    // stop without one; an owed attempt (the task's continuation, the follow-up on unresolved
+    // outcomes) whose candidate was not kept changed nothing delivered, so its stop is not it; a
+    // narrow repair that finished says so (runLifecycle false), since it finished the repair and
+    // not the task. Records without these fields read as they always did.
+    const owed = thisRun
       .map((candidate) => payloads.get(candidate.payloadDigest))
-      .filter((payload) => payload?.rule === "outcome-follow-up-v1")
-      .at(-1);
-    const followUpKept = followUp?.state === "given" && followUp.accepted === true;
-    const stop = thisRun
       .filter(
-        (candidate) =>
-          candidate.type === "session-stopped" &&
-          !(payloads.get(candidate.payloadDigest)?.followUp === true && !followUpKept) &&
-          loopLifecycles.includes(payloads.get(candidate.payloadDigest)?.stopReason),
-      )
+        (payload) =>
+          payload?.rule === "outcome-follow-up-v1" || payload?.rule === "task-continuation-v1",
+      );
+    const owedKept = (attempt) => {
+      const record =
+        typeof attempt === "number" ? owed.find((one) => one?.attempt === attempt) : owed.at(-1);
+      return record?.state === "given" && record.accepted === true;
+    };
+    const stop = thisRun
+      .filter((candidate) => {
+        if (candidate.type !== "session-stopped") return false;
+        const stopped = payloads.get(candidate.payloadDigest);
+        if (!loopLifecycles.includes(stopped?.stopReason)) return false;
+        if (stopped?.runLifecycle === false) return false;
+        if (stopped?.followUp === true && !owedKept(stopped.attempt)) return false;
+        return true;
+      })
       .at(-1);
     consistent &&=
       inputs?.lifecycleRecord === (stop?.payloadDigest ?? null) &&

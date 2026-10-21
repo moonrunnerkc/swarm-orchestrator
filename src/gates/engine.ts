@@ -61,6 +61,8 @@ interface GatesEngineOptions {
   readonly cap?: number;
   /** Owed one attempt from the cap once the gates are green; see the resolve loop. */
   readonly followUp?: OwedFollowUp;
+  /** The task's own continuation, owed before the follow-up where its loop was interrupted. */
+  readonly continuation?: OwedFollowUp;
   readonly budgets?: DiffBudget;
   readonly gateOptions?: GateSetOptions;
   /**
@@ -263,6 +265,7 @@ export async function runGatesEngine(options: GatesEngineOptions): Promise<Gates
     context,
     ...(options.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
     ...(options.followUp === undefined ? {} : { followUp: options.followUp }),
+    ...(options.continuation === undefined ? {} : { continuation: options.continuation }),
     cycleDeps: {
       commands,
       evidence: options.evidence,

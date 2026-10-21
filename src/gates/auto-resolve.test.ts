@@ -182,6 +182,7 @@ function harness(
     /** What the base tree prints for a gate, or null where nothing can measure it. */
     atBase?: (gate: GateDefinition) => { exitCode: number; stdout: string } | null;
     followUp?: OwedFollowUp;
+    continuation?: OwedFollowUp;
   } = {},
 ): Harness {
   const workspace = createMemoryWorkspace({
@@ -246,6 +247,7 @@ function harness(
         },
         cap: options.cap ?? 3,
         ...(options.followUp === undefined ? {} : { followUp: options.followUp }),
+        ...(options.continuation === undefined ? {} : { continuation: options.continuation }),
         ...(options.atBase === undefined
           ? {}
           : {
@@ -1045,5 +1047,144 @@ describe("a follow-up owed on work no gate measures", () => {
       reason: expect.stringContaining("no usable budget remains"),
     });
     expect(outcome.settled).toBe("green");
+  });
+});
+
+describe("the continuation owed to a task loop that stopped at its step limit", () => {
+  const owedContinuation: OwedFollowUp = {
+    identity: "sha256:continuation",
+    brief:
+      "The task's first loop stopped at its step limit before it reported the task done; finish what the task still requires.",
+  };
+  const owedOutcomes: OwedFollowUp = {
+    identity: "sha256:outcomes",
+    brief: "Requested behaviour no sealed check exercises: add(2, 3) gives 5.",
+  };
+  const continuations = () =>
+    ledgerPayloads("verification-command").filter((one) => one.rule === "task-continuation-v1");
+
+  it("is given once the gates are green, as an attempt from the cap, before any outcome follow-up", async () => {
+    const test = harness({ continuation: owedContinuation, followUp: owedOutcomes });
+    test.workspace.write(sourcePath, fixedSource);
+    const requests: ResolveRequest[] = [];
+    const outcome = await test.run((request) => {
+      requests.push(request);
+      return Promise.resolve();
+    });
+    expect(requests.map((one) => [one.attempt, one.followUpKind, one.followUp])).toEqual([
+      [1, "continuation", owedContinuation.brief],
+      [2, "outcomes", owedOutcomes.brief],
+    ]);
+    expect(outcome.settled).toBe("green");
+    expect(outcome.continuation).toMatchObject({
+      identity: owedContinuation.identity,
+      state: "given",
+      attempt: 1,
+      accepted: true,
+    });
+    expect(outcome.followUp).toMatchObject({ state: "given", attempt: 2, accepted: true });
+    expect(continuations()).toEqual([
+      expect.objectContaining({ state: "given", attempt: 1, accepted: true }),
+    ]);
+  });
+
+  it("comes after the narrow repair the gates asked for, from the same cap", async () => {
+    const test = harness({ continuation: owedContinuation });
+    const requests: ResolveRequest[] = [];
+    const outcome = await test.run((request) => {
+      requests.push(request);
+      if (request.attempt === 1) test.workspace.write(sourcePath, fixedSource);
+      return Promise.resolve();
+    });
+    expect(requests.map((one) => one.followUpKind ?? "repair")).toEqual(["repair", "continuation"]);
+    expect(outcome.continuation).toMatchObject({ state: "given", attempt: 2, accepted: true });
+    expect(outcome.settled).toBe("green");
+  });
+
+  it("keeps a continuation that adds a test the base lacks, and accounts for the added test from the harness's own measures", async () => {
+    const test = harness({ continuation: owedContinuation });
+    test.workspace.write(sourcePath, fixedSource);
+    const added = `${originalTests}\nit('adds negatives', () => {\n  expect(add(-1, -2)).toBe(-3);\n});\n`;
+    const outcome = await test.run(
+      () => {
+        test.workspace.write(testPath, added);
+        return Promise.resolve();
+      },
+      createStubBaseControl(() => ({
+        onBase: "failed",
+        onSubmitted: "passed",
+        failedOnBase: ["adds negatives"],
+      })),
+    );
+    expect(outcome.continuation).toMatchObject({ state: "given", attempt: 1, accepted: true });
+    expect(test.workspace.files.get(testPath)).toBe(added);
+    expect(outcome.regressionTests).toMatchObject({
+      testsGate: "passed",
+      files: [
+        {
+          path: testPath,
+          testsAdded: ["adds negatives"],
+          testsRemoved: [],
+          assertionsAdded: 1,
+          onBaseSource: { outcome: "failed", failedTests: ["adds negatives"] },
+        },
+      ],
+    });
+    expect(ledgerPayloads("verification-command")).toContainEqual(
+      expect.objectContaining({ rule: "regression-tests-v1", testsGate: "passed" }),
+    );
+  });
+
+  it("says when no test file changed, and when nothing can run the added tests on the base's source", async () => {
+    const test = harness({ continuation: owedContinuation });
+    test.workspace.write(sourcePath, fixedSource);
+    const untouched = await test.run(() => Promise.resolve());
+    expect(untouched.regressionTests).toMatchObject({ files: [], testsGate: "passed" });
+    const again = harness({ continuation: owedContinuation });
+    again.workspace.write(sourcePath, fixedSource);
+    const added = `${originalTests}\nit('adds negatives', () => {\n  expect(add(-1, -2)).toBe(-3);\n});\n`;
+    const unmeasured = await again.run(() => {
+      again.workspace.write(testPath, added);
+      return Promise.resolve();
+    }, null);
+    expect(unmeasured.regressionTests?.files[0]).toMatchObject({
+      testsAdded: ["adds negatives"],
+      onBaseSource: null,
+    });
+  });
+
+  it("rolls back a continuation that weakens the tests, and leaves the run green on the state before it", async () => {
+    const test = harness({ continuation: owedContinuation });
+    test.workspace.write(sourcePath, fixedSource);
+    const weakened = originalTests.replace("  expect(add(2, 2)).toBe(4);\n", "");
+    const outcome = await test.run(() => {
+      test.workspace.write(testPath, weakened);
+      return Promise.resolve();
+    });
+    expect(outcome.continuation).toMatchObject({ state: "given", attempt: 1, accepted: false });
+    expect(test.workspace.files.get(testPath)).toBe(originalTests);
+    expect(outcome.settled).toBe("green");
+    expect(outcome.attempts).toHaveLength(1);
+  });
+
+  it("is withheld, and says why, when the cap was spent on repairs or the gates never went green", async () => {
+    const spent = harness({ cap: 1, continuation: owedContinuation });
+    const first = await spent.run(() => {
+      spent.workspace.write(sourcePath, fixedSource);
+      return Promise.resolve();
+    });
+    expect(first.settled).toBe("green");
+    expect(first.continuation).toMatchObject({
+      state: "withheld",
+      attempt: null,
+      reason: "no attempt was left under the cap of 1",
+    });
+    const never = harness({ cap: 2, continuation: owedContinuation });
+    const second = await never.run(() => Promise.resolve());
+    expect(second.settled).toBe("escalated");
+    expect(second.continuation).toMatchObject({
+      state: "withheld",
+      reason: expect.stringContaining("the gates were not green"),
+    });
   });
 });
