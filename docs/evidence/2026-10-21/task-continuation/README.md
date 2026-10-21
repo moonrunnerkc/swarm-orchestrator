@@ -218,3 +218,76 @@ scripted repairs that decline on purpose decline twice, as a model told the noti
 2 ran before that scoping on `cbf9544b4`; no owed attempt was given there (the continuation was
 withheld), so the scoping changes nothing in its trace. The build the trial pinned differs from
 the branch's final code in that one respect, and in nothing the launches exercised.
+
+## 6. Correction, 2026-10-21 evening: the cut was the model-work cutoff, not the run's deadline
+
+Sections 4 and the plain answers say launch 2's repair "was cut by the wall" and that the product
+refused the tree "because its allowance ran out mid-repair". The launch's own records say
+otherwise (its chain is in [packed-derived/payloads-2](packed-derived/payloads-2/)):
+
+| record | time (UTC) | what it says |
+| --- | --- | --- |
+| 10 `session-budget` (`verification-reserve-v1`) | 16:54:08.818 | deadline **17:02:50.410**; model work ends 17:01:37.370, 73.04 s held for the final cycle, acceptance and the independent verification |
+| 268 `session-budget` | 16:56:20.326 | the loop and every repair draw from one wall that ends a second before model work does (17:01:36.370) |
+| 714 `model-call` | 17:00:59.524 | step 107, sent 227 ms earlier, cancelled; `usageStatus: "unknown"` |
+| 715 `session-stopped` | **17:00:59.529** | repair attempt 2 stopped `max-wall-time` after 26 steps, with 37.01 s held back for its own gate cycle (its wall ended 17:00:59.360) |
+| 716 to 748 | 17:01:02.502 to 17:01:33.510 | the final gate cycle over the delivered tree: every gate passed |
+| 749 `run-assessment` | 17:01:33.516 | not acceptable; the only refusal: "the run stopped as max-wall-time" |
+| 755 `independent-verification` | **17:01:57.313** | the delivered patch applied to a fresh checkout and the sealed check passed (`verified: true`, task accepted) |
+| 756 `run-assessment` | 17:01:57.324 | not acceptable, carried from 749 |
+
+The repair was stopped by an internal cutoff that exists to keep verification time, and that time
+was used: the final cycle and the independent verification of the exact delivered tree finished
+53.1 s before the run's deadline. Nothing was cancelled (749 records `cancelled: false`), no
+check went unrun, and no write was in flight. The tree was refused for the lifecycle word alone,
+under `run-acceptance-v4`, which refused every `max-wall-time` without asking which wall it was.
+That is a product defect, and launches.md's "no product defect is named from this trace" is
+withdrawn. Nor does this trial show that nine minutes was too short for the implementation and
+its verification: both finished inside the allowance. What it shows is that the model-work share
+ended while the second repair was still working, and that the verdict then discarded the
+verification the reserve had paid for.
+
+**Reproduced with no model** ([assessment-replay/](assessment-replay/)). `replay-launch-2-assessment.mjs`
+copies the chain to record 748, records the worker assessment again with the product's own
+`recordRunAssessment` from what the chain holds, appends records 750 to 755 with their payloads
+unchanged, records the goal assessment with `recordGoalAssessment`, exports both chains as bundles
+and runs the standalone verifier over them. On the code of `173bce007` the replayed worker
+assessment is canonically identical to record 749 and the goal verdict to 756, and the verifier
+re-derives all four assessments (`before-173bce007.json`, packed in
+[packed-derived/assessment-replay](packed-derived/assessment-replay/)).
+
+**The correction** (policy `run-acceptance-v5`, mirrored by the standalone verifier). A loop's wall
+stop is read against the run's recorded reserve: whether the stop came before the deadline the
+reserve names, and whether every write and shell call requested settled before the model-work
+cutoff. Where both hold, the stop is the cut of model work and does not refuse on its own, as a
+step-limit stop does not; the run is then decided by the checks of the delivered tree and every
+other condition of the policy. The lifecycle stays `max-wall-time`, no completion claim is read
+into it, and the verdict and report say the acceptance is the checks' reading and says nothing
+about whether the model had finished. A stop at the deadline, cancellation, an allowance that ended
+before the checks finished, a failed or unrun required check, a final verification of another
+patch, and a write unsettled at the cutoff still refuse; a run with no reserve recorded refuses a
+wall stop as before; v1, v2 and v4 records keep their meaning, and the verifier refuses a v4 record
+that carries the new field. Over launch 2's records the v5 assessment is acceptable, the goal
+assessment is acceptable with the task accepted, and the verifier re-derives both (`after-v5.json`).
+The tests that pin each case, on an injected clock and through the command line with a scripted
+endpoint, are listed in [assessment-replay/README.md](assessment-replay/README.md), with the ones
+that fail on `173bce007`.
+
+**The score stands.** Launch 2 was scored under the protocol frozen before it, whose item 5
+required lifecycle `completed` and an acceptable verdict; it is "not delivered" there and stays so.
+The corrected product would have accepted this tree with lifecycle `max-wall-time` and no
+completion claim, which that item still would not count as a delivery.
+
+**Tokens.** launches.md reports launch 2 as "2,826,981 tokens, every call reporting". 106 of its 107
+model calls reported usage, totalling 2,826,981; the 107th (record 714) was sent and cancelled 227 ms
+later by the cutoff, and its usage is unknown. The product's settled count said 0 unknown because
+only answered calls were counted ([usage-launch-2.json](packed-derived/assessment-replay/), from
+`usage-account.mjs`). The reported total is a lower bound; charged at the request bound its record
+carries (78,695 tokens), the launch used at most 2,905,676. The last prompt the server measured
+before it was 34,837 input tokens; whether the server processed any of the cancelled request is not
+recorded. Launch 1's 56 calls all reported usage (`usage-launch-1.json`). The product now counts a
+call that was sent and ended without an answer as unknown usage.
+
+**The continuation still has no demonstrated live benefit.** It was withheld in both launches
+(launch 1 for want of an attempt under the cap, launch 2 for want of model-work time), so its value
+rests on the regression tests alone.
