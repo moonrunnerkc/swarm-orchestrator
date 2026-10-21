@@ -46,7 +46,9 @@ for (const record of records) {
   });
 }
 const reported = inputTokens + outputTokens;
-const bound = unknown.reduce((sum, one) => sum + (one.requestBound?.reservedTokens ?? Number.NaN), 0);
+// A call that answered without usage carries no bound; only a cancelled call records one.
+const unbounded = unknown.filter((one) => typeof one.requestBound?.reservedTokens !== "number");
+const bound = unknown.reduce((sum, one) => sum + (one.requestBound?.reservedTokens ?? 0), 0);
 process.stdout.write(
   `${JSON.stringify(
     {
@@ -59,7 +61,9 @@ process.stdout.write(
       reading:
         unknown.length === 0
           ? "every call reported its usage; the total is the reported total"
-          : `the reported total is a lower bound; with each unknown call charged at its recorded request bound it is at most ${reported + bound}`,
+          : unbounded.length > 0
+            ? `the reported total is a lower bound; ${unbounded.length} unknown call(s) record no bound, so the records give no upper bound`
+            : `the reported total is a lower bound; with each unknown call charged at its recorded request bound it is at most ${reported + bound}`,
     },
     null,
     2,
