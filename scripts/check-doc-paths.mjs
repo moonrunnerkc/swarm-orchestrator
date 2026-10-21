@@ -116,6 +116,10 @@ const documentedAsRemoved = new Map([
     "packed losslessly into docs/evidence/2026-08-23/packed-derived/terminal-recordings-2026-08; the record naming it stands",
   ],
   [
+    "campaign/pr-tasks/scored.json",
+    "packed losslessly into campaign/pr-tasks/packed-derived/scored-tasks on 2026-10-21 to keep the tree's weight headroom; restore gives the bytes back, and the 2026-09-11 audit names it as it was",
+  ],
+  [
     "scripts/action-artifacts.mjs",
     "moved into src/action/artifacts.ts when the Action became a client of the installed verifier; the 2026-09-27 execution record names it as it was",
   ],
