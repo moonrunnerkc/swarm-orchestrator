@@ -41,8 +41,8 @@ the hidden test file.
 | validatorjs/validator.js, cheeriojs/cheerio | no commit changing both source and a test file in the window examined |
 | isaacs/node-glob, isaacs/path-scurry | candidates found, but the base fails the project's own tests at each, so no task is launchable |
 | isaacs/rimraf | one valid candidate, a one-line change; too small |
-| motdotla/dotenv | six valid candidates ([mining/motdotla__dotenv.candidates.json](mining/motdotla__dotenv.candidates.json)); `048dd4863` chosen (25 insertions, 11 deletions in `lib/main.js`, a scanner with three behaviours to repair); the others are one- to three-line changes or depend on it |
-| sinonjs/sinon | five valid candidates ([mining/sinonjs__sinon.candidates.json](mining/sinonjs__sinon.candidates.json)), re-verified under mocha as the comparison scores them ([mining/sinon-verify.json](mining/sinon-verify.json)); `002ee82bc` (19 insertions, 2 deletions over two files) and `40de5a48c` (29 insertions, 4 deletions over two files) chosen; the others are one-line changes |
+| motdotla/dotenv | six valid candidates (`comparison/mining/motdotla__dotenv.candidates.json`, packed in [../packed-derived/comparison-streams](../packed-derived/comparison-streams/)); `048dd4863` chosen (25 insertions, 11 deletions in `lib/main.js`, a scanner with three behaviours to repair); the others are one- to three-line changes or depend on it |
+| sinonjs/sinon | five valid candidates (`comparison/mining/sinonjs__sinon.candidates.json`, packed), re-verified under mocha as the comparison scores them (`comparison/mining/sinon-verify.json`, packed); `002ee82bc` (19 insertions, 2 deletions over two files) and `40de5a48c` (29 insertions, 4 deletions over two files) chosen; the others are one-line changes |
 
 Sinon's `npm test` drives two browser suites after its node suite; this harness provisions no
 browser, so the task names the project's own `npm run test-node` as the test command for both

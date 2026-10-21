@@ -83,8 +83,8 @@ scores stand as written. The work that followed is in
    for both", is wrong: it was immutable for Swarm alone.
 2. **Swarm asked for the test and was refused, twice.** Record 465 (`amend_file_set`,
    `test/partial.js`, "to maintain 100% coverage") and record 521 (`declare_file_set`,
-   `src/index.ts` and `test/partial.js`) both failed with "test/partial.js is outside
-   controller-authorized scope". The product then amended its set to `src/index.ts` alone
+   minimatch's src/index.ts and `test/partial.js`) both failed with "test/partial.js is outside
+   controller-authorized scope". The product then amended its set to minimatch's src/index.ts alone
    (record 539) and finished without a test.
 3. **The reference needed its test too.** The validator diffed the whole upstream commit,
    which deletes `test/partial.js` and adds `test/partial.ts` with fourteen assertions, and

@@ -121,7 +121,7 @@ frozen and not in the pinned build). That is the arm's own result, not the exper
 failure: Swarm's attempt stands as recorded in
 `sinon-bugfix-stub-accessor-calls.swarm.halted-1.json` and is **not relaunched**. Its kept
 workspace is scored with the runner's own verdicts after the fact
-([scored/sinon-bugfix-stub-accessor-calls.swarm.json](scored/sinon-bugfix-stub-accessor-calls.swarm.json))
+(`comparison/scored/sinon-bugfix-stub-accessor-calls.swarm.json`, packed in [../packed-derived/comparison-streams](../packed-derived/comparison-streams/))
 and reported beside the others with that provenance named. The campaign is recovered with the
 justification above and continued for order 5 only (`--arm opencode`), inside the allowance:
 41.9 of the 90 agent-minutes used before it.
