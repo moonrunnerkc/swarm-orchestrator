@@ -98,6 +98,35 @@ const sinon = {
   visiblePrefix: "",
 };
 
+/**
+ * Fresh tasks for the comparison after the task-continuation trial, from mochajs/mocha, a
+ * repository this project has never launched or registered a task from: the first two entries of
+ * docs/evidence/2026-10-21/delivery-trial/candidates.json, re-validated on this host with no
+ * model (docs/evidence/2026-10-21/fresh-comparison/). Task text was written from the base's
+ * observed behaviour and the upstream change without naming it.
+ */
+/**
+ * The mocha tasks' hidden behaviour checks: every example their task text states, beyond the
+ * upstream test files, kept with the stage that registered them and written into the scoring
+ * checkout under acceptance/hidden/, so their imports step up two directories to the source.
+ */
+const mochaBehaviourCheck = (name) =>
+  readFileSync(
+    new URL(`../../docs/evidence/2026-10-21/fresh-comparison/hidden/${name}`, import.meta.url),
+    "utf8",
+  );
+
+const mocha = {
+  repository: "mochajs/mocha",
+  install: [npmCi],
+  build: [],
+  // The project's `npm test` runs lint, every node suite and a Playwright browser suite, which
+  // this harness does not provision; the unit suites are its own `test-node:unit` script
+  // (mocha under nyc over test/unit and test/node-unit).
+  projectTest: ["npm", "run", "test-node:unit"],
+  visiblePrefix: "",
+};
+
 export const tasks = [
   {
     id: "marked-bugfix-www-case",
@@ -753,5 +782,67 @@ mock.verify();
 process.stdout.write("visible check passed\\n");
 `,
     },
+  },
+  {
+    id: "mocha-bugfix-long-prefix-short-alias",
+    ...mocha,
+    workType: "bugfix",
+    baseCommit: "bb2e69a95",
+    upstreamCommit: "12279398f",
+    hidden: {
+      testFiles: ["test/node-unit/cli/parse-args.spec.js"],
+      argv: ["node", "bin/mocha.js", "test/node-unit/cli/parse-args.spec.js"],
+      files: [
+        {
+          path: "acceptance/hidden/behaviour-check.mjs",
+          source: mochaBehaviourCheck("alias-behaviour-check.mjs"),
+        },
+      ],
+      extraArgv: [["node", "acceptance/hidden/behaviour-check.mjs"]],
+    },
+    immutable: [],
+    taskText: `mocha's command-line parser (parseMochaArgs in lib/cli/parse-args.js) accepts each one-character option alias written with one dash, but the same alias written with two dashes, with its value given as the next argument, is not read as that option. Today parseMochaArgs(["--t", "0"], { timeout: 1000 }) throws "Mocha flag '--t' given invalid option: '0'" (so mocha --t 0 a.spec.cjs exits 1 with that error), parseMochaArgs(["--R", "dot"], { timeout: 1000 }) gives reporter true and takes "dot" as a spec file (_ is ["dot"]), and ["--r", "./x.js", "--r", "./y.js"] gives require ["true"] with both files in _. A one-character alias written with two dashes must mean exactly what it means with one dash, with the value given as the next argument or after "=". With defaults { timeout: 1000 }: ["--t", "0"] and ["--t=0"] must both give timeout "0" and _ []; ["--R", "dot"] must give reporter "dot" and _ []; ["--r", "./x.js", "--r", "./y.js"] must give require ["./x.js", "./y.js"] and _ []; ["--j", "3"] must give jobs 3; ["test/a.js", "--t", "0"] must give _ ["test/a.js"] and timeout "0"; ["--timeout", "5", "--t", "7"] must give timeout "7"; and, as with one dash, the alias itself must not appear as a key of the result (no t, R, r or j property). What must not change: one-dash aliases (["-t", "0"] gives timeout "0"; ["-R", "json", "-b"] gives reporter "json" and bail true), the "=" form that already works today (["--t=0"] gives timeout "0"), long names and long aliases (["--timeouts=200"] gives timeout "200", ["--reporter-options=a=b"] gives reporter-option ["a=b"]), negation (["--no-bail"] gives bail false), boolean one-character aliases that already work with two dashes (["--b"] gives bail true, ["--A"] gives async-only true) and unknown flags (["--x"] still gives x true). The parser is ESM in lib/cli/parse-args.js, where option names are normalised before yargs-parser reads them. Add regression tests for this behaviour to the project's existing test suite (the CLI's unit tests are under test/node-unit/cli/). The unit tests run with npm run test-node:unit (mocha under nyc over test/unit and test/node-unit).`,
+    visible: check(
+      mocha,
+      `import assert from "node:assert/strict";
+import { parseMochaArgs } from "../../lib/cli/parse-args.js";
+
+const result = parseMochaArgs(["--t", "0"], { timeout: 1000 });
+assert.equal(result.timeout, "0");
+console.log("visible check passed");
+`,
+    ),
+  },
+  {
+    id: "mocha-bugfix-unparse-attached-values",
+    ...mocha,
+    workType: "bugfix",
+    baseCommit: "e5a779eb4",
+    upstreamCommit: "15aa7d155",
+    hidden: {
+      testFiles: ["test/node-unit/cli/unparse-args.spec.js"],
+      argv: ["node", "bin/mocha.js", "test/node-unit/cli/unparse-args.spec.js"],
+      files: [
+        {
+          path: "acceptance/hidden/behaviour-check.mjs",
+          source: mochaBehaviourCheck("unparse-behaviour-check.mjs"),
+        },
+      ],
+      extraArgv: [["node", "acceptance/hidden/behaviour-check.mjs"]],
+    },
+    immutable: [],
+    taskText: `When mocha must start a second Node process (a Node or V8 flag such as --enable-source-maps was given, or --node-option was used), bin/mocha.js turns the options it loaded back into command-line arguments with unparseMochaArgs from lib/cli/unparse-args.js and passes them to the child. Today an option with a scalar value is emitted as two arguments, the flag and then the value (unparseMochaArgs({ reporter: "json" }) gives ["--reporter", "json"]), except dotted names such as reporter-option.foo, which are emitted as one "--name=value" argument. An option the child has no definition for is then read as a boolean flag and its value as a test file: in a directory whose .mocharc.json holds "$schema": "https://json.schemastore.org/mocharc.json" and "spec": "a.spec.cjs", running mocha --enable-source-maps prints Warning: Cannot find any files matching pattern "https://json.schemastore.org/mocharc.json" before running a.spec.cjs (without the Node flag no child is started and there is no warning). Emit every option that carries a value as one "--name=value" argument, whatever its name: unparseMochaArgs({ $schema: "https://json.schemastore.org/mocharc.json" }) must give ["--$schema=https://json.schemastore.org/mocharc.json"]; unparseMochaArgs({ _: ["test/a.spec.js"], reporter: "json" }) must give ["test/a.spec.js", "--reporter=json"]; unparseMochaArgs({ require: ["tsx", "./setup.js"], timeout: "0" }) must give ["--require=tsx", "--require=./setup.js", "--timeout=0"]; unparseMochaArgs({ slow: 75 }) must give ["--slow=75"]; unparseMochaArgs({ grep: "--x" }) must give ["--grep=--x"]. What must not change: positionals come first; true gives "--name", false gives "--no-name", null and undefined give nothing (unparseMochaArgs({ bail: true, color: false, ui: null }) gives ["--bail", "--no-color"]); an array repeats the option once per item; an object value is flattened into dotted names (unparseMochaArgs({ "reporter-option": { foo: "bar", baz: true } }) still gives ["--reporter-option.foo=bar", "--reporter-option.baz"]); and unparseNodeFlags, which already writes "--name=value", is unchanged. Some existing cases in test/node-unit/cli/unparse-args.spec.js expect the two-argument form; they describe the behaviour being replaced, so update their expected arguments to the one-argument form without removing any case. Add regression tests for this behaviour to the project's existing test suite. The unit tests run with npm run test-node:unit (mocha under nyc over test/unit and test/node-unit).`,
+    visible: check(
+      mocha,
+      `import assert from "node:assert/strict";
+import { unparseMochaArgs } from "../../lib/cli/unparse-args.js";
+
+assert.deepEqual(
+  unparseMochaArgs({ $schema: "https://json.schemastore.org/mocharc.json" }),
+  ["--$schema=https://json.schemastore.org/mocharc.json"],
+);
+console.log("visible check passed");
+`,
+    ),
   },
 ];
