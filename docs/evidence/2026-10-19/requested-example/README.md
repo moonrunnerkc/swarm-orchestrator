@@ -73,7 +73,7 @@ task's example attached to the outcome with what was asked and what the base gav
 expectation moving to the base's answer, and acts on the unresolved outcomes before reporting. It
 cannot show what a live revision or a live follow-up would have done with that: the recorded
 planner never saw the new feedback, and the replayed worker writes the delivered file whatever it is
-told. The `16ec1a7e6` replay ([launch-build-16ec1a7e6.json](replay/launch-build-16ec1a7e6.json)) is
+told. The `16ec1a7e6` replay ([launch-build-16ec1a7e6.json](replay/packed-derived/replay-records/) (the file replay/launch-build-16ec1a7e6.json, packed on 2026-10-21 to keep the tree's weight headroom; `scripts/evidence-pack.mjs` restore gives the bytes back)) is
 the same but for the empty trail, which `b470b55e2` fixed.
 
 ## 3. What changed

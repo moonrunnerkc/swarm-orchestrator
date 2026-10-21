@@ -15,7 +15,7 @@ by the deterministic validation below, which runs no arm and no model.
   restores them. The hidden oracles are not here; they stay sealed until final scoring.
 - [competitors/](competitors/): the Ranex x86-64 VM eligibility run and the Critique local-route
   run, as summarized in the protocol's capability matrix.
-- [manifest-prefreeze.json](manifest-prefreeze.json): the 882 launches, built with the development
+- [manifest-prefreeze.json](packed-derived/manifest-prefreeze/) (the file manifest-prefreeze.json, packed on 2026-10-21 to keep the tree's weight headroom; `scripts/evidence-pack.mjs` restore gives the bytes back): the 882 launches, built with the development
   pin; the freeze rebuilds it with the owner's pin.
 - [development-pilot.json](development-pilot.json): every development pilot launch, by round, with
   its decision, wall time, agent time, tokens, truth and oracle-exposure scan. Full launch records

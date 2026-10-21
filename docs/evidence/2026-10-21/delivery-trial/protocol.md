@@ -118,7 +118,7 @@ the base on this host (a test suite submodule) and are not usable.
 
 ## Amendments
 
-### 1. 2026-10-21 14:55 UTC, after launch 1: a named correction, and a second development launch
+### 1. 2026-10-21 14:46 UTC, after launch 1: a named correction, and a second development launch
 
 Launch 1 was not delivered ([launches.md](launches.md)): the source passed the sealed tests,
 the hidden API check and the project's suite, and the run's own nine new test cases failed on
