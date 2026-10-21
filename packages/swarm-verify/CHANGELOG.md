@@ -7,6 +7,18 @@ verifier's implementation, `swarm-orchestrator`, keeps its own changelog at the 
 
 ## Unreleased
 
+### Added
+
+- **`run-acceptance-v5` is re-derived.** It is `run-acceptance-v4` with one more input, `wallStop`,
+  read for a loop that stopped at its wall: the run's last `verification-reserve-v1` record, whether
+  the loop's stop came before the deadline that record names, and whether every write and shell
+  call requested settled, none that ran at or after the model-work cutoff. Where all hold, the wall
+  stop is a cut of model work that left the rest of the allowance to the checks, and it does not
+  refuse on its own; the checks of the delivered tree, cancellation and every other condition still
+  do. The verifier recomputes `wallStop` from the chain and refuses a record whose value differs.
+  Records under v1, v2 and v4 keep their meaning: a wall stop refuses, and a v4 record carrying
+  `wallStop` is not re-derived.
+
 ### Fixed
 
 - **A run whose last attempt was rolled back verifies.** The run-assessment re-derivation required
