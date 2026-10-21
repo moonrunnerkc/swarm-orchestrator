@@ -60,6 +60,32 @@ const check = (repo, source) => ({
   source,
 });
 
+/**
+ * Fresh tasks of 2026-10-21, mined from two repositories that appear nowhere in this
+ * repository's campaign corpus, pull-request pools, mirrors or earlier evidence (motdotla/dotenv
+ * and sinonjs/sinon), each a bug-fix commit that changed source and tests, validated with no
+ * model: the base fails the commit's own test file and passes the project's node tests, the
+ * commit passes both. Task text was written from the base's observed behaviour and the upstream
+ * change without naming it.
+ */
+const dotenv = {
+  repository: "motdotla/dotenv",
+  install: [npmCi],
+  build: [],
+  projectTest: ["npm", "test"],
+  visiblePrefix: "",
+};
+
+const sinon = {
+  repository: "sinonjs/sinon",
+  install: [npmCi],
+  build: [],
+  // The project's `npm test` also drives two browser suites, which this harness does not
+  // provision; the node suite is the project's own `test-node` script (mocha over test/).
+  projectTest: ["npm", "run", "test-node"],
+  visiblePrefix: "",
+};
+
 export const tasks = [
   {
     id: "marked-bugfix-www-case",
@@ -77,7 +103,7 @@ export const tasks = [
         "test/run-spec-tests.js",
       ],
     },
-    immutable: ["test"],
+    immutable: [],
     taskText: `With GFM autolinking enabled, marked currently turns any text starting with "www." into a link regardless of letter case, so "Www.example.com" and "WWW.example.com" become links. Per the GFM spec a bare www autolink must start with lowercase "www." exactly; mixed- or upper-case variants must stay plain text. Scheme autolinks must remain case-insensitive for the scheme, so "(See hTtPS://example.com/fhqwhgads.)" must still produce a link with the trailing period excluded. Make "www." detection case-sensitive without changing how http://, https:// or ftp:// are detected, and keep email autolinks working. Source lives under src/ (TypeScript); the library is built with npm run build:esbuild before tests run.`,
     visible: check(
       marked,
@@ -101,7 +127,7 @@ console.log('visible check passed');
       testFiles: ["test/unit/Lexer.test.js"],
       argv: ["node", "--test", "--test-reporter=spec", "test/unit/Lexer.test.js"],
     },
-    immutable: ["test"],
+    immutable: [],
     taskText: `Link reference definitions such as '[link]: https://example.com "title"' are consumed by the lexer and recorded in lexer.links, but they do not appear in the token array returned by marked.lexer(), so walkTokens and token-based extensions cannot see them. Expose each definition as a block token of type "def" with fields raw, tag (the normalized label), href and title (undefined when absent), placed at its position in the token stream. Rendered output must not change: the parser must render nothing for the new token by default, through a new overridable renderer method def(token) so custom renderers can emit something for definitions. Every existing spec example must still pass. Source lives under src/ (TypeScript); the library is built with npm run build:esbuild before tests run.`,
     visible: check(
       marked,
@@ -140,7 +166,7 @@ console.log('visible check passed');
         },
       ],
     },
-    immutable: ["test"],
+    immutable: [],
     taskText: `Five while-loops in src/Lexer.ts and src/Tokenizer.ts test the result of RegExp.prototype.exec with loose inequality (\`!= null\`). RegExp.exec returns an array or null, never undefined, so replace every such loose comparison in those two files with strict \`!== null\`, and change nothing else: no other logic, no output. Every existing test must still pass (npm test).`,
     visible: check(
       marked,
@@ -163,7 +189,7 @@ console.log('visible check passed');
       argv: ["npm", "test"],
       upgrade: [{ name: "cheerio", section: "devDependencies", version: "1.2.0" }],
     },
-    immutable: ["test"],
+    immutable: [],
     taskText: `Upgrade the devDependency cheerio from the pinned version 1.1.2 to exactly 1.2.0 in package.json (declare "1.2.0", no range), regenerate package-lock.json with npm so that npm ci installs 1.2.0, and confirm npm test still passes. Change no other dependency and nothing else in package.json.`,
     visible: check(
       marked,
@@ -185,7 +211,7 @@ console.log('visible check passed');
       testFiles: ["spec/inputType_spec.js"],
       argv: ["npx", "jasmine", "spec/inputType_spec.js"],
     },
-    immutable: ["spec"],
+    immutable: [],
     taskText: `XMLParser.parse() accepts non-string input that has a toString method, but when a plain Uint8Array (for example the output of TextEncoder.encode) is passed, the parser stringifies it as a comma-separated list of byte values instead of decoding the bytes, so parsing fails or produces garbage. Make parse() treat a Uint8Array as UTF-8 encoded XML text: multi-byte characters (accented letters, emoji) must round-trip correctly; only the bytes inside the given view must be decoded (respect byteOffset and length of a subarray); a leading UTF-8 byte order mark must be preserved in the decoded string so that captureMetaData startIndex values match those obtained when the equivalent string is parsed directly; validation (validator.validate) must accept the same bytes it would accept as a string and reject malformed XML. Node.js Buffer input must keep working exactly as before. Source is under src/; tests run with npm test (jasmine).`,
     visible: check(
       fxp,
@@ -204,7 +230,7 @@ console.log("visible check passed");
     baseCommit: "c692040f",
     upstreamCommit: "c3ffbab9",
     hidden: { testFiles: ["spec/nfr_spec.js"], argv: ["npx", "jasmine", "spec/nfr_spec.js"] },
-    immutable: ["spec"],
+    immutable: [],
     taskText: `An XML element whose tag name equals the configured commentPropName or cdataPropName collides with the synthetic property the parser uses for comments or CDATA in the output object, which can let untrusted input masquerade as parser-generated structure. Add a parser option strictReservedNames (boolean, default true, documented in the TypeScript option type in src/fxp.d.ts). When it is true, encountering an opening tag whose name (after updateTag) equals commentPropName or cdataPropName must throw an Error with the message exactly "Invalid tag name: <name>". When it is explicitly set to false, such tags must be parsed as ordinary elements, producing the same output as before this option existed. Source is under src/; tests run with npm test (jasmine).`,
     visible: check(
       fxp,
@@ -247,7 +273,7 @@ console.log("visible check passed");
         },
       ],
     },
-    immutable: ["spec"],
+    immutable: [],
     taskText: `The parser checks whether a tag is one of the configured unpairedTags in five places in src/xmlparser/OrderedObjParser.js, each time with a linear Array.prototype.indexOf scan over this.options.unpairedTags. Replace these with constant-time membership tests: build a Set from the unpairedTags array exactly once when options are normalized in buildOptions (src/xmlparser/OptionsBuilder.js), expose it on the built options as unpairedTagsSet (assigned with \`unpairedTagsSet = new Set(...)\`), and use unpairedTagsSet.has(...) at every former indexOf site so that no indexOf call on options.unpairedTags remains in the parser. Behavior must be unchanged: the original unpairedTags array stays available on the options object and the whole existing suite (npm test) passes.`,
     visible: check(
       fxp,
@@ -273,7 +299,7 @@ console.log("visible check passed");
       argv: ["npm", "test"],
       upgrade: [{ name: "strnum", section: "dependencies", version: "2.4.1" }],
     },
-    immutable: ["spec"],
+    immutable: [],
     taskText: `Upgrade the runtime dependency strnum from the currently locked 2.4.0 to exactly 2.4.1: declare "2.4.1" in package.json (no range) and regenerate package-lock.json with npm so that node_modules/strnum resolves to exactly 2.4.1 after npm ci. Then npm ci --ignore-scripts and npm test must pass. Do not change any other dependency and do not modify source files.`,
     visible: check(
       fxp,
@@ -295,7 +321,7 @@ console.log("visible check passed");
       testFiles: ["test/yargs-parser.mjs"],
       argv: ["npx", "mocha", "test/yargs-parser.mjs"],
     },
-    immutable: ["test"],
+    immutable: [],
     taskText: `When an option that is NOT declared as a count is repeated with numeric values and one of those values is 1, the parser silently adds them up instead of collecting them: parser("-x 3 -x 1") returns { x: 4 } while parser("-x 3 -x 2") correctly returns { x: [3, 2] }. Repeated values must always be collected into an array ("-x 3 -x 1" gives [3, 1], "-x 1 -x 1" gives [1, 1], "-x 1 -x 3" gives [1, 3]) whatever the numbers, and options that ARE declared under count must keep incrementing exactly as before ("-v -v -v" with count: ["v"] gives 3). Nothing else about duplicate-argument handling may change. Source is lib/yargs-parser.ts; tests are compiled with npx tsc -p tsconfig.test.json and run with npm test (mocha); test/yargs-parser.mjs imports the built library.`,
     visible: check(
       yargsParser,
@@ -317,7 +343,7 @@ console.log("visible check passed");
       testFiles: ["test/yargs-parser.mjs"],
       argv: ["npx", "mocha", "test/yargs-parser.mjs"],
     },
-    immutable: ["test"],
+    immutable: [],
     taskText: `With the configuration unknown-options-as-args: true, arguments that are not recognised options are placed into the positional array _ instead of being parsed as flags. When boolean-negation is additionally set to false, the --no-<name> negation syntax is disabled, so --no-known-arg can no longer refer to the declared boolean known-arg and must be treated as an unknown option. Today it is still recognised and produces knownArg: false. Required: parser("--no-known-arg --no-unknown-arg", { boolean: ["known-arg"], configuration: { "unknown-options-as-args": true, "boolean-negation": false } }) must return exactly { _: ["--no-known-arg", "--no-unknown-arg"] }. With boolean-negation left at its default, behavior must not change (--no-known-arg still yields knownArg: false). Source is lib/yargs-parser.ts; tests are compiled with npx tsc -p tsconfig.test.json and run with npm test (mocha).`,
     visible: check(
       yargsParser,
@@ -353,7 +379,7 @@ console.log("visible check passed");
       ],
     },
     upgradeSourcePaths: [".eslintrc.json", ".eslintignore"],
-    immutable: ["test"],
+    immutable: [],
     taskText: `Upgrade the test and lint toolchain devDependencies to these exact versions, declared without ranges in package.json: mocha 12.0.0, chai 6.2.2, c8 12.0.0 and gts 6.0.2, and regenerate package-lock.json with npm so npm ci --ignore-scripts installs exactly those. Afterwards npm test must pass on Node 24 and npm run check (gts lint) must still pass; gts 6 needs the ESLint configuration adjusted (a parserOptions.project for the TypeScript override and the Deno files excluded from linting), so .eslintrc.json and .eslintignore may change. Do not change library source or tests, and change no other dependency.`,
     visible: check(
       yargsParser,
@@ -376,7 +402,7 @@ console.log("visible check passed");
       testFiles: ["test/core/tags/timestamp.test.mjs"],
       argv: ["node", "--test", "test/core/tags/timestamp.test.mjs"],
     },
-    immutable: ["test"],
+    immutable: [],
     taskText: `With the YAML 1.1 schema (YAML11_SCHEMA), timestamps whose year is between 0000 and 0099 are not recognized: load("- 0001-01-01\\n- 0050-06-15T12:30:00Z", { schema: YAML11_SCHEMA }) returns plain strings instead of Date objects, and a Date in that range does not survive dump followed by load. Make such date-only and full timestamps resolve to Date values whose UTC year is the literal four-digit year written in the document (year 1, year 50), with calendar validation still rejecting dates that Date would normalize such as 0001-02-29 (which must stay a string, and must raise "cannot resolve" when tagged !!timestamp explicitly). Behavior for years 0100 and later must not change. Source is under src/ (TypeScript); the package is built with npm run build and tests run with node --test "test/core/**/*.test.mjs" "test/spec/*.test.mjs".`,
     visible: check(
       jsYaml,
@@ -399,7 +425,7 @@ console.log('visible check passed')
       testFiles: ["test/core/units/load-options.test.mjs"],
       argv: ["node", "--test", "test/core/units/load-options.test.mjs"],
     },
-    immutable: ["test"],
+    immutable: [],
     taskText: `Add a maxAliases loader option to load() and loadAll(), documented in README next to the other load options, that limits how many alias nodes (*ref) a single document may contain. The default -1 means no limit; 0 rejects any alias; a positive N allows at most N alias uses per document. Exceeding the limit must throw the library's YAMLException with a message containing "maxAliases" (for example "aliases exceeded maxAliases (1)"). The count resets for every document in a multi-document stream, so loadAll on two documents with one alias each succeeds with maxAliases: 1 and fails with maxAliases: 0. Documents without aliases are unaffected whatever the option. Source is under src/ (TypeScript); the package is built with npm run build and tests run with node --test "test/core/**/*.test.mjs" "test/spec/*.test.mjs".`,
     visible: check(
       jsYaml,
@@ -427,7 +453,7 @@ console.log('visible check passed')
         { pattern: "common/object", files: ["src/tag/mapping/real_map.ts"], count: 1 },
       ],
     },
-    immutable: ["test/spec", "test/core/tags", "test/core/units"],
+    immutable: [],
     taskText: `The helper isPlainObject (true only for a non-null, non-array object whose prototype is null or Object.prototype) is defined inside src/tag/mapping/map.ts and re-exported from there for src/tag/mapping/real_map.ts, although it is a general-purpose utility. Move it into a new module src/common/object.ts as a named export isPlainObject with the same signature (data: unknown) => boolean and identical semantics; import it from "../../common/object.ts" in both mapping tag modules; remove the definition and its export from map.ts. Public behavior, the full test suite, lint and type-check must be unchanged. Source is under src/ (TypeScript); the package is built with npm run build and tests run with node --test "test/core/**/*.test.mjs" "test/spec/*.test.mjs".`,
     visible: check(
       jsYaml,
@@ -456,7 +482,7 @@ console.log('visible check passed')
         { name: "workerpool", section: "devDependencies", version: "10.0.3" },
       ],
     },
-    immutable: ["test"],
+    immutable: [],
     taskText: `Update two devDependencies to exact versions declared without ranges in package.json: vite to 8.1.2 and workerpool to 10.0.3. Regenerate package-lock.json with npm so that npm ci --ignore-scripts installs exactly those versions, and confirm the build (npm run build, which uses vite) and the full node:test suite still pass. No other dependency may change and nothing else in package.json may change.`,
     visible: check(
       jsYaml,
@@ -479,7 +505,7 @@ console.log('visible check passed')
       testFiles: ["test/core/units/dump-options.test.mjs"],
       argv: ["node", "--test", "test/core/units/dump-options.test.mjs"],
     },
-    immutable: ["test"],
+    immutable: [],
     taskText: `dump() emits unparseable or lossy output for strings in flow collections when a colon is immediately followed by a flow indicator. For example dump([":{"], { flowLevel: 0 }) and dump({ k: ":[" }, { flowLevel: 0 }) leave the value as a plain scalar, so load(dump(x)) does not give back x for values such as ":{", ":[", ":,", ":}", ":]" or "x:{". In flow context a colon followed by any of , [ ] { } is not plain-safe (YAML 1.2, ns-plain-safe-in excludes c-flow-indicator), so such values must be quoted when presented in flow style, while block-context output and other plain scalars (for example "a:b", or "x:{" at block level) must stay exactly as they are today. Source is under src/ (TypeScript); the package is built with npm run build and tests run with node --test "test/core/**/*.test.mjs" "test/spec/*.test.mjs".`,
     visible: check(
       jsYaml,
@@ -503,7 +529,7 @@ console.log('visible check passed')
       testFiles: ["spec/endIndex_spec.js", "spec/startIndex_spec.js"],
       argv: ["npx", "jasmine", "spec/endIndex_spec.js", "spec/startIndex_spec.js"],
     },
-    immutable: ["spec"],
+    immutable: [],
     taskText: `When the captureMetaData option is enabled, every parsed element node carries a metadata object (under the symbol returned by XMLParser.getMetaDataSymbol()) that currently holds only startIndex, the offset of the node's opening "<". Add endIndex to that same metadata object: the exclusive offset just past the last character of the node in the input string, so that input.slice(startIndex, endIndex) is the node's full source text. It must be set for paired elements (the position after the closing tag's ">"), self-closing elements (after "/>"), unpaired tags configured through unpairedTags, and processing-instruction nodes (after "?>"); nested elements each get their own value; it must work in both the default and the preserveOrder output, and the updateTag option must not disturb a sibling's indices. Declare the field in the TypeScript types in src/fxp.d.ts. Source is under src/; tests run with npm test (jasmine).`,
     visible: check(
       fxp,
@@ -532,7 +558,7 @@ console.log("visible check passed");
       testFiles: ["test/partial.ts"],
       argv: ["npx", "tap", "run", "--disable-coverage", "test/partial.ts"],
     },
-    immutable: ["test"],
+    immutable: [],
     taskText: `With the partial: true option (and Minimatch#match(path, true)), a path should match when it is a valid prefix of a path that the full pattern could match, including when the pattern contains **. Today patterns with a globstar wrongly report false for valid prefixes. For example minimatch("/b/c/d/a", "/**/a/b/c", { partial: true }), minimatch("/b/c/d/a", "/**/a/b/c/**", { partial: true }), minimatch("a", "a/**", { partial: true }), minimatch("/b/c/d/a", "/**/a/**/b/c/**", { partial: true }) and minimatch("/b/c/d/a", "/**/a/**", { partial: true }) must all return true, while minimatch("b/a", "a/**", { partial: true }) must still return false. Existing partial behavior for patterns without ** (for example "/a/b" against "/*/b/x/y/z" is true and "/a/b/c" is false) and makeRe(pattern, { partial: true }) must be unchanged, and non-partial matching must not loosen: minimatch("/b/c/d/a", "/**/a/b/c") stays false. Make the change in the ** path-walking logic in src/index.ts, not by post-processing results. The library is TypeScript built with npx tshy; tests run with npm test (tap, which requires 100% coverage).`,
     visible: {
       path: "acceptance/visible/check.mjs",
@@ -559,7 +585,7 @@ console.log("visible check passed");
       testFiles: ["test/optimization-level-2.ts"],
       argv: ["npx", "tap", "run", "--disable-coverage", "test/optimization-level-2.ts"],
     },
-    immutable: ["test"],
+    immutable: [],
     taskText: `When matching on Windows (platform: "win32") at optimizationLevel 2, the path optimizer that collapses "<dir>/.." segments must treat a drive-letter root such as "C:" as a root rather than an ordinary directory, so ".." cannot step past it. Today new Minimatch("public/**", { platform: "win32", optimizationLevel: 2 }).match("C:/../public/secret") returns true, because the optimizer rewrites "C:/../public/secret" into "public/secret"; it must return false, as it already does at optimizationLevel 1. On non-Windows platforms a leading "C:" is not special, so new Minimatch("public/**", { platform: "darwin", optimizationLevel: 2 }).match("C:/../public/secret") must remain true. Only the ..-collapsing step may change; "**/.." and "./" handling stay as they are. Source is src/index.ts (TypeScript built with npx tshy); tests run with npm test (tap, which requires 100% coverage).`,
     visible: {
       path: "acceptance/visible/check.mjs",
@@ -589,7 +615,7 @@ console.log("visible check passed");
         { name: "tap", section: "devDependencies", version: "21.6.1" },
       ],
     },
-    immutable: ["test", "src"],
+    immutable: ["src"],
     taskText: `Upgrade two devDependencies to exact versions declared without ranges in package.json: @types/node to 25.3.0 and tap to 21.6.1, regenerating package-lock.json with npm so that npm ci --ignore-scripts installs exactly those versions and no other dependency section changes. After the upgrade, npm test (the tshy build followed by tap with its default 100% coverage requirement) must pass on Node 24; at present the suite hangs on this Node version until tap's timeout. Do not change any source or test file.`,
     visible: {
       path: "acceptance/visible/check.mjs",
@@ -600,6 +626,86 @@ const manifest = JSON.parse(readFileSync("package.json", "utf8"));
 assert.ok(["25.3.0", "^25.3.0"].includes(manifest.devDependencies["@types/node"]), manifest.devDependencies["@types/node"]);
 assert.ok(["21.6.1", "^21.6.1"].includes(manifest.devDependencies.tap), manifest.devDependencies.tap);
 console.log("visible check passed");
+`,
+    },
+  },
+  {
+    id: "dotenv-bugfix-fast-parser-line-ends",
+    ...dotenv,
+    workType: "bugfix",
+    baseCommit: "e73dc1f51",
+    upstreamCommit: "048dd4863",
+    hidden: {
+      testFiles: ["tests/test-parse-fast.js"],
+      argv: ["npx", "tap", "run", "--disable-coverage", "tests/test-parse-fast.js"],
+    },
+    immutable: [],
+    taskText: `dotenv's opt-in fast parser, dotenv.parse(src, { fast: true }) (the hand-written scanner parseFast in lib/main.js), must give the same result as the classic parser dotenv.parse(src) in three situations where it diverges today. (1) A colon separator followed by a line break: for 'A:\\nfoo' the classic parser gives { A: 'foo' } and the fast parser gives { A: '' }; 'A:\\r\\nfoo\\nNEXT=ok' must give { A: 'foo', NEXT: 'ok' }. (2) The word export used as a key: 'export =value' and 'export\\t=value' must give { export: 'value' } (the fast parser gives {} today), while 'export : value\\nNEXT=ok' must still give { NEXT: 'ok' } and 'export KEY=value' must still give { KEY: 'value' }. (3) The Unicode line separators U+2028 and U+2029 must end a comment, a quoted value's line and an invalid line, as the classic parser already treats them: 'A="x"\\u2028B=ok' must give { A: 'x', B: 'ok' } (today { A: '"x"\\u2028B=ok' }), '# comment\\u2028B=ok' must give { B: 'ok' } (today {}), 'A="x" # comment\\u2028B=ok' and 'A=x # comment\\u2028B=ok' must give { A: 'x', B: 'ok' } (today { A: 'x' }), 'invalid\\u2028B=ok' must give { B: 'ok' } (today {}); an unquoted value keeps them, so 'A=x\\u2028B=ok' stays { A: 'x\\u2028B=ok' }, as both parsers give today. Make the change in the fast scanner in lib/main.js; the classic parser is the reference and must not change, and every case where the two parsers already agree must keep agreeing. The library is CommonJS; npm test builds it, runs the standard linter, checks the types and runs tap over tests/.`,
+    visible: {
+      path: "acceptance/visible/check.mjs",
+      command: "node acceptance/visible/check.mjs",
+      // In the project's own style: its npm test runs standard over the whole tree.
+      source: `import assert from 'node:assert/strict'
+import dotenv from '../../lib/main.js'
+assert.deepEqual(dotenv.parse('A:\\nfoo', { fast: true }), { A: 'foo' })
+assert.deepEqual(dotenv.parse('export =value', { fast: true }), { export: 'value' })
+assert.deepEqual(dotenv.parse('# comment\\u2028B=ok', { fast: true }), { B: 'ok' })
+assert.deepEqual(dotenv.parse('A=x\\u2028B=ok', { fast: true }), { A: 'x\\u2028B=ok' })
+console.log('visible check passed')
+`,
+    },
+  },
+  {
+    id: "sinon-bugfix-stub-accessor-calls",
+    ...sinon,
+    workType: "bugfix",
+    baseCommit: "8c663edec",
+    upstreamCommit: "002ee82bc",
+    hidden: {
+      testFiles: ["test/src/stub-test.js"],
+      argv: ["npx", "mocha", "-R", "dot", "test/src/stub-test.js"],
+    },
+    immutable: [],
+    taskText: `sinon.stub(obj, "prop").get(fn) and sinon.stub(obj, "prop").set(fn) install the replacement function directly as the property's accessor, so reading or writing the stubbed property runs the replacement untracked: nothing records the access and there is no call count to assert on. Wrap the replacement getter and the replacement setter in a spy and expose the spies on the stub as stub.getter and stub.setter, mirroring the spy.get and spy.set surface that sinon.spy(obj, "prop", ["get"]) produces. After const stub = sinon.stub(obj, "prop").get(() => "bar"), reading obj.prop three times must give "bar" each time and stub.getter.callCount must be 3 (stub.getter.calledThrice true); after const stub = sinon.stub(obj, "prop").set((value) => { obj.example = value }), assigning obj.prop = "bar" then obj.prop = "baz" must run the setter both times (obj.example is "baz") with stub.setter.callCount 2 and stub.setter.calledWith("bar") true. stub.resetBehavior() must remove both, so stub.getter and stub.setter are undefined afterwards. Everything .get and .set do today must stay: the replacement runs, the property is defined configurable as before, restore works, and .get and .set stay chainable. Source is ESM under src/sinon/ (default-behaviors.js holds the get and set behaviours, stub.js the stub prototype, spy.js makes spies); the node tests run with npm run test-node (mocha over test/src, test/issues and test/scripts).`,
+    visible: {
+      path: "acceptance/visible/check.mjs",
+      command: "node acceptance/visible/check.mjs",
+      source: `import assert from "node:assert/strict";
+import createStub from "../../src/sinon/stub.js";
+const obj = { prop: "foo" };
+const stub = createStub(obj, "prop").get(() => "bar");
+assert.equal(obj.prop, "bar");
+assert.equal(obj.prop, "bar");
+assert.equal(stub.getter.callCount, 2);
+process.stdout.write("visible check passed\\n");
+`,
+    },
+  },
+  {
+    id: "sinon-bugfix-mock-oncall-expectations",
+    ...sinon,
+    workType: "bugfix",
+    baseCommit: "177e318c2",
+    upstreamCommit: "40de5a48c",
+    hidden: {
+      testFiles: ["test/src/mock-test.js"],
+      argv: ["npx", "mocha", "-R", "dot", "test/src/mock-test.js"],
+    },
+    immutable: [],
+    taskText: `A mock's expectations carry stub behaviours, including per-call ones set with onCall(n). When several expectations for one method are told apart by withArgs and each sets a behaviour for a call index with onCall, the behaviour is looked up by that expectation's own call count rather than by the call's position among all the method's calls, so the configured behaviour is not applied. With const mock = sinon.mock(object); mock.expects("accumulate").withArgs("first thing").onCall(0).callsFake((thing) => "mock-added " + thing); mock.expects("accumulate").withArgs("second thing").onCall(1).callsFake(...same...); mock.expects("accumulate").withArgs("third thing").onCall(2).callsFake(...same...), calling object.accumulate("first thing"), object.accumulate("second thing") and object.accumulate("third thing") in that order must return "mock-added first thing", "mock-added second thing" and "mock-added third thing", and mock.verify() must pass; today only the first call returns the fake's value and the second and third return undefined. Fix this so that an expectation invoked by the mock picks its behaviour by the number of calls already made to the method across all of that method's expectations (the call's position in the mock's sequence), and only while that invocation runs; do not change how the mock selects an expectation (withArgs matching, exhausted expectations, calls in any order) or how an ordinary stub picks its behaviour by its own callCount. Source is ESM under src/sinon/ (mock.js invokes expectations; stub.js chooses the current behaviour); the node tests run with npm run test-node (mocha over test/src, test/issues and test/scripts).`,
+    visible: {
+      path: "acceptance/visible/check.mjs",
+      command: "node acceptance/visible/check.mjs",
+      source: `import assert from "node:assert/strict";
+import sinonMock from "../../src/sinon/mock.js";
+const object = { accumulate(thing) { return \`added \${thing}\`; } };
+const mock = sinonMock(object);
+mock.expects("accumulate").withArgs("first thing").onCall(0).callsFake((thing) => \`mock-added \${thing}\`);
+mock.expects("accumulate").withArgs("second thing").onCall(1).callsFake((thing) => \`mock-added \${thing}\`);
+assert.equal(object.accumulate("first thing"), "mock-added first thing");
+assert.equal(object.accumulate("second thing"), "mock-added second thing");
+mock.verify();
+process.stdout.write("visible check passed\\n");
 `,
     },
   },

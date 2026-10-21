@@ -182,6 +182,74 @@ describe("what the instrument is", () => {
     ).toEqual(["support/build.mjs"]);
   });
 
+  it("reads a manifest reached inside the closure by field, not as a bag of strings naming the whole project", async () => {
+    // sinon's shape, as the 2026-10-21 comparison found it: the eslint configuration lists the
+    // build script among the files it lints, the build script requires package.json for its
+    // version, and package.json's knip entries name src/sinon.js, which imports every source
+    // file. Read as strings, the manifest made the project's whole source the lint check's
+    // instrument, so a correct change to one source file withheld a passing lint, the gates
+    // never read green, and the run escalated at an "unknown" gate with every check passing.
+    const reference = {
+      "package.json": manifest(
+        { lint: "eslint .", "build-artifacts": "node ./build.cjs" },
+        { knip: { entry: ["src/sinon.js"] } },
+      ),
+      "eslint.config.js":
+        'export default [{ files: ["build.cjs", "src/**/*.js"], rules: { "no-underscore-dangle": "error" } }];\n',
+      "build.cjs": 'const pkg = require("./package.json");\nconsole.log(pkg.version);\n',
+      "src/sinon.js": 'import "./sinon/mock.js";\n',
+      "src/sinon/mock.js": "export const mock = 1;\n",
+    };
+    const current = { ...reference, "src/sinon/mock.js": "export const mock = 2;\n" };
+    expect(await changes(npm("lint"), reference, current)).toEqual([]);
+    const observation = await observeInstrument(npm("lint"), trees(reference, current));
+    expect(observation.files.map((file) => file.path)).not.toContain("src/sinon/mock.js");
+    expect(observation.files.map((file) => file.path)).not.toContain("src/sinon.js");
+    // The manifest's own script is still the instrument, and so is the configuration.
+    expect(
+      await changes(npm("lint"), reference, {
+        ...reference,
+        "package.json": manifest(
+          { lint: "eslint . --quiet", "build-artifacts": "node ./build.cjs" },
+          { knip: { entry: ["src/sinon.js"] } },
+        ),
+      }),
+    ).toContain("package.json#scripts.lint");
+    expect(
+      await changes(npm("lint"), reference, {
+        ...reference,
+        "eslint.config.js": "export default [];\n",
+      }),
+    ).toEqual(["eslint.config.js"]);
+    // The same manifest reached through a test command's pre-hook: sinon's `npm run test-node`
+    // runs the build script first, which requires package.json. A source change with a new
+    // regression test then read "passes only under this patch's changes to the runner
+    // configuration", and a complete source-and-test change exited as unmeasured.
+    const withTests = {
+      ...reference,
+      "package.json": manifest(
+        {
+          "test-node": "mocha test",
+          "pretest-node": "npm run build-artifacts",
+          "build-artifacts": "node ./build.cjs",
+        },
+        { knip: { entry: ["src/sinon.js"] } },
+      ),
+    };
+    expect(
+      await changes(npm("test-node"), withTests, {
+        ...withTests,
+        "src/sinon/mock.js": "export const mock = 2;\n",
+      }),
+    ).toEqual([]);
+    expect(
+      await changes(npm("test-node"), withTests, {
+        ...withTests,
+        "build.cjs": "process.exit(1);\n",
+      }),
+    ).toEqual(["build.cjs"]);
+  });
+
   it("follows what a run program imports, and what it names where it runs processes or loads by computed name", async () => {
     const reference = {
       "package.json": manifest({

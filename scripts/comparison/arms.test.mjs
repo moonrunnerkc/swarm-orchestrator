@@ -14,6 +14,7 @@ import {
   swarmWorkflowFlags,
   taskPrompt,
 } from "./arms.mjs";
+import { protectedPaths, runnerConfigurationPaths } from "./change-policy.mjs";
 import { taskSchema } from "./schema.mjs";
 import { tasks } from "./tasks.mjs";
 
@@ -34,13 +35,42 @@ describe("the task set", () => {
 });
 
 describe("what both arms are given", () => {
-  it("is the same task text, visible check and test command", () => {
+  it("is the same task text, visible check, test command and allowed-change policy", () => {
     const prompt = taskPrompt(bugfix);
     expect(prompt).toContain(bugfix.taskText.trim());
     expect(prompt).toContain(bugfix.visible.command);
     expect(prompt).toContain("npm test");
-    expect(prompt).toContain("Do not modify anything under acceptance/visible/");
+    expect(prompt).toContain("Do not modify anything under acceptance/visible/.");
+    expect(prompt).toContain("regression tests for the change");
+    expect(prompt).toContain("Do not delete or weaken existing tests");
     expect(correctionPrompt(bugfix, "visible check exited 1")).toContain("visible check exited 1");
+  });
+
+  it("protects the same paths for both arms: Swarm's immutable paths are the policy's, and the prompt names each", () => {
+    const contract = swarmContract(bugfix);
+    const prompt = taskPrompt(bugfix);
+    expect(contract.immutablePaths).toEqual(protectedPaths(bugfix));
+    // No test directory is frozen for either arm: a regression test is an allowed change.
+    expect(contract.immutablePaths.some((path) => /^(test|tests|spec)(\/|$)/.test(path))).toBe(
+      false,
+    );
+    for (const path of contract.immutablePaths) {
+      const named =
+        prompt.includes(`${path}/`) ||
+        runnerConfigurationPaths.includes(path) ||
+        bugfix.immutable.includes(path);
+      expect(named, path).toBe(true);
+    }
+    // The runner configuration files are named to both arms by family.
+    for (const family of [
+      ".taprc*",
+      ".nycrc*",
+      ".c8rc*",
+      ".mocharc*",
+      "jest.config.*",
+      "vitest.config.*",
+    ])
+      expect(prompt).toContain(family);
   });
 
   it("gives swarm the visible check as a sealed shared command check, and the upgrade preset only for an upgrade", () => {
@@ -55,7 +85,7 @@ describe("what both arms are given", () => {
           command: bugfix.visible.command,
         },
       ],
-      immutablePaths: ["acceptance/visible", "test"],
+      immutablePaths: protectedPaths(bugfix),
     });
     expect(swarmContract(bugfix).preset).toBeUndefined();
     expect(swarmContract(upgrade).preset).toEqual({

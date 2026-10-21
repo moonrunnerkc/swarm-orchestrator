@@ -160,7 +160,7 @@ function task(id, repository, commits, overrides = {}) {
         'import { add } from "../../calc.mjs";\nif (add(2, 3) !== 5) { console.error("add(2, 3) is " + add(2, 3)); process.exit(1); }\n',
     },
     hidden: { testFiles: ["test/add.test.mjs"], argv: ["node", "test/add.test.mjs"] },
-    immutable: ["test"],
+    immutable: [],
     taskText:
       "add(a, b) in calc.mjs subtracts instead of adding; make it add and keep mul as it is.",
     ...overrides,

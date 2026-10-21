@@ -67,3 +67,62 @@ gates, acceptance and verification 14.2 s, inside a 60 s reserve.
 - The hidden oracle's verdict rests on the project's test command; the probe is this work's own
   instrument, validated against the base and the reference but not independent of its author.
 - The task's exposure in the 2026-10-11 comparison, stated above and in [selection.md](selection.md).
+
+## Corrections, 2026-10-21
+
+Appended after a review of the records; nothing above is edited, the launch records and the
+scores stand as written. The work that followed is in
+[../../2026-10-21/permissions-repair/](../../2026-10-21/permissions-repair/README.md).
+
+1. **Swarm's contract froze the whole `test/` directory; OpenCode's did not.** The task
+   contract (chain `20261020T233810-339b33`, record 11) carries
+   `immutablePaths: ["acceptance/visible", "test"]`, from the runner's `immutable: ["test"]` for
+   this task. The task text both arms received said only "Do not modify anything under
+   acceptance/visible/", and OpenCode's workspace configuration allowed edits everywhere. The
+   two arms did not have equivalent permissions, and the sentence above, "test/ was immutable
+   for both", is wrong: it was immutable for Swarm alone.
+2. **Swarm asked for the test and was refused, twice.** Record 465 (`amend_file_set`,
+   `test/partial.js`, "to maintain 100% coverage") and record 521 (`declare_file_set`,
+   minimatch's src/index.ts and `test/partial.js`) both failed with "test/partial.js is outside
+   controller-authorized scope". The product then amended its set to minimatch's src/index.ts alone
+   (record 539) and finished without a test.
+3. **The reference needed its test too.** The validator diffed the whole upstream commit,
+   which deletes `test/partial.js` and adds `test/partial.ts` with fourteen assertions, and
+   passed it. Measured apart on this host ([reference-feasibility.json](../../2026-10-21/permissions-repair/reference-feasibility.json),
+   darwin arm64, Node v24.15.0, the launch's own environment): the base passes `npm test`
+   (6,221 assertions); the upstream **source change alone, with the public tests as the base
+   has them, fails `npm test` on the coverage rule** (lines 955 to 957 uncovered, 99.88%
+   branches); the complete upstream change passes (6,228); and the evaluator's overlay of
+   `test/partial.ts` makes the source-only change pass as well (6,235, hidden argv exit 0).
+   So the reading above, "a patch shaped so the existing suite reaches every branch; the
+   upstream fix is the latter", is withdrawn. No source-only change is shown feasible under
+   the project's test command, and under the frozen contract Swarm could not have delivered
+   one. OpenCode could have added a test and did not; it was not told the test directory was
+   open to it.
+4. **What the validator proved.** That the complete upstream change passes the oracle and the
+   project's tests. It did not execute the base against the hidden oracle: the base row reads
+   "the final tree is the base: nothing was changed", the scorer's short-circuit on an empty
+   patch, so the base's failure was asserted, not run. The validator now runs it
+   ([validation.json](../../2026-10-21/permissions-repair/validation.json): the base's hidden
+   argv exits 1) and holds the reference to the same allowed-change policy as the arms.
+5. **The four denied shell calls were denied on comments.** Records 405, 423, 441 and 527
+   were `node -e` probes of the built library. Each was refused because a word in a `//`
+   comment of the program (`/a/b`, `/a/b/c`, `/b/c/d/a`, `/b/c/d/a`, the task text's example
+   paths, copied while the model reasoned about them) resolved outside the workspace. Record
+   405 would then have been refused on `/a` inside the string `'Without partial /a vs
+   **/x/a/b:'`, ordinary data. None of the four named a file the program would open, and none
+   ran. The reader now reads a comment as a comment and a string as one literal
+   (`src/tools/inline-program-denials.test.ts` replays the four verbatim); a path a program
+   opens in code is checked as before.
+6. **A Linux reading of the reference was not reproduced here.** A review on Linux reported
+   coverage failures for the complete reference. This host is macOS and has no container
+   runtime available in this session; the rows above are the launch's own environment, where
+   the complete reference passes. The Linux result is neither confirmed nor refuted by this
+   work and is bounded to that platform until someone runs
+   `node scripts/comparison/reference-feasibility.mjs --only minimatch-bugfix-partial-globstar`
+   there.
+
+The decision stands: no demonstrated advantage. What changes is the attribution. Swarm's
+failure to deliver was the experiment's contract (a regression test was required and
+forbidden) and a reader defect that refused its diagnostics, not a limit of its repair.
+OpenCode's failure was its own, under permissions it was not told it had.
