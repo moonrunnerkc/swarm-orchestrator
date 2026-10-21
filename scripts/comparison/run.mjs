@@ -674,6 +674,8 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory, owner)
       verdict: hidden.verdict,
       basis: hidden.basis,
       detailDigest: storeBlob(blobs, Buffer.from(hidden.detail ?? "")),
+      ...(hidden.policy === undefined ? {} : { policy: hidden.policy }),
+      ...(hidden.displaced === undefined ? {} : { displaced: hidden.displaced }),
     };
     // A verdict the scorer could not reach is a failure of the instrument or an uncertain case,
     // and either stops the campaign for diagnosis rather than counting against the arm.

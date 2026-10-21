@@ -14,6 +14,7 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parse as parseToml } from "smol-toml";
 import { swarmChildHomeName } from "./arms.mjs";
+import { changePolicyVerdict, describePolicy } from "./change-policy.mjs";
 import {
   applyPatch,
   cloneAtBase,
@@ -265,6 +266,13 @@ const valueAt = (object, path) =>
  * control it establishes nothing: a validator that reads "the final tree is the base" has not
  * shown that the hidden tests reject the missing behaviour, only that the scorer refuses an
  * empty patch. Validation asks for the execution and labels the control by what it ran.
+ *
+ * Every patch is first held to the allowed-change policy (change-policy.mjs), the reference
+ * included: a change that deletes or weakens a test, excludes code from coverage or alters how
+ * the checks run fails here by name, before any test runs. The hidden files are then overlaid
+ * from the sealed mirror; a file the patch wrote at a hidden file's path is displaced by the
+ * overlay, and `displaced` names it so the project-test result below is not read as the
+ * delivered tree's (the visible verdict is that; this one is the delivered tree plus the overlay).
  */
 export async function hiddenVerdict(
   log,
@@ -280,6 +288,7 @@ export async function hiddenVerdict(
       basis: "the final tree is the base: nothing was changed",
       detail: "",
     };
+  const displaced = task.hidden.testFiles.filter((path) => patchedPaths(patch).includes(path));
   const allowed = task.hidden.allowedPaths;
   if (allowed !== undefined) {
     // A sealed test file is overlaid at scoring time whatever the patch did to it, so an edit
@@ -306,7 +315,29 @@ export async function hiddenVerdict(
             : `the candidate's dependencies or build do not prepare: ${tree.prepared.failed.join(" ")}`,
         detail: tree.prepared.detail,
       };
-    const details = [];
+    const policy = await changePolicyVerdict(patch, task, {
+      readBase: async (path) => {
+        const shown = await sealedFile(log, task, base, path);
+        return shown.exitCode === 0 ? shown.stdout.toString() : null;
+      },
+      readAfter: async (path) =>
+        existsSync(join(tree.checkout, path))
+          ? readFileSync(join(tree.checkout, path), "utf8")
+          : null,
+    });
+    if (!policy.ok)
+      return {
+        verdict: "fail",
+        basis: describePolicy(policy),
+        detail: "",
+        policy,
+        displaced,
+      };
+    const details = [describePolicy(policy)];
+    if (displaced.length > 0)
+      details.push(
+        `the patch wrote ${displaced.join(", ")} and the sealed overlay displaced it: the project-test result here is the overlaid tree's, not the delivered tree's`,
+      );
     for (const path of task.hidden.testFiles) {
       const shown = await sealedFile(log, task, upstream, path);
       if (shown.exitCode !== 0)
@@ -447,6 +478,8 @@ export async function hiddenVerdict(
       verdict: "pass",
       basis: "hidden tests, project tests and every structural or version requirement passed",
       detail: details.join("\n"),
+      policy,
+      displaced,
     };
   } finally {
     rmSync(tree.scratch, { recursive: true, force: true });

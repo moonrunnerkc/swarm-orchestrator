@@ -181,6 +181,27 @@ export const probeTotalsSchema = z.strictObject({
   probeWallMs: z.number().int().nonnegative(),
 });
 
+export const changePolicySchema = z.strictObject({
+  ok: z.boolean(),
+  violations: z.array(
+    z.strictObject({
+      rule: z.enum([
+        "protected-path",
+        "coverage-exclusion",
+        "skip-marker",
+        "assertions-removed",
+        "check-configuration",
+      ]),
+      path: z.string().nullable(),
+      detail: z.string(),
+    }),
+  ),
+  addedAssertions: z.number().int().nonnegative(),
+  removedAssertions: z.number().int().nonnegative(),
+  testFilesAdded: z.array(z.string()),
+  testFilesTouched: z.array(z.string()),
+});
+
 export const recordSchema = z.strictObject({
   schema: z.literal("swarm-ordinary-comparison.record.v1"),
   manifestDigest: digest,
@@ -212,6 +233,10 @@ export const recordSchema = z.strictObject({
     verdict: z.enum(["pass", "fail", "unjudgeable"]),
     basis: z.string(),
     detailDigest: digest.nullable(),
+    /** The allowed-change policy's verdict over the patch (change-policy.mjs); absent on records written before the policy. */
+    policy: changePolicySchema.optional(),
+    /** Hidden test files the patch itself wrote, displaced by the sealed overlay at scoring. */
+    displaced: z.array(z.string()).optional(),
   }),
   oracleExposure: z.string(),
   totals: z.strictObject({

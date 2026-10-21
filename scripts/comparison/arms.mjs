@@ -17,6 +17,7 @@
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { policyLines, protectedPaths } from "./change-policy.mjs";
 
 export const wallBudgetMs = 30 * 60_000;
 /**
@@ -53,13 +54,18 @@ export const verificationReserveMs = (budgets) => budgets.swarmVerificationReser
  */
 export const swarmChildHomeName = "SWARM_CHILD_HOME";
 
+/**
+ * The task as both arms read it: the task text, the visible check, the test command and the
+ * allowed-change policy (change-policy.mjs), the same words for each. Swarm's contract makes the
+ * policy's protected paths immutable; OpenCode has no contract and reads the same sentence.
+ */
 export function taskPrompt(task) {
   return [
     task.taskText.trim(),
     "",
     `Visible acceptance check (it must pass; it is not the only criterion): ${task.visible.command}`,
     `The project's own tests run with: ${task.projectTest.join(" ")}`,
-    `Do not modify anything under ${task.visible.path.split("/").slice(0, -1).join("/")}/.`,
+    ...policyLines(task),
   ].join("\n");
 }
 
@@ -111,7 +117,9 @@ export function swarmContract(task) {
         artifacts: [],
       },
     ],
-    immutablePaths: [task.visible.path.split("/").slice(0, -1).join("/"), ...task.immutable],
+    // The policy's protected paths and nothing more: a test directory is not among them, so
+    // the product can declare and write a regression test where the project keeps its tests.
+    immutablePaths: protectedPaths(task),
   };
 }
 
