@@ -13,7 +13,7 @@ sessions come from `node scripts/evidence-pack.mjs restore docs/evidence/2026-10
 | --- | --- |
 | [replay-edits.mjs](replay-edits.mjs) | the recorded write and edit tool calls replayed over a git tree by the edit tool's own rule, and the tree's change read as the product's workspace-diff record spells it |
 | [reconstruct-launches.mjs](reconstruct-launches.mjs), [reconstruction/](reconstruction/) | every candidate tree of both launches rebuilt from their ledgers and held to the digests their records carry; the patches |
-| [check-trees.mjs](check-trees.mjs), [checks.json](checks.json) | the real sinon checks over those trees: the tree's own tests, lint, the node suite, the visible check, the hidden API check, the sealed upstream tests overlaid, and the tree's tests over the base's source |
+| [check-trees.mjs](check-trees.mjs), [checks.json](packed-derived/checks/) (checks.json and checks-trial.json are packed there; `scripts/evidence-pack.mjs` restore gives them back) | the real sinon checks over those trees: the tree's own tests, lint, the node suite, the visible check, the hidden API check, the sealed upstream tests overlaid, and the tree's tests over the base's source |
 | [replay-launch-1-controller.mjs](replay-launch-1-controller.mjs), [controller-replay/](controller-replay/) | launch 1 through the product's real gates engine and run assessment over the real tree, the model replaced by the recorded repair; and a weakened-test control |
 | [regressions-on-fb02cae05/](regressions-on-fb02cae05/) | the new regression tests run on the starting implementation, where they fail |
 | [protocol.md](protocol.md), [manifest.json](manifest.json), [preflight.json](preflight.json), [launches.md](launches.md) | the trial, registered before any inference, and every launch |
@@ -40,7 +40,7 @@ The rejected-candidate records (446, 665) keep the repaired test file truncated 
 characters, so they are not what the trees are rebuilt from; the digests above are what hold
 the replay to the launch.
 
-**The reviewer's five findings, reproduced on the real tree** ([checks.json](checks.json),
+**The reviewer's five findings, reproduced on the real tree** ([checks.json](packed-derived/checks/),
 Node v24.15.0, the base installed from its lockfile):
 
 | finding | measured |
@@ -119,7 +119,7 @@ finishes, every gate green, no test written. On `fb02cae05` they fail
 ([regressions-on-fb02cae05/agent-run.txt](regressions-on-fb02cae05/agent-run.txt)): no
 continuation exists, and the run's lifecycle reads `completed`.
 
-**The resetBehavior failure, reproduced apart from any worker** ([checks.json](checks.json),
+**The resetBehavior failure, reproduced apart from any worker** ([checks.json](packed-derived/checks/),
 `launch-2 final`): the delivered tree passes its own tests, lint, the node suite, the visible
 check and the API check; with the sealed upstream `test/src/stub-test.js` overlaid, one case
 fails (`.resetBehavior cleans stubbed getter and setter spies`), the hidden oracle's reading. The
@@ -187,7 +187,7 @@ the source written and the test file begun; repair attempt 1 spent its 40 steps 
 repair attempt 2 fixed the tests and was cut by the wall after 26 steps, its candidate measured
 green and kept. The delivered tree is complete and correct under the frozen evaluator: the sealed
 tests, the API check and the suite pass; 8 cases and 26 assertions were added, pass on the
-delivered tree, and 6 of them fail over the base's source ([checks-trial.json](checks-trial.json)).
+delivered tree, and 6 of them fail over the base's source ([checks-trial.json](packed-derived/checks/)).
 The product refused it: its last loop stopped at the wall, which the verdict policy refuses on
 its own, so it exited 1 with no claim and offered `swarm resume`. Not delivered by item 5. Repair
 improved the artifact here: cycle 0 failed lint and tests, and the kept tree passes everything.

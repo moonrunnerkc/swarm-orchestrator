@@ -110,7 +110,7 @@ observations and cannot substitute for those people.
   already used in development.
 - `campaign/pr-tasks/scored.attack.json`: 18 historical attack runs, including two recorded
   false greens. The patches are under `campaign/pr-tasks/patches-attack/`.
-- `campaign/pr-tasks/scored.json`: 94 historical task rows across 14 repositories. Seventy-nine
+- `campaign/pr-tasks/scored.json` (packed losslessly into `campaign/pr-tasks/packed-derived/scored-tasks` on 2026-10-21; `scripts/evidence-pack.mjs` restore gives it back): 94 historical task rows across 14 repositories. Seventy-nine
   share one harness version; other rows have different or missing versions. Do not pool these
   into a rate for the repaired build.
 - `docs/evidence/2026-09-04/real-repos/README.md`: a three-task, eighteen-run baseline pilot.

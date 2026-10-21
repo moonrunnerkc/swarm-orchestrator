@@ -7,7 +7,7 @@
 - **Status:** this is the only scored cohort of the assignment. The development launches in
   [../development/](../development/protocol.md) were on exposed tasks and do not pool with it.
 - **Frozen:** this file, the manifest
-  ([manifests/stage-A.json](manifests/stage-A.json)), the task module
+  ([manifests/stage-A.json](packed-derived/stage-a-views/) (the file manifests/stage-A.json, packed on 2026-10-21 to keep the tree's weight headroom; `scripts/evidence-pack.mjs` restore gives the bytes back)), the task module
   (`scripts/pilot/tasks-2026-10-16.mjs`) and the harness digest the manifest names. All are fixed
   before the first launch. Nothing in a scored cohort changes after that.
 

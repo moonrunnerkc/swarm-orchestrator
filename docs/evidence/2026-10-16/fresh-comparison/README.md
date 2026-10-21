@@ -24,7 +24,7 @@ every decision measure Swarm was behind or level:
 - **Frozen before the first launch** (commit `a50d72f0f`):
   - the tasks, the pool and the exclusions ([candidates.md](candidates.md));
   - the protocol;
-  - the manifest ([manifests/stage-A.json](manifests/stage-A.json)).
+  - the manifest ([manifests/stage-A.json](packed-derived/stage-a-views/) (the file manifests/stage-A.json, packed on 2026-10-21 to keep the tree's weight headroom; `scripts/evidence-pack.mjs` restore gives the bytes back)).
 - **Instruments validated on this host before the freeze:**
   - [validation/](validation/), the harness's own validator;
   - [preflight/replays/](preflight/replays/), Swarm's acceptance path on each reference and base.
