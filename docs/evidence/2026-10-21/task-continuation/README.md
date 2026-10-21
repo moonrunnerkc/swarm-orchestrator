@@ -273,6 +273,13 @@ The tests that pin each case, on an injected clock and through the command line 
 endpoint, are listed in [assessment-replay/README.md](assessment-replay/README.md), with the ones
 that fail on `173bce007`.
 
+**Independent reproduction of the delivered tree, with its caveat.** An independent review
+reproduced launch 2's tree as section 4 reads it: 323 passing authored tests, 318 passing sealed
+tests, the API and visible checks passing, and six added cases failing over the base's source. The
+project's full node suite passed with 1,565 tests on a rerun; the reviewer's first local run hit
+the suite's existing two-second timeout in a sandbox test while the base passed, so the
+reproduction was not uniformly clean on the first attempt.
+
 **The score stands.** Launch 2 was scored under the protocol frozen before it, whose item 5
 required lifecycle `completed` and an acceptable verdict; it is "not delivered" there and stays so.
 The corrected product would have accepted this tree with lifecycle `max-wall-time` and no

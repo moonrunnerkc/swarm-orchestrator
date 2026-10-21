@@ -12,7 +12,4 @@ The logs are packed under [packed-derived/verification-logs](packed-derived/veri
 | `736251101` | `npm run build`, `npm run check:packaged`, `npm run fuzz:build` | **0** | as above |
 | `f4c9a10b2` (before `099558499`) | `npm run gates` | **1** | **1 test failed** of 4,734: `src/workers/contract-enforcement.test.ts` pinned the worker assessment's policy as `run-acceptance-v4`; updated to v5 in `099558499` ([gates-f4c9a10b2-failed.txt](packed-derived/verification-logs/)) |
 
-Commits after `a7de453ed` change only this file and the packed logs. The local reproduction the
-review reported (an initial run of the full suite hitting the existing two-second sandbox-test
-timeout while the base passed) did not recur in these three runs; it is not shown fixed, only not
-observed here.
+Commits after `a7de453ed` change only this file and the packed logs.
