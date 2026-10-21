@@ -9,9 +9,11 @@ import type {
   InterventionCounts,
   OutcomeFollowUpReport,
   OutcomeStatus,
+  RegressionTestsReport,
   RequirementOutcome,
   RunOutcomeReport,
   SetupUsage,
+  TaskContinuationReport,
   UnresolvedOutcomeReport,
 } from "./run-outcome-shape.ts";
 import { formatElapsed } from "./tui/elapsed.ts";
@@ -64,6 +66,10 @@ export interface RunOutcomeInput {
   readonly unresolvedOutcomes?: readonly UnresolvedOutcomeReport[];
   /** The follow-up owed on those outcomes and what became of it. */
   readonly outcomeFollowUp?: OutcomeFollowUpReport;
+  /** The continuation owed to a task loop stopped at its step limit, where one was. */
+  readonly continuation?: TaskContinuationReport;
+  /** The test deliverable as measured on the delivered tree, where the gates measured it. */
+  readonly regressionTests?: RegressionTestsReport;
   /** Null where no final independent verification ran. */
   readonly finalVerification: FinalVerificationOutcome | null;
   readonly usage: {
@@ -197,6 +203,9 @@ export function describeRunOutcome(input: RunOutcomeInput): readonly string[] {
       `policy ${input.verdict.policy}, execution ${input.verdict.executionTrust}; ` +
       `the loop stopped as ${input.lifecycle}`,
   );
+  if (input.continuation !== undefined) say(`  ${describeContinuation(input.continuation)}`);
+  if (input.regressionTests !== undefined)
+    for (const line of describeRegressionTests(input.regressionTests)) say(`  ${line}`);
 
   if (input.requirements === null) {
     say(
@@ -329,6 +338,74 @@ export function describeRunOutcome(input: RunOutcomeInput): readonly string[] {
     say(`  next: ${nextAction(input)}`);
   }
   return lines;
+}
+
+/**
+ * The continuation a step-limited loop was owed, and whether what it left stands. Given and kept
+ * is the one case the task's own loop finished; every other case leaves the task possibly
+ * unfinished, and says so beside a status the sealed checks decided.
+ */
+function describeContinuation(continuation: TaskContinuationReport): string {
+  const became =
+    continuation.state === "withheld"
+      ? `withheld (${firstLine(continuation.reason, 200)})`
+      : `given once, as attempt ${continuation.attempt}, and ${
+          continuation.accepted === null
+            ? "it left nothing to judge"
+            : continuation.accepted
+              ? "the ratchet kept what it left"
+              : "the ratchet rolled back what it left"
+        }`;
+  const finished = continuation.state === "given" && continuation.accepted === true;
+  return (
+    "the task's own loop stopped at its step limit before it reported the task done; its " +
+    `continuation was ${became}${finished ? "" : ", so the task may be unfinished"}`
+  );
+}
+
+/**
+ * The test deliverable, from the harness's measures: what the test files add against the base,
+ * whether the tests gate passed on the delivered tree, and whether a file's added tests fail
+ * over the base's source where that was run. Counts and names, never a reading of the model's
+ * account; what was not measured is said to be unmeasured.
+ */
+function describeRegressionTests(report: RegressionTestsReport): readonly string[] {
+  if (report.files.length === 0)
+    return ["regression tests: no test file differs from the base, so none was added"];
+  const gate =
+    report.testsGate === "passed"
+      ? "the tests gate passed on the delivered tree"
+      : report.testsGate === "failed"
+        ? "the tests gate failed on the delivered tree"
+        : "no tests gate ran on the delivered tree";
+  return report.files.map((file, index) => {
+    const list = (names: readonly string[]) =>
+      names.slice(0, 5).join(", ") + (names.length > 5 ? `, ${names.length - 5} more` : "");
+    const added =
+      file.testsAdded.length === 0
+        ? "adds no case"
+        : `adds ${file.testsAdded.length} case${file.testsAdded.length === 1 ? "" : "s"} (${list(file.testsAdded)})`;
+    const removed =
+      file.testsRemoved.length === 0
+        ? ""
+        : `, removes ${file.testsRemoved.length} (${list(file.testsRemoved)})`;
+    const assertions = ` and ${file.assertionsAdded} assertion(s)`;
+    const control =
+      file.testsAdded.length === 0
+        ? ""
+        : file.onBaseSource === null
+          ? "; over the base's source: not run, so whether the added case fails without the change is not measured"
+          : file.onBaseSource.outcome === "indeterminate"
+            ? `; over the base's source: not measured (${firstLine(file.onBaseSource.detail, 120)})`
+            : file.onBaseSource.outcome === "passed"
+              ? "; over the base's source the file passes, so the added case does not fail without the change"
+              : file.onBaseSource.failedTests === null
+                ? "; over the base's source the file fails, which test the runner did not name"
+                : file.testsAdded.some((name) => file.onBaseSource?.failedTests?.includes(name))
+                  ? `; over the base's source the file fails, naming ${list(file.onBaseSource.failedTests.filter((name) => file.testsAdded.includes(name)))}, so the added case fails without the change`
+                  : `; over the base's source the file fails in ${list(file.onBaseSource.failedTests)}, none of them an added case`;
+    return `${index === 0 ? "regression tests: " : "  "}${file.path} ${added}${removed}${assertions}; ${gate}${control}`;
+  });
 }
 
 /** A planned requirement: what it quotes, and what its generated checks did, never a verdict. */
@@ -515,13 +592,17 @@ export function interventionsOn(evidence: EvidenceRecorder): InterventionCounts 
   let promptsAnsweredByPerson = 0;
   let promptsPreApproved = 0;
   let promptsDeclined = 0;
-  // The follow-up owed once the gates were green is an attempt from the cap, and its candidate is
-  // judged as a repair's is, but nothing was failing: it is reported on its own line, not here.
+  // An owed attempt once the gates were green (the task's continuation, the follow-up on
+  // outcomes) is an attempt from the cap, and its candidate is judged as a repair's is, but
+  // nothing was failing: each is reported on its own line, not here.
   const followUpAttempts = new Set(
     evidence
       .records()
       .map((record) => payloads.get(record.payloadDigest) as { rule?: string; attempt?: unknown })
-      .filter((payload) => payload?.rule === "outcome-follow-up-v1")
+      .filter(
+        (payload) =>
+          payload?.rule === "outcome-follow-up-v1" || payload?.rule === "task-continuation-v1",
+      )
       .flatMap((payload) => (typeof payload.attempt === "number" ? [payload.attempt] : [])),
   );
   for (const record of evidence.records()) {

@@ -108,6 +108,39 @@ export interface RunOutcomeReport {
    * outcomes stay unresolved: no sealed check states them.
    */
   readonly outcomeFollowUp?: OutcomeFollowUpReport;
+  /**
+   * Added in 14.5.0: the one continuation a run owes its task when the loop that worked it
+   * stopped at its step limit before it reported the task done, and what became of it. Present
+   * only where the loop was so stopped. Given and kept, the continuation's own stop is the
+   * lifecycle; withheld or rolled back, the lifecycle stays the interrupted loop's, and a status
+   * of `accepted` beside it is the sealed checks' reading, never that the whole task was done.
+   */
+  readonly continuation?: TaskContinuationReport;
+  /**
+   * Added in 14.5.0: the test deliverable as the harness measured it on the delivered tree.
+   * Names what changed in test files against the base, whether the tests gate passed, and, where
+   * measured, whether a file's added tests fail over the base's source. Decides nothing.
+   */
+  readonly regressionTests?: RegressionTestsReport;
+}
+
+/** The task's continuation, as the resolve loop recorded it: the same shape as a follow-up's. */
+export type TaskContinuationReport = OutcomeFollowUpReport;
+
+export interface RegressionTestsReport {
+  readonly files: readonly {
+    readonly path: string;
+    readonly testsAdded: readonly string[];
+    readonly testsRemoved: readonly string[];
+    readonly assertionsAdded: number;
+    readonly onBaseSource: {
+      readonly outcome: "passed" | "failed" | "indeterminate";
+      readonly detail: string;
+      readonly failedTests: readonly string[] | null;
+    } | null;
+  }[];
+  readonly testsGate: "passed" | "failed" | "not-applicable" | "absent";
+  readonly record: string;
 }
 
 /** The follow-up on unresolved outcomes, as the resolve loop recorded it. */

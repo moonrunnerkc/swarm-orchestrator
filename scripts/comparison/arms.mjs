@@ -397,9 +397,20 @@ export function completionAccount(arm, exitCode, signal, stdout) {
     const result = swarmResult(stdout);
     if (result === null)
       return { ended, claim: "unknown", basis: "no swarm.result.v1 line in the stream" };
-    return result.verdict?.acceptable === true
-      ? { ended, claim: "claimed", basis: "the product reported its verdict as acceptable" }
-      : { ended, claim: "none", basis: "the product reported its verdict as not acceptable" };
+    if (result.verdict?.acceptable !== true)
+      return { ended, claim: "none", basis: "the product reported its verdict as not acceptable" };
+    // The product's own lifecycle, where the result carries one: an acceptable verdict over a
+    // loop that stopped at a limit is the sealed checks' reading, not the product saying the task
+    // was finished. Launch 2 of the 2026-10-21 trial was read as claimed on that basis; the
+    // product now reports its interrupted loop as such, and this reads it.
+    const lifecycle = result.outcome?.lifecycle;
+    if (typeof lifecycle === "string" && lifecycle !== "completed")
+      return {
+        ended,
+        claim: "none",
+        basis: `the product reported its verdict as acceptable and its loop stopped as ${lifecycle}, not completed`,
+      };
+    return { ended, claim: "claimed", basis: "the product reported its verdict as acceptable" };
   }
   const turns = opencodeTurns(stdout);
   if (turns.length === 0)

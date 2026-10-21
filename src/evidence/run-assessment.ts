@@ -67,20 +67,7 @@ export async function recordRunAssessment(
                   ?.phase === "effective",
             )?.payloadDigest,
         }),
-    // The last stop of a loop. A repair attempt withheld for want of budget is recorded as a
-    // stop too, but it never ran a loop and its reason is not a lifecycle; naming it here put a
-    // record beside a lifecycle it does not carry, and the bundle's own verifier refused it.
-    // A follow-up given once the gates were green, whose candidate was not kept, changed nothing
-    // delivered, so its stop is not the run's lifecycle either.
-    lifecycleRecord:
-      evidence.records().findLast((entry) => {
-        if (entry.type !== "session-stopped") return false;
-        const stopped = evidence.payloads().get(entry.payloadDigest) as
-          | { stopReason?: unknown; followUp?: unknown }
-          | undefined;
-        if (stopped?.followUp === true && !followUpKept(evidence)) return false;
-        return (loopLifecycles as readonly unknown[]).includes(stopped?.stopReason);
-      })?.payloadDigest ?? null,
+    lifecycleRecord: lifecycleStop(evidence)?.payloadDigest ?? null,
     lifecycle,
     cancelled,
     settled: gates.outcome.settled,
@@ -237,16 +224,59 @@ function hypothesesOnly(independent: {
   );
 }
 
-/** Whether the run's follow-up, where one was given, left a candidate the ratchet kept. */
-function followUpKept(evidence: EvidenceRecorder): boolean {
-  const recorded = evidence
+/**
+ * The last stop of a loop that worked the task, on this run's part of the chain, by the rule the
+ * bundled verifier mirrors. A repair attempt withheld for want of budget is recorded as a stop
+ * too, but it never ran a loop and its reason is not a lifecycle. An owed attempt (the task's
+ * continuation, or the follow-up on unresolved outcomes) whose candidate was not kept changed
+ * nothing delivered, so its stop is not the run's lifecycle. A narrow repair that finished says
+ * its stop is not the run's (`runLifecycle: false`): it finished the repair, not the task, and
+ * the loop that stopped at its step limit before it is still the one that worked the task.
+ * Records that predate these fields read as they always did.
+ */
+function lifecycleStop(evidence: EvidenceRecorder) {
+  const payloads = evidence.payloads();
+  const previous = evidence
     .records()
+    .findLast((entry) => entry.type === "run-assessment")?.sequence;
+  const thisRun = evidence
+    .records()
+    .filter((entry) => previous === undefined || entry.sequence > previous);
+  const owed = thisRun
     .map(
       (entry) =>
-        evidence.payloads().get(entry.payloadDigest) as
-          | { rule?: unknown; state?: unknown; accepted?: unknown }
+        payloads.get(entry.payloadDigest) as
+          | { rule?: unknown; state?: unknown; accepted?: unknown; attempt?: unknown }
           | undefined,
     )
-    .findLast((payload) => payload?.rule === "outcome-follow-up-v1");
-  return recorded?.state === "given" && recorded.accepted === true;
+    .filter(
+      (payload) =>
+        payload?.rule === "outcome-follow-up-v1" || payload?.rule === "task-continuation-v1",
+    );
+  const kept = (attempt: unknown): boolean => {
+    const record =
+      typeof attempt === "number" ? owed.find((one) => one?.attempt === attempt) : owed.at(-1);
+    return record?.state === "given" && record.accepted === true;
+  };
+  return thisRun.findLast((entry) => {
+    if (entry.type !== "session-stopped") return false;
+    const stopped = payloads.get(entry.payloadDigest) as
+      | { stopReason?: unknown; followUp?: unknown; attempt?: unknown; runLifecycle?: unknown }
+      | undefined;
+    if (!(loopLifecycles as readonly unknown[]).includes(stopped?.stopReason)) return false;
+    if (stopped?.runLifecycle === false) return false;
+    if (stopped?.followUp === true && !kept(stopped.attempt)) return false;
+    return true;
+  });
+}
+
+/** The run's lifecycle as the chain records it, or null where no loop has stopped. */
+export function runLifecycle(evidence: EvidenceRecorder): AgentLoopOutcome["stopReason"] | null {
+  const stop = lifecycleStop(evidence);
+  if (stop === undefined) return null;
+  const reason = (evidence.payloads().get(stop.payloadDigest) as { stopReason?: unknown })
+    ?.stopReason;
+  return (loopLifecycles as readonly unknown[]).includes(reason)
+    ? (reason as AgentLoopOutcome["stopReason"])
+    : null;
 }

@@ -953,6 +953,8 @@ async function run(options: RunCommand): Promise<number> {
       ),
       repairsForGeneratedChecksOnly: repairsForGeneratedChecksOnly(gates.outcome),
       outcomeFollowUp: gates.outcome.followUp ?? null,
+      continuation: gates.outcome.continuation,
+      regressionTests: gates.outcome.regressionTests,
       usage: {
         durationMs: clock.now() - startedAt,
         steps: loop.steps,
@@ -1032,6 +1034,10 @@ async function run(options: RunCommand): Promise<number> {
             ...(outcome.outcomeFollowUp === undefined
               ? {}
               : { outcomeFollowUp: outcome.outcomeFollowUp }),
+            ...(outcome.continuation === undefined ? {} : { continuation: outcome.continuation }),
+            ...(outcome.regressionTests === undefined
+              ? {}
+              : { regressionTests: outcome.regressionTests }),
             ...(outcome.repairsForGeneratedChecksOnly === undefined
               ? {}
               : { repairsForGeneratedChecksOnly: outcome.repairsForGeneratedChecksOnly }),
@@ -1126,6 +1132,8 @@ async function runOutcome(input: {
   readonly unresolvedOutcomes: NonNullable<RunOutcomeInput["unresolvedOutcomes"]>;
   readonly repairsForGeneratedChecksOnly: readonly number[];
   readonly outcomeFollowUp: NonNullable<RunOutcomeInput["outcomeFollowUp"]> | null;
+  readonly continuation: NonNullable<RunOutcomeInput["continuation"]> | null;
+  readonly regressionTests: RunOutcomeInput["regressionTests"];
   readonly usage: RunOutcomeInput["usage"];
 }): Promise<RunOutcomeInput> {
   const { evidence } = input;
@@ -1179,6 +1187,8 @@ async function runOutcome(input: {
       ? {}
       : { unresolvedOutcomes: input.unresolvedOutcomes }),
     ...(input.outcomeFollowUp === null ? {} : { outcomeFollowUp: input.outcomeFollowUp }),
+    ...(input.continuation === null ? {} : { continuation: input.continuation }),
+    ...(input.regressionTests === undefined ? {} : { regressionTests: input.regressionTests }),
     ...(input.repairsForGeneratedChecksOnly.length === 0
       ? {}
       : { repairsForGeneratedChecksOnly: input.repairsForGeneratedChecksOnly }),

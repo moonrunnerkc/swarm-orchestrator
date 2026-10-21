@@ -20,13 +20,15 @@ import {
   measuresFor,
   takeMeasureSnapshot,
 } from "./measure-snapshot.ts";
-import { isTestFile } from "./measures.ts";
+import { emptyTestFileMeasures, isTestFile } from "./measures.ts";
 import { judgeRatchet, type RatchetDecision, ratchetPayload } from "./ratchet.ts";
 import { classifyRepair } from "./repair-policy.ts";
 import {
   type BaseControlRunner,
+  type ControlOutcome,
   clearedTests,
   findNewSpecifications,
+  indeterminate,
   type RespecificationCandidate,
   type RespecificationFinding,
 } from "./respecification.ts";
@@ -50,16 +52,59 @@ export interface ResolveRequest {
    * once the gates are green: its brief, in place of a failure to fix.
    */
   readonly followUp?: string;
+  /** Which owed work the brief is: a task's own continuation, or its unresolved outcomes. */
+  readonly followUpKind?: OwedKind;
 }
 
 /**
+ * What a run can owe once its gates are green, in the order it is owed: the task's own
+ * continuation, where the loop that worked it stopped at its step limit before it reported the
+ * task done, and then the follow-up on requested outcomes no sealed check states.
+ */
+export type OwedKind = "continuation" | "outcomes";
+
+/**
  * Work the gates do not measure that the controller owes one bounded attempt before the run is
- * reported: requested outcomes no sealed check states. Its identity names what it covers, so the
- * same work is never followed up twice however it is worded.
+ * reported: requested outcomes no sealed check states, or the task itself where its loop was
+ * interrupted. Its identity names what it covers, so the same work is never followed up twice
+ * however it is worded.
  */
 export interface OwedFollowUp {
   readonly identity: string;
   readonly brief: string;
+}
+
+/**
+ * The run's test deliverable as the harness measured it, never as the model described it: which
+ * test files changed against the base, what each added, whether the tests gate passed on the
+ * delivered tree, and whether a file's added tests fail on the base's source. A test that fails
+ * without the change and passes with it is a regression test; this names what was measured and
+ * what was not, and decides nothing.
+ */
+export interface RegressionTestAccount {
+  readonly files: readonly RegressionTestFile[];
+  /** The tests gate's status on the delivered tree: whether the added tests execute and pass with the change. */
+  readonly testsGate: "passed" | "failed" | "not-applicable" | "absent";
+  readonly record: string;
+}
+
+export interface RegressionTestFile {
+  readonly path: string;
+  /** Declared tests the file has and the base's does not, by name. */
+  readonly testsAdded: readonly string[];
+  readonly testsRemoved: readonly string[];
+  /** The file's assertion count against the base's; negative where it fell. */
+  readonly assertionsAdded: number;
+  /**
+   * The whole file run over the base's source, where it added tests and the project has a way to
+   * run one file. "failed" says the file fails without the change; the names say which tests,
+   * where the runner's reporter attributes them. Null where nothing ran it.
+   */
+  readonly onBaseSource: {
+    readonly outcome: ControlOutcome;
+    readonly detail: string;
+    readonly failedTests: readonly string[] | null;
+  } | null;
 }
 
 /** What became of an owed follow-up, from the loop's own records. */
@@ -137,6 +182,14 @@ interface AutoResolveDependencies {
    * gate measures was failing, so the loop that repairs failures never looked again.
    */
   readonly followUp?: OwedFollowUp;
+  /**
+   * Owed one attempt once the gates are green, before `followUp` and from the same cap: the task
+   * itself, where the loop that worked it stopped at its step limit before it reported the task
+   * done. Launch 2 of the 2026-10-21 development trial reached its cap with the regression test
+   * it was asked for unwritten; the narrow repair that followed fixed one lint error and finished,
+   * and nothing resumed the task. Absent is none owed.
+   */
+  readonly continuation?: OwedFollowUp;
 }
 
 interface AutoResolveAttempt {
@@ -166,6 +219,10 @@ export interface AutoResolveOutcome {
   readonly escalation: EscalationPayload | null;
   /** Null where nothing was owed. */
   readonly followUp?: FollowUpOutcome | null;
+  /** The task's own continuation, where its loop was interrupted; null where none was owed. */
+  readonly continuation: FollowUpOutcome | null;
+  /** The test deliverable as measured on the final state, against the base. */
+  readonly regressionTests: RegressionTestAccount;
 }
 
 export const defaultAttemptCap = 3;
@@ -199,15 +256,34 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
 
   const attempts: AutoResolveAttempt[] = [];
   let rejected: RejectedCandidate | null = null;
-  // The owed follow-up: pending until an attempt carries it, then given once and never again.
-  let followUp: { state: "pending" } | Omit<FollowUpOutcome, "record"> | null =
-    deps.followUp === undefined ? null : { state: "pending" };
+  // What the run owes once the gates are green, in the order it is owed. Each is pending until an
+  // attempt carries it, then given once and never again.
+  const owed: readonly OwedWork[] = [
+    ...(deps.continuation === undefined
+      ? []
+      : [
+          {
+            kind: "continuation" as const,
+            rule: "task-continuation-v1" as const,
+            work: deps.continuation,
+          },
+        ]),
+    ...(deps.followUp === undefined
+      ? []
+      : [
+          { kind: "outcomes" as const, rule: "outcome-follow-up-v1" as const, work: deps.followUp },
+        ]),
+  ];
+  const owedStates = new Map<OwedKind, OwedState>(
+    owed.map((entry) => [entry.kind, { state: "pending" }]),
+  );
 
   while (attempts.length < deps.cap && deps.abortSignal?.aborted !== true) {
-    const owed: OwedFollowUp | undefined =
-      isGreen(cycle) && followUp?.state === "pending" ? deps.followUp : undefined;
-    if (isGreen(cycle) && owed === undefined) break;
-    const classification = owed === undefined ? classifyRepair(cycle) : null;
+    const next: OwedWork | undefined = isGreen(cycle)
+      ? owed.find((entry) => owedStates.get(entry.kind)?.state === "pending")
+      : undefined;
+    if (isGreen(cycle) && next === undefined) break;
+    const classification = next === undefined ? classifyRepair(cycle) : null;
     if (
       classification !== null &&
       (classification.kind === "setup" ||
@@ -234,14 +310,14 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
     const failure = await tryResolve(deps, {
       attempt,
       cap: deps.cap,
-      gateOutput: owed === undefined ? describeFailuresForModel(cycle, failingAtBase) : "",
+      gateOutput: next === undefined ? describeFailuresForModel(cycle, failingAtBase) : "",
       cycle,
       rejected,
-      ...(owed === undefined ? {} : { followUp: owed.brief }),
+      ...(next === undefined ? {} : { followUp: next.work.brief, followUpKind: next.kind }),
     });
-    if (owed !== undefined)
-      followUp = {
-        identity: owed.identity,
+    if (next !== undefined)
+      owedStates.set(next.kind, {
+        identity: next.work.identity,
         state: failure?.includes("repair stopped:") === true ? "withheld" : "given",
         attempt: failure?.includes("repair stopped:") === true ? null : attempt,
         accepted: null,
@@ -251,7 +327,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
             : failure.includes("repair stopped:")
               ? failure
               : `given, and the attempt produced nothing to judge: ${failure}`,
-      };
+      });
 
     if (failure !== null) {
       // The workspace is in an unknown state after a failed attempt, so it goes back to the
@@ -314,8 +390,9 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
       respecification,
       ratchetRecord: recorded.record.payloadDigest,
     });
-    if (owed !== undefined && followUp !== null && followUp.state === "given")
-      followUp = { ...followUp, accepted: decision.accepted };
+    const carried = next === undefined ? undefined : owedStates.get(next.kind);
+    if (next !== undefined && carried !== undefined && carried.state === "given")
+      owedStates.set(next.kind, { ...carried, accepted: decision.accepted });
 
     if (!decision.accepted) {
       const kept = await keepRejectedCandidate(
@@ -344,28 +421,38 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
     rejected = null;
   }
 
-  const followUpOutcome =
-    deps.followUp === undefined || followUp === null
-      ? null
-      : await recordFollowUp(
-          deps,
-          followUp.state === "pending"
-            ? {
-                identity: deps.followUp.identity,
-                state: "withheld",
-                attempt: null,
-                accepted: null,
-                reason:
-                  deps.abortSignal?.aborted === true
-                    ? "model work ended before it could be given"
-                    : !isGreen(cycle)
-                      ? "the gates were not green when the attempts ended, so the attempts went to what they measured"
-                      : `no attempt was left under the cap of ${deps.cap}`,
-              }
-            : followUp,
-        );
+  // What became of each owed item, on the chain in the order it was owed: given with the ratchet's
+  // decision, or withheld with the reason.
+  const settled = new Map<OwedKind, FollowUpOutcome>();
+  for (const entry of owed) {
+    const state = owedStates.get(entry.kind) ?? { state: "pending" };
+    settled.set(
+      entry.kind,
+      await recordFollowUp(
+        deps,
+        entry.rule,
+        state.state === "pending"
+          ? {
+              identity: entry.work.identity,
+              state: "withheld",
+              attempt: null,
+              accepted: null,
+              reason:
+                deps.abortSignal?.aborted === true
+                  ? "model work ended before it could be given"
+                  : !isGreen(cycle)
+                    ? "the gates were not green when the attempts ended, so the attempts went to what they measured"
+                    : `no attempt was left under the cap of ${deps.cap}`,
+            }
+          : state,
+      ),
+    );
+  }
+  const continuationOutcome = settled.get("continuation") ?? null;
+  const followUpOutcome = settled.get("outcomes") ?? null;
 
   const baseComparison = await judgeAgainstBase(deps, cycle, baseline);
+  const regressionTests = await accountForRegressionTests(deps, cycle, baseline);
 
   if (isGreen(cycle) && baseComparison.decision.accepted) {
     return {
@@ -377,6 +464,8 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
       baseComparison,
       escalation: null,
       followUp: followUpOutcome,
+      continuation: continuationOutcome,
+      regressionTests,
     };
   }
 
@@ -390,6 +479,8 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
     baseComparison,
     escalation,
     followUp: followUpOutcome,
+    continuation: continuationOutcome,
+    regressionTests,
   };
 
   async function snapshot(
@@ -447,9 +538,19 @@ async function judgeAgainstBase(
   return { decision, respecification, ratchetRecord: recorded.record.payloadDigest };
 }
 
-/** What became of the owed follow-up, on the chain; the brief it was given is the attempt's own. */
+interface OwedWork {
+  readonly kind: OwedKind;
+  /** The rule the outcome is recorded under; the bundled verifier reads both. */
+  readonly rule: "task-continuation-v1" | "outcome-follow-up-v1";
+  readonly work: OwedFollowUp;
+}
+
+type OwedState = { readonly state: "pending" } | Omit<FollowUpOutcome, "record">;
+
+/** What became of an owed item, on the chain; the brief it was given is the attempt's own. */
 async function recordFollowUp(
   deps: AutoResolveDependencies,
+  rule: OwedWork["rule"],
   outcome: Omit<FollowUpOutcome, "record">,
 ): Promise<FollowUpOutcome> {
   const recorded = await deps.evidence.record({
@@ -457,13 +558,78 @@ async function recordFollowUp(
     actor: "harness",
     provenance: ["tool-output"],
     payload: asJsonValue({
-      rule: "outcome-follow-up-v1",
+      rule,
       ...outcome,
       limitation:
-        "given means one attempt carried the brief and its candidate was judged as any repair's is; it does not settle the work it names, which no sealed check states",
+        rule === "task-continuation-v1"
+          ? "given means one attempt carried the task again with the interrupted loop's account and its candidate was judged as any repair's is; it does not establish that the task is done, which only the sealed checks and the final verification speak to"
+          : "given means one attempt carried the brief and its candidate was judged as any repair's is; it does not settle the work it names, which no sealed check states",
     }),
   });
   return { ...outcome, record: recorded.record.payloadDigest };
+}
+
+/**
+ * The test deliverable, measured: which test files differ from the base and how, whether the
+ * tests gate passed on the delivered tree, and, where a file added tests and the project can run
+ * one file, whether that file fails over the base's source. A model saying "tests added" is not
+ * this; an assertion count alone is not this either, so the names travel with the counts.
+ */
+async function accountForRegressionTests(
+  deps: AutoResolveDependencies,
+  cycle: GateCycle,
+  final: MeasureSnapshot,
+): Promise<RegressionTestAccount> {
+  const files: RegressionTestFile[] = [];
+  for (const path of Object.keys(final.perTestFile).sort()) {
+    const now = final.perTestFile[path] ?? emptyTestFileMeasures;
+    const atBase = final.perTestFileAtBase[path] ?? emptyTestFileMeasures;
+    const testsAdded = Object.keys(now.perTest).filter((name) => !(name in atBase.perTest));
+    const testsRemoved = Object.keys(atBase.perTest).filter((name) => !(name in now.perTest));
+    const assertionsAdded = now.assertions - atBase.assertions;
+    if (testsAdded.length === 0 && testsRemoved.length === 0 && assertionsAdded === 0) continue;
+    // Run only where the harness can hand the runner this one file and read its result points: a
+    // project whose fallback is its whole test script is not run here, since that script can be
+    // the browser suite, and this reading is taken on every run that added a test.
+    const control =
+      testsAdded.length === 0 || deps.baseControl === null
+        ? null
+        : deps.baseControl.attributes?.(path) === false
+          ? indeterminate(
+              "not run: this project has no command the harness can hand one test file to; its whole test script would run instead",
+            )
+          : await deps.baseControl.runOnBaseSource(path);
+    files.push({
+      path,
+      testsAdded,
+      testsRemoved,
+      assertionsAdded,
+      onBaseSource:
+        control === null
+          ? null
+          : { outcome: control.outcome, detail: control.detail, failedTests: control.failedTests },
+    });
+  }
+  const tests = cycle.runs.find((run) => run.gateId === "tests");
+  const testsGate =
+    tests === undefined
+      ? "absent"
+      : tests.status === "passed" || tests.status === "failed"
+        ? tests.status
+        : "not-applicable";
+  const recorded = await deps.evidence.record({
+    type: "verification-command",
+    actor: "harness",
+    provenance: ["tool-output"],
+    payload: asJsonValue({
+      rule: "regression-tests-v1",
+      files,
+      testsGate,
+      limitation:
+        "tests and assertions are counted from the files' text by name; a file is run over the base's source only where it added tests and the project runs one file on its own, and its failing tests are named only where the runner's reporter attributes them; nothing here judges whether a failing test is about the task's defect",
+    }),
+  });
+  return { files, testsGate, record: recorded.record.payloadDigest };
 }
 
 async function tryResolve(

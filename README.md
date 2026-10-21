@@ -3,7 +3,9 @@
 `swarm` is a command-line coding agent for git repositories. You describe a change in plain
 words; it edits your working tree with a local or hosted model, runs your project's checks,
 repairs failures within a fixed number of attempts, and reports what was actually established,
-with a signed record of every command it ran.
+with a signed record of every command it ran. A loop that hits its step limit before it reports
+the task done is continued once, from the same attempts and allowances, once the checks are
+green; the report says whether that happened and what the test files add against the base.
 
 ```sh
 swarm "make slugify in slug.js turn each run of spaces into one dash, and add a test for it" \

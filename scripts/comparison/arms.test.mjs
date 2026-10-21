@@ -302,6 +302,29 @@ describe("reading what the arms reported", () => {
     expect(claimedSuccess("opencode", 0, "")).toBe(false);
   });
 
+  it("reads Swarm's own lifecycle: an acceptable verdict over a loop stopped at a limit is not a completion claim", () => {
+    const line = (outcome) =>
+      JSON.stringify({
+        schema: "swarm.result.v1",
+        verdict: { acceptable: true },
+        ...(outcome === undefined ? {} : { outcome }),
+      });
+    expect(completionAccount("swarm", 0, null, line({ lifecycle: "completed" }))).toEqual({
+      ended: "exited",
+      claim: "claimed",
+      basis: "the product reported its verdict as acceptable",
+    });
+    expect(completionAccount("swarm", 0, null, line({ lifecycle: "max-steps" }))).toEqual({
+      ended: "exited",
+      claim: "none",
+      basis:
+        "the product reported its verdict as acceptable and its loop stopped as max-steps, not completed",
+    });
+    expect(claimedSuccess("swarm", 0, line({ lifecycle: "max-steps" }))).toBe(false);
+    // A result without an outcome (an older build) reads as before.
+    expect(completionAccount("swarm", 0, null, line(undefined)).claim).toBe("claimed");
+  });
+
   it("keeps the process exit, the lifecycle and the explicit completion claim apart, and never reads progress text as a claim", () => {
     const start = '{"type":"step_start","part":{"type":"step-start"}}';
     const text =
