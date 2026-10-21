@@ -1,6 +1,6 @@
 # Results
 
-Rendered 2026-10-21T17:03:43.184Z from 1 record(s) of the 1 launches the manifest froze (1 completed, 0 infrastructure attempt(s)); manifest digest `sha256:da4bc0fe6ae0d0d001b96559467bcade8dd55c5cb15d665db8076dfca61db6a9`. Each count is against the number of launches started for that arm; a task not yet launched is "not run". The protocol is [protocol.md](protocol.md).
+Rendered 2026-10-21T17:03:43.184Z from 1 record(s) of the 1 launches the manifest froze (1 completed, 0 infrastructure attempt(s)); manifest digest `sha256:da4bc0fe6ae0d0d001b96559467bcade8dd55c5cb15d665db8076dfca61db6a9`. Each count is against the number of launches started for that arm; a task not yet launched is "not run". The protocol is [protocol.md](../protocol.md) (this link repointed by hand after rendering: the publisher writes a sibling link, and launch 2's records sit one directory below the protocol).
 
 | measure | swarm | opencode |
 | --- | --- | --- |
