@@ -117,3 +117,23 @@ the base on this host (a test suite submodule) and are not usable.
 ---
 
 ## Amendments
+
+### 1. 2026-10-21 14:55 UTC, after launch 1: a named correction, and a second development launch
+
+Launch 1 was not delivered ([launches.md](launches.md)): the source passed the sealed tests,
+the hidden API check and the project's suite, and the run's own nine new test cases failed on
+their own errors. Both repair attempts fixed those cases, turning lint and tests green with the
+independent verification reading `regression pass`, and both were rejected by the ratchet as a
+one-assertion decrease: the repair replaced two calls to `assert.isNotUndefined`, a method
+referee does not have, with `refute.isUndefined`, and the product's assertion measure
+(`src/gates/measures.ts`) counted `assert`, `expect` and `should` and not referee's `refute`,
+which the comparison's own policy counter already counted. A green repair read as a weakened
+suite, the attempts were reverted and the first tree was delivered.
+
+The correction: `refute` counts as an assertion, with a regression test replaying the two
+versions of the test (`src/gates/measures.test.ts`), commit `643b9ef4c`. Nothing else changes:
+not the model, not the budgets, not the task, not the prompt, not the ratchet rule. The second
+development launch runs the same configuration on the build pinned at `643b9ef4c`
+([manifest-2.json](manifest-2.json)), order 1. It is a launch of a corrected product, not a
+retry hoping for a better answer: the model's own test errors may recur, and whether the
+corrected measure lets a green repair stand is what the launch measures.
