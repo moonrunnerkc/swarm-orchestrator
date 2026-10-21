@@ -160,3 +160,24 @@ verifier re-derives every one of those assessments. Separately, tests that pin o
 wording: the brief's text and identity (`src/task-continuation.test.ts`), the lifecycle rule over
 synthetic records including the legacy reading (`src/evidence/run-assessment.test.ts`), the
 outcome lines (`src/cli-run-outcome.test.ts`), the harness's reading (`scripts/comparison/arms.test.mjs`).
+
+## 4. The trial
+
+Registered in [protocol.md](protocol.md) before any inference; every launch in
+[launches.md](launches.md); the records in [records/](records/); every payload of each launch in
+[packed-derived/payloads](packed-derived/payloads/) ([payloads-inventory.json](payloads-inventory.json)).
+
+**Launch 1** (`87b6f294e`, 282.5 s, 1,011,623 tokens): the first loop stopped at its 40-step cap
+with the source written and no test; cycle 0 failed lint (three errors in `src/sinon/stub.js`).
+Repair attempts 1 and 2 each answered with one step of text and no tool call, were counted and
+measured over the unchanged tree, and were accepted by the ratchet as moving nothing; attempt 3
+fixed lint in 14 steps. The continuation was withheld: no attempt was left under the cap of 3.
+The delivered source is correct under the frozen evaluator (the sealed upstream tests, the
+`resetBehavior` case included; the hidden API check; the project's suite), and no test was
+written. The product reported it as it was: lifecycle `max-steps`, "its continuation was
+withheld (no attempt was left under the cap of 3), so the task may be unfinished", "regression
+tests: no test file differs from the base, so none was added"; the harness read no completion
+claim. Not delivered (item 5): the test deliverable is absent and the lifecycle is not
+`completed`. Earliest actionable failure: a repair attempt that calls no tool changes nothing and
+still consumed an attempt; corrected in `cbf9544b4` (amendment 1), with its regression failing
+on `87b6f294e` ([regressions-on-87b6f294e/](regressions-on-87b6f294e/)).

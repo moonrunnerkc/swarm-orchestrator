@@ -148,8 +148,8 @@ freeze` from `campaign/pr-tasks/viable.json` before any agent ran on any of them
 - **79 historical tasks**, every task of the reach-pressure cohort, kept whole.
 - **75 new tasks** from two walks of the campaign selection's GitHub search, continued past the
   26 JavaScript and TypeScript repositories the miner had always read
-  ([`repository-pool.json`](../../../../campaign/pr-tasks/repository-pool.json), 30 accepted of
-  594 walked; [`repository-pool-2.json`](../../../../campaign/pr-tasks/repository-pool-2.json), 40
+  ([`repository-pool.json`](../../../../campaign/pr-tasks/packed-derived/repository-pools/) (the file campaign/pr-tasks/repository-pool.json, packed on 2026-10-21 to keep the tree's weight headroom; `scripts/evidence-pack.mjs` restore gives the bytes back), 30 accepted of
+  594 walked; [`repository-pool-2.json`](../../../../campaign/pr-tasks/packed-derived/repository-pools/) (the file campaign/pr-tasks/repository-pool-2.json, packed on 2026-10-21 to keep the tree's weight headroom; `scripts/evidence-pack.mjs` restore gives the bytes back), 40
   of 383). The walk applies the campaign's own search, ordering, search rules and checkout rules,
   skips every repository already mined, requires `package-lock.json` because the pipeline installs
   with `npm ci` only, and does not run the campaign's container suite, since each task's own

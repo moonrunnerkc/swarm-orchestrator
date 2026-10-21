@@ -124,3 +124,30 @@ three commits is named anywhere in this repository but that candidates file.
 ---
 
 ## Amendments
+
+### 1. 2026-10-21 16:52 UTC, after launch 1: a reproduced defect, a named correction, and a second development launch
+
+Launch 1 was not delivered ([launches.md](launches.md)): the source passed the sealed tests,
+the hidden API check and the project's suite; no test was written; the product reported its
+loop stopped at its step limit, its continuation withheld and no test file changed, and the
+harness read no completion claim. The trace: repair attempts 1 and 2 each answered the lint
+failure with one step of text and no tool call ("Let me read the current state of the files
+first"), each was counted as a finished attempt and measured over the unchanged tree (lint
+failing identically at cycles 0, 1 and 2, the ratchet accepting a candidate that moved nothing),
+attempt 3 fixed lint in 14 steps, and the continuation was withheld with no attempt left under
+the cap of 3.
+
+The defect, reproduced with no model: `src/agent-run.test.ts`, "tells a repair that called no
+tool so, once, inside the same attempt, and leaves the continuation its attempt", a scripted
+repair that answers with text and no call; on `87b6f294e` the attempts are 1, 2 and 3 and the
+continuation is attempt 3 ([regressions-on-87b6f294e/](regressions-on-87b6f294e/)).
+
+The correction, commit `cbf9544b4`: an attempt whose answer called no tool is told so once, as a
+user message in the same conversation, and continues under what remains of its own budget; a
+second answer with no call then stands as the attempt's. The notice is recorded on the chain
+(`no-action-notice-v1`). Nothing else changes: not the model, the budgets, the task, the prompt,
+the step cap, the attempt cap, the ratchet or the continuation. The second development launch
+runs the same configuration on the build pinned at `cbf9544b4` ([manifest-2.json](manifest-2.json)),
+order 1. It is a launch of a corrected product, not a retry hoping for a better answer: whether a
+repair told it acted on nothing then acts, and whether the continuation it leaves room for
+writes the test, is what the launch measures.
