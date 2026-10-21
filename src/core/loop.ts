@@ -353,7 +353,7 @@ export async function runAgentLoop(
           ? {
               ...outcome,
               output: repeatedAnswerNotice(call.toolName, outcome.output, repeats, {
-                writes: writers.has(call.toolName),
+                landed: writers.has(call.toolName) && !outcome.failed,
               }),
             }
           : outcome,
