@@ -1,0 +1,186 @@
+8 03:23:32 goal-verification: {"accepted":false,"checkResults":[{"detail":"command exited 1; its output ends:\nnode:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: Expected values to be strictly ...
+27 03:23:36 tool list requested: list requested | input {"path":"."}
+33 03:23:37 tool list requested: list requested | input {"path":"src/sinon"}
+35 03:23:37 tool list requested: list requested | input {"path":"acceptance/visible"}
+41 03:23:37 tool read requested: read requested | input {"path":"acceptance/visible/check.mjs"}
+47 03:23:38 tool read requested: read requested | input {"path":"src/sinon/mock.js"}
+49 03:23:39 tool read requested: read requested | input {"path":"src/sinon/mock-expectation.js"}
+55 03:23:41 tool read requested: read requested | input {"path":"src/sinon/stub.js"}
+57 03:23:41 tool read requested: read requested | input {"path":"src/sinon/behavior.js"}
+63 03:23:44 tool read requested: read requested | input {"path":"src/sinon/proxy-invoke.js"}
+65 03:23:44 tool read requested: read requested | input {"path":"src/sinon/spy.js"}
+71 03:23:49 tool read requested: read requested | input {"path":"src/sinon/proxy.js"}
+77 03:23:54 tool read requested: read requested | input {"path":"src/sinon/mock-expectation.js","startLine":1}
+83 03:23:57 tool search requested: search requested | input {"path":"src/sinon/mock-expectation.js","pattern":"\\.apply\\("}
+89 03:23:58 tool search requested: search requested | input {"path":"src/sinon/mock.js","pattern":"\\.apply\\("}
+95 03:24:00 tool search requested: search requested | input {"path":"src/sinon/stub.js","pattern":"apply"}
+101 03:24:01 tool search requested: search requested | input {"path":"src/sinon/proxy.js","pattern":"apply\""}
+107 03:24:02 tool search requested: search requested | input {"path":"src/sinon/proxy.js","pattern":"\\.apply\\("}
+113 03:24:03 tool search requested: search requested | input {"path":"src/sinon/spy.js","pattern":"apply"}
+119 03:24:04 tool search requested: search requested | input {"path":"src/sinon/assert.js","pattern":"\\.apply\\("}
+125 03:24:05 tool read requested: read requested | input {"path":"src/sinon/assert.js"}
+131 03:24:08 tool search requested: search requested | input {"path":"src/sinon/stub.js","pattern":"\\.apply|invoke"}
+137 03:24:10 tool read requested: read requested | input {"path":"src/sinon/util/core/extend.js"}
+143 03:24:19 tool read requested: read requested | input {"path":"src/sinon/proxy-call-util.js"}
+149 03:24:22 tool shell requested: shell requested | input {"command":"node acceptance/visible/check.mjs 2>&1 || true"}
+151 03:24:23 shell: node acceptance/visible/check.mjs 2>&1 || true -> exit 0
+156 03:24:41 tool read requested: read requested | input {"path":"src/sinon/mock.js","startLine":120}
+162 03:24:56 tool read requested: read requested | input {"endLine":70,"path":"src/sinon/stub.js","startLine":35}
+168 03:24:58 tool read requested: read requested | input {"endLine":80,"path":"src/sinon/stub.js","startLine":67}
+174 03:24:59 tool search requested: search requested | input {"path":"test/","pattern":"onCall"}
+180 03:25:01 tool read requested: read requested | input {"endLine":3150,"path":"test/src/stub-test.js","startLine":2898}
+186 03:25:04 tool search requested: search requested | input {"path":"test/","pattern":"\\.expects.*onCall|mock.*onCall"}
+192 03:25:05 tool search requested: search requested | input {"path":"test/src/mock-test.js","pattern":"onCall"}
+198 03:25:06 tool list requested: list requested | input {"path":"test/src"}
+204 03:25:07 tool read requested: read requested | input {"path":"test/src/mock-test.js"}
+210 03:25:18 tool read requested: read requested | input {"path":"package.json"}
+216 03:25:22 tool declare_file_set requested: declare_file_set requested | input {"files":["src/sinon/stub.js","test/src/mock-test.js"],"temporary":["/tmp/debug_test.mjs"]}
+217 03:25:22 file-set-declared: ["src/sinon/stub.js","test/src/mock-test.js"]
+223 03:25:24 tool read requested: read requested | input {"endLine":215,"path":"src/sinon/stub.js","startLine":170}
+229 03:25:29 tool edit requested: edit requested | input {"find":"function getCurrentBehavior(stubInstance) {\n    const currentBehavior = stubInstance.behaviors[stubInstance.callCount - 1];\n    return currentBehavio...
+230 03:25:29 edit src/sinon/stub.js
+235 03:25:31 tool read requested: read requested | input {"path":"src/sinon/mock.js"}
+252 03:25:41 tool edit requested: edit requested | input {"find":"    create: function create(object) {\n        if (!object) {\n            throw new TypeError(\"object is null\");\n        }\n\n        const mockObj...
+253 03:25:41 tool edit failed: src/sinon/mock.js is outside the declared file set (src/sinon/stub.js, test/src/mock-test.js). Call amend_file_set with a reason a reviewer will read, naming src/sinon/mock.js, before writing it. | input {"find":"    create: function create(object) {\n        if (!object) {\n            throw new TypeError(\"object is null\");\n        }\n\n        const mockObj...
+269 03:25:45 tool amend_file_set requested: amend_file_set requested | input {"files":["src/sinon/mock.js"],"reason":"The fix requires modifying src/sinon/mock.js to track per-method call indices and pass them to the stub during behavior...
+270 03:25:45 file-set-amended: ["src/sinon/mock.js"] added ["src/sinon/mock.js"] (The fix requires modifying src/sinon/mock.js to track per-method call indices and pass them to the stub during behavior ...)
+271 03:25:45 claim: {"narrative":"The declared file set was widened to cover src/sinon/mock.js. Stated reason: The fix requires modifying src/sinon/mock.js to track per-method call indices and pass them to the stub during behavior resolutio...
+288 03:25:49 tool edit requested: edit requested | input {"find":"    create: function create(object) {\n        if (!object) {\n            throw new TypeError(\"object is null\");\n        }\n\n        const mockObj...
+289 03:25:49 edit src/sinon/mock.js
+305 03:25:59 tool edit requested: edit requested | input {"find":"    invokeMethod: function invokeMethod(method, thisValue, args) {\n        /* if we cannot find any matching files we will explicitly call mockExpecti...
+306 03:25:59 tool edit failed: no occurrence of the search text in src/sinon/mock.js. Read the file and copy the exact text. | input {"find":"    invokeMethod: function invokeMethod(method, thisValue, args) {\n        /* if we cannot find any matching files we will explicitly call mockExpecti...
+322 03:26:03 tool read requested: read requested | input {"endLine":130,"path":"src/sinon/mock.js","startLine":84}
+339 03:26:06 tool read requested: read requested | input {"path":"src/sinon/mock.js","startLine":130}
+341 03:26:06 session-stopped: max-steps steps 40 tokens 961970
+345 03:26:14 gate lint attempt 0: failed the command exited 1
+347 03:26:15 gate tests attempt 0: passed the command exited 0
+357 03:26:40 goal-verification: {"accepted":false,"checkResults":[{"detail":"command exited 1; its output ends:\nnode:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: Expected values to be strictly ...
+358 03:26:48 independent-verification: applied sha256:48c40abed4507d89191938accadcdfc159d7584ab540f3ec691445278a6c13f7 regression fail a check failed on this patch in a way it did not fail at the base commit: lint. Read its finding abo...
+359 03:26:48 gate task-acceptance attempt 0: failed the inspection exited 1
+364 03:26:54 tool read requested: read requested | input {"path":"src/sinon/mock.js"}
+366 03:26:54 tool read requested: read requested | input {"path":"src/sinon/mock-expectation.js"}
+368 03:26:54 tool read requested: read requested | input {"path":"src/sinon/stub.js"}
+374 03:27:00 tool read requested: read requested | input {"path":"src/sinon/proxy-invoke.js"}
+380 03:27:02 tool read requested: read requested | input {"path":"src/sinon/behavior.js"}
+386 03:27:09 tool read requested: read requested | input {"path":"acceptance/visible/check.mjs"}
+392 03:27:13 tool read requested: read requested | input {"path":"src/sinon/mock.js"}
+398 03:27:15 tool amend_file_set requested: amend_file_set requested | input {"files":["src/sinon/mock.js","src/sinon/stub.js"],"reason":"The lint gate fails on underscore-prefixed variables in both files. Both src/sinon/mock.js and src/...
+399 03:27:16 file-set-amended: ["src/sinon/mock.js","src/sinon/stub.js"] (The lint gate fails on underscore-prefixed variables in both files. Both src/sinon/mock.js and src/sinon/stub.js need to...)
+400 03:27:16 claim: {"narrative":"An amendment was recorded for src/sinon/mock.js, src/sinon/stub.js, which the set already allowed. Stated reason: The lint gate fails on underscore-prefixed variables in both files. Both src/sinon/mock.js a...
+406 03:27:17 tool search requested: search requested | input {"path":"src/sinon","pattern":"eslint-disable.*no-underscore-dangle"}
+412 03:27:20 tool edit requested: edit requested | input {"find":"    create: function create(object) {\n        if (!object) {\n            throw new TypeError(\"object is null\");\n        }\n\n        const mockObj...
+413 03:27:20 edit src/sinon/mock.js
+418 03:27:23 tool edit requested: edit requested | input {"find":"function getCurrentBehavior(stubInstance) {\n    // During mock invocation, the call index may be overridden to reflect the\n    // global position acr...
+419 03:27:23 edit src/sinon/stub.js
+424 03:27:25 tool read requested: read requested | input {"path":"src/sinon/mock.js"}
+430 03:27:28 tool edit requested: edit requested | input {"find":"        if (expectationsToApply.length > 0) {\n            return expectationsToApply[0].apply(thisValue, args);\n        }","path":"src/sinon/mock.js"...
+431 03:27:28 edit src/sinon/mock.js
+436 03:27:31 tool edit requested: edit requested | input {"find":"        if (available && exhausted === 0) {\n            return available.apply(thisValue, args);\n        }","path":"src/sinon/mock.js","replace":"   ...
+437 03:27:31 edit src/sinon/mock.js
+442 03:27:33 tool shell requested: shell requested | input {"command":"cd /Users/brad/swarm-comparison-work/sinon-bugfix-mock-oncall-expectations.swarm-O8taaW/workspace && node acceptance/visible/check.mjs 2>&1","timeou...
+443 03:27:33 shell: cd /Users/brad/swarm-comparison-work/sinon-bugfix-mock-oncall-expectations.swarm-O8taaW/workspace && node acceptance/vis... -> exit 0
+448 03:27:34 tool shell requested: shell requested | input {"command":"cd /Users/brad/swarm-comparison-work/sinon-bugfix-mock-oncall-expectations.swarm-O8taaW/workspace && npm run lint 2>&1","timeoutMs":30000}
+449 03:27:36 shell: cd /Users/brad/swarm-comparison-work/sinon-bugfix-mock-oncall-expectations.swarm-O8taaW/workspace && npm run lint 2>&1 -> exit 1
+454 03:27:38 tool read requested: read requested | input {"endLine":200,"path":"src/sinon/mock.js","startLine":145}
+460 03:27:46 tool edit requested: edit requested | input {"find":"        if (expectationsToApply.length > 0) {\n            // eslint-disable-next-line no-underscore-dangle\n            const callIndex =\n           ...
+461 03:27:46 edit src/sinon/mock.js
+466 03:27:49 tool shell requested: shell requested | input {"command":"cd /Users/brad/swarm-comparison-work/sinon-bugfix-mock-oncall-expectations.swarm-O8taaW/workspace && grep -n '_mockCallsOn\\|no-underscore-dangle' s...
+467 03:27:49 shell: cd /Users/brad/swarm-comparison-work/sinon-bugfix-mock-oncall-expectations.swarm-O8taaW/workspace && grep -n '_mockCalls... -> exit 0
+472 03:27:57 tool edit requested: edit requested | input {"find":"        if (expectationsToApply.length > 0) {\n            // eslint-disable-next-line no-underscore-dangle\n            const callIndex =\n           ...
+473 03:27:58 edit src/sinon/mock.js
+478 03:28:00 tool shell requested: shell requested | input {"command":"cd /Users/brad/swarm-comparison-work/sinon-bugfix-mock-oncall-expectations.swarm-O8taaW/workspace && grep -n '_mockCallIndex\\|no-underscore-dangle'...
+479 03:28:00 shell: cd /Users/brad/swarm-comparison-work/sinon-bugfix-mock-oncall-expectations.swarm-O8taaW/workspace && grep -n '_mockCallI... -> exit 0
+484 03:28:03 tool edit requested: edit requested | input {"find":"function getCurrentBehavior(stubInstance) {\n    // During mock invocation, the call index may be overridden to reflect the\n    // global position acr...
+485 03:28:03 edit src/sinon/stub.js
+490 03:28:05 tool shell requested: shell requested | input {"command":"cd /Users/brad/swarm-comparison-work/sinon-bugfix-mock-oncall-expectations.swarm-O8taaW/workspace && npm run lint 2>&1","timeoutMs":30000}
+491 03:28:07 shell: cd /Users/brad/swarm-comparison-work/sinon-bugfix-mock-oncall-expectations.swarm-O8taaW/workspace && npm run lint 2>&1 -> exit 1
+496 03:28:09 tool read requested: read requested | input {"endLine":240,"path":"src/sinon/stub.js","startLine":225}
+502 03:28:11 tool edit requested: edit requested | input {"find":"    // eslint-disable-next-line no-underscore-dangle\n    const idx = typeof stubInstance._mockCallIndex === \"number\"\n        ? stubInstance._mockCa...
+503 03:28:11 edit src/sinon/stub.js
+508 03:28:12 tool shell requested: shell requested | input {"command":"cd /Users/brad/swarm-comparison-work/sinon-bugfix-mock-oncall-expectations.swarm-O8taaW/workspace && npm run lint 2>&1","timeoutMs":30000}
+509 03:28:14 shell: cd /Users/brad/swarm-comparison-work/sinon-bugfix-mock-oncall-expectations.swarm-O8taaW/workspace && npm run lint 2>&1 -> exit 0
+514 03:28:16 tool shell requested: shell requested | input {"command":"cd /Users/brad/swarm-comparison-work/sinon-bugfix-mock-oncall-expectations.swarm-O8taaW/workspace && node acceptance/visible/check.mjs 2>&1","timeou...
+515 03:28:16 shell: cd /Users/brad/swarm-comparison-work/sinon-bugfix-mock-oncall-expectations.swarm-O8taaW/workspace && node acceptance/vis... -> exit 0
+520 03:28:17 tool shell requested: shell requested | input {"command":"cd /Users/brad/swarm-comparison-work/sinon-bugfix-mock-oncall-expectations.swarm-O8taaW/workspace && npm run test-node 2>&1","timeoutMs":120000}
+521 03:28:18 shell: cd /Users/brad/swarm-comparison-work/sinon-bugfix-mock-oncall-expectations.swarm-O8taaW/workspace && npm run test-node 2... -> exit 0
+526 03:28:20 tool shell requested: shell requested | input {"command":"cd /Users/brad/swarm-comparison-work/sinon-bugfix-mock-oncall-expectations.swarm-O8taaW/workspace && git diff src/sinon/mock.js src/sinon/stub.js 2>...
+527 03:28:21 shell: cd /Users/brad/swarm-comparison-work/sinon-bugfix-mock-oncall-expectations.swarm-O8taaW/workspace && git diff src/sinon/... -> exit 0
+532 03:28:23 tool claim requested: claim requested | input {"narrative":"lint passes cleanly — all ESLint errors resolved with proper eslint-disable comments for underscore-prefixed internal identifiers.","predicate":"f...
+533 03:28:23 tool claim denied (invalid-input): input rejected: [
+  {
+    "origin": "string",
+    "code": "invalid_format",
+    "format": "regex",
+    "pattern": "/^sha256:[0-9a-f]{64}$/",
+    "path": [
+      "record"
+    ],
+    "message": "Invalid... | input {"narrative":"lint passes cleanly — all ESLint errors resolved with proper eslint-disable comments for underscore-prefixed internal identifiers.","predicate":"f...
+538 03:28:25 tool claim requested: claim requested | input {"narrative":"Lint passed — previous lint had been fixed and we now verify again. All 0 ESLint errors remaining.","predicate":"facts.exitCode == 0","record":"bf...
+539 03:28:25 tool claim denied (invalid-input): input rejected: [
+  {
+    "origin": "string",
+    "code": "invalid_format",
+    "format": "regex",
+    "pattern": "/^sha256:[0-9a-f]{64}$/",
+    "path": [
+      "record"
+    ],
+    "message": "Invalid... | input {"narrative":"Lint passed — previous lint had been fixed and we now verify again. All 0 ESLint errors remaining.","predicate":"facts.exitCode == 0","record":"bf...
+544 03:28:27 tool run_check requested: run_check requested | input {"check":"visible-check"}
+549 03:28:53 goal-verification: {"accepted":true,"checkResults":[{"detail":"command exited 0","id":"visible-check","record":"sha256:08a7604d06421dd2481e3cb47db4717445d48e429631ed92d1cf9bf7a47f5c14","status":"accepted"}],"contractDigest":"sha256:2b548ef...
+550 03:28:54 independent-verification: applied sha256:d80a50ed00690aa1e7dac06110bffaea11606425e040e1ddd02720974d29a0a4 regression pass a check passes only with this patch's changes to the runner configuration (src/sinon/mock.js, src/si...
+556 03:28:56 tool claim requested: claim requested | input {"narrative":"visible acceptance check passes — onCall() behaviors now correctly resolve by global call position across all expectations for a mocked method.","...
+557 03:28:56 tool claim denied (invalid-input): input rejected: [
+  {
+    "origin": "string",
+    "code": "invalid_format",
+    "format": "regex",
+    "pattern": "/^sha256:[0-9a-f]{64}$/",
+    "path": [
+      "record"
+    ],
+    "message": "Invalid... | input {"narrative":"visible acceptance check passes — onCall() behaviors now correctly resolve by global call position across all expectations for a mocked method.","...
+562 03:28:58 tool shell requested: shell requested | input {"command":"cd /Users/brad/swarm-comparison-work/sinon-bugfix-mock-oncall-expectations.swarm-O8taaW/workspace && git diff --stat HEAD 2>&1"}
+563 03:28:58 shell: cd /Users/brad/swarm-comparison-work/sinon-bugfix-mock-oncall-expectations.swarm-O8taaW/workspace && git diff --stat HEA... -> exit 0
+568 03:29:05 tool claim requested: claim requested | input {"narrative":"All checks pass — visible acceptance check and all project tests.","predicate":"accepted == true","record":"791c5532c773c586d035a2ebdfab4ad3c434fd...
+569 03:29:05 tool claim denied (invalid-input): input rejected: [
+  {
+    "origin": "string",
+    "code": "invalid_format",
+    "format": "regex",
+    "pattern": "/^sha256:[0-9a-f]{64}$/",
+    "path": [
+      "record"
+    ],
+    "message": "Invalid... | input {"narrative":"All checks pass — visible acceptance check and all project tests.","predicate":"accepted == true","record":"791c5532c773c586d035a2ebdfab4ad3c434fd...
+574 03:29:08 session-stopped: completed steps 34 tokens 766407
+579 03:29:15 gate tests attempt 1: passed the command exited 0
+589 03:29:39 goal-verification: {"accepted":true,"checkResults":[{"detail":"command exited 0","id":"visible-check","record":"sha256:04817e2efab6bf6cbde3be1212875742323f9f999a6f4d29ab0667db3297b332","status":"accepted"}],"contractDigest":"sha256:2b548ef...
+590 03:29:40 independent-verification: applied sha256:d80a50ed00690aa1e7dac06110bffaea11606425e040e1ddd02720974d29a0a4 regression pass a check passes only with this patch's changes to the runner configuration (src/sinon/mock.js, src/si...
+592 03:29:40 ratchet attempt 1 (retry): accepted true the ratchet accepted the attempt: no measure moved the wrong way (not compared: testsCollected, changedLineCoverage) measures after {"assertions":0,"changedLineCoverage":null,"skipMarkers":0,"testsCollected":null,"testsDeclared":0}
+596 03:29:43 tool run_check requested: run_check requested | input {"check":"visible-check"}
+601 03:30:08 goal-verification: {"accepted":true,"checkResults":[{"detail":"command exited 0","id":"visible-check","record":"sha256:739a30e839a0e0d38c31b4138d5cbfb2d39865dbe48bcb71f440720a171d8ea4","status":"accepted"}],"contractDigest":"sha256:2b548ef...
+602 03:30:09 independent-verification: applied sha256:d80a50ed00690aa1e7dac06110bffaea11606425e040e1ddd02720974d29a0a4 regression pass a check passes only with this patch's changes to the runner configuration (src/sinon/mock.js, src/si...
+604 03:30:09 tool read requested: read requested | input {"path":"acceptance/visible/check.mjs"}
+610 03:30:10 tool shell requested: shell requested | input {"command":"npm run test-node 2>&1 | tail -80","timeoutMs":120000}
+611 03:30:11 shell: npm run test-node 2>&1 | tail -80 -> exit 0
+616 03:30:13 tool read requested: read requested | input {"path":"src/sinon/mock.js"}
+618 03:30:13 tool read requested: read requested | input {"path":"src/sinon/stub.js"}
+624 03:30:16 tool shell requested: shell requested | input {"command":"npm run test-node 2>&1 | tail -20","timeoutMs":120000}
+625 03:30:17 shell: npm run test-node 2>&1 | tail -20 -> exit 0
+630 03:30:21 session-stopped: completed steps 5 tokens 44911
+635 03:30:28 gate tests attempt 2: passed the command exited 0
+645 03:30:53 goal-verification: {"accepted":true,"checkResults":[{"detail":"command exited 0","id":"visible-check","record":"sha256:89f533e137f253f2869f75da8c6f945913eba174c29abd9cc1ab3713c30ee948","status":"accepted"}],"contractDigest":"sha256:2b548ef...
+646 03:30:54 independent-verification: applied sha256:d80a50ed00690aa1e7dac06110bffaea11606425e040e1ddd02720974d29a0a4 regression pass a check passes only with this patch's changes to the runner configuration (src/sinon/mock.js, src/si...
+648 03:30:54 ratchet attempt 2 (retry): accepted true the ratchet accepted the attempt: no measure moved the wrong way (not compared: testsCollected, changedLineCoverage) measures after {"assertions":0,"changedLineCoverage":null,"skipMarkers":0,"testsCollected":null,"testsDeclared":0}
+649 03:30:54 session-stopped: repair-withheld steps undefined tokens undefined
+650 03:30:54 ratchet attempt 3 (retry): accepted false the attempt produced nothing to judge: repair stopped: no usable budget remains for attempt 3: 6226712 tokens and 0 ms left, and an attempt needs at least 8192 ... measures after {"assertions":0,"changedLineCoverage":null,"skipMarkers":0,"testsCollected":null,"testsDeclared":0}
+651 03:30:54 ratchet attempt 0 (base): accepted true the ratchet accepted the attempt: no measure moved the wrong way (not compared: testsCollected, changedLineCoverage) measures after {"assertions":0,"changedLineCoverage":null,"skipMarkers":0,"testsCollected":null,"testsDeclared":0}
+652 03:30:54 escalation: unknown attempts 3/3 the run stopped with a blocking failure that is no longer in the final cycle
+653 03:30:54 claim: {"narrative":"Auto-resolve stopped at the unknown gate: the run stopped with a blocking failure that is no longer in the final cycle","predicate":"attemptsUsed == 3 && cap == 3","record":"sha256:9dfd989c44c2433c91f2807a8...
+661 03:30:56 workspace-diff sha256:1f3d6af04eca9b5547d0735dbb4b1752865ef1862f13df2a5644ccf09acc1deb 2501 chars; files: src/sinon/mock.js, src/sinon/stub.js
+663 03:30:56 run-assessment: {"inputs":{"baseRatchetAccepted":true,"baseRatchetRecord":"sha256:c1f07b2fa65e1cce19f3f28e829721bab9eae749620d99b24790492d1f3dd709","cancelled":false,"changedFiles":2,"contractRecord":"sha256:44aa843e403d2c2f3f9c85161146...
+668 03:31:20 goal-verification: {"accepted":true,"checkResults":[{"detail":"command exited 0","id":"visible-check","record":"sha256:04817e2efab6bf6cbde3be1212875742323f9f999a6f4d29ab0667db3297b332","status":"accepted"}],"contractDigest":"sha256:2b548ef...
+669 03:31:21 independent-verification: applied sha256:d80a50ed00690aa1e7dac06110bffaea11606425e040e1ddd02720974d29a0a4 regression pass a check passes only with this patch's changes to the runner configuration (src/sinon/mock.js, src/si...
+670 03:31:21 run-assessment: {"inputs":{"independentRecord":"sha256:1d11fb521d4a4a03ba597aaeaedb24af40936f9e1c71ad50c7be9bc372d86ebd","policy":"run-acceptance-v3","previousAssessment":"sha256:996e433b2b5612fe29b0211e306dae81b42551cc8ee2a8be55888d458...

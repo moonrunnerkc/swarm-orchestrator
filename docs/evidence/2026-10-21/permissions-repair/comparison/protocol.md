@@ -106,3 +106,22 @@ the exact commits.
 ---
 
 ## Amendments
+
+### 1. 2026-10-21 04:02 UTC, after launch 5 (order 4): recovery for the one remaining launch
+
+The runner halted after the Swarm launch on `sinon-bugfix-stub-accessor-calls` (order 4): the
+product exited 4, which the runner classifies as "the product could not run the task"
+(`configuration`), so launch order 5 (OpenCode on the same task) was not dispatched. The product
+did run the task: its own output shows a completed run of 57 steps with a changed tree
+(`src/sinon/default-behaviors.js`, `src/sinon/stub.js`, `test/src/stub-test.js`), and its exit 4
+came from its final verification reading "unmeasured" because its instrument closure treated
+the project's own source as the test runner's configuration (the same defect as launch 2's
+"unknown" escalation, recorded in the branch's commit `f6e13ca2f`, made after this stage was
+frozen and not in the pinned build). That is the arm's own result, not the experiment's
+failure: Swarm's attempt stands as recorded in
+`sinon-bugfix-stub-accessor-calls.swarm.halted-1.json` and is **not relaunched**. Its kept
+workspace is scored with the runner's own verdicts after the fact
+([scored/sinon-bugfix-stub-accessor-calls.swarm.json](scored/sinon-bugfix-stub-accessor-calls.swarm.json))
+and reported beside the others with that provenance named. The campaign is recovered with the
+justification above and continued for order 5 only (`--arm opencode`), inside the allowance:
+41.9 of the 90 agent-minutes used before it.
