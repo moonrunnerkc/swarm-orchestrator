@@ -478,10 +478,67 @@ const builtins = new Set([
 interface Reading {
   readonly specifiers: readonly string[];
   readonly strings: readonly string[];
+  /**
+   * Strings under a key that selects what the tool checks rather than what it loads: eslint's
+   * `files` and `ignores`, mocha's `spec`, a test runner's `include` and `exclude`, tsconfig's
+   * `files`, a coverage tool's `include`. The files they name are the subject of the check, and
+   * following them as loaded code made a project's source the instrument of its own lint.
+   */
+  readonly subjects: readonly string[];
   readonly globs: readonly string[];
   readonly open: readonly string[];
   /** Whether the file starts processes or loads code by a name it computes, so a string may name code it runs. */
   readonly runsNamedFiles: boolean;
+}
+
+/**
+ * Configuration keys whose values name the files a tool checks, by exact spelling, across the
+ * supported tools: eslint and prettier (`files`, `ignores`), mocha (`spec`, `extension`), vitest
+ * and jest and c8/nyc (`include`, `exclude`, `roots`, `testMatch`, `collectCoverageFrom`),
+ * playwright (`testDir`, `testMatch`, `testIgnore`), ava (`files`) and tsc (`files`, `include`,
+ * `exclude`). A key that names a file the tool loads (`file`, `require`, `setupFiles`,
+ * `ignorePath`, `extends`) is not among them and its values are followed as before.
+ */
+const subjectKeys: ReadonlySet<string> = new Set([
+  "files",
+  "ignores",
+  "ignore",
+  "ignorePatterns",
+  "spec",
+  "extension",
+  "extensions",
+  "include",
+  "exclude",
+  "roots",
+  "testMatch",
+  "testRegex",
+  "testPathIgnorePatterns",
+  "collectCoverageFrom",
+  "coveragePathIgnorePatterns",
+  "modulePathIgnorePatterns",
+  "watchPathIgnorePatterns",
+  "testDir",
+  "testIgnore",
+  "dir",
+  "all",
+]);
+
+const keyPattern = /([A-Za-z_$][\w$]*)["']?\s*[:=]/g;
+
+/**
+ * The key a string sits under: the last `name:` or `name=` since the previous string, the same
+ * key where only separators lie between (the value after a quoted key, the next entry of one
+ * array), the last one in the 300 characters before it for the first string of a file, and
+ * unknown after a closing bracket with no key since. Unknown reads as the instrument, which is
+ * the direction that withholds rather than passes.
+ */
+function keyOf(text: string, start: number, previousEnd: number, previousKey: string | null) {
+  const since = text.slice(previousEnd, start);
+  const named = [...since.matchAll(keyPattern)].at(-1)?.[1];
+  if (named !== undefined) return named;
+  if (previousKey === null)
+    return [...text.slice(Math.max(0, start - 300), start).matchAll(keyPattern)].at(-1)?.[1] ?? "";
+  return /^[\s,:([{]*$/.test(since) ? previousKey : "";
 }
 
 /** What a JavaScript or JSON-shaped file names: modules it loads and strings it holds. */
@@ -492,12 +549,25 @@ function readScript(text: string): Reading {
   ))
     if (match[1] !== undefined) specifiers.push(match[1]);
   const strings: string[] = [];
+  const subjects: string[] = [];
   const globs: string[] = [];
+  let previousEnd = 0;
+  let previousKey: string | null = null;
   for (const match of text.matchAll(/["'`]([^"'`\n]{1,300})["'`]/g)) {
     const value = match[1] ?? "";
-    if (/[*]/.test(value)) {
-      const before = text.slice(Math.max(0, (match.index ?? 0) - 300), match.index ?? 0);
-      const key = [...before.matchAll(/([A-Za-z_$][\w$]*)["']?\s*[:=]/g)].at(-1)?.[1] ?? "";
+    const start = match.index ?? 0;
+    const end = start + match[0].length;
+    // A quoted key (JSON, or a JavaScript object literal's "no-console") names what follows it.
+    if (/^\s*:/.test(text.slice(end, end + 40))) {
+      previousEnd = end;
+      previousKey = value;
+      continue;
+    }
+    const key = keyOf(text, start, previousEnd, previousKey);
+    previousEnd = end;
+    previousKey = key;
+    if (subjectKeys.has(key)) subjects.push(value);
+    else if (/[*]/.test(value)) {
       if (
         /setup|teardown|reporter|require|import|loader|plugin|environment|transform|serializer|resolver|runner|preset|extends/i.test(
           key,
@@ -519,7 +589,7 @@ function readScript(text: string): Reading {
     /\b(?:spawn|spawnSync|exec|execSync|execFile|execFileSync|fork)\s*\(|\bnew\s+Worker\s*\(/.test(
       text,
     );
-  return { specifiers, strings, globs, open: [...new Set(open)], runsNamedFiles };
+  return { specifiers, strings, subjects, globs, open: [...new Set(open)], runsNamedFiles };
 }
 
 /** What a Python file imports, and the plugin modules a conftest names. */
@@ -541,7 +611,7 @@ function readPython(text: string): Reading {
   const open: string[] = [];
   if (/\b(?:importlib\.import_module|__import__|exec|eval)\s*\(/.test(text))
     open.push("a module loaded by a computed name");
-  return { specifiers, strings, globs: [], open, runsNamedFiles: open.length > 0 };
+  return { specifiers, strings, subjects: [], globs: [], open, runsNamedFiles: open.length > 0 };
 }
 
 function pythonCandidates(module: string, from: string): readonly string[] {
@@ -754,6 +824,8 @@ export async function observeInstrument(
   const visited = new Map<string, "configuration" | "program">();
   // Files a run program names only as its input, by the program that names them.
   const programInputs = new Map<string, string[]>();
+  // Files a configuration names as what its tool checks, by the configuration that lists them.
+  const subjectInputs = new Map<string, string[]>();
   const globs: { pattern: RegExp; from: string }[] = [];
   while (pending.length > 0) {
     const { path, role } = pending.shift() as { path: string; role: "configuration" | "program" };
@@ -827,6 +899,11 @@ export async function observeInstrument(
         }
         for (const candidate of named) pending.push({ path: candidate, role });
       }
+      for (const value of reading.subjects) {
+        const named = candidatePaths(value, path).find((candidate) => trees.listed.has(candidate));
+        if (named !== undefined)
+          subjectInputs.set(path, [...(subjectInputs.get(path) ?? []), named]);
+      }
       for (const glob of reading.globs) {
         const pattern = globPattern(glob, path);
         if (pattern !== null) globs.push({ pattern, from: path });
@@ -845,6 +922,12 @@ export async function observeInstrument(
         }
       }
     }
+  }
+  for (const [configuration, inputs] of subjectInputs) {
+    const unique = [...new Set(inputs)].sort();
+    residuals.add(
+      `${configuration} names ${unique.length} file(s) in the tree as what its tool checks (${unique.slice(0, 3).join(", ")}${unique.length > 3 ? ", ..." : ""}); they are the subject of the check, not the instrument, and not followed`,
+    );
   }
   for (const [program, inputs] of programInputs) {
     const unique = [...new Set(inputs)].sort();
