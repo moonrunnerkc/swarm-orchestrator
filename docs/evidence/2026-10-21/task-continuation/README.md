@@ -207,3 +207,14 @@ launch 2), so the continuation's own value is shown only by the regression tests
 - **Did Swarm outperform OpenCode?** Not measured: the fresh pairs were conditioned on a delivery.
 - **Unproven:** that the continuation writes a missing test live; that 40 steps and 9 minutes
   suffice for this task's source and tests together on this model.
+
+## 5. After the trial
+
+The no-tool notice of `cbf9544b4` was given to every attempt, owed ones included. The full
+suite on that commit showed the conflict: the continuation's brief and the follow-up's both ask
+for a one-line answer where nothing needs changing, so an answer with no call is the shape they
+asked for. Commit `3fa28403a` gives the notice to repairs of failing checks only and makes the
+scripted repairs that decline on purpose decline twice, as a model told the notice would. Launch
+2 ran before that scoping on `cbf9544b4`; no owed attempt was given there (the continuation was
+withheld), so the scoping changes nothing in its trace. The build the trial pinned differs from
+the branch's final code in that one respect, and in nothing the launches exercised.
