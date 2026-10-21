@@ -10,12 +10,12 @@ The subsequent report and consumer-pin update are documentation-only. Their exac
 and independent publication results are recorded with the [GitHub release](https://github.com/moonrunnerkc/swarm-orchestrator/releases).
 The September 27 audit invalidated the earlier blanket completion claim; its reproduced failures
 and failed corrective attempts remain in [audit corrections](upgrade-audit-corrections.md) and
-the [current observation index](evidence/2026-09-27/upgrade-audit-observations.json).
+the [current observation index](evidence/2026-09-27/packed-derived/observations-and-frames/) (`upgrade-audit-observations.json`, packed).
 Unaffected rows retain their original implementation evidence, not an invented new study.
 
 All five workflows share the existing engine. Start with [the broad-use guide](broad-use.md).
 [Prior evidence report, superseded for completion status](evidence/2026-09-27/broad-use/report.md) records exact commands and source
-identities. [Prior observation manifest](evidence/2026-09-27/broad-use/observations.json) identifies
+identities. [Prior observation manifest](evidence/2026-09-27/packed-derived/observations-and-frames/) (`broad-use/observations.json`, packed) identifies
 retained artifacts by digest. [Execution declarations](evidence/2026-09-27/broad-use/execution.md)
 preserve the edit sets, amendments and intermediate failures.
 
