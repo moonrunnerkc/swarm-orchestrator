@@ -212,6 +212,40 @@ describe("counting a test file", () => {
     expect(measureTestFile(real)).toMatchObject({ tests: 1, assertions: 4 });
   });
 
+  it("counts referee's refute as an assertion, the same as its assert", () => {
+    // sinon's suite asserts with referee: `assert.isUndefined(x)` and `refute.isUndefined(x)`
+    // are the same kind of check. A repair on 2026-10-21 replaced two calls to a method that
+    // does not exist (`assert.isNotUndefined`) with `refute.isUndefined`, and the count fell
+    // by two, so a green repair read as a weakened suite and was rejected.
+    const before = measureTestFile(
+      [
+        "describe('stub', function () {",
+        "  it('exposes the getter', function () {",
+        "    assert.isNotUndefined(stub.getter);",
+        "    assert.equals(obj.prop, 'bar');",
+        "  });",
+        "});",
+        "",
+      ].join("\n"),
+    );
+    const after = measureTestFile(
+      [
+        "describe('stub', function () {",
+        "  it('exposes the getter', function () {",
+        "    refute.isUndefined(stub.getter);",
+        "    assert.equals(obj.prop, 'bar');",
+        "  });",
+        "});",
+        "",
+      ].join("\n"),
+    );
+    expect(before.assertions).toBe(2);
+    expect(after.assertions).toBe(2);
+    expect(
+      measureTestFile("it('x', () => {\n  refute(flag);\n  refute.same(a, b);\n});\n").assertions,
+    ).toBe(2);
+  });
+
   it("counts go and python assertion styles", () => {
     expect(
       measureTestFile(
