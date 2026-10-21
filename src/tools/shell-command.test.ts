@@ -103,3 +103,74 @@ describe("a program passed inline to an interpreter", () => {
     );
   });
 });
+
+describe("comments inside a program passed inline", () => {
+  it("does not offer a path that only a comment names", () => {
+    const operands =
+      readShellCommand(
+        "node -e \"const m = require('./lib');\n// e.g., /a/b matching /**/a/x/y\n/* block: see /etc/hosts\n   and ~/.ssh/config */\nconsole.log(m('/a/b/c'));\"",
+      )?.operands ?? [];
+    expect(operands).toContain("./lib");
+    for (const commented of ["/a/b", "/etc/hosts", "~/.ssh/config", "hosts"])
+      expect(operands, commented).not.toContain(commented);
+  });
+
+  it("keeps what comes after a comment marker inside a string or a regular expression", () => {
+    // The `//` in the URL, the `//` matched by the regular expression and the `/*` in the
+    // string open no comment: the home path on the line after each is still offered.
+    const operands =
+      readShellCommand(
+        'node -e \'const url = "http://x//y"; f( ~/.ssh/id_rsa )\nconst r = /\\/\\//; f( ~/.aws/credentials )\nconst t = "/* open"; load("./lib/a.js")\'',
+      )?.operands ?? [];
+    expect(operands).toContain("~/.ssh/id_rsa");
+    expect(operands).toContain("~/.aws/credentials");
+    expect(operands).toContain("./lib/a.js");
+  });
+
+  it("reads a string with spaces as the one literal it is: absolute paths inside it are data, relative ones are offered", () => {
+    const operands =
+      readShellCommand(
+        'node -e \'console.log("Without partial /a vs b:", r); read("the file ./notes.txt and ~/.ssh/id_rsa")\'',
+      )?.operands ?? [];
+    expect(operands).not.toContain("/a");
+    expect(operands).toContain("./notes.txt");
+    expect(operands).toContain("~/.ssh/id_rsa");
+  });
+
+  it("reads a division as code, so what follows it on the line is still read", () => {
+    const operands =
+      readShellCommand("node -e 'const n = total / 2 / x; f( ~/.aws/credentials ) // /etc/hosts'")
+        ?.operands ?? [];
+    expect(operands).toContain("~/.aws/credentials");
+    expect(operands).not.toContain("/etc/hosts");
+  });
+
+  it("reads a regular expression after a keyword as one, and the comment after it as a comment", () => {
+    const operands =
+      readShellCommand(
+        "node -e 'if (/\\/\\//.test(s)) f( ~/.aws/credentials ); // see /etc/hosts\nreturn /a/.test(x) // and /etc/passwd'",
+      )?.operands ?? [];
+    expect(operands).toContain("~/.aws/credentials");
+    expect(operands).not.toContain("/etc/hosts");
+    expect(operands).not.toContain("/etc/passwd");
+  });
+
+  it("drops a python hash comment and keeps the hash inside a string", () => {
+    const operands =
+      readShellCommand(
+        'python3 -c \'open("./data.txt")  # was /etc/passwd\ns = "# ~/.ssh/id_rsa"; f( ~/.aws/credentials )\'',
+      )?.operands ?? [];
+    expect(operands).toContain("./data.txt");
+    expect(operands).toContain("~/.aws/credentials");
+    expect(operands).not.toContain("/etc/passwd");
+    expect(operands).not.toContain("passwd");
+  });
+
+  it("falls back to reading everything where the code cannot be read to its end", () => {
+    // An unterminated string: nothing after it is known to be code or comment, so every
+    // path-shaped piece is offered, as before.
+    const operands =
+      readShellCommand("node -e 'const s = \"open; // ~/.ssh/id_rsa'")?.operands ?? [];
+    expect(operands).toContain("~/.ssh/id_rsa");
+  });
+});
