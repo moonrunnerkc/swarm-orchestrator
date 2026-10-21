@@ -250,6 +250,13 @@ export async function runAgentLoop(
           else lastInputTokens = response.inputTokens;
         },
         () => deps.budget.maxTokens - tokensUsed,
+        // A call that reached the model and ended without an answer (cut at the wall, cancelled,
+        // or failed) reported nothing, and nothing says it consumed nothing: its usage is unknown,
+        // as its record says, and the totals are lower bounds. Launch 2 of 2026-10-21 settled
+        // "0 unknown" over a request the wall cancelled mid-flight.
+        () => {
+          callsWithUnknownUsage += 1;
+        },
       );
     } catch (cause) {
       if (cause instanceof ModelTokenBudgetError) return finish("max-tokens", "");
@@ -484,7 +491,8 @@ async function callWithinBudget(
   deps: AgentLoopDependencies,
   request: ModelRequest,
   remainingMs: number,
-  attemptSignal?: AbortSignal,
+  attemptSignal: AbortSignal | undefined,
+  unreported: () => void,
 ): Promise<ModelResponse> {
   if (remainingMs <= 0) throw new ModelCallDeadlineError(remainingMs);
   deps.abortSignal.throwIfAborted();
@@ -507,6 +515,7 @@ async function callWithinBudget(
       ? pending
       : withModelCancellation(pending, controller.signal));
   } catch (cause) {
+    unreported();
     throw expired ? new ModelCallDeadlineError(remainingMs) : cause;
   } finally {
     release.abort();
@@ -522,6 +531,7 @@ async function callModelWithRetry(
   deadline: number,
   account: (response: ModelResponse) => void,
   remainingTokens: () => number,
+  unreported: () => void,
 ): Promise<ModelResponse> {
   const { attempts, baseDelayMs, maxJitterRatio } = deps.retryPolicy;
   let lastCause: unknown;
@@ -567,6 +577,7 @@ async function callModelWithRetry(
         },
         deadline - deps.clock.now(),
         spiral.signal,
+        unreported,
       );
       account(response);
       if (deps.clock.now() >= deadline) throw new ModelCallDeadlineError(0);
