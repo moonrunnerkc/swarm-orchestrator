@@ -516,7 +516,7 @@ have named.
 
 The collection was stopped during its tenth unit. Its rows (nine settled units: one eligible pair
 with its three arms and five prefixes that did not reach visible acceptance), its environment and
-log are kept unchanged under [`generation-2/`](generation-2/results.jsonl) and are part of no
+log are kept unchanged under [`generation-2/`](generation-2/ledgers/) (its `results.jsonl`, packed losslessly) and are part of no
 estimate; no held-back verdict existed. The fix (`9c4104e78`): a reference ends at the first
 character a path cannot hold, and trailing punctuation is dropped, with tests that fail on the
 previous tokenizer. Re-run over generation 2's seventeen real sessions, the corrected audit names
@@ -531,7 +531,7 @@ audit reported `…/feedback-study` and `…/g3/runs/lo`: a stack trace in the a
 hard-wrapped its own workspace path at 80 columns, and each fragment was read as a separate place.
 Like generation 2's, this defect touched only a reported measure. The collection was stopped
 during its nineteenth unit; its rows (eighteen prefixes, none visibly accepted, so no arm ran), its
-environment and log are kept unchanged under [`generation-3/`](generation-3/results.jsonl) and are
+environment and log are kept unchanged under [`generation-3/`](generation-3/ledgers/) (its `results.jsonl`, packed losslessly) and are
 part of no estimate. No held-back verdict existed.
 
 The fix (`ea6a04740`) closes the class and not the one shape: a wrapped, truncated or partly
