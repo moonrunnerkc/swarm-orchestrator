@@ -333,6 +333,333 @@ describe("what the instrument is", () => {
   });
 });
 
+describe("what a configuration lists as the files it checks", () => {
+  // The minimal case the 2026-10-21 accessor run reduced to: a lint configuration names one
+  // source file, by its literal path, among the files it lints. The configuration is unchanged,
+  // the source file changes, lint passes, and the pass was withheld because the file was read
+  // as part of the instrument. A file a tool checks is the subject of the check; what the tool
+  // loads to perform it (configuration, plugins, processors, parsers, reporters, setup files,
+  // programs run) is the instrument.
+  const lint = {
+    "package.json": manifest({ lint: "eslint ." }),
+    "eslint.config.js":
+      'export default [{ files: ["src/sum.js"], ignores: ["src/legacy.js"], rules: { "no-debugger": "error" } }];\n',
+    "src/sum.js": "export const sum = (a, b) => a + b;\n",
+    "src/legacy.js": "export const old = 1;\n",
+  };
+
+  it("leaves a source file a lint configuration lists by literal path out of the instrument", async () => {
+    const current = { ...lint, "src/sum.js": "export const sum = (a, b) => a + b + 0;\n" };
+    expect(await changes(npm("lint"), lint, current)).toEqual([]);
+    const observation = await observeInstrument(npm("lint"), trees(lint, current));
+    expect(observation.files.map((file) => file.path)).toEqual([
+      "eslint.config.js",
+      "package.json#scripts.lint",
+    ]);
+    expect(observation.residuals).toContain(
+      "eslint.config.js names 2 file(s) in the tree as what its tool checks (src/legacy.js, src/sum.js); they are the subject of the check, not the instrument, and not followed",
+    );
+    // An ignored file is the subject too, by the same token.
+    expect(await changes(npm("lint"), lint, { ...lint, "src/legacy.js": "x" })).toEqual([]);
+  });
+
+  it("leaves files a configuration selects by pattern out of it, for the supported tools", async () => {
+    const cases: [string, Record<string, string>, string][] = [
+      [
+        "eslint",
+        {
+          "package.json": manifest({ lint: "eslint ." }),
+          "eslint.config.mjs":
+            'export default [{ files: ["src/**/*.js", "tools/build.cjs"], ignores: ["dist/**"] }];\n',
+        },
+        "lint",
+      ],
+      [
+        "mocha",
+        {
+          "package.json": manifest({ test: "mocha" }),
+          ".mocharc.json": '{ "spec": ["test/**/*.js", "test/run.js"], "extension": ["js"] }\n',
+        },
+        "test",
+      ],
+      [
+        "vitest",
+        {
+          "package.json": manifest({ test: "vitest run" }),
+          "vitest.config.mjs":
+            'export default { test: { include: ["src/**/*.spec.js", "tools/build.cjs"], exclude: ["src/x.js"], coverage: { include: ["src/**"] } } };\n',
+        },
+        "test",
+      ],
+      [
+        "jest",
+        {
+          "package.json": manifest({ test: "jest" }),
+          "jest.config.js":
+            'module.exports = { roots: ["<rootDir>/src"], testMatch: ["**/tools/build.cjs"], collectCoverageFrom: ["src/**/*.js", "tools/build.cjs"] };\n',
+        },
+        "test",
+      ],
+      [
+        "tsc",
+        {
+          "package.json": manifest({ typecheck: "tsc -p tsconfig.json" }),
+          "tsconfig.json":
+            '{ "compilerOptions": { "strict": true }, "files": ["tools/build.cjs", "src/x.js"], "include": ["src/**/*"] }\n',
+        },
+        "typecheck",
+      ],
+      [
+        "nyc",
+        {
+          "package.json": manifest({ test: "nyc mocha" }),
+          ".nycrc.json":
+            '{ "include": ["src/**", "tools/build.cjs"], "exclude": ["src/x.js"], "all": true }\n',
+        },
+        "test",
+      ],
+    ];
+    for (const [tool, files, script] of cases) {
+      const reference = {
+        ...files,
+        "tools/build.cjs": "module.exports = 1;\n",
+        "src/x.js": "export const x = 1;\n",
+      };
+      for (const path of ["tools/build.cjs", "src/x.js"])
+        expect(
+          await changes(npm(script), reference, { ...reference, [path]: "changed" }),
+          `${tool}: ${path}`,
+        ).toEqual([]);
+    }
+  });
+
+  it("still follows what a configuration loads: parsers, processors, plugins, reporters, setup and the configuration itself", async () => {
+    const reference = {
+      "package.json": manifest({ lint: "eslint .", test: "mocha", check: "vitest run" }),
+      ".eslintrc.json":
+        '{ "overrides": [{ "files": ["src/sum.js"], "parser": "./tools/parser.js", "processor": "./tools/processor.js" }], "extends": ["./tools/base.json"] }\n',
+      ".mocharc.json":
+        '{ "spec": ["test/a.js"], "require": "./tools/setup.js", "reporter": "./tools/reporter.js", "file": ["./tools/first.js"] }\n',
+      "vitest.config.mjs":
+        'export default { test: { include: ["src/**/*.spec.js"], setupFiles: ["tools/prime.js"] } };\n',
+      "tools/parser.js": "",
+      "tools/processor.js": "",
+      "tools/base.json": "{}",
+      "tools/setup.js": "",
+      "tools/reporter.js": "",
+      "tools/first.js": "",
+      "tools/prime.js": "",
+      "src/sum.js": "",
+      "test/a.js": "",
+    };
+    for (const [script, path] of [
+      ["lint", "tools/parser.js"],
+      ["lint", "tools/processor.js"],
+      ["lint", "tools/base.json"],
+      ["lint", ".eslintrc.json"],
+      ["test", "tools/setup.js"],
+      ["test", "tools/reporter.js"],
+      ["test", "tools/first.js"],
+      ["test", ".mocharc.json"],
+      ["check", "tools/prime.js"],
+      ["check", "vitest.config.mjs"],
+    ] as const)
+      expect(await changes(npm(script), reference, { ...reference, [path]: "x" }), path).toEqual([
+        path,
+      ]);
+    for (const [script, path] of [
+      ["lint", "src/sum.js"],
+      ["test", "test/a.js"],
+    ] as const)
+      expect(await changes(npm(script), reference, { ...reference, [path]: "x" }), path).toEqual(
+        [],
+      );
+  });
+
+  it("reads sinon's lint configuration as listing what it lints, so a source change leaves the lint instrument alone", async () => {
+    // sinon at 8c663edec, the accessor task's base, reduced to the shape that mattered: the flat
+    // configuration lists build.cjs and four test helpers among the files it lints by literal
+    // path; build.cjs requires package.json and runs rollup over rollup.config.mjs, which lists
+    // src at run time and names the bundle entries; src/sinon.js imports every module. Followed
+    // from the lint configuration as loaded code, that chain put the project's whole source into
+    // the lint instrument, and a change to two source files withheld a passing lint, then the
+    // base-configuration rerun restored those two files and the run's own new tests failed.
+    const reference = {
+      "package.json": manifest({
+        "build-artifacts": "node ./build.cjs",
+        "pretest-node": "npm run build-artifacts",
+        "test-node": 'mocha --recursive -R dot "test/{src,issues,scripts}/**/*-test.js"',
+        lint: "eslint --max-warnings 0 '**/*.{js,cjs,mjs}'",
+      }),
+      "eslint.config.js": sinonLintConfiguration,
+      "build.cjs":
+        'const { execFileSync } = require("node:child_process");\nconst pkg = require("./package.json");\nexecFileSync(process.execPath, [require.resolve("rollup/dist/bin/rollup"), "-c", "rollup.config.mjs"], { stdio: "inherit" });\nconsole.log(pkg.version);\n',
+      "rollup.config.mjs":
+        'import fs from "node:fs";\nfunction getAllFiles(dir) { return fs.readdirSync(dir); }\nexport default { input: getAllFiles("src"), output: { dir: "lib" } };\n',
+      "src/sinon.js": 'import "./sinon/stub.js";\nimport "./sinon/default-behaviors.js";\n',
+      "src/sinon/stub.js": 'import "./default-behaviors.js";\nexport const stub = 1;\n',
+      "src/sinon/default-behaviors.js": "export const get = 1;\n",
+      "src/sinon/util/core/walk.js": "export const walk = 1;\n",
+      "test/src/stub-test.js": "describe('stub', () => {});\n",
+      "test/src/shared-spy-stub-everything-tests.js": "export const shared = 1;\n",
+      "test/webworker/webworker-script.js": "onmessage = () => {};\n",
+    };
+    const accessorPatch = {
+      ...reference,
+      "src/sinon/default-behaviors.js": "export const get = 2;\n",
+      "src/sinon/stub.js": 'import "./default-behaviors.js";\nexport const stub = 2;\n',
+      "test/src/stub-test.js": "describe('stub', () => { it('getter', () => {}); });\n",
+    };
+    expect(await changes(npm("lint"), reference, accessorPatch)).toEqual([]);
+    expect(await changes(npm("test-node"), reference, accessorPatch)).toEqual([]);
+    const observation = await observeInstrument(npm("lint"), trees(reference, accessorPatch));
+    expect(
+      observation.files.map((file) => file.path).filter((path) => path.startsWith("src/")),
+    ).toEqual([]);
+    expect(observation.files.map((file) => file.path)).not.toContain("build.cjs");
+    // Checking machinery still reads as the instrument: the configuration, and the build the
+    // test command runs first.
+    expect(
+      await changes(npm("lint"), reference, {
+        ...accessorPatch,
+        "eslint.config.js": sinonLintConfiguration.replace('"src/**/*.js",', ""),
+      }),
+    ).toEqual(["eslint.config.js"]);
+    expect(
+      await changes(npm("test-node"), reference, {
+        ...accessorPatch,
+        "build.cjs": "process.exit(0);\n",
+      }),
+    ).toEqual(["build.cjs"]);
+  });
+});
+
+/** sinon's eslint.config.js at 8c663edec, verbatim. */
+const sinonLintConfiguration = `import noPrototypeMethods from "@sinonjs/eslint-plugin-no-prototype-methods";
+import sinonConfig from "@sinonjs/eslint-config";
+
+export default [
+    {
+        ignores: [
+            "eslint.config.js",
+            "coverage/**",
+            ".worktrees/**",
+            "**/.worktrees/**",
+            "out/**",
+            "pkg/**",
+            "lib/**",
+            "tmp/**",
+            "**/node_modules/**",
+            "docs/**",
+            "vendor/**",
+            "rollup.config.js",
+        ],
+    },
+    ...sinonConfig,
+    {
+        plugins: {
+            "@sinonjs/no-prototype-methods": noPrototypeMethods,
+        },
+        rules: {
+            "@sinonjs/no-prototype-methods/no-prototype-methods": "error",
+            "jsdoc/require-param-type": "off",
+            "jsdoc/require-jsdoc": "off",
+            "jsdoc/tag-lines": "off",
+        },
+    },
+    {
+        files: [
+            "src/**/*.js",
+            "test/src/**/*.js",
+            "*.mjs",
+            "**/*.mjs",
+            "scripts/**/*.mjs",
+            "test/distribution/browser-global-smoke.js",
+            "test/es2015/check-esm-bundle-is-runnable.js",
+        ],
+        languageOptions: {
+            sourceType: "module",
+        },
+        rules: {
+            "no-underscore-dangle": [
+                "error",
+                {
+                    allow: ["__dirname"],
+                },
+            ],
+        },
+    },
+    {
+        files: ["test/webworker/webworker-support-assessment.js"],
+        languageOptions: {
+            globals: {
+                describe: false,
+                it: false,
+                Worker: false,
+            },
+        },
+    },
+    {
+        files: ["test/webworker/webworker-script.js"],
+        languageOptions: {
+            globals: {
+                importScripts: false,
+                onmessage: false,
+                postMessage: false,
+                sinon: false,
+            },
+        },
+    },
+    {
+        files: [
+            "build.cjs",
+            "scripts/**/*.mjs",
+            "test/distribution/browser-global-smoke.js",
+            "test/es2015/check-esm-bundle-is-runnable.js",
+        ],
+        rules: {
+            "no-console": "off",
+            "no-implicit-globals": "off",
+        },
+    },
+    {
+        files: ["*.cjs"],
+        languageOptions: {
+            sourceType: "script",
+        },
+    },
+    {
+        files: ["**/*-test.js", "test/**/*.js"],
+        rules: {
+            "@sinonjs/no-prototype-methods/no-prototype-methods": "off",
+            "max-nested-callbacks": "off",
+        },
+    },
+    {
+        files: ["**/*-tests.*"],
+        rules: {
+            "@sinonjs/no-prototype-methods/no-prototype-methods": "off",
+            "max-nested-callbacks": "off",
+        },
+    },
+    {
+        files: ["test/src/shared-spy-stub-everything-tests.js"],
+        rules: {
+            "mocha/no-exports": "off",
+        },
+    },
+    {
+        files: [
+            "src/sinon/util/core/walk-object.js",
+            "src/sinon/util/core/walk.js",
+        ],
+        rules: {
+            "no-implicit-globals": "off",
+        },
+    },
+];
+`;
+
 describe("where the runner comes from", () => {
   const lock = (entries: Record<string, unknown>) =>
     JSON.stringify({ lockfileVersion: 3, packages: { "": {}, ...entries } });
