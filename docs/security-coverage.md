@@ -266,7 +266,13 @@ most of what would actually go wrong in this codebase.
   `git config --list` reads a denied file without naming it, and `node -e "..."` is an allowlisted
   interpreter handed a program. That is the whole of what "a lexical path and program policy, not
   a sandbox" means, and closing either is a decision about interpreters rather than a fix to a
-  check.
+  check. The program handed to an interpreter is read lexically: a comment is not offered as a
+  path (four diagnostics of the 2026-10-20 minimatch launch were refused on example paths in
+  their comments, replayed verbatim in `src/tools/inline-program-denials.test.ts`), a string is
+  one literal whether or not it holds a space, and a relative or home path in code or in a
+  literal is still checked. A path the program builds, or an absolute literal it passes to a
+  call, was never visible to this reader and still is not; where the program cannot be read to
+  its end, every word of it is offered as before.
 - **What a command leaves running after it exits.** The harness spawns each command as a process
   group and signals the group, which stops a child that outlives its parent. A descendant that
   calls `setsid` leaves that group, and a command that exits zero leaves nothing to signal.
