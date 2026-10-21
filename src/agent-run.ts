@@ -1342,7 +1342,14 @@ async function resolveWithModel(
   ].join("\n");
 
   const first = await runAgentLoop(brief, loopDependencies);
-  if (first.stopReason !== "completed" || madeAToolCall(first.messages)) return first;
+  // An owed attempt's brief asks for a one-line answer where nothing needs changing, so an answer
+  // with no call is the shape it was asked for; a repair of a failing check was asked to fix it.
+  if (
+    request.followUpKind !== undefined ||
+    first.stopReason !== "completed" ||
+    madeAToolCall(first.messages)
+  )
+    return first;
   // The answer called no tool: nothing in the workspace changed, and the attempt would be
   // counted and measured over the restored tree as it is. Two repair attempts of the
   // 2026-10-21 trial's continuation launch ended this way after one step each ("Let me read the
