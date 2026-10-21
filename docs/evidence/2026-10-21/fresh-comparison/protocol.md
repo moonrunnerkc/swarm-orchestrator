@@ -151,3 +151,22 @@ artifact or equivalence, the cost of any improvement, and what two pairs cannot 
 ---
 
 ## Amendments
+
+### 1. 2026-10-21 21:40 UTC, after launch 0: the Swarm attempt stands; the remaining three launches run as registered
+
+Launch 0 (Swarm, `mocha-bugfix-unparse-attached-values`) exited 4 after 324.5 s and 148,823
+tokens, and the runner halted the campaign, classifying the exit as "the product could not run
+the task" (`configuration`). The product did run the task: 14 steps, a changed tree
+(`lib/cli/unparse-args.js` and four regression cases added to
+`test/node-unit/cli/unparse-args.spec.js`). Its exit came from its own reading: mocha runs its own
+tests, so the product marked its build and tests gates as measured by an instrument the change
+altered (`n/a`), its final verification as unmeasured, its sealed acceptance gate as failed
+("the inspection exited 1"), and escalated after 0 of 3 repair attempts. Under the failure
+handling registered above, an exit the product chose is the arm's result: the attempt stands as
+recorded in `mocha-bugfix-unparse-attached-values.swarm.halted-1.json` and is **not relaunched**.
+Its kept workspace's patch is scored after the fact with the runner's own verdicts and this
+stage's scorers, with that provenance named. No product code changes before the remaining
+launches. The campaign is recovered (`recovery-1.json`) and continued with
+`--only mocha-bugfix-unparse-attached-values --arm opencode` (launch 1), then
+`--only mocha-bugfix-long-prefix-short-alias` (launches 2 and 3, in the frozen order), so that
+launch 0 is not dispatched again. 5.4 of the 60 agent-minutes and 1 of the 4 launches are used.
