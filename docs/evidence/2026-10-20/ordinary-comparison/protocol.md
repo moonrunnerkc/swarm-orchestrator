@@ -110,3 +110,14 @@ the project's `npm test` on tap's 100% coverage rule, which the task text names.
 above there is **no demonstrated advantage**. Nothing in the product changed during either launch;
 no planning rule is added and nothing is rerun. See [launches.md](launches.md) and
 [README.md](README.md).
+
+### 2. 2026-10-21, after review: the configuration was not equivalent
+
+The configuration table above says the task text and limits were the same for both arms. The
+permissions were not: Swarm's sealed contract made `test/` immutable (from the runner's
+`immutable: ["test"]`), OpenCode's configuration allowed every edit, and the task text named
+only `acceptance/visible/`. The reference was validated with its test changes included, and its
+source change alone fails the project's coverage rule. The records and the decision are kept;
+the corrections are appended to [README.md](README.md). This protocol is closed and nothing is
+launched under it; the corrected setup is registered apart in
+[../../2026-10-21/permissions-repair/protocol.md](../../2026-10-21/permissions-repair/protocol.md).
