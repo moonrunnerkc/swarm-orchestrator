@@ -791,19 +791,33 @@ async function escalate(
   // did not stand down over the work, they were never started, and "the work is not in a
   // shape the test command can run" would blame the change for the clock.
   const notRun = gatesTheHarnessCouldNotRun(cycle);
+  // A blocking command gate that stood down is what keeps a cycle with no failure in it from
+  // being green (a pass withheld under a changed instrument, a script the project removed).
+  // It is the gate to name: a run that ended this way with "unknown" sent its reader to look
+  // for a failure that was not there.
+  const withheld = cycle.runs.find(
+    (run) =>
+      run.kind === "command" && run.severity === "blocking" && run.status === "not-applicable",
+  );
   const payload = escalationSchema.parse({
     gateId:
       blocking?.gateId ??
-      (notRun.size > 0 || unmeasured ? "unmeasured" : eroded === null ? "unknown" : "ratchet"),
+      (notRun.size > 0 || unmeasured
+        ? "unmeasured"
+        : eroded !== null
+          ? "ratchet"
+          : (withheld?.gateId ?? "unknown")),
     title:
       blocking?.title ??
       (notRun.size > 0
         ? "the gates could not be run"
         : unmeasured
           ? "nothing ran over this change"
-          : eroded === null
-            ? "unknown"
-            : "the ratchet against the base commit"),
+          : eroded !== null
+            ? "the ratchet against the base commit"
+            : withheld !== undefined
+              ? `${withheld.title} withheld its pass`
+              : "unknown"),
     reason:
       (blocking === undefined
         ? undefined
@@ -817,9 +831,10 @@ async function escalate(
           ? `${cycle.measures.changedFiles ?? 0} file(s) changed and every gate that runs a ` +
             "command stood down, so nothing executed them. The work is not in a shape this " +
             "project's own test command can run."
-          : eroded === null
-            ? "the run stopped with a blocking failure that is no longer in the final cycle"
-            : eroded.decision.detail),
+          : eroded !== null
+            ? eroded.decision.detail
+            : (withheld?.detail ??
+              "the run stopped with a blocking failure that is no longer in the final cycle")),
     attemptsUsed: attempts.length,
     cap: deps.cap,
     attemptsRejectedByRatchet: rejected.length + (eroded === null ? 0 : 1),

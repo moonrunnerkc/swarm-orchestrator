@@ -144,6 +144,12 @@ The product hypothesis is that Swarm completes real repository tasks with less s
 rework than an ordinary coding agent. It is measured, not assumed, and so far it has not been
 shown.
 
+- **October 21, three fresh tasks under one allowed-change policy**
+  ([permissions repair](evidence/2026-10-21/permissions-repair/README.md)): no Swarm win and no
+  OpenCode win under the frozen rule. The 2026-10-20 result is corrected (Swarm's contract alone
+  froze the test directory), Swarm produced the stage's only complete source-and-test change and
+  its own verdict reported it as unmeasured, for an instrument-closure defect fixed after the
+  freeze.
 - **October 11, twenty mined tasks** ([comparison](evidence/2026-10-11/comparison/README.md)):
   Swarm 5 of 20 correct, OpenCode 4 of 20 on the same local model, workspace, visible check and
   wall, scored by sealed upstream tests. A one-task difference supports no claim of an advantage.

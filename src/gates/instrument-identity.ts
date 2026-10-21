@@ -775,6 +775,12 @@ export async function observeInstrument(
     if (before === null && after === null) continue;
     note(path, before, after);
     closureRoots.add(path);
+    // The manifest is read by field, above: the scripts a command reaches and the fields the
+    // tool itself reads. Reached here (a build script requires it for its version, a
+    // configuration names it), its other strings are other tools' configuration and the
+    // project's own inventory (a knip entry list, a files list, lint-staged patterns), and
+    // following them made a project's whole source the instrument of its lint check.
+    if (path === "package.json") continue;
     const python = path.endsWith(".py");
     for (const [side, content] of [
       ["reference", before],
