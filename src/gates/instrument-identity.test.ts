@@ -221,6 +221,33 @@ describe("what the instrument is", () => {
         "eslint.config.js": "export default [];\n",
       }),
     ).toEqual(["eslint.config.js"]);
+    // The same manifest reached through a test command's pre-hook: sinon's `npm run test-node`
+    // runs the build script first, which requires package.json. A source change with a new
+    // regression test then read "passes only under this patch's changes to the runner
+    // configuration", and a complete source-and-test change exited as unmeasured.
+    const withTests = {
+      ...reference,
+      "package.json": manifest(
+        {
+          "test-node": "mocha test",
+          "pretest-node": "npm run build-artifacts",
+          "build-artifacts": "node ./build.cjs",
+        },
+        { knip: { entry: ["src/sinon.js"] } },
+      ),
+    };
+    expect(
+      await changes(npm("test-node"), withTests, {
+        ...withTests,
+        "src/sinon/mock.js": "export const mock = 2;\n",
+      }),
+    ).toEqual([]);
+    expect(
+      await changes(npm("test-node"), withTests, {
+        ...withTests,
+        "build.cjs": "process.exit(1);\n",
+      }),
+    ).toEqual(["build.cjs"]);
   });
 
   it("follows what a run program imports, and what it names where it runs processes or loads by computed name", async () => {
