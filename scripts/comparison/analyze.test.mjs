@@ -1,5 +1,13 @@
-import { describe, expect, it } from "vitest";
-import { renderMarkdown, summarize } from "./analyze.mjs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  claimedCompletion,
+  renderMarkdown,
+  summarize,
+  withSupplementalScores,
+} from "./analyze.mjs";
 
 const record = (arm, task, over) => ({
   arm,
@@ -12,6 +20,99 @@ const record = (arm, task, over) => ({
   totals: { agentWallMs: 60_000, tokens: 1000, tokensUnknownInvocations: 0 },
   preparation: { wallMs: 5_000 },
   ...over,
+});
+
+describe("a completion claim", () => {
+  it("is read from the completion account where the record carries one, else from the one-word field", () => {
+    expect(claimedCompletion(undefined)).toBe(false);
+    expect(claimedCompletion({ claimedSuccess: true })).toBe(true);
+    expect(claimedCompletion({ claimedSuccess: false })).toBe(false);
+    // The account outranks the word: a turn that ended wanting tool results was once a claim.
+    expect(
+      claimedCompletion({
+        claimedSuccess: true,
+        completion: { ended: "exited", claim: "none", basis: "tool-calls" },
+      }),
+    ).toBe(false);
+    expect(
+      claimedCompletion({
+        claimedSuccess: false,
+        completion: { ended: "exited", claim: "claimed", basis: "answered" },
+      }),
+    ).toBe(true);
+    expect(
+      claimedCompletion({
+        claimedSuccess: false,
+        completion: { ended: "killed", claim: "unknown", basis: "no finished turn" },
+      }),
+    ).toBe(false);
+    const summary = summarize([
+      record("opencode", "a", {
+        hidden: { verdict: "fail" },
+        invocations: [
+          {
+            claimedSuccess: true,
+            completion: { ended: "exited", claim: "none", basis: "tool-calls" },
+          },
+        ],
+      }),
+    ]);
+    expect(summary.arms.opencode.claimedSuccessButHiddenFailed).toBe(0);
+  });
+});
+
+describe("a halted launch scored after the fact", () => {
+  const stages = [];
+  afterEach(() => {
+    for (const stage of stages.splice(0)) rmSync(stage, { recursive: true, force: true });
+  });
+
+  it("reads with its supplemental score, named as such, and leaves the record alone", () => {
+    const stage = mkdtempSync(join(tmpdir(), "analyze-stage-"));
+    stages.push(stage);
+    mkdirSync(join(stage, "scored"));
+    writeFileSync(
+      join(stage, "scored/a.swarm.json"),
+      JSON.stringify({
+        patchDigest: "sha256:abc",
+        visible: { passed: true },
+        hidden: {
+          verdict: "pass",
+          basis: "hidden tests passed",
+          policy: { addedAssertions: 18 },
+          displaced: ["test/a.js"],
+        },
+      }),
+    );
+    const halted = record("swarm", "a", {
+      infrastructureFailure:
+        "the swarm arm exited 4 (unavailable): the product could not run the task",
+      hidden: { verdict: "unjudgeable", basis: "not scored" },
+      resolvedVisible: false,
+    });
+    const plain = record("opencode", "a");
+    const rows = withSupplementalScores([halted, plain], stage);
+    expect(rows[1]).toBe(plain);
+    expect(rows[0]).toMatchObject({
+      infrastructureFailure: null,
+      resolvedVisible: true,
+      hidden: { verdict: "pass" },
+      supplemental: {
+        source: "scored/a.swarm.json",
+        patchDigest: "sha256:abc",
+        displaced: ["test/a.js"],
+      },
+    });
+    expect(halted.infrastructureFailure).not.toBeNull();
+    const summary = summarize(rows);
+    expect(summary.arms.swarm).toMatchObject({ started: 1, infrastructureFailures: 0, correct: 1 });
+    expect(renderMarkdown(summary)).toContain("| a | pass (supplemental scoring) | pass |");
+    // A halted launch with no score stays an infrastructure attempt.
+    expect(
+      withSupplementalScores([record("swarm", "b", { infrastructureFailure: "x" })], stage)[0]
+        .infrastructureFailure,
+    ).toBe("x");
+  });
 });
 
 describe("the comparison tables", () => {

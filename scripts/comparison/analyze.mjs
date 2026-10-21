@@ -2,11 +2,15 @@
  * The comparison's tables from its records, exact counts with their denominators. Nothing here
  * combines dimensions into a score; each is reported on its own.
  *
- *   node scripts/comparison/analyze.mjs --runs <directory> [--out <markdown file>]
+ *   node scripts/comparison/analyze.mjs --runs <directory> [--supplement] [--out <markdown file>]
+ *
+ * `--supplement` reads a halted launch's after-the-fact score (`scored/<task>.<arm>.json` beside
+ * the stage's `records/`) in its row, the cell saying so; without it a halted launch is an
+ * infrastructure attempt, as the runner wrote it.
  */
-import { readdirSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { readStageRecord, stageRecordNames } from "../pilot/stage-files.mjs";
+import { packedFiles, readStageRecord, stageRecordNames } from "../pilot/stage-files.mjs";
 
 /** A launch record's file name: a cell's record or one of its failed attempts; not a halt or recovery. */
 export const isLaunchRecord = (name) =>
@@ -27,6 +31,53 @@ export function latestAttempts(records) {
   return [...byKey.values()];
 }
 
+/**
+ * Whether an invocation claimed completion: its `completion` account where the record carries
+ * one, else the older one-word `claimedSuccess`, which read a turn that ended wanting tool
+ * results as a claim.
+ */
+export function claimedCompletion(invocation) {
+  if (invocation === undefined) return false;
+  if (invocation.completion !== undefined) return invocation.completion.claim === "claimed";
+  return invocation.claimedSuccess === true;
+}
+
+/**
+ * A stage's after-the-fact scores, read beside its records and never in their place: for a
+ * launch the runner halted before scoring (`<task>.<arm>.halted-N.json`) whose kept workspace
+ * was scored later by the runner's own verdicts (`scored/<task>.<arm>.json`), the row the tables
+ * read carries the supplemental verdicts with their source named, and the launch record stays
+ * as written. A score with no halted record to supplement is ignored.
+ */
+export function withSupplementalScores(records, stage) {
+  const files = packedFiles(stage);
+  const read = (path) => {
+    const inTree = join(stage, path);
+    if (existsSync(inTree)) return readFileSync(inTree, "utf8");
+    return files.get(path) ?? packedFiles(dirname(stage)).get(`${basename(stage)}/${path}`) ?? null;
+  };
+  return records.map((record) => {
+    if (record.infrastructureFailure === null) return record;
+    const text = read(`scored/${record.task}.${record.arm}.json`);
+    if (text === null) return record;
+    const scored = JSON.parse(text);
+    return {
+      ...record,
+      infrastructureFailure: null,
+      resolvedVisible: scored.visible.passed,
+      hidden: { verdict: scored.hidden.verdict, basis: scored.hidden.basis, detailDigest: null },
+      finalPatchDigest: scored.patchDigest,
+      supplemental: {
+        source: `scored/${record.task}.${record.arm}.json`,
+        patchDigest: scored.patchDigest,
+        replaces: record.infrastructureFailure,
+        policy: scored.hidden.policy ?? null,
+        displaced: scored.hidden.displaced ?? [],
+      },
+    };
+  });
+}
+
 export function summarize(allRecords) {
   const records = latestAttempts(allRecords);
   const byArm = { swarm: [], opencode: [] };
@@ -39,7 +90,7 @@ export function summarize(allRecords) {
     const correct = rows.filter((row) => row.hidden.verdict === "pass");
     const correctNoCorrection = correct.filter((row) => row.corrections === 0);
     const claimedWrong = rows.filter(
-      (row) => row.invocations.at(-1)?.claimedSuccess === true && row.hidden.verdict !== "pass",
+      (row) => claimedCompletion(row.invocations.at(-1)) && row.hidden.verdict !== "pass",
     );
     const unresolved = rows.filter((row) => !row.resolvedVisible);
     const tokensKnown = rows.filter(
@@ -77,7 +128,7 @@ export function summarize(allRecords) {
         ? "not run"
         : row.infrastructureFailure
           ? "infrastructure"
-          : `${row.hidden.verdict}${row.corrections > 0 ? ` (+${row.corrections} corr.)` : ""}${row.resolvedVisible ? "" : ", visible unresolved"}`;
+          : `${row.hidden.verdict}${row.corrections > 0 ? ` (+${row.corrections} corr.)` : ""}${row.resolvedVisible ? "" : ", visible unresolved"}${row.supplemental ? " (supplemental scoring)" : ""}`;
     return { task, swarm: cell(s), opencode: cell(o), swarmRecord: s, opencodeRecord: o };
   });
   return { arms: armRows, paired, tasks: tasks.length };
@@ -148,7 +199,11 @@ if (process.argv[1]?.endsWith("analyze.mjs")) {
   const records = names
     .filter(isLaunchRecord)
     .map((name) => JSON.parse(readStageRecord(join(directory, name))));
-  const summary = summarize(records);
+  // --supplement: a halted launch scored after the fact reads with its supplemental score, the
+  // cell saying so; the records on disk are not changed.
+  const summary = summarize(
+    args.has("supplement") ? withSupplementalScores(records, dirname(directory)) : records,
+  );
   const markdown = renderMarkdown(summary);
   if (args.has("out")) writeFileSync(args.get("out"), `${markdown}\n`);
   console.log(markdown);

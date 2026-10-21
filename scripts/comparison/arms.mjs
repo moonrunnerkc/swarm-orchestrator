@@ -65,8 +65,23 @@ export function taskPrompt(task) {
     "",
     `Visible acceptance check (it must pass; it is not the only criterion): ${task.visible.command}`,
     `The project's own tests run with: ${task.projectTest.join(" ")}`,
+    ...deliverableLines(task),
     ...policyLines(task),
   ].join("\n");
+}
+
+/**
+ * Every deliverable the stage scores, said to both arms in the same words. The scoring rule
+ * requires a regression test; through 2026-10-21 the task text only permitted one, and on the
+ * sinon mock task neither arm wrote one.
+ */
+export function deliverableLines(task) {
+  return [
+    "Deliverables, all required; the task is not done until each is in the tree:",
+    "1. The implementation of the behaviour described above, in the project's own source.",
+    "2. Regression tests: at least one new test case, in the project's own test directory and style, that fails on the current code and passes with your change, adding at least one new assertion. A change without a new test is incomplete.",
+    `3. The visible acceptance check (${task.visible.command}) and the project's own test command (${task.projectTest.join(" ")}) both passing on the final tree.`,
+  ];
 }
 
 export function correctionPrompt(task, detail) {
@@ -361,31 +376,72 @@ export function opencodeTokens(stdout) {
 }
 
 /**
- * What the arm itself reported. swarm: an acceptable verdict with exit 0. opencode: a run that
- * exited 0, reported no error and whose last turn ended on a message, which is the only
- * account it gives; it has no verdict of its own, so "claimed" here means "finished with an
- * answer and without reporting an error". A last turn that finished with no message and no
- * tool call (the server having stopped the generation) said nothing, and is not a claim.
+ * What the arm's own stream says about how it ended, apart from its process exit and from any
+ * later reading of its tree. Five things are kept separate on a record: the process exit (exit
+ * code or signal), the terminal lifecycle (`ended`: exited on its own or killed at the deadline),
+ * this explicit completion claim, the independently observed correctness (the visible and hidden
+ * verdicts) and the stage's delivery rule, which the analysis applies over all of them.
+ *
+ * `claim` is "claimed" only where the arm said it finished: Swarm's own verdict acceptable, or an
+ * OpenCode turn that ended on its own (`reason` "stop") with a message. It is "none" where the
+ * stream shows it did not finish: a refused verdict, a reported error, or a last turn that ended
+ * wanting tool results or at a length limit, whatever text it printed on the way (a turn's
+ * "Now let me read the key files" is progress, not a claim; the 2026-10-21 accessor launch was
+ * recorded as a success claim on exactly that, after a refused read ended its investigation).
+ * It is "unknown" where the stream cannot say: no result line, no finished turn, a kill before
+ * either.
  */
-export function claimedSuccess(arm, exitCode, stdout) {
-  if (arm === "swarm") return exitCode === 0 && swarmResult(stdout)?.verdict?.acceptable === true;
-  return exitCode === 0 && !/"type":"error"/.test(stdout) && lastTurnAnswered(stdout);
+export function completionAccount(arm, exitCode, signal, stdout) {
+  const ended = signal === null || signal === undefined ? "exited" : "killed";
+  if (arm === "swarm") {
+    const result = swarmResult(stdout);
+    if (result === null)
+      return { ended, claim: "unknown", basis: "no swarm.result.v1 line in the stream" };
+    return result.verdict?.acceptable === true
+      ? { ended, claim: "claimed", basis: "the product reported its verdict as acceptable" }
+      : { ended, claim: "none", basis: "the product reported its verdict as not acceptable" };
+  }
+  const turns = opencodeTurns(stdout);
+  if (turns.length === 0)
+    return { ended, claim: "unknown", basis: "no finished turn in the stream" };
+  if (/"type":"error"/.test(stdout))
+    return { ended, claim: "none", basis: "the stream reports an error" };
+  const last = turns.at(-1);
+  if (last.reason !== "stop")
+    return {
+      ended,
+      claim: "none",
+      basis: `the last turn finished with reason ${JSON.stringify(last.reason)}, not on its own`,
+    };
+  if (!last.answered)
+    return { ended, claim: "none", basis: "the last turn finished with no message" };
+  return { ended, claim: "claimed", basis: "the last turn ended on its own with a message" };
 }
 
-/** Whether OpenCode's last finished turn carried a text part. */
-function lastTurnAnswered(stdout) {
+/**
+ * The one-word form kept on every record: the arm exited 0 and claimed completion. Records
+ * before `completion` was written read a turn that ended wanting tool results as a claim; the
+ * 2026-10-21 corrections name the one record that was wrong.
+ */
+export function claimedSuccess(arm, exitCode, stdout) {
+  return exitCode === 0 && completionAccount(arm, exitCode, null, stdout).claim === "claimed";
+}
+
+/** OpenCode's finished turns: how each ended and whether it carried a message. */
+function opencodeTurns(stdout) {
+  const turns = [];
   let textInTurn = false;
-  let lastTurnAnswered = false;
   for (const line of stdout.split("\n")) {
     if (!line.startsWith("{")) continue;
     try {
       const parsed = JSON.parse(line);
       if (parsed.type === "step_start") textInTurn = false;
       else if (parsed.type === "text") textInTurn = true;
-      else if (parsed.type === "step_finish") lastTurnAnswered = textInTurn;
+      else if (parsed.type === "step_finish")
+        turns.push({ reason: parsed.part?.reason ?? null, answered: textInTurn });
     } catch {}
   }
-  return lastTurnAnswered;
+  return turns;
 }
 
 export const digestOf = (text) => `sha256:${createHash("sha256").update(text).digest("hex")}`;

@@ -117,6 +117,19 @@ export const invocationSchema = z.strictObject({
   tokenAllowance: z.number().int().nonnegative().nullable().optional(),
   /** The arm's own account of finishing: swarm's verdict, opencode's exit; never the truth. */
   claimedSuccess: z.boolean(),
+  /**
+   * The same account in parts (arms.mjs `completionAccount`): how the process ended, whether
+   * the stream carries an explicit completion claim, and what that reading rests on. Absent on
+   * records written before 2026-10-21, whose `claimedSuccess` read a turn that ended wanting
+   * tool results as a claim.
+   */
+  completion: z
+    .strictObject({
+      ended: z.enum(["exited", "killed"]),
+      claim: z.enum(["claimed", "none", "unknown"]),
+      basis: z.string().min(1),
+    })
+    .optional(),
   /** Set where the harness killed the invocation at the launch's deadline: whether and how fast its end was confirmed. */
   termination: z
     .strictObject({
