@@ -1,0 +1,101 @@
+diff --git a/src/index.ts b/src/index.ts
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -969,16 +969,54 @@
+     // now we know the head matches!
+ 
+     // if the last portion is not empty, it MUST match the end
+-    // check the tail
++    // check the tail. In partial mode with globstar patterns, we also accept
++    // a prefix that doesn't yet reach the tail but could still become one.
+     let fileTailMatch: number = 0
+     if (tail.length) {
+-      // if head + tail > file, then we cannot possibly match
+-      if (tail.length + fileIndex > file.length) return false
++      // if head + tail > file, then we cannot possibly match, unless
++      // partial mode allows for more path content to arrive later
++      if (tail.length + fileIndex > file.length && !partial) return false
+ 
+       // try to match the tail
+       let tailStart = file.length - tail.length
+       if (this.#matchOne(file, tail, partial, tailStart, 0)) {
+         fileTailMatch = tail.length
++      } else if (!partial || lastgs === firstgs) {
++        // in partial with multi-globstar (body has content), the #matchGlobStarBodySections
++        // function will handle the partial logic. Otherwise for a single globstar,
++        // try the affordance below or fall through to the partial prefix handling.
++        // For the single-globstar case with tail that doesn't match at end,
++        // check if there's no contradiction in the remaining content — if
++        // so we can still return true as a valid prefix in partial mode.
++        if (lastgs === firstgs) {
++          let sawBad = false
++          for (let i = fileIndex; i < file.length; i++) {
++            const f = String(file[i])
++            if (
++              f === '.' ||
++              f === '..' ||
++              (!this.options.dot && f.startsWith('.'))
++            ) {
++              sawBad = true
++              break
++            }
++          }
++          if (!sawBad) return true
++          // had bad dots, so not a valid prefix — continue with normal logic
++        } else {
++          // Multi-globstar body: normal affordance check.
++          if (
++            file[file.length - 1] !== '' ||
++            fileIndex + tail.length === file.length
++          ) {
++            return false
++          }
++          tailStart--
++          if (!this.#matchOne(file, tail, partial, tailStart, 0)) {
++            return false
++          }
++          fileTailMatch = tail.length + 1
++        }
+       } else {
+         // affordance for stuff like a/**/* matching a/b/
+         // if the last file portion is '', and there's more to the pattern
+@@ -1018,6 +1056,17 @@
+           return false
+         }
+       }
++      // In partial mode, even when no body segments were consumed (sawSome is
++      // false), this can still be a valid prefix if head matched and the
++      // globstar can absorb what comes. This happens when the pattern ends
++      // with /** or ** (tail doesn't require specific ending content).
++      if (!sawSome && partial) {
++        // If head was empty too (pattern is just **), then fileIndex hasn't
++        // advanced at all and there's no actual match yet. Return true only
++        // if the body is effectively the same globstar (no tail requiring end).
++        // Otherwise, we need at least seen something or that nothing follows.
++        return true
++      }
+       return sawSome
+     }
+ 
+@@ -1047,7 +1096,7 @@
+       b[1] = fileLength - ((nonGsPartsSums[i--] as number) + b[0].length)
+     }
+ 
+-    return !!this.#matchGlobStarBodySections(
++    const sub = this.#matchGlobStarBodySections(
+       file,
+       bodySegments,
+       fileIndex,
+@@ -1056,6 +1105,12 @@
+       0,
+       !!fileTailMatch,
+     )
++    if (sub === null && partial) {
++      // walked off end of file: in partial mode there might still be more
++      // path content coming that would satisfy the pattern.
++      return true
++    }
++    return !!sub
+   }
+ 
+   // return false for "nope, not matching"

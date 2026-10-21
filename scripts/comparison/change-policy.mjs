@@ -128,12 +128,19 @@ const structureMethods = new Set([
   "formatSnapshot",
 ]);
 
+/**
+ * The assertion objects as the projects name them: tap's test handle in its usual spellings
+ * (`t`, and `ct`, `st`, `tt` for a subtest), node's and chai's `assert`, jest's `expect`, chai's
+ * `should`, and referee's `assert` and `refute`.
+ */
+const assertionObjects = /\b(t|ct|st|tt|assert|refute|expect|should)\s*\.\s*([A-Za-z_]\w*)\s*\(/g;
+
 export function countAssertions(line) {
   let count = 0;
-  for (const match of line.matchAll(/\b(t|assert|expect|should)\s*\.\s*([A-Za-z_]\w*)\s*\(/g)) {
+  for (const match of line.matchAll(assertionObjects)) {
     if (!structureMethods.has(match[2])) count += 1;
   }
-  count += (line.match(/(?<![\w.])(expect|assert)\s*\(/g) ?? []).length;
+  count += (line.match(/(?<![\w.])(expect|assert|refute)\s*\(/g) ?? []).length;
   return count;
 }
 

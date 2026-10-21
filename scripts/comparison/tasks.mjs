@@ -60,6 +60,32 @@ const check = (repo, source) => ({
   source,
 });
 
+/**
+ * Fresh tasks of 2026-10-21, mined from two repositories that appear nowhere in this
+ * repository's campaign corpus, pull-request pools, mirrors or earlier evidence (motdotla/dotenv
+ * and sinonjs/sinon), each a bug-fix commit that changed source and tests, validated with no
+ * model: the base fails the commit's own test file and passes the project's node tests, the
+ * commit passes both. Task text was written from the base's observed behaviour and the upstream
+ * change without naming it.
+ */
+const dotenv = {
+  repository: "motdotla/dotenv",
+  install: [npmCi],
+  build: [],
+  projectTest: ["npm", "test"],
+  visiblePrefix: "",
+};
+
+const sinon = {
+  repository: "sinonjs/sinon",
+  install: [npmCi],
+  build: [],
+  // The project's `npm test` also drives two browser suites, which this harness does not
+  // provision; the node suite is the project's own `test-node` script (mocha over test/).
+  projectTest: ["npm", "run", "test-node"],
+  visiblePrefix: "",
+};
+
 export const tasks = [
   {
     id: "marked-bugfix-www-case",
@@ -600,6 +626,86 @@ const manifest = JSON.parse(readFileSync("package.json", "utf8"));
 assert.ok(["25.3.0", "^25.3.0"].includes(manifest.devDependencies["@types/node"]), manifest.devDependencies["@types/node"]);
 assert.ok(["21.6.1", "^21.6.1"].includes(manifest.devDependencies.tap), manifest.devDependencies.tap);
 console.log("visible check passed");
+`,
+    },
+  },
+  {
+    id: "dotenv-bugfix-fast-parser-line-ends",
+    ...dotenv,
+    workType: "bugfix",
+    baseCommit: "e73dc1f51",
+    upstreamCommit: "048dd4863",
+    hidden: {
+      testFiles: ["tests/test-parse-fast.js"],
+      argv: ["npx", "tap", "run", "--disable-coverage", "tests/test-parse-fast.js"],
+    },
+    immutable: [],
+    taskText: `dotenv's opt-in fast parser, dotenv.parse(src, { fast: true }) (the hand-written scanner parseFast in lib/main.js), must give the same result as the classic parser dotenv.parse(src) in three situations where it diverges today. (1) A colon separator followed by a line break: for 'A:\\nfoo' the classic parser gives { A: 'foo' } and the fast parser gives { A: '' }; 'A:\\r\\nfoo\\nNEXT=ok' must give { A: 'foo', NEXT: 'ok' }. (2) The word export used as a key: 'export =value' and 'export\\t=value' must give { export: 'value' } (the fast parser gives {} today), while 'export : value\\nNEXT=ok' must still give { NEXT: 'ok' } and 'export KEY=value' must still give { KEY: 'value' }. (3) The Unicode line separators U+2028 and U+2029 must end a comment, a quoted value's line and an invalid line, as the classic parser already treats them: 'A="x"\\u2028B=ok' must give { A: 'x', B: 'ok' } (today { A: '"x"\\u2028B=ok' }), '# comment\\u2028B=ok' must give { B: 'ok' } (today {}), 'A="x" # comment\\u2028B=ok' and 'A=x # comment\\u2028B=ok' must give { A: 'x', B: 'ok' } (today { A: 'x' }), 'invalid\\u2028B=ok' must give { B: 'ok' } (today {}); an unquoted value keeps them, so 'A=x\\u2028B=ok' stays { A: 'x\\u2028B=ok' }, as both parsers give today. Make the change in the fast scanner in lib/main.js; the classic parser is the reference and must not change, and every case where the two parsers already agree must keep agreeing. The library is CommonJS; npm test builds it, runs the standard linter, checks the types and runs tap over tests/.`,
+    visible: {
+      path: "acceptance/visible/check.mjs",
+      command: "node acceptance/visible/check.mjs",
+      // In the project's own style: its npm test runs standard over the whole tree.
+      source: `import assert from 'node:assert/strict'
+import dotenv from '../../lib/main.js'
+assert.deepEqual(dotenv.parse('A:\\nfoo', { fast: true }), { A: 'foo' })
+assert.deepEqual(dotenv.parse('export =value', { fast: true }), { export: 'value' })
+assert.deepEqual(dotenv.parse('# comment\\u2028B=ok', { fast: true }), { B: 'ok' })
+assert.deepEqual(dotenv.parse('A=x\\u2028B=ok', { fast: true }), { A: 'x\\u2028B=ok' })
+console.log('visible check passed')
+`,
+    },
+  },
+  {
+    id: "sinon-bugfix-stub-accessor-calls",
+    ...sinon,
+    workType: "bugfix",
+    baseCommit: "8c663edec",
+    upstreamCommit: "002ee82bc",
+    hidden: {
+      testFiles: ["test/src/stub-test.js"],
+      argv: ["npx", "mocha", "-R", "dot", "test/src/stub-test.js"],
+    },
+    immutable: [],
+    taskText: `sinon.stub(obj, "prop").get(fn) and sinon.stub(obj, "prop").set(fn) install the replacement function directly as the property's accessor, so reading or writing the stubbed property runs the replacement untracked: nothing records the access and there is no call count to assert on. Wrap the replacement getter and the replacement setter in a spy and expose the spies on the stub as stub.getter and stub.setter, mirroring the spy.get and spy.set surface that sinon.spy(obj, "prop", ["get"]) produces. After const stub = sinon.stub(obj, "prop").get(() => "bar"), reading obj.prop three times must give "bar" each time and stub.getter.callCount must be 3 (stub.getter.calledThrice true); after const stub = sinon.stub(obj, "prop").set((value) => { obj.example = value }), assigning obj.prop = "bar" then obj.prop = "baz" must run the setter both times (obj.example is "baz") with stub.setter.callCount 2 and stub.setter.calledWith("bar") true. stub.resetBehavior() must remove both, so stub.getter and stub.setter are undefined afterwards. Everything .get and .set do today must stay: the replacement runs, the property is defined configurable as before, restore works, and .get and .set stay chainable. Source is ESM under src/sinon/ (default-behaviors.js holds the get and set behaviours, stub.js the stub prototype, spy.js makes spies); the node tests run with npm run test-node (mocha over test/src, test/issues and test/scripts).`,
+    visible: {
+      path: "acceptance/visible/check.mjs",
+      command: "node acceptance/visible/check.mjs",
+      source: `import assert from "node:assert/strict";
+import createStub from "../../src/sinon/stub.js";
+const obj = { prop: "foo" };
+const stub = createStub(obj, "prop").get(() => "bar");
+assert.equal(obj.prop, "bar");
+assert.equal(obj.prop, "bar");
+assert.equal(stub.getter.callCount, 2);
+process.stdout.write("visible check passed\\n");
+`,
+    },
+  },
+  {
+    id: "sinon-bugfix-mock-oncall-expectations",
+    ...sinon,
+    workType: "bugfix",
+    baseCommit: "177e318c2",
+    upstreamCommit: "40de5a48c",
+    hidden: {
+      testFiles: ["test/src/mock-test.js"],
+      argv: ["npx", "mocha", "-R", "dot", "test/src/mock-test.js"],
+    },
+    immutable: [],
+    taskText: `A mock's expectations carry stub behaviours, including per-call ones set with onCall(n). When several expectations for one method are told apart by withArgs and each sets a behaviour for a call index with onCall, the behaviour is looked up by that expectation's own call count rather than by the call's position among all the method's calls, so the configured behaviour is not applied. With const mock = sinon.mock(object); mock.expects("accumulate").withArgs("first thing").onCall(0).callsFake((thing) => "mock-added " + thing); mock.expects("accumulate").withArgs("second thing").onCall(1).callsFake(...same...); mock.expects("accumulate").withArgs("third thing").onCall(2).callsFake(...same...), calling object.accumulate("first thing"), object.accumulate("second thing") and object.accumulate("third thing") in that order must return "mock-added first thing", "mock-added second thing" and "mock-added third thing", and mock.verify() must pass; today only the first call returns the fake's value and the second and third return undefined. Fix this so that an expectation invoked by the mock picks its behaviour by the number of calls already made to the method across all of that method's expectations (the call's position in the mock's sequence), and only while that invocation runs; do not change how the mock selects an expectation (withArgs matching, exhausted expectations, calls in any order) or how an ordinary stub picks its behaviour by its own callCount. Source is ESM under src/sinon/ (mock.js invokes expectations; stub.js chooses the current behaviour); the node tests run with npm run test-node (mocha over test/src, test/issues and test/scripts).`,
+    visible: {
+      path: "acceptance/visible/check.mjs",
+      command: "node acceptance/visible/check.mjs",
+      source: `import assert from "node:assert/strict";
+import sinonMock from "../../src/sinon/mock.js";
+const object = { accumulate(thing) { return \`added \${thing}\`; } };
+const mock = sinonMock(object);
+mock.expects("accumulate").withArgs("first thing").onCall(0).callsFake((thing) => \`mock-added \${thing}\`);
+mock.expects("accumulate").withArgs("second thing").onCall(1).callsFake((thing) => \`mock-added \${thing}\`);
+assert.equal(object.accumulate("first thing"), "mock-added first thing");
+assert.equal(object.accumulate("second thing"), "mock-added second thing");
+mock.verify();
+process.stdout.write("visible check passed\\n");
 `,
     },
   },

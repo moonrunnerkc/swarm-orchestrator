@@ -232,5 +232,10 @@ describe("reading patches and tests", () => {
     expect(countAssertions("t.test('x', (t) => { t.plan(2) })")).toBe(0);
     expect(countAssertions("expect(x).toBe(1); assert(y); assert.strictEqual(a, b)")).toBe(3);
     expect(countAssertions("const expectation = compute(); describe('x')")).toBe(0);
+    // tap's subtest handles and referee's assert and refute, as dotenv and sinon write them.
+    expect(countAssertions("ct.same(dotenv.parse(src), expected, label)")).toBe(1);
+    expect(
+      countAssertions("refute.exception(() => object.method()); assert(stub.getter.calledThrice)"),
+    ).toBe(2);
   });
 });
