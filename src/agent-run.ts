@@ -1284,6 +1284,7 @@ async function resolveWithModel(
   account: string,
   loopDependencies: Parameters<typeof runAgentLoop>[1],
 ): Promise<AgentLoopOutcome> {
+  const startedAt = options.clock.now();
   const candidateDiff = await diffAgainstBase({
     workspaceRoot: options.workspace,
     baseRef: options.baseRef,
@@ -1340,7 +1341,62 @@ async function resolveWithModel(
       : [request.followUp]),
   ].join("\n");
 
-  return runAgentLoop(brief, loopDependencies);
+  const first = await runAgentLoop(brief, loopDependencies);
+  if (first.stopReason !== "completed" || madeAToolCall(first.messages)) return first;
+  // The answer called no tool: nothing in the workspace changed, and the attempt would be
+  // counted and measured over the restored tree as it is. Two repair attempts of the
+  // 2026-10-21 trial's continuation launch ended this way after one step each ("Let me read the
+  // current state of the files first"), spent two of the three attempts on nothing, and left
+  // none for the continuation the task was owed. Told so once, in the same conversation and the
+  // same attempt; a second answer with no call then stands as the attempt's.
+  const remaining = {
+    maxTokens: Math.max(0, loopDependencies.budget.maxTokens - first.tokensUsed),
+    maxWallTimeMs: Math.max(
+      0,
+      loopDependencies.budget.maxWallTimeMs - (options.clock.now() - startedAt),
+    ),
+  };
+  if (remaining.maxTokens < loopDependencies.maxOutputTokens || remaining.maxWallTimeMs <= 0)
+    return first;
+  await options.evidence.record({
+    type: "session-budget",
+    actor: "harness",
+    provenance: ["tool-output"],
+    payload: {
+      rule: "no-action-notice-v1",
+      attempt: request.attempt,
+      step: first.steps,
+      answer: first.completionClaim.slice(0, 2000),
+      note: "the attempt's answer called no tool, so the workspace is unchanged; the notice was given once in the same attempt",
+    },
+  });
+  const second = await runAgentLoop(noActionNotice, {
+    ...loopDependencies,
+    history: first.messages,
+    budget: { ...loopDependencies.budget, ...remaining },
+  });
+  return {
+    stopReason: second.stopReason,
+    steps: first.steps + second.steps,
+    answeredSteps: first.answeredSteps + second.answeredSteps,
+    tokensUsed: first.tokensUsed + second.tokensUsed,
+    callsWithUnknownUsage: first.callsWithUnknownUsage + second.callsWithUnknownUsage,
+    usage: combineUsage(first.usage, second.usage),
+    reservedTokens: second.reservedTokens,
+    plan: first.plan,
+    completionClaim: second.completionClaim,
+    messages: second.messages,
+  };
+}
+
+/** The one notice an attempt that acted on nothing is given, as a user message it cannot mistake for a result. */
+export const noActionNotice =
+  "[harness notice: no tool call] Your answer called no tool, so the workspace is unchanged and " +
+  "whatever was failing is still failing. If work remains, make the tool calls now: read what you " +
+  "need, then edit or write. If no change is needed, say so in one line and stop.";
+
+function madeAToolCall(messages: readonly ConversationMessage[]): boolean {
+  return messages.some((message) => message.role === "assistant" && message.toolCalls.length > 0);
 }
 
 /**
