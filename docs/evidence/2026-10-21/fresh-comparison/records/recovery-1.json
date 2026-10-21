@@ -1,0 +1,115 @@
+{
+  "schema": "swarm-ordinary-comparison.recovery.v1",
+  "manifestDigest": "sha256:36d8d71b8418639b79bcc2fc7268466e91e26cf126d09c4088557bea134f155b",
+  "recoveredAt": "2026-10-21T21:36:28.653Z",
+  "clears": "halt-1.json",
+  "clearsDigest": "sha256:0b26bc52be435b68610d9408c28a6f3c73b30163b6a6de3159f51cfeca5a413b",
+  "justification": "Launch 0 (Swarm, unparse task) ran the task to its own end: 14 steps, 148,823 tokens, a changed tree (lib/cli/unparse-args.js and four added regression cases in test/node-unit/cli/unparse-args.spec.js). Its exit 4 is the product's own verdict, not an infrastructure failure: mocha is its own test runner, so the product read its build and tests gates as measured by an instrument the change altered, its final verification as unmeasured, and escalated after 0 repair attempts. The protocol registers an exit the product chose as the arm's result, never relaunched. The attempt stands as recorded and its kept workspace is scored after the fact with the runner's own verdicts. The endpoint, the pins and the harness are unchanged; continuing to the next registered launch only.",
+  "revalidation": {
+    "problems": [],
+    "harnessDigest": "sha256:65f35d13747f47564a36a8428a65726d11a1b6c98aa43ef9a5124976d312d323",
+    "node": "v24.15.0",
+    "endpointInstance": "pid 76525 started Mon Oct 19 22:45:30 2026",
+    "models": [
+      "gemma4-31b-greedy-128k:latest",
+      "swarm-redesign-qwen36-32k:latest",
+      "qwen3.6:35b-a3b",
+      "qwen3:0.6b",
+      "gemma4:e2b-it-q8_0",
+      "resident-heavy:24b",
+      "resident-reason:e4b",
+      "resident-fast:2b",
+      "resident-embed:0.6b",
+      "mistral-small3.2:24b",
+      "qwen3-embedding:0.6b",
+      "deepseek-v4-pro:cloud",
+      "kimi-k2:1t-cloud",
+      "kimi-k2.6:cloud",
+      "gemma4:e4b-it-q8_0",
+      "glm-5.1:cloud",
+      "gemma4:31b"
+    ],
+    "opencode": "1.14.48",
+    "swarmCliDigest": "sha256:3503870a31f1a4b4cfe7e207c8174c44c19475cb5324166806cceff7940893b4"
+  },
+  "completed": 0,
+  "remaining": [
+    {
+      "task": "mocha-bugfix-unparse-attached-values",
+      "arm": "swarm",
+      "order": 0
+    },
+    {
+      "task": "mocha-bugfix-unparse-attached-values",
+      "arm": "opencode",
+      "order": 1
+    },
+    {
+      "task": "mocha-bugfix-long-prefix-short-alias",
+      "arm": "opencode",
+      "order": 2
+    },
+    {
+      "task": "mocha-bugfix-long-prefix-short-alias",
+      "arm": "swarm",
+      "order": 3
+    }
+  ],
+  "probes": [
+    {
+      "purpose": "recovery",
+      "startedAt": "2026-10-21T21:36:27.798Z",
+      "wallMs": 854,
+      "ok": true,
+      "problem": null,
+      "configuration": {
+        "endpoint": "http://127.0.0.1:11434/v1",
+        "model": "qwen3.6:35b-a3b",
+        "stream": true,
+        "includeUsage": true,
+        "thinking": false,
+        "maxTokens": 64,
+        "requestDeadlineMs": 30000,
+        "sequenceDeadlineMs": 90000
+      },
+      "requests": [
+        {
+          "kind": "chat",
+          "wallMs": 267,
+          "firstByteMs": 248,
+          "status": 200,
+          "outcome": "answered",
+          "problem": null,
+          "usage": {
+            "input": 38,
+            "output": 2
+          }
+        },
+        {
+          "kind": "tool-call",
+          "wallMs": 335,
+          "firstByteMs": 334,
+          "status": 200,
+          "outcome": "answered",
+          "problem": null,
+          "usage": {
+            "input": 311,
+            "output": 28
+          }
+        },
+        {
+          "kind": "tool-result",
+          "wallMs": 252,
+          "firstByteMs": 233,
+          "status": 200,
+          "outcome": "answered",
+          "problem": null,
+          "usage": {
+            "input": 372,
+            "output": 2
+          }
+        }
+      ]
+    }
+  ]
+}
