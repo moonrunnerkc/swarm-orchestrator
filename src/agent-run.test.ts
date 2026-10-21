@@ -565,7 +565,9 @@ it("dispatches one explicit alternate after repeated observed failure and stops 
   const alternate = createRecordingModelClient(
     createFixtureModelClient({
       modelId: "fixture:alternate",
-      turns: [respondWithText("No repair found.")],
+      // Told once that its answer called no tool, the alternate declines again; that second
+      // answer stands as the attempt's.
+      turns: [respondWithText("No repair found."), respondWithText("No change is needed.")],
     }),
     evidence,
   );
@@ -583,6 +585,7 @@ it("dispatches one explicit alternate after repeated observed failure and stops 
       ]),
       respondWithText("done"),
       respondWithText("No repair found."),
+      respondWithText("No change is needed."),
     ],
     {
       attempts: 4,
@@ -629,7 +632,7 @@ it("dispatches one explicit alternate after repeated observed failure and stops 
     evidence
       .records()
       .filter((record) => record.type === "model-call" && record.actor === "fixture:alternate"),
-  ).toHaveLength(1);
+  ).toHaveLength(2);
   const alternateCall = evidence
     .records()
     .find((record) => record.type === "model-call" && record.actor === "fixture:alternate");
