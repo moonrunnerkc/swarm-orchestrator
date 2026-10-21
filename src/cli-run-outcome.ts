@@ -203,6 +203,9 @@ export function describeRunOutcome(input: RunOutcomeInput): readonly string[] {
       `policy ${input.verdict.policy}, execution ${input.verdict.executionTrust}; ` +
       `the loop stopped as ${input.lifecycle}`,
   );
+  // Accepted over a cut: the report says the acceptance is the checks', not the model's finish.
+  if (input.verdict.acceptable && input.verdict.reasons.lifecycle !== undefined)
+    say(`  lifecycle: ${input.verdict.reasons.lifecycle}`);
   if (input.continuation !== undefined) say(`  ${describeContinuation(input.continuation)}`);
   if (input.regressionTests !== undefined)
     for (const line of describeRegressionTests(input.regressionTests)) say(`  ${line}`);

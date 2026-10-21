@@ -497,6 +497,26 @@ describe("the run's one status", () => {
     );
   });
 
+  it("says a run accepted over a model-work cut was accepted on its checks, and keeps the cut as its lifecycle", () => {
+    const cutLifecycle =
+      "the model's work was cut at the end of its allowance (max-wall-time), before the run's deadline and with every write and shell call settled before the cut; the checks of the delivered tree decide the run, which says nothing about whether the model had finished";
+    const input = {
+      ...base,
+      verdict: { ...certified, reasons: { ...certified.reasons, lifecycle: cutLifecycle } },
+      requirements: finished("accepted", "accepted"),
+      gates: cycle([run("tests", "passed"), run("task-acceptance", "passed")]),
+      lifecycle: "max-wall-time",
+    };
+    const lines = describeRunOutcome(input).join("\n");
+    expect(outcomeStatus(input)).toBe("accepted");
+    expect(lines).toContain("the loop stopped as max-wall-time");
+    expect(lines).toContain(`lifecycle: ${cutLifecycle}`);
+    // A refused run says nothing of the kind, whatever its reasons hold.
+    expect(
+      describeRunOutcome({ ...input, verdict: { ...input.verdict, acceptable: false } }).join("\n"),
+    ).not.toContain("lifecycle: ");
+  });
+
   it("names the continuation a step-limited loop was owed, and the regression tests as the harness measured them", () => {
     const input = {
       ...base,
