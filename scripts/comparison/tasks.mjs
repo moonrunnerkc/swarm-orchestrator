@@ -10,7 +10,19 @@
  * This set is separate from the registered campaign of 2026-09-29 and shares none of its goals.
  */
 
+import { readFileSync } from "node:fs";
+
 const npmCi = ["npm", "ci", "--ignore-scripts"];
+
+/**
+ * The accessor task's hidden API check, kept with the audit that established the requirement and
+ * written into the scoring checkout under acceptance/hidden/, so its imports step up two
+ * directories to the project's source.
+ */
+const sinonAccessorApiCheck = readFileSync(
+  new URL("../../docs/evidence/2026-10-21/accessor-audit/api-check.mjs", import.meta.url),
+  "utf8",
+).replaceAll('from "./src/', 'from "../../src/');
 
 /** marked: tests import the built lib/marked.esm.js, so a build precedes every check. */
 const markedBuild = "npm run build:esbuild";
@@ -667,6 +679,39 @@ console.log('visible check passed')
     },
     immutable: [],
     taskText: `sinon.stub(obj, "prop").get(fn) and sinon.stub(obj, "prop").set(fn) install the replacement function directly as the property's accessor, so reading or writing the stubbed property runs the replacement untracked: nothing records the access and there is no call count to assert on. Wrap the replacement getter and the replacement setter in a spy and expose the spies on the stub as stub.getter and stub.setter, mirroring the spy.get and spy.set surface that sinon.spy(obj, "prop", ["get"]) produces. After const stub = sinon.stub(obj, "prop").get(() => "bar"), reading obj.prop three times must give "bar" each time and stub.getter.callCount must be 3 (stub.getter.calledThrice true); after const stub = sinon.stub(obj, "prop").set((value) => { obj.example = value }), assigning obj.prop = "bar" then obj.prop = "baz" must run the setter both times (obj.example is "baz") with stub.setter.callCount 2 and stub.setter.calledWith("bar") true. stub.resetBehavior() must remove both, so stub.getter and stub.setter are undefined afterwards. Everything .get and .set do today must stay: the replacement runs, the property is defined configurable as before, restore works, and .get and .set stay chainable. Source is ESM under src/sinon/ (default-behaviors.js holds the get and set behaviours, stub.js the stub prototype, spy.js makes spies); the node tests run with npm run test-node (mocha over test/src, test/issues and test/scripts).`,
+    visible: {
+      path: "acceptance/visible/check.mjs",
+      command: "node acceptance/visible/check.mjs",
+      source: `import assert from "node:assert/strict";
+import createStub from "../../src/sinon/stub.js";
+const obj = { prop: "foo" };
+const stub = createStub(obj, "prop").get(() => "bar");
+assert.equal(obj.prop, "bar");
+assert.equal(obj.prop, "bar");
+assert.equal(stub.getter.callCount, 2);
+process.stdout.write("visible check passed\\n");
+`,
+    },
+  },
+  {
+    // The accessor task again, exposed development material after 2026-10-21: the published
+    // patch counted calls but exposed wrappers without the spy surface the task named, and no
+    // check asked for it. The text now says what "mirroring the spy.get and spy.set surface"
+    // requires, and a hidden check (acceptance-audit/api-check.mjs, never in an arm's
+    // workspace) holds the delivered tree to it beyond the task's own examples.
+    id: "sinon-bugfix-stub-accessor-calls-v2",
+    ...sinon,
+    workType: "bugfix",
+    baseCommit: "8c663edec",
+    upstreamCommit: "002ee82bc",
+    hidden: {
+      testFiles: ["test/src/stub-test.js"],
+      argv: ["npx", "mocha", "-R", "dot", "test/src/stub-test.js"],
+      files: [{ path: "acceptance/hidden/api-check.mjs", source: sinonAccessorApiCheck }],
+      extraArgv: [["node", "acceptance/hidden/api-check.mjs"]],
+    },
+    immutable: [],
+    taskText: `sinon.stub(obj, "prop").get(fn) and sinon.stub(obj, "prop").set(fn) install the replacement function directly as the property's accessor, so reading or writing the stubbed property runs the replacement untracked: nothing records the access and there is no call count to assert on. Wrap the replacement getter and the replacement setter in a spy and expose the spies on the stub as stub.getter and stub.setter, mirroring the spy.get and spy.set surface that sinon.spy(obj, "prop", ["get"]) produces. That surface is the whole sinon spy API, not a call counter: stub.getter and stub.setter must be sinon spies on which everything sinon.spy(fn) returns supports works the same way, among them callCount, calledOnce and calledThrice, calledWith, withArgs, getCall and firstCall, args, returnValues and resetHistory; a wrapper that only counts calls does not meet this. After const stub = sinon.stub(obj, "prop").get(() => "bar"), reading obj.prop three times must give "bar" each time and stub.getter.callCount must be 3 (stub.getter.calledThrice true); after const stub = sinon.stub(obj, "prop").set((value) => { obj.example = value }), assigning obj.prop = "bar" then obj.prop = "baz" must run the setter both times (obj.example is "baz") with stub.setter.callCount 2, stub.setter.calledWith("bar") true and stub.setter.withArgs("bar").callCount 1. stub.resetBehavior() must remove both, so stub.getter and stub.setter are undefined afterwards. Everything .get and .set do today must stay: the replacement runs, the property is defined configurable as before, restore works, and .get and .set stay chainable. Source is ESM under src/sinon/ (default-behaviors.js holds the get and set behaviours, stub.js the stub prototype, spy.js makes spies); the node tests run with npm run test-node (mocha over test/src, test/issues and test/scripts).`,
     visible: {
       path: "acceptance/visible/check.mjs",
       command: "node acceptance/visible/check.mjs",
