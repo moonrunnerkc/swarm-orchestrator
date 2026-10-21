@@ -1,0 +1,187 @@
+diff --git a/src/sinon/default-behaviors.js b/src/sinon/default-behaviors.js
+index 82368b6670a4dc714c99af56966d9a091fee62d8..23101ec3749f87ea2680c1fb98027646d460046d 100644
+--- a/src/sinon/default-behaviors.js
++++ b/src/sinon/default-behaviors.js
+@@ -1,9 +1,10 @@
+-import commons from "@sinonjs/commons";
++import constants from "@sinonjs/commons";
+ 
+-const { prototypes } = commons;
++const { prototypes } = constants;
+ import isPropertyConfigurable from "./util/core/is-property-configurable.js";
+ import exportAsyncBehaviors from "./util/core/export-async-behaviors.js";
+ import extend from "./util/core/extend.js";
++import createSpy from "./spy.js";
+ 
+ const { slice } = prototypes.array;
+ 
+@@ -281,8 +282,13 @@ const defaultBehaviors = {
+     get: function get(fake, getterFunction) {
+         const rootStub = fake.stub || fake;
+ 
++        // Wrap the getter in a spy to track calls
++        if (!rootStub.getter) {
++            rootStub.getter = createSpy(getterFunction);
++        }
++
+         Object.defineProperty(rootStub.rootObj, rootStub.propName, {
+-            get: getterFunction,
++            get: rootStub.getter,
+             configurable: isPropertyConfigurable(
+                 rootStub.rootObj,
+                 rootStub.propName,
+@@ -295,12 +301,17 @@ const defaultBehaviors = {
+     set: function set(fake, setterFunction) {
+         const rootStub = fake.stub || fake;
+ 
++        // Wrap the setter in a spy to track calls
++        if (!rootStub.setter) {
++            rootStub.setter = createSpy(setterFunction);
++        }
++
+         Object.defineProperty(
+             rootStub.rootObj,
+             rootStub.propName,
+             // eslint-disable-next-line accessor-pairs
+             {
+-                set: setterFunction,
++                set: rootStub.setter,
+                 configurable: isPropertyConfigurable(
+                     rootStub.rootObj,
+                     rootStub.propName,
+diff --git a/src/sinon/stub.js b/src/sinon/stub.js
+index 7adc67d311792d7435f52623753a00027dd0d7eb..6c39a3c656547ed5d7648270dabcf0f6a45457f0 100644
+--- a/src/sinon/stub.js
++++ b/src/sinon/stub.js
+@@ -246,6 +246,10 @@ const proto = {
+         this.returnThis = false;
+         this.resolveThis = false;
+ 
++        // Clear the getter and setter spies exposed by .get()/.set()
++        delete this.getter;
++        delete this.setter;
++
+         forEach(this.fakes, function (fake) {
+             fake.resetBehavior();
+         });
+diff --git a/test/src/stub-test.js b/test/src/stub-test.js
+index 157026f44aa67b05ba848bbf49f54a8c752bf4ba..e1b36dfd299c8fd8e0c463af6b01f88d447b4574 100644
+--- a/test/src/stub-test.js
++++ b/test/src/stub-test.js
+@@ -3768,6 +3768,116 @@ describe("stub", function () {
+         });
+     });
+ 
++    describe("stub.getter and stub.setter spies", function () {
++        it("getter spy tracks call count for .get", function () {
++            const myObj = { prop: "foo" };
++            const stub = createStub(myObj, "prop").get(function getterFn() {
++                return "bar";
++            });
++
++            assert.equals(myObj.prop, "bar");
++            assert.equals(myObj.prop, "bar");
++            assert.equals(stub.getter.callCount, 2);
++        });
++
++        it("getter spy.calledThrice works for .get", function () {
++            const myObj = { prop: "foo" };
++            const stub = createStub(myObj, "prop").get(function getterFn() {
++                return "bar";
++            });
++
++            Object.keys({ a: 1, b: 2, c: 3 }).forEach(function () {
++                assert.equals(myObj.prop, "bar");
++            });
++            assert.isTrue(stub.getter.calledThrice);
++        });
++
++        it("setter spy tracks call count for .set", function () {
++            const myObj = { prop: undefined };
++            const stub = createStub(myObj, "prop").set(function setterFn(value) {
++                myObj.example = value;
++            });
++
++            myObj.prop = "bar";
++            myObj.prop = "baz";
++            assert.equals(stub.setter.callCount, 2);
++        });
++
++        it("setter spy.calledWith works for .set", function () {
++            const myObj = { prop: undefined };
++            const stub = createStub(myObj, "prop").set(function setterFn(value) {
++                myObj.example = value;
++            });
++
++            myObj.prop = "first";
++            myObj.prop = "second";
++            assert.isTrue(stub.setter.calledWith("first"));
++        });
++
++        it("setter spy.withArgs works for .set", function () {
++            const myObj = { prop: undefined };
++            const stub = createStub(myObj, "prop").set(function setterFn(value) {
++                myObj.example = value;
++            });
++
++            myObj.prop = "bar";
++            myObj.prop = "baz";
++            assert.equals(stub.setter.withArgs("bar").callCount, 1);
++        });
++
++        it("setter spy args track captured arguments", function () {
++            const myObj = { prop: undefined };
++            const stub = createStub(myObj, "prop").set(function setterFn(value) {
++                myObj.example = value;
++            });
++
++            myObj.prop = "test-val";
++            assert.equals(stub.setter.args[0][0], "test-val");
++        });
++
++        it("getter spy returns captured return values", function () {
++            const myObj = { prop: "foo" };
++            const stub = createStub(myObj, "prop").get(function getterFn() {
++                return "bar";
++            });
++
++            Object.keys({ a: 1, b: 2 }).forEach(function () {
++                assert.equals(myObj.prop, "bar");
++            });
++            assert.equals(stub.getter.returnValues.length, 2);
++            assert.equals(stub.getter.returnValues[0], "bar");
++        });
++
++        it("resetBehavior removes getter and setter", function () {
++            const myObj = { prop: "foo" };
++            const stub = createStub(myObj, "prop").get(function getterFn() {
++                return "bar";
++            });
++
++            refute.isUndefined(stub.getter);
++            assert.equals(myObj.prop, "bar");
++
++            stub.resetBehavior();
++
++            assert.isUndefined(stub.getter);
++        });
++
++        it("resetBehavior removes setter spy", function () {
++            const myObj = { prop: undefined };
++            const stub = createStub(myObj, "prop").set(function setterFn(value) {
++                myObj.example = value;
++            });
++
++            myObj.prop = "bar";
++            refute.isUndefined(stub.setter);
++            assert.equals(stub.setter.callCount, 1);
++
++            stub.resetBehavior();
++
++            assert.isUndefined(stub.setter);
++        });
++    });
++
+     describe(".value", function () {
+         it("allows stubbing property descriptor values", function () {
+             const myObj = {
