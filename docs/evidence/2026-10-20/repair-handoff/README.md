@@ -216,3 +216,20 @@ commits, with their logs.
   unchanged, and the product's own chains record every call, but it is one more process than the
   trial had.
 - The exported bundle directories of the two runs are not kept (weight); the chains are, packed.
+
+## 9. Audit, appended 2026-10-20 23:23 UTC: both patches autolink a scheme-less `://host`
+
+[audit-url-scheme/](audit-url-scheme/README.md). Both delivered patches, identical bytes, spell the
+`url` rule's scheme as `(?:[fF][tT][pP]|[hH][tT][tT][pP][sS]?)?:\/\/`, the whole alternative
+optional before `://`. On the project's parser, built from fresh clones, `://example.com` and
+`://example.com/file` are plain text on the base `e3c0d3e208c8` and on the upstream fix
+`626d961335c9`, and an HTML link on both delivered patches. The frozen evaluation never tried a
+scheme-less input, so the scores in sections 5 and 6 stand as recorded, and the summary is
+corrected: both arms fixed the known FTP defect and passed the frozen evaluation while retaining
+this regression. "The same correct patch" above reads, from this audit on, as "the same patch,
+correct under the frozen evaluation and wrong on this input". The decision of section 6 is
+unchanged: the trees are identical, so there is no demonstrated benefit. The audit also separates
+each launch's replayed usage (906,557 tokens, recorded, no live inference) from the live second
+attempt's (785,078 control, 532,509 treatment), and names the product rule behind the treatment's
+`not accepted`: the assessment's refusing-lifecycle rule on `max-wall-time`, not the absence of a
+completion claim. Nothing in sections 1 to 8 is rewritten.

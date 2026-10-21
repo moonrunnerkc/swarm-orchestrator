@@ -1,0 +1,45 @@
+{
+  "tree": "base with the patch",
+  "commit": "e3c0d3e208c80daca2c9fbb68f125f060cd30fc3",
+  "patch": "live-treatment/final.patch",
+  "patchDigest": "sha256:32788e7d951aa584da2b21e8139f7a9094139353d57ebc6fd9e78a13bc1948db",
+  "urlRule": "HEAD:src/rules.ts:411:  url: edit(/^((?:ftp|https?):\\/\\/|www\\.)(?:[a-zA-Z0-9\\-]+\\.?)+[^\\s<]*|^email/, 'i')",
+  "results": [
+    {
+      "id": "scheme-less-bare",
+      "input": "://example.com",
+      "html": "<p><a href=\"://example.com\">://example.com</a></p>\n",
+      "linked": true
+    },
+    {
+      "id": "scheme-less-path",
+      "input": "://example.com/file",
+      "html": "<p><a href=\"://example.com/file\">://example.com/file</a></p>\n",
+      "linked": true
+    },
+    {
+      "id": "scheme-less-in-text",
+      "input": "See ://example.com/file today.",
+      "html": "<p>See ://example.com/file today.</p>\n",
+      "linked": false
+    },
+    {
+      "id": "ftp-bare",
+      "input": "ftp://example.com/file",
+      "html": "<p><a href=\"ftp://example.com/file\">ftp://example.com/file</a></p>\n",
+      "linked": true
+    },
+    {
+      "id": "ftp-mixed-case",
+      "input": "Ftp://ftp.example.net/file",
+      "html": "<p><a href=\"Ftp://ftp.example.net/file\">Ftp://ftp.example.net/file</a></p>\n",
+      "linked": true
+    },
+    {
+      "id": "http-bare",
+      "input": "http://example.com",
+      "html": "<p><a href=\"http://example.com\">http://example.com</a></p>\n",
+      "linked": true
+    }
+  ]
+}

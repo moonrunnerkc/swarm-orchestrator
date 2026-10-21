@@ -156,3 +156,14 @@ benefit**: the treatment did not do what the control did not. The product's own 
 and checks, before it claimed), which the rule does not score and [README.md](README.md) section 5
 reports. The handoff is kept available by name and not made a default
 ([README.md](README.md) section 6). Nothing in the product changed during either launch.
+
+### 2. 2026-10-20 23:23 UTC, after the pair was closed: an audit of the delivered patches
+
+[audit-url-scheme/](audit-url-scheme/README.md), appended with the scores above unchanged. Both
+arms' identical patch makes the `url` rule's scheme optional before `://`, so `://example.com` is
+autolinked where the base and the upstream fix leave it as text; the frozen evaluation (oracle,
+probe, supplied check, project tests) did not try such an input and passed the patch. "Both arms
+delivered the same correct patch" in amendment 1 is read as correct under that evaluation: both
+arms fixed the known FTP defect and passed the frozen evaluation while retaining this regression.
+The decision rule and the decision (no demonstrated benefit; the trees are identical) stand. No
+launch follows under this protocol.

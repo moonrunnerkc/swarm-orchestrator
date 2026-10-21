@@ -1,0 +1,93 @@
+{
+  "schema": "swarm-ordinary-comparison.manifest.v1",
+  "frozenAt": "2026-10-20T23:36:05.182Z",
+  "protocolDigest": "sha256:5d3ec09f7188c3cad852e5bba64a51965267df757ea52b3de6c62a14aa36b255",
+  "pins": {
+    "model": "qwen3.6:35b-a3b",
+    "endpoint": "http://127.0.0.1:11434/v1",
+    "swarmCli": "/Users/brad/.cache/swarm-comparison/tools/swarm-8ce795eb8/dist/cli.js",
+    "swarmRevision": "8ce795eb8",
+    "swarmCliDigest": "sha256:2bb07c9a9bf46cda45759455c27f21d8336fe0d3dc6d20e4e5461bfc026ea6e0",
+    "opencode": "1.14.48",
+    "node": "v24.15.0",
+    "harnessDigest": "sha256:1689053d2e356504639466a8e8e92e10a99521245c681d75fed1551d38d40854",
+    "swarmFlags": []
+  },
+  "budgets": {
+    "wallMsPerInvocation": 540500,
+    "wallGraceMs": 59500,
+    "swarmTokenCap": 8000000,
+    "maxCorrections": 0,
+    "inferenceDeadlineMs": 180000,
+    "readinessRequestDeadlineMs": 30000,
+    "readinessSequenceDeadlineMs": 90000,
+    "readinessSequences": 2,
+    "swarmVerificationReserveMs": 0
+  },
+  "seed": "swarm-ordinary-comparison-2026-10-11",
+  "tasks": [
+    {
+      "id": "minimatch-bugfix-partial-globstar",
+      "repository": "isaacs/minimatch",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ],
+        [
+          "npx",
+          "tshy"
+        ]
+      ],
+      "build": [
+        [
+          "npx",
+          "tshy"
+        ]
+      ],
+      "projectTest": [
+        "npm",
+        "test"
+      ],
+      "visiblePrefix": "npx tshy && ",
+      "workType": "bugfix",
+      "baseCommit": "ea94840326c3f40522f1b544bd2303024b0eec35",
+      "upstreamCommit": "3a0d83b6f03a17ebc15361c2faa7110777042aab",
+      "hidden": {
+        "testFiles": [
+          "test/partial.ts"
+        ],
+        "argv": [
+          "npx",
+          "tap",
+          "run",
+          "--disable-coverage",
+          "test/partial.ts"
+        ]
+      },
+      "immutable": [
+        "test"
+      ],
+      "taskText": "With the partial: true option (and Minimatch#match(path, true)), a path should match when it is a valid prefix of a path that the full pattern could match, including when the pattern contains **. Today patterns with a globstar wrongly report false for valid prefixes. For example minimatch(\"/b/c/d/a\", \"/**/a/b/c\", { partial: true }), minimatch(\"/b/c/d/a\", \"/**/a/b/c/**\", { partial: true }), minimatch(\"a\", \"a/**\", { partial: true }), minimatch(\"/b/c/d/a\", \"/**/a/**/b/c/**\", { partial: true }) and minimatch(\"/b/c/d/a\", \"/**/a/**\", { partial: true }) must all return true, while minimatch(\"b/a\", \"a/**\", { partial: true }) must still return false. Existing partial behavior for patterns without ** (for example \"/a/b\" against \"/*/b/x/y/z\" is true and \"/a/b/c\" is false) and makeRe(pattern, { partial: true }) must be unchanged, and non-partial matching must not loosen: minimatch(\"/b/c/d/a\", \"/**/a/b/c\") stays false. Make the change in the ** path-walking logic in src/index.ts, not by post-processing results. The library is TypeScript built with npx tshy; tests run with npm test (tap, which requires 100% coverage).",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "npx tshy && node acceptance/visible/check.mjs",
+        "source": "import assert from \"node:assert/strict\";\nimport { minimatch } from \"../../dist/esm/index.js\";\nassert.equal(minimatch(\"/b/c/d/a\", \"/**/a/b/c\", { partial: true }), true);\nassert.equal(minimatch(\"b/a\", \"a/**\", { partial: true }), false);\nassert.equal(minimatch(\"/b/c/d/a\", \"/**/a/b/c\"), false);\nconsole.log(\"visible check passed\");\n"
+      }
+    }
+  ],
+  "launches": [
+    {
+      "task": "minimatch-bugfix-partial-globstar",
+      "arm": "swarm",
+      "order": 0
+    },
+    {
+      "task": "minimatch-bugfix-partial-globstar",
+      "arm": "opencode",
+      "order": 1
+    }
+  ],
+  "purpose": "one fresh ordinary comparison, Swarm (ordinary configuration, handoff off) then OpenCode, on minimatch-bugfix-partial-globstar, build 8ce795eb8"
+}

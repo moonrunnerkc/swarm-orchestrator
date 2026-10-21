@@ -24,11 +24,30 @@ Source on `v13-main`; not published until a release names it.
   ran, not that what it examined was correct. The selection is the last three in call order; nothing
   selects by meaning and no model text travels. The worker does not ask for them: one matched
   development pair at that run's repair boundary (`docs/evidence/2026-10-20/repair-handoff/`)
-  delivered the same correct patch with and without them, which by the pair's pre-registered rule
-  is no demonstrated benefit, so they are not a default.
+  delivered the same patch with and without them, which by the pair's pre-registered rule is no
+  demonstrated benefit, so they are not a default. Both arms' patch fixed the known FTP defect and
+  passed the frozen evaluation; a later audit (`audit-url-scheme/`) found it also makes the URL
+  rule's scheme optional before `://`, autolinking `://example.com` where the base does not, which
+  the frozen evaluation did not try. The treatment's lower live token usage in that one pair is an
+  observation, not a benefit attributed to the account.
 
 ### Fixed
 
+- **A shell check repeated after an edit is answered again, with the shell still counted as a
+  possible edit.** Naming the shell as a tool whose call may write (below) keyed every shell
+  command the way a writing call was keyed, without the workspace generation, so a check run
+  before an edit and again after it was compared with its own earlier answer and its fresh
+  result, with its evidence reference, was replaced by the "already answered" notice. The command
+  ran both times and both results are on the ledger; the model lost the second answer. Whether a
+  call may mutate files and which workspace its answer is about are now two facts: every
+  observation is keyed by the generation its call ran against, and a successful call that may
+  write advances the generation after it is keyed. A check repeated after an edit, or an
+  inspection repeated after a shell command, is a new question; an inspection, a denied call, a
+  write or a shell command repeated with nothing else landing between is still a repeat. The
+  notices say what a repeat establishes: of a call that did not land, that no writing call has
+  landed since; of one that landed, that no other landed between the two. Reproduced through the
+  real worker and chokepoint on a git workspace against `33fbf1693` before the change
+  (`docs/evidence/2026-10-20/repeat-key/`). Not evidence of any improved repair.
 - **A shell command counts as a possible edit, and a repeated write is not told that no write
   landed.** The worker named as writers only the tools the chokepoint classes as `write`, so a
   shell command that edited a file did not start a new workspace for the repeated-call tracker and
