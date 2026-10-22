@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -305,6 +305,31 @@ describe.runIf(darwin)("access from inside the launch's own profile", () => {
         (one) => one.name === "inside the profile: a protected canary is unreadable",
       ),
     ).toMatchObject({ ok: false });
+  });
+
+  it("reads a frozen tool inside a denied parent, never writes it, and keeps its documentation denied", () => {
+    const tools = join(root, "tools");
+    mkdirSync(join(tools, "frozen", "docs"), { recursive: true });
+    mkdirSync(join(tools, "older-clone"), { recursive: true });
+    writeFileSync(join(tools, "frozen", "cli.js"), "run\n");
+    writeFileSync(join(tools, "frozen", "docs", "hidden-check.mjs"), "secret\n");
+    writeFileSync(join(tools, "older-clone", "evidence.md"), "old\n");
+    const profile = sandboxProfile({
+      protectedRoots: [tools],
+      readableRoots: [join(tools, "frozen")],
+      reprotectedRoots: [join(tools, "frozen", "docs")],
+      ownRoots: [],
+    });
+    const status = (command) =>
+      spawnSync(
+        "/usr/bin/sandbox-exec",
+        ["-p", profile, "/bin/sh", "-c", `${command} >/dev/null 2>&1; echo $?`],
+        { encoding: "utf8" },
+      ).stdout.trim();
+    expect(status(`cat ${join(tools, "frozen", "cli.js")}`)).toBe("0");
+    expect(status(`echo x > ${join(tools, "frozen", "new.js")}`)).not.toBe("0");
+    expect(status(`cat ${join(tools, "frozen", "docs", "hidden-check.mjs")}`)).not.toBe("0");
+    expect(status(`cat ${join(tools, "older-clone", "evidence.md")}`)).not.toBe("0");
   });
 
   it("writes the same profile text for every arm of a manifest", () => {

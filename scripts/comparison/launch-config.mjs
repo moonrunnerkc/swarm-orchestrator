@@ -56,18 +56,30 @@ function resolvedPath(path) {
 const quote = (path) => JSON.stringify(path);
 
 /**
- * The profile text. A specific file operation outranks the wildcard form whatever their order
- * (measured on this host: a later `allow file-read*` did not reopen a `deny file-read-data`), so
- * the launch's own roots are admitted with the same operations the protected roots are denied.
- * Metadata is left readable so a path through a protected directory still resolves.
+ * The profile text, in layers where the last matching rule decides: protected roots denied,
+ * read-only roots inside them readable again (the frozen tool, a declared package manager),
+ * re-protected roots inside those denied again (the tool's documentation and evidence), and the
+ * launch's own roots readable and writable. A specific file operation outranks the wildcard form
+ * whatever their order (measured on this host: a later `allow file-read*` did not reopen a
+ * `deny file-read-data`), so every layer names the same operations. Metadata is left readable so a
+ * path through a protected directory still resolves.
  */
-export function sandboxProfile({ protectedRoots, ownRoots }) {
+export function sandboxProfile({
+  protectedRoots,
+  readableRoots = [],
+  reprotectedRoots = [],
+  ownRoots,
+}) {
   const subpaths = (roots) =>
     roots.map((root) => `(subpath ${quote(resolvedPath(root))})`).join(" ");
   return [
     "(version 1)",
     "(allow default)",
     `(deny file-read-data file-write* ${subpaths(protectedRoots)})`,
+    ...(readableRoots.length === 0 ? [] : [`(allow file-read-data ${subpaths(readableRoots)})`]),
+    ...(reprotectedRoots.length === 0
+      ? []
+      : [`(deny file-read-data file-write* ${subpaths(reprotectedRoots)})`]),
     ...(ownRoots.length === 0 ? [] : [`(allow file-read-data file-write* ${subpaths(ownRoots)})`]),
   ].join("\n");
 }
@@ -246,6 +258,8 @@ export function buildLaunch({
 }) {
   const profile = sandboxProfile({
     protectedRoots: protectedRootsOf(manifest),
+    readableRoots: manifest.isolation?.readableRoots ?? [],
+    reprotectedRoots: manifest.isolation?.reprotectedRoots ?? [],
     ownRoots: [scratch, ...ownRoots, ...(manifest.isolation?.sharedWritable ?? [])],
   });
   const inner = armArgv({
