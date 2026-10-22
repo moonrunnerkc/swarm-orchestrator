@@ -292,7 +292,14 @@ export async function structuredRewriteOf(pins, checkout, expected, effective) {
   }
   const { structuredRunner, renderRunnerArgv } = await import(pathToFileURL(module).href);
   const argv = structuredRunner(body);
-  return argv !== null && renderRunnerArgv(argv) === effective;
+  if (argv !== null) return renderRunnerArgv(argv) === effective;
+  // The other form the pinned build runs a script in: node's own runner with the harness's
+  // coverage reporters (gates/harness-reporting.js), rendered as the build renders it.
+  const reporting = join(dirname(pins.swarmCli), "gates", "harness-reporting.js");
+  if (!existsSync(reporting)) return false;
+  const { harnessReportingCommand } = await import(pathToFileURL(reporting).href);
+  const vector = harnessReportingCommand(body, pins.node ?? process.version);
+  return vector !== null && vector.join(" ") === effective;
 }
 
 /** The last line of a stream that parses as JSON with the named schema, or null. */
