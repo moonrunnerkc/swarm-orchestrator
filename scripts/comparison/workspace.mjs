@@ -315,7 +315,8 @@ export function swarmConfigurationText(endpoint, task, declared = {}) {
  * advisory gates for the task (Swarm only).
  */
 export function writeArmConfiguration(directory, arm, endpoint, model, task, declared = {}) {
-  if (arm === "swarm") {
+  // The internal ablation is Swarm with its orchestration flags off: the same configuration file.
+  if (arm === "swarm" || arm === "swarm-control" || arm === "swarm-direct") {
     writeFileSync(join(directory, "swarm.toml"), swarmConfigurationText(endpoint, task, declared));
   } else {
     writeFileSync(
