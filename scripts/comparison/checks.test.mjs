@@ -237,4 +237,18 @@ describe("the product's structured form of a task's test script", () => {
       false,
     );
   });
+
+  it("reads npm test as npm run test, as npm itself does", async () => {
+    writeFileSync(
+      join(checkout, "package.json"),
+      JSON.stringify({ scripts: { test: "vitest run" } }),
+    );
+    expect(await structuredRewriteOf(pins, checkout, "npm test", "'node' '-e' 'VITEST'")).toBe(
+      true,
+    );
+    expect(await structuredRewriteOf(pins, checkout, "npm t", "'node' '-e' 'VITEST'")).toBe(true);
+    expect(await structuredRewriteOf(pins, checkout, "npm test", "'node' '-e' 'OTHER'")).toBe(
+      false,
+    );
+  });
 });

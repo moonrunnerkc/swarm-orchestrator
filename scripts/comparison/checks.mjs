@@ -277,7 +277,11 @@ export async function swarmGatePlanVerdict(log, task, base, pins, childHome, dec
  * reporter for that same suite as a different gate.
  */
 export async function structuredRewriteOf(pins, checkout, expected, effective) {
-  const script = /^npm run ([\w:.@/-]+)$/.exec(expected)?.[1];
+  // `npm test` and `npm t` are npm's own names for `npm run test`; the smoke of 2026-10-22 halted
+  // before inference on a task whose command was spelled that way.
+  const script = /^npm (?:test|t)$/.test(expected)
+    ? "test"
+    : /^npm run ([\w:.@/-]+)$/.exec(expected)?.[1];
   const module = join(dirname(pins.swarmCli), "gates", "structured-runner.js");
   if (script === undefined || effective === null || !existsSync(module)) return false;
   let body;
