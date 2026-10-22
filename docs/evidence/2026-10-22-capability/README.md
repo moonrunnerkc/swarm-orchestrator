@@ -31,6 +31,8 @@ with tarfile.open(archive) as packed:
     assert {member.name for member in packed.getmembers()} == expected
     assert all(member.isfile() for member in packed.getmembers())
     packed.extractall(destination, filter='data')
+for path in destination.rglob('*'):
+    path.chmod(0o700 if path.is_dir() else 0o600)
 for row in inventory['files']:
     data = (destination / row['path']).read_bytes()
     assert len(data) == row['bytes']
@@ -51,3 +53,9 @@ Re-run trajectory-account.mjs from the product feature branch on each restored s
 score-project.mjs and the existing score-tests.mjs with the frozen task manifests and restored
 patches for independent project and added-test scoring. Hidden cases are evaluator artifacts and
 must remain outside worker workspaces. The two failed agent starts were never retried.
+
+Post-publication accounting is in additional-accounting.json. Product totals exclude readiness
+and smoke work, which are listed separately. The raw archive is unchanged. Hidden evaluators
+were outside worker checkouts but not protected by OS isolation on this host. Broad CLI host
+permissions could reach them; no access was observed. These exposed development samples do not
+establish a comparison with enforced inaccessible evaluators.
