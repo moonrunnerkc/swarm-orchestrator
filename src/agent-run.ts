@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import { createEscalationController } from "./agent-escalation.ts";
 import { describeJustificationRequest, runJustificationTurn } from "./agent-justification.ts";
 import { type WorkerPromptProfile, workerPrompt } from "./agent-prompt.ts";
+import { finishRepair } from "./agent-repair-finish.ts";
 import { buildVersion } from "./build-version.ts";
 import type { ApprovalMode } from "./config/approval-mode.ts";
 import type { Clock } from "./core/clock.ts";
@@ -127,6 +128,8 @@ export interface AgentTaskOptions {
    * edits. Off unless asked for.
    */
   readonly repairTrace?: boolean;
+  /** Experimental early static feedback within the existing repair allowance. */
+  readonly repairFinish?: boolean;
   readonly commandPool?: ResourcePool | undefined;
   readonly contract?: TaskContract;
   readonly maxTokens?: number;
@@ -1372,6 +1375,17 @@ async function resolveWithModel(
   ].join("\n");
 
   const first = await runAgentLoop(brief, loopDependencies);
+  if (options.repairFinish === true && request.followUpKind === undefined) {
+    const finished = await finishRepair({
+      options,
+      dependencies: loopDependencies,
+      first,
+      startedAt,
+      beforeDigest: candidateDigest,
+      attempt: request.attempt,
+    });
+    if (finished !== null) return combineLoops(first, finished);
+  }
   // An owed attempt's brief asks for a one-line answer where nothing needs changing, so an answer
   // with no call is the shape it was asked for; a repair of a failing check was asked to fix it.
   if (
@@ -1412,6 +1426,10 @@ async function resolveWithModel(
     history: first.messages,
     budget: { ...loopDependencies.budget, ...remaining },
   });
+  return combineLoops(first, second);
+}
+
+function combineLoops(first: AgentLoopOutcome, second: AgentLoopOutcome): AgentLoopOutcome {
   return {
     stopReason: second.stopReason,
     steps: first.steps + second.steps,

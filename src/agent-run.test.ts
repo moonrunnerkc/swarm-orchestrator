@@ -1910,3 +1910,154 @@ describe("a task loop that stopped at its step limit (the launch 2 shape)", () =
     expect(Object.values(result.verdict.reasons).join(" ")).toContain("the run was cancelled");
   }, 60_000);
 });
+
+describe("bounded repair finishing", () => {
+  async function formatterFixture() {
+    await write(
+      "scripts/format.mjs",
+      [
+        "import { readFileSync } from 'node:fs';",
+        "const source = readFileSync('src/greet.js', 'utf8');",
+        "if (source.includes('  ;')) { console.error('remove spaces before semicolon'); process.exit(1); }",
+      ].join("\n"),
+    );
+    await git("add", ".");
+    await git("commit", "--quiet", "-m", "declare format check");
+  }
+
+  it.each([false, true])(
+    "finishes a useful repair before its full cycle when enabled=%s",
+    async (repairFinish) => {
+      await formatterFixture();
+      const unformatted =
+        "export function greet() {\n  return 'hello'  ;\n}\nexport const shout = 1;\n";
+      const result = await task(
+        [
+          ...goodTurns(broken),
+          respondWithToolCalls("repair behavior", [
+            {
+              callId: "repair",
+              toolName: "write",
+              input: { path: "src/greet.js", content: unformatted },
+            },
+          ]),
+          respondWithText("fixed"),
+          respondWithToolCalls("finish formatting", [
+            {
+              callId: "finish",
+              toolName: "write",
+              input: { path: "src/greet.js", content: stillGreen },
+            },
+          ]),
+          respondWithText("finished"),
+        ],
+        {
+          attempts: 1,
+          repairFinish,
+          gateOptions: {
+            commandOverrides: { ...gateOverrides, format: "node scripts/format.mjs" },
+          },
+        },
+      );
+      expect(result.green).toBe(repairFinish);
+      expect(readFileSync(join(workspace, "src/greet.js"), "utf8")).toBe(
+        repairFinish ? stillGreen : broken,
+      );
+      expect(result.gates.outcome.attempts).toHaveLength(1);
+      const checks = evidence
+        .records()
+        .filter((r) => r.type === "verification-command")
+        .map((r) => evidence.payloads().get(r.payloadDigest) as Record<string, unknown>)
+        .filter((p) => p.rule === "repair-finish-v1");
+      expect(checks).toHaveLength(repairFinish ? 1 : 0);
+      if (repairFinish) {
+        expect(checks[0]).toMatchObject({ attempt: 1, failed: ["format"] });
+        const prompts = evidence
+          .records()
+          .filter((r) => r.type === "model-call")
+          .map((r) => JSON.stringify(evidence.payloads().get(r.payloadDigest)));
+        expect(
+          prompts.some(
+            (p) => p.includes("remove spaces before semicolon") && p.includes("add a shout helper"),
+          ),
+        ).toBe(true);
+      }
+    },
+    60000,
+  );
+
+  it.each(["step limit", "ineffective finish", "stale observation"])(
+    "preserves rollback and the original allowance: %s",
+    async (condition) => {
+      await formatterFixture();
+      if (condition === "stale observation") {
+        await write(
+          "scripts/format.mjs",
+          [
+            "import {readFileSync, writeFileSync} from 'node:fs';",
+            "const path = 'src/greet.js'; const source = readFileSync(path, 'utf8');",
+            "if (source.includes('  ;')) {writeFileSync(path, source + '\\n'); console.error('invalid formatting'); process.exit(1);}",
+          ].join("\n"),
+        );
+        await git("add", ".");
+        await git("commit", "--quiet", "-m", "a check that changes its input");
+      }
+      const unformatted = "export function greet() {\n  return 'hello'  ;\n}\n";
+      const result = await task(
+        [
+          ...goodTurns(broken),
+          respondWithToolCalls("repair", [
+            {
+              callId: "repair",
+              toolName: "write",
+              input: { path: "src/greet.js", content: unformatted },
+            },
+          ]),
+          respondWithText("fixed"),
+          respondWithText("I think the formatting is already correct"),
+        ],
+        {
+          attempts: 1,
+          repairFinish: true,
+          maxSteps: condition === "step limit" ? 3 : 8,
+          gateOptions: {
+            commandOverrides: { ...gateOverrides, format: "node scripts/format.mjs" },
+          },
+        },
+      );
+      expect(result.green).toBe(false);
+      expect(readFileSync(join(workspace, "src/greet.js"), "utf8")).toBe(broken);
+      expect(result.gates.outcome.attempts).toHaveLength(1);
+      expect(evidence.records().filter((r) => r.type === "model-call")).toHaveLength(
+        condition === "ineffective finish" ? 6 : 5,
+      );
+      const finishes = evidence
+        .records()
+        .filter((r) => r.type === "verification-command")
+        .map((r) => evidence.payloads().get(r.payloadDigest) as Record<string, unknown>)
+        .filter((p) => p.rule === "repair-finish-v1");
+      if (condition === "step limit") expect(finishes).toHaveLength(0);
+      else
+        expect(finishes[0]).toMatchObject({
+          stale: condition === "stale observation",
+          dispatched: condition !== "stale observation",
+        });
+    },
+    60000,
+  );
+
+  it("adds no finish checks to a direct successful task", async () => {
+    const result = await task(goodTurns(stillGreen), {
+      repairFinish: true,
+    } as Partial<AgentTaskOptions>);
+    expect(result.green).toBe(true);
+    expect(evidence.records().filter((r) => r.type === "model-call")).toHaveLength(3);
+    expect(
+      evidence
+        .records()
+        .filter((r) => r.type === "verification-command")
+        .map((r) => evidence.payloads().get(r.payloadDigest) as Record<string, unknown>)
+        .some((p) => p.rule === "repair-finish-v1"),
+    ).toBe(false);
+  });
+});

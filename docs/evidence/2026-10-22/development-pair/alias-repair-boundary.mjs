@@ -65,6 +65,7 @@ const { values } = parseArgs({
   options: {
     arm: { type: "string" },
     build: { type: "string" },
+    "treatment-flag": { type: "string", default: "repair-trace" },
     session: { type: "string" },
     out: { type: "string" },
     "wall-minutes": { type: "string", default: "9" },
@@ -76,6 +77,7 @@ const { values } = parseArgs({
 for (const name of ["arm", "build", "session", "out"])
   if (values[name] === undefined) throw new Error(`--${name} is required`);
 if (!["control", "treatment"].includes(values.arm)) throw new Error("--arm is control or treatment");
+if (!["repair-trace", "repair-finish"].includes(values["treatment-flag"])) throw new Error("unsupported treatment flag");
 const here = import.meta.dirname;
 const stage = resolve(here, "../../2026-10-21/fresh-comparison");
 const out = resolve(values.out);
@@ -225,7 +227,7 @@ const pins = {
   model: values.model,
   endpoint: proxyUrl,
   swarmCli: join(homedir(), `.cache/swarm-comparison/tools/swarm-${values.build}/dist/cli.js`),
-  swarmFlags: values.arm === "treatment" ? ["--repair-trace"] : [],
+  swarmFlags: values.arm === "treatment" ? [`--${values["treatment-flag"]}`] : [],
 };
 if (!existsSync(pins.swarmCli)) throw new Error(`${pins.swarmCli} is not built`);
 record.swarmCliDigest = digest(readFileSync(pins.swarmCli));

@@ -67,3 +67,28 @@ beyond the harness's own readings above.
   this pair names; nothing here was changed for it.
 
 A single pair is development evidence. The trace stays experimental and off by default.
+
+
+## Supplemental reconstruction audit, 2026-10-22
+
+The earlier statement that neither rejected tree can be reconstructed was too broad.
+The treatment session `20261022T082133-6e195b` contains complete shell diff outputs at
+records 150 and 156. Applying those to recorded base `4d6498ff08c531642f09faea489c1b426c4d0efb`
+and regenerating the binary, full-index patch independently reproduces
+`sha256:bf823a5124440626b4d4ca6481bd0ef708b7dc018094c6f23772c91ceb49c1aa` (3,836 bytes).
+The write-only replay still encounters redactions; the shell diff records avoid those bytes.
+The control reconstruction remains unresolved.
+
+Use a clean checkout of that recorded base, with the original session restored as above:
+
+```sh
+node rebuild-rejected.mjs --session <session> --checkout <base-checkout> \
+  --diff-records 150,156 \
+  --expect-digest sha256:bf823a5124440626b4d4ca6481bd0ef708b7dc018094c6f23772c91ceb49c1aa \
+  --out <candidate.patch>
+```
+
+This corrects reconstruction availability, not the historical outcome: the product rolled the
+candidate back and delivered its original faulty tree. Independently scoring or formatting this
+reconstruction is an audit, not a live delivery win. Supplemental checks and the new experiment
+are recorded in [the capability study](../../../capability-study-2026-10-22.md).

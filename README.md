@@ -104,3 +104,5 @@ machine under a path policy, not a sandbox, unless you pass `--isolation`.
 - Contributing: [docs/build-guide.md](docs/build-guide.md); `npm run gates` must pass
 
 ISC licensed. Contact: bradkinnard@proton.me.
+
+Experimental controller work and its limits: [execution-guided delivery study](docs/capability-study-2026-10-22.md).
