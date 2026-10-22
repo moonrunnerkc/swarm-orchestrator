@@ -41,7 +41,7 @@ if (values.product === "opencode") writeArmConfiguration(workspace, "opencode", 
 const argv = values.product === "opencode"
   ? opencodeArgv({model}, prompt, workspace)
   : ["claude", "-p", "--verbose", "--output-format", "stream-json", "--model", model,
-      "--dangerously-skip-permissions", "--tools", "Read,Write,Edit,Bash,Glob,Grep", prompt];
+      "--dangerously-skip-permissions", "--tools", "Read,Write,Edit,Bash,Glob,Grep", "--", prompt];
 const env = {
   PATH: `${join(homedir(), ".cache/swarm-capability-tools/opencode/node_modules/.bin")}:${taskEnvironment(task).PATH}`,
   HOME: home, PWD: workspace, TMPDIR: process.env.TMPDIR ?? "/tmp", LANG: "en_US.UTF-8",

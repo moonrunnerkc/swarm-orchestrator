@@ -5,7 +5,8 @@ answer broad superiority. Do not substitute its exposed tasks for this portfolio
 
 Target 20 tasks, four per repository, one in each family: bug fix, feature, behavior-preserving
 refactor, API/dependency compatibility. Candidate repositories: pallets/click, python-attrs/attrs,
-pytest-dev/pluggy (Python), sindresorhus/p-limit and fastify/fastify (JavaScript/TypeScript).
+pytest-dev/pluggy (Python), sindresorhus/p-limit and fastify/fastify (JavaScript/TypeScript),
+plus sindresorhus/p-queue for the unfilled p-limit refactor slot.
 These are selection targets, not claims that their tasks have passed exposure or feasibility checks.
 At least ten tasks must require meaningful changes in multiple authored files.
 
@@ -39,3 +40,17 @@ Practical retention threshold to preregister: at least two more complete deliver
 tasks without increased total budget, no newly introduced preservation failures, and improvement
 in at least two families. This threshold is a product decision, not statistical proof. Broad claims
 also need uncertainty compatible with benefit, repeated evidence and competent comparator setups.
+
+## Metadata inventory, not launch-ready tasks
+
+The [candidate inventory](candidates.json) contains 20 identities in six repositories and two
+languages. The [scan](exposure.json) found no remaining commit-prefix matches after excluding
+three exposed identities. It searched 18,284 tracked files and expanded 161 archives. This
+check does not establish semantic novelty or absence from model training.
+
+Metadata alone also reveals feasibility concerns: attrs' proposed feature is typing examples,
+pluggy's proposed compatibility change is a pyupgrade sweep, and Fastify's proposed refactor
+removes a public type. They cannot be assumed to satisfy the intended task families. Retain
+them as rejected-or-pending inventory until the task review chooses replacements by an amended
+rule. No held-out workers ran and no hidden evaluator has been validated for these candidates.
+The 20-task coverage target therefore remains unmet at the executable benchmark level.

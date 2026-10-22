@@ -62,3 +62,23 @@ with no semantic damage. A single paired win is narrow evidence, not broad super
 all pairs, ties, losses and failed starts. With only two task families and single samples, report
 counts and avoid significance claims. No simple-agent baseline is implemented in this trial;
 product comparisons cannot establish the value of orchestration alone.
+
+
+## Operational amendment 1, before slot 3
+
+Slot 2 ended before inference: the launcher was given a patch path staged from the wrong archive
+root and failed with ENOENT. It consumes its slot and is not retried. Stage the already frozen,
+digest-checked patch from the archive's `payloads/patches` for slots 4, 7 and 8. This leaves the
+Qwen Mocha treatment without a same-trial control and prevents a paired mechanism claim there.
+
+Claude's neutral smoke initially failed before inference because its variadic `--tools` option
+consumed the positional prompt. Add the standard `--` separator, then repeat only the neutral
+smoke within its existing six-minute aggregate allowance. No task or evaluator changes.
+
+## Operational amendment 2, before slot 7
+
+Slot 6 ended before inference because the launch command omitted the PATH prefix for the pinned
+OpenCode 1.19.4 installation. The shared preflight found the ordinary 1.14.48 binary and halted.
+This is an experimenter setup error, consumes its slot, and is not recovered or retried. There
+is no Qwen entities treatment and no matched Qwen pair in this trial. The remaining Gemma pair
+uses the registered alias driver and unchanged frozen product/task. Retain the halt record.

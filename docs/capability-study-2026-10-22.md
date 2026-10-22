@@ -7,7 +7,8 @@ checks and CI support that objective; they are not its success metric.
 
 Remote inspected on October 22: draft PR 94 at `3c29b6fa2214fedd1f030d2ef6b9aabb09cf3cd0`,
 base `53c2e6b06cf86156a7ed523d9c47cdcb9c8ada61`. The original checkout has unrelated edits
-and is left intact. This work uses an isolated checkout of the PR head. No policy changes.
+and is left intact. This work uses an isolated checkout of the PR head. No policy changes. PR 94 was merged
+externally at 14:46:58 UTC; the new work will be published in a separate draft PR.
 
 The [prior trial](evidence/2026-10-22/README.md) has no superiority result. Its entities arms
 are equivalent under its registered artifact rule; neither acorn arm succeeds. All six named
@@ -29,6 +30,30 @@ Use [trajectory-account.mjs](evidence/2026-10-22-capability/trajectory-account.m
 restored session for successful edits, repeat counts, candidate identities and requested-to-result
 tool intervals. Tool time includes nested verification and must not be added to verification time.
 A long trace alone establishes no cause. No successful edit is recorded as null, never zero.
+
+Measured from the actual ledgers (seconds, excluding no inferred work):
+
+| session | model | tool intervals | first successful file edit | repeated read lines |
+| --- | ---: | ---: | ---: | ---: |
+| October 21 alias `214114-aa33a0` | 163.1 | 16.2 | 121.4 | 499 |
+| October 22 Mocha control `081213-bbf324` | 108.1 | 69.7 | 38.1, scripted seed | 0 |
+| Mocha treatment `082133-6e195b` | 69.0 | 28.9 | 40.8, scripted seed | 0 |
+| Acorn control `083045-433e79` | 198.2 | 5.0 | none | 481 |
+| Acorn treatment `084048-f4121d` | 242.1 | 4.2 | none | 1,153 |
+| Entities `090449-8bd2bb` | 92.6 | 16.8 | 27.5 | 4 |
+
+Repeated read lines count line ranges already returned since a potentially writing call; they
+are overlap, not proof of wasted reasoning. Exact identical call/result repeats were zero by
+this conservative metric. Acorn treatment records 328 to 481 show varied searches for test
+helpers and error wording rather than identical-call loops; exact-repeat detection cannot fix
+that progression. Its required test style becomes available at record 481, at the loop's end.
+
+Earlier failures add two constraints. The [mime audit](evidence/2026-10-19/repair-value/README.md)
+shows repair 1 damaging an externally passing candidate in response to an unsupported generated
+expectation; repair 3 also formatted seven unauthorized files, so its rollback was correct.
+The [marked handoff pair](evidence/2026-10-20/repair-handoff/README.md) supplies omitted diagnostic
+results, but both arms deliver identical correct patches; that does not establish artifact gain.
+These findings rule out trusting generated relations and blanket formatting as shortcuts.
 
 The [Mocha correction](evidence/2026-10-22/development-pair/README.md#supplemental-reconstruction-audit-2026-10-22)
 is supplemental. Original failed-delivery scores remain historical. Formatting an audited
@@ -82,4 +107,19 @@ A credible broad campaign still needs at least 20 sealed held-out tasks across f
 including bug fixes, features, behavior-preserving refactoring and API/dependency compatibility.
 The separate [portfolio plan](evidence/2026-10-22-capability/portfolio.md) specifies selection,
 exposure checks and repeated runs. Until selected tasks and validated hidden evaluators exist,
-that document is a registration plan, not a prepared or completed benchmark.
+that document is a registration plan, not a prepared or completed benchmark. Metadata selection
+now records 20 candidate identities in six repositories; exposure filtering excludes three old
+pilot identities, and feasibility review and hidden evaluator validation remain outstanding.
+
+## Live outcome
+
+The [complete local report](evidence/2026-10-22-capability/README.md) retains all eight registered
+slots. Two failed before inference due experimenter setup errors and were not retried. Neither
+live treatment dispatched the finishing continuation. The single matched Gemma pair ties at
+failed delivery. There is no demonstrated artifact gain or model transfer from this feature.
+
+The new entities control passes behavior, build and lint with two added ESLint suppressions;
+it fails the requested no-suppression bar. Claude's local-model artifact passes behavior and
+build but fails lint. OpenCode makes no edit after a mistaken path. These single exposed-task
+results establish no broad product advantage. The experimental option remains off by default;
+persistent hypothesis state, planning assistance and observation-cache reuse remain unimplemented.
