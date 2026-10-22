@@ -1,7 +1,7 @@
 # Two fresh mocha tasks, Swarm against OpenCode, 2026-10-21 evening
 
 Registered in [protocol.md](protocol.md) before any inference; every launch in
-[launches.md](launches.md); the runner's records in [records/](records/) and its rendered
+[launches.md](launches.md); the runner's records in [records/](packed-derived/records/) and its rendered
 [results.md](results.md); the Swarm sessions, the patches, every arm's output stream and the
 stage's scores in [packed-derived/payloads](packed-derived/payloads/)
 (`node scripts/evidence-pack.mjs restore docs/evidence/2026-10-21/fresh-comparison/packed-derived/payloads`).
@@ -111,3 +111,13 @@ The launches themselves: `node scripts/comparison/run.mjs --manifest docs/eviden
 with the pinned build (`736251101`, built as [launches.md](launches.md) records) and OpenCode
 1.14.48 against the same Ollama model; inference is not deterministic, so a rerun is a new sample,
 not a replay.
+
+## Correction, 2026-10-22
+
+[correction-2026-10-22/](correction-2026-10-22/README.md), appended; nothing above is rewritten. The
+OpenCode alias patch passed the frozen evaluation but returns before the base's long-alias
+normalization: `--timeouts 200` throws, `--reporter-options a=b` and `--globals window` read as
+`["true"]` with the value left as a spec, and ESLint reports `no-unreachable`. Under the task's
+broader requirements neither alias artifact is correct; that is not a Swarm win. The Swarm alias
+repair made no edit, and its lint "regression" was the project's own order-dependent lint, reproduced
+on the untouched base.
