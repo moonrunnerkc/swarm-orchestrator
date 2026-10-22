@@ -227,6 +227,29 @@ describe("the launch environment and arm flags", () => {
     }
   });
 
+  it("installs from a lockfile only where the base has one", () => {
+    const directories = launchDirectories();
+    const manifest = manifestWith(
+      {},
+      { lockfiles: { locked: "package-lock.json", unlocked: null } },
+    );
+    const argvFor = (id) =>
+      buildLaunch({
+        manifest,
+        arm: "swarm",
+        task: { id, workType: "feature" },
+        prompt: "p",
+        base: "HEAD",
+        contractPath: "/c",
+        ...directories,
+        remainingMs: 60_000,
+        tokenAllowance: 1,
+      }).inner;
+    expect(argvFor("locked")).toContain("--install");
+    expect(argvFor("unlocked")).not.toContain("--install");
+    expect(argvFor("unlocked")).not.toContain("--lockfile");
+  });
+
   it("freezes only named Swarm flags, so the ablation and the revised arm differ by declared flags", () => {
     expect(frozenSwarmFlags(["--adaptive"])).toEqual(["--adaptive"]);
     expect(frozenSwarmFlags(["--attempts", "0"])).toEqual(["--attempts", "0"]);

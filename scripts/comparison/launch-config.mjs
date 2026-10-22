@@ -227,9 +227,11 @@ export function armArgv({
       "--goal-contract",
       contractPath,
       ...(task.workType === "upgrade" ? ["--preset", "upgrade"] : []),
-      "--install",
-      "--lockfile",
-      "package-lock.json",
+      // A base with no lockfile is installed by the runner for every arm and used as it stands:
+      // the product refuses to install without one rather than guess (prepare-dependencies.ts).
+      ...(manifest.lockfiles?.[task.id] === null
+        ? []
+        : ["--install", "--lockfile", manifest.lockfiles?.[task.id] ?? "package-lock.json"]),
       "--max-tokens",
       String(tokenAllowance),
       "--max-wall-minutes",

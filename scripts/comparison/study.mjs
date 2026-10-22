@@ -81,6 +81,7 @@ import {
   cloneAtBase,
   commitVisibleCheck,
   finalPatch,
+  mirrorOf,
   prepare,
   prepareLaunchHome,
   resolveFull,
@@ -165,10 +166,16 @@ async function freeze(configPath, outPath) {
     throw new Error("a configured task id is not in the tasks module");
   const log = commandLog(join(dirname(resolve(outPath)), "freeze-blobs"));
   const resolved = [];
+  const lockfiles = {};
   for (const task of selected) {
     taskSchema.parse(task);
     const commits = await resolveFull(log, task);
     resolved.push({ ...task, baseCommit: commits.base, upstreamCommit: commits.upstream });
+    const lock = await log.run(["git", "cat-file", "-e", `${commits.base}:package-lock.json`], {
+      cwd: mirrorOf(task.repository),
+      timeoutMs: 60_000,
+    });
+    lockfiles[task.id] = lock.exitCode === 0 ? "package-lock.json" : null;
   }
   for (const arm of config.arms)
     if (!launchArms.includes(arm)) throw new Error(`unknown arm ${arm}`);
@@ -199,6 +206,7 @@ async function freeze(configPath, outPath) {
     inputRoots: config.inputRoots ?? [],
     frozenInputs: config.frozenInputs ?? {},
     exposureMarkers: config.exposureMarkers ?? [],
+    lockfiles,
     tasks: resolved,
     launches:
       config.order === "listed"
