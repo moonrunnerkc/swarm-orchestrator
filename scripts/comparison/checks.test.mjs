@@ -210,7 +210,7 @@ describe("the product's structured form of a task's test script", () => {
   writeFileSync(
     join(build, "gates", "structured-runner.js"),
     "export const structuredRunner = (body) => (body === 'vitest run' ? ['node', '-e', 'VITEST'] : null);\n" +
-      "export const renderRunnerArgv = (argv) => argv.map((word) => `'${word}'`).join(' ');\n",
+      "export const renderRunnerArgv = (argv) => argv.map((word) => \"'\" + word + \"'\").join(' ');\n",
   );
   const pins = { swarmCli: join(build, "cli.js") };
 
