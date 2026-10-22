@@ -1,4 +1,3 @@
-import { z } from "zod";
 import type { Clock } from "./core/clock.ts";
 import type {
   DecisionPoint,
@@ -59,37 +58,101 @@ const minimumWallMs = 60_000;
 const excerptRadius = 10;
 const maxLocations = 3;
 
-const diagnosisSchema = z.object({
-  question: z.string().max(800).optional(),
-  hypotheses: z
-    .array(
-      z.object({
-        statement: z.string().min(1).max(800),
-        predicts: z
-          .object({
-            exitCode: z.number().int().optional(),
-            outputIncludes: z.string().max(240).optional(),
-          })
-          .optional(),
-      }),
-    )
-    .max(3)
-    .optional(),
-  test: z.object({ command: z.string().min(1).max(400) }).optional(),
-  locations: z
-    .array(
-      z.object({
-        path: z.string().min(1).max(300),
-        line: z.number().int().positive(),
-        why: z.string().max(300).optional(),
-      }),
-    )
-    .max(4)
-    .optional(),
-  approach: z.string().max(1500).optional(),
-});
+/**
+ * A diagnosis as the harness keeps it. The model's answer is normalized field by field rather
+ * than accepted or refused whole: development run 2 refused three answers that each named a real
+ * location, for an array where a string was expected, a null, a long approach and one bad escape.
+ * Nothing normalized here counts for anything until the harness checks it: a location still has to
+ * be readable through the chokepoint and a command still has to run.
+ */
+export interface Diagnosis {
+  readonly question?: string;
+  readonly hypotheses?: readonly {
+    readonly statement: string;
+    readonly predicts?: { readonly exitCode?: number; readonly outputIncludes?: readonly string[] };
+  }[];
+  readonly test?: { readonly command: string };
+  readonly locations?: readonly {
+    readonly path: string;
+    readonly line: number;
+    readonly why?: string;
+  }[];
+  readonly approach?: string;
+}
 
-export type Diagnosis = z.infer<typeof diagnosisSchema>;
+const cut = (value: unknown, limit: number): string | undefined =>
+  typeof value === "string" && value.trim().length > 0 ? value.trim().slice(0, limit) : undefined;
+
+const objectOf = (value: unknown): Record<string, unknown> | null =>
+  value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+
+/** The fields of a parsed answer that have the declared shape, with what was dropped named. */
+export function normalizeDiagnosis(value: unknown): { diagnosis: Diagnosis; dropped: string[] } {
+  const dropped: string[] = [];
+  const answer = objectOf(value) ?? {};
+  const hypotheses: NonNullable<Diagnosis["hypotheses"]>[number][] = [];
+  for (const entry of Array.isArray(answer.hypotheses) ? answer.hypotheses : []) {
+    const statement = cut(objectOf(entry)?.statement, 800);
+    if (statement === undefined) {
+      dropped.push("a hypothesis with no statement");
+      continue;
+    }
+    const predicts = objectOf(objectOf(entry)?.predicts);
+    const includes = predicts?.outputIncludes;
+    const outputIncludes = (
+      typeof includes === "string" ? [includes] : Array.isArray(includes) ? includes : []
+    )
+      .map((one) => cut(one, 240))
+      .filter((one): one is string => one !== undefined);
+    const exitCode = Number.isInteger(predicts?.exitCode)
+      ? (predicts?.exitCode as number)
+      : undefined;
+    hypotheses.push({
+      statement,
+      ...(exitCode === undefined && outputIncludes.length === 0
+        ? {}
+        : {
+            predicts: {
+              ...(exitCode === undefined ? {} : { exitCode }),
+              ...(outputIncludes.length === 0 ? {} : { outputIncludes }),
+            },
+          }),
+    });
+  }
+  const locations: NonNullable<Diagnosis["locations"]>[number][] = [];
+  for (const entry of Array.isArray(answer.locations) ? answer.locations : []) {
+    const path = cut(objectOf(entry)?.path, 300);
+    const line = Number(objectOf(entry)?.line);
+    if (path === undefined || !Number.isInteger(line) || line < 1) {
+      dropped.push("a location without a path and a positive line");
+      continue;
+    }
+    const why = cut(objectOf(entry)?.why, 300);
+    locations.push({ path, line, ...(why === undefined ? {} : { why }) });
+  }
+  // A command is run as written or not at all: one too long to run is dropped, never shortened.
+  const rawCommand = typeof answer.test === "string" ? answer.test : objectOf(answer.test)?.command;
+  const command =
+    typeof rawCommand === "string" && rawCommand.trim().length > 0 && rawCommand.length <= 400
+      ? rawCommand.trim()
+      : undefined;
+  if (rawCommand !== undefined && command === undefined)
+    dropped.push("a test command that is empty or longer than 400 characters");
+  const question = cut(answer.question, 800);
+  const approach = cut(answer.approach, 1500);
+  return {
+    diagnosis: {
+      ...(question === undefined ? {} : { question }),
+      ...(hypotheses.length === 0 ? {} : { hypotheses: hypotheses.slice(0, 3) }),
+      ...(command === undefined ? {} : { test: { command } }),
+      ...(locations.length === 0 ? {} : { locations: locations.slice(0, 4) }),
+      ...(approach === undefined ? {} : { approach }),
+    },
+    dropped,
+  };
+}
 
 /** The diagnosis's own instruction: a fixed text, so nothing a workspace holds steers it. */
 export const diagnosisSystemPrompt = [
@@ -474,20 +537,29 @@ function joinLoops(
   };
 }
 
-function parseDiagnosis(answer: string): { diagnosis: Diagnosis | null; error: string | null } {
+/**
+ * The answer's JSON object, normalized. Where the object does not parse, only path-and-line pairs
+ * are recovered from its text, since those are the one claim the harness reads back for itself.
+ */
+export function parseDiagnosis(answer: string): {
+  diagnosis: Diagnosis | null;
+  error: string | null;
+} {
   const start = answer.indexOf("{");
   const end = answer.lastIndexOf("}");
   if (start < 0 || end <= start) return { diagnosis: null, error: "no JSON object in the answer" };
-  let value: unknown;
   try {
-    value = JSON.parse(answer.slice(start, end + 1));
+    const { diagnosis, dropped } = normalizeDiagnosis(JSON.parse(answer.slice(start, end + 1)));
+    return { diagnosis, error: dropped.length === 0 ? null : `dropped: ${dropped.join("; ")}` };
   } catch (cause) {
-    return { diagnosis: null, error: `not JSON: ${String(cause)}` };
+    const locations = [
+      ...answer.matchAll(/"path"\s*:\s*"([^"\\]{1,300})"\s*,\s*"line"\s*:\s*(\d+)/g),
+    ].map((match) => ({ path: match[1] as string, line: Number(match[2]) }));
+    return {
+      diagnosis: locations.length === 0 ? null : { locations: locations.slice(0, 4) },
+      error: `not JSON (${String(cause)}); ${locations.length} location(s) recovered from its text`,
+    };
   }
-  const parsed = diagnosisSchema.safeParse(value);
-  return parsed.success
-    ? { diagnosis: parsed.data, error: null }
-    : { diagnosis: null, error: bounded(parsed.error.message, 600) };
 }
 
 interface CheckedDiagnosis {
