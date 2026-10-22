@@ -86,7 +86,8 @@ export interface Hypothesis {
 /** What a hypothesis says a distinguishing execution will show if it is true. */
 export interface Prediction {
   readonly exitCode?: number | undefined;
-  readonly outputIncludes?: string | undefined;
+  /** Text the output must contain; every entry, where several are given. */
+  readonly outputIncludes?: string | readonly string[] | undefined;
 }
 
 /** The first words of the one message a decision point may add to a loop's conversation. */
@@ -314,8 +315,12 @@ export function predictionHolds(
   const checks: boolean[] = [];
   if (prediction.exitCode !== undefined)
     checks.push(observed.exitCode !== null && observed.exitCode === prediction.exitCode);
-  if (prediction.outputIncludes !== undefined && prediction.outputIncludes.length > 0)
-    checks.push(strip(observed.output).includes(prediction.outputIncludes));
+  const includes =
+    typeof prediction.outputIncludes === "string"
+      ? [prediction.outputIncludes]
+      : (prediction.outputIncludes ?? []);
+  for (const text of includes)
+    if (text.length > 0) checks.push(strip(observed.output).includes(text));
   return checks.length === 0 ? null : checks.every(Boolean);
 }
 
