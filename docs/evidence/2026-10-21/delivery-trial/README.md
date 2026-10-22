@@ -2,7 +2,7 @@
 
 Registered in [protocol.md](protocol.md) before any inference, every launch in
 [launches.md](launches.md), the task's validation in [validation.json](validation.json), the
-records in [records/](records/) and [launch-2/records/](launch-2/records/), every payload in
+records in [records/](packed-derived/records/) and [launch-2/records/](launch-2/packed-derived/records/), every payload in
 [packed-derived/payloads](packed-derived/payloads/). The question was whether ordinary Swarm,
 with every deliverable stated and the audited API requirement held by a hidden check, produces
 a complete implementation and meaningful tests on `sinon-bugfix-stub-accessor-calls-v2`,

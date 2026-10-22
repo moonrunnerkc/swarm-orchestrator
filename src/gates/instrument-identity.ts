@@ -74,6 +74,21 @@ export interface InstrumentObservation {
    * them. A difference there is not an edit to the instrument. Absent means none.
    */
   readonly authorized?: readonly string[];
+  /**
+   * Tree files the closure reached only as code a program the command runs loads, never as a
+   * tool's configuration: a project that is its own test runner (mocha's `node bin/mocha.js`)
+   * loads its own source this way, and that source is also what its tests exercise. Recorded so
+   * the runner-source reading (runner-source-v1) can tell a change to the runner's code apart
+   * from a change to how the check is configured. Absent means none.
+   */
+  readonly programCode?: readonly string[];
+  /**
+   * The changed files of `programCode` that a test file also loads, by static import followed
+   * through the change's tree: code that is the instrument and the subject at once. Putting one
+   * back to measure the instrument puts back the implementation the tests exercise. A walk that
+   * could not finish names every changed program file here. Absent means none.
+   */
+  readonly programSubjects?: readonly string[];
 }
 
 const digestPattern = z.string().regex(/^sha256:[0-9a-f]{64}$/);
@@ -108,6 +123,8 @@ export const instrumentObservationSchema = z.strictObject({
   residuals: z.array(z.string()),
   before: digestPattern.optional(),
   authorized: z.array(z.string().min(1)).optional(),
+  programCode: z.array(z.string().min(1)).optional(),
+  programSubjects: z.array(z.string().min(1)).optional(),
 });
 
 /** The digest an observation carries as `before`: of everything in it but that field. */
@@ -975,6 +992,12 @@ export async function observeInstrument(
           trees,
           used.map(([, rule]) => rule),
         );
+  const programCode = [...files.keys()].filter((path) => visited.get(path) === "program").sort();
+  const changedProgram = programCode.filter(
+    (path) => files.get(path)?.reference !== files.get(path)?.current,
+  );
+  const programSubjects =
+    changedProgram.length === 0 ? [] : await loadedByTests(trees, new Set(changedProgram));
 
   return {
     rule: instrumentRule,
@@ -987,7 +1010,44 @@ export async function observeInstrument(
     ...(options.authorized === undefined || options.authorized.length === 0
       ? {}
       : { authorized: [...new Set(options.authorized)].sort() }),
+    ...(programCode.length === 0 ? {} : { programCode }),
+    ...(programSubjects.length === 0 ? {} : { programSubjects }),
   };
+}
+
+/** How many files the walk from the tests reads before it stops and names every target. */
+const testWalkLimit = 5000;
+
+/**
+ * Which of `targets` a test file loads, by static import or require followed from every test file
+ * through the change's tree. Bounded: a walk that reaches its limit names every target, the
+ * direction that withholds a pass rather than lets one stand. A test that starts the project's
+ * program as a process loads it too, and that is not followed here.
+ */
+async function loadedByTests(
+  trees: InstrumentTrees,
+  targets: ReadonlySet<string>,
+): Promise<readonly string[]> {
+  const pending = [...trees.listed].filter((path) => testFileName.test(path)).sort();
+  const visited = new Set<string>();
+  const found = new Set<string>();
+  while (pending.length > 0 && found.size < targets.size) {
+    const path = pending.shift() as string;
+    if (visited.has(path) || !trees.listed.has(path)) continue;
+    visited.add(path);
+    if (visited.size > testWalkLimit) return [...targets].sort();
+    if (targets.has(path)) found.add(path);
+    const content = await trees.current(path);
+    if (content === null) continue;
+    const python = path.endsWith(".py");
+    const reading = python ? readPython(content) : readScript(content);
+    for (const specifier of reading.specifiers) {
+      if (python) pending.push(...pythonCandidates(specifier, path));
+      else if (specifier.startsWith(".") || specifier.startsWith("/"))
+        pending.push(...candidatePaths(specifier, path));
+    }
+  }
+  return [...found].sort();
 }
 
 const runGit = promisify(execFile);

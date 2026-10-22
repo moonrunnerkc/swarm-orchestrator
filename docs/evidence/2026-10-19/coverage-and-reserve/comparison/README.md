@@ -6,7 +6,7 @@ yargs/yargs-parser, chosen by the rule fixed before the product was frozen, laun
 cohorts and not used to develop this work. All arms: `qwen3.6:35b-a3b` on the local Ollama, the
 same task text, base, visible check and limits (14 minutes and half a second, killed at 15), no
 correction, run by the comparison runner unchanged in the registered order. Swarm is the frozen
-build `9a5052750`. Records: the runner's records, streams and the exact patch in [records/](records/);
+build `9a5052750`. Records: the runner's records, streams and the exact patch in [records/](packed-derived/records/);
 both Swarm arms' session chains packed losslessly in [packed-derived/comparison-streams](packed-derived/comparison-streams/);
 `records/arm*-reading.json` are [../read-launch.mjs](../read-launch.mjs) over those chains, which
 re-derive identically from the restored pack.
@@ -19,7 +19,7 @@ re-derive identically from the restored pack.
 | 2. Swarm, no workflow flag | **pass** | `accepted`, exit 0 | completed: tests and `task-acceptance` passed, independent verification passed (26.9 s, reserve 60 s, the policy floor) | 110 s | 620,893 | none ran |
 | 3. OpenCode 1.14.48 | **pass** | exit 0, success claimed | none (the product has none) | 44 s | 263,751 | n/a |
 
-All three delivered the same patch, byte for byte ([records/final.patch](records/final.patch),
+All three delivered the same patch, byte for byte ([records/final.patch](packed-derived/records/),
 `sha256:391cab14...`): the numeric-value increment applies only to options declared under `count`.
 In every arm the lint gate reads not-applicable (the repository declares no lint script) and there
 is no build gate. Neither Swarm arm repaired, so there is no candidate to score for repair's

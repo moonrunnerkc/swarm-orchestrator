@@ -83,11 +83,13 @@ say the code is correct. If a first run fails, see
 
 ## Limitations
 
-Swarm is experimental. In the latest comparison on public tasks with one local model it showed
-no advantage over OpenCode, 7 of 8 correct deliveries against 8 of 8
-([evidence](docs/evidence/2026-10-16/fresh-comparison/README.md)), and in the latest
-development trial it delivered no complete source-and-test change in two launches
-([evidence](docs/evidence/2026-10-21/delivery-trial/README.md)). Model-written checks
+Swarm is experimental. In the latest comparisons on fresh public tasks with one local model it
+has not produced a better artifact than OpenCode: on 2026-10-22 the two delivered equivalent
+correct, complete changes on one task, and no arm completed the other, with Swarm taking several
+times OpenCode's time and tokens ([evidence](docs/evidence/2026-10-22/README.md)); on 2026-10-21
+OpenCode's artifacts passed the frozen evaluation more often, though a later audit found its alias
+patch also breaks behaviour that task kept
+([correction](docs/evidence/2026-10-21/fresh-comparison/correction-2026-10-22/README.md)). Model-written checks
 (`--plan-checks`) guide repair but cannot establish a requirement alone. Commands run on your
 machine under a path policy, not a sandbox, unless you pass `--isolation`.
 

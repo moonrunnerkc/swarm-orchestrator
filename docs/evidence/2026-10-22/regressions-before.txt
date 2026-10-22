@@ -1,0 +1,1341 @@
+53c2e6b06cf86156a7ed523d9c47cdcb9c8ada61
+
+ RUN  v4.1.11 /Users/brad/projects/swarm-orchestrator/.claude/worktrees/baseline-53c2e6b06
+
+ ❯ |suite| src/gates/unmeasured-change.test.ts (6 tests | 2 failed) 5ms
+     × does not say nothing ran over a change its tests just failed on 2ms
+     × keeps the end of a long runner output, where its failures are reported 1ms
+ ❯ |suite| src/cli-ci-self-hosted-runner.integration.test.ts (5 tests | 4 failed) 10602ms
+     × lets a legitimate change to the shared runner source stand, and rereads nothing else 2394ms
+     × withholds the pass of a change whose runner swallows failures 2197ms
+     × withholds the pass of a change whose runner skips a test file 2222ms
+     × reads a changed test script by the base-configuration rule, never as runner source 1339ms
+ ❯ |suite| src/gates/independent-verification.test.ts (63 tests | 1 failed | 1 skipped) 43754ms
+     × rereads a check from the environment its first reading started from 1266ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 7 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |suite| src/cli-ci-self-hosted-runner.integration.test.ts > a project that runs its own tests with its own code > lets a legitimate change to the shared runner source stand, and rereads nothing else
+AssertionError: expected 'not-applicable' to be 'passed' // Object.is equality
+
+Expected: "passed"
+Received: "not-applicable"
+
+ ❯ src/cli-ci-self-hosted-runner.integration.test.ts:191:26
+    189|       }),
+    190|     );
+    191|     expect(tests.status).toBe("passed");
+       |                          ^
+    192|     expect(tests.detail).toContain("runner-source-v1");
+    193|     expect(tests.runnerWitness?.files).toEqual(["test/other.spec.mjs",…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/7]⎯
+
+ FAIL  |suite| src/cli-ci-self-hosted-runner.integration.test.ts > a project that runs its own tests with its own code > withholds the pass of a change whose runner swallows failures
+AssertionError: expected undefined to be defined
+ ❯ src/cli-ci-self-hosted-runner.integration.test.ts:224:33
+    222|     );
+    223|     expect(tests.status).not.toBe("passed");
+    224|     expect(tests.runnerWitness).toBeDefined();
+       |                                 ^
+    225|     expect(derivedHeld(tests.runnerWitness, tests.instrument)).toBe(fa…
+    226|     expect(result.regression).not.toBe("pass");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/7]⎯
+
+ FAIL  |suite| src/cli-ci-self-hosted-runner.integration.test.ts > a project that runs its own tests with its own code > withholds the pass of a change whose runner skips a test file
+AssertionError: expected undefined to be defined
+ ❯ src/cli-ci-self-hosted-runner.integration.test.ts:240:33
+    238|     );
+    239|     expect(tests.status).not.toBe("passed");
+    240|     expect(tests.runnerWitness).toBeDefined();
+       |                                 ^
+    241|     expect(derivedHeld(tests.runnerWitness, tests.instrument)).toBe(fa…
+    242|     expect(result.regression).not.toBe("pass");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/7]⎯
+
+ FAIL  |suite| src/cli-ci-self-hosted-runner.integration.test.ts > a project that runs its own tests with its own code > reads a changed test script by the base-configuration rule, never as runner source
+AssertionError: expected 'passed' not to be 'passed' // Object.is equality
+ ❯ src/cli-ci-self-hosted-runner.integration.test.ts:260:30
+    258|       }),
+    259|     );
+    260|     expect(tests.status).not.toBe("passed");
+       |                              ^
+    261|     expect(tests.runnerWitness).toBeUndefined();
+    262|     expect(result.regression).not.toBe("pass");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/7]⎯
+
+ FAIL  |suite| src/gates/independent-verification.test.ts > a failure the base already had > rereads a check from the environment its first reading started from
+AssertionError: expected 'failed' to be 'passed' // Object.is equality
+
+Expected: "passed"
+Received: "failed"
+
+ ❯ src/gates/independent-verification.test.ts:721:35
+    719|
+    720|     const lint = result.checks.find((check) => check.id === "lint");
+    721|     expect(lint?.baseTestsStatus).toBe("passed");
+       |                                   ^
+    722|     expect(lint?.status).toBe("passed");
+    723|     expect(result.regression).toBe("pass");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/7]⎯
+
+ FAIL  |suite| src/gates/unmeasured-change.test.ts > a repair brief over a failing test command > does not say nothing ran over a change its tests just failed on
+AssertionError: expected 'Nothing ran over this change. Every g…' not to contain 'Nothing ran over this change'
+
+- Expected
++ Received
+
+- Nothing ran over this change
++ Nothing ran over this change. Every gate that runs a command stood down: tests (0 collected: the command found no tests to run). The 1 file(s) this change touched were never executed by anything, so passing the other gates says nothing about whether the code works. Write the change in the language the project's declared test command runs, and add a test that command actually collects, in the place it looks for one. Declare any file you have not already declared before you write it: widening the set without recording an amendment fails a different gate, and rewriting the work in another language fails this one again.
++
++ gate tests (tests) FAILED: 0 collected: the command found no tests to run
++ evidence record: sha256:aa kind gate-run:tests
+
+ ❯ src/gates/unmeasured-change.test.ts:77:22
+     75|   it("does not say nothing ran over a change its tests just failed on"…
+     76|     const told = describeFailuresForModel(cycleWith({ changedFiles: 1,…
+     77|     expect(told).not.toContain("Nothing ran over this change");
+       |                      ^
+     78|     expect(told).toContain("gate tests (tests) FAILED");
+     79|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/7]⎯
+
+ FAIL  |suite| src/gates/unmeasured-change.test.ts > a repair brief over a failing test command > keeps the end of a long runner output, where its failures are reported
+AssertionError: expected 'Nothing ran over this change. Every g…' to contain 'characters omitted from the middle'
+
+- Expected
++ Received
+
+- characters omitted from the middle
++ Nothing ran over this change. Every gate that runs a command stood down: tests (0 collected: the command found no tests to run). The 1 file(s) this change touched were never executed by anything, so passing the other gates says nothing about whether the code works. Write the change in the language the project's declared test command runs, and add a test that command actually collects, in the place it looks for one. Declare any file you have not already declared before you write it: widening the set without recording an amendment fails a different gate, and rewriting the work in another language fails this one again.
++
++ gate tests (tests) FAILED: 0 collected: the command found no tests to run
++ evidence record: sha256:aa kind gate-run:tests
++ stdout:
++ ✔ passing test 0
++     ✔ passing test 1
++     ✔ passing test 2
++     ✔ passing test 3
++     ✔ passing test 4
++     ✔ passing test 5
++     ✔ passing test 6
++     ✔ passing test 7
++     ✔ passing test 8
++     ✔ passing test 9
++     ✔ passing test 10
++     ✔ passing test 11
++     ✔ passing test 12
++     ✔ passing test 13
++     ✔ passing test 14
++     ✔ passing test 15
++     ✔ passing test 16
++     ✔ passing test 17
++     ✔ passing test 18
++     ✔ passing test 19
++     ✔ passing test 20
++     ✔ passing test 21
++     ✔ passing test 22
++     ✔ passing test 23
++     ✔ passing test 24
++     ✔ passing test 25
++     ✔ passing test 26
++     ✔ passing test 27
++     ✔ passing test 28
++     ✔ passing test 29
++     ✔ passing test 30
++     ✔ passing test 31
++     ✔ passing test 32
++     ✔ passing test 33
++     ✔ passing test 34
++     ✔ passing test 35
++     ✔ passing test 36
++     ✔ passing test 37
++     ✔ passing test 38
++     ✔ passing test 39
++     ✔ passing test 40
++     ✔ passing test 41
++     ✔ passing test 42
++     ✔ passing test 43
++     ✔ passing test 44
++     ✔ passing test 45
++     ✔ passing test 46
++     ✔ passing test 47
++     ✔ passing test 48
++     ✔ passing test 49
++     ✔ passing test 50
++     ✔ passing test 51
++     ✔ passing test 52
++     ✔ passing test 53
++     ✔ passing test 54
++     ✔ passing test 55
++     ✔ passing test 56
++     ✔ passing test 57
++     ✔ passing test 58
++     ✔ passing test 59
++     ✔ passing test 60
++     ✔ passing test 61
++     ✔ passing test 62
++     ✔ passing test 63
++     ✔ passing test 64
++     ✔ passing test 65
++     ✔ passing test 66
++     ✔ passing test 67
++     ✔ passing test 68
++     ✔ passing test 69
++     ✔ passing test 70
++     ✔ passing test 71
++     ✔ passing test 72
++     ✔ passing test 73
++     ✔ passing test 74
++     ✔ passing test 75
++     ✔ passing test 76
++     ✔ passing test 77
++     ✔ passing test 78
++     ✔ passing test 79
++     ✔ passing test 80
++     ✔ passing test 81
++     ✔ passing test 82
++     ✔ passing test 83
++     ✔ passing test 84
++     ✔ passing test 85
++     ✔ passing test 86
++     ✔ passing test 87
++     ✔ passing test 88
++     ✔ passing test 89
++     ✔ passing test 90
++     ✔ passing test 91
++     ✔ passing test 92
++     ✔ passing test 93
++     ✔ passing test 94
++     ✔ passing test 95
++     ✔ passing test 96
++     ✔ passing test 97
++     ✔ passing test 98
++     ✔ passing test 99
++     ✔ passing test 100
++     ✔ passing test 101
++     ✔ passing test 102
++     ✔ passing test 103
++     ✔ passing test 104
++     ✔ passing test 105
++     ✔ passing test 106
++     ✔ passing test 107
++     ✔ passing test 108
++     ✔ passing test 109
++     ✔ passing test 110
++     ✔ passing test 111
++     ✔ passing test 112
++     ✔ passing test 113
++     ✔ passing test 114
++     ✔ passing test 115
++     ✔ passing test 116
++     ✔ passing test 117
++     ✔ passing test 118
++     ✔ passing test 119
++     ✔ passing test 120
++     ✔ passing test 121
++     ✔ passing test 122
++     ✔ passing test 123
++     ✔ passing test 124
++     ✔ passing test 125
++     ✔ passing test 126
++     ✔ passing test 127
++     ✔ passing test 128
++     ✔ passing test 129
++     ✔ passing test 130
++     ✔ passing test 131
++     ✔ passing test 132
++     ✔ passing test 133
++     ✔ passing test 134
++     ✔ passing test 135
++     ✔ passing test 136
++     ✔ passing test 137
++     ✔ passing test 138
++     ✔ passing test 139
++     ✔ passing test 140
++     ✔ passing test 141
++     ✔ passing test 142
++     ✔ passing test 143
++     ✔ passing test 144
++     ✔ passing test 145
++     ✔ passing test 146
++     ✔ passing test 147
++     ✔ passing test 148
++     ✔ passing test 149
++     ✔ passing test 150
++     ✔ passing test 151
++     ✔ passing test 152
++     ✔ passing test 153
++     ✔ passing test 154
++     ✔ passing test 155
++     ✔ passing test 156
++     ✔ passing test 157
++     ✔ passing test 158
++     ✔ passing test 159
++     ✔ passing test 160
++     ✔ passing test 161
++     ✔ passing test 162
++     ✔ passing test 163
++     ✔ passing test 164
++     ✔ passing test 165
++     ✔ passing test 166
++     ✔ passing test 167
++     ✔ passing test 168
++     ✔ passing test 169
++     ✔ passing test 170
++     ✔ passing test 171
++     ✔ passing test 172
++     ✔ passing test 173
++     ✔ passing test 174
++     ✔ passing test 175
++     ✔ passing test 176
++     ✔ passing test 177
++     ✔ passing test 178
++     ✔ passing test 179
++     ✔ passing test 180
++     ✔ passing test 181
++     ✔ passing test 182
++     ✔ passing test 183
++     ✔ passing test 184
++     ✔ passing test 185
++     ✔ passing test 186
++     ✔ passing test 187
++     ✔ passing test 188
++     ✔ passing test 189
++     ✔ passing test 190
++     ✔ passing test 191
++     ✔ passing test 192
++     ✔ passing test 193
++     ✔ passing test 194
++     ✔ passing test 195
++     ✔ passing test 196
++     ✔ passing test 197
++     ✔ passing test 198
++     ✔ passing test 199
++     ✔ passing test 200
++     ✔ passing test 201
++     ✔ passing test 202
++     ✔ passing test 203
++     ✔ passing test 204
++     ✔ passing test 205
++     ✔ passing test 206
++     ✔ passing test 207
++     ✔ passing test 208
++     ✔ passing test 209
++     ✔ passing test 210
++     ✔ passing test 211
++     ✔ passing test 212
++     ✔ passing test 213
++     ✔ passing test 214
++     ✔ passing test 215
++     ✔ passing test 216
++     ✔ passing test 217
++     ✔ passing test 218
++     ✔ passing test 219
++     ✔ passing test 220
++     ✔ passing test 221
++     ✔ passing test 222
++     ✔ passing test 223
++     ✔ passing test 224
++     ✔ passing test 225
++     ✔ passing test 226
++     ✔ passing test 227
++     ✔ passing test 228
++     ✔ passing test 229
++     ✔ passing test 230
++     ✔ passing test 231
++     ✔ passing test 232
++     ✔ passing test 233
++     ✔ passing test 234
++     ✔ passing test 235
++     ✔ passing test 236
++     ✔ passing test 237
++     ✔ passing test 238
++     ✔ passing test 239
++     ✔ passing test 240
++     ✔ passing test 241
++     ✔ passing test 242
++     ✔ passing test 243
++     ✔ passing test 244
++     ✔ passing test 245
++     ✔ passing test 246
++     ✔ passing test 247
++     ✔ passing test 248
++     ✔ passing test 249
++     ✔ passing test 250
++     ✔ passing test 251
++     ✔ passing test 252
++     ✔ passing test 253
++     ✔ passing test 254
++     ✔ passing test 255
++     ✔ passing test 256
++     ✔ passing test 257
++     ✔ passing test 258
++     ✔ passing test 259
++     ✔ passing test 260
++     ✔ passing test 261
++     ✔ passing test 262
++     ✔ passing test 263
++     ✔ passing test 264
++     ✔ passing test 265
++     ✔ passing test 266
++     ✔ passing test 267
++     ✔ passing test 268
++     ✔ passing test 269
++     ✔ passing test 270
++     ✔ passing test 271
++     ✔ passing test 272
++     ✔ passing test 273
++     ✔ passing test 274
++     ✔ passing test 275
++     ✔ passing test 276
++     ✔ passing test 277
++     ✔ passing test 278
++     ✔ passing test 279
++     ✔ passing test 280
++     ✔ passing test 281
++     ✔ passing test 282
++     ✔ passing test 283
++     ✔ passing test 284
++     ✔ passing test 285
++     ✔ passing test 286
++     ✔ passing test 287
++     ✔ passing test 288
++     ✔ passing test 289
++     ✔ passing test 290
++     ✔ passing test 291
++     ✔ passing test 292
++     ✔ passing test 293
++     ✔ passing test 294
++     ✔ passing test 295
++     ✔ passing test 296
++     ✔ passing test 297
++     ✔ passing test 298
++     ✔ passing test 299
++     ✔ passing test 300
++     ✔ passing test 301
++     ✔ passing test 302
++     ✔ passing test 303
++     ✔ passing test 304
++     ✔ passing test 305
++     ✔ passing test 306
++     ✔ passing test 307
++     ✔ passing test 308
++     ✔ passing test 309
++     ✔ passing test 310
++     ✔ passing test 311
++     ✔ passing test 312
++     ✔ passing test 313
++     ✔ passing test 314
++     ✔ passing test 315
++     ✔ passing test 316
++     ✔ passing test 317
++     ✔ passing test 318
++     ✔ passing test 319
++     ✔ passing test 320
++     ✔ passing test 321
++     ✔ passing test 322
++     ✔ passing test 323
++     ✔ passing test 324
++     ✔ passing test 325
++     ✔ passing test 326
++     ✔ passing test 327
++     ✔ passing test 328
++     ✔ passing test 329
++     ✔ passing test 330
++     ✔ passing test 331
++     ✔ passing test 332
++     ✔ passing test 333
++     ✔ passing test 334
++     ✔ passing test 335
++     ✔ passing test 336
++     ✔ passing test 337
++     ✔ passing test 338
++     ✔ passing test 339
++     ✔ passing test 340
++     ✔ passing test 341
++     ✔ passing test 342
++     ✔ passing test 343
++     ✔ passing test 344
++     ✔ passing test 345
++     ✔ passing test 346
++     ✔ passing test 347
++     ✔ passing test 348
++     ✔ passing test 349
++     ✔ passing test 350
++     ✔ passing test 351
++     ✔ passing test 352
++     ✔ passing test 353
++     ✔ passing test 354
++     ✔ passing test 355
++     ✔ passing test 356
++     ✔ passing test 357
++     ✔ passing test 358
++     ✔ passing test 359
++     ✔ passing test 360
++     ✔ passing test 361
++     ✔ passing test 362
++     ✔ passing test 363
++     ✔ passing test 364
++     ✔ passing test 365
++     ✔ passing test 366
++     ✔ passing test 367
++     ✔ passing test 368
++     ✔ passing test 369
++     ✔ passing test 370
++     ✔ passing test 371
++     ✔ passing test 372
++     ✔ passing test 373
++     ✔ passing test 374
++     ✔ passing test 375
++     ✔ passing test 376
++     ✔ passing test 377
++     ✔ passing test 378
++     ✔ passing test 379
++     ✔ passing test 380
++     ✔ passing test 381
++     ✔ passing test 382
++     ✔ passing test 383
++     ✔ passing test 384
++     ✔ passing test 385
++     ✔ passing test 386
++     ✔ passing test 387
++     ✔ passing test 388
++     ✔ passing test 389
++     ✔ passing test 390
++     ✔ passing test 391
++     ✔ passing test 392
++     ✔ passing test 393
++     ✔ passing test 394
++     ✔ passing test 395
++     ✔ passing test 396
++     ✔ passing test 397
++     ✔ passing test 398
++     ✔ passing test 399
++     ✔ passing test 400
++     ✔ passing test 401
++     ✔ passing test 402
++     ✔ passing test 403
++     ✔ passing test 404
++     ✔ passing test 405
++     ✔ passing test 406
++     ✔ passing test 407
++     ✔ passing test 408
++     ✔ passing test 409
++     ✔ passing test 410
++     ✔ passing test 411
++     ✔ passing test 412
++     ✔ passing test 413
++     ✔ passing test 414
++     ✔ passing test 415
++     ✔ passing test 416
++     ✔ passing test 417
++     ✔ passing test 418
++     ✔ passing test 419
++     ✔ passing test 420
++     ✔ passing test 421
++     ✔ passing test 422
++     ✔ passing test 423
++     ✔ passing test 424
++     ✔ passing test 425
++     ✔ passing test 426
++     ✔ passing test 427
++     ✔ passing test 428
++     ✔ passing test 429
++     ✔ passing test 430
++     ✔ passing test 431
++     ✔ passing test 432
++     ✔ passing test 433
++     ✔ passing test 434
++     ✔ passing test 435
++     ✔ passing test 436
++     ✔ passing test 437
++     ✔ passing test 438
++     ✔ passing test 439
++     ✔ passing test 440
++     ✔ passing test 441
++     ✔ passing test 442
++     ✔ passing test 443
++     ✔ passing test 444
++     ✔ passing test 445
++     ✔ passing test 446
++     ✔ passing test 447
++     ✔ passing test 448
++     ✔ passing test 449
++     ✔ passing test 450
++     ✔ passing test 451
++     ✔ passing test 452
++     ✔ passing test 453
++     ✔ passing test 454
++     ✔ passing test 455
++     ✔ passing test 456
++     ✔ passing test 457
++     ✔ passing test 458
++     ✔ passing test 459
++     ✔ passing test 460
++     ✔ passing test 461
++     ✔ passing test 462
++     ✔ passing test 463
++     ✔ passing test 464
++     ✔ passing test 465
++     ✔ passing test 466
++     ✔ passing test 467
++     ✔ passing test 468
++     ✔ passing test 469
++     ✔ passing test 470
++     ✔ passing test 471
++     ✔ passing test 472
++     ✔ passing test 473
++     ✔ passing test 474
++     ✔ passing test 475
++     ✔ passing test 476
++     ✔ passing test 477
++     ✔ passing test 478
++     ✔ passing test 479
++     ✔ passing test 480
++     ✔ passing test 481
++     ✔ passing test 482
++     ✔ passing test 483
++     ✔ passing test 484
++     ✔ passing test 485
++     ✔ passing test 486
++     ✔ passing test 487
++     ✔ passing test 488
++     ✔ passing test 489
++     ✔ passing test 490
++     ✔ passing test 491
++     ✔ passing test 492
++     ✔ passing test 493
++     ✔ passing test 494
++     ✔ passing test 495
++     ✔ passing test 496
++     ✔ passing test 497
++     ✔ passing test 498
++     ✔ passing test 499
++     ✔ passing test 500
++     ✔ passing test 501
++     ✔ passing test 502
++     ✔ passing test 503
++     ✔ passing test 504
++     ✔ passing test 505
++     ✔ passing test 506
++     ✔ passing test 507
++     ✔ passing test 508
++     ✔ passing test 509
++     ✔ passing test 510
++     ✔ passing test 511
++     ✔ passing test 512
++     ✔ passing test 513
++     ✔ passing test 514
++     ✔ passing test 515
++     ✔ passing test 516
++     ✔ passing test 517
++     ✔ passing test 518
++     ✔ passing test 519
++     ✔ passing test 520
++     ✔ passing test 521
++     ✔ passing test 522
++     ✔ passing test 523
++     ✔ passing test 524
++     ✔ passing test 525
++     ✔ passing test 526
++     ✔ passing test 527
++     ✔ passing test 528
++     ✔ passing test 529
++     ✔ passing test 530
++     ✔ passing test 531
++     ✔ passing test 532
++     ✔ passing test 533
++     ✔ passing test 534
++     ✔ passing test 535
++     ✔ passing test 536
++     ✔ passing test 537
++     ✔ passing test 538
++     ✔ passing test 539
++     ✔ passing test 540
++     ✔ passing test 541
++     ✔ passing test 542
++     ✔ passing test 543
++     ✔ passing test 544
++     ✔ passing test 545
++     ✔ passing test 546
++     ✔ passing test 547
++     ✔ passing test 548
++     ✔ passing test 549
++     ✔ passing test 550
++     ✔ passing test 551
++     ✔ passing test 552
++     ✔ passing test 553
++     ✔ passing test 554
++     ✔ passing test 555
++     ✔ passing test 556
++     ✔ passing test 557
++     ✔ passing test 558
++     ✔ passing test 559
++     ✔ passing test 560
++     ✔ passing test 561
++     ✔ passing test 562
++     ✔ passing test 563
++     ✔ passing test 564
++     ✔ passing test 565
++     ✔ passing test 566
++     ✔ passing test 567
++     ✔ passing test 568
++     ✔ passing test 569
++     ✔ passing test 570
++     ✔ passing test 571
++     ✔ passing test 572
++     ✔ passing test 573
++     ✔ passing test 574
++     ✔ passing test 575
++     ✔ passing test 576
++     ✔ passing test 577
++     ✔ passing test 578
++     ✔ passing test 579
++     ✔ passing test 580
++     ✔ passing test 581
++     ✔ passing test 582
++     ✔ passing test 583
++     ✔ passing test 584
++     ✔ passing test 585
++     ✔ passing test 586
++     ✔ passing test 587
++     ✔ passing test 588
++     ✔ passing test 589
++     ✔ passing test 590
++     ✔ passing test 591
++     ✔ passing test 592
++     ✔ passing test 593
++     ✔ passing test 594
++     ✔ passing test 595
++     ✔ passing test 596
++     ✔ passing test 597
++     ✔ passing test 598
++     ✔ passing test 599
++     ✔ passing test 600
++     ✔ passing test 601
++     ✔ passing test 602
++     ✔ passing test 603
++     ✔ passing test 604
++     ✔ passing test 605
++     ✔ passing test 606
++     ✔ passing test 607
++     ✔ passing test 608
++     ✔ passing test 609
++     ✔ passing test 610
++     ✔ passing test 611
++     ✔ passing test 612
++     ✔ passing test 613
++     ✔ passing test 614
++     ✔ passing test 615
++     ✔ passing test 616
++     ✔ passing test 617
++     ✔ passing test 618
++     ✔ passing test 619
++     ✔ passing test 620
++     ✔ passing test 621
++     ✔ passing test 622
++     ✔ passing test 623
++     ✔ passing test 624
++     ✔ passing test 625
++     ✔ passing test 626
++     ✔ passing test 627
++     ✔ passing test 628
++     ✔ passing test 629
++     ✔ passing test 630
++     ✔ passing test 631
++     ✔ passing test 632
++     ✔ passing test 633
++     ✔ passing test 634
++     ✔ passing test 635
++     ✔ passing test 636
++     ✔ passing test 637
++     ✔ passing test 638
++     ✔ passing test 639
++     ✔ passing test 640
++     ✔ passing test 641
++     ✔ passing test 642
++     ✔ passing test 643
++     ✔ passing test 644
++     ✔ passing test 645
++     ✔ passing test 646
++     ✔ passing test 647
++     ✔ passing test 648
++     ✔ passing test 649
++     ✔ passing test 650
++     ✔ passing test 651
++     ✔ passing test 652
++     ✔ passing test 653
++     ✔ passing test 654
++     ✔ passing test 655
++     ✔ passing test 656
++     ✔ passing test 657
++     ✔ passing test 658
++     ✔ passing test 659
++     ✔ passing test 660
++     ✔ passing test 661
++     ✔ passing test 662
++     ✔ passing test 663
++     ✔ passing test 664
++     ✔ passing test 665
++     ✔ passing test 666
++     ✔ passing test 667
++     ✔ passing test 668
++     ✔ passing test 669
++     ✔ passing test 670
++     ✔ passing test 671
++     ✔ passing test 672
++     ✔ passing test 673
++     ✔ passing test 674
++     ✔ passing test 675
++     ✔ passing test 676
++     ✔ passing test 677
++     ✔ passing test 678
++     ✔ passing test 679
++     ✔ passing test 680
++     ✔ passing test 681
++     ✔ passing test 682
++     ✔ passing test 683
++     ✔ passing test 684
++     ✔ passing test 685
++     ✔ passing test 686
++     ✔ passing test 687
++     ✔ passing test 688
++     ✔ passing test 689
++     ✔ passing test 690
++     ✔ passing test 691
++     ✔ passing test 692
++     ✔ passing test 693
++     ✔ passing test 694
++     ✔ passing test 695
++     ✔ passing test 696
++     ✔ passing test 697
++     ✔ passing test 698
++     ✔ passing test 699
++     ✔ passing test 700
++     ✔ passing test 701
++     ✔ passing test 702
++     ✔ passing test 703
++     ✔ passing test 704
++     ✔ passing test 705
++     ✔ passing test 706
++     ✔ passing test 707
++     ✔ passing test 708
++     ✔ passing test 709
++     ✔ passing test 710
++     ✔ passing test 711
++     ✔ passing test 712
++     ✔ passing test 713
++     ✔ passing test 714
++     ✔ passing test 715
++     ✔ passing test 716
++     ✔ passing test 717
++     ✔ passing test 718
++     ✔ passing test 719
++     ✔ passing test 720
++     ✔ passing test 721
++     ✔ passing test 722
++     ✔ passing test 723
++     ✔ passing test 724
++     ✔ passing test 725
++     ✔ passing test 726
++     ✔ passing test 727
++     ✔ passing test 728
++     ✔ passing test 729
++     ✔ passing test 730
++     ✔ passing test 731
++     ✔ passing test 732
++     ✔ passing test 733
++     ✔ passing test 734
++     ✔ passing test 735
++     ✔ passing test 736
++     ✔ passing test 737
++     ✔ passing test 738
++     ✔ passing test 739
++     ✔ passing test 740
++     ✔ passing test 741
++     ✔ passing test 742
++     ✔ passing test 743
++     ✔ passing test 744
++     ✔ passing test 745
++     ✔ passing test 746
++     ✔ passing test 747
++     ✔ passing test 748
++     ✔ passing test 749
++     ✔ passing test 750
++     ✔ passing test 751
++     ✔ passing test 752
++     ✔ passing test 753
++     ✔ passing test 754
++     ✔ passing test 755
++     ✔ passing test 756
++     ✔ passing test 757
++     ✔ passing test 758
++     ✔ passing test 759
++     ✔ passing test 760
++     ✔ passing test 761
++     ✔ passing test 762
++     ✔ passing test 763
++     ✔ passing test 764
++     ✔ passing test 765
++     ✔ passing test 766
++     ✔ passing test 767
++     ✔ passing test 768
++     ✔ passing test 769
++     ✔ passing test 770
++     ✔ passing test 771
++     ✔ passing test 772
++     ✔ passing test 773
++     ✔ passing test 774
++     ✔ passing test 775
++     ✔ passing test 776
++     ✔ passing test 777
++     ✔ passing test 778
++     ✔ passing test 779
++     ✔ passing test 780
++     ✔ passing test 781
++     ✔ passing test 782
++     ✔ passing test 783
++     ✔ passing test 784
++     ✔ passing test 785
++     ✔ passing test 786
++     ✔ passing test 787
++     ✔ passing test 788
++     ✔ passing test 789
++     ✔ passing test 790
++     ✔ passing test 791
++     ✔ passing test 792
++     ✔ passing test 793
++     ✔ passing test 794
++     ✔ passing test 795
++     ✔ passing test 796
++     ✔ passing test 797
++     ✔ passing test 798
++     ✔ passing test 799
++     ✔ passing test 800
++     ✔ passing test 801
++     ✔ passing test 802
++     ✔ passing test 803
++     ✔ passing test 804
++     ✔ passing test 805
++     ✔ passing test 806
++     ✔ passing test 807
++     ✔ passing test 808
++     ✔ passing test 809
++     ✔ passing test 810
++     ✔ passing test 811
++     ✔ passing test 812
++     ✔ passing test 813
++     ✔ passing test 814
++     ✔ passing test 815
++     ✔ passing test 816
++     ✔ passing test 817
++     ✔ passing test 818
++     ✔ passing test 819
++     ✔ passing test 820
++     ✔ passing test 821
++     ✔ passing test 822
++     ✔ passing test 823
++     ✔ passing test 824
++     ✔ passing test 825
++     ✔ passing test 826
++     ✔ passing test 827
++     ✔ passing test 828
++     ✔ passing test 829
++     ✔ passing test 830
++     ✔ passing test 831
++     ✔ passing test 832
++     ✔ passing test 833
++     ✔ passing test 834
++     ✔ passing test 835
++     ✔ passing test 836
++     ✔ passing test 837
++     ✔ passing test 838
++     ✔ passing test 839
++     ✔ passing test 840
++     ✔ passing test 841
++     ✔ passing test 842
++     ✔ passing test 843
++     ✔ passing test 844
++     ✔ passing test 845
++     ✔ passing test 846
++     ✔ passing test 847
++     ✔ passing test 848
++     ✔ passing test 849
++     ✔ passing test 850
++     ✔ passing test 851
++     ✔ passing test 852
++     ✔ passing test 853
++     ✔ passing test 854
++     ✔ passing test 855
++     ✔ passing test 856
++     ✔ passing test 857
++     ✔ passing test 858
++     ✔ passing test 859
++     ✔ passing test 860
++     ✔ passing test 861
++     ✔ passing test 862
++     ✔ passing test 863
++     ✔ passing test 864
++     ✔ passing test 865
++     ✔ passing test 866
++     ✔ passing test 867
++     ✔ passing test 868
++     ✔ passing test 869
++     ✔ passing test 870
++     ✔ passing test 871
++     ✔ passing test 872
++     ✔ passing test 873
++     ✔ passing test 874
++     ✔ passing test 875
++     ✔ passing test 876
++     ✔ passing test 877
++     ✔ passing test 878
++     ✔ passing test 879
++     ✔ passing test 880
++     ✔ passing test 881
++     ✔ passing test 882
++     ✔ passing test 883
++     ✔ passing test 884
++     ✔ passing test 885
++     ✔ passing test 886
++     ✔ passing test 887
++     ✔ passing test 888
++     ✔ passing test 889
++     ✔ passing test 890
++     ✔ passing test 891
++     ✔ passing test 892
++     ✔ passing test 893
++     ✔ passing test 894
++     ✔ passing test 895
++     ✔ passing test 896
++     ✔ passing test 897
++     ✔ passing test 898
++     ✔ passing test 899
++     ✔ passing test 900
++     ✔ passing test 901
++     ✔ passing test 902
++     ✔ passing test 903
++     ✔ passing test 904
++     ✔ passing test 905
++     ✔ passing test 906
++     ✔ passing test 907
++     ✔ passing test 908
++     ✔ passing test 909
++     ✔ passing test 910
++     ✔ passing test 911
++     ✔ passing test 912
++     ✔ passing test 913
++     ✔ passing test 914
++     ✔ passing test 915
++     ✔ passing test 916
++     ✔ passing test 917
++     ✔ passing test 918
++     ✔ passing test 919
++     ✔ passing test 920
++     ✔ passing test 921
++     ✔ passing test 922
++     ✔ passing test 923
++     ✔ passing test 924
++     ✔ passing test 925
++     ✔ passing test 926
++     ✔ passing test 927
++     ✔ passing test 928
++     ✔ passing test 929
++     ✔ passing test 930
++     ✔ passing test 931
++     ✔ passing test 932
++     ✔ passing test 933
++     ✔ passing test 934
++     ✔ passing test 935
++     ✔ passing test 936
++     ✔ passing test 937
++     ✔ passing test 938
++     ✔ passing test 939
++     ✔ passing test 940
++     ✔ passing test 941
++     ✔ passing test 942
++     ✔ passing test 943
++     ✔ passing test 944
++     ✔ passing test 945
++     ✔ passing test 946
++     ✔ passing test 947
++     ✔ passing test 948
++     ✔ passing test 949
++     ✔ passing test 950
++     ✔ passing test 951
++     ✔ passing test 952
++     ✔ passing test 953
++     ✔ passing test 954
++     ✔ passing test 955
++     ✔ passing test 956
++     ✔ passing test 957
++     ✔ passing test 958
++     ✔ passing test 959
++     ✔ passing test 960
++     ✔ passing test 961
++     ✔ passing test 962
++     ✔ passing test 963
++     ✔ passing test 964
++     ✔ passing test 965
++     ✔ passing test 966
++     ✔ passing test 967
++     ✔ passing test 968
++     ✔ passing test 969
++     ✔ passing test 970
++     ✔ passing test 971
++     ✔ passing test 972
++     ✔ passing test 973
++     ✔ passing test 974
++     ✔ passing test 975
++     ✔ passing test 976
++     ✔ passing test 977
++     ✔ passing test 978
++     ✔ passing test 979
++     ✔ passing test 980
++     ✔ passing test 981
++     ✔ passing test 982
++     ✔ passing test 983
++     ✔ passing test 984
++     ✔ passing test 985
++     ✔ passing test 986
++     ✔ passing test 987
++     ✔ passing test 988
++     ✔ passing test 989
++     ✔ passing test 990
++     ✔ passing test 991
++     ✔ passing test 992
++     ✔ passing test 993
++     ✔ passing test 994
++     ✔ passing test 995
++     ✔ passing test 996
++     ✔ passing test 997
++     ✔ passing test 998
++     ✔ passing test 999
++     ✔ passing test 1000
++     ✔ passing test 1001
++     ✔ passing test 1002
++     ✔ passing test 1003
++     ✔ passing test 1004
++     ✔ passing test 1005
++     ✔ passing test 1006
++     ✔ passing test 1007
++     ✔ passing test 1008
++     ✔ passing test 1009
++     ✔ passing test 1010
++     ✔ passing test 1011
++     ✔ passing test 1012
++     ✔ passing test 1013
++     ✔ passing test 1014
++     ✔ passing test 1015
++     ✔ passing test 1016
++     ✔ passing test 1017
++     ✔ passing test 1018
++     ✔ passing test 1019
++     ✔ passing test 1020
++     ✔ passing test 1021
++     ✔ passing test 1022
++     ✔ passing test 1023
++     ✔ passing test 1024
++     ✔ passing test 1025
++     ✔ passing test 1026
++     ✔ passing test 1027
++     ✔ passing test 1028
++     ✔ passing test 1029
++     ✔ passing test 1030
++     ✔ passing test 1031
++     ✔ passing test 1032
++     ✔ passing test 1033
++     ✔ passing test 1034
++     ✔ passing test 1035
++     ✔ passing test 1036
++     ✔ passing test 1037
++     ✔ passing test 1038
++     ✔ passing test 1039
++     ✔ passing test 1040
++     ✔ passing test 1041
++     ✔ passing test 1042
++     ✔ passing test 1043
++     ✔ passing test 1044
++     ✔ passing test 1045
++     ✔ passing test 1046
++     ✔ passing test 1047
++     ✔ passing test 1048
++     ✔ passing test 1049
++     ✔ passing test 1050
++     ✔ passing test 1051
++     ✔ passing test 1052
++     ✔ passing test 1053
++     ✔ passing test 1054
++     ✔ passing test 1055
++     ✔ passing test 1056
++     ✔ passing test 1057
++     ✔ passing test 1058
++     ✔ passing test 1059
++     ✔ passing test 1060
++     ✔ passing test 1061
++     ✔ passing test 1062
++     ✔ passing test 1063
++     ✔ passing test 1064
++     ✔ passing test 1065
++     ✔ passing test 1066
++     ✔ passing test 1067
++     ✔ passing test 1068
++     ✔ passing test 1069
++     ✔ passing test 1070
++     ✔ passing test 1071
++     ✔ passing test 1072
++     ✔ passing test 1073
++     ✔ passing test 1074
++     ✔ passing test 1075
++     ✔ passing test 1076
++     ✔ passing test 1077
++     ✔ passing test 1078
++     ✔ passing test 1079
++     ✔ passing test 1080
++     ✔ passing test 1081
++     ✔ passing test 1082
++     ✔ passing test 1083
++     ✔ passing test 1084
++     ✔ passing test 1085
++     ✔ passing test 1086
++     ✔ passing test 1087
++     ✔ passing test 1088
++     ✔ passing test 1089
++     ✔ passing test 1090
++     ✔ passing test 1091
++     ✔ passing test 1092
++     ✔ passing test 1093
++     ✔ passing test 1094
++     ✔ passing test 1095
++     ✔ passing test 1096
++     ✔ passing test 1097
++     ✔ passing test 1098
++     ✔ passing test 1099
++     ✔ passing test 1100
++     ✔ passing test 1101
++     ✔ passing test 1102
++     ✔ passing test 1103
++     ✔ passing test 1104
++     ✔ passing test 1105
++     ✔ passing test 1106
++     ✔ passing test 1107
++     ✔ passing test 1108
++     ✔ passing test 1109
++     ✔ passing test 1110
++     ✔ passing test 1111
++     ✔ passing test 1112
++     ✔ passing test 1113
++     ✔ passing test 1114
++     ✔ passing test 1115
++     ✔ passing test 1116
++     ✔ passing test 1117
++     ✔ passing test 1118
++     ✔ passing test 1119
++     ✔ passing test 1120
++     ✔ passing test 1121
++     ✔ passing test 1122
++     ✔ passing test 1123
++     ✔ passing test 1124
++     ✔ passing test 1125
++     ✔ passing test 1126
++     ✔ passing test 1127
++     ✔ passing test 1128
++     ✔ passing test 1129
++     ✔ passing test 1130
++     ✔ passing test 1131
++     ✔ passing test 1132
++     ✔ passing test 1133
++     ✔ passing test 1134
++     ✔ passing test 1135
++     ✔ passing test 1136
++     ✔ passing test 1137
++     ✔ passing test 1138
++     ✔ passing test 1139
++     ✔ passing test 1140
++     ✔ passing test 1141
++     ✔ passing test 1142
++     ✔ passing test 1143
++     ✔ passing test 1144
++     ✔ passing test 1145
++     ✔ passing test 1146
++     ✔ passing test 1147
++     ✔ passing test 1148
++     ✔ passing test 1149
++     ✔ passing test 1150
++     ✔ passing test 1151
++     ✔ passing test 1152
++     ✔ passing test 1153
++     ✔ passing test 1154
++     ✔ passing test 1155
++     ✔ passing test 1156
++     ✔ passing test 1157
++     ✔ passing test 1158
++     ✔ passing test 1159
++     ✔ passing test 1160
++     ✔ passing test 1161
++     ✔ passing test 1162
++     ✔ passing test 1163
++     ✔ passing test 1164
++     ✔ passing test 1165
++     ✔ passing test 1166
++     ✔ passing test 1167
++     ✔ passing test 1168
++     ✔ passing test 1169
++     ✔ passing test 1170
++     ✔ passing test 1171
++     ✔ passing test 1172
++     ✔ passing test 1173
++     ✔ passing test 1174
++     ✔ passing test 1175
++     ✔ passing test 1176
++     ✔ passing test 1177
++     ✔ passing test 1178
++     ✔ passing test 1179
++     ✔ passing test 1180
++     ✔ passing test 1181
++     ✔ passing test 1182
++     ✔ passing test 1183
++     ✔ passing test 1184
++     ✔ passing test 1185
++     ✔ passing test 1186
++     ✔ passing test 1187
++     ✔ passing test 1188
++     ✔ passing test 1189
++     ✔ passing test 1190
++     ✔ passing test 1191
++     ✔ passing test 1192
++     ✔ passing test 1193
++     ✔ passing test 1194
++     ✔ passing test 1195
++     ✔ passing test 1196
++     ✔ passing test 1197
++     ✔ passing test 1198
++     ✔ passing test 1199
++   1238 passing (5s)
++   3 failing
++   1) parse-args
++        allows -j 4:
++      TypeError: Mocha flag '-j' given invalid option: '4'
+
+ ❯ src/gates/unmeasured-change.test.ts:96:18
+     94|     );
+     95|     expect(told).toContain("Mocha flag '-j' given invalid option: '4'"…
+     96|     expect(told).toContain("characters omitted from the middle");
+       |                  ^
+     97|     expect(told.length).toBeLessThan(9_000);
+     98|     expect(excerptForModel("short output")).toBe("short output");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/7]⎯
+
+
+ Test Files  3 failed (3)
+      Tests  7 failed | 66 passed | 1 skipped (74)
+   Start at  03:22:07
+   Duration  44.18s (transform 365ms, setup 0ms, import 514ms, tests 54.36s, environment 0ms)
+

@@ -12,6 +12,15 @@ Source on `v13-main`; not published until a release names it.
 
 ### Added
 
+- **Experimental, off by default: `--repair-trace` (preservation-trace-v1).** Where a failing gate
+  passed in the harness's own run over the base, the repair attempt is told so with the
+  gate-baseline record and asked to reproduce one preserved case on both trees, narrow to the first
+  value that differs, fix there, and check the preserved case and the task's own examples before
+  adding a regression test; `run_check` then accepts `compare_base: true`, which runs one program
+  over a git archive of the base and over the workspace and names the inputs whose results differ.
+  One development pair and one fresh task (`docs/evidence/2026-10-22/`) showed no artifact
+  improvement: the model never called `compare_base`.
+
 - **Experimental, off by default: the account handed to a repair attempt can carry the previous
   loop's last three shell results that printed something and exited 0.** The account kept the
   commands that printed nothing or failed and dropped the ones that printed, so what a diagnostic
@@ -32,6 +41,25 @@ Source on `v13-main`; not published until a release names it.
   observation, not a benefit attributed to the account.
 
 ### Fixed
+
+- **A change to a project's own test runner is verified, not refused.** mocha runs its own suite
+  with `node bin/mocha.js`, so every change to its `lib/` altered the instrument and the code under
+  test at once, and putting the base's file back to measure the pass restored the implementation
+  too: correct changes read `unmeasured`. runner-source-v1 appends a failing test with a run-time
+  marker to every test file and runs the check under the change's runner and the base's; the pass
+  stands only where both report the same added failures. A base-instrument pass that put back code
+  the tests load no longer stands on its own, which also closes a false pass for a changed test
+  script plus a broken shared source. The offline verifier re-derives both.
+- **Rereadings are scoped and start clean.** Each check is reread under the base's instrument only
+  for its own changed files, and every rereading starts from the prepared environment with the first
+  reading's leftovers moved aside and returned after; mocha's lint, whose second run in a tree fails
+  on its own cache, no longer has its pass withheld for a file it never loads.
+- **`run_check` runs the sealed acceptance checks alone.** One call took 77 of a run's 231 seconds
+  of verification by rerunning the whole suite and its rereadings; live it now takes about 9 s. The
+  acceptance gate and the final verification are unchanged.
+- **A repair is given the failures it is fixing.** A long gate stream keeps its end, where runners
+  report failures (mocha's failing tests were cut off behind 1,231 passing titles), and "Nothing ran
+  over this change" is said only where no test command passed or failed.
 
 - **A run whose model work was cut before its deadline is decided by the checks of the tree it
   delivered.** A run with a total allowance ends model work a reserve before its deadline so the

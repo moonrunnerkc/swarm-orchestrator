@@ -54,6 +54,12 @@ export interface ResolveRequest {
   readonly followUp?: string;
   /** Which owed work the brief is: a task's own continuation, or its unresolved outcomes. */
   readonly followUpKind?: OwedKind;
+  /**
+   * The failing gates this attempt is asked to fix that passed when run over the base, each with
+   * the gate-baseline record of that run: behaviour the base had and the change lost, as the
+   * harness measured it. Absent for owed work; empty where none was measured passing.
+   */
+  readonly passingAtBase?: readonly { readonly gateId: string; readonly record: string }[];
 }
 
 /**
@@ -252,7 +258,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
   let cycle = await runGateCycle(deps.gates, context, 0, deps.cycleDeps);
   const firstCycle = cycle;
   let baseline = await snapshot(context, cycle, trackedTestFiles);
-  const failingAtBase = await failuresTheBaseHas(deps, cycle);
+  const { failing: failingAtBase, passing: passingAtBase } = await failuresTheBaseHas(deps, cycle);
 
   const attempts: AutoResolveAttempt[] = [];
   let rejected: RejectedCandidate | null = null;
@@ -313,6 +319,14 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
       gateOutput: next === undefined ? describeFailuresForModel(cycle, failingAtBase) : "",
       cycle,
       rejected,
+      ...(next === undefined
+        ? {
+            passingAtBase: cycle.blockingFailures.flatMap((run) => {
+              const record = passingAtBase.get(run.gateId);
+              return record === undefined ? [] : [{ gateId: run.gateId, record }];
+            }),
+          }
+        : {}),
       ...(next === undefined ? {} : { followUp: next.work.brief, followUpKind: next.kind }),
     });
     if (next !== undefined)
@@ -895,17 +909,22 @@ export function gatesTheHarnessCouldNotRun(cycle: GateCycle): ReadonlyMap<string
 }
 
 /**
- * Which of the first cycle's blocking failures the base tree already has, unchanged. Each is
- * measured once, by running the gate over the base and comparing the failure's signature,
- * and recorded as a gate-baseline record whether or not it matched.
+ * Which of the first cycle's blocking failures the base tree already has, unchanged, and which
+ * the base passed, with the record of that passing run. Each is measured once, by running the
+ * gate over the base and comparing the failure's signature, and recorded as a gate-baseline
+ * record whether or not it matched.
  */
 async function failuresTheBaseHas(
   deps: AutoResolveDependencies,
   cycle: GateCycle,
-): Promise<ReadonlySet<string>> {
+): Promise<{
+  readonly failing: ReadonlySet<string>;
+  readonly passing: ReadonlyMap<string, string>;
+}> {
   const failing = new Set<string>();
+  const passing = new Map<string, string>();
   if (deps.measureAtBase === undefined) {
-    return failing;
+    return { failing, passing };
   }
   for (const run of cycle.blockingFailures) {
     const gate = deps.gates.find((candidate) => candidate.id === run.gateId);
@@ -924,8 +943,9 @@ async function failuresTheBaseHas(
     ) {
       failing.add(run.gateId);
     }
+    if (atBase.status === "passed") passing.set(run.gateId, atBase.record);
   }
-  return failing;
+  return { failing, passing };
 }
 
 async function escalate(

@@ -33,9 +33,9 @@ delivery. Nothing is rerun and no planning rule is added.
 | product status | exit 1, `not accepted`, no completion claim; loop stopped `max-steps` after 80 steps; two repair attempts (one accepted by the ratchet with tests still failing, one withheld for budget); final verification of the exact tree: regression fail (tests) | exit 0, **success claimed** after its own run had shown the uncovered lines: a false completion claim under the oracle |
 | arm wall (spawn to exit) | **469.1 s** (7.8 min); preparation 11.9 s, readiness 5.9 s with the model loading, cleanup 0.17 s, apart | **204.9 s** (3.4 min); preparation 2.2 s, readiness 0.9 s, cleanup 0.11 s, apart |
 | live tokens, as the server counted them | **2,513,621** (2,492,257 input, 21,364 output), a lower bound: one call reported no usage | **1,149,636** (1,140,722 input, 8,914 output), every call reporting usage |
-| patch | [records/swarm-final.patch](records/swarm-final.patch), 2,430 bytes, `sha256:65f6e10365...` | [records/opencode-final.patch](records/opencode-final.patch), 2,809 bytes, `sha256:c359720502...` |
+| patch | [records/swarm-final.patch](packed-derived/records/), 2,430 bytes, `sha256:65f6e10365...` | [records/opencode-final.patch](packed-derived/records/), 2,809 bytes, `sha256:c359720502...` |
 
-Swarm's wall split, from its own chain ([records/swarm-reading.json](records/swarm-reading.json)):
+Swarm's wall split, from its own chain ([records/swarm-reading.json](packed-derived/records/)):
 seal and preflight 10.9 s; worker loop and repairs 443.4 s (model 357.5 s, tools 40.2 s); final
 gates, acceptance and verification 14.2 s, inside a 60 s reserve.
 

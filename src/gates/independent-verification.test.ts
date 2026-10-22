@@ -684,6 +684,47 @@ describe("a failure the base already had", () => {
     expect(capturedRegression(result.checks)).toBe(result.regression);
   });
 
+  it("rereads a check from the environment its first reading started from", async () => {
+    // mocha's lint: its first run in a tree passes and every later run fails, because the first
+    // leaves a cache behind. Read again under the base's tests beside that cache, it failed where
+    // nothing the patch did could have made it fail, and its pass was withheld.
+    await writeFile(
+      join(repository, "package.json"),
+      '{"name":"w","version":"1.0.0","type":"module","scripts":{"test":"node --test","lint":"node lint.mjs"}}\n',
+    );
+    await writeFile(join(repository, ".gitignore"), ".lint-cache\n");
+    await writeFile(
+      join(repository, "lint.mjs"),
+      "import { existsSync, writeFileSync } from 'node:fs';\nif (existsSync('.lint-cache')) { console.log('stale cache'); process.exit(1); }\nwriteFileSync('.lint-cache', 'x');\n",
+    );
+    git(["add", "-A"], repository);
+    git(["commit", "-qm", "a linter whose second run in a tree fails"], repository);
+    const patch = [
+      "diff --git a/clamp.test.mjs b/clamp.test.mjs",
+      "--- a/clamp.test.mjs",
+      "+++ b/clamp.test.mjs",
+      "@@ -4 +4,2 @@",
+      " test('identity', () => assert.equal(clamp(3), 3));",
+      "+test('zero', () => assert.equal(clamp(0), 0));",
+      "",
+    ].join("\n");
+
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch,
+      commands: commands(),
+      clock,
+    });
+
+    const lint = result.checks.find((check) => check.id === "lint");
+    expect(lint?.baseTestsStatus).toBe("passed");
+    expect(lint?.status).toBe("passed");
+    expect(result.regression).toBe("pass");
+    // The offline verifier, a second implementation, reads the same regression from the record.
+    expect(capturedRegression(result.checks)).toBe(result.regression);
+  });
+
   it("still inherits a failure the base printed identically", async () => {
     await writeFile(
       join(repository, "package.json"),

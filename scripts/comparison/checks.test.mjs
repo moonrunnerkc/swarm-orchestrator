@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { commandLog } from "../campaign/exec.mjs";
-import { hiddenVerdict } from "./checks.mjs";
+import { hiddenVerdict, structuredRewriteOf } from "./checks.mjs";
 import { validateTask } from "./validate.mjs";
 import { cloneAtBase, mirrorOf } from "./workspace.mjs";
 
@@ -198,5 +198,43 @@ describe("validating a task's reference", () => {
     });
     expect(row.reference.hiddenBasis).toContain("protected-path (.taprc)");
     expect(row.valid).toBe(false);
+  });
+});
+
+describe("the product's structured form of a task's test script", () => {
+  // A stand-in for the pinned build's gates/structured-runner.js, with its rule: a script body of
+  // `vitest run` runs the same suite through a reporter the product reads.
+  const build = mkdtempSync(join(tmpdir(), "swarm-pinned-"));
+  const checkout = mkdtempSync(join(tmpdir(), "swarm-gate-plan-"));
+  mkdirSync(join(build, "gates"), { recursive: true });
+  writeFileSync(
+    join(build, "gates", "structured-runner.js"),
+    "export const structuredRunner = (body) => (body === 'vitest run' ? ['node', '-e', 'VITEST'] : null);\n" +
+      "export const renderRunnerArgv = (argv) => argv.map((word) => \"'\" + word + \"'\").join(' ');\n",
+  );
+  const pins = { swarmCli: join(build, "cli.js") };
+
+  it("is accepted only where it is exactly what the pinned build renders for the script's body", async () => {
+    writeFileSync(
+      join(checkout, "package.json"),
+      JSON.stringify({ scripts: { "test:vi": "vitest run" } }),
+    );
+    expect(
+      await structuredRewriteOf(pins, checkout, "npm run test:vi", "'node' '-e' 'VITEST'"),
+    ).toBe(true);
+    // Any other command, or a body the build does not rewrite, is not the task's gate.
+    expect(
+      await structuredRewriteOf(pins, checkout, "npm run test:vi", "'node' '-e' 'OTHER'"),
+    ).toBe(false);
+    writeFileSync(
+      join(checkout, "package.json"),
+      JSON.stringify({ scripts: { "test:vi": "vitest run --project unit" } }),
+    );
+    expect(
+      await structuredRewriteOf(pins, checkout, "npm run test:vi", "'node' '-e' 'VITEST'"),
+    ).toBe(false);
+    expect(await structuredRewriteOf(pins, checkout, "npm test", "'node' '-e' 'VITEST'")).toBe(
+      false,
+    );
   });
 });

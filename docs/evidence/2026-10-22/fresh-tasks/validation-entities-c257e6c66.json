@@ -1,0 +1,64 @@
+{
+  "sha": "c257e6c66",
+  "base": "08ef000a26e9d4343de6f5d5f9a2353d1ec9d12b",
+  "test": "npm run test:vi",
+  "hidden": "npx vitest run src/decode.spec.ts src/escape.spec.ts",
+  "steps": {
+    "baseInstall": {
+      "command": "npm ci --ignore-scripts --no-audit --no-fund",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 890,
+      "outputTail": "\nadded 237 packages in 845ms\n\n"
+    },
+    "baseTest": {
+      "command": "npm run test:vi",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 1504,
+      "outputTail": "\n> entities@8.0.0 test:vi\n> vitest run\n\n\n RUN  v4.1.9 /private/tmp/claude-501/-Users-brad-projects-swarm-orchestrator/e7b3a962-14fd-453d-b3e9-0801a3983f95/scratchpad/validate/entities-c257e6c66/base\n\n\n Test Files  8 passed (8)\n      Tests  313 passed (313)\n   Start at  01:58:11\n   Duration  849ms (transform 461ms, setup 0ms, import 563ms, tests 813ms, environment 0ms)\n\n\n"
+    },
+    "overlaidInstall": {
+      "command": "npm ci --ignore-scripts --no-audit --no-fund",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 889,
+      "outputTail": "\nadded 237 packages in 842ms\n\n"
+    },
+    "baseHidden": {
+      "command": "npx vitest run src/decode.spec.ts src/escape.spec.ts",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 895,
+      "outputTail": " FAIL  src/escape.spec.ts > getCodePoint > should read astral code points from surrogate pairs\nTypeError: getCodePoint is not a function\n ❯ src/escape.spec.ts:28:16\n     26|\n     27|     it(\"should read astral code points from surrogate pairs\", () => {\n     28|         expect(getCodePoint(\"💯\", 0)).toBe(128_175);\n       |                ^\n     29|         expect(getCodePoint(\"a\\u{1F4A9}\", 1)).toBe(0x1_f4_a9);\n     30|     });\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯\n\n FAIL  src/escape.spec.ts > getCodePoint > should return NaN for out-of-range indices\nTypeError: getCodePoint is not a function\n ❯ src/escape.spec.ts:33:16\n     31|\n     32|     it(\"should return NaN for out-of-range indices\", () => {\n     33|         expect(getCodePoint(\"abc\", 3)).toBeNaN();\n       |                ^\n     34|         expect(getCodePoint(\"\", 0)).toBeNaN();\n     35|     });\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯\n\n"
+    },
+    "commitInstall": {
+      "command": "npm ci --ignore-scripts --no-audit --no-fund",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 855,
+      "outputTail": "\nadded 237 packages in 808ms\n\n"
+    },
+    "commitHidden": {
+      "command": "npx vitest run src/decode.spec.ts src/escape.spec.ts",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 870,
+      "outputTail": "\n RUN  v4.1.9 /private/tmp/claude-501/-Users-brad-projects-swarm-orchestrator/e7b3a962-14fd-453d-b3e9-0801a3983f95/scratchpad/validate/entities-c257e6c66/commit\n\n\n Test Files  2 passed (2)\n      Tests  242 passed (242)\n   Start at  01:58:15\n   Duration  114ms (transform 68ms, setup 0ms, import 90ms, tests 10ms, environment 0ms)\n\n\n"
+    },
+    "commitTest": {
+      "command": "npm run test:vi",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 999,
+      "outputTail": "\n> entities@8.0.0 test:vi\n> vitest run\n\n\n RUN  v4.1.9 /private/tmp/claude-501/-Users-brad-projects-swarm-orchestrator/e7b3a962-14fd-453d-b3e9-0801a3983f95/scratchpad/validate/entities-c257e6c66/commit\n\n\n Test Files  8 passed (8)\n      Tests  317 passed (317)\n   Start at  01:58:16\n   Duration  823ms (transform 387ms, setup 0ms, import 507ms, tests 803ms, environment 0ms)\n\n\n"
+    }
+  },
+  "criteria": {
+    "install": true,
+    "basePassesProjectTest": true,
+    "baseFailsHidden": true,
+    "commitPassesBoth": true
+  },
+  "eligible": true
+}

@@ -127,6 +127,36 @@ const mocha = {
   visiblePrefix: "",
 };
 
+/**
+ * Fresh tasks of 2026-10-22, selected by docs/evidence/2026-10-22/fresh-tasks/selection-rule.md
+ * from two repositories no launch of this project has used, validated with no model
+ * (docs/evidence/2026-10-22/fresh-tasks/). Task text was written from the base's observed behaviour
+ * and the upstream change without naming it. Their hidden behaviour checks are kept with that stage.
+ */
+const freshBehaviourCheck = (name) =>
+  readFileSync(
+    new URL(`../../docs/evidence/2026-10-22/fresh-tasks/hidden/${name}`, import.meta.url),
+    "utf8",
+  );
+
+const acorn = {
+  repository: "acornjs/acorn",
+  install: [npmCi],
+  build: [],
+  // `npm test` builds the parser from source (its pretest) and runs every test file.
+  projectTest: ["npm", "test"],
+  visiblePrefix: "",
+};
+
+const entities = {
+  repository: "fb55/entities",
+  install: [npmCi],
+  build: [],
+  // The project's `npm test` also runs eslint, tsc and biome; its test suite alone is `test:vi`.
+  projectTest: ["npm", "run", "test:vi"],
+  visiblePrefix: "",
+};
+
 export const tasks = [
   {
     id: "marked-bugfix-www-case",
@@ -841,6 +871,78 @@ assert.deepEqual(
   unparseMochaArgs({ $schema: "https://json.schemastore.org/mocharc.json" }),
   ["--$schema=https://json.schemastore.org/mocharc.json"],
 );
+console.log("visible check passed");
+`,
+    ),
+  },
+  {
+    id: "acorn-bugfix-member-target-pattern-errors",
+    ...acorn,
+    workType: "bugfix",
+    baseCommit: "d788421b2",
+    upstreamCommit: "1cd3fd47d",
+    hidden: {
+      testFiles: ["test/tests-harmony.js"],
+      argv: ["npm", "test"],
+      files: [
+        {
+          path: "acceptance/hidden/behaviour-check.mjs",
+          source: freshBehaviourCheck("acorn-behaviour-check.mjs"),
+        },
+      ],
+      extraArgv: [["node", "acceptance/hidden/behaviour-check.mjs"]],
+    },
+    immutable: [],
+    taskText: `acorn's parser (acorn/src/expression.js) reports two errors in an object literal only once it knows the literal is not a destructuring pattern: a shorthand property with a default, as in {a = 0}, is "Shorthand property assignments are valid only in destructuring patterns", and a second __proto__ property is "Redefinition of __proto__ property". Today both errors are lost when the object literal is the object of a member expression that is itself an assignment target, although such a literal is never a pattern: with { ecmaVersion: 2022 }, parse("({a = 0}.x = 0);") succeeds, and so do parse("[{a = 0}.x] = [];"), parse("for ({a = 0}.x of []) ;") and parse("({__proto__: 1, __proto__: 2}.x = 0);"). Each must throw a SyntaxError: "({a = 0}.x = 0);" and "[{a = 0}.x] = [];" with "Shorthand property assignments are valid only in destructuring patterns (1:4)", "for ({a = 0}.x of []) ;" with the same message at (1:8), and "({__proto__: 1, __proto__: 2}.x = 0);" with "Redefinition of __proto__ property (1:16)". The same holds wherever such a literal is the object of a member expression that is assigned to or destructured into, however deep. What must not change: real destructuring patterns still parse ("({a = 0} = {});", "[{a = 0}] = [];", "({a = 0}) => 0;"), a member expression whose object has no such property still parses as a target ("[{a: 0}.x] = [];"), and the errors acorn reports today stay as they are ("({a = 0});" throws the shorthand message at (1:4); "({a = 0} += 1);" throws "Assigning to rvalue (1:1)"). The parser's source is in acorn/src; npm test builds it and runs the test files under test/ (the parser's expression tests are in test/tests-harmony.js, written with test() and testFail()). Add regression tests for this behaviour to the project's existing test suite. The project's tests run with npm test.`,
+    visible: check(
+      acorn,
+      `import assert from "node:assert/strict";
+import { parse } from "../../acorn/src/index.js";
+
+assert.throws(() => parse("({a = 0}.x = 0);", { ecmaVersion: 2022 }), {
+  name: "SyntaxError",
+  message: /Shorthand property assignments are valid only in destructuring patterns/,
+});
+console.log("visible check passed");
+`,
+    ),
+  },
+  {
+    id: "entities-bugfix-restore-get-code-point",
+    ...entities,
+    workType: "bugfix",
+    baseCommit: "08ef000a2",
+    upstreamCommit: "c257e6c66",
+    hidden: {
+      testFiles: ["src/decode.spec.ts", "src/escape.spec.ts"],
+      argv: ["npx", "vitest", "run", "src/decode.spec.ts", "src/escape.spec.ts"],
+      files: [
+        {
+          path: "acceptance/hidden/behaviour-check.mts",
+          source: freshBehaviourCheck("entities-behaviour-check.mts"),
+        },
+      ],
+      extraArgv: [["node", "--import=tsx", "acceptance/hidden/behaviour-check.mts"]],
+    },
+    immutable: [],
+    taskText: `entities no longer exports getCodePoint from src/escape.ts, a helper its earlier releases exported and code that depends on the package still imports from the escape module; today importing it gives undefined. Restore it in src/escape.ts as a deprecated export (marked @deprecated in favour of String.prototype.codePointAt): getCodePoint(input, index) returns the Unicode code point that starts at index in input, reading a surrogate pair as one astral code point, and NaN where index is outside the string. getCodePoint("abc", 0) must give 97, getCodePoint("abc", 2) 99, getCodePoint("ü", 0) 252, getCodePoint("💯", 0) 128175, getCodePoint("a\u{1F4A9}", 1) 128169, and getCodePoint("abc", 3) and getCodePoint("", 0) NaN. What must not change: the other exports of src/escape.ts and their results (encodeXML(\`<a href="x">'&'</a> 💯 ü\`) gives "&lt;a href=&quot;x&quot;&gt;&apos;&amp;&apos;&lt;/a&gt; &#128175; &#252;" and escapeUTF8 of the same string gives "&lt;a href=&quot;x&quot;&gt;&apos;&amp;&apos;&lt;/a&gt; 💯 ü"), and the exports of src/index.ts, which do not include getCodePoint. The source is TypeScript in src/, with its vitest tests beside it (src/escape.spec.ts tests the escape module). Add regression tests for this behaviour to the project's existing test suite. The project's tests run with npm run test:vi.`,
+    visible: check(
+      entities,
+      `import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+
+// The source is TypeScript; tsx, a development dependency of the project, loads it.
+const probe = spawnSync(
+    process.execPath,
+    [
+        "--import=tsx",
+        "--input-type=module",
+        "-e",
+        "import { getCodePoint } from './src/escape.ts'; console.log(getCodePoint('abc', 0));",
+    ],
+    { encoding: "utf8" },
+);
+assert.equal(probe.stdout.trim(), "97", probe.stderr);
 console.log("visible check passed");
 `,
     ),
