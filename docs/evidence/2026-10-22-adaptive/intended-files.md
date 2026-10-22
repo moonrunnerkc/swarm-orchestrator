@@ -37,3 +37,21 @@ recorded below as dated amendments before they are edited.
 - `docs/capability-study-2026-10-22.md`: appended continuation.
 - `README.md`: one short link.
 - `docs/evidence/2026-10-22-adaptive/`: protocol, selection rule, records, scores and report.
+
+## Amendment 1, October 22, before editing these files
+
+The existing two-arm campaign runner (`scripts/comparison/run.mjs`) and its historical protocols
+are left unchanged; the three-arm study gets its own runner over the shared modules instead of
+`run.mjs` changes. Added:
+
+- `scripts/comparison/study.mjs`, `scripts/comparison/study.test.mjs`: the study runner (freeze,
+  setup-failure records and bounded setup retry, retention after inference, scoring, exposure scan).
+- `scripts/comparison/checks.mjs`, `scripts/comparison/checks.test.mjs`: a delivered-tree static
+  verdict (project lint on the base and on the candidate).
+- `scripts/comparison/workspace.mjs`, `scripts/comparison/workspace.test.mjs`: the internal-ablation
+  arm writes Swarm's configuration, not OpenCode's.
+- `scripts/comparison/fixtures/neutral-smoke.mjs`: the neutral edit-and-test smoke task and its local
+  repository, run through the study runner's own launch builder.
+
+`run.mjs`, `run.test.mjs`, `arms.mjs`, `schema.mjs` and `validate.mjs` from the original
+declaration are no longer intended edits.
