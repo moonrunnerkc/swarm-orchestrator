@@ -763,6 +763,7 @@ async function run(options: RunCommand): Promise<number> {
       ...(options.promptProfile === undefined ? {} : { promptProfile: options.promptProfile }),
       ...(options.repairTrace === true ? { repairTrace: true } : {}),
       ...(options.repairFinish === true ? { repairFinish: true } : {}),
+      ...(options.adaptive === true ? { adaptive: true } : {}),
       ...(repairFeedback === undefined ? {} : { repairFeedback }),
       ...(options.escalationModel === undefined
         ? {}
