@@ -17,7 +17,7 @@ Known-pattern review does not guarantee secret removal.
 From a clone, obtain this branch's archive without switching your working tree:
 
 ```sh
-git fetch origin evidence/2026-10-22-capability
+git fetch origin artifacts/capability-2026-10-22
 git show FETCH_HEAD:docs/evidence/2026-10-22-capability/inventory.json > /tmp/capability-inventory.json
 git show FETCH_HEAD:docs/evidence/2026-10-22-capability/evidence.tar.gz > /tmp/capability-evidence.tar.gz
 python3 - <<'PY'
@@ -59,3 +59,9 @@ and smoke work, which are listed separately. The raw archive is unchanged. Hidde
 were outside worker checkouts but not protected by OS isolation on this host. Broad CLI host
 permissions could reach them; no access was observed. These exposed development samples do not
 establish a comparison with enforced inaccessible evaluators.
+
+This is a data-only snapshot, not Swarm product source. Its parent preserves the earlier
+publication. The earlier source-plus-archive snapshot failed the unchanged repository weight
+check. This snapshot contains only the evidence and its verification workflow. It does not
+claim a product gates result. Run python3 verify-archive.py at its root to check every member
+and all five native bundles. Product gates remain on the feature PR.
