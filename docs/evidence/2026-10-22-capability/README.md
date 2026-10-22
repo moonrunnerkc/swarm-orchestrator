@@ -39,7 +39,9 @@ single-run failure, not evidence that other OpenCode tasks or its normal model c
 Claude's corrected neutral smoke passes. Both comparator launches occurred independently of
 Swarm success. Claude's approval bypass with isolated HOME has broader effective path permissions
 than Swarm/OpenCode's lexical guards. This limits fair product conclusions; no superiority claim
-follows. No hidden evaluator was supplied to a worker.
+follows. No hidden evaluator was supplied to a worker. Hidden files stayed outside worker
+checkouts but were not OS-inaccessible on this host. Broad CLI host permissions could reach
+them; no access was observed. These runs do not meet an enforced evaluator-isolation requirement.
 
 All three live Mocha deliveries have identical frozen-task base content and final patch digest
 `fa5bce2fd91a7fe83cc604c99bf6cdadfa33d6884d43d0a92c8fc1c1de8bc2af`.
@@ -75,7 +77,9 @@ the cheap direct path. They do not demonstrate model transfer.
 
 Total product wall: 1,655.201 s (27.6 minutes). Reported product usage: at least 2,319,624 tokens,
 including 1,137 synthetic scripted-seed tokens; readiness probes and neutral smokes are additional
-and preserved in the raw records. Two cancelled Gemma calls have unknown usage. Native model time
+and preserved in the raw records. They add 2,913 readiness tokens / 16.312 s and 50,141 neutral
+smoke tokens / 15.091 s. Total measured local inference is at least 2,371,541 tokens after
+subtracting the synthetic seed usage. Two cancelled Gemma calls have unknown usage. Native model time
 sums recorded response durations. Verification unions declared gate-duration intervals and the
 independent verification phase intervals; it is an elapsed estimate, not CPU time. Tool and
 verification categories overlap and must not be added. Use [trajectory-account.mjs](trajectory-account.mjs)
@@ -132,7 +136,7 @@ artifacts. Another round of orchestration is not assumed to help.
 
 ## Reproduce and inspect
 
-[Raw evidence and restoration instructions](https://github.com/moonrunnerkc/swarm-orchestrator/tree/ec03980a4ed87b32905a7d8cd98b7805235be372/docs/evidence/2026-10-22-capability)
+[Raw evidence and restoration instructions](https://github.com/moonrunnerkc/swarm-orchestrator/tree/136da596bec657ad9084ec5811d7909ae584b4f6/docs/evidence/2026-10-22-capability)
 include every new native session, external product stream, command result, frozen input, exact
 patch, supplemental score and verification log. The archive is 15,234,872 bytes; all 3,641
 restored files were checked against their lengths and SHA-256 digests. All five native bundles
