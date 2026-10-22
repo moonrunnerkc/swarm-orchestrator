@@ -161,6 +161,7 @@ async function decide(
   const candidate = await measureCandidate(context);
   const base = {
     rule: "adaptive-decision-v1",
+    phase: "decided",
     loop: context.loop,
     step: input.steps,
     remaining: input.remaining,

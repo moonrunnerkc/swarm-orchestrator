@@ -651,30 +651,49 @@ async function executeAgentTask(
   const brief = taskBrief(options.task, options.contract);
   // The run's explanations, shared by every loop so a finding survives a repair's fresh context.
   const hypotheses: Hypothesis[] = [];
-  const decisionPointFor = (loop: string, budget: LoopBudget): DecisionPoint | undefined =>
-    options.adaptive !== true
-      ? undefined
-      : createDecisionPoint({
-          loop,
-          task: brief,
-          requiredChecks: options.contract?.requiredChecks ?? [],
-          workspace: options.workspace,
-          baseRef: options.baseRef,
-          budget,
-          clock: options.clock,
-          evidence: options.evidence,
-          toolInvoker,
-          shellAllowed: definitions.some((tool) => tool.name === "shell"),
-          readOnly: () =>
-            assembleToolset({
-              ...toolsetBase,
-              tools: () => definitions.filter((tool) => readOnlyTools.has(tool.name)),
-            }),
-          runLoop: runAgentLoop,
-          loopDependencies: { ...loopDependencies, budget },
-          hypotheses,
-        });
-  const firstPoint = decisionPointFor("task", loopDependencies.budget);
+  // Armed on the record per loop, with its thresholds, so a loop that finishes before its point
+  // is still seen to have run with it: no decision record alone cannot tell the two apart.
+  const decisionPointFor = async (
+    loop: string,
+    budget: LoopBudget,
+  ): Promise<DecisionPoint | undefined> => {
+    if (options.adaptive !== true) return undefined;
+    const point = createDecisionPoint({
+      loop,
+      task: brief,
+      requiredChecks: options.contract?.requiredChecks ?? [],
+      workspace: options.workspace,
+      baseRef: options.baseRef,
+      budget,
+      clock: options.clock,
+      evidence: options.evidence,
+      toolInvoker,
+      shellAllowed: definitions.some((tool) => tool.name === "shell"),
+      readOnly: () =>
+        assembleToolset({
+          ...toolsetBase,
+          tools: () => definitions.filter((tool) => readOnlyTools.has(tool.name)),
+        }),
+      runLoop: runAgentLoop,
+      loopDependencies: { ...loopDependencies, budget },
+      hypotheses,
+    });
+    await options.evidence.record({
+      type: "verification-command",
+      actor: "harness",
+      provenance: ["user"],
+      payload: asJsonValue({
+        rule: "adaptive-decision-v1",
+        phase: "armed",
+        loop,
+        atStep: point.atStep,
+        atElapsedMs: point.atElapsedMs,
+        budget,
+      }),
+    });
+    return point;
+  };
+  const firstPoint = await decisionPointFor("task", loopDependencies.budget);
   const loop = await runAgentLoop(
     options.repairFeedback === undefined
       ? brief
@@ -833,7 +852,7 @@ async function executeAgentTask(
       if (request.followUpKind !== undefined)
         beforeOwed.set(request.followUpKind, { completionClaim, messages, latestLoop });
       const repairBudget = { ...loopDependencies.budget, ...attemptBudget };
-      const repairPoint = decisionPointFor(`attempt ${request.attempt}`, repairBudget);
+      const repairPoint = await decisionPointFor(`attempt ${request.attempt}`, repairBudget);
       const repair = await resolveWithModel(
         request,
         options,

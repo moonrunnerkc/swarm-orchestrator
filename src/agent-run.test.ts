@@ -2109,6 +2109,8 @@ describe("the adaptive decision point (adaptive-decision-v1)", () => {
         payload: evidence.payloads().get(r.payloadDigest) as Record<string, unknown>,
       }))
       .filter((entry) => entry.payload.rule === "adaptive-decision-v1");
+    const armed = decisions.filter((entry) => entry.payload.phase === "armed");
+    const decided = decisions.filter((entry) => entry.payload.phase === "decided");
     const promptOf = (index: number) =>
       (fixture.requests[index]?.messages ?? [])
         .map((message) =>
@@ -2117,7 +2119,7 @@ describe("the adaptive decision point (adaptive-decision-v1)", () => {
             : message.text,
         )
         .join("\n");
-    return { result, requests: fixture.requests, decisions, promptOf };
+    return { result, requests: fixture.requests, decisions: decided, armed, promptOf };
   }
 
   const call = (callId: string, toolName: string, input: unknown) =>
@@ -2245,6 +2247,10 @@ describe("the adaptive decision point (adaptive-decision-v1)", () => {
     const direct = await adaptiveTask(goodTurns(stillGreen), { maxSteps: 8 });
     expect(direct.result.green).toBe(true);
     expect(direct.decisions).toHaveLength(0);
+    // Armed all the same, so the record shows the run had the point and never reached it.
+    expect(direct.armed.map((entry) => entry.payload)).toEqual([
+      expect.objectContaining({ loop: "task", atStep: 4 }),
+    ]);
     expect(direct.requests).toHaveLength(3);
 
     await rm(join(scratch, "sessions"), { recursive: true, force: true });
