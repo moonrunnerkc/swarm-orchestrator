@@ -204,8 +204,8 @@ describe("describeWorkingState", () => {
     expect(text).toContain("- original task: make the parser throw");
     expect(text).toContain("required checks still to pass on the delivered tree: visible-check");
     expect(text).toContain("no change against the base yet");
-    expect(text).toContain("contradicted by execution H1 (model-proposed)");
-    expect(text).toContain("hypothesis, no distinguishing execution ran H2 (model-proposed)");
+    expect(text).toContain("prediction failed when the harness ran it: H1 (model-proposed)");
+    expect(text).toContain("no distinguishing execution ran: H2 (model-proposed)");
     expect(text).toContain("next unresolved question (model-proposed)");
     expect(text).toContain("remaining in this loop: 24 steps, 5000 tokens, 120 s");
     expect(text).toContain(

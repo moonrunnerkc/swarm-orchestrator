@@ -408,15 +408,18 @@ export function describeWorkingState(state: WorkingState, context: WorkingStateC
       for (const printed of execution.excerpt.split("\n")) lines.push(`    ${printed}`);
     }
   }
+  // A status says only whether the hypothesis's own stated prediction held for the command the
+  // harness ran. A prediction can be weak: development run 3's sinon diagnosis predicted grep's exit
+  // status, and the passing patch edited the file of the hypothesis whose prediction failed.
   for (const hypothesis of context.hypotheses ?? []) {
     const label =
       hypothesis.status === "contradicted"
-        ? "contradicted by execution"
+        ? "prediction failed when the harness ran it:"
         : hypothesis.status === "consistent"
-          ? "consistent with execution (not proof)"
+          ? "prediction held when the harness ran it (says nothing beyond that prediction):"
           : hypothesis.status === "untested"
-            ? "hypothesis, no distinguishing execution ran"
-            : "hypothesis";
+            ? "no distinguishing execution ran:"
+            : "no distinguishing prediction:";
     const evidence =
       hypothesis.evidence === null
         ? ""
