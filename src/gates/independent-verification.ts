@@ -1,6 +1,6 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import type { Clock } from "../core/clock.ts";
 import { freezeAcceptanceContract } from "../evidence/acceptance-contract.ts";
 import { asJsonValue } from "../evidence/canonical-json.ts";
@@ -567,6 +567,14 @@ export async function verifyIndependently(
       toBase: () => resetToBase(checkout, options, timeoutMs, environment),
       toPatch: () => restorePatch(checkout, options, timeoutMs, environment),
     };
+    // Each rereading of the checks starts from the environment the first reading started from,
+    // as the base's reading already does, and what the first reading left is put back after it,
+    // since the oracle and the goal checks read the tree as the patched reading left it. mocha's
+    // lint passes on its first run in a tree and fails on every later one (its docs check reuses
+    // its own cache), so its rereadings failed where its first reading passed and withheld a pass
+    // for nothing the change did.
+    const fresh = <T>(measure: () => Promise<T>) =>
+      fromPreparedEnvironment(checkout, environment, measure);
     const onlyTheOracle = options.repositoryChecks === "skip";
     const withPatch = onlyTheOracle
       ? []
@@ -576,10 +584,12 @@ export async function verifyIndependently(
             checkout,
             options,
             timeoutMs,
+            fresh,
           ),
           checkout,
           options,
           timeoutMs,
+          fresh,
         );
     // The base is measured only to explain a failure, so a run where everything passed pays
     // nothing for this. Install is not repeated: the same checkout is reset to the base, so the
@@ -1374,6 +1384,42 @@ async function settleEnvironment(
   return true;
 }
 
+/**
+ * Runs `measure` from the ignored tree the checks were prepared in, then puts back what was there
+ * before it: what earlier readings added is moved aside first, what `measure` adds is removed after,
+ * and the moved entries are returned. Where an earlier reading changed a prepared entry, which
+ * cannot be put back, `measure` runs beside what is there, as every rereading did before.
+ */
+async function fromPreparedEnvironment<T>(
+  checkout: string,
+  environment: ComparisonEnvironment,
+  measure: () => Promise<T>,
+): Promise<T> {
+  const { added, altered } = producedSince(environment.ignored, await snapshotIgnored(checkout));
+  if (added.length === 0 || altered.length > 0) return measure();
+  const roots = await removalRoots(checkout, added, environment.ignored);
+  const holding = await mkdtemp(join(dirname(checkout), "swarm-held-"));
+  const moved: string[] = [];
+  try {
+    for (const root of roots) {
+      if (root === "" || isAbsolute(root) || root.split("/").includes(".."))
+        throw new Error(`refusing to move ${root}: not a path inside the checkout`);
+      await mkdir(dirname(join(holding, root)), { recursive: true });
+      await rename(join(checkout, root), join(holding, root));
+      moved.push(root);
+    }
+    return await measure();
+  } finally {
+    const { added: produced } = producedSince(environment.ignored, await snapshotIgnored(checkout));
+    await removeProduced(checkout, await removalRoots(checkout, produced, environment.ignored));
+    for (const root of moved) {
+      await mkdir(dirname(join(checkout, root)), { recursive: true });
+      await rename(join(holding, root), join(checkout, root));
+    }
+    await rm(holding, { recursive: true, force: true });
+  }
+}
+
 /** The patch again, on a checkout `resetToBase` emptied, reported rather than assumed. */
 async function restorePatch(
   checkout: string,
@@ -1548,6 +1594,7 @@ async function readUnderBaseTests(
   checkout: string,
   options: IndependentVerificationOptions,
   timeoutMs: number,
+  fresh: <T>(measure: () => Promise<T>) => Promise<T>,
 ): Promise<readonly IndependentCheck[]> {
   const files = parseUnifiedDiff(options.patch)
     .filter((file) => file.kind !== "added" && isTestFile(file.path))
@@ -1566,7 +1613,7 @@ async function readUnderBaseTests(
       if (atBase.exitCode !== 0) return withPatch;
       await writeFile(join(checkout, path), atBase.stdout);
     }
-    const underBase = await runChecks(checkout, options, timeoutMs);
+    const underBase = await fresh(() => runChecks(checkout, options, timeoutMs));
     return withPatch.map((check) => {
       const reading = underBase.find((one) => one.id === check.id);
       if (reading?.observation === undefined || check.observation === undefined) return check;
@@ -1646,6 +1693,7 @@ async function readUnderBaseConfiguration(
   checkout: string,
   options: IndependentVerificationOptions,
   timeoutMs: number,
+  fresh: <T>(measure: () => Promise<T>) => Promise<T>,
 ): Promise<readonly IndependentCheck[]> {
   const groups = new Map<string, { files: readonly string[]; ids: Set<string> }>();
   for (const check of withPatch) {
@@ -1659,7 +1707,7 @@ async function readUnderBaseConfiguration(
   let decided = withPatch;
   for (const { files, ids } of groups.values()) {
     const underBase = await underBaseInstrument(checkout, options, timeoutMs, files, () =>
-      runChecks(checkout, options, timeoutMs, ids),
+      fresh(() => runChecks(checkout, options, timeoutMs, ids)),
     );
     decided = decided.map((check) => {
       const reading = underBase.find((one) => one.id === check.id);
@@ -1704,7 +1752,14 @@ async function readUnderBaseConfiguration(
         .map((check) => check.id),
     );
     if (runnerSource.size === 0) continue;
-    const witnesses = await readRunnerWitnesses(checkout, options, timeoutMs, files, runnerSource);
+    const witnesses = await readRunnerWitnesses(
+      checkout,
+      options,
+      timeoutMs,
+      files,
+      runnerSource,
+      fresh,
+    );
     decided = decided.map((check) => {
       const witness = witnesses.get(check.id);
       if (witness === undefined) return check;
@@ -1738,12 +1793,15 @@ async function readRunnerWitnesses(
   timeoutMs: number,
   files: readonly string[],
   ids: ReadonlySet<string>,
+  fresh: <T>(measure: () => Promise<T>) => Promise<T>,
 ): Promise<ReadonlyMap<string, RunnerWitness>> {
   const testFiles = await witnessFiles(checkout);
   if (testFiles.length === 0) return new Map();
   const markers = drawWitnessMarkers(testFiles.length);
   const measure = () =>
-    withWitnesses(checkout, testFiles, markers, () => runChecks(checkout, options, timeoutMs, ids));
+    withWitnesses(checkout, testFiles, markers, () =>
+      fresh(() => runChecks(checkout, options, timeoutMs, ids)),
+    );
   const candidate = await measure();
   const reference = await underBaseInstrument(checkout, options, timeoutMs, files, measure);
   const witnesses = new Map<string, RunnerWitness>();
