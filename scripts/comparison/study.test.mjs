@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { cellState, classifyStop, exposureHits, studyOrder } from "./study.mjs";
+import { cellKey, cellState, classifyStop, exposureHits, studyOrder } from "./study.mjs";
 
 describe("the study's registered rules", () => {
   it("rotates the arms by task position so each goes first on an equal share of tasks", () => {
@@ -47,6 +47,12 @@ describe("the study's registered rules", () => {
     } finally {
       rmSync(runs, { recursive: true, force: true });
     }
+  });
+
+  it("gives a second sample of the same task and arm its own cell", () => {
+    expect(cellKey({ task: "acorn", arm: "swarm" })).toBe("acorn");
+    expect(cellKey({ task: "acorn", arm: "swarm", sample: 1 })).toBe("acorn");
+    expect(cellKey({ task: "acorn", arm: "swarm", sample: 2 })).toBe("acorn~2");
   });
 
   it("finds the sealed commit or a sealed path in what an arm left", () => {

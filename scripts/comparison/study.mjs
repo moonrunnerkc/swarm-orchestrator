@@ -106,6 +106,13 @@ export function studyOrder(taskIds, arms) {
   return out;
 }
 
+/**
+ * The cell a launch fills: its task, with the sample number where a manifest registers more than
+ * one launch of the same task and arm, so two samples never share a record.
+ */
+export const cellKey = (launch) =>
+  (launch.sample ?? 1) > 1 ? `${launch.task}~${launch.sample}` : launch.task;
+
 /** What is on disk for one cell: its outcome if written, and its setup failures so far. */
 export function cellState(runsDirectory, task, arm) {
   const names = existsSync(runsDirectory) ? readdirSync(runsDirectory) : [];
@@ -219,7 +226,7 @@ const inferenceLease = createInferenceLease();
 async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
   const task = manifest.tasks.find((one) => one.id === launch.task);
   const { pins, budgets } = manifest;
-  const cell = cellState(runsDirectory, launch.task, launch.arm);
+  const cell = cellState(runsDirectory, cellKey(launch), launch.arm);
   const family = isSwarmArm(launch.arm) ? "swarm" : launch.arm;
   const blobs = join(runsDirectory, "blobs");
   const log = commandLog(blobs, { signal: interruption.controller.signal });
@@ -231,6 +238,7 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
     schema: recordSchemaName,
     manifestDigest,
     task: launch.task,
+    sample: launch.sample ?? 1,
     arm: launch.arm,
     order: launch.order,
     startedAt: new Date().toISOString(),
@@ -430,7 +438,7 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
       );
     // The product's own evidence, kept beside the records before the launch directory goes.
     if (evidenceDirectory !== null && existsSync(evidenceDirectory)) {
-      const kept = join(runsDirectory, "sessions", `${launch.task}.${launch.arm}`);
+      const kept = join(runsDirectory, "sessions", `${cellKey(launch)}.${launch.arm}`);
       cpSync(evidenceDirectory, kept, { recursive: true });
       record.evidence = kept;
     }
@@ -525,7 +533,7 @@ async function main() {
   );
   if (args.has("status")) {
     for (const launch of selected) {
-      const cell = cellState(runsDirectory, launch.task, launch.arm);
+      const cell = cellState(runsDirectory, cellKey(launch), launch.arm);
       console.log(
         `${launch.order} ${launch.task} ${launch.arm}: ${cell.recorded ? "recorded" : "pending"}${cell.setupFailures.length ? `, ${cell.setupFailures.length} setup failure(s)` : ""}`,
       );
@@ -560,7 +568,7 @@ async function main() {
   }
   try {
     for (const launch of selected) {
-      const cell = cellState(runsDirectory, launch.task, launch.arm);
+      const cell = cellState(runsDirectory, cellKey(launch), launch.arm);
       if (cell.recorded) continue;
       if (cell.setupFailures.length > manifest.budgets.setupRetries) {
         writeFileSync(
