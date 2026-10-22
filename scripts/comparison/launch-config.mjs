@@ -383,7 +383,7 @@ export function validateLaunch({ manifest, arm, launch, canary, otherLaunch, inp
     isAbsolute(launch.env.HOME) &&
       existsSync(launch.env.HOME) &&
       readdirSync(launch.env.HOME).every((name) => name === ".npm"),
-    launch.env.HOME,
+    `${launch.env.HOME}${existsSync(launch.env.HOME) ? ` holds ${readdirSync(launch.env.HOME).join(", ") || "nothing"}` : " is absent"}`,
   );
   const access = probeAccess({ launch, canary, otherLaunch });
   for (const one of access) checks.push(one);

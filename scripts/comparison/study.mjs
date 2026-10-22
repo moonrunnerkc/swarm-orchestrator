@@ -241,6 +241,7 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
     manifestDigest,
     task: launch.task,
     sample: launch.sample ?? 1,
+    harnessDigest: harnessDigest(),
     arm: launch.arm,
     order: launch.order,
     startedAt: new Date().toISOString(),
@@ -302,12 +303,16 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
     );
     prepareLaunchHome(home);
     if (isSwarmArm(launch.arm)) {
+      // Measured under a home of its own, prepared as the arm's is: the product's check leaves
+      // files in the HOME it runs under, and the arm's home must reach the arm as prepared.
+      const gatePlanHome = join(scratch, "gate-plan-home");
+      prepareLaunchHome(gatePlanHome);
       const gatePlan = await swarmGatePlanVerdict(
         log,
         task,
         task.baseCommit,
         pins,
-        home,
+        gatePlanHome,
         manifest.swarmGates?.[task.id] ?? {},
       );
       record.gatePlan = gatePlan;
@@ -524,8 +529,20 @@ async function main() {
   const manifestDigest = digestOf(bytes);
   const runsDirectory = join(dirname(manifestPath), "runs");
   mkdirSync(runsDirectory, { recursive: true });
-  if (manifest.harnessDigest !== harnessDigest()) {
-    console.error("the harness differs from the one frozen in the manifest");
+  // The harness a correction moved to, or the frozen one: a changed harness runs only under a
+  // recorded correction that names both digests.
+  const corrected = readdirSync(runsDirectory)
+    .filter((name) => /^correction-\d+\.json$/.test(name))
+    .sort((a, b) => Number(a.match(/\d+/)[0]) - Number(b.match(/\d+/)[0]))
+    .map((name) => JSON.parse(readFileSync(join(runsDirectory, name), "utf8")).harnessAfter)
+    .filter(Boolean);
+  const expectedHarness = corrected.at(-1) ?? manifest.harnessDigest;
+  const currentHarness = harnessDigest();
+  const stoppedAt = join(runsDirectory, "stopped.json");
+  if (currentHarness !== expectedHarness && !(existsSync(stoppedAt) && args.has("correction"))) {
+    console.error(
+      `the harness is ${currentHarness}, not ${expectedHarness}; a changed harness runs only after a stop, with --correction`,
+    );
     return 2;
   }
   const selected = manifest.launches.filter(
@@ -555,7 +572,7 @@ async function main() {
     ).length;
     writeFileSync(
       join(runsDirectory, `correction-${corrections + 1}.json`),
-      `${JSON.stringify({ at: new Date().toISOString(), stopped: JSON.parse(readFileSync(stopped, "utf8")), correction: args.get("correction") }, null, 2)}\n`,
+      `${JSON.stringify({ at: new Date().toISOString(), stopped: JSON.parse(readFileSync(stopped, "utf8")), correction: args.get("correction"), harnessBefore: expectedHarness, harnessAfter: currentHarness }, null, 2)}\n`,
       { flag: "wx" },
     );
     rmSync(stopped);
