@@ -65,3 +65,9 @@ publication. The earlier source-plus-archive snapshot failed the unchanged repos
 check. This snapshot contains only the evidence and its verification workflow. It does not
 claim a product gates result. Run python3 verify-archive.py at its root to check every member
 and all five native bundles. Product gates remain on the feature PR.
+
+Final source CI records and complete compressed logs are in ci-record.json and ci/. They bind
+head 4544df018e8e8164dcfc45c03f959e9f5a22d343 to both push and PR runs. The PR merge tree and
+source head tree are identical. Both platform gates, Node 22/24 packaged checks and verifier
+matrices passed. The retired source-plus-archive snapshot's weight failure is retained too;
+it was not a passing product tree. Each saved log has compressed and uncompressed digests.
