@@ -1128,3 +1128,140 @@ describe("a turn that spirals inside a tool call's arguments", () => {
     ]);
   });
 });
+
+describe("the decision point", () => {
+  const read = (n: number) =>
+    respondWithToolCalls("", [{ callId: `r${n}`, toolName: "read", input: { path: `f${n}` } }]);
+  const spend = {
+    inputTokens: 300,
+    outputTokens: 40,
+    reasoningTokens: null,
+    cachedInputTokens: null,
+  };
+
+  it("fires once at its step, charges the loop what it spent, and adds its notice", async () => {
+    const seen: number[] = [];
+    const harness = createHarness(
+      [read(1), read(2), read(3), read(4), read(5), respondWithText("done")],
+      {
+        budget: { ...generousBudget, maxSteps: 10 },
+        decisionPoint: {
+          atStep: 2,
+          atElapsedMs: 1_000_000,
+          decide: (input) => {
+            seen.push(input.steps);
+            expect(input.remaining).toMatchObject({ steps: 8 });
+            expect(input.messages.at(-1)?.role).toBe("tool");
+            return Promise.resolve({
+              notice: "[harness decision point] look at f9",
+              steps: 3,
+              tokensUsed: 340,
+              usage: spend,
+              callsWithUnknownUsage: 1,
+            });
+          },
+        },
+      },
+    );
+    const outcome = await runAgentLoop("task", harness.deps);
+    expect(seen).toEqual([2]);
+    // Two worker steps, three charged to the decision, then four more worker steps.
+    expect(outcome.steps).toBe(9);
+    expect(outcome.tokensUsed).toBe(6 * 15 + 340);
+    expect(outcome.callsWithUnknownUsage).toBe(1);
+    expect(outcome.usage.inputTokens).toBe(6 * 10 + 300);
+    const notice = outcome.messages.findIndex(
+      (message) => message.role === "user" && message.text.includes("look at f9"),
+    );
+    expect(notice).toBe(5);
+  });
+
+  it("charged steps count against the step limit", async () => {
+    const harness = createHarness([read(1), read(2), read(3), read(4)], {
+      budget: { ...generousBudget, maxSteps: 4 },
+      decisionPoint: {
+        atStep: 1,
+        atElapsedMs: 1_000_000,
+        decide: () =>
+          Promise.resolve({
+            notice: null,
+            steps: 2,
+            tokensUsed: 0,
+            usage: spend,
+            callsWithUnknownUsage: 0,
+          }),
+      },
+    });
+    const outcome = await runAgentLoop("task", harness.deps);
+    expect(outcome.stopReason).toBe("max-steps");
+    expect(outcome.steps).toBe(4);
+    expect(harness.toolInvoker.invocations).toHaveLength(2);
+  });
+
+  it("fires on elapsed wall before its step when the loop is slow", async () => {
+    let clock: TestClock | null = null;
+    const fired: number[] = [];
+    const harness = createHarness([read(1), read(2), read(3), respondWithText("done")], {
+      budget: { ...generousBudget, maxSteps: 40, maxWallTimeMs: 50_000 },
+      decisionPoint: {
+        atStep: 16,
+        atElapsedMs: 20_000,
+        decide: (input) => {
+          fired.push(input.steps);
+          return Promise.resolve({
+            notice: null,
+            steps: 0,
+            tokensUsed: 0,
+            usage: spend,
+            callsWithUnknownUsage: 0,
+          });
+        },
+      },
+    });
+    clock = harness.clock;
+    // Each tool call takes a fifth of the wall, so the elapsed share arrives at step 2.
+    const invoker = harness.deps.toolInvoker;
+    const outcome = await runAgentLoop("task", {
+      ...harness.deps,
+      toolInvoker: {
+        invoke: (invocation) => {
+          clock?.advance(10_000);
+          return invoker.invoke(invocation);
+        },
+      },
+    });
+    expect(outcome.stopReason).toBe("completed");
+    expect(fired).toEqual([2]);
+  });
+
+  it("never fires for a loop that finishes first, nor again in a conversation that already had it", async () => {
+    let calls = 0;
+    const decisionPoint = {
+      atStep: 3,
+      atElapsedMs: 1_000_000,
+      decide: () => {
+        calls += 1;
+        return Promise.resolve({
+          notice: null,
+          steps: 0,
+          tokensUsed: 0,
+          usage: spend,
+          callsWithUnknownUsage: 0,
+        });
+      },
+    };
+    await runAgentLoop(
+      "task",
+      createHarness([read(1), respondWithText("done")], { decisionPoint }).deps,
+    );
+    expect(calls).toBe(0);
+    await runAgentLoop(
+      "continue",
+      createHarness([read(1), read(2), read(3), respondWithText("done")], {
+        decisionPoint,
+        history: [{ role: "user", text: "[harness decision point] earlier" }],
+      }).deps,
+    );
+    expect(calls).toBe(0);
+  });
+});
