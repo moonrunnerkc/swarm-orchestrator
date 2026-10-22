@@ -762,6 +762,7 @@ async function run(options: RunCommand): Promise<number> {
       task: options.task,
       ...(options.promptProfile === undefined ? {} : { promptProfile: options.promptProfile }),
       ...(options.repairTrace === true ? { repairTrace: true } : {}),
+      ...(options.repairFinish === true ? { repairFinish: true } : {}),
       ...(repairFeedback === undefined ? {} : { repairFeedback }),
       ...(options.escalationModel === undefined
         ? {}
@@ -846,6 +847,7 @@ async function run(options: RunCommand): Promise<number> {
               contract: goal,
               signal: modelWork.signal,
               ...(options.repairTrace === true ? { repairTrace: true } : {}),
+              ...(options.repairFinish === true ? { repairFinish: true } : {}),
             }),
           }),
       ...(gateOptions === undefined
