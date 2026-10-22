@@ -565,7 +565,9 @@ it("dispatches one explicit alternate after repeated observed failure and stops 
   const alternate = createRecordingModelClient(
     createFixtureModelClient({
       modelId: "fixture:alternate",
-      turns: [respondWithText("No repair found.")],
+      // Told once that its answer called no tool, the alternate declines again; that second
+      // answer stands as the attempt's.
+      turns: [respondWithText("No repair found."), respondWithText("No change is needed.")],
     }),
     evidence,
   );
@@ -583,6 +585,7 @@ it("dispatches one explicit alternate after repeated observed failure and stops 
       ]),
       respondWithText("done"),
       respondWithText("No repair found."),
+      respondWithText("No change is needed."),
     ],
     {
       attempts: 4,
@@ -629,7 +632,7 @@ it("dispatches one explicit alternate after repeated observed failure and stops 
     evidence
       .records()
       .filter((record) => record.type === "model-call" && record.actor === "fixture:alternate"),
-  ).toHaveLength(1);
+  ).toHaveLength(2);
   const alternateCall = evidence
     .records()
     .find((record) => record.type === "model-call" && record.actor === "fixture:alternate");
@@ -1594,5 +1597,249 @@ describe("a run whose last repair is rolled back", () => {
     const lines = await verifiedAssessment(result, "rolled-back-bundle");
     expect(lines).toMatch(/PASS {2}run assessment \d+ re-derived/);
     expect(lines).not.toMatch(/FAIL {2}run assessment/);
+  }, 60_000);
+});
+
+describe("a task loop that stopped at its step limit (the launch 2 shape)", () => {
+  // Launch 2 of the 2026-10-21 development trial: the first loop reached its 40-step cap
+  // before writing the regression test the task required; the one lint error was repaired in a
+  // narrow loop that finished; every gate then passed, and the run was reported as completed with
+  // the deliverable absent. Replayed here with a scripted model, a lint rule and a step cap of 3.
+  const withVar = "export function greet() {\n  var word = 'hello';\n  return word;\n}\n";
+  const withConst = "export function greet() {\n  const word = 'hello';\n  return word;\n}\n";
+  const testWithShout = `${suite}test('greet is a string', () => { assert.equal(typeof greet(), 'string'); });\n`;
+  const lintRule = {
+    ...gateOverrides,
+    lint: "node scripts/lint.mjs",
+  };
+  const interrupted = [
+    respondWithToolCalls("declaring", [
+      { callId: "c0", toolName: "declare_file_set", input: { files: ["src/greet.js"] } },
+    ]),
+    respondWithToolCalls("writing", [
+      { callId: "c1", toolName: "write", input: { path: "src/greet.js", content: withVar } },
+    ]),
+    // The third step is spent reading, and the cap of 3 ends the loop before the test is written.
+    respondWithToolCalls("looking for the test file", [
+      { callId: "c2", toolName: "read", input: { path: "src/greet.test.js" } },
+    ]),
+  ];
+  const lintRepair = [
+    respondWithToolCalls("repairing lint", [
+      { callId: "r1", toolName: "write", input: { path: "src/greet.js", content: withConst } },
+    ]),
+    respondWithText("fixed the lint error"),
+  ];
+  const writesTheTest = [
+    respondWithToolCalls("amending", [
+      {
+        callId: "f0",
+        toolName: "amend_file_set",
+        input: { files: ["src/greet.test.js"], reason: "the regression test the task requires" },
+      },
+    ]),
+    respondWithToolCalls("writing the test", [
+      {
+        callId: "f1",
+        toolName: "write",
+        input: { path: "src/greet.test.js", content: testWithShout },
+      },
+    ]),
+    respondWithText("added the regression test; the task is done"),
+  ];
+
+  beforeEach(async () => {
+    await write(
+      "scripts/lint.mjs",
+      "import { readFileSync } from 'node:fs';\n" +
+        "if (readFileSync('src/greet.js', 'utf8').includes('var ')) {\n" +
+        "  console.error('src/greet.js: \"var\" is not allowed');\n  process.exit(1);\n}\n",
+    );
+    await git("add", "scripts/lint.mjs");
+    await git("commit", "-qm", "lint rule");
+  });
+
+  const stops = () =>
+    evidence
+      .records()
+      .filter((record) => record.type === "session-stopped")
+      .map((record) => evidence.payloads().get(record.payloadDigest) as Record<string, unknown>);
+
+  it("is owed one continuation once the narrow repair turned the gates green, and the continuation can add and keep the missing test", async () => {
+    const result = await task([...interrupted, ...lintRepair, ...writesTheTest], {
+      maxSteps: 3,
+      attempts: 3,
+      gateOptions: { commandOverrides: lintRule },
+    });
+    // The first loop stopped at its limit; the repair finished; the continuation finished.
+    expect(
+      stops().map((stop) => [stop.stopReason, stop.repair ?? false, stop.continuation ?? false]),
+    ).toEqual([
+      ["max-steps", false, false],
+      ["completed", true, false],
+      ["completed", true, true],
+    ]);
+    expect(result.gates.outcome.attempts.map((one) => one.decision.accepted)).toEqual([true, true]);
+    expect(result.gates.outcome.continuation).toMatchObject({
+      state: "given",
+      attempt: 2,
+      accepted: true,
+    });
+    expect(readFileSync(join(workspace, "src/greet.test.js"), "utf8")).toBe(testWithShout);
+    expect(readFileSync(join(workspace, "src/greet.js"), "utf8")).toBe(withConst);
+    // The continuation's loop is the one that worked the task, so its stop is the run's.
+    expect(result.loop.stopReason).toBe("completed");
+    expect(result.green).toBe(true);
+    expect(result.gates.outcome.regressionTests).toMatchObject({
+      testsGate: "passed",
+      files: [{ path: "src/greet.test.js", testsAdded: ["greet is a string"], assertionsAdded: 1 }],
+    });
+    // The brief carried the task and the interrupted loop's account, as tool output.
+    const prompts = evidence
+      .records()
+      .filter((record) => record.type === "model-call")
+      .map((record) => JSON.stringify(evidence.payloads().get(record.payloadDigest)));
+    const continuation = prompts.find((prompt) => prompt.includes("stopped at its step limit"));
+    expect(continuation).toContain("add a shout helper");
+    expect(continuation).toContain("files it edited: src/greet.js");
+    expect(continuation).toContain("This is attempt 2 of 3");
+    expect(await verifiedAssessment(result, "continuation-bundle")).toMatch(
+      /PASS {2}run assessment \d+ re-derived/,
+    );
+  }, 60_000);
+
+  it("is not read as completed when the cap left no continuation: the repair's finish is the repair's, not the task's", async () => {
+    const result = await task([...interrupted, ...lintRepair], {
+      maxSteps: 3,
+      attempts: 1,
+      gateOptions: { commandOverrides: lintRule },
+    });
+    expect(result.gates.outcome.settled).toBe("green");
+    expect(result.gates.outcome.continuation).toMatchObject({
+      state: "withheld",
+      reason: "no attempt was left under the cap of 1",
+    });
+    expect(result.loop.stopReason).toBe("max-steps");
+    expect(stops().at(-1)).toMatchObject({
+      stopReason: "completed",
+      repair: true,
+      runLifecycle: false,
+    });
+    const assessment = evidence
+      .records()
+      .filter((record) => record.type === "run-assessment")
+      .map(
+        (record) =>
+          evidence.payloads().get(record.payloadDigest) as { inputs: { lifecycle: string } },
+      )
+      .at(-1);
+    expect(assessment?.inputs.lifecycle).toBe("max-steps");
+    // Green work is not refused for the step limit; the lifecycle still says it was unfinished.
+    expect(result.green).toBe(true);
+    expect(await verifiedAssessment(result, "withheld-continuation-bundle")).toMatch(
+      /PASS {2}run assessment \d+ re-derived/,
+    );
+  }, 60_000);
+
+  it("rolls back a continuation that breaks a passing check, and the run's lifecycle is the interrupted loop's", async () => {
+    const result = await task(
+      [
+        ...interrupted,
+        ...lintRepair,
+        respondWithToolCalls("breaking", [
+          { callId: "b1", toolName: "write", input: { path: "src/greet.js", content: broken } },
+        ]),
+        respondWithText("done"),
+      ],
+      { maxSteps: 3, attempts: 3, gateOptions: { commandOverrides: lintRule } },
+    );
+    expect(result.gates.outcome.continuation).toMatchObject({
+      state: "given",
+      attempt: 2,
+      accepted: false,
+    });
+    expect(readFileSync(join(workspace, "src/greet.js"), "utf8")).toBe(withConst);
+    expect(result.loop.stopReason).toBe("max-steps");
+    expect(result.green).toBe(true);
+    expect(await verifiedAssessment(result, "rolled-back-continuation-bundle")).toMatch(
+      /PASS {2}run assessment \d+ re-derived/,
+    );
+  }, 60_000);
+
+  it("tells a repair that called no tool so, once, inside the same attempt, and leaves the continuation its attempt", async () => {
+    // Development launch 1 of the continuation's trial: two repair attempts answered "Let me read
+    // the current state of the files first" with no tool call, each counted and measured over an
+    // unchanged tree, and the third fixed lint; no attempt was left for the continuation.
+    const result = await task(
+      [
+        ...interrupted,
+        respondWithText("Let me read the current state of the files first."),
+        ...lintRepair,
+        ...writesTheTest,
+      ],
+      { maxSteps: 3, attempts: 3, gateOptions: { commandOverrides: lintRule } },
+    );
+    expect(result.gates.outcome.attempts.map((one) => one.attempt)).toEqual([1, 2]);
+    expect(result.gates.outcome.continuation).toMatchObject({
+      state: "given",
+      attempt: 2,
+      accepted: true,
+    });
+    expect(readFileSync(join(workspace, "src/greet.test.js"), "utf8")).toBe(testWithShout);
+    const notices = evidence
+      .records()
+      .filter((record) => record.type === "session-budget")
+      .map((record) => evidence.payloads().get(record.payloadDigest) as Record<string, unknown>)
+      .filter((payload) => payload.rule === "no-action-notice-v1");
+    expect(notices).toEqual([
+      expect.objectContaining({
+        attempt: 1,
+        step: 1,
+        answer: "Let me read the current state of the files first.",
+      }),
+    ]);
+    // The repair's stop counts both parts of the one attempt, and its brief reached the model as
+    // a user message in the same conversation.
+    expect(stops()[1]).toMatchObject({
+      stopReason: "completed",
+      repair: true,
+      attempt: 1,
+      steps: 3,
+    });
+    const prompts = evidence
+      .records()
+      .filter((record) => record.type === "model-call")
+      .map((record) => JSON.stringify(evidence.payloads().get(record.payloadDigest)));
+    expect(
+      prompts.filter((prompt) => prompt.includes("[harness notice: no tool call]")),
+    ).not.toHaveLength(0);
+    expect(result.loop.stopReason).toBe("completed");
+    expect(result.green).toBe(true);
+  }, 60_000);
+
+  it("gives a task that finished on its own no continuation", async () => {
+    const result = await task(goodTurns(stillGreen), { attempts: 3 });
+    expect(result.loop.stopReason).toBe("completed");
+    expect(result.gates.outcome.continuation).toBeNull();
+    expect(result.gates.outcome.attempts).toHaveLength(0);
+    expect(evidence.records().filter((record) => record.type === "model-call")).toHaveLength(3);
+  });
+
+  it("withholds the continuation when the run is cancelled, and the run is refused as cancelled", async () => {
+    const cancel = new AbortController();
+    const result = await task([...interrupted, ...writesTheTest], {
+      maxSteps: 3,
+      attempts: 3,
+      abortSignal: cancel.signal,
+      emit: (event) => {
+        if (event.type === "stopped") cancel.abort("cancelled from the keyboard");
+      },
+    });
+    expect(result.gates.outcome.continuation).toMatchObject({
+      state: "withheld",
+      reason: "model work ended before it could be given",
+    });
+    expect(result.green).toBe(false);
+    expect(Object.values(result.verdict.reasons).join(" ")).toContain("the run was cancelled");
   }, 60_000);
 });

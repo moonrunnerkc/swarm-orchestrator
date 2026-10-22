@@ -897,9 +897,8 @@ export async function verifyIndependently(
                         )}. A failure this patch introduced could be hidden inside it, so the regression dimension is unmeasured, not passed. Fixing the base's failure makes the comparison exact.`
                     : checks.some(
                           (check) =>
-                            (check.configurationFiles ?? []).length > 0 &&
-                            check.status === "not-applicable" &&
-                            check.configurationObservation !== undefined,
+                            passedOnlyUnderThePatchConfiguration(check) &&
+                            check.status === "not-applicable",
                         )
                       ? `a check passes only with this patch's changes to the runner configuration (${[
                           ...new Set(checks.flatMap((check) => check.configurationFiles ?? [])),

@@ -306,9 +306,27 @@ describe("the final checks' share of the total allowance", () => {
     expect(diff.patch).toContain("+export const value = 2;");
     const outcome = resultLine(ran.stdout)?.outcome;
     expect(outcome?.finalVerification?.refusal ?? null).toBeNull();
-    // The work stopped at its allowance, so the run is not accepted, and it was not cancelled.
-    expect(outcome?.status).toBe("not-accepted");
+    // The model's work was cut at the end of its share, before the deadline, with its write long
+    // settled; the delivered tree's required checks then completed and passed. The checks decide
+    // the run, under the sealed contract's scope, and the lifecycle stays the cut: the model made
+    // no completion claim and none is read. Until run-acceptance-v5 the cut alone refused it.
+    expect(outcome?.lifecycle).toBe("max-wall-time");
+    expect(outcome?.status).toBe("accepted");
+    expect(ran.code).toBe(0);
+    const [worker, goal] = chainPayloads(runId, "run-assessment") as {
+      inputs: Record<string, unknown>;
+      verdict: { acceptable: boolean; reasons: Record<string, string> };
+    }[];
+    expect(worker?.inputs).toMatchObject({
+      policy: "run-acceptance-v5",
+      lifecycle: "max-wall-time",
+      wallStop: { beforeDeadline: true, effectsSettled: true },
+    });
+    expect(goal?.verdict.acceptable).toBe(true);
+    expect(goal?.verdict.reasons.lifecycle).toContain("before the run's deadline");
     expect(ran.stdout + ran.stderr).not.toContain("the run was cancelled");
+    // The call the cut ended was sent and never answered: its usage is unknown, not zero.
+    expect(stopped(ran.events)[0]?.callsWithUnknownUsage).toBe(1);
   }, 200_000);
 
   it("stops a check slower than the reserve at the end of the total, and reports the run incomplete", async () => {

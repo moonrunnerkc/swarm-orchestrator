@@ -71,7 +71,7 @@ Amendment 6, before edits: `README.md`, `docs/cli.md`, `docs/using.md`,
 `docs/verifying.md`, `docs/verify-only.md`, and `packages/swarm-verify/README.md` add
 concise links and migration notes for the corrected browser boundary and retained unknowns.
 
-Amendment 7, before reporting edits: `docs/evidence/2026-09-27/upgrade-audit-observations.json`
+Amendment 7, before reporting edits: the observation index `upgrade-audit-observations.json` (now packed in `docs/evidence/2026-09-27/packed-derived/observations-and-frames`)
 will index retained logs, exact tested source, installed fixtures and external delivery state.
 Update this report, `docs/upgrade-completion.md` and the already-declared `docs/broad-use.md`
 with final local results and the unsupported candidate-server boundary. These are reporting-only
@@ -104,7 +104,7 @@ completed gates, fuzz and both proof arms. Publication triggers were not broaden
 Tested source: `981f7ff0e612a2caf1434b46a14c7659885d86c5`, clean worktree at execution.
 This is the first complete local correction run. The later CI fixture timing correction and
 its separate source-bound validation are recorded below.
-The [observation index](evidence/2026-09-27/upgrade-audit-observations.json) records exact
+The [observation index](evidence/2026-09-27/packed-derived/observations-and-frames/) (`upgrade-audit-observations.json`, packed) records exact
 commands, exit statuses, environment, source identity, tarball digests and retained log digests.
 Raw logs and the two additional installed-CLI reproduction scripts are owner-only under
 `~/.swarm/upgrade-validation/audit-evidence-qwjsubo4/`; fixture evidence stays under the recorded

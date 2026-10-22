@@ -26,6 +26,13 @@ export { readControllerHistory };
 
 const GENESIS = "genesis";
 const COMPARISONS = ["==", "!=", ">=", "<=", ">", "<"];
+/** The worker assessment policies this verifier re-derives; a goal assessment conjoins one of them. */
+const workerAssessmentPolicies = [
+  "run-acceptance-v1",
+  "run-acceptance-v2",
+  "run-acceptance-v4",
+  "run-acceptance-v5",
+];
 /** How a loop can stop, as run assessments name it (src/evidence/run-assessment.ts keeps the same list). */
 const loopLifecycles = [
   "completed",
@@ -1349,9 +1356,7 @@ function collectChecks(directory) {
       record(
         `run assessment ${entry.sequence} re-derived`,
         previous?.payloadDigest === inputs.previousAssessment &&
-          ["run-acceptance-v1", "run-acceptance-v2", "run-acceptance-v4"].includes(
-            base?.inputs?.policy,
-          ) &&
+          workerAssessmentPolicies.includes(base?.inputs?.policy) &&
           verification !== undefined &&
           source !== undefined &&
           (observed?.certificationPolicy === "goal-obligations-v1" || refused) &&
@@ -1363,8 +1368,7 @@ function collectChecks(directory) {
       continue;
     }
     let consistent =
-      ["run-acceptance-v1", "run-acceptance-v2", "run-acceptance-v4"].includes(inputs?.policy) &&
-      typeof verdict?.acceptable === "boolean";
+      workerAssessmentPolicies.includes(inputs?.policy) && typeof verdict?.acceptable === "boolean";
     const prior = records.filter((candidate) => candidate.sequence < entry.sequence);
     const lookupKind = (digest, kind) =>
       prior.some((candidate) => candidate.payloadDigest === digest && candidate.type === kind);
@@ -1411,21 +1415,79 @@ function collectChecks(directory) {
       [...latestGates.values()].every((digest) => gateRecords.includes(digest));
     const measured = Object.assign({}, ...gates.map((gate) => gate?.measures ?? {}));
     consistent &&= inputs?.changedFiles === (measured.changedFiles ?? 0);
-    // The last stop of a loop: a withheld repair attempt is recorded as a stop without one, and a
-    // follow-up whose candidate was not kept changed nothing delivered, so its stop is not it.
-    const followUp = thisRun
+    // The last stop of a loop that worked the task: a withheld repair attempt is recorded as a
+    // stop without one; an owed attempt (the task's continuation, the follow-up on unresolved
+    // outcomes) whose candidate was not kept changed nothing delivered, so its stop is not it; a
+    // narrow repair that finished says so (runLifecycle false), since it finished the repair and
+    // not the task. Records without these fields read as they always did.
+    const owed = thisRun
       .map((candidate) => payloads.get(candidate.payloadDigest))
-      .filter((payload) => payload?.rule === "outcome-follow-up-v1")
-      .at(-1);
-    const followUpKept = followUp?.state === "given" && followUp.accepted === true;
+      .filter(
+        (payload) =>
+          payload?.rule === "outcome-follow-up-v1" || payload?.rule === "task-continuation-v1",
+      );
+    const owedKept = (attempt) => {
+      const record =
+        typeof attempt === "number" ? owed.find((one) => one?.attempt === attempt) : owed.at(-1);
+      return record?.state === "given" && record.accepted === true;
+    };
     const stop = thisRun
+      .filter((candidate) => {
+        if (candidate.type !== "session-stopped") return false;
+        const stopped = payloads.get(candidate.payloadDigest);
+        if (!loopLifecycles.includes(stopped?.stopReason)) return false;
+        if (stopped?.runLifecycle === false) return false;
+        if (stopped?.followUp === true && !owedKept(stopped.attempt)) return false;
+        return true;
+      })
+      .at(-1);
+    // v5 only: where a wall stop stood against the run's allowance. The last reserve this run
+    // recorded (verification-reserve-v1); whether the loop's stop came before its deadline; and
+    // whether every write and shell call requested settled, none that ran at or after the
+    // model-work cutoff. Mirrors wallStopOf in src/evidence/run-assessment.ts.
+    const reserve = thisRun
       .filter(
         (candidate) =>
-          candidate.type === "session-stopped" &&
-          !(payloads.get(candidate.payloadDigest)?.followUp === true && !followUpKept) &&
-          loopLifecycles.includes(payloads.get(candidate.payloadDigest)?.stopReason),
+          candidate.type === "session-budget" &&
+          payloads.get(candidate.payloadDigest)?.rule === "verification-reserve-v1",
       )
       .at(-1);
+    const window = payloads.get(reserve?.payloadDigest);
+    const effects = thisRun
+      .filter((candidate) => candidate.type === "tool-call")
+      .map((candidate) => ({ entry: candidate, call: payloads.get(candidate.payloadDigest) }))
+      .filter(({ call }) => call?.kind === "write" || call?.kind === "shell");
+    const wallStop =
+      inputs?.lifecycle !== "max-wall-time" ||
+      reserve === undefined ||
+      stop === undefined ||
+      typeof window?.deadline !== "number" ||
+      typeof window?.modelWorkEnds !== "number"
+        ? null
+        : {
+            reserveRecord: reserve.payloadDigest,
+            beforeDeadline: stop.timestamp < window.deadline,
+            effectsSettled: effects.every(
+              ({ entry, call }) =>
+                (call?.decision !== "requested" ||
+                  effects.some(
+                    (later) =>
+                      later.entry.sequence > entry.sequence &&
+                      later.call?.callId === call?.callId &&
+                      later.call?.decision !== "requested",
+                  )) &&
+                (!(call?.decision === "allowed" || call?.decision === "failed") ||
+                  entry.timestamp < window.modelWorkEnds),
+            ),
+          };
+    consistent &&=
+      inputs?.policy === "run-acceptance-v5"
+        ? canonicalJson(inputs.wallStop ?? null) === canonicalJson(wallStop)
+        : inputs?.wallStop === undefined;
+    const cutAtModelWork =
+      inputs?.policy === "run-acceptance-v5" &&
+      wallStop?.beforeDeadline === true &&
+      wallStop.effectsSettled === true;
     consistent &&=
       inputs?.lifecycleRecord === (stop?.payloadDigest ?? null) &&
       (stop === undefined
@@ -1452,7 +1514,8 @@ function collectChecks(directory) {
     consistent &&= JSON.stringify(blockingVacuous) === JSON.stringify(inputs?.vacuousBlockingBonds);
     const contracted =
       inputs?.policy === "run-acceptance-v2" ||
-      (inputs?.policy === "run-acceptance-v4" && inputs.contractRecord !== undefined);
+      (["run-acceptance-v4", "run-acceptance-v5"].includes(inputs?.policy) &&
+        inputs.contractRecord !== undefined);
     const requiredChecks = contracted ? inputs.requiredChecks : [];
     if (contracted) {
       const contract = payloads.get(inputs.contractRecord);
@@ -1468,10 +1531,12 @@ function collectChecks(directory) {
         gates.some((gate) => gate?.gateId === id && gate.status === "passed"),
       );
     const failed = gates.some((gate) => gate?.severity === "blocking" && gate.status === "failed");
-    // v4 only: an advisory gate whose own measure demanded a justification is answered by a
+    // v4 and v5: an advisory gate whose own measure demanded a justification is answered by a
     // worker claim, before this assessment, that cites the gate's record under its own kind,
     // carries a narrative, and that this verifier evaluates as verified.
-    const justifications = inputs?.policy === "run-acceptance-v4" ? inputs.justifications : [];
+    const justifications = ["run-acceptance-v4", "run-acceptance-v5"].includes(inputs?.policy)
+      ? inputs.justifications
+      : [];
     consistent &&= Array.isArray(justifications);
     const answered = new Set();
     for (const one of Array.isArray(justifications) ? justifications : []) {
@@ -1511,7 +1576,10 @@ function collectChecks(directory) {
       inputs?.settled === "green" &&
       base?.accepted === true &&
       inputs?.cancelled === false &&
-      !["interrupted", "max-wall-time", "max-tokens"].includes(inputs?.lifecycle) &&
+      !(
+        ["interrupted", "max-wall-time", "max-tokens"].includes(inputs?.lifecycle) &&
+        !cutAtModelWork
+      ) &&
       (inputs?.changedFiles > 0 || inputs?.lifecycle === "completed") &&
       blockingVacuous.length === 0 &&
       !failed &&

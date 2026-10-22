@@ -69,6 +69,14 @@ interface VerdictInput {
     readonly baseRatchetAccepted: boolean;
     readonly vacuousBlockingBonds: readonly string[];
     readonly changedFiles: number;
+    /**
+     * Where a wall stop stood against the run's allowance, recorded from run-acceptance-v5 on.
+     * Absent or null, a wall stop refuses on its own, as it did under every earlier policy.
+     */
+    readonly wallStop?:
+      | { readonly beforeDeadline: boolean; readonly effectsSettled: boolean }
+      | null
+      | undefined;
     /** Advisory demands answered by a verified worker claim: the gate record and the claim. */
     readonly justifications?:
       | readonly { readonly gateRecord: string; readonly claimRecord: string }[]
@@ -193,6 +201,14 @@ export function runVerdict(input: VerdictInput): RunVerdict {
           ? "a containment self-test refused every escape it tried"
           : "commands ran under a lexical path and program policy, which is not containment",
       humanApproval: describeApprovals(input.approvals),
+      ...(complete !== undefined && cutAtModelWork(complete)
+        ? {
+            lifecycle:
+              "the model's work was cut at the end of its allowance (max-wall-time), before the " +
+              "run's deadline and with every write and shell call settled before the cut; the checks of the delivered tree " +
+              "decide the run, which says nothing about whether the model had finished",
+          }
+        : {}),
       signer:
         input.signer === "trusted"
           ? "the bundle was signed by a key the trust policy names"
@@ -324,21 +340,44 @@ export function describeVerdict(verdict: RunVerdict): readonly string[] {
 }
 
 /**
+ * A loop cut at the end of its model work, before the run's deadline, with every write and shell
+ * call settled before the cutoff: the run held the rest of its allowance so the delivered tree
+ * could be checked, and the checks that then ran decide it. The lifecycle stays what it was.
+ */
+export function cutAtModelWork(complete: NonNullable<VerdictInput["assessment"]>): boolean {
+  return (
+    complete.lifecycle === "max-wall-time" &&
+    complete.wallStop?.beforeDeadline === true &&
+    complete.wallStop.effectsSettled
+  );
+}
+
+/**
  * The worker assessment's own conditions, each in the words a person reads and only where it
  * refused. A lifecycle is named only where it is one that refuses: a loop that stopped at its
- * step limit and left green work is not refused for it.
+ * step limit and left green work is not refused for it, nor is one cut at the end of its model
+ * work (`cutAtModelWork`); a cancellation, a spent token budget, and a wall stop that was not that
+ * cut still refuse.
  */
 function assessmentRefusals(
   complete: NonNullable<VerdictInput["assessment"]>,
   unmetChecks: readonly string[],
 ): readonly string[] {
-  const refusingLifecycle = ["interrupted", "max-wall-time", "max-tokens"].includes(
-    complete.lifecycle,
-  );
+  const refusingLifecycle =
+    ["interrupted", "max-wall-time", "max-tokens"].includes(complete.lifecycle) &&
+    !cutAtModelWork(complete);
+  const wallStop = complete.lifecycle === "max-wall-time" ? complete.wallStop : null;
   return [
     unmetChecks.length > 0 ? `required checks unmet: ${unmetChecks.join(", ")}` : null,
     complete.settled === "green" ? null : `the gates settled ${complete.settled}`,
-    refusingLifecycle ? `the run stopped as ${complete.lifecycle}` : null,
+    refusingLifecycle
+      ? `the run stopped as ${complete.lifecycle}` +
+        (wallStop == null
+          ? ""
+          : !wallStop.beforeDeadline
+            ? " at the run's deadline"
+            : " with a write or shell call unsettled at the model-work cutoff")
+      : null,
     complete.baseRatchetAccepted ? null : "the base ratchet rejected the final state",
     complete.vacuousBlockingBonds.length > 0
       ? `vacuous blocking bonds: ${complete.vacuousBlockingBonds.join(", ")}`

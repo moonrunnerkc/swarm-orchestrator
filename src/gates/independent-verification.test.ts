@@ -902,6 +902,10 @@ describe("a patch that changes the runner's configuration", () => {
 
     expect(result.checks.find((check) => check.id === "tests")?.status).toBe("passed");
     expect(result.regression).toBe("pass");
+    // The checks the manifest does not declare (typecheck, format) carry the restored files
+    // too; absent by their own account, they are not a check that passed only under the
+    // patch's configuration, and the advice for a passing regression must not say they are.
+    expect(result.advice).not.toContain("passes only with this patch's changes");
     // The offline verifier, a second implementation, reads the same regression from the record.
     expect(capturedRegression(result.checks)).toBe(result.regression);
   });
@@ -2258,4 +2262,106 @@ describe("a base control that sees nothing the patched tree's run produced", () 
     expect(tests?.attribution).toBe("new");
     expect(result.regression).toBe("fail");
   }, 300_000);
+});
+
+describe("a configuration that lists the files it checks", () => {
+  /**
+   * The minimal case the 2026-10-21 accessor run reduced to. The lint command loads
+   * eslint.config.js, which lists src/sum.js by literal path among the files it lints; the stand-in
+   * below does what eslint does with that list (reads each listed file and flags it) without
+   * installing eslint in a fresh checkout. The file a check reads is its subject, not its
+   * instrument: a change to src/sum.js alone leaves the lint pass standing, while a change to the
+   * configuration or to the program that performs the check is still put back to the base's.
+   */
+  const lintStandIn = [
+    "import { readFileSync } from 'node:fs';",
+    "const [configuration] = (await import('../eslint.config.js')).default;",
+    "const flagged = configuration.files.filter((path) => readFileSync(path, 'utf8').includes('debugger'));",
+    "if (flagged.length > 0) { console.error('debugger in ' + flagged.join(', ')); process.exit(1); }",
+    "console.log('linted ' + configuration.files.length + ' file(s)');",
+    "",
+  ].join("\n");
+  const configuration =
+    'export default [{ files: ["src/sum.js"], rules: { "no-debugger": "error" } }];\n';
+  beforeEach(async () => {
+    await writeFile(
+      join(repository, "package.json"),
+      '{"name":"w","version":"1.0.0","type":"module","scripts":{"lint":"node tools/eslint.mjs","test":"node --test"}}\n',
+    );
+    await mkdir(join(repository, "tools"), { recursive: true });
+    await mkdir(join(repository, "src"), { recursive: true });
+    await writeFile(join(repository, "tools/eslint.mjs"), lintStandIn);
+    await writeFile(join(repository, "eslint.config.js"), configuration);
+    await writeFile(join(repository, "src/sum.js"), "export const sum = (a, b) => a + b;\n");
+    git(["add", "-A"], repository);
+    git(["commit", "-qm", "a lint configuration that lists the file it checks"], repository);
+  });
+  const edit = (path: string, before: string, after: string) => [
+    `diff --git a/${path} b/${path}`,
+    `--- a/${path}`,
+    `+++ b/${path}`,
+    "@@ -1 +1 @@",
+    `-${before}`,
+    `+${after}`,
+  ];
+  const sum = "export const sum = (a, b) => a + b;";
+  const verify = (patch: readonly string[]) =>
+    verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch: [...patch, ""].join("\n"),
+      commands: commands(),
+      clock,
+    });
+
+  it("leaves a passing lint standing where only the listed source file changed", async () => {
+    const result = await verify(edit("src/sum.js", sum, "export const sum = (a, b) => a + b + 0;"));
+    const lint = result.checks.find((check) => check.id === "lint");
+    expect(lint?.status).toBe("passed");
+    expect(lint?.reportedStatus).toBeUndefined();
+    expect(lint?.configurationFiles).toBeUndefined();
+    expect(lint?.instrument?.files.map((file) => file.path)).not.toContain("src/sum.js");
+    expect(result.regression).toBe("pass");
+    expect(capturedRegression(result.checks)).toBe(result.regression);
+  });
+
+  it("still withholds a pass that only the patch's configuration gives", async () => {
+    const result = await verify([
+      ...edit("src/sum.js", sum, "debugger; export const sum = (a, b) => a + b;"),
+      ...edit(
+        "eslint.config.js",
+        configuration.trimEnd(),
+        'export default [{ files: [], rules: { "no-debugger": "error" } }];',
+      ),
+    ]);
+    const lint = result.checks.find((check) => check.id === "lint");
+    expect(lint?.reportedStatus).toBe("passed");
+    expect(lint?.configurationFiles).toEqual(["eslint.config.js"]);
+    expect(lint?.configurationStatus).toBe("failed");
+    expect(lint?.status).not.toBe("passed");
+    expect(result.regression).not.toBe("pass");
+    expect(capturedRegression(result.checks)).toBe(result.regression);
+  });
+
+  it("still withholds a pass that only the patch's version of the checking program gives", async () => {
+    const result = await verify([
+      ...edit("src/sum.js", sum, "debugger; export const sum = (a, b) => a + b;"),
+      "diff --git a/tools/eslint.mjs b/tools/eslint.mjs",
+      "--- a/tools/eslint.mjs",
+      "+++ b/tools/eslint.mjs",
+      "@@ -1,5 +1 @@",
+      ...lintStandIn
+        .trimEnd()
+        .split("\n")
+        .map((line) => `-${line}`),
+      "+process.exit(0);",
+    ]);
+    const lint = result.checks.find((check) => check.id === "lint");
+    expect(lint?.reportedStatus).toBe("passed");
+    expect(lint?.configurationFiles).toEqual(["tools/eslint.mjs"]);
+    expect(lint?.configurationStatus).toBe("failed");
+    expect(lint?.status).not.toBe("passed");
+    expect(result.regression).not.toBe("pass");
+    expect(capturedRegression(result.checks)).toBe(result.regression);
+  });
 });
