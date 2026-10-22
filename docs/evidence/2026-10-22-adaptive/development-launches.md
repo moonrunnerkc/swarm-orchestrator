@@ -80,3 +80,7 @@ every recovered claim is still checked by the harness before it counts. It chang
 runs under `--adaptive`, so run 3 launches the four `swarm` cells again on the new build with run 2's
 configuration and resources, and pairs each with run 2's `swarm-control` launch of the same task and
 sample. Order: acorn 1, entities, sinon v2, acorn 2.
+
+Frozen: manifest `~/.cache/swarm-study-2026-10-22/dev-3/manifest.json`, sha256
+`e2a018d3512cc8cfa6012ce0adf355cea556343010e503ee04ac77a53a27107c`; build `git archive` of `3f2ce162e`; smoke `smoke-6`
+passes all four arms.
