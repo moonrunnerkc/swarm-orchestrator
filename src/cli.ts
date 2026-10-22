@@ -761,6 +761,7 @@ async function run(options: RunCommand): Promise<number> {
     ): Parameters<typeof runAgentTask>[0] => ({
       task: options.task,
       ...(options.promptProfile === undefined ? {} : { promptProfile: options.promptProfile }),
+      ...(options.repairTrace === true ? { repairTrace: true } : {}),
       ...(repairFeedback === undefined ? {} : { repairFeedback }),
       ...(options.escalationModel === undefined
         ? {}
@@ -844,6 +845,7 @@ async function run(options: RunCommand): Promise<number> {
               ...goalContext,
               contract: goal,
               signal: modelWork.signal,
+              ...(options.repairTrace === true ? { repairTrace: true } : {}),
             }),
           }),
       ...(gateOptions === undefined

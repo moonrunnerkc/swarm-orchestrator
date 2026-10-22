@@ -96,6 +96,10 @@ const documentedAsRemoved = new Map([
     "a file of the mime task's repository, which the 2026-10-18 generated-check protocol names; that protocol is not edited after its first launch",
   ],
   [
+    "src/escape.ts",
+    "a file of the entities task's repository, which the 2026-10-22 repair-trace protocol names; that protocol is not edited after its first launch",
+  ],
+  [
     "src/rules.ts",
     "a file of the marked task's repository, which the 2026-10-20 repair-handoff protocol names; that protocol is not edited after its first launch",
   ],

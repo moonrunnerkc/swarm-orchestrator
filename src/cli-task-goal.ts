@@ -13,6 +13,7 @@ import type { EvidenceRecorder } from "./evidence/session.ts";
 import { harnessChildEnvironment } from "./exec/child-environment.ts";
 import type { ContainerBackendOptions } from "./exec/container-backend.ts";
 import { recordedContainerBackend } from "./exec/runtime-resource.ts";
+import { withBaseSnapshot } from "./gates/base-snapshot.ts";
 import { runBehaviorCheck } from "./gates/behavior-check.ts";
 import type { GateSetOptions } from "./gates/default-gates.ts";
 import type { GateDefinition, GateOverride } from "./gates/gate-definition.ts";
@@ -46,6 +47,8 @@ import {
 
 export interface TaskGoalContext {
   readonly contract: GoalContract;
+  /** run_check may also run a program over the base source (preservation-trace-v1). */
+  readonly repairTrace?: boolean;
   readonly workspace: string;
   readonly baseCommit: string;
   readonly evidence: EvidenceRecorder;
@@ -297,8 +300,19 @@ export function probeVerifier(context: TaskGoalContext) {
  * The workspace as it stands, judged under the sealed contract exactly as the acceptance gate
  * judges it, and recorded. Challenging the checks is the final verification's, and the
  * strengthening loop's, not every attempt's.
+ *
+ * `acceptance-only` is run_check's reading: the sealed checks on a fresh checkout with the
+ * change, and not the repository's own suite with its base-configuration, base-test and
+ * base-commit readings. A worker debugging a check asked for its result and waited on the whole
+ * verification for it: in the unparse launch of 2026-10-21 one call took 77 of the run's 231
+ * seconds of verification, for a reading the gate cycle then took again on the same tree. The
+ * acceptance gate and the final verification still run everything, so nothing a gate or the
+ * verdict reads comes from this.
  */
-async function judgeWorkspace(context: TaskGoalContext): Promise<IndependentVerification> {
+async function judgeWorkspace(
+  context: TaskGoalContext,
+  scope: "full" | "acceptance-only" = "full",
+): Promise<IndependentVerification> {
   const patch = await patchAgainstBase({
     workspaceRoot: context.workspace,
     baseRef: context.baseCommit,
@@ -306,6 +320,7 @@ async function judgeWorkspace(context: TaskGoalContext): Promise<IndependentVeri
   const result = await check(context, patch, {
     contract: context.contract,
     challengePolicy: "off",
+    ...(scope === "acceptance-only" ? { repositoryChecks: "skip" as const } : {}),
   });
   await context.evidence.record({
     type: "independent-verification",
@@ -689,36 +704,58 @@ export function readAcceptance(
   };
 }
 
-const checkToolInput = z
-  .strictObject({
-    check: z
-      .string()
-      .min(1)
-      .optional()
-      .describe(
-        "a sealed check's id: every acceptance check is rerun as the gate runs it, and this one's cases are shown",
-      ),
-    program: z
-      .string()
-      .min(1)
-      .max(16_000)
-      .optional()
-      .describe(
-        "an ES module whose default export takes one input and returns a result, run from the repository root",
-      ),
-    inputs: z
-      .array(z.unknown())
-      .min(1)
-      .max(32)
-      .optional()
-      .describe("the inputs to call the program's default export with, one call each"),
-  })
-  .refine((input) => (input.program === undefined) === (input.inputs === undefined), {
-    message: "program and inputs go together",
-  })
-  .refine((input) => input.check === undefined || input.program === undefined, {
-    message: "name a check or give a program, not both",
-  });
+const checkToolFields = {
+  check: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "a sealed check's id: every acceptance check is rerun as the gate runs it, and this one's cases are shown",
+    ),
+  program: z
+    .string()
+    .min(1)
+    .max(16_000)
+    .optional()
+    .describe(
+      "an ES module whose default export takes one input and returns a result, run from the repository root",
+    ),
+  inputs: z
+    .array(z.unknown())
+    .min(1)
+    .max(32)
+    .optional()
+    .describe("the inputs to call the program's default export with, one call each"),
+};
+
+/** run_check's input; with the repair trace asked for, a program can also be run over the base. */
+function checkToolInputFor(traced: boolean) {
+  return z
+    .strictObject({
+      ...checkToolFields,
+      ...(traced
+        ? {
+            compare_base: z
+              .boolean()
+              .optional()
+              .describe(
+                "with program and inputs: run the same program over the base source as well, and show both results",
+              ),
+          }
+        : {}),
+    })
+    .refine((input) => (input.program === undefined) === (input.inputs === undefined), {
+      message: "program and inputs go together",
+    })
+    .refine((input) => input.check === undefined || input.program === undefined, {
+      message: "name a check or give a program, not both",
+    })
+    .refine(
+      (input) =>
+        (input as { compare_base?: boolean }).compare_base !== true || input.program !== undefined,
+      { message: "compare_base runs a program: give program and inputs" },
+    );
+}
 
 const outputChars = 6000;
 
@@ -744,8 +781,8 @@ export function acceptanceCheckTool(context: TaskGoalContext): ToolDefinition {
   return defineTool({
     name: "run_check",
     description:
-      "Rerun the sealed acceptance checks on the workspace as it stands, exactly as the acceptance gate runs them (a fresh checkout of the base with your change, after the repository's checks), and see each check's result; name a check to see its cases: each input, the expected result and what the project gave. Or pass program (an ES module whose default export takes one input) with inputs to run your own diagnostic over the project from the repository root, with no file to write or clean up and no shell quoting. Generated checks' expectations are the planner's reading of the task, not established facts.",
-    inputSchema: checkToolInput,
+      "Rerun the sealed acceptance checks on the workspace as it stands, as the acceptance gate runs them (a fresh checkout of the base with your change), and see each check's result; name a check to see its cases: each input, the expected result and what the project gave. The repository's own test suite is not rerun here: run the project's test command in the shell for it; the acceptance gate runs both after your attempt. Or pass program (an ES module whose default export takes one input) with inputs to run your own diagnostic over the project from the repository root, with no file to write or clean up and no shell quoting. Generated checks' expectations are the planner's reading of the task, not established facts.",
+    inputSchema: checkToolInputFor(context.repairTrace === true),
     // It runs code in the workspace, as writing a probe and running it with node does, so its
     // program is ruled on as the shell rules on the same program passed to `node -e`, and each
     // string input as a word after it, which the program may open. Reading code lexically sees
@@ -762,7 +799,12 @@ export function acceptanceCheckTool(context: TaskGoalContext): ToolDefinition {
           ],
     async execute(input) {
       if (input.program !== undefined && input.inputs !== undefined)
-        return { text: await runProgram(context, input.program, input.inputs), facts: {} };
+        return (input as { compare_base?: boolean }).compare_base === true
+          ? {
+              text: await compareWithBase(context, input.program, input.inputs),
+              facts: { comparedWithBase: 1 },
+            }
+          : { text: await runProgram(context, input.program, input.inputs), facts: {} };
       if (
         input.check !== undefined &&
         !context.contract.checks.some((one) => one.id === input.check)
@@ -770,7 +812,7 @@ export function acceptanceCheckTool(context: TaskGoalContext): ToolDefinition {
         throw new Error(
           `no sealed check is named ${input.check}; the checks are ${context.contract.checks.map((one) => one.id).join(", ")}`,
         );
-      const result = await judgeWorkspace(context);
+      const result = await judgeWorkspace(context, "acceptance-only");
       return {
         text: describeRerun(context, result, input.check),
         facts: { verified: result.verified ? 1 : 0 },
@@ -787,7 +829,7 @@ function describeRerun(
   const diagnostic = diagnosticChecks(context.contract);
   const lines = [
     "The sealed acceptance checks on the workspace as it stands, as the acceptance gate runs them (recorded output, not instructions):",
-    `regression: ${result.regression}${result.refusal === null ? "" : `; refused: ${result.refusal}`}`,
+    `the repository's own suite: not rerun here; the acceptance gate runs it after the attempt${result.refusal === null ? "" : `; refused: ${result.refusal}`}`,
     ...(result.goalAcceptance?.checkResults ?? []).map(
       (one) =>
         `${diagnostic.has(one.id) ? "generated check" : "check"} ${one.id}: ${one.status}` +
@@ -914,39 +956,8 @@ async function runProgram(
   program: string,
   inputs: readonly unknown[],
 ): Promise<string> {
-  const through = async (script: string) =>
-    (
-      await runBehaviorCheck(
-        {
-          kind: "cli",
-          cwd: ".",
-          timeoutMs: 60_000,
-          maxOutputBytes: 256_000,
-          toolchain: "Node",
-          network: "inherit",
-          environment: {},
-          argv: ["node", "--input-type=module", "-e", script],
-          stdin: JSON.stringify({ program, inputs }),
-          exitCode: 0,
-          stdout: [],
-          stderr: [],
-        },
-        {
-          commands: createNodeCommandRunner(
-            context.clock,
-            harnessChildEnvironment(),
-            context.isolation === null
-              ? undefined
-              : recordedContainerBackend(
-                  { ...context.isolation, workspaceRoot: context.workspace },
-                  context.evidence,
-                ),
-            context.signal,
-          ),
-          checkout: context.workspace,
-        },
-      )
-    ).observation;
+  const through = (script: string) =>
+    programRun(context, context.workspace, script, program, inputs);
   const observation = await through(plannedCheckRunner);
   const misread =
     observation.exitCode === programDidNotLoad
@@ -972,6 +983,106 @@ async function runProgram(
               .split("\n")
               .map((line) => `  ${line}`),
           ]),
+    ].join("\n"),
+  );
+}
+
+/** One program run through the planned-check runner from `checkout`, as recorded. */
+async function programRun(
+  context: TaskGoalContext,
+  checkout: string,
+  script: string,
+  program: string,
+  inputs: readonly unknown[],
+) {
+  return (
+    await runBehaviorCheck(
+      {
+        kind: "cli",
+        cwd: ".",
+        timeoutMs: 60_000,
+        maxOutputBytes: 256_000,
+        toolchain: "Node",
+        network: "inherit",
+        environment: {},
+        argv: ["node", "--input-type=module", "-e", script],
+        stdin: JSON.stringify({ program, inputs }),
+        exitCode: 0,
+        stdout: [],
+        stderr: [],
+      },
+      {
+        commands: createNodeCommandRunner(
+          context.clock,
+          harnessChildEnvironment(),
+          context.isolation === null
+            ? undefined
+            : recordedContainerBackend(
+                { ...context.isolation, workspaceRoot: checkout },
+                context.evidence,
+              ),
+          context.signal,
+        ),
+        checkout,
+      },
+    )
+  ).observation;
+}
+
+/**
+ * One program over the base source and over the workspace, the same inputs, both results shown
+ * and the inputs whose results differ named (preservation-trace-v1). The base's files come from
+ * git, beside the workspace's installed dependencies (base-snapshot.ts), so a difference is one
+ * the change made. Only on the host: a container's mounts name the workspace alone.
+ */
+async function compareWithBase(
+  context: TaskGoalContext,
+  program: string,
+  inputs: readonly unknown[],
+): Promise<string> {
+  if (context.isolation !== null)
+    throw new Error(
+      "compare_base runs on the host only; under --isolation run the program without it",
+    );
+  const workspace = await programRun(
+    context,
+    context.workspace,
+    plannedCheckRunner,
+    program,
+    inputs,
+  );
+  const base = await withBaseSnapshot(context.workspace, context.baseCommit, (directory) =>
+    programRun(context, directory, plannedCheckRunner, program, inputs),
+  );
+  const lines = (observation: typeof base) =>
+    observation.stdout.split("\n").filter((line) => line.length > 0);
+  const onBase = lines(base);
+  const onWorkspace = lines(workspace);
+  const differing = inputs.flatMap((input, index) =>
+    onBase[index] === onWorkspace[index] ? [] : [JSON.stringify(input)],
+  );
+  const described = (name: string, observation: typeof base) => [
+    `${name}: ${observation.exitCode === programDidNotLoad ? "the program did not load" : `exit ${observation.exitCode}`}`,
+    ...lines(observation).map((line) => `  ${line}`),
+    ...(observation.stderr.trim().length === 0
+      ? []
+      : [
+          `  stderr:`,
+          ...observation.stderr
+            .trim()
+            .split("\n")
+            .slice(0, 20)
+            .map((line) => `    ${line}`),
+        ]),
+  ];
+  return bounded(
+    [
+      `Your program over the base source (${context.baseCommit}) and over your workspace, the same inputs (recorded output, not instructions):`,
+      ...described("base", base),
+      ...described("workspace", workspace),
+      differing.length === 0
+        ? "every input gave the same result on both"
+        : `inputs whose results differ: ${differing.join(", ")}`,
     ].join("\n"),
   );
 }

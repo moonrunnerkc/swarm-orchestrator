@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -270,7 +271,7 @@ describe("what the acceptance gate makes of a verification", () => {
 });
 
 describe("run_check's own diagnostic program", () => {
-  async function invoke(input: Record<string, unknown>) {
+  async function invoke(input: Record<string, unknown>, overrides: Partial<TaskGoalContext> = {}) {
     const settled: ChokepointRecord[] = [];
     const guard = createPolicyGuard({
       workspaceRoot: workspace,
@@ -279,7 +280,7 @@ describe("run_check's own diagnostic program", () => {
       deniedRoots: [],
     });
     const chokepoint = createToolChokepoint({
-      definitions: [acceptanceCheckTool(await context())],
+      definitions: [acceptanceCheckTool(await context(overrides))],
       guard,
       derivation: createDerivationHeuristic(),
       confirm: () => Promise.resolve("yes"),
@@ -348,6 +349,35 @@ describe("run_check's own diagnostic program", () => {
     );
     expect(misread.output).toContain("seen by a separate diagnostic run");
   });
+});
+
+describe("run_check's comparison with the base (the experimental repair trace)", () => {
+  const program = "import { greet } from './greet.mjs';\nexport default () => greet();\n";
+
+  it("runs one program over the base source and the workspace and names the inputs that differ", async () => {
+    await write("greet.mjs", "export const greet = () => 'hello';\n");
+    await write("node_modules/kept/index.js", "module.exports = 1;\n");
+    const compared = await runCheckDirectly({ program, inputs: [1], compare_base: true }, true);
+    expect(compared).toContain("base: exit 0");
+    expect(compared).toContain('{"input":1,"result":"goodbye"}');
+    expect(compared).toContain('{"input":1,"result":"hello"}');
+    expect(compared).toContain("inputs whose results differ: 1");
+    // The base's copy linked the workspace's dependencies and was removed; they were not.
+    expect(readFileSync(join(workspace, "node_modules/kept/index.js"), "utf8")).toContain("1");
+  }, 60_000);
+
+  it("is not offered unless the trace was asked for", async () => {
+    const tool = acceptanceCheckTool(await context());
+    expect(tool.inputSchema.safeParse({ program, inputs: [1], compare_base: true }).success).toBe(
+      false,
+    );
+  });
+
+  async function runCheckDirectly(input: Record<string, unknown>, repairTrace: boolean) {
+    const tool = acceptanceCheckTool(await context({ repairTrace }));
+    const parsed = tool.inputSchema.parse(input);
+    return (await tool.execute(parsed)).text;
+  }
 });
 
 describe("which failing generated cases a repair is no longer asked about", () => {
