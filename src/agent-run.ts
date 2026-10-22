@@ -14,7 +14,7 @@ import type { ToolInvoker } from "./core/tool-invoker.ts";
 import { openRunStore, type RunStore } from "./durable/run-store.ts";
 import { digestOfBytes } from "./evidence/canonical-json.ts";
 import { recordRoutineClaims } from "./evidence/routine-claims.ts";
-import { recordRunAssessment } from "./evidence/run-assessment.ts";
+import { recordRunAssessment, runLifecycle } from "./evidence/run-assessment.ts";
 import { sealRunSpec } from "./evidence/run-spec.ts";
 import type { EvidenceRecorder } from "./evidence/session.ts";
 import { parseTaskContract, type TaskContract } from "./evidence/task-contract.ts";
@@ -25,7 +25,12 @@ import type { ResourcePool } from "./exec/resource-pool.ts";
 import { describeEnvelopeForReader, establishExecutionEnvelope } from "./exec/run-envelope.ts";
 import { enforceContractExecution } from "./exec/task-contract-enforcement.ts";
 import { approvalsRequiredFor } from "./gates/approval.ts";
-import { describeRejectedCandidate, type ResolveRequest } from "./gates/auto-resolve.ts";
+import {
+  describeRejectedCandidate,
+  type FollowUpOutcome,
+  type OwedKind,
+  type ResolveRequest,
+} from "./gates/auto-resolve.ts";
 import type { SingleFileCommand } from "./gates/base-control.ts";
 import { restrictFileSet } from "./gates/contract-scope.ts";
 import type { GateSetOptions } from "./gates/default-gates.ts";
@@ -51,6 +56,7 @@ import type { EscalationSettings } from "./gates/repair-policy.ts";
 import { diffAgainstBase } from "./gates/scratch-index.ts";
 import { parseUnifiedDiff } from "./gates/unified-diff.ts";
 import { taskBrief } from "./task-brief.ts";
+import { taskContinuation } from "./task-continuation.ts";
 import { type ConfirmationPrompt, createToolChokepoint } from "./tools/chokepoint.ts";
 import { createLedgerChokepointRecorder } from "./tools/chokepoint-record.ts";
 import { createClaimReferenceTool } from "./tools/claim-reference-tool.ts";
@@ -629,23 +635,22 @@ async function executeAgentTask(
     },
   );
 
-  let finalStopReason = loop.stopReason;
   let totalSteps = loop.steps;
   let completionClaim = loop.completionClaim;
   let messages = loop.messages;
   // The loop whose account the next repair attempt is handed: the first loop, then each attempt.
   let latestLoop: AgentLoopOutcome = loop;
-  // The run's account as it stood when the follow-up was given: a follow-up whose change is not
-  // kept leaves the tree, and so the lifecycle, of the work it followed up.
-  // Held in an object because the resolve callback sets it, out of the compiler's sight.
-  const followedUp: {
-    before: {
-      readonly stopReason: typeof finalStopReason;
+  // The run's account as it stood when each owed attempt was given: an owed attempt whose change
+  // is not kept leaves the tree, and so the account, of the work it followed. Set by the resolve
+  // callback, out of the compiler's sight.
+  const beforeOwed = new Map<
+    OwedKind,
+    {
       readonly completionClaim: string;
       readonly messages: typeof messages;
       readonly latestLoop: AgentLoopOutcome;
-    } | null;
-  } = { before: null };
+    }
+  >();
   remainingTokens -= loop.tokensUsed;
   let callsWithUnknownUsage = loop.callsWithUnknownUsage;
   await options.evidence.record({
@@ -663,9 +668,16 @@ async function executeAgentTask(
     },
   });
   let usageTotal = loop.usage;
+  // The task's own continuation, owed where the loop was cut off at its step limit before it
+  // said it was done. Other stops are not continued: a spent budget has nothing left to continue
+  // in, and a stall or a runtime stop is named in the report as before.
+  const continuation =
+    loop.stopReason === "max-steps"
+      ? taskContinuation({ task: brief, steps: loop.steps, maxSteps: options.maxSteps })
+      : undefined;
 
-  // The model has said it is done. Nothing about that is a result yet: the gates run now,
-  // and what they measure is what decides the outcome.
+  // The model has said it is done, or was stopped. Nothing about that is a result yet: the gates
+  // run now, and what they measure is what decides the outcome.
   if (wall.deadlineMs !== null) {
     await options.evidence.record({
       type: "session-budget",
@@ -696,6 +708,7 @@ async function executeAgentTask(
     emit: options.emit,
     cap: options.attempts,
     ...(options.followUp === undefined ? {} : { followUp: options.followUp }),
+    ...(continuation === undefined ? {} : { continuation }),
     // The resolve loop stops at the wall deadline as it stops at a cancellation. The commands that
     // measure a cycle answer only to the run's cancellation and the end of its total allowance:
     // C1's loop spent its wall, and that wall's end refused its final build, lint and tests.
@@ -766,13 +779,8 @@ async function executeAgentTask(
       const account = describePriorLoop(
         priorLoopAccount(latestLoop.messages, latestLoop.stopReason, latestLoop.steps),
       );
-      if (request.followUp !== undefined)
-        followedUp.before = {
-          stopReason: finalStopReason,
-          completionClaim,
-          messages,
-          latestLoop,
-        };
+      if (request.followUpKind !== undefined)
+        beforeOwed.set(request.followUpKind, { completionClaim, messages, latestLoop });
       const repair = await resolveWithModel(request, options, account, {
         ...loopDependencies,
         ...(alternate == null ? {} : { model: alternate }),
@@ -782,7 +790,6 @@ async function executeAgentTask(
       remainingTokens -= repair.tokensUsed;
       callsWithUnknownUsage += repair.callsWithUnknownUsage;
       usageTotal = combineUsage(usageTotal, repair.usage);
-      finalStopReason = repair.stopReason;
       totalSteps += repair.steps;
       completionClaim = repair.completionClaim;
       messages = repair.messages;
@@ -797,8 +804,18 @@ async function executeAgentTask(
           tokensUsed: repair.tokensUsed,
           ...usageFields(repair),
           repair: true,
-          // A follow-up's stop is the run's lifecycle only where its candidate is kept.
-          ...(request.followUp === undefined ? {} : { followUp: true }),
+          attempt: request.attempt,
+          // An owed attempt's stop is the run's lifecycle only where its candidate is kept; the
+          // task's continuation is named as such beside the follow-up marker both kinds carry.
+          ...(request.followUpKind === undefined ? {} : { followUp: true }),
+          ...(request.followUpKind === "continuation" ? { continuation: true } : {}),
+          // A narrow repair that finished finished the repair, not the task: its stop is not the
+          // run's lifecycle. Launch 2 of the 2026-10-21 trial read a lint repair's finish as the
+          // completion of a loop that had stopped at its step cap with a deliverable unwritten. A
+          // repair that stopped at a limit still ends the run as that limit.
+          ...(request.followUpKind === undefined && repair.stopReason === "completed"
+            ? { runLifecycle: false }
+            : {}),
           // Held back from the attempt's wall so its candidate could be measured, and the
           // account of the previous loop it was handed, both on the record.
           reservedForGatesMs,
@@ -814,17 +831,29 @@ async function executeAgentTask(
       : { singleFileTestCommand: options.singleFileTestCommand }),
   });
 
-  // A follow-up given and not kept (rolled back, or nothing to judge) changed nothing delivered: a
-  // follow-up that ran out of its wall must not make a finished run read as stopped at its wall.
-  // What it spent stays spent.
-  const followUp = gates.outcome.followUp;
-  const restored = followedUp.before;
-  if (restored !== null && followUp?.state === "given" && followUp.accepted !== true) {
-    finalStopReason = restored.stopReason;
-    completionClaim = restored.completionClaim;
-    messages = restored.messages;
-    latestLoop = restored.latestLoop;
+  // An owed attempt given and not kept (rolled back, or nothing to judge) changed nothing
+  // delivered, so the account goes back to the work it followed: the earliest such attempt's,
+  // unless a later owed attempt was kept, whose own account then stands. What it spent stays
+  // spent. The lifecycle is read off the chain below by the rule the bundled verifier mirrors.
+  const owedOutcomes: readonly (readonly [OwedKind, FollowUpOutcome | null])[] = [
+    ["continuation", gates.outcome.continuation],
+    ["outcomes", gates.outcome.followUp ?? null],
+  ];
+  const given = owedOutcomes.filter(([, outcome]) => outcome?.state === "given");
+  const firstNotKept = given.findIndex(([, outcome]) => outcome?.accepted !== true);
+  const restoreTo =
+    firstNotKept >= 0 &&
+    given.slice(firstNotKept).every(([, outcome]) => outcome?.accepted !== true)
+      ? beforeOwed.get(given[firstNotKept]?.[0] ?? "outcomes")
+      : undefined;
+  if (restoreTo !== undefined) {
+    completionClaim = restoreTo.completionClaim;
+    messages = restoreTo.messages;
+    latestLoop = restoreTo.latestLoop;
   }
+  // The last stop of a loop that worked the task: the first loop's, a repair's where it stopped
+  // at a limit, an owed attempt's where its candidate was kept.
+  const finalStopReason = runLifecycle(options.evidence) ?? loop.stopReason;
 
   // An advisory gate that demands a justification is owed one turn to answer it, once the work
   // is otherwise acceptable. Before this, nothing asked: the model was never told, no call
@@ -1255,6 +1284,7 @@ async function resolveWithModel(
   account: string,
   loopDependencies: Parameters<typeof runAgentLoop>[1],
 ): Promise<AgentLoopOutcome> {
+  const startedAt = options.clock.now();
   const candidateDiff = await diffAgainstBase({
     workspaceRoot: options.workspace,
     baseRef: options.baseRef,
@@ -1265,7 +1295,9 @@ async function resolveWithModel(
     "",
     request.followUp === undefined
       ? `A quality gate is failing. This is attempt ${request.attempt} of ${request.cap}.`
-      : `Every gate passes. This is attempt ${request.attempt} of ${request.cap}, a follow-up the controller owes before the run is reported, given once: the work below is requested and no sealed check exercises it, so the gates passing says nothing about it.`,
+      : request.followUpKind === "continuation"
+        ? `Every gate passes. This is attempt ${request.attempt} of ${request.cap}, the one continuation of the task's own loop that the controller owes before the run is reported: that loop was stopped at its step limit, so the gates passing says nothing about whether the task is done.`
+        : `Every gate passes. This is attempt ${request.attempt} of ${request.cap}, a follow-up the controller owes before the run is reported, given once: the work below is requested and no sealed check exercises it, so the gates passing says nothing about it.`,
     request.followUp === undefined
       ? "Fix the cause. Do not weaken the tests: removing a test, removing an assertion, adding a"
       : "Do not weaken the tests: removing a test, removing an assertion, adding a",
@@ -1309,7 +1341,69 @@ async function resolveWithModel(
       : [request.followUp]),
   ].join("\n");
 
-  return runAgentLoop(brief, loopDependencies);
+  const first = await runAgentLoop(brief, loopDependencies);
+  // An owed attempt's brief asks for a one-line answer where nothing needs changing, so an answer
+  // with no call is the shape it was asked for; a repair of a failing check was asked to fix it.
+  if (
+    request.followUpKind !== undefined ||
+    first.stopReason !== "completed" ||
+    madeAToolCall(first.messages)
+  )
+    return first;
+  // The answer called no tool: nothing in the workspace changed, and the attempt would be
+  // counted and measured over the restored tree as it is. Two repair attempts of the
+  // 2026-10-21 trial's continuation launch ended this way after one step each ("Let me read the
+  // current state of the files first"), spent two of the three attempts on nothing, and left
+  // none for the continuation the task was owed. Told so once, in the same conversation and the
+  // same attempt; a second answer with no call then stands as the attempt's.
+  const remaining = {
+    maxTokens: Math.max(0, loopDependencies.budget.maxTokens - first.tokensUsed),
+    maxWallTimeMs: Math.max(
+      0,
+      loopDependencies.budget.maxWallTimeMs - (options.clock.now() - startedAt),
+    ),
+  };
+  if (remaining.maxTokens < loopDependencies.maxOutputTokens || remaining.maxWallTimeMs <= 0)
+    return first;
+  await options.evidence.record({
+    type: "session-budget",
+    actor: "harness",
+    provenance: ["tool-output"],
+    payload: {
+      rule: "no-action-notice-v1",
+      attempt: request.attempt,
+      step: first.steps,
+      answer: first.completionClaim.slice(0, 2000),
+      note: "the attempt's answer called no tool, so the workspace is unchanged; the notice was given once in the same attempt",
+    },
+  });
+  const second = await runAgentLoop(noActionNotice, {
+    ...loopDependencies,
+    history: first.messages,
+    budget: { ...loopDependencies.budget, ...remaining },
+  });
+  return {
+    stopReason: second.stopReason,
+    steps: first.steps + second.steps,
+    answeredSteps: first.answeredSteps + second.answeredSteps,
+    tokensUsed: first.tokensUsed + second.tokensUsed,
+    callsWithUnknownUsage: first.callsWithUnknownUsage + second.callsWithUnknownUsage,
+    usage: combineUsage(first.usage, second.usage),
+    reservedTokens: second.reservedTokens,
+    plan: first.plan,
+    completionClaim: second.completionClaim,
+    messages: second.messages,
+  };
+}
+
+/** The one notice an attempt that acted on nothing is given, as a user message it cannot mistake for a result. */
+export const noActionNotice =
+  "[harness notice: no tool call] Your answer called no tool, so the workspace is unchanged and " +
+  "whatever was failing is still failing. If work remains, make the tool calls now: read what you " +
+  "need, then edit or write. If no change is needed, say so in one line and stop.";
+
+function madeAToolCall(messages: readonly ConversationMessage[]): boolean {
+  return messages.some((message) => message.role === "assistant" && message.toolCalls.length > 0);
 }
 
 /**

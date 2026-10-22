@@ -497,6 +497,127 @@ describe("the run's one status", () => {
     );
   });
 
+  it("says a run accepted over a model-work cut was accepted on its checks, and keeps the cut as its lifecycle", () => {
+    const cutLifecycle =
+      "the model's work was cut at the end of its allowance (max-wall-time), before the run's deadline and with every write and shell call settled before the cut; the checks of the delivered tree decide the run, which says nothing about whether the model had finished";
+    const input = {
+      ...base,
+      verdict: { ...certified, reasons: { ...certified.reasons, lifecycle: cutLifecycle } },
+      requirements: finished("accepted", "accepted"),
+      gates: cycle([run("tests", "passed"), run("task-acceptance", "passed")]),
+      lifecycle: "max-wall-time",
+    };
+    const lines = describeRunOutcome(input).join("\n");
+    expect(outcomeStatus(input)).toBe("accepted");
+    expect(lines).toContain("the loop stopped as max-wall-time");
+    expect(lines).toContain(`lifecycle: ${cutLifecycle}`);
+    // A refused run says nothing of the kind, whatever its reasons hold.
+    expect(
+      describeRunOutcome({ ...input, verdict: { ...input.verdict, acceptable: false } }).join("\n"),
+    ).not.toContain("lifecycle: ");
+  });
+
+  it("names the continuation a step-limited loop was owed, and the regression tests as the harness measured them", () => {
+    const input = {
+      ...base,
+      verdict: certified,
+      requirements: finished("accepted", "accepted"),
+      gates: cycle([run("tests", "passed"), run("task-acceptance", "passed")]),
+      lifecycle: "max-steps",
+    };
+    const withheld = describeRunOutcome({
+      ...input,
+      continuation: {
+        state: "withheld",
+        attempt: null,
+        accepted: null,
+        reason: "no attempt was left under the cap of 1",
+        record: "sha256:cont",
+      },
+    }).join("\n");
+    expect(withheld).toContain(
+      "the task's own loop stopped at its step limit before it reported the task done; its continuation was withheld (no attempt was left under the cap of 1), so the task may be unfinished",
+    );
+    // Status and exit code keep their meaning: green work is not refused for the step limit.
+    expect(outcomeStatus(input)).toBe("accepted");
+    const given = describeRunOutcome({
+      ...input,
+      lifecycle: "completed",
+      continuation: {
+        state: "given",
+        attempt: 2,
+        accepted: true,
+        reason: "given once the gates were green",
+        record: "sha256:cont",
+      },
+    }).join("\n");
+    expect(given).toContain(
+      "the task's own loop stopped at its step limit before it reported the task done; its continuation was given once, as attempt 2, and the ratchet kept what it left",
+    );
+    const rolledBack = describeRunOutcome({
+      ...input,
+      continuation: {
+        state: "given",
+        attempt: 2,
+        accepted: false,
+        reason: "given once the gates were green",
+        record: "sha256:cont",
+      },
+    }).join("\n");
+    expect(rolledBack).toContain(
+      "its continuation was given once, as attempt 2, and the ratchet rolled back what it left, so the task may be unfinished",
+    );
+    const measured = describeRunOutcome({
+      ...input,
+      regressionTests: {
+        testsGate: "passed",
+        files: [
+          {
+            path: "test/slug.test.js",
+            testsAdded: ["collapses whitespace"],
+            testsRemoved: [],
+            assertionsAdded: 2,
+            onBaseSource: {
+              outcome: "failed",
+              detail: "exited 1",
+              failedTests: ["collapses whitespace"],
+            },
+          },
+        ],
+        record: "sha256:tests",
+      },
+    }).join("\n");
+    expect(measured).toContain(
+      "regression tests: test/slug.test.js adds 1 case (collapses whitespace) and 2 assertion(s); the tests gate passed on the delivered tree; over the base's source the file fails, naming collapses whitespace, so the added case fails without the change",
+    );
+    const unattributed = describeRunOutcome({
+      ...input,
+      regressionTests: {
+        testsGate: "passed",
+        files: [
+          {
+            path: "test/slug.test.js",
+            testsAdded: ["collapses whitespace"],
+            testsRemoved: [],
+            assertionsAdded: 2,
+            onBaseSource: null,
+          },
+        ],
+        record: "sha256:tests",
+      },
+    }).join("\n");
+    expect(unattributed).toContain(
+      "over the base's source: not run, so whether the added case fails without the change is not measured",
+    );
+    const none = describeRunOutcome({
+      ...input,
+      regressionTests: { testsGate: "passed", files: [], record: "sha256:tests" },
+    }).join("\n");
+    expect(none).toContain(
+      "regression tests: no test file differs from the base, so none was added",
+    );
+  });
+
   it("leaves a run of hypotheses alone unjudged, as the same run without planning is", () => {
     const hypotheses = freezeGoalContract({
       ...plannedContract,

@@ -148,3 +148,85 @@ verification inside its wall.
   one test helper remain in its lint closure), which did not affect these tasks.
 - That the fresh tasks are unseen by the model: they are unseen by this project; the upstream
   commits are public and date from May to October 2026.
+
+## Corrections, 2026-10-21 (later the same day)
+
+Appended after a second reading of the records above. Nothing above is edited; the launch
+records, the frozen scores and their provenance stand as written. The audit that goes with
+these corrections is [../accessor-audit/README.md](../accessor-audit/README.md).
+
+1. **OpenCode has one oracle-passing tree in this stage, not two.** The records
+   ([comparison/packed-derived/records](comparison/packed-derived/records/)): the mock task
+   passed the hidden oracle, the dotenv task failed it, the accessor task changed nothing. "Did
+   Swarm deliver better code?" above and the comparison README's cost table say OpenCode
+   "produced two correct source trees"; the right count is one, as
+   [comparison/results.md](comparison/results.md) always showed (correct completion 1 / 3). The
+   decision is unchanged by it.
+2. **The accessor OpenCode run made no completion claim.** Its stream
+   (`sinon-bugfix-stub-accessor-calls.opencode.stdout.txt`, in the streams pack) has two
+   finished turns, both with `reason` `tool-calls`: a sub-agent exploration, then two reads, the
+   second refused ("permission requested: external_directory ... auto-rejecting", its stderr)
+   because the model asked for a path under a mistyped workspace name outside its directory.
+   The run ended there, with no implementation and no answer; the text parts are "I'll start by
+   exploring the codebase" and "Now let me read the key files in detail". The runner's
+   `claimedSuccess` read the last turn's text part as a claim, so the record carries
+   `claimedSuccess: true` and launch 7 above and the comparison README call it "success
+   claimed" and "a false completion claim under the oracle". Withdrawn: the arm exited 0 after
+   an investigation a refused read ended, claimed nothing, and delivered nothing. The record is
+   not rewritten; the misclassification is named here and the runner is changed for later
+   launches (below). The stage's count of false claims is 0 for both arms.
+3. **The scoring protocol requires a regression test; the task text only permitted one.**
+   [comparison/protocol.md](comparison/protocol.md) counts a delivery only with at least one
+   assertion added, and says "each requires a regression test". What both arms received
+   (`taskPrompt` in `scripts/comparison/arms.mjs` at the stage's commit) was the task text, the
+   visible check, the test command and the allowed-change policy, whose first sentence permits
+   "implementation code, and regression tests for the change"; nothing required one. "Why
+   neither arm wrote a test on the mock task when the task text and the policy asked for one"
+   has an answer: they were not asked. The prompt now names every scored deliverable, the
+   regression test as a requirement (`deliverableLines`, the same words for both arms).
+4. **The accessor repair fixed the tests, not the source.** Launch 6's ledger (session
+   `20261021T035234-702463`; every payload is now published, item 7): the first loop's four
+   source edits are records 149 to 167 (`src/sinon/default-behaviors.js` three times,
+   `src/sinon/stub.js` once); the lint and tests gates then failed (records 270, 272) on the
+   model's own new test cases (`refute.exists`, which referee has no such method; an unused
+   variable; bare expressions). The repair loop's four edits, records 335 to 353, are all to
+   `test/src/stub-test.js`, after which lint and tests passed (359, 365). "The only launch where
+   repair turned a failing candidate into a passing one" above is right about the gates and
+   silent about what moved: the source the first loop wrote is the source that was delivered.
+   Repair improved the test file and the gate readings; it did not repair source behaviour, and
+   the source's defect (item 6) was not something any gate measured.
+5. **`comparison/scored/score-kept.mjs` imported the harness by absolute paths of this host.**
+   Its three imports named `/Users/brad/projects/...` through a `../../../../../../Users/...`
+   spelling. They are now repository-relative, with the logic unchanged and a note in the file;
+   the score it wrote stands. The portable path is `scripts/comparison/rescore.mjs`, which
+   scores a published patch from the pinned commits on any machine and refuses bytes whose
+   digest no record carries ([../accessor-audit/rescore-swarm.json](../accessor-audit/rescore-swarm.json)
+   is that command over the accessor patch: the same readings).
+6. **The accessor tree is not fully correct against the task as written.** It passes the
+   oracle, the visible check and the project's tests, and its exposed `stub.getter` and
+   `stub.setter` are not sinon spies: `stub.setter.withArgs("bar")` throws, and 14 functions of
+   the surface the task named are absent ([../accessor-audit/README.md](../accessor-audit/README.md),
+   section 1). "A correct fix", "the stage's only complete source-and-test change" and "every
+   check passing when scored" above are true of every check that existed and not of the task's
+   own sentence; the audit keeps the oracle pass and the 324/9 test reading and stops calling the
+   patch complete.
+7. **Swarm's payload blobs and stdout were not all published.** The streams pack holds the four
+   run ledgers and OpenCode's streams; Swarm's own stdout streams stayed in the runner's blob
+   store and the sessions' payload blobs in the host's session store, bound by digests. For
+   launch 6 they are now in [../accessor-audit/packed-derived/payloads](../accessor-audit/packed-derived/payloads/):
+   the 438 payload blobs the ledger cites, each under its SHA-256, and the launch record's stdout
+   (`sha256:69c58dbf...`) and stderr. The other launches' payloads remain where they were, bound
+   the same way and named as not published.
+
+For later runs the record keeps five things apart (`scripts/comparison/arms.mjs`
+`completionAccount`, `scripts/comparison/schema.mjs` `completion`): the process exit (code or
+signal), the terminal lifecycle (`ended`: exited or killed at the deadline), the explicit
+completion claim (`claimed`, `none` or `unknown`, with its basis: only a turn that ended on its
+own with a message, or Swarm's own acceptable verdict, is a claim; progress text never is),
+the independently observed correctness (the visible and hidden verdicts) and the stage's
+delivery rule, applied over all of them in the README. No judge reads the prose.
+
+The supplemental reading of this stage's tables, with launch 6's after-the-fact score in its
+row and named as such, is [comparison/results-supplemented.md](comparison/results-supplemented.md)
+(`node scripts/comparison/analyze.mjs --runs <records> --supplement`); the original
+[comparison/results.md](comparison/results.md) is unchanged.

@@ -64,6 +64,35 @@ export const excludedFromPatch = ["acceptance/visible", "swarm.toml", "opencode.
 
 const git = (log, cwd, ...args) => log.run(["git", ...args], { cwd, timeoutMs: 600_000 });
 
+/**
+ * The task's mirror, cloned from the repository's public origin where this machine has none, and
+ * fetched where it lacks the pinned commits. A rescoring on another machine starts from the
+ * pinned commits and nothing else; the launches' own mirrors were made the same way.
+ */
+export async function ensureMirror(log, task) {
+  const mirror = mirrorOf(task.repository);
+  const origin = `https://github.com/${task.repository}.git`;
+  if (!existsSync(mirror)) {
+    mkdirSync(dirname(mirror), { recursive: true });
+    const cloned = await log.run(["git", "clone", "--quiet", "--mirror", origin, mirror], {
+      cwd: dirname(mirror),
+      timeoutMs: 1_800_000,
+    });
+    if (cloned.exitCode !== 0)
+      throw new Error(`${task.id}: cloning ${origin} into ${mirror} failed:\n${tail(cloned)}`);
+  }
+  for (const short of [task.baseCommit, task.upstreamCommit]) {
+    const present = await git(log, mirror, "rev-parse", "--verify", "--quiet", `${short}^{commit}`);
+    if (present.exitCode === 0) continue;
+    const fetched = await git(log, mirror, "fetch", "--quiet", origin, short);
+    if (fetched.exitCode !== 0)
+      throw new Error(
+        `${task.id}: commit ${short} is not in ${mirror} and ${origin} did not serve it`,
+      );
+  }
+  return mirror;
+}
+
 export async function resolveFull(log, task) {
   const resolved = {};
   for (const [key, short] of [

@@ -1,0 +1,90 @@
+{
+  "schema": "swarm-ordinary-comparison.manifest.v1",
+  "frozenAt": "2026-10-21T14:45:57.970Z",
+  "protocolDigest": "sha256:80e85bc7b27b031f3c4a9b6ce261e02d79259b9398b5b5f1c19f200467b5172e",
+  "pins": {
+    "model": "qwen3.6:35b-a3b",
+    "endpoint": "http://127.0.0.1:11434/v1",
+    "swarmCli": "/Users/brad/.cache/swarm-comparison/tools/swarm-643b9ef4c/dist/cli.js",
+    "swarmRevision": "643b9ef4cb26860f935063ff3f7480adb89f747a",
+    "swarmCliDigest": "sha256:2bb07c9a9bf46cda45759455c27f21d8336fe0d3dc6d20e4e5461bfc026ea6e0",
+    "opencode": "1.14.48",
+    "node": "v24.15.0",
+    "harnessDigest": "sha256:220f8c0646099974851afb475bcd8129c1787f92a3edb561525ac46be57c714e",
+    "swarmFlags": []
+  },
+  "budgets": {
+    "wallMsPerInvocation": 540500,
+    "wallGraceMs": 59500,
+    "swarmTokenCap": 8000000,
+    "maxCorrections": 0,
+    "inferenceDeadlineMs": 180000,
+    "readinessRequestDeadlineMs": 30000,
+    "readinessSequenceDeadlineMs": 90000,
+    "readinessSequences": 2,
+    "swarmVerificationReserveMs": 0
+  },
+  "seed": "swarm-ordinary-comparison-2026-10-11",
+  "tasks": [
+    {
+      "id": "sinon-bugfix-stub-accessor-calls-v2",
+      "repository": "sinonjs/sinon",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ]
+      ],
+      "build": [],
+      "projectTest": [
+        "npm",
+        "run",
+        "test-node"
+      ],
+      "visiblePrefix": "",
+      "workType": "bugfix",
+      "baseCommit": "8c663edeccc5e2fa5ddaaf4cab979726cf78304a",
+      "upstreamCommit": "002ee82bc5329fd88e7083aeedb7520c0260d1ab",
+      "hidden": {
+        "testFiles": [
+          "test/src/stub-test.js"
+        ],
+        "argv": [
+          "npx",
+          "mocha",
+          "-R",
+          "dot",
+          "test/src/stub-test.js"
+        ],
+        "files": [
+          {
+            "path": "acceptance/hidden/api-check.mjs",
+            "source": "// The accessor task's API requirement, as the audit established it: the spies a stub exposes as\n// stub.getter and stub.setter must carry the surface sinon's own accessor spies carry, not only\n// a call count. Written for the scoring checkout's root; exits 1 at the first requirement the\n// tree does not meet. Used as a hidden check of the development trial and never shown to an arm.\nimport assert from \"node:assert/strict\";\nimport createStub from \"../../src/sinon/stub.js\";\nimport spy from \"../../src/sinon/spy.js\";\n\nconst names = (value) => {\n  const seen = new Set();\n  for (\n    let at = value;\n    at !== null && at !== Function.prototype && at !== Object.prototype;\n    at = Object.getPrototypeOf(at)\n  )\n    for (const name of Object.getOwnPropertyNames(at)) seen.add(name);\n  return seen;\n};\n\n// The reference surface: an accessor spy sinon.spy(obj, \"prop\", [\"set\"]) produces. Two of its\n// names belong to the wrapping of an existing accessor (restore, wrappedMethod) and are not\n// asked of a stub's replacement spy.\nconst spied = {};\nObject.defineProperty(spied, \"prop\", {\n  get() {\n    return \"foo\";\n  },\n  set(value) {\n    spied.example = value;\n  },\n  configurable: true,\n});\nconst reference = spy(spied, \"prop\", [\"set\"]).set;\nconst required = [...names(reference)].filter(\n  (name) => typeof reference[name] === \"function\" && ![\"restore\", \"wrappedMethod\"].includes(name),\n);\n\n// 1. The setter spy: the task's own example, then the surface beyond it.\nconst obj = { prop: \"foo\" };\nconst setterStub = createStub(obj, \"prop\").set((value) => {\n  obj.example = value;\n});\nobj.prop = \"bar\";\nobj.prop = \"baz\";\nassert.equal(obj.example, \"baz\", \"the replacement setter runs\");\nassert.equal(setterStub.setter.callCount, 2, \"stub.setter counts calls\");\nassert.ok(setterStub.setter.calledWith(\"bar\"), \"stub.setter.calledWith\");\nconst missing = required.filter((name) => typeof setterStub.setter[name] !== \"function\");\nassert.deepEqual(missing, [], `stub.setter lacks the accessor spy surface: ${missing.join(\", \")}`);\nassert.equal(setterStub.setter.withArgs(\"bar\").callCount, 1, \"stub.setter.withArgs filters calls\");\nassert.equal(setterStub.setter.getCall(1).args[0], \"baz\", \"stub.setter.getCall\");\nassert.equal(setterStub.setter.firstCall.args[0], \"bar\", \"stub.setter.firstCall\");\nsetterStub.setter.resetHistory();\nassert.equal(setterStub.setter.callCount, 0, \"stub.setter.resetHistory\");\n\n// 2. The getter spy, the same way.\nconst read = { prop: \"foo\" };\nconst getterStub = createStub(read, \"prop\").get(() => \"bar\");\nassert.equal(read.prop, \"bar\");\nassert.equal(read.prop, \"bar\");\nassert.equal(read.prop, \"bar\");\nassert.ok(getterStub.getter.calledThrice, \"stub.getter.calledThrice\");\nconst missingGetter = required.filter((name) => typeof getterStub.getter[name] !== \"function\");\nassert.deepEqual(missingGetter, [], `stub.getter lacks the accessor spy surface: ${missingGetter.join(\", \")}`);\nassert.equal(getterStub.getter.withArgs().callCount, 3, \"stub.getter.withArgs\");\nassert.equal(getterStub.getter.returnValues[0], \"bar\", \"stub.getter records return values\");\n\n// 3. What .get and .set did before must stay: chainable, configurable, restorable, reset.\nconst kept = { prop: \"original\" };\nconst chain = createStub(kept, \"prop\").get(() => \"replaced\");\nassert.equal(chain.get(() => \"again\"), chain, \".get stays chainable\");\nassert.equal(Object.getOwnPropertyDescriptor(kept, \"prop\").configurable, true, \"configurable as before\");\nchain.restore();\nassert.equal(kept.prop, \"original\", \"restore puts the original back\");\nconst reset = { prop: \"foo\" };\nconst resetStub = createStub(reset, \"prop\").get(() => \"bar\");\nassert.equal(typeof resetStub.getter, \"function\");\nresetStub.resetBehavior();\nassert.equal(resetStub.getter, undefined, \"resetBehavior removes stub.getter\");\nassert.equal(resetStub.setter, undefined, \"resetBehavior removes stub.setter\");\nprocess.stdout.write(`api check passed: ${required.length} spy methods present on stub.getter and stub.setter\\n`);\n"
+          }
+        ],
+        "extraArgv": [
+          [
+            "node",
+            "acceptance/hidden/api-check.mjs"
+          ]
+        ]
+      },
+      "immutable": [],
+      "taskText": "sinon.stub(obj, \"prop\").get(fn) and sinon.stub(obj, \"prop\").set(fn) install the replacement function directly as the property's accessor, so reading or writing the stubbed property runs the replacement untracked: nothing records the access and there is no call count to assert on. Wrap the replacement getter and the replacement setter in a spy and expose the spies on the stub as stub.getter and stub.setter, mirroring the spy.get and spy.set surface that sinon.spy(obj, \"prop\", [\"get\"]) produces. That surface is the whole sinon spy API, not a call counter: stub.getter and stub.setter must be sinon spies on which everything sinon.spy(fn) returns supports works the same way, among them callCount, calledOnce and calledThrice, calledWith, withArgs, getCall and firstCall, args, returnValues and resetHistory; a wrapper that only counts calls does not meet this. After const stub = sinon.stub(obj, \"prop\").get(() => \"bar\"), reading obj.prop three times must give \"bar\" each time and stub.getter.callCount must be 3 (stub.getter.calledThrice true); after const stub = sinon.stub(obj, \"prop\").set((value) => { obj.example = value }), assigning obj.prop = \"bar\" then obj.prop = \"baz\" must run the setter both times (obj.example is \"baz\") with stub.setter.callCount 2, stub.setter.calledWith(\"bar\") true and stub.setter.withArgs(\"bar\").callCount 1. stub.resetBehavior() must remove both, so stub.getter and stub.setter are undefined afterwards. Everything .get and .set do today must stay: the replacement runs, the property is defined configurable as before, restore works, and .get and .set stay chainable. Source is ESM under src/sinon/ (default-behaviors.js holds the get and set behaviours, stub.js the stub prototype, spy.js makes spies); the node tests run with npm run test-node (mocha over test/src, test/issues and test/scripts).",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "node acceptance/visible/check.mjs",
+        "source": "import assert from \"node:assert/strict\";\nimport createStub from \"../../src/sinon/stub.js\";\nconst obj = { prop: \"foo\" };\nconst stub = createStub(obj, \"prop\").get(() => \"bar\");\nassert.equal(obj.prop, \"bar\");\nassert.equal(obj.prop, \"bar\");\nassert.equal(stub.getter.callCount, 2);\nprocess.stdout.write(\"visible check passed\\n\");\n"
+      }
+    }
+  ],
+  "launches": [
+    {
+      "task": "sinon-bugfix-stub-accessor-calls-v2",
+      "arm": "swarm",
+      "order": 1
+    }
+  ],
+  "purpose": "Development launch 2 after amendment 1: the same configuration on the build whose ratchet counts referee's refute as an assertion. Not a comparison."
+}

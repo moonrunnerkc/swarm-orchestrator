@@ -175,9 +175,10 @@ const swarmLines = (acceptable, bundleDirectory) => [
 const opencodeLines = () => [
   JSON.stringify({ type: "step_start" }),
   JSON.stringify({ type: "text", part: { type: "text", text: "done" } }),
+  // A turn that ended on its own with a message, as OpenCode 1.14 writes one: `reason` "stop".
   JSON.stringify({
     type: "step_finish",
-    part: { type: "step-finish", tokens: { input: 1000, output: 234 } },
+    part: { type: "step-finish", reason: "stop", tokens: { input: 1000, output: 234 } },
   }),
 ];
 

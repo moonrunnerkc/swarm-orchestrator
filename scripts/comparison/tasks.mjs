@@ -10,7 +10,19 @@
  * This set is separate from the registered campaign of 2026-09-29 and shares none of its goals.
  */
 
+import { readFileSync } from "node:fs";
+
 const npmCi = ["npm", "ci", "--ignore-scripts"];
+
+/**
+ * The accessor task's hidden API check, kept with the audit that established the requirement and
+ * written into the scoring checkout under acceptance/hidden/, so its imports step up two
+ * directories to the project's source.
+ */
+const sinonAccessorApiCheck = readFileSync(
+  new URL("../../docs/evidence/2026-10-21/accessor-audit/api-check.mjs", import.meta.url),
+  "utf8",
+).replaceAll('from "./src/', 'from "../../src/');
 
 /** marked: tests import the built lib/marked.esm.js, so a build precedes every check. */
 const markedBuild = "npm run build:esbuild";
@@ -83,6 +95,35 @@ const sinon = {
   // The project's `npm test` also drives two browser suites, which this harness does not
   // provision; the node suite is the project's own `test-node` script (mocha over test/).
   projectTest: ["npm", "run", "test-node"],
+  visiblePrefix: "",
+};
+
+/**
+ * Fresh tasks for the comparison after the task-continuation trial, from mochajs/mocha, a
+ * repository this project has never launched or registered a task from: the first two entries of
+ * docs/evidence/2026-10-21/delivery-trial/candidates.json, re-validated on this host with no
+ * model (docs/evidence/2026-10-21/fresh-comparison/). Task text was written from the base's
+ * observed behaviour and the upstream change without naming it.
+ */
+/**
+ * The mocha tasks' hidden behaviour checks: every example their task text states, beyond the
+ * upstream test files, kept with the stage that registered them and written into the scoring
+ * checkout under acceptance/hidden/, so their imports step up two directories to the source.
+ */
+const mochaBehaviourCheck = (name) =>
+  readFileSync(
+    new URL(`../../docs/evidence/2026-10-21/fresh-comparison/hidden/${name}`, import.meta.url),
+    "utf8",
+  );
+
+const mocha = {
+  repository: "mochajs/mocha",
+  install: [npmCi],
+  build: [],
+  // The project's `npm test` runs lint, every node suite and a Playwright browser suite, which
+  // this harness does not provision; the unit suites are its own `test-node:unit` script
+  // (mocha under nyc over test/unit and test/node-unit).
+  projectTest: ["npm", "run", "test-node:unit"],
   visiblePrefix: "",
 };
 
@@ -682,6 +723,39 @@ process.stdout.write("visible check passed\\n");
     },
   },
   {
+    // The accessor task again, exposed development material after 2026-10-21: the published
+    // patch counted calls but exposed wrappers without the spy surface the task named, and no
+    // check asked for it. The text now says what "mirroring the spy.get and spy.set surface"
+    // requires, and a hidden check (acceptance-audit/api-check.mjs, never in an arm's
+    // workspace) holds the delivered tree to it beyond the task's own examples.
+    id: "sinon-bugfix-stub-accessor-calls-v2",
+    ...sinon,
+    workType: "bugfix",
+    baseCommit: "8c663edec",
+    upstreamCommit: "002ee82bc",
+    hidden: {
+      testFiles: ["test/src/stub-test.js"],
+      argv: ["npx", "mocha", "-R", "dot", "test/src/stub-test.js"],
+      files: [{ path: "acceptance/hidden/api-check.mjs", source: sinonAccessorApiCheck }],
+      extraArgv: [["node", "acceptance/hidden/api-check.mjs"]],
+    },
+    immutable: [],
+    taskText: `sinon.stub(obj, "prop").get(fn) and sinon.stub(obj, "prop").set(fn) install the replacement function directly as the property's accessor, so reading or writing the stubbed property runs the replacement untracked: nothing records the access and there is no call count to assert on. Wrap the replacement getter and the replacement setter in a spy and expose the spies on the stub as stub.getter and stub.setter, mirroring the spy.get and spy.set surface that sinon.spy(obj, "prop", ["get"]) produces. That surface is the whole sinon spy API, not a call counter: stub.getter and stub.setter must be sinon spies on which everything sinon.spy(fn) returns supports works the same way, among them callCount, calledOnce and calledThrice, calledWith, withArgs, getCall and firstCall, args, returnValues and resetHistory; a wrapper that only counts calls does not meet this. After const stub = sinon.stub(obj, "prop").get(() => "bar"), reading obj.prop three times must give "bar" each time and stub.getter.callCount must be 3 (stub.getter.calledThrice true); after const stub = sinon.stub(obj, "prop").set((value) => { obj.example = value }), assigning obj.prop = "bar" then obj.prop = "baz" must run the setter both times (obj.example is "baz") with stub.setter.callCount 2, stub.setter.calledWith("bar") true and stub.setter.withArgs("bar").callCount 1. stub.resetBehavior() must remove both, so stub.getter and stub.setter are undefined afterwards. Everything .get and .set do today must stay: the replacement runs, the property is defined configurable as before, restore works, and .get and .set stay chainable. Source is ESM under src/sinon/ (default-behaviors.js holds the get and set behaviours, stub.js the stub prototype, spy.js makes spies); the node tests run with npm run test-node (mocha over test/src, test/issues and test/scripts).`,
+    visible: {
+      path: "acceptance/visible/check.mjs",
+      command: "node acceptance/visible/check.mjs",
+      source: `import assert from "node:assert/strict";
+import createStub from "../../src/sinon/stub.js";
+const obj = { prop: "foo" };
+const stub = createStub(obj, "prop").get(() => "bar");
+assert.equal(obj.prop, "bar");
+assert.equal(obj.prop, "bar");
+assert.equal(stub.getter.callCount, 2);
+process.stdout.write("visible check passed\\n");
+`,
+    },
+  },
+  {
     id: "sinon-bugfix-mock-oncall-expectations",
     ...sinon,
     workType: "bugfix",
@@ -708,5 +782,67 @@ mock.verify();
 process.stdout.write("visible check passed\\n");
 `,
     },
+  },
+  {
+    id: "mocha-bugfix-long-prefix-short-alias",
+    ...mocha,
+    workType: "bugfix",
+    baseCommit: "bb2e69a95",
+    upstreamCommit: "12279398f",
+    hidden: {
+      testFiles: ["test/node-unit/cli/parse-args.spec.js"],
+      argv: ["node", "bin/mocha.js", "test/node-unit/cli/parse-args.spec.js"],
+      files: [
+        {
+          path: "acceptance/hidden/behaviour-check.mjs",
+          source: mochaBehaviourCheck("alias-behaviour-check.mjs"),
+        },
+      ],
+      extraArgv: [["node", "acceptance/hidden/behaviour-check.mjs"]],
+    },
+    immutable: [],
+    taskText: `mocha's command-line parser (parseMochaArgs in lib/cli/parse-args.js) accepts each one-character option alias written with one dash, but the same alias written with two dashes, with its value given as the next argument, is not read as that option. Today parseMochaArgs(["--t", "0"], { timeout: 1000 }) throws "Mocha flag '--t' given invalid option: '0'" (so mocha --t 0 a.spec.cjs exits 1 with that error), parseMochaArgs(["--R", "dot"], { timeout: 1000 }) gives reporter true and takes "dot" as a spec file (_ is ["dot"]), and ["--r", "./x.js", "--r", "./y.js"] gives require ["true"] with both files in _. A one-character alias written with two dashes must mean exactly what it means with one dash, with the value given as the next argument or after "=". With defaults { timeout: 1000 }: ["--t", "0"] and ["--t=0"] must both give timeout "0" and _ []; ["--R", "dot"] must give reporter "dot" and _ []; ["--r", "./x.js", "--r", "./y.js"] must give require ["./x.js", "./y.js"] and _ []; ["--j", "3"] must give jobs 3; ["test/a.js", "--t", "0"] must give _ ["test/a.js"] and timeout "0"; ["--timeout", "5", "--t", "7"] must give timeout "7"; and, as with one dash, the alias itself must not appear as a key of the result (no t, R, r or j property). What must not change: one-dash aliases (["-t", "0"] gives timeout "0"; ["-R", "json", "-b"] gives reporter "json" and bail true), the "=" form that already works today (["--t=0"] gives timeout "0"), long names and long aliases (["--timeouts=200"] gives timeout "200", ["--reporter-options=a=b"] gives reporter-option ["a=b"]), negation (["--no-bail"] gives bail false), boolean one-character aliases that already work with two dashes (["--b"] gives bail true, ["--A"] gives async-only true) and unknown flags (["--x"] still gives x true). The parser is ESM in lib/cli/parse-args.js, where option names are normalised before yargs-parser reads them. Add regression tests for this behaviour to the project's existing test suite (the CLI's unit tests are under test/node-unit/cli/). The unit tests run with npm run test-node:unit (mocha under nyc over test/unit and test/node-unit).`,
+    visible: check(
+      mocha,
+      `import assert from "node:assert/strict";
+import { parseMochaArgs } from "../../lib/cli/parse-args.js";
+
+const result = parseMochaArgs(["--t", "0"], { timeout: 1000 });
+assert.equal(result.timeout, "0");
+console.log("visible check passed");
+`,
+    ),
+  },
+  {
+    id: "mocha-bugfix-unparse-attached-values",
+    ...mocha,
+    workType: "bugfix",
+    baseCommit: "e5a779eb4",
+    upstreamCommit: "15aa7d155",
+    hidden: {
+      testFiles: ["test/node-unit/cli/unparse-args.spec.js"],
+      argv: ["node", "bin/mocha.js", "test/node-unit/cli/unparse-args.spec.js"],
+      files: [
+        {
+          path: "acceptance/hidden/behaviour-check.mjs",
+          source: mochaBehaviourCheck("unparse-behaviour-check.mjs"),
+        },
+      ],
+      extraArgv: [["node", "acceptance/hidden/behaviour-check.mjs"]],
+    },
+    immutable: [],
+    taskText: `When mocha must start a second Node process (a Node or V8 flag such as --enable-source-maps was given, or --node-option was used), bin/mocha.js turns the options it loaded back into command-line arguments with unparseMochaArgs from lib/cli/unparse-args.js and passes them to the child. Today an option with a scalar value is emitted as two arguments, the flag and then the value (unparseMochaArgs({ reporter: "json" }) gives ["--reporter", "json"]), except dotted names such as reporter-option.foo, which are emitted as one "--name=value" argument. An option the child has no definition for is then read as a boolean flag and its value as a test file: in a directory whose .mocharc.json holds "$schema": "https://json.schemastore.org/mocharc.json" and "spec": "a.spec.cjs", running mocha --enable-source-maps prints Warning: Cannot find any files matching pattern "https://json.schemastore.org/mocharc.json" before running a.spec.cjs (without the Node flag no child is started and there is no warning). Emit every option that carries a value as one "--name=value" argument, whatever its name: unparseMochaArgs({ $schema: "https://json.schemastore.org/mocharc.json" }) must give ["--$schema=https://json.schemastore.org/mocharc.json"]; unparseMochaArgs({ _: ["test/a.spec.js"], reporter: "json" }) must give ["test/a.spec.js", "--reporter=json"]; unparseMochaArgs({ require: ["tsx", "./setup.js"], timeout: "0" }) must give ["--require=tsx", "--require=./setup.js", "--timeout=0"]; unparseMochaArgs({ slow: 75 }) must give ["--slow=75"]; unparseMochaArgs({ grep: "--x" }) must give ["--grep=--x"]. What must not change: positionals come first; true gives "--name", false gives "--no-name", null and undefined give nothing (unparseMochaArgs({ bail: true, color: false, ui: null }) gives ["--bail", "--no-color"]); an array repeats the option once per item; an object value is flattened into dotted names (unparseMochaArgs({ "reporter-option": { foo: "bar", baz: true } }) still gives ["--reporter-option.foo=bar", "--reporter-option.baz"]); and unparseNodeFlags, which already writes "--name=value", is unchanged. Some existing cases in test/node-unit/cli/unparse-args.spec.js expect the two-argument form; they describe the behaviour being replaced, so update their expected arguments to the one-argument form without removing any case. Add regression tests for this behaviour to the project's existing test suite. The unit tests run with npm run test-node:unit (mocha under nyc over test/unit and test/node-unit).`,
+    visible: check(
+      mocha,
+      `import assert from "node:assert/strict";
+import { unparseMochaArgs } from "../../lib/cli/unparse-args.js";
+
+assert.deepEqual(
+  unparseMochaArgs({ $schema: "https://json.schemastore.org/mocharc.json" }),
+  ["--$schema=https://json.schemastore.org/mocharc.json"],
+);
+console.log("visible check passed");
+`,
+    ),
   },
 ];

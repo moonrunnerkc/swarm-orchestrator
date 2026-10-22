@@ -1,7 +1,7 @@
 # The csstree refusal, reproduced and repaired through the ordinary run
 
 No model was called. Swarm's own retained stage A patch
-([../../comparison/stage-a/patches/csstree-upgrade-esbuild-0-24.swarm.patch](../../comparison/stage-a/patches/csstree-upgrade-esbuild-0-24.swarm.patch))
+([../../comparison/stage-a/patches/csstree-upgrade-esbuild-0-24.swarm.patch](../../comparison/packed-derived/stage-a-patches/) (the file docs/evidence/2026-10-16/comparison/stage-a/patches/csstree-upgrade-esbuild-0-24.swarm.patch, packed on 2026-10-21 to keep the tree's weight headroom; `scripts/evidence-pack.mjs` restore gives the bytes back))
 reaches each run the way a live launch's change does:
 
 1. the run starts at the original base;

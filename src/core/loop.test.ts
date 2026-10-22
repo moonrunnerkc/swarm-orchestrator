@@ -168,6 +168,56 @@ describe("runAgentLoop", () => {
     expect(harness.events.at(-1)).toMatchObject({ type: "stopped", callsWithUnknownUsage: 0 });
   });
 
+  /**
+   * Launch 2 of 2026-10-21: the wall cancelled a request already sent, its record said its usage
+   * was unknown, and the run settled "0 unknown" because only answers were counted.
+   */
+  it("counts a call the wall cut off after it was sent as unknown usage, not as zero", async () => {
+    const harness = createHarness([respondWithText("never reached")]);
+    let sent = 0;
+    harness.deps.model.generate = (request) =>
+      new Promise((_resolve, reject) => {
+        sent += 1;
+        request.abortSignal?.addEventListener("abort", () =>
+          reject(new DOMException("This operation was aborted", "AbortError")),
+        );
+        harness.clock.advance(generousBudget.maxWallTimeMs + 1_000);
+        harness.controller.abort("the model-work allowance is spent");
+      });
+
+    const outcome = await runAgentLoop("run past the wall", harness.deps);
+
+    expect(sent).toBe(1);
+    expect(outcome.stopReason).toBe("max-wall-time");
+    expect(outcome.tokensUsed).toBe(0);
+    expect(outcome.callsWithUnknownUsage).toBe(1);
+    expect(harness.events.at(-1)).toMatchObject({ type: "stopped", callsWithUnknownUsage: 1 });
+  });
+
+  it("counts every failed attempt that reached the model, and no call refused before sending", async () => {
+    const failing = Object.assign(new Error("upstream reset"), { statusCode: 503 });
+    let sent = 0;
+    const harness = createHarness([], {
+      retryPolicy: { attempts: 2, baseDelayMs: 0, maxJitterRatio: 0 },
+      model: {
+        modelId: "flaky",
+        generate: async () => {
+          sent += 1;
+          throw failing;
+        },
+      },
+    });
+    const outcome = await runAgentLoop("fail twice", harness.deps);
+    expect(outcome.stopReason).toBe("model-error");
+    expect(sent).toBe(2);
+    expect(outcome.callsWithUnknownUsage).toBe(2);
+
+    const spent = createHarness([], { budget: { ...generousBudget, maxWallTimeMs: 0 } });
+    const none = await runAgentLoop("no time at all", spent.deps);
+    expect(none.stopReason).toBe("max-wall-time");
+    expect(none.callsWithUnknownUsage).toBe(0);
+  });
+
   it("stops on max-tokens once the spend crosses the budget", async () => {
     const harness = createHarness(
       [

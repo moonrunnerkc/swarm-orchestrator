@@ -1710,6 +1710,8 @@ describe("what admission accepts as a generated check's control", () => {
         },
         { text: "Done." },
         { text: "The task keeps 13 big, so I leave the code as it is." },
+        // Told once that its answer called no tool, the repair declines again.
+        { text: "No change is needed." },
         { text: "A second repair was asked for." },
       ],
       false,
@@ -2013,6 +2015,7 @@ describe("what admission accepts as a generated check's control", () => {
         { text: "Plan: lower the word before the lookup.", ...lookupFix },
         { text: "Done." },
         { text: "The project gives fruit for Apple now; these checks do not reach it." },
+        { text: "No change is needed." },
         { text: "A second repair was asked for." },
       ],
       false,

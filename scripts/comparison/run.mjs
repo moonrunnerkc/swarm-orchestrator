@@ -31,6 +31,7 @@ import { join } from "node:path";
 import { commandLog, storeBlob } from "../campaign/exec.mjs";
 import {
   claimedSuccess,
+  completionAccount,
   correctionPrompt,
   defaultPins,
   digestOf,
@@ -295,6 +296,7 @@ async function invokeArm(log, launch, pins, budgets, task, workspace, base, turn
       usage: launch.arm === "swarm" ? swarmUsage(stdout) : opencodeUsage(stdout),
       tokenAllowance: launch.arm === "swarm" ? tokenAllowance : null,
       claimedSuccess: claimedSuccess(launch.arm, ran.exitCode, stdout),
+      completion: completionAccount(launch.arm, ran.exitCode, ran.signal, stdout),
       termination:
         ran.termination === null
           ? null

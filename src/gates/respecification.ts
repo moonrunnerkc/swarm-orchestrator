@@ -43,6 +43,14 @@ export interface BaseControlRunner {
   runOnBaseSource(testFile: string): Promise<ControlRun>;
   /** The same test file against the working tree as it stands. */
   runOnSubmittedSource(testFile: string): Promise<ControlRun>;
+  /**
+   * Whether a run of this file would be one the harness built and can attribute (a vector with
+   * its own reporter over the one file), rather than the project's whole test script handed to a
+   * shell with the file appended. Absent means attributable. The escape hatch runs either arm,
+   * since it runs only where a measure regressed; a reading taken on every run with added tests
+   * asks first, because a whole test script can be a browser suite.
+   */
+  readonly attributes?: (testFile: string) => boolean;
 }
 
 export const respecificationSchema = z.object({

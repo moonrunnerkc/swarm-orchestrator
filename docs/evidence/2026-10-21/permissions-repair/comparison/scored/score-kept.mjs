@@ -1,12 +1,19 @@
 // Score a kept launch workspace exactly as the runner would have: the final patch against the
 // base-plus-visible-check commit, the visible verdict and the hidden verdict.
 //   node score-kept.mjs <manifest> <task-id> <workspace> <out-json>
+//
+// This reads a launch's kept workspace on the host that ran it, so it is not the portable
+// path; `scripts/comparison/rescore.mjs` scores the published patch from the pinned commits on
+// any machine. As first committed on 2026-10-21 the three imports below named the harness by an
+// absolute path on that host; they were made repository-relative the same day, with the logic
+// unchanged, so the score it wrote (`sinon-bugfix-stub-accessor-calls.swarm.json`) is
+// reproducible from a clone.
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { commandLog, storeBlob } from "../../../../../../Users/brad/projects/swarm-orchestrator/.claude/worktrees/comparison-permissions/scripts/campaign/exec.mjs";
-import { hiddenVerdict, visibleVerdict } from "../../../../../../Users/brad/projects/swarm-orchestrator/.claude/worktrees/comparison-permissions/scripts/comparison/checks.mjs";
-import { comparisonRoot, finalPatch } from "../../../../../../Users/brad/projects/swarm-orchestrator/.claude/worktrees/comparison-permissions/scripts/comparison/workspace.mjs";
+import { commandLog, storeBlob } from "../../../../../../scripts/campaign/exec.mjs";
+import { hiddenVerdict, visibleVerdict } from "../../../../../../scripts/comparison/checks.mjs";
+import { comparisonRoot, finalPatch } from "../../../../../../scripts/comparison/workspace.mjs";
 
 const [manifestPath, taskId, workspace, out] = process.argv.slice(2);
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));

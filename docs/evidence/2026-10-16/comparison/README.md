@@ -21,7 +21,7 @@ more tokens per delivery.
 
 Records, patches and the evidence they cite are in [stage-a/](stage-a/). The table is
 re-derived by `node scripts/pilot/analyze.mjs --evidence docs/evidence/2026-10-16/comparison/stage-a`
-([stage-a/results.md](stage-a/results.md), [stage-a/analysis.json](stage-a/analysis.json)).
+([stage-a/results.md](stage-a/results.md), [stage-a/analysis.json](packed-derived/stage-a-analysis/) (the file stage-a/analysis.json, packed on 2026-10-21 to keep the tree's weight headroom; `scripts/evidence-pack.mjs` restore gives the bytes back)).
 
 | task | arm | correct patch | delivered | corrections | claim (reviewed) | agent time | end-to-end | tokens |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |

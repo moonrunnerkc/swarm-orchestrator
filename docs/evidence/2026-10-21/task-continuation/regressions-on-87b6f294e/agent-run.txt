@@ -1,0 +1,36 @@
+
+ RUN  v4.1.11 /Users/brad/.cache/swarm-comparison/tools/swarm-87b6f294e
+
+ ❯ |suite| src/agent-run.test.ts (54 tests | 1 failed | 53 skipped) 3166ms
+     × tells a repair that called no tool so, once, inside the same attempt, and leaves the continuation its attempt 3165ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |suite| src/agent-run.test.ts > a task loop that stopped at its step limit (the launch 2 shape) > tells a repair that called no tool so, once, inside the same attempt, and leaves the continuation its attempt
+AssertionError: expected [ 1, 2, 3 ] to deeply equal [ 1, 2 ]
+
+- Expected
++ Received
+
+  [
+    1,
+    2,
++   3,
+  ]
+
+ ❯ src/agent-run.test.ts:1779:69
+    1777|       { maxSteps: 3, attempts: 3, gateOptions: { commandOverrides: lin…
+    1778|     );
+    1779|     expect(result.gates.outcome.attempts.map((one) => one.attempt)).to…
+       |                                                                     ^
+    1780|     expect(result.gates.outcome.continuation).toMatchObject({
+    1781|       state: "given",
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 53 skipped (54)
+   Start at  10:48:30
+   Duration  3.71s (transform 364ms, setup 0ms, import 485ms, tests 3.17s, environment 0ms)
+

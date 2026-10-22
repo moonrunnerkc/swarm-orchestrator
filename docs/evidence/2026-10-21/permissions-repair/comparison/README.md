@@ -62,3 +62,26 @@ as "could not run the task" and stopped before the last OpenCode launch; the pro
 task, so Swarm's attempt stands as its result and only the undispatched launch was continued.
 Launch records: [packed-derived/records](packed-derived/records/) (`halt-1.json`,
 `recovery-1.json` beside the cells).
+
+## Corrections, 2026-10-21 (later the same day)
+
+Appended; nothing above is edited and the records and frozen scores stand. The full list is in
+[../README.md](../README.md), "Corrections", and the audit in
+[../../accessor-audit/README.md](../../accessor-audit/README.md).
+
+- "OpenCode produced two correct source trees": one. The mock task passed the hidden oracle;
+  the dotenv task failed it; the accessor task changed nothing. The cost table's "correct trees
+  by the oracle" reads 2 / 3 for Swarm (one of them scored after the fact) and 1 / 3 for OpenCode.
+- "OpenCode claimed one" tree the oracle rejects, and the accessor row's "exit 0, success
+  claimed": the stream shows no claim. Its two turns ended wanting tool results, the last after
+  a refused read of a mistyped path outside the workspace; the runner's one-word reading took a
+  progress message for a claim. False completion claims in this stage: 0 and 0.
+- "Swarm's tree is the only complete delivery of the stage": complete against every check
+  that existed, and not against the task's own sentence. Its exposed accessors are proxies
+  without the spy surface the task named (`withArgs` throws). The oracle pass stands.
+- The decision is unchanged: under the frozen rule no task is a Swarm win and none is an
+  OpenCode win. The task text both arms received permitted a regression test and did not
+  require one; the rule required one. The prompt now names every scored deliverable.
+- [results-supplemented.md](results-supplemented.md) renders the same records with launch 6's
+  after-the-fact score in its row, marked as supplemental scoring; [results.md](results.md) is
+  the runner's original rendering and is unchanged.

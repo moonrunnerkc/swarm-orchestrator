@@ -124,6 +124,7 @@ export function createBaseControlRunner(options: BaseControlOptions): BaseContro
     },
 
     runOnSubmittedSource: (testFile: string) => runOne(testFile),
+    attributes: (testFile: string) => options.singleFileCommand(testFile)?.kind === "argv",
   };
 }
 

@@ -1,0 +1,83 @@
+diff --git a/src/sinon/default-behaviors.js b/src/sinon/default-behaviors.js
+index 82368b6670a4dc714c99af56966d9a091fee62d8..3e8baef6deb8d986aead4220a6a478f225763ff4 100644
+--- a/src/sinon/default-behaviors.js
++++ b/src/sinon/default-behaviors.js
+@@ -4,6 +4,7 @@ const { prototypes } = commons;
+ import isPropertyConfigurable from "./util/core/is-property-configurable.js";
+ import exportAsyncBehaviors from "./util/core/export-async-behaviors.js";
+ import extend from "./util/core/extend.js";
++import spy from "./spy.js";
+ 
+ const { slice } = prototypes.array;
+ 
+@@ -281,8 +282,13 @@ const defaultBehaviors = {
+     get: function get(fake, getterFunction) {
+         const rootStub = fake.stub || fake;
+ 
++        const wrappedGetter = spy(getterFunction);
++        rootStub.getter = wrappedGetter;
++
+         Object.defineProperty(rootStub.rootObj, rootStub.propName, {
+-            get: getterFunction,
++            get: function () {
++                return wrappedGetter.apply(this, arguments);
++            },
+             configurable: isPropertyConfigurable(
+                 rootStub.rootObj,
+                 rootStub.propName,
+@@ -295,12 +301,17 @@ const defaultBehaviors = {
+     set: function set(fake, setterFunction) {
+         const rootStub = fake.stub || fake;
+ 
++        const wrappedSetter = spy(setterFunction);
++        rootStub.setter = wrappedSetter;
++
+         Object.defineProperty(
+             rootStub.rootObj,
+             rootStub.propName,
+             // eslint-disable-next-line accessor-pairs
+             {
+-                set: setterFunction,
++                set: function (value) {
++                    wrappedSetter.call(this, value);
++                },
+                 configurable: isPropertyConfigurable(
+                     rootStub.rootObj,
+                     rootStub.propName,
+diff --git a/src/sinon/stub.js b/src/sinon/stub.js
+index 7adc67d311792d7435f52623753a00027dd0d7eb..492f5f828c1f302f57cef2e84dd33db3895ef0ce 100644
+--- a/src/sinon/stub.js
++++ b/src/sinon/stub.js
+@@ -246,6 +246,32 @@ const proto = {
+         this.returnThis = false;
+         this.resolveThis = false;
+ 
++        // Remove stubbed getters and setters (exposed as spies)
++        if (this.rootObj && this.propName !== undefined) {
++            delete this.getter;
++            delete this.setter;
++            const descriptor = Object.getOwnPropertyDescriptor(
++                this.rootObj,
++                this.propName,
++            );
++            if (descriptor && (descriptor.get || descriptor.set)) {
++                // Remove both getter and setter to fully reset the property behavior
++                const newDescriptor = {};
++                if (descriptor.value !== undefined) {
++                    newDescriptor.value = descriptor.value;
++                    newDescriptor.writable = descriptor.writable;
++                }
++                if (descriptor.enumerable !== undefined) {
++                    newDescriptor.enumerable = descriptor.enumerable;
++                }
++                if (descriptor.configurable !== undefined) {
++                    newDescriptor.configurable = descriptor.configurable;
++                }
++                // Delete original accessors but keep value/base property
++                Object.defineProperty(this.rootObj, this.propName, newDescriptor);
++            }
++        }
++
+         forEach(this.fakes, function (fake) {
+             fake.resetBehavior();
+         });

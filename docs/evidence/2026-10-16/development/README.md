@@ -49,7 +49,7 @@ cent more on pako and 11 per cent fewer on mime, so the default prompt stays. Th
 remains selectable with `--prompt-profile concise`.
 
 Both mime patches here are right on all 113 cases of the audit
-([audit-mime-dev.json](audit-mime-dev.json)). On an exposed task, with one launch each, that
+([audit-mime-dev.json](packed-derived/mime-audits/) (the file audit-mime-dev.json, packed on 2026-10-21 to keep the tree's weight headroom; `scripts/evidence-pack.mjs` restore gives the bytes back)). On an exposed task, with one launch each, that
 says nothing about the changes being measured.
 
 ## Question 2: planned checks on mime (`--plan-checks`)
@@ -75,7 +75,7 @@ repaired with a regression before the next launch:
    planning allowance.
 
 Repair 4 was never exercised live: the allowance ended first. The three delivered patches are all
-right on the 113-case audit ([audit-mime-dev-plan.json](audit-mime-dev-plan.json)). That is the
+right on the 113-case audit ([audit-mime-dev-plan.json](packed-derived/mime-audits/) (the file audit-mime-dev-plan.json, packed on 2026-10-21 to keep the tree's weight headroom; `scripts/evidence-pack.mjs` restore gives the bytes back)). That is the
 same result as the default prompt's, at three to four times its tokens.
 
 ## Detection and repair on the retained omission, scripted

@@ -25,6 +25,9 @@ const testDirectorySegments: readonly RegExp[] = [/(^|\/)(tests?|__tests__|spec|
 const assertionPatterns: readonly RegExp[] = [
   /\bexpect\s*\(/,
   /\bassert\b/,
+  // referee's negated assertion object (sinon, buster): `refute.isUndefined(x)` checks what
+  // `assert.isUndefined(x)` checks, the other way round.
+  /\brefute\b/,
   /\bshould\b/,
   /\bt\.Fatal[f]?\s*\(/,
   /\bt\.Error[f]?\s*\(/,

@@ -16,7 +16,7 @@ and `v12-final` were present; the conflicting local `v14.0.0` tag was not rewrit
 Node 24.15.0, npm 11.12.1, pnpm 9.15.0, uv 0.11.13, host Python 3.14.7, isolated Python
 3.11.2, pytest 9.0.2, Vitest 4.1.11, Playwright 1.63.0, Chromium 153 and Docker 29.5.2.
 Image identities, commands, durations, tarball digests and retained artifact paths are in
-[observations.json](observations.json). Session evidence stays outside the workspace with
+[observations.json](../packed-derived/observations-and-frames/) (packed). Session evidence stays outside the workspace with
 owner-only storage. Raw logs are retained under `/tmp/swarm-upgrade-evidence`; fixture records
 and signed bundles are under `/Users/brad/.swarm/upgrade-validation` and `/Users/brad/.swarm/sessions`.
 The manifest hashes identify those local artifacts; the source repository does not embed their

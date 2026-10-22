@@ -470,7 +470,7 @@ A treatment is called superior to a comparator only when every clause holds:
    comparator did.
 
 Why these margins, from the development evidence
-([pilot records](../evidence/2026-09-29/campaign/development-pilot.json)):
+([pilot records](../evidence/2026-09-29/campaign/packed-derived/development-pilot/) (`development-pilot.json`, packed)):
 
 - **0.10 for incorrect approvals and for the loss of correct approvals.** With three repetitions
   a goal's rate moves in steps of one third, and the final set has 24 goals, so 0.10 is about one

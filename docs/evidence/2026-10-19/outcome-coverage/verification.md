@@ -6,7 +6,7 @@ after `npm ci` (exit 0). Logs, verbatim but for the clone's path, in `verificati
 
 | command | exit | result |
 | --- | --- | --- |
-| `npm run gates` | 0 | checks: zero doc-path misses, weight under the 100.0 MB ceiling with 11.2 MB headroom (6.0 MB required), every derived pack restores, cited bundles verify, CI verdicts re-derive; typecheck clean; lint 0 errors, 28 warnings and 1 info, none in a file this work touched (the same counts as on `4e6c4e510`); tests 465 files passed and 5 skipped, 4,541 tests passed and 29 skipped ([gates-b148573e3.txt](verification/gates-b148573e3.txt)) |
+| `npm run gates` | 0 | checks: zero doc-path misses, weight under the 100.0 MB ceiling with 11.2 MB headroom (6.0 MB required), every derived pack restores, cited bundles verify, CI verdicts re-derive; typecheck clean; lint 0 errors, 28 warnings and 1 info, none in a file this work touched (the same counts as on `4e6c4e510`); tests 465 files passed and 5 skipped, 4,541 tests passed and 29 skipped ([gates-b148573e3.txt](packed-derived/verification-logs/) (the log gates-b148573e3.txt, packed on 2026-10-21 to keep the tree's weight headroom; `scripts/evidence-pack.mjs` restore gives the bytes back)) |
 | `npm run build` | 0 | [build-b148573e3.txt](verification/build-b148573e3.txt) |
 | `npm run check:packaged` | 0 | [packaged-b148573e3.txt](verification/packaged-b148573e3.txt) |
 | `npm run fuzz:build` | 0 | [fuzz-b148573e3.txt](verification/fuzz-b148573e3.txt) |
@@ -31,7 +31,7 @@ clean full-history clones after `npm ci` (exit 0):
 - `8b17304d90923643922c88c2968be1aa45311272`: `npm run gates` **exit 0**, zero doc-path misses,
   10.6 MB of weight headroom, every pack restores (`launch-streams` included); typecheck clean;
   lint 0 errors, 28 warnings and 1 info, as before; 465 test files passed and 5 skipped, 4,541
-  tests passed and 29 skipped ([gates-8b17304d9.txt](verification/gates-8b17304d9.txt));
+  tests passed and 29 skipped ([gates-8b17304d9.txt](packed-derived/verification-logs/) (the log gates-8b17304d9.txt, packed on 2026-10-21 to keep the tree's weight headroom; `scripts/evidence-pack.mjs` restore gives the bytes back));
   `npm run build`, `npm run check:packaged` and `npm run fuzz:build` exit 0
   ([build](verification/build-8b17304d9.txt), [packaged](verification/packaged-8b17304d9.txt),
   [fuzz](verification/fuzz-8b17304d9.txt)). Its `src/` differs from `b148573e3`'s only by the

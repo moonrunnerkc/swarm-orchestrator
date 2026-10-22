@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   claimedSuccess,
+  completionAccount,
   correctionPrompt,
   defaultPins,
   opencodeArgv,
@@ -44,6 +45,20 @@ describe("what both arms are given", () => {
     expect(prompt).toContain("regression tests for the change");
     expect(prompt).toContain("Do not delete or weaken existing tests");
     expect(correctionPrompt(bugfix, "visible check exited 1")).toContain("visible check exited 1");
+  });
+
+  it("names every scored deliverable, the regression test as a requirement among them", () => {
+    const prompt = taskPrompt(bugfix);
+    expect(prompt).toContain("Deliverables, all required");
+    expect(prompt).toContain("1. The implementation of the behaviour described above");
+    expect(prompt).toContain(
+      "2. Regression tests: at least one new test case, in the project's own test directory and style, that fails on the current code and passes with your change, adding at least one new assertion. A change without a new test is incomplete.",
+    );
+    expect(prompt).toContain(
+      `3. The visible acceptance check (${bugfix.visible.command}) and the project's own test command (${bugfix.projectTest.join(" ")}) both passing on the final tree.`,
+    );
+    // The deliverables come before the policy, which is the same for both arms.
+    expect(prompt.indexOf("Deliverables")).toBeLessThan(prompt.indexOf("Allowed changes:"));
   });
 
   it("protects the same paths for both arms: Swarm's immutable paths are the policy's, and the prompt names each", () => {
@@ -285,6 +300,84 @@ describe("reading what the arms reported", () => {
     expect(claimedSuccess("opencode", 0, [start, finish].join("\n"))).toBe(false);
     expect(claimedSuccess("opencode", 0, text)).toBe(false);
     expect(claimedSuccess("opencode", 0, "")).toBe(false);
+  });
+
+  it("reads Swarm's own lifecycle: an acceptable verdict over a loop stopped at a limit is not a completion claim", () => {
+    const line = (outcome) =>
+      JSON.stringify({
+        schema: "swarm.result.v1",
+        verdict: { acceptable: true },
+        ...(outcome === undefined ? {} : { outcome }),
+      });
+    expect(completionAccount("swarm", 0, null, line({ lifecycle: "completed" }))).toEqual({
+      ended: "exited",
+      claim: "claimed",
+      basis: "the product reported its verdict as acceptable",
+    });
+    expect(completionAccount("swarm", 0, null, line({ lifecycle: "max-steps" }))).toEqual({
+      ended: "exited",
+      claim: "none",
+      basis:
+        "the product reported its verdict as acceptable and its loop stopped as max-steps, not completed",
+    });
+    expect(claimedSuccess("swarm", 0, line({ lifecycle: "max-steps" }))).toBe(false);
+    // A result without an outcome (an older build) reads as before.
+    expect(completionAccount("swarm", 0, null, line(undefined)).claim).toBe("claimed");
+  });
+
+  it("keeps the process exit, the lifecycle and the explicit completion claim apart, and never reads progress text as a claim", () => {
+    const start = '{"type":"step_start","part":{"type":"step-start"}}';
+    const text =
+      '{"type":"text","part":{"type":"text","text":"Now let me read the key files in detail:"}}';
+    const toolCalls = '{"type":"step_finish","part":{"type":"step-finish","reason":"tool-calls"}}';
+    const stop = '{"type":"step_finish","part":{"type":"step-finish","reason":"stop"}}';
+    const length = '{"type":"step_finish","part":{"type":"step-finish","reason":"length"}}';
+    // The 2026-10-21 accessor launch: two turns that ended wanting tool results, the second
+    // after a refused read, exit 0. Progress text, no answer, no claim.
+    const investigation = [start, text, toolCalls, start, text, toolCalls].join("\n");
+    expect(completionAccount("opencode", 0, null, investigation)).toEqual({
+      ended: "exited",
+      claim: "none",
+      basis: 'the last turn finished with reason "tool-calls", not on its own',
+    });
+    expect(claimedSuccess("opencode", 0, investigation)).toBe(false);
+    expect(completionAccount("opencode", 0, null, [start, text, stop].join("\n"))).toEqual({
+      ended: "exited",
+      claim: "claimed",
+      basis: "the last turn ended on its own with a message",
+    });
+    // A claim is the stream's, not the exit code's: exit 1 with an answered turn still claimed.
+    expect(completionAccount("opencode", 1, null, [start, text, stop].join("\n")).claim).toBe(
+      "claimed",
+    );
+    expect(claimedSuccess("opencode", 1, [start, text, stop].join("\n"))).toBe(false);
+    expect(completionAccount("opencode", 0, null, [start, text, length].join("\n")).claim).toBe(
+      "none",
+    );
+    expect(completionAccount("opencode", 0, null, [start, stop].join("\n")).claim).toBe("none");
+    expect(
+      completionAccount("opencode", 0, null, `${[start, text, stop].join("\n")}\n{"type":"error"}`)
+        .claim,
+    ).toBe("none");
+    // Killed at the deadline before any turn finished: the lifecycle is known, the claim is not.
+    expect(completionAccount("opencode", null, "SIGTERM", `${start}\n${text}`)).toEqual({
+      ended: "killed",
+      claim: "unknown",
+      basis: "no finished turn in the stream",
+    });
+    expect(completionAccount("opencode", 0, null, "")).toMatchObject({ claim: "unknown" });
+    const acceptable = JSON.stringify({ schema: "swarm.result.v1", verdict: { acceptable: true } });
+    const refused = JSON.stringify({ schema: "swarm.result.v1", verdict: { acceptable: false } });
+    expect(completionAccount("swarm", 0, null, acceptable)).toMatchObject({
+      ended: "exited",
+      claim: "claimed",
+    });
+    expect(completionAccount("swarm", 4, null, refused)).toMatchObject({ claim: "none" });
+    expect(completionAccount("swarm", null, "SIGKILL", "")).toEqual({
+      ended: "killed",
+      claim: "unknown",
+      basis: "no swarm.result.v1 line in the stream",
+    });
   });
 });
 

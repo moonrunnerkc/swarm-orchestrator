@@ -4,6 +4,7 @@ import type { GatesEngineRun } from "../gates/engine.ts";
 import { justifiedRecords } from "../gates/gate-runner.ts";
 import type { JsonValue } from "./canonical-json.ts";
 import { asJsonValue } from "./canonical-json.ts";
+import type { LedgerRecord } from "./ledger-record.ts";
 import type { EvidenceRecorder } from "./session.ts";
 import type { TaskContract } from "./task-contract.ts";
 import { type RunVerdict, runVerdict, runVerdictSchema } from "./verdict.ts";
@@ -22,12 +23,32 @@ const loopLifecycles = [
 ] as const;
 
 /**
+ * Where a loop that stopped at its wall stood against the run's allowance (`wallStopOf`). The
+ * reserve record is the run's `verification-reserve-v1` budget; the other two are read off the
+ * chain against it.
+ */
+const wallStopSchema = z.strictObject({
+  reserveRecord: z.string(),
+  beforeDeadline: z.boolean(),
+  effectsSettled: z.boolean(),
+});
+
+/**
  * v1 and v2 are the recorded policies of earlier runs and keep their meaning: any failed policy
  * gate refuses. v4 is v2 with the contract optional and one more input, the advisory demands a
- * verified worker claim answered; the bundled verifier re-derives each by its own rule.
+ * verified worker claim answered. v5 is v4 with the wall stop read against the run's allowance:
+ * a loop cut at the end of its model work, before the run's deadline and with no effect in flight,
+ * is not refused for the cut, as a loop stopped at its step limit is not; every other condition
+ * still applies to the checked tree. Under v1 to v4 a wall stop refuses on its own, and their
+ * records keep that meaning. The bundled verifier re-derives each by its own rule.
  */
 export const assessmentInputsSchema = z.object({
-  policy: z.enum(["run-acceptance-v1", "run-acceptance-v2", "run-acceptance-v4"]),
+  policy: z.enum([
+    "run-acceptance-v1",
+    "run-acceptance-v2",
+    "run-acceptance-v4",
+    "run-acceptance-v5",
+  ]),
   requiredChecks: z.array(z.string().min(1)).optional(),
   contractRecord: z.string().optional(),
   lifecycle: z.enum(loopLifecycles),
@@ -39,6 +60,7 @@ export const assessmentInputsSchema = z.object({
   gateRecords: z.array(z.string()),
   baseRatchetRecord: z.string(),
   lifecycleRecord: z.string().nullable(),
+  wallStop: wallStopSchema.nullable().optional(),
   justifications: z
     .array(z.strictObject({ gateRecord: z.string(), claimRecord: z.string() }))
     .optional(),
@@ -52,8 +74,9 @@ export async function recordRunAssessment(
   cancelled: boolean,
   contract?: TaskContract,
 ): Promise<RunVerdict> {
+  const stop = lifecycleStop(evidence);
   const inputs = assessmentInputsSchema.parse({
-    policy: "run-acceptance-v4",
+    policy: "run-acceptance-v5",
     ...(contract === undefined
       ? {}
       : {
@@ -67,21 +90,9 @@ export async function recordRunAssessment(
                   ?.phase === "effective",
             )?.payloadDigest,
         }),
-    // The last stop of a loop. A repair attempt withheld for want of budget is recorded as a
-    // stop too, but it never ran a loop and its reason is not a lifecycle; naming it here put a
-    // record beside a lifecycle it does not carry, and the bundle's own verifier refused it.
-    // A follow-up given once the gates were green, whose candidate was not kept, changed nothing
-    // delivered, so its stop is not the run's lifecycle either.
-    lifecycleRecord:
-      evidence.records().findLast((entry) => {
-        if (entry.type !== "session-stopped") return false;
-        const stopped = evidence.payloads().get(entry.payloadDigest) as
-          | { stopReason?: unknown; followUp?: unknown }
-          | undefined;
-        if (stopped?.followUp === true && !followUpKept(evidence)) return false;
-        return (loopLifecycles as readonly unknown[]).includes(stopped?.stopReason);
-      })?.payloadDigest ?? null,
+    lifecycleRecord: stop?.payloadDigest ?? null,
     lifecycle,
+    wallStop: lifecycle === "max-wall-time" ? wallStopOf(evidence, stop) : null,
     cancelled,
     settled: gates.outcome.settled,
     baseRatchetAccepted: gates.outcome.baseComparison.decision.accepted,
@@ -237,16 +248,120 @@ function hypothesesOnly(independent: {
   );
 }
 
-/** Whether the run's follow-up, where one was given, left a candidate the ratchet kept. */
-function followUpKept(evidence: EvidenceRecorder): boolean {
-  const recorded = evidence
+/**
+ * Whether a loop's wall stop was the end of its model work or the end of the run. A run that holds
+ * a share of its total allowance for the final checks records it (`verification-reserve-v1`) and
+ * ends model work that much before its deadline, so a loop cut there was cut so the delivered tree
+ * could still be checked, and those checks decide the run. Read off this run's part of the chain,
+ * by the rule the bundled verifier mirrors: the last reserve recorded; whether the loop's stop was
+ * recorded before the deadline that reserve names; and whether every write and shell call that
+ * was requested settled, none of them at or after the model-work cutoff, where the cutoff can stop
+ * a command mid-effect. Null where no reserve was recorded or no loop stopped, which leaves a wall
+ * stop refusing as it always did.
+ */
+function wallStopOf(
+  evidence: EvidenceRecorder,
+  stop: LedgerRecord | undefined,
+): z.infer<typeof wallStopSchema> | null {
+  const payloads = evidence.payloads();
+  const thisRun = recordsOfThisRun(evidence);
+  const reserve = thisRun.findLast(
+    (entry) =>
+      entry.type === "session-budget" &&
+      (payloads.get(entry.payloadDigest) as { rule?: unknown } | undefined)?.rule ===
+        "verification-reserve-v1",
+  );
+  const window = z
+    .object({ deadline: z.number(), modelWorkEnds: z.number() })
+    .safeParse(reserve === undefined ? undefined : payloads.get(reserve.payloadDigest));
+  if (reserve === undefined || stop === undefined || !window.success) return null;
+  const calls = thisRun
+    .filter((entry) => entry.type === "tool-call")
+    .map((entry) => ({
+      sequence: entry.sequence,
+      timestamp: entry.timestamp,
+      call: payloads.get(entry.payloadDigest) as
+        | { callId?: unknown; kind?: unknown; decision?: unknown }
+        | undefined,
+    }))
+    .filter(({ call }) => call?.kind === "write" || call?.kind === "shell");
+  // Every request has a later settlement under its id, and none that ran (a denied call had no
+  // effect) settled at or after the cutoff.
+  const effectsSettled = calls.every(
+    (one) =>
+      (one.call?.decision !== "requested" ||
+        calls.some(
+          (later) =>
+            later.sequence > one.sequence &&
+            later.call?.callId === one.call?.callId &&
+            later.call?.decision !== "requested",
+        )) &&
+      (!(one.call?.decision === "allowed" || one.call?.decision === "failed") ||
+        one.timestamp < window.data.modelWorkEnds),
+  );
+  return {
+    reserveRecord: reserve.payloadDigest,
+    beforeDeadline: stop.timestamp < window.data.deadline,
+    effectsSettled,
+  };
+}
+
+/** This run's part of the chain: everything after the last run assessment recorded on it. */
+function recordsOfThisRun(evidence: EvidenceRecorder): readonly LedgerRecord[] {
+  const previous = evidence
     .records()
+    .findLast((entry) => entry.type === "run-assessment")?.sequence;
+  return evidence.records().filter((entry) => previous === undefined || entry.sequence > previous);
+}
+
+/**
+ * The last stop of a loop that worked the task, on this run's part of the chain, by the rule the
+ * bundled verifier mirrors. A repair attempt withheld for want of budget is recorded as a stop
+ * too, but it never ran a loop and its reason is not a lifecycle. An owed attempt (the task's
+ * continuation, or the follow-up on unresolved outcomes) whose candidate was not kept changed
+ * nothing delivered, so its stop is not the run's lifecycle. A narrow repair that finished says
+ * its stop is not the run's (`runLifecycle: false`): it finished the repair, not the task, and
+ * the loop that stopped at its step limit before it is still the one that worked the task.
+ * Records that predate these fields read as they always did.
+ */
+function lifecycleStop(evidence: EvidenceRecorder) {
+  const payloads = evidence.payloads();
+  const thisRun = recordsOfThisRun(evidence);
+  const owed = thisRun
     .map(
       (entry) =>
-        evidence.payloads().get(entry.payloadDigest) as
-          | { rule?: unknown; state?: unknown; accepted?: unknown }
+        payloads.get(entry.payloadDigest) as
+          | { rule?: unknown; state?: unknown; accepted?: unknown; attempt?: unknown }
           | undefined,
     )
-    .findLast((payload) => payload?.rule === "outcome-follow-up-v1");
-  return recorded?.state === "given" && recorded.accepted === true;
+    .filter(
+      (payload) =>
+        payload?.rule === "outcome-follow-up-v1" || payload?.rule === "task-continuation-v1",
+    );
+  const kept = (attempt: unknown): boolean => {
+    const record =
+      typeof attempt === "number" ? owed.find((one) => one?.attempt === attempt) : owed.at(-1);
+    return record?.state === "given" && record.accepted === true;
+  };
+  return thisRun.findLast((entry) => {
+    if (entry.type !== "session-stopped") return false;
+    const stopped = payloads.get(entry.payloadDigest) as
+      | { stopReason?: unknown; followUp?: unknown; attempt?: unknown; runLifecycle?: unknown }
+      | undefined;
+    if (!(loopLifecycles as readonly unknown[]).includes(stopped?.stopReason)) return false;
+    if (stopped?.runLifecycle === false) return false;
+    if (stopped?.followUp === true && !kept(stopped.attempt)) return false;
+    return true;
+  });
+}
+
+/** The run's lifecycle as the chain records it, or null where no loop has stopped. */
+export function runLifecycle(evidence: EvidenceRecorder): AgentLoopOutcome["stopReason"] | null {
+  const stop = lifecycleStop(evidence);
+  if (stop === undefined) return null;
+  const reason = (evidence.payloads().get(stop.payloadDigest) as { stopReason?: unknown })
+    ?.stopReason;
+  return (loopLifecycles as readonly unknown[]).includes(reason)
+    ? (reason as AgentLoopOutcome["stopReason"])
+    : null;
 }
