@@ -111,6 +111,17 @@ the parser without an edit, and had no wall left for a repair or the owed contin
   `evidence/2026-10-22-sessions` of this repository at commit `2af3c588c`, packed the same way, so
   this tree keeps the 6.0 MB of weight headroom its checks require.
 
+## Gates and release checks
+
+Logs packed in [verification-logs/](verification-logs/packed-derived/verification-logs/), each run
+reported on its own:
+
+| commit | command | exit | result |
+| --- | --- | --- | --- |
+| `612dba297` | `npm run gates` | **1** | checks, typecheck pass; lint 30 warnings, no error; **1 test failed** of 4,753: `src/agent-run.test.ts` "stops the checks it was given time for at the end of the verification allowance" timed out at 60 s under the full suite; it passed alone (2.4 s, three runs), in its file, under 14 CPU-bound processes, and in a full-suite rerun at the same commit (`vitest-rerun-612dba297`: 4,724 passed, 29 skipped). Not reproduced; no cause established. The extra lint warning was this branch's (a test fixture string), fixed in `fa830ec8f` |
+| **`fa830ec8f`** | `npm run gates` | **0** | 16 invariants match; 62 record kinds; zero doc-path misses; 6.2 MB of headroom (6.0 MB required); all 153 packs restore; all 15 cited bundles verify; lint 29 warnings, no error; **478 test files passed, 5 skipped; 4,724 tests passed, 29 skipped** |
+| `fa830ec8f` | `npm run build`, `npm run check:packaged`, `npm run fuzz:build` | **0** | "dist/ emitted, 21 asset(s) copied"; "every documented command met its packaged behavioral contract"; fuzz smoke ran |
+
 ## Reproduction
 
     node scripts/evidence-pack.mjs restore docs/evidence/2026-10-22/payloads/packed-derived/payloads
