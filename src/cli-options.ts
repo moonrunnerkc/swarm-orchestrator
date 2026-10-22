@@ -50,6 +50,11 @@ export interface RunCommand {
    * and seal them. Model-authored checks stay labelled as such on the chain and in the report.
    */
   readonly planChecks?: boolean;
+  /**
+   * Experimental: a repair of a check the base passed is asked to trace one preserved case on the
+   * base and the workspace through run_check before it edits (preservation-trace-v1).
+   */
+  readonly repairTrace?: boolean;
   /** The worker's system prompt. Absent is the historical default, `legacy`. */
   readonly promptProfile?: "legacy" | "concise";
   readonly installDependencies?: boolean;
@@ -349,6 +354,8 @@ export const usage = [
   "  --challenges off|report|required [--strengthen [--strengthen-rounds <n>]]",
   "                              challenge the contract's checks; strengthen a gap with an admitted check",
   "  --prompt-profile legacy|concise    the worker's system prompt (default legacy)",
+  "  --repair-trace              experimental: a repair of a check the base passed traces one preserved",
+  "                              case on the base and the workspace through run_check before editing",
   "  --escalate-model <provider:id>     authorize one bounded capability escalation",
   "  --approve ask|auto          auto answers shell-allowlist prompts itself and records each; a",
   "                              derivation-heuristic prompt still asks either way",
@@ -745,6 +752,7 @@ function commandFrom(
         }),
     ...(lockfile === undefined ? {} : { lockfile }),
     ...(flags.has("plan-checks") ? { planChecks: true } : {}),
+    ...(flags.has("repair-trace") ? { repairTrace: true } : {}),
     ...(promptProfile === undefined ? {} : { promptProfile }),
     ...(flags.has("escalate-model")
       ? { escalationModel: flags.get("escalate-model") as string }

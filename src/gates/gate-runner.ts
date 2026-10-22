@@ -155,6 +155,39 @@ export function executedTheChange(cycle: GateCycle): boolean {
   return cycle.runs.some((run) => run.capability === "dynamic" && run.status === "passed");
 }
 
+/** Whether a dynamic command gate ran over the change and reported on it, passing or failing. */
+function measuredTheChange(cycle: GateCycle): boolean {
+  if ((cycle.measures.changedFiles ?? 0) === 0) return true;
+  return cycle.runs.some(
+    (run) =>
+      run.kind === "command" &&
+      run.capability === "dynamic" &&
+      (run.status === "passed" || run.status === "failed"),
+  );
+}
+
+/** How much of one gate stream a repair brief quotes: some of its start, and its end. */
+const excerptHeadChars = 1_000;
+const excerptTailChars = 6_000;
+
+/**
+ * One gate stream as a repair brief quotes it. Runners print their failures last, after every
+ * passing title: mocha's 1,231 passing lines came first in the alias repair's brief, the brief was
+ * cut at its first 16,000 characters, and the repair never read which three tests failed. So a
+ * long stream keeps its end, and says how much of its middle it left out.
+ */
+export function excerptForModel(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= excerptHeadChars + excerptTailChars) return trimmed;
+  const headEnd = trimmed.lastIndexOf("\n", excerptHeadChars);
+  const head = trimmed.slice(0, headEnd > 0 ? headEnd : excerptHeadChars);
+  const tailCut = trimmed.length - excerptTailChars;
+  const tailStart = trimmed.indexOf("\n", tailCut);
+  const tail = trimmed.slice(tailStart >= 0 && tailStart - tailCut < 400 ? tailStart + 1 : tailCut);
+  const omitted = trimmed.length - head.length - tail.length;
+  return `${head}\n[... ${omitted.toLocaleString("en-US")} characters omitted from the middle; the end, where a runner reports its failures, follows; the gate's record holds all of it ...]\n${tail}`;
+}
+
 export function isGreen(cycle: GateCycle): boolean {
   return (
     cycle.blockingFailures.length === 0 &&
@@ -467,8 +500,12 @@ export function describeFailuresForModel(
           "not caused by it. Do not edit unrelated files to make it pass; if it is outside the " +
           "task, say so and leave it."
         : "",
-      run.observation.stdout.trim().length === 0 ? "" : `stdout:\n${run.observation.stdout.trim()}`,
-      run.observation.stderr.trim().length === 0 ? "" : `stderr:\n${run.observation.stderr.trim()}`,
+      run.observation.stdout.trim().length === 0
+        ? ""
+        : `stdout:\n${excerptForModel(run.observation.stdout)}`,
+      run.observation.stderr.trim().length === 0
+        ? ""
+        : `stderr:\n${excerptForModel(run.observation.stderr)}`,
     ]
       .filter((part) => part.length > 0)
       .join("\n"),
@@ -485,8 +522,10 @@ export function describeFailuresForModel(
 
   // Not a gate's own bytes, because no gate objected: every one of them that runs a command
   // stood down, so there is nothing to quote and nothing yet to fix. Saying so is the only way
-  // the loop that reads this can act on it.
-  const unmeasured = executedTheChange(cycle)
+  // the loop that reads this can act on it. A test command that failed ran over the change, so
+  // this is said only where none passed or failed: the alias repair of 2026-10-21 was told
+  // "Nothing ran over this change" above the three failures its tests gate had just measured.
+  const unmeasured = measuredTheChange(cycle)
     ? []
     : [
         "Nothing ran over this change. Every gate that runs a command stood down: " +

@@ -205,6 +205,7 @@ export const switchFlags = new Set([
   "no-open-evidence",
   "strengthen",
   "plan-checks",
+  "repair-trace",
 ]);
 
 export const defaultBaseRef = "HEAD";

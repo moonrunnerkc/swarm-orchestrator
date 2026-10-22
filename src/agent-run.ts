@@ -12,7 +12,7 @@ import type { ConversationMessage, ModelClient, SamplingSettings } from "./core/
 import type { RandomSource } from "./core/random-source.ts";
 import type { ToolInvoker } from "./core/tool-invoker.ts";
 import { openRunStore, type RunStore } from "./durable/run-store.ts";
-import { digestOfBytes } from "./evidence/canonical-json.ts";
+import { asJsonValue, digestOfBytes } from "./evidence/canonical-json.ts";
 import { recordRoutineClaims } from "./evidence/routine-claims.ts";
 import { recordRunAssessment, runLifecycle } from "./evidence/run-assessment.ts";
 import { sealRunSpec } from "./evidence/run-spec.ts";
@@ -51,6 +51,7 @@ import { createGitWorkspaceProbe } from "./gates/git-workspace.ts";
 import { captureInheritedChanges, type InheritedChanges } from "./gates/inherited-changes.ts";
 import { createNodeCommandRunner } from "./gates/node-command-runner.ts";
 import { prepareDependencies } from "./gates/prepare-dependencies.ts";
+import { preservationTraceBrief, preservationTraceRule } from "./gates/preservation-trace.ts";
 import { detectProject } from "./gates/project-type.ts";
 import type { EscalationSettings } from "./gates/repair-policy.ts";
 import { diffAgainstBase } from "./gates/scratch-index.ts";
@@ -120,6 +121,12 @@ export interface AgentTaskOptions {
   };
   readonly installDependencies?: boolean;
   readonly promptProfile?: WorkerPromptProfile;
+  /**
+   * Experimental (preservation-trace-v1, src/gates/preservation-trace.ts): a repair of a gate the
+   * base passed is asked to trace one preserved case on both trees through run_check before it
+   * edits. Off unless asked for.
+   */
+  readonly repairTrace?: boolean;
   readonly commandPool?: ResourcePool | undefined;
   readonly contract?: TaskContract;
   readonly maxTokens?: number;
@@ -1290,6 +1297,27 @@ async function resolveWithModel(
     baseRef: options.baseRef,
   });
   const candidateDigest = digestOfBytes(candidateDiff);
+  // Asked for, a repair of a failing check (not owed work), a gate the base passed among its
+  // failures, and run_check there to compare the two trees with.
+  const traced =
+    options.repairTrace === true &&
+    request.followUp === undefined &&
+    (request.passingAtBase ?? []).length > 0 &&
+    options.checkTool !== undefined &&
+    (options.contract === undefined || options.contract.allowedTools.includes("shell"));
+  if (traced)
+    await options.evidence.record({
+      type: "verification-command",
+      actor: "harness",
+      provenance: ["tool-output"],
+      payload: asJsonValue({
+        rule: preservationTraceRule,
+        attempt: request.attempt,
+        passingAtBase: request.passingAtBase ?? [],
+        limitation:
+          "the procedure was given in the attempt's brief; whether the attempt followed it is read from its tool calls, and nothing here establishes that the repair is right",
+      }),
+    });
   const brief = [
     `The task was: ${taskBrief(options.task, options.contract)}`,
     "",
@@ -1325,17 +1353,19 @@ async function resolveWithModel(
     (options.contract !== undefined && !options.contract.allowedTools.includes("shell"))
       ? []
       : [
-          "run_check reruns the acceptance checks exactly as the gate runs them and shows a named check's cases; given a program and inputs, it runs your own diagnostic over the project with no file to write and no shell quoting.",
+          "run_check reruns the sealed acceptance checks as the gate runs them (not the repository's own suite) and shows a named check's cases; given a program and inputs, it runs your own diagnostic over the project with no file to write and no shell quoting.",
         ]),
     "",
     account,
     "",
     ...(request.rejected === null ? [] : [describeRejectedCandidate(request.rejected), ""]),
+    ...(traced ? [preservationTraceBrief(request.passingAtBase ?? []), ""] : []),
     ...(request.followUp === undefined
       ? [
           `What the gates report on the workspace as it is now (cycle ${request.cycle.attempt}):`,
+          // Bounded at both ends: the last gate's failures are at the end of what the gates said.
           request.gateOutput.length > 16000
-            ? `${request.gateOutput.slice(0, 16000)}\n[diagnostic excerpt truncated; consult the cited evidence records]`
+            ? `${request.gateOutput.slice(0, 6000)}\n[diagnostic excerpt cut in the middle; consult the cited evidence records]\n${request.gateOutput.slice(-10000)}`
             : request.gateOutput,
         ]
       : [request.followUp]),
