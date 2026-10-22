@@ -1,0 +1,64 @@
+{
+  "sha": "cec1fd876",
+  "base": "8f61da7151a253478c87e4dd23dcf7f092c1cd5b",
+  "test": "npm run test:vi",
+  "hidden": "npx vitest run src/decode.spec.ts",
+  "steps": {
+    "baseInstall": {
+      "command": "npm ci --ignore-scripts --no-audit --no-fund",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 910,
+      "outputTail": "\nadded 240 packages in 865ms\n\n"
+    },
+    "baseTest": {
+      "command": "npm run test:vi",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 1492,
+      "outputTail": "\n> entities@8.0.0 test:vi\n> vitest run\n\n\n RUN  v4.1.5 /private/tmp/claude-501/-Users-brad-projects-swarm-orchestrator/e7b3a962-14fd-453d-b3e9-0801a3983f95/scratchpad/validate/entities-cec1fd876/base\n\n\n Test Files  8 passed (8)\n      Tests  124 passed (124)\n   Start at  01:58:25\n   Duration  843ms (transform 406ms, setup 0ms, import 503ms, tests 758ms, environment 0ms)\n\n\n"
+    },
+    "overlaidInstall": {
+      "command": "npm ci --ignore-scripts --no-audit --no-fund",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 818,
+      "outputTail": "\nadded 240 packages in 769ms\n\n"
+    },
+    "baseHidden": {
+      "command": "npx vitest run src/decode.spec.ts",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 879,
+      "outputTail": "+ 4\n\n ❯ src/decode.spec.ts:175:46\n    173|     it(\"should not commit a legacy match in attribute mode after desce…\n    174|         decoder.startEntity(entities.DecodingMode.Attribute);\n    175|         expect(decoder.write(\"notin\\0;\", 0)).toBe(0);\n       |                                              ^\n    176|         expect(decoder.end()).toBe(0);\n    177|         expect(callback).not.toHaveBeenCalled();\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯\n\n FAIL  src/decode.spec.ts > EntityDecoder > should not commit a legacy match in attribute mode after descending past it across chunks (#2208)\nAssertionError: expected 4 to be less than or equal to 0\n ❯ src/decode.spec.ts:184:29\n    182|         for (const chunk of [\"no\", \"ti\", \"n\\0\", \";\"]) {\n    183|             const written = decoder.write(chunk, 0);\n    184|             expect(written).toBeLessThanOrEqual(0);\n       |                             ^\n    185|         }\n    186|         expect(decoder.end()).toBe(0);\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯\n\n"
+    },
+    "commitInstall": {
+      "command": "npm ci --ignore-scripts --no-audit --no-fund",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 819,
+      "outputTail": "\nadded 240 packages in 771ms\n\n"
+    },
+    "commitHidden": {
+      "command": "npx vitest run src/decode.spec.ts",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 862,
+      "outputTail": "\n RUN  v4.1.5 /private/tmp/claude-501/-Users-brad-projects-swarm-orchestrator/e7b3a962-14fd-453d-b3e9-0801a3983f95/scratchpad/validate/entities-cec1fd876/commit\n\n\n Test Files  1 passed (1)\n      Tests  54 passed (54)\n   Start at  01:58:30\n   Duration  98ms (transform 28ms, setup 0ms, import 36ms, tests 4ms, environment 0ms)\n\n\n"
+    },
+    "commitTest": {
+      "command": "npm run test:vi",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 1002,
+      "outputTail": "\n> entities@8.0.0 test:vi\n> vitest run\n\n\n RUN  v4.1.5 /private/tmp/claude-501/-Users-brad-projects-swarm-orchestrator/e7b3a962-14fd-453d-b3e9-0801a3983f95/scratchpad/validate/entities-cec1fd876/commit\n\n\n Test Files  8 passed (8)\n      Tests  127 passed (127)\n   Start at  01:58:30\n   Duration  824ms (transform 368ms, setup 0ms, import 515ms, tests 748ms, environment 0ms)\n\n\n"
+    }
+  },
+  "criteria": {
+    "install": true,
+    "basePassesProjectTest": true,
+    "baseFailsHidden": true,
+    "commitPassesBoth": true
+  },
+  "eligible": true
+}

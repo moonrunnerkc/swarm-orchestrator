@@ -187,6 +187,7 @@ export function swarmArgv(
 const workflowFlags = {
   "--prompt-profile": ["legacy", "concise"],
   "--plan-checks": null,
+  "--repair-trace": null,
 };
 
 export function swarmWorkflowFlags(flags) {
