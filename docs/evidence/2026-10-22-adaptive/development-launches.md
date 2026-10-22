@@ -84,3 +84,45 @@ sample. Order: acorn 1, entities, sinon v2, acorn 2.
 Frozen: manifest `~/.cache/swarm-study-2026-10-22/dev-3/manifest.json`, sha256
 `e2a018d3512cc8cfa6012ce0adf355cea556343010e503ee04ac77a53a27107c`; build `git archive` of `3f2ce162e`; smoke `smoke-6`
 passes all four arms.
+
+## Development run 3 results (build `3f2ce162e`), paired with run 2's controls
+
+| Task | `swarm` (`--adaptive`), run 3 | `swarm-control`, run 2 | Pair |
+| --- | --- | --- | --- |
+| acorn, sample 1 | killed at the deadline, no edit; fail | killed at the deadline, no edit; fail | tie, failed |
+| entities | complete; 190 s, 660,509 tokens | complete; 398 s, 2,016,309 tokens | tie, complete |
+| sinon v2 | **complete**: hidden (upstream tests, behavior and spy-surface checks, policy), visible, lint pass; all 8 added tests fail over base source and pass on the candidate (323/323); 489 s, 2,673,414 tokens | hidden and visible fail; 471 s, 2,754,807 tokens | **win** |
+| acorn, sample 2 | killed at the deadline; two edits landed and the delivered tree is empty; fail | killed at the deadline, no edit; fail | tie, failed |
+
+What the decision point did:
+
+- sinon, task loop step 16, no edit yet: one diagnosis (5 steps, 14,443 tokens, 13 s). Actionable:
+  three locations the harness read (`src/sinon/stub.js:245`, `:168`, `src/sinon/spy.js:1`), a command
+  run through the chokepoint, and an approach (wrap the `.get`/`.set` replacements in spies exposed as
+  `getter`/`setter`, cleared in `resetBehavior`). The notice was delivered; the worker's first landed
+  edit came after it, and its delivered patch edits `stub.js`, `default-behaviors.js` and the tests.
+  Its later repair attempts continued at no cost. This is one development sample: run 2's two sinon
+  launches without a delivered notice (the control, and the `--adaptive` launch whose answer the old
+  parser refused) both failed, but sampling variation alone could produce this; no causal claim.
+  The command was a `grep` of the test file, and the statuses it gave (one hypothesis "consistent",
+  two "contradicted") were read from predicted exit statuses that did not test where the fix
+  belongs; the passing patch edited the file of a hypothesis marked contradicted. Corrected below.
+- acorn sample 1, step 16, no edit: an actionable diagnosis (three readable locations in
+  `acorn/src/expression.js`, an executed command) was delivered (5 steps, 30,489 tokens, 63 s); the
+  worker read the named locations seven more times and never edited before the wall.
+- acorn sample 2, step 16: deterministic retrieval of code-like names the loop had searched for, at no
+  model cost; edits followed but the launch was killed at the deadline with an empty delivered tree.
+- entities: continue at no cost in the task loop and in its one repair.
+
+Scorer note: `docs/evidence/2026-10-22/score-tests.mjs` reported "no added test fails over the base's
+source" for the sinon patch although its over-base run exited 8; its per-test attribution reads
+vitest's reporter only. The mocha JSON run above names the eight failing added tests.
+
+Totals across development runs: run 1, one tie; run 2, four ties; run 3 against run 2's controls, one
+win and three ties. Development material only; no transfer claim.
+
+## Tuning 3 before the held-out freeze
+
+A hypothesis status now says only whether its stated prediction held when the harness ran the
+command ("prediction held" or "prediction failed"), never that execution confirmed or refuted the
+explanation; and a command two or more hypotheses predict alike gives none of them a status.

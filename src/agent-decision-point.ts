@@ -379,6 +379,13 @@ async function decide(
     input,
     harnessCallId,
   );
+  // A command distinguishes hypotheses only where they predict different results of it; where two
+  // or more predict the same thing, its result moves none of them.
+  const stated = (parsed.diagnosis?.hypotheses ?? [])
+    .map((hypothesis) => hypothesis.predicts)
+    .filter((predicts) => predicts !== undefined)
+    .map((predicts) => JSON.stringify(predicts));
+  const distinguishing = stated.length < 2 || new Set(stated).size === stated.length;
   const ids = (parsed.diagnosis?.hypotheses ?? []).map(
     (_, index) => `H${context.hypotheses.length + index + 1}`,
   );
@@ -387,7 +394,7 @@ async function decide(
     if (checked.execution === null || checked.execution.outcome.failed)
       return { id, statement: hypothesis.statement, status: "untested", evidence: null };
     const holds =
-      hypothesis.predicts === undefined
+      hypothesis.predicts === undefined || !distinguishing
         ? null
         : predictionHolds(hypothesis.predicts, {
             exitCode: checked.execution.exitCode,

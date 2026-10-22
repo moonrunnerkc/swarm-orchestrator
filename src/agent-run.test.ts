@@ -2195,8 +2195,10 @@ describe("the adaptive decision point (adaptive-decision-v1)", () => {
     // The worker's next turn carries the notice: located advice, the harness's execution, labels.
     const notice = promptOf(6);
     expect(notice).toContain("[harness decision point] Step 4 of 10");
-    expect(notice).toContain("consistent with execution (not proof) H1");
-    expect(notice).toContain("contradicted by execution H2");
+    expect(notice).toContain(
+      "prediction held when the harness ran it (says nothing beyond that prediction): H1",
+    );
+    expect(notice).toContain("prediction failed when the harness ran it: H2");
     expect(notice).toContain("src/greet.js:3 (add the export after greet)");
     expect(notice).not.toContain("src/missing.js:1");
     expect(notice).toContain("the gates still decide acceptance".replace("the gates", "The gates"));
@@ -2214,6 +2216,26 @@ describe("the adaptive decision point (adaptive-decision-v1)", () => {
     expect(result.loop.tokensUsed).toBe(10 * 15);
     expect(decision.spent).toMatchObject({ steps: 2, tokensUsed: 30 });
     expect(result.green).toBe(true);
+  }, 60_000);
+
+  it("gives no status from a command that two hypotheses predict alike", async () => {
+    await probeFixture();
+    const alike = JSON.stringify({
+      ...JSON.parse(diagnosis),
+      hypotheses: [
+        { statement: "shout is missing", predicts: { exitCode: 0 } },
+        { statement: "shout is misspelled", predicts: { exitCode: 0 } },
+      ],
+    });
+    const { decisions } = await adaptiveTask([
+      ...explore,
+      respondWithText(alike),
+      call("w5", "declare_file_set", { files: ["src/greet.js"] }),
+      call("w6", "write", { path: "src/greet.js", content: stillGreen }),
+      respondWithText("done"),
+    ]);
+    const decision = decisions[0]?.payload as { diagnosis: { hypotheses: Hypothesis[] } };
+    expect(decision.diagnosis.hypotheses.map((h) => h.status)).toEqual(["proposed", "proposed"]);
   }, 60_000);
 
   it("names an observation made before a later edit as predating the tree it diagnoses", async () => {
@@ -2404,8 +2426,10 @@ describe("the adaptive decision point (adaptive-decision-v1)", () => {
     expect(brief).toMatch(
       /step 1: shell node scripts\/probe\.mjs; exit 0; before the edit of src\/greet\.js at step 6, so it predates the previous loop's last tree, which may since have been rolled back/,
     );
-    expect(brief).toContain("consistent with execution (not proof) H1");
-    expect(brief).toContain("contradicted by execution H2");
+    expect(brief).toContain(
+      "prediction held when the harness ran it (says nothing beyond that prediction): H1",
+    );
+    expect(brief).toContain("prediction failed when the harness ran it: H2");
     expect(result.green).toBe(true);
   }, 60_000);
 });
