@@ -4,7 +4,7 @@ Registered by [amendment 1](../protocol.md) before either arm, on `marked-bugfix
 from a repository not used to develop this work. The manifest ([manifest.json](manifest.json)) was
 frozen by [../freeze-comparison.mjs](../freeze-comparison.mjs) and run by the comparison runner
 unchanged, one arm at a time, Swarm first by the runner's own order rule. The runner's records are
-in [records/](records/), every blob they cite (patches, streams, the oracle's output) is in
+in [records/](packed-derived/records/), every blob they cite (patches, streams, the oracle's output) is in
 `blobs/`, and the Swarm arm's sessions are in `sessions/`; streams, blobs and ledgers are packed
 losslessly.
 

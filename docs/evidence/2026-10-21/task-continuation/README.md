@@ -164,7 +164,7 @@ outcome lines (`src/cli-run-outcome.test.ts`), the harness's reading (`scripts/c
 ## 4. The trial
 
 Registered in [protocol.md](protocol.md) before any inference; every launch in
-[launches.md](launches.md); the records in [records/](records/); every payload of each launch in
+[launches.md](launches.md); the records in [records/](packed-derived/records/); every payload of each launch in
 [packed-derived/payloads](packed-derived/payloads/) ([payloads-inventory.json](payloads-inventory.json)).
 
 **Launch 1** (`87b6f294e`, 282.5 s, 1,011,623 tokens): the first loop stopped at its 40-step cap
