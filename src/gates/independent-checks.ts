@@ -40,11 +40,14 @@ async function changedInCheckout(checkout: string, baseCommit: string): Promise<
  * Each command's instrument is observed against the base commit before and after it runs, and a
  * pass it reported under an instrument the patch altered is withheld (`reportedStatus` keeps what
  * the runner said). The base-configuration reading decides whether that pass can stand.
+ *
+ * `only` names the checks a rereading is about; absent runs every check.
  */
 export async function runChecks(
   checkout: string,
   options: IndependentVerificationOptions,
   timeoutMs: number,
+  only?: ReadonlySet<string>,
 ): Promise<readonly IndependentCheck[]> {
   const { gates } = await assembleGateSet({
     workspaceRoot: options.repositoryRoot,
@@ -76,6 +79,7 @@ export async function runChecks(
   const authorized = preset?.kind === "upgrade" ? [preset.manifest, preset.lockfile] : [];
   const results: IndependentCheck[] = [];
   for (const gate of gates) {
+    if (only !== undefined && !only.has(gate.id)) continue;
     if (gate.source.kind === "inspection" && gate.source.unavailableReason === undefined) continue;
     const instrumented =
       gate.source.kind === "command"

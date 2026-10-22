@@ -59,6 +59,16 @@ import { prepareDependencies } from "./prepare-dependencies.ts";
 import { stagePreparedPython } from "./prepared-python.ts";
 import { withPreparedTools } from "./prepared-tools.ts";
 import { enforceUpgrade, reproducedBug } from "./preset-verification.ts";
+import {
+  drawWitnessMarkers,
+  type RunnerWitness,
+  reportedWitnesses,
+  runnerSourceChanges,
+  runnerWitnessHeld,
+  runnerWitnessRule,
+  withWitnesses,
+  witnessFiles,
+} from "./runner-witness.ts";
 import { parseUnifiedDiff } from "./unified-diff.ts";
 import { observeUpgradeResolution } from "./upgrade-resolution.ts";
 import { readV8Coverage } from "./v8-coverage.ts";
@@ -139,6 +149,13 @@ export interface IndependentCheck {
   readonly baseTestsInstrument?: import("./instrument-identity.ts").InstrumentObservation;
   readonly baseTestsFiles?: readonly string[];
   readonly weakenedTests?: readonly string[];
+  /**
+   * Where the instrument the patch changed is the project's own runner source and the
+   * base-configuration reading did not pass: the check again with a failing test added to every
+   * test file, under the change's runner and under the base's (runner-source-v1). The pass stands
+   * where both report the same added failures; see runner-witness.ts.
+   */
+  readonly runnerWitness?: RunnerWitness;
 }
 
 export type { DependencyInstall } from "./dependency-install.ts";
@@ -1576,22 +1593,53 @@ export function isTestFile(path: string): boolean {
   );
 }
 
-/** A check whose patched reading passed while the base's runner configuration did not. */
+/**
+ * A check whose patched reading passed while the base's runner configuration did not, and whose
+ * pass the runner-source reading did not let stand.
+ */
 function passedOnlyUnderThePatchConfiguration(check: IndependentCheck): boolean {
   return (
     check.configurationStatus !== undefined &&
     (check.reportedStatus ?? check.status) === "passed" &&
-    check.configurationStatus !== "passed"
+    check.configurationStatus !== "passed" &&
+    !(check.runnerWitness !== undefined && runnerWitnessHeld(check.runnerWitness, check.instrument))
   );
 }
 
+/** Whether a base-configuration reading of the check put back code its tests load as well. */
+function restoresProgramCode(check: IndependentCheck, restored: readonly string[]): boolean {
+  const subjects = new Set(check.instrument?.programSubjects ?? []);
+  return restored.some((path) => subjects.has(path));
+}
+
+/** The instrument paths one check's own reading found changed, a manifest's fields by name. */
+function changedInstrumentPaths(check: IndependentCheck): readonly string[] {
+  const authorized = check.instrument?.authorized ?? [];
+  return (check.instrument?.files ?? [])
+    .filter(
+      (file) =>
+        file.reference !== file.current && !authorized.includes(file.path.split("#")[0] as string),
+    )
+    .map((file) => file.path)
+    .sort();
+}
+
 /**
- * The checks again, with the instrument the patch changed put back to the base's (restored where
- * the base has it, removed where the patch added it; a package.json field is restored alone), then
- * the patch's versions written back. Only where the patch changed any: a patch that leaves the
- * instrument alone pays nothing. The readings are kept on each check, and which one stands is
- * decided with the base's own results in hand. A pass under the base's instrument stands; what
- * cannot be put back (a runner dependency from outside the registry) leaves the pass withheld.
+ * Each check again, with the instrument its own reading found changed put back to the base's
+ * (restored where the base has it, removed where the patch added it; a package.json field is
+ * restored alone), then the patch's versions written back. Only the checks whose own instrument
+ * the patch changed are read again, and each with only its own changes put back: a check whose
+ * instrument the patch left alone was measured by the base's instrument already, and reading it
+ * again beside another check's restored files measured nothing about it. mocha's lint was read
+ * again that way for a change to the test runner's source, failed on a second run of its own
+ * cached docs check, and had its pass withheld as resting on a file it never loads.
+ *
+ * The readings are kept on each check, and which one stands is decided with the base's own
+ * results in hand. A pass under the base's instrument stands; what cannot be put back (a runner
+ * dependency from outside the registry) leaves the pass withheld, and so does a pass under the
+ * base's instrument where putting it back also put back code the tests load. Where the changed
+ * instrument is the project's own runner source and its tests load it, the runner-source reading
+ * (runner-witness.ts) decides whether the change's own pass stands.
  */
 async function readUnderBaseConfiguration(
   withPatch: readonly IndependentCheck[],
@@ -1599,19 +1647,132 @@ async function readUnderBaseConfiguration(
   options: IndependentVerificationOptions,
   timeoutMs: number,
 ): Promise<readonly IndependentCheck[]> {
-  const changed = new Set<string>();
-  // A difference the observation names as authorized (an upgrade's manifest and lockfile) is
-  // the task, not a configuration to put back: the base's would measure the tree the task was
-  // asked to leave rather than the one it was asked to make.
-  for (const check of withPatch)
-    for (const file of check.instrument?.files ?? [])
-      if (
-        file.reference !== file.current &&
-        !(check.instrument?.authorized ?? []).includes(file.path.split("#")[0] as string)
-      )
-        changed.add(file.path);
-  const files = [...changed].sort();
-  if (files.length === 0 || withPatch.length === 0) return withPatch;
+  const groups = new Map<string, { files: readonly string[]; ids: Set<string> }>();
+  for (const check of withPatch) {
+    const files = changedInstrumentPaths(check);
+    if (files.length === 0) continue;
+    const key = files.join("\0");
+    const group = groups.get(key) ?? { files, ids: new Set<string>() };
+    group.ids.add(check.id);
+    groups.set(key, group);
+  }
+  let decided = withPatch;
+  for (const { files, ids } of groups.values()) {
+    const underBase = await underBaseInstrument(checkout, options, timeoutMs, files, () =>
+      runChecks(checkout, options, timeoutMs, ids),
+    );
+    decided = decided.map((check) => {
+      const reading = underBase.find((one) => one.id === check.id);
+      if (!ids.has(check.id) || reading?.observation === undefined) return check;
+      const reported = check.reportedStatus ?? check.status;
+      const restoredCode = restoresProgramCode(check, files);
+      return {
+        ...check,
+        // Measured again under the base's instrument and passed there: that reading is the
+        // evidence, unless putting the instrument back also put back code the tests load, which
+        // in a project that runs its own tests is the implementation they exercise.
+        ...(reported === "passed" && reading.status === "passed" && !restoredCode
+          ? { status: "passed" as const }
+          : {}),
+        ...(reported === "passed" && reading.status === "passed" && restoredCode
+          ? {
+              detail:
+                `the runner reported a pass under an instrument this change altered (${files.join(", ")}), ` +
+                "and putting the base's instrument back also put back code its tests load: the pass " +
+                "measured there is about the base's code, not this change's, so neither reading is " +
+                "evidence",
+            }
+          : {}),
+        configurationObservation: reading.observation,
+        configurationStatus: reading.status,
+        configurationFiles: files,
+        ...(reading.instrument === undefined
+          ? {}
+          : { configurationInstrument: reading.instrument }),
+      };
+    });
+    const runnerSource = new Set(
+      decided
+        .filter(
+          (check) =>
+            ids.has(check.id) &&
+            (check.reportedStatus ?? check.status) === "passed" &&
+            check.configurationStatus !== undefined &&
+            check.instrument !== undefined &&
+            runnerSourceChanges(check.instrument) !== null,
+        )
+        .map((check) => check.id),
+    );
+    if (runnerSource.size === 0) continue;
+    const witnesses = await readRunnerWitnesses(checkout, options, timeoutMs, files, runnerSource);
+    decided = decided.map((check) => {
+      const witness = witnesses.get(check.id);
+      if (witness === undefined) return check;
+      if (!runnerWitnessHeld(witness, check.instrument))
+        return { ...check, runnerWitness: witness };
+      const reported = reportedWitnesses(witness.reference, witness.markers).length;
+      return {
+        ...check,
+        runnerWitness: witness,
+        status: "passed" as const,
+        detail:
+          `the runner reported a pass under its own changed source (${files.join(", ")}); with a ` +
+          `failing test added to each of ${witness.files.length} test file(s), the change's runner ` +
+          `and the base's runner both failed and reported the same ${reported} of them, so it ` +
+          "executes and reports what the base's runner does (runner-source-v1). Not excluded: a " +
+          "runner change that tells the added tests apart from its own and hides only the latter",
+      };
+    });
+  }
+  return decided;
+}
+
+/**
+ * The check again with a failing test added to every test file, under the change's runner and
+ * under the base's runner files: the two readings runner-source-v1 compares. Keyed by check id;
+ * empty where the checkout has no JavaScript or TypeScript test file to add one to.
+ */
+async function readRunnerWitnesses(
+  checkout: string,
+  options: IndependentVerificationOptions,
+  timeoutMs: number,
+  files: readonly string[],
+  ids: ReadonlySet<string>,
+): Promise<ReadonlyMap<string, RunnerWitness>> {
+  const testFiles = await witnessFiles(checkout);
+  if (testFiles.length === 0) return new Map();
+  const markers = drawWitnessMarkers(testFiles.length);
+  const measure = () =>
+    withWitnesses(checkout, testFiles, markers, () => runChecks(checkout, options, timeoutMs, ids));
+  const candidate = await measure();
+  const reference = await underBaseInstrument(checkout, options, timeoutMs, files, measure);
+  const witnesses = new Map<string, RunnerWitness>();
+  for (const id of ids) {
+    const underChange = candidate.find((one) => one.id === id)?.observation;
+    const underBase = reference.find((one) => one.id === id)?.observation;
+    if (underChange === undefined || underBase === undefined) continue;
+    witnesses.set(id, {
+      rule: runnerWitnessRule,
+      files: testFiles,
+      markers,
+      candidate: underChange,
+      reference: underBase,
+    });
+  }
+  return witnesses;
+}
+
+/**
+ * Runs `measure` with the named instrument paths put back to the base's, then writes the patch's
+ * versions back, whatever `measure` did.
+ */
+async function underBaseInstrument<T>(
+  checkout: string,
+  options: IndependentVerificationOptions,
+  timeoutMs: number,
+  files: readonly string[],
+  measure: () => Promise<T>,
+): Promise<T> {
   const whole = [...new Set(files.map((path) => path.split("#")[0] as string))];
   const patched = new Map<string, string | null>();
   for (const path of whole)
@@ -1642,25 +1803,7 @@ async function readUnderBaseConfiguration(
       if (atBase.exitCode === 0) await writeFile(join(checkout, path), atBase.stdout);
       else await rm(join(checkout, path), { force: true });
     }
-    const underBase = await runChecks(checkout, options, timeoutMs);
-    return withPatch.map((check) => {
-      const reading = underBase.find((one) => one.id === check.id);
-      if (reading?.observation === undefined) return check;
-      const reported = check.reportedStatus ?? check.status;
-      return {
-        ...check,
-        // Measured again under the base's instrument and passed there: that reading is the evidence.
-        ...(reported === "passed" && reading.status === "passed"
-          ? { status: "passed" as const }
-          : {}),
-        configurationObservation: reading.observation,
-        configurationStatus: reading.status,
-        configurationFiles: files,
-        ...(reading.instrument === undefined
-          ? {}
-          : { configurationInstrument: reading.instrument }),
-      };
-    });
+    return await measure();
   } finally {
     for (const [path, text] of patched) {
       if (text === null) await rm(join(checkout, path), { force: true });
