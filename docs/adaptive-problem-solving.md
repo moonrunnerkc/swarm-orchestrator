@@ -33,8 +33,10 @@ results, never from model prose:
 - landed and refused edits, reads, searches that matched nothing, declared files not yet edited;
 - the last few executions with command, exit status, a bounded excerpt, the evidence record
   holding the whole result, and the workspace generation they ran against;
-- explanations, labelled as model-proposed hypotheses, and what a harness-run execution showed
-  about each (consistent, contradicted, or untested);
+- explanations, labelled as model-proposed hypotheses, and whether each one's stated prediction
+  held when the harness ran the distinguishing command (held, failed, untested, or no
+  distinguishing prediction where several hypotheses predict the same result). A held or failed
+  prediction says nothing beyond that prediction: a weak prediction can fail for a right explanation;
 - the next unresolved question, labelled as model-proposed, and the loop's remaining steps, tokens
   and wall.
 
@@ -53,7 +55,7 @@ distinguishing command, up to four locations and an approach. The harness then c
 
 - a location counts only if the worker's own chokepoint can read it from the workspace now;
 - the distinguishing command runs through the worker's chokepoint, and its exit status and output
-  decide which hypotheses it contradicts;
+  decide whose stated predictions held;
 - an approach counts only if it names a file the harness has seen.
 
 An answer with no readable location, no executed distinction and no grounded approach is discarded
