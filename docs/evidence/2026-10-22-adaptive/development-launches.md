@@ -40,3 +40,10 @@ Two causes, both in this stage's own code, corrected before run 2:
 Run 1's records are kept as they are. Its acorn pair counts as development evidence about build
 `309a2c0e6`: the point was exercised and its diagnosis produced nothing usable. Run 2 repeats the
 registered eight launches on the tuned build under a new manifest.
+
+## Development run 2, frozen before its first launch
+
+- Manifest `~/.cache/swarm-study-2026-10-22/dev-2/manifest.json`, sha256
+  `dc872c3b5c70f92a04466d2f845ed73357f322d51e64ff507786be5a2f2e4de2`; build `git archive` of `4e0ece037`.
+- Smoke `smoke-5` on that build: all four arms pass every registered criterion.
+- Same registered eight launches, order, tasks, arms and resources as run 1.
