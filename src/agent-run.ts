@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { createDecisionPoint } from "./agent-decision-point.ts";
 import { createEscalationController } from "./agent-escalation.ts";
 import { describeJustificationRequest, runJustificationTurn } from "./agent-justification.ts";
 import { type WorkerPromptProfile, workerPrompt } from "./agent-prompt.ts";
@@ -6,12 +7,19 @@ import { finishRepair } from "./agent-repair-finish.ts";
 import { buildVersion } from "./build-version.ts";
 import type { ApprovalMode } from "./config/approval-mode.ts";
 import type { Clock } from "./core/clock.ts";
-import { type AgentLoopOutcome, runAgentLoop, type StallIntervention } from "./core/loop.ts";
+import {
+  type AgentLoopOutcome,
+  type DecisionPoint,
+  runAgentLoop,
+  type StallIntervention,
+} from "./core/loop.ts";
 import { describePriorLoop, priorLoopAccount } from "./core/loop-account.ts";
 import type { LoopEvent, LoopUsage } from "./core/loop-events.ts";
 import type { ConversationMessage, ModelClient, SamplingSettings } from "./core/model-client.ts";
 import type { RandomSource } from "./core/random-source.ts";
+import type { LoopBudget } from "./core/termination.ts";
 import type { ToolInvoker } from "./core/tool-invoker.ts";
+import { deriveWorkingState, describeWorkingState, type Hypothesis } from "./core/working-state.ts";
 import { openRunStore, type RunStore } from "./durable/run-store.ts";
 import { asJsonValue, digestOfBytes } from "./evidence/canonical-json.ts";
 import { recordRoutineClaims } from "./evidence/routine-claims.ts";
@@ -130,6 +138,12 @@ export interface AgentTaskOptions {
   readonly repairTrace?: boolean;
   /** Experimental early static feedback within the existing repair allowance. */
   readonly repairFinish?: boolean;
+  /**
+   * Experimental (adaptive-decision-v1, src/agent-decision-point.ts): one decision point per loop
+   * that reads the loop's working state and may retrieve, diagnose or run a distinguishing
+   * command, charged to that loop; repair briefs also carry the working state. Off unless asked for.
+   */
+  readonly adaptive?: boolean;
   readonly commandPool?: ResourcePool | undefined;
   readonly contract?: TaskContract;
   readonly maxTokens?: number;
@@ -635,6 +649,32 @@ async function executeAgentTask(
 
   let remainingTokens = loopDependencies.budget.maxTokens;
   const brief = taskBrief(options.task, options.contract);
+  // The run's explanations, shared by every loop so a finding survives a repair's fresh context.
+  const hypotheses: Hypothesis[] = [];
+  const decisionPointFor = (loop: string, budget: LoopBudget): DecisionPoint | undefined =>
+    options.adaptive !== true
+      ? undefined
+      : createDecisionPoint({
+          loop,
+          task: brief,
+          requiredChecks: options.contract?.requiredChecks ?? [],
+          workspace: options.workspace,
+          baseRef: options.baseRef,
+          budget,
+          clock: options.clock,
+          evidence: options.evidence,
+          toolInvoker,
+          shellAllowed: definitions.some((tool) => tool.name === "shell"),
+          readOnly: () =>
+            assembleToolset({
+              ...toolsetBase,
+              tools: () => definitions.filter((tool) => readOnlyTools.has(tool.name)),
+            }),
+          runLoop: runAgentLoop,
+          loopDependencies: { ...loopDependencies, budget },
+          hypotheses,
+        });
+  const firstPoint = decisionPointFor("task", loopDependencies.budget);
   const loop = await runAgentLoop(
     options.repairFeedback === undefined
       ? brief
@@ -642,6 +682,7 @@ async function executeAgentTask(
     {
       ...loopDependencies,
       ...(options.history === undefined ? {} : { history: options.history }),
+      ...(firstPoint === undefined ? {} : { decisionPoint: firstPoint }),
     },
   );
 
@@ -791,11 +832,21 @@ async function executeAgentTask(
       );
       if (request.followUpKind !== undefined)
         beforeOwed.set(request.followUpKind, { completionClaim, messages, latestLoop });
-      const repair = await resolveWithModel(request, options, account, {
-        ...loopDependencies,
-        ...(alternate == null ? {} : { model: alternate }),
-        budget: { ...loopDependencies.budget, ...attemptBudget },
-      });
+      const repairBudget = { ...loopDependencies.budget, ...attemptBudget };
+      const repairPoint = decisionPointFor(`attempt ${request.attempt}`, repairBudget);
+      const repair = await resolveWithModel(
+        request,
+        options,
+        account,
+        {
+          ...loopDependencies,
+          ...(alternate == null ? {} : { model: alternate }),
+          budget: repairBudget,
+        },
+        repairPoint === undefined
+          ? undefined
+          : { decisionPoint: repairPoint, priorMessages: latestLoop.messages, hypotheses },
+      );
       if (alternate != null) await escalation?.complete(repair.callsWithUnknownUsage > 0);
       remainingTokens -= repair.tokensUsed;
       callsWithUnknownUsage += repair.callsWithUnknownUsage;
@@ -1288,11 +1339,19 @@ function measuredCycleMs(cycle: ResolveRequest["cycle"]): number {
  */
 const candidateDiffChars = 6000;
 
+/** The tools a diagnosis may use: it reads and searches, and changes and runs nothing. */
+const readOnlyTools: ReadonlySet<string> = new Set(["read", "search", "list"]);
+
 async function resolveWithModel(
   request: ResolveRequest,
   options: AgentTaskOptions,
   account: string,
   loopDependencies: Parameters<typeof runAgentLoop>[1],
+  adaptive?: {
+    readonly decisionPoint: DecisionPoint;
+    readonly priorMessages: readonly import("./core/model-client.ts").ConversationMessage[];
+    readonly hypotheses: readonly Hypothesis[];
+  },
 ): Promise<AgentLoopOutcome> {
   const startedAt = options.clock.now();
   const candidateDiff = await diffAgainstBase({
@@ -1361,6 +1420,23 @@ async function resolveWithModel(
     "",
     account,
     "",
+    // The previous loop's working state, with the run's explanations and what executions showed
+    // about them, so findings and requirements survive the fresh context. Its last tree is that
+    // loop's, which a rollback may have replaced; the diff above is the workspace now.
+    ...(adaptive === undefined
+      ? []
+      : [
+          describeWorkingState(deriveWorkingState(adaptive.priorMessages), {
+            requiredChecks: options.contract?.requiredChecks ?? [],
+            candidate: {
+              digest: candidateDigest,
+              changedFiles: parseUnifiedDiff(candidateDiff).map((file) => file.path),
+            },
+            hypotheses: adaptive.hypotheses,
+            lastTree: "the previous loop's last tree, which may since have been rolled back",
+          }),
+          "",
+        ]),
     ...(request.rejected === null ? [] : [describeRejectedCandidate(request.rejected), ""]),
     ...(traced ? [preservationTraceBrief(request.passingAtBase ?? []), ""] : []),
     ...(request.followUp === undefined
@@ -1374,7 +1450,12 @@ async function resolveWithModel(
       : [request.followUp]),
   ].join("\n");
 
-  const first = await runAgentLoop(brief, loopDependencies);
+  const first = await runAgentLoop(
+    brief,
+    adaptive === undefined
+      ? loopDependencies
+      : { ...loopDependencies, decisionPoint: adaptive.decisionPoint },
+  );
   if (options.repairFinish === true && request.followUpKind === undefined) {
     const finished = await finishRepair({
       options,
