@@ -367,6 +367,19 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
           .map((one) => `${one.name} (${one.detail})`)
           .join("; ")}`,
       );
+    // A preflight stops here: everything before inference was done and checked, and no arm runs.
+    if (args.has("preflight")) {
+      record.outcome = "preflight-ok";
+      record.endedAt = new Date().toISOString();
+      writeFileSync(
+        join(runsDirectory, cell.nextSetup.replace(".setup-", ".preflight-")),
+        `${JSON.stringify({ ...record, commands: log.commands }, null, 2)}\n`,
+        { flag: "wx" },
+      );
+      rmSync(scratch, { recursive: true, force: true });
+      console.log(`${launch.order} ${launch.task} ${launch.arm}: preflight ok`);
+      return { outcome: "preflight-ok", fatal: null };
+    }
 
     const watch = new AbortController();
     const stopWatch =
@@ -542,7 +555,8 @@ async function main() {
   if (manifest.schema !== manifestSchemaName)
     throw new Error(`${manifestPath} is not a study manifest`);
   const manifestDigest = digestOf(bytes);
-  const runsDirectory = join(dirname(manifestPath), "runs");
+  // A preflight's records sit apart, so they never count as a launch or a setup failure.
+  const runsDirectory = join(dirname(manifestPath), args.has("preflight") ? "preflight" : "runs");
   mkdirSync(runsDirectory, { recursive: true });
   // The harness a correction moved to, or the frozen one: a changed harness runs only under a
   // recorded correction that names both digests.
@@ -613,6 +627,7 @@ async function main() {
         continue;
       }
       const ended = await runLaunch(manifest, manifestDigest, launch, runsDirectory);
+      if (ended.fatal !== null && args.has("preflight")) continue;
       if (ended.fatal !== null) {
         writeFileSync(
           stopped,
