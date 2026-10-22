@@ -14,3 +14,22 @@ Frozen before the first launch, October 22, 2026.
   p-limit feature (opencode, swarm, swarm-control, swarm-direct).
 
 Outcomes are read only after the sixteenth launch is scored.
+
+## Setup correction 1, before any task inference
+
+Launch 0 (p-queue, `swarm`) stopped before its first model request: with no lockfile at the base,
+Swarm ran without `--install`, its goal setup checked the base in a fresh checkout with no installed
+dependencies, every gate stood down, and the product refused to measure (exit 1 after 0.9 s; record
+`heldout/runs/p-queue-compat-remove-throw-on-timeout.swarm.setup-1.json`). The preflight had passed
+because the harness's gate-plan check runs in a prepared tree; it does not exercise the product's
+own fresh-checkout setup.
+
+Correction: one lockfile per task, resolved by the harness from each base with
+`npm install --package-lock-only --package-lock=true --before=2026-10-22T00:00:00.000Z` (the
+evaluator author's registered install date), frozen by digest under the study root, and committed
+by the runner beside the visible check, so every arm sees the same file and versions, Swarm arms
+install from it with `--install --lockfile package-lock.json`, and it is never part of a patch.
+`npm ci` installs from such a lockfile despite the projects' `package-lock=false`. A patch that
+edits `package-lock.json` would not apply over the scorer's tree, which is prepared without it; any
+such case is reported. Same tasks, arms, order and budgets, refrozen as `heldout-2`; this counts as
+the first of the cell's two permitted setup retries.

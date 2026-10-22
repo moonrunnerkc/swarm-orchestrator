@@ -70,6 +70,7 @@ import {
   inferenceBegan,
   isSwarmArm,
   launchArms,
+  resolveFrozenInput,
   treeDigest,
   validateLaunch,
   versionOfExecutable,
@@ -175,7 +176,10 @@ async function freeze(configPath, outPath) {
       cwd: mirrorOf(task.repository),
       timeoutMs: 60_000,
     });
-    lockfiles[task.id] = lock.exitCode === 0 ? "package-lock.json" : null;
+    lockfiles[task.id] =
+      lock.exitCode === 0 || config.harnessLockfiles?.[task.id] !== undefined
+        ? "package-lock.json"
+        : null;
   }
   for (const arm of config.arms)
     if (!launchArms.includes(arm)) throw new Error(`unknown arm ${arm}`);
@@ -207,6 +211,7 @@ async function freeze(configPath, outPath) {
     frozenInputs: config.frozenInputs ?? {},
     exposureMarkers: config.exposureMarkers ?? [],
     lockfiles,
+    harnessLockfiles: config.harnessLockfiles ?? {},
     tasks: resolved,
     launches:
       config.order === "listed"
@@ -292,7 +297,45 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
 
     const preparationStarted = Date.now();
     await cloneAtBase(log, task, task.baseCommit, workspace);
-    const base = await commitVisibleCheck(log, task, workspace);
+    let base = await commitVisibleCheck(log, task, workspace);
+    // A base with no lockfile gets the one the harness resolved for it, frozen by digest and
+    // committed beside the visible check, so every arm installs the same versions, Swarm can
+    // install from a fresh checkout, and the file is never part of an arm's change.
+    const lockInput = manifest.harnessLockfiles?.[task.id];
+    if (lockInput !== undefined) {
+      const found = resolveFrozenInput(manifest, lockInput);
+      if (found === null)
+        throw new FatalError(
+          "configuration",
+          `the frozen lockfile ${lockInput.digest} for ${task.id} is not under the registered input roots`,
+        );
+      writeFileSync(join(workspace, "package-lock.json"), found.bytes);
+      for (const argv of [
+        ["add", "--force", "package-lock.json"],
+        [
+          "-c",
+          "user.name=comparison",
+          "-c",
+          "user.email=comparison@localhost",
+          "commit",
+          "-qm",
+          "Lockfile the harness resolved for the task's base",
+        ],
+      ]) {
+        const ran = await log.run(["git", ...argv], { cwd: workspace, timeoutMs: 60_000 });
+        if (ran.exitCode !== 0)
+          throw new FatalError(
+            "preparation",
+            `committing the harness lockfile failed: ${ran.stderr.toString()}`,
+          );
+      }
+      base = (
+        await log.run(["git", "rev-parse", "HEAD"], { cwd: workspace, timeoutMs: 60_000 })
+      ).stdout
+        .toString()
+        .trim();
+      record.harnessLockfile = { digest: lockInput.digest, base };
+    }
     const prepared = await prepare(log, task, workspace);
     record.preparation = {
       ok: prepared.ok,
