@@ -188,6 +188,7 @@ const workflowFlags = {
   "--prompt-profile": ["legacy", "concise"],
   "--plan-checks": null,
   "--repair-trace": null,
+  "--repair-finish": null,
 };
 
 export function swarmWorkflowFlags(flags) {

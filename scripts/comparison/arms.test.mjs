@@ -395,6 +395,7 @@ describe("Swarm's frozen workflow flags", () => {
     );
     expect(argv.slice(-3)).toEqual(["--prompt-profile", "concise", "--plan-checks"]);
     // The experimental repair intervention is frozen per manifest the same way: one cohort, one setting.
+    expect(swarmWorkflowFlags(["--repair-finish"])).toEqual(["--repair-finish"]);
     expect(swarmWorkflowFlags(["--repair-trace"])).toEqual(["--repair-trace"]);
     expect(() => swarmWorkflowFlags(["--max-tokens", "1"])).toThrow("not a workflow flag");
     expect(() => swarmWorkflowFlags(["--prompt-profile", "terse"])).toThrow(
