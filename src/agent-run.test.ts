@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { type AgentTaskOptions, runAgentTask, systemPrompt } from "./agent-run.ts";
 import { createSystemClock } from "./cli-runtime-inputs.ts";
 import { taskGoalGate } from "./cli-task-goal.ts";
@@ -31,6 +32,7 @@ import {
   respondWithText,
   respondWithToolCalls,
 } from "./providers/fixture-provider.ts";
+import { defineTool } from "./tools/tool-definition.ts";
 import { createReadTrailTool } from "./workers/trail-tool.ts";
 
 const run = promisify(execFile);
@@ -939,6 +941,71 @@ describe("a repair after a rolled-back repair (scripted model)", () => {
     const firstRepair = prompts.find((prompt) => prompt.includes("This is attempt 1 of 2"));
     expect(firstRepair).not.toContain("rolled back");
   }, 60000);
+});
+
+describe("the experimental repair trace (scripted model)", () => {
+  // A stand-in for run_check: the trace is offered only where the worker can compare the trees.
+  const checkTool = defineTool({
+    name: "run_check",
+    description: "stand-in",
+    inputSchema: z.strictObject({}),
+    kind: "read",
+    pathsFrom: () => [],
+    execute: () => Promise.resolve({ text: "ok", facts: {} }),
+  });
+  const breaksThenFixes = [
+    respondWithToolCalls("declaring", [
+      { callId: "c0", toolName: "declare_file_set", input: { files: ["src/greet.js"] } },
+    ]),
+    respondWithToolCalls("writing", [
+      { callId: "c1", toolName: "write", input: { path: "src/greet.js", content: broken } },
+    ]),
+    respondWithText("done"),
+    respondWithToolCalls("restoring", [
+      {
+        callId: "c2",
+        toolName: "write",
+        input: {
+          path: "src/greet.js",
+          content: "export function greet() {\n  return 'hello';\n}\n",
+        },
+      },
+    ]),
+    respondWithText("fixed"),
+  ];
+  const repairBrief = () =>
+    evidence
+      .records()
+      .filter((record) => record.type === "model-call")
+      .map((record) => JSON.stringify(evidence.payloads().get(record.payloadDigest)))
+      .find((prompt) => prompt.includes("This is attempt 1 of 1"));
+  const traceNotices = () =>
+    evidence
+      .records()
+      .filter((record) => record.type === "verification-command")
+      .map((record) => evidence.payloads().get(record.payloadDigest) as Record<string, unknown>)
+      .filter((payload) => payload.rule === "preservation-trace-v1");
+
+  it("asks a repair of a gate the base passed to trace a preserved case, and records that it did", async () => {
+    await task(breaksThenFixes, { attempts: 1, repairTrace: true, checkTool });
+    const brief = repairBrief();
+    expect(brief).toContain("Trace before you edit (preservation-trace-v1");
+    expect(brief).toContain("passed when the harness ran it over the base source");
+    expect(brief).toContain("compare_base: true");
+    expect(traceNotices()).toEqual([
+      expect.objectContaining({
+        attempt: 1,
+        passingAtBase: [expect.objectContaining({ gateId: "tests" })],
+      }),
+    ]);
+  }, 60_000);
+
+  it("leaves the brief as it was when the trace was not asked for", async () => {
+    await task(breaksThenFixes, { attempts: 1, checkTool });
+    expect(repairBrief()).toBeDefined();
+    expect(repairBrief()).not.toContain("preservation-trace-v1");
+    expect(traceNotices()).toEqual([]);
+  }, 60_000);
 });
 
 describe("an answer the model already has", () => {
