@@ -107,15 +107,15 @@ the parser without an edit, and had no wall left for a repair or the owed contin
   and the pack `payloads/packed-derived/payloads` (runner records, patches, scores, lint readings,
   session accounts, OpenCode streams, development-pair records and briefs, verification-matrix
   summaries) and `packed-derived/records` (the runner's records, byte for byte).
-- The five Swarm session bundles (about 0.9 MB packed) are on the branch
-  `evidence/2026-10-22-sessions` of this repository, packed the same way, so this tree keeps the
-  6.0 MB of weight headroom its checks require.
+- The five Swarm session bundles (55 MB of ledgers and blobs, packed to 0.70 MB) are on the branch
+  `evidence/2026-10-22-sessions` of this repository at commit `2af3c588c`, packed the same way, so
+  this tree keeps the 6.0 MB of weight headroom its checks require.
 
 ## Reproduction
 
     node scripts/evidence-pack.mjs restore docs/evidence/2026-10-22/payloads/packed-derived/payloads
     node scripts/evidence-pack.mjs restore docs/evidence/2026-10-22/packed-derived/records
-    git fetch origin evidence/2026-10-22-sessions && git checkout FETCH_HEAD -- docs/evidence/2026-10-22/sessions
+    git fetch origin 2af3c588c261394c90ab2a18b8358eb5f5d79be0 && git checkout FETCH_HEAD -- docs/evidence/2026-10-22/sessions
     node scripts/evidence-pack.mjs restore docs/evidence/2026-10-22/sessions/packed-derived/sessions
     node docs/evidence/2026-10-22/session-account.mjs <restored session directory>
     node docs/evidence/2026-10-22/opencode-account.mjs <restored runner record> <directory of restored streams>
