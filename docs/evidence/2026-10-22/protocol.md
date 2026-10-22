@@ -133,3 +133,23 @@ registered scores are not rewritten.
 ---
 
 ## Amendments
+
+### 1. 2026-10-22 09:04 UTC, after launch 6: the runner's preflight is corrected for launch 7; launch 6 stands as halted
+
+Launch 6 (entities, Swarm trace) halted before dispatch, with no inference (0 s, 0 tokens), on the
+runner's own gate-plan preflight (`halt-1.json` of the trace manifest's runs, class
+`configuration`): the product's effective tests gate for `npm run test:vi` is its structured form
+of that script (the same `vitest run` suite with a JSON reporter, which the product substitutes
+only for a script body of exactly `vitest` or `vitest run`), and the preflight compared the two
+command strings. It is a defect of the comparison harness, not of an arm and not a change of
+product. Under the failure handling above, launch 6 counts against the eight and is **not
+relaunched**; the entities trace arm is unmeasured.
+
+Launch 7 would halt the same way. So before it, and only for it: the preflight
+(`scripts/comparison/checks.mjs`, `structuredRewriteOf`) also accepts an effective gate that is
+exactly what the pinned build's own `structuredRunner` renders for the task script's body at the
+base, and nothing else; the evaluator (`hiddenVerdict`, `visibleVerdict`, the change policy and
+the scorers) is unchanged. The harness digest changes with it, so launch 7 runs under a control
+manifest re-frozen at that commit ([control-amended/manifest.json](control-amended/manifest.json))
+with the same pins, flags, budgets and tasks and launch 7 alone. Launches 2, 4 and 5 stand under
+the original control manifest.

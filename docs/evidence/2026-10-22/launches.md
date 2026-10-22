@@ -19,3 +19,11 @@ used no model and are not launches.
 
 | # | task | arm | started (UTC) | arm wall | usage | outcome |
 | --- | --- | --- | --- | --- | --- | --- |
+| 0 | mocha-bugfix-long-prefix-short-alias (repair boundary) | Swarm control | 08:12:00 | | | |
+| 1 | mocha-bugfix-long-prefix-short-alias (repair boundary) | Swarm trace | 08:21:25 | | | |
+| 2 | acorn-bugfix-member-target-pattern-errors | Swarm control | 08:29:18 | | | |
+| 3 | acorn-bugfix-member-target-pattern-errors | Swarm trace | 08:39:24 | | | |
+| 4 | acorn-bugfix-member-target-pattern-errors | OpenCode | 08:49:55 | | | |
+| 5 | entities-bugfix-restore-get-code-point | OpenCode | 09:01:04 | | | |
+| 6 | entities-bugfix-restore-get-code-point | Swarm trace | 09:02:08 | | | |
+| 7 | entities-bugfix-restore-get-code-point | Swarm control | 09:02:26 | | | |

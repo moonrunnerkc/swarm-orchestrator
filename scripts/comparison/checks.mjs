@@ -193,8 +193,14 @@ export async function swarmGatePlanVerdict(log, task, base, pins, childHome, dec
     const extra = { effective, status, bundleDirectory: report.bundleDirectory ?? null };
     if (tests === null)
       return verdict(false, "the product's check reports no tests gate at all", extra);
-    // A vouched rewrite keeps the command and adds the harness's own flags after it.
-    if (effective !== expected && !(effective ?? "").startsWith(`${expected} `))
+    // A vouched rewrite keeps the command and adds the harness's own flags after it; a structured
+    // rewrite runs the script's own body through a reporter the product reads, and is accepted only
+    // where it is exactly what the pinned build renders for that body.
+    if (
+      effective !== expected &&
+      !(effective ?? "").startsWith(`${expected} `) &&
+      !(await structuredRewriteOf(pins, tree.checkout, expected, effective))
+    )
       return verdict(
         false,
         `the product's effective tests gate is ${JSON.stringify(effective)}, not the task's ${JSON.stringify(expected)}`,
@@ -226,6 +232,29 @@ export async function swarmGatePlanVerdict(log, task, base, pins, childHome, dec
   } finally {
     rmSync(tree.scratch, { recursive: true, force: true });
   }
+}
+
+/**
+ * Whether the product's effective tests gate is its own structured form of the task's script: the
+ * task's command is `npm run <script>`, that script's body at the base is one the pinned build
+ * rewrites (`structuredRunner`, for `vitest run` the same suite with a JSON reporter), and the
+ * effective command is exactly what the pinned build renders for it. 2026-10-22 launch 6 halted on
+ * this: entities' `test:vi` is `vitest run`, and the string comparison read the product's own
+ * reporter for that same suite as a different gate.
+ */
+export async function structuredRewriteOf(pins, checkout, expected, effective) {
+  const script = /^npm run ([\w:.@/-]+)$/.exec(expected)?.[1];
+  const module = join(dirname(pins.swarmCli), "gates", "structured-runner.js");
+  if (script === undefined || effective === null || !existsSync(module)) return false;
+  let body;
+  try {
+    body = JSON.parse(readFileSync(join(checkout, "package.json"), "utf8")).scripts?.[script];
+  } catch {
+    return false;
+  }
+  const { structuredRunner, renderRunnerArgv } = await import(pathToFileURL(module).href);
+  const argv = structuredRunner(body);
+  return argv !== null && renderRunnerArgv(argv) === effective;
 }
 
 /** The last line of a stream that parses as JSON with the named schema, or null. */
