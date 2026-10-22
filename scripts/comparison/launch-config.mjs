@@ -112,6 +112,25 @@ export function resolveFrozenInput(manifest, input) {
   return null;
 }
 
+/**
+ * One digest over every file of a built tree, by sorted relative path and bytes. The CLI entry
+ * alone is not the build: two builds of 2026-10-22 differed in their agent loop and had the same
+ * `dist/cli.js` bytes.
+ */
+export function treeDigest(directory) {
+  const hash = createHash("sha256");
+  const files = readdirSync(directory, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => join(entry.parentPath ?? entry.path, entry.name))
+    .sort();
+  for (const file of files) {
+    hash.update(`${file.slice(directory.length + 1)}\n`);
+    hash.update(readFileSync(file));
+    hash.update("\n");
+  }
+  return `sha256:${hash.digest("hex")}`;
+}
+
 /** What the pinned executable says its version is, asked of the absolute file itself. */
 export function versionOfExecutable(path, versionArgs = ["--version"]) {
   const ran = spawnSync(path, versionArgs, { encoding: "utf8", env: { PATH: dirname(path) } });
@@ -318,6 +337,12 @@ export function validateLaunch({ manifest, arm, launch, canary, otherLaunch, inp
       "swarm cli digest",
       observed === pins.swarmCliDigest,
       `${observed}; pinned ${pins.swarmCliDigest}`,
+    );
+    const build = treeDigest(dirname(pins.swarmCli));
+    check(
+      "swarm build digest",
+      build === pins.swarmBuildDigest,
+      `${build}; pinned ${pins.swarmBuildDigest}`,
     );
   }
   if (arm === "opencode" && typeof pins.opencodeBin === "string" && existsSync(pins.opencodeBin)) {

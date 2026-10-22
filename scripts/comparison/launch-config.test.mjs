@@ -11,6 +11,7 @@ import {
   launchEnvironment,
   resolveFrozenInput,
   sandboxProfile,
+  treeDigest,
   validateLaunch,
 } from "./launch-config.mjs";
 
@@ -52,6 +53,7 @@ function manifestWith(pins, extra = {}) {
       node: process.version,
       swarmCli: join(root, "swarm", "cli.js"),
       swarmCliDigest: digestOf("cli"),
+      swarmBuildDigest: "sha256:unbuilt",
       ...pins,
     },
     isolation: { protectedRoots: [join(root, "sealed"), join(root, "work")] },
@@ -186,6 +188,18 @@ describe("frozen inputs (the 2026-10-22 slot 2 failure)", () => {
     expect(result.checks.find((one) => one.name === "frozen input alias.patch")).toMatchObject({
       ok: false,
     });
+  });
+});
+
+describe("the pinned build", () => {
+  it("changes digest when any built file changes, not only the entry", () => {
+    const dist = join(root, "dist");
+    mkdirSync(join(dist, "gates"), { recursive: true });
+    writeFileSync(join(dist, "cli.js"), "entry\n");
+    writeFileSync(join(dist, "gates", "agent.js"), "one\n");
+    const before = treeDigest(dist);
+    writeFileSync(join(dist, "gates", "agent.js"), "two\n");
+    expect(treeDigest(dist)).not.toBe(before);
   });
 });
 

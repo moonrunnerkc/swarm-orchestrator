@@ -70,6 +70,7 @@ import {
   inferenceBegan,
   isSwarmArm,
   launchArms,
+  treeDigest,
   validateLaunch,
   versionOfExecutable,
 } from "./launch-config.mjs";
@@ -184,6 +185,7 @@ async function freeze(configPath, outPath) {
       ...config.pins,
       node: versionOfExecutable(config.pins.nodeBin).version,
       swarmCliDigest: digestOf(readFileSync(config.pins.swarmCli)),
+      swarmBuildDigest: treeDigest(dirname(config.pins.swarmCli)),
       ...(opencode === null ? {} : { opencode: opencode.version }),
     },
     arms: Object.fromEntries(config.arms.map((arm) => [arm, config.armSettings?.[arm] ?? {}])),
