@@ -1,8 +1,8 @@
 # Local capability study, October 22, 2026
 
 The new finishing intervention has **no demonstrated live artifact benefit**. Neither live
-finishing treatment dispatched its continuation. The only complete-delivery improvement is in
-a deterministic source regression, not a live product win. The general product objective remains unmet.
+finishing treatment dispatched its continuation. The demonstrated finishing and rollback behavior is in
+a scripted controller regression. It is not a live product win. The general product objective remains unmet.
 
 The [study](../../capability-study-2026-10-22.md) explains diagnosis, primary research and the
 small opt-in implementation. The [protocol](protocol.md) froze eight ordered local slots before
@@ -129,3 +129,51 @@ a bounded distinguishing execution chosen from the task and observed code, befor
 inspection, can improve the first candidate at the same total budget. Test it against the direct
 loop with independently scored delivery; remove it if additional reasoning/checking fails to improve
 artifacts. Another round of orchestration is not assumed to help.
+
+## Reproduce and inspect
+
+[Raw evidence and restoration instructions](https://github.com/moonrunnerkc/swarm-orchestrator/tree/ec03980a4ed87b32905a7d8cd98b7805235be372/docs/evidence/2026-10-22-capability)
+include every new native session, external product stream, command result, frozen input, exact
+patch, supplemental score and verification log. The archive is 15,234,872 bytes; all 3,641
+restored files were checked against their lengths and SHA-256 digests. All five native bundles
+independently verify with exit 0, including the failed outcomes. The earlier retained Mocha
+session remains in the prior report's published session archive.
+
+The shared credential scan and its review are retained. Its credential-assignment findings are
+public inference measurements/allowances in external records, documented local dummy credentials,
+and source metadata; native bundle detector text also produces named findings. No detector or
+native record was changed to clear the scan. This is known-pattern review, not secret removal.
+
+From the product checkout, score a restored submitted patch with:
+
+```sh
+node docs/evidence/2026-10-22-capability/score-project.mjs \
+  --manifest docs/evidence/2026-10-22-capability/control.json \
+  --task entities-bugfix-restore-get-code-point --patch <restored-patch> --out <new-score-directory>
+node docs/evidence/2026-10-22/score-tests.mjs \
+  --manifest docs/evidence/2026-10-22-capability/control.json \
+  --task entities-bugfix-restore-get-code-point --patch <restored-patch> --out <new-score.json>
+```
+
+Run supplemental scorers serially: the inherited comparison blob writer has an observed concurrent
+EEXIST race. Restoration/scoring commands need no model inference. Replaying a source trajectory
+is not another live sample. Keep hidden checks outside workers when repeating live experiments.
+
+## Repository verification
+
+Tested commit `726d2746435e7130b7b407163c8574fc36e9e6a9`, with an empty captured diff:
+
+```text
+npm run gates: exit 0
+ Test Files  478 passed | 5 skipped (483)
+      Tests  4731 passed | 29 skipped (4760)
+   Duration  277.24s
+```
+
+Checks passed with zero documentation-path misses and 6.1 MB tracked-tree headroom (6.0 MB
+required). Lint reported 29 warnings, one information diagnostic and no errors. Build exited 0
+with "dist/ emitted, 21 asset(s) copied". Packaged checks exited 0 with "every documented command
+met its packaged behavioral contract". Fuzz build and all eight seed groups exited 0. Full logs,
+including warnings, skipped tests, the failing pre-fix regression and earlier supplemental scoring
+failures, are in the raw archive. Subsequent local changes are documentation only; CI is checked
+on the published source head separately. No merge or release was performed by this work.
