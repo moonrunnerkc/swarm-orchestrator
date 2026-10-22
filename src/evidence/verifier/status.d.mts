@@ -11,3 +11,5 @@ export function capturedRegression(
 export function instrumentChanges(instrument: unknown): readonly string[];
 /** Whether every authorized instrument difference the checks carry is one the goal allows. */
 export function authorizedWithin(checks: unknown, allowed: readonly string[]): boolean;
+/** Whether a recorded runner-source-v1 reading lets a pass under the project's own changed runner stand. */
+export function runnerWitnessHeld(witness: unknown, instrument: unknown): boolean;

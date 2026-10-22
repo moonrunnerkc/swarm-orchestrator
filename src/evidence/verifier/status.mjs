@@ -48,6 +48,62 @@ export function instrumentChanges(instrument) {
   return changed;
 }
 
+/**
+ * Whether a recorded runner-source reading lets a pass under the project's own changed runner
+ * stand (runner-source-v1). Mirrors `runnerWitnessHeld` in src/gates/runner-witness.ts: every
+ * instrument difference is a file reached as code a run program loads, at least one of them is
+ * loaded by the tests too, both witnessed runs failed
+ * with nothing cut, the base's runner reported at least one added test, and the change's runner
+ * reported exactly the ones the base's runner did.
+ */
+export function runnerWitnessHeld(witness, instrument) {
+  if (
+    witness === null ||
+    typeof witness !== "object" ||
+    witness.rule !== "runner-source-v1" ||
+    instrument === undefined ||
+    instrument === null
+  )
+    return false;
+  const changes = instrumentChanges(instrument);
+  const program = new Set(Array.isArray(instrument.programCode) ? instrument.programCode : []);
+  const subjects = Array.isArray(instrument.programSubjects) ? instrument.programSubjects : [];
+  if (
+    changes.length === 0 ||
+    subjects.length === 0 ||
+    !changes.every((change) => program.has(change))
+  )
+    return false;
+  const { files, markers, candidate, reference } = witness;
+  if (
+    !Array.isArray(files) ||
+    !Array.isArray(markers) ||
+    markers.length === 0 ||
+    markers.length !== files.length ||
+    !markers.every((marker) => typeof marker === "string" && marker.length > 0)
+  )
+    return false;
+  const usable = (observation) =>
+    observation !== null &&
+    typeof observation === "object" &&
+    (observation.unavailable === null || observation.unavailable === undefined) &&
+    observation.outputTruncated !== true &&
+    typeof observation.exitCode === "number" &&
+    observation.exitCode !== 0;
+  if (!usable(candidate) || !usable(reference)) return false;
+  const reported = (observation) => {
+    const text = `${observation.stdout ?? ""}\n${observation.stderr ?? ""}`;
+    return markers.flatMap((marker, index) => (text.includes(marker) ? [index] : []));
+  };
+  const byReference = reported(reference);
+  const byCandidate = reported(candidate);
+  return (
+    byReference.length > 0 &&
+    byReference.length === byCandidate.length &&
+    byReference.every((index, position) => byCandidate[position] === index)
+  );
+}
+
 function notApplicable(observation) {
   if (observation.unavailable !== null && observation.unavailable !== undefined)
     return "not-applicable";
@@ -652,8 +708,17 @@ function expectedStatusBeforeTests(check) {
   );
   if (underBase !== check.configurationStatus) return null;
   if (reported !== "passed") return { status: own, regressed: [] };
-  // Measured again under the base's instrument and passed there: that reading stands.
-  if (underBase === "passed") return { status: "passed", regressed: [] };
+  // The project's own runner source changed, and the change's runner reported the same added
+  // failures as the base's runner: the change's own pass stands (runner-source-v1).
+  if (check.runnerWitness !== undefined && runnerWitnessHeld(check.runnerWitness, check.instrument))
+    return { status: "passed", regressed: [] };
+  // Measured again under the base's instrument and passed there: that reading stands, unless
+  // putting it back also put back code the tests load as well.
+  const subjects = new Set(
+    Array.isArray(check.instrument?.programSubjects) ? check.instrument.programSubjects : [],
+  );
+  const restoredCode = (check.configurationFiles ?? []).some((path) => subjects.has(path));
+  if (underBase === "passed") return { status: restoredCode ? own : "passed", regressed: [] };
   const v2 = identityRule(check) !== null;
   const points = v2
     ? namedTestsV2(check.configurationObservation)
