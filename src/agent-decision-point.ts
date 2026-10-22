@@ -164,7 +164,12 @@ async function decide(
     phase: "decided",
     loop: context.loop,
     step: input.steps,
-    remaining: input.remaining,
+    // Named as budgets are elsewhere on the chain: a field called "tokens" is scrubbed as a credential.
+    remaining: {
+      maxSteps: input.remaining.steps,
+      maxTokens: input.remaining.tokens,
+      maxWallTimeMs: input.remaining.wallMs,
+    },
     signals: {
       landedEdits: signals.landedEdits,
       failedEdits: signals.failedEdits,
@@ -261,18 +266,41 @@ async function decide(
   }
 
   const readOnly = context.readOnly();
-  const brief = diagnosisBrief(context, state, candidate, choice.rule, input);
-  const loop = await context.runLoop(brief, {
+  // Every step but the last may read; the last is an answer with no tool to call. Live acorn run
+  // 1 of the development study spent all five steps reading and never answered.
+  const toolSteps = diagnosisBudget.maxSteps - 1;
+  const brief = diagnosisBrief(context, state, candidate, choice.rule, input, toolSteps);
+  const diagnosisDependencies = {
     ...context.loopDependencies,
     toolInvoker: readOnly.toolInvoker,
     toolSchemas: readOnly.definitions,
     systemPrompt: diagnosisSystemPrompt,
-    budget: diagnosisBudget,
     // The diagnosis's own turns are not the worker's plan or its account of finishing.
     emit: (event: LoopEvent) => {
       if (event.type !== "plan" && event.type !== "claim") context.loopDependencies.emit(event);
     },
+  };
+  const reading = await context.runLoop(brief, {
+    ...diagnosisDependencies,
+    budget: { ...diagnosisBudget, maxSteps: toolSteps },
   });
+  const left = {
+    maxSteps: 1,
+    maxTokens: Math.max(0, diagnosisBudget.maxTokens - reading.tokensUsed),
+    maxWallTimeMs: Math.max(0, diagnosisBudget.maxWallTimeMs - (context.clock.now() - startedAt)),
+  };
+  const loop =
+    reading.stopReason === "max-steps" && left.maxTokens >= maxOutput && left.maxWallTimeMs > 0
+      ? joinLoops(
+          reading,
+          await context.runLoop(answerNowNotice, {
+            ...diagnosisDependencies,
+            toolSchemas: [],
+            history: reading.messages,
+            budget: left,
+          }),
+        )
+      : reading;
   const charged = {
     steps: loop.steps,
     tokensUsed: loop.tokensUsed,
@@ -400,6 +428,7 @@ function diagnosisBrief(
   candidate: Candidate,
   rule: string,
   input: DecisionPointInput,
+  toolSteps: number,
 ): string {
   const focus =
     rule === "failing-check-at-current-tree"
@@ -407,6 +436,7 @@ function diagnosisBrief(
       : "The agent has not landed an edit yet. Identify what blocks implementation: the exact places to change (and any helper or test example to copy), the approach, and a distinguishing command if competing explanations remain.";
   return [
     focus,
+    `You have at most ${toolSteps} reading step(s); your answer comes after them. The files the working state lists as read are known to the agent: read only what your answer needs.`,
     "",
     describeWorkingState(state, {
       task: context.task,
@@ -416,6 +446,32 @@ function diagnosisBrief(
       remaining: input.remaining,
     }),
   ].join("\n");
+}
+
+/** The diagnosis's last turn, given no tools, so what it has read becomes an answer. */
+export const answerNowNotice =
+  "[harness notice: answer now] Your reading steps are used. Answer now with the one JSON object described above, from what you have read; no more tool calls are available.";
+
+function joinLoops(
+  first: Awaited<ReturnType<typeof runAgentLoop>>,
+  second: Awaited<ReturnType<typeof runAgentLoop>>,
+): Awaited<ReturnType<typeof runAgentLoop>> {
+  const add = (a: number | null, b: number | null): number | null =>
+    a === null && b === null ? null : (a ?? 0) + (b ?? 0);
+  return {
+    ...second,
+    steps: first.steps + second.steps,
+    answeredSteps: first.answeredSteps + second.answeredSteps,
+    tokensUsed: first.tokensUsed + second.tokensUsed,
+    callsWithUnknownUsage: first.callsWithUnknownUsage + second.callsWithUnknownUsage,
+    usage: {
+      inputTokens: first.usage.inputTokens + second.usage.inputTokens,
+      outputTokens: first.usage.outputTokens + second.usage.outputTokens,
+      reasoningTokens: add(first.usage.reasoningTokens, second.usage.reasoningTokens),
+      cachedInputTokens: add(first.usage.cachedInputTokens, second.usage.cachedInputTokens),
+    },
+    plan: first.plan,
+  };
 }
 
 function parseDiagnosis(answer: string): { diagnosis: Diagnosis | null; error: string | null } {

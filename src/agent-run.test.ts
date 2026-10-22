@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { diagnosisSystemPrompt } from "./agent-decision-point.ts";
+import { answerNowNotice, diagnosisSystemPrompt } from "./agent-decision-point.ts";
 import { type AgentTaskOptions, runAgentTask, systemPrompt } from "./agent-run.ts";
 import { createSystemClock } from "./cli-runtime-inputs.ts";
 import { taskGoalGate } from "./cli-task-goal.ts";
@@ -2161,7 +2161,7 @@ describe("the adaptive decision point (adaptive-decision-v1)", () => {
 
     expect(decisions).toHaveLength(1);
     const decision = decisions[0]?.payload as Record<string, unknown> & {
-      readonly remaining: { readonly steps: number };
+      readonly remaining: { readonly maxSteps: number; readonly maxTokens: number };
       readonly diagnosis: { readonly hypotheses: readonly Hypothesis[] };
     };
     expect(decision).toMatchObject({
@@ -2170,7 +2170,7 @@ describe("the adaptive decision point (adaptive-decision-v1)", () => {
       chosen: "diagnose",
       chosenBy: "no-edit-at-decision-point",
     });
-    expect(decision.remaining.steps).toBe(6);
+    expect(decision.remaining).toMatchObject({ maxSteps: 6, maxTokens: expect.any(Number) });
     expect(decision.diagnosis).toMatchObject({
       parsed: true,
       actionable: true,
@@ -2278,6 +2278,34 @@ describe("the adaptive decision point (adaptive-decision-v1)", () => {
     ]);
     expect(landing.requests).toHaveLength(5);
     expect(landing.result.loop.tokensUsed).toBe(5 * 15);
+  }, 60_000);
+
+  it("makes a diagnosis that keeps reading answer on its last step, with no tool to call", async () => {
+    await probeFixture();
+    // Ten steps put the point at step 4 and leave the diagnosis three: two to read, one to answer.
+    const { decisions, requests, result } = await adaptiveTask([
+      ...explore,
+      call("d1", "read", { path: "src/greet.js" }),
+      call("d2", "read", { path: "scripts/probe.mjs" }),
+      respondWithText(diagnosis),
+      call("w5", "declare_file_set", { files: ["src/greet.js"] }),
+      call("w6", "write", { path: "src/greet.js", content: stillGreen }),
+      respondWithText("done"),
+    ]);
+    expect(requests.slice(4, 6).map((request) => request.tools.length)).toEqual([3, 3]);
+    expect(requests[6]?.tools).toEqual([]);
+    const last = requests[6]?.messages.at(-1);
+    expect(last?.role === "user" ? last.text : "").toBe(answerNowNotice);
+    expect(decisions[0]?.payload).toMatchObject({
+      diagnosis: expect.objectContaining({
+        parsed: true,
+        actionable: true,
+        stopReason: "completed",
+      }),
+      spent: expect.objectContaining({ steps: 3 }),
+    });
+    expect(result.loop.steps).toBe(10);
+    expect(result.green).toBe(true);
   }, 60_000);
 
   it("gives no notice for an answer that is not actionable, and still charges what it cost", async () => {
