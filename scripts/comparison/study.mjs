@@ -443,12 +443,7 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
         "interrupted",
         `processes still running in the launch directory: ${strays.unstopped.join(", ")}`,
       );
-    // The product's own evidence, kept beside the records before the launch directory goes.
-    if (evidenceDirectory !== null && existsSync(evidenceDirectory)) {
-      const kept = join(runsDirectory, "sessions", `${cellKey(launch)}.${launch.arm}`);
-      cpSync(evidenceDirectory, kept, { recursive: true });
-      record.evidence = kept;
-    }
+    keepSessions(record, home, runsDirectory, launch);
     const patch = await finalPatch(log, workspace, base);
     record.finalPatchDigest = storeBlob(blobs, Buffer.from(patch));
     record.finalPatchBytes = Buffer.byteLength(patch);
@@ -491,6 +486,9 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
         ? cause
         : new FatalError("harness", String(cause?.stack ?? cause));
   }
+  // A stop after inference keeps what the product wrote, as a scored launch does.
+  if (record.evidence === undefined && existsSync(home))
+    keepSessions(record, home, runsDirectory, launch);
   record.endedAt = new Date().toISOString();
   record.outcome = classifyStop({ fatal, inference: record.inferenceBegan });
   if (fatal !== null) record.infrastructureFailure = { class: fatal.class, message: fatal.message };
@@ -506,6 +504,23 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
     `${launch.order} ${launch.task} ${launch.arm}: ${record.outcome}${record.scores ? `, hidden ${record.scores.hidden.verdict}, visible ${record.scores.visible.passed}` : ""}${fatal ? ` (${fatal.class}: ${fatal.message.split("\n")[0]})` : ""}`,
   );
   return { outcome: record.outcome, fatal };
+}
+
+/**
+ * The product's own sessions, kept beside the records before the launch directory goes: every
+ * session under the launch's home, whether or not the arm printed where it wrote one. An arm the
+ * deadline killed prints no result line, and three development launches lost their sessions that way.
+ */
+function keepSessions(record, home, runsDirectory, launch) {
+  const sessions = join(home, ".swarm", "sessions");
+  if (!existsSync(sessions)) return;
+  const names = readdirSync(sessions);
+  if (names.length === 0) return;
+  const kept = join(runsDirectory, "sessions", `${cellKey(launch)}.${launch.arm}`);
+  for (const name of names)
+    cpSync(join(sessions, name), names.length === 1 ? kept : join(kept, name), { recursive: true });
+  record.evidence = kept;
+  record.sessionIds = names;
 }
 
 /** Every text file a kept session holds, for the exposure scan. */
