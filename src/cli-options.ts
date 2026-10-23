@@ -56,7 +56,7 @@ export interface RunCommand {
    */
   readonly repairTrace?: boolean;
   readonly repairFinish?: boolean;
-  /** Experimental: one decision point per loop over its working state (adaptive-decision-v1). */
+  /** Experimental: one decision point per loop over its working state (adaptive-decision-v2). */
   readonly adaptive?: boolean;
   /** The worker's system prompt. Absent is the historical default, `legacy`. */
   readonly promptProfile?: "legacy" | "concise";
@@ -359,7 +359,8 @@ export const usage = [
   "  --prompt-profile legacy|concise    the worker's system prompt (default legacy)",
   "  --repair-finish             experimental: finish static failures within the same repair budget",
   "  --adaptive                  experimental: one decision point per loop reads its working state and",
-  "                              may retrieve, diagnose or run a distinguishing command, within its budget",
+  "                              may retrieve, diagnose or run a distinguishing command, then looks at",
+  "                              whether that led anywhere and may reassess once, within its budget",
   "  --repair-trace              experimental: a repair of a check the base passed traces one preserved",
   "                              case on the base and the workspace through run_check before editing",
   "  --escalate-model <provider:id>     authorize one bounded capability escalation",
