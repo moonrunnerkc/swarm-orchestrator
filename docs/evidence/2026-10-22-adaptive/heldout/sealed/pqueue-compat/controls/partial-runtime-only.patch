@@ -1,0 +1,23 @@
+diff --git a/source/index.ts b/source/index.ts
+index 11e9750..226697a 100644
+--- a/source/index.ts
++++ b/source/index.ts
+@@ -1,5 +1,5 @@
+ import {EventEmitter} from 'eventemitter3';
+-import pTimeout, {TimeoutError} from 'p-timeout';
++import pTimeout from 'p-timeout';
+ import {type Queue, type RunFunction} from './queue.js';
+ import PriorityQueue from './priority-queue.js';
+ import {type QueueAddOptions, type Options, type TaskOptions} from './options.js';
+@@ -353,11 +353,6 @@ export default class PQueue<QueueType extends Queue<RunFunction, EnqueueOptionsT
+ 					resolve(result);
+ 					this.emit('completed', result);
+ 				} catch (error: unknown) {
+-					if (error instanceof TimeoutError && !options.throwOnTimeout) {
+-						resolve();
+-						return;
+-					}
+-
+ 					reject(error);
+ 					this.emit('error', error);
+ 				} finally {

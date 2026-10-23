@@ -1,0 +1,2331 @@
+{
+  "task": "p-queue-compat-remove-throw-on-timeout",
+  "repository": "sindresorhus/p-queue",
+  "workType": "feature",
+  "baseCommit": "62efb742ec5567eb8e18e81063924ef1bae314d5",
+  "upstreamCommit": "e48716fa1236fdd8ac0ad88f7831467f2455976a",
+  "validatedAt": "2026-10-22T23:34:04.346Z",
+  "referenceDigest": "sha256:0264452575a3a1861ceb22584353b15b2f4574575f65382a2106fd08b2971073",
+  "sealedReferenceMatches": true,
+  "timings": {
+    "baseInstallMs": 2183,
+    "baseProjectTestMs": 34503,
+    "baseProjectTestExit": 0
+  },
+  "base": {
+    "visible": {
+      "passed": false,
+      "checkExit": 1,
+      "projectTestExit": 0,
+      "detail": "visible check (node --import=tsx/esm acceptance/visible/check.mjs) exited 1:\nnode:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: Missing expected rejection (TimeoutError).\n    at async file:///Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-HzizpI/checkout/acceptance/visible/check.mjs:6:1 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: undefined,\n  expected: { name: 'TimeoutError' },\n  operator: 'rejects',\n  diff: 'simple'\n}\n\nNode.js v24.15.0"
+    },
+    "hidden": {
+      "verdict": "fail",
+      "basis": "hidden tests (node --import=tsx/esm --test test/basic.ts test/advanced.ts) exited 1",
+      "policy": {
+        "ok": true,
+        "violations": [],
+        "addedAssertions": 0,
+        "removedAssertions": 0,
+        "testFilesAdded": [],
+        "testFilesTouched": []
+      },
+      "displaced": [],
+      "detail": " (0.464291ms)\n✔ .addAll() sync/async mixed tasks (2002.354542ms)\n✔ should resolve empty when size is zero (1209.516583ms)\n✔ .add() - throttled (556.549375ms)\n✔ .add() - throttled, carryoverConcurrencyCount false (1257.6915ms)\n✔ .add() - throttled, carryoverConcurrencyCount true (1650.701042ms)\n✔ .add() - throttled 10, concurrency 5 (1403.043375ms)\n✔ .add() - throttled finish and resume (2202.823666ms)\n✔ pause should work when throttled (2502.6035ms)\nℹ tests 79\nℹ suites 0\nℹ pass 74\nℹ fail 4\nℹ cancelled 0\nℹ skipped 1\nℹ todo 0\nℹ duration_ms 30815.554583\n\n✖ failing tests:\n\ntest at test/advanced.ts:1:4922\n✖ should verify timeout overrides passed to add (205.694583ms)\n  AssertionError [ERR_ASSERTION]: Missing expected rejection.\n      at async TestContext.<anonymous> (/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-rQbc1v/checkout/test/advanced.ts:267:2)\n      at async Test.run (node:internal/test_runner/test:1208:7)\n      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {\n    generatedMessage: false,\n    code: 'ERR_ASSERTION',\n    actual: undefined,\n    expected: undefined,\n    operator: 'rejects',\n    diff: 'simple'\n  }\n\ntest at test/basic.ts:1:3475\n✖ .add() - timeout always throws (308.658083ms)\n  AssertionError [ERR_ASSERTION]: Missing expected rejection (TimeoutError): Task exceeding timeout should throw TimeoutError\n      at async TestContext.<anonymous> (/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-rQbc1v/checkout/test/basic.ts:140:2)\n      at async Test.run (node:internal/test_runner/test:1208:7)\n      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {\n    generatedMessage: false,\n    code: 'ERR_ASSERTION',\n    actual: undefined,\n    operator: 'rejects',\n    diff: 'simple'\n  }\n\ntest at test/basic.ts:1:4007\n✖ .add() - timeout behavior (303.106875ms)\n  AssertionError [ERR_ASSERTION]: Missing expected rejection (TimeoutError).\n      at async TestContext.<anonymous> (/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-rQbc1v/checkout/test/basic.ts:171:2)\n      at async Test.run (node:internal/test_runner/test:1208:7)\n      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {\n    generatedMessage: false,\n    code: 'ERR_ASSERTION',\n    actual: undefined,\n    operator: 'rejects',\n    diff: 'simple'\n  }\n\ntest at test/basic.ts:1:4488\n✖ .add() - change timeout in between (52.595334ms)\n  AssertionError [ERR_ASSERTION]: Missing expected rejection (TimeoutError).\n      at async TestContext.<anonymous> (/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-rQbc1v/checkout/test/basic.ts:203:2)\n      at async Test.run (node:internal/test_runner/test:1208:7)\n      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {\n    generatedMessage: false,\n    code: 'ERR_ASSERTION',\n    actual: undefined,\n    operator: 'rejects',\n    diff: 'simple'\n  }"
+    },
+    "executed": true
+  },
+  "reference": {
+    "visible": {
+      "passed": true,
+      "checkExit": 0,
+      "projectTestExit": 0,
+      "detail": "visible check and project tests passed"
+    },
+    "hidden": {
+      "verdict": "pass",
+      "basis": "hidden tests, project tests and every structural or version requirement passed",
+      "policy": {
+        "ok": true,
+        "violations": [],
+        "addedAssertions": 7,
+        "removedAssertions": 3,
+        "testFilesAdded": [],
+        "testFilesTouched": [
+          "test/advanced.ts",
+          "test/basic.ts"
+        ]
+      },
+      "displaced": [
+        "test/basic.ts",
+        "test/advanced.ts",
+        "test-d/index.test-d.ts"
+      ],
+      "detail": "allowed-change policy satisfied (7 assertion(s) added in 2 test file(s), 3 removed)\nthe patch wrote test/basic.ts, test/advanced.ts, test-d/index.test-d.ts and the sealed overlay displaced it: the project-test result here is the overlaid tree's, not the delivered tree's"
+    }
+  },
+  "lint": {
+    "ok": true,
+    "applicable": false,
+    "detail": "the project declares no lint script"
+  },
+  "controls": [
+    {
+      "name": "alternative-correct.patch",
+      "digest": "sha256:347c2395e3600069196ce5dc7bf8d046c069e6d3e8ed82038c27200d7cde0810",
+      "expected": "pass",
+      "hidden": {
+        "verdict": "pass",
+        "basis": "hidden tests, project tests and every structural or version requirement passed",
+        "policy": {
+          "ok": true,
+          "violations": [],
+          "addedAssertions": 7,
+          "removedAssertions": 3,
+          "testFilesAdded": [],
+          "testFilesTouched": [
+            "test/advanced.ts",
+            "test/basic.ts"
+          ]
+        },
+        "displaced": [
+          "test/basic.ts",
+          "test/advanced.ts",
+          "test-d/index.test-d.ts"
+        ],
+        "detail": "allowed-change policy satisfied (7 assertion(s) added in 2 test file(s), 3 removed)\nthe patch wrote test/basic.ts, test/advanced.ts, test-d/index.test-d.ts and the sealed overlay displaced it: the project-test result here is the overlaid tree's, not the delivered tree's"
+      },
+      "visible": {
+        "passed": true,
+        "checkExit": 0,
+        "projectTestExit": 0,
+        "detail": "visible check and project tests passed"
+      }
+    },
+    {
+      "name": "partial-runtime-only.patch",
+      "digest": "sha256:1668bd97afaa6bc53e13b626c2ea6964c402ae8ef5f8f0b5913f44d6a0dc2af1",
+      "expected": "fail",
+      "hidden": {
+        "verdict": "fail",
+        "basis": "node --import=tsx/esm acceptance/hidden/behaviour-check.mjs exited 1",
+        "policy": {
+          "ok": true,
+          "violations": [],
+          "addedAssertions": 0,
+          "removedAssertions": 0,
+          "testFilesAdded": [],
+          "testFilesTouched": []
+        },
+        "displaced": [],
+        "detail": "not ok - the option is gone from the source and its types\nAssertionError [ERR_ASSERTION]: source/index.ts still mentions throwOnTimeout\n    at file:///Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-OkjKuI/checkout/acceptance/hidden/behaviour-check.mjs:21:10\n    at file:///Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-OkjKuI/checkout/acceptance/hidden/behaviour-check.mjs:128:23\n    at ModuleJob.run (node:internal/modules/esm/module_job:437:25)\n    at async node:internal/modules/esm/loader:639:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)\nok - a queue timeout rejects with TimeoutError, emits error and not completed\nok - the examples: timeout 300, a 400 ms task rejects, a 200 ms task gives its value, a 10 ms override rejects\nok - a throwOnTimeout given anyway changes nothing: the timeout still rejects\nok - addAll rejects when one of its tasks times out\nok - preserved: without a timeout, slow tasks complete\nok - preserved: changing queue.timeout applies to tasks added later\nok - preserved: the queue keeps going after timeouts, within its concurrency\nok - preserved: other errors still reject and emit error\nok - preserved: priorities and results\n9/10 behaviour checks passed"
+      },
+      "visible": {
+        "passed": false,
+        "checkExit": 0,
+        "projectTestExit": 1,
+        "detail": "      at PQueue.add (/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-A8AfX3/checkout/source/index.ts:324:10)\n      at TestContext.<anonymous> (/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-A8AfX3/checkout/test/advanced.ts:271:14)\n      at async Test.run (node:internal/test_runner/test:1208:7)\n\ntest at test/basic.ts:1:3439\n✖ .add() - timeout without throwing (303.637875ms)\n  Error [TimeoutError]: Promise timed out after 300 milliseconds\n      at file:///Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-A8AfX3/checkout/node_modules/p-timeout/index.js:54:24\n      at new Promise (<anonymous>)\n      at pTimeout (file:///Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-A8AfX3/checkout/node_modules/p-timeout/index.js:24:25)\n      at <anonymous> (/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-A8AfX3/checkout/source/index.ts:345:19)\n      at PQueue.#tryToStartAnother (/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-A8AfX3/checkout/source/index.ts:202:5)\n      at <anonymous> (/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-A8AfX3/checkout/source/index.ts:368:9)\n      at new Promise (<anonymous>)\n      at PQueue.add (/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-A8AfX3/checkout/source/index.ts:324:10)\n      at TestContext.<anonymous> (/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-A8AfX3/checkout/test/basic.ts:137:8)\n      at Test.runInAsyncScope (node:async_hooks:227:14)\n\ntest at test/basic.ts:1:4299\n✖ .add() - change timeout in between (53.228041ms)\n  Error [TimeoutError]: Promise timed out after 50 milliseconds\n      at file:///Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-A8AfX3/checkout/node_modules/p-timeout/index.js:54:24\n      at new Promise (<anonymous>)\n      at pTimeout (file:///Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-A8AfX3/checkout/node_modules/p-timeout/index.js:24:25)\n      at <anonymous> (/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-A8AfX3/checkout/source/index.ts:345:19)\n      at PQueue.#tryToStartAnother (/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-A8AfX3/checkout/source/index.ts:202:5)\n      at <anonymous> (/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-A8AfX3/checkout/source/index.ts:368:9)\n      at new Promise (<anonymous>)\n      at PQueue.add (/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-A8AfX3/checkout/source/index.ts:324:10)\n      at TestContext.<anonymous> (/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-A8AfX3/checkout/test/basic.ts:180:8)\n      at Test.runInAsyncScope (node:async_hooks:227:14)"
+      }
+    },
+    {
+      "name": "task-timeout-overridden.patch",
+      "digest": "sha256:eb29665af17ced33238d168a5c8d44d35bb06e9866ec8b2d696420b4b35c4f45",
+      "expected": "fail",
+      "hidden": {
+        "verdict": "fail",
+        "basis": "hidden tests (node --import=tsx/esm --test test/basic.ts test/advanced.ts) exited 1",
+        "policy": {
+          "ok": true,
+          "violations": [],
+          "addedAssertions": 7,
+          "removedAssertions": 3,
+          "testFilesAdded": [],
+          "testFilesTouched": [
+            "test/advanced.ts",
+            "test/basic.ts"
+          ]
+        },
+        "displaced": [
+          "test/basic.ts",
+          "test/advanced.ts",
+          "test-d/index.test-d.ts"
+        ],
+        "detail": "ckout/node_modules/p-timeout/index.js:54:24\n      at new Promise (<anonymous>)\n      at pTimeout (file:///Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-E9cFxu/checkout/node_modules/p-timeout/index.js:24:25)\n      at <anonymous> (/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-E9cFxu/checkout/source/index.ts:339:19)\n      at PQueue.#tryToStartAnother (/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-E9cFxu/checkout/source/index.ts:198:5)\n      at <anonymous> (/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-E9cFxu/checkout/source/index.ts:362:9)\n      at new Promise (<anonymous>)\n      at PQueue.add (/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-E9cFxu/checkout/source/index.ts:318:10)\n      at TestContext.<anonymous> (/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-E9cFxu/checkout/test/advanced.ts:271:14)\n      at async Test.run (node:internal/test_runner/test:1208:7)\n\ntest at test/basic.ts:1:3475\n✖ .add() - timeout always throws (610.979333ms)\n  AssertionError [ERR_ASSERTION]: Missing expected rejection (TimeoutError): Short timeout should throw\n      at async TestContext.<anonymous> (/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-E9cFxu/checkout/test/basic.ts:158:2)\n      at async Test.run (node:internal/test_runner/test:1208:7)\n      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {\n    generatedMessage: false,\n    code: 'ERR_ASSERTION',\n    actual: undefined,\n    operator: 'rejects',\n    diff: 'simple'\n  }\n\ntest at test/basic.ts:1:4007\n✖ .add() - timeout behavior (809.573875ms)\n  Error [TimeoutError]: Promise timed out after 300 milliseconds\n      at file:///Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-E9cFxu/checkout/node_modules/p-timeout/index.js:54:24\n      at new Promise (<anonymous>)\n      at pTimeout (file:///Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-E9cFxu/checkout/node_modules/p-timeout/index.js:24:25)\n      at <anonymous> (/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-E9cFxu/checkout/source/index.ts:339:19)\n      at PQueue.#tryToStartAnother (/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-E9cFxu/checkout/source/index.ts:198:5)\n      at <anonymous> (/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-E9cFxu/checkout/source/index.ts:362:9)\n      at new Promise (<anonymous>)\n      at PQueue.add (/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-E9cFxu/checkout/source/index.ts:318:10)\n      at TestContext.<anonymous> (/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-E9cFxu/checkout/test/basic.ts:187:33)\n      at async Test.run (node:internal/test_runner/test:1208:7)"
+      },
+      "visible": {
+        "passed": false,
+        "checkExit": 0,
+        "projectTestExit": 1,
+        "detail": "modules/p-timeout/index.js:54:24\n      at new Promise (<anonymous>)\n      at pTimeout (file:///Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-K3lwSu/checkout/node_modules/p-timeout/index.js:24:25)\n      at <anonymous> (/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-K3lwSu/checkout/source/index.ts:339:19)\n      at PQueue.#tryToStartAnother (/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-K3lwSu/checkout/source/index.ts:198:5)\n      at <anonymous> (/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-K3lwSu/checkout/source/index.ts:362:9)\n      at new Promise (<anonymous>)\n      at PQueue.add (/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-K3lwSu/checkout/source/index.ts:318:10)\n      at TestContext.<anonymous> (/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-K3lwSu/checkout/test/advanced.ts:271:14)\n      at async Test.run (node:internal/test_runner/test:1208:7)\n\ntest at test/basic.ts:1:3475\n✖ .add() - timeout always throws (611.773ms)\n  AssertionError [ERR_ASSERTION]: Missing expected rejection (TimeoutError): Short timeout should throw\n      at async TestContext.<anonymous> (/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-K3lwSu/checkout/test/basic.ts:158:2)\n      at async Test.run (node:internal/test_runner/test:1208:7)\n      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {\n    generatedMessage: false,\n    code: 'ERR_ASSERTION',\n    actual: undefined,\n    operator: 'rejects',\n    diff: 'simple'\n  }\n\ntest at test/basic.ts:1:4007\n✖ .add() - timeout behavior (807.534333ms)\n  Error [TimeoutError]: Promise timed out after 300 milliseconds\n      at file:///Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-K3lwSu/checkout/node_modules/p-timeout/index.js:54:24\n      at new Promise (<anonymous>)\n      at pTimeout (file:///Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-K3lwSu/checkout/node_modules/p-timeout/index.js:24:25)\n      at <anonymous> (/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-K3lwSu/checkout/source/index.ts:339:19)\n      at PQueue.#tryToStartAnother (/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-K3lwSu/checkout/source/index.ts:198:5)\n      at <anonymous> (/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-K3lwSu/checkout/source/index.ts:362:9)\n      at new Promise (<anonymous>)\n      at PQueue.add (/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-K3lwSu/checkout/source/index.ts:318:10)\n      at TestContext.<anonymous> (/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-K3lwSu/checkout/test/basic.ts:187:33)\n      at async Test.run (node:internal/test_runner/test:1208:7)"
+      }
+    }
+  ],
+  "valid": true,
+  "controlsAsExpected": true,
+  "wallMs": 447975,
+  "commands": [
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "62efb742e^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:fbaf38d420c7678bb9175c3a927e2e37e6258983092bb9b101b9bbdbd8d37616",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "e48716fa1^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:0f646870ad757d848e4e71d9c57212ced275dac9d4d14c15797fa5a0037fb146",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "62efb742e^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:fbaf38d420c7678bb9175c3a927e2e37e6258983092bb9b101b9bbdbd8d37616",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "e48716fa1^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:0f646870ad757d848e4e71d9c57212ced275dac9d4d14c15797fa5a0037fb146",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "e48716fa1236fdd8ac0ad88f7831467f2455976a^"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:fbaf38d420c7678bb9175c3a927e2e37e6258983092bb9b101b9bbdbd8d37616",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--binary",
+        "62efb742ec5567eb8e18e81063924ef1bae314d5",
+        "e48716fa1236fdd8ac0ad88f7831467f2455976a"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:0264452575a3a1861ceb22584353b15b2f4574575f65382a2106fd08b2971073",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/p-queue-compat-remove-throw-on-timeout/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:fbaf38d420c7678bb9175c3a927e2e37e6258983092bb9b101b9bbdbd8d37616",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/p-queue-compat-remove-throw-on-timeout/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+        "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-HzizpI/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 31,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:a5295fdc5ddfe27651a3385cfd3d0b43b5d1f9553657e9948ea8c8d501935373"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-HzizpI/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-HzizpI/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-HzizpI/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:fbaf38d420c7678bb9175c3a927e2e37e6258983092bb9b101b9bbdbd8d37616",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-HzizpI/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-HzizpI/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 16,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-HzizpI/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:4139abc6129e4625b22cd9e876162c98704f26a63aa15fcac2eb21b6af931a8c",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-22T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-HzizpI/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2183,
+      "stdoutDigest": "sha256:90be90a62e0e6ae43bb40cdf7ff04c452be74d1e677f8dc4318fe98cf70e0429",
+      "stderrDigest": "sha256:882076ede3a8982166553bb7d36896c689c0e4c283bba18720ac0bcfd4cf3284"
+    },
+    {
+      "argv": [
+        "sh",
+        "-c",
+        "node --import=tsx/esm acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-HzizpI/checkout",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 306,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:c12e8dab0336958d12bd77be4fdab08e3e939062b0e2493a0b7dd60d2f519e68"
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-HzizpI/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 34503,
+      "stdoutDigest": "sha256:b722e4a4121bd2bfa1d9e3e0349ea8520dbc6be38b5b37c61b1dd1282dc7a090",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/p-queue-compat-remove-throw-on-timeout/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 12,
+      "stdoutDigest": "sha256:fbaf38d420c7678bb9175c3a927e2e37e6258983092bb9b101b9bbdbd8d37616",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/p-queue-compat-remove-throw-on-timeout/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+        "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-rQbc1v/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 31,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:a5295fdc5ddfe27651a3385cfd3d0b43b5d1f9553657e9948ea8c8d501935373"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-rQbc1v/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-rQbc1v/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-rQbc1v/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:fbaf38d420c7678bb9175c3a927e2e37e6258983092bb9b101b9bbdbd8d37616",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-rQbc1v/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-rQbc1v/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 16,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-rQbc1v/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:eb48e923419a8876bd2e3f052515e91de24f59269017241c19dc2b64f155c851",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-22T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-rQbc1v/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2310,
+      "stdoutDigest": "sha256:90be90a62e0e6ae43bb40cdf7ff04c452be74d1e677f8dc4318fe98cf70e0429",
+      "stderrDigest": "sha256:882076ede3a8982166553bb7d36896c689c0e4c283bba18720ac0bcfd4cf3284"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "e48716fa1236fdd8ac0ad88f7831467f2455976a:test/basic.ts"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:ba9d781db51229b741b8a43f4989b1933455b9502e53021c481e27e20299a3eb",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "e48716fa1236fdd8ac0ad88f7831467f2455976a:test/advanced.ts"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:44deae09b1ddd40ffb9f92c9bd03adb1bee62b24d2a83594181fc73251290c94",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "e48716fa1236fdd8ac0ad88f7831467f2455976a:test-d/index.test-d.ts"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:ff4c8d2c6dbaf6d4f8d21083b5eef171ec92d68a48d0443c725586e1ab05f6c0",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "node",
+        "--import=tsx/esm",
+        "--test",
+        "test/basic.ts",
+        "test/advanced.ts"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-rQbc1v/checkout",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 30840,
+      "stdoutDigest": "sha256:ea7634e0feaeb00b792388cea85d9fbebba4b503a2b2b05f746a0aeb39dd9315",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/p-queue-compat-remove-throw-on-timeout/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:fbaf38d420c7678bb9175c3a927e2e37e6258983092bb9b101b9bbdbd8d37616",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/p-queue-compat-remove-throw-on-timeout/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+        "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-PedRuX/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 32,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:a5295fdc5ddfe27651a3385cfd3d0b43b5d1f9553657e9948ea8c8d501935373"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-PedRuX/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-PedRuX/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-PedRuX/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 7,
+      "stdoutDigest": "sha256:fbaf38d420c7678bb9175c3a927e2e37e6258983092bb9b101b9bbdbd8d37616",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-PedRuX/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-PedRuX/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 15,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-PedRuX/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:4b641f78da1182814d5d6f0084dc42763c4db457d769a5fa94c963dbe7ebcfd9",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-PedRuX/0264452575a3.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-PedRuX/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-22T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-PedRuX/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2341,
+      "stdoutDigest": "sha256:90be90a62e0e6ae43bb40cdf7ff04c452be74d1e677f8dc4318fe98cf70e0429",
+      "stderrDigest": "sha256:882076ede3a8982166553bb7d36896c689c0e4c283bba18720ac0bcfd4cf3284"
+    },
+    {
+      "argv": [
+        "sh",
+        "-c",
+        "node --import=tsx/esm acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-PedRuX/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 386,
+      "stdoutDigest": "sha256:d81e5c2040ab0ac064d24c7c5b7c5a9ad59c1ff14fe0b7af13028cc7787f9b4a",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-PedRuX/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 35600,
+      "stdoutDigest": "sha256:c2ff16133ec046878f7d6938682254a526cc77dea6e225ed57a670229cf38cb5",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/p-queue-compat-remove-throw-on-timeout/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:fbaf38d420c7678bb9175c3a927e2e37e6258983092bb9b101b9bbdbd8d37616",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/p-queue-compat-remove-throw-on-timeout/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+        "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-mWMxnc/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 36,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:a5295fdc5ddfe27651a3385cfd3d0b43b5d1f9553657e9948ea8c8d501935373"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-mWMxnc/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-mWMxnc/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-mWMxnc/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:fbaf38d420c7678bb9175c3a927e2e37e6258983092bb9b101b9bbdbd8d37616",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-mWMxnc/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-mWMxnc/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 16,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-mWMxnc/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:872c363aa037bf7ea4021f1090b564612852541ad1e600c282e3be3f0dd3bbde",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-mWMxnc/0264452575a3.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-mWMxnc/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-22T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-mWMxnc/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2370,
+      "stdoutDigest": "sha256:90be90a62e0e6ae43bb40cdf7ff04c452be74d1e677f8dc4318fe98cf70e0429",
+      "stderrDigest": "sha256:882076ede3a8982166553bb7d36896c689c0e4c283bba18720ac0bcfd4cf3284"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "e48716fa1236fdd8ac0ad88f7831467f2455976a:test/basic.ts"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:ba9d781db51229b741b8a43f4989b1933455b9502e53021c481e27e20299a3eb",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "e48716fa1236fdd8ac0ad88f7831467f2455976a:test/advanced.ts"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:44deae09b1ddd40ffb9f92c9bd03adb1bee62b24d2a83594181fc73251290c94",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "e48716fa1236fdd8ac0ad88f7831467f2455976a:test-d/index.test-d.ts"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:ff4c8d2c6dbaf6d4f8d21083b5eef171ec92d68a48d0443c725586e1ab05f6c0",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "node",
+        "--import=tsx/esm",
+        "--test",
+        "test/basic.ts",
+        "test/advanced.ts"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-mWMxnc/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 32096,
+      "stdoutDigest": "sha256:d58e1d60637a417c2fefe8ee42d1448e843793d6c4e572de4fd3acd04397d255",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "node",
+        "--import=tsx/esm",
+        "acceptance/hidden/behaviour-check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-mWMxnc/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 1585,
+      "stdoutDigest": "sha256:e0b1fe781792b0dacf806afd9c577a1a11931cf0fadeda3efcb556214c0459cc",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-mWMxnc/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 34821,
+      "stdoutDigest": "sha256:f2240b2524bda316f2bfd4c5f7cd02aa24c825798bba3dd8e52e0d936e51c5ed",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/p-queue-compat-remove-throw-on-timeout/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:fbaf38d420c7678bb9175c3a927e2e37e6258983092bb9b101b9bbdbd8d37616",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/p-queue-compat-remove-throw-on-timeout/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+        "/Users/brad/swarm-comparison-work/lint-p-queue-compat-remove-throw-on-timeout-Z1GlDm/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 34,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:a5295fdc5ddfe27651a3385cfd3d0b43b5d1f9553657e9948ea8c8d501935373"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/lint-p-queue-compat-remove-throw-on-timeout-Z1GlDm/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/lint-p-queue-compat-remove-throw-on-timeout-Z1GlDm/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/lint-p-queue-compat-remove-throw-on-timeout-Z1GlDm/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:fbaf38d420c7678bb9175c3a927e2e37e6258983092bb9b101b9bbdbd8d37616",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/lint-p-queue-compat-remove-throw-on-timeout-Z1GlDm/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/lint-p-queue-compat-remove-throw-on-timeout-Z1GlDm/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 15,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/lint-p-queue-compat-remove-throw-on-timeout-Z1GlDm/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:5132bda4852234e19d3c4f24bdd42407a422f7d19e43f1def1383cf3c666b9f1",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-22T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/lint-p-queue-compat-remove-throw-on-timeout-Z1GlDm/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8671,
+      "stdoutDigest": "sha256:4e474754a3602d8c05d86291ea96797ed1d2760d30899ada65da7012866f4836",
+      "stderrDigest": "sha256:882076ede3a8982166553bb7d36896c689c0e4c283bba18720ac0bcfd4cf3284"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/p-queue-compat-remove-throw-on-timeout/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:fbaf38d420c7678bb9175c3a927e2e37e6258983092bb9b101b9bbdbd8d37616",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/p-queue-compat-remove-throw-on-timeout/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+        "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-aiClKX/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 134,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:a5295fdc5ddfe27651a3385cfd3d0b43b5d1f9553657e9948ea8c8d501935373"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-aiClKX/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 13,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-aiClKX/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-aiClKX/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:fbaf38d420c7678bb9175c3a927e2e37e6258983092bb9b101b9bbdbd8d37616",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-aiClKX/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-aiClKX/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 16,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-aiClKX/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:7930f24f1de0bbd16c3543dd4f4b487a33b27586ec3677f24a6a6b5683b93a03",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-aiClKX/347c2395e360.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-aiClKX/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-22T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-aiClKX/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2283,
+      "stdoutDigest": "sha256:90be90a62e0e6ae43bb40cdf7ff04c452be74d1e677f8dc4318fe98cf70e0429",
+      "stderrDigest": "sha256:882076ede3a8982166553bb7d36896c689c0e4c283bba18720ac0bcfd4cf3284"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "e48716fa1236fdd8ac0ad88f7831467f2455976a:test/basic.ts"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:ba9d781db51229b741b8a43f4989b1933455b9502e53021c481e27e20299a3eb",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "e48716fa1236fdd8ac0ad88f7831467f2455976a:test/advanced.ts"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:44deae09b1ddd40ffb9f92c9bd03adb1bee62b24d2a83594181fc73251290c94",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "e48716fa1236fdd8ac0ad88f7831467f2455976a:test-d/index.test-d.ts"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 27,
+      "stdoutDigest": "sha256:ff4c8d2c6dbaf6d4f8d21083b5eef171ec92d68a48d0443c725586e1ab05f6c0",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "node",
+        "--import=tsx/esm",
+        "--test",
+        "test/basic.ts",
+        "test/advanced.ts"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-aiClKX/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 31633,
+      "stdoutDigest": "sha256:099bf92f8dc8bf8a637d72d70d79585a432bc2449d85434388a84873494232e8",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "node",
+        "--import=tsx/esm",
+        "acceptance/hidden/behaviour-check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-aiClKX/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 1568,
+      "stdoutDigest": "sha256:e0b1fe781792b0dacf806afd9c577a1a11931cf0fadeda3efcb556214c0459cc",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-aiClKX/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 36155,
+      "stdoutDigest": "sha256:ec056c6d4eae08a79ed7f5d4ff1d995f4a331b19f50a2347d20b2e5081e639f2",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/p-queue-compat-remove-throw-on-timeout/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:fbaf38d420c7678bb9175c3a927e2e37e6258983092bb9b101b9bbdbd8d37616",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/p-queue-compat-remove-throw-on-timeout/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+        "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-OrVNHz/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 33,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:a5295fdc5ddfe27651a3385cfd3d0b43b5d1f9553657e9948ea8c8d501935373"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-OrVNHz/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-OrVNHz/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-OrVNHz/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 7,
+      "stdoutDigest": "sha256:fbaf38d420c7678bb9175c3a927e2e37e6258983092bb9b101b9bbdbd8d37616",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-OrVNHz/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-OrVNHz/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 16,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-OrVNHz/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 7,
+      "stdoutDigest": "sha256:75ac167215624c2f55968f0fe2d64f6027e31cb75bc27ba95ee3bcb8dfb2c8cd",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-OrVNHz/347c2395e360.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-OrVNHz/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-22T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-OrVNHz/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2256,
+      "stdoutDigest": "sha256:90be90a62e0e6ae43bb40cdf7ff04c452be74d1e677f8dc4318fe98cf70e0429",
+      "stderrDigest": "sha256:882076ede3a8982166553bb7d36896c689c0e4c283bba18720ac0bcfd4cf3284"
+    },
+    {
+      "argv": [
+        "sh",
+        "-c",
+        "node --import=tsx/esm acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-OrVNHz/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 382,
+      "stdoutDigest": "sha256:d81e5c2040ab0ac064d24c7c5b7c5a9ad59c1ff14fe0b7af13028cc7787f9b4a",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-OrVNHz/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 35067,
+      "stdoutDigest": "sha256:d729caa7a89f61f6da41fe3edba9076c4d253974a8e9accc00905fd086c92a63",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/p-queue-compat-remove-throw-on-timeout/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 12,
+      "stdoutDigest": "sha256:fbaf38d420c7678bb9175c3a927e2e37e6258983092bb9b101b9bbdbd8d37616",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/p-queue-compat-remove-throw-on-timeout/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+        "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-OkjKuI/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 48,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:a5295fdc5ddfe27651a3385cfd3d0b43b5d1f9553657e9948ea8c8d501935373"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-OkjKuI/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 17,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-OkjKuI/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 14,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-OkjKuI/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 15,
+      "stdoutDigest": "sha256:fbaf38d420c7678bb9175c3a927e2e37e6258983092bb9b101b9bbdbd8d37616",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-OkjKuI/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 15,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-OkjKuI/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 22,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-OkjKuI/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:82bd800bc1f69c905792a9a18c2c39f28151890ff8c568c7227b5c3990009117",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-OkjKuI/1668bd97afaa.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-OkjKuI/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-22T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-OkjKuI/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2351,
+      "stdoutDigest": "sha256:90be90a62e0e6ae43bb40cdf7ff04c452be74d1e677f8dc4318fe98cf70e0429",
+      "stderrDigest": "sha256:882076ede3a8982166553bb7d36896c689c0e4c283bba18720ac0bcfd4cf3284"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "e48716fa1236fdd8ac0ad88f7831467f2455976a:test/basic.ts"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:ba9d781db51229b741b8a43f4989b1933455b9502e53021c481e27e20299a3eb",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "e48716fa1236fdd8ac0ad88f7831467f2455976a:test/advanced.ts"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:44deae09b1ddd40ffb9f92c9bd03adb1bee62b24d2a83594181fc73251290c94",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "e48716fa1236fdd8ac0ad88f7831467f2455976a:test-d/index.test-d.ts"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:ff4c8d2c6dbaf6d4f8d21083b5eef171ec92d68a48d0443c725586e1ab05f6c0",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "node",
+        "--import=tsx/esm",
+        "--test",
+        "test/basic.ts",
+        "test/advanced.ts"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-OkjKuI/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 31554,
+      "stdoutDigest": "sha256:dd0af653b13c252dd0f9f9f4577f6ab7e3d60e7c6c7549169a25532a6e3e7d40",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "node",
+        "--import=tsx/esm",
+        "acceptance/hidden/behaviour-check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-OkjKuI/checkout",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 1569,
+      "stdoutDigest": "sha256:e96fa56fc7384f63e9f324c36724b4351fe6b5a0be49fadffd180391529976ad",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/p-queue-compat-remove-throw-on-timeout/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:fbaf38d420c7678bb9175c3a927e2e37e6258983092bb9b101b9bbdbd8d37616",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/p-queue-compat-remove-throw-on-timeout/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+        "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-A8AfX3/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 34,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:a5295fdc5ddfe27651a3385cfd3d0b43b5d1f9553657e9948ea8c8d501935373"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-A8AfX3/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-A8AfX3/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-A8AfX3/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:fbaf38d420c7678bb9175c3a927e2e37e6258983092bb9b101b9bbdbd8d37616",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-A8AfX3/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-A8AfX3/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 15,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-A8AfX3/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:8283211970909e3ab5e8f30875a00e586590f059f4764e9d873d4233f24050dc",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-A8AfX3/1668bd97afaa.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-A8AfX3/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-22T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-A8AfX3/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2524,
+      "stdoutDigest": "sha256:90be90a62e0e6ae43bb40cdf7ff04c452be74d1e677f8dc4318fe98cf70e0429",
+      "stderrDigest": "sha256:882076ede3a8982166553bb7d36896c689c0e4c283bba18720ac0bcfd4cf3284"
+    },
+    {
+      "argv": [
+        "sh",
+        "-c",
+        "node --import=tsx/esm acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-A8AfX3/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 375,
+      "stdoutDigest": "sha256:d81e5c2040ab0ac064d24c7c5b7c5a9ad59c1ff14fe0b7af13028cc7787f9b4a",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-A8AfX3/checkout",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 32273,
+      "stdoutDigest": "sha256:b12498ce326c7ee4ac8d29f788e9c4fe38151172853a5a754a82c3edbc901dd1",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/p-queue-compat-remove-throw-on-timeout/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:fbaf38d420c7678bb9175c3a927e2e37e6258983092bb9b101b9bbdbd8d37616",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/p-queue-compat-remove-throw-on-timeout/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+        "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-E9cFxu/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 33,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:a5295fdc5ddfe27651a3385cfd3d0b43b5d1f9553657e9948ea8c8d501935373"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-E9cFxu/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 13,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-E9cFxu/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-E9cFxu/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:fbaf38d420c7678bb9175c3a927e2e37e6258983092bb9b101b9bbdbd8d37616",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-E9cFxu/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-E9cFxu/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 16,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-E9cFxu/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:6d6a801121bab1d0deb211a4462677b86adf443af9afff5dc982ed324ed638bc",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-E9cFxu/eb29665af17c.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-E9cFxu/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-22T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-E9cFxu/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2345,
+      "stdoutDigest": "sha256:90be90a62e0e6ae43bb40cdf7ff04c452be74d1e677f8dc4318fe98cf70e0429",
+      "stderrDigest": "sha256:882076ede3a8982166553bb7d36896c689c0e4c283bba18720ac0bcfd4cf3284"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "e48716fa1236fdd8ac0ad88f7831467f2455976a:test/basic.ts"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 12,
+      "stdoutDigest": "sha256:ba9d781db51229b741b8a43f4989b1933455b9502e53021c481e27e20299a3eb",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "e48716fa1236fdd8ac0ad88f7831467f2455976a:test/advanced.ts"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:44deae09b1ddd40ffb9f92c9bd03adb1bee62b24d2a83594181fc73251290c94",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "e48716fa1236fdd8ac0ad88f7831467f2455976a:test-d/index.test-d.ts"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:ff4c8d2c6dbaf6d4f8d21083b5eef171ec92d68a48d0443c725586e1ab05f6c0",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "node",
+        "--import=tsx/esm",
+        "--test",
+        "test/basic.ts",
+        "test/advanced.ts"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-queue-compat-remove-throw-on-timeout-E9cFxu/checkout",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 31841,
+      "stdoutDigest": "sha256:c4ab712528498e48b35b02a0b35f396f70e1544f7096498a767ec0a89ed0aabc",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/p-queue-compat-remove-throw-on-timeout/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:fbaf38d420c7678bb9175c3a927e2e37e6258983092bb9b101b9bbdbd8d37616",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/p-queue-compat-remove-throw-on-timeout/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-queue.git",
+        "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-K3lwSu/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 31,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:a5295fdc5ddfe27651a3385cfd3d0b43b5d1f9553657e9948ea8c8d501935373"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-K3lwSu/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-K3lwSu/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-K3lwSu/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:fbaf38d420c7678bb9175c3a927e2e37e6258983092bb9b101b9bbdbd8d37616",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-K3lwSu/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-K3lwSu/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 16,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-K3lwSu/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:b47e6d74bf651854aa5ba0db8040dd04b2d798893fdb36d10a3afa4791153176",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-K3lwSu/eb29665af17c.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-K3lwSu/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-22T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-K3lwSu/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2440,
+      "stdoutDigest": "sha256:90be90a62e0e6ae43bb40cdf7ff04c452be74d1e677f8dc4318fe98cf70e0429",
+      "stderrDigest": "sha256:882076ede3a8982166553bb7d36896c689c0e4c283bba18720ac0bcfd4cf3284"
+    },
+    {
+      "argv": [
+        "sh",
+        "-c",
+        "node --import=tsx/esm acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-K3lwSu/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 375,
+      "stdoutDigest": "sha256:d81e5c2040ab0ac064d24c7c5b7c5a9ad59c1ff14fe0b7af13028cc7787f9b4a",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-queue-compat-remove-throw-on-timeout-K3lwSu/checkout",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 33413,
+      "stdoutDigest": "sha256:7426da72fcea9e2cb11797a75b6239bcedd8efdda31c2923896b4906ccec8def",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}

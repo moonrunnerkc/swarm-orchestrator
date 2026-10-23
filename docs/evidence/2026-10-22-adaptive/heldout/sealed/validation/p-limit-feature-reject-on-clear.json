@@ -1,0 +1,3082 @@
+{
+  "task": "p-limit-feature-reject-on-clear",
+  "repository": "sindresorhus/p-limit",
+  "workType": "feature",
+  "baseCommit": "ce9d71cf1391edf2897cbb9e00b8bc4f091df8b1",
+  "upstreamCommit": "8907801ffa0252b51490a2c9efbb388d0c83391f",
+  "validatedAt": "2026-10-22T20:36:13.798Z",
+  "referenceDigest": "sha256:3d141f61a41cbd6c38a791ab6bd4e4d60245a9dc0a524641eef72e7034926c9c",
+  "sealedReferenceMatches": true,
+  "timings": {
+    "baseInstallMs": 2354,
+    "baseProjectTestMs": 5606,
+    "baseProjectTestExit": 0
+  },
+  "base": {
+    "visible": {
+      "passed": false,
+      "checkExit": 1,
+      "projectTestExit": 0,
+      "detail": "visible check (node acceptance/visible/check.mjs) exited 1:\nnode:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: Missing expected exception (TypeError).\n    at file:///Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-SMpTgE/checkout/acceptance/visible/check.mjs:4:8\n    at ModuleJob.run (node:internal/modules/esm/module_job:437:25)\n    at async node:internal/modules/esm/loader:639:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: undefined,\n  expected: [Function: TypeError],\n  operator: 'throws',\n  diff: 'simple'\n}\n\nNode.js v24.15.0"
+    },
+    "hidden": {
+      "verdict": "fail",
+      "basis": "hidden tests (npx ava test.js) exited 1",
+      "policy": {
+        "ok": true,
+        "violations": [],
+        "addedAssertions": 0,
+        "removedAssertions": 0,
+        "testFilesAdded": [],
+        "testFilesTouched": []
+      },
+      "displaced": [],
+      "detail": "✔ throws on invalid concurrency argument\n  ✔ clearQueue\n  ✔ accepts additional arguments\n  ✔ continues after sync throw\n  ✔ runs all tasks asynchronously\n  ✔ non-promise returning function\n  ✔ map accepts an iterable (set)\n  ✔ map accepts an iterable (array iterator)\n  ✔ map\n  ✔ propagates async execution context properly\n  ✔ shared context with a limited provider helper\n  ✔ map passes index and preserves order with concurrency\n  ✔ accepts options object (103ms)\n  ✔ does not ignore errors (113ms)\n  ✔ change concurrency to bigger value (154ms)\n  ✔ change concurrency to smaller value (206ms)\n  ✔ concurrency: 1 (608ms)\n  ✔ concurrency: 4 (2.3s)\n  ✔ limitFunction() (2.4s)\n  ✔ activeCount and pendingCount properties (3s)\n  ✘ [fail]: clearQueue rejects pending promises when enabled Promise returned by test never resolved\n  ─\n\n  clearQueue rejects pending promises when enabled\n\n  Error: Promise returned by test never resolved\n\n  Error: Promise returned by test never resolved\n      at Test.finishDueToInactivity (file:///Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DaKbxl/checkout/node_modules/ava/lib/test.js:587:9)\n      at Runner.beforeExitHandler (file:///Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DaKbxl/checkout/node_modules/ava/lib/runner.js:238:13)\n      at process.emit (node:events:509:28)\n\n  ─\n\n  1 test failed"
+    },
+    "executed": true
+  },
+  "reference": {
+    "visible": {
+      "passed": true,
+      "checkExit": 0,
+      "projectTestExit": 0,
+      "detail": "visible check and project tests passed"
+    },
+    "hidden": {
+      "verdict": "pass",
+      "basis": "hidden tests, project tests and every structural or version requirement passed",
+      "policy": {
+        "ok": true,
+        "violations": [],
+        "addedAssertions": 0,
+        "removedAssertions": 0,
+        "testFilesAdded": [],
+        "testFilesTouched": []
+      },
+      "displaced": [
+        "test.js",
+        "index.test-d.ts"
+      ],
+      "detail": "allowed-change policy satisfied (0 assertion(s) added in 0 test file(s), 0 removed)\nthe patch wrote test.js, index.test-d.ts and the sealed overlay displaced it: the project-test result here is the overlaid tree's, not the delivered tree's"
+    }
+  },
+  "lint": {
+    "ok": true,
+    "applicable": false,
+    "detail": "the project declares no lint script"
+  },
+  "controls": [
+    {
+      "name": "alternative-correct.patch",
+      "digest": "sha256:9a361fb5feef224d17a1a4b0645d6e550fe921037938d7221c066c69f3f0687e",
+      "expected": "pass",
+      "hidden": {
+        "verdict": "pass",
+        "basis": "hidden tests, project tests and every structural or version requirement passed",
+        "policy": {
+          "ok": true,
+          "violations": [],
+          "addedAssertions": 0,
+          "removedAssertions": 0,
+          "testFilesAdded": [],
+          "testFilesTouched": []
+        },
+        "displaced": [
+          "test.js",
+          "index.test-d.ts"
+        ],
+        "detail": "allowed-change policy satisfied (0 assertion(s) added in 0 test file(s), 0 removed)\nthe patch wrote test.js, index.test-d.ts and the sealed overlay displaced it: the project-test result here is the overlaid tree's, not the delivered tree's"
+      },
+      "visible": {
+        "passed": true,
+        "checkExit": 0,
+        "projectTestExit": 0,
+        "detail": "visible check and project tests passed"
+      }
+    },
+    {
+      "name": "always-reject.patch",
+      "digest": "sha256:43a2b43734c56c893c6dc0f68c7ae0b11c015d0b92a8cf68b5cf5c37cb989ec4",
+      "expected": "fail",
+      "hidden": {
+        "verdict": "fail",
+        "basis": "hidden tests (npx ava test.js) exited 1",
+        "policy": {
+          "ok": true,
+          "violations": [],
+          "addedAssertions": 0,
+          "removedAssertions": 0,
+          "testFilesAdded": [],
+          "testFilesTouched": []
+        },
+        "displaced": [],
+        "detail": "✔ throws on invalid concurrency argument\n  ✔ clearQueue\n  ✔ accepts additional arguments\n  ✔ continues after sync throw\n  ✔ runs all tasks asynchronously\n  ✔ non-promise returning function\n  ✔ map accepts an iterable (set)\n  ✔ map accepts an iterable (array iterator)\n  ✔ map\n  ✔ propagates async execution context properly\n  ✔ shared context with a limited provider helper\n  ✔ map passes index and preserves order with concurrency\n  ✔ clearQueue rejects pending promises when enabled (102ms)\n  ✔ accepts options object (102ms)\n  ✔ does not ignore errors (114ms)\n  ✔ change concurrency to bigger value (153ms)\n  ✔ change concurrency to smaller value (204ms)\n  ✔ concurrency: 1 (607ms)\n  ✔ limitFunction() (2.3s)\n  ✔ concurrency: 4 (2.4s)\n  ✔ activeCount and pendingCount properties (3s)\n\n  Unhandled rejection in test.js\n\n  test.js:191\n\n   190:   t.is(limit.pendingCount, 3);\n   191:   limit.clearQueue();         \n   192:   t.is(limit.pendingCount, 0);\n\n  AbortError: This operation was aborted\n\n  › generator.value (file://index.js:79:36)\n  › file://test.js:191:8\n\n  Unhandled rejection in test.js\n\n  test.js:191\n\n   190:   t.is(limit.pendingCount, 3);\n   191:   limit.clearQueue();         \n   192:   t.is(limit.pendingCount, 0);\n\n  AbortError: This operation was aborted\n\n  › generator.value (file://index.js:79:36)\n  › file://test.js:191:8\n\n  Unhandled rejection in test.js\n\n  test.js:191\n\n   190:   t.is(limit.pendingCount, 3);\n   191:   limit.clearQueue();         \n   192:   t.is(limit.pendingCount, 0);\n\n  AbortError: This operation was aborted\n\n  › generator.value (file://index.js:79:36)\n  › file://test.js:191:8\n\n  ✘ test.js exited with a non-zero exit code: 1\n  ─\n\n  21 tests passed\n  3 unhandled rejections"
+      },
+      "visible": {
+        "passed": false,
+        "checkExit": 0,
+        "projectTestExit": 1,
+        "detail": "project tests (npm test) exited 1:\n  ✔ non-promise returning function\n  ✔ map accepts an iterable (set)\n  ✔ map accepts an iterable (array iterator)\n  ✔ map\n  ✔ propagates async execution context properly\n  ✔ shared context with a limited provider helper\n  ✔ map passes index and preserves order with concurrency\n  ✔ accepts options object\n  ✔ does not ignore errors (113ms)\n  ✔ change concurrency to bigger value (151ms)\n  ✔ change concurrency to smaller value (202ms)\n  ✔ concurrency: 1 (604ms)\n  ✔ concurrency: 4 (2.2s)\n  ✔ limitFunction() (2.4s)\n  ✔ activeCount and pendingCount properties (3s)\n\n  Unhandled rejection in test.js\n\n  test.js:191\n\n   190:   t.is(limit.pendingCount, 3);\n   191:   limit.clearQueue();         \n   192:   t.is(limit.pendingCount, 0);\n\n  AbortError: This operation was aborted\n\n  › generator.value (file://index.js:79:36)\n  › file://test.js:191:8\n\n  Unhandled rejection in test.js\n\n  test.js:191\n\n   190:   t.is(limit.pendingCount, 3);\n   191:   limit.clearQueue();         \n   192:   t.is(limit.pendingCount, 0);\n\n  AbortError: This operation was aborted\n\n  › generator.value (file://index.js:79:36)\n  › file://test.js:191:8\n\n  Unhandled rejection in test.js\n\n  test.js:191\n\n   190:   t.is(limit.pendingCount, 3);\n   191:   limit.clearQueue();         \n   192:   t.is(limit.pendingCount, 0);\n\n  AbortError: This operation was aborted\n\n  › generator.value (file://index.js:79:36)\n  › file://test.js:191:8\n\n  ✘ test.js exited with a non-zero exit code: 1\n  ─\n\n  20 tests passed\n  3 unhandled rejections"
+      }
+    },
+    {
+      "name": "partial-no-types.patch",
+      "digest": "sha256:45633ea0f36bed17218288496d1920a1a6b00b19be2d40c413df948518a83b24",
+      "expected": "fail",
+      "hidden": {
+        "verdict": "fail",
+        "basis": "npx tsd exited 1",
+        "policy": {
+          "ok": true,
+          "violations": [],
+          "addedAssertions": 0,
+          "removedAssertions": 0,
+          "testFilesAdded": [],
+          "testFilesTouched": []
+        },
+        "displaced": [],
+        "detail": "index.test-d.ts:5:55\n  ✖  5:55  Object literal may only specify known properties, and rejectOnClear does not exist in type Options.  \n\n  1 error"
+      },
+      "visible": {
+        "passed": true,
+        "checkExit": 0,
+        "projectTestExit": 0,
+        "detail": "visible check and project tests passed"
+      }
+    },
+    {
+      "name": "plain-error.patch",
+      "digest": "sha256:98fc7afa0f94bd6b58a6df3cfaa521c4d81d3b267c88ba3883f3a58abb96cbc0",
+      "expected": "fail",
+      "hidden": {
+        "verdict": "fail",
+        "basis": "hidden tests (npx ava test.js) exited 1",
+        "policy": {
+          "ok": true,
+          "violations": [],
+          "addedAssertions": 0,
+          "removedAssertions": 0,
+          "testFilesAdded": [],
+          "testFilesTouched": []
+        },
+        "displaced": [],
+        "detail": "✔ throws on invalid concurrency argument\n  ✔ clearQueue\n  ✔ accepts additional arguments\n  ✔ continues after sync throw\n  ✔ runs all tasks asynchronously\n  ✔ non-promise returning function\n  ✔ map accepts an iterable (set)\n  ✔ map accepts an iterable (array iterator)\n  ✔ map\n  ✔ propagates async execution context properly\n  ✔ shared context with a limited provider helper\n  ✔ map passes index and preserves order with concurrency\n  ✘ [fail]: clearQueue rejects pending promises when enabled\n  ✔ accepts options object (105ms)\n  ✔ does not ignore errors (114ms)\n  ✔ change concurrency to bigger value (154ms)\n  ✔ change concurrency to smaller value (207ms)\n  ✔ concurrency: 1 (610ms)\n  ✔ concurrency: 4 (2.3s)\n  ✔ limitFunction() (2.3s)\n  ✔ activeCount and pendingCount properties (3s)\n\n  Unhandled rejection in test.js\n\n  test.js:205\n\n   204:                               \n   205:   limit.clearQueue();         \n   206:   t.is(limit.pendingCount, 0);\n\n  Error: Queue cleared\n\n  › generator.value (file://index.js:84:24)\n  › file://test.js:205:8\n\n  ✘ test.js exited with a non-zero exit code: 1\n  ─\n\n  clearQueue rejects pending promises when enabled\n\n  test.js:209\n\n   208:   await runningPromise;                                        \n   209:   await t.throwsAsync(pendingPromiseOne, {name: 'AbortError'});\n   210:   await t.throwsAsync(pendingPromiseTwo, {name: 'AbortError'});\n\n  Promise rejected with unexpected exception:\n\n  Error {\n    message: 'Queue cleared',\n  }\n\n  Expected name to equal:\n\n  'AbortError'\n\n  › generator.value (file://index.js:84:24)\n  › file://test.js:205:8\n\n  ─\n\n  1 test failed\n  1 unhandled rejection"
+      },
+      "visible": {
+        "passed": true,
+        "checkExit": 0,
+        "projectTestExit": 0,
+        "detail": "visible check and project tests passed"
+      }
+    },
+    {
+      "name": "unvalidated-option.patch",
+      "digest": "sha256:377bdc821d6de9f370c361c6cb1be9ba918858b44da19e1ec4157974a8f2cce0",
+      "expected": "fail",
+      "hidden": {
+        "verdict": "fail",
+        "basis": "node acceptance/hidden/behaviour-check.mjs exited 1",
+        "policy": {
+          "ok": true,
+          "violations": [],
+          "addedAssertions": 0,
+          "removedAssertions": 0,
+          "testFilesAdded": [],
+          "testFilesTouched": []
+        },
+        "displaced": [],
+        "detail": "ok - rejectOnClear: true rejects every waiting promise with an AbortError; the running one completes\nok - rejected promises settle promptly, before the running task finishes\nok - default and rejectOnClear: false keep cleared promises unsettled\nok - the limiter keeps working after a rejecting clear\nok - clearQueue with nothing waiting is harmless\nnot ok - a non-boolean rejectOnClear throws a TypeError\nAssertionError [ERR_ASSERTION]: Missing expected exception (TypeError): rejectOnClear \"nope\"\n    at file:///Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-nm47Wj/checkout/acceptance/hidden/behaviour-check.mjs:103:10\n    at file:///Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-nm47Wj/checkout/acceptance/hidden/behaviour-check.mjs:168:23\nnot ok - limitFunction accepts and validates rejectOnClear\nAssertionError [ERR_ASSERTION]: Missing expected exception (TypeError).\n    at file:///Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-nm47Wj/checkout/acceptance/hidden/behaviour-check.mjs:108:9\n    at file:///Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-nm47Wj/checkout/acceptance/hidden/behaviour-check.mjs:168:23\nok - preserved: concurrency validation and the number form\nok - preserved: concurrency is respected and results keep order\nok - preserved: errors and arguments\nok - preserved: raising concurrency starts waiting tasks\n9/11 behaviour checks passed"
+      },
+      "visible": {
+        "passed": false,
+        "checkExit": 1,
+        "projectTestExit": 0,
+        "detail": "visible check (node acceptance/visible/check.mjs) exited 1:\nnode:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: Missing expected exception (TypeError).\n    at file:///Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-vah9af/checkout/acceptance/visible/check.mjs:4:8\n    at ModuleJob.run (node:internal/modules/esm/module_job:437:25)\n    at async node:internal/modules/esm/loader:639:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: undefined,\n  expected: [Function: TypeError],\n  operator: 'throws',\n  diff: 'simple'\n}\n\nNode.js v24.15.0"
+      }
+    }
+  ],
+  "valid": true,
+  "controlsAsExpected": true,
+  "wallMs": 131863,
+  "commands": [
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "ce9d71cf1^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "8907801ff^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:9a6d2129b88fac444ba3e1116eec63b4471489ee695852b074bcad4cb71719f1",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "ce9d71cf1^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "8907801ff^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:9a6d2129b88fac444ba3e1116eec63b4471489ee695852b074bcad4cb71719f1",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "8907801ffa0252b51490a2c9efbb388d0c83391f^"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--binary",
+        "ce9d71cf1391edf2897cbb9e00b8bc4f091df8b1",
+        "8907801ffa0252b51490a2c9efbb388d0c83391f"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:3d141f61a41cbd6c38a791ab6bd4e4d60245a9dc0a524641eef72e7034926c9c",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/p-limit-feature-reject-on-clear/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "tag",
+        "comparison/p-limit-feature-reject-on-clear/base",
+        "ce9d71cf1391edf2897cbb9e00b8bc4f091df8b1"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/p-limit-feature-reject-on-clear/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+        "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-SMpTgE/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 31,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:f40da936327061a287c52eed607c522b3418757f6fc37980b312ca5e0b0fda24"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-SMpTgE/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-SMpTgE/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-SMpTgE/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-SMpTgE/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-SMpTgE/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 16,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-SMpTgE/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:04b3371cd4f66936b0ef7bdf071e191a0c300b77d1378fa8d717e5f5ea24c8d5",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-22T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-SMpTgE/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2354,
+      "stdoutDigest": "sha256:262085dcc37435cfdc0761b6e6e9f5aa8cd6fccd0026182cb2e077809a82edc2",
+      "stderrDigest": "sha256:e307d6e0ba31bd34be5447c054b06e4af87eb75d6050fc6095665ee48e62d175"
+    },
+    {
+      "argv": [
+        "sh",
+        "-c",
+        "node acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-SMpTgE/checkout",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 24,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:1187fcfabe152d26e8010fbe3fe118bb0174d6dd1117bf1ee6a586c99a98e43a"
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-SMpTgE/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 5606,
+      "stdoutDigest": "sha256:45ee88645ca2d5d50f8ddc9ef83f6dad739b2138d2ccafb109922213ddabc4d8",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/p-limit-feature-reject-on-clear/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/p-limit-feature-reject-on-clear/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+        "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DaKbxl/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 31,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:f40da936327061a287c52eed607c522b3418757f6fc37980b312ca5e0b0fda24"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DaKbxl/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 12,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DaKbxl/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DaKbxl/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DaKbxl/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DaKbxl/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 15,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DaKbxl/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:de941cdf026d89c8b5155434c61653a1de2c2a5f8aeeb2995a1a15aed4fc3c9e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-22T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DaKbxl/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2484,
+      "stdoutDigest": "sha256:262085dcc37435cfdc0761b6e6e9f5aa8cd6fccd0026182cb2e077809a82edc2",
+      "stderrDigest": "sha256:e307d6e0ba31bd34be5447c054b06e4af87eb75d6050fc6095665ee48e62d175"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "8907801ffa0252b51490a2c9efbb388d0c83391f:test.js"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:044ad2e942e52edda88be5f25bfc4074ae536c938d4f9b0fed1c0c6ff872d67a",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "8907801ffa0252b51490a2c9efbb388d0c83391f:index.test-d.ts"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:064f7730458642af15b53399bf764ada95a7b5c571c4351f17e7e4cdb2d5adf4",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npx",
+        "ava",
+        "test.js"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DaKbxl/checkout",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 3457,
+      "stdoutDigest": "sha256:ef3be46da2bef89b106e59d2be83e7a6358f18df2d93cc1dce8487c7fefb7425",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/p-limit-feature-reject-on-clear/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/p-limit-feature-reject-on-clear/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+        "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-y5JLXB/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 31,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:f40da936327061a287c52eed607c522b3418757f6fc37980b312ca5e0b0fda24"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-y5JLXB/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-y5JLXB/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-y5JLXB/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-y5JLXB/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-y5JLXB/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 14,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-y5JLXB/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:09873bf21018ea3dd489fa1316dadc234d1ae2ca5ff1b2602f95e3390fd6dbf6",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-y5JLXB/3d141f61a41c.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-y5JLXB/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-22T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-y5JLXB/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2533,
+      "stdoutDigest": "sha256:262085dcc37435cfdc0761b6e6e9f5aa8cd6fccd0026182cb2e077809a82edc2",
+      "stderrDigest": "sha256:e307d6e0ba31bd34be5447c054b06e4af87eb75d6050fc6095665ee48e62d175"
+    },
+    {
+      "argv": [
+        "sh",
+        "-c",
+        "node acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-y5JLXB/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 24,
+      "stdoutDigest": "sha256:d81e5c2040ab0ac064d24c7c5b7c5a9ad59c1ff14fe0b7af13028cc7787f9b4a",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-y5JLXB/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 5509,
+      "stdoutDigest": "sha256:ed2a15320d4ee9414b4d16f0dbb9cbfe185d0a2b65585e2838dc6477592841dc",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/p-limit-feature-reject-on-clear/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/p-limit-feature-reject-on-clear/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+        "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DLD350/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 34,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:f40da936327061a287c52eed607c522b3418757f6fc37980b312ca5e0b0fda24"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DLD350/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DLD350/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DLD350/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DLD350/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DLD350/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 17,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DLD350/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:9f395fc639a823c04df9246b72a0ff4c6d5296a0b67813a235eebf1deea18af1",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DLD350/3d141f61a41c.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DLD350/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-22T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DLD350/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2645,
+      "stdoutDigest": "sha256:11ada7d61d6581c254d28559884c9704d30f3383b4ba5d7fa1882489d8931149",
+      "stderrDigest": "sha256:e307d6e0ba31bd34be5447c054b06e4af87eb75d6050fc6095665ee48e62d175"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "8907801ffa0252b51490a2c9efbb388d0c83391f:test.js"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 17,
+      "stdoutDigest": "sha256:044ad2e942e52edda88be5f25bfc4074ae536c938d4f9b0fed1c0c6ff872d67a",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "8907801ffa0252b51490a2c9efbb388d0c83391f:index.test-d.ts"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 14,
+      "stdoutDigest": "sha256:064f7730458642af15b53399bf764ada95a7b5c571c4351f17e7e4cdb2d5adf4",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npx",
+        "ava",
+        "test.js"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DLD350/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 3442,
+      "stdoutDigest": "sha256:fc2175637f90cf4e9fb7dd6761855e93f166ac58cb2b61c0550fafa085da6522",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npx",
+        "tsd"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DLD350/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 909,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "node",
+        "acceptance/hidden/behaviour-check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DLD350/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 839,
+      "stdoutDigest": "sha256:825c9751d9fc5df1cd1776b3350a9834edc02d2bcd6d4fbc83f1816ad84645c3",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DLD350/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 5273,
+      "stdoutDigest": "sha256:df070bc72b676886a016ba9fe7aa850898315acd69966887b91221a768365a2e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/p-limit-feature-reject-on-clear/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/p-limit-feature-reject-on-clear/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+        "/Users/brad/swarm-comparison-work/lint-p-limit-feature-reject-on-clear-CTmKZs/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 35,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:f40da936327061a287c52eed607c522b3418757f6fc37980b312ca5e0b0fda24"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/lint-p-limit-feature-reject-on-clear-CTmKZs/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/lint-p-limit-feature-reject-on-clear-CTmKZs/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/lint-p-limit-feature-reject-on-clear-CTmKZs/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/lint-p-limit-feature-reject-on-clear-CTmKZs/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/lint-p-limit-feature-reject-on-clear-CTmKZs/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 15,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/lint-p-limit-feature-reject-on-clear-CTmKZs/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:3ed1be4a9e48eb3a1ddb98c91611d78c9dc96c676bbecfebe03f09b7a7551b53",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-22T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/lint-p-limit-feature-reject-on-clear-CTmKZs/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2552,
+      "stdoutDigest": "sha256:11ada7d61d6581c254d28559884c9704d30f3383b4ba5d7fa1882489d8931149",
+      "stderrDigest": "sha256:e307d6e0ba31bd34be5447c054b06e4af87eb75d6050fc6095665ee48e62d175"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/p-limit-feature-reject-on-clear/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/p-limit-feature-reject-on-clear/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+        "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-d2b91W/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 32,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:f40da936327061a287c52eed607c522b3418757f6fc37980b312ca5e0b0fda24"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-d2b91W/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-d2b91W/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-d2b91W/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-d2b91W/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-d2b91W/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 16,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-d2b91W/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:f1884c87d4fdd40a96ce7c100f32ca830507789e6b0bc4c1acc83785adeecc93",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-d2b91W/9a361fb5feef.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-d2b91W/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-22T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-d2b91W/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2541,
+      "stdoutDigest": "sha256:262085dcc37435cfdc0761b6e6e9f5aa8cd6fccd0026182cb2e077809a82edc2",
+      "stderrDigest": "sha256:e307d6e0ba31bd34be5447c054b06e4af87eb75d6050fc6095665ee48e62d175"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "8907801ffa0252b51490a2c9efbb388d0c83391f:test.js"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:044ad2e942e52edda88be5f25bfc4074ae536c938d4f9b0fed1c0c6ff872d67a",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "8907801ffa0252b51490a2c9efbb388d0c83391f:index.test-d.ts"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:064f7730458642af15b53399bf764ada95a7b5c571c4351f17e7e4cdb2d5adf4",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npx",
+        "ava",
+        "test.js"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-d2b91W/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 3451,
+      "stdoutDigest": "sha256:958decb3425551aa57f4176d7e9b8e9717e6dffdecd03a22f32a3d3e1bc1d258",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npx",
+        "tsd"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-d2b91W/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 832,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "node",
+        "acceptance/hidden/behaviour-check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-d2b91W/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 832,
+      "stdoutDigest": "sha256:825c9751d9fc5df1cd1776b3350a9834edc02d2bcd6d4fbc83f1816ad84645c3",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-d2b91W/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 5232,
+      "stdoutDigest": "sha256:320873d3296a29818671845b4ee84ac5d24fa257a0810f9067e990e689171ee8",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/p-limit-feature-reject-on-clear/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/p-limit-feature-reject-on-clear/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+        "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-EuYlzM/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 33,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:f40da936327061a287c52eed607c522b3418757f6fc37980b312ca5e0b0fda24"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-EuYlzM/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-EuYlzM/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-EuYlzM/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-EuYlzM/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-EuYlzM/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 15,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-EuYlzM/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:2be27ad07c224b15348cc1f718269790019200a4e225ab1f3e12e9e53c8c6de9",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-EuYlzM/9a361fb5feef.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-EuYlzM/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-22T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-EuYlzM/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2637,
+      "stdoutDigest": "sha256:11ada7d61d6581c254d28559884c9704d30f3383b4ba5d7fa1882489d8931149",
+      "stderrDigest": "sha256:e307d6e0ba31bd34be5447c054b06e4af87eb75d6050fc6095665ee48e62d175"
+    },
+    {
+      "argv": [
+        "sh",
+        "-c",
+        "node acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-EuYlzM/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 24,
+      "stdoutDigest": "sha256:d81e5c2040ab0ac064d24c7c5b7c5a9ad59c1ff14fe0b7af13028cc7787f9b4a",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-EuYlzM/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 5488,
+      "stdoutDigest": "sha256:ad33fd7e314d7a0e6a54593c647183305e2bff49c78a7415f83f8d36123e658f",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/p-limit-feature-reject-on-clear/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/p-limit-feature-reject-on-clear/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+        "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DCPPI7/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 33,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:f40da936327061a287c52eed607c522b3418757f6fc37980b312ca5e0b0fda24"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DCPPI7/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DCPPI7/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DCPPI7/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DCPPI7/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DCPPI7/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 16,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DCPPI7/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:200dbfe48863362ab4815cabb06878dc6cc60b6d5e63ebd7ad5bbcc1943aae21",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DCPPI7/43a2b43734c5.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DCPPI7/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-22T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DCPPI7/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2749,
+      "stdoutDigest": "sha256:11ada7d61d6581c254d28559884c9704d30f3383b4ba5d7fa1882489d8931149",
+      "stderrDigest": "sha256:e307d6e0ba31bd34be5447c054b06e4af87eb75d6050fc6095665ee48e62d175"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "8907801ffa0252b51490a2c9efbb388d0c83391f:test.js"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:044ad2e942e52edda88be5f25bfc4074ae536c938d4f9b0fed1c0c6ff872d67a",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "8907801ffa0252b51490a2c9efbb388d0c83391f:index.test-d.ts"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:064f7730458642af15b53399bf764ada95a7b5c571c4351f17e7e4cdb2d5adf4",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npx",
+        "ava",
+        "test.js"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-DCPPI7/checkout",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 3458,
+      "stdoutDigest": "sha256:9eee69161938d61548a62cd6ff09582e5560df2f81976026066d65ea298605c2",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/p-limit-feature-reject-on-clear/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/p-limit-feature-reject-on-clear/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+        "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-IMld7t/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 33,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:f40da936327061a287c52eed607c522b3418757f6fc37980b312ca5e0b0fda24"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-IMld7t/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 12,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-IMld7t/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-IMld7t/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-IMld7t/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-IMld7t/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 16,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-IMld7t/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:1ea17f40dc3b949fc83feafa671c3c04e8b31315b09eaaba4160dfe3eb5abe34",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-IMld7t/43a2b43734c5.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-IMld7t/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-22T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-IMld7t/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2586,
+      "stdoutDigest": "sha256:11ada7d61d6581c254d28559884c9704d30f3383b4ba5d7fa1882489d8931149",
+      "stderrDigest": "sha256:e307d6e0ba31bd34be5447c054b06e4af87eb75d6050fc6095665ee48e62d175"
+    },
+    {
+      "argv": [
+        "sh",
+        "-c",
+        "node acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-IMld7t/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 22,
+      "stdoutDigest": "sha256:d81e5c2040ab0ac064d24c7c5b7c5a9ad59c1ff14fe0b7af13028cc7787f9b4a",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-IMld7t/checkout",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 4942,
+      "stdoutDigest": "sha256:80faf04c090040e4d721a51ddd536e6f30c5b298baf867a783224691b26f1683",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/p-limit-feature-reject-on-clear/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/p-limit-feature-reject-on-clear/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+        "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-d3FXk1/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 32,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:f40da936327061a287c52eed607c522b3418757f6fc37980b312ca5e0b0fda24"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-d3FXk1/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 12,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-d3FXk1/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-d3FXk1/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-d3FXk1/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-d3FXk1/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 16,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-d3FXk1/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:b62b0b103c897b57560bd223417ebb5be9dffa0d1a4da8cccf94f8b1c1f11b67",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-d3FXk1/45633ea0f36b.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-d3FXk1/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-22T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-d3FXk1/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2585,
+      "stdoutDigest": "sha256:11ada7d61d6581c254d28559884c9704d30f3383b4ba5d7fa1882489d8931149",
+      "stderrDigest": "sha256:e307d6e0ba31bd34be5447c054b06e4af87eb75d6050fc6095665ee48e62d175"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "8907801ffa0252b51490a2c9efbb388d0c83391f:test.js"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:044ad2e942e52edda88be5f25bfc4074ae536c938d4f9b0fed1c0c6ff872d67a",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "8907801ffa0252b51490a2c9efbb388d0c83391f:index.test-d.ts"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:064f7730458642af15b53399bf764ada95a7b5c571c4351f17e7e4cdb2d5adf4",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npx",
+        "ava",
+        "test.js"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-d3FXk1/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 3446,
+      "stdoutDigest": "sha256:95bb38099fb5b667f9d0f40943161f03ba106ff282df8fdad97335cebd51ad1a",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npx",
+        "tsd"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-d3FXk1/checkout",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 819,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:970e289fd3057fc8dfc094e21f56fa56ac6c4127aae7963e6be7686ceb12c5b8"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/p-limit-feature-reject-on-clear/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/p-limit-feature-reject-on-clear/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+        "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-pCncQO/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 33,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:f40da936327061a287c52eed607c522b3418757f6fc37980b312ca5e0b0fda24"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-pCncQO/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-pCncQO/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-pCncQO/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-pCncQO/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-pCncQO/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 16,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-pCncQO/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:bc19a321947395dfa12608d705d979a64ef7f0c04fa6a0627edafe5747e7c046",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-pCncQO/45633ea0f36b.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-pCncQO/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-22T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-pCncQO/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2554,
+      "stdoutDigest": "sha256:11ada7d61d6581c254d28559884c9704d30f3383b4ba5d7fa1882489d8931149",
+      "stderrDigest": "sha256:e307d6e0ba31bd34be5447c054b06e4af87eb75d6050fc6095665ee48e62d175"
+    },
+    {
+      "argv": [
+        "sh",
+        "-c",
+        "node acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-pCncQO/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 23,
+      "stdoutDigest": "sha256:d81e5c2040ab0ac064d24c7c5b7c5a9ad59c1ff14fe0b7af13028cc7787f9b4a",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-pCncQO/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 5657,
+      "stdoutDigest": "sha256:05dec525167ee915453f56b62fabc3b8dfc57a2849b51aac4f846dd6bfe2d8eb",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/p-limit-feature-reject-on-clear/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/p-limit-feature-reject-on-clear/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+        "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-dvmesa/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 31,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:f40da936327061a287c52eed607c522b3418757f6fc37980b312ca5e0b0fda24"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-dvmesa/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 12,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-dvmesa/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-dvmesa/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-dvmesa/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-dvmesa/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 16,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-dvmesa/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:3cd287d5c89cb81377304be134c1e7e2b5e3eb12b9b0e308ee7640c9c63c6458",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-dvmesa/98fc7afa0f94.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-dvmesa/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-22T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-dvmesa/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2613,
+      "stdoutDigest": "sha256:11ada7d61d6581c254d28559884c9704d30f3383b4ba5d7fa1882489d8931149",
+      "stderrDigest": "sha256:e307d6e0ba31bd34be5447c054b06e4af87eb75d6050fc6095665ee48e62d175"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "8907801ffa0252b51490a2c9efbb388d0c83391f:test.js"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:044ad2e942e52edda88be5f25bfc4074ae536c938d4f9b0fed1c0c6ff872d67a",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "8907801ffa0252b51490a2c9efbb388d0c83391f:index.test-d.ts"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:064f7730458642af15b53399bf764ada95a7b5c571c4351f17e7e4cdb2d5adf4",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npx",
+        "ava",
+        "test.js"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-dvmesa/checkout",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 3453,
+      "stdoutDigest": "sha256:4980d43fec62149bf5a9d2056b01e070fcac877ecab9e3a70b83bb807edac2ee",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/p-limit-feature-reject-on-clear/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/p-limit-feature-reject-on-clear/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+        "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-9lADtI/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 36,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:f40da936327061a287c52eed607c522b3418757f6fc37980b312ca5e0b0fda24"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-9lADtI/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 14,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-9lADtI/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-9lADtI/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-9lADtI/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-9lADtI/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 20,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-9lADtI/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:aa05f0618eeedf7f26a5433e11b5b34857c4c832015231d1db6a79b064cfbe26",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-9lADtI/98fc7afa0f94.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-9lADtI/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-22T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-9lADtI/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2713,
+      "stdoutDigest": "sha256:11ada7d61d6581c254d28559884c9704d30f3383b4ba5d7fa1882489d8931149",
+      "stderrDigest": "sha256:e307d6e0ba31bd34be5447c054b06e4af87eb75d6050fc6095665ee48e62d175"
+    },
+    {
+      "argv": [
+        "sh",
+        "-c",
+        "node acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-9lADtI/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 25,
+      "stdoutDigest": "sha256:d81e5c2040ab0ac064d24c7c5b7c5a9ad59c1ff14fe0b7af13028cc7787f9b4a",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-9lADtI/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 5515,
+      "stdoutDigest": "sha256:839d8b521095ab0523208c621c47f59f771b828ed9532e921f46e5fcee27c8e9",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/p-limit-feature-reject-on-clear/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/p-limit-feature-reject-on-clear/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+        "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-nm47Wj/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 32,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:f40da936327061a287c52eed607c522b3418757f6fc37980b312ca5e0b0fda24"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-nm47Wj/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-nm47Wj/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-nm47Wj/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-nm47Wj/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-nm47Wj/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 16,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-nm47Wj/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:d22445649dd0d4f171422b4406205306a51072d086a47f698b4713cebfff7c87",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-nm47Wj/377bdc821d6d.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-nm47Wj/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-22T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-nm47Wj/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2677,
+      "stdoutDigest": "sha256:11ada7d61d6581c254d28559884c9704d30f3383b4ba5d7fa1882489d8931149",
+      "stderrDigest": "sha256:e307d6e0ba31bd34be5447c054b06e4af87eb75d6050fc6095665ee48e62d175"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "8907801ffa0252b51490a2c9efbb388d0c83391f:test.js"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:044ad2e942e52edda88be5f25bfc4074ae536c938d4f9b0fed1c0c6ff872d67a",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "8907801ffa0252b51490a2c9efbb388d0c83391f:index.test-d.ts"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:064f7730458642af15b53399bf764ada95a7b5c571c4351f17e7e4cdb2d5adf4",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npx",
+        "ava",
+        "test.js"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-nm47Wj/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 3440,
+      "stdoutDigest": "sha256:022f5b36a42780071da784e36cd89ecd675e71c1917b72037aae2eac5be27013",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npx",
+        "tsd"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-nm47Wj/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 815,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "node",
+        "acceptance/hidden/behaviour-check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-p-limit-feature-reject-on-clear-nm47Wj/checkout",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 841,
+      "stdoutDigest": "sha256:d9dca51147fe59561c1e797e0cdcc73086d0c596b9108e0004f5b2abd42d0048",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/p-limit-feature-reject-on-clear/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/p-limit-feature-reject-on-clear/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/sindresorhus__p-limit.git",
+        "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-vah9af/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 32,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:f40da936327061a287c52eed607c522b3418757f6fc37980b312ca5e0b0fda24"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-vah9af/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 12,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-vah9af/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-vah9af/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8,
+      "stdoutDigest": "sha256:f7d3aaeaf03f96181edd3292e34886261f9478c66d09c031318774829856998e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-vah9af/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-vah9af/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 17,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-vah9af/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:03714e3915ff1a9ad0562a3ad960f3b248cfb3acd5a46f9da15702e4af51a9b1",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-vah9af/377bdc821d6d.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-vah9af/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-22T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-vah9af/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2588,
+      "stdoutDigest": "sha256:11ada7d61d6581c254d28559884c9704d30f3383b4ba5d7fa1882489d8931149",
+      "stderrDigest": "sha256:e307d6e0ba31bd34be5447c054b06e4af87eb75d6050fc6095665ee48e62d175"
+    },
+    {
+      "argv": [
+        "sh",
+        "-c",
+        "node acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-vah9af/checkout",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 24,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:51f34f8689aa92e398fce4967e8479b64c34cf69288e43857518deaed3a5ae61"
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-p-limit-feature-reject-on-clear-vah9af/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 5633,
+      "stdoutDigest": "sha256:181f8899b02187b6a6e78932d69bf60f05b40c8c7c6321ecdb47044b89937ef6",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}

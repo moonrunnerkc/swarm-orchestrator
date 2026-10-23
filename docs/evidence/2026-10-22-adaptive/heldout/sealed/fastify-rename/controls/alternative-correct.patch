@@ -1,0 +1,381 @@
+diff --git a/build/build-validation.js b/build/build-validation.js
+index ae3a881d8..0b6d4c8b4 100644
+--- a/build/build-validation.js
++++ b/build/build-validation.js
+@@ -16,7 +16,7 @@ module.exports.defaultInitOptions = ${JSON.stringify(defaultInitOptions)}
+ /* c8 ignore stop */
+ `
+ 
+-    const file = path.join(__dirname, '..', 'lib', 'configValidator.js')
++    const file = path.join(__dirname, '..', 'lib', 'config-validator.js')
+     fs.writeFileSync(file, moduleCode)
+     console.log(`Saved ${file} file successfully`)
+   }
+diff --git a/eslint.config.js b/eslint.config.js
+index cc4570e29..2d0202b08 100644
+--- a/eslint.config.js
++++ b/eslint.config.js
+@@ -4,7 +4,7 @@ const neostandard = require('neostandard')
+ module.exports = [
+   ...neostandard({
+     ignores: [
+-      'lib/configValidator.js',
++      'lib/config-validator.js',
+       'lib/error-serializer.js',
+       'test/same-shape.test.js',
+       'test/types/import.js'
+diff --git a/fastify.d.ts b/fastify.d.ts
+index 4c0fe0ca1..9b170cf89 100644
+--- a/fastify.d.ts
++++ b/fastify.d.ts
+@@ -29,7 +29,7 @@ import { FastifyReply } from './types/reply'
+ import { FastifyRequest, RequestGenericInterface } from './types/request'
+ import { RouteGenericInterface, RouteHandler, RouteHandlerMethod, RouteOptions, RouteShorthandMethod, RouteShorthandOptions, RouteShorthandOptionsWithHandler } from './types/route'
+ import { FastifySchema, FastifySchemaValidationError, FastifySchemaCompiler, FastifySerializerCompiler, SchemaErrorDataVar, SchemaErrorFormatter } from './types/schema'
+-import { FastifyServerFactory, FastifyServerFactoryHandler } from './types/serverFactory'
++import { FastifyServerFactory, FastifyServerFactoryHandler } from './types/server-factory'
+ import { FastifyTypeProvider, FastifyTypeProviderDefault, SafePromiseLike } from './types/type-provider'
+ import { ContextConfigDefault, HTTPMethods, RawReplyDefaultExpression, RawRequestDefaultExpression, RawServerBase, RawServerDefault, RequestBodyDefault, RequestHeadersDefault, RequestParamsDefault, RequestQuerystringDefault } from './types/utils'
+ 
+@@ -199,7 +199,7 @@ declare namespace fastify {
+     FastifySchema, FastifySchemaValidationError, FastifySchemaCompiler, FastifySerializerCompiler, // './types/schema'
+     HTTPMethods, RawServerBase, RawRequestDefaultExpression, RawReplyDefaultExpression, RawServerDefault, ContextConfigDefault, RequestBodyDefault, RequestQuerystringDefault, RequestParamsDefault, RequestHeadersDefault, // './types/utils'
+     DoneFuncWithErrOrRes, HookHandlerDoneFunction, RequestPayload, onCloseAsyncHookHandler, onCloseHookHandler, onErrorAsyncHookHandler, onErrorHookHandler, onReadyAsyncHookHandler, onReadyHookHandler, onListenAsyncHookHandler, onListenHookHandler, onRegisterHookHandler, onRequestAsyncHookHandler, onRequestHookHandler, onResponseAsyncHookHandler, onResponseHookHandler, onRouteHookHandler, onSendAsyncHookHandler, onSendHookHandler, onTimeoutAsyncHookHandler, onTimeoutHookHandler, preHandlerAsyncHookHandler, preHandlerHookHandler, preParsingAsyncHookHandler, preParsingHookHandler, preSerializationAsyncHookHandler, preSerializationHookHandler, preValidationAsyncHookHandler, preValidationHookHandler, onRequestAbortHookHandler, onRequestAbortAsyncHookHandler, preCloseAsyncHookHandler, preCloseHookHandler, // './types/hooks'
+-    FastifyServerFactory, FastifyServerFactoryHandler, // './types/serverFactory'
++    FastifyServerFactory, FastifyServerFactoryHandler, // './types/server-factory'
+     FastifyTypeProvider, FastifyTypeProviderDefault, SafePromiseLike, // './types/type-provider'
+     FastifyErrorCodes // './types/errors'
+   }
+diff --git a/fastify.js b/fastify.js
+index a51de41ac..ef74b6d1d 100644
+--- a/fastify.js
++++ b/fastify.js
+@@ -40,16 +40,16 @@ const Reply = require('./lib/reply')
+ const Request = require('./lib/request')
+ const Context = require('./lib/context.js')
+ const decorator = require('./lib/decorate')
+-const ContentTypeParser = require('./lib/contentTypeParser')
++const ContentTypeParser = require('./lib/content-type-parser.js')
+ const SchemaController = require('./lib/schema-controller')
+ const { Hooks, hookRunnerApplication, supportedHooks } = require('./lib/hooks')
+ const { createChildLogger, defaultChildLoggerFactory, createLogger } = require('./lib/logger-factory')
+-const pluginUtils = require('./lib/pluginUtils')
+-const { getGenReqId, reqIdGenFactory } = require('./lib/reqIdGenFactory')
++const pluginUtils = require('./lib/plugin-utils.js')
++const { getGenReqId, reqIdGenFactory } = require('./lib/req-id-gen-factory.js')
+ const { buildRouting, validateBodyLimitOption, buildRouterOptions } = require('./lib/route')
+-const build404 = require('./lib/fourOhFour')
+-const getSecuredInitialConfig = require('./lib/initialConfigValidation')
+-const override = require('./lib/pluginOverride')
++const build404 = require('./lib/four-oh-four.js')
++const getSecuredInitialConfig = require('./lib/initial-config-validation.js')
++const override = require('./lib/plugin-override.js')
+ const noopSet = require('./lib/noop-set')
+ const {
+   appendStackTrace,
+diff --git a/lib/configValidator.js b/lib/config-validator.js
+similarity index 100%
+rename from lib/configValidator.js
+rename to lib/config-validator.js
+diff --git a/lib/contentTypeParser.js b/lib/content-type-parser.js
+similarity index 100%
+rename from lib/contentTypeParser.js
+rename to lib/content-type-parser.js
+diff --git a/lib/error-handler.js b/lib/error-handler.js
+index c5ebf629a..25bb90cb9 100644
+--- a/lib/error-handler.js
++++ b/lib/error-handler.js
+@@ -1,7 +1,7 @@
+ 'use strict'
+ 
+ const statusCodes = require('node:http').STATUS_CODES
+-const wrapThenable = require('./wrapThenable')
++const wrapThenable = require('./wrap-thenable.js')
+ const {
+   kReplyHeaders,
+   kReplyNextErrorHandler,
+diff --git a/lib/fourOhFour.js b/lib/four-oh-four.js
+similarity index 99%
+rename from lib/fourOhFour.js
+rename to lib/four-oh-four.js
+index 41e77dfee..917bb8e59 100644
+--- a/lib/fourOhFour.js
++++ b/lib/four-oh-four.js
+@@ -19,7 +19,7 @@ const {
+   FST_ERR_NOT_FOUND
+ } = require('./errors')
+ const { createChildLogger } = require('./logger-factory')
+-const { getGenReqId } = require('./reqIdGenFactory.js')
++const { getGenReqId } = require('./req-id-gen-factory.js')
+ 
+ /**
+  * Each fastify instance have a:
+diff --git a/lib/handleRequest.js b/lib/handle-request.js
+similarity index 98%
+rename from lib/handleRequest.js
+rename to lib/handle-request.js
+index be8b43eac..e75fc44df 100644
+--- a/lib/handleRequest.js
++++ b/lib/handle-request.js
+@@ -3,7 +3,7 @@
+ const diagnostics = require('node:diagnostics_channel')
+ const { validate: validateSchema } = require('./validation')
+ const { preValidationHookRunner, preHandlerHookRunner } = require('./hooks')
+-const wrapThenable = require('./wrapThenable')
++const wrapThenable = require('./wrap-thenable.js')
+ const {
+   kReplyIsError,
+   kRouteContext,
+diff --git a/lib/headRoute.js b/lib/head-route.js
+similarity index 100%
+rename from lib/headRoute.js
+rename to lib/head-route.js
+diff --git a/lib/initialConfigValidation.js b/lib/initial-config-validation.js
+similarity index 95%
+rename from lib/initialConfigValidation.js
+rename to lib/initial-config-validation.js
+index c56d8c54e..4ab92fdd3 100644
+--- a/lib/initialConfigValidation.js
++++ b/lib/initial-config-validation.js
+@@ -1,6 +1,6 @@
+ 'use strict'
+ 
+-const validate = require('./configValidator')
++const validate = require('./config-validator.js')
+ const deepClone = require('rfdc')({ circles: true, proto: false })
+ const { FST_ERR_INIT_OPTS_INVALID } = require('./errors')
+ 
+diff --git a/lib/pluginOverride.js b/lib/plugin-override.js
+similarity index 96%
+rename from lib/pluginOverride.js
+rename to lib/plugin-override.js
+index 3a98e352c..4eef32577 100644
+--- a/lib/pluginOverride.js
++++ b/lib/plugin-override.js
+@@ -19,9 +19,9 @@ const {
+ const Reply = require('./reply')
+ const Request = require('./request')
+ const SchemaController = require('./schema-controller')
+-const ContentTypeParser = require('./contentTypeParser')
++const ContentTypeParser = require('./content-type-parser.js')
+ const { buildHooks } = require('./hooks')
+-const pluginUtils = require('./pluginUtils')
++const pluginUtils = require('./plugin-utils.js')
+ 
+ // Function that runs the encapsulation magic.
+ // Everything that need to be encapsulated must be handled in this function.
+diff --git a/lib/pluginUtils.js b/lib/plugin-utils.js
+similarity index 97%
+rename from lib/pluginUtils.js
+rename to lib/plugin-utils.js
+index 577296904..d18d94e58 100644
+--- a/lib/pluginUtils.js
++++ b/lib/plugin-utils.js
+@@ -6,12 +6,12 @@ const kRegisteredPlugins = Symbol.for('registered-plugin')
+ const {
+   kTestInternals
+ } = require('./symbols.js')
+-const { exist, existReply, existRequest } = require('./decorate')
++const { exist, existReply, existRequest } = require('./decorate.js')
+ const {
+   FST_ERR_PLUGIN_VERSION_MISMATCH,
+   FST_ERR_PLUGIN_NOT_PRESENT_IN_INSTANCE,
+   FST_ERR_PLUGIN_INVALID_ASYNC_HANDLER
+-} = require('./errors')
++} = require('./errors.js')
+ 
+ const rcRegex = /-(?:rc|pre|alpha).+$/u
+ 
+diff --git a/lib/reply.js b/lib/reply.js
+index 3bc7c722c..0d057acf6 100644
+--- a/lib/reply.js
++++ b/lib/reply.js
+@@ -31,7 +31,7 @@ const {
+   preSerializationHookRunner
+ } = require('./hooks')
+ 
+-const internals = require('./handleRequest')[Symbol.for('internals')]
++const internals = require('./handle-request.js')[Symbol.for('internals')]
+ const loggerUtils = require('./logger-factory')
+ const now = loggerUtils.now
+ const { handleError } = require('./error-handler')
+diff --git a/lib/reqIdGenFactory.js b/lib/req-id-gen-factory.js
+similarity index 100%
+rename from lib/reqIdGenFactory.js
+rename to lib/req-id-gen-factory.js
+diff --git a/lib/route.js b/lib/route.js
+index d5e5d832a..83813220f 100644
+--- a/lib/route.js
++++ b/lib/route.js
+@@ -2,10 +2,10 @@
+ 
+ const FindMyWay = require('find-my-way')
+ const Context = require('./context')
+-const handleRequest = require('./handleRequest')
++const handleRequest = require('./handle-request.js')
+ const { onRequestAbortHookRunner, lifecycleHooks, preParsingHookRunner, onTimeoutHookRunner, onRequestHookRunner } = require('./hooks')
+ const { normalizeSchema } = require('./schemas')
+-const { parseHeadOnSendHandlers } = require('./headRoute')
++const { parseHeadOnSendHandlers } = require('./head-route.js')
+ 
+ const {
+   compileSchemasForValidation,
+@@ -52,7 +52,7 @@ const {
+ } = require('./symbols.js')
+ const { buildErrorHandler } = require('./error-handler')
+ const { createChildLogger } = require('./logger-factory.js')
+-const { getGenReqId } = require('./reqIdGenFactory.js')
++const { getGenReqId } = require('./req-id-gen-factory.js')
+ 
+ const routerKeys = [
+   'allowUnsafeRegex',
+diff --git a/lib/wrapThenable.js b/lib/wrap-thenable.js
+similarity index 100%
+rename from lib/wrapThenable.js
+rename to lib/wrap-thenable.js
+diff --git a/package.json b/package.json
+index 519cf287b..5d3b74b08 100644
+--- a/package.json
++++ b/package.json
+@@ -21,7 +21,7 @@
+     "test": "npm run lint && npm run unit && npm run test:typescript",
+     "test:ci": "npm run unit && npm run test:typescript",
+     "test:report": "npm run lint && npm run unit:report && npm run test:typescript",
+-    "test:validator:integrity": "npm run build:validation && git diff --quiet --ignore-all-space --ignore-blank-lines --ignore-cr-at-eol lib/error-serializer.js && git diff --quiet --ignore-all-space --ignore-blank-lines --ignore-cr-at-eol lib/configValidator.js",
++    "test:validator:integrity": "npm run build:validation && git diff --quiet --ignore-all-space --ignore-blank-lines --ignore-cr-at-eol lib/error-serializer.js && git diff --quiet --ignore-all-space --ignore-blank-lines --ignore-cr-at-eol lib/config-validator.js",
+     "test:typescript": "tsc test/types/import.ts --target es2022 --moduleResolution node16 --module node16 --noEmit && tsd",
+     "test:watch": "npm run unit -- --watch --coverage-report=none --reporter=terse",
+     "unit": "borp",
+diff --git a/test/diagnostics-channel/error-before-handler.test.js b/test/diagnostics-channel/error-before-handler.test.js
+index 4d15c3dfd..0f4f082ff 100644
+--- a/test/diagnostics-channel/error-before-handler.test.js
++++ b/test/diagnostics-channel/error-before-handler.test.js
+@@ -6,7 +6,7 @@ require('../../lib/hooks').onSendHookRunner = function Stub () {}
+ const Request = require('../../lib/request')
+ const Reply = require('../../lib/reply')
+ const symbols = require('../../lib/symbols.js')
+-const { preHandlerCallback } = require('../../lib/handleRequest')[Symbol.for('internals')]
++const { preHandlerCallback } = require('../../lib/handle-request.js')[Symbol.for('internals')]
+ 
+ test('diagnostics channel handles an error before calling context handler', t => {
+   t.plan(3)
+diff --git a/test/internals/content-type-parser.test.js b/test/internals/content-type-parser.test.js
+index 75bfd3f79..5a923f7c0 100644
+--- a/test/internals/content-type-parser.test.js
++++ b/test/internals/content-type-parser.test.js
+@@ -10,7 +10,7 @@ const Reply = require('../../lib/reply')
+ test('rawBody function', t => {
+   t.plan(2)
+ 
+-  const internals = require('../../lib/contentTypeParser')[kTestInternals]
++  const internals = require('../../lib/content-type-parser.js')[kTestInternals]
+   const body = Buffer.from('你好 世界')
+   const parser = {
+     asString: true,
+@@ -60,7 +60,7 @@ test('rawBody function', t => {
+ test('Should support Webpack and faux modules', t => {
+   t.plan(2)
+ 
+-  const internals = proxyquire('../../lib/contentTypeParser', {
++  const internals = proxyquire('../../lib/content-type-parser.js', {
+     'toad-cache': { default: () => { } }
+   })[kTestInternals]
+ 
+diff --git a/test/internals/handle-request.test.js b/test/internals/handle-request.test.js
+index a1752123a..49f51f3b3 100644
+--- a/test/internals/handle-request.test.js
++++ b/test/internals/handle-request.test.js
+@@ -1,8 +1,8 @@
+ 'use strict'
+ 
+ const { test } = require('node:test')
+-const handleRequest = require('../../lib/handleRequest')
+-const internals = require('../../lib/handleRequest')[Symbol.for('internals')]
++const handleRequest = require('../../lib/handle-request.js')
++const internals = require('../../lib/handle-request.js')[Symbol.for('internals')]
+ const Request = require('../../lib/request')
+ const Reply = require('../../lib/reply')
+ const { kRouteContext } = require('../../lib/symbols')
+diff --git a/test/internals/initial-config.test.js b/test/internals/initial-config.test.js
+index 20a1c146a..3b434c53d 100644
+--- a/test/internals/initial-config.test.js
++++ b/test/internals/initial-config.test.js
+@@ -7,7 +7,7 @@ const http = require('node:http')
+ const pino = require('pino')
+ const split = require('split2')
+ const deepClone = require('rfdc')({ circles: true, proto: false })
+-const { deepFreezeObject } = require('../../lib/initialConfigValidation').utils
++const { deepFreezeObject } = require('../../lib/initial-config-validation.js').utils
+ 
+ const { buildCertificate } = require('../build-certificate')
+ 
+diff --git a/test/internals/plugin.test.js b/test/internals/plugin.test.js
+index 8dc335712..3fca66d74 100644
+--- a/test/internals/plugin.test.js
++++ b/test/internals/plugin.test.js
+@@ -2,9 +2,9 @@
+ 
+ const { test } = require('node:test')
+ 
+-const pluginUtilsPublic = require('../../lib/pluginUtils.js')
++const pluginUtilsPublic = require('../../lib/plugin-utils.js')
+ const symbols = require('../../lib/symbols.js')
+-const pluginUtils = require('../../lib/pluginUtils')[symbols.kTestInternals]
++const pluginUtils = require('../../lib/plugin-utils.js')[symbols.kTestInternals]
+ 
+ test("shouldSkipOverride should check the 'skip-override' symbol", t => {
+   t.plan(2)
+diff --git a/test/internals/req-id-gen-factory.test.js b/test/internals/req-id-gen-factory.test.js
+index 567a3cc27..c98553e8c 100644
+--- a/test/internals/req-id-gen-factory.test.js
++++ b/test/internals/req-id-gen-factory.test.js
+@@ -1,7 +1,7 @@
+ 'use strict'
+ 
+ const { test } = require('node:test')
+-const { reqIdGenFactory } = require('../../lib/reqIdGenFactory')
++const { reqIdGenFactory } = require('../../lib/req-id-gen-factory.js')
+ 
+ test('should create incremental ids deterministically', t => {
+   t.plan(1)
+diff --git a/test/stream.5.test.js b/test/stream.5.test.js
+index 77165f608..1f02d4447 100644
+--- a/test/stream.5.test.js
++++ b/test/stream.5.test.js
+@@ -35,8 +35,8 @@ test('should mark reply as sent before pumping the payload stream into response
+   t.plan(2)
+   t.after(() => fastify.close())
+ 
+-  const handleRequest = proxyquire('../lib/handleRequest', {
+-    './wrapThenable': (thenable, reply) => {
++  const handleRequest = proxyquire('../lib/handle-request.js', {
++    './wrap-thenable.js': (thenable, reply) => {
+       thenable.then(function (payload) {
+         t.assert.strictEqual(reply.sent, true)
+       })
+@@ -44,7 +44,7 @@ test('should mark reply as sent before pumping the payload stream into response
+   })
+ 
+   const route = proxyquire('../lib/route', {
+-    './handleRequest': handleRequest
++    './handle-request.js': handleRequest
+   })
+ 
+   const Fastify = proxyquire('..', {
+diff --git a/test/wrap-thenable.test.js b/test/wrap-thenable.test.js
+index 1e543fd95..847cfdad5 100644
+--- a/test/wrap-thenable.test.js
++++ b/test/wrap-thenable.test.js
+@@ -2,7 +2,7 @@
+ 
+ const { test } = require('node:test')
+ const { kReplyHijacked } = require('../lib/symbols')
+-const wrapThenable = require('../lib/wrapThenable')
++const wrapThenable = require('../lib/wrap-thenable.js')
+ const Reply = require('../lib/reply')
+ 
+ test('should resolve immediately when reply[kReplyHijacked] is true', async t => {
+diff --git a/types/serverFactory.d.ts b/types/server-factory.d.ts
+similarity index 100%
+rename from types/serverFactory.d.ts
+rename to types/server-factory.d.ts

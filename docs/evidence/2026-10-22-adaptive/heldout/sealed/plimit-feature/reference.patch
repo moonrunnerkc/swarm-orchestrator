@@ -1,0 +1,221 @@
+diff --git a/index.d.ts b/index.d.ts
+index 86aa91e..ddbc985 100644
+--- a/index.d.ts
++++ b/index.d.ts
+@@ -20,6 +20,9 @@ export type LimitFunction = {
+ 	This might be useful if you want to teardown the queue at the end of your program's lifecycle or discard any function calls referencing an intermediary state of your app.
+ 
+ 	Note: This does not cancel promises that are already running.
++
++	When `rejectOnClear` is enabled, pending promises are rejected with an `AbortError`.
++	This is recommended if you await the returned promises, for example with `Promise.all`, so pending tasks do not remain unresolved after `clearQueue()`.
+ 	*/
+ 	clearQueue: () => void;
+ 
+@@ -92,6 +95,15 @@ export type Options = {
+ 	Minimum: `1`.
+ 	*/
+ 	readonly concurrency: number;
++
++	/**
++	Reject pending promises with an `AbortError` when `clearQueue()` is called.
++
++	Default: `false`.
++
++	This is recommended if you await the returned promises, for example with `Promise.all`, so pending tasks do not remain unresolved after `clearQueue()`.
++	*/
++	readonly rejectOnClear?: boolean;
+ };
+ 
+ /**
+diff --git a/index.js b/index.js
+index 63ba65c..384049e 100644
+--- a/index.js
++++ b/index.js
+@@ -1,12 +1,18 @@
+ import Queue from 'yocto-queue';
+ 
+ export default function pLimit(concurrency) {
++	let rejectOnClear = false;
++
+ 	if (typeof concurrency === 'object') {
+-		concurrency = concurrency.concurrency;
++		({concurrency, rejectOnClear = false} = concurrency);
+ 	}
+ 
+ 	validateConcurrency(concurrency);
+ 
++	if (typeof rejectOnClear !== 'boolean') {
++		throw new TypeError('Expected `rejectOnClear` to be a boolean');
++	}
++
+ 	const queue = new Queue();
+ 	let activeCount = 0;
+ 
+@@ -14,7 +20,7 @@ export default function pLimit(concurrency) {
+ 		// Process the next queued function if we're under the concurrency limit
+ 		if (activeCount < concurrency && queue.size > 0) {
+ 			activeCount++;
+-			queue.dequeue()();
++			queue.dequeue().run();
+ 		}
+ 	};
+ 
+@@ -41,11 +47,14 @@ export default function pLimit(concurrency) {
+ 		next();
+ 	};
+ 
+-	const enqueue = (function_, resolve, arguments_) => {
++	const enqueue = (function_, resolve, reject, arguments_) => {
++		const queueItem = {reject};
++
+ 		// Queue the internal resolve function instead of the run function
+ 		// to preserve the asynchronous execution context.
+ 		new Promise(internalResolve => { // eslint-disable-line promise/param-names
+-			queue.enqueue(internalResolve);
++			queueItem.run = internalResolve;
++			queue.enqueue(queueItem);
+ 		}).then(run.bind(undefined, function_, resolve, arguments_)); // eslint-disable-line promise/prefer-await-to-then
+ 
+ 		// Start processing immediately if we haven't reached the concurrency limit
+@@ -54,8 +63,8 @@ export default function pLimit(concurrency) {
+ 		}
+ 	};
+ 
+-	const generator = (function_, ...arguments_) => new Promise(resolve => {
+-		enqueue(function_, resolve, arguments_);
++	const generator = (function_, ...arguments_) => new Promise((resolve, reject) => {
++		enqueue(function_, resolve, reject, arguments_);
+ 	});
+ 
+ 	Object.defineProperties(generator, {
+@@ -67,7 +76,16 @@ export default function pLimit(concurrency) {
+ 		},
+ 		clearQueue: {
+ 			value() {
+-				queue.clear();
++				if (!rejectOnClear) {
++					queue.clear();
++					return;
++				}
++
++				const abortError = AbortSignal.abort().reason;
++
++				while (queue.size > 0) {
++					queue.dequeue().reject(abortError);
++				}
+ 			},
+ 		},
+ 		concurrency: {
+@@ -97,8 +115,7 @@ export default function pLimit(concurrency) {
+ }
+ 
+ export function limitFunction(function_, options) {
+-	const {concurrency} = options;
+-	const limit = pLimit(concurrency);
++	const limit = pLimit(options);
+ 
+ 	return (...arguments_) => limit(() => function_(...arguments_));
+ }
+diff --git a/index.test-d.ts b/index.test-d.ts
+index 3d5ec75..672c31a 100644
+--- a/index.test-d.ts
++++ b/index.test-d.ts
+@@ -2,6 +2,7 @@ import {expectType, expectError} from 'tsd';
+ import pLimit, {limitFunction} from './index.js';
+ 
+ const limit = pLimit(1);
++const limitWithRejectOnClear = pLimit({concurrency: 1, rejectOnClear: true});
+ 
+ const input = [
+ 	limit(async () => 'foo'),
+@@ -18,12 +19,14 @@ expectType<number>(limit.activeCount);
+ expectType<number>(limit.pendingCount);
+ 
+ expectType<void>(limit.clearQueue());
++expectType<void>(limitWithRejectOnClear.clearQueue());
+ 
+ // LimitFunction should require a Promise-returning function
+ const lf = limitFunction(async (_a: string) => 'ok', {concurrency: 1});
+ expectType<Promise<string>>(lf('input'));
+ 
+ expectError(limitFunction((_a: string) => 'x', {concurrency: 1}));
++expectError(pLimit({concurrency: 1, rejectOnClear: 'nope'}));
+ 
+ // LimitFunction.map accepts iterables
+ expectType<Promise<string[]>>(limit.map(new Set(['a', 'b', 'c']), async x => x + x));
+diff --git a/readme.md b/readme.md
+index 3ebc9fd..5250063 100644
+--- a/readme.md
++++ b/readme.md
+@@ -41,7 +41,15 @@ Minimum: `1`
+ 
+ Concurrency limit.
+ 
+-You can pass a number or an options object with a `concurrency` property:
++You can pass a number or an options object with a `concurrency` property.
++
++#### rejectOnClear
++
++Type: `boolean`\
++Default: `false`
++
++Reject pending promises with an `AbortError` when `clearQueue()` is called.
++This is recommended if you await the returned promises, for example with `Promise.all`, so pending tasks do not remain unresolved after `clearQueue()`.
+ 
+ ```js
+ import pLimit from 'p-limit';
+@@ -93,6 +101,9 @@ This might be useful if you want to teardown the queue at the end of your progra
+ 
+ Note: This does not cancel promises that are already running.
+ 
++When `rejectOnClear` is enabled, pending promises are rejected with an `AbortError`.
++This is recommended if you await the returned promises, for example with `Promise.all`, so pending tasks do not remain unresolved after `clearQueue()`.
++
+ ### limit.concurrency
+ 
+ Get or set the concurrency limit.
+@@ -135,6 +146,14 @@ Minimum: `1`
+ 
+ Concurrency limit.
+ 
++#### rejectOnClear
++
++Type: `boolean`\
++Default: `false`
++
++Reject pending promises with an `AbortError` when `clearQueue()` is called.
++This is recommended if you await the returned promises, for example with `Promise.all`, so pending tasks do not remain unresolved after `clearQueue()`.
++
+ ## Recipes
+ 
+ See [recipes.md](recipes.md) for common use cases and patterns.
+diff --git a/test.js b/test.js
+index d7cb024..138709e 100644
+--- a/test.js
++++ b/test.js
+@@ -192,6 +192,24 @@ test('clearQueue', async t => {
+ 	t.is(limit.pendingCount, 0);
+ });
+ 
++test('clearQueue rejects pending promises when enabled', async t => {
++	const limit = pLimit({concurrency: 1, rejectOnClear: true});
++
++	const runningPromise = limit(() => delay(100));
++	const pendingPromiseOne = limit(() => delay(10));
++	const pendingPromiseTwo = limit(() => delay(10));
++
++	await Promise.resolve();
++	t.is(limit.pendingCount, 2);
++
++	limit.clearQueue();
++	t.is(limit.pendingCount, 0);
++
++	await runningPromise;
++	await t.throwsAsync(pendingPromiseOne, {name: 'AbortError'});
++	await t.throwsAsync(pendingPromiseTwo, {name: 'AbortError'});
++});
++
+ test('map', async t => {
+ 	const limit = pLimit(1);
+ 	const results = await limit.map([1, 2, 3, 4, 5, 6, 7], input => input + 1);
