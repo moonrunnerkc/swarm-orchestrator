@@ -26,7 +26,14 @@
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
@@ -54,6 +61,16 @@ function resolvedPath(path) {
 }
 
 const quote = (path) => JSON.stringify(path);
+
+/**
+ * A fresh temporary directory short enough for a socket path under it: macOS refuses socket paths
+ * past 104 bytes, and a test that listens on a socket file in TMPDIR fails with EINVAL under a long
+ * one. Made under /tmp, which every POSIX host has, and resolved through symlinks so the profile
+ * and the arm see one spelling (/private/tmp on macOS).
+ */
+export function shortTemporaryDirectory(prefix = "sws-") {
+  return realpathSync(mkdtempSync(join("/tmp", prefix)));
+}
 
 /**
  * The profile text, in layers where the last matching rule decides: protected roots denied,

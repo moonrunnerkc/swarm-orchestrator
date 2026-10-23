@@ -11,6 +11,7 @@ import {
   launchEnvironment,
   resolveFrozenInput,
   sandboxProfile,
+  shortTemporaryDirectory,
   treeDigest,
   validateLaunch,
 } from "./launch-config.mjs";
@@ -252,7 +253,7 @@ describe("the launch environment and arm flags", () => {
 
   it("gives the arm the short temporary directory the runner made, and admits it in the profile", () => {
     const directories = launchDirectories();
-    const tmpDir = mkdtempSync("/private/tmp/sws-test-");
+    const tmpDir = shortTemporaryDirectory("sws-test-");
     try {
       const launch = buildLaunch({
         manifest: manifestWith({}),

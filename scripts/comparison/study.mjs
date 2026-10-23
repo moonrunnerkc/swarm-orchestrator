@@ -71,6 +71,7 @@ import {
   isSwarmArm,
   launchArms,
   resolveFrozenInput,
+  shortTemporaryDirectory,
   treeDigest,
   validateLaunch,
   versionOfExecutable,
@@ -247,8 +248,7 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
   const log = commandLog(blobs, { signal: interruption.controller.signal });
   mkdirSync(workRoot, { recursive: true });
   const scratch = mkdtempSync(join(workRoot, `${launch.task}.${launch.arm}-`));
-  // The launch's TMPDIR, short enough for a socket path under it (launch-config.mjs).
-  const tmpDir = mkdtempSync("/private/tmp/sws-");
+  const tmpDir = shortTemporaryDirectory();
   const workspace = join(scratch, "workspace");
   const home = join(scratch, "home");
   const record = {
