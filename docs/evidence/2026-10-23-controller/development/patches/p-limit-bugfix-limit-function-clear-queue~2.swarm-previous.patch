@@ -1,0 +1,155 @@
+diff --git a/index.d.ts b/index.d.ts
+index 5a64963..46807d5 100644
+--- a/index.d.ts
++++ b/index.d.ts
+@@ -133,4 +133,4 @@ await Promise.all(input);
+ export function limitFunction<Arguments extends unknown[], ReturnType>(
+ 	function_: (...arguments_: Arguments) => PromiseLike<ReturnType>,
+ 	options: Options
+-): (...arguments_: Arguments) => Promise<ReturnType>;
++): ((...arguments_: Arguments) => Promise<ReturnType>) & Pick<LimitFunction, 'activeCount' | 'pendingCount' | 'clearQueue'>;
+diff --git a/index.js b/index.js
+index 5ecd392..dc312ff 100644
+--- a/index.js
++++ b/index.js
+@@ -117,7 +117,23 @@ export default function pLimit(concurrency) {
+ export function limitFunction(function_, options) {
+ 	const limit = pLimit(options);
+ 
+-	return (...arguments_) => limit(() => function_(...arguments_));
++	const limited = (...arguments_) => limit(() => function_(...arguments_));
++
++	Object.defineProperties(limited, {
++		activeCount: {
++			get: () => limit.activeCount,
++		},
++		pendingCount: {
++			get: () => limit.pendingCount,
++		},
++		concurrency: {
++			get: () => options.concurrency,
++		},
++	});
++
++	limited.clearQueue = () => limit.clearQueue();
++
++	return limited;
+ }
+ 
+ function validateConcurrency(concurrency) {
+diff --git a/test.js b/test.js
+index e303a46..e1291cc 100644
+--- a/test.js
++++ b/test.js
+@@ -375,3 +375,111 @@ test('limitFunction()', async t => {
+ 
+ 	await Promise.all(input);
+ });
++
++test('limitFunction().clearQueue is a function', async t => {
++	const limited = limitFunction(async () => 'done', {concurrency: 1});
++	t.is(typeof limited.clearQueue, 'function');
++	await limited.clearQueue();
++	t.pass();
++});
++
++test('limitFunction().clearQueue discards pending calls (without rejectOnClear)', async t => {
++	let runningCount = 0;
++	const limiter = limitFunction(async () => {
++		runningCount++;
++		await delay(200);
++		return 'done';
++	}, {concurrency: 1});
++
++	// With concurrency=1, the first call runs immediately (activeCount=1, pendingCount=0)
++	const promisedOne = limiter('a');
++	t.is(limiter.activeCount, 1);
++	t.is(limiter.pendingCount, 0);
++
++	// Add more calls; they queue up waiting for the first to complete
++	limiter('b');
++	const _discarded = limiter('c');
++	t.is(limiter.pendingCount, 2);
++
++	// Clear the queue before any of them finish
++	limiter.clearQueue();
++	t.is(limiter.pendingCount, 0);
++
++	// The first call should complete normally since it was already running.
++	t.is(await promisedOne, 'done');
++	t.is(runningCount, 1);
++
++	// PendingCount after clearQueue should be zero.
++	t.is(limiter.pendingCount, 0);
++});
++
++const node20 = process.versions.node.startsWith('20.') ? test.skip : test;
++
++node20('limitFunction().clearQueue discards pending calls with rejectOnClear', async t => {
++	let runningCount = 0;
++	const limiter = limitFunction(async () => {
++		runningCount++;
++		await delay(100);
++		return 'done';
++	}, {concurrency: 1, rejectOnClear: true});
++
++	// With concurrency=1, the first call runs immediately (activeCount=1, pendingCount=0)
++	const promisedOne = limiter('a');
++	t.is(limiter.activeCount, 1);
++	t.is(limiter.pendingCount, 0);
++
++	// Add more calls; they queue up waiting for the first to complete
++	const rejectedPromise = limiter('b');
++	const rejectedPromise2 = limiter('c');
++	t.is(limiter.pendingCount, 2);
++
++	limiter.clearQueue();
++	t.is(limiter.pendingCount, 0);
++
++	await promisedOne;
++	t.is(runningCount, 1);
++
++	await t.throwsAsync(rejectedPromise, {name: 'AbortError'});
++	await t.throwsAsync(rejectedPromise2, {name: 'AbortError'});
++
++	// The function should not have been called for the discarded promises
++	t.is(runningCount, 1);
++});
++
++node20('limitFunction().clearQueue isolates its own internal limiter', async t => {
++	const limit1 = pLimit({concurrency: 1, rejectOnClear: true});
++
++	await Promise.resolve();
++	t.is(limit1.pendingCount, 0);
++
++	// LimitFunction uses its own internal limiter, clearing it does not affect the shared pLimit above
++	const limited = limitFunction(async y => y * 2, {concurrency: 1, rejectOnClear: true});
++	const promisedA = limited(3);
++	const promisedB = limited(4);
++	t.is(limited.pendingCount, 1);
++
++	limited.clearQueue();
++	t.is(limited.pendingCount, 0);
++
++	// PromisedA completes normally (was already running)
++	t.is(await promisedA, 6);
++
++	// PromisedB was rejected by clearQueue with rejectOnClear: true
++	await t.throwsAsync(promisedB, {name: 'AbortError'});
++
++	// The shared pLimit was not affected by limitFunction's clearQueue
++	t.is(limit1.pendingCount, 0);
++});
++
++node20('limitFunction().clearQueue with nothing pending is harmless', async t => {
++	const limited = limitFunction(async x => x * 2, {concurrency: 1});
++
++	await limited(5);
++
++	t.is(limited.pendingCount, 0);
++
++	// ClearQueue on an empty queue should return undefined.
++	const result = limited.clearQueue();
++	t.is(result, undefined);
++});
++

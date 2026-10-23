@@ -100,13 +100,19 @@ export interface DecisionPointOutcome {
   readonly tokensUsed: number;
   readonly usage: LoopUsage;
   readonly callsWithUnknownUsage: number;
+  /**
+   * The step at which the point asks to look again, to see whether what it did had the effect it
+   * was for; absent is done. The loop honours it only up to `maxDecisionsPerLoop`.
+   */
+  readonly followUpAtStep?: number | undefined;
 }
 
 /**
- * Fired once, after the first step at which the loop has taken `atStep` steps or spent
- * `atElapsedMs` of its wall, whichever comes first, so a loop slowed by long calls reaches it
- * while its allowance is still mostly there. Whatever it spends, model calls included, comes out
- * of this loop's own steps, tokens and wall: a fresh look is not a fresh allowance.
+ * Fired first after the step at which the loop has taken `atStep` steps or spent `atElapsedMs`
+ * of its wall, whichever comes first, so a loop slowed by long calls reaches it while its
+ * allowance is still mostly there; then again only where a decision asks to follow up, and never
+ * more than `maxDecisionsPerLoop` times. Whatever it spends, model calls included, comes out of
+ * this loop's own steps, tokens and wall: a fresh look is not a fresh allowance.
  */
 export interface DecisionPoint {
   readonly atStep: number;
@@ -124,6 +130,9 @@ export interface StallIntervention extends StallDetected {
  * notice would be the harness repeating itself at a model that did not act on the first.
  */
 const stallNoticeAllowance = 1;
+
+/** The most decisions a loop makes, whatever the point asks: the first and two follow-ups. */
+export const maxDecisionsPerLoop = 3;
 
 export interface AgentLoopOutcome {
   readonly stopReason: StopReason;
@@ -171,9 +180,12 @@ export async function runAgentLoop(
     (message) => message.role === "user" && message.text.startsWith(stallNoticePrefix),
   ).length;
   // A conversation taken up again that already carries a decision notice has had its decision.
-  let decided = (deps.history ?? []).some(
+  let decisions = (deps.history ?? []).some(
     (message) => message.role === "user" && message.text.startsWith(decisionNoticePrefix),
-  );
+  )
+    ? maxDecisionsPerLoop
+    : 0;
+  let followUpAtStep: number | null = null;
   let lastCompactedAt = 0;
   let steps = 0;
   let answeredSteps = 0;
@@ -416,13 +428,19 @@ export async function runAgentLoop(
     }
 
     const point = deps.decisionPoint;
+    const due =
+      decisions === 0
+        ? steps >= (point?.atStep ?? Number.POSITIVE_INFINITY) ||
+          deps.clock.now() - startedAt >= (point?.atElapsedMs ?? Number.POSITIVE_INFINITY)
+        : followUpAtStep !== null && steps >= followUpAtStep;
     if (
       point !== undefined &&
-      !decided &&
-      !deps.abortSignal.aborted &&
-      (steps >= point.atStep || deps.clock.now() - startedAt >= point.atElapsedMs)
+      decisions < maxDecisionsPerLoop &&
+      due &&
+      !deps.abortSignal.aborted
     ) {
-      decided = true;
+      decisions += 1;
+      followUpAtStep = null;
       const outcome = await point.decide({
         messages: [...messages],
         steps,
@@ -437,6 +455,8 @@ export async function runAgentLoop(
       usage = sumUsage(usage, outcome.usage);
       callsWithUnknownUsage += outcome.callsWithUnknownUsage;
       if (outcome.notice !== null) messages.push({ role: "user", text: outcome.notice });
+      if (outcome.followUpAtStep !== undefined && outcome.followUpAtStep > steps)
+        followUpAtStep = outcome.followUpAtStep;
     }
   }
 }

@@ -1,0 +1,95 @@
+TAP version 13
+ok 1 - throws on invalid concurrency argument
+not ok 2 - limitFunction clearQueue on empty queue is harmless
+  ---
+    name: AssertionError
+    details:
+      'Rejected promise returned by test. Reason:': |-
+        TypeError {
+          message: 'limited.clearQueue is not a function',
+        }
+    message: Rejected promise returned by test
+    at: >-
+      file:///Users/brad/swarm-comparison-work/sensitivity-tests-on-base-p-limit-bugfix-limit-function-clear-queue-JkrEB7/checkout/test.js:439:10
+  ...
+not ok 3 - limitFunction activeCount and pendingCount work
+  ---
+    name: AssertionError
+    assertion: t.is()
+    details:
+      'Difference (- actual, + expected):': |-
+        - undefined
+        + 0
+    message: ''
+    at: >-
+      ExecutionContext.is
+      (file:///Users/brad/swarm-comparison-work/sensitivity-tests-on-base-p-limit-bugfix-limit-function-clear-queue-JkrEB7/checkout/node_modules/ava/lib/assert.js:309:16)
+  ...
+ok 4 - clearQueue
+not ok 5 - limitFunction clearQueue removes pending promises
+  ---
+    name: AssertionError
+    assertion: t.is()
+    details:
+      'Difference (- actual, + expected):': |-
+        - undefined
+        + 2
+    message: ''
+    at: >-
+      ExecutionContext.is
+      (file:///Users/brad/swarm-comparison-work/sensitivity-tests-on-base-p-limit-bugfix-limit-function-clear-queue-JkrEB7/checkout/node_modules/ava/lib/assert.js:309:16)
+  ...
+not ok 6 - limitFunction clearQueue without rejectOnClear leaves pending promises unsettled
+  ---
+    name: AssertionError
+    assertion: t.is()
+    details:
+      'Difference (- actual, + expected):': |-
+        - undefined
+        + 2
+    message: ''
+    at: >-
+      ExecutionContext.is
+      (file:///Users/brad/swarm-comparison-work/sensitivity-tests-on-base-p-limit-bugfix-limit-function-clear-queue-JkrEB7/checkout/node_modules/ava/lib/assert.js:309:16)
+  ...
+not ok 7 - limitFunction clearQueue does not affect another limiter
+  ---
+    name: AssertionError
+    assertion: t.is()
+    details:
+      'Difference (- actual, + expected):': |-
+        - undefined
+        + 1
+    message: ''
+    at: >-
+      ExecutionContext.is
+      (file:///Users/brad/swarm-comparison-work/sensitivity-tests-on-base-p-limit-bugfix-limit-function-clear-queue-JkrEB7/checkout/node_modules/ava/lib/assert.js:309:16)
+  ...
+ok 8 - accepts additional arguments
+ok 9 - limitFunction forwards arguments correctly
+ok 10 - continues after sync throw
+ok 11 - runs all tasks asynchronously
+ok 12 - limitFunction rejects when function throws synchronously
+ok 13 - non-promise returning function
+ok 14 - map accepts an iterable (set)
+ok 15 - map accepts an iterable (array iterator)
+ok 16 - map
+ok 17 - propagates async execution context properly
+ok 18 - shared context with a limited provider helper
+ok 19 - map passes index and preserves order with concurrency
+ok 20 - map works when detached from the limit
+ok 21 - clearQueue rejects pending promises when enabled
+ok 22 - accepts options object
+ok 23 - does not ignore errors
+ok 24 - change concurrency to bigger value
+ok 25 - change concurrency to smaller value
+ok 26 - concurrency: 1
+ok 27 - concurrency: 4
+ok 28 - limitFunction()
+ok 29 - activeCount and pendingCount properties
+
+1..29
+# tests 29
+# pass 24
+# fail 5
+

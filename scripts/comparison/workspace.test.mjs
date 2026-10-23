@@ -7,12 +7,15 @@ import {
   readlinkSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import { describe, expect, it } from "vitest";
 import {
   browserCacheIn,
+  npmToolchain,
+  packageManagerToolchain,
+  parsePackageManager,
   prepareLaunchHome,
   sharedNpmCache,
   swarmConfigurationText,
@@ -111,5 +114,24 @@ describe("the mutable state a launch gets", () => {
     const home = mkdtempSync(join(tmpdir(), "comparison-home-"));
     mkdirSync(join(home, "Library/Caches/ms-playwright"), { recursive: true });
     expect(browserCacheIn(home)).toBe(true);
+  });
+});
+
+describe("the package manager a base declares", () => {
+  it("reads npm and pnpm releases, and nothing else", () => {
+    expect(parsePackageManager("npm@11.2.0")).toEqual({ name: "npm", version: "11.2.0" });
+    expect(parsePackageManager("pnpm@10.34.5+sha512.abc")).toEqual({
+      name: "pnpm",
+      version: "10.34.5",
+    });
+    expect(parsePackageManager("yarn@4.1.0")).toBeNull();
+    expect(parsePackageManager(undefined)).toBeNull();
+  });
+
+  it("keeps npm under the comparison's tools and puts any other manager outside the protected roots", () => {
+    expect(packageManagerToolchain("npm", "11.2.0")).toBe(npmToolchain("11.2.0"));
+    expect(packageManagerToolchain("pnpm", "10.34.5")).toBe(
+      join(homedir(), ".cache", "swarm-capability-tools", "pnpm-10.34.5"),
+    );
   });
 });

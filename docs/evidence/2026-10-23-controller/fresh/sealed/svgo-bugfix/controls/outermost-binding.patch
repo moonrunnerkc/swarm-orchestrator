@@ -1,0 +1,101 @@
+diff --git a/lib/svgo/tools.js b/lib/svgo/tools.js
+index d44fcda8..c7387f28 100644
+--- a/lib/svgo/tools.js
++++ b/lib/svgo/tools.js
+@@ -166,7 +166,12 @@ const executableDataMediaTypes = new Set([
+  * @returns {boolean}
+  */
+ export const isExecutableUrl = (value) => {
+-  const normalizedValue = value.trimStart().toLowerCase();
++  // Browsers remove ASCII tabs and newlines from URLs before parsing them.
++  // Normalize them here too so they cannot be embedded in a scheme name.
++  const normalizedValue = value
++    .replace(/[\t\n\r]/g, '')
++    .trimStart()
++    .toLowerCase();
+ 
+   // `javascript:` is executable in modern browsers. `vbscript:` was only
+   // implemented by legacy Internet Explorer, but rejecting it is inexpensive,
+diff --git a/plugins/removeScripts.js b/plugins/removeScripts.js
+index ffb4dec0..3dfc240b 100644
+--- a/plugins/removeScripts.js
++++ b/plugins/removeScripts.js
+@@ -19,6 +19,9 @@ const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
+ /** Namespaces that support SVG <foreignObject> elements. */
+ const FOREIGN_OBJECT_NAMESPACES = [SVG_NAMESPACE];
+ 
++/** Namespaces that support SVG <a> elements. */
++const ANCHOR_NAMESPACES = [SVG_NAMESPACE];
++
+ /** Namespaces that support executable <script> elements. */
+ const SCRIPT_NAMESPACES = [SVG_NAMESPACE, 'http://www.w3.org/1999/xhtml'];
+ 
+@@ -128,6 +131,15 @@ export const fn = () => {
+           prefixes,
+           FOREIGN_OBJECT_NAMESPACES,
+         );
++        const [anchorPrefix, anchorLocal] = node.name.includes(':')
++          ? node.name.split(':', 2)
++          : [null, node.name];
++        const isAnchor =
++          anchorLocal === 'a' &&
++          (anchorPrefix === null ||
++            ANCHOR_NAMESPACES.includes(
++              /** @type {string[]} */ (prefixes.get(anchorPrefix))[0],
++            ));
+ 
+         for (const k of Object.keys(node.attributes)) {
+           if (!k.startsWith('xmlns:')) {
+@@ -138,7 +150,7 @@ export const fn = () => {
+           /** @type {string[]} */ (prefixes.get(prefix)).pop();
+         }
+ 
+-        if (node.name === 'a') {
++        if (isAnchor) {
+           for (const attr of Object.keys(node.attributes)) {
+             if (attr === 'href' || attr.endsWith(':href')) {
+               if (
+diff --git a/test/plugins/removeScripts.11.svg.txt b/test/plugins/removeScripts.11.svg.txt
+new file mode 100644
+index 00000000..de884708
+--- /dev/null
++++ b/test/plugins/removeScripts.11.svg.txt
+@@ -0,0 +1,38 @@
++Collapses namespace-prefixed SVG anchors and links whose executable URL schemes
++contain ASCII tabs or newlines. Anchors in unrelated namespaces are preserved.
++
++===
++
++<svg xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:custom="https://example.com/custom">
++  <svg:a xlink:href="javascript:alert(1)">
++    <text y="10">Prefixed anchor</text>
++  </svg:a>
++  <alias:a xmlns:alias="http://www.w3.org/2000/svg" href="javascript:alert(1)">
++    <text y="20">Locally declared prefix</text>
++  </alias:a>
++  <a href="java&#9;script:alert(1)">
++    <text y="30">Tab</text>
++  </a>
++  <a href="java&#10;script:alert(1)">
++    <text y="40">Line feed</text>
++  </a>
++  <a href="java&#13;script:alert(1)">
++    <text y="50">Carriage return</text>
++  </a>
++  <custom:a href="javascript:alert(1)">
++    <text y="60">Custom anchor</text>
++  </custom:a>
++</svg>
++
++@@@
++
++<svg xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:custom="https://example.com/custom">
++    <text y="10">Prefixed anchor</text>
++    <text y="20">Locally declared prefix</text>
++    <text y="30">Tab</text>
++    <text y="40">Line feed</text>
++    <text y="50">Carriage return</text>
++    <custom:a href="javascript:alert(1)">
++        <text y="60">Custom anchor</text>
++    </custom:a>
++</svg>

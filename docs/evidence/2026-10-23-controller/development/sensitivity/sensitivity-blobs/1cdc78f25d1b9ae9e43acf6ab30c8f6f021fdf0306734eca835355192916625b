@@ -1,0 +1,101 @@
+TAP version 13
+ok 1 - throws on invalid concurrency argument
+not ok 2 - limitFunction clearQueue on empty queue is harmless
+  ---
+    name: AssertionError
+    details:
+      'Error thrown in test:': |-
+        TypeError {
+          message: 'limited.clearQueue is not a function',
+        }
+    message: Error thrown in test
+    at: >-
+      file:///Users/brad/swarm-comparison-work/sensitivity-tests-on-base-p-limit-bugfix-limit-function-clear-queue-0R8lP0/checkout/test.js:437:10
+  ...
+ok 3 - clearQueue
+not ok 4 - limitFunction clearQueue discards pending promises
+  ---
+    name: AssertionError
+    details:
+      'Rejected promise returned by test. Reason:': |-
+        TypeError {
+          message: 'limited.clearQueue is not a function',
+        }
+    message: Rejected promise returned by test
+    at: >-
+      file:///Users/brad/swarm-comparison-work/sensitivity-tests-on-base-p-limit-bugfix-limit-function-clear-queue-0R8lP0/checkout/test.js:393:10
+  ...
+not ok 5 - limitFunction clearQueue with default rejectOnClear leaves promises unsettled
+  ---
+    name: AssertionError
+    details:
+      'Rejected promise returned by test. Reason:': |-
+        TypeError {
+          message: 'limited.clearQueue is not a function',
+        }
+    message: Rejected promise returned by test
+    at: >-
+      file:///Users/brad/swarm-comparison-work/sensitivity-tests-on-base-p-limit-bugfix-limit-function-clear-queue-0R8lP0/checkout/test.js:415:10
+  ...
+not ok 6 - limitFunction clearQueue rejects pending with AbortError
+  ---
+    name: AssertionError
+    details:
+      'Rejected promise returned by test. Reason:': |-
+        TypeError {
+          message: 'limited.clearQueue is not a function',
+        }
+    message: Rejected promise returned by test
+    at: >-
+      file:///Users/brad/swarm-comparison-work/sensitivity-tests-on-base-p-limit-bugfix-limit-function-clear-queue-0R8lP0/checkout/test.js:459:10
+  ...
+not ok 7 - limitFunction clearQueue does not affect separate callers
+  ---
+    name: AssertionError
+    details:
+      'Rejected promise returned by test. Reason:': |-
+        TypeError {
+          message: 'limited1.clearQueue is not a function',
+        }
+    message: Rejected promise returned by test
+    at: >-
+      file:///Users/brad/swarm-comparison-work/sensitivity-tests-on-base-p-limit-bugfix-limit-function-clear-queue-0R8lP0/checkout/test.js:483:11
+  ...
+ok 8 - accepts additional arguments
+ok 9 - continues after sync throw
+ok 10 - runs all tasks asynchronously
+ok 11 - non-promise returning function
+ok 12 - map accepts an iterable (set)
+ok 13 - map accepts an iterable (array iterator)
+ok 14 - map
+ok 15 - propagates async execution context properly
+not ok 16 - limitFunction clearQueue calls run normally
+  ---
+    name: AssertionError
+    details:
+      'Rejected promise returned by test. Reason:': |-
+        TypeError {
+          message: 'limited.clearQueue is not a function',
+        }
+    message: Rejected promise returned by test
+    at: >-
+      file:///Users/brad/swarm-comparison-work/sensitivity-tests-on-base-p-limit-bugfix-limit-function-clear-queue-0R8lP0/checkout/test.js:428:16
+  ...
+ok 17 - shared context with a limited provider helper
+ok 18 - map passes index and preserves order with concurrency
+ok 19 - map works when detached from the limit
+ok 20 - clearQueue rejects pending promises when enabled
+ok 21 - accepts options object
+ok 22 - does not ignore errors
+ok 23 - change concurrency to bigger value
+ok 24 - change concurrency to smaller value
+ok 25 - concurrency: 1
+ok 26 - concurrency: 4
+ok 27 - limitFunction()
+ok 28 - activeCount and pendingCount properties
+
+1..28
+# tests 28
+# pass 22
+# fail 6
+

@@ -82,12 +82,13 @@ import { createStallWatch, inferenceDeadlineMs, pollStallWatch } from "./stall.m
 import {
   cloneAtBase,
   commitVisibleCheck,
+  declaredPackageManager,
   finalPatch,
   mirrorOf,
+  packageManagerToolchain,
   prepare,
   prepareLaunchHome,
   resolveFull,
-  taskEnvironment,
   workRoot,
   writeArmConfiguration,
 } from "./workspace.mjs";
@@ -200,7 +201,22 @@ async function freeze(configPath, outPath) {
       swarmBuildDigest: treeDigest(dirname(config.pins.swarmCli)),
       ...(opencode === null ? {} : { opencode: opencode.version }),
     },
-    arms: Object.fromEntries(config.arms.map((arm) => [arm, config.armSettings?.[arm] ?? {}])),
+    // An arm with its own pinned build carries that build's digests, frozen as the main pin's are.
+    arms: Object.fromEntries(
+      config.arms.map((arm) => {
+        const settings = config.armSettings?.[arm] ?? {};
+        return [
+          arm,
+          typeof settings.swarmCli === "string"
+            ? {
+                ...settings,
+                swarmCliDigest: digestOf(readFileSync(settings.swarmCli)),
+                swarmBuildDigest: treeDigest(dirname(settings.swarmCli)),
+              }
+            : settings,
+        ];
+      }),
+    ),
     budgets: {
       setupRetries: 2,
       wallGraceMs: 60_000,
@@ -378,9 +394,13 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
     const contractPath = join(scratch, "contract.json");
     writeFileSync(contractPath, JSON.stringify(swarmContract(task), null, 2));
     const deadlineMs = Date.now() + budgets.wallMsPerLaunch;
-    const taskPath = taskEnvironment(task)
-      .PATH.split(":")
-      .filter((entry) => entry.includes("swarm-comparison/tools/npm-"));
+    // Only the declared package manager's pinned directory comes from the task environment;
+    // nothing else of the experimenter's PATH reaches an arm.
+    const declared = declaredPackageManager(task);
+    const taskPath =
+      declared === null
+        ? []
+        : [join(packageManagerToolchain(declared.name, declared.version), "node_modules", ".bin")];
     const launchSpec = buildLaunch({
       manifest,
       arm: launch.arm,

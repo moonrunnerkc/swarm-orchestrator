@@ -12,6 +12,7 @@ import {
   resolveFrozenInput,
   sandboxProfile,
   shortTemporaryDirectory,
+  swarmBuildOf,
   treeDigest,
   validateLaunch,
 } from "./launch-config.mjs";
@@ -64,6 +65,52 @@ function manifestWith(pins, extra = {}) {
 }
 
 const task = { id: "neutral-smoke", workType: "bugfix" };
+
+describe("a Swarm arm with its own pinned build", () => {
+  it("runs and validates swarm-previous against its own build, every other Swarm arm against the main pin", () => {
+    const directories = launchDirectories();
+    mkdirSync(join(root, "previous"), { recursive: true });
+    const previousCli = join(root, "previous", "cli.js");
+    writeFileSync(previousCli, "previous cli");
+    const manifest = manifestWith(
+      {},
+      {
+        arms: {
+          swarm: { flags: ["--adaptive"] },
+          "swarm-previous": {
+            flags: ["--adaptive"],
+            swarmCli: previousCli,
+            swarmCliDigest: digestOf("previous cli"),
+            swarmBuildDigest: "sha256:wrong",
+          },
+        },
+      },
+    );
+    expect(swarmBuildOf(manifest, "swarm").cli).toBe(join(root, "swarm", "cli.js"));
+    const launch = buildLaunch({
+      manifest,
+      arm: "swarm-previous",
+      task,
+      prompt: "p",
+      base: "HEAD",
+      ...directories,
+      remainingMs: 60_000,
+      tokenAllowance: 1,
+    });
+    expect(launch.inner[1]).toBe(previousCli);
+    expect(launch.inner).toContain("--adaptive");
+    const checks = validateLaunch({
+      manifest,
+      arm: "swarm-previous",
+      launch,
+      canary: join(root, "sealed", "x"),
+      otherLaunch: join(root, "work", "b"),
+    }).checks;
+    expect(checks.find((one) => one.name === "swarm cli digest")).toMatchObject({ ok: true });
+    // A build tree that is not the one frozen refuses the launch before inference.
+    expect(checks.find((one) => one.name === "swarm build digest")).toMatchObject({ ok: false });
+  });
+});
 
 describe("pinned executables (the 2026-10-22 slot 6 failure)", () => {
   it("runs the pinned OpenCode by absolute path, whatever another opencode on PATH says", () => {

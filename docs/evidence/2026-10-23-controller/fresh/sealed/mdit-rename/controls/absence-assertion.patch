@@ -1,0 +1,886 @@
+diff --git a/benchmark/implementations/current-commonmark/index.mjs b/benchmark/implementations/current-commonmark/index.mjs
+index 24f509b..f140e6b 100644
+--- a/benchmark/implementations/current-commonmark/index.mjs
++++ b/benchmark/implementations/current-commonmark/index.mjs
+@@ -1,4 +1,4 @@
+-import markdownit from '../../../src/index.mjs'
++import markdownit from '../../../src/index.ts'
+ 
+ const md = markdownit('commonmark')
+ 
+diff --git a/benchmark/implementations/current/index.mjs b/benchmark/implementations/current/index.mjs
+index 42867bf..c6caf07 100644
+--- a/benchmark/implementations/current/index.mjs
++++ b/benchmark/implementations/current/index.mjs
+@@ -1,4 +1,4 @@
+-import markdownit from '../../../src/index.mjs'
++import markdownit from '../../../src/index.ts'
+ 
+ const md = markdownit({
+   html: true,
+diff --git a/benchmark/profile.mjs b/benchmark/profile.mjs
+index 5fd48f8..c8972a1 100755
+--- a/benchmark/profile.mjs
++++ b/benchmark/profile.mjs
+@@ -2,7 +2,7 @@
+ /* eslint no-console:0 */
+ 
+ import { readFileSync } from 'fs'
+-import markdownit from '../src/index.mjs'
++import markdownit from '../src/index.ts'
+ 
+ const md = markdownit({
+   html: true,
+diff --git a/src/common/html_blocks.mjs b/src/common/html_blocks.ts
+similarity index 100%
+rename from src/common/html_blocks.mjs
+rename to src/common/html_blocks.ts
+diff --git a/src/common/html_re.mjs b/src/common/html_re.ts
+similarity index 100%
+rename from src/common/html_re.mjs
+rename to src/common/html_re.ts
+diff --git a/src/common/utils.mjs b/src/common/utils.ts
+similarity index 100%
+rename from src/common/utils.mjs
+rename to src/common/utils.ts
+diff --git a/src/helpers/index.mjs b/src/helpers/index.mjs
+deleted file mode 100644
+index 7ea30af..0000000
+--- a/src/helpers/index.mjs
++++ /dev/null
+@@ -1,11 +0,0 @@
+-// Just a shortcut for bulk export
+-
+-import parseLinkLabel from './parse_link_label.mjs'
+-import parseLinkDestination from './parse_link_destination.mjs'
+-import parseLinkTitle from './parse_link_title.mjs'
+-
+-export {
+-  parseLinkLabel,
+-  parseLinkDestination,
+-  parseLinkTitle
+-}
+diff --git a/src/helpers/index.ts b/src/helpers/index.ts
+new file mode 100644
+index 0000000..92cc8ce
+--- /dev/null
++++ b/src/helpers/index.ts
+@@ -0,0 +1,11 @@
++// Just a shortcut for bulk export
++
++import parseLinkLabel from './parse_link_label.ts'
++import parseLinkDestination from './parse_link_destination.ts'
++import parseLinkTitle from './parse_link_title.ts'
++
++export {
++  parseLinkLabel,
++  parseLinkDestination,
++  parseLinkTitle
++}
+diff --git a/src/helpers/parse_link_destination.mjs b/src/helpers/parse_link_destination.ts
+similarity index 96%
+rename from src/helpers/parse_link_destination.mjs
+rename to src/helpers/parse_link_destination.ts
+index 31523ce..dafba2f 100644
+--- a/src/helpers/parse_link_destination.mjs
++++ b/src/helpers/parse_link_destination.ts
+@@ -1,7 +1,7 @@
+ // Parse link destination
+ //
+ 
+-import { unescapeAll } from '../common/utils.mjs'
++import { unescapeAll } from '../common/utils.ts'
+ 
+ export default function parseLinkDestination (str, start, max) {
+   let code
+diff --git a/src/helpers/parse_link_label.mjs b/src/helpers/parse_link_label.ts
+similarity index 100%
+rename from src/helpers/parse_link_label.mjs
+rename to src/helpers/parse_link_label.ts
+diff --git a/src/helpers/parse_link_title.mjs b/src/helpers/parse_link_title.ts
+similarity index 97%
+rename from src/helpers/parse_link_title.mjs
+rename to src/helpers/parse_link_title.ts
+index 4605647..4435527 100644
+--- a/src/helpers/parse_link_title.mjs
++++ b/src/helpers/parse_link_title.ts
+@@ -1,7 +1,7 @@
+ // Parse link title
+ //
+ 
+-import { unescapeAll } from '../common/utils.mjs'
++import { unescapeAll } from '../common/utils.ts'
+ 
+ // Parse link title within `str` in [start, max] range,
+ // or continue previous parsing if `prev_state` is defined (equal to result of last execution).
+diff --git a/src/index.mjs b/src/index.mjs
+deleted file mode 100644
+index 80d393f..0000000
+--- a/src/index.mjs
++++ /dev/null
+@@ -1 +0,0 @@
+-export { default } from './markdownit.mjs'
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000..107fa4e
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1 @@
++export { default } from './markdownit.ts'
+diff --git a/src/markdownit.mjs b/src/markdownit.ts
+similarity index 96%
+rename from src/markdownit.mjs
+rename to src/markdownit.ts
+index bd3d6c1..021749e 100644
+--- a/src/markdownit.mjs
++++ b/src/markdownit.ts
+@@ -1,23 +1,23 @@
+ // Main parser class
+ 
+-import * as utils from './common/utils.mjs'
+-import * as helpers from './helpers/index.mjs'
+-import Token from './token.mjs'
+-import Ruler from './ruler.mjs'
+-import Renderer from './renderer.mjs'
+-import ParserCore from './parser_core.mjs'
+-import StateCore from './rules_core/state_core.mjs'
+-import ParserBlock from './parser_block.mjs'
+-import StateBlock from './rules_block/state_block.mjs'
+-import ParserInline from './parser_inline.mjs'
+-import StateInline from './rules_inline/state_inline.mjs'
++import * as utils from './common/utils.ts'
++import * as helpers from './helpers/index.ts'
++import Token from './token.ts'
++import Ruler from './ruler.ts'
++import Renderer from './renderer.ts'
++import ParserCore from './parser_core.ts'
++import StateCore from './rules_core/state_core.ts'
++import ParserBlock from './parser_block.ts'
++import StateBlock from './rules_block/state_block.ts'
++import ParserInline from './parser_inline.ts'
++import StateInline from './rules_inline/state_inline.ts'
+ import { LinkifyIt } from 'linkify-it'
+ import * as mdurl from 'mdurl'
+ import punycode from 'punycode.js'
+ 
+-import cfg_default from './presets/default.mjs'
+-import cfg_zero from './presets/zero.mjs'
+-import cfg_commonmark from './presets/commonmark.mjs'
++import cfg_default from './presets/default.ts'
++import cfg_zero from './presets/zero.ts'
++import cfg_commonmark from './presets/commonmark.ts'
+ 
+ const config = {
+   default: cfg_default,
+diff --git a/src/package.json b/src/package.json
+new file mode 100644
+index 0000000..5ffd980
+--- /dev/null
++++ b/src/package.json
+@@ -0,0 +1 @@
++{ "type": "module" }
+diff --git a/src/parser_block.mjs b/src/parser_block.ts
+similarity index 84%
+rename from src/parser_block.mjs
+rename to src/parser_block.ts
+index 22d6841..b2a4be4 100644
+--- a/src/parser_block.mjs
++++ b/src/parser_block.ts
+@@ -4,20 +4,20 @@
+  * Block-level tokenizer.
+  **/
+ 
+-import Ruler from './ruler.mjs'
+-import StateBlock from './rules_block/state_block.mjs'
+-
+-import r_table from './rules_block/table.mjs'
+-import r_code from './rules_block/code.mjs'
+-import r_fence from './rules_block/fence.mjs'
+-import r_blockquote from './rules_block/blockquote.mjs'
+-import r_hr from './rules_block/hr.mjs'
+-import r_list from './rules_block/list.mjs'
+-import r_reference from './rules_block/reference.mjs'
+-import r_html_block from './rules_block/html_block.mjs'
+-import r_heading from './rules_block/heading.mjs'
+-import r_lheading from './rules_block/lheading.mjs'
+-import r_paragraph from './rules_block/paragraph.mjs'
++import Ruler from './ruler.ts'
++import StateBlock from './rules_block/state_block.ts'
++
++import r_table from './rules_block/table.ts'
++import r_code from './rules_block/code.ts'
++import r_fence from './rules_block/fence.ts'
++import r_blockquote from './rules_block/blockquote.ts'
++import r_hr from './rules_block/hr.ts'
++import r_list from './rules_block/list.ts'
++import r_reference from './rules_block/reference.ts'
++import r_html_block from './rules_block/html_block.ts'
++import r_heading from './rules_block/heading.ts'
++import r_lheading from './rules_block/lheading.ts'
++import r_paragraph from './rules_block/paragraph.ts'
+ 
+ const _rules = [
+   // First 2 params - rule name & source. Secondary array - list of rules,
+diff --git a/src/parser_core.mjs b/src/parser_core.ts
+similarity index 70%
+rename from src/parser_core.mjs
+rename to src/parser_core.ts
+index 3065641..2a6419c 100644
+--- a/src/parser_core.mjs
++++ b/src/parser_core.ts
+@@ -5,16 +5,16 @@
+  * transformations.
+  **/
+ 
+-import Ruler from './ruler.mjs'
+-import StateCore from './rules_core/state_core.mjs'
++import Ruler from './ruler.ts'
++import StateCore from './rules_core/state_core.ts'
+ 
+-import r_normalize from './rules_core/normalize.mjs'
+-import r_block from './rules_core/block.mjs'
+-import r_inline from './rules_core/inline.mjs'
+-import r_linkify from './rules_core/linkify.mjs'
+-import r_replacements from './rules_core/replacements.mjs'
+-import r_smartquotes from './rules_core/smartquotes.mjs'
+-import r_text_join from './rules_core/text_join.mjs'
++import r_normalize from './rules_core/normalize.ts'
++import r_block from './rules_core/block.ts'
++import r_inline from './rules_core/inline.ts'
++import r_linkify from './rules_core/linkify.ts'
++import r_replacements from './rules_core/replacements.ts'
++import r_smartquotes from './rules_core/smartquotes.ts'
++import r_text_join from './rules_core/text_join.ts'
+ 
+ const _rules = [
+   ['normalize', r_normalize],
+diff --git a/src/parser_inline.mjs b/src/parser_inline.ts
+similarity index 84%
+rename from src/parser_inline.mjs
+rename to src/parser_inline.ts
+index f02b46e..0c1d929 100644
+--- a/src/parser_inline.mjs
++++ b/src/parser_inline.ts
+@@ -4,24 +4,24 @@
+  * Tokenizes paragraph content.
+  **/
+ 
+-import Ruler from './ruler.mjs'
+-import StateInline from './rules_inline/state_inline.mjs'
+-
+-import r_text from './rules_inline/text.mjs'
+-import r_linkify from './rules_inline/linkify.mjs'
+-import r_newline from './rules_inline/newline.mjs'
+-import r_escape from './rules_inline/escape.mjs'
+-import r_backticks from './rules_inline/backticks.mjs'
+-import r_strikethrough from './rules_inline/strikethrough.mjs'
+-import r_emphasis from './rules_inline/emphasis.mjs'
+-import r_link from './rules_inline/link.mjs'
+-import r_image from './rules_inline/image.mjs'
+-import r_autolink from './rules_inline/autolink.mjs'
+-import r_html_inline from './rules_inline/html_inline.mjs'
+-import r_entity from './rules_inline/entity.mjs'
+-
+-import r_balance_pairs from './rules_inline/balance_pairs.mjs'
+-import r_fragments_join from './rules_inline/fragments_join.mjs'
++import Ruler from './ruler.ts'
++import StateInline from './rules_inline/state_inline.ts'
++
++import r_text from './rules_inline/text.ts'
++import r_linkify from './rules_inline/linkify.ts'
++import r_newline from './rules_inline/newline.ts'
++import r_escape from './rules_inline/escape.ts'
++import r_backticks from './rules_inline/backticks.ts'
++import r_strikethrough from './rules_inline/strikethrough.ts'
++import r_emphasis from './rules_inline/emphasis.ts'
++import r_link from './rules_inline/link.ts'
++import r_image from './rules_inline/image.ts'
++import r_autolink from './rules_inline/autolink.ts'
++import r_html_inline from './rules_inline/html_inline.ts'
++import r_entity from './rules_inline/entity.ts'
++
++import r_balance_pairs from './rules_inline/balance_pairs.ts'
++import r_fragments_join from './rules_inline/fragments_join.ts'
+ 
+ // Parser rules
+ 
+diff --git a/src/presets/commonmark.mjs b/src/presets/commonmark.ts
+similarity index 100%
+rename from src/presets/commonmark.mjs
+rename to src/presets/commonmark.ts
+diff --git a/src/presets/default.mjs b/src/presets/default.ts
+similarity index 100%
+rename from src/presets/default.mjs
+rename to src/presets/default.ts
+diff --git a/src/presets/zero.mjs b/src/presets/zero.ts
+similarity index 100%
+rename from src/presets/zero.mjs
+rename to src/presets/zero.ts
+diff --git a/src/renderer.mjs b/src/renderer.ts
+similarity index 99%
+rename from src/renderer.mjs
+rename to src/renderer.ts
+index 6e05a07..6c369e5 100644
+--- a/src/renderer.mjs
++++ b/src/renderer.ts
+@@ -6,7 +6,7 @@
+  * rules if you create plugin and adds new token types.
+  **/
+ 
+-import { assign, unescapeAll, escapeHtml } from './common/utils.mjs'
++import { assign, unescapeAll, escapeHtml } from './common/utils.ts'
+ 
+ const default_rules = {}
+ 
+diff --git a/src/ruler.mjs b/src/ruler.ts
+similarity index 100%
+rename from src/ruler.mjs
+rename to src/ruler.ts
+diff --git a/src/rules_block/blockquote.mjs b/src/rules_block/blockquote.ts
+similarity index 99%
+rename from src/rules_block/blockquote.mjs
+rename to src/rules_block/blockquote.ts
+index 4ac80be..eafd0dc 100644
+--- a/src/rules_block/blockquote.mjs
++++ b/src/rules_block/blockquote.ts
+@@ -1,6 +1,6 @@
+ // Block quotes
+ 
+-import { isSpace } from '../common/utils.mjs'
++import { isSpace } from '../common/utils.ts'
+ 
+ export default function blockquote (state, startLine, endLine, silent) {
+   let pos = state.bMarks[startLine] + state.tShift[startLine]
+diff --git a/src/rules_block/code.mjs b/src/rules_block/code.ts
+similarity index 100%
+rename from src/rules_block/code.mjs
+rename to src/rules_block/code.ts
+diff --git a/src/rules_block/fence.mjs b/src/rules_block/fence.ts
+similarity index 100%
+rename from src/rules_block/fence.mjs
+rename to src/rules_block/fence.ts
+diff --git a/src/rules_block/heading.mjs b/src/rules_block/heading.ts
+similarity index 96%
+rename from src/rules_block/heading.mjs
+rename to src/rules_block/heading.ts
+index e4fbff7..4322798 100644
+--- a/src/rules_block/heading.mjs
++++ b/src/rules_block/heading.ts
+@@ -1,6 +1,6 @@
+ // heading (#, ##, ...)
+ 
+-import { isSpace, asciiTrim } from '../common/utils.mjs'
++import { isSpace, asciiTrim } from '../common/utils.ts'
+ 
+ export default function heading (state, startLine, endLine, silent) {
+   let pos = state.bMarks[startLine] + state.tShift[startLine]
+diff --git a/src/rules_block/hr.mjs b/src/rules_block/hr.ts
+similarity index 95%
+rename from src/rules_block/hr.mjs
+rename to src/rules_block/hr.ts
+index bc174af..962376d 100644
+--- a/src/rules_block/hr.mjs
++++ b/src/rules_block/hr.ts
+@@ -1,6 +1,6 @@
+ // Horizontal rule
+ 
+-import { isSpace } from '../common/utils.mjs'
++import { isSpace } from '../common/utils.ts'
+ 
+ export default function hr (state, startLine, endLine, silent) {
+   const max = state.eMarks[startLine]
+diff --git a/src/rules_block/html_block.mjs b/src/rules_block/html_block.ts
+similarity index 95%
+rename from src/rules_block/html_block.mjs
+rename to src/rules_block/html_block.ts
+index a27a291..e13aca5 100644
+--- a/src/rules_block/html_block.mjs
++++ b/src/rules_block/html_block.ts
+@@ -1,7 +1,7 @@
+ // HTML block
+ 
+-import block_names from '../common/html_blocks.mjs'
+-import { HTML_OPEN_CLOSE_TAG_RE } from '../common/html_re.mjs'
++import block_names from '../common/html_blocks.ts'
++import { HTML_OPEN_CLOSE_TAG_RE } from '../common/html_re.ts'
+ 
+ // An array of opening and corresponding closing sequences for html tags,
+ // last argument defines whether it can terminate a paragraph or not
+diff --git a/src/rules_block/lheading.mjs b/src/rules_block/lheading.ts
+similarity index 98%
+rename from src/rules_block/lheading.mjs
+rename to src/rules_block/lheading.ts
+index 660a2e1..5596c01 100644
+--- a/src/rules_block/lheading.mjs
++++ b/src/rules_block/lheading.ts
+@@ -1,6 +1,6 @@
+ // lheading (---, ===)
+ 
+-import { asciiTrim } from '../common/utils.mjs'
++import { asciiTrim } from '../common/utils.ts'
+ 
+ export default function lheading (state, startLine, endLine/*, silent */) {
+   const terminatorRules = state.md.block.ruler.getRules('paragraph')
+diff --git a/src/rules_block/list.mjs b/src/rules_block/list.ts
+similarity index 99%
+rename from src/rules_block/list.mjs
+rename to src/rules_block/list.ts
+index b02d1e1..c28b831 100644
+--- a/src/rules_block/list.mjs
++++ b/src/rules_block/list.ts
+@@ -1,6 +1,6 @@
+ // Lists
+ 
+-import { isSpace } from '../common/utils.mjs'
++import { isSpace } from '../common/utils.ts'
+ 
+ // Search `[-+*][\n ]`, returns next pos after marker on success
+ // or -1 on fail.
+diff --git a/src/rules_block/paragraph.mjs b/src/rules_block/paragraph.ts
+similarity index 96%
+rename from src/rules_block/paragraph.mjs
+rename to src/rules_block/paragraph.ts
+index d09db3e..b342ca3 100644
+--- a/src/rules_block/paragraph.mjs
++++ b/src/rules_block/paragraph.ts
+@@ -1,6 +1,6 @@
+ // Paragraph
+ 
+-import { asciiTrim } from '../common/utils.mjs'
++import { asciiTrim } from '../common/utils.ts'
+ 
+ export default function paragraph (state, startLine, endLine) {
+   const terminatorRules = state.md.block.ruler.getRules('paragraph')
+diff --git a/src/rules_block/reference.mjs b/src/rules_block/reference.ts
+similarity index 98%
+rename from src/rules_block/reference.mjs
+rename to src/rules_block/reference.ts
+index 307d3bb..3bfb377 100644
+--- a/src/rules_block/reference.mjs
++++ b/src/rules_block/reference.ts
+@@ -1,4 +1,4 @@
+-import { isSpace, normalizeReference } from '../common/utils.mjs'
++import { isSpace, normalizeReference } from '../common/utils.ts'
+ 
+ export default function reference (state, startLine, _endLine, silent) {
+   let pos = state.bMarks[startLine] + state.tShift[startLine]
+diff --git a/src/rules_block/state_block.mjs b/src/rules_block/state_block.ts
+similarity index 98%
+rename from src/rules_block/state_block.mjs
+rename to src/rules_block/state_block.ts
+index 1a36182..703ae19 100644
+--- a/src/rules_block/state_block.mjs
++++ b/src/rules_block/state_block.ts
+@@ -1,7 +1,7 @@
+ // Parser state class
+ 
+-import Token from '../token.mjs'
+-import { isSpace } from '../common/utils.mjs'
++import Token from '../token.ts'
++import { isSpace } from '../common/utils.ts'
+ 
+ class StateBlock {
+   constructor (src, md, env, tokens) {
+diff --git a/src/rules_block/table.mjs b/src/rules_block/table.ts
+similarity index 99%
+rename from src/rules_block/table.mjs
+rename to src/rules_block/table.ts
+index 2096344..30ab104 100644
+--- a/src/rules_block/table.mjs
++++ b/src/rules_block/table.ts
+@@ -1,6 +1,6 @@
+ // GFM table, https://github.github.com/gfm/#tables-extension-
+ 
+-import { isSpace } from '../common/utils.mjs'
++import { isSpace } from '../common/utils.ts'
+ 
+ // Limit the amount of empty autocompleted cells in a table,
+ // see https://github.com/markdown-it/markdown-it/issues/1000,
+diff --git a/src/rules_core/block.mjs b/src/rules_core/block.ts
+similarity index 100%
+rename from src/rules_core/block.mjs
+rename to src/rules_core/block.ts
+diff --git a/src/rules_core/inline.mjs b/src/rules_core/inline.ts
+similarity index 100%
+rename from src/rules_core/inline.mjs
+rename to src/rules_core/inline.ts
+diff --git a/src/rules_core/linkify.mjs b/src/rules_core/linkify.ts
+similarity index 98%
+rename from src/rules_core/linkify.mjs
+rename to src/rules_core/linkify.ts
+index c8fa16b..4d1331a 100644
+--- a/src/rules_core/linkify.mjs
++++ b/src/rules_core/linkify.ts
+@@ -3,7 +3,7 @@
+ // Currently restricted by `md.validateLink()` to http/https/ftp
+ //
+ 
+-import { arrayReplaceAt } from '../common/utils.mjs'
++import { arrayReplaceAt } from '../common/utils.ts'
+ 
+ function isLinkOpen (str) {
+   return /^<a[>\s]/i.test(str)
+diff --git a/src/rules_core/normalize.mjs b/src/rules_core/normalize.ts
+similarity index 100%
+rename from src/rules_core/normalize.mjs
+rename to src/rules_core/normalize.ts
+diff --git a/src/rules_core/replacements.mjs b/src/rules_core/replacements.ts
+similarity index 100%
+rename from src/rules_core/replacements.mjs
+rename to src/rules_core/replacements.ts
+diff --git a/src/rules_core/smartquotes.mjs b/src/rules_core/smartquotes.ts
+similarity index 99%
+rename from src/rules_core/smartquotes.mjs
+rename to src/rules_core/smartquotes.ts
+index 5e4510c..fcf2f30 100644
+--- a/src/rules_core/smartquotes.mjs
++++ b/src/rules_core/smartquotes.ts
+@@ -1,7 +1,7 @@
+ // Convert straight quotation marks to typographic ones
+ //
+ 
+-import { isWhiteSpace, isPunctCharCode, isMdAsciiPunct } from '../common/utils.mjs'
++import { isWhiteSpace, isPunctCharCode, isMdAsciiPunct } from '../common/utils.ts'
+ 
+ const QUOTE_TEST_RE = /['"]/
+ const QUOTE_RE = /['"]/g
+diff --git a/src/rules_core/state_core.mjs b/src/rules_core/state_core.ts
+similarity index 90%
+rename from src/rules_core/state_core.mjs
+rename to src/rules_core/state_core.ts
+index b1c8a39..6c6cda1 100644
+--- a/src/rules_core/state_core.mjs
++++ b/src/rules_core/state_core.ts
+@@ -1,7 +1,7 @@
+ // Core state object
+ //
+ 
+-import Token from '../token.mjs'
++import Token from '../token.ts'
+ 
+ class StateCore {
+   constructor (src, md, env) {
+diff --git a/src/rules_core/text_join.mjs b/src/rules_core/text_join.ts
+similarity index 100%
+rename from src/rules_core/text_join.mjs
+rename to src/rules_core/text_join.ts
+diff --git a/src/rules_inline/autolink.mjs b/src/rules_inline/autolink.ts
+similarity index 100%
+rename from src/rules_inline/autolink.mjs
+rename to src/rules_inline/autolink.ts
+diff --git a/src/rules_inline/backticks.mjs b/src/rules_inline/backticks.ts
+similarity index 100%
+rename from src/rules_inline/backticks.mjs
+rename to src/rules_inline/backticks.ts
+diff --git a/src/rules_inline/balance_pairs.mjs b/src/rules_inline/balance_pairs.ts
+similarity index 100%
+rename from src/rules_inline/balance_pairs.mjs
+rename to src/rules_inline/balance_pairs.ts
+diff --git a/src/rules_inline/emphasis.mjs b/src/rules_inline/emphasis.ts
+similarity index 100%
+rename from src/rules_inline/emphasis.mjs
+rename to src/rules_inline/emphasis.ts
+diff --git a/src/rules_inline/entity.mjs b/src/rules_inline/entity.ts
+similarity index 99%
+rename from src/rules_inline/entity.mjs
+rename to src/rules_inline/entity.ts
+index 38ac908..8b9ee6f 100644
+--- a/src/rules_inline/entity.mjs
++++ b/src/rules_inline/entity.ts
+@@ -1,7 +1,7 @@
+ // Process html entity - &#123;, &#xAF;, &quot;, ...
+ 
+ import { decodeHTMLStrict } from 'entities'
+-import { isValidEntityCode, fromCodePoint } from '../common/utils.mjs'
++import { isValidEntityCode, fromCodePoint } from '../common/utils.ts'
+ 
+ const DIGITAL_RE = /^&#((?:x[a-f0-9]{1,6}|[0-9]{1,7}));/i
+ const NAMED_RE = /^&([a-z][a-z0-9]{1,31});/i
+diff --git a/src/rules_inline/escape.mjs b/src/rules_inline/escape.ts
+similarity index 97%
+rename from src/rules_inline/escape.mjs
+rename to src/rules_inline/escape.ts
+index 139c3f3..9d084d6 100644
+--- a/src/rules_inline/escape.mjs
++++ b/src/rules_inline/escape.ts
+@@ -1,6 +1,6 @@
+ // Process escaped chars and hardbreaks
+ 
+-import { isSpace } from '../common/utils.mjs'
++import { isSpace } from '../common/utils.ts'
+ 
+ const ESCAPED = []
+ 
+diff --git a/src/rules_inline/fragments_join.mjs b/src/rules_inline/fragments_join.ts
+similarity index 100%
+rename from src/rules_inline/fragments_join.mjs
+rename to src/rules_inline/fragments_join.ts
+diff --git a/src/rules_inline/html_inline.mjs b/src/rules_inline/html_inline.ts
+similarity index 95%
+rename from src/rules_inline/html_inline.mjs
+rename to src/rules_inline/html_inline.ts
+index e868052..a124470 100644
+--- a/src/rules_inline/html_inline.mjs
++++ b/src/rules_inline/html_inline.ts
+@@ -1,6 +1,6 @@
+ // Process html tags
+ 
+-import { HTML_TAG_RE } from '../common/html_re.mjs'
++import { HTML_TAG_RE } from '../common/html_re.ts'
+ 
+ function isLinkOpen (str) {
+   return /^<a[>\s]/i.test(str)
+diff --git a/src/rules_inline/image.mjs b/src/rules_inline/image.ts
+similarity index 98%
+rename from src/rules_inline/image.mjs
+rename to src/rules_inline/image.ts
+index 32cbb31..8247751 100644
+--- a/src/rules_inline/image.mjs
++++ b/src/rules_inline/image.ts
+@@ -1,6 +1,6 @@
+ // Process ![image](<src> "title")
+ 
+-import { normalizeReference, isSpace } from '../common/utils.mjs'
++import { normalizeReference, isSpace } from '../common/utils.ts'
+ 
+ export default function image (state, silent) {
+   let code, content, label, pos, ref, res, title, start
+diff --git a/src/rules_inline/link.mjs b/src/rules_inline/link.ts
+similarity index 98%
+rename from src/rules_inline/link.mjs
+rename to src/rules_inline/link.ts
+index a6e2765..bbf0379 100644
+--- a/src/rules_inline/link.mjs
++++ b/src/rules_inline/link.ts
+@@ -1,6 +1,6 @@
+ // Process [link](<to> "stuff")
+ 
+-import { normalizeReference, isSpace } from '../common/utils.mjs'
++import { normalizeReference, isSpace } from '../common/utils.ts'
+ 
+ export default function link (state, silent) {
+   let code, label, res, ref
+diff --git a/src/rules_inline/linkify.mjs b/src/rules_inline/linkify.ts
+similarity index 100%
+rename from src/rules_inline/linkify.mjs
+rename to src/rules_inline/linkify.ts
+diff --git a/src/rules_inline/newline.mjs b/src/rules_inline/newline.ts
+similarity index 96%
+rename from src/rules_inline/newline.mjs
+rename to src/rules_inline/newline.ts
+index 2c0e3ae..1299fec 100644
+--- a/src/rules_inline/newline.mjs
++++ b/src/rules_inline/newline.ts
+@@ -1,6 +1,6 @@
+ // Proceess '\n'
+ 
+-import { isSpace } from '../common/utils.mjs'
++import { isSpace } from '../common/utils.ts'
+ 
+ export default function newline (state, silent) {
+   let pos = state.pos
+diff --git a/src/rules_inline/state_inline.mjs b/src/rules_inline/state_inline.ts
+similarity index 98%
+rename from src/rules_inline/state_inline.mjs
+rename to src/rules_inline/state_inline.ts
+index 8d3f693..1e90aca 100644
+--- a/src/rules_inline/state_inline.mjs
++++ b/src/rules_inline/state_inline.ts
+@@ -1,7 +1,7 @@
+ // Inline parser state
+ 
+-import Token from '../token.mjs'
+-import { isWhiteSpace, isPunctCharCode, isMdAsciiPunct } from '../common/utils.mjs'
++import Token from '../token.ts'
++import { isWhiteSpace, isPunctCharCode, isMdAsciiPunct } from '../common/utils.ts'
+ 
+ class StateInline {
+   constructor (src, md, env, outTokens) {
+diff --git a/src/rules_inline/strikethrough.mjs b/src/rules_inline/strikethrough.ts
+similarity index 100%
+rename from src/rules_inline/strikethrough.mjs
+rename to src/rules_inline/strikethrough.ts
+diff --git a/src/rules_inline/text.mjs b/src/rules_inline/text.ts
+similarity index 100%
+rename from src/rules_inline/text.mjs
+rename to src/rules_inline/text.ts
+diff --git a/src/token.mjs b/src/token.ts
+similarity index 100%
+rename from src/token.mjs
+rename to src/token.ts
+diff --git a/support/build-dist.mjs b/support/build-dist.mjs
+index 3a7c24c..7bf9e18 100644
+--- a/support/build-dist.mjs
++++ b/support/build-dist.mjs
+@@ -26,7 +26,7 @@ await build({
+     target: 'es2015',
+     minify: false,
+     lib: {
+-      entry: 'src/index.mjs',
++      entry: 'src/index.ts',
+       formats: ['cjs'],
+       fileName: () => 'markdown-it.cjs.js'
+     },
+@@ -47,7 +47,7 @@ await build({
+     target: 'es2018',
+     minify: false,
+     lib: {
+-      entry: 'src/index.mjs',
++      entry: 'src/index.ts',
+       formats: ['es'],
+       fileName: () => 'markdown-it.mjs'
+     },
+@@ -68,7 +68,7 @@ await build({
+     outDir: 'dist/browser',
+     minify: true,
+     lib: {
+-      entry: 'src/index.mjs',
++      entry: 'src/index.ts',
+       name: 'markdownit',
+       formats: ['umd'],
+       fileName: () => 'markdown-it.umd.min.js'
+@@ -91,7 +91,7 @@ await build({
+     outDir: 'dist/browser',
+     minify: true,
+     lib: {
+-      entry: 'src/index.mjs',
++      entry: 'src/index.ts',
+       formats: ['es'],
+       fileName: () => 'markdown-it.esm.min.mjs'
+     },
+diff --git a/support/demo_template/index.mjs b/support/demo_template/index.mjs
+index b3b872a..0c39c11 100644
+--- a/support/demo_template/index.mjs
++++ b/support/demo_template/index.mjs
+@@ -1,4 +1,4 @@
+-import markdownit from '../../src/index.mjs'
++import markdownit from '../../src/index.ts'
+ import * as mdurl from 'mdurl'
+ import hljs from 'highlight.js'
+ import 'highlight.js/styles/github.min.css'
+diff --git a/support/specsplit.mjs b/support/specsplit.mjs
+index fbffc90..cfaf7b0 100755
+--- a/support/specsplit.mjs
++++ b/support/specsplit.mjs
+@@ -6,7 +6,7 @@
+ 
+ import fs from 'node:fs'
+ import argparse from 'argparse'
+-import markdownit from '../src/index.mjs'
++import markdownit from '../src/index.ts'
+ 
+ const cli = new argparse.ArgumentParser({
+   add_help: true
+diff --git a/test/cmspec/commonmark.test.mjs b/test/cmspec/commonmark.test.mjs
+index 2320b59..7c7632e 100644
+--- a/test/cmspec/commonmark.test.mjs
++++ b/test/cmspec/commonmark.test.mjs
+@@ -1,7 +1,7 @@
+ import { readFileSync } from 'node:fs'
+ import assert from 'node:assert/strict'
+ import { describe, it } from 'node:test'
+-import markdownit from '../../src/index.mjs'
++import markdownit from '../../src/index.ts'
+ 
+ function normalize (text) {
+   return text.replace(/<blockquote>\n<\/blockquote>/g, '<blockquote></blockquote>')
+diff --git a/test/markdown-it/layout.test.mjs b/test/markdown-it/layout.test.mjs
+new file mode 100644
+index 0000000..14f2736
+--- /dev/null
++++ b/test/markdown-it/layout.test.mjs
+@@ -0,0 +1,20 @@
++import assert from 'node:assert/strict'
++import { existsSync, readdirSync } from 'node:fs'
++import { describe, it } from 'node:test'
++
++const src = new URL('../../src/', import.meta.url)
++
++describe('source layout', function () {
++  it('keeps no .mjs module under src/', function () {
++    const left = readdirSync(src, { recursive: true }).filter(name => String(name).endsWith('.mjs'))
++
++    assert.deepEqual(left, [])
++  })
++
++  it('has removed the old entry points', function () {
++    for (const old of ['index.mjs', 'markdownit.mjs', 'common/utils.mjs', 'helpers/index.mjs']) {
++      assert.equal(existsSync(new URL(old, src)), false, `src/${old} must be gone`)
++    }
++    assert.notEqual(String(new URL('index.ts', src)), String(new URL('../../src/index.mjs', import.meta.url)))
++  })
++})
+diff --git a/test/markdown-it/markdown-it.test.mjs b/test/markdown-it/markdown-it.test.mjs
+index 8b43bf6..440f43c 100644
+--- a/test/markdown-it/markdown-it.test.mjs
++++ b/test/markdown-it/markdown-it.test.mjs
+@@ -1,7 +1,7 @@
+ import { fileURLToPath } from 'node:url'
+ import { describe } from 'node:test'
+ import { generateTests } from '../helpers.mjs'
+-import markdownit from '../../src/index.mjs'
++import markdownit from '../../src/index.ts'
+ 
+ const fixtures = [
+   'commonmark_extras.txt',
+diff --git a/test/markdown-it/misc.test.mjs b/test/markdown-it/misc.test.mjs
+index d7d7b83..13e070b 100644
+--- a/test/markdown-it/misc.test.mjs
++++ b/test/markdown-it/misc.test.mjs
+@@ -1,6 +1,6 @@
+ import assert from 'node:assert/strict'
+ import { describe, it } from 'node:test'
+-import markdownit from '../../src/index.mjs'
++import markdownit from '../../src/index.ts'
+ import forInline from 'markdown-it-for-inline'
+ 
+ describe('API', function () {
+diff --git a/test/markdown-it/pathological.test.mjs b/test/markdown-it/pathological.test.mjs
+index 1a2c6dd..7256f51 100644
+--- a/test/markdown-it/pathological.test.mjs
++++ b/test/markdown-it/pathological.test.mjs
+@@ -4,7 +4,7 @@ import { Worker, isMainThread, parentPort, workerData } from 'node:worker_thread
+ import { fileURLToPath } from 'node:url'
+ 
+ if (!isMainThread) {
+-  const { default: md } = await import('../../src/index.mjs')
++  const { default: md } = await import('../../src/index.ts')
+   parentPort.postMessage(md(workerData.opts).render(workerData.str))
+   process.exit(0)
+ }
+diff --git a/test/markdown-it/ruler.test.mjs b/test/markdown-it/ruler.test.mjs
+index 9b518e6..b99de7d 100644
+--- a/test/markdown-it/ruler.test.mjs
++++ b/test/markdown-it/ruler.test.mjs
+@@ -1,6 +1,6 @@
+ import assert from 'node:assert/strict'
+ import { describe, it } from 'node:test'
+-import Ruler from '../../src/ruler.mjs'
++import Ruler from '../../src/ruler.ts'
+ 
+ describe('Ruler', function () {
+   it('should replace rule (.at)', function () {
+diff --git a/test/markdown-it/token.test.mjs b/test/markdown-it/token.test.mjs
+index 87a086e..1c8736a 100644
+--- a/test/markdown-it/token.test.mjs
++++ b/test/markdown-it/token.test.mjs
+@@ -1,6 +1,6 @@
+ import assert from 'node:assert/strict'
+ import { describe, it } from 'node:test'
+-import Token from '../../src/token.mjs'
++import Token from '../../src/token.ts'
+ 
+ describe('Token', function () {
+   it('attr', function () {
+diff --git a/test/markdown-it/utils.test.mjs b/test/markdown-it/utils.test.mjs
+index 778fcdf..2cd66cb 100644
+--- a/test/markdown-it/utils.test.mjs
++++ b/test/markdown-it/utils.test.mjs
+@@ -1,6 +1,6 @@
+ import assert from 'node:assert/strict'
+ import { describe, it } from 'node:test'
+-import * as utils from '../../src/common/utils.mjs'
++import * as utils from '../../src/common/utils.ts'
+ 
+ describe('Utils', function () {
+   it('fromCodePoint', function () {

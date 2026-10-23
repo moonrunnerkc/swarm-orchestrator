@@ -1,0 +1,91 @@
+
+> p-limit@7.3.1 test
+> xo && ava && tsd
+
+
+  scripts/benchmarker.js:3:1
+  ⚠  3:1  Unexpected todo comment: TODO: I will move this to a proper....  no-warning-comments
+
+  1 warning
+
+
+  ✔ throws on invalid concurrency argument
+  ✘ [fail]: limitFunction().clearQueue discards pending calls (without rejectOnClear)
+  ✘ [fail]: limitFunction().clearQueue discards pending calls with rejectOnClear
+  ✔ clearQueue
+  ✔ limitFunction().clearQueue is a function
+  ✘ [fail]: limitFunction().clearQueue isolates its own internal limiter Rejected promise returned by test
+  ✔ accepts additional arguments
+  ✔ continues after sync throw
+  ✔ runs all tasks asynchronously
+  ✔ limitFunction().clearQueue with nothing pending is harmless
+  ✔ non-promise returning function
+  ✔ map accepts an iterable (set)
+  ✔ map accepts an iterable (array iterator)
+  ✔ map
+  ✔ propagates async execution context properly
+  ✔ shared context with a limited provider helper
+  ✔ map passes index and preserves order with concurrency
+  ✔ map works when detached from the limit
+  ✔ clearQueue rejects pending promises when enabled (103ms)
+  ✔ accepts options object (103ms)
+  ✔ does not ignore errors (112ms)
+  ✔ change concurrency to bigger value (154ms)
+  ✔ change concurrency to smaller value (205ms)
+  ✔ concurrency: 1 (607ms)
+  ✔ limitFunction() (2.3s)
+  ✔ concurrency: 4 (2.4s)
+  ✔ activeCount and pendingCount properties (3s)
+  ─
+
+  limitFunction().clearQueue discards pending calls (without rejectOnClear)
+
+  test.js:395
+
+   394:   const promisedOne = limiter('a');
+   395:   t.is(limiter.pendingCount, 1);   
+   396:                                    
+
+  Difference (- actual, + expected):
+
+  - 0
+  + 1
+
+  › file://test.js:395:4
+
+
+
+  limitFunction().clearQueue discards pending calls with rejectOnClear
+
+  test.js:423
+
+   422:   const promisedOne = limiter('a');
+   423:   t.is(limiter.pendingCount, 1);   
+   424:                                    
+
+  Difference (- actual, + expected):
+
+  - 0
+  + 1
+
+  › file://test.js:423:4
+
+
+
+  limitFunction().clearQueue isolates its own internal limiter
+
+  Rejected promise returned by test. Reason:
+
+  DOMException {}
+
+  AbortError: This operation was aborted
+      at new DOMException (node:internal/per_context/domexception:76:18)
+      at AbortSignal.abort (node:internal/abort_controller:230:14)
+      at generator.value (file:///Users/brad/swarm-comparison-work/visible-p-limit-bugfix-limit-function-clear-queue-xZMcOC/checkout/index.js:84:36)
+      at limited.clearQueue (file:///Users/brad/swarm-comparison-work/visible-p-limit-bugfix-limit-function-clear-queue-xZMcOC/checkout/index.js:134:35)
+      at file:///Users/brad/swarm-comparison-work/visible-p-limit-bugfix-limit-function-clear-queue-xZMcOC/checkout/test.js:454:10
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+
+  ─
+
+  3 tests failed

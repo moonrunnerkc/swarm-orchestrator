@@ -1,0 +1,91 @@
+diff --git a/lib/svgo/tools.js b/lib/svgo/tools.js
+index d44fcda8..79775a66 100644
+--- a/lib/svgo/tools.js
++++ b/lib/svgo/tools.js
+@@ -166,7 +166,15 @@ const executableDataMediaTypes = new Set([
+  * @returns {boolean}
+  */
+ export const isExecutableUrl = (value) => {
+-  const normalizedValue = value.trimStart().toLowerCase();
++  // URL parsing drops every ASCII tab, line feed and carriage return, so a
++  // scheme split by them is still the same scheme to a browser.
++  let unsplit = '';
++  for (const char of value) {
++    if (char !== '\t' && char !== '\n' && char !== '\r') {
++      unsplit += char;
++    }
++  }
++  const normalizedValue = unsplit.trimStart().toLowerCase();
+ 
+   // `javascript:` is executable in modern browsers. `vbscript:` was only
+   // implemented by legacy Internet Explorer, but rejecting it is inexpensive,
+diff --git a/plugins/removeScripts.js b/plugins/removeScripts.js
+index ffb4dec0..ac244658 100644
+--- a/plugins/removeScripts.js
++++ b/plugins/removeScripts.js
+@@ -68,6 +68,13 @@ export const fn = () => {
+    * @type {Map<string, string[]>} */
+   const prefixes = new Map();
+   let foreignObjectDepth = 0;
++  /**
++   * Anchors in the SVG namespace, decided on entry while the element's own
++   * namespace declarations are in scope.
++   *
++   * @type {Set<import('../lib/types.js').XastElement>}
++   */
++  const svgAnchors = new Set();
+ 
+   return {
+     element: {
+@@ -97,6 +104,10 @@ export const fn = () => {
+           foreignObjectDepth += 1;
+         }
+ 
++        if (isNamespaceAwareElem(node.name, 'a', prefixes, [SVG_NAMESPACE])) {
++          svgAnchors.add(node);
++        }
++
+         if (
+           isNamespaceAwareElem(node.name, 'script', prefixes, SCRIPT_NAMESPACES)
+         ) {
+@@ -138,7 +149,7 @@ export const fn = () => {
+           /** @type {string[]} */ (prefixes.get(prefix)).pop();
+         }
+ 
+-        if (node.name === 'a') {
++        if (svgAnchors.delete(node)) {
+           for (const attr of Object.keys(node.attributes)) {
+             if (attr === 'href' || attr.endsWith(':href')) {
+               if (
+diff --git a/test/plugins/removeScripts.11.svg.txt b/test/plugins/removeScripts.11.svg.txt
+new file mode 100644
+index 00000000..4b450e3a
+--- /dev/null
++++ b/test/plugins/removeScripts.11.svg.txt
+@@ -0,0 +1,26 @@
++Removes the executable links of SVG anchors written with any prefix bound to the
++SVG namespace, and of links whose scheme is split by ASCII tabs or newlines.
++
++===
++
++<svg xmlns="http://www.w3.org/2000/svg" xmlns:s="http://www.w3.org/2000/svg" xmlns:o="https://example.com/o">
++  <s:a href="javascript:alert(1)">
++    <rect width="1" height="1"/>
++  </s:a>
++  <a href="jav&#10;ascript:alert(1)">
++    <rect width="2" height="2"/>
++  </a>
++  <o:a href="javascript:alert(1)">
++    <rect width="3" height="3"/>
++  </o:a>
++</svg>
++
++@@@
++
++<svg xmlns="http://www.w3.org/2000/svg" xmlns:s="http://www.w3.org/2000/svg" xmlns:o="https://example.com/o">
++    <rect width="1" height="1"/>
++    <rect width="2" height="2"/>
++    <o:a href="javascript:alert(1)">
++        <rect width="3" height="3"/>
++    </o:a>
++</svg>

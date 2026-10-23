@@ -20,12 +20,73 @@ const writeInput = z.object({
   content: z.string(),
 });
 
-const editInput = z.object({
+const oneEdit = z.object({
   path: z.string().describe("Workspace-relative path to edit."),
   find: z.string().min(1).describe("Exact text to replace."),
   replace: z.string(),
   replaceAll: z.boolean().optional().describe("Replace every occurrence instead of requiring one."),
 });
+
+const maxBatchEdits = 50;
+
+/**
+ * One replacement, or a batch of them across files. A batch is checked whole before anything is
+ * written and applied whole or not at all, so a mechanical change across twenty files is one call
+ * that either lands or says which replacement it could not make. Held-out block 1's fastify rename
+ * needed about forty separate edits and every Swarm arm ran out of wall making them one per turn.
+ */
+const editInput = z
+  .object({
+    path: z.string().optional().describe("Workspace-relative path to edit (single edit)."),
+    find: z.string().min(1).optional().describe("Exact text to replace (single edit)."),
+    replace: z.string().optional(),
+    replaceAll: z
+      .boolean()
+      .optional()
+      .describe("Replace every occurrence instead of requiring one."),
+    edits: z
+      .array(oneEdit)
+      .min(1)
+      .max(maxBatchEdits)
+      .optional()
+      .describe(
+        "Instead of path/find/replace: several replacements, applied in order, all or none.",
+      ),
+    reason: z
+      .string()
+      .optional()
+      .describe("Why the change replaces existing code rather than extending it, where asked."),
+  })
+  .refine((input) => (input.edits === undefined) !== (input.path === undefined), {
+    message: "give either path, find and replace, or edits, not both",
+  })
+  .refine(
+    (input) =>
+      input.edits !== undefined || (input.find !== undefined && input.replace !== undefined),
+    { message: "a single edit needs find and replace" },
+  );
+
+/** One change to one file as the edit tool is about to make it, for a review to read. */
+export interface ProposedFileChange {
+  readonly path: string;
+  readonly before: string;
+  readonly after: string;
+  /** The exact text replaced and its replacement, per replacement made. */
+  readonly replacements: readonly { readonly find: string; readonly replace: string }[];
+}
+
+/**
+ * A reading of edits beside the guard and the file set: it may refuse a change with a sentence
+ * the model can act on, and it may add lines to the result once the change has landed. It never
+ * edits anything itself.
+ */
+export interface EditReview {
+  refuse(
+    changes: readonly ProposedFileChange[],
+    reason: string | undefined,
+  ): Promise<string | null>;
+  afterwards(changes: readonly ProposedFileChange[]): Promise<readonly string[]>;
+}
 
 const listInput = z.object({
   path: z.string().optional().describe("Workspace-relative directory. Defaults to the root."),
@@ -91,39 +152,90 @@ export function createWriteTool(guard: PolicyGuard, refuse?: WriteRefusal): Tool
   });
 }
 
-export function createEditTool(guard: PolicyGuard, refuse?: WriteRefusal): ToolDefinition {
+export function createEditTool(
+  guard: PolicyGuard,
+  refuse?: WriteRefusal,
+  review?: EditReview,
+): ToolDefinition {
   return defineTool({
     name: "edit",
-    description: "Replace exact text in a workspace file.",
+    description:
+      "Replace exact text in a workspace file. For a change repeated across files (a rename's references, an import path), pass edits: [{path, find, replace}, ...] to make every replacement in one call, all or none.",
     inputSchema: editInput,
     kind: "write",
-    pathsFrom: (input) => [input.path],
+    pathsFrom: (input) =>
+      input.edits === undefined
+        ? [input.path ?? ""]
+        : [...new Set(input.edits.map((edit) => edit.path))],
     async execute(input) {
-      refuseIfNotAuthorized(refuse, input.path);
-      const absolutePath = resolveInsideWorkspace(guard, input.path);
-      const before = await readFile(absolutePath, "utf8");
-      const occurrences = before.split(input.find).length - 1;
-
-      if (occurrences === 0) {
-        throw new Error(
-          `no occurrence of the search text in ${input.path}. Read the file and copy the exact text.`,
-        );
+      const edits = input.edits ?? [
+        {
+          path: input.path ?? "",
+          find: input.find ?? "",
+          replace: input.replace ?? "",
+          ...(input.replaceAll === undefined ? {} : { replaceAll: input.replaceAll }),
+        },
+      ];
+      for (const path of new Set(edits.map((edit) => edit.path)))
+        refuseIfNotAuthorized(refuse, path);
+      // Every replacement is made in memory first, in order, so a later edit of the same file sees
+      // the earlier one; nothing is written until all of them have been made.
+      const contents = new Map<string, { before: string; after: string }>();
+      const replacements = new Map<string, { find: string; replace: string }[]>();
+      const counts: string[] = [];
+      for (const [index, edit] of edits.entries()) {
+        const absolutePath = resolveInsideWorkspace(guard, edit.path);
+        const current = contents.get(absolutePath) ?? {
+          before: await readFile(absolutePath, "utf8"),
+          after: "",
+        };
+        const text = contents.has(absolutePath) ? current.after : current.before;
+        const occurrences = text.split(edit.find).length - 1;
+        const where = edits.length === 1 ? edit.path : `edit ${index + 1} (${edit.path})`;
+        if (occurrences === 0)
+          throw new Error(
+            `no occurrence of the search text in ${where}. Read the file and copy the exact text.${edits.length > 1 ? " Nothing in the batch was applied." : ""}`,
+          );
+        if (occurrences > 1 && edit.replaceAll !== true)
+          throw new Error(
+            `the search text appears ${occurrences} times in ${where}. ` +
+              `Extend it until it is unique, or pass replaceAll.${edits.length > 1 ? " Nothing in the batch was applied." : ""}`,
+          );
+        const after =
+          edit.replaceAll === true
+            ? text.split(edit.find).join(edit.replace)
+            : text.replace(edit.find, () => edit.replace);
+        contents.set(absolutePath, { before: current.before, after });
+        replacements.set(absolutePath, [
+          ...(replacements.get(absolutePath) ?? []),
+          { find: edit.find, replace: edit.replace },
+        ]);
+        counts.push(`replaced ${occurrences} occurrence(s) in ${edit.path}`);
       }
-      if (occurrences > 1 && input.replaceAll !== true) {
-        throw new Error(
-          `the search text appears ${occurrences} times in ${input.path}. ` +
-            "Extend it until it is unique, or pass replaceAll.",
-        );
-      }
-
-      const after =
-        input.replaceAll === true
-          ? before.split(input.find).join(input.replace)
-          : before.replace(input.find, () => input.replace);
-      await writeFile(absolutePath, after, "utf8");
+      const changes: ProposedFileChange[] = [...contents].map(([absolutePath, content]) => ({
+        path:
+          edits.find((edit) => resolveInsideWorkspace(guard, edit.path) === absolutePath)?.path ??
+          absolutePath,
+        before: content.before,
+        after: content.after,
+        replacements: replacements.get(absolutePath) ?? [],
+      }));
+      const refusal = (await review?.refuse(changes, input.reason)) ?? null;
+      if (refusal !== null) throw new Error(refusal);
+      for (const [absolutePath, content] of contents)
+        await writeFile(absolutePath, content.after, "utf8");
+      const notes = (await review?.afterwards(changes)) ?? [];
+      const first = edits[0];
       return {
-        text: `replaced ${occurrences} occurrence(s) in ${input.path}`,
-        facts: { path: input.path, occurrences, bytes: after.length },
+        text: [...counts, ...notes].join("\n"),
+        facts:
+          edits.length === 1 && first !== undefined
+            ? {
+                path: first.path,
+                occurrences: Number(/^replaced (\d+)/.exec(counts[0] ?? "")?.[1] ?? 0),
+                bytes: changes[0]?.after.length ?? 0,
+              }
+            : { paths: changes.map((change) => change.path), edits: edits.length },
       };
     },
   });

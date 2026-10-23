@@ -8,7 +8,7 @@ import {
   respondWithToolCalls,
 } from "../providers/fixture-provider.ts";
 import { degenerateRepeatThreshold } from "./degenerate-output.ts";
-import { type AgentLoopDependencies, runAgentLoop } from "./loop.ts";
+import { type AgentLoopDependencies, maxDecisionsPerLoop, runAgentLoop } from "./loop.ts";
 import type { LoopEvent } from "./loop-events.ts";
 import {
   type ModelClient,
@@ -1232,6 +1232,46 @@ describe("the decision point", () => {
     });
     expect(outcome.stopReason).toBe("completed");
     expect(fired).toEqual([2]);
+  });
+
+  it("looks again only where a decision asks, and never more than the loop's decision limit", async () => {
+    const seen: number[] = [];
+    const harness = createHarness(
+      [
+        read(1),
+        read(2),
+        read(3),
+        read(4),
+        read(5),
+        read(6),
+        read(7),
+        read(8),
+        respondWithText("done"),
+      ],
+      {
+        budget: { ...generousBudget, maxSteps: 12 },
+        decisionPoint: {
+          atStep: 2,
+          atElapsedMs: 1_000_000,
+          decide: (input) => {
+            seen.push(input.steps);
+            // Every decision asks to look again two steps later; the loop stops at its limit.
+            return Promise.resolve({
+              notice: null,
+              steps: 0,
+              tokensUsed: 0,
+              usage: spend,
+              callsWithUnknownUsage: 0,
+              followUpAtStep: input.steps + 2,
+            });
+          },
+        },
+      },
+    );
+    const outcome = await runAgentLoop("task", harness.deps);
+    expect(outcome.stopReason).toBe("completed");
+    expect(seen).toEqual([2, 4, 6]);
+    expect(seen).toHaveLength(maxDecisionsPerLoop);
   });
 
   it("never fires for a loop that finishes first, nor again in a conversation that already had it", async () => {

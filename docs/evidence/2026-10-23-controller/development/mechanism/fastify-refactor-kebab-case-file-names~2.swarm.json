@@ -1,0 +1,100 @@
+{
+  "task": "fastify-refactor-kebab-case-file-names",
+  "sample": 2,
+  "arm": "swarm",
+  "outcome": "scored",
+  "scores": {
+    "visible": false,
+    "hidden": "fail",
+    "staticPassed": true
+  },
+  "productVerdict": false,
+  "wallMs": 612319,
+  "tokens": 772709,
+  "decisions": [
+    {
+      "rule": "adaptive-decision-v2",
+      "phase": "decided",
+      "loop": "task",
+      "step": 16,
+      "action": "diagnose",
+      "chosenBy": "no-edit-at-decision-point",
+      "reason": null,
+      "notice": true,
+      "carriedOut": null,
+      "diagnosis": {
+        "actionable": true,
+        "locations": [],
+        "action": null,
+        "answer": "I've already read all 14 declared files in previous steps. The grep search for require patterns under test/ returned nothing, which means I need to find those references myself. Let me compile the full implementation approach based on what I've read.\n\nFrom reading all source files:\n\n**Changes needed:**\n\n1. **lib/configValidator.js → lib/config-validator.js** - Already reads `./initialConfigValidation`, `./reqIdGenFactory`\n2. **lib/contentTypeParser.js → lib/content-type-parser.js**  \n3. **lib/fourOhFour.js → lib/four-oh-four.js** - Reads `./contentTypeParser`\n4. **lib/handleRequest.js → lib/ha"
+      },
+      "spent": {
+        "callsWithUnknownUsage": 0,
+        "steps": 1,
+        "tokensUsed": 3288,
+        "wallMs": 13907
+      },
+      "nextWorkerEdit": null
+    },
+    {
+      "rule": "adaptive-decision-v2",
+      "phase": "followed-up",
+      "loop": "task",
+      "step": 21,
+      "action": "look-again",
+      "chosenBy": null,
+      "reason": "the outcome has not occurred, but the worker is reading or running something new",
+      "notice": false,
+      "carriedOut": null,
+      "diagnosis": null,
+      "spent": {
+        "callsWithUnknownUsage": 0,
+        "steps": 0,
+        "tokensUsed": 0,
+        "wallMs": 1
+      },
+      "nextWorkerEdit": null
+    },
+    {
+      "rule": "adaptive-decision-v2",
+      "phase": "followed-up",
+      "loop": "task",
+      "step": 25,
+      "action": "reassess",
+      "chosenBy": "intervention-without-effect",
+      "reason": null,
+      "notice": true,
+      "carriedOut": {
+        "record": "sha256:8ce14492ee96c70548038fdd652c2665cc8da8990234b4a1d8e45f10f7284707",
+        "refused": true,
+        "summary": "shell cd /home/user/repos/fastify && mv lib/configValidator.js lib/config-validator.js && mv lib/contentTypeParser.js lib/content-type-parser.js && mv lib/fourOhFour.js lib/four-oh-four.js && mv lib/handleRequest.js lib/handle-request.js && mv lib/headRoute.js lib/head-route.js && mv lib/initialConfigValidation.js lib/initial-config-validation.js && mv lib/pluginOverride.js lib/plugin-override.js && mv \n[cut at 400 characters]",
+        "tool": "shell"
+      },
+      "diagnosis": {
+        "actionable": true,
+        "locations": [],
+        "action": {
+          "command": "cd /home/user/repos/fastify && mv lib/configValidator.js lib/config-validator.js && mv lib/contentTypeParser.js lib/content-type-parser.js && mv lib/fourOhFour.js lib/four-oh-four.js && mv lib/handleRequest.js lib/handle-request.js && mv lib/headRoute.js lib/head-route.js && mv lib/initialConfigValidation.js lib/initial-config-validation.js && mv lib/pluginOverride.js lib/plugin-override.js && mv lib/pluginUtils.js lib/plugin-utils.js && mv lib/reqIdGenFactory.js lib/req-id-gen-factory.js && mv lib/wrapThenable.js lib/wrap-thenable.js && mv types/serverFactory.d.ts types/server-factory.d.ts && echo RENAMES_DONE",
+          "tool": "shell"
+        },
+        "answer": "{\n  \"approach\": \"I will execute all file renames via a single shell command and then apply edits to update require/import paths in fastify.js, fastify.d.ts, package.json, build/build-validation.js, eslint.config.js, and lib/route.js. The files have already been read so I know their contents.\",\n  \"action\": {\n    \"tool\": \"shell\",\n    \"command\": \"cd /home/user/repos/fastify && mv lib/configValidator.js lib/config-validator.js && mv lib/contentTypeParser.js lib/content-type-parser.js && mv lib/fourOhFour.js lib/four-oh-four.js && mv lib/handleRequest.js lib/handle-request.js && mv lib/headRoute.js"
+      },
+      "spent": {
+        "callsWithUnknownUsage": 0,
+        "steps": 5,
+        "tokensUsed": 17539,
+        "wallMs": 11186
+      },
+      "nextWorkerEdit": null
+    }
+  ],
+  "rewriteHolds": [],
+  "batchEdits": [],
+  "stillOccursNotes": 0,
+  "shellEffects": {
+    "measured": 6,
+    "unmeasured": 0,
+    "changedTree": []
+  },
+  "followUps": []
+}
