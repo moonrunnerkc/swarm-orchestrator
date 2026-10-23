@@ -591,7 +591,10 @@ describe("stopping the comparison when the experiment is invalid", () => {
       budgets: { wallMsPerInvocation: 1500, wallGraceMs: 500 },
     });
     const result = await runRunner(fixture.env, fixture.path, [], "hang");
-    expect(result.code).toBe(0);
+    expect(
+      result.code,
+      JSON.stringify(halts(fixture.runs).map((name) => readJson(join(fixture.runs, name)))),
+    ).toBe(0);
     expect(halts(fixture.runs)).toEqual([]);
     expect(recordsOf(fixture.runs)).toHaveLength(2);
     expect(launchLines(fixture.env)).toHaveLength(2);

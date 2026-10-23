@@ -328,6 +328,12 @@ describe("the launch environment and arm flags", () => {
     expect(frozenSwarmFlags(["--attempts", "0"])).toEqual(["--attempts", "0"]);
     expect(() => frozenSwarmFlags(["--max-steps", "80"])).toThrow(/not a flag/);
     expect(() => frozenSwarmFlags(["--attempts", "9"])).toThrow(/takes/);
+    expect(frozenSwarmFlags(["--adaptive", "--review", "prose"])).toEqual([
+      "--adaptive",
+      "--review",
+      "prose",
+    ]);
+    expect(() => frozenSwarmFlags(["--review", "judge"])).toThrow(/takes/);
   });
 
   it("reads whether inference began from the events the arm printed", () => {

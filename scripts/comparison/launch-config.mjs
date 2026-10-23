@@ -43,11 +43,23 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
  * `swarm-direct` is an internal ablation with orchestration removed, not an independent competitor.
  * `swarm-previous` is the one Swarm arm that may run another pinned build (its own `swarmCli` in
  * the manifest's arm settings, with its own digests), so a revised implementation can be compared
- * with the one it replaces in one manifest and one interleaved order.
+ * with the one it replaces in one manifest and one interleaved order. `swarm-prose` is a second
+ * control on the same build, for a mechanism whose equal-cost control is not simply its absence.
  */
-export const launchArms = ["swarm", "swarm-control", "swarm-direct", "swarm-previous", "opencode"];
+export const launchArms = [
+  "swarm",
+  "swarm-control",
+  "swarm-prose",
+  "swarm-direct",
+  "swarm-previous",
+  "opencode",
+];
 export const isSwarmArm = (arm) =>
-  arm === "swarm" || arm === "swarm-control" || arm === "swarm-direct" || arm === "swarm-previous";
+  arm === "swarm" ||
+  arm === "swarm-control" ||
+  arm === "swarm-prose" ||
+  arm === "swarm-direct" ||
+  arm === "swarm-previous";
 
 /** The Swarm build an arm runs: its own pin where the manifest gives one, else the main pin. */
 export function swarmBuildOf(manifest, arm) {
@@ -211,6 +223,7 @@ const swarmArmFlags = {
   "--repair-finish": null,
   "--repair-trace": null,
   "--attempts": ["0", "1", "2", "3"],
+  "--review": ["executable", "prose"],
 };
 
 export function frozenSwarmFlags(flags) {
