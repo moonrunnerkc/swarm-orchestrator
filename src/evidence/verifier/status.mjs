@@ -24,7 +24,11 @@ export function instrumentChanges(instrument) {
   const changed = [];
   const authorized = instrument.authorized ?? [];
   for (const file of instrument.files ?? [])
-    if (file.reference !== file.current && !authorized.includes(file.path.split("#")[0]))
+    if (
+      file.reference !== file.current &&
+      !authorized.includes(file.path.split("#")[0]) &&
+      !transportedFile(instrument, file)
+    )
       changed.push(file.path);
   for (const dependency of instrument.dependencies ?? [])
     if (
@@ -46,6 +50,33 @@ export function instrumentChanges(instrument) {
     if (now !== instrument.before) changed.push("the instrument changed while the check ran");
   }
   return changed;
+}
+
+/**
+ * Whether a recorded instrument difference is only references moved along the patch's own renames
+ * (rename-transport-v1). Mirrors `transportedFile` in src/gates/instrument-identity.ts: the entry
+ * says so, the record carries the renames it rests on, and a side of a rename is one of them with
+ * the digest the entry carries. Reading the texts for moved references was the harness's; this
+ * checks what follows from what it recorded.
+ */
+function transportedFile(instrument, file) {
+  const transport = instrument.transport;
+  if (
+    file.transported !== true ||
+    transport === null ||
+    typeof transport !== "object" ||
+    transport.rule !== "rename-transport-v1" ||
+    !Array.isArray(transport.renames) ||
+    transport.renames.length === 0
+  )
+    return false;
+  if (file.current === null)
+    return transport.renames.some(
+      (one) => one.from === file.path && one.reference === file.reference,
+    );
+  if (file.reference === null)
+    return transport.renames.some((one) => one.to === file.path && one.current === file.current);
+  return true;
 }
 
 /**

@@ -12,6 +12,12 @@ import {
   observeInstalled,
   parseJson,
 } from "./instrument-dependencies.ts";
+import {
+  pairRenames,
+  type RecordedRename,
+  renameTransportRule,
+  transportedEqual,
+} from "./rename-transport.ts";
 
 export type { InstalledRunner, InstrumentDependency } from "./instrument-dependencies.ts";
 
@@ -52,6 +58,12 @@ export interface InstrumentFile {
   readonly path: string;
   readonly reference: string | null;
   readonly current: string | null;
+  /**
+   * The difference is only references moved along the patch's own renames (rename-transport-v1):
+   * the current content is the reference content with each path naming a renamed file replaced
+   * by that file's new path, or the file is itself one side of a recorded rename. Absent means not.
+   */
+  readonly transported?: true;
 }
 
 export interface InstrumentObservation {
@@ -89,6 +101,14 @@ export interface InstrumentObservation {
    * could not finish names every changed program file here. Absent means none.
    */
   readonly programSubjects?: readonly string[];
+  /**
+   * The renames the patch makes, each a deleted file and the added file it is under moved
+   * references, recorded where any instrument file is read as transported. Absent means none.
+   */
+  readonly transport?: {
+    readonly rule: typeof renameTransportRule;
+    readonly renames: readonly RecordedRename[];
+  };
 }
 
 const digestPattern = z.string().regex(/^sha256:[0-9a-f]{64}$/);
@@ -101,6 +121,7 @@ export const instrumentObservationSchema = z.strictObject({
       path: z.string().min(1),
       reference: digestPattern.nullable(),
       current: digestPattern.nullable(),
+      transported: z.literal(true).optional(),
     }),
   ),
   dependencies: z.array(
@@ -125,6 +146,21 @@ export const instrumentObservationSchema = z.strictObject({
   authorized: z.array(z.string().min(1)).optional(),
   programCode: z.array(z.string().min(1)).optional(),
   programSubjects: z.array(z.string().min(1)).optional(),
+  transport: z
+    .strictObject({
+      rule: z.literal(renameTransportRule),
+      renames: z
+        .array(
+          z.strictObject({
+            from: z.string().min(1),
+            to: z.string().min(1),
+            reference: digestPattern,
+            current: digestPattern,
+          }),
+        )
+        .min(1),
+    })
+    .optional(),
 });
 
 /** The digest an observation carries as `before`: of everything in it but that field. */
@@ -157,7 +193,11 @@ export function instrumentChanges(observation: InstrumentObservation): readonly 
   const changed: string[] = [];
   const authorized = observation.authorized ?? [];
   for (const file of observation.files)
-    if (file.reference !== file.current && !authorized.includes(file.path.split("#")[0] as string))
+    if (
+      file.reference !== file.current &&
+      !authorized.includes(file.path.split("#")[0] as string) &&
+      !transportedFile(observation, file)
+    )
       changed.push(file.path);
   for (const dependency of observation.dependencies)
     if (
@@ -176,6 +216,23 @@ export function instrumentChanges(observation: InstrumentObservation): readonly 
   if (observation.before !== undefined && observation.before !== observationDigest(observation))
     changed.push("the instrument changed while the check ran");
   return changed;
+}
+
+/**
+ * Whether a file's difference is read as moved references (rename-transport-v1). A side of a
+ * rename counts only where the recorded rename carries the digest the file entry carries, so an
+ * entry cannot borrow a pair it is not.
+ */
+export function transportedFile(observation: InstrumentObservation, file: InstrumentFile): boolean {
+  if (file.transported !== true || observation.transport?.rule !== renameTransportRule)
+    return false;
+  const renames = observation.transport.renames;
+  if (renames.length === 0) return false;
+  if (file.current === null)
+    return renames.some((one) => one.from === file.path && one.reference === file.reference);
+  if (file.reference === null)
+    return renames.some((one) => one.to === file.path && one.current === file.current);
+  return true;
 }
 
 /** The reading a check keeps once its instrument is known: a pass it did not author, or not one. */
@@ -372,13 +429,26 @@ function scriptsOf(manifest: Record<string, unknown> | null): Readonly<Record<st
   );
 }
 
-/** The package script a package-manager command runs, or null where the command is not one. */
-function scriptOf(command: string | null): string | null {
+/**
+ * The package script a package-manager command runs, or null where the command is not one. A
+ * lifecycle alias is a script too: `npm test` runs the `test` script exactly as `npm run test`
+ * does, and reading it as no script left a `test` body replaced by an echo of a passing summary
+ * outside the instrument of every check spelled that way.
+ */
+export function scriptOf(command: string | null): string | null {
   if (command === null) return null;
-  const match = /^(?:npm|pnpm|yarn|bun)\s+run(?:\s+--?[\w-]+(?:=\S+)?)*\s+([\w:.@/-]+)\s*$/.exec(
-    command.trim(),
-  );
-  return match?.[1] ?? null;
+  const text = command.trim();
+  const named =
+    /^(?:npm|pnpm|yarn|bun)(?:\s+--?[\w-]+(?:=\S+)?)*\s+run(?:-script)?(?:\s+--?[\w-]+(?:=\S+)?)*\s+([\w:.@/-]+)\s*$/.exec(
+      text,
+    );
+  if (named?.[1] !== undefined) return named[1];
+  const alias =
+    /^(?:npm|pnpm|yarn|bun)(?:\s+--?[\w-]+(?:=\S+)?)*\s+(test|tst|t|start|stop|restart)(?:\s+--?[\w-]+(?:=\S+)?)*\s*$/.exec(
+      text,
+    );
+  if (alias?.[1] === undefined) return null;
+  return alias[1] === "t" || alias[1] === "tst" ? "test" : alias[1];
 }
 
 /** Every script a script body runs through a package manager, by name. */
@@ -749,14 +819,18 @@ export async function observeInstrument(
   options: { readonly authorized?: readonly string[] } = {},
 ): Promise<InstrumentObservation> {
   const files = new Map<string, InstrumentFile>();
+  // The texts each entry was digested from, so a difference can be read for moved references.
+  const texts = new Map<string, { reference: string | null; current: string | null }>();
   const residuals = new Set<string>();
   const dependencyNames = new Set<string>();
   let complete = true;
 
   const note = (path: string, reference: string | null, current: string | null) => {
     if (reference === null && current === null) return;
-    if (!files.has(path))
+    if (!files.has(path)) {
       files.set(path, { path, reference: digest(reference), current: digest(current) });
+      texts.set(path, { reference, current });
+    }
   };
 
   const referenceManifest = parseJson(await trees.reference("package.json"));
@@ -980,6 +1054,9 @@ export async function observeInstrument(
     }
   }
 
+  const transport = await transportedEntries(trees, files, texts);
+  for (const residual of transport.residuals) residuals.add(residual);
+
   const dependencies = await observeDependencies(
     trees,
     used.map(([, rule]) => rule),
@@ -994,7 +1071,9 @@ export async function observeInstrument(
         );
   const programCode = [...files.keys()].filter((path) => visited.get(path) === "program").sort();
   const changedProgram = programCode.filter(
-    (path) => files.get(path)?.reference !== files.get(path)?.current,
+    (path) =>
+      files.get(path)?.reference !== files.get(path)?.current &&
+      files.get(path)?.transported !== true,
   );
   const programSubjects =
     changedProgram.length === 0 ? [] : await loadedByTests(trees, new Set(changedProgram));
@@ -1012,7 +1091,62 @@ export async function observeInstrument(
       : { authorized: [...new Set(options.authorized)].sort() }),
     ...(programCode.length === 0 ? {} : { programCode }),
     ...(programSubjects.length === 0 ? {} : { programSubjects }),
+    ...(transport.renames.length === 0
+      ? {}
+      : { transport: { rule: renameTransportRule, renames: transport.renames } }),
   };
+}
+
+/**
+ * One pairing per pair of trees: every check of a verification is observed against the same base
+ * and checkout, which a tree factory gives one remembered reader of the base for, and the pairing
+ * reads every renamed file.
+ */
+const pairings = new WeakMap<
+  InstrumentTrees["reference"],
+  { readonly changed: readonly string[]; readonly map: ReturnType<typeof pairRenames> }
+>();
+
+function renamesOf(trees: InstrumentTrees): ReturnType<typeof pairRenames> {
+  const known = pairings.get(trees.reference);
+  if (known !== undefined && known.changed === trees.changed) return known.map;
+  const map = pairRenames(trees);
+  pairings.set(trees.reference, { changed: trees.changed, map });
+  return map;
+}
+
+/**
+ * Marks each changed instrument entry whose difference is only references moved along the patch's
+ * renames, and returns the renames that reading rests on. An entry is a whole file or one field of
+ * a manifest (read with the manifest's path as its location); a side of a rename is marked where
+ * the rename was paired. Nothing is marked where the patch renames nothing.
+ */
+async function transportedEntries(
+  trees: InstrumentTrees,
+  files: Map<string, InstrumentFile>,
+  texts: ReadonlyMap<string, { reference: string | null; current: string | null }>,
+): Promise<{ readonly renames: readonly RecordedRename[]; readonly residuals: readonly string[] }> {
+  const differing = [...files.values()].filter((file) => file.reference !== file.current);
+  if (differing.length === 0) return { renames: [], residuals: [] };
+  const map = await renamesOf(trees);
+  if (map.pairs.length === 0) return { renames: [], residuals: map.residuals };
+  const renamedTo = new Set(map.pairs.map((pair) => pair.to));
+  let marked = false;
+  for (const file of differing) {
+    const text = texts.get(file.path);
+    if (text === undefined) continue;
+    const location = file.path.split("#")[0] as string;
+    const moved =
+      text.reference !== null && text.current !== null
+        ? transportedEqual(map, text.reference, location, text.current, location)
+        : text.current === null
+          ? map.byFrom.has(file.path)
+          : renamedTo.has(file.path);
+    if (!moved) continue;
+    files.set(file.path, { ...file, transported: true });
+    marked = true;
+  }
+  return { renames: marked ? map.pairs : [], residuals: map.residuals };
 }
 
 /** How many files the walk from the tests reads before it stops and names every target. */

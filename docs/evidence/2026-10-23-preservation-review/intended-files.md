@@ -49,3 +49,12 @@ dated amendments before they are edited.
 - `docs/cli.md`, `docs/verifying.md`, `README.md`: short, accurate links.
 - `docs/evidence/2026-10-23-preservation-review/`: design note, reproductions, controls,
   protocols, records, scores and report.
+
+## Amendment 1, October 23, 2026
+
+- `src/gates/independent-checks.ts`: the base and checkout trees an instrument is compared across,
+  factored out so the base-tests reading pairs renames over the same trees. **Edited before this
+  amendment was recorded**; the declaration above named `independent-verification.ts` and not this
+  file. Recorded here as an out-of-set edit rather than left implied.
+- `scripts/comparison/run.mjs`: its progress line prints hidden verdicts too, like the study
+  runner's; declared before editing.
