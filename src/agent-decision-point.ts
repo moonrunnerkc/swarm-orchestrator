@@ -605,7 +605,11 @@ export function normalizeAction(value: unknown): DiagnosedAction | undefined {
 
 /**
  * The action, run as the worker would run it. An edit batch is applied whole or not at all by the
- * edit tool itself; a shell command is guarded, and its measured effect is in its result.
+ * edit tool itself, after its files are declared (or the declaration amended) through the same
+ * chokepoint, as a worker must before editing: the fresh block's first markdown-it reassessment
+ * named a correct batch and the file set refused it, undeclared. A shell command is guarded, and
+ * its measured effect is in its result; one that only inspects the workspace is not carried out at
+ * all, since it is not an action (another reassessment of that block ran `git diff --stat; ls`).
  */
 async function carryOut(
   context: DecisionPointContext,
@@ -614,6 +618,38 @@ async function carryOut(
 ): Promise<{ tool: string; summary: string; outcome: ToolCallOutcome } | null> {
   if (action === undefined) return null;
   if (action.tool === "shell" && !context.shellAllowed) return null;
+  if (action.tool === "shell" && classifyShellCommand(action.command).kind === "inspection")
+    return {
+      tool: "shell",
+      summary: `shell ${bounded(action.command, 400)}`,
+      outcome: {
+        callId: harnessCallId("action-shell"),
+        toolName: "shell",
+        failed: true,
+        output:
+          "not carried out: the command only inspects the workspace, and a reassessment's action has to change it",
+      },
+    };
+  if (action.tool === "edit") {
+    const files = [...new Set(action.edits.map((one) => one.path))];
+    const declared = await context.toolInvoker.invoke({
+      callId: harnessCallId("action-declare"),
+      toolName: "declare_file_set",
+      input: { files },
+      provenance: "model",
+    });
+    if (declared.failed)
+      await context.toolInvoker.invoke({
+        callId: harnessCallId("action-amend"),
+        toolName: "amend_file_set",
+        input: {
+          files,
+          reason:
+            "the controller's reassessment carries out an edit of these files, as its record names",
+        },
+        provenance: "model",
+      });
+  }
   const invocation =
     action.tool === "edit"
       ? {
