@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { classifyShellCommand } from "../tools/shell-observation.ts";
 import type { ConversationMessage } from "./model-client.ts";
 import {
   chooseDecision,
@@ -7,6 +8,8 @@ import {
   describeWorkingState,
   exitCodeOf,
   predictionHolds,
+  workspaceEffectLine,
+  workspaceEffectOf,
 } from "./working-state.ts";
 
 const record = (n: number) => `sha256:${n.toString(16).padStart(64, "0")}`;
@@ -130,7 +133,7 @@ describe("the registered decision policy", () => {
     ];
     expect(chooseDecision(decisionSignals(deriveWorkingState(messages)))).toEqual({
       kind: "continue",
-      rule: "edits-landed-no-failing-check",
+      rule: "edits-landed-no-open-failure",
       alternativePermitted: false,
     });
   });
@@ -169,6 +172,194 @@ describe("the registered decision policy", () => {
       kind: "diagnose",
       rule: "no-edit-at-decision-point",
     });
+  });
+});
+
+/** The classifier the product hands the working state. */
+const classified = { classifyShell: classifyShellCommand };
+const landed = () =>
+  exchange("edit", { path: "src/a.js", find: "a", replace: "b" }, "replaced 1 occurrence(s)");
+const npmTest = (exit: number) =>
+  exchange(
+    "shell",
+    { command: "npm test" },
+    `exit code: ${exit}\nstdout:\n${exit === 0 ? "ok" : "1 failing"}`,
+  );
+const effect = (line: string) => `\n${line}`;
+
+describe("checks kept apart from inspections (adaptive-decision-v2)", () => {
+  it("does not let a later unrelated success close a failure on the same tree", () => {
+    // Case A, as the entities repair loop of development run 3 had it: lint failed, then sed -n.
+    const messages = [
+      { role: "user", text: "t" } as ConversationMessage,
+      ...landed(),
+      ...npmTest(1),
+      ...exchange("shell", { command: "ls src" }, "exit code: 0\nstdout:\na.js"),
+    ];
+    for (const options of [classified, {}]) {
+      const signals = decisionSignals(deriveWorkingState(messages, options));
+      expect(signals.openFailures.map((one) => one.subject)).toEqual(["npm test"]);
+      expect(chooseDecision(signals)).toMatchObject({
+        kind: "diagnose",
+        rule: "failing-check-at-current-tree",
+      });
+    }
+    const state = deriveWorkingState(messages, classified);
+    expect(state.executions.at(-1)).toMatchObject({ kind: "inspection", status: "exit-zero" });
+    expect(describeWorkingState(state, { candidate: null })).toMatch(
+      /checks failing on the current tree: npm test \(exit 1, step 2, current tree, unless a later shell command whose effect was not measured changed it\)/,
+    );
+  });
+
+  it("reads a failure an edit has since replaced as stale, to rerun, and continues", () => {
+    const messages = [
+      { role: "user", text: "t" } as ConversationMessage,
+      ...landed(),
+      ...npmTest(1),
+      ...landed(),
+    ];
+    const state = deriveWorkingState(messages, classified);
+    const signals = decisionSignals(state);
+    expect(signals.openFailures).toEqual([]);
+    expect(signals.staleFailures.map((one) => one.subject)).toEqual(["npm test"]);
+    expect(chooseDecision(signals).kind).toBe("continue");
+    expect(describeWorkingState(state, { candidate: null })).toContain(
+      "checks that failed before a later change and have not run since (rerun to know): npm test",
+    );
+  });
+
+  it("closes a failure only when the same check passes again", () => {
+    const fixed = [
+      { role: "user", text: "t" } as ConversationMessage,
+      ...landed(),
+      ...npmTest(1),
+      ...landed(),
+      ...npmTest(0),
+    ];
+    expect(decisionSignals(deriveWorkingState(fixed, classified)).openFailures).toEqual([]);
+    // A filter's exit status is not the check's: it neither passes nor fails `npm test`.
+    const filtered = [
+      { role: "user", text: "t" } as ConversationMessage,
+      ...landed(),
+      ...npmTest(1),
+      ...exchange(
+        "shell",
+        { command: "npm test 2>&1 | tail -5" },
+        "exit code: 0\nstdout:\n1 failing",
+      ),
+    ];
+    const state = deriveWorkingState(filtered, classified);
+    expect(state.executions.at(-1)?.status).toBe("unknown");
+    expect(decisionSignals(state).openFailures.map((one) => one.step)).toEqual([2]);
+  });
+
+  it("keeps a refused or unrun command as uncertainty, never a pass or a failure", () => {
+    const messages = [
+      { role: "user", text: "t" } as ConversationMessage,
+      ...landed(),
+      ...exchange("shell", { command: "npm test" }, "denied: not on the allowlist", true),
+      ...exchange(
+        "shell",
+        { command: "npm run slow" },
+        "exit code: 137\nthe command was killed for exceeding its timeout",
+      ),
+    ];
+    const state = deriveWorkingState(messages, classified);
+    expect(state.executions.map((one) => one.status)).toEqual(["not-run", "unknown"]);
+    expect(decisionSignals(state).openFailures).toEqual([]);
+    expect(describeWorkingState(state, { candidate: null })).toContain("refused or not run");
+  });
+
+  it("counts a measured shell write as a change, so a check before it predates the tree", () => {
+    // Case B: a passing test, then a shell command that changes source.
+    const messages = [
+      { role: "user", text: "t" } as ConversationMessage,
+      ...landed(),
+      ...npmTest(0),
+      ...exchange(
+        "shell",
+        { command: "sed -i '' 's/b/c/' src/a.js" },
+        `exit code: 0${effect(workspaceEffectLine({ changes: [{ status: "M", path: "src/a.js" }], more: 0 }))}`,
+      ),
+    ];
+    const state = deriveWorkingState(messages, classified);
+    expect(state.generation).toBe(2);
+    expect(state.edits.at(-1)).toMatchObject({ path: "src/a.js", step: 3, byShell: "modified" });
+    const text = describeWorkingState(state, { candidate: null });
+    expect(text).toMatch(
+      /step 2: shell npm test; exit 0; before the shell change of src\/a\.js at step 3, so it predates the current tree/,
+    );
+    expect(text).toContain("src/a.js (step 3, by shell: modified)");
+  });
+
+  it("leaves a measured no-op alone and names an unmeasured command as a possible change", () => {
+    const unchanged = [
+      { role: "user", text: "t" } as ConversationMessage,
+      ...landed(),
+      ...npmTest(0),
+      ...exchange(
+        "shell",
+        { command: "node probe.js" },
+        `exit code: 0${effect(workspaceEffectLine({ changes: [], more: 0 }))}`,
+      ),
+    ];
+    expect(deriveWorkingState(unchanged, classified).generation).toBe(1);
+    const unmeasured = [
+      { role: "user", text: "t" } as ConversationMessage,
+      ...landed(),
+      ...npmTest(0),
+      ...exchange(
+        "shell",
+        { command: "npx prettier --write ." },
+        `exit code: 0${effect(workspaceEffectLine({ unmeasured: "git failed" }))}`,
+      ),
+    ];
+    const state = deriveWorkingState(unmeasured, classified);
+    // The test run carries no effect line either, so it too counts as unmeasured.
+    expect(state.unmeasuredShell).toBe(2);
+    const text = describeWorkingState(state, { candidate: null });
+    expect(text).toMatch(
+      /step 2: shell npm test; exit 0; current tree, unless a later shell command whose effect was not measured changed it/,
+    );
+    expect(text).toContain("2 shell command(s) ran with no measured effect");
+  });
+
+  it("retrieves only names the loop has not been shown anywhere", () => {
+    // Fastify, held-out block 1: a path-qualified search matched nothing, but the listing and
+    // earlier searches had shown every one of those names.
+    const seen = [
+      { role: "user", text: "t" } as ConversationMessage,
+      ...exchange("list", { path: "lib" }, "configValidator.js\nfourOhFour.js"),
+      ...exchange(
+        "search",
+        { pattern: "lib/configValidator|lib/fourOhFour", path: "test" },
+        "no match for /lib/configValidator|lib/fourOhFour/",
+      ),
+    ];
+    const signals = decisionSignals(deriveWorkingState(seen, classified));
+    expect(signals.missingNames).toEqual([]);
+    expect(chooseDecision(signals).rule).toBe("no-edit-at-decision-point");
+  });
+
+  it("writes and reads back the workspace-effect line", () => {
+    const line = workspaceEffectLine({
+      changes: [
+        { status: "R", from: "lib/fourOhFour.js", path: "lib/four-oh-four.js" },
+        { status: "M", path: "fastify.js" },
+      ],
+      more: 3,
+    });
+    expect(line).toBe(
+      "[workspace after this command: changed R lib/fourOhFour.js -> lib/four-oh-four.js; M fastify.js; and 3 more]",
+    );
+    expect(workspaceEffectOf(`exit code: 0\n${line}${trailer(1)}`)).toEqual({
+      changes: [
+        { status: "R", from: "lib/fourOhFour.js", path: "lib/four-oh-four.js" },
+        { status: "M", path: "fastify.js" },
+      ],
+      more: 3,
+    });
+    expect(workspaceEffectOf("exit code: 0")).toBeNull();
   });
 });
 

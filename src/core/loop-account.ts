@@ -1,5 +1,6 @@
 import type { ConversationMessage, ModelToolCall, ToolCallOutcome } from "./model-client.ts";
 import type { StopReason } from "./termination.ts";
+import { workspaceEffectOf, writtenPaths } from "./working-state.ts";
 
 /**
  * What a loop did, told to the loop that comes after it.
@@ -86,9 +87,12 @@ function spell(call: ModelToolCall): string {
     return typeof value === "string" ? value : null;
   };
   switch (call.toolName) {
-    case "read":
     case "write":
-    case "edit":
+    case "edit": {
+      const paths = writtenPaths(call);
+      return paths.length === 0 ? JSON.stringify(call.input) : paths.join(", ");
+    }
+    case "read":
     case "list":
       return field("path") ?? JSON.stringify(call.input);
     case "search": {
@@ -120,6 +124,9 @@ function shellPrinted(text: string): boolean {
 /** A shell result the loop learned nothing from: it ran and printed nothing, or it did not run. */
 function shellWasEmpty(output: string): boolean {
   const text = strip(output);
+  // A command that printed nothing but changed files (a move) did something the loop can see.
+  const effect = workspaceEffectOf(output);
+  if (effect !== null && "changes" in effect && effect.changes.length > 0) return false;
   return !shellPrinted(text) || /^exit code: [1-9]\d*\s*$/m.test(text);
 }
 
