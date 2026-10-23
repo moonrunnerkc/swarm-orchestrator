@@ -31,3 +31,26 @@ top-level `packages` key is the root project), with a regression test; with it t
 the root and runs svgo's suite (519 runner-reported tests, passing on the base). This is a generic
 defect in reading modern pnpm repositories, found with no inference; no hidden material was read.
 Refrozen as `fresh-2`; its preflight passes all 18 configurations.
+
+## Setup correction 2, after launch 3 and before its inference
+
+Launch 3 (svgo sample 1, `swarm-direct`) stopped before its first model request: Swarm's goal setup
+reported `build` unable to run ("the command is not installed on this machine") and refused to
+spend model calls. svgo declares `packageManager: pnpm@10.34.5` and its build script calls pnpm,
+which no launch PATH held; the harness provisioned a declared npm and nothing else, and the
+preflight's gate-plan check exercises the tests gate only, so it passed. Corrected in the harness
+(`scripts/comparison/workspace.mjs`, `study.mjs`): the base's declared package manager, npm or
+pnpm, is provisioned at its pinned version and put first on every arm's and every scorer's PATH;
+pnpm sits beside the pinned OpenCode, outside the protected roots. Recorded through the runner
+(`runs/correction-1.json`, harness digests before and after). The three markdown-it launches
+already scored are unaffected: markdown-it declares no package manager. This is the cell's first
+of two permitted setup retries.
+
+## A departure from the protocol: three hidden verdicts seen early
+
+The runner prints each scored launch's hidden verdict on its progress line, and the implementer
+read the first three (the markdown-it refactor's sample 1 for all three arms) while diagnosing the
+setup stop above, before the eighteenth launch was scored. The build, arms, tasks, order and
+budgets were already frozen and nothing was changed on the basis of those lines; the setup
+correction concerns svgo's declared package manager only. From that point the runner's output was
+not read until the block ended.
