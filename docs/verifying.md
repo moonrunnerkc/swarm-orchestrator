@@ -71,6 +71,23 @@ tree's, so a patch that rewrites the test script does not get to choose the inst
 measures it. A patch touching a path you declared immutable is refused before anything runs. A
 patch that will not apply reports that no check happened rather than passing on an unchanged tree.
 
+**A configuration change that only follows the patch's renames** (`rename-transport-v1`) is the
+one difference to the instrument the base's instrument is read through:
+
+- An ignore entry, a build entry point, or a test's `require` that names a file the same patch
+  renames, now under its new path, counts as the base's instrument with its references moved.
+- A deleted file and an added file are a rename only where the added one is the deleted one under
+  the same reading, so a stub left at the new path is not.
+- Any other configuration edit is withheld and read again under the base's configuration:
+  - a rule switched off, or a file or directory ignored;
+  - a test glob narrowed;
+  - a status swallowed with `|| true`;
+  - a printed pass;
+  - a build output left unwritten.
+- What this does not establish:
+  - that a renamed file still behaves as before, which is the tests' question;
+  - that a configuration's globs still select the same files after a move.
+
 ## Two answers, not one
 
 ```
