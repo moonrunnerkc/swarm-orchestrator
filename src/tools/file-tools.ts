@@ -160,7 +160,7 @@ export function createEditTool(
   return defineTool({
     name: "edit",
     description:
-      "Replace exact text in a workspace file, or apply a batch of replacements across files at once (all or none).",
+      "Replace exact text in a workspace file. For a change repeated across files (a rename's references, an import path), pass edits: [{path, find, replace}, ...] to make every replacement in one call, all or none.",
     inputSchema: editInput,
     kind: "write",
     pathsFrom: (input) =>

@@ -137,7 +137,9 @@ export function withWorkspaceEffects(
       ...(references === null || references.length === 0
         ? []
         : [
-            `[paths this command removed are still named at: ${references.join("; ")}${references.length >= maxReferencesShown ? "; and possibly more" : ""}]`,
+            // Development study, fastify: the worker updated eleven moves' references one edit
+            // per step and spent its forty steps; one batch edit takes them all.
+            `[paths this command removed are still named at: ${references.join("; ")}${references.length >= maxReferencesShown ? "; and possibly more" : ""}. One edit call with "edits": [{path, find, replace}, ...] can update several files at once]`,
           ]),
     ];
     return { ...outcome, output: insertBeforeTrailer(outcome.output, lines.join("\n")) };
