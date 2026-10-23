@@ -804,3 +804,13 @@ describe("a flag this build does not have", () => {
     expect(parseCommandLine(["--help", "--plan-check", "x"], context)).toEqual({ command: "help" });
   });
 });
+
+it("keeps repair finishing opt-in", () => {
+  expect(parseRun(["--repair-finish", "fix the build"]).repairFinish).toBe(true);
+  expect(parseRun(["fix the build"]).repairFinish).toBeUndefined();
+});
+
+it("keeps the adaptive decision point opt-in", () => {
+  expect(parseRun(["--adaptive", "fix the build"]).adaptive).toBe(true);
+  expect(parseRun(["fix the build"]).adaptive).toBeUndefined();
+});
