@@ -11,8 +11,8 @@ before it show two kinds of failure, and they need different remedies.
 1. **Correct work refused (delivery).** Both complete refactor deliveries of that stage were
    refused. The stage attributed both to the instrument rule. The records show more than that:
    - **markdown-it rename, sample 1.** The `build` check was withheld because the patch changed
-     `support/build-dist.mjs` (`src/index.mjs` to `src/index.ts`, four times), and the base's
-     version cannot build a tree where `src/index.mjs` no longer exists. Task acceptance failed
+     `support/build-dist.mjs` (its entry `index.mjs` to `index.ts`, four times), and the base's
+     version cannot build a tree where the `.mjs` entry no longer exists. Task acceptance failed
      for that reason alone. The diff-budget justification was never asked for, because it is
      asked only once the gates are green.
    - **fastify rename, sample 1 (`swarm-previous`).** The `lint` check was withheld for the same
