@@ -91,3 +91,12 @@ Declared before editing:
 - `scripts/comparison/launch-config.mjs`, `scripts/comparison/launch-config.test.mjs`: a
   `swarm-prose` arm (the review's prose control on the same pinned build), and `--review` as a
   flag a manifest may freeze, so the development study's three arms differ only in frozen flags.
+
+## Amendment 5, October 23, 2026, before editing these files
+
+- `scripts/comparison/launch-config.mjs`, `scripts/comparison/arms.mjs`,
+  `scripts/comparison/study.mjs`, `scripts/comparison/workspace.mjs` and their tests: an `aider`
+  arm (aider 0.82.3 in its own pinned virtual environment, the same model and endpoint, edits
+  and its test command run in the workspace), as the fresh block's credible simple agent. Its
+  token use is read from aider's own analytics log in the launch's home; `.aider*` files are kept
+  out of every arm's patch.

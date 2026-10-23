@@ -360,6 +360,48 @@ function addUsage(total, part) {
   };
 }
 
+/**
+ * aider's spend from its analytics log: each `message_send` event carries the prompt and
+ * completion tokens of one call, as the provider reported them or aider counted them. Null where
+ * the log holds no such event.
+ */
+export function aiderUsage(analytics) {
+  let total = null;
+  for (const event of aiderEvents(analytics))
+    total = addUsage(total, {
+      input: event.prompt_tokens,
+      output: event.completion_tokens,
+      reasoning: null,
+      cacheRead: null,
+      cacheWrite: null,
+      unknownCalls: 0,
+      breakdown: "disjoint",
+    });
+  return total;
+}
+
+/** aider's comparable total over the same events; null where none. */
+export function aiderTokens(analytics) {
+  const usage = aiderUsage(analytics);
+  return usage === null ? null : usage.input + usage.output;
+}
+
+function* aiderEvents(analytics) {
+  for (const line of (analytics ?? "").split("\n")) {
+    if (!line.startsWith("{")) continue;
+    try {
+      const parsed = JSON.parse(line);
+      const properties = parsed.properties ?? {};
+      if (
+        parsed.event === "message_send" &&
+        typeof properties.prompt_tokens === "number" &&
+        typeof properties.completion_tokens === "number"
+      )
+        yield properties;
+    } catch {}
+  }
+}
+
 /** OpenCode's comparable total: the sum of its disjoint parts over every step-finish; null where none. */
 export function opencodeTokens(stdout) {
   let total = 0;
@@ -395,6 +437,8 @@ export function opencodeTokens(stdout) {
  */
 export function completionAccount(arm, exitCode, signal, stdout) {
   const ended = signal === null || signal === undefined ? "exited" : "killed";
+  // aider answers one message and exits; it says nothing about whether the task is finished.
+  if (arm === "aider") return { ended, claim: "unknown", basis: "aider makes no completion claim" };
   if (arm === "swarm") {
     const result = swarmResult(stdout);
     if (result === null)

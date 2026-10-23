@@ -53,7 +53,11 @@ export const launchArms = [
   "swarm-direct",
   "swarm-previous",
   "opencode",
+  "aider",
 ];
+
+/** Where an aider launch writes its analytics events, which carry each call's token counts. */
+export const aiderAnalyticsLog = (home) => join(home, "aider-analytics.jsonl");
 export const isSwarmArm = (arm) =>
   arm === "swarm" ||
   arm === "swarm-control" ||
@@ -257,6 +261,7 @@ export function armArgv({
   contractPath,
   remainingMs,
   tokenAllowance,
+  home,
 }) {
   const { pins } = manifest;
   if (isSwarmArm(arm))
@@ -306,6 +311,42 @@ export function armArgv({
       "comparison launch",
       prompt,
     ];
+  // A simple agent as it ships: one message, its own edit format and repository map, and the
+  // task's visible check and project tests as its test command, which it runs after its edits and
+  // answers failures of. Nothing it writes for itself (history, tag cache) reaches the patch, and
+  // it commits nothing.
+  if (arm === "aider")
+    return [
+      pins.aiderBin,
+      "--model",
+      `openai/${pins.model}`,
+      "--openai-api-base",
+      pins.endpoint,
+      "--openai-api-key",
+      "local-endpoint",
+      "--yes-always",
+      "--no-auto-commits",
+      "--no-dirty-commits",
+      "--no-gitignore",
+      "--no-check-update",
+      "--no-show-release-notes",
+      "--no-show-model-warnings",
+      "--no-analytics",
+      "--analytics-log",
+      aiderAnalyticsLog(home),
+      "--no-pretty",
+      "--no-fancy-input",
+      "--no-restore-chat-history",
+      "--chat-history-file",
+      join(home, "aider.chat.history.md"),
+      "--input-history-file",
+      join(home, "aider.input.history"),
+      "--auto-test",
+      "--test-cmd",
+      `${task.visible.command} && ${task.projectTest.join(" ")}`,
+      "--message",
+      prompt,
+    ];
   throw new Error(`unknown arm ${arm}`);
 }
 
@@ -347,6 +388,7 @@ export function buildLaunch({
     contractPath,
     remainingMs,
     tokenAllowance,
+    home,
   });
   return {
     argv: [sandboxExec, "-p", profile, ...inner],
@@ -373,6 +415,7 @@ export function validateLaunch({ manifest, arm, launch, canary, otherLaunch, inp
     ["node", pins.nodeBin],
     ...(isSwarmArm(arm) ? [["swarm cli", swarmBuildOf(manifest, arm).cli]] : []),
     ...(arm === "opencode" ? [["opencode", pins.opencodeBin]] : []),
+    ...(arm === "aider" ? [["aider", pins.aiderBin]] : []),
   ])
     check(
       `${name} is an absolute pinned file`,
@@ -408,6 +451,14 @@ export function validateLaunch({ manifest, arm, launch, canary, otherLaunch, inp
       "opencode version",
       opencode.ok && opencode.version === pins.opencode,
       `${opencode.version ?? opencode.problem}; pinned ${pins.opencode}`,
+    );
+  }
+  if (arm === "aider" && typeof pins.aiderBin === "string" && existsSync(pins.aiderBin)) {
+    const aider = versionOfExecutable(pins.aiderBin);
+    check(
+      "aider version",
+      aider.ok && aider.version === pins.aider,
+      `${aider.version ?? aider.problem}; pinned ${pins.aider}`,
     );
   }
   if (isSwarmArm(arm)) {
@@ -505,6 +556,8 @@ const shellWord = (word) => `'${String(word).replaceAll("'", `'\\''`)}'`;
  * with none shows that no request was made, which is what a zero-inference setup failure is.
  */
 export function inferenceBegan(arm, stdout) {
+  // aider prints a usage line after every model call it made.
+  if (arm === "aider") return /^Tokens: /m.test(stdout);
   for (const line of stdout.split("\n")) {
     let parsed;
     try {

@@ -471,3 +471,40 @@ describe.runIf(darwin)("access from inside the launch's own profile", () => {
     );
   });
 });
+
+describe("the aider arm", () => {
+  it("runs one message with the task's checks as its test command and keeps its own files in its home", () => {
+    const directories = launchDirectories();
+    const aider = fakeExecutable(join(root, "tools", "aider", "bin"), "aider", "aider 0.82.3");
+    const inner = buildLaunch({
+      manifest: manifestWith({ aiderBin: aider, aider: "aider 0.82.3" }),
+      arm: "aider",
+      task: {
+        id: "t",
+        workType: "bugfix",
+        visible: { command: "node acceptance/visible/check.mjs" },
+        projectTest: ["npm", "test"],
+      },
+      prompt: "fix it",
+      base: "HEAD",
+      contractPath: "/c",
+      ...directories,
+      remainingMs: 60_000,
+      tokenAllowance: 1,
+    }).inner;
+    expect(inner[0]).toBe(aider);
+    expect(inner).toContain("--no-auto-commits");
+    expect(inner.at(-2)).toBe("--message");
+    expect(inner.at(-1)).toBe("fix it");
+    expect(inner[inner.indexOf("--test-cmd") + 1]).toBe(
+      "node acceptance/visible/check.mjs && npm test",
+    );
+    for (const flag of ["--analytics-log", "--chat-history-file", "--input-history-file"])
+      expect(inner[inner.indexOf(flag) + 1].startsWith(directories.home)).toBe(true);
+  });
+
+  it("began inference once it printed a usage line", () => {
+    expect(inferenceBegan("aider", "Aider v0.82.3\nTokens: 2.4k sent, 120 received.\n")).toBe(true);
+    expect(inferenceBegan("aider", "Aider v0.82.3\nlitellm.APIConnectionError\n")).toBe(false);
+  });
+});

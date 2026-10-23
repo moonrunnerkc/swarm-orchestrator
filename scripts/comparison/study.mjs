@@ -41,6 +41,8 @@ import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { commandLog, storeBlob } from "../campaign/exec.mjs";
 import {
+  aiderTokens,
+  aiderUsage,
   claimedSuccess,
   completionAccount,
   opencodeTokens,
@@ -66,6 +68,7 @@ import { endpointPort, instanceChange, probeEndpoint, watchInstance } from "./en
 import { harnessDigest } from "./harness-identity.mjs";
 import { createInferenceLease, establishReadiness, probeTotals } from "./inference.mjs";
 import {
+  aiderAnalyticsLog,
   buildLaunch,
   inferenceBegan,
   isSwarmArm,
@@ -89,6 +92,7 @@ import {
   prepare,
   prepareLaunchHome,
   resolveFull,
+  snapshotPatch,
   workRoot,
   writeArmConfiguration,
 } from "./workspace.mjs";
@@ -247,6 +251,7 @@ async function freeze(configPath, outPath) {
   const opencode = config.arms.includes("opencode")
     ? versionOfExecutable(config.pins.opencodeBin)
     : null;
+  const aider = config.arms.includes("aider") ? versionOfExecutable(config.pins.aiderBin) : null;
   const manifest = {
     schema: manifestSchemaName,
     frozenAt: new Date().toISOString(),
@@ -259,6 +264,7 @@ async function freeze(configPath, outPath) {
       swarmCliDigest: digestOf(readFileSync(config.pins.swarmCli)),
       swarmBuildDigest: treeDigest(dirname(config.pins.swarmCli)),
       ...(opencode === null ? {} : { opencode: opencode.version }),
+      ...(aider === null ? {} : { aider: aider.version }),
     },
     // An arm with its own pinned build carries that build's digests, frozen as the main pin's are.
     arms: Object.fromEntries(
@@ -535,6 +541,44 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
               watch.abort(new FatalError("endpoint", reason, at));
             },
           });
+    // The harness's own snapshot of the candidate each time a Swarm arm announces an attempt:
+    // the product's snapshot is scrubbed like all its evidence, and an initial candidate whose
+    // code assigns to a credential-bearing name cannot be rebuilt from it. Taken through a
+    // separate index as the attempt starts, before its first model call returns; the record
+    // says when, against the attempt event.
+    const snapshots = [];
+    const snapshotting = [];
+    let pendingLine = "";
+    const observeAttempts = isSwarmArm(launch.arm)
+      ? (chunk) => {
+          const text = pendingLine + chunk.toString();
+          const lines = text.split("\n");
+          pendingLine = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.includes('"type":"attempt"')) continue;
+            let attempt;
+            try {
+              attempt = JSON.parse(line).event?.attempt;
+            } catch {
+              continue;
+            }
+            if (typeof attempt !== "number") continue;
+            const seenAt = Date.now();
+            snapshotting.push(
+              snapshotPatch(log, workspace, base, join(tmpDir, `snapshot-${attempt}.index`)).then(
+                (patch) => {
+                  snapshots.push({
+                    attempt,
+                    eventAt: new Date(seenAt).toISOString(),
+                    tookMs: Date.now() - seenAt,
+                    patchDigest: patch === null ? null : storeBlob(blobs, Buffer.from(patch)),
+                  });
+                },
+              ),
+            );
+          }
+        }
+      : null;
     const release = inferenceLease.hold(`${launch.arm} invocation of ${launch.task}`);
     let ran;
     try {
@@ -544,7 +588,13 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
         timeoutMs: Math.max(0, deadlineMs - Date.now()),
         killConfirmMs: Math.min(terminationDeadlineMs, budgets.wallGraceMs),
         signal: AbortSignal.any([watch.signal, interruption.controller.signal]),
-        onStdout: stallWatch === null ? null : (chunk) => stallWatch.observe(chunk),
+        onStdout:
+          stallWatch === null
+            ? null
+            : (chunk) => {
+                stallWatch.observe(chunk);
+                observeAttempts?.(chunk);
+              },
       });
     } finally {
       stopWatch?.();
@@ -552,15 +602,34 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
       release();
     }
     stdout = ran.stdout.toString();
+    await Promise.allSettled(snapshotting);
+    if (snapshots.length > 0)
+      record.attemptSnapshots = snapshots.sort((a, b) => a.attempt - b.attempt);
     record.inferenceBegan = inferenceBegan(launch.arm, stdout);
+    // aider's token counts are in its analytics log, not its stdout.
+    const analytics =
+      family === "aider" && existsSync(aiderAnalyticsLog(home))
+        ? readFileSync(aiderAnalyticsLog(home), "utf8")
+        : null;
+    if (analytics !== null) record.aiderAnalyticsDigest = storeBlob(blobs, Buffer.from(analytics));
     record.invocation = {
       exitCode: ran.exitCode,
       signal: ran.signal,
       wallMs: ran.wallMs,
       stdoutDigest: storeBlob(blobs, ran.stdout),
       stderrDigest: storeBlob(blobs, ran.stderr),
-      tokens: family === "swarm" ? swarmTokens(stdout) : opencodeTokens(stdout),
-      usage: family === "swarm" ? swarmUsage(stdout) : opencodeUsage(stdout),
+      tokens:
+        family === "swarm"
+          ? swarmTokens(stdout)
+          : family === "aider"
+            ? aiderTokens(analytics)
+            : opencodeTokens(stdout),
+      usage:
+        family === "swarm"
+          ? swarmUsage(stdout)
+          : family === "aider"
+            ? aiderUsage(analytics)
+            : opencodeUsage(stdout),
       claimedSuccess: claimedSuccess(family, ran.exitCode, stdout),
       completion: completionAccount(family, ran.exitCode, ran.signal, stdout),
       productVerdict: family === "swarm" ? (swarmResult(stdout)?.verdict ?? null) : null,
