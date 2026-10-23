@@ -67,3 +67,25 @@ requires, before any held-out evidence. Added:
 - `docs/evidence/2026-10-22-adaptive/test-sensitivity.mjs` and `evaluator-audit.mjs`: scoring tools
   under the declared evidence directory, named here because they were written after the hidden
   results were read.
+
+## Amendment 3, October 23, before editing these files
+
+CI on the branch head hung twice at a 60 s test limit in the "gates after a loop that spent its
+wall" tests. Cause, measured: Node's timers can fire up to 1 ms before `Date.now()` shows the full
+interval (4 of 4,000 in a local trial), and the loop's per-call deadline aborted only when the
+injected clock showed the whole interval elapsed, so an early timer dropped the deadline and a
+model call that never returns held the run. Added:
+
+- `src/core/clock.ts`: the contract states that `sleep` resolves no earlier than `now()` plus the
+  interval.
+- `src/cli-runtime-inputs.ts` and a new `src/cli-runtime-inputs.test.ts`: the system clock keeps
+  that contract by re-arming for the remainder, with its timer and time source injectable for the
+  test.
+- `src/core/loop.ts`, `src/core/loop.test.ts`: the per-call deadline re-arms for the remainder if
+  a sleep resolves early, rather than being dropped.
+
+Withdrawn before commit: the `src/core/loop.ts` re-arm. Many tests inject a frozen clock whose
+`sleep` resolves at once without advancing `now()`; against those the re-arm never ended, and a
+full gates run sat with two test workers at 100% CPU for over two hours. Both CI hangs ran on
+`createSystemClock()`, so the system clock keeping the contract is the whole fix. `src/core/loop.ts`
+and `src/core/loop.test.ts` are unchanged.
