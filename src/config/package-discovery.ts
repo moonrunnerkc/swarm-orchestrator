@@ -13,7 +13,10 @@ export async function discoverPackages(root: string): Promise<readonly string[]>
   const workspaces = schema.parse(JSON.parse(manifest)).workspaces;
   const patterns = Array.isArray(workspaces) ? workspaces : (workspaces?.packages ?? []);
   const pnpm = await readFile(join(root, "pnpm-workspace.yaml"), "utf8").catch(() => "");
-  if (pnpm) {
+  // pnpm 9 and later read settings from this file too, and a file with no top-level `packages`
+  // key is a workspace of the root project alone: svgo's holds only `minimumReleaseAge` and
+  // `patchedDependencies`, and reading it as an unlisted workspace left the check with no scope.
+  if (pnpm && /^packages\s*:/m.test(pnpm)) {
     const block = /^packages:\s*\n((?:[ \t]+[^\n]*\n?)*)/m.exec(pnpm)?.[1];
     if (block === undefined)
       throw new Error(
