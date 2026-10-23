@@ -10,6 +10,7 @@ import type {
 } from "./independent-verification.ts";
 import {
   gitInstrumentTrees,
+  type InstrumentTrees,
   observationDigest,
   observeInstrument,
   readUnderInstrument,
@@ -34,6 +35,31 @@ async function changedInCheckout(checkout: string, baseCommit: string): Promise<
   return [...new Set([...tracked, ...untracked])].sort();
 }
 
+/** The base commit and the checkout as the two trees an instrument is compared across. */
+export async function checkoutTrees(
+  checkout: string,
+  baseCommit: string,
+): Promise<() => Promise<InstrumentTrees>> {
+  return gitInstrumentTrees({
+    root: checkout,
+    referenceCommit: baseCommit,
+    changed: await changedInCheckout(checkout, baseCommit),
+    readReference: async (path) => {
+      try {
+        const { stdout } = await runGit("git", ["show", `${baseCommit}:${path}`], {
+          cwd: checkout,
+          maxBuffer: 64_000_000,
+        });
+        return stdout;
+      } catch {
+        return null;
+      }
+    },
+    readCurrent: (path) => readFile(join(checkout, path), "utf8").catch(() => null),
+    installedRoot: checkout,
+  });
+}
+
 /**
  * Capture configured commands and absent language checks without dropping unknown outcomes.
  *
@@ -54,24 +80,7 @@ export async function runChecks(
     criteriaRef: options.baseCommit,
     ...(options.gateOptions === undefined ? {} : { gateOptions: options.gateOptions }),
   });
-  const trees = gitInstrumentTrees({
-    root: checkout,
-    referenceCommit: options.baseCommit,
-    changed: await changedInCheckout(checkout, options.baseCommit),
-    readReference: async (path) => {
-      try {
-        const { stdout } = await runGit("git", ["show", `${options.baseCommit}:${path}`], {
-          cwd: checkout,
-          maxBuffer: 64_000_000,
-        });
-        return stdout;
-      } catch {
-        return null;
-      }
-    },
-    readCurrent: (path) => readFile(join(checkout, path), "utf8").catch(() => null),
-    installedRoot: checkout,
-  });
+  const trees = await checkoutTrees(checkout, options.baseCommit);
 
   // An upgrade's manifest and lockfile differ from the reference by definition; the preset's
   // enforcement, which ran before any check, holds that difference to the declared dependencies.

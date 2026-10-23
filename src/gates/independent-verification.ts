@@ -40,7 +40,8 @@ import { type GoalVerification, verifyGoal } from "./goal-acceptance.ts";
 import { createChallengeRunner } from "./goal-challenge-runner.ts";
 import { type ChallengePolicy, type ChallengeReport, challengeGoal } from "./goal-challenges.ts";
 import { GoalEffectReconciliationError } from "./goal-effects.ts";
-import { runChecks } from "./independent-checks.ts";
+import { checkoutTrees, runChecks } from "./independent-checks.ts";
+import { transportedFile } from "./instrument-identity.ts";
 import { nodeSyntaxCheck } from "./mutant-parse.ts";
 import type { LineHits } from "./mutant-witness.ts";
 import type { BondedMutant, OracleBond, OracleBondVerdict } from "./oracle-bond.ts";
@@ -59,6 +60,7 @@ import { prepareDependencies } from "./prepare-dependencies.ts";
 import { stagePreparedPython } from "./prepared-python.ts";
 import { withPreparedTools } from "./prepared-tools.ts";
 import { enforceUpgrade, reproducedBug } from "./preset-verification.ts";
+import { pairRenames, transportedEqual } from "./rename-transport.ts";
 import {
   drawWitnessMarkers,
   type RunnerWitness,
@@ -148,6 +150,11 @@ export interface IndependentCheck {
   readonly baseTestsStatus?: "passed" | "failed" | "not-applicable";
   readonly baseTestsInstrument?: import("./instrument-identity.ts").InstrumentObservation;
   readonly baseTestsFiles?: readonly string[];
+  /**
+   * The changed test files left out of that reading because their change is only references moved
+   * along the patch's renames (rename-transport-v1). Absent means none.
+   */
+  readonly baseTestsTransported?: readonly string[];
   readonly weakenedTests?: readonly string[];
   /**
    * Where the instrument the patch changed is the project's own runner source and the
@@ -1596,11 +1603,20 @@ async function readUnderBaseTests(
   timeoutMs: number,
   fresh: <T>(measure: () => Promise<T>) => Promise<T>,
 ): Promise<readonly IndependentCheck[]> {
-  const files = parseUnifiedDiff(options.patch)
+  const changedTests = parseUnifiedDiff(options.patch)
     .filter((file) => file.kind !== "added" && isTestFile(file.path))
     .map((file) => file.path)
     .sort();
-  if (files.length === 0 || withPatch.length === 0) return withPatch;
+  if (changedTests.length === 0 || withPatch.length === 0) return withPatch;
+  // A test whose change is only references moved along the patch's renames is the base's test,
+  // and the patch's run of it already was the base test's run (rename-transport-v1). Putting the
+  // base's version back would only make it require paths the rename removed.
+  const transported = await transportedTests(checkout, options, changedTests);
+  const files = changedTests.filter((path) => !transported.includes(path));
+  if (files.length === 0)
+    return withPatch.map((check) =>
+      check.observation === undefined ? check : { ...check, baseTestsTransported: transported },
+    );
   const patched = new Map<string, string | null>();
   for (const path of files)
     patched.set(path, await readFile(join(checkout, path), "utf8").catch(() => null));
@@ -1622,6 +1638,7 @@ async function readUnderBaseTests(
         baseTestsObservation: reading.observation,
         baseTestsStatus: reading.status,
         baseTestsFiles: files,
+        ...(transported.length === 0 ? {} : { baseTestsTransported: transported }),
         ...(reading.instrument === undefined ? {} : { baseTestsInstrument: reading.instrument }),
       };
     });
@@ -1631,6 +1648,24 @@ async function readUnderBaseTests(
       else await writeFile(join(checkout, path), text);
     }
   }
+}
+
+/** The changed test files whose change is only references moved along the patch's renames. */
+async function transportedTests(
+  checkout: string,
+  options: IndependentVerificationOptions,
+  tests: readonly string[],
+): Promise<readonly string[]> {
+  const trees = await (await checkoutTrees(checkout, options.baseCommit))();
+  const map = await pairRenames(trees);
+  if (map.pairs.length === 0) return [];
+  const moved: string[] = [];
+  for (const path of tests) {
+    const [before, after] = await Promise.all([trees.reference(path), trees.current(path)]);
+    if (before !== null && after !== null && transportedEqual(map, before, path, after, path))
+      moved.push(path);
+  }
+  return moved;
 }
 
 /** A file a runner collects as tests by its name, in any of the supported ecosystems. */
@@ -1661,11 +1696,15 @@ function restoresProgramCode(check: IndependentCheck, restored: readonly string[
 
 /** The instrument paths one check's own reading found changed, a manifest's fields by name. */
 function changedInstrumentPaths(check: IndependentCheck): readonly string[] {
-  const authorized = check.instrument?.authorized ?? [];
-  return (check.instrument?.files ?? [])
+  const instrument = check.instrument;
+  if (instrument === undefined) return [];
+  const authorized = instrument.authorized ?? [];
+  return instrument.files
     .filter(
       (file) =>
-        file.reference !== file.current && !authorized.includes(file.path.split("#")[0] as string),
+        file.reference !== file.current &&
+        !authorized.includes(file.path.split("#")[0] as string) &&
+        !transportedFile(instrument, file),
     )
     .map((file) => file.path)
     .sort();
