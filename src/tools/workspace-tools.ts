@@ -3,6 +3,7 @@ import {
   createListTool,
   createReadTool,
   createWriteTool,
+  type EditReview,
   type WriteRefusal,
 } from "./file-tools.ts";
 import type { PolicyGuard } from "./policy-guard.ts";
@@ -19,11 +20,12 @@ export function createWorkspaceTools(
   guard: PolicyGuard,
   refuseWrite?: WriteRefusal,
   shell?: ShellToolOptions,
+  editReview?: EditReview,
 ): readonly ToolDefinition[] {
   return [
     createReadTool(guard),
     createWriteTool(guard, refuseWrite),
-    createEditTool(guard, refuseWrite),
+    createEditTool(guard, refuseWrite, editReview),
     createListTool(guard),
     createSearchTool(guard),
     createShellTool(guard, shell),
