@@ -22,8 +22,11 @@ const decidedByTheShell = new Set(["$", "`", "(", ")", "{", "}"]);
 
 type Token =
   | { readonly kind: "word"; readonly text: string }
-  | { readonly kind: "separator" }
+  | { readonly kind: "separator"; readonly operator: ShellOperator }
   | { readonly kind: "redirect" };
+
+/** What joins a simple command to the one before it. */
+export type ShellOperator = ";" | "&&" | "||" | "|";
 
 /** One simple command of a string: its program, and the words it was given, in order. */
 export interface SimpleShellCommand {
@@ -70,6 +73,42 @@ export function readShellPipeline(command: string): readonly SimpleShellCommand[
     return null;
   }
   return commands;
+}
+
+/** A simple command with what joins it to the command before it; null for the first. */
+export interface ShellStage extends SimpleShellCommand {
+  readonly after: ShellOperator | null;
+}
+
+/**
+ * The pipeline's commands with the operator before each, so a reader can tell whose exit status
+ * the shell reports: the last command of a pipe (`npm test | tail` reports tail's), and a
+ * command behind `||` that runs only on failure (`npm test || true` reports success either way).
+ */
+export function readShellStages(command: string): readonly ShellStage[] | null {
+  const tokens = tokenize(command);
+  const pipeline = readShellPipeline(command);
+  if (tokens === null || pipeline === null) {
+    return null;
+  }
+  const operators: (ShellOperator | null)[] = [];
+  let pending: ShellOperator | null = null;
+  let startsCommand = true;
+  let awaitingTarget = false;
+  for (const token of tokens) {
+    if (token.kind === "separator") {
+      pending = token.operator;
+      startsCommand = true;
+    } else if (token.kind === "redirect") {
+      awaitingTarget = true;
+    } else if (awaitingTarget) {
+      awaitingTarget = false;
+    } else if (startsCommand) {
+      operators.push(operators.length === 0 ? null : pending);
+      startsCommand = false;
+    }
+  }
+  return pipeline.map((one, index) => ({ ...one, after: operators[index] ?? null }));
 }
 
 export function readShellCommand(command: string): ShellCommand | null {
@@ -436,7 +475,7 @@ function tokenize(command: string): Token[] | null {
 
     if (character === ";" || character === "\n") {
       flush();
-      tokens.push({ kind: "separator" });
+      tokens.push({ kind: "separator", operator: ";" });
       continue;
     }
 
@@ -450,7 +489,10 @@ function tokenize(command: string): Token[] | null {
       if (doubled) {
         at += 1;
       }
-      tokens.push({ kind: "separator" });
+      tokens.push({
+        kind: "separator",
+        operator: character === "&" ? "&&" : doubled ? "||" : "|",
+      });
       continue;
     }
 
