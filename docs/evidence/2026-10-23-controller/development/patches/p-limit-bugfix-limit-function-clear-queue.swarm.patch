@@ -1,0 +1,166 @@
+diff --git a/index.d.ts b/index.d.ts
+index 5a64963..a3d0b8c 100644
+--- a/index.d.ts
++++ b/index.d.ts
+@@ -130,7 +130,19 @@ const input = Array.from({length: 10}, limitedFunction);
+ await Promise.all(input);
+ ```
+ */
++export type LimitedFunction = {
++	/**
++	Discard pending promises that are waiting to run.
++
++	Note: This does not cancel promises that are already running.
++
++	When `rejectOnClear` is enabled, pending promises are rejected with an `AbortError`.
++	*/
++	clearQueue: () => void;
++};
++
++export function limitFunction(function_: (fnArguments: unknown) => PromiseLike<string>, options: Options): LimitedFunction & ((...arguments_: unknown[]) => Promise<string>);
+ export function limitFunction<Arguments extends unknown[], ReturnType>(
+ 	function_: (...arguments_: Arguments) => PromiseLike<ReturnType>,
+ 	options: Options
+-): (...arguments_: Arguments) => Promise<ReturnType>;
++): {clearQueue(): void} & ((...arguments_: Arguments) => Promise<ReturnType>);
+diff --git a/index.js b/index.js
+index 5ecd392..b1c7fd8 100644
+--- a/index.js
++++ b/index.js
+@@ -117,7 +117,15 @@ export default function pLimit(concurrency) {
+ export function limitFunction(function_, options) {
+ 	const limit = pLimit(options);
+ 
+-	return (...arguments_) => limit(() => function_(...arguments_));
++	const generator = (...arguments_) => limit(() => function_(...arguments_));
++
++	Object.defineProperty(generator, 'clearQueue', {
++		value() {
++			limit.clearQueue();
++		},
++	});
++
++	return generator;
+ }
+ 
+ function validateConcurrency(concurrency) {
+diff --git a/test.js b/test.js
+index e303a46..d6bc84a 100644
+--- a/test.js
++++ b/test.js
+@@ -375,3 +375,115 @@ test('limitFunction()', async t => {
+ 
+ 	await Promise.all(input);
+ });
++
++test('limitFunction clearQueue discards pending promises', async t => {
++	const limited = limitFunction(async x => {
++		await delay(50);
++		return x * 2;
++	}, {concurrency: 1, rejectOnClear: true});
++
++	const first = limited(1);
++
++	await Promise.resolve();
++
++	// Queue up pending calls after the first is running
++	const _second = limited(2);
++	const third = limited(3);
++
++	limited.clearQueue();
++
++	const firstResult = await first;
++	t.is(firstResult, 2);
++
++	await t.throwsAsync(_second, {name: 'AbortError'});
++	await t.throwsAsync(third, {name: 'AbortError'});
++});
++
++test('limitFunction clearQueue with default rejectOnClear leaves promises unsettled', async t => {
++	const limited = limitFunction(async x => {
++		await delay(50);
++		return x * 2;
++	}, {concurrency: 1});
++
++	const first = limited(1);
++
++	await Promise.resolve();
++
++	// Queue up a pending call after the first is running
++	const _second = limited(2);
++
++	limited.clearQueue();
++
++	const firstResult = await first;
++	t.is(firstResult, 2);
++});
++
++test('limitFunction clearQueue calls run normally', async t => {
++	const limited = limitFunction(async x => {
++		await delay(10);
++		return x * 2;
++	}, {concurrency: 1});
++
++	await limited(1);
++	await limited.clearQueue();
++
++	const result = await limited(3);
++	t.is(result, 6);
++});
++
++test('limitFunction clearQueue on empty queue is harmless', t => {
++	const limited = limitFunction(async () => 'done', {concurrency: 1});
++
++	limited.clearQueue(); // Should not throw
++	t.pass();
++});
++
++// Node.js 20 has a bug where DOMException is not properly handled by AVA's `throwsAsync`.
++const testLimitFunctionClearQueueRejects = process.versions.node.startsWith('20.') ? test.skip : test;
++
++testLimitFunctionClearQueueRejects('limitFunction clearQueue rejects pending with AbortError', async t => {
++	const limited = limitFunction(async x => {
++		await delay(50);
++		return x * 2;
++	}, {concurrency: 1, rejectOnClear: true});
++
++	// Start a running call
++	const first = limited(1);
++
++	await Promise.resolve();
++
++	// Queue up pending calls after the first is running
++	const _second = limited(2);
++	const _third = limited(3);
++
++	limited.clearQueue();
++
++	t.is(await first, 2);
++
++	await t.throwsAsync(_second, {name: 'AbortError'});
++	await t.throwsAsync(_third, {name: 'AbortError'});
++});
++
++test('limitFunction clearQueue does not affect separate callers', async t => {
++	const limited1 = limitFunction(async x => {
++		await delay(50);
++		return x * 2;
++	}, {concurrency: 1});
++
++	const limited2 = limitFunction(async x => {
++		await delay(50);
++		return x * 2;
++	}, {concurrency: 1});
++
++	const p1 = limited1(1);
++	const p2 = limited2(2);
++
++	await Promise.resolve();
++
++	limited1.clearQueue();
++
++	t.is(await p1, 2);
++
++	const result = await p2;
++	t.is(result, 4);
++});

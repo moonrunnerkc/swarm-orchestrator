@@ -1,0 +1,4195 @@
+{
+  "task": "svgo-bugfix-remove-scripts-anchor-bypass",
+  "repository": "svg/svgo",
+  "workType": "bugfix",
+  "baseCommit": "4e9b9aed2a4607cf28025871151421d5bfe86484",
+  "upstreamCommit": "3db3ef33e409a0bc0fdaf255e46c908b00e93bc2",
+  "validatedAt": "2026-10-23T13:25:28.167Z",
+  "referenceDigest": "sha256:f354d29183da0584014dcd36a6e7c29585b56cbf35cc19328a499c12925dfd54",
+  "sealedReferenceMatches": true,
+  "timings": {
+    "baseInstallMs": 18952,
+    "baseProjectTestMs": 3268,
+    "baseProjectTestExit": 0
+  },
+  "base": {
+    "visible": {
+      "passed": false,
+      "checkExit": 1,
+      "projectTestExit": 0,
+      "detail": "visible check (node acceptance/visible/check.mjs) exited 1:\nnode:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ '<svg xmlns=\"http://www.w3.org/2000/svg\"><a href=\"java\\tscript:alert(1)\"><rect width=\"1\" height=\"1\"/></a></svg>'\n- '<svg xmlns=\"http://www.w3.org/2000/svg\"><rect width=\"1\" height=\"1\"/></svg>'\n\n    at file:///Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-VUZYIo/checkout/acceptance/visible/check.mjs:8:8\n    at ModuleJob.run (node:internal/modules/esm/module_job:437:25)\n    at async node:internal/modules/esm/loader:639:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {\n  generatedMessage: true,\n  code: 'ERR_ASSERTION',\n  actual: '<svg xmlns=\"http://www.w3.org/2000/svg\"><a href=\"java\\tscript:alert(1)\"><rect width=\"1\" height=\"1\"/></a></svg>',\n  expected: '<svg xmlns=\"http://www.w3.org/2000/svg\"><rect width=\"1\" height=\"1\"/></svg>',\n  operator: 'strictEqual',\n  diff: 'simple'\n}\n\nNode.js v24.15.0"
+    },
+    "hidden": {
+      "verdict": "fail",
+      "basis": "hidden tests (npx vitest run test/plugins/_index.test.js) exited 1",
+      "policy": {
+        "ok": true,
+        "violations": [],
+        "addedAssertions": 0,
+        "removedAssertions": 0,
+        "testFilesAdded": [],
+        "testFilesTouched": []
+      },
+      "displaced": [],
+      "detail": "RUN  v4.1.12 /Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-ntYUxU/checkout\n\n ❯ test/plugins/_index.test.js (375 tests | 1 failed) 274ms\n     × removeScripts.11 5ms\n\n Test Files  1 failed (1)\n      Tests  1 failed | 374 passed (375)\nType Errors  no errors\n   Start at  07:26:02\n   Duration  1.25s (transform 669ms, setup 0ms, import 883ms, tests 274ms, environment 0ms)\n\n\nTesting types with tsc and vue-tsc is an experimental feature.\nBreaking changes might not follow SemVer, please pin Vitest's version when using it.\n\n⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯\n\n FAIL  test/plugins/_index.test.js > plugins tests > removeScripts.11\nAssertionError: expected '<svg xmlns=\"http://www.w3.org/2000/sv…' to strictly equal '<svg xmlns=\"http://www.w3.org/2000/sv…'\n\n- Expected\n+ Received\n\n  <svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:svg=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" xmlns:custom=\"https://example.com/custom\">\n-     <text y=\"10\">Prefixed anchor</text>\n-     <text y=\"20\">Locally declared prefix</text>\n+     <svg:a xlink:href=\"javascript:alert(1)\">\n+         <text y=\"10\">Prefixed anchor</text>\n+     </svg:a>\n+     <alias:a xmlns:alias=\"http://www.w3.org/2000/svg\" href=\"javascript:alert(1)\">\n+         <text y=\"20\">Locally declared prefix</text>\n-     <text y=\"30\">Tab</text>\n-     <text y=\"40\">Line feed</text>\n+     </alias:a>\n+     <a href=\"java\tscript:alert(1)\">\n+     <text y=\"30\">Tab</text>\n+   </a>\n+     <a href=\"java\n+ script:alert(1)\">\n+     <text y=\"40\">Line feed</text>\n+   </a>\n+     <a href=\"java\rscript:alert(1)\">\n      <text y=\"50\">Carriage return</text>\n+   </a>\n      <custom:a href=\"javascript:alert(1)\">\n          <text y=\"60\">Custom anchor</text>\n      </custom:a>\n  </svg>\n\n ❯ test/plugins/_index.test.js:49:44\n     47|             lastResultData = result.data;\n     48|             //FIXME: results.data has a '\\n' at the end while it shoul…\n     49|             expect(normalize(result.data)).toStrictEqual(should);\n       |                                            ^\n     50|           }\n     51|         });\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯"
+    },
+    "executed": true
+  },
+  "reference": {
+    "visible": {
+      "passed": true,
+      "checkExit": 0,
+      "projectTestExit": 0,
+      "detail": "visible check and project tests passed"
+    },
+    "hidden": {
+      "verdict": "pass",
+      "basis": "hidden tests, project tests and every structural or version requirement passed",
+      "policy": {
+        "ok": true,
+        "violations": [],
+        "addedAssertions": 0,
+        "removedAssertions": 0,
+        "testFilesAdded": [
+          "test/plugins/removeScripts.11.svg.txt"
+        ],
+        "testFilesTouched": [
+          "test/plugins/removeScripts.11.svg.txt"
+        ]
+      },
+      "displaced": [
+        "test/plugins/removeScripts.11.svg.txt"
+      ],
+      "detail": "allowed-change policy satisfied (0 assertion(s) added in 1 test file(s), 0 removed)\nthe patch wrote test/plugins/removeScripts.11.svg.txt and the sealed overlay displaced it: the project-test result here is the overlaid tree's, not the delivered tree's"
+    }
+  },
+  "lint": {
+    "ok": true,
+    "applicable": true,
+    "detail": "lint passes with the visible check in the tree"
+  },
+  "controls": [
+    {
+      "name": "absence-assertion.patch",
+      "digest": "sha256:ef3829d25bf8c3eb3fd31529cdef405dd7121bec7268235eaa2cde987bcabd0c",
+      "kind": "absence-assertion",
+      "expected": "pass",
+      "hidden": {
+        "verdict": "pass",
+        "basis": "hidden tests, project tests and every structural or version requirement passed",
+        "policy": {
+          "ok": true,
+          "violations": [],
+          "addedAssertions": 4,
+          "removedAssertions": 0,
+          "testFilesAdded": [
+            "test/plugins/removeScripts.11.svg.txt",
+            "test/plugins/removeScripts.anchors.test.js"
+          ],
+          "testFilesTouched": [
+            "test/plugins/removeScripts.11.svg.txt",
+            "test/plugins/removeScripts.anchors.test.js"
+          ]
+        },
+        "displaced": [
+          "test/plugins/removeScripts.11.svg.txt"
+        ],
+        "detail": "allowed-change policy satisfied (4 assertion(s) added in 2 test file(s), 0 removed)\nthe patch wrote test/plugins/removeScripts.11.svg.txt and the sealed overlay displaced it: the project-test result here is the overlaid tree's, not the delivered tree's"
+      },
+      "visible": {
+        "passed": true,
+        "checkExit": 0,
+        "projectTestExit": 0,
+        "detail": "visible check and project tests passed"
+      }
+    },
+    {
+      "name": "alternative-correct.patch",
+      "digest": "sha256:0a894110b4701c2d08d3e0b35977541407ea52b17971b782126ff892a107d6f2",
+      "kind": "alternative",
+      "expected": "pass",
+      "hidden": {
+        "verdict": "pass",
+        "basis": "hidden tests, project tests and every structural or version requirement passed",
+        "policy": {
+          "ok": true,
+          "violations": [],
+          "addedAssertions": 0,
+          "removedAssertions": 0,
+          "testFilesAdded": [
+            "test/plugins/removeScripts.11.svg.txt"
+          ],
+          "testFilesTouched": [
+            "test/plugins/removeScripts.11.svg.txt"
+          ]
+        },
+        "displaced": [
+          "test/plugins/removeScripts.11.svg.txt"
+        ],
+        "detail": "allowed-change policy satisfied (0 assertion(s) added in 1 test file(s), 0 removed)\nthe patch wrote test/plugins/removeScripts.11.svg.txt and the sealed overlay displaced it: the project-test result here is the overlaid tree's, not the delivered tree's"
+      },
+      "visible": {
+        "passed": true,
+        "checkExit": 0,
+        "projectTestExit": 0,
+        "detail": "visible check and project tests passed"
+      }
+    },
+    {
+      "name": "anchor-after-pop.patch",
+      "digest": "sha256:7962217b966baf999a6f1afe73f5c1de47c080bf585e6483aca96d8518c27ed5",
+      "kind": "faulty",
+      "expected": "fail",
+      "hidden": {
+        "verdict": "fail",
+        "basis": "hidden tests (npx vitest run test/plugins/_index.test.js) exited 1",
+        "policy": {
+          "ok": true,
+          "violations": [],
+          "addedAssertions": 0,
+          "removedAssertions": 0,
+          "testFilesAdded": [
+            "test/plugins/removeScripts.11.svg.txt"
+          ],
+          "testFilesTouched": [
+            "test/plugins/removeScripts.11.svg.txt"
+          ]
+        },
+        "displaced": [
+          "test/plugins/removeScripts.11.svg.txt"
+        ],
+        "detail": "RUN  v4.1.12 /Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-T1PYmr/checkout\n\n ❯ test/plugins/_index.test.js (375 tests | 1 failed) 275ms\n     × removeScripts.11 4ms\n\n Test Files  1 failed (1)\n      Tests  1 failed | 374 passed (375)\nType Errors  no errors\n   Start at  07:27:45\n   Duration  1.06s (transform 516ms, setup 0ms, import 697ms, tests 275ms, environment 0ms)\n\n\nTesting types with tsc and vue-tsc is an experimental feature.\nBreaking changes might not follow SemVer, please pin Vitest's version when using it.\n\n⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯\n\n FAIL  test/plugins/_index.test.js > plugins tests > removeScripts.11\nAssertionError: expected '<svg xmlns=\"http://www.w3.org/2000/sv…' to strictly equal '<svg xmlns=\"http://www.w3.org/2000/sv…'\n\n- Expected\n+ Received\n\n@@ -1,8 +1,10 @@\n  <svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:svg=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" xmlns:custom=\"https://example.com/custom\">\n      <text y=\"10\">Prefixed anchor</text>\n-     <text y=\"20\">Locally declared prefix</text>\n+     <alias:a xmlns:alias=\"http://www.w3.org/2000/svg\" href=\"javascript:alert(1)\">\n+         <text y=\"20\">Locally declared prefix</text>\n+     </alias:a>\n      <text y=\"30\">Tab</text>\n      <text y=\"40\">Line feed</text>\n      <text y=\"50\">Carriage return</text>\n      <custom:a href=\"javascript:alert(1)\">\n          <text y=\"60\">Custom anchor</text>\n\n ❯ test/plugins/_index.test.js:49:44\n     47|             lastResultData = result.data;\n     48|             //FIXME: results.data has a '\\n' at the end while it shoul…\n     49|             expect(normalize(result.data)).toStrictEqual(should);\n       |                                            ^\n     50|           }\n     51|         });\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯"
+      },
+      "visible": {
+        "passed": false,
+        "checkExit": 0,
+        "projectTestExit": 1,
+        "detail": "project tests (npm test) exited 1:\n> svgo@4.0.2 test\n> vitest run\n\n\n RUN  v4.1.12 /Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-5IfFrD/checkout\n\n ❯ test/plugins/_index.test.js (375 tests | 1 failed) 201ms\n     × removeScripts.11 4ms\n\n Test Files  1 failed | 18 passed (19)\n      Tests  1 failed | 516 passed | 3 skipped (520)\nType Errors  no errors\n   Start at  07:28:00\n   Duration  1.78s (transform 776ms, setup 0ms, import 1.98s, tests 1.16s, environment 1ms, typecheck 484ms)\n\n\nTesting types with tsc and vue-tsc is an experimental feature.\nBreaking changes might not follow SemVer, please pin Vitest's version when using it.\n\n⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯\n\n FAIL  test/plugins/_index.test.js > plugins tests > removeScripts.11\nAssertionError: expected '<svg xmlns=\"http://www.w3.org/2000/sv…' to strictly equal '<svg xmlns=\"http://www.w3.org/2000/sv…'\n\n- Expected\n+ Received\n\n@@ -1,8 +1,10 @@\n  <svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:svg=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" xmlns:custom=\"https://example.com/custom\">\n      <text y=\"10\">Prefixed anchor</text>\n-     <text y=\"20\">Locally declared prefix</text>\n+     <alias:a xmlns:alias=\"http://www.w3.org/2000/svg\" href=\"javascript:alert(1)\">\n+         <text y=\"20\">Locally declared prefix</text>\n+     </alias:a>\n      <text y=\"30\">Tab</text>\n      <text y=\"40\">Line feed</text>\n      <text y=\"50\">Carriage return</text>\n      <custom:a href=\"javascript:alert(1)\">\n          <text y=\"60\">Custom anchor</text>\n\n ❯ test/plugins/_index.test.js:49:44\n     47|             lastResultData = result.data;\n     48|             //FIXME: results.data has a '\\n' at the end while it shoul…\n     49|             expect(normalize(result.data)).toStrictEqual(should);\n       |                                            ^\n     50|           }\n     51|         });\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯"
+      }
+    },
+    {
+      "name": "any-prefix.patch",
+      "digest": "sha256:31ab88287104cb9e0f33ce520344bf712ebdadf9ca1136d9ae6d257747202c51",
+      "kind": "faulty",
+      "expected": "fail",
+      "hidden": {
+        "verdict": "fail",
+        "basis": "hidden tests (npx vitest run test/plugins/_index.test.js) exited 1",
+        "policy": {
+          "ok": true,
+          "violations": [],
+          "addedAssertions": 0,
+          "removedAssertions": 0,
+          "testFilesAdded": [
+            "test/plugins/removeScripts.11.svg.txt"
+          ],
+          "testFilesTouched": [
+            "test/plugins/removeScripts.11.svg.txt"
+          ]
+        },
+        "displaced": [
+          "test/plugins/removeScripts.11.svg.txt"
+        ],
+        "detail": "RUN  v4.1.12 /Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-7dVR0I/checkout\n\n ❯ test/plugins/_index.test.js (375 tests | 1 failed) 138ms\n     × removeScripts.11 3ms\n\n Test Files  1 failed (1)\n      Tests  1 failed | 374 passed (375)\nType Errors  no errors\n   Start at  07:28:07\n   Duration  516ms (transform 194ms, setup 0ms, import 311ms, tests 138ms, environment 0ms)\n\n\nTesting types with tsc and vue-tsc is an experimental feature.\nBreaking changes might not follow SemVer, please pin Vitest's version when using it.\n\n⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯\n\n FAIL  test/plugins/_index.test.js > plugins tests > removeScripts.11\nAssertionError: expected '<svg xmlns=\"http://www.w3.org/2000/sv…' to strictly equal '<svg xmlns=\"http://www.w3.org/2000/sv…'\n\n- Expected\n+ Received\n\n@@ -2,9 +2,7 @@\n      <text y=\"10\">Prefixed anchor</text>\n      <text y=\"20\">Locally declared prefix</text>\n      <text y=\"30\">Tab</text>\n      <text y=\"40\">Line feed</text>\n      <text y=\"50\">Carriage return</text>\n-     <custom:a href=\"javascript:alert(1)\">\n-         <text y=\"60\">Custom anchor</text>\n+     <text y=\"60\">Custom anchor</text>\n-     </custom:a>\n  </svg>\n\n ❯ test/plugins/_index.test.js:49:44\n     47|             lastResultData = result.data;\n     48|             //FIXME: results.data has a '\\n' at the end while it shoul…\n     49|             expect(normalize(result.data)).toStrictEqual(should);\n       |                                            ^\n     50|           }\n     51|         });\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯"
+      },
+      "visible": {
+        "passed": false,
+        "checkExit": 0,
+        "projectTestExit": 1,
+        "detail": "project tests (npm test) exited 1:\n> svgo@4.0.2 test\n> vitest run\n\n\n RUN  v4.1.12 /Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-jU4WRq/checkout\n\n ❯ test/plugins/_index.test.js (375 tests | 1 failed) 206ms\n     × removeScripts.11 4ms\n\n Test Files  1 failed | 18 passed (19)\n      Tests  1 failed | 516 passed | 3 skipped (520)\nType Errors  no errors\n   Start at  07:28:14\n   Duration  1.79s (transform 756ms, setup 0ms, import 2.00s, tests 1.27s, environment 1ms, typecheck 420ms)\n\n\nTesting types with tsc and vue-tsc is an experimental feature.\nBreaking changes might not follow SemVer, please pin Vitest's version when using it.\n\n⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯\n\n FAIL  test/plugins/_index.test.js > plugins tests > removeScripts.11\nAssertionError: expected '<svg xmlns=\"http://www.w3.org/2000/sv…' to strictly equal '<svg xmlns=\"http://www.w3.org/2000/sv…'\n\n- Expected\n+ Received\n\n@@ -2,9 +2,7 @@\n      <text y=\"10\">Prefixed anchor</text>\n      <text y=\"20\">Locally declared prefix</text>\n      <text y=\"30\">Tab</text>\n      <text y=\"40\">Line feed</text>\n      <text y=\"50\">Carriage return</text>\n-     <custom:a href=\"javascript:alert(1)\">\n-         <text y=\"60\">Custom anchor</text>\n+     <text y=\"60\">Custom anchor</text>\n-     </custom:a>\n  </svg>\n\n ❯ test/plugins/_index.test.js:49:44\n     47|             lastResultData = result.data;\n     48|             //FIXME: results.data has a '\\n' at the end while it shoul…\n     49|             expect(normalize(result.data)).toStrictEqual(should);\n       |                                            ^\n     50|           }\n     51|         });\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯"
+      }
+    },
+    {
+      "name": "outermost-binding.patch",
+      "digest": "sha256:0b7cadf5014969e74622d22006a4d22c69dbbd7179bc37ea06c2397387340280",
+      "kind": "faulty",
+      "expected": "fail",
+      "hidden": {
+        "verdict": "fail",
+        "basis": "node acceptance/hidden/behaviour-check.mjs exited 1",
+        "policy": {
+          "ok": true,
+          "violations": [],
+          "addedAssertions": 0,
+          "removedAssertions": 0,
+          "testFilesAdded": [
+            "test/plugins/removeScripts.11.svg.txt"
+          ],
+          "testFilesTouched": [
+            "test/plugins/removeScripts.11.svg.txt"
+          ]
+        },
+        "displaced": [
+          "test/plugins/removeScripts.11.svg.txt"
+        ],
+        "detail": "2 behaviour check(s) failed:\n- removeScripts on case #2: Expected values to be strictly equal: | + actual - expected |  | + '<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" xmlns:x=\"https://example.com/other\"><g xmlns:x=\"http://www.w3.org/2000/svg\"><x:a href=\"javascript:1\"><path d=\"M0 0\"/></x:a></g></svg>'\n- removeScripts on case #13: Expected values to be strictly equal: | + actual - expected |  | + '<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" xmlns:x=\"http://www.w3.org/2000/svg\"><g xmlns:x=\"https://example.com/other\"><path d=\"M1 1\"/></g><path d=\"M2 2\"/></svg>'"
+      },
+      "visible": {
+        "passed": true,
+        "checkExit": 0,
+        "projectTestExit": 0,
+        "detail": "visible check and project tests passed"
+      }
+    },
+    {
+      "name": "plugin-only-normalization.patch",
+      "digest": "sha256:1e017f9ff2fa772f1cdfadca0c0b79462dc0dc4b80a098882be6915e962184df",
+      "kind": "faulty",
+      "expected": "fail",
+      "hidden": {
+        "verdict": "fail",
+        "basis": "node acceptance/hidden/behaviour-check.mjs exited 1",
+        "policy": {
+          "ok": true,
+          "violations": [],
+          "addedAssertions": 0,
+          "removedAssertions": 0,
+          "testFilesAdded": [
+            "test/plugins/removeScripts.11.svg.txt"
+          ],
+          "testFilesTouched": [
+            "test/plugins/removeScripts.11.svg.txt"
+          ]
+        },
+        "displaced": [
+          "test/plugins/removeScripts.11.svg.txt"
+        ],
+        "detail": "4 behaviour check(s) failed:\n- removeScripts on case #11: Expected values to be strictly equal: | + actual - expected |  | + '<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" xmlns:xhtml=\"http://www.w3.org/1999/xhtml\"><foreignObject width=\"10\" height=\"10\"><xhtml:iframe src=\"java\\tscript:alert(1)\" title=\"f\"/><xhtml:a href=\"java\\n' +\n- preset-default on case #1: Expected values to be strictly equal: | + actual - expected |  | + '<svg xmlns=\"http://www.w3.org/2000/svg\"><a><path id=\"a\" d=\"M0 0h5v5H0z\" style=\"fill:red\"/></a><use href=\"#a\"/></svg>'\n- isExecutableUrl ignores ASCII tab, line feed and carriage return: \"java\\tscript:alert(1)\" |  | false !== true | \n- hasScripts sees tab-split executable links: Expected values to be strictly equal: |  | false !== true |"
+      },
+      "visible": {
+        "passed": true,
+        "checkExit": 0,
+        "projectTestExit": 0,
+        "detail": "visible check and project tests passed"
+      }
+    },
+    {
+      "name": "prefix-only.patch",
+      "digest": "sha256:cc2f03aec481f8259060ef9e59d85100e21316aa1cf4cc5c1cbe2d0c4274b05f",
+      "kind": "faulty",
+      "expected": "fail",
+      "hidden": {
+        "verdict": "fail",
+        "basis": "hidden tests (npx vitest run test/plugins/_index.test.js) exited 1",
+        "policy": {
+          "ok": true,
+          "violations": [],
+          "addedAssertions": 0,
+          "removedAssertions": 0,
+          "testFilesAdded": [
+            "test/plugins/removeScripts.11.svg.txt"
+          ],
+          "testFilesTouched": [
+            "test/plugins/removeScripts.11.svg.txt"
+          ]
+        },
+        "displaced": [
+          "test/plugins/removeScripts.11.svg.txt"
+        ],
+        "detail": "RUN  v4.1.12 /Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-F5gfQO/checkout\n\n ❯ test/plugins/_index.test.js (375 tests | 1 failed) 159ms\n     × removeScripts.11 4ms\n\n Test Files  1 failed (1)\n      Tests  1 failed | 374 passed (375)\nType Errors  no errors\n   Start at  07:28:50\n   Duration  555ms (transform 204ms, setup 0ms, import 324ms, tests 159ms, environment 0ms)\n\n\nTesting types with tsc and vue-tsc is an experimental feature.\nBreaking changes might not follow SemVer, please pin Vitest's version when using it.\n\n⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯\n\n FAIL  test/plugins/_index.test.js > plugins tests > removeScripts.11\nAssertionError: expected '<svg xmlns=\"http://www.w3.org/2000/sv…' to strictly equal '<svg xmlns=\"http://www.w3.org/2000/sv…'\n\n- Expected\n+ Received\n\n  <svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:svg=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" xmlns:custom=\"https://example.com/custom\">\n      <text y=\"10\">Prefixed anchor</text>\n      <text y=\"20\">Locally declared prefix</text>\n-     <text y=\"30\">Tab</text>\n-     <text y=\"40\">Line feed</text>\n+     <a href=\"java\tscript:alert(1)\">\n+     <text y=\"30\">Tab</text>\n+   </a>\n+     <a href=\"java\n+ script:alert(1)\">\n+     <text y=\"40\">Line feed</text>\n+   </a>\n+     <a href=\"java\rscript:alert(1)\">\n      <text y=\"50\">Carriage return</text>\n+   </a>\n      <custom:a href=\"javascript:alert(1)\">\n          <text y=\"60\">Custom anchor</text>\n      </custom:a>\n  </svg>\n\n ❯ test/plugins/_index.test.js:49:44\n     47|             lastResultData = result.data;\n     48|             //FIXME: results.data has a '\\n' at the end while it shoul…\n     49|             expect(normalize(result.data)).toStrictEqual(should);\n       |                                            ^\n     50|           }\n     51|         });\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯"
+      },
+      "visible": {
+        "passed": false,
+        "checkExit": 1,
+        "projectTestExit": 1,
+        "detail": "run_main:107\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ '<svg xmlns=\"http://www.w3.org/2000/svg\"><a href=\"java\\tscript:alert(1)\"><rect width=\"1\" height=\"1\"/></a></svg>'\n- '<svg xmlns=\"http://www.w3.org/2000/svg\"><rect width=\"1\" height=\"1\"/></svg>'\n\n    at file:///Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-IQoToy/checkout/acceptance/visible/check.mjs:8:8\n    at ModuleJob.run (node:internal/modules/esm/module_job:437:25)\n    at async node:internal/modules/esm/loader:639:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {\n  generatedMessage: true,\n  code: 'ERR_ASSERTION',\n  actual: '<svg xmlns=\"http://www.w3.org/2000/svg\"><a href=\"java\\tscript:alert(1)\"><rect width=\"1\" height=\"1\"/></a></svg>',\n  expected: '<svg xmlns=\"http://www.w3.org/2000/svg\"><rect width=\"1\" height=\"1\"/></svg>',\n  operator: 'strictEqual',\n  diff: 'simple'\n}\n\nNode.js v24.15.0\n\nproject tests (npm test) exited 1:\n> svgo@4.0.2 test\n> vitest run\n\n\n RUN  v4.1.12 /Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-IQoToy/checkout\n\n ❯ test/plugins/_index.test.js (375 tests | 1 failed) 185ms\n     × removeScripts.11 4ms\n\n Test Files  1 failed | 18 passed (19)\n      Tests  1 failed | 516 passed | 3 skipped (520)\nType Errors  no errors\n   Start at  07:28:55\n   Duration  1.58s (transform 571ms, setup 0ms, import 1.70s, tests 1.09s, environment 1ms, typecheck 420ms)\n\n\nTesting types with tsc and vue-tsc is an experimental feature.\nBreaking changes might not follow SemVer, please pin Vitest's version when using it.\n\n⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯\n\n FAIL  test/plugins/_index.test.js > plugins tests > removeScripts.11\nAssertionError: expected '<svg xmlns=\"http://www.w3.org/2000/sv…' to strictly equal '<svg xmlns=\"http://www.w3.org/2000/sv…'\n\n- Expected\n+ Received\n\n  <svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:svg=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" xmlns:custom=\"https://example.com/custom\">\n      <text y=\"10\">Prefixed anchor</text>\n      <text y=\"20\">Locally declared prefix</text>\n-     <text y=\"30\">Tab</text>\n-     <text y=\"40\">Line feed</text>\n+     <a href=\"java\tscript:alert(1)\">\n+     <text y=\"30\">Tab</text>\n+   </a>\n+     <a href=\"java\n+ script:alert(1)\">\n+     <text y=\"40\">Line feed</text>\n+   </a>\n+     <a href=\"java\rscript:alert(1)\">\n      <text y=\"50\">Carriage return</text>\n+   </a>\n      <custom:a href=\"javascript:alert(1)\">\n          <text y=\"60\">Custom anchor</text>\n      </custom:a>\n  </svg>\n\n ❯ test/plugins/_index.test.js:49:44\n     47|             lastResultData = result.data;\n     48|             //FIXME: results.data has a '\\n' at the end while it shoul…\n     49|             expect(normalize(result.data)).toStrictEqual(should);\n       |                                            ^\n     50|           }\n     51|         });\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯"
+      }
+    },
+    {
+      "name": "whitespace-only.patch",
+      "digest": "sha256:d2ea1e3af733390ddf9c58fc8b27104265628d422fecb06d07759f92d259b480",
+      "kind": "faulty",
+      "expected": "fail",
+      "hidden": {
+        "verdict": "fail",
+        "basis": "hidden tests (npx vitest run test/plugins/_index.test.js) exited 1",
+        "policy": {
+          "ok": true,
+          "violations": [],
+          "addedAssertions": 0,
+          "removedAssertions": 0,
+          "testFilesAdded": [
+            "test/plugins/removeScripts.11.svg.txt"
+          ],
+          "testFilesTouched": [
+            "test/plugins/removeScripts.11.svg.txt"
+          ]
+        },
+        "displaced": [
+          "test/plugins/removeScripts.11.svg.txt"
+        ],
+        "detail": "RUN  v4.1.12 /Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-1CxVwu/checkout\n\n ❯ test/plugins/_index.test.js (375 tests | 1 failed) 211ms\n     × removeScripts.11 3ms\n\n Test Files  1 failed (1)\n      Tests  1 failed | 374 passed (375)\nType Errors  no errors\n   Start at  07:29:02\n   Duration  700ms (transform 284ms, setup 0ms, import 430ms, tests 211ms, environment 0ms)\n\n\nTesting types with tsc and vue-tsc is an experimental feature.\nBreaking changes might not follow SemVer, please pin Vitest's version when using it.\n\n⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯\n\n FAIL  test/plugins/_index.test.js > plugins tests > removeScripts.11\nAssertionError: expected '<svg xmlns=\"http://www.w3.org/2000/sv…' to strictly equal '<svg xmlns=\"http://www.w3.org/2000/sv…'\n\n- Expected\n+ Received\n\n@@ -1,8 +1,12 @@\n  <svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:svg=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" xmlns:custom=\"https://example.com/custom\">\n-     <text y=\"10\">Prefixed anchor</text>\n-     <text y=\"20\">Locally declared prefix</text>\n+     <svg:a xlink:href=\"javascript:alert(1)\">\n+         <text y=\"10\">Prefixed anchor</text>\n+     </svg:a>\n+     <alias:a xmlns:alias=\"http://www.w3.org/2000/svg\" href=\"javascript:alert(1)\">\n+         <text y=\"20\">Locally declared prefix</text>\n+     </alias:a>\n      <text y=\"30\">Tab</text>\n      <text y=\"40\">Line feed</text>\n      <text y=\"50\">Carriage return</text>\n      <custom:a href=\"javascript:alert(1)\">\n          <text y=\"60\">Custom anchor</text>\n\n ❯ test/plugins/_index.test.js:49:44\n     47|             lastResultData = result.data;\n     48|             //FIXME: results.data has a '\\n' at the end while it shoul…\n     49|             expect(normalize(result.data)).toStrictEqual(should);\n       |                                            ^\n     50|           }\n     51|         });\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯"
+      },
+      "visible": {
+        "passed": false,
+        "checkExit": 0,
+        "projectTestExit": 1,
+        "detail": "project tests (npm test) exited 1:\n> svgo@4.0.2 test\n> vitest run\n\n\n RUN  v4.1.12 /Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-NI3I1t/checkout\n\n ❯ test/plugins/_index.test.js (375 tests | 1 failed) 192ms\n     × removeScripts.11 4ms\n\n Test Files  1 failed | 18 passed (19)\n      Tests  1 failed | 516 passed | 3 skipped (520)\nType Errors  no errors\n   Start at  07:29:07\n   Duration  1.58s (transform 626ms, setup 0ms, import 1.73s, tests 1.12s, environment 1ms, typecheck 417ms)\n\n\nTesting types with tsc and vue-tsc is an experimental feature.\nBreaking changes might not follow SemVer, please pin Vitest's version when using it.\n\n⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯\n\n FAIL  test/plugins/_index.test.js > plugins tests > removeScripts.11\nAssertionError: expected '<svg xmlns=\"http://www.w3.org/2000/sv…' to strictly equal '<svg xmlns=\"http://www.w3.org/2000/sv…'\n\n- Expected\n+ Received\n\n@@ -1,8 +1,12 @@\n  <svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:svg=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" xmlns:custom=\"https://example.com/custom\">\n-     <text y=\"10\">Prefixed anchor</text>\n-     <text y=\"20\">Locally declared prefix</text>\n+     <svg:a xlink:href=\"javascript:alert(1)\">\n+         <text y=\"10\">Prefixed anchor</text>\n+     </svg:a>\n+     <alias:a xmlns:alias=\"http://www.w3.org/2000/svg\" href=\"javascript:alert(1)\">\n+         <text y=\"20\">Locally declared prefix</text>\n+     </alias:a>\n      <text y=\"30\">Tab</text>\n      <text y=\"40\">Line feed</text>\n      <text y=\"50\">Carriage return</text>\n      <custom:a href=\"javascript:alert(1)\">\n          <text y=\"60\">Custom anchor</text>\n\n ❯ test/plugins/_index.test.js:49:44\n     47|             lastResultData = result.data;\n     48|             //FIXME: results.data has a '\\n' at the end while it shoul…\n     49|             expect(normalize(result.data)).toStrictEqual(should);\n       |                                            ^\n     50|           }\n     51|         });\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯"
+      }
+    }
+  ],
+  "valid": true,
+  "controlsAsExpected": true,
+  "wallMs": 221872,
+  "commands": [
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "4e9b9aed2^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 13,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "3db3ef33e^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:d4b53daaf79e5eaf1c39887eb8da2aed52bf06305944719654da62e9eb4f2e2e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "4e9b9aed2^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "3db3ef33e^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:d4b53daaf79e5eaf1c39887eb8da2aed52bf06305944719654da62e9eb4f2e2e",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "3db3ef33e409a0bc0fdaf255e46c908b00e93bc2^"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--binary",
+        "4e9b9aed2a4607cf28025871151421d5bfe86484",
+        "3db3ef33e409a0bc0fdaf255e46c908b00e93bc2"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 13,
+      "stdoutDigest": "sha256:f354d29183da0584014dcd36a6e7c29585b56cbf35cc19328a499c12925dfd54",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "tag",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base",
+        "4e9b9aed2a4607cf28025871151421d5bfe86484"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+        "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-VUZYIo/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 91,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:01433baca6883730edd1b08bbd9e6ff845a59e635d37bece4fa72c79e40ae5aa"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-VUZYIo/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 32,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-VUZYIo/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-VUZYIo/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-VUZYIo/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 26,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-VUZYIo/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 33,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-VUZYIo/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:e12f639c278c19130ab058714ff8fa33d2b9f67042cff061d37e90af59e718f8",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-23T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-VUZYIo/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 18952,
+      "stdoutDigest": "sha256:587eab4b0a3ff85696561e9628c5a74fb63907bf35160d318a308f15e9b39cbd",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "sh",
+        "-c",
+        "node acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-VUZYIo/checkout",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 133,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:d8b53d81ae0b862238c2003631af2e5117faf3e9acb96ab209ef60f864747b24"
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-VUZYIo/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 3268,
+      "stdoutDigest": "sha256:6584fe4468d1b088f5c689be8453b5c85912739d7f43799cf02bdaadfac0599b",
+      "stderrDigest": "sha256:371fe791443c178811c6f801fa5088fb37337011c4caf9ce08d8e0e7999f31db"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 27,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+        "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-ntYUxU/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 299,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:01433baca6883730edd1b08bbd9e6ff845a59e635d37bece4fa72c79e40ae5aa"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-ntYUxU/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 79,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-ntYUxU/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 27,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-ntYUxU/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 26,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-ntYUxU/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 81,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-ntYUxU/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 94,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-ntYUxU/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 19,
+      "stdoutDigest": "sha256:8b3c6bf51ab3e0e4c3e78fcec81bad1f354b95b9c62a2a224ae761ab5ccd3ed4",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-23T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-ntYUxU/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 7072,
+      "stdoutDigest": "sha256:1cdc98897e2c6ae35f70a7f32daad0f01a0811d38d0f05cf8f8ccaa450248927",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "3db3ef33e409a0bc0fdaf255e46c908b00e93bc2:test/plugins/removeScripts.11.svg.txt"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 25,
+      "stdoutDigest": "sha256:43266cc2faad4d861eb5c257e826336581b8962e2c66d763f99f862bb73c85cb",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npx",
+        "vitest",
+        "run",
+        "test/plugins/_index.test.js"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-ntYUxU/checkout",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 2242,
+      "stdoutDigest": "sha256:06178e5c45c74f3e0fb369d64cd217603d334fce9302bf5a052adf0ae379f29c",
+      "stderrDigest": "sha256:113a4dc4725557a593c1e8840a5ac054c817accd27d0567a63e0df765607e08d"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 32,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+        "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-cQhDcz/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 434,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:01433baca6883730edd1b08bbd9e6ff845a59e635d37bece4fa72c79e40ae5aa"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-cQhDcz/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 90,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-cQhDcz/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 28,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-cQhDcz/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 29,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-cQhDcz/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 69,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-cQhDcz/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 103,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-cQhDcz/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 18,
+      "stdoutDigest": "sha256:5195ca4ecd7dd525372a8e552ca06d622f06ae2751bd1d45850160be36027fca",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-cQhDcz/f354d29183da.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-cQhDcz/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 26,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-23T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-cQhDcz/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 4927,
+      "stdoutDigest": "sha256:f0af798319ea140ac006ed40b732af7ae3f916d515d2e7366b8e8d4d2716fc7f",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "sh",
+        "-c",
+        "node acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-cQhDcz/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 166,
+      "stdoutDigest": "sha256:d81e5c2040ab0ac064d24c7c5b7c5a9ad59c1ff14fe0b7af13028cc7787f9b4a",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-cQhDcz/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 3892,
+      "stdoutDigest": "sha256:1bdbb3273bd0eea6ee6179e879da3fab49b204c80881200626d9b120dddde34c",
+      "stderrDigest": "sha256:371fe791443c178811c6f801fa5088fb37337011c4caf9ce08d8e0e7999f31db"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 28,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+        "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-qZUEMS/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 413,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:01433baca6883730edd1b08bbd9e6ff845a59e635d37bece4fa72c79e40ae5aa"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-qZUEMS/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 58,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-qZUEMS/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 26,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-qZUEMS/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 26,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-qZUEMS/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 35,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-qZUEMS/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 125,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-qZUEMS/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 16,
+      "stdoutDigest": "sha256:d8d6ae2cd9415a54edebefbcc6b6bad5c2c511e2f4b74a28bf2c7434d8dee508",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-qZUEMS/f354d29183da.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-qZUEMS/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 50,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-23T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-qZUEMS/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 5989,
+      "stdoutDigest": "sha256:06bcc0a42a1d1253e95b0188db009977e40350576c2159c125acf16c46f90d17",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "3db3ef33e409a0bc0fdaf255e46c908b00e93bc2:test/plugins/removeScripts.11.svg.txt"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 32,
+      "stdoutDigest": "sha256:43266cc2faad4d861eb5c257e826336581b8962e2c66d763f99f862bb73c85cb",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npx",
+        "vitest",
+        "run",
+        "test/plugins/_index.test.js"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-qZUEMS/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2306,
+      "stdoutDigest": "sha256:f7f1dc9f4c5edf8aae8f611715f923e18bf8c8d11ea5105b25f558be5bccc8fc",
+      "stderrDigest": "sha256:371fe791443c178811c6f801fa5088fb37337011c4caf9ce08d8e0e7999f31db"
+    },
+    {
+      "argv": [
+        "node",
+        "acceptance/hidden/behaviour-check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-qZUEMS/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 164,
+      "stdoutDigest": "sha256:a78df5c03558ce9e17f74beba3ffc18c7aa318fc521cbfa0cb2ac4bab7d26949",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-qZUEMS/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2784,
+      "stdoutDigest": "sha256:a6ff9320c032d911a64cc251eef7b13d61776f59209c79fe2e789fb51b599524",
+      "stderrDigest": "sha256:371fe791443c178811c6f801fa5088fb37337011c4caf9ce08d8e0e7999f31db"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 33,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+        "/Users/brad/swarm-comparison-work/lint-svgo-bugfix-remove-scripts-anchor-bypass-CxBj0c/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 486,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:01433baca6883730edd1b08bbd9e6ff845a59e635d37bece4fa72c79e40ae5aa"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/lint-svgo-bugfix-remove-scripts-anchor-bypass-CxBj0c/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 80,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/lint-svgo-bugfix-remove-scripts-anchor-bypass-CxBj0c/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 53,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/lint-svgo-bugfix-remove-scripts-anchor-bypass-CxBj0c/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 24,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/lint-svgo-bugfix-remove-scripts-anchor-bypass-CxBj0c/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 77,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/lint-svgo-bugfix-remove-scripts-anchor-bypass-CxBj0c/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 47,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/lint-svgo-bugfix-remove-scripts-anchor-bypass-CxBj0c/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 25,
+      "stdoutDigest": "sha256:5767834abe6603363b738f3428b1acd0138af60f97f838b780e6e6130ad37076",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-23T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/lint-svgo-bugfix-remove-scripts-anchor-bypass-CxBj0c/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 6778,
+      "stdoutDigest": "sha256:1cdc98897e2c6ae35f70a7f32daad0f01a0811d38d0f05cf8f8ccaa450248927",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "run",
+        "--loglevel=error",
+        "lint"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/lint-svgo-bugfix-remove-scripts-anchor-bypass-CxBj0c/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2704,
+      "stdoutDigest": "sha256:079fb92109d227b51da8fa419c4e175e4613d4caa1a6e9d6f9aede0bb506aeb2",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 22,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+        "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-zrj2G1/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 260,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:01433baca6883730edd1b08bbd9e6ff845a59e635d37bece4fa72c79e40ae5aa"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-zrj2G1/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 74,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-zrj2G1/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 27,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-zrj2G1/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 27,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-zrj2G1/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 66,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-zrj2G1/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 93,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-zrj2G1/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 27,
+      "stdoutDigest": "sha256:18e43c86fa90136d647ac288fc6be1018d94283f29092dda3bc0bad80a120198",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-zrj2G1/ef3829d25bf8.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-zrj2G1/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 35,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-23T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-zrj2G1/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 4948,
+      "stdoutDigest": "sha256:f0af798319ea140ac006ed40b732af7ae3f916d515d2e7366b8e8d4d2716fc7f",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "3db3ef33e409a0bc0fdaf255e46c908b00e93bc2:test/plugins/removeScripts.11.svg.txt"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 20,
+      "stdoutDigest": "sha256:43266cc2faad4d861eb5c257e826336581b8962e2c66d763f99f862bb73c85cb",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npx",
+        "vitest",
+        "run",
+        "test/plugins/_index.test.js"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-zrj2G1/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 1789,
+      "stdoutDigest": "sha256:854b132977a31342577991acc4becc82332e25b7636e9267bfb1b82b58806011",
+      "stderrDigest": "sha256:371fe791443c178811c6f801fa5088fb37337011c4caf9ce08d8e0e7999f31db"
+    },
+    {
+      "argv": [
+        "node",
+        "acceptance/hidden/behaviour-check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-zrj2G1/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 160,
+      "stdoutDigest": "sha256:a78df5c03558ce9e17f74beba3ffc18c7aa318fc521cbfa0cb2ac4bab7d26949",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-zrj2G1/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 3141,
+      "stdoutDigest": "sha256:a942aecd2618a17a995777c4ce3f3d6c2a39a0ee64b76a19885fcbe7d5963db4",
+      "stderrDigest": "sha256:371fe791443c178811c6f801fa5088fb37337011c4caf9ce08d8e0e7999f31db"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 25,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+        "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-NNkief/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 412,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:01433baca6883730edd1b08bbd9e6ff845a59e635d37bece4fa72c79e40ae5aa"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-NNkief/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 64,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-NNkief/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 37,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-NNkief/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 24,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-NNkief/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 57,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-NNkief/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 94,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-NNkief/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 26,
+      "stdoutDigest": "sha256:43a821699b5f282e52a7eddf8e1eec07c9f8a075bfcd002867a6270d9464e09f",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-NNkief/ef3829d25bf8.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-NNkief/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 26,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-23T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-NNkief/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 4978,
+      "stdoutDigest": "sha256:f0af798319ea140ac006ed40b732af7ae3f916d515d2e7366b8e8d4d2716fc7f",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "sh",
+        "-c",
+        "node acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-NNkief/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 146,
+      "stdoutDigest": "sha256:d81e5c2040ab0ac064d24c7c5b7c5a9ad59c1ff14fe0b7af13028cc7787f9b4a",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-NNkief/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 3173,
+      "stdoutDigest": "sha256:7c4eaa629563a473114de4e2c7aa0cb7d37c531f6daaef37e523eb7b3f8a4977",
+      "stderrDigest": "sha256:371fe791443c178811c6f801fa5088fb37337011c4caf9ce08d8e0e7999f31db"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 28,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+        "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-jYE0Kw/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 378,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:01433baca6883730edd1b08bbd9e6ff845a59e635d37bece4fa72c79e40ae5aa"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-jYE0Kw/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 72,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-jYE0Kw/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 28,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-jYE0Kw/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 27,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-jYE0Kw/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 59,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-jYE0Kw/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 80,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-jYE0Kw/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 22,
+      "stdoutDigest": "sha256:120876d517985a3b094292345bc9c6a03b9d4e3cc9bb269773115eebe980ad5f",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-jYE0Kw/0a894110b470.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-jYE0Kw/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 29,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-23T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-jYE0Kw/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 3887,
+      "stdoutDigest": "sha256:34ea800792256823bb26b71b56362e8705350eb401e309a804b91b90dc5371ad",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "3db3ef33e409a0bc0fdaf255e46c908b00e93bc2:test/plugins/removeScripts.11.svg.txt"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 38,
+      "stdoutDigest": "sha256:43266cc2faad4d861eb5c257e826336581b8962e2c66d763f99f862bb73c85cb",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npx",
+        "vitest",
+        "run",
+        "test/plugins/_index.test.js"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-jYE0Kw/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2171,
+      "stdoutDigest": "sha256:7ba2a8c5e3e47aa5eeab1bef6f16f56ed0c8e019cd13af128a052bfa85253603",
+      "stderrDigest": "sha256:371fe791443c178811c6f801fa5088fb37337011c4caf9ce08d8e0e7999f31db"
+    },
+    {
+      "argv": [
+        "node",
+        "acceptance/hidden/behaviour-check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-jYE0Kw/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 149,
+      "stdoutDigest": "sha256:a78df5c03558ce9e17f74beba3ffc18c7aa318fc521cbfa0cb2ac4bab7d26949",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-jYE0Kw/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 3260,
+      "stdoutDigest": "sha256:ae253eae552b7a70b154bbdb71607161aca14a10968939b8e944eb593714c2b1",
+      "stderrDigest": "sha256:371fe791443c178811c6f801fa5088fb37337011c4caf9ce08d8e0e7999f31db"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 36,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+        "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-nygqaO/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 453,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:01433baca6883730edd1b08bbd9e6ff845a59e635d37bece4fa72c79e40ae5aa"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-nygqaO/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 76,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-nygqaO/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 30,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-nygqaO/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 24,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-nygqaO/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 79,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-nygqaO/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 40,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-nygqaO/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 25,
+      "stdoutDigest": "sha256:bb05ae417635ba57f5b3ec0e01b5b38dbd0225001f9ed152da06f43d4ceb1ac9",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-nygqaO/0a894110b470.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-nygqaO/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 30,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-23T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-nygqaO/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 6229,
+      "stdoutDigest": "sha256:06bcc0a42a1d1253e95b0188db009977e40350576c2159c125acf16c46f90d17",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "sh",
+        "-c",
+        "node acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-nygqaO/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 158,
+      "stdoutDigest": "sha256:d81e5c2040ab0ac064d24c7c5b7c5a9ad59c1ff14fe0b7af13028cc7787f9b4a",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-nygqaO/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 3482,
+      "stdoutDigest": "sha256:6d6a82b74b13a89341659db1ad93260d331627d4a22bd7f11b8f4fd4eed28019",
+      "stderrDigest": "sha256:371fe791443c178811c6f801fa5088fb37337011c4caf9ce08d8e0e7999f31db"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 29,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+        "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-T1PYmr/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 377,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:01433baca6883730edd1b08bbd9e6ff845a59e635d37bece4fa72c79e40ae5aa"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-T1PYmr/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 69,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-T1PYmr/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 30,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-T1PYmr/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 30,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-T1PYmr/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 48,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-T1PYmr/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 80,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-T1PYmr/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 29,
+      "stdoutDigest": "sha256:6f416365b8f1f77f94369f47780adbc5a5da0d1ec80134d8382dca62fc3a0036",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-T1PYmr/7962217b966b.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-T1PYmr/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 35,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-23T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-T1PYmr/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 8266,
+      "stdoutDigest": "sha256:5fb6651f11470879f941a9fdc240fe5c2dd46857547c5d626c2927c51cf3bde0",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "3db3ef33e409a0bc0fdaf255e46c908b00e93bc2:test/plugins/removeScripts.11.svg.txt"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 19,
+      "stdoutDigest": "sha256:43266cc2faad4d861eb5c257e826336581b8962e2c66d763f99f862bb73c85cb",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npx",
+        "vitest",
+        "run",
+        "test/plugins/_index.test.js"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-T1PYmr/checkout",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 2045,
+      "stdoutDigest": "sha256:4891127adf2fd7bebc8e3ae23df476d3329ee75b3cc748171c0d6e1cb3851e5f",
+      "stderrDigest": "sha256:9b00fcc3034c1e4cb7394c97a67c327c6c5939185d2f41f748a8c514b874d244"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 17,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+        "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-5IfFrD/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 200,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:01433baca6883730edd1b08bbd9e6ff845a59e635d37bece4fa72c79e40ae5aa"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-5IfFrD/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 56,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-5IfFrD/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 19,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-5IfFrD/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 17,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-5IfFrD/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 20,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-5IfFrD/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 49,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-5IfFrD/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 20,
+      "stdoutDigest": "sha256:c92edd0466edec7f492a4ccbbb67b9a481cdf9a84beb000ec45b19551f4d5162",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-5IfFrD/7962217b966b.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-5IfFrD/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 24,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-23T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-5IfFrD/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 3450,
+      "stdoutDigest": "sha256:a9f444282eb091fe2ab2693d28ab6d682c4df2e080d084e52b294bdc8a12fe13",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "sh",
+        "-c",
+        "node acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-5IfFrD/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 117,
+      "stdoutDigest": "sha256:d81e5c2040ab0ac064d24c7c5b7c5a9ad59c1ff14fe0b7af13028cc7787f9b4a",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-5IfFrD/checkout",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 2509,
+      "stdoutDigest": "sha256:7d6063039385446b8bc1842c727364b9f1881466700901f4c6d3820968586cca",
+      "stderrDigest": "sha256:9b00fcc3034c1e4cb7394c97a67c327c6c5939185d2f41f748a8c514b874d244"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 15,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+        "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-7dVR0I/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 195,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:01433baca6883730edd1b08bbd9e6ff845a59e635d37bece4fa72c79e40ae5aa"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-7dVR0I/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 43,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-7dVR0I/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 14,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-7dVR0I/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-7dVR0I/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 39,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-7dVR0I/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 63,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-7dVR0I/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 16,
+      "stdoutDigest": "sha256:a29dc21efa6f607d238d6066d9bc45ae05852ca044c665caa755250e7776a52d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-7dVR0I/31ab88287104.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-7dVR0I/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 17,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-23T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-7dVR0I/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 3257,
+      "stdoutDigest": "sha256:a9f444282eb091fe2ab2693d28ab6d682c4df2e080d084e52b294bdc8a12fe13",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "3db3ef33e409a0bc0fdaf255e46c908b00e93bc2:test/plugins/removeScripts.11.svg.txt"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 22,
+      "stdoutDigest": "sha256:43266cc2faad4d861eb5c257e826336581b8962e2c66d763f99f862bb73c85cb",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npx",
+        "vitest",
+        "run",
+        "test/plugins/_index.test.js"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-7dVR0I/checkout",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 1308,
+      "stdoutDigest": "sha256:ac42666c41e9945401194e48fbe81433a1c0fc1e9c04e934b7ed4ac5f2ea419f",
+      "stderrDigest": "sha256:2695b13a439b4dbb9178417dca14815bfc8f4b8e68f48cbbc8d2f59698275843"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 14,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+        "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-jU4WRq/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 189,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:01433baca6883730edd1b08bbd9e6ff845a59e635d37bece4fa72c79e40ae5aa"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-jU4WRq/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 51,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-jU4WRq/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 14,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-jU4WRq/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 14,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-jU4WRq/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 39,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-jU4WRq/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 76,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-jU4WRq/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:abc945a4acf8f239fb54f2a879fd9f73ffa6999b7fe652e3a969fa0b03387d54",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-jU4WRq/31ab88287104.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-jU4WRq/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 15,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-23T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-jU4WRq/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 3202,
+      "stdoutDigest": "sha256:a9f444282eb091fe2ab2693d28ab6d682c4df2e080d084e52b294bdc8a12fe13",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "sh",
+        "-c",
+        "node acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-jU4WRq/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 126,
+      "stdoutDigest": "sha256:d81e5c2040ab0ac064d24c7c5b7c5a9ad59c1ff14fe0b7af13028cc7787f9b4a",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-jU4WRq/checkout",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 2590,
+      "stdoutDigest": "sha256:fdced899979556dbfa8e72aacb23c43f57a5da2d963bd0a196c0f909f23af132",
+      "stderrDigest": "sha256:2695b13a439b4dbb9178417dca14815bfc8f4b8e68f48cbbc8d2f59698275843"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 17,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+        "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-1bhJ42/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 265,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:01433baca6883730edd1b08bbd9e6ff845a59e635d37bece4fa72c79e40ae5aa"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-1bhJ42/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 53,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-1bhJ42/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 19,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-1bhJ42/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 18,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-1bhJ42/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 59,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-1bhJ42/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 58,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-1bhJ42/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 16,
+      "stdoutDigest": "sha256:ff6332626cdf380c9d965e07f242e005eed1020fc75cacbfb87236ff15090c78",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-1bhJ42/0b7cadf50149.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-1bhJ42/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 18,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-23T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-1bhJ42/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 3169,
+      "stdoutDigest": "sha256:a9f444282eb091fe2ab2693d28ab6d682c4df2e080d084e52b294bdc8a12fe13",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "3db3ef33e409a0bc0fdaf255e46c908b00e93bc2:test/plugins/removeScripts.11.svg.txt"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 12,
+      "stdoutDigest": "sha256:43266cc2faad4d861eb5c257e826336581b8962e2c66d763f99f862bb73c85cb",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npx",
+        "vitest",
+        "run",
+        "test/plugins/_index.test.js"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-1bhJ42/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 1508,
+      "stdoutDigest": "sha256:2f97014028ebcba46b115344ef92e9ece485b498a93a985f530d9b7408f720ef",
+      "stderrDigest": "sha256:371fe791443c178811c6f801fa5088fb37337011c4caf9ce08d8e0e7999f31db"
+    },
+    {
+      "argv": [
+        "node",
+        "acceptance/hidden/behaviour-check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-1bhJ42/checkout",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 124,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:2031a8d36e0803a82bd2dc97204cc05062dcee0ed5dca859f9af2b8c5d9c859d"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 19,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+        "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-nMKXDy/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 183,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:01433baca6883730edd1b08bbd9e6ff845a59e635d37bece4fa72c79e40ae5aa"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-nMKXDy/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 45,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-nMKXDy/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 20,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-nMKXDy/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 15,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-nMKXDy/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 45,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-nMKXDy/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 62,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-nMKXDy/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 16,
+      "stdoutDigest": "sha256:f9430e1608f1349f0a124a242ff9b681168649afde7d6910b9cdd645f4c7a0b4",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-nMKXDy/0b7cadf50149.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-nMKXDy/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 14,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-23T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-nMKXDy/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 3150,
+      "stdoutDigest": "sha256:a9f444282eb091fe2ab2693d28ab6d682c4df2e080d084e52b294bdc8a12fe13",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "sh",
+        "-c",
+        "node acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-nMKXDy/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 94,
+      "stdoutDigest": "sha256:d81e5c2040ab0ac064d24c7c5b7c5a9ad59c1ff14fe0b7af13028cc7787f9b4a",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-nMKXDy/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2589,
+      "stdoutDigest": "sha256:f73f8bfc966329f8e27035f9631f6433edf6e2912adf1542b94320acd8d7ad9a",
+      "stderrDigest": "sha256:371fe791443c178811c6f801fa5088fb37337011c4caf9ce08d8e0e7999f31db"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 56,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+        "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-2Wk2Vm/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 193,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:01433baca6883730edd1b08bbd9e6ff845a59e635d37bece4fa72c79e40ae5aa"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-2Wk2Vm/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 43,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-2Wk2Vm/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 16,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-2Wk2Vm/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 15,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-2Wk2Vm/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 65,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-2Wk2Vm/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 72,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-2Wk2Vm/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 16,
+      "stdoutDigest": "sha256:7b9a4eb7907a8e8812b3cda1a0a073359f37006487a8dc044996e5a23c7b5906",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-2Wk2Vm/1e017f9ff2fa.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-2Wk2Vm/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 17,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-23T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-2Wk2Vm/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 3690,
+      "stdoutDigest": "sha256:34ea800792256823bb26b71b56362e8705350eb401e309a804b91b90dc5371ad",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "3db3ef33e409a0bc0fdaf255e46c908b00e93bc2:test/plugins/removeScripts.11.svg.txt"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 13,
+      "stdoutDigest": "sha256:43266cc2faad4d861eb5c257e826336581b8962e2c66d763f99f862bb73c85cb",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npx",
+        "vitest",
+        "run",
+        "test/plugins/_index.test.js"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-2Wk2Vm/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 1392,
+      "stdoutDigest": "sha256:23c7ca744286b6996412997dc21b46fffb4d3df2f7e824f020c96cb6d365357b",
+      "stderrDigest": "sha256:371fe791443c178811c6f801fa5088fb37337011c4caf9ce08d8e0e7999f31db"
+    },
+    {
+      "argv": [
+        "node",
+        "acceptance/hidden/behaviour-check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-2Wk2Vm/checkout",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 121,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e263e44e5122637e7f0a575bd7e2037e9c264a1aa7dab1b81859a9dbec7d6193"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 14,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+        "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-r3bUnk/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 159,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:01433baca6883730edd1b08bbd9e6ff845a59e635d37bece4fa72c79e40ae5aa"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-r3bUnk/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 34,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-r3bUnk/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-r3bUnk/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 12,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-r3bUnk/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 46,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-r3bUnk/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 42,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-r3bUnk/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:a7122692c4016cd7b1049066caee9a8313f96a111629f0253f12d674372bbecb",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-r3bUnk/1e017f9ff2fa.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-r3bUnk/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 16,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-23T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-r3bUnk/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 3341,
+      "stdoutDigest": "sha256:a9f444282eb091fe2ab2693d28ab6d682c4df2e080d084e52b294bdc8a12fe13",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "sh",
+        "-c",
+        "node acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-r3bUnk/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 102,
+      "stdoutDigest": "sha256:d81e5c2040ab0ac064d24c7c5b7c5a9ad59c1ff14fe0b7af13028cc7787f9b4a",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-r3bUnk/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2490,
+      "stdoutDigest": "sha256:8bbec407db74b3e8284b179c0139f5cbffddf0c355ffc4f6515a569621db06c8",
+      "stderrDigest": "sha256:371fe791443c178811c6f801fa5088fb37337011c4caf9ce08d8e0e7999f31db"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+        "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-F5gfQO/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 132,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:01433baca6883730edd1b08bbd9e6ff845a59e635d37bece4fa72c79e40ae5aa"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-F5gfQO/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 39,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-F5gfQO/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 12,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-F5gfQO/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 12,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-F5gfQO/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 32,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-F5gfQO/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 39,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-F5gfQO/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 12,
+      "stdoutDigest": "sha256:0611d12a07450b8a6ca8d7d0feb3bb73951245efdbb987bda1a08fcd771f7f93",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-F5gfQO/cc2f03aec481.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-F5gfQO/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 12,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-23T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-F5gfQO/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 3344,
+      "stdoutDigest": "sha256:a9f444282eb091fe2ab2693d28ab6d682c4df2e080d084e52b294bdc8a12fe13",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "3db3ef33e409a0bc0fdaf255e46c908b00e93bc2:test/plugins/removeScripts.11.svg.txt"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 14,
+      "stdoutDigest": "sha256:43266cc2faad4d861eb5c257e826336581b8962e2c66d763f99f862bb73c85cb",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npx",
+        "vitest",
+        "run",
+        "test/plugins/_index.test.js"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-F5gfQO/checkout",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 1338,
+      "stdoutDigest": "sha256:515223b45115a51782c40a759150ddbebde0e7b579409def490ec36d9c46fd63",
+      "stderrDigest": "sha256:28652efbda5d3b1ad2593bf128bdf3538f54bd34b4e04eda62baf43d6acaa37e"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+        "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-IQoToy/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 141,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:01433baca6883730edd1b08bbd9e6ff845a59e635d37bece4fa72c79e40ae5aa"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-IQoToy/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 34,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-IQoToy/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 12,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-IQoToy/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 9,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-IQoToy/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 32,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-IQoToy/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 38,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-IQoToy/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 17,
+      "stdoutDigest": "sha256:8e15f4623e19ffa3d9d5e7f0409c35dedabe31f8bdcd741f9588c3047b7bbaad",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-IQoToy/cc2f03aec481.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-IQoToy/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 15,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-23T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-IQoToy/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2856,
+      "stdoutDigest": "sha256:a9f444282eb091fe2ab2693d28ab6d682c4df2e080d084e52b294bdc8a12fe13",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "sh",
+        "-c",
+        "node acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-IQoToy/checkout",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 99,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:047926bc2a61bf4eac765267116a4a22fbe5e4ccb39fcce4534ae6da38393e67"
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-IQoToy/checkout",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 2261,
+      "stdoutDigest": "sha256:ac28609e66e3fe25fb1138f3a4a482c9c31441ff767d4bb82b62ad4dd32c970a",
+      "stderrDigest": "sha256:28652efbda5d3b1ad2593bf128bdf3538f54bd34b4e04eda62baf43d6acaa37e"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+        "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-1CxVwu/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 127,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:01433baca6883730edd1b08bbd9e6ff845a59e635d37bece4fa72c79e40ae5aa"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-1CxVwu/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 33,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-1CxVwu/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-1CxVwu/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 10,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-1CxVwu/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 29,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-1CxVwu/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 55,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-1CxVwu/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 12,
+      "stdoutDigest": "sha256:7d65e96bcb429cfd5a48e0fbbeef62b6804bcc187a644b604163682897f05405",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-1CxVwu/d2ea1e3af733.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-1CxVwu/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 12,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-23T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-1CxVwu/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 3121,
+      "stdoutDigest": "sha256:a9f444282eb091fe2ab2693d28ab6d682c4df2e080d084e52b294bdc8a12fe13",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "3db3ef33e409a0bc0fdaf255e46c908b00e93bc2:test/plugins/removeScripts.11.svg.txt"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 12,
+      "stdoutDigest": "sha256:43266cc2faad4d861eb5c257e826336581b8962e2c66d763f99f862bb73c85cb",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npx",
+        "vitest",
+        "run",
+        "test/plugins/_index.test.js"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-1CxVwu/checkout",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 1450,
+      "stdoutDigest": "sha256:3b122a4a10c8c91cd0dbc1d6b69df8015b0df6ba7f95d351959dbfda9c705acc",
+      "stderrDigest": "sha256:3c2a7af2840b1afbb75820fcc840023942eb76596ad43dd1f19d98bf016d7da4"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base^{commit}"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 24,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "comparison/svgo-bugfix-remove-scripts-anchor-bypass/base",
+        "file:///Users/brad/.cache/swarm-comparison/mirrors/svg__svgo.git",
+        "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-NI3I1t/checkout"
+      ],
+      "cwd": "/Users/brad/.cache/swarm-comparison",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 161,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:01433baca6883730edd1b08bbd9e6ff845a59e635d37bece4fa72c79e40ae5aa"
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--quiet",
+        "-b",
+        "work"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-NI3I1t/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 38,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "remote",
+        "remove",
+        "origin"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-NI3I1t/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 15,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-NI3I1t/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 13,
+      "stdoutDigest": "sha256:012b00db93e63348c26ea9524b886af7991241be44a4e9a8d2b169337364609d",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "--force",
+        "acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-NI3I1t/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 33,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "user.name=comparison",
+        "-c",
+        "user.email=comparison@localhost",
+        "commit",
+        "-qm",
+        "Visible acceptance check for the task"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-NI3I1t/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 41,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-NI3I1t/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 11,
+      "stdoutDigest": "sha256:56097241224bb2aeb1336c1b5559ca8c984e94377af8af2a8e7112dba9eb4445",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--whitespace=nowarn",
+        "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-NI3I1t/d2ea1e3af733.patch"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-NI3I1t/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 17,
+      "stdoutDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--before=2026-10-23T00:00:00.000Z"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-NI3I1t/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 2482,
+      "stdoutDigest": "sha256:27edd5158b90e63f8bf33ff5121f7996550fc1eadbeba0c7b678c2505b8e9a85",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "sh",
+        "-c",
+        "node acceptance/visible/check.mjs"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-NI3I1t/checkout",
+      "exitCode": 0,
+      "signal": null,
+      "wallMs": 94,
+      "stdoutDigest": "sha256:d81e5c2040ab0ac064d24c7c5b7c5a9ad59c1ff14fe0b7af13028cc7787f9b4a",
+      "stderrDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "cwd": "/Users/brad/swarm-comparison-work/visible-svgo-bugfix-remove-scripts-anchor-bypass-NI3I1t/checkout",
+      "exitCode": 1,
+      "signal": null,
+      "wallMs": 2230,
+      "stdoutDigest": "sha256:861701328d7d3c42b83bdd905f11f78497b6fb74af5ce6acb4a7d690d93f2b64",
+      "stderrDigest": "sha256:3c2a7af2840b1afbb75820fcc840023942eb76596ad43dd1f19d98bf016d7da4"
+    }
+  ]
+}

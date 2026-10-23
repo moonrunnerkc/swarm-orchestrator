@@ -1,0 +1,94 @@
+diff --git a/src/renderer.ts b/src/renderer.ts
+index de2bd1a..f548af4 100644
+--- a/src/renderer.ts
++++ b/src/renderer.ts
+@@ -215,8 +215,14 @@ class Renderer {
+     //
+     // Only closing hidden tokens count, to not break on other hidden ones.
+     //
+-    if (token.block && token.nesting !== -1 && idx &&
+-        tokens[idx - 1].hidden && tokens[idx - 1].nesting === -1) {
++    // Hidden tokens without nesting (`reference_definition`) are skipped here
++    // and below, or they would break line feeds around neighbour blocks.
++    //
++    let prev = idx - 1
++    while (prev >= 0 && tokens[prev].hidden && tokens[prev].nesting === 0) { prev-- }
++
++    if (token.block && token.nesting !== -1 && prev >= 0 &&
++        tokens[prev].hidden && tokens[prev].nesting === -1) {
+       result += '\n'
+     }
+ 
+@@ -237,8 +243,11 @@ class Renderer {
+       needLf = true
+ 
+       if (token.nesting === 1) {
+-        if (idx + 1 < tokens.length) {
+-          const nextToken = tokens[idx + 1]
++        let next = idx + 1
++        while (next < tokens.length && tokens[next].hidden && tokens[next].nesting === 0) { next++ }
++
++        if (next < tokens.length) {
++          const nextToken = tokens[next]
+ 
+           if (nextToken.type === 'inline' || nextToken.hidden) {
+           // Block-level tag containing an inline tag.
+diff --git a/src/rules_block/reference.ts b/src/rules_block/reference.ts
+index a79f472..5cbb289 100644
+--- a/src/rules_block/reference.ts
++++ b/src/rules_block/reference.ts
+@@ -208,6 +208,16 @@ export default function reference (state: StateBlock, startLine: number, _endLin
+     state.env.references[label] = { title, href }
+   }
+ 
++  // Marks the place definition took in the source. Renders to nothing,
++  // href/title stay in `env.references`.
++  const token = state.push('reference_definition', '', 0)
++  token.map = [startLine, nextLine]
++  token.hidden = true
++
++  const meta: Record<string, unknown> = Object.create(null)
++  meta.label = label
++  token.meta = meta
++
+   state.line = nextLine
+   return true
+ }
+diff --git a/test/markdown-it/misc.test.mjs b/test/markdown-it/misc.test.mjs
+index 19bdea8..d076b24 100644
+--- a/test/markdown-it/misc.test.mjs
++++ b/test/markdown-it/misc.test.mjs
+@@ -213,6 +213,33 @@ describe('Misc', function () {
+     assert.deepEqual(inlineTokens[1].children[0].meta, expectedMeta)
+   })
+ 
++  it('Should strip reference definition tokens by default', function () {
++    const md = markdownit()
++    const src = '[foo]: /url\n\ntext'
++
++    assert.deepEqual(md.parse(src, {}).filter(t => t.type === 'reference_definition'), [])
++
++    md.core.ruler.disable('strip_references')
++    const tokens = md.parse(src, {}).filter(t => t.type === 'reference_definition')
++    const expectedMeta = Object.create(null)
++    expectedMeta.label = 'FOO'
++
++    assert.strictEqual(tokens.length, 1)
++    assert.deepEqual(tokens[0].map, [0, 1])
++    assert.deepEqual(tokens[0].meta, expectedMeta)
++  })
++
++  it('Should not affect line breaks with reference definition tokens', function () {
++    const md = markdownit()
++    md.core.ruler.disable('strip_references')
++
++    assert.strictEqual(md.render('- [foo]: /url'), '<ul>\n<li></li>\n</ul>\n')
++    assert.strictEqual(md.render('> [foo]: /url'), '<blockquote></blockquote>\n')
++    assert.strictEqual(md.render('> [foo]: /url\n> bar'), '<blockquote>\n<p>bar</p>\n</blockquote>\n')
++    assert.strictEqual(md.render('- [foo]: /url\n\n  > bar'),
++      '<ul>\n<li>\n<blockquote>\n<p>bar</p>\n</blockquote>\n</li>\n</ul>\n')
++  })
++
+   it('Should replace NULL characters', function () {
+     const md = markdownit()
+ 

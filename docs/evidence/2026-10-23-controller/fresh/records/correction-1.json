@@ -1,0 +1,17 @@
+{
+  "at": "2026-10-23T15:53:22.819Z",
+  "stopped": {
+    "launch": {
+      "task": "svgo-bugfix-remove-scripts-anchor-bypass",
+      "arm": "swarm-direct",
+      "order": 3,
+      "sample": 1
+    },
+    "outcome": "setup-failure",
+    "class": "configuration",
+    "message": "the swarm arm printed nothing and exited 1; its runtime never started"
+  },
+  "correction": "svgo declares packageManager pnpm@10.34.5 and its build script calls pnpm; with pnpm absent from the launch PATH Swarm's goal setup refused to spend model calls (a required check, build, could not run), so the launch stopped with no inference. The harness now provisions the declared package manager (npm or pnpm) at its pinned version and puts it first on every arm's and every scorer's PATH (commit be57eb3cd). Same arms, tasks, order and budgets; the three launches already scored are unaffected (markdown-it declares no package manager).",
+  "harnessBefore": "sha256:214a2d1d289b3141b85fe70faad1838e8172744c68ca5b878c28157bfa77c482",
+  "harnessAfter": "sha256:1cf4eb012046975de671314b6dd76b780d8354dba2a0d621408292fb9153fa67"
+}

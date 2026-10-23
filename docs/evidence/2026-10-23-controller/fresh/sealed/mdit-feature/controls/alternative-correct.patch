@@ -1,0 +1,152 @@
+diff --git a/src/parser_core.ts b/src/parser_core.ts
+index 3209515..4cb39ef 100644
+--- a/src/parser_core.ts
++++ b/src/parser_core.ts
+@@ -4,6 +4,7 @@ import StateCore from './rules_core/state_core.ts'
+ import r_normalize from './rules_core/normalize.ts'
+ import r_block from './rules_core/block.ts'
+ import r_inline from './rules_core/inline.ts'
++import r_strip_references from './rules_core/strip_references.ts'
+ import r_linkify from './rules_core/linkify.ts'
+ import r_replacements from './rules_core/replacements.ts'
+ import r_smartquotes from './rules_core/smartquotes.ts'
+@@ -15,6 +16,7 @@ const _rules: Array<[
+ ]> = [
+   ['normalize', r_normalize],
+   ['block', r_block],
++  ['strip_references', r_strip_references],
+   ['inline', r_inline],
+   ['linkify', r_linkify],
+   ['replacements', r_replacements],
+diff --git a/src/presets/commonmark.ts b/src/presets/commonmark.ts
+index 687cd96..ff6f2e8 100644
+--- a/src/presets/commonmark.ts
++++ b/src/presets/commonmark.ts
+@@ -49,6 +49,7 @@ export default {
+       rules: [
+         'normalize',
+         'block',
++        'strip_references',
+         'inline',
+         'text_join'
+       ]
+diff --git a/src/presets/zero.ts b/src/presets/zero.ts
+index 7a11099..4235106 100644
+--- a/src/presets/zero.ts
++++ b/src/presets/zero.ts
+@@ -50,6 +50,7 @@ export default {
+       rules: [
+         'normalize',
+         'block',
++        'strip_references',
+         'inline',
+         'text_join'
+       ]
+diff --git a/src/renderer.ts b/src/renderer.ts
+index de2bd1a..384d154 100644
+--- a/src/renderer.ts
++++ b/src/renderer.ts
+@@ -144,6 +144,16 @@ default_rules.html_inline = function (tokens: Token[], idx: number): string {
+  *
+  * Creates new renderer instance and fills {@link Renderer.rules} with defaults.
+  */
++// The nearest token in one direction that is not a hidden marker without
++// nesting (a reference_definition): such markers render to nothing and must
++// not change the line feeds between the blocks around them.
++function visibleNeighbour (tokens: Token[], idx: number, step: 1 | -1): Token | undefined {
++  for (let i = idx + step; i >= 0 && i < tokens.length; i += step) {
++    if (!(tokens[i].hidden && tokens[i].nesting === 0)) { return tokens[i] }
++  }
++  return undefined
++}
++
+ class Renderer {
+   /**
+    * Contains render rules for tokens. Can be updated and extended.
+@@ -215,8 +225,9 @@ class Renderer {
+     //
+     // Only closing hidden tokens count, to not break on other hidden ones.
+     //
+-    if (token.block && token.nesting !== -1 && idx &&
+-        tokens[idx - 1].hidden && tokens[idx - 1].nesting === -1) {
++    const previous = visibleNeighbour(tokens, idx, -1)
++    if (token.block && token.nesting !== -1 && previous &&
++        previous.hidden && previous.nesting === -1) {
+       result += '\n'
+     }
+ 
+@@ -237,8 +248,8 @@ class Renderer {
+       needLf = true
+ 
+       if (token.nesting === 1) {
+-        if (idx + 1 < tokens.length) {
+-          const nextToken = tokens[idx + 1]
++        const nextToken = visibleNeighbour(tokens, idx, 1)
++        if (nextToken) {
+ 
+           if (nextToken.type === 'inline' || nextToken.hidden) {
+           // Block-level tag containing an inline tag.
+diff --git a/src/rules_block/reference.ts b/src/rules_block/reference.ts
+index a79f472..d30bd88 100644
+--- a/src/rules_block/reference.ts
++++ b/src/rules_block/reference.ts
+@@ -208,6 +208,15 @@ export default function reference (state: StateBlock, startLine: number, _endLin
+     state.env.references[label] = { title, href }
+   }
+ 
++  // Every recognised definition leaves a hidden marker where it stood (a later
++  // duplicate too); the first definition still wins in env.references.
++  const definition = state.push('reference_definition', '', 0)
++  definition.hidden = true
++  definition.map = [startLine, nextLine]
++  const meta: Record<string, unknown> = Object.create(null)
++  meta.label = label
++  definition.meta = meta
++
+   state.line = nextLine
+   return true
+ }
+diff --git a/src/rules_core/strip_references.ts b/src/rules_core/strip_references.ts
+new file mode 100644
+index 0000000..2cd55c9
+--- /dev/null
++++ b/src/rules_core/strip_references.ts
+@@ -0,0 +1,11 @@
++// Removes the reference_definition markers the block parser leaves, so the
++// default token stream is the one plugins have always seen. Disable this
++// rule to keep them.
++
++import type StateCore from './state_core.ts'
++
++export default function strip_references (state: StateCore): void {
++  if (!state.tokens.some(token => token.type === 'reference_definition')) { return }
++
++  state.tokens = state.tokens.filter(token => token.type !== 'reference_definition')
++}
+diff --git a/test/markdown-it/misc.test.mjs b/test/markdown-it/misc.test.mjs
+index 19bdea8..735b693 100644
+--- a/test/markdown-it/misc.test.mjs
++++ b/test/markdown-it/misc.test.mjs
+@@ -213,6 +213,22 @@ describe('Misc', function () {
+     assert.deepEqual(inlineTokens[1].children[0].meta, expectedMeta)
+   })
+ 
++  it('Should keep reference definition markers only when asked', function () {
++    const src = 'a\n\n[foo]:\n/url\n"title"\n[foo]: /other\n\nb'
++    const md = markdownit()
++
++    assert.strictEqual(md.parse(src, {}).some(t => t.type === 'reference_definition'), false)
++
++    md.core.ruler.disable('strip_references')
++    const env = {}
++    const defs = md.parse(src, env).filter(t => t.type === 'reference_definition')
++
++    assert.deepEqual(defs.map(t => t.map), [[2, 5], [5, 6]])
++    assert.deepEqual(defs.map(t => t.meta.label), ['FOO', 'FOO'])
++    assert.strictEqual(env.references.FOO.href, '/url')
++    assert.strictEqual(md.render('> [foo]: /url\n> bar'), markdownit().render('> [foo]: /url\n> bar'))
++  })
++
+   it('Should replace NULL characters', function () {
+     const md = markdownit()
+ 

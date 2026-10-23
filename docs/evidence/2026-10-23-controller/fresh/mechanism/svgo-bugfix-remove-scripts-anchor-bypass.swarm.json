@@ -1,0 +1,106 @@
+{
+  "task": "svgo-bugfix-remove-scripts-anchor-bypass",
+  "sample": 1,
+  "arm": "swarm",
+  "outcome": "scored",
+  "scores": {
+    "visible": true,
+    "hidden": "fail",
+    "staticPassed": true
+  },
+  "productVerdict": true,
+  "wallMs": 475281,
+  "tokens": 2522158,
+  "decisions": [
+    {
+      "rule": "adaptive-decision-v2",
+      "phase": "decided",
+      "loop": "task",
+      "step": 16,
+      "action": "continue",
+      "chosenBy": "edits-landed-no-open-failure",
+      "reason": null,
+      "notice": false,
+      "carriedOut": null,
+      "diagnosis": null,
+      "spent": {
+        "callsWithUnknownUsage": 0,
+        "steps": 0,
+        "tokensUsed": 0,
+        "wallMs": 56
+      },
+      "nextWorkerEdit": {
+        "sequence": 520,
+        "paths": [
+          "lib/svgo/tools.js"
+        ]
+      }
+    },
+    {
+      "rule": "adaptive-decision-v2",
+      "phase": "decided",
+      "loop": "attempt 1",
+      "step": 16,
+      "action": "diagnose",
+      "chosenBy": "no-edit-at-decision-point",
+      "reason": null,
+      "notice": true,
+      "carriedOut": null,
+      "diagnosis": {
+        "actionable": true,
+        "locations": [
+          "plugins/removeScripts.js:105",
+          "lib/svgo/tools.js:198",
+          "test/plugins/removeScripts.11.svg.txt:1"
+        ],
+        "action": null,
+        "answer": "{\n  \"hypotheses\": [\n    {\n      \"statement\": \"Bug 1 (namespace-aware element): In plugins/removeScripts.js exit handler, isNamespaceAwareElem checks node.name against local name 'a' with targetNamespaces=[SVG_NAMESPACE]. When the element is <svg:a>, node.name in the AST includes the prefix (i.e., 'svg:a'), so isNamespaceAwareElem correctly identifies it. The actual bug may be that `isNamespaceAwareElem(node.name, 'a', ...)` only looks at the local name after split on ':', but when the namespace declaration has the same URL as xmlns, multiple prefixes can resolve to the same target namespace — "
+      },
+      "spent": {
+        "callsWithUnknownUsage": 0,
+        "steps": 5,
+        "tokensUsed": 42393,
+        "wallMs": 44604
+      },
+      "nextWorkerEdit": {
+        "sequence": 520,
+        "paths": [
+          "lib/svgo/tools.js"
+        ]
+      }
+    },
+    {
+      "rule": "adaptive-decision-v2",
+      "phase": "followed-up",
+      "loop": "attempt 1",
+      "step": 25,
+      "action": "none",
+      "chosenBy": null,
+      "reason": "the intervention's intended outcome occurred",
+      "notice": false,
+      "carriedOut": null,
+      "diagnosis": null,
+      "spent": {
+        "callsWithUnknownUsage": 0,
+        "steps": 0,
+        "tokensUsed": 0,
+        "wallMs": 1
+      },
+      "nextWorkerEdit": {
+        "sequence": 547,
+        "paths": [
+          "lib/svgo/tools.js"
+        ]
+      }
+    }
+  ],
+  "rewriteHolds": [],
+  "batchEdits": [],
+  "stillOccursNotes": 0,
+  "shellEffects": {
+    "measured": 45,
+    "unmeasured": 0,
+    "changedTree": []
+  },
+  "followUps": []
+}

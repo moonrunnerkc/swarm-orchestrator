@@ -1,0 +1,289 @@
+{
+  "task": "markdown-it-feature-reference-definition-token",
+  "sample": 2,
+  "arm": "swarm",
+  "outcome": "scored",
+  "scores": {
+    "visible": true,
+    "hidden": "fail",
+    "staticPassed": true
+  },
+  "productVerdict": false,
+  "wallMs": 613856,
+  "tokens": 4029727,
+  "decisions": [
+    {
+      "rule": "adaptive-decision-v2",
+      "phase": "decided",
+      "loop": "task",
+      "step": 16,
+      "action": "diagnose",
+      "chosenBy": "no-edit-at-decision-point",
+      "reason": null,
+      "notice": true,
+      "carriedOut": null,
+      "diagnosis": {
+        "actionable": true,
+        "locations": [
+          "src/rules_block/reference.ts:1",
+          "src/token.ts:1",
+          "src/rules_inline/link.ts:1"
+        ],
+        "action": null,
+        "answer": "{\n  \"question\": \"What exact logic does reference.ts use to parse a link reference definition, and how should the token's meta be structured?\",\n  \"hypotheses\": [\n    {\n      \"statement\": \"reference.ts returns boolean (match/no-match) and uses env.references directly; the parsing logic for label normalization and title extraction is already in place or duplicated.\",\n      \"predicts\": {\n        \"outputIncludes\": []\n      }\n    },\n    {\n      \"statement\": \"reference.ts has dedicated helper functions or regex patterns for parsing that I can reference to build the meta object correctly.\",\n      \"pre"
+      },
+      "spent": {
+        "callsWithUnknownUsage": 0,
+        "steps": 1,
+        "tokensUsed": 1971,
+        "wallMs": 4652
+      },
+      "nextWorkerEdit": {
+        "sequence": 179,
+        "paths": [
+          "src/rules_block/reference.ts"
+        ]
+      }
+    },
+    {
+      "rule": "adaptive-decision-v2",
+      "phase": "followed-up",
+      "loop": "task",
+      "step": 21,
+      "action": "none",
+      "chosenBy": null,
+      "reason": "the intervention's intended outcome occurred",
+      "notice": false,
+      "carriedOut": null,
+      "diagnosis": null,
+      "spent": {
+        "callsWithUnknownUsage": 0,
+        "steps": 0,
+        "tokensUsed": 0,
+        "wallMs": 0
+      },
+      "nextWorkerEdit": {
+        "sequence": 204,
+        "paths": [
+          "src/presets/default.ts"
+        ]
+      }
+    },
+    {
+      "rule": "adaptive-decision-v2",
+      "phase": "decided",
+      "loop": "attempt 1",
+      "step": 16,
+      "action": "diagnose",
+      "chosenBy": "no-edit-at-decision-point",
+      "reason": null,
+      "notice": true,
+      "carriedOut": null,
+      "diagnosis": {
+        "actionable": true,
+        "locations": [
+          "src/rules_block/reference.ts:1",
+          "src/presets/zero.ts:1",
+          "test/markdown-it/misc.test.mjs:450"
+        ],
+        "action": null,
+        "answer": "{\n\"question\": \"Does the current code create a `strip_references.ts` file and register the rule in all presets?\",\n\"hypotheses\": [\n{\n\"statement\": \"H1: strip_references.ts exists but it's not registered in all presets\",\n\"predicts\": {\n\"exitCode\": 0,\n\"outputIncludes\": [\"✖\"]\n}\n},\n{\n\"statement\": \"H2: The task acceptance check (visible/hidden tokens) fails because strip_references is not properly removing the new token type\",\n\"predicts\": {\n\"exitCode\": 0,\n\"outputIncludes\": [\"✖\"]\n}\n},\n{\n\"statement\": \"H3: misc.test.mjs test for reference definition tokens has errors or expects incorrect data\",\n\"predicts\""
+      },
+      "spent": {
+        "callsWithUnknownUsage": 0,
+        "steps": 1,
+        "tokensUsed": 3570,
+        "wallMs": 9753
+      },
+      "nextWorkerEdit": {
+        "sequence": 595,
+        "paths": [
+          "src/presets/default.ts"
+        ]
+      }
+    },
+    {
+      "rule": "adaptive-decision-v2",
+      "phase": "followed-up",
+      "loop": "attempt 1",
+      "step": 21,
+      "action": "look-again",
+      "chosenBy": null,
+      "reason": "the outcome has not occurred, but the worker is reading or running something new",
+      "notice": false,
+      "carriedOut": null,
+      "diagnosis": null,
+      "spent": {
+        "callsWithUnknownUsage": 0,
+        "steps": 0,
+        "tokensUsed": 0,
+        "wallMs": 0
+      },
+      "nextWorkerEdit": {
+        "sequence": 595,
+        "paths": [
+          "src/presets/default.ts"
+        ]
+      }
+    },
+    {
+      "rule": "adaptive-decision-v2",
+      "phase": "followed-up",
+      "loop": "attempt 1",
+      "step": 25,
+      "action": "reassess",
+      "chosenBy": "intervention-without-effect",
+      "reason": null,
+      "notice": true,
+      "carriedOut": {
+        "record": "sha256:be983d7b2988d39973682cb7836c484acfb15207efb0ca4bedfe611dab26cbd0",
+        "refused": false,
+        "summary": "shell git diff HEAD --stat 2>&1; echo '---'; ls -la src/rules_core/strip_references.ts 2>&1; echo '---'; git diff --name-only HEAD 2>&1",
+        "tool": "shell"
+      },
+      "diagnosis": {
+        "actionable": true,
+        "locations": [],
+        "action": {
+          "command": "git diff HEAD --stat 2>&1; echo '---'; ls -la src/rules_core/strip_references.ts 2>&1; echo '---'; git diff --name-only HEAD 2>&1",
+          "tool": "shell"
+        },
+        "answer": "{\n  \"question\": \"What are the unstaged changes in the working tree, and do they include all required files?\",\n  \"hypotheses\": [\n    {\n      \"statement\": \"H1: Changes exist in git but were stashed during step 19; need to pop from stash and commit\",\n      \"predicts\": {\n        \"outputIncludes\": [\n          \"On branch work\"\n        ]\n      }\n    },\n    {\n      \"statement\": \"H2: No changes exist in git at all; the agent never committed or stashed correctly\",\n      \"predicts\": {\n        \"outputIncludes\": []\n      }\n    },\n    {\n      \"statement\": \"H3: Changes are untracked (not added to index) and "
+      },
+      "spent": {
+        "callsWithUnknownUsage": 0,
+        "steps": 5,
+        "tokensUsed": 43358,
+        "wallMs": 18432
+      },
+      "nextWorkerEdit": {
+        "sequence": 595,
+        "paths": [
+          "src/presets/default.ts"
+        ]
+      }
+    },
+    {
+      "rule": "adaptive-decision-v2",
+      "phase": "decided",
+      "loop": "attempt 2",
+      "step": 16,
+      "action": "diagnose",
+      "chosenBy": "no-edit-at-decision-point",
+      "reason": null,
+      "notice": true,
+      "carriedOut": null,
+      "diagnosis": {
+        "actionable": true,
+        "locations": [
+          "src/rules_block/reference.ts:148",
+          "test/markdown-it/misc.test.mjs:368"
+        ],
+        "action": null,
+        "answer": "{\n  \"hypotheses\": [\n    {\n      \"statement\": \"All source code changes (reference.ts token push, strip_references rule, parser_core registration) are already implemented in the current tree and the only missing step is committing/changing files.\",\n      \"predicts\": {\n        \"exitCode\": 0,\n        \"outputIncludes\": [\n          \"strip_references\"\n        ]\n      }\n    },\n    {\n      \"statement\": \"The preset files (commonmark.ts, zero.ts) are missing 'strip_references' registration and need edits.\",\n      \"predicts\": {\n        \"exitCode\": 0,\n        \"outputIncludes\": [\n          \"strip_references"
+      },
+      "spent": {
+        "callsWithUnknownUsage": 0,
+        "steps": 5,
+        "tokensUsed": 30707,
+        "wallMs": 20322
+      },
+      "nextWorkerEdit": {
+        "sequence": 812,
+        "paths": [
+          "test/markdown-it/misc.test.mjs"
+        ]
+      }
+    },
+    {
+      "rule": "adaptive-decision-v2",
+      "phase": "followed-up",
+      "loop": "attempt 2",
+      "step": 25,
+      "action": "none",
+      "chosenBy": null,
+      "reason": "the intervention's intended outcome occurred",
+      "notice": false,
+      "carriedOut": null,
+      "diagnosis": null,
+      "spent": {
+        "callsWithUnknownUsage": 0,
+        "steps": 0,
+        "tokensUsed": 0,
+        "wallMs": 0
+      },
+      "nextWorkerEdit": null
+    },
+    {
+      "rule": "adaptive-decision-v2",
+      "phase": "decided",
+      "loop": "attempt 3",
+      "step": 16,
+      "action": "diagnose",
+      "chosenBy": "no-edit-at-decision-point",
+      "reason": null,
+      "notice": true,
+      "carriedOut": null,
+      "diagnosis": {
+        "actionable": true,
+        "locations": [],
+        "action": null,
+        "answer": "All the required source code changes appear to be in place:\n\n1. **`src/rules_block/reference.ts`** - Already modified to push a `reference_definition` token with proper properties (nesting 0, empty tag, hidden true, block true, map, meta with label).\n2. **`src/rules_core/strip_references.ts`** - Exists and correctly filters out `reference_definition` tokens from the stream.\n3. **`src/parser_core.ts`** - Already imports and registers `r_strip_references` in the `_rules` array at the correct position (after `inline`, before `linkify`).\n4. **`src/presets/default.ts`** - Already includes `'strip_r"
+      },
+      "spent": {
+        "callsWithUnknownUsage": 0,
+        "steps": 5,
+        "tokensUsed": 41625,
+        "wallMs": 18139
+      },
+      "nextWorkerEdit": null
+    },
+    {
+      "rule": "adaptive-decision-v2",
+      "phase": "followed-up",
+      "loop": "attempt 3",
+      "step": 25,
+      "action": "look-again",
+      "chosenBy": null,
+      "reason": "the outcome has not occurred, but the worker is reading or running something new",
+      "notice": false,
+      "carriedOut": null,
+      "diagnosis": null,
+      "spent": {
+        "callsWithUnknownUsage": 0,
+        "steps": 0,
+        "tokensUsed": 0,
+        "wallMs": 0
+      },
+      "nextWorkerEdit": null
+    },
+    {
+      "rule": "adaptive-decision-v2",
+      "phase": "followed-up",
+      "loop": "attempt 3",
+      "step": 29,
+      "action": "withheld",
+      "chosenBy": null,
+      "reason": "too little of this loop's allowance remains to reassess and act on the answer",
+      "notice": false,
+      "carriedOut": null,
+      "diagnosis": null,
+      "spent": {
+        "callsWithUnknownUsage": 0,
+        "steps": 0,
+        "tokensUsed": 0,
+        "wallMs": 47
+      },
+      "nextWorkerEdit": null
+    }
+  ],
+  "rewriteHolds": [],
+  "batchEdits": [],
+  "stillOccursNotes": 0,
+  "shellEffects": {
+    "measured": 70,
+    "unmeasured": 0,
+    "changedTree": []
+  },
+  "followUps": []
+}
