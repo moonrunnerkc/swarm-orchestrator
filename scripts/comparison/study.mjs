@@ -140,6 +140,65 @@ export function classifyStop({ fatal, inference }) {
 }
 
 /** Whether any text an arm left names a route to sealed material; the markers are the manifest's. */
+/**
+ * The line printed as a launch ends: what ran, how it ended and what it spent. Never a verdict:
+ * the frozen block's hidden results are read only after its last launch is scored, and on
+ * October 23 the implementer read three of them off this line while diagnosing a setup failure.
+ * The visible check's result is left out with them, since it is a correctness reading as well.
+ */
+export function progressLine(launch, record, fatal) {
+  const wall = record.invocation?.wallMs;
+  const tokens = record.invocation?.tokens;
+  const health = [
+    record.outcome,
+    ...(typeof wall === "number" ? [`${Math.round(wall / 1000)} s`] : []),
+    ...(typeof tokens === "number" ? [`${tokens} tokens`] : []),
+    ...(record.scores === undefined ? [] : ["scored, sealed"]),
+  ];
+  return `${launch.order} ${launch.task} ${launch.arm}: ${health.join(", ")}${fatal ? ` (${fatal.class}: ${fatal.message.split("\n")[0]})` : ""}`;
+}
+
+/** Where a record's hidden verdict is kept until `reveal`. */
+export const sealedDirectory = "sealed-hidden";
+
+/** Writes a launch's hidden verdict apart from its record, readable by the owner alone. */
+export function sealHidden(runsDirectory, recordName, hidden) {
+  const directory = join(runsDirectory, sealedDirectory);
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const bytes = `${JSON.stringify(hidden, null, 2)}\n`;
+  writeFileSync(join(directory, recordName), bytes, { flag: "wx", mode: 0o600 });
+  return { sealed: `${sealedDirectory}/${recordName}`, digest: digestOf(Buffer.from(bytes)) };
+}
+
+/**
+ * Every record of the block with its hidden verdict put back, once every registered launch has an
+ * outcome: a block with a launch still pending, or stopped, is not revealed. Each sealed file must
+ * be the bytes its record names.
+ */
+export function revealHidden(runsDirectory, launches) {
+  const pending = [];
+  const revealed = [];
+  for (const launch of launches) {
+    const cell = cellState(runsDirectory, cellKey(launch), launch.arm);
+    if (!cell.recorded) {
+      pending.push(`${launch.order} ${launch.task} ${launch.arm}`);
+      continue;
+    }
+    const record = JSON.parse(readFileSync(join(runsDirectory, cell.record), "utf8"));
+    const sealed = record.scores?.hidden;
+    if (sealed?.sealed !== undefined) {
+      const bytes = readFileSync(join(runsDirectory, sealed.sealed));
+      if (digestOf(bytes) !== sealed.digest)
+        throw new Error(`${sealed.sealed} is not the verdict ${cell.record} sealed`);
+      record.scores = { ...record.scores, hidden: JSON.parse(bytes.toString("utf8")) };
+    }
+    revealed.push(record);
+  }
+  if (pending.length > 0)
+    throw new Error(`the block is not finished; pending: ${pending.join("; ")}`);
+  return revealed;
+}
+
 export function exposureHits(texts, markers) {
   const hits = [];
   for (const [label, text] of texts)
@@ -545,12 +604,14 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
         projectTestExit: visible.projectTestExit,
         detailDigest: storeBlob(blobs, Buffer.from(visible.detail)),
       },
-      hidden: {
+      // Sealed until the block ends: the record a person reads while diagnosing a launch says
+      // where the verdict is kept, not what it is (`reveal` releases every one at once).
+      hidden: sealHidden(runsDirectory, cell.record, {
         verdict: hidden.verdict,
         basis: hidden.basis,
         detailDigest: storeBlob(blobs, Buffer.from(hidden.detail ?? "")),
         policy: hidden.policy ?? null,
-      },
+      }),
       static: {
         ...statics,
         detail: undefined,
@@ -589,9 +650,7 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
   );
   rmSync(scratch, { recursive: true, force: true });
   rmSync(tmpDir, { recursive: true, force: true });
-  console.log(
-    `${launch.order} ${launch.task} ${launch.arm}: ${record.outcome}${record.scores ? `, hidden ${record.scores.hidden.verdict}, visible ${record.scores.visible.passed}` : ""}${fatal ? ` (${fatal.class}: ${fatal.message.split("\n")[0]})` : ""}`,
-  );
+  console.log(progressLine(launch, record, fatal));
   return { outcome: record.outcome, fatal };
 }
 
@@ -655,6 +714,13 @@ async function main() {
       (!args.has("only") || args.get("only") === launch.task) &&
       (!args.has("arm") || args.get("arm") === launch.arm),
   );
+  if (args.has("reveal")) {
+    const revealed = revealHidden(runsDirectory, manifest.launches);
+    const out = join(runsDirectory, "revealed.json");
+    writeFileSync(out, `${JSON.stringify(revealed, null, 2)}\n`, { flag: "wx" });
+    console.log(`${revealed.length} records with their hidden verdicts: ${out}`);
+    return 0;
+  }
   if (args.has("status")) {
     for (const launch of selected) {
       const cell = cellState(runsDirectory, cellKey(launch), launch.arm);
