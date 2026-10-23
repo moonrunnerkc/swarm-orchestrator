@@ -604,7 +604,9 @@ export function interventionsOn(evidence: EvidenceRecorder): InterventionCounts 
       .map((record) => payloads.get(record.payloadDigest) as { rule?: string; attempt?: unknown })
       .filter(
         (payload) =>
-          payload?.rule === "outcome-follow-up-v1" || payload?.rule === "task-continuation-v1",
+          payload?.rule === "outcome-follow-up-v1" ||
+          payload?.rule === "task-continuation-v1" ||
+          payload?.rule === "candidate-review-attempt-v1",
       )
       .flatMap((payload) => (typeof payload.attempt === "number" ? [payload.attempt] : [])),
   );

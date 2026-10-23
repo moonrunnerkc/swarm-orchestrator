@@ -20,6 +20,18 @@ export interface LoopUsage {
   readonly cachedInputTokens: number | null;
 }
 
+/** Two spends as one: a figure absent on both sides stays absent rather than reading as zero. */
+export function combineUsage(left: LoopUsage, right: LoopUsage): LoopUsage {
+  const add = (a: number | null, b: number | null): number | null =>
+    a === null && b === null ? null : (a ?? 0) + (b ?? 0);
+  return {
+    inputTokens: left.inputTokens + right.inputTokens,
+    outputTokens: left.outputTokens + right.outputTokens,
+    reasoningTokens: add(left.reasoningTokens, right.reasoningTokens),
+    cachedInputTokens: add(left.cachedInputTokens, right.cachedInputTokens),
+  };
+}
+
 /**
  * What the loop reports as it runs. The TUI renders from these alone, never from a
  * side channel, so every displayed line traces to something the harness observed.

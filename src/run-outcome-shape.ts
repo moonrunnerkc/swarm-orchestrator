@@ -96,6 +96,29 @@ export interface RunOutcomeReport {
    */
   readonly repairsForGeneratedChecksOnly?: readonly number[];
   /**
+   * Added in 14.6.0: what the run had to preserve, each obligation with its source and the status
+   * what ran gave it (preservation-obligations-v1). An obligation nothing measured is unmeasured.
+   */
+  readonly preservation?: readonly {
+    readonly id: string;
+    readonly source: "task" | "contract" | "base" | "review";
+    readonly authority: "authoritative" | "observed" | "proposed";
+    readonly statement: string;
+    readonly basis: string;
+    readonly status: "kept" | "regressed" | "unmeasured";
+    readonly by: string;
+  }[];
+  /** Added in 14.6.0, experimental: the review of the candidate, where `--review` asked for one. */
+  readonly review?: {
+    readonly mode: "executable" | "prose";
+    /** The examination's record, or null where the review never examined. */
+    readonly examination: string | null;
+    /** The attempt its findings were owed, or null where none was. */
+    readonly attempt: unknown;
+    readonly probes: readonly string[];
+    readonly readings: readonly unknown[];
+  };
+  /**
    * Added in 14.5.0: requested outcomes the planner identified from the task (a requirement, the
    * words a check quoted, and whether its cases change or keep behaviour) that no check retained
    * for the run states. Present only where there are some. A status of `accepted` beside these is

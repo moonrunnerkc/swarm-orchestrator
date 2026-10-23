@@ -203,10 +203,16 @@ export function judgeRatchet(input: RatchetInput): RatchetDecision {
 
   // Within a gate, each part that passed before is held as the gate is, whatever the gate's own
   // status was: a gate failing for one part before and after hides a part a retry broke.
+  // Parts under a key that is no gate (the experimental review's probe readings) belong to no
+  // gate that could have stood down, so they are compared whatever the gate statuses hold, as the
+  // bundled verifier compares every part.
   for (const [gateId, parts] of Object.entries(input.baselineParts ?? {})) {
+    const isGate = gateId in input.baselineGates || gateId in input.candidateGates;
     const notRun =
       input.unmeasuredGates?.get(gateId) ??
-      (input.candidateGates[gateId] === undefined ? "the gate did not run in this attempt" : null);
+      (isGate && input.candidateGates[gateId] === undefined
+        ? "the gate did not run in this attempt"
+        : null);
     for (const [part, status] of Object.entries(parts)) {
       if (status !== "passed") continue;
       const now = input.candidateParts?.[gateId]?.[part];
@@ -231,7 +237,7 @@ export function judgeRatchet(input: RatchetInput): RatchetDecision {
           kind: "gate-part-regressed",
           before: 1,
           after: 0,
-          detail: `${part} in the ${gateId} gate passed before this attempt and now reports ${now}`,
+          detail: `${part} in the ${gateId} ${isGate ? "gate" : "readings"} passed before this attempt and now reports ${now}`,
         });
     }
   }

@@ -7,6 +7,7 @@ import type { IsolationBackend } from "../exec/execution-mode.ts";
 import type { ResourcePool } from "../exec/resource-pool.ts";
 import {
   type AutoResolveOutcome,
+  type CandidateReviewHook,
   defaultAttemptCap,
   type OwedFollowUp,
   type ResolveAttempt,
@@ -63,6 +64,8 @@ interface GatesEngineOptions {
   readonly followUp?: OwedFollowUp;
   /** The task's own continuation, owed before the follow-up where its loop was interrupted. */
   readonly continuation?: OwedFollowUp;
+  /** The experimental review of the candidate; absent is none. */
+  readonly review?: CandidateReviewHook;
   readonly budgets?: DiffBudget;
   readonly gateOptions?: GateSetOptions;
   /**
@@ -266,6 +269,7 @@ export async function runGatesEngine(options: GatesEngineOptions): Promise<Gates
     ...(options.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
     ...(options.followUp === undefined ? {} : { followUp: options.followUp }),
     ...(options.continuation === undefined ? {} : { continuation: options.continuation }),
+    ...(options.review === undefined ? {} : { review: options.review }),
     cycleDeps: {
       commands,
       evidence: options.evidence,

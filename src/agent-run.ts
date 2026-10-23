@@ -10,6 +10,7 @@ import { createEscalationController } from "./agent-escalation.ts";
 import { describeJustificationRequest, runJustificationTurn } from "./agent-justification.ts";
 import { type WorkerPromptProfile, workerPrompt } from "./agent-prompt.ts";
 import { finishRepair } from "./agent-repair-finish.ts";
+import { createCandidateReview, type ProbeRunner, type ReviewMode } from "./agent-review.ts";
 import { withWorkspaceEffects } from "./agent-workspace-effects.ts";
 import { buildVersion } from "./build-version.ts";
 import type { ApprovalMode } from "./config/approval-mode.ts";
@@ -21,7 +22,7 @@ import {
   type StallIntervention,
 } from "./core/loop.ts";
 import { describePriorLoop, priorLoopAccount } from "./core/loop-account.ts";
-import type { LoopEvent, LoopUsage } from "./core/loop-events.ts";
+import { combineUsage, type LoopEvent } from "./core/loop-events.ts";
 import type { ConversationMessage, ModelClient, SamplingSettings } from "./core/model-client.ts";
 import type { RandomSource } from "./core/random-source.ts";
 import type { LoopBudget } from "./core/termination.ts";
@@ -73,10 +74,11 @@ import { createGitWorkspaceProbe } from "./gates/git-workspace.ts";
 import { captureInheritedChanges, type InheritedChanges } from "./gates/inherited-changes.ts";
 import { createNodeCommandRunner } from "./gates/node-command-runner.ts";
 import { prepareDependencies } from "./gates/prepare-dependencies.ts";
+import { keepStatements } from "./gates/preservation-obligations.ts";
 import { preservationTraceBrief, preservationTraceRule } from "./gates/preservation-trace.ts";
 import { detectProject } from "./gates/project-type.ts";
 import type { EscalationSettings } from "./gates/repair-policy.ts";
-import { diffAgainstBase } from "./gates/scratch-index.ts";
+import { diffAgainstBase, patchAgainstBase } from "./gates/scratch-index.ts";
 import { parseUnifiedDiff } from "./gates/unified-diff.ts";
 import { taskBrief } from "./task-brief.ts";
 import { taskContinuation } from "./task-continuation.ts";
@@ -237,6 +239,20 @@ export interface AgentTaskOptions {
    * attempt cap and under the ratchet: requested outcomes no sealed check states. Absent is none.
    */
   readonly followUp?: import("./gates/auto-resolve.ts").OwedFollowUp;
+  /**
+   * Experimental (candidate-review-v1): a separate review of the candidate once the gates are
+   * green, whose established findings are owed one attempt from the cap. Absent is none.
+   */
+  readonly review?: {
+    readonly mode: ReviewMode;
+    readonly runProbes: ProbeRunner;
+    /** The run's preservation obligations, as the reviewer is shown them. */
+    readonly obligations: readonly string[];
+    /** Where the review's readings are handed back for the report. */
+    readonly settled?: (
+      readings: ReturnType<ReturnType<typeof createCandidateReview>["readings"]>,
+    ) => void;
+  };
   readonly coordination?: readonly ToolDefinition[];
   /**
    * Set only where a task is being tried several ways at once, so the attempts can diverge
@@ -806,6 +822,54 @@ async function executeAgentTask(
       },
     });
   }
+  // The experimental review runs read-only through the worker's own chokepoint and draws from
+  // the same allowance: what it spends is charged here and recorded as its own stop.
+  const review =
+    options.review === undefined
+      ? undefined
+      : createCandidateReview({
+          mode: options.review.mode,
+          task: options.task,
+          evidence: options.evidence,
+          clock: options.clock,
+          runProbes: options.review.runProbes,
+          diff: () =>
+            diffAgainstBase({ workspaceRoot: options.workspace, baseRef: options.baseRef }),
+          obligations: options.review.obligations,
+          keepStatements: keepStatements(options.task),
+          runLoop: runAgentLoop,
+          loopDependencies,
+          readOnly: () => {
+            const readOnly = assembleToolset({
+              ...toolsetBase,
+              tools: () => definitions.filter((tool) => readOnlyTools.has(tool.name)),
+            });
+            return { toolInvoker: readOnly.toolInvoker, toolSchemas: readOnly.definitions };
+          },
+          remaining: () => ({ tokens: remainingTokens, wallMs: wall.loopBudgetMs() }),
+          charge: async (charge) => {
+            remainingTokens -= charge.tokensUsed;
+            callsWithUnknownUsage += charge.callsWithUnknownUsage;
+            usageTotal = combineUsage(usageTotal, charge.usage);
+            totalSteps += charge.steps;
+            await options.evidence.record({
+              type: "session-stopped",
+              actor: "harness",
+              provenance: ["model"],
+              payload: {
+                stopReason: "candidate-review",
+                review: true,
+                steps: charge.steps,
+                tokensUsed: charge.tokensUsed,
+                inputTokens: charge.usage.inputTokens,
+                outputTokens: charge.usage.outputTokens,
+                reasoningTokens: charge.usage.reasoningTokens,
+                cachedInputTokens: charge.usage.cachedInputTokens,
+                callsWithUnknownUsage: charge.callsWithUnknownUsage,
+              },
+            });
+          },
+        });
   const escalation =
     options.escalation === undefined
       ? undefined
@@ -825,6 +889,7 @@ async function executeAgentTask(
     cap: options.attempts,
     ...(followUp === undefined ? {} : { followUp }),
     ...(continuation === undefined ? {} : { continuation }),
+    ...(review === undefined ? {} : { review }),
     // The resolve loop stops at the wall deadline as it stops at a cancellation. The commands that
     // measure a cycle answer only to the run's cancellation and the end of its total allowance:
     // C1's loop spent its wall, and that wall's end refused its final build, lint and tests.
@@ -834,6 +899,26 @@ async function executeAgentTask(
     criteriaSealed,
     criteriaRef: criteriaRefOf(options),
     resolve: async (request) => {
+      // The candidate this attempt starts from, whole, so what an attempt changed can be rebuilt
+      // from the chain: a repair brief carries a truncated diff, and on October 23 that was the
+      // only trace of an initial candidate whose repair gain was then unmeasurable.
+      const before = await patchAgainstBase({
+        workspaceRoot: options.workspace,
+        baseRef: options.baseRef,
+      });
+      await options.evidence.record({
+        type: "verification-command",
+        actor: "harness",
+        provenance: ["tool-output"],
+        payload: {
+          rule: "candidate-snapshot-v1",
+          boundary: "before attempt",
+          attempt: request.attempt,
+          owed: request.followUpKind ?? null,
+          truncated: before.length > candidateSnapshotChars,
+          patch: before.slice(0, candidateSnapshotChars),
+        },
+      });
       const alternate = await escalation?.select(request.cycle, {
         remainingTokens,
         remainingMs: wall.loopBudgetMs(),
@@ -935,6 +1020,7 @@ async function executeAgentTask(
           // task's continuation is named as such beside the follow-up marker both kinds carry.
           ...(request.followUpKind === undefined ? {} : { followUp: true }),
           ...(request.followUpKind === "continuation" ? { continuation: true } : {}),
+          ...(request.followUpKind === "review" ? { review: true } : {}),
           // A narrow repair that finished finished the repair, not the task: its stop is not the
           // run's lifecycle. Launch 2 of the 2026-10-21 trial read a lint repair's finish as the
           // completion of a loop that had stopped at its step cap with a deliverable unwritten. A
@@ -964,7 +1050,9 @@ async function executeAgentTask(
   const owedOutcomes: readonly (readonly [OwedKind, FollowUpOutcome | null])[] = [
     ["continuation", gates.outcome.continuation],
     ["outcomes", gates.outcome.followUp ?? null],
+    ["review", gates.outcome.review ?? null],
   ];
+  if (review !== undefined) options.review?.settled?.(review.readings());
   const given = owedOutcomes.filter(([, outcome]) => outcome?.state === "given");
   const firstNotKept = given.findIndex(([, outcome]) => outcome?.accepted !== true);
   const restoreTo =
@@ -1171,6 +1259,9 @@ const defaultRunTokens = 1_000_000;
  * once, if at all, and the attempt's gates then run over a tree it never touched.
  */
 const minimumAttemptWallMs = 60_000;
+/** The most of a candidate's patch a snapshot keeps; one past this is marked truncated. */
+const candidateSnapshotChars = 4_000_000;
+
 /** One local answer with a claim in it, measured at a few seconds; a justification needs no more. */
 const justificationFloorMs = 15_000;
 const attemptWallFraction = 20;
@@ -1642,16 +1733,5 @@ function usageFields(loop: Pick<AgentLoopOutcome, "usage" | "reservedTokens">) {
     reasoningTokens: loop.usage.reasoningTokens,
     cachedInputTokens: loop.usage.cachedInputTokens,
     ...(loop.reservedTokens === 0 ? {} : { reservedTokens: loop.reservedTokens }),
-  };
-}
-
-function combineUsage(left: LoopUsage, right: LoopUsage): LoopUsage {
-  const add = (a: number | null, b: number | null): number | null =>
-    a === null && b === null ? null : (a ?? 0) + (b ?? 0);
-  return {
-    inputTokens: left.inputTokens + right.inputTokens,
-    outputTokens: left.outputTokens + right.outputTokens,
-    reasoningTokens: add(left.reasoningTokens, right.reasoningTokens),
-    cachedInputTokens: add(left.cachedInputTokens, right.cachedInputTokens),
   };
 }
