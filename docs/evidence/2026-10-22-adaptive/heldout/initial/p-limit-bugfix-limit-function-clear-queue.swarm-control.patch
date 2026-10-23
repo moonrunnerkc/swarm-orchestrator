@@ -1,0 +1,182 @@
+diff --git a/index.d.ts b/index.d.ts
+index 5a64963..65d9fed 100644
+--- a/index.d.ts
++++ b/index.d.ts
+@@ -136 +136,13 @@ export function limitFunction<Arguments extends unknown[], ReturnType>(
+-): (...arguments_: Arguments) => Promise<ReturnType>;
++): ((...arguments_: Arguments) => Promise<ReturnType>) & {
++	/**
++	Discard pending promises that are waiting to run.
++
++	This is useful if you want to tear down the queue at the end of your program's lifecycle or discard any function calls referencing an intermediary state of your app.
++
++	Note: This does not cancel promises that are already running.
++
++	When `rejectOnClear` is enabled, pending promises are rejected with an `AbortError`.
++	This is recommended if you await the returned promises, for example with `Promise.all`, so pending tasks do not remain unresolved after `clearQueue()`.
++	*/
++	clearQueue: () => void;
++};
+diff --git a/index.js b/index.js
+index 5ecd392..c8639e4 100644
+--- a/index.js
++++ b/index.js
+@@ -120 +120,22 @@ export function limitFunction(function_, options) {
+-	return (...arguments_) => limit(() => function_(...arguments_));
++	const limited = (...arguments_) => limit(() => function_(...arguments_));
++
++	Object.defineProperty(limited, 'activeCount', {
++		get: () => limit.activeCount,
++	});
++
++	Object.defineProperty(limited, 'pendingCount', {
++		get: () => limit.pendingCount,
++	});
++
++	Object.defineProperty(limited, 'concurrency', {
++		get: () => limit.concurrency,
++		set(newConcurrency) {
++			limit.concurrency = newConcurrency;
++		},
++	});
++
++	limited.clearQueue = () => {
++		limit.clearQueue();
++	};
++
++	return limited;
+diff --git a/test.js b/test.js
+index e303a46..1215a0a 100644
+--- a/test.js
++++ b/test.js
+@@ -377,0 +378,130 @@ test('limitFunction()', async t => {
++
++test('limitFunction().clearQueue exists and is a function', t => {
++	const limitedFunction = limitFunction(async () => {}, {concurrency: 1});
++	t.is(typeof limitedFunction.clearQueue, 'function');
++});
++
++test('limitFunction().clearQueue discards pending promises with default rejectOnClear:false', async t => {
++	const limitedFunction = limitFunction(async x => {
++		await delay(10);
++		return x * 2;
++	}, {concurrency: 1});
++
++	const first = limitedFunction(1);
++	limitedFunction(2);
++	limitedFunction(3);
++
++	await Promise.resolve();
++	t.is(limitedFunction.pendingCount, 2);
++	t.is(limitedFunction.activeCount, 1);
++
++	limitedFunction.clearQueue();
++	t.is(limitedFunction.pendingCount, 0);
++
++	// First should resolve normally since it was running
++	const result = await first;
++	t.is(result, 2);
++
++	// Pending promises cleared stay unsettled but pending count is zero
++	t.is(limitedFunction.pendingCount, 0);
++});
++
++test('limitFunction().clearQueue rejects pending promises when rejectOnClear:true', async t => {
++	const limitedFunction = limitFunction(async x => {
++		await delay(100);
++		return x * 2;
++	}, {concurrency: 1, rejectOnClear: true});
++
++	const runningPromise = limitedFunction(1);
++	const pendingPromiseOne = limitedFunction(2);
++	const pendingPromiseTwo = limitedFunction(3);
++
++	await Promise.resolve();
++	t.is(limitedFunction.pendingCount, 2);
++	t.is(limitedFunction.activeCount, 1);
++
++	limitedFunction.clearQueue();
++	t.is(limitedFunction.pendingCount, 0);
++
++	await runningPromise;
++	await t.throwsAsync(pendingPromiseOne, {name: 'AbortError'});
++	await t.throwsAsync(pendingPromiseTwo, {name: 'AbortError'});
++});
++
++test('limitFunction().clearQueue is harmless when nothing pending', async t => {
++	const limitedFunction = limitFunction(async x => {
++		await Promise.resolve();
++		return x * 2;
++	}, {concurrency: 1});
++
++	const result = await limitedFunction(5);
++	t.is(result, 10);
++	t.is(limitedFunction.pendingCount, 0);
++
++	// Should not throw
++	limitedFunction.clearQueue();
++	t.is(limitedFunction.pendingCount, 0);
++});
++
++test('limitFunction().clearQueue does not affect another limiter', async t => {
++	const limitedOne = limitFunction(async x => {
++		await delay(100);
++		return x * 2;
++	}, {concurrency: 1, rejectOnClear: true});
++
++	const limitedTwo = limitFunction(async x => {
++		await delay(100);
++		return x * 2;
++	}, {concurrency: 1, rejectOnClear: true});
++
++	const onePending = limitedOne(1);
++	const twoPending = limitedTwo(99);
++
++	await Promise.resolve();
++	t.is(onePending.rethrow ? 1 : 1, onePending.constructor === Promise ? 1 : 1);
++
++	limitedOne.clearQueue();
++
++	await t.throwsAsync(onePending, {name: 'AbortError'});
++	// Two's promise should resolve fine and not be affected
++	const twoResult = await twoPending;
++	t.is(twoResult, 198);
++});
++
++test('limitFunction() forwards arguments and returns result', async t => {
++	const limitedFunction = limitFunction((a, b, c) => a + b + c, {concurrency: 1});
++	const result = await limitedFunction(1, 2, 3);
++	t.is(result, 6);
++});
++
++test('limitFunction() rejects on sync throw', async t => {
++	const limitedFunction = limitFunction(() => {
++		throw new Error('sync error');
++	}, {concurrency: 1});
++
++	await t.throwsAsync(limitedFunction(), {message: 'sync error'});
++});
++
++// Node.js 20 has a bug where DOMException is not properly handled by AVA's `throwsAsync`.
++const testClearQueueRejectsLimitFunction = process.versions.node.startsWith('20.') ? test.skip : test;
++
++testClearQueueRejectsLimitFunction('limitFunction().clearQueue rejects with AbortError when rejectOnClear:true', async t => {
++	const limitedFunction = limitFunction(async x => {
++		await delay(100);
++		return x * 2;
++	}, {concurrency: 1, rejectOnClear: true});
++
++	const runningPromise = limitedFunction(1);
++	const pendingPromiseOne = limitedFunction(2);
++	const pendingPromiseTwo = limitedFunction(3);
++
++	await Promise.resolve();
++	t.is(limitedFunction.pendingCount, 2);
++
++	limitedFunction.clearQueue();
++	t.is(limitedFunction.pendingCount, 0);
++
++	await runningPromise;
++	await t.throwsAsync(pendingPromiseOne, {name: 'AbortError'});
++	await t.throwsAsync(pendingPromiseTwo, {name: 'AbortError'});
++});

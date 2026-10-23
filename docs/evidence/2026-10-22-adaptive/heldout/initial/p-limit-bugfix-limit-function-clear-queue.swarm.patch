@@ -1,0 +1,133 @@
+diff --git a/index.d.ts b/index.d.ts
+index 5a64963..502a46e 100644
+--- a/index.d.ts
++++ b/index.d.ts
+@@ -133,2 +133,37 @@ await Promise.all(input);
+-export function limitFunction<Arguments extends unknown[], ReturnType>(
+-	function_: (...arguments_: Arguments) => PromiseLike<ReturnType>,
++export type LimitedFunction = {
++	/**
++	The number of promises that are currently running.
++	*/
++	readonly activeCount: number;
++
++	/**
++	The number of promises that are waiting to run (i.e. their internal `fn` was not called yet).
++	*/
++	readonly pendingCount: number;
++
++	/**
++	Get or set the concurrency limit.
++	*/
++	concurrency: number;
++
++	/**
++	Discard pending promises that are waiting to run.
++
++	This might be useful if you want to tear down the queue at the end of your program's lifecycle or discard any function calls referencing an intermediary state of your app.
++
++	Note: This does not cancel promises that are already running.
++
++	When `rejectOnClear` is enabled, pending promises are rejected with an `AbortError`.
++	This is recommended if you await the returned promises, for example with `Promise.all`, so pending tasks do not remain unresolved after `clearQueue()`.
++	*/
++	clearQueue: () => void;
++
++	// eslint-disable-next-line @typescript-eslint/no-explicit-any
++	<Arguments extends any[], ReturnType>(
++		// eslint-disable-next-line @typescript-eslint/no-explicit-any
++		...arguments_: Arguments
++	): Promise<ReturnType>;
++};
++
++export function limitFunction(
++	fn: (...args: unknown[]) => PromiseLike<unknown>,
+@@ -136 +171 @@ export function limitFunction<Arguments extends unknown[], ReturnType>(
+-): (...arguments_: Arguments) => Promise<ReturnType>;
++): LimitedFunction;
+diff --git a/index.js b/index.js
+index 5ecd392..ae90ac9 100644
+--- a/index.js
++++ b/index.js
+@@ -118 +118,77 @@ export function limitFunction(function_, options) {
+-	const limit = pLimit(options);
++	let concurrency = 1;
++	let rejectOnClear = false;
++
++	if (typeof options === 'object' && options !== null) {
++		concurrency = options.concurrency ?? 1;
++		if (options.rejectOnClear !== undefined && typeof options.rejectOnClear !== 'boolean') {
++			throw new TypeError('Expected `rejectOnClear` to be a boolean');
++		}
++
++		rejectOnClear = options.rejectOnClear ?? false;
++	} else if (typeof options === 'number' || typeof options === 'bigint') {
++		concurrency = options;
++	}
++
++	if (!((Number.isInteger(concurrency) || concurrency === Number.POSITIVE_INFINITY) && concurrency > 0)) {
++		throw new TypeError('Expected `concurrency` to be a number from 1 and up');
++	}
++
++	const queue = new Queue();
++
++	let activeCount = 0;
++
++	const resumeNext = () => {
++		if (activeCount < concurrency && queue.size > 0) {
++			activeCount++;
++			queue.dequeue().run();
++		}
++	};
++
++	const next = () => {
++		activeCount--;
++		resumeNext();
++	};
++
++	const execute = async (resolve, args_) => {
++		const resultPromise = function_(...args_);
++		resolve(resultPromise);
++
++		try {
++			await resultPromise;
++		} catch {}
++
++		next();
++	};
++
++	const limited = (...args) => new Promise((resolve, reject) => { // eslint-disable-line promise/param-names
++		const queueItem = {reject};
++
++		new Promise(internalResolve => { // eslint-disable-line promise/param-names
++			queueItem.run = internalResolve;
++			queue.enqueue(queueItem);
++		}).then(() => execute(resolve, args)); // eslint-disable-line promise/prefer-await-to-then
++
++		if (activeCount < concurrency) {
++			resumeNext();
++		}
++	});
++
++	Object.defineProperties(limited, {
++		activeCount: {get: () => activeCount},
++		pendingCount: {get: () => queue.size},
++		concurrency: {get: () => concurrency},
++		clearQueue: {
++			value() {
++				if (!rejectOnClear) {
++					queue.clear();
++					return;
++				}
++
++				const abortError = AbortSignal.abort().reason;
++
++				while (queue.size > 0) {
++					queue.dequeue().reject(abortError);
++				}
++			},
++		},
++	});
+@@ -120 +196 @@ export function limitFunction(function_, options) {
+-	return (...arguments_) => limit(() => function_(...arguments_));
++	return limited;
