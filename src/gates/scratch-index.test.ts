@@ -1,11 +1,11 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createGitWorkspaceProbe } from "./git-workspace.ts";
-import { untrackedEnvironments } from "./scratch-index.ts";
+import { openWorkspaceIdentity, untrackedEnvironments } from "./scratch-index.ts";
 import { recordTurnBaseline } from "./turn-baseline.ts";
 
 const run = promisify(execFile);
@@ -237,5 +237,41 @@ describe("an untracked Python virtual environment in a checked working tree", ()
     await git("add", "-A");
     await git("commit", "-q", "-m", "tracked");
     await expect(changedPaths(["tracked"])).rejects.toThrow(/tracked at the base/);
+  });
+});
+
+describe("a workspace identity measured across a run", () => {
+  it("changes only when the tree does, pairs a move, and leaves the person's index alone", async () => {
+    await mkdir(join(workspace, "lib"));
+    await writeFile(join(workspace, "lib", "fourOhFour.js"), "module.exports = 404\n");
+    await writeFile(join(workspace, "main.js"), "require('./lib/fourOhFour')\n");
+    await git("add", "-A");
+    await git("commit", "-q", "-m", "second");
+    const identity = await openWorkspaceIdentity({ workspaceRoot: workspace, baseRef: "HEAD" });
+    try {
+      const first = await identity.measure();
+      expect(await identity.measure()).toBe(first);
+      await writeFile(join(workspace, "notes.txt"), "untracked counts\n");
+      const second = await identity.measure();
+      expect(second).not.toBe(first);
+      expect(await identity.changes(first, second)).toEqual([{ status: "A", path: "notes.txt" }]);
+
+      await rename(
+        join(workspace, "lib", "fourOhFour.js"),
+        join(workspace, "lib", "four-oh-four.js"),
+      );
+      const third = await identity.measure();
+      expect(await identity.changes(second, third)).toEqual([
+        { status: "R", from: "lib/fourOhFour.js", path: "lib/four-oh-four.js" },
+      ]);
+      expect(await identity.matches("/fourOhFour['\"]", 5)).toEqual([
+        "main.js:1:require('./lib/fourOhFour')",
+      ]);
+      expect(await identity.matches("nothing-like-this", 5)).toEqual([]);
+      // The person's own index never saw any of it.
+      expect(await git("status", "--porcelain")).toContain("?? notes.txt");
+    } finally {
+      await identity.close();
+    }
   });
 });
