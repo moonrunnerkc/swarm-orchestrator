@@ -55,3 +55,15 @@ are left unchanged; the three-arm study gets its own runner over the shared modu
 
 `run.mjs`, `run.test.mjs`, `arms.mjs`, `schema.mjs` and `validate.mjs` from the original
 declaration are no longer intended edits.
+
+## Amendment 2, October 22, after the held-out block's last launch was scored
+
+The branch's additions left the tracked tree 0.2 MB short of the 6.0 MB headroom the weight check
+requires, before any held-out evidence. Added:
+
+- `campaign/corpus/local-mlx/`: the finished corpus, whose payloads were already outside the
+  repository and which no code reads, packed whole into `packed-derived/local-mlx-corpus` exactly as
+  the local-ollama and fixed-cli corpora were, with a README naming the pack.
+- `docs/evidence/2026-10-22-adaptive/test-sensitivity.mjs` and `evaluator-audit.mjs`: scoring tools
+  under the declared evidence directory, named here because they were written after the hidden
+  results were read.
