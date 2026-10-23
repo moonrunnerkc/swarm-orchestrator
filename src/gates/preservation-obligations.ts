@@ -41,8 +41,10 @@ export interface ObligationStatus extends PreservationObligation {
   readonly by: string;
 }
 
+// "still" only where a behaviour follows it: "invalid options still throw" keeps something,
+// "the calls still waiting to run" describes the base.
 const keepSentence =
-  /\b(must not change|not change|unchanged|as (it does )?today|keeps? (passing|working)|still|preserv\w*|behaves? as|exactly what it exported|the same (output|behaviou?r|content|html)|no warning)\b/i;
+  /\b(must not change|not change|unchanged|as (it does )?today|keeps? (passing|working)|must keep|still (\w+ )?(pass|work|behav|produc|print|throw|reject|resolv|accept|return|run|export|load|build|give|render)\w*|preserv\w*|behaves? as|exactly what it exported|the same (output|behaviou?r|content|html|result)|no warning)\b/i;
 
 /** The task's sentences about behaviour to keep, in its order. */
 export function keepStatements(task: string): readonly string[] {

@@ -57,11 +57,27 @@ describe("admitting a reviewer's probes", () => {
         { ...strict, id: "invented", quote: "strict mode also sorts the keys" },
         { ...strict, id: "no-expectation", cases: [{ input: "[1,]" }] },
         { ...preserve, cases: [{ input: "[]", expected: "anything" }] },
-        { id: "Bad Id", basis: "preserve", program: "x", cases: [{ input: 1 }] },
+        { id: "Bad Id", basis: "preserve", program: "./probes/bad.js", cases: [{ input: 1 }] },
+        { ...preserve, id: "keepsDefaultParse" },
       ],
     });
-    expect(admitted.probes.map((one) => one.id)).toEqual(["strict-comma", "default-parse"]);
-    expect(admitted.dropped.map((one) => one.id)).toEqual(["invented", "no-expectation", "Bad Id"]);
+    expect(admitted.probes.map((one) => one.id)).toEqual([
+      "strict-comma",
+      "default-parse",
+      "keeps-default-parse",
+    ]);
+    expect(admitted.dropped).toEqual([
+      { id: "invented", reason: "a requirement probe must quote the task's own words" },
+      {
+        id: "no-expectation",
+        reason: "a requirement case needs an expected answer or throws: true",
+      },
+      {
+        id: "bad-id",
+        reason:
+          "the program must be the source text of an ES module with a default export, not a path or a description",
+      },
+    ]);
   });
 
   it("keeps at most four objections, each with a scenario and an expectation", () => {

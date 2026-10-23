@@ -88,13 +88,28 @@ export function admitProbes(task: string, answer: unknown): ProbeAdmission {
   const dropped: { id: string; reason: string }[] = [];
   const seen = new Set<string>();
   for (const [index, raw] of listed.entries()) {
-    const parsed = probeSchema.safeParse(raw);
-    const id =
-      typeof (raw as { id?: unknown } | null)?.id === "string"
-        ? String((raw as { id: string }).id)
-        : `probe-${index + 1}`;
+    // An id is a name for the record, so its spelling is normalized rather than refused: a live
+    // reviewer's first probes were all dropped for camelCase ids.
+    const given = (raw as { id?: unknown } | null)?.id;
+    const id = probeSlug(typeof given === "string" ? given : "", index);
+    const program = (raw as { program?: unknown } | null)?.program;
+    if (typeof program === "string" && !/\bexport\b/.test(program)) {
+      dropped.push({
+        id,
+        reason:
+          "the program must be the source text of an ES module with a default export, not a path or a description",
+      });
+      continue;
+    }
+    const parsed = probeSchema.safeParse(
+      raw !== null && typeof raw === "object" ? { ...raw, id } : raw,
+    );
     if (!parsed.success) {
-      dropped.push({ id, reason: `not a probe: ${parsed.error.issues[0]?.message ?? "invalid"}` });
+      const issue = parsed.error.issues[0];
+      dropped.push({
+        id,
+        reason: `not a probe: ${issue?.path.join(".") || "probe"}: ${issue?.message ?? "invalid"}`,
+      });
       continue;
     }
     const probe = parsed.data;
@@ -120,6 +135,19 @@ export function admitProbes(task: string, answer: unknown): ProbeAdmission {
     probes.push(probe);
   }
   return { probes, dropped };
+}
+
+/** A probe id as a slug: lower case, dashes for anything else, starting with a letter. */
+function probeSlug(given: string, index: number): string {
+  const slug = given
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[^a-z]+/, "")
+    .slice(0, 40)
+    .replace(/-+$/, "");
+  return slug.length === 0 ? `probe-${index + 1}` : slug;
 }
 
 /** The reviewer's objections, at most four, each with the scenario and what it expects. */
@@ -468,14 +496,16 @@ export const reviewSystemPrompt = {
   executable: [
     "You review a change another coding agent made to a repository; you did not write it, and its account of the work is not given to you.",
     "You may read, list and search the workspace, which holds the change; you cannot edit or run commands.",
+    "Before answering, read the changed files and the code that calls what they change.",
     "Look for behaviour the task asks for that the change does not implement, existing behaviour it may have broken (including in callers and neighbours of what it changed), and how the new behaviour interacts with what must stay.",
     "Answer with one JSON object and nothing else:",
     '{"probes": up to 4 {"id": a short slug, "basis": "preserve" or "requirement",',
     ' "quote": the task\'s own words the probe rests on (required for "requirement"),',
     ' "keeps": for "preserve", the existing behaviour that should stay the same,',
-    ' "program": an ES module, run from the repository root, whose default export takes one input and returns a JSON-serialisable value (import the project by ./ paths from the root; it may be async),',
+    ' "program": the source text of an ES module (not a path), run from the repository root, whose default export takes one input and returns a JSON-serialisable value; import the project by ./ paths from the root; it may be async, and for asynchronous behaviour it returns what it observed (which calls ran, in what order, which promises settled and how), never a timing,',
     ' "cases": up to 6 {"input", "expected" (for "requirement": the answer the task\'s words imply), "throws": true where the task says it throws}}}.',
     'For "preserve" probes choose inputs whose behaviour the task does not change: the harness takes their expected answer from the unchanged base, not from you.',
+    'An example probe: {"id": "trims-names", "basis": "preserve", "keeps": "label(name) trims the spaces around the name", "program": "import { label } from \'./label.mjs\';\\nexport default (input) => label(input.name);", "cases": [{"input": {"name": "  ann  "}}, {"input": {"name": "bob"}}]}.',
     'If nothing is worth checking, answer {"probes": []}.',
   ].join(" "),
   prose: [
@@ -546,6 +576,8 @@ export interface ReviewConversation {
   readonly answer: string;
   readonly stopReason: string;
   readonly charge: ReviewCharge;
+  /** The conversation so far, for a revision that continues it. */
+  readonly messages: AgentLoopOutcome["messages"];
 }
 
 const answerNow = "Answer now with the one JSON object; no more tool calls.";
@@ -569,6 +601,8 @@ export async function converse(input: {
   readonly loopDependencies: AgentLoopDependencies;
   readonly readOnly: Pick<AgentLoopDependencies, "toolInvoker" | "toolSchemas">;
   readonly clock: Clock;
+  /** Where the conversation continues one already held. */
+  readonly history?: AgentLoopOutcome["messages"];
 }): Promise<ReviewConversation> {
   const started = input.clock.now();
   const toolSteps = Math.max(1, input.budget.maxSteps - 1);
@@ -582,6 +616,7 @@ export async function converse(input: {
   };
   const reading = await input.runLoop(input.request(toolSteps), {
     ...dependencies,
+    ...(input.history === undefined ? {} : { history: input.history }),
     budget: { ...input.loopDependencies.budget, ...input.budget, maxSteps: toolSteps },
   });
   const left = {
@@ -604,6 +639,7 @@ export async function converse(input: {
   return {
     answer: (answered ?? reading).completionClaim ?? "",
     stopReason: (answered ?? reading).stopReason,
+    messages: (answered ?? reading).messages,
     charge: {
       steps: loops.reduce((total, loop) => total + loop.steps, 0),
       tokensUsed: loops.reduce((total, loop) => total + loop.tokensUsed, 0),
@@ -723,6 +759,7 @@ export function createCandidateReview(options: CandidateReviewOptions): {
     readonly parts: Readonly<Record<string, GateStatus>>;
     readonly claims: readonly string[];
   }>;
+  readonly withhold: (reason: string) => Promise<string>;
   /** The probes and their latest readings, for the report; empty before an examination. */
   readonly readings: () => {
     readonly probes: readonly ReviewProbe[];
@@ -805,16 +842,60 @@ export function createCandidateReview(options: CandidateReviewOptions): {
               record,
             };
       }
-      const admitted = admitProbes(options.task, parsed.value);
+      let admitted = admitProbes(options.task, parsed.value);
+      let charge = conversation.charge;
+      let answerError = parsed.error;
+      // One revision where every probe was dropped for its form, with the reasons: a probe that
+      // cannot run says nothing either way, and the first live answer gave paths for programs.
+      const spare = options.remaining();
+      if (
+        admitted.probes.length === 0 &&
+        (admitted.dropped.length > 0 || parsed.error !== null) &&
+        spare.tokens * reviewTokenShare >= 3 * maxOutput &&
+        spare.wallMs >= needed
+      ) {
+        const revision = await converse({
+          mode: "executable",
+          request: () =>
+            [
+              "None of your probes can run:",
+              ...(parsed.error === null ? [] : [`- the answer: ${parsed.error}`]),
+              ...admitted.dropped.map((one) => `- ${one.id}: ${one.reason}`),
+              "Answer again with the one JSON object, every program the full source text of a module with a default export, every probe with its cases.",
+            ].join("\n"),
+          budget: {
+            maxSteps: 3,
+            maxTokens: Math.floor(spare.tokens * reviewTokenShare),
+            maxWallTimeMs: Math.min(reviewWallCapMs, Math.floor(spare.wallMs * reviewWallShare)),
+          },
+          runLoop: options.runLoop,
+          loopDependencies: options.loopDependencies,
+          readOnly: options.readOnly(),
+          clock: options.clock,
+          history: conversation.messages,
+        });
+        await options.charge(revision.charge);
+        charge = addCharge(charge, revision.charge);
+        const revised = parseReviewAnswer(revision.answer);
+        answerError = revised.error;
+        const again = admitProbes(options.task, revised.value);
+        admitted = {
+          probes: again.probes,
+          dropped: [
+            ...admitted.dropped.map((one) => ({ ...one, reason: `first answer: ${one.reason}` })),
+            ...again.dropped,
+          ],
+        };
+      }
       if (admitted.probes.length === 0)
         return nothing(
           await recordExamination(options.evidence, {
             mode: "executable",
             phase: "examined",
-            answerError: parsed.error,
+            answerError,
             dropped: admitted.dropped,
             probes: [],
-            charge: conversation.charge,
+            charge,
             wallMs: options.clock.now() - started,
           }),
         );
@@ -827,7 +908,7 @@ export function createCandidateReview(options: CandidateReviewOptions): {
             reason: `the reviewer answered with ${left.wallMs} ms left, too little to run its probes and still give an attempt`,
             probes: admitted.probes,
             dropped: admitted.dropped,
-            charge: conversation.charge,
+            charge,
           }),
         );
       const base = await options.runProbes(admitted.probes, "base");
@@ -847,13 +928,13 @@ export function createCandidateReview(options: CandidateReviewOptions): {
       const record = await recordExamination(options.evidence, {
         mode: "executable",
         phase: "examined",
-        answerError: parsed.error,
+        answerError,
         dropped: admitted.dropped,
         probes: admitted.probes,
         classified,
         parts,
         runs: [...base.records, ...candidate.records],
-        charge: conversation.charge,
+        charge,
         wallMs: options.clock.now() - started,
       });
       return {
@@ -888,10 +969,21 @@ export function createCandidateReview(options: CandidateReviewOptions): {
       return { parts, claims };
     },
     readings: () => ({ probes, classified: latest }),
+    withhold: (reason) =>
+      recordExamination(options.evidence, { mode: options.mode, phase: "withheld", reason }),
   };
 }
 
 const missingRun: ProbeRun = { kind: "did-not-complete", detail: "the probe was not run" };
+
+function addCharge(first: ReviewCharge, second: ReviewCharge): ReviewCharge {
+  return {
+    steps: first.steps + second.steps,
+    tokensUsed: first.tokensUsed + second.tokensUsed,
+    usage: combineUsage(first.usage, second.usage),
+    callsWithUnknownUsage: first.callsWithUnknownUsage + second.callsWithUnknownUsage,
+  };
+}
 
 /**
  * The review's probes as preservation obligations, each with the readings of its cases that hold

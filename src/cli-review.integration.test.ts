@@ -141,15 +141,19 @@ const upperProbe = {
  */
 function roles(input: {
   readonly worker: readonly ScriptedTurn[];
+  /** One answer, or one per review conversation in order (the last repeats). */
   readonly reviewer: unknown;
   readonly repair?: readonly ScriptedTurn[];
 }): readonly ScriptedTurnSource[] {
   let worker = 0;
   let repair = 0;
+  let reviews = 0;
   const route: ScriptedTurnSource = (request) => {
     const text = JSON.stringify(request);
-    if (text.includes("You review a change another coding agent made"))
-      return { text: JSON.stringify(input.reviewer) };
+    if (text.includes("You review a change another coding agent made")) {
+      const answers = Array.isArray(input.reviewer) ? input.reviewer : [input.reviewer];
+      return { text: JSON.stringify(answers[Math.min(reviews++, answers.length - 1)]) };
+    }
     if (text.includes("A separate review of your change"))
       return input.repair?.[repair++] ?? { text: "Done with the review's findings." };
     return input.worker[worker++] ?? { text: "Done." };
@@ -352,7 +356,10 @@ describe("the candidate review's development controls", () => {
     expect(result.outcome?.preservation?.find((one) => one.id === "base-suite")?.status).toBe(
       "unmeasured",
     );
-    expect(result.outcome?.review?.examination).toBeNull();
+    // The review was withheld on the record, since there was no green candidate to review.
+    expect(result.outcome?.review?.examination).toMatch(/^sha256:/);
+    expect(result.outcome?.review?.attempt).toBeNull();
+    expect(result.outcome?.review?.readings).toEqual([]);
   }, 240_000);
 
   it("a weakened check that hides damage is refused", async () => {
@@ -434,6 +441,26 @@ describe("the candidate review's development controls", () => {
       "throws-itself#1 defective-program",
       "throws-itself#2 defective-program",
     ]);
+    expect(readFileSync(join(directory, "label.mjs"), "utf8")).toBe(correctUpper);
+    await independentlyChecked(result.bundleDirectory ?? "");
+  }, 240_000);
+
+  it("a first answer whose programs are paths gets one revision, and the revised probes run", async () => {
+    const { result, stdout, directory } = await swarm(
+      upperTask,
+      upperCheck,
+      roles({
+        worker: [declare(["label.mjs"]), write("label.mjs", untrimmedUpper)],
+        reviewer: [
+          { probes: [{ ...trimming, program: "./probes/trims.js" }] },
+          { probes: [trimming] },
+        ],
+        repair: [write("label.mjs", correctUpper)],
+      }),
+    );
+    expect(result.outcome?.status, stdout.slice(-3000)).toBe("accepted");
+    expect(result.outcome?.review?.attempt).toMatchObject({ state: "given", accepted: true });
+    expect(readingsOf(result)).toEqual(["trims-names#1 kept", "trims-names#2 kept"]);
     expect(readFileSync(join(directory, "label.mjs"), "utf8")).toBe(correctUpper);
     await independentlyChecked(result.bundleDirectory ?? "");
   }, 240_000);

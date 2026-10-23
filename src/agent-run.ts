@@ -981,7 +981,8 @@ async function executeAgentTask(
         priorLoopAccount(latestLoop.messages, latestLoop.stopReason, latestLoop.steps),
       );
       if (request.followUpKind !== undefined)
-        beforeOwed.set(request.followUpKind, { completionClaim, messages, latestLoop });
+        for (const kind of request.followUpCarries ?? [request.followUpKind])
+          beforeOwed.set(kind, { completionClaim, messages, latestLoop });
       const repairBudget = { ...loopDependencies.budget, ...attemptBudget };
       const repairPoint = await decisionPointFor(`attempt ${request.attempt}`, repairBudget);
       const repair = await resolveWithModel(

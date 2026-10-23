@@ -1213,6 +1213,10 @@ describe("the experimental review of a green candidate", () => {
       calls.push("measure");
       return Promise.resolve({ parts: measured(), claims: ["probe: requested"] });
     },
+    withhold: (reason) => {
+      calls.push(`withhold: ${reason}`);
+      return Promise.resolve("sha256:withheld");
+    },
   });
   const source = (marker: string) => `${fixedSource}\n// ${marker}\n`;
   const reading = (test: Harness) => () => {
@@ -1223,7 +1227,7 @@ describe("the experimental review of a green candidate", () => {
     };
   };
 
-  it("is examined once the gates are green and the other owed work is done, and its findings get one attempt", async () => {
+  it("is examined once the gates are green, before the follow-up on outcomes, and its findings get one attempt", async () => {
     const calls: string[] = [];
     const owed = { identity: "sha256:outcomes", brief: "outcomes" };
     let test: Harness | null = null;
@@ -1242,11 +1246,14 @@ describe("the experimental review of a green candidate", () => {
         test?.workspace.write(sourcePath, source("MET_REQUEST"));
       return Promise.resolve();
     });
-    expect(calls).toEqual(["attempt 1 outcomes", "examine", "attempt 2 review", "measure"]);
-    expect(requests[1]?.followUp).toContain("missed-requirement");
-    expect(outcome.review).toMatchObject({ state: "given", attempt: 2, accepted: true });
+    // The review is asked before the follow-up on outcomes, whose brief rides in its attempt.
+    expect(calls).toEqual(["examine", "attempt 1 review", "measure"]);
+    expect(requests[0]?.followUp).toContain("missed-requirement");
+    expect(requests[0]?.followUp).toContain("outcomes");
+    expect(outcome.review).toMatchObject({ state: "given", attempt: 1, accepted: true });
+    expect(outcome.followUp).toMatchObject({ state: "given", attempt: 1, accepted: true });
     expect(outcome.reviewExamination).toBe("sha256:examination");
-    const decision = ledgerPayloads("ratchet-decision").find((one) => one.attempt === 2) as {
+    const decision = ledgerPayloads("ratchet-decision").find((one) => one.attempt === 1) as {
       parts: { before: Record<string, unknown>; after: Record<string, unknown> };
     };
     expect(decision.parts.before["candidate-review"]).toEqual({
@@ -1270,6 +1277,7 @@ describe("the experimental review of a green candidate", () => {
     });
     expect(attempts).toBe(0);
     expect(calls).toEqual(["examine"]);
+    expect(outcome.reviewExamination).toBe("sha256:examination");
     expect(outcome.review).toBeNull();
     expect(outcome.settled).toBe("green");
   });
@@ -1300,5 +1308,25 @@ describe("the experimental review of a green candidate", () => {
     ]);
     // The bundled verifier re-derives the same refusal from the decision's own record.
     expect(rederiveRatchet(decision).violations).toEqual(["gate-part-regressed"]);
+  });
+
+  it("waits for the task's continuation, and says so when no attempt is left to act on a finding", async () => {
+    const calls: string[] = [];
+    const test = harness({
+      cap: 1,
+      continuation: { identity: "sha256:continuation", brief: "continue" },
+      review: reviewOf({ brief: "findings" }, calls),
+    });
+    test.workspace.write(sourcePath, fixedSource);
+    const outcome = await test.run((request) => {
+      calls.push(`attempt ${request.attempt} ${request.followUpKind}`);
+      return Promise.resolve();
+    });
+    expect(calls).toEqual([
+      "attempt 1 continuation",
+      "withhold: no attempt was left under the cap of 1 for what a review could find",
+    ]);
+    expect(outcome.reviewExamination).toBe("sha256:withheld");
+    expect(outcome.review).toBeNull();
   });
 });
