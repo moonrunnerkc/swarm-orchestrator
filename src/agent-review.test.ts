@@ -146,6 +146,25 @@ describe("what a probe's cases establish", () => {
     ]);
   });
 
+  it("reads a probe the base answers and the candidate no longer loads as a regression", () => {
+    const lost = classifyProbe(
+      preserve,
+      twice(answered("[1,2]", "[1]")),
+      twice({ kind: "did-not-load", detail: "does not provide an export named parse" }),
+    );
+    expect(lost.map((one) => [one.reading, one.role, one.base])).toEqual([
+      ["preservation-regression", "kept", "[1,2]"],
+      ["preservation-regression", "kept", "[1]"],
+    ]);
+  });
+
+  it("keeps a preservation probe whose quote is not the task's words, without the quote", () => {
+    const admitted = admitProbes(task, { probes: [{ ...preserve, quote: "e" }] });
+    expect(admitted.probes).toHaveLength(1);
+    expect(admitted.probes[0]?.quote).toBeUndefined();
+    expect(admitted.dropped[0]?.reason).toContain("not the task's own words");
+  });
+
   it("establishes nothing where two runs disagree, the program raised, or nothing answered", () => {
     expect(
       classifyProbe(

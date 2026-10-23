@@ -13,10 +13,12 @@ import {
   parseJson,
 } from "./instrument-dependencies.ts";
 import {
+  type MovedReference,
+  movedReferences,
+  moveNamesRename,
   pairRenames,
   type RecordedRename,
   renameTransportRule,
-  transportedEqual,
 } from "./rename-transport.ts";
 
 export type { InstalledRunner, InstrumentDependency } from "./instrument-dependencies.ts";
@@ -64,6 +66,8 @@ export interface InstrumentFile {
    * by that file's new path, or the file is itself one side of a recorded rename. Absent means not.
    */
   readonly transported?: true;
+  /** The references that moved, each the base's word and its replacement, where transported. */
+  readonly moves?: readonly MovedReference[];
 }
 
 export interface InstrumentObservation {
@@ -122,6 +126,11 @@ export const instrumentObservationSchema = z.strictObject({
       reference: digestPattern.nullable(),
       current: digestPattern.nullable(),
       transported: z.literal(true).optional(),
+      moves: z
+        .array(z.strictObject({ was: z.string().min(1), now: z.string().min(1) }))
+        .min(1)
+        .max(200)
+        .optional(),
     }),
   ),
   dependencies: z.array(
@@ -219,20 +228,20 @@ export function instrumentChanges(observation: InstrumentObservation): readonly 
 }
 
 /**
- * Whether a file's difference is read as moved references (rename-transport-v1). A side of a
- * rename counts only where the recorded rename carries the digest the file entry carries, so an
- * entry cannot borrow a pair it is not.
+ * Whether a file's difference is read as moved references (rename-transport-v1): an entry both
+ * trees hold, marked so, whose every recorded move names one of the recorded renames as text. An
+ * entry cannot borrow a rename its moves do not name, and a moved or deleted file never counts.
  */
 export function transportedFile(observation: InstrumentObservation, file: InstrumentFile): boolean {
   if (file.transported !== true || observation.transport?.rule !== renameTransportRule)
     return false;
   const renames = observation.transport.renames;
-  if (renames.length === 0) return false;
-  if (file.current === null)
-    return renames.some((one) => one.from === file.path && one.reference === file.reference);
-  if (file.reference === null)
-    return renames.some((one) => one.to === file.path && one.current === file.current);
-  return true;
+  if (renames.length === 0 || file.reference === null || file.current === null) return false;
+  const moves = file.moves ?? [];
+  return (
+    moves.length > 0 &&
+    moves.every((move) => renames.some((rename) => moveNamesRename(move, rename)))
+  );
 }
 
 /** The reading a check keeps once its instrument is known: a pass it did not author, or not one. */
@@ -431,9 +440,9 @@ function scriptsOf(manifest: Record<string, unknown> | null): Readonly<Record<st
 
 /**
  * The package script a package-manager command runs, or null where the command is not one. A
- * lifecycle alias is a script too: `npm test` runs the `test` script exactly as `npm run test`
- * does, and reading it as no script left a `test` body replaced by an echo of a passing summary
- * outside the instrument of every check spelled that way.
+ * lifecycle alias is a script too (`bun test` is bun's own runner, not one): `npm test` runs the
+ * `test` script exactly as `npm run test` does, and reading it as no script left a `test` body
+ * replaced by an echo of a passing summary outside the instrument of every check spelled that way.
  */
 export function scriptOf(command: string | null): string | null {
   if (command === null) return null;
@@ -444,7 +453,7 @@ export function scriptOf(command: string | null): string | null {
     );
   if (named?.[1] !== undefined) return named[1];
   const alias =
-    /^(?:npm|pnpm|yarn|bun)(?:\s+--?[\w-]+(?:=\S+)?)*\s+(test|tst|t|start|stop|restart)(?:\s+--?[\w-]+(?:=\S+)?)*\s*$/.exec(
+    /^(?:npm|pnpm|yarn)(?:\s+--?[\w-]+(?:=\S+)?)*\s+(test|tst|t|start|stop|restart)(?:\s+--?[\w-]+(?:=\S+)?)*\s*$/.exec(
       text,
     );
   if (alias?.[1] === undefined) return null;
@@ -1097,6 +1106,9 @@ export async function observeInstrument(
   };
 }
 
+/** More moved references than this in one entry are not recorded, and the entry reads as changed. */
+const movesLimit = 200;
+
 /**
  * One pairing per pair of trees: every check of a verification is observed against the same base
  * and checkout, which a tree factory gives one remembered reader of the base for, and the pairing
@@ -1130,20 +1142,17 @@ async function transportedEntries(
   if (differing.length === 0) return { renames: [], residuals: [] };
   const map = await renamesOf(trees);
   if (map.pairs.length === 0) return { renames: [], residuals: map.residuals };
-  const renamedTo = new Set(map.pairs.map((pair) => pair.to));
   let marked = false;
   for (const file of differing) {
     const text = texts.get(file.path);
-    if (text === undefined) continue;
+    // Only an entry both trees hold can be transported. An instrument file that was itself moved
+    // or deleted is found by its tool (or not) by its name, so moving `.mocharc.json` aside is a
+    // configuration the tool no longer reads, whatever its content: it reads as changed.
+    if (text === undefined || text.reference === null || text.current === null) continue;
     const location = file.path.split("#")[0] as string;
-    const moved =
-      text.reference !== null && text.current !== null
-        ? transportedEqual(map, text.reference, location, text.current, location)
-        : text.current === null
-          ? map.byFrom.has(file.path)
-          : renamedTo.has(file.path);
-    if (!moved) continue;
-    files.set(file.path, { ...file, transported: true });
+    const moves = movedReferences(map, text.reference, location, text.current, location);
+    if (moves === null || moves.length === 0 || moves.length > movesLimit) continue;
+    files.set(file.path, { ...file, transported: true, moves });
     marked = true;
   }
   return { renames: marked ? map.pairs : [], residuals: map.residuals };

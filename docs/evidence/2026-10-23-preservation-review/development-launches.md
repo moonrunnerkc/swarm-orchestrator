@@ -73,3 +73,11 @@ that the build above corrects. None is a study launch, and their results are not
   tasks on the same host: clones, installs and project test runs, one at a time and no model
   inference. Every arm shares that load, since the order interleaves them, but it is not a
   controlled resource, and a timing-sensitive failure in this study can be the host's.
+
+- **A second exposure path, found during the study by an independent code review.** The run
+  record's command log (`commands`) carried the hidden scorer's commands with their exit status,
+  in plain JSON beside the sealed verdict. The development study ran with that path open. The
+  implementer did not read any record's command log during the study; the only reads of its
+  records were by `review-account.mjs`, which prints the review's own records and nothing of the
+  scoring. The runner used for the fresh block runs the hidden scorer under a log of its own and
+  seals those commands with the verdict.

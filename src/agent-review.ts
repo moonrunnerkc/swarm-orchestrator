@@ -121,8 +121,20 @@ export function admitProbes(task: string, answer: unknown): ProbeAdmission {
       dropped.push({ id, reason: `at most ${maxProbes} probes run` });
       continue;
     }
+    // A quote is the task's words or it is not carried: a preservation probe's quote is what ties
+    // it to the task's own sentences about keeping behaviour, so it is held to the same check.
+    if (probe.basis === "preserve" && probe.quote !== undefined && !quotesTask(task, probe.quote)) {
+      dropped.push({
+        id,
+        reason: "its quote is not the task's own words, so it is kept without one",
+      });
+      const { quote: _quote, ...unquoted } = probe;
+      seen.add(probe.id);
+      if (probes.length < maxProbes) probes.push(unquoted);
+      continue;
+    }
     if (probe.basis === "requirement") {
-      if (probe.quote === undefined || sentencesQuoted(task, [probe.quote]).length === 0) {
+      if (probe.quote === undefined || !quotesTask(task, probe.quote)) {
         dropped.push({ id, reason: "a requirement probe must quote the task's own words" });
         continue;
       }
@@ -135,6 +147,14 @@ export function admitProbes(task: string, answer: unknown): ProbeAdmission {
     probes.push(probe);
   }
   return { probes, dropped };
+}
+
+/**
+ * Whether a quote is the task's own words: at least twelve characters, matched against the task's
+ * sentences. A single short fragment matches some sentence of almost any task.
+ */
+function quotesTask(task: string, quote: string): boolean {
+  return quote.trim().length >= 12 && sentencesQuoted(task, [quote]).length > 0;
 }
 
 /** A probe id as a slug: lower case, dashes for anything else, starting with a letter. */
@@ -265,8 +285,25 @@ export function classifyProbe(
           ? '{"threw":true}'
           : textOf(one.expected)
         : null;
-    const failed = unusable(base, "base") ?? unusable(candidate, "candidate");
     const blank = { probe: probe.id, index: index + 1, input: one.input, expected };
+    // The probe answered on the base both times and the candidate gives it no answer at all: the
+    // change took away something the base had (an export, a module), which is the plainest
+    // regression a probe can show.
+    const baseAnswered = base.every((run) => run.kind === "answered");
+    const candidateFailed = candidate.every((run) => run.kind !== "answered");
+    if (baseAnswered && candidateFailed) {
+      const baseAnswer = (base[0] as { answers: readonly CaseAnswer[] }).answers[index];
+      const lost = candidate[0] as Exclude<ProbeRun, { kind: "answered" }>;
+      return {
+        ...blank,
+        reading: "preservation-regression",
+        role: "kept",
+        base: baseAnswer === undefined ? null : answerText(baseAnswer),
+        candidate: null,
+        detail: `the base answered and the candidate gave no answer (${lost.kind}: ${lost.detail.slice(0, 300)})`,
+      };
+    }
+    const failed = unusable(base, "base") ?? unusable(candidate, "candidate");
     if (failed !== null)
       return {
         ...blank,

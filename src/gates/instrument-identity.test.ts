@@ -954,6 +954,32 @@ describe("a configuration change that only follows the patch's renames", () => {
     ).toEqual(["eslint.config.js"]);
   });
 
+  it("never reads a configuration the tool finds by name as transported once it is moved", async () => {
+    const reference = {
+      "package.json": manifest({ test: "mocha" }),
+      ".mocharc.json": '{ "spec": "test/**/*.js", "forbidOnly": true }\n',
+      "test/a.js": "t",
+    };
+    const moved = {
+      "package.json": manifest({ test: "mocha" }),
+      "config/mocharc.json": reference[".mocharc.json"],
+      "test/a.js": "t",
+    };
+    expect(await changes({ command: "npm test", argv: null }, reference, moved)).toEqual([
+      ".mocharc.json",
+    ]);
+  });
+
+  it("is refused offline where a recorded move names no recorded rename", async () => {
+    const observation = await observeInstrument(npm("lint"), trees(reference, renamed));
+    const forged = JSON.parse(JSON.stringify(observation));
+    const entry = forged.files.find((file: { path: string }) => file.path === "eslint.config.js");
+    entry.moves = [{ was: "'no-undef': 'error'", now: "'no-undef': 'off'" }];
+    expect(offlineChanges(forged)).toEqual(["eslint.config.js"]);
+    delete entry.moves;
+    expect(offlineChanges(forged)).toEqual(["eslint.config.js"]);
+  });
+
   it("is refused offline when a record claims a transport it does not carry", async () => {
     const observation = await observeInstrument(npm("lint"), trees(reference, renamed));
     const { transport: _transport, ...stripped } = JSON.parse(JSON.stringify(observation));

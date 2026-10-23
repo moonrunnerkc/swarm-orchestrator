@@ -142,12 +142,13 @@ export function settleObligations(input: {
 }): readonly ObligationStatus[] {
   // A case that established nothing (unstable, a defective program, no answer) measures nothing,
   // so it neither keeps an obligation nor breaks one; a probe with no measuring case is unmeasured.
+  // A regression in any case is a regression. Kept needs every case to have measured: a probe
+  // with one unstable case among kept ones has not shown the behaviour kept.
   const probeStatus = (readings: readonly string[]): ObligationState => {
-    const measuring = readings.filter(
-      (one) => one === "kept" || one === "met" || one === "preservation-regression",
-    );
-    if (measuring.length === 0) return "unmeasured";
-    return measuring.includes("preservation-regression") ? "regressed" : "kept";
+    if (readings.includes("preservation-regression")) return "regressed";
+    return readings.length > 0 && readings.every((one) => one === "kept" || one === "met")
+      ? "kept"
+      : "unmeasured";
   };
   const settled: ObligationStatus[] = input.obligations.map((obligation) => {
     if (obligation.source === "base")
@@ -177,11 +178,14 @@ export function settleObligations(input: {
         by: found === undefined ? "not judged" : `its checks: ${found.status}`,
       };
     }
-    const quoting = input.probes.filter(
-      (probe) =>
-        probe.quote !== null &&
-        folded(obligation.statement).includes(folded(probe.quote).slice(0, 120)),
-    );
+    // A probe speaks to a task sentence only where it quotes at least half of it: a fragment
+    // quoted from one clause does not measure the whole sentence.
+    const quoting = input.probes.filter((probe) => {
+      if (probe.quote === null) return false;
+      const quote = folded(probe.quote).replace(/[.;,]+$/, "");
+      const statement = folded(obligation.statement);
+      return quote.length >= statement.length / 2 && statement.includes(quote);
+    });
     const status = probeStatus(quoting.flatMap((probe) => probe.readings));
     return {
       ...obligation,
