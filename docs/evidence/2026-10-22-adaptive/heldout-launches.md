@@ -33,3 +33,7 @@ install from it with `--install --lockfile package-lock.json`, and it is never p
 edits `package-lock.json` would not apply over the scorer's tree, which is prepared without it; any
 such case is reported. Same tasks, arms, order and budgets, refrozen as `heldout-2`; this counts as
 the first of the cell's two permitted setup retries.
+
+Refrozen manifest `~/.cache/swarm-study-2026-10-22/heldout-2/manifest.json`, sha256
+`ff861dcf5bfca97a1c882882d7327d325d6b2c5594d7b47f40cd281c15d0c91b`; preflight passes all 16 configurations,
+with the harness lockfile committed and Swarm arms installing from it.
