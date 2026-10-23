@@ -20,7 +20,7 @@ Outcomes are read only after the sixteenth launch is scored.
 Launch 0 (p-queue, `swarm`) stopped before its first model request: with no lockfile at the base,
 Swarm ran without `--install`, its goal setup checked the base in a fresh checkout with no installed
 dependencies, every gate stood down, and the product refused to measure (exit 1 after 0.9 s; record
-`heldout/runs/p-queue-compat-remove-throw-on-timeout.swarm.setup-1.json`). The preflight had passed
+`heldout/first-freeze/packed-derived/records`, `p-queue-compat-remove-throw-on-timeout.swarm.setup-1.json`). The preflight had passed
 because the harness's gate-plan check runs in a prepared tree; it does not exercise the product's
 own fresh-checkout setup.
 
@@ -50,3 +50,10 @@ Correction: each launch gets a short temporary directory (`/private/tmp/sws-*`),
 shared profile and removed after the launch, for every arm. The four p-queue launches had already
 run with the long path, all four alike; p-queue's tests open no socket. Recorded through the
 runner's correction record with both harness digests; the manifest is unchanged.
+
+## Completion
+
+All sixteen launches were scored on October 23, 2026 (UTC), with no infrastructure failure after
+inference. The only zero-inference setup failures were the two above. Outcomes, pairs, the
+decision point's account, verdict accuracy and the evaluator audit are in
+[the stage report](README.md#held-out-block-1).
