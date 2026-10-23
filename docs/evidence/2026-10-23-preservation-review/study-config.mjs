@@ -34,6 +34,20 @@ const studies = {
       swarm: { flags: ["--adaptive", "--review", "executable"] },
     },
   },
+  fresh: {
+    tasksModule: tasksModuleArgument ?? cache("swarm-heldout-2026-10-23c/sealed/heldout-tasks.mjs"),
+    taskIds: [
+      "ufo-feature-filter-query",
+      "ufo-bugfix-base-prefix-boundary",
+      "nanoid-refactor-module-subdirectories",
+    ],
+    protocol: resolve("docs/evidence/2026-10-23-preservation-review/fresh-block-protocol.md"),
+    arms: ["swarm", "swarm-control", "aider", "opencode"],
+    armSettings: {
+      swarm: { flags: ["--adaptive", "--review", "executable"] },
+      "swarm-control": { flags: ["--adaptive"] },
+    },
+  },
 };
 
 const study = studies[block];
@@ -58,6 +72,7 @@ const config = {
     swarmCli: join(tool, "dist/cli.js"),
     swarmRevision: revision,
     opencodeBin: cache("swarm-capability-tools/opencode/node_modules/.bin/opencode"),
+    aiderBin: cache("swarm-capability-tools/aider-0.82.3/bin/aider"),
   },
   budgets: {
     wallMsPerLaunch: 720500,
@@ -100,7 +115,11 @@ const config = {
     "swarm-heldout-2026-10-23c",
     "swarm-study-2026-10-23c",
   ],
-  inputRoots: [cache("swarm-study-2026-10-22/heldout-inputs"), cache("swarm-study-2026-10-23/heldout-inputs")],
+  inputRoots: [
+    cache("swarm-study-2026-10-22/heldout-inputs"),
+    cache("swarm-study-2026-10-23/heldout-inputs"),
+    join(studyRoot, "heldout-inputs"),
+  ],
   harnessLockfiles: {
     "p-limit-bugfix-limit-function-clear-queue": {
       name: "p-limit-bugfix-limit-function-clear-queue/package-lock.json",
@@ -109,6 +128,18 @@ const config = {
     "svgo-bugfix-remove-scripts-anchor-bypass": {
       name: "svgo-bugfix-remove-scripts-anchor-bypass/package-lock.json",
       digest: "sha256:5a61a1a968736c0b192b2b7f6bd36d5d2251e8778ed89add20fc0280f6e9cfec",
+    },
+    "ufo-feature-filter-query": {
+      name: "ufo-feature-filter-query/package-lock.json",
+      digest: "sha256:7dd1273583912f56cb8f54694c0eb4798b743cb49da72e210258c64c17a350fe",
+    },
+    "ufo-bugfix-base-prefix-boundary": {
+      name: "ufo-bugfix-base-prefix-boundary/package-lock.json",
+      digest: "sha256:18c73b9b38b4e280822d70fcf7ef3754662ff32ac7421ed695b0dee182c26c8f",
+    },
+    "nanoid-refactor-module-subdirectories": {
+      name: "nanoid-refactor-module-subdirectories/package-lock.json",
+      digest: "sha256:489ec77d36151f493d93736578ae1506298759e052fe1a120b1f53d3ba01644f",
     },
   },
 };
