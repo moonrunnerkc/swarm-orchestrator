@@ -41,10 +41,25 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
  * The arms a manifest may register. Every `swarm` arm runs the same pinned build and differs only
  * in its frozen flags: `swarm-control` is the product without the flag under study, and
  * `swarm-direct` is an internal ablation with orchestration removed, not an independent competitor.
+ * `swarm-previous` is the one Swarm arm that may run another pinned build (its own `swarmCli` in
+ * the manifest's arm settings, with its own digests), so a revised implementation can be compared
+ * with the one it replaces in one manifest and one interleaved order.
  */
-export const launchArms = ["swarm", "swarm-control", "swarm-direct", "opencode"];
+export const launchArms = ["swarm", "swarm-control", "swarm-direct", "swarm-previous", "opencode"];
 export const isSwarmArm = (arm) =>
-  arm === "swarm" || arm === "swarm-control" || arm === "swarm-direct";
+  arm === "swarm" || arm === "swarm-control" || arm === "swarm-direct" || arm === "swarm-previous";
+
+/** The Swarm build an arm runs: its own pin where the manifest gives one, else the main pin. */
+export function swarmBuildOf(manifest, arm) {
+  const own = manifest.arms?.[arm];
+  return typeof own?.swarmCli === "string"
+    ? { cli: own.swarmCli, cliDigest: own.swarmCliDigest, buildDigest: own.swarmBuildDigest }
+    : {
+        cli: manifest.pins.swarmCli,
+        cliDigest: manifest.pins.swarmCliDigest,
+        buildDigest: manifest.pins.swarmBuildDigest,
+      };
+}
 
 export const sandboxExec = "/usr/bin/sandbox-exec";
 
@@ -234,7 +249,7 @@ export function armArgv({
   if (isSwarmArm(arm))
     return [
       pins.nodeBin,
-      pins.swarmCli,
+      swarmBuildOf(manifest, arm).cli,
       prompt,
       "--model",
       `local:${pins.model}`,
@@ -343,7 +358,7 @@ export function validateLaunch({ manifest, arm, launch, canary, otherLaunch, inp
   check("sandbox-exec present", existsSync(sandboxExec), sandboxExec);
   for (const [name, path] of [
     ["node", pins.nodeBin],
-    ...(isSwarmArm(arm) ? [["swarm cli", pins.swarmCli]] : []),
+    ...(isSwarmArm(arm) ? [["swarm cli", swarmBuildOf(manifest, arm).cli]] : []),
     ...(arm === "opencode" ? [["opencode", pins.opencodeBin]] : []),
   ])
     check(
@@ -359,18 +374,19 @@ export function validateLaunch({ manifest, arm, launch, canary, otherLaunch, inp
       `${node.version ?? node.problem}; pinned ${pins.node}`,
     );
   }
-  if (isSwarmArm(arm) && typeof pins.swarmCli === "string" && existsSync(pins.swarmCli)) {
-    const observed = digestOf(readFileSync(pins.swarmCli));
+  const swarmBuild = isSwarmArm(arm) ? swarmBuildOf(manifest, arm) : null;
+  if (swarmBuild !== null && typeof swarmBuild.cli === "string" && existsSync(swarmBuild.cli)) {
+    const observed = digestOf(readFileSync(swarmBuild.cli));
     check(
       "swarm cli digest",
-      observed === pins.swarmCliDigest,
-      `${observed}; pinned ${pins.swarmCliDigest}`,
+      observed === swarmBuild.cliDigest,
+      `${observed}; pinned ${swarmBuild.cliDigest}`,
     );
-    const build = treeDigest(dirname(pins.swarmCli));
+    const build = treeDigest(dirname(swarmBuild.cli));
     check(
       "swarm build digest",
-      build === pins.swarmBuildDigest,
-      `${build}; pinned ${pins.swarmBuildDigest}`,
+      build === swarmBuild.buildDigest,
+      `${build}; pinned ${swarmBuild.buildDigest}`,
     );
   }
   if (arm === "opencode" && typeof pins.opencodeBin === "string" && existsSync(pins.opencodeBin)) {

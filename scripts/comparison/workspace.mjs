@@ -316,7 +316,7 @@ export function swarmConfigurationText(endpoint, task, declared = {}) {
  */
 export function writeArmConfiguration(directory, arm, endpoint, model, task, declared = {}) {
   // The internal ablation is Swarm with its orchestration flags off: the same configuration file.
-  if (arm === "swarm" || arm === "swarm-control" || arm === "swarm-direct") {
+  if (arm.startsWith("swarm")) {
     writeFileSync(join(directory, "swarm.toml"), swarmConfigurationText(endpoint, task, declared));
   } else {
     writeFileSync(

@@ -200,7 +200,22 @@ async function freeze(configPath, outPath) {
       swarmBuildDigest: treeDigest(dirname(config.pins.swarmCli)),
       ...(opencode === null ? {} : { opencode: opencode.version }),
     },
-    arms: Object.fromEntries(config.arms.map((arm) => [arm, config.armSettings?.[arm] ?? {}])),
+    // An arm with its own pinned build carries that build's digests, frozen as the main pin's are.
+    arms: Object.fromEntries(
+      config.arms.map((arm) => {
+        const settings = config.armSettings?.[arm] ?? {};
+        return [
+          arm,
+          typeof settings.swarmCli === "string"
+            ? {
+                ...settings,
+                swarmCliDigest: digestOf(readFileSync(settings.swarmCli)),
+                swarmBuildDigest: treeDigest(dirname(settings.swarmCli)),
+              }
+            : settings,
+        ];
+      }),
+    ),
     budgets: {
       setupRetries: 2,
       wallGraceMs: 60_000,

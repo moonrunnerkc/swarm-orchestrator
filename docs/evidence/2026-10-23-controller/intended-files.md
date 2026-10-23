@@ -38,3 +38,17 @@ files are recorded below as dated amendments before they are edited.
 - `README.md`: one short link.
 - `docs/evidence/2026-10-23-controller/`: reproductions, trace reconstruction, protocols,
   selection rule, records, scores and report.
+
+## Amendment 1, October 23, 2026, before editing these files
+
+- `scripts/comparison/launch-config.mjs`, `scripts/comparison/launch-config.test.mjs`,
+  `scripts/comparison/study.mjs`, `scripts/comparison/workspace.mjs`: a `swarm-previous` arm whose
+  pinned build may differ from the other Swarm arms' (its own CLI path, CLI digest and build-tree
+  digest, frozen and validated like the main pin), so the development study compares the current
+  and the revised implementation in one manifest and one interleaved order. Scoring keeps using
+  the manifest's main pinned build for every arm.
+
+## Amendment 2, October 23, 2026, before editing this file
+
+- `src/cli-options.ts`: the `--adaptive` help line and option comment name the revised rule and its
+  follow-up.
