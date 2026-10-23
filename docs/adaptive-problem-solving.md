@@ -98,7 +98,10 @@ diagnosis cannot write, and a test weakened on its advice is still refused by th
 scripted, not live model behavior. A replay of the registered rule over the two retained acorn
 loops of 2026-10-22 (no model call) shows both reaching the point at step 16 of 40 with no edit.
 
-Live results are in [the adaptive stage's evidence](evidence/2026-10-22-adaptive/README.md).
+Live results are in [the adaptive stage's evidence](evidence/2026-10-22-adaptive/README.md). In
+development the point delivered one diagnosis notice before any edit on a task the same launch then
+completed (one sample, no causal claim); on the four held-out tasks it decided seven times, chose
+continue six times and retrieval once, ran no diagnosis and changed no delivered artifact.
 
 Known limits: the rule's thresholds were set before any live trial and are not tuned; the
 diagnosis uses the same model as the worker; a location that exists can still be the wrong place;
