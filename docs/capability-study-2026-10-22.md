@@ -123,3 +123,15 @@ it fails the requested no-suppression bar. Claude's local-model artifact passes 
 build but fails lint. OpenCode makes no edit after a mistaken path. These single exposed-task
 results establish no broad product advantage. The experimental option remains off by default;
 persistent hypothesis state, planning assistance and observation-cache reuse remain unimplemented.
+
+## Continuation: adaptive decision point and held-out block 1
+
+The [adaptive stage](evidence/2026-10-22-adaptive/README.md) added a compact working state and a
+bounded decision point inside the controller (`--adaptive`, experimental), made launch setup
+dependable (validated configurations, a neutral smoke through the real builder, setup failures
+recorded apart, equal in-profile permissions), and ran a registered held-out block of four fresh
+tasks across three repositories with four arms. Complete deliveries: revised Swarm 1, its control
+1, the internal ablation 1, OpenCode 2 (3 after an evaluator audit); revised Swarm against OpenCode
+0 wins, 1 loss, 3 ties as registered. The decision point changed no held-out artifact. The
+[portfolio preparation](evidence/2026-10-22-adaptive/portfolio-preparation.md) separates the next
+studies and computes their ceiling.
