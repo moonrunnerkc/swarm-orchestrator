@@ -13,6 +13,7 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { readStageRecord } from "../../../scripts/pilot/stage-files.mjs";
 
 const directory = process.argv[2];
 const arms = ["swarm", "swarm-control", "swarm-direct", "opencode"];
@@ -30,7 +31,8 @@ const amendedVerdict = (arm) => audit.rows.find((row) => row.subject === `delive
 const launches = [];
 for (const task of tasks)
   for (const arm of arms) {
-    const record = read(join(directory, "records", `${task}.${arm}.json`));
+    // Records are read from the tree or, once packed, from the stage's records pack.
+    const record = JSON.parse(readStageRecord(join(directory, "records", `${task}.${arm}.json`)));
     const sensitivityPath = join(directory, "sensitivity", `${task}.${arm}.json`);
     const sensitive = existsSync(sensitivityPath)
       ? read(sensitivityPath).commands.reduce((total, command) => total + command.sensitive.length, 0)
