@@ -54,6 +54,8 @@ export interface ResolveRequest {
   readonly followUp?: string;
   /** Which owed work the brief is: a task's own continuation, or its unresolved outcomes. */
   readonly followUpKind?: OwedKind;
+  /** Every owed kind the attempt carries, where it carries more than its `followUpKind`. */
+  readonly followUpCarries?: readonly OwedKind[];
   /**
    * The failing gates this attempt is asked to fix that passed when run over the base, each with
    * the gate-baseline record of that run: behaviour the base had and the change lost, as the
@@ -91,6 +93,8 @@ export interface CandidateReviewHook {
     readonly parts: Readonly<Record<string, GateStatus>>;
     readonly claims: readonly string[];
   }>;
+  /** Records why the review was never asked, and returns that record. */
+  readonly withhold: (reason: string) => Promise<string>;
 }
 
 /**
@@ -321,24 +325,46 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
   let reviewReading: Awaited<ReturnType<CandidateReviewHook["measure"]>> | null = null;
 
   while (attempts.length < deps.cap && deps.abortSignal?.aborted !== true) {
-    let next: OwedWork | undefined = isGreen(cycle)
-      ? owed.find((entry) => owedStates.get(entry.kind)?.state === "pending")
-      : undefined;
-    if (isGreen(cycle) && next === undefined && deps.review !== undefined && !reviewExamined) {
+    const pendingOwed = isGreen(cycle)
+      ? owed.filter((entry) => owedStates.get(entry.kind)?.state === "pending")
+      : [];
+    // What this attempt carries: the first owed item, or, once the review has findings, the
+    // review's and the outcomes' follow-up together, so the review does not cost the follow-up
+    // its attempt under the same cap.
+    let carried: readonly OwedWork[] = pendingOwed.slice(0, 1);
+    // The review asks once a finished candidate is green: after the task's own continuation,
+    // which may still change what it would read, and before the follow-up on outcomes.
+    if (
+      isGreen(cycle) &&
+      deps.review !== undefined &&
+      !reviewExamined &&
+      carried[0]?.kind !== "continuation"
+    ) {
       reviewExamined = true;
       const examined = await deps.review.examine(cycle);
       reviewExamination = examined.record;
       reviewReading = { parts: examined.parts, claims: examined.claims };
       if (examined.brief !== null) {
-        next = {
+        const entry: OwedWork = {
           kind: "review",
           rule: "candidate-review-attempt-v1",
           work: { identity: examined.identity, brief: examined.brief },
         };
-        owed.push(next);
+        owed.push(entry);
         owedStates.set("review", { state: "pending" });
+        carried = [entry, ...pendingOwed.filter((one) => one.kind === "outcomes")];
       }
     }
+    const next: OwedWork | undefined =
+      carried.length <= 1
+        ? carried[0]
+        : {
+            ...(carried[0] as OwedWork),
+            work: {
+              identity: (carried[0] as OwedWork).work.identity,
+              brief: carried.map((one) => one.work.brief).join("\n\n"),
+            },
+          };
     if (isGreen(cycle) && next === undefined) break;
     const classification = next === undefined ? classifyRepair(cycle) : null;
     if (
@@ -379,16 +405,22 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
           }
         : {}),
       ...(next === undefined ? {} : { followUp: next.work.brief, followUpKind: next.kind }),
+      ...(carried.length > 1 ? { followUpCarries: carried.map((one) => one.kind) } : {}),
     });
-    if (next !== undefined)
-      owedStates.set(next.kind, {
-        identity: next.work.identity,
+    for (const entry of carried)
+      owedStates.set(entry.kind, {
+        identity: entry.work.identity,
         state: failure?.includes("repair stopped:") === true ? "withheld" : "given",
         attempt: failure?.includes("repair stopped:") === true ? null : attempt,
         accepted: null,
         reason:
           failure === null
-            ? "given once the gates were green"
+            ? carried.length > 1
+              ? `given once the gates were green, in one attempt with ${carried
+                  .filter((one) => one !== entry)
+                  .map((one) => one.kind)
+                  .join(", ")}`
+              : "given once the gates were green"
             : failure.includes("repair stopped:")
               ? failure
               : `given, and the attempt produced nothing to judge: ${failure}`,
@@ -471,9 +503,11 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
       respecification,
       ratchetRecord: recorded.record.payloadDigest,
     });
-    const carried = next === undefined ? undefined : owedStates.get(next.kind);
-    if (next !== undefined && carried !== undefined && carried.state === "given")
-      owedStates.set(next.kind, { ...carried, accepted: decision.accepted });
+    for (const entry of carried) {
+      const state = owedStates.get(entry.kind);
+      if (state !== undefined && state.state === "given")
+        owedStates.set(entry.kind, { ...state, accepted: decision.accepted });
+    }
 
     if (!decision.accepted) {
       const kept = await keepRejectedCandidate(
@@ -502,6 +536,15 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
     rejected = null;
     if (reviewNow !== null && reviewNow !== undefined) reviewReading = reviewNow;
   }
+
+  if (deps.review !== undefined && !reviewExamined)
+    reviewExamination = await deps.review.withhold(
+      deps.abortSignal?.aborted === true
+        ? "model work ended before the review could be asked"
+        : !isGreen(cycle)
+          ? "the gates were not green when the attempts ended, so there was no candidate to review"
+          : `no attempt was left under the cap of ${deps.cap} for what a review could find`,
+    );
 
   // What became of each owed item, on the chain in the order it was owed: given with the ratchet's
   // decision, or withheld with the reason.
