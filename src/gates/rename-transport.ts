@@ -215,6 +215,57 @@ export function transportedEqual(
   return equalUnder(map, map.byFrom, before, beforeFile, after, afterFile);
 }
 
+/** One moved reference: the base's word and the word that replaced it. */
+export interface MovedReference {
+  readonly was: string;
+  readonly now: string;
+}
+
+/**
+ * The words that moved, where `after` is `before` with only references moved along the renames;
+ * null where it is not, or where the texts are identical (nothing moved). Recorded with a
+ * transported entry so the verifier can check each against a recorded rename.
+ */
+export function movedReferences(
+  map: RenameMap,
+  before: string,
+  beforeFile: string,
+  after: string,
+  afterFile: string,
+): readonly MovedReference[] | null {
+  if (before === after || !equalUnder(map, map.byFrom, before, beforeFile, after, afterFile))
+    return null;
+  const a = split(before).words;
+  const b = split(after).words;
+  return (differingWords(before, after) ?? []).map((index) => ({
+    was: a[index] as string,
+    now: b[index] as string,
+  }));
+}
+
+/**
+ * Whether a moved reference is, as text, one recorded rename: the old word names the renamed
+ * file's path (or a tail of it, with or without its extension) and the new word names the new
+ * path the same way. A lexical check the bundled verifier repeats from the record; resolving the
+ * word from its file was the harness's.
+ */
+export function moveNamesRename(move: MovedReference, rename: RenamePair): boolean {
+  const tail = (word: string) => word.replace(/[?#].*$/, "").replace(/^(?:\.{1,2}\/)+|^\/+/, "");
+  const names = (word: string, path: string) => {
+    const text = tail(word);
+    if (text.length === 0) return false;
+    const stems = [
+      path,
+      path.replace(/(\.d)?\.[^./]+$/, ""),
+      path.replace(/\/index(\.d)?\.[^./]+$/, ""),
+    ];
+    return stems.some(
+      (stem) => stem === text || stem.endsWith(`/${text}`) || text.endsWith(`/${stem}`),
+    );
+  };
+  return names(move.was, rename.from) && names(move.now, rename.to);
+}
+
 function equalUnder(
   map: Pick<RenameMap, "listed" | "added" | "deleted">,
   renames: ReadonlyMap<string, string>,

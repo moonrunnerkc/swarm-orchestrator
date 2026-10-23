@@ -94,4 +94,26 @@ describe("what ran says about each obligation", () => {
     });
     expect(describePreservation(statuses)).toContain("1 kept, 2 regressed, 3 unmeasured, of 6");
   });
+
+  it("binds a probe to a task sentence only by quoting at least half of it, and keeps only what every case measured", () => {
+    const statuses = settleObligations({
+      obligations,
+      regression: "pass",
+      requirements: [],
+      probes: [
+        { probe: "fragment", statement: "x", quote: "e", readings: ["kept"] },
+        {
+          probe: "partial",
+          statement: "the public API",
+          quote: "the public API behaves as today",
+          readings: ["kept", "unstable"],
+        },
+      ],
+    });
+    const by = Object.fromEntries(statuses.map((one) => [one.id, one.status]));
+    expect(by["task-keep-1"]).toBe("unmeasured");
+    expect(by["task-keep-2"]).toBe("unmeasured");
+    expect(by["review-fragment"]).toBe("kept");
+    expect(by["review-partial"]).toBe("unmeasured");
+  });
 });

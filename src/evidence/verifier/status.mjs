@@ -67,16 +67,37 @@ function transportedFile(instrument, file) {
     typeof transport !== "object" ||
     transport.rule !== "rename-transport-v1" ||
     !Array.isArray(transport.renames) ||
-    transport.renames.length === 0
+    transport.renames.length === 0 ||
+    file.reference === null ||
+    file.current === null ||
+    !Array.isArray(file.moves) ||
+    file.moves.length === 0
   )
     return false;
-  if (file.current === null)
-    return transport.renames.some(
-      (one) => one.from === file.path && one.reference === file.reference,
+  return file.moves.every((move) =>
+    transport.renames.some((rename) => moveNamesRename(move, rename)),
+  );
+}
+
+/** Mirrors `moveNamesRename` in src/gates/rename-transport.ts. */
+function moveNamesRename(move, rename) {
+  const tail = (word) =>
+    String(word)
+      .replace(/[?#].*$/, "")
+      .replace(/^(?:\.{1,2}\/)+|^\/+/, "");
+  const names = (word, path) => {
+    const text = tail(word);
+    if (typeof path !== "string" || text.length === 0) return false;
+    const stems = [
+      path,
+      path.replace(/(\.d)?\.[^./]+$/, ""),
+      path.replace(/\/index(\.d)?\.[^./]+$/, ""),
+    ];
+    return stems.some(
+      (stem) => stem === text || stem.endsWith(`/${text}`) || text.endsWith(`/${stem}`),
     );
-  if (file.reference === null)
-    return transport.renames.some((one) => one.to === file.path && one.current === file.current);
-  return true;
+  };
+  return names(move?.was, rename?.from) && names(move?.now, rename?.to);
 }
 
 /**
