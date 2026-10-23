@@ -180,42 +180,63 @@ export function installEnvironment() {
 /** Where the harness keeps a package manager release a task's base declares. */
 export const npmToolchain = (version) => join(comparisonRoot, "tools", `npm-${version}`);
 
-const declaredNpmCache = new Map();
+/**
+ * Where a declared package manager's pinned release is provisioned. npm keeps its place under the
+ * comparison's tools, which manifests name as a readable root; any other manager sits beside the
+ * pinned OpenCode, outside every protected root, so an arm can run it without a manifest naming it.
+ */
+export const packageManagerToolchain = (name, version) =>
+  name === "npm"
+    ? npmToolchain(version)
+    : join(homedir(), ".cache", "swarm-capability-tools", `${name}-${version}`);
+
+const declaredCache = new Map();
 
 /**
- * The npm release a task's base declares in its manifest (`packageManager: "npm@11.2.0"`), read
- * from the sealed mirror so no change an arm makes can move it; null where it declares none.
+ * The package manager and release a task's base declares in its manifest (`packageManager:
+ * "npm@11.2.0"` or `"pnpm@10.34.5"`), read from the sealed mirror so no change an arm makes can
+ * move it; null where it declares none or another one.
  */
-export function declaredNpm(task) {
-  if (declaredNpmCache.has(task.id)) return declaredNpmCache.get(task.id);
+export function declaredPackageManager(task) {
+  if (declaredCache.has(task.id)) return declaredCache.get(task.id);
   const shown = spawnSync("git", ["show", `${task.baseCommit}:package.json`], {
     cwd: mirrorOf(task.repository),
     encoding: "utf8",
   });
-  let version = null;
-  if (shown.status === 0) {
-    const declared = JSON.parse(shown.stdout).packageManager;
-    const match = typeof declared === "string" ? /^npm@(\d+\.\d+\.\d+)/.exec(declared) : null;
-    version = match?.[1] ?? null;
-  }
-  declaredNpmCache.set(task.id, version);
-  return version;
+  const declared =
+    shown.status === 0 ? parsePackageManager(JSON.parse(shown.stdout).packageManager) : null;
+  declaredCache.set(task.id, declared);
+  return declared;
+}
+
+/** A `packageManager` field read as an npm or pnpm release, or null for anything else. */
+export function parsePackageManager(field) {
+  const match = typeof field === "string" ? /^(npm|pnpm)@(\d+\.\d+\.\d+)/.exec(field) : null;
+  return match === null ? null : { name: match[1], version: match[2] };
+}
+
+/** The npm release a task's base declares; null where it declares none or another manager. */
+export function declaredNpm(task) {
+  const declared = declaredPackageManager(task);
+  return declared?.name === "npm" ? declared.version : null;
 }
 
 /**
  * The environment every command of a task runs in, the arms' included: the install
- * environment, with the npm release the base declares first on PATH where it declares one. A
+ * environment, with the package manager the base declares first on PATH where it declares one. A
  * project that pins its package manager is prepared with that one; Swarm refuses to spend model
- * calls in an environment other than the declared one, and both arms get the same.
+ * calls in an environment other than the declared one (svgo's build calls pnpm, and with pnpm
+ * missing Swarm's goal setup refused to start), and every arm gets the same.
  */
 export function taskEnvironment(task) {
   const environment = installEnvironment();
-  const version = declaredNpm(task);
-  if (version === null) return environment;
-  const bin = join(npmToolchain(version), "node_modules", ".bin");
-  if (!existsSync(join(bin, "npm")))
+  const declared = declaredPackageManager(task);
+  if (declared === null) return environment;
+  const home = packageManagerToolchain(declared.name, declared.version);
+  const bin = join(home, "node_modules", ".bin");
+  if (!existsSync(join(bin, declared.name)))
     throw new Error(
-      `${task.id} declares npm@${version} and it is not provisioned; before freezing run: npm install --prefix ${npmToolchain(version)} --no-audit --no-fund npm@${version}`,
+      `${task.id} declares ${declared.name}@${declared.version} and it is not provisioned; before freezing run: npm install --prefix ${home} --no-audit --no-fund ${declared.name}@${declared.version}`,
     );
   return { ...environment, PATH: `${bin}:${environment.PATH}` };
 }

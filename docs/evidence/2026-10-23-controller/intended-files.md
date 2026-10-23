@@ -60,3 +60,11 @@ files are recorded below as dated amendments before they are edited.
   single-package project, not an unreadable workspace. Found by the fresh block's preflight: svgo's
   file holds only `minimumReleaseAge` and `patchedDependencies`, and Swarm refused to choose a scope,
   so it ran no check at all.
+
+## Amendment 4, October 23, 2026, before editing these files
+
+- `scripts/comparison/workspace.mjs`, `scripts/comparison/workspace.test.mjs`, `scripts/comparison/study.mjs`: the declared package
+  manager a task's base names (`packageManager`), npm or pnpm, is provisioned at its pinned version
+  and put first on every arm's and every scorer's PATH. Found by the fresh block's first svgo
+  launch: svgo declares `pnpm@10.34.5`, its build script calls pnpm, Swarm's goal setup refused to
+  spend model calls with a required check unable to run, and no inference took place.
