@@ -143,3 +143,37 @@ it("scrubs what each operation writes and appends only that operation's entries"
   expect(JSON.stringify(held.leaky)).not.toContain("abcd1234efgh");
   expect(held.plain).toEqual({ note: "nothing secret" });
 });
+it("reads an entry's id as data, so an id that spells a credential word redacts nothing", () => {
+  // A temporary directory named controller-recovery-OtpGQ6 made a CI run's lease unreadable:
+  // its path, used as the id, split into "otp", and every field under it was redacted.
+  const root = mkdtempSync(join(tmpdir(), "swarm-journal-"));
+  roots.push(root);
+  const store = openRunStore(join(root, "ownership.jsonl"));
+  const path = "/tmp/controller-recovery-OtpGQ6/sessions/queue";
+  store.startRun({ runId: "token-run", specDigest: "sha256:spec", task: "lease", startedAt: 1 });
+  expect(store.acquireLease({ runId: "token-run", path, holder: "h", at: 1_761_200_000_000 })).toBe(
+    true,
+  );
+  expect(store.leases("token-run")).toEqual([
+    { runId: "token-run", path, holder: "h", heldAt: 1_761_200_000_000 },
+  ]);
+  store.close();
+
+  const schema = z.object({ items: z.record(z.string(), z.unknown()) });
+  const items = openRunJournal<z.infer<typeof schema>>(
+    join(root, "items.jsonl"),
+    () => ({ items: {} }),
+    (input) => schema.parse(input),
+  );
+  items.update("ids", (projection) => {
+    projection.items["ghp_SwarmJournalCase0000000000000000000000"] = { count: 3 };
+    projection.items.secret = { apiKey: "abcd1234efgh", count: 4 };
+  });
+  const written = readFileSync(join(root, "items.jsonl"), "utf8");
+  // Credential-shaped material in an id is still scrubbed, and so is a credential-named field.
+  expect(written).not.toContain("ghp_SwarmJournalCase");
+  expect(written).not.toContain("abcd1234efgh");
+  const held = items.read().items;
+  expect(Object.values(held)).toContainEqual({ count: 3 });
+  expect(held.secret).toMatchObject({ count: 4 });
+});
