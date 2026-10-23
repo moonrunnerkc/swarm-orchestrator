@@ -31,9 +31,10 @@ if (!values.manifest || !values.out) throw new Error("usage: --manifest <file> -
 const manifest = JSON.parse(readFileSync(values.manifest, "utf8"));
 const runs = join(dirname(resolve(values.manifest)), "runs");
 const revealed = values.revealed === undefined ? [] : JSON.parse(readFileSync(values.revealed, "utf8"));
+const recordName = (one) => `${one.task}${(one.sample ?? 1) > 1 ? `~${one.sample}` : ""}.${one.arm}`;
 const hiddenOf = (name) =>
-  revealed.find((one) => one.task !== undefined && `${name}` === `${one.task}.${one.arm}`)?.scores
-    ?.hidden?.verdict ?? null;
+  revealed.find((one) => one.task !== undefined && recordName(one) === name)?.scores?.hidden
+    ?.verdict ?? null;
 
 function must(argv, cwd) {
   const ran = spawnSync(argv[0], argv.slice(1), { cwd, encoding: "utf8", maxBuffer: 1 << 28 });
