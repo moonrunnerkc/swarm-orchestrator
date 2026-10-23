@@ -83,3 +83,9 @@ model call that never returns held the run. Added:
   test.
 - `src/core/loop.ts`, `src/core/loop.test.ts`: the per-call deadline re-arms for the remainder if
   a sleep resolves early, rather than being dropped.
+
+Withdrawn before commit: the `src/core/loop.ts` re-arm. Many tests inject a frozen clock whose
+`sleep` resolves at once without advancing `now()`; against those the re-arm never ended, and a
+full gates run sat with two test workers at 100% CPU for over two hours. Both CI hangs ran on
+`createSystemClock()`, so the system clock keeping the contract is the whole fix. `src/core/loop.ts`
+and `src/core/loop.test.ts` are unchanged.

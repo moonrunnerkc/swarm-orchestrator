@@ -5,7 +5,8 @@ export interface Clock {
   /**
    * Resolves after the interval, or as soon as `cancel` aborts, which is how a deadline armed
    * beside a call is let go of when the call returns first: a timer nobody cancels would
-   * hold the process open for the whole interval after the run is over.
+   * hold the process open for the whole interval after the run is over. Uncancelled, it
+   * resolves no earlier than `now()` plus the interval, on this clock's own time.
    */
   sleep(milliseconds: number, cancel?: AbortSignal, purpose?: "deadline" | "delay"): Promise<void>;
 }
