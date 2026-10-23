@@ -100,3 +100,8 @@ Declared before editing:
   and its test command run in the workspace), as the fresh block's credible simple agent. Its
   token use is read from aider's own analytics log in the launch's home; `.aider*` files are kept
   out of every arm's patch.
+
+## Amendment 6, October 23, 2026, before editing these files
+
+- `CHANGELOG.md`, `packages/swarm-verify/CHANGELOG.md`: the stage's entries (the verifier's for
+  `rename-transport-v1`, the lifecycle alias and the review's owed-attempt rule).
