@@ -128,6 +128,15 @@ export const contractLineageSchema = z.discriminatedUnion("role", [
     parent: z.string().regex(/^sha256:[0-9a-f]{64}$/),
     admissions: z.array(z.string().regex(/^sha256:[0-9a-f]{64}$/)).min(1),
   }),
+  /**
+   * The experimental review's probes as a contract of diagnostics decided by no check
+   * (candidate-review-v1), run on the base and the candidate; `proposal` digests the probes.
+   */
+  z.strictObject({
+    role: z.literal("review-probe"),
+    parent: z.string().regex(/^sha256:[0-9a-f]{64}$/),
+    proposal: z.string().regex(/^sha256:[0-9a-f]{64}$/),
+  }),
 ]);
 export type ContractLineage = z.infer<typeof contractLineageSchema>;
 

@@ -58,3 +58,36 @@ dated amendments before they are edited.
   file. Recorded here as an out-of-set edit rather than left implied.
 - `scripts/comparison/run.mjs`: its progress line prints hidden verdicts too, like the study
   runner's; declared before editing.
+
+## Amendment 2, October 23, 2026, before editing these files
+
+- `src/core/loop-events.ts`: `combineUsage` moves here from `src/agent-run.ts`, beside the
+  `LoopUsage` it sums, so the review's conversation and the run share one implementation.
+- `src/cli-review.ts`, `src/cli-review.test.ts` (new): the probe runner over fresh checkouts of the
+  base and the candidate, through the planned-check runner and the goal verification path.
+- `src/evidence/run-assessment.ts`: the run lifecycle reads the review's owed attempt as it reads
+  the other owed kinds.
+- `src/gates/engine.ts`, `src/gates/default-gates.ts`: the review hook passed from the run to the
+  repair loop.
+
+## Amendment 3, October 23, 2026
+
+Edited before this amendment was recorded, each found necessary while wiring the review:
+
+- `src/gates/ratchet.ts`: parts under a key that is no gate (the review's probe readings) are
+  compared whatever the gate statuses hold, as the bundled verifier already compares every part.
+  Without it the live ratchet abstained where the verifier found a violation.
+- `src/evidence/goal-contract.ts`: a `review-probe` contract lineage, so a probe contract is
+  declared on the chain beside the root it derives from before it is judged.
+- `src/run-outcome-shape.ts`: the `preservation` and `review` fields of the result.
+
+Declared before editing:
+
+- `src/cli-review.integration.test.ts` (new): the deterministic development controls through the
+  ordinary command line and the bundle's own verifier.
+
+## Amendment 4, October 23, 2026, before editing these files
+
+- `scripts/comparison/launch-config.mjs`, `scripts/comparison/launch-config.test.mjs`: a
+  `swarm-prose` arm (the review's prose control on the same pinned build), and `--review` as a
+  flag a manifest may freeze, so the development study's three arms differ only in frozen flags.

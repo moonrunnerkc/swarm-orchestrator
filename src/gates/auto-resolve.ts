@@ -1,4 +1,4 @@
-import type { LoopEvent } from "../core/loop-events.ts";
+import type { GateStatus, LoopEvent } from "../core/loop-events.ts";
 import { asJsonValue } from "../evidence/canonical-json.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import { refusedBeforeSpawn } from "../exec/run-process.ts";
@@ -67,7 +67,31 @@ export interface ResolveRequest {
  * continuation, where the loop that worked it stopped at its step limit before it reported the
  * task done, and then the follow-up on requested outcomes no sealed check states.
  */
-export type OwedKind = "continuation" | "outcomes";
+export type OwedKind = "continuation" | "outcomes" | "review";
+
+/** Where the review's readings sit among the ratchet's parts; no gate carries this id. */
+export const reviewPartsKey = "candidate-review";
+
+/**
+ * The experimental review of the candidate (candidate-review-v1), asked once the gates are green
+ * and nothing else is owed. Its examination may owe one attempt, from the same cap; after it,
+ * every candidate is measured again so the probes' kept cases are held by the ratchet as parts.
+ */
+export interface CandidateReviewHook {
+  /** Asked with the incumbent's cycle: what its checks reported and what a cycle costs. */
+  readonly examine: (cycle: GateCycle) => Promise<{
+    readonly identity: string;
+    /** The attempt's brief, or null where the review established nothing to act on. */
+    readonly brief: string | null;
+    readonly parts: Readonly<Record<string, GateStatus>>;
+    readonly claims: readonly string[];
+    readonly record: string;
+  }>;
+  readonly measure: () => Promise<{
+    readonly parts: Readonly<Record<string, GateStatus>>;
+    readonly claims: readonly string[];
+  }>;
+}
 
 /**
  * Work the gates do not measure that the controller owes one bounded attempt before the run is
@@ -196,6 +220,8 @@ interface AutoResolveDependencies {
    * and nothing resumed the task. Absent is none owed.
    */
   readonly continuation?: OwedFollowUp;
+  /** Absent is no review, which is the default. */
+  readonly review?: CandidateReviewHook;
 }
 
 interface AutoResolveAttempt {
@@ -227,6 +253,10 @@ export interface AutoResolveOutcome {
   readonly followUp?: FollowUpOutcome | null;
   /** The task's own continuation, where its loop was interrupted; null where none was owed. */
   readonly continuation: FollowUpOutcome | null;
+  /** The review's attempt, where its examination owed one; null otherwise. */
+  readonly review?: FollowUpOutcome | null;
+  /** The examination's record, where the review ran one. */
+  readonly reviewExamination?: string | null;
   /** The test deliverable as measured on the final state, against the base. */
   readonly regressionTests: RegressionTestAccount;
 }
@@ -264,7 +294,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
   let rejected: RejectedCandidate | null = null;
   // What the run owes once the gates are green, in the order it is owed. Each is pending until an
   // attempt carries it, then given once and never again.
-  const owed: readonly OwedWork[] = [
+  const owed: OwedWork[] = [
     ...(deps.continuation === undefined
       ? []
       : [
@@ -284,10 +314,31 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
     owed.map((entry) => [entry.kind, { state: "pending" }]),
   );
 
+  // The review's readings of the state the workspace is in, once it has examined: held by the
+  // ratchet beside the gates' own parts for every later candidate.
+  let reviewExamined = false;
+  let reviewExamination: string | null = null;
+  let reviewReading: Awaited<ReturnType<CandidateReviewHook["measure"]>> | null = null;
+
   while (attempts.length < deps.cap && deps.abortSignal?.aborted !== true) {
-    const next: OwedWork | undefined = isGreen(cycle)
+    let next: OwedWork | undefined = isGreen(cycle)
       ? owed.find((entry) => owedStates.get(entry.kind)?.state === "pending")
       : undefined;
+    if (isGreen(cycle) && next === undefined && deps.review !== undefined && !reviewExamined) {
+      reviewExamined = true;
+      const examined = await deps.review.examine(cycle);
+      reviewExamination = examined.record;
+      reviewReading = { parts: examined.parts, claims: examined.claims };
+      if (examined.brief !== null) {
+        next = {
+          kind: "review",
+          rule: "candidate-review-attempt-v1",
+          work: { identity: examined.identity, brief: examined.brief },
+        };
+        owed.push(next);
+        owedStates.set("review", { state: "pending" });
+      }
+    }
     if (isGreen(cycle) && next === undefined) break;
     const classification = next === undefined ? classifyRepair(cycle) : null;
     if (
@@ -368,14 +419,30 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
       deps.baseControl,
     );
 
+    const reviewNow = reviewReading === null ? null : await deps.review?.measure();
+    const withReview = (
+      parts: GateCycle["parts"],
+      reading: Awaited<ReturnType<CandidateReviewHook["measure"]>> | null | undefined,
+    ) =>
+      reading === null || reading === undefined
+        ? parts
+        : { ...(parts ?? {}), [reviewPartsKey]: reading.parts };
     const input = {
       baselineGates: cycle.statuses,
       candidateGates: candidateCycle.statuses,
-      baselineParts: cycle.parts,
-      candidateParts: candidateCycle.parts,
+      baselineParts: withReview(cycle.parts, reviewReading),
+      candidateParts: withReview(candidateCycle.parts, reviewNow),
       // The claims are the sealed contract's, the same on both sides; the candidate's reading
-      // names them for every part it reported.
-      partClaims: candidateCycle.claims ?? {},
+      // names them for every part it reported. The review's requested cases are claims too.
+      partClaims:
+        reviewNow === null || reviewNow === undefined
+          ? (candidateCycle.claims ?? {})
+          : {
+              ...(candidateCycle.claims ?? {}),
+              [reviewPartsKey]: [
+                ...new Set([...(reviewReading?.claims ?? []), ...reviewNow.claims]),
+              ],
+            },
       baseline,
       candidate,
       newSpecifications: clearedTests(respecification),
@@ -433,6 +500,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
     cycle = candidateCycle;
     baseline = candidate;
     rejected = null;
+    if (reviewNow !== null && reviewNow !== undefined) reviewReading = reviewNow;
   }
 
   // What became of each owed item, on the chain in the order it was owed: given with the ratchet's
@@ -464,6 +532,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
   }
   const continuationOutcome = settled.get("continuation") ?? null;
   const followUpOutcome = settled.get("outcomes") ?? null;
+  const reviewOutcome = settled.get("review") ?? null;
 
   const baseComparison = await judgeAgainstBase(deps, cycle, baseline);
   const regressionTests = await accountForRegressionTests(deps, cycle, baseline);
@@ -479,6 +548,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
       escalation: null,
       followUp: followUpOutcome,
       continuation: continuationOutcome,
+      ...(deps.review === undefined ? {} : { review: reviewOutcome, reviewExamination }),
       regressionTests,
     };
   }
@@ -494,6 +564,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
     escalation,
     followUp: followUpOutcome,
     continuation: continuationOutcome,
+    ...(deps.review === undefined ? {} : { review: reviewOutcome, reviewExamination }),
     regressionTests,
   };
 
@@ -555,7 +626,7 @@ async function judgeAgainstBase(
 interface OwedWork {
   readonly kind: OwedKind;
   /** The rule the outcome is recorded under; the bundled verifier reads both. */
-  readonly rule: "task-continuation-v1" | "outcome-follow-up-v1";
+  readonly rule: "task-continuation-v1" | "outcome-follow-up-v1" | "candidate-review-attempt-v1";
   readonly work: OwedFollowUp;
 }
 
@@ -577,7 +648,9 @@ async function recordFollowUp(
       limitation:
         rule === "task-continuation-v1"
           ? "given means one attempt carried the task again with the interrupted loop's account and its candidate was judged as any repair's is; it does not establish that the task is done, which only the sealed checks and the final verification speak to"
-          : "given means one attempt carried the brief and its candidate was judged as any repair's is; it does not settle the work it names, which no sealed check states",
+          : rule === "candidate-review-attempt-v1"
+            ? "given means one attempt carried the review's established findings and its candidate was judged as any repair's is, with the probes' kept cases held as parts; it does not establish that the findings were right, which no sealed check states"
+            : "given means one attempt carried the brief and its candidate was judged as any repair's is; it does not settle the work it names, which no sealed check states",
     }),
   });
   return { ...outcome, record: recorded.record.payloadDigest };

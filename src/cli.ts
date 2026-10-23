@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { type createCandidateReview, probeObligations, reviewRule } from "./agent-review.ts";
+import { reviewProbeRunner } from "./cli-review.ts";
 // Check the runtime before loading the command composition.
 import "./node-floor-check.ts";
 
@@ -123,6 +125,13 @@ import { recordedContainerBackend } from "./exec/runtime-resource.ts";
 import { defaultDiffBudget } from "./gates/engine.ts";
 import { createFileSetRegistry } from "./gates/file-set.ts";
 import { requireBaseCommit } from "./gates/git-workspace.ts";
+import {
+  describePreservation,
+  initialObligations,
+  preservationRule,
+  recordObligations,
+  settleObligations,
+} from "./gates/preservation-obligations.ts";
 import { summarizeRatchet } from "./gates/ratchet-summary.ts";
 import { diagnose, remediesFor, runtimeFinding } from "./install/health.ts";
 import { inspectInstall } from "./install/inspect.ts";
@@ -471,6 +480,30 @@ async function run(options: RunCommand): Promise<number> {
   // person's answer go through the terminal, which the screen then owns. The planner reads
   // the workspace with read-only tools on a chain of its own; what it pins is sealed on this
   // chain below exactly as a supplied contract is, and stays labelled model-authored.
+  // What the run must preserve, from the task's words, the supplied contract and the base's own
+  // checks, recorded before the first model call (preservation-obligations-v1); and the
+  // experimental review, declared before anything it governs runs.
+  const obligations = initialObligations({
+    task: options.task,
+    ...(sealedGoal === undefined ? {} : { contract: sealedGoal }),
+  });
+  await recordObligations(evidence, obligations);
+  if (options.review !== undefined)
+    await evidence.record({
+      type: "verification-command",
+      actor: "harness",
+      provenance: ["user"],
+      payload: {
+        rule: reviewRule,
+        phase: "declared",
+        mode: options.review,
+        note: "experimental: once the gates are green, one review of the candidate; established findings are owed one attempt from the cap, probe kept cases are ratchet parts, and nothing it finds decides acceptance",
+      },
+    });
+  // Filled in by the run once the review has examined; read back for the report.
+  const reviewState: {
+    readings: ReturnType<ReturnType<typeof createCandidateReview>["readings"]> | null;
+  } = { readings: null };
   let planning: PlanChecksOutcome | null = null;
   if (options.planChecks === true && options.recovery === undefined) {
     const interactive =
@@ -764,6 +797,20 @@ async function run(options: RunCommand): Promise<number> {
       ...(options.repairTrace === true ? { repairTrace: true } : {}),
       ...(options.repairFinish === true ? { repairFinish: true } : {}),
       ...(options.adaptive === true ? { adaptive: true } : {}),
+      ...(options.review === undefined || goalContext === undefined || goal === undefined
+        ? {}
+        : {
+            review: {
+              mode: options.review,
+              runProbes: reviewProbeRunner({ ...goalContext, contract: goal }),
+              obligations: obligations.map(
+                (one) => `${one.statement} (${one.authority}: ${one.basis})`,
+              ),
+              settled: (readings) => {
+                reviewState.readings = readings;
+              },
+            },
+          }),
       ...(repairFeedback === undefined ? {} : { repairFeedback }),
       ...(options.escalationModel === undefined
         ? {}
@@ -973,6 +1020,19 @@ async function run(options: RunCommand): Promise<number> {
       },
     });
     keepChildHome = outcome.resumable;
+    const preservation = settleObligations({
+      obligations,
+      regression: outcome.finalVerification?.regression ?? null,
+      requirements: (outcome.requirements ?? []).map(({ id, status }) => ({ id, status })),
+      probes: reviewState.readings === null ? [] : probeObligations(reviewState.readings),
+    });
+    await evidence.record({
+      type: "verification-command",
+      actor: "harness",
+      provenance: ["tool-output"],
+      payload: asJsonValue({ rule: preservationRule, phase: "settled", statuses: preservation }),
+    });
+    ui.note(describePreservation(preservation));
     // The terminal, the result line and the exit status read one status, so a run the outcome
     // calls partially checked cannot exit as if it were accepted.
     const status = outcomeStatus(outcome);
@@ -1046,6 +1106,18 @@ async function run(options: RunCommand): Promise<number> {
             ...(outcome.repairsForGeneratedChecksOnly === undefined
               ? {}
               : { repairsForGeneratedChecksOnly: outcome.repairsForGeneratedChecksOnly }),
+            preservation,
+            ...(options.review === undefined
+              ? {}
+              : {
+                  review: {
+                    mode: options.review,
+                    examination: gates.outcome.reviewExamination ?? null,
+                    attempt: gates.outcome.review ?? null,
+                    probes: reviewState.readings?.probes.map((one) => one.id) ?? [],
+                    readings: reviewState.readings?.classified ?? [],
+                  },
+                }),
           },
           ...(planning === null
             ? {}
