@@ -1,0 +1,101 @@
+diff --git a/index.d.ts b/index.d.ts
+index 86aa91e..ddbc985 100644
+--- a/index.d.ts
++++ b/index.d.ts
+@@ -20,6 +20,9 @@ export type LimitFunction = {
+ 	This might be useful if you want to teardown the queue at the end of your program's lifecycle or discard any function calls referencing an intermediary state of your app.
+ 
+ 	Note: This does not cancel promises that are already running.
++
++	When `rejectOnClear` is enabled, pending promises are rejected with an `AbortError`.
++	This is recommended if you await the returned promises, for example with `Promise.all`, so pending tasks do not remain unresolved after `clearQueue()`.
+ 	*/
+ 	clearQueue: () => void;
+ 
+@@ -92,6 +95,15 @@ export type Options = {
+ 	Minimum: `1`.
+ 	*/
+ 	readonly concurrency: number;
++
++	/**
++	Reject pending promises with an `AbortError` when `clearQueue()` is called.
++
++	Default: `false`.
++
++	This is recommended if you await the returned promises, for example with `Promise.all`, so pending tasks do not remain unresolved after `clearQueue()`.
++	*/
++	readonly rejectOnClear?: boolean;
+ };
+ 
+ /**
+diff --git a/index.js b/index.js
+index 63ba65c..167527d 100644
+--- a/index.js
++++ b/index.js
+@@ -1,8 +1,10 @@
+ import Queue from 'yocto-queue';
+ 
+ export default function pLimit(concurrency) {
++	let rejectOnClear = false;
++
+ 	if (typeof concurrency === 'object') {
+-		concurrency = concurrency.concurrency;
++		({concurrency, rejectOnClear = false} = concurrency);
+ 	}
+ 
+ 	validateConcurrency(concurrency);
+@@ -14,7 +16,7 @@ export default function pLimit(concurrency) {
+ 		// Process the next queued function if we're under the concurrency limit
+ 		if (activeCount < concurrency && queue.size > 0) {
+ 			activeCount++;
+-			queue.dequeue()();
++			queue.dequeue().run();
+ 		}
+ 	};
+ 
+@@ -41,11 +43,14 @@ export default function pLimit(concurrency) {
+ 		next();
+ 	};
+ 
+-	const enqueue = (function_, resolve, arguments_) => {
++	const enqueue = (function_, resolve, reject, arguments_) => {
++		const queueItem = {reject};
++
+ 		// Queue the internal resolve function instead of the run function
+ 		// to preserve the asynchronous execution context.
+ 		new Promise(internalResolve => { // eslint-disable-line promise/param-names
+-			queue.enqueue(internalResolve);
++			queueItem.run = internalResolve;
++			queue.enqueue(queueItem);
+ 		}).then(run.bind(undefined, function_, resolve, arguments_)); // eslint-disable-line promise/prefer-await-to-then
+ 
+ 		// Start processing immediately if we haven't reached the concurrency limit
+@@ -54,8 +59,8 @@ export default function pLimit(concurrency) {
+ 		}
+ 	};
+ 
+-	const generator = (function_, ...arguments_) => new Promise(resolve => {
+-		enqueue(function_, resolve, arguments_);
++	const generator = (function_, ...arguments_) => new Promise((resolve, reject) => {
++		enqueue(function_, resolve, reject, arguments_);
+ 	});
+ 
+ 	Object.defineProperties(generator, {
+@@ -67,7 +72,16 @@ export default function pLimit(concurrency) {
+ 		},
+ 		clearQueue: {
+ 			value() {
+-				queue.clear();
++				if (!rejectOnClear) {
++					queue.clear();
++					return;
++				}
++
++				const abortError = AbortSignal.abort().reason;
++
++				while (queue.size > 0) {
++					queue.dequeue().reject(abortError);
++				}
+ 			},
+ 		},
+ 		concurrency: {

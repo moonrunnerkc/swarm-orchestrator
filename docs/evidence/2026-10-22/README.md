@@ -147,3 +147,11 @@ One model, one host, two small fresh tasks from two repositories plus one develo
 launch per arm. The entities task is a one-function restoration. The upstream fixes are public and
 may be in the model's training data. The trace arm was measured on one task only, where its
 procedure was not used.
+
+
+## Supplemental audit, 2026-10-22
+
+The treatment repair in launch 1 is now independently reconstructed from its recorded shell
+diffs to its exact recorded full-patch digest. The prior claim that both rejected candidates
+were unreconstructable was too broad. See the [appended reconstruction audit](development-pair/README.md#supplemental-reconstruction-audit-2026-10-22).
+Historical scores and the no-improvement conclusion remain unchanged.

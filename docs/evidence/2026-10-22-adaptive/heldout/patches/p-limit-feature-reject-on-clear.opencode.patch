@@ -1,0 +1,225 @@
+diff --git a/index.d.ts b/index.d.ts
+index 86aa91e..7dd4b1c 100644
+--- a/index.d.ts
++++ b/index.d.ts
+@@ -92,6 +92,15 @@ export type Options = {
+ 	Minimum: `1`.
+ 	*/
+ 	readonly concurrency: number;
++
++	/**
++	Whether to reject the promises of pending tasks when `clearQueue` is called.
++
++	When `true`, calling `clearQueue` will immediately reject all pending task promises with an `AbortError`. Running tasks are not cancelled.
++
++	@default false
++	*/
++	readonly rejectOnClear?: boolean;
+ };
+ 
+ /**
+diff --git a/index.js b/index.js
+index 63ba65c..23a699d 100644
+--- a/index.js
++++ b/index.js
+@@ -1,14 +1,22 @@
+ import Queue from 'yocto-queue';
+ 
+-export default function pLimit(concurrency) {
++export default function pLimit(concurrency = {}) {
++	let rejectOnClear = false;
++
+ 	if (typeof concurrency === 'object') {
++		if ('rejectOnClear' in concurrency) {
++			rejectOnClear = concurrency.rejectOnClear;
++		}
++
+ 		concurrency = concurrency.concurrency;
+ 	}
+ 
+ 	validateConcurrency(concurrency);
++	validateRejectOnClear(rejectOnClear);
+ 
+ 	const queue = new Queue();
+ 	let activeCount = 0;
++	const pendingTasks = [];
+ 
+ 	const resumeNext = () => {
+ 		// Process the next queued function if we're under the concurrency limit
+@@ -48,13 +56,14 @@ export default function pLimit(concurrency) {
+ 			queue.enqueue(internalResolve);
+ 		}).then(run.bind(undefined, function_, resolve, arguments_)); // eslint-disable-line promise/prefer-await-to-then
+ 
+-		// Start processing immediately if we haven't reached the concurrency limit
++		// Start processing immediately if we're under the concurrency limit
+ 		if (activeCount < concurrency) {
+ 			resumeNext();
+ 		}
+ 	};
+ 
+-	const generator = (function_, ...arguments_) => new Promise(resolve => {
++	const generator = (function_, ...arguments_) => new Promise((resolve, reject) => {
++		pendingTasks.push({resolve, reject});
+ 		enqueue(function_, resolve, arguments_);
+ 	});
+ 
+@@ -67,7 +76,21 @@ export default function pLimit(concurrency) {
+ 		},
+ 		clearQueue: {
+ 			value() {
+-				queue.clear();
++				if (rejectOnClear) {
++					const abortError = Object.assign(new Error('clearQueue was called'), {
++						name: 'AbortError',
++					});
++
++					while (queue.size > 0) {
++						queue.dequeue();
++					}
++
++					while (pendingTasks.length > 0) {
++						pendingTasks.shift().reject(abortError);
++					}
++				} else {
++					queue.clear();
++				}
+ 			},
+ 		},
+ 		concurrency: {
+@@ -97,6 +120,7 @@ export default function pLimit(concurrency) {
+ }
+ 
+ export function limitFunction(function_, options) {
++	validateRejectOnClear(options.rejectOnClear);
+ 	const {concurrency} = options;
+ 	const limit = pLimit(concurrency);
+ 
+@@ -108,3 +132,9 @@ function validateConcurrency(concurrency) {
+ 		throw new TypeError('Expected `concurrency` to be a number from 1 and up');
+ 	}
+ }
++
++function validateRejectOnClear(rejectOnClear) {
++	if (rejectOnClear !== true && rejectOnClear !== false && rejectOnClear !== undefined) {
++		throw new TypeError('Expected `rejectOnClear` to be a boolean or undefined');
++	}
++}
+diff --git a/index.test-d.ts b/index.test-d.ts
+index 3d5ec75..0c467d4 100644
+--- a/index.test-d.ts
++++ b/index.test-d.ts
+@@ -28,3 +28,10 @@ expectError(limitFunction((_a: string) => 'x', {concurrency: 1}));
+ // LimitFunction.map accepts iterables
+ expectType<Promise<string[]>>(limit.map(new Set(['a', 'b', 'c']), async x => x + x));
+ expectType<Promise<number[]>>(limit.map([1, 2, 3].values(), async x => x * 2));
++
++// The rejectOnClear option type-checks as optional boolean
++const limitWithReject = pLimit({concurrency: 1, rejectOnClear: true});
++expectType<number>(limitWithReject.activeCount);
++
++expectError(pLimit({concurrency: 1, rejectOnClear: 'nope'}));
++expectError(pLimit({concurrency: 1, rejectOnClear: null}));
+diff --git a/test.js b/test.js
+index d7cb024..59a7ea3 100644
+--- a/test.js
++++ b/test.js
+@@ -333,3 +333,99 @@ test('limitFunction()', async t => {
+ 
+ 	await Promise.all(input);
+ });
++
++test('rejectOnClear: true rejects pending tasks with AbortError', async t => {
++	const limit = pLimit({concurrency: 1, rejectOnClear: true});
++
++	limit(async () => {
++		await delay(40);
++		return 'task1';
++	});
++
++	const task2Promise = limit(async () => {
++		await delay(40);
++		return 'task2';
++	});
++
++	const task3Promise = limit(async () => {
++		await delay(40);
++		return 'task3';
++	});
++
++	await Promise.resolve();
++	t.is(limit.pendingCount, 2);
++
++	limit.clearQueue();
++	t.is(limit.pendingCount, 0);
++
++	const afterClearTask = limit(async () => 'after-clear');
++
++	try {
++		await task2Promise;
++	} catch (error) {
++		t.truthy(error);
++		t.is(error.name, 'AbortError');
++	}
++
++	try {
++		await task3Promise;
++	} catch (error) {
++		t.truthy(error);
++		t.is(error.name, 'AbortError');
++	}
++
++	t.is(await afterClearTask, 'after-clear');
++	t.pass();
++});
++
++test('rejectOnClear: false behaves as before', async t => {
++	const limit = pLimit({concurrency: 1, rejectOnClear: false});
++
++	limit(async () => delay(40));
++	limit(async () => delay(40));
++
++	await Promise.resolve();
++	t.is(limit.pendingCount, 1);
++
++	limit.clearQueue();
++	t.is(limit.pendingCount, 0);
++});
++
++test('rejectOnClear: undefined behaves as before', async t => {
++	const limit = pLimit({concurrency: 1});
++
++	limit(async () => delay(40));
++	limit(async () => delay(40));
++
++	await Promise.resolve();
++	t.is(limit.pendingCount, 1);
++
++	limit.clearQueue();
++	t.is(limit.pendingCount, 0);
++});
++
++test('rejectOnClear throws TypeError for non-boolean values', t => {
++	t.throws(() => {
++		pLimit({concurrency: 1, rejectOnClear: 'nope'});
++	});
++
++	t.throws(() => {
++		pLimit({concurrency: 1, rejectOnClear: 1});
++	});
++
++	t.throws(() => {
++		pLimit({concurrency: 1, rejectOnClear: null});
++	});
++});
++
++test('limitFunction with rejectOnClear validates the option', t => {
++	t.throws(() => {
++		limitFunction(() => '', {concurrency: 1, rejectOnClear: 'nope'});
++	});
++});
++
++test('limitFunction with rejectOnClear: true works correctly', async t => {
++	const limitedFn = limitFunction(async () => 'ok', {concurrency: 1, rejectOnClear: true});
++
++	await t.notThrowsAsync(limitedFn());
++});

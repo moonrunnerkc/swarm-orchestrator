@@ -1,0 +1,9 @@
+{
+  "task": "p-limit-bugfix-limit-function-clear-queue",
+  "arm": "swarm",
+  "candidate": "initial (initial/p-limit-bugfix-limit-function-clear-queue.swarm.patch, recorded sha256:1ef1b2ab714cb936b26d94c4dd9a85cb05f12c2aa9ae7969015eb2ff3f095b44)",
+  "why": "the scorer's hidden verdict stopped at npx tsd before the behaviour check ran, so whether the delivered tree's preservation failure was already in the first candidate was unknown",
+  "method": "base df476048d, the candidate applied with git apply --unidiff-zero, npm install --ignore-scripts --before=2026-10-22T00:00:00.000Z, the sealed behaviour-check.mjs run with node",
+  "result": "the same failure as the delivered tree: every check up to 'preserved: concurrency limit is respected' passes, then the synchronous throw of 'preserved: errors from the function reject the call' escapes as an uncaught TypeError ('sync boom') instead of rejecting the call",
+  "reading": "the repair attempts did not introduce the preservation failure and did not remove it"
+}

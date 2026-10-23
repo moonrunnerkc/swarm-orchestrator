@@ -1,0 +1,47 @@
+{
+  "task": "p-limit-feature-reject-on-clear",
+  "patchFiles": [
+    "index.d.ts",
+    "index.js",
+    "test.js"
+  ],
+  "testFilesInPatch": [
+    "test.js"
+  ],
+  "baseWithTests": {
+    "applied": true,
+    "prepared": true
+  },
+  "delivered": {
+    "applied": true,
+    "prepared": true
+  },
+  "commands": [
+    {
+      "command": "npx ava test.js --tap",
+      "exitOnBaseWithTests": 1,
+      "exitOnDelivered": 1,
+      "failingOnBaseWithTests": [
+        "rejectOnClear throws with invalid value",
+        "limitFunction rejects invalid rejectOnClear",
+        "rejectOnClear: true rejects pending promises with AbortError",
+        "rejectOnClear: true rejects pending promises at once"
+      ],
+      "failingOnDelivered": [
+        "rejectOnClear throws with invalid value",
+        "limitFunction rejects invalid rejectOnClear",
+        "rejectOnClear: true rejects pending promises at once",
+        "rejectOnClear: true rejects pending promises with AbortError"
+      ],
+      "sensitive": []
+    },
+    {
+      "command": "npx tsd",
+      "exitOnBaseWithTests": 0,
+      "exitOnDelivered": 0,
+      "failingOnBaseWithTests": [],
+      "failingOnDelivered": [],
+      "sensitive": []
+    }
+  ]
+}

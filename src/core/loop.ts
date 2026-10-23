@@ -25,6 +25,7 @@ import {
   stallNotice,
   stallNoticePrefix,
 } from "./tool-stall.ts";
+import { decisionNoticePrefix } from "./working-state.ts";
 
 interface ModelRetryPolicy {
   /** Total attempts per step, including the first. */
@@ -80,6 +81,37 @@ export interface AgentLoopDependencies {
         readonly writers?: readonly string[];
       }
     | false;
+  /** One decision point within this loop's allowance; absent is the ordinary direct loop. */
+  readonly decisionPoint?: DecisionPoint;
+}
+
+/** What the loop hands its decision point: the conversation so far and what is left to spend. */
+export interface DecisionPointInput {
+  readonly messages: readonly ConversationMessage[];
+  readonly steps: number;
+  readonly remaining: { readonly steps: number; readonly tokens: number; readonly wallMs: number };
+}
+
+/** What the decision point spent, which this loop is charged, and what it says, if anything. */
+export interface DecisionPointOutcome {
+  /** A harness-attributed message for the next turn; null where the decision was to continue. */
+  readonly notice: string | null;
+  readonly steps: number;
+  readonly tokensUsed: number;
+  readonly usage: LoopUsage;
+  readonly callsWithUnknownUsage: number;
+}
+
+/**
+ * Fired once, after the first step at which the loop has taken `atStep` steps or spent
+ * `atElapsedMs` of its wall, whichever comes first, so a loop slowed by long calls reaches it
+ * while its allowance is still mostly there. Whatever it spends, model calls included, comes out
+ * of this loop's own steps, tokens and wall: a fresh look is not a fresh allowance.
+ */
+export interface DecisionPoint {
+  readonly atStep: number;
+  readonly atElapsedMs: number;
+  decide(input: DecisionPointInput): Promise<DecisionPointOutcome>;
 }
 
 export interface StallIntervention extends StallDetected {
@@ -138,6 +170,10 @@ export async function runAgentLoop(
   let stallNotices = (deps.history ?? []).filter(
     (message) => message.role === "user" && message.text.startsWith(stallNoticePrefix),
   ).length;
+  // A conversation taken up again that already carries a decision notice has had its decision.
+  let decided = (deps.history ?? []).some(
+    (message) => message.role === "user" && message.text.startsWith(decisionNoticePrefix),
+  );
   let lastCompactedAt = 0;
   let steps = 0;
   let answeredSteps = 0;
@@ -378,7 +414,42 @@ export async function runAgentLoop(
       stalls?.reset();
       messages.push({ role: "user", text: stallNotice(stalled) });
     }
+
+    const point = deps.decisionPoint;
+    if (
+      point !== undefined &&
+      !decided &&
+      !deps.abortSignal.aborted &&
+      (steps >= point.atStep || deps.clock.now() - startedAt >= point.atElapsedMs)
+    ) {
+      decided = true;
+      const outcome = await point.decide({
+        messages: [...messages],
+        steps,
+        remaining: {
+          steps: Math.max(0, deps.budget.maxSteps - steps),
+          tokens: Math.max(0, deps.budget.maxTokens - tokensUsed),
+          wallMs: Math.max(0, deadline - deps.clock.now()),
+        },
+      });
+      steps += outcome.steps;
+      tokensUsed += outcome.tokensUsed;
+      usage = sumUsage(usage, outcome.usage);
+      callsWithUnknownUsage += outcome.callsWithUnknownUsage;
+      if (outcome.notice !== null) messages.push({ role: "user", text: outcome.notice });
+    }
   }
+}
+
+function sumUsage(left: LoopUsage, right: LoopUsage): LoopUsage {
+  const add = (a: number | null, b: number | null): number | null =>
+    a === null && b === null ? null : (a ?? 0) + (b ?? 0);
+  return {
+    inputTokens: left.inputTokens + right.inputTokens,
+    outputTokens: left.outputTokens + right.outputTokens,
+    reasoningTokens: add(left.reasoningTokens, right.reasoningTokens),
+    cachedInputTokens: add(left.cachedInputTokens, right.cachedInputTokens),
+  };
 }
 
 function buildRequest(

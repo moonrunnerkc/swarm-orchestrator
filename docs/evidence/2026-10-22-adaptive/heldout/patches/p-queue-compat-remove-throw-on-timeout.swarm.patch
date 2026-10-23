@@ -1,0 +1,428 @@
+diff --git a/source/index.ts b/source/index.ts
+index 11e9750..764c4a8 100644
+--- a/source/index.ts
++++ b/source/index.ts
+@@ -1,5 +1,5 @@
+ import {EventEmitter} from 'eventemitter3';
+-import pTimeout, {TimeoutError} from 'p-timeout';
++import pTimeout from 'p-timeout';
+ import {type Queue, type RunFunction} from './queue.js';
+ import PriorityQueue from './priority-queue.js';
+ import {type QueueAddOptions, type Options, type TaskOptions} from './options.js';
+@@ -43,8 +43,6 @@ export default class PQueue<QueueType extends Queue<RunFunction, EnqueueOptionsT
+ 
+ 	#isPaused: boolean;
+ 
+-	readonly #throwOnTimeout: boolean;
+-
+ 	// Use to assign a unique identifier to a promise function, if not explicitly specified
+ 	#idAssigner = 1n;
+ 
+@@ -57,7 +55,6 @@ export default class PQueue<QueueType extends Queue<RunFunction, EnqueueOptionsT
+ 	*/
+ 	timeout?: number;
+ 
+-	// TODO: The `throwOnTimeout` option should affect the return types of `add()` and `addAll()`
+ 	constructor(options?: Options<QueueType, EnqueueOptionsType>) {
+ 		super();
+ 
+@@ -88,7 +85,6 @@ export default class PQueue<QueueType extends Queue<RunFunction, EnqueueOptionsT
+ 		this.#queueClass = options.queueClass!;
+ 		this.concurrency = options.concurrency!;
+ 		this.timeout = options.timeout;
+-		this.#throwOnTimeout = options.throwOnTimeout === true;
+ 		this.#isPaused = options.autoStart === false;
+ 	}
+ 
+@@ -309,18 +305,15 @@ export default class PQueue<QueueType extends Queue<RunFunction, EnqueueOptionsT
+ 	/**
+ 	Adds a sync or async task to the queue. Always returns a promise.
+ 	*/
+-	async add<TaskResultType>(function_: Task<TaskResultType>, options: {throwOnTimeout: true} & Exclude<EnqueueOptionsType, 'throwOnTimeout'>): Promise<TaskResultType>;
+-	async add<TaskResultType>(function_: Task<TaskResultType>, options?: Partial<EnqueueOptionsType>): Promise<TaskResultType | void>;
+-	async add<TaskResultType>(function_: Task<TaskResultType>, options: Partial<EnqueueOptionsType> = {}): Promise<TaskResultType | void> {
+-		// In case `id` is not defined.
+-		options.id ??= (this.#idAssigner++).toString();
+-
+-		options = {
++	async add<TaskResultType>(function_: Task<TaskResultType>, options?: Partial<EnqueueOptionsType>): Promise<TaskResultType> {
++		const resolvedOptions = {
+ 			timeout: this.timeout,
+-			throwOnTimeout: this.#throwOnTimeout,
+ 			...options,
+ 		};
+ 
++		// In case `id` is not defined.
++		resolvedOptions.id ??= (this.#idAssigner++).toString();
++
+ 		return new Promise((resolve, reject) => {
+ 			this.#queue.enqueue(async () => {
+ 				this.#pending++;
+@@ -329,7 +322,7 @@ export default class PQueue<QueueType extends Queue<RunFunction, EnqueueOptionsT
+ 					// Check abort signal - if aborted, need to decrement the counter
+ 					// that was incremented in tryToStartAnother
+ 					try {
+-						options.signal?.throwIfAborted();
++						resolvedOptions.signal?.throwIfAborted();
+ 					} catch (error) {
+ 						// Decrement the counter that was already incremented
+ 						if (!this.#isIntervalIgnored) {
+@@ -339,25 +332,20 @@ export default class PQueue<QueueType extends Queue<RunFunction, EnqueueOptionsT
+ 						throw error;
+ 					}
+ 
+-					let operation = function_({signal: options.signal});
++					let operation = function_({signal: resolvedOptions.signal});
+ 
+-					if (options.timeout) {
+-						operation = pTimeout(Promise.resolve(operation), {milliseconds: options.timeout});
++					if (resolvedOptions.timeout) {
++						operation = pTimeout(Promise.resolve(operation), {milliseconds: resolvedOptions.timeout});
+ 					}
+ 
+-					if (options.signal) {
+-						operation = Promise.race([operation, this.#throwOnAbort(options.signal)]);
++					if (resolvedOptions.signal) {
++						operation = Promise.race([operation, this.#throwOnAbort(resolvedOptions.signal)]);
+ 					}
+ 
+ 					const result = await operation;
+ 					resolve(result);
+ 					this.emit('completed', result);
+ 				} catch (error: unknown) {
+-					if (error instanceof TimeoutError && !options.throwOnTimeout) {
+-						resolve();
+-						return;
+-					}
+-
+ 					reject(error);
+ 					this.emit('error', error);
+ 				} finally {
+@@ -366,7 +354,7 @@ export default class PQueue<QueueType extends Queue<RunFunction, EnqueueOptionsT
+ 						this.#next();
+ 					});
+ 				}
+-			}, options);
++			}, resolvedOptions as Partial<EnqueueOptionsType>);
+ 
+ 			this.emit('add');
+ 
+@@ -379,18 +367,10 @@ export default class PQueue<QueueType extends Queue<RunFunction, EnqueueOptionsT
+ 
+ 	@returns A promise that resolves when all functions are resolved.
+ 	*/
+-	async addAll<TaskResultsType>(
+-		functions: ReadonlyArray<Task<TaskResultsType>>,
+-		options?: {throwOnTimeout: true} & Partial<Exclude<EnqueueOptionsType, 'throwOnTimeout'>>,
+-	): Promise<TaskResultsType[]>;
+-	async addAll<TaskResultsType>(
+-		functions: ReadonlyArray<Task<TaskResultsType>>,
+-		options?: Partial<EnqueueOptionsType>,
+-	): Promise<Array<TaskResultsType | void>>;
+ 	async addAll<TaskResultsType>(
+ 		functions: ReadonlyArray<Task<TaskResultsType>>,
+ 		options?: Partial<EnqueueOptionsType>,
+-	): Promise<Array<TaskResultsType | void>> {
++	): Promise<TaskResultsType[]> {
+ 		return Promise.all(functions.map(async function_ => this.add(function_, options)));
+ 	}
+ 
+diff --git a/source/options.ts b/source/options.ts
+index 5e0db35..c5b27f4 100644
+--- a/source/options.ts
++++ b/source/options.ts
+@@ -7,13 +7,6 @@ type TimeoutOptions = {
+ 	The timeout begins when the operation is dequeued and starts execution, not while it's waiting in the queue.
+ 	*/
+ 	timeout?: number;
+-
+-	/**
+-	Whether or not a timeout is considered an exception.
+-
+-	@default false
+-	*/
+-	throwOnTimeout?: boolean;
+ };
+ 
+ export type Options<QueueType extends Queue<RunFunction, QueueOptions>, QueueOptions extends QueueAddOptions> = {
+diff --git a/test-d/index.test-d.ts b/test-d/index.test-d.ts
+index 67641a7..9f666fb 100644
+--- a/test-d/index.test-d.ts
++++ b/test-d/index.test-d.ts
+@@ -4,4 +4,4 @@ import PQueue from '../source/index.js';
+ const queue = new PQueue();
+ 
+ expectType<Promise<string | void>>(queue.add(async () => '🦄'));
+-expectType<Promise<string>>(queue.add(async () => '🦄', {throwOnTimeout: true}));
++expectType<Promise<string>>(queue.add(async () => '🦄', {priority: 0, timeout: 100}));
+diff --git a/test/advanced.ts b/test/advanced.ts
+index cee30bb..e140e82 100644
+--- a/test/advanced.ts
++++ b/test/advanced.ts
+@@ -262,18 +262,14 @@ test('should emit completed / error events', async () => {
+ });
+ 
+ test('should verify timeout overrides passed to add', async () => {
+-	const queue = new PQueue({timeout: 200, throwOnTimeout: true});
++	const queue = new PQueue({timeout: 200});
+ 
+ 	await assert.rejects(queue.add(async () => {
+ 		await delay(400);
+-	}));
++	}), {name: 'TimeoutError'});
+ 
+ 	await queue.add(async () => {
+-		await delay(400);
+-	}, {throwOnTimeout: false});
+-
+-	await queue.add(async () => {
+-		await delay(400);
++		await delay(150);
+ 	}, {timeout: 600});
+ 
+ 	await queue.add(async () => {
+@@ -282,7 +278,7 @@ test('should verify timeout overrides passed to add', async () => {
+ 
+ 	await assert.rejects(queue.add(async () => {
+ 		await delay(100);
+-	}, {timeout: 50}));
++	}, {timeout: 50}), {name: 'TimeoutError'});
+ 
+ 	await queue.onIdle();
+ });
+diff --git a/test/basic.ts b/test/basic.ts
+index 6e23dcc..c0c6c45 100644
+--- a/test/basic.ts
++++ b/test/basic.ts
+@@ -131,18 +131,27 @@ test('.add() - priority defaults to 0 when undefined', async () => {
+ 	assert.deepEqual(result, ['first', 'priority', 'second', 'third']);
+ });
+ 
+-test('.add() - timeout without throwing', async () => {
++test('.add() - timeout rejects on idle after timing out', async () => {
+ 	const result: string[] = [];
+-	const queue = new PQueue({timeout: 300, throwOnTimeout: false});
+-	queue.add(async () => {
++	const queue = new PQueue({timeout: 300});
++	let errorCaught = false;
++	queue.on('error', error => {
++		if (error.name === 'TimeoutError') {
++			errorCaught = true;
++		}
++	});
++
++	const timedOutPromise = queue.add(async () => {
+ 		await delay(400);
+ 		result.push('🐌');
+ 	});
++	await assert.rejects(timedOutPromise, (error: Error) => error.name === 'TimeoutError');
++
+ 	queue.add(async () => {
+ 		await delay(250);
+ 		result.push('🦆');
+ 	});
+-	queue.add(async () => {
++	const finishedPromise = queue.add(async () => {
+ 		await delay(310);
+ 		result.push('🐢');
+ 	});
+@@ -150,20 +159,24 @@ test('.add() - timeout without throwing', async () => {
+ 		await delay(100);
+ 		result.push('🐅');
+ 	});
+-	queue.add(async () => {
++	const immediatePromise = queue.add(async () => {
+ 		result.push('⚡️');
+ 	});
+-	await queue.onIdle();
++	assert.equal(await immediatePromise, '⚡️');
++
++	await finishedPromise;
++
++	assert.ok(errorCaught);
+ 	assert.deepEqual(result, ['⚡️', '🐅', '🦆']);
+ });
+ 
+-test.skip('.add() - timeout with throwing', async () => {
++test('.add() - timeout always rejects', async () => {
+ 	const result: string[] = [];
+-	const queue = new PQueue({timeout: 300, throwOnTimeout: true});
++	const queue = new PQueue({timeout: 300});
+ 	await assert.rejects(queue.add(async () => {
+ 		await delay(400);
+ 		result.push('🐌');
+-	}));
++	}), {name: 'TimeoutError'});
+ 	queue.add(async () => {
+ 		await delay(200);
+ 		result.push('🦆');
+@@ -176,7 +189,7 @@ test('.add() - change timeout in between', async () => {
+ 	const result: string[] = [];
+ 	const initialTimeout = 50;
+ 	const newTimeout = 200;
+-	const queue = new PQueue({timeout: initialTimeout, throwOnTimeout: false, concurrency: 2});
++	const queue = new PQueue({timeout: initialTimeout, concurrency: 2});
+ 	queue.add(async () => {
+ 		const {timeout} = queue;
+ 		assert.equal(timeout, initialTimeout);
+@@ -800,7 +813,9 @@ test('.addAll() sync/async mixed tasks', async () => {
+ 
+ 	assert.equal(queue.size, 0);
+ 	assert.equal(queue.pending, 4);
+-	assert.deepEqual(await promise, ['sync 1', undefined, 'sync 2', fixture]);
++	const allResults = await promise;
++	assert.equal(allResults[0], 'sync 1');
++	assert.deepEqual(allResults.slice(1), ['sync 2', fixture]);
+ });
+ 
+ test('should resolve empty when size is zero', async () => {
+diff --git a/test/throw-on-timeout-removed.ts b/test/throw-on-timeout-removed.ts
+new file mode 100644
+index 0000000..ae6b596
+--- /dev/null
++++ b/test/throw-on-timeout-removed.ts
+@@ -0,0 +1,144 @@
++import {test} from 'node:test';
++import assert from 'node:assert/strict';
++import delay from 'delay';
++import PQueue, {TimeoutError} from '../source/index.js';
++
++test('timed-out tasks always reject with TimeoutError', async () => {
++	const queue = new PQueue({concurrency: 1});
++
++	// A task that times out should reject
++	const timedOutTask = queue.add(async () => {
++		await delay(200);
++		return '🐌';
++	}, {timeout: 50});
++
++	await assert.rejects(timedOutTask, {name: 'TimeoutError'});
++});
++
++test('queue.add resolves with value when task completes before timeout', async () => {
++	const queue = new PQueue({concurrency: 1});
++
++	const result = await queue.add(async () => {
++		await delay(50);
++		return '🦄';
++	}, {timeout: 300});
++
++	assert.equal(result, '🦄');
++});
++
++test('per-task timeout overrides queue timeout', async () => {
++	const queue = new PQueue({timeout: 100});
++
++	// This should complete because per-task timeout is longer than task duration
++	const result = await queue.add(async () => {
++		await delay(50);
++		return '🏇';
++	}, {timeout: 300});
++
++	assert.equal(result, '🏇');
++
++	// This should reject because per-task timeout is shorter
++	const timedOutTask = queue.add(async () => {
++		await delay(200);
++		return '🐌';
++	}, {timeout: 50});
++
++	await assert.rejects(timedOutTask, {name: 'TimeoutError'});
++});
++
++test('queue.timeout applies to tasks added after it is set', async () => {
++	const queue = new PQueue();
++	queue.timeout = 100;
++
++	const result = await queue.add(async () => {
++		await delay(50);
++		return '🦅';
++	});
++
++	assert.equal(result, '🦅');
++
++	queue.timeout = 50;
++	const timedOutTask = queue.add(async () => {
++		await delay(200);
++		return '🐌';
++	});
++
++	await assert.rejects(timedOutTask, {name: 'TimeoutError'});
++});
++
++test('timed-out task emits error event but no completed event', async () => {
++	const queue = new PQueue({timeout: 50});
++	let errorEmitted = false;
++	queue.on('error', error => {
++		if (error.name === 'TimeoutError') {
++			errorEmitted = true;
++		}
++	});
++
++	await assert.rejects(queue.add(async () => {
++		await delay(200);
++		return '🐌';
++	}), {name: 'TimeoutError'});
++
++	assert.ok(errorEmitted, 'error event should be emitted for timeout');
++});
++
++test('queue continues processing after a timed-out task', async () => {
++	const order: string[] = [];
++	const queue = new PQueue({concurrency: 1, timeout: 50});
++
++	queue.add(async () => {
++		await delay(10);
++		order.push('task3');
++	});
++
++	const rejected = queue.add(async () => {
++		await delay(200);
++		order.push('task1');
++	});
++	await assert.rejects(rejected, {name: 'TimeoutError'});
++
++	queue.add(async () => {
++		await delay(10);
++		order.push('task2');
++	});
++
++	await queue.onIdle();
++	assert.deepEqual(order, ['task3', 'task2']);
++});
++
++test('addAll() rejects when one of its tasks times out', async () => {
++	const queue = new PQueue({concurrency: 2, timeout: 50});
++	let errorEmitted = false;
++	queue.on('error', error => {
++		if (error.name === 'TimeoutError') {
++			errorEmitted = true;
++		}
++	});
++
++	const allPromise = queue.addAll([
++		async () => {
++			await delay(10);
++			return 'fast';
++		},
++		async () => {
++			await delay(200);
++			return 'slow';
++		},
++	]);
++
++	await assert.rejects(allPromise, {name: 'TimeoutError'});
++	assert.ok(errorEmitted);
++});
++
++test('throwOnTimeout passed at runtime is ignored (timeout still rejects)', async () => {
++	const queue = new PQueue();
++
++	// Even if someone passes throwOnTimeout, the timeout should still reject
++	const timedOutTask = queue.add(async () => {
++		await delay(200);
++		return '🐌';
++	}, {timeout: 50, throwOnTimeout: false});
++
++	await assert.rejects(timedOutTask, {name: 'TimeoutError'});
++});

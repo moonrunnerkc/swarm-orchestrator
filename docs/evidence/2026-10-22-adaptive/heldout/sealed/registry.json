@@ -1,0 +1,1158 @@
+{
+  "schema": "swarm-heldout-2026-10-22.registry.v1",
+  "builtAt": "2026-10-22T23:41:38.628Z",
+  "rule": "docs/evidence/2026-10-22-adaptive/heldout-selection-rule.md (registered in dbea530b9)",
+  "interpretation": [
+    "Families are taken in the rule's listed order (bug fix, feature, behavior-preserving refactor, API or dependency compatibility); within a family, inventory candidates in file order, then amended replacements.",
+    "The three-repository requirement is enforced as a selection guard: a candidate is not taken when, after taking it, the families still open could no longer bring the block to three repositories. Candidates refused by the guard are recorded with that reason.",
+    "Amended replacement pools are the three repositories' first-parent history from the inventory's recorded heads, merged and ordered newest first by commit time, filtered by whole-word subject keywords (refactor*, simplif*, move/moves/moved; deps, compat*, support*, drop*, remove*). A keyword match is necessary, not sufficient: a candidate whose change is plainly of another family is rejected with that reason.",
+    "Exposure: the project's exposure-scan.mjs was run over the amended candidates considered (scan/amended-*.json); no identity matched."
+  ],
+  "heads": {
+    "sindresorhus/p-limit": "a8a6fbec4e0e866d6d779b10889bb4f5567e70eb",
+    "fastify/fastify": "ce41dc0fbb4ed75e9a42f3972ac896333f6a7396",
+    "sindresorhus/p-queue": "7f272ab5ff2254c0dc2537b7977e88ede1cd55e8"
+  },
+  "candidates": [
+    {
+      "source": "inventory",
+      "id": "sindresorhus-p-limit-compatibility",
+      "family": "compatibility",
+      "repository": "sindresorhus/p-limit",
+      "base": "54c0ba85af33fef826f7d91dca57734141ad550c",
+      "upstream": "69b6017d180297c0eb0d229167bbfe0e832ebe91",
+      "subject": "Remove `p-try` dependency",
+      "filesTouched": 7,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three. Also observed: the base's own npm test cannot run on this host's Node 24 (xo 0.26 crashes on the removed util.isDate; tsd 0.11 fails against current @types/node); only its ava suite runs."
+    },
+    {
+      "source": "inventory",
+      "id": "p-limit-feature-reject-on-clear",
+      "candidate": "sindresorhus-p-limit-feature",
+      "family": "feature",
+      "workType": "feature",
+      "repository": "sindresorhus/p-limit",
+      "base": "ce9d71cf1391edf2897cbb9e00b8bc4f091df8b1",
+      "upstream": "8907801ffa0252b51490a2c9efbb388d0c83391f",
+      "decision": "accepted",
+      "reason": "passes every feasibility condition; validated with the comparison's own scorers",
+      "referenceDigest": "sha256:3d141f61a41cbd6c38a791ab6bd4e4d60245a9dc0a524641eef72e7034926c9c",
+      "referenceMatchesUpstreamDiff": true,
+      "filesTouched": {
+        "paths": [
+          "index.d.ts",
+          "index.js",
+          "index.test-d.ts",
+          "readme.md",
+          "test.js"
+        ],
+        "authored": 4,
+        "nonTestSource": 3
+      },
+      "timings": {
+        "baseInstallMs": 2354,
+        "baseProjectTestMs": 5606,
+        "baseProjectTestExit": 0
+      },
+      "lint": {
+        "ok": true,
+        "applicable": false,
+        "detail": "the project declares no lint script"
+      },
+      "base_": {
+        "visible": false,
+        "visibleCheckExit": 1,
+        "hidden": "fail",
+        "hiddenBasis": "hidden tests (npx ava test.js) exited 1",
+        "hiddenExit": 1,
+        "executed": true
+      },
+      "reference_": {
+        "visible": true,
+        "visibleCheckExit": 0,
+        "projectTestExit": 0,
+        "hidden": "pass",
+        "hiddenBasis": "hidden tests, project tests and every structural or version requirement passed",
+        "policy": {
+          "ok": true,
+          "violations": [],
+          "addedAssertions": 0,
+          "removedAssertions": 0,
+          "testFilesAdded": [],
+          "testFilesTouched": []
+        }
+      },
+      "valid": true,
+      "controls": [
+        {
+          "name": "alternative-correct.patch",
+          "digest": "sha256:9a361fb5feef224d17a1a4b0645d6e550fe921037938d7221c066c69f3f0687e",
+          "digestMatchesFile": true,
+          "expected": "pass",
+          "hidden": "pass",
+          "hiddenBasis": "hidden tests, project tests and every structural or version requirement passed",
+          "hiddenExit": null,
+          "policyOk": true,
+          "visible": true,
+          "visibleCheckExit": 0,
+          "projectTestExit": 0,
+          "asExpected": true
+        },
+        {
+          "name": "always-reject.patch",
+          "digest": "sha256:43a2b43734c56c893c6dc0f68c7ae0b11c015d0b92a8cf68b5cf5c37cb989ec4",
+          "digestMatchesFile": true,
+          "expected": "fail",
+          "hidden": "fail",
+          "hiddenBasis": "hidden tests (npx ava test.js) exited 1",
+          "hiddenExit": 1,
+          "policyOk": true,
+          "visible": false,
+          "visibleCheckExit": 0,
+          "projectTestExit": 1,
+          "asExpected": true
+        },
+        {
+          "name": "partial-no-types.patch",
+          "digest": "sha256:45633ea0f36bed17218288496d1920a1a6b00b19be2d40c413df948518a83b24",
+          "digestMatchesFile": true,
+          "expected": "fail",
+          "hidden": "fail",
+          "hiddenBasis": "npx tsd exited 1",
+          "hiddenExit": 1,
+          "policyOk": true,
+          "visible": true,
+          "visibleCheckExit": 0,
+          "projectTestExit": 0,
+          "asExpected": true
+        },
+        {
+          "name": "plain-error.patch",
+          "digest": "sha256:98fc7afa0f94bd6b58a6df3cfaa521c4d81d3b267c88ba3883f3a58abb96cbc0",
+          "digestMatchesFile": true,
+          "expected": "fail",
+          "hidden": "fail",
+          "hiddenBasis": "hidden tests (npx ava test.js) exited 1",
+          "hiddenExit": 1,
+          "policyOk": true,
+          "visible": true,
+          "visibleCheckExit": 0,
+          "projectTestExit": 0,
+          "asExpected": true
+        },
+        {
+          "name": "unvalidated-option.patch",
+          "digest": "sha256:377bdc821d6de9f370c361c6cb1be9ba918858b44da19e1ec4157974a8f2cce0",
+          "digestMatchesFile": true,
+          "expected": "fail",
+          "hidden": "fail",
+          "hiddenBasis": "node acceptance/hidden/behaviour-check.mjs exited 1",
+          "hiddenExit": 1,
+          "policyOk": true,
+          "visible": false,
+          "visibleCheckExit": 1,
+          "projectTestExit": 0,
+          "asExpected": true
+        }
+      ],
+      "hiddenFiles": [
+        {
+          "path": "acceptance/hidden/behaviour-check.mjs",
+          "sealedSource": "/Users/brad/.cache/swarm-heldout-2026-10-22/sealed/plimit-feature/behaviour-check.mjs",
+          "digest": "sha256:234e6e8b0c6b58652ab6226cb1ee43ab57d891deac6d13593157db50dbcfc53e"
+        }
+      ],
+      "exposureMatches": []
+    },
+    {
+      "source": "inventory",
+      "id": "p-limit-bugfix-limit-function-clear-queue",
+      "candidate": "sindresorhus-p-limit-bugfix",
+      "family": "bugfix",
+      "workType": "bugfix",
+      "repository": "sindresorhus/p-limit",
+      "base": "df476048d023ff868cd45b35ee47f5fb0ca2b25a",
+      "upstream": "f3e7f9ba364a9357bd912d136367d06c46660917",
+      "decision": "accepted",
+      "reason": "passes every feasibility condition; validated with the comparison's own scorers",
+      "referenceDigest": "sha256:265905aeb1727496ea8c41a8cf60e9826c8724d778a409b5d8233e23a562f818",
+      "referenceMatchesUpstreamDiff": true,
+      "filesTouched": {
+        "paths": [
+          "index.d.ts",
+          "index.js",
+          "index.test-d.ts",
+          "readme.md",
+          "test.js"
+        ],
+        "authored": 4,
+        "nonTestSource": 3
+      },
+      "timings": {
+        "baseInstallMs": 2458,
+        "baseProjectTestMs": 5617,
+        "baseProjectTestExit": 0
+      },
+      "lint": {
+        "ok": true,
+        "applicable": false,
+        "detail": "the project declares no lint script"
+      },
+      "base_": {
+        "visible": false,
+        "visibleCheckExit": 1,
+        "hidden": "fail",
+        "hiddenBasis": "hidden tests (npx ava test.js) exited 1",
+        "hiddenExit": 1,
+        "executed": true
+      },
+      "reference_": {
+        "visible": true,
+        "visibleCheckExit": 0,
+        "projectTestExit": 0,
+        "hidden": "pass",
+        "hiddenBasis": "hidden tests, project tests and every structural or version requirement passed",
+        "policy": {
+          "ok": true,
+          "violations": [],
+          "addedAssertions": 0,
+          "removedAssertions": 0,
+          "testFilesAdded": [],
+          "testFilesTouched": []
+        }
+      },
+      "valid": true,
+      "controls": [
+        {
+          "name": "alternative-correct.patch",
+          "digest": "sha256:f9d46d572a39cfea0f7178e22798639a117338bbeea399180c0fcb8a76e8d509",
+          "digestMatchesFile": true,
+          "expected": "pass",
+          "hidden": "pass",
+          "hiddenBasis": "hidden tests, project tests and every structural or version requirement passed",
+          "hiddenExit": null,
+          "policyOk": true,
+          "visible": true,
+          "visibleCheckExit": 0,
+          "projectTestExit": 0,
+          "asExpected": true
+        },
+        {
+          "name": "noop-clear.patch",
+          "digest": "sha256:d787d536849ee9d0c01ab411c1175b6d0516734558e54cad8a7f9edb418f39fe",
+          "digestMatchesFile": true,
+          "expected": "fail",
+          "hidden": "fail",
+          "hiddenBasis": "hidden tests (npx ava test.js) exited 1",
+          "hiddenExit": 1,
+          "policyOk": true,
+          "visible": true,
+          "visibleCheckExit": 0,
+          "projectTestExit": 0,
+          "asExpected": true
+        },
+        {
+          "name": "partial-no-types.patch",
+          "digest": "sha256:0b2656e576f6ae4634d5f3154cb0c28c7fe3768bfe80fcf9894a505bfaea71fd",
+          "digestMatchesFile": true,
+          "expected": "fail",
+          "hidden": "fail",
+          "hiddenBasis": "npx tsd exited 1",
+          "hiddenExit": 1,
+          "policyOk": true,
+          "visible": true,
+          "visibleCheckExit": 0,
+          "projectTestExit": 0,
+          "asExpected": true
+        },
+        {
+          "name": "reset-limiter.patch",
+          "digest": "sha256:7b8d98adc5d32139cd67a7c11ffa5dcc139027966a7192d2174b35be5d0426af",
+          "digestMatchesFile": true,
+          "expected": "fail",
+          "hidden": "fail",
+          "hiddenBasis": "node acceptance/hidden/behaviour-check.mjs exited 1",
+          "hiddenExit": 1,
+          "policyOk": true,
+          "visible": true,
+          "visibleCheckExit": 0,
+          "projectTestExit": 0,
+          "asExpected": true
+        }
+      ],
+      "hiddenFiles": [
+        {
+          "path": "acceptance/hidden/behaviour-check.mjs",
+          "sealedSource": "/Users/brad/.cache/swarm-heldout-2026-10-22/sealed/plimit-bugfix/behaviour-check.mjs",
+          "digest": "sha256:73d23ea4626bdfbb7511dbbff15f7097d5808134421303feab3627c55267907a"
+        }
+      ],
+      "exposureMatches": []
+    },
+    {
+      "source": "inventory",
+      "id": "fastify-fastify-compatibility",
+      "family": "compatibility",
+      "repository": "fastify/fastify",
+      "base": "a2f590563f111ebc8e92b8f17701909e9b19d4b7",
+      "upstream": "27938ac777c15482a81881b29f86c82b025f7fae",
+      "subject": "fix: recognize constructor-assigned built-in properties as decorator dependencies (#6892)",
+      "filesTouched": 2,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three. Also: the subject matches the family only through \"decorator dependencies\"; the change is a bug fix in decorator dependency detection, not an API or dependency compatibility change."
+    },
+    {
+      "source": "inventory",
+      "id": "fastify-fastify-refactor",
+      "family": "refactor",
+      "repository": "fastify/fastify",
+      "base": "e5fcec84a8639325d3351e4b52f6d13d119e0979",
+      "upstream": "2808d207d93c5b56d5ed9cf02ada65c15bb6e8f8",
+      "subject": "refactor(types)!: remove ResSerializerReply type (#6911)",
+      "filesTouched": 2,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "not behavior-preserving: removes the exported ResSerializerReply type (marked BREAKING CHANGE); its only non-test source is a .d.ts; the commit is not on main's first-parent history"
+    },
+    {
+      "source": "inventory",
+      "id": "fastify-fastify-feature",
+      "family": "feature",
+      "repository": "fastify/fastify",
+      "base": "3efe8748335fea67b7006773a8ea28dd4abc8724",
+      "upstream": "eaff726a68c629c1aedc99f96b3c4b95dfdb38d1",
+      "subject": "feat: add `Reply.prototype.mediaType` (#6932)",
+      "filesTouched": 4,
+      "exposureMatches": [],
+      "decision": "not reached",
+      "reason": "the feature family was filled by sindresorhus-p-limit-feature, earlier in file order"
+    },
+    {
+      "source": "inventory",
+      "id": "fastify-fastify-bugfix",
+      "family": "bugfix",
+      "repository": "fastify/fastify",
+      "base": "83e69762aff047940b376fc2a266d143499ef727",
+      "upstream": "4176096a31f5b4c31512c36f578b08a596a72435",
+      "subject": "fix: callNotFound should run not-found preHandler regardless of registration order (#6965)",
+      "filesTouched": 2,
+      "exposureMatches": [],
+      "decision": "not reached",
+      "reason": "the bug-fix family was filled by sindresorhus-p-limit-bugfix, earlier in file order"
+    },
+    {
+      "source": "inventory",
+      "id": "sindresorhus-p-queue-refactor",
+      "family": "refactor",
+      "repository": "sindresorhus/p-queue",
+      "base": "18040fecaacad375b5a46751f56131ba32104daf",
+      "upstream": "a9d3ad9996d0f6cc91bb63676bf43ef2c764971b",
+      "subject": "Refactor module in TypeScript (#60)",
+      "filesTouched": 15,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "a whole-module rewrite into TypeScript (13 files, build tooling, test runner moved) that cannot be stated as a bounded task; the reference also changes package.json scripts.test, which the allowed-change policy rejects"
+    },
+    {
+      "source": "amended refactor replacement",
+      "id": "fastify-fastify-refactor-27f4d6222",
+      "family": "refactor",
+      "repository": "fastify/fastify",
+      "base": "5350e744afcb8373c89a4f3164c456e3f3d3d614",
+      "upstream": "27f4d6222dd945238e96c1fdaa632d5dc3c37b2c",
+      "subject": "refactor(decorate): replace `find` with `some` in `hasKey` for correct boolean semantics (#6759)",
+      "filesTouched": 1,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "reference touches one authored file (lib/decorate.js)"
+    },
+    {
+      "source": "amended refactor replacement",
+      "id": "fastify-fastify-refactor-5ff2cd024",
+      "family": "refactor",
+      "repository": "fastify/fastify",
+      "base": "00f202f35d4a33fe45044995023ef1679200e559",
+      "upstream": "5ff2cd024325de044a53a2df26cca5acb78741fe",
+      "subject": "refactor(test-types): replace deprecated FastifyPlugin with FastifyPluginAsync in dummy-plugin (#6472)",
+      "filesTouched": 1,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "test-only change (test/types/dummy-plugin.ts); no non-test source"
+    },
+    {
+      "source": "amended refactor replacement",
+      "id": "fastify-fastify-refactor-f4a6ac1d0",
+      "family": "refactor",
+      "repository": "fastify/fastify",
+      "base": "2af83d64b53a0a786141d93edb9ffefac8b6446a",
+      "upstream": "f4a6ac1d0321e9f1757c165a2d423ccbefe7c9c9",
+      "subject": "docs: move querystringParser example under routerOptions (#6463)",
+      "filesTouched": 1,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "documentation only"
+    },
+    {
+      "source": "amended refactor replacement",
+      "id": "fastify-fastify-refactor-a676d7fcd",
+      "family": "refactor",
+      "repository": "fastify/fastify",
+      "base": "358a4e95d882098c0fef2e4cb514e5aabe854c34",
+      "upstream": "a676d7fcde507031aeeca4512da60aab117eb4bd",
+      "subject": "Simplify and tighten decorators example (#6451)",
+      "filesTouched": 1,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "documentation only"
+    },
+    {
+      "source": "amended refactor replacement",
+      "id": "fastify-fastify-refactor-a38ebb49d",
+      "family": "refactor",
+      "repository": "fastify/fastify",
+      "base": "329e40f09f23910ed0193a9636b474844a7fbe79",
+      "upstream": "a38ebb49dbe32245639d8757d3acb70ff6a298e9",
+      "subject": "refactor: delegate options processing to a dedicated function (#6333)",
+      "filesTouched": 3,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "reference fails the allowed-change policy: it moves an `istanbul ignore next` pragma into lib/server.js, which the policy counts as an added coverage exclusion (evaluator and controls had been drafted; kept under sealed/rejected/)",
+      "draftedMaterial": [
+        {
+          "path": "rejected/fastify-refactor-a38ebb49d/behaviour-check.mjs",
+          "digest": "sha256:633d449e1935cb2514b39250a4ebea041adf425ebc4a1b72251f0df194695c7f"
+        },
+        {
+          "path": "rejected/fastify-refactor-a38ebb49d/reference.patch",
+          "digest": "sha256:a7c1119c5924ac9b732f760ed8bfabcd203d39041f75d883472269ff79da56c3"
+        },
+        {
+          "path": "rejected/fastify-refactor-a38ebb49d/controls/alternative-correct.patch",
+          "digest": "sha256:70c1ef2e50454ac412fc2d8256dd2c3c38c4c1da66e9b5e15430c646f78aaee3"
+        },
+        {
+          "path": "rejected/fastify-refactor-a38ebb49d/controls/idle-default-lost.patch",
+          "digest": "sha256:477b0c6b4f385d6273a21b81065b62a06de3955a6a7252773108963e37c17d29"
+        },
+        {
+          "path": "rejected/fastify-refactor-a38ebb49d/controls/mutates-caller-options.patch",
+          "digest": "sha256:e6ba98d7d2ee937e090335f71856227840733dd3f673dcd13cd70f9648a51ee2"
+        },
+        {
+          "path": "rejected/fastify-refactor-a38ebb49d/controls/partial-router-logger.patch",
+          "digest": "sha256:07ff5cb7822abbad11aed841e7cad54866f5b82424677c2cde5c85e7368c2856"
+        },
+        {
+          "path": "rejected/fastify-refactor-a38ebb49d/controls/partial-server-unchanged.patch",
+          "digest": "sha256:af665e04608532794aa84666b957e5ec55e2344efa9781bcb26428bcdf5c1cba"
+        }
+      ]
+    },
+    {
+      "source": "amended refactor replacement",
+      "subject": "refactor: rename source file names with kebab-case (#6331)",
+      "id": "fastify-refactor-kebab-case-file-names",
+      "candidate": "fastify-fastify-refactor-5bcee1d7a",
+      "family": "refactor",
+      "workType": "refactor",
+      "repository": "fastify/fastify",
+      "base": "91414fecaa0ad383c7f97c91f86bee87bf4f06c0",
+      "upstream": "5bcee1d7ab3bd7109488df50054a185c27fcf486",
+      "decision": "accepted",
+      "reason": "passes every feasibility condition; validated with the comparison's own scorers",
+      "referenceDigest": "sha256:4ff75ed7085c2b6fa99d27bc0e8a6f74430d7538778982b7d11ff009dda30cdb",
+      "referenceMatchesUpstreamDiff": true,
+      "filesTouched": {
+        "paths": [
+          "build/build-validation.js",
+          "eslint.config.js",
+          "fastify.d.ts",
+          "fastify.js",
+          "lib/config-validator.js",
+          "lib/content-type-parser.js",
+          "lib/error-handler.js",
+          "lib/four-oh-four.js",
+          "lib/handle-request.js",
+          "lib/head-route.js",
+          "lib/initial-config-validation.js",
+          "lib/plugin-override.js",
+          "lib/plugin-utils.js",
+          "lib/reply.js",
+          "lib/req-id-gen-factory.js",
+          "lib/route.js",
+          "lib/wrap-thenable.js",
+          "package.json",
+          "test/diagnostics-channel/error-before-handler.test.js",
+          "test/internals/content-type-parser.test.js",
+          "test/internals/handle-request.test.js",
+          "test/internals/initial-config.test.js",
+          "test/internals/plugin.test.js",
+          "test/internals/req-id-gen-factory.test.js",
+          "test/stream.5.test.js",
+          "test/wrap-thenable.test.js",
+          "types/server-factory.d.ts"
+        ],
+        "authored": 27,
+        "nonTestSource": 19
+      },
+      "timings": {
+        "baseInstallMs": 3081,
+        "baseProjectTestMs": 17308,
+        "baseProjectTestExit": 0
+      },
+      "lint": {
+        "ok": true,
+        "applicable": true,
+        "detail": "lint passes with the visible check in the tree"
+      },
+      "base_": {
+        "visible": false,
+        "visibleCheckExit": 1,
+        "hidden": "fail",
+        "hiddenBasis": "node acceptance/hidden/behaviour-check.mjs exited 1",
+        "hiddenExit": 1,
+        "executed": true
+      },
+      "reference_": {
+        "visible": true,
+        "visibleCheckExit": 0,
+        "projectTestExit": 0,
+        "hidden": "pass",
+        "hiddenBasis": "hidden tests, project tests and every structural or version requirement passed",
+        "policy": {
+          "ok": true,
+          "violations": [],
+          "addedAssertions": 0,
+          "removedAssertions": 0,
+          "testFilesAdded": [],
+          "testFilesTouched": [
+            "test/diagnostics-channel/error-before-handler.test.js",
+            "test/internals/content-type-parser.test.js",
+            "test/internals/handle-request.test.js",
+            "test/internals/initial-config.test.js",
+            "test/internals/plugin.test.js",
+            "test/internals/req-id-gen-factory.test.js",
+            "test/stream.5.test.js",
+            "test/wrap-thenable.test.js"
+          ]
+        }
+      },
+      "valid": true,
+      "controls": [
+        {
+          "name": "alternative-correct.patch",
+          "digest": "sha256:82ed4eaf731210b653f52b63527bb1698acadc70482842a7d94a374c9e943d48",
+          "digestMatchesFile": true,
+          "expected": "pass",
+          "hidden": "pass",
+          "hiddenBasis": "hidden tests, project tests and every structural or version requirement passed",
+          "hiddenExit": null,
+          "policyOk": true,
+          "visible": true,
+          "visibleCheckExit": 0,
+          "projectTestExit": 0,
+          "asExpected": true
+        },
+        {
+          "name": "export-shape-changed.patch",
+          "digest": "sha256:ed977bb59ad9268a09a380b8dc7b6821891ba2bcb3429252ad6c17b9bbd075bd",
+          "digestMatchesFile": true,
+          "expected": "fail",
+          "hidden": "fail",
+          "hiddenBasis": "node acceptance/hidden/behaviour-check.mjs exited 1",
+          "hiddenExit": 1,
+          "policyOk": true,
+          "visible": true,
+          "visibleCheckExit": 0,
+          "projectTestExit": 0,
+          "asExpected": true
+        },
+        {
+          "name": "partial-lib-only.patch",
+          "digest": "sha256:d4bd5c16f225a4a6922e4b29b3fd1562dd6ccc9a64f19beaa809c0d696528bd0",
+          "digestMatchesFile": true,
+          "expected": "fail",
+          "hidden": "fail",
+          "hiddenBasis": "hidden tests (npm test) exited 1",
+          "hiddenExit": 1,
+          "policyOk": true,
+          "visible": false,
+          "visibleCheckExit": 0,
+          "projectTestExit": 1,
+          "asExpected": true
+        },
+        {
+          "name": "shim-old-names.patch",
+          "digest": "sha256:bacad0d8f9cfff2a3a80b8bc6435b42b2d01c5c2f77881a8012e13da29ff37eb",
+          "digestMatchesFile": true,
+          "expected": "fail",
+          "hidden": "fail",
+          "hiddenBasis": "node acceptance/hidden/behaviour-check.mjs exited 1",
+          "hiddenExit": 1,
+          "policyOk": true,
+          "visible": true,
+          "visibleCheckExit": 0,
+          "projectTestExit": 0,
+          "asExpected": true
+        },
+        {
+          "name": "stale-type-import.patch",
+          "digest": "sha256:42f155758bd736ed4993ccd3427ff1a02411df4f566ab4aa59c66f46586fec6b",
+          "digestMatchesFile": true,
+          "expected": "fail",
+          "hidden": "fail",
+          "hiddenBasis": "hidden tests (npm test) exited 2",
+          "hiddenExit": 2,
+          "policyOk": true,
+          "visible": false,
+          "visibleCheckExit": 0,
+          "projectTestExit": 2,
+          "asExpected": true
+        }
+      ],
+      "hiddenFiles": [
+        {
+          "path": "acceptance/hidden/behaviour-check.mjs",
+          "sealedSource": "/Users/brad/.cache/swarm-heldout-2026-10-22/sealed/fastify-rename/behaviour-check.mjs",
+          "digest": "sha256:0284fe58d503c9cb6e5072a7ae8ca8960d8067bf4f986aff23800d687da30826"
+        }
+      ],
+      "exposureMatches": []
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "fastify-fastify-compatibility-5d4c23352",
+      "family": "compatibility",
+      "repository": "fastify/fastify",
+      "base": "e61a91e73bed771396d8ae7365b5d3ca2501e624",
+      "upstream": "5d4c23352d90c2474bfaf1a0d530c86b699cb795",
+      "subject": "feat(hooks): support disposables in onClose hook (#7121)",
+      "filesTouched": 5,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "sindresorhus-p-queue-compatibility-fa3c3e0b4",
+      "family": "compatibility",
+      "repository": "sindresorhus/p-queue",
+      "base": "d6cf96b05fd59f9690389075aff83ef6797fa6e1",
+      "upstream": "fa3c3e0b4536ba444f57c673be91e0755d7aad2e",
+      "subject": "Fix the types of `.addEventListener()` and `.removeEventListener()` rejecting a listener object",
+      "filesTouched": 2,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "bug fix of type declarations (subject starts with Fix); the keyword appears only inside the identifier removeEventListener"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "sindresorhus-p-queue-compatibility-64311ff68",
+      "family": "compatibility",
+      "repository": "sindresorhus/p-queue",
+      "base": "300a52d93618c3fdcb63aaa4e1c016a987a7e534",
+      "upstream": "64311ff6803887d76053ef6afe6d4c2714390707",
+      "subject": "Make `.clear()` reject the promises of the removed tasks",
+      "filesTouched": 5,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "a new clear() behaviour (rejecting removed tasks' promises), not a compatibility change; \"removed\" describes tasks; also a 198-line rewrite of source/index.ts"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "fastify-fastify-compatibility-b7eb53e41",
+      "family": "compatibility",
+      "repository": "fastify/fastify",
+      "base": "0d945819bebc08f4ca666d8283c03a26ed9706a0",
+      "upstream": "b7eb53e41e1db355ddd2a04f2fbbfca7962a7bd9",
+      "subject": "docs: remove plugins that do not support Fastify v5 (#7075)",
+      "filesTouched": 1,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "fastify-fastify-compatibility-bc25b7499",
+      "family": "compatibility",
+      "repository": "fastify/fastify",
+      "base": "c3051e5b60c0e0e95ac0638fae342e82099fe534",
+      "upstream": "bc25b7499acedb803ef3cef644d0d56cf4e7c725",
+      "subject": "fix: remove error when HTTP QUERY request has empty body (#6929)",
+      "filesTouched": 7,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "fastify-fastify-compatibility-1beaf7e72",
+      "family": "compatibility",
+      "repository": "fastify/fastify",
+      "base": "4176096a31f5b4c31512c36f578b08a596a72435",
+      "upstream": "1beaf7e72d24b2fc63a02a7f5806772a00e45454",
+      "subject": "docs(ecosystem): remove deprecated http-wizard and rename fastify-better-sqlite3 (#6972)",
+      "filesTouched": 1,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "fastify-fastify-compatibility-d693f43d8",
+      "family": "compatibility",
+      "repository": "fastify/fastify",
+      "base": "f5ef34443c5be0cfc7fbde44f84253ef5d0ec66e",
+      "upstream": "d693f43d890f07a8852b4737b048ed76458139a2",
+      "subject": "docs: remove deprecated-API notices ahead of v6 cleanup (#6951)",
+      "filesTouched": 3,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "fastify-fastify-compatibility-e4ffc2053",
+      "family": "compatibility",
+      "repository": "fastify/fastify",
+      "base": "ed664c344f4d7e0171f252d5e886db6d7d241770",
+      "upstream": "e4ffc205328db294d550c5855d2573b33f5e9d62",
+      "subject": "fix: remove raw response headers (#6860)",
+      "filesTouched": 2,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "fastify-fastify-compatibility-e1fc82593",
+      "family": "compatibility",
+      "repository": "fastify/fastify",
+      "base": "2e81c38bfede1858c3705c5a6f7753abd93019b3",
+      "upstream": "e1fc82593b614a991e6d237ce2c134f7bf8f9254",
+      "subject": "test: remove @sinonjs/fake-timers (#6934)",
+      "filesTouched": 2,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "fastify-fastify-compatibility-0c28b57ce",
+      "family": "compatibility",
+      "repository": "fastify/fastify",
+      "base": "5a654336f5c946aeafa77a23ff857e0f94028849",
+      "upstream": "0c28b57cef28d15b6873df77c0f76a80a0ad2269",
+      "subject": "docs: remove marko from @fastify/view engines (support dropped) (#6821)",
+      "filesTouched": 1,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "fastify-fastify-compatibility-ff993e806",
+      "family": "compatibility",
+      "repository": "fastify/fastify",
+      "base": "458f1044590a0f84af0a666616e163c606198738",
+      "upstream": "ff993e806adb0b12a41a95fc883f682e62e90bae",
+      "subject": "docs: update Serverless guide Dockerfile to a supported Node.js version (#6789)",
+      "filesTouched": 1,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "fastify-fastify-compatibility-5350e744a",
+      "family": "compatibility",
+      "repository": "fastify/fastify",
+      "base": "7932bc63aadde5130dc12184b1b51de7ad17de3f",
+      "upstream": "5350e744afcb8373c89a4f3164c456e3f3d3d614",
+      "subject": "docs: remove HackerOne reporting link (#6735)",
+      "filesTouched": 1,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "fastify-fastify-compatibility-fc9eafdda",
+      "family": "compatibility",
+      "repository": "fastify/fastify",
+      "base": "d15746d18a71c28f1266754cb7d8e142a582414e",
+      "upstream": "fc9eafddae37dea167d2affc26a29a04f9412047",
+      "subject": "docs(Warnings): remove retired FSTWRN002 warning code (#6754)",
+      "filesTouched": 1,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "fastify-fastify-compatibility-1c4997480",
+      "family": "compatibility",
+      "repository": "fastify/fastify",
+      "base": "9026164f5a2e78db59ff8f98933279161a85a6e3",
+      "upstream": "1c49974805e57a17f1616f422678317b1d35b73f",
+      "subject": "feat: add support of onMaxParamLength (#6716)",
+      "filesTouched": 13,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "fastify-fastify-compatibility-dce0d47a4",
+      "family": "compatibility",
+      "repository": "fastify/fastify",
+      "base": "dc48d11ecbbbd0d341cc475da65b1193b4908e60",
+      "upstream": "dce0d47a44ecf6605a4e6b39d80f0bef17c2c2ce",
+      "subject": "ci: drop Node.js 20 from yarn matrix (#6662)",
+      "filesTouched": 1,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "fastify-fastify-compatibility-282ff731c",
+      "family": "compatibility",
+      "repository": "fastify/fastify",
+      "base": "890ab7578f14730b2fed6de43acfeee19da1a3e4",
+      "upstream": "282ff731c233f2e84ea46c7c73d773ea2a7aea43",
+      "subject": "docs: remove deprecated leveldb plugin and update ecosystem (#6661)",
+      "filesTouched": 2,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "fastify-fastify-compatibility-bbdfe82ae",
+      "family": "compatibility",
+      "repository": "fastify/fastify",
+      "base": "cd58ed45d3c3b25cae3cfaa27e9c76a1c8865d0f",
+      "upstream": "bbdfe82ae891199ba0d2b49326b7ddce5f103ab3",
+      "subject": "style: remove trailing whitespace (#6543)",
+      "filesTouched": 9,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "fastify-fastify-compatibility-2590592da",
+      "family": "compatibility",
+      "repository": "fastify/fastify",
+      "base": "09b55b6ca6a3244df9f02b02157db41777198d4f",
+      "upstream": "2590592da900172e04526f36dfe4dac617022469",
+      "subject": "ci: remove broken links and add ecosystem link validator (#6421)",
+      "filesTouched": 5,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "fastify-fastify-compatibility-1e0be1294",
+      "family": "compatibility",
+      "repository": "fastify/fastify",
+      "base": "8fad07272bf8042db8c0074c6fd40ed50fb6b0f7",
+      "upstream": "1e0be1294e85734f1e6ac651f3ff664d389d7799",
+      "subject": "fix: remove format placeholder from FST_ERR_CTP_INVALID_MEDIA_TYPE message (#6528)",
+      "filesTouched": 4,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "fastify-fastify-compatibility-f376f6082",
+      "family": "compatibility",
+      "repository": "fastify/fastify",
+      "base": "c970ed48d3e436f392d08d9e379f632409472743",
+      "upstream": "f376f6082b5ddfe5ea96fdd3d98a66377b6bb4c2",
+      "subject": "feat: First-class support for handler-level timeouts (#6521)",
+      "filesTouched": 24,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "fastify-fastify-compatibility-c970ed48d",
+      "family": "compatibility",
+      "repository": "fastify/fastify",
+      "base": "53eea2c6c391b328bb0464afe6aae023114c81fb",
+      "upstream": "c970ed48d3e436f392d08d9e379f632409472743",
+      "subject": "chore: remove unused `tsconfig.eslint.json` (#6524)",
+      "filesTouched": 1,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "fastify-fastify-compatibility-7c11089bc",
+      "family": "compatibility",
+      "repository": "fastify/fastify",
+      "base": "cf1fac48ce8bf5ac2543b7dab3ac4abea2072f66",
+      "upstream": "7c11089bc369c17752361ec0bc9d7f06905b2799",
+      "subject": "docs(security): remove hackerone references; change note style (#6501)",
+      "filesTouched": 1,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "fastify-fastify-compatibility-cf1fac48c",
+      "family": "compatibility",
+      "repository": "fastify/fastify",
+      "base": "2837be64267dca1ed4069111398401feded29f90",
+      "upstream": "cf1fac48ce8bf5ac2543b7dab3ac4abea2072f66",
+      "subject": "ci: remove stale.yml file (#6504)",
+      "filesTouched": 1,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "fastify-fastify-compatibility-2837be642",
+      "family": "compatibility",
+      "repository": "fastify/fastify",
+      "base": "8b3acf25a52f56a17c994f5433fca028f095ada4",
+      "upstream": "2837be64267dca1ed4069111398401feded29f90",
+      "subject": "chore: remove tests-checker workflow (#6481)",
+      "filesTouched": 1,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "fastify-fastify-compatibility-ae8ab65a5",
+      "family": "compatibility",
+      "repository": "fastify/fastify",
+      "base": "3937f93a220247a0e150272dd7e64267008db597",
+      "upstream": "ae8ab65a5001facac11943a7fee5bfe27a617a53",
+      "subject": "chore: support pino v9 and v10 (#6496)",
+      "filesTouched": 3,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "sindresorhus-p-limit-compatibility-870db0f54",
+      "family": "compatibility",
+      "repository": "sindresorhus/p-limit",
+      "base": "1fb1407cb390019b004bfa66585ab5e3de1de7bd",
+      "upstream": "870db0f54785cc6ae6444be421df98cc48932e58",
+      "subject": "Support options object in `pLimit()`",
+      "filesTouched": 4,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "fastify-fastify-compatibility-25aa29dd3",
+      "family": "compatibility",
+      "repository": "fastify/fastify",
+      "base": "5317c9068a43a02b671cd6df7392dd45a9aabaac",
+      "upstream": "25aa29dd392fe75780df0311ecfbfc2b348d33d3",
+      "subject": "test: skip IPv6 test if its support is not present (#6428)",
+      "filesTouched": 1,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "sindresorhus-p-queue-compatibility-e9074f06f",
+      "family": "compatibility",
+      "repository": "sindresorhus/p-queue",
+      "base": "5e400174a89395a44399713191b76544cf743fe5",
+      "upstream": "e9074f06fff500a13e0ef7c910ff4fc2fe65b01c",
+      "subject": "Fix: Remove abort listener when operation completes (#235)",
+      "filesTouched": 2,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "a bug fix (subject \"Fix: Remove abort listener ...\", a listener leak), not an API or dependency compatibility change"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "fastify-fastify-compatibility-1b0e4080b",
+      "family": "compatibility",
+      "repository": "fastify/fastify",
+      "base": "b1b7f6ef541cfa6715a0364be7508f2b412a510a",
+      "upstream": "1b0e4080bfa4b0c451b7b840ffe26352ea249634",
+      "subject": "chore: remove test file (#6384)",
+      "filesTouched": 1,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "fastify-fastify-compatibility-02ac9e083",
+      "family": "compatibility",
+      "repository": "fastify/fastify",
+      "base": "0b97a6283698cc37aaf80fd1e2cd86e05359843f",
+      "upstream": "02ac9e083ea993f3dc446466020387c254fa6249",
+      "subject": "style(ci): remove whitespace from concurrency group (#6366)",
+      "filesTouched": 1,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "fastify-fastify-compatibility-387b16899",
+      "family": "compatibility",
+      "repository": "fastify/fastify",
+      "base": "fa5b4792c70924693dcdd18df7052c510242d32b",
+      "upstream": "387b168997acbffb82ea9b10377a43b21aceb259",
+      "subject": "chore: remove commented tests (#6352)",
+      "filesTouched": 1,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "id": "fastify-fastify-compatibility-fa5b4792c",
+      "family": "compatibility",
+      "repository": "fastify/fastify",
+      "base": "0c7bc2c723aca8e757ce850b42bdf07c65a38848",
+      "upstream": "fa5b4792c70924693dcdd18df7052c510242d32b",
+      "subject": "chore: remove reference to simple-get (#6353)",
+      "filesTouched": 1,
+      "exposureMatches": [],
+      "decision": "rejected",
+      "reason": "span guard: bug fix and feature are already p-limit and the refactor is fastify, so a compatibility task from either of those repositories would leave the block at two repositories; the rule requires three"
+    },
+    {
+      "source": "amended compatibility replacement",
+      "subject": "Remove `throwOnTimeout` option - timeouts now always throw",
+      "id": "p-queue-compat-remove-throw-on-timeout",
+      "candidate": "sindresorhus-p-queue-compatibility-e48716fa1",
+      "family": "compatibility",
+      "workType": "feature",
+      "repository": "sindresorhus/p-queue",
+      "base": "62efb742ec5567eb8e18e81063924ef1bae314d5",
+      "upstream": "e48716fa1236fdd8ac0ad88f7831467f2455976a",
+      "decision": "accepted",
+      "reason": "passes every feasibility condition; validated with the comparison's own scorers",
+      "referenceDigest": "sha256:0264452575a3a1861ceb22584353b15b2f4574575f65382a2106fd08b2971073",
+      "referenceMatchesUpstreamDiff": true,
+      "filesTouched": {
+        "paths": [
+          "readme.md",
+          "source/index.ts",
+          "source/options.ts",
+          "test-d/index.test-d.ts",
+          "test/advanced.ts",
+          "test/basic.ts"
+        ],
+        "authored": 5,
+        "nonTestSource": 2
+      },
+      "timings": {
+        "baseInstallMs": 2183,
+        "baseProjectTestMs": 34503,
+        "baseProjectTestExit": 0
+      },
+      "lint": {
+        "ok": true,
+        "applicable": false,
+        "detail": "the project declares no lint script"
+      },
+      "base_": {
+        "visible": false,
+        "visibleCheckExit": 1,
+        "hidden": "fail",
+        "hiddenBasis": "hidden tests (node --import=tsx/esm --test test/basic.ts test/advanced.ts) exited 1",
+        "hiddenExit": 1,
+        "executed": true
+      },
+      "reference_": {
+        "visible": true,
+        "visibleCheckExit": 0,
+        "projectTestExit": 0,
+        "hidden": "pass",
+        "hiddenBasis": "hidden tests, project tests and every structural or version requirement passed",
+        "policy": {
+          "ok": true,
+          "violations": [],
+          "addedAssertions": 7,
+          "removedAssertions": 3,
+          "testFilesAdded": [],
+          "testFilesTouched": [
+            "test/advanced.ts",
+            "test/basic.ts"
+          ]
+        }
+      },
+      "valid": true,
+      "controls": [
+        {
+          "name": "alternative-correct.patch",
+          "digest": "sha256:347c2395e3600069196ce5dc7bf8d046c069e6d3e8ed82038c27200d7cde0810",
+          "digestMatchesFile": true,
+          "expected": "pass",
+          "hidden": "pass",
+          "hiddenBasis": "hidden tests, project tests and every structural or version requirement passed",
+          "hiddenExit": null,
+          "policyOk": true,
+          "visible": true,
+          "visibleCheckExit": 0,
+          "projectTestExit": 0,
+          "asExpected": true
+        },
+        {
+          "name": "partial-runtime-only.patch",
+          "digest": "sha256:1668bd97afaa6bc53e13b626c2ea6964c402ae8ef5f8f0b5913f44d6a0dc2af1",
+          "digestMatchesFile": true,
+          "expected": "fail",
+          "hidden": "fail",
+          "hiddenBasis": "node --import=tsx/esm acceptance/hidden/behaviour-check.mjs exited 1",
+          "hiddenExit": 1,
+          "policyOk": true,
+          "visible": false,
+          "visibleCheckExit": 0,
+          "projectTestExit": 1,
+          "asExpected": true
+        },
+        {
+          "name": "task-timeout-overridden.patch",
+          "digest": "sha256:eb29665af17ced33238d168a5c8d44d35bb06e9866ec8b2d696420b4b35c4f45",
+          "digestMatchesFile": true,
+          "expected": "fail",
+          "hidden": "fail",
+          "hiddenBasis": "hidden tests (node --import=tsx/esm --test test/basic.ts test/advanced.ts) exited 1",
+          "hiddenExit": 1,
+          "policyOk": true,
+          "visible": false,
+          "visibleCheckExit": 0,
+          "projectTestExit": 1,
+          "asExpected": true
+        }
+      ],
+      "hiddenFiles": [
+        {
+          "path": "acceptance/hidden/behaviour-check.mjs",
+          "sealedSource": "/Users/brad/.cache/swarm-heldout-2026-10-22/sealed/pqueue-compat/behaviour-check.mjs",
+          "digest": "sha256:91a4ed5e8a1bcf0fe1ffbafda6ea05e85e2abc7d3b704c764b375747d8e13ae4"
+        }
+      ],
+      "exposureMatches": []
+    }
+  ]
+}

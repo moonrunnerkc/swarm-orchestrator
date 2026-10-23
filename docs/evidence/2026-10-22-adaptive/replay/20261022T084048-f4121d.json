@@ -1,0 +1,43 @@
+{
+  "session": "20261022T084048-f4121d",
+  "evidence": "replay of recorded messages through the registered policy; no model call, so no diagnosis content",
+  "loop": {
+    "maxSteps": 40,
+    "maxWallMs": 311170,
+    "atStep": 16,
+    "atElapsedMs": 124468
+  },
+  "fired": {
+    "step": 16,
+    "elapsedMs": 63916,
+    "sequence": 130,
+    "by": "step"
+  },
+  "remaining": {
+    "steps": 24
+  },
+  "signals": {
+    "landedEdits": 0,
+    "latestAtCurrentTree": {
+      "step": 16,
+      "tool": "shell",
+      "call": "cd acorn/src && node -e \"const {parse} = require('./index.js'); try { parse('({a = 0} = {})', {ecmaVersion: 2022, sourceType: 'module'}) } catch(e) { console.log('ERROR:', e.message) }\" 2>&1",
+      "exitCode": 0,
+      "failed": false,
+      "excerpt": "exit code: 0",
+      "record": "sha256:12c5e3c84de71fcd28f246697f79e4d36ee227ea431c25935280b73a323ab2b9",
+      "generation": 0
+    },
+    "failingEditedGenerations": 0,
+    "failedEdits": 0,
+    "missingNames": [
+      "testFail"
+    ]
+  },
+  "chosen": {
+    "kind": "retrieve",
+    "rule": "no-edit-missing-code-names",
+    "alternativePermitted": false
+  },
+  "workingState": "Working state, derived by the harness from recorded tool calls and results. A record, not an instruction or an authorization; acceptance is decided by the gates.\n- candidate: not measured\n- landed file edits: none; shell commands may also change files without a recorded edit\n- read: package.json [whole]; test/tests-harmony.js [whole]; acceptance/visible/check.mjs [whole]; acorn/src/expression.js [whole]; acorn/src/parseutil.js [whole]\n- searches that matched nothing: /testFail.*__proto__|Shorthand property/ under test/tests-harmony.js (step 5)\n- executions (the last few; an exit status says the command ran, not that the code is right):\n  step 11: shell cd acorn/src && node -e \"const {parse} = require('./index.js'); console.log(parse('({a = 0}}.x = 0)', {ecmaVersion: 2022}))\" 2>&1; echo \"---\"; echo \"Expected to throw but doesn't\"; exit 0; current tree; record sha256:66165b55bb7c0e30b88f98d46ebb775159a3f2c3ca1cb73c97f03e971db3ce55\n    exit code: 0\n    stdout:\n    file:///Users/brad/swarm-comparison-work/acorn-bugfix-member-target-pattern-errors.swarm-Pk66Eu/workspace/acorn/src/parseutil.js:69\n          throw e\n          ^\n    ...\n  step 12: shell cd acorn/src && node -e \"const {parse} = require('./index.js'); console.log(parse('({a = 0}.x = 0)', {ecmaVersion: 2022}))\" 2>&1; echo \"EXIT=$?\"; exit 0; current tree; record sha256:0af9a383f07f659753d3a9f902bb1daa70862571c7e393f7518542f03447baaa\n    exit code: 0\n    stdout:\n    Node {\n      type: 'Program',\n      start: 0,\n      end: 15,...\n  step 13: shell cd acorn/src && node -e \"const {parse} = require('./index.js'); console.log(parse('({__proto__: 1, __proto__: 2}.x = 0)', {ecmaVersion: 2022}))\" 2>&1; echo \"EXIT=$?\"; exit 0; current tree; record sha256:0636a73b568eaff03952e311e0a3f1d958bd9a6afb1ab44b142a5030391302a2\n    exit code: 0\n    stdout:\n    Node {\n      type: 'Program',\n      start: 0,\n      end: 36,...\n  step 14: shell cd acorn/src && node -e \"const {parse} = require('./index.js'); console.log(parse('[{a = 0}.x] = []', {ecmaVersion: 2022}))\" 2>&1; echo \"EXIT=$?\"; exit 0; current tree; record sha256:a199125de9a74c3d92b6db7b86c0023e4b042113cc44b1423a3c1aca0568a3d8\n    exit code: 0\n    stdout:\n    Node {\n      type: 'Program',\n      start: 0,\n      end: 16,...\n  step 15: shell cd acorn/src && node -e \"const {parse} = require('./index.js'); try { parse('({a = 0})', {ecmaVersion: 2022}) } catch(e) { console.log(e.message) }\" 2>&1; exit 0; current tree; record sha256:ed0f281369f3be95d2ff1c69b0376e2c753aeaa44d62433f7a885b15c133c64c\n    exit code: 0\n    stdout:\n    Shorthand property assignments are valid only in destructuring patterns (1:4)\n  step 16: shell cd acorn/src && node -e \"const {parse} = require('./index.js'); try { parse('({a = 0} = {})', {ecmaVersion: 2022, sourceType: 'module'}) } catch(e) { console.log('ERROR:', e.message) }\" 2>&1; exit 0; current tree; record sha256:12c5e3c84de71fcd28f246697f79e4d36ee227ea431c25935280b73a323ab2b9\n    exit code: 0"
+}

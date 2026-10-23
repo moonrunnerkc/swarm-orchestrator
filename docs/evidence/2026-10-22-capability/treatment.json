@@ -1,0 +1,94 @@
+{
+  "schema": "swarm-ordinary-comparison.manifest.v1",
+  "frozenAt": "2026-10-22T13:54:06.481Z",
+  "protocolDigest": "sha256:db5e11ecfbbe91c313c698d5bc4a48bcbbbe2a081422cf668730f175d82ee7ed",
+  "pins": {
+    "model": "qwen3.6:35b-a3b",
+    "endpoint": "http://127.0.0.1:11434/v1",
+    "swarmCli": "/Users/brad/.cache/swarm-comparison/tools/swarm-f07cd0861/dist/cli.js",
+    "swarmRevision": "f07cd0861c3be79087baffabbb1238b38e3e37eb",
+    "swarmCliDigest": "sha256:9fec8862909a2c05d30bf351d333296830fcdba25d1fed3ec41aa879336ddb49",
+    "opencode": "1.19.4",
+    "node": "v24.15.0",
+    "harnessDigest": "sha256:405a6dfd3de42d4770e999e01c58dad20b9ff8d25f62d0a2f30e61daa3c5bbf9",
+    "swarmFlags": [
+      "--repair-finish"
+    ]
+  },
+  "budgets": {
+    "wallMsPerInvocation": 540500,
+    "wallGraceMs": 59500,
+    "swarmTokenCap": 8000000,
+    "maxCorrections": 0,
+    "inferenceDeadlineMs": 180000,
+    "readinessRequestDeadlineMs": 30000,
+    "readinessSequenceDeadlineMs": 90000,
+    "readinessSequences": 2,
+    "swarmVerificationReserveMs": 0
+  },
+  "seed": "swarm-ordinary-comparison-2026-10-11",
+  "tasks": [
+    {
+      "id": "entities-bugfix-restore-get-code-point",
+      "repository": "fb55/entities",
+      "install": [
+        [
+          "npm",
+          "ci",
+          "--ignore-scripts"
+        ]
+      ],
+      "build": [],
+      "projectTest": [
+        "npm",
+        "run",
+        "test:vi"
+      ],
+      "visiblePrefix": "",
+      "workType": "bugfix",
+      "baseCommit": "08ef000a26e9d4343de6f5d5f9a2353d1ec9d12b",
+      "upstreamCommit": "c257e6c66956b66cacfc94f0bca2d65e0791d2c3",
+      "hidden": {
+        "testFiles": [
+          "src/decode.spec.ts",
+          "src/escape.spec.ts"
+        ],
+        "argv": [
+          "npx",
+          "vitest",
+          "run",
+          "src/decode.spec.ts",
+          "src/escape.spec.ts"
+        ],
+        "files": [
+          {
+            "path": "acceptance/hidden/behaviour-check.mts",
+            "source": "// Hidden behaviour check for entities-bugfix-restore-get-code-point: every example the task text\n// states and representative cases beyond them, the required ones (the restored export) and the ones\n// that must not change (the other exports and their outputs). Written into the scoring checkout\n// under acceptance/hidden/ and run there with tsx; never in an arm's workspace. Exits 1 naming\n// every case that does not hold.\nimport * as escape from \"../../src/escape.ts\";\nimport * as index from \"../../src/index.ts\";\n\nconst sample = `<a href=\"x\">'&'</a> 💯 ü`;\nconst same = (a: unknown, b: unknown) =>\n  (Number.isNaN(a) && Number.isNaN(b)) || JSON.stringify(a) === JSON.stringify(b);\nconst getCodePoint = (escape as Record<string, unknown>).getCodePoint as\n  | ((input: string, at: number) => number)\n  | undefined;\nconst cases: [string, () => unknown, unknown][] = [\n  // required: stated in the task text\n  [\"getCodePoint is a function of src/escape.ts\", () => typeof getCodePoint, \"function\"],\n  ['getCodePoint(\"abc\", 0)', () => getCodePoint?.(\"abc\", 0), 97],\n  ['getCodePoint(\"abc\", 2)', () => getCodePoint?.(\"abc\", 2), 99],\n  ['getCodePoint(\"ü\", 0)', () => getCodePoint?.(\"ü\", 0), 252],\n  ['getCodePoint(\"💯\", 0)', () => getCodePoint?.(\"💯\", 0), 128_175],\n  ['getCodePoint(\"a💩\", 1)', () => getCodePoint?.(\"a\\u{1F4A9}\", 1), 128_169],\n  ['getCodePoint(\"abc\", 3)', () => getCodePoint?.(\"abc\", 3), Number.NaN],\n  ['getCodePoint(\"\", 0)', () => getCodePoint?.(\"\", 0), Number.NaN],\n  // required: beyond the stated examples\n  ['getCodePoint(\"a💩\", 2) (a low surrogate alone)', () => getCodePoint?.(\"a\\u{1F4A9}\", 2), 56_489],\n  ['getCodePoint(\"\\\\ud83d\", 0) (a lone high surrogate)', () => getCodePoint?.(\"\\uD83D\", 0), 55_357],\n  ['getCodePoint(\"abc\", -1)', () => getCodePoint?.(\"abc\", -1), Number.NaN],\n  ['getCodePoint(\"€\", 0)', () => getCodePoint?.(\"€\", 0), 8364],\n  // must not change: stated\n  [\"encodeXML\", () => index.encodeXML(sample), \"&lt;a href=&quot;x&quot;&gt;&apos;&amp;&apos;&lt;/a&gt; &#128175; &#252;\"],\n  [\"escapeUTF8\", () => index.escapeUTF8(sample), \"&lt;a href=&quot;x&quot;&gt;&apos;&amp;&apos;&lt;/a&gt; 💯 ü\"],\n  [\"src/index.ts exports\", () => Object.keys(index).includes(\"getCodePoint\"), false],\n  // must not change: beyond the stated examples\n  [\"encodeHTML\", () => index.encodeHTML(\"<a> & ü 💯\"), \"&lt;a&gt; &amp; &uuml; &#128175;\"],\n  [\"encodeNonAsciiHTML\", () => index.encodeNonAsciiHTML(\"<a> & ü 💯\"), \"&lt;a&gt; &amp; &uuml; &#128175;\"],\n  [\"escapeAttribute\", () => index.escapeAttribute(`\"a\" & <b> ü`), \"&quot;a&quot; &amp; <b> ü\"],\n  [\"escapeText\", () => index.escapeText(`\"a\" & <b> ü`), '\"a\" &amp; &lt;b&gt; ü'],\n  [\"decodeHTML\", () => index.decodeHTML(\"&amp;&lt;&#x1f4af;&uuml;&notin;\"), \"&<💯ü∉\"],\n  [\"decodeXML\", () => index.decodeXML(\"&amp;&lt;&#x1f4af;&apos;\"), \"&<💯'\"],\n  [\n    \"src/escape.ts's other exports\",\n    () => Object.keys(escape).filter((name) => name !== \"getCodePoint\").sort(),\n    [\"XML_BITSET_VALUE\", \"encodeXML\", \"escape\", \"escapeAttribute\", \"escapeText\", \"escapeUTF8\", \"xmlEncodeRegex\"],\n  ],\n];\nconst failed: string[] = [];\nfor (const [name, read, expected] of cases) {\n  let got: unknown;\n  try {\n    got = read();\n  } catch (error) {\n    got = `throws ${(error as Error).message}`;\n  }\n  if (!same(got, expected)) failed.push(`${name}: expected ${String(expected)}, got ${String(got)}`);\n}\nif (failed.length > 0) {\n  console.error(`behaviour check: ${failed.length} of ${cases.length} cases do not hold\\n${failed.join(\"\\n\")}`);\n  process.exit(1);\n}\nconsole.log(`behaviour check: all ${cases.length} cases hold`);\n"
+          }
+        ],
+        "extraArgv": [
+          [
+            "node",
+            "--import=tsx",
+            "acceptance/hidden/behaviour-check.mts"
+          ]
+        ]
+      },
+      "immutable": [],
+      "taskText": "entities no longer exports getCodePoint from src/escape.ts, a helper its earlier releases exported and code that depends on the package still imports from the escape module; today importing it gives undefined. Restore it in src/escape.ts as a deprecated export (marked @deprecated in favour of String.prototype.codePointAt): getCodePoint(input, index) returns the Unicode code point that starts at index in input, reading a surrogate pair as one astral code point, and NaN where index is outside the string. getCodePoint(\"abc\", 0) must give 97, getCodePoint(\"abc\", 2) 99, getCodePoint(\"ü\", 0) 252, getCodePoint(\"💯\", 0) 128175, getCodePoint(\"a💩\", 1) 128169, and getCodePoint(\"abc\", 3) and getCodePoint(\"\", 0) NaN. What must not change: the other exports of src/escape.ts and their results (encodeXML(`<a href=\"x\">'&'</a> 💯 ü`) gives \"&lt;a href=&quot;x&quot;&gt;&apos;&amp;&apos;&lt;/a&gt; &#128175; &#252;\" and escapeUTF8 of the same string gives \"&lt;a href=&quot;x&quot;&gt;&apos;&amp;&apos;&lt;/a&gt; 💯 ü\"), and the exports of src/index.ts, which do not include getCodePoint. The source is TypeScript in src/, with its vitest tests beside it (src/escape.spec.ts tests the escape module). Add regression tests for this behaviour to the project's existing test suite. The project's tests run with npm run test:vi.",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "node acceptance/visible/check.mjs",
+        "source": "import assert from \"node:assert/strict\";\nimport { spawnSync } from \"node:child_process\";\n\n// The source is TypeScript; tsx, a development dependency of the project, loads it.\nconst probe = spawnSync(\n    process.execPath,\n    [\n        \"--import=tsx\",\n        \"--input-type=module\",\n        \"-e\",\n        \"import { getCodePoint } from './src/escape.ts'; console.log(getCodePoint('abc', 0));\",\n    ],\n    { encoding: \"utf8\" },\n);\nassert.equal(probe.stdout.trim(), \"97\", probe.stderr);\nconsole.log(\"visible check passed\");\n"
+      }
+    }
+  ],
+  "launches": [
+    {
+      "task": "entities-bugfix-restore-get-code-point",
+      "arm": "swarm",
+      "order": 6
+    }
+  ],
+  "purpose": "2026-10-22 repair-trace trial, control cohort; protocol docs/evidence/2026-10-22/protocol.md; amendment 1: launch 7 alone, after the runner preflight correction"
+}

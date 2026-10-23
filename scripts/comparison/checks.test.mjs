@@ -212,6 +212,10 @@ describe("the product's structured form of a task's test script", () => {
     "export const structuredRunner = (body) => (body === 'vitest run' ? ['node', '-e', 'VITEST'] : null);\n" +
       "export const renderRunnerArgv = (argv) => argv.map((word) => \"'\" + word + \"'\").join(' ');\n",
   );
+  writeFileSync(
+    join(build, "gates", "harness-reporting.js"),
+    "export const harnessReportingCommand = (body) => (body === 'node --test' ? ['node', '--test', '--experimental-test-coverage'] : null);\n",
+  );
   const pins = { swarmCli: join(build, "cli.js") };
 
   it("is accepted only where it is exactly what the pinned build renders for the script's body", async () => {
@@ -234,6 +238,38 @@ describe("the product's structured form of a task's test script", () => {
       await structuredRewriteOf(pins, checkout, "npm run test:vi", "'node' '-e' 'VITEST'"),
     ).toBe(false);
     expect(await structuredRewriteOf(pins, checkout, "npm test", "'node' '-e' 'VITEST'")).toBe(
+      false,
+    );
+  });
+
+  it("reads npm test as npm run test, as npm itself does", async () => {
+    writeFileSync(
+      join(checkout, "package.json"),
+      JSON.stringify({ scripts: { test: "vitest run" } }),
+    );
+    expect(await structuredRewriteOf(pins, checkout, "npm test", "'node' '-e' 'VITEST'")).toBe(
+      true,
+    );
+    expect(await structuredRewriteOf(pins, checkout, "npm t", "'node' '-e' 'VITEST'")).toBe(true);
+    expect(await structuredRewriteOf(pins, checkout, "npm test", "'node' '-e' 'OTHER'")).toBe(
+      false,
+    );
+  });
+
+  it("accepts the build's coverage-reporting form of node's own runner, and nothing near it", async () => {
+    writeFileSync(
+      join(checkout, "package.json"),
+      JSON.stringify({ scripts: { test: "node --test" } }),
+    );
+    expect(
+      await structuredRewriteOf(
+        pins,
+        checkout,
+        "npm test",
+        "node --test --experimental-test-coverage",
+      ),
+    ).toBe(true);
+    expect(await structuredRewriteOf(pins, checkout, "npm test", "node --test --other-flag")).toBe(
       false,
     );
   });

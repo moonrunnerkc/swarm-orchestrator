@@ -1,0 +1,133 @@
+diff --git a/lib/configValidator.js b/lib/config-validator.js
+similarity index 100%
+rename from lib/configValidator.js
+rename to lib/config-validator.js
+diff --git a/lib/contentTypeParser.js b/lib/content-type-parser.js
+similarity index 100%
+rename from lib/contentTypeParser.js
+rename to lib/content-type-parser.js
+diff --git a/lib/error-handler.js b/lib/error-handler.js
+index c5ebf62..fd8f222 100644
+--- a/lib/error-handler.js
++++ b/lib/error-handler.js
+@@ -1,7 +1,7 @@
+ 'use strict'
+ 
+ const statusCodes = require('node:http').STATUS_CODES
+-const wrapThenable = require('./wrapThenable')
++const wrapThenable = require('./wrap-thenable')
+ const {
+   kReplyHeaders,
+   kReplyNextErrorHandler,
+diff --git a/lib/fourOhFour.js b/lib/four-oh-four.js
+similarity index 99%
+rename from lib/fourOhFour.js
+rename to lib/four-oh-four.js
+index 41e77df..917bb8e 100644
+--- a/lib/fourOhFour.js
++++ b/lib/four-oh-four.js
+@@ -19,7 +19,7 @@ const {
+   FST_ERR_NOT_FOUND
+ } = require('./errors')
+ const { createChildLogger } = require('./logger-factory')
+-const { getGenReqId } = require('./reqIdGenFactory.js')
++const { getGenReqId } = require('./req-id-gen-factory.js')
+ 
+ /**
+  * Each fastify instance have a:
+diff --git a/lib/handleRequest.js b/lib/handle-request.js
+similarity index 98%
+rename from lib/handleRequest.js
+rename to lib/handle-request.js
+index be8b43e..fe0977f 100644
+--- a/lib/handleRequest.js
++++ b/lib/handle-request.js
+@@ -3,7 +3,7 @@
+ const diagnostics = require('node:diagnostics_channel')
+ const { validate: validateSchema } = require('./validation')
+ const { preValidationHookRunner, preHandlerHookRunner } = require('./hooks')
+-const wrapThenable = require('./wrapThenable')
++const wrapThenable = require('./wrap-thenable')
+ const {
+   kReplyIsError,
+   kRouteContext,
+diff --git a/lib/headRoute.js b/lib/head-route.js
+similarity index 100%
+rename from lib/headRoute.js
+rename to lib/head-route.js
+diff --git a/lib/initialConfigValidation.js b/lib/initial-config-validation.js
+similarity index 95%
+rename from lib/initialConfigValidation.js
+rename to lib/initial-config-validation.js
+index c56d8c5..d8f3d6f 100644
+--- a/lib/initialConfigValidation.js
++++ b/lib/initial-config-validation.js
+@@ -1,6 +1,6 @@
+ 'use strict'
+ 
+-const validate = require('./configValidator')
++const validate = require('./config-validator')
+ const deepClone = require('rfdc')({ circles: true, proto: false })
+ const { FST_ERR_INIT_OPTS_INVALID } = require('./errors')
+ 
+diff --git a/lib/pluginOverride.js b/lib/plugin-override.js
+similarity index 96%
+rename from lib/pluginOverride.js
+rename to lib/plugin-override.js
+index 3a98e35..d67809d 100644
+--- a/lib/pluginOverride.js
++++ b/lib/plugin-override.js
+@@ -19,9 +19,9 @@ const {
+ const Reply = require('./reply')
+ const Request = require('./request')
+ const SchemaController = require('./schema-controller')
+-const ContentTypeParser = require('./contentTypeParser')
++const ContentTypeParser = require('./content-type-parser')
+ const { buildHooks } = require('./hooks')
+-const pluginUtils = require('./pluginUtils')
++const pluginUtils = require('./plugin-utils')
+ 
+ // Function that runs the encapsulation magic.
+ // Everything that need to be encapsulated must be handled in this function.
+diff --git a/lib/pluginUtils.js b/lib/plugin-utils.js
+similarity index 100%
+rename from lib/pluginUtils.js
+rename to lib/plugin-utils.js
+diff --git a/lib/reply.js b/lib/reply.js
+index 3bc7c72..d0bb5f3 100644
+--- a/lib/reply.js
++++ b/lib/reply.js
+@@ -31,7 +31,7 @@ const {
+   preSerializationHookRunner
+ } = require('./hooks')
+ 
+-const internals = require('./handleRequest')[Symbol.for('internals')]
++const internals = require('./handle-request')[Symbol.for('internals')]
+ const loggerUtils = require('./logger-factory')
+ const now = loggerUtils.now
+ const { handleError } = require('./error-handler')
+diff --git a/lib/reqIdGenFactory.js b/lib/req-id-gen-factory.js
+similarity index 100%
+rename from lib/reqIdGenFactory.js
+rename to lib/req-id-gen-factory.js
+diff --git a/lib/route.js b/lib/route.js
+index d5e5d83..f464a6a 100644
+--- a/lib/route.js
++++ b/lib/route.js
+@@ -2,7 +2,7 @@
+ 
+ const FindMyWay = require('find-my-way')
+ const Context = require('./context')
+-const handleRequest = require('./handleRequest')
++const handleRequest = require('./handle-request')
+ const { onRequestAbortHookRunner, lifecycleHooks, preParsingHookRunner, onTimeoutHookRunner, onRequestHookRunner } = require('./hooks')
+ const { normalizeSchema } = require('./schemas')
+ const { parseHeadOnSendHandlers } = require('./headRoute')
+diff --git a/lib/wrapThenable.js b/lib/wrap-thenable.js
+similarity index 100%
+rename from lib/wrapThenable.js
+rename to lib/wrap-thenable.js
+diff --git a/types/serverFactory.d.ts b/types/server-factory.d.ts
+similarity index 100%
+rename from types/serverFactory.d.ts
+rename to types/server-factory.d.ts

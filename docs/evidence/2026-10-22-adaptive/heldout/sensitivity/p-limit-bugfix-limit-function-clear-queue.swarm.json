@@ -1,0 +1,53 @@
+{
+  "task": "p-limit-bugfix-limit-function-clear-queue",
+  "patchFiles": [
+    "index.d.ts",
+    "index.js",
+    "index.test-d.ts",
+    "test.js"
+  ],
+  "testFilesInPatch": [
+    "index.test-d.ts",
+    "test.js"
+  ],
+  "baseWithTests": {
+    "applied": true,
+    "prepared": true
+  },
+  "delivered": {
+    "applied": true,
+    "prepared": true
+  },
+  "commands": [
+    {
+      "command": "npx ava test.js --tap",
+      "exitOnBaseWithTests": 1,
+      "exitOnDelivered": 0,
+      "failingOnBaseWithTests": [
+        "limitFunction clearQueue is harmless with no pending",
+        "limitFunction clearQueue",
+        "limitFunction clearQueue with rejectOnClear",
+        "limitFunction clearQueue without rejectOnClear leaves promises unsettled",
+        "limitFunction clearQueue does not affect separate limiter",
+        "limitFunction clearQueue does not cancel running calls"
+      ],
+      "failingOnDelivered": [],
+      "sensitive": [
+        "limitFunction clearQueue is harmless with no pending",
+        "limitFunction clearQueue",
+        "limitFunction clearQueue with rejectOnClear",
+        "limitFunction clearQueue without rejectOnClear leaves promises unsettled",
+        "limitFunction clearQueue does not affect separate limiter",
+        "limitFunction clearQueue does not cancel running calls"
+      ]
+    },
+    {
+      "command": "npx tsd",
+      "exitOnBaseWithTests": 1,
+      "exitOnDelivered": 0,
+      "failingOnBaseWithTests": [],
+      "failingOnDelivered": [],
+      "sensitive": []
+    }
+  ]
+}

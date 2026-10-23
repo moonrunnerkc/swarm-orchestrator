@@ -206,6 +206,8 @@ export const switchFlags = new Set([
   "strengthen",
   "plan-checks",
   "repair-trace",
+  "repair-finish",
+  "adaptive",
 ]);
 
 export const defaultBaseRef = "HEAD";

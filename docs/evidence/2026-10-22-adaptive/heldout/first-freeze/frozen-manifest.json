@@ -1,0 +1,390 @@
+{
+  "schema": "swarm-capability-study.manifest.v1",
+  "frozenAt": "2026-10-22T23:44:20.777Z",
+  "protocolDigest": "sha256:c161156f738b8732b494f017d699be0a9913ae27f169bedc6db8daacffae16f9",
+  "protocol": "/Users/brad/projects/swarm-capability-2026-10-22/docs/evidence/2026-10-22-adaptive/heldout-protocol.md",
+  "harnessDigest": "sha256:40d2a66ed714ae38215d07dc3640cc9bdd243289d6da873e16115bcf7e16937b",
+  "pins": {
+    "model": "qwen3.6:35b-a3b",
+    "endpoint": "http://127.0.0.1:11434/v1",
+    "nodeBin": "/usr/local/bin/node",
+    "swarmCli": "/Users/brad/.cache/swarm-comparison/tools/swarm-study-299dac547/dist/cli.js",
+    "swarmRevision": "299dac547",
+    "opencodeBin": "/Users/brad/.cache/swarm-capability-tools/opencode/node_modules/.bin/opencode",
+    "node": "v24.15.0",
+    "swarmCliDigest": "sha256:c2d32595e38ad48f0d8a1dc325225cc9c88953069cebe47a15c5d8abfea101ff",
+    "swarmBuildDigest": "sha256:8624cbcda545578af09d68f88c3df3a4d1cc40ff5031ee60365351cd1b44c902",
+    "opencode": "1.19.4"
+  },
+  "arms": {
+    "swarm": {
+      "flags": [
+        "--adaptive"
+      ]
+    },
+    "swarm-control": {
+      "flags": []
+    },
+    "swarm-direct": {
+      "flags": [
+        "--attempts",
+        "0"
+      ]
+    },
+    "opencode": {}
+  },
+  "budgets": {
+    "setupRetries": 2,
+    "wallGraceMs": 59500,
+    "inferenceDeadlineMs": 180000,
+    "wallMsPerLaunch": 720500,
+    "swarmTokenCap": 8000000,
+    "swarmVerificationReserveMs": 60000,
+    "readinessSequences": 2
+  },
+  "isolation": {
+    "protectedRoots": [
+      "/Users/brad/.cache/swarm-study-2026-10-22",
+      "/Users/brad/.cache/swarm-heldout-2026-10-22",
+      "/Users/brad/.cache/swarm-comparison/tools",
+      "/Users/brad/.cache/swarm-comparison/runs",
+      "/Users/brad/.cache/swarm-comparison/work",
+      "/Users/brad/.cache/swarm-comparison-b",
+      "/Users/brad/.cache/swarm-ai-pr-study",
+      "/Users/brad/.cache/swarm-campaign",
+      "/Users/brad/.cache/swarm-live-runs",
+      "/Users/brad/.cache/swarm-pr-tasks",
+      "/Users/brad/.cache/swarm-redesign-pilot",
+      "/private/tmp/claude-501"
+    ],
+    "readableRoots": [
+      "/Users/brad/.cache/swarm-comparison/tools/swarm-study-299dac547",
+      "/Users/brad/.cache/swarm-comparison/tools/npm-11.2.0"
+    ],
+    "reprotectedRoots": [
+      "/Users/brad/.cache/swarm-comparison/tools/swarm-study-299dac547/docs",
+      "/Users/brad/.cache/swarm-comparison/tools/swarm-study-299dac547/scripts",
+      "/Users/brad/.cache/swarm-comparison/tools/swarm-study-299dac547/campaign",
+      "/Users/brad/.cache/swarm-comparison/tools/swarm-study-299dac547/fuzz"
+    ],
+    "canary": "/Users/brad/.cache/swarm-study-2026-10-22/sealed-canary/canary.txt"
+  },
+  "inputRoots": [],
+  "frozenInputs": {},
+  "exposureMarkers": [
+    "canary-822aaa8a825dd9d81208407e",
+    "swarm-comparison/mirrors",
+    "swarm-heldout-2026-10-22",
+    "swarm-study-2026-10-22"
+  ],
+  "lockfiles": {
+    "p-limit-bugfix-limit-function-clear-queue": null,
+    "p-limit-feature-reject-on-clear": null,
+    "fastify-refactor-kebab-case-file-names": null,
+    "p-queue-compat-remove-throw-on-timeout": null
+  },
+  "tasks": [
+    {
+      "id": "p-limit-bugfix-limit-function-clear-queue",
+      "repository": "sindresorhus/p-limit",
+      "install": [
+        [
+          "npm",
+          "install",
+          "--ignore-scripts",
+          "--no-audit",
+          "--no-fund",
+          "--before=2026-10-22T00:00:00.000Z"
+        ]
+      ],
+      "build": [],
+      "projectTest": [
+        "npm",
+        "test"
+      ],
+      "visiblePrefix": "",
+      "workType": "bugfix",
+      "baseCommit": "df476048d023ff868cd45b35ee47f5fb0ca2b25a",
+      "upstreamCommit": "f3e7f9ba364a9357bd912d136367d06c46660917",
+      "hidden": {
+        "testFiles": [
+          "test.js",
+          "index.test-d.ts"
+        ],
+        "argv": [
+          "npx",
+          "ava",
+          "test.js"
+        ],
+        "files": [
+          {
+            "path": "acceptance/hidden/behaviour-check.mjs",
+            "source": "// Hidden behaviour check: limitFunction's clearQueue, every example the task states, and the\n// behaviour of limitFunction and pLimit that must not change. Runs from acceptance/hidden/.\nimport assert from 'node:assert/strict';\nimport {setTimeout as delay} from 'node:timers/promises';\nimport pLimit, {limitFunction} from '../../index.js';\n\nconst pending = Symbol('pending');\nconst settleWithin = async (promise, ms) => Promise.race([\n\tpromise.then(value => ({value}), error => ({error})),\n\tdelay(ms).then(() => pending),\n]);\n\nconst checks = [];\nconst check = (name, body) => checks.push([name, body]);\n\ncheck('clearQueue is a function on the limited function and returns undefined', async () => {\n\tconst limited = limitFunction(async () => 1, {concurrency: 1});\n\tassert.equal(typeof limited.clearQueue, 'function');\n\tassert.equal(limited.clearQueue(), undefined);\n});\n\ncheck('rejectOnClear: running call completes, pending calls reject with AbortError and never run', async () => {\n\tconst started = [];\n\tconst limited = limitFunction(async value => {\n\t\tstarted.push(value);\n\t\tawait delay(40);\n\t\treturn value * 2;\n\t}, {concurrency: 1, rejectOnClear: true});\n\tconst first = limited(1);\n\tconst second = limited(2);\n\tconst third = limited(3);\n\tsecond.catch(() => {});\n\tthird.catch(() => {});\n\tawait delay(5);\n\tlimited.clearQueue();\n\tassert.equal(await first, 2);\n\tawait assert.rejects(second, {name: 'AbortError'});\n\tawait assert.rejects(third, {name: 'AbortError'});\n\tawait delay(60);\n\tassert.deepEqual(started, [1]);\n});\n\ncheck('without rejectOnClear: pending calls stay unsettled and never run', async () => {\n\tconst started = [];\n\tconst limited = limitFunction(async value => {\n\t\tstarted.push(value);\n\t\tawait delay(20);\n\t\treturn value;\n\t}, {concurrency: 1});\n\tconst first = limited('a');\n\tconst second = limited('b');\n\tawait delay(5);\n\tlimited.clearQueue();\n\tassert.equal(await first, 'a');\n\tassert.equal(await settleWithin(second, 120), pending);\n\tassert.deepEqual(started, ['a']);\n});\n\ncheck('calls made after clearing run normally', async () => {\n\tconst limited = limitFunction(async value => {\n\t\tawait delay(10);\n\t\treturn value + 1;\n\t}, {concurrency: 1, rejectOnClear: true});\n\tconst running = limited(1);\n\tconst cleared = limited(2);\n\tcleared.catch(() => {});\n\tlimited.clearQueue();\n\tawait assert.rejects(cleared, {name: 'AbortError'});\n\tassert.equal(await running, 2);\n\tassert.deepEqual(await Promise.all([limited(10), limited(20)]), [11, 21]);\n});\n\ncheck('calls that are already running still count against the limit after clearing', async () => {\n\tlet active = 0;\n\tlet highest = 0;\n\tconst limited = limitFunction(async value => {\n\t\tactive++;\n\t\thighest = Math.max(highest, active);\n\t\tawait delay(30);\n\t\tactive--;\n\t\treturn value;\n\t}, {concurrency: 1, rejectOnClear: true});\n\tconst running = limited('first');\n\tconst cleared = limited('cleared');\n\tcleared.catch(() => {});\n\tawait delay(5);\n\tlimited.clearQueue();\n\tconst later = [limited('second'), limited('third')];\n\tassert.deepEqual(await Promise.all([running, ...later]), ['first', 'second', 'third']);\n\tawait assert.rejects(cleared, {name: 'AbortError'});\n\tassert.equal(highest, 1);\n});\n\ncheck('clearing one limited function leaves another limited function alone', async () => {\n\tconst options = {concurrency: 1, rejectOnClear: true};\n\tconst one = limitFunction(async value => {\n\t\tawait delay(20);\n\t\treturn value;\n\t}, options);\n\tconst two = limitFunction(async value => {\n\t\tawait delay(20);\n\t\treturn value;\n\t}, options);\n\tconst oneRunning = one('x');\n\tconst onePending = one('y');\n\tonePending.catch(() => {});\n\tconst twoRunning = two('p');\n\tconst twoPending = two('q');\n\tawait delay(2);\n\tone.clearQueue();\n\tawait assert.rejects(onePending, {name: 'AbortError'});\n\tassert.deepEqual(await Promise.all([oneRunning, twoRunning, twoPending]), ['x', 'p', 'q']);\n});\n\ncheck('clearQueue on an idle limited function is harmless', async () => {\n\tconst limited = limitFunction(async value => value, {concurrency: 2, rejectOnClear: true});\n\tlimited.clearQueue();\n\tassert.equal(await limited(5), 5);\n});\n\ncheck('preserved: arguments are forwarded and results resolve in call order', async () => {\n\tconst limited = limitFunction(async (a, b, c) => {\n\t\tawait delay(5);\n\t\treturn [a, b, c];\n\t}, {concurrency: 2});\n\tassert.deepEqual(await Promise.all([limited(1, 2, 3), limited('x', 'y', 'z')]), [[1, 2, 3], ['x', 'y', 'z']]);\n});\n\ncheck('preserved: concurrency limit is respected', async () => {\n\tlet active = 0;\n\tlet highest = 0;\n\tconst limited = limitFunction(async value => {\n\t\tactive++;\n\t\thighest = Math.max(highest, active);\n\t\tawait delay(15);\n\t\tactive--;\n\t\treturn value;\n\t}, {concurrency: 2});\n\tconst results = await Promise.all([1, 2, 3, 4, 5, 6].map(value => limited(value)));\n\tassert.deepEqual(results, [1, 2, 3, 4, 5, 6]);\n\tassert.equal(highest, 2);\n});\n\ncheck('preserved: errors from the function reject the call', async () => {\n\tconst limited = limitFunction(async () => {\n\t\tthrow new Error('boom');\n\t}, {concurrency: 1});\n\tawait assert.rejects(limited(), {message: 'boom'});\n\tconst syncThrow = limitFunction(() => {\n\t\tthrow new TypeError('sync boom');\n\t}, {concurrency: 1});\n\tawait assert.rejects(syncThrow(), {name: 'TypeError', message: 'sync boom'});\n});\n\ncheck('preserved: option validation', async () => {\n\tassert.throws(() => limitFunction(async () => {}, {concurrency: 0}), TypeError);\n\tassert.throws(() => limitFunction(async () => {}, {concurrency: 1, rejectOnClear: 'yes'}), TypeError);\n});\n\ncheck('preserved: pLimit clearQueue and counters', async () => {\n\tconst limit = pLimit({concurrency: 1, rejectOnClear: true});\n\tconst running = limit(async () => {\n\t\tawait delay(20);\n\t\treturn 'done';\n\t});\n\tconst queued = limit(async () => 'never');\n\tqueued.catch(() => {});\n\tawait Promise.resolve();\n\tassert.equal(limit.activeCount, 1);\n\tassert.equal(limit.pendingCount, 1);\n\tlimit.clearQueue();\n\tassert.equal(limit.pendingCount, 0);\n\tawait assert.rejects(queued, {name: 'AbortError'});\n\tassert.equal(await running, 'done');\n\tconst plain = pLimit(1);\n\tconst plainRunning = plain(async () => delay(10));\n\tconst plainQueued = plain(async () => 'never');\n\tplain.clearQueue();\n\tawait plainRunning;\n\tassert.equal(await settleWithin(plainQueued, 60), pending);\n\tassert.deepEqual(await plain.map([1, 2, 3], async value => value * 3), [3, 6, 9]);\n});\n\nlet failed = 0;\nfor (const [name, body] of checks) {\n\tlet timer;\n\ttry {\n\t\t// A promise that never settles must fail its check, not end the process silently.\n\t\tawait Promise.race([body(), new Promise((resolve, reject) => {\n\t\t\ttimer = setTimeout(() => reject(new Error('timed out after 3000 ms: a promise never settled')), 3000);\n\t\t})]);\n\t\tconsole.log(`ok - ${name}`);\n\t} catch (error) {\n\t\tfailed++;\n\t\tconsole.log(`not ok - ${name}\\n${error?.stack ?? error}`);\n\t} finally {\n\t\tclearTimeout(timer);\n\t}\n}\n\nconsole.log(`${checks.length - failed}/${checks.length} behaviour checks passed`);\nprocess.exitCode = failed === 0 ? 0 : 1;\n"
+          }
+        ],
+        "extraArgv": [
+          [
+            "npx",
+            "tsd"
+          ],
+          [
+            "node",
+            "acceptance/hidden/behaviour-check.mjs"
+          ]
+        ]
+      },
+      "immutable": [],
+      "taskText": "p-limit's limitFunction(function_, options) in index.js returns a function that runs function_ with limited concurrency, and its options accept rejectOnClear just as pLimit's do, but the returned function offers no way to discard the calls still waiting to run, so that option has no effect there. Today limitFunction(async () => 'done', {concurrency: 1}).clearQueue is undefined, and calling it throws \"TypeError: limited.clearQueue is not a function\". Give the returned function a clearQueue() method that discards the calls that have not started yet, exactly as clearQueue() does for a pLimit limiter: it returns undefined; calls already running are not cancelled and settle as usual; the function of a discarded call is never invoked; with rejectOnClear: true each discarded call's promise rejects with an error whose name is \"AbortError\", and without it (the default) the discarded promises stay unsettled; calls made after clearing run normally, and calls that are still running keep counting against the concurrency limit. For example, with const limited = limitFunction(async x => { await delay(40); return x * 2; }, {concurrency: 1, rejectOnClear: true}), calling limited(1), limited(2) and limited(3) and then limited.clearQueue() gives 2 for the first call and AbortError rejections for the other two, whose function never runs. Clearing one limited function does not affect another one, even when both were made with the same options object, and clearQueue() on a limited function with nothing waiting is harmless. The TypeScript declarations in index.d.ts must describe the method: for const lf = limitFunction(async (_a: string) => 'ok', {concurrency: 1}), lf.clearQueue() must type-check with type void, and lf('input') must stay Promise<string>. What must not change: the limited function forwards all of its arguments and resolves with the function's result (or rejects with its error, a synchronous throw included); it never runs more than options.concurrency calls at once; invalid options still throw a TypeError (a concurrency of 0, a rejectOnClear that is not a boolean); and the default export pLimit, with its activeCount, pendingCount, clearQueue, concurrency and map, behaves as it does today. The source is index.js, with its type declarations in index.d.ts; the tests are test.js (ava) and the type tests index.test-d.ts (tsd). Add regression tests for this behaviour to the project's existing test suite. The project's tests run with npm test (xo, then ava, then tsd).",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "node acceptance/visible/check.mjs",
+        "source": "import assert from 'node:assert/strict';\nimport {limitFunction} from '../../index.js';\n\nconst limited = limitFunction(async () => 'done', {concurrency: 1});\nassert.equal(typeof limited.clearQueue, 'function');\nconsole.log('visible check passed');\n"
+      }
+    },
+    {
+      "id": "p-limit-feature-reject-on-clear",
+      "repository": "sindresorhus/p-limit",
+      "install": [
+        [
+          "npm",
+          "install",
+          "--ignore-scripts",
+          "--no-audit",
+          "--no-fund",
+          "--before=2026-10-22T00:00:00.000Z"
+        ]
+      ],
+      "build": [],
+      "projectTest": [
+        "npm",
+        "test"
+      ],
+      "visiblePrefix": "",
+      "workType": "feature",
+      "baseCommit": "ce9d71cf1391edf2897cbb9e00b8bc4f091df8b1",
+      "upstreamCommit": "8907801ffa0252b51490a2c9efbb388d0c83391f",
+      "hidden": {
+        "testFiles": [
+          "test.js",
+          "index.test-d.ts"
+        ],
+        "argv": [
+          "npx",
+          "ava",
+          "test.js"
+        ],
+        "files": [
+          {
+            "path": "acceptance/hidden/behaviour-check.mjs",
+            "source": "// Hidden behaviour check: pLimit's rejectOnClear option, every example the task states, and the\n// limiter behaviour that must not change. Runs from acceptance/hidden/.\nimport assert from 'node:assert/strict';\nimport {setTimeout as delay} from 'node:timers/promises';\nimport pLimit, {limitFunction} from '../../index.js';\n\nconst pending = Symbol('pending');\nconst settleWithin = async (promise, ms) => Promise.race([\n\tpromise.then(value => ({value}), error => ({error})),\n\tdelay(ms).then(() => pending),\n]);\n\nconst checks = [];\nconst check = (name, body) => checks.push([name, body]);\n\ncheck('rejectOnClear: true rejects every waiting promise with an AbortError; the running one completes', async () => {\n\tconst started = [];\n\tconst limit = pLimit({concurrency: 1, rejectOnClear: true});\n\tconst task = value => limit(async () => {\n\t\tstarted.push(value);\n\t\tawait delay(40);\n\t\treturn value;\n\t});\n\tconst running = task('running');\n\tconst one = task('one');\n\tconst two = task('two');\n\tone.catch(() => {});\n\ttwo.catch(() => {});\n\tawait Promise.resolve();\n\tassert.equal(limit.pendingCount, 2);\n\tassert.equal(limit.activeCount, 1);\n\tassert.equal(limit.clearQueue(), undefined);\n\tassert.equal(limit.pendingCount, 0);\n\tawait assert.rejects(one, error => error instanceof Error && error.name === 'AbortError');\n\tawait assert.rejects(two, {name: 'AbortError'});\n\tassert.equal(await running, 'running');\n\tawait delay(60);\n\tassert.deepEqual(started, ['running']);\n});\n\ncheck('rejected promises settle promptly, before the running task finishes', async () => {\n\tconst limit = pLimit({concurrency: 1, rejectOnClear: true});\n\tconst running = limit(async () => delay(300));\n\tconst waiting = limit(async () => 'never');\n\twaiting.catch(() => {});\n\tawait Promise.resolve();\n\tlimit.clearQueue();\n\tconst outcome = await settleWithin(waiting, 100);\n\tassert.notEqual(outcome, pending, 'the cleared promise is still pending');\n\tassert.equal(outcome.error?.name, 'AbortError');\n\tawait running;\n});\n\ncheck('default and rejectOnClear: false keep cleared promises unsettled', async () => {\n\tfor (const limit of [pLimit(1), pLimit({concurrency: 1}), pLimit({concurrency: 1, rejectOnClear: false})]) {\n\t\tconst started = [];\n\t\tconst running = limit(async () => {\n\t\t\tstarted.push('running');\n\t\t\tawait delay(20);\n\t\t});\n\t\tconst waiting = limit(async () => {\n\t\t\tstarted.push('waiting');\n\t\t});\n\t\tawait Promise.resolve();\n\t\tassert.equal(limit.pendingCount, 1);\n\t\tlimit.clearQueue();\n\t\tassert.equal(limit.pendingCount, 0);\n\t\tawait running;\n\t\tassert.equal(await settleWithin(waiting, 80), pending);\n\t\tassert.deepEqual(started, ['running']);\n\t}\n});\n\ncheck('the limiter keeps working after a rejecting clear', async () => {\n\tconst limit = pLimit({concurrency: 2, rejectOnClear: true});\n\tconst runningA = limit(async () => {\n\t\tawait delay(20);\n\t\treturn 'a';\n\t});\n\tconst runningB = limit(async () => {\n\t\tawait delay(20);\n\t\treturn 'b';\n\t});\n\tconst cleared = limit(async () => 'cleared');\n\tcleared.catch(() => {});\n\tawait Promise.resolve();\n\tlimit.clearQueue();\n\tawait assert.rejects(cleared, {name: 'AbortError'});\n\tconst later = await Promise.all([limit(async () => 'c'), limit(async () => 'd'), limit(async () => 'e')]);\n\tassert.deepEqual([await runningA, await runningB, ...later], ['a', 'b', 'c', 'd', 'e']);\n\tassert.equal(limit.activeCount, 0);\n\tassert.equal(limit.pendingCount, 0);\n});\n\ncheck('clearQueue with nothing waiting is harmless', async () => {\n\tconst limit = pLimit({concurrency: 1, rejectOnClear: true});\n\tlimit.clearQueue();\n\tassert.equal(await limit(async () => 7), 7);\n});\n\ncheck('a non-boolean rejectOnClear throws a TypeError', async () => {\n\tfor (const value of ['nope', 1, null, {}]) {\n\t\tassert.throws(() => pLimit({concurrency: 1, rejectOnClear: value}), TypeError, `rejectOnClear ${JSON.stringify(value)}`);\n\t}\n});\n\ncheck('limitFunction accepts and validates rejectOnClear', async () => {\n\tassert.throws(() => limitFunction(async () => {}, {concurrency: 1, rejectOnClear: 'nope'}), TypeError);\n\tconst limited = limitFunction(async (a, b) => a + b, {concurrency: 1, rejectOnClear: true});\n\tassert.equal(await limited(2, 3), 5);\n});\n\ncheck('preserved: concurrency validation and the number form', async () => {\n\tassert.throws(() => pLimit(0), TypeError);\n\tassert.throws(() => pLimit({concurrency: 0}), TypeError);\n\tassert.throws(() => pLimit({concurrency: 1.5, rejectOnClear: true}), TypeError);\n\tconst limit = pLimit(2);\n\tassert.equal(limit.concurrency, 2);\n\tassert.equal(pLimit({concurrency: 3, rejectOnClear: true}).concurrency, 3);\n});\n\ncheck('preserved: concurrency is respected and results keep order', async () => {\n\tlet active = 0;\n\tlet highest = 0;\n\tconst limit = pLimit({concurrency: 2, rejectOnClear: true});\n\tconst results = await Promise.all([1, 2, 3, 4, 5].map(value => limit(async () => {\n\t\tactive++;\n\t\thighest = Math.max(highest, active);\n\t\tawait delay(10);\n\t\tactive--;\n\t\treturn value * 10;\n\t})));\n\tassert.deepEqual(results, [10, 20, 30, 40, 50]);\n\tassert.equal(highest, 2);\n});\n\ncheck('preserved: errors and arguments', async () => {\n\tconst limit = pLimit({concurrency: 1, rejectOnClear: true});\n\tawait assert.rejects(limit(async () => {\n\t\tthrow new Error('boom');\n\t}), {message: 'boom'});\n\tawait assert.rejects(limit(() => {\n\t\tthrow new RangeError('sync');\n\t}), RangeError);\n\tassert.deepEqual(await limit(async (...values) => values, 1, 'two', 3), [1, 'two', 3]);\n\tassert.deepEqual(await limit.map([1, 2, 3], async (value, index) => value + index), [1, 3, 5]);\n});\n\ncheck('preserved: raising concurrency starts waiting tasks', async () => {\n\tconst limit = pLimit({concurrency: 1, rejectOnClear: true});\n\tconst order = [];\n\tconst tasks = [1, 2, 3].map(value => limit(async () => {\n\t\torder.push(value);\n\t\tawait delay(30);\n\t}));\n\tawait Promise.resolve();\n\tlimit.concurrency = 3;\n\tawait delay(10);\n\tassert.deepEqual(order, [1, 2, 3]);\n\tawait Promise.all(tasks);\n});\n\nlet failed = 0;\nfor (const [name, body] of checks) {\n\tlet timer;\n\ttry {\n\t\t// A promise that never settles must fail its check, not end the process silently.\n\t\tawait Promise.race([body(), new Promise((resolve, reject) => {\n\t\t\ttimer = setTimeout(() => reject(new Error('timed out after 3000 ms: a promise never settled')), 3000);\n\t\t})]);\n\t\tconsole.log(`ok - ${name}`);\n\t} catch (error) {\n\t\tfailed++;\n\t\tconsole.log(`not ok - ${name}\\n${error?.stack ?? error}`);\n\t} finally {\n\t\tclearTimeout(timer);\n\t}\n}\n\nconsole.log(`${checks.length - failed}/${checks.length} behaviour checks passed`);\nprocess.exitCode = failed === 0 ? 0 : 1;\n"
+          }
+        ],
+        "extraArgv": [
+          [
+            "npx",
+            "tsd"
+          ],
+          [
+            "node",
+            "acceptance/hidden/behaviour-check.mjs"
+          ]
+        ]
+      },
+      "immutable": [],
+      "taskText": "p-limit's limiter (pLimit in index.js) has clearQueue(), which discards the tasks still waiting to run but leaves their promises unsettled forever, so code that awaits them (with Promise.all, for example) never continues. Add a rejectOnClear option to the options object pLimit accepts, pLimit({concurrency, rejectOnClear}), defaulting to false; today pLimit({concurrency: 1, rejectOnClear: true}) silently ignores it. With rejectOnClear: true, clearQueue() must reject the promise of every task that has not started with an error whose name is \"AbortError\" (an Error, like the reason of AbortSignal.abort()), at once rather than after the running tasks finish; running tasks are not cancelled and settle as usual; the function of a discarded task is never called; pendingCount is 0 afterwards; and the limiter keeps working for tasks added later. For example, with const limit = pLimit({concurrency: 1, rejectOnClear: true}), adding three tasks that each wait 40 ms and calling limit.clearQueue() after one microtask leaves pendingCount 0, resolves the first task and rejects the other two with AbortError. Without the option, or with rejectOnClear: false, clearQueue() behaves exactly as today. Any rejectOnClear other than true, false or undefined (for example \"nope\", 1 or null) makes pLimit throw a TypeError. limitFunction(function_, options) must accept and validate the same options: limitFunction(fn, {concurrency: 1, rejectOnClear: \"nope\"}) throws a TypeError, and limitFunction(fn, {concurrency: 1, rejectOnClear: true}) runs fn as usual. Declare the option in the Options type in index.d.ts as an optional boolean, so that pLimit({concurrency: 1, rejectOnClear: true}) type-checks and a non-boolean value is a type error. What must not change: pLimit(number) and pLimit({concurrency}) work as today; concurrency is still validated (pLimit(0) and pLimit({concurrency: 0}) throw a TypeError); no more than the concurrency limit of tasks run at once; tasks resolve with their results and reject with their errors (a synchronous throw included); arguments given as limit(fn, ...arguments) reach fn; and limit.map, activeCount, pendingCount and setting limit.concurrency (raising it starts waiting tasks) behave as today. The source is index.js, with its type declarations in index.d.ts; the tests are test.js (ava) and the type tests index.test-d.ts (tsd). Add regression tests for this behaviour to the project's existing test suite. The project's tests run with npm test (xo, then ava, then tsd).",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "node acceptance/visible/check.mjs",
+        "source": "import assert from 'node:assert/strict';\nimport pLimit from '../../index.js';\n\nassert.throws(() => pLimit({concurrency: 1, rejectOnClear: 'nope'}), TypeError);\nconsole.log('visible check passed');\n"
+      }
+    },
+    {
+      "id": "fastify-refactor-kebab-case-file-names",
+      "repository": "fastify/fastify",
+      "install": [
+        [
+          "npm",
+          "install",
+          "--ignore-scripts",
+          "--no-audit",
+          "--no-fund",
+          "--before=2026-10-22T00:00:00.000Z"
+        ]
+      ],
+      "build": [],
+      "projectTest": [
+        "npm",
+        "test"
+      ],
+      "visiblePrefix": "",
+      "workType": "refactor",
+      "baseCommit": "91414fecaa0ad383c7f97c91f86bee87bf4f06c0",
+      "upstreamCommit": "5bcee1d7ab3bd7109488df50054a185c27fcf486",
+      "hidden": {
+        "testFiles": [],
+        "argv": [
+          "npm",
+          "test"
+        ],
+        "files": [
+          {
+            "path": "acceptance/hidden/behaviour-check.mjs",
+            "source": "// Hidden behaviour check for the kebab-case rename: every file the task names exists only under\n// its new name, nothing in the code, types, tests, build script or configuration still points at\n// an old name, each moved module exports what it exported before, the validator build writes the\n// new file, and fastify behaves as before through the moved modules. Runs from acceptance/hidden/.\nimport assert from 'node:assert/strict'\nimport { execFileSync } from 'node:child_process'\nimport { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'\nimport { createRequire } from 'node:module'\nimport { join } from 'node:path'\nimport { fileURLToPath } from 'node:url'\n\nconst require = createRequire(import.meta.url)\nconst root = fileURLToPath(new URL('../../', import.meta.url))\nconst checks = []\nconst check = (name, body) => checks.push([name, body])\n\nconst renames = {\n  'lib/configValidator.js': 'lib/config-validator.js',\n  'lib/contentTypeParser.js': 'lib/content-type-parser.js',\n  'lib/fourOhFour.js': 'lib/four-oh-four.js',\n  'lib/handleRequest.js': 'lib/handle-request.js',\n  'lib/headRoute.js': 'lib/head-route.js',\n  'lib/initialConfigValidation.js': 'lib/initial-config-validation.js',\n  'lib/pluginOverride.js': 'lib/plugin-override.js',\n  'lib/pluginUtils.js': 'lib/plugin-utils.js',\n  'lib/reqIdGenFactory.js': 'lib/req-id-gen-factory.js',\n  'lib/wrapThenable.js': 'lib/wrap-thenable.js',\n  'types/serverFactory.d.ts': 'types/server-factory.d.ts'\n}\nconst oldNames = Object.keys(renames).map((path) => path.split('/').pop().replace(/\\.(d\\.ts|js)$/, ''))\nconst alternation = oldNames.join('|')\n\n// The export shape of each module at the base, by its old name.\nconst shapes = {\n  'lib/configValidator.js': { type: 'function', keys: ['default', 'defaultInitOptions'], symbols: [] },\n  'lib/contentTypeParser.js': { type: 'function', keys: ['defaultParsers', 'helpers'], symbols: ['Symbol(fastify.testInternals)'] },\n  'lib/fourOhFour.js': { type: 'function', keys: [], symbols: [] },\n  'lib/handleRequest.js': { type: 'function', keys: [], symbols: ['Symbol(internals)'] },\n  'lib/headRoute.js': { type: 'object', keys: ['parseHeadOnSendHandlers'], symbols: [] },\n  'lib/initialConfigValidation.js': { type: 'function', keys: ['defaultInitOptions', 'utils'], symbols: [] },\n  'lib/pluginOverride.js': { type: 'function', keys: [], symbols: [] },\n  'lib/pluginUtils.js': { type: 'object', keys: ['getDisplayName', 'getFuncPreview', 'getPluginName', 'kRegisteredPlugins', 'registerPlugin'], symbols: ['Symbol(fastify.testInternals)'] },\n  'lib/reqIdGenFactory.js': { type: 'object', keys: ['getGenReqId', 'reqIdGenFactory'], symbols: [] },\n  'lib/wrapThenable.js': { type: 'function', keys: [], symbols: [] }\n}\n\nconst walk = (directory, pattern) => {\n  const found = []\n  if (!existsSync(join(root, directory))) return found\n  for (const entry of readdirSync(join(root, directory))) {\n    const relative = join(directory, entry)\n    if (entry === 'node_modules' || entry.startsWith('.')) continue\n    if (statSync(join(root, relative)).isDirectory()) found.push(...walk(relative, pattern))\n    else if (pattern.test(entry)) found.push(relative)\n  }\n  return found\n}\n\ncheck('every renamed file exists under its new name and not under its old one', () => {\n  const problems = []\n  for (const after of Object.values(renames)) {\n    if (!existsSync(join(root, after))) problems.push(`${after} is missing`)\n  }\n  // Old names are found by listing the directories, so the file system's case rules do not matter.\n  for (const directory of ['lib', 'types']) {\n    for (const entry of readdirSync(join(root, directory))) {\n      if (oldNames.some((name) => entry.startsWith(`${name}.`))) problems.push(`${directory}/${entry} still exists`)\n    }\n  }\n  assert.deepEqual(problems, [])\n})\n\ncheck('nothing still points at an old file name', () => {\n  const files = [\n    'fastify.js', 'fastify.d.ts', 'eslint.config.js', 'package.json',\n    ...walk('lib', /\\.js$/), ...walk('types', /\\.ts$/), ...walk('build', /\\.js$/), ...walk('test', /\\.(c|m)?(j|t)s$/)\n  ].filter((path) => existsSync(join(root, path)))\n  const patterns = [\n    new RegExp(`(?:require|import|proxyquire)\\\\s*\\\\(\\\\s*['\"][^'\"]*\\\\b(?:${alternation})(?:\\\\.js|\\\\.d\\\\.ts)?['\"]`),\n    new RegExp(`from\\\\s+['\"][^'\"]*\\\\b(?:${alternation})(?:\\\\.js)?['\"]`),\n    new RegExp(`['\"]\\\\./(?:${alternation})(?:\\\\.js)?['\"]\\\\s*:`),\n    new RegExp(`['\"](?:lib/|types/)?(?:${alternation})\\\\.(?:js|d\\\\.ts)['\"]`),\n    new RegExp(`lib/(?:${alternation})\\\\.js`)\n  ]\n  const hits = []\n  for (const path of files) {\n    const lines = readFileSync(join(root, path), 'utf8').split('\\n')\n    lines.forEach((line, index) => {\n      if (patterns.some((pattern) => pattern.test(line))) hits.push(`${path}:${index + 1}: ${line.trim()}`)\n    })\n  }\n  assert.deepEqual(hits, [])\n})\n\ncheck('each moved module exports what it exported under its old name', () => {\n  for (const [before, shape] of Object.entries(shapes)) {\n    const moved = require(join(root, renames[before]))\n    assert.equal(typeof moved, shape.type, renames[before])\n    assert.deepEqual(Object.keys(moved).sort(), shape.keys, renames[before])\n    assert.deepEqual(Object.getOwnPropertySymbols(moved).map(String), shape.symbols, renames[before])\n  }\n})\n\ncheck('the type declarations resolve the server factory types from the new file', () => {\n  const declarations = readFileSync(join(root, 'fastify.d.ts'), 'utf8')\n  assert.ok(/from\\s+['\"]\\.\\/types\\/server-factory['\"]/.test(declarations), 'fastify.d.ts does not import ./types/server-factory')\n  const factory = readFileSync(join(root, 'types/server-factory.d.ts'), 'utf8')\n  assert.ok(/FastifyServerFactory\\b/.test(factory) && /FastifyServerFactoryHandler\\b/.test(factory))\n})\n\ncheck('the validator build writes the renamed file, with the same content', () => {\n  const target = join(root, 'lib/config-validator.js')\n  const normalise = (text) => text.replace(/\\s+/g, '')\n  const before = readFileSync(target, 'utf8')\n  execFileSync(process.execPath, ['build/build-validation.js'], { cwd: root, stdio: 'pipe' })\n  assert.equal(normalise(readFileSync(target, 'utf8')), normalise(before))\n  assert.ok(!existsSync(join(root, 'lib/configValidator.js')), 'the build wrote lib/configValidator.js')\n})\n\ncheck('preserved: fastify behaves as before through the moved modules', async () => {\n  const fastify = require(join(root, 'fastify.js'))\n  assert.throws(() => fastify({ connectionTimeout: 'soon' }), (error) => error.code === 'FST_ERR_INIT_OPTS_INVALID')\n  const app = fastify({ requestIdHeader: 'x-trace' })\n  assert.ok(Object.isFrozen(app.initialConfig))\n  app.addContentTypeParser('text/csv', { parseAs: 'string' }, (request, body, done) => { done(null, body.split(',')) })\n  app.register(async function child (instance) {\n    instance.decorate('scoped', true)\n    instance.get('/scoped', async () => ({ scoped: instance.scoped }))\n  })\n  const shared = async function shared (instance) { instance.decorate('shared', 'yes') }\n  shared[Symbol.for('skip-override')] = true\n  app.register(shared)\n  app.get('/', async (request) => ({ id: request.id, shared: app.shared }))\n  app.post('/csv', (request, reply) => { reply.send(request.body) })\n  app.get('/thenable', () => ({ then (resolve) { resolve({ via: 'thenable' }) } }))\n  app.setNotFoundHandler((request, reply) => { reply.code(404).send({ missing: request.url }) })\n  await app.ready()\n  assert.equal(app.scoped, undefined)\n  assert.deepEqual((await app.inject({ url: '/', headers: { 'x-trace': 'abc' } })).json(), { id: 'abc', shared: 'yes' })\n  assert.deepEqual((await app.inject('/scoped')).json(), { scoped: true })\n  assert.deepEqual((await app.inject({ method: 'POST', url: '/csv', headers: { 'content-type': 'text/csv' }, payload: 'a,b,c' })).json(), ['a', 'b', 'c'])\n  assert.deepEqual((await app.inject('/thenable')).json(), { via: 'thenable' })\n  const head = await app.inject({ method: 'HEAD', url: '/' })\n  assert.equal(head.statusCode, 200)\n  assert.equal(head.body, '')\n  const missing = await app.inject('/nowhere')\n  assert.equal(missing.statusCode, 404)\n  assert.deepEqual(missing.json(), { missing: '/nowhere' })\n  await app.close()\n})\n\nlet failed = 0\nfor (const [name, body] of checks) {\n  let timer\n  try {\n    await Promise.race([body(), new Promise((resolve, reject) => {\n      timer = setTimeout(() => reject(new Error('timed out after 10000 ms')), 10000)\n    })])\n    console.log(`ok - ${name}`)\n  } catch (error) {\n    failed++\n    console.log(`not ok - ${name}\\n${error?.stack ?? error}`)\n  } finally {\n    clearTimeout(timer)\n  }\n}\nconsole.log(`${checks.length - failed}/${checks.length} behaviour checks passed`)\nprocess.exitCode = failed === 0 ? 0 : 1\n"
+          }
+        ],
+        "extraArgv": [
+          [
+            "node",
+            "acceptance/hidden/behaviour-check.mjs"
+          ]
+        ]
+      },
+      "immutable": [],
+      "taskText": "fastify's source files under lib/ and types/ mostly use kebab-case file names (lib/error-handler.js, lib/logger-factory.js, types/type-provider.d.ts), but eleven still use camelCase. Rename them with behaviour unchanged: lib/configValidator.js to lib/config-validator.js, lib/contentTypeParser.js to lib/content-type-parser.js, lib/fourOhFour.js to lib/four-oh-four.js, lib/handleRequest.js to lib/handle-request.js, lib/headRoute.js to lib/head-route.js, lib/initialConfigValidation.js to lib/initial-config-validation.js, lib/pluginOverride.js to lib/plugin-override.js, lib/pluginUtils.js to lib/plugin-utils.js, lib/reqIdGenFactory.js to lib/req-id-gen-factory.js, lib/wrapThenable.js to lib/wrap-thenable.js, and types/serverFactory.d.ts to types/server-factory.d.ts. Move each file, its content unchanged apart from the paths it requires, so that the old names no longer exist, and do not leave files under the old names (no re-exporting stubs). Update every reference to an old name: the require calls in fastify.js and lib/, the import in fastify.d.ts, the tests under test/ that require or stub these modules (proxyquire paths and stub keys included), the file that the validator build script build/build-validation.js writes (lib/configValidator.js is generated by npm run build:validation), that generated file's entry in the ignore list of eslint.config.js, and the path in package.json's test:validator:integrity script. Behaviour must not change: each moved module exports exactly what it exported before; fastify's public API, its type declarations and its test suite behave as today; and node build/build-validation.js regenerates lib/config-validator.js with the same content. The source is CommonJS in fastify.js and lib/, with type declarations in fastify.d.ts and types/, and tests in test/ (node:test, run with borp). The project's tests run with npm test (eslint, then borp over test/**/*.test.js, then tsc and tsd), and must keep passing.",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "node acceptance/visible/check.mjs",
+        "source": "import assert from 'node:assert/strict'\nimport { existsSync } from 'node:fs'\n\nassert.ok(existsSync(new URL('../../lib/four-oh-four.js', import.meta.url)), 'lib/four-oh-four.js is missing')\nconsole.log('visible check passed')\n"
+      }
+    },
+    {
+      "id": "p-queue-compat-remove-throw-on-timeout",
+      "repository": "sindresorhus/p-queue",
+      "install": [
+        [
+          "npm",
+          "install",
+          "--ignore-scripts",
+          "--no-audit",
+          "--no-fund",
+          "--before=2026-10-22T00:00:00.000Z"
+        ]
+      ],
+      "build": [],
+      "projectTest": [
+        "npm",
+        "test"
+      ],
+      "visiblePrefix": "",
+      "workType": "feature",
+      "baseCommit": "62efb742ec5567eb8e18e81063924ef1bae314d5",
+      "upstreamCommit": "e48716fa1236fdd8ac0ad88f7831467f2455976a",
+      "hidden": {
+        "testFiles": [
+          "test/basic.ts",
+          "test/advanced.ts",
+          "test-d/index.test-d.ts"
+        ],
+        "argv": [
+          "node",
+          "--import=tsx/esm",
+          "--test",
+          "test/basic.ts",
+          "test/advanced.ts"
+        ],
+        "files": [
+          {
+            "path": "acceptance/hidden/behaviour-check.mjs",
+            "source": "// Hidden behaviour check: the throwOnTimeout option is gone and a timeout always rejects, every\n// example the task states, and the queue behaviour that must not change. Runs from\n// acceptance/hidden/ under node --import=tsx/esm, which loads the TypeScript source.\nimport assert from 'node:assert/strict';\nimport {readFileSync} from 'node:fs';\nimport {setTimeout as delay} from 'node:timers/promises';\nimport {TimeoutError} from 'p-timeout';\nimport PQueue from '../../source/index.js';\n\nconst checks = [];\nconst check = (name, body) => checks.push([name, body]);\nconst isTimeout = error => error instanceof TimeoutError && error.name === 'TimeoutError';\nconst slow = (ms, value) => async () => {\n\tawait delay(ms);\n\treturn value;\n};\n\ncheck('the option is gone from the source and its types', () => {\n\tfor (const path of ['source/index.ts', 'source/options.ts']) {\n\t\tconst text = readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');\n\t\tassert.ok(!/throwOnTimeout/.test(text), `${path} still mentions throwOnTimeout`);\n\t}\n});\n\ncheck('a queue timeout rejects with TimeoutError, emits error and not completed', async () => {\n\tconst queue = new PQueue({timeout: 50});\n\tconst errors = [];\n\tconst completed = [];\n\tqueue.on('error', error => errors.push(error));\n\tqueue.on('completed', result => completed.push(result));\n\tawait assert.rejects(queue.add(slow(150, 'slow')), isTimeout);\n\tassert.equal(errors.length, 1);\n\tassert.ok(isTimeout(errors[0]));\n\tassert.deepEqual(completed, []);\n\tassert.equal(await queue.add(slow(10, 'fast')), 'fast');\n\tassert.deepEqual(completed, ['fast']);\n\tawait queue.onIdle();\n\tassert.equal(queue.pending, 0);\n\tassert.equal(queue.size, 0);\n});\n\ncheck('the examples: timeout 300, a 400 ms task rejects, a 200 ms task gives its value, a 10 ms override rejects', async () => {\n\tconst queue = new PQueue({timeout: 300});\n\tawait assert.rejects(queue.add(slow(400, '🐌')), isTimeout);\n\tassert.equal(await queue.add(slow(200, '🦆')), '🦆');\n\tawait assert.rejects(queue.add(slow(100, 'x'), {timeout: 10}), isTimeout);\n\tassert.equal(await queue.add(slow(400, '🐢'), {timeout: 500}), '🐢');\n});\n\ncheck('a throwOnTimeout given anyway changes nothing: the timeout still rejects', async () => {\n\tconst queue = new PQueue({timeout: 30, throwOnTimeout: false});\n\tawait assert.rejects(queue.add(slow(100, 'a')), isTimeout);\n\tawait assert.rejects(queue.add(slow(100, 'b'), {throwOnTimeout: false}), isTimeout);\n\tconst plain = new PQueue();\n\tawait assert.rejects(plain.add(slow(100, 'c'), {timeout: 20, throwOnTimeout: false}), isTimeout);\n});\n\ncheck('addAll rejects when one of its tasks times out', async () => {\n\tconst queue = new PQueue({concurrency: 2});\n\tawait assert.rejects(queue.addAll([slow(5, 1), slow(150, 2)], {timeout: 50}), isTimeout);\n\tassert.deepEqual(await queue.addAll([slow(5, 1), slow(10, 2)], {timeout: 100}), [1, 2]);\n\tawait queue.onIdle();\n});\n\ncheck('preserved: without a timeout, slow tasks complete', async () => {\n\tconst queue = new PQueue();\n\tassert.equal(await queue.add(slow(120, 'done')), 'done');\n});\n\ncheck('preserved: changing queue.timeout applies to tasks added later', async () => {\n\tconst queue = new PQueue({timeout: 30, concurrency: 2});\n\tconst first = queue.add(slow(100, 'first'));\n\tfirst.catch(() => {});\n\tqueue.timeout = 300;\n\tassert.equal(await queue.add(slow(100, 'second')), 'second');\n\tawait assert.rejects(first, isTimeout);\n});\n\ncheck('preserved: the queue keeps going after timeouts, within its concurrency', async () => {\n\tconst queue = new PQueue({concurrency: 2, timeout: 40});\n\t// A timeout frees its slot while the timed-out function itself keeps running (p-timeout does\n\t// not cancel it), so the limit is read from the queue's own count of running tasks.\n\tlet highest = 0;\n\tconst tracked = (ms, value) => async () => {\n\t\thighest = Math.max(highest, queue.pending);\n\t\tawait delay(ms);\n\t\treturn value;\n\t};\n\n\tconst results = await Promise.allSettled([tracked(80, 'a'), tracked(5, 'b'), tracked(80, 'c'), tracked(5, 'd')].map(task => queue.add(task)));\n\tassert.deepEqual(results.map(result => result.status), ['rejected', 'fulfilled', 'rejected', 'fulfilled']);\n\tassert.ok(results.filter(result => result.status === 'rejected').every(result => isTimeout(result.reason)));\n\tassert.ok(highest <= 2, `the queue ran ${highest} tasks at once`);\n\tawait delay(100);\n\tawait queue.onIdle();\n\tassert.equal(queue.pending, 0);\n});\n\ncheck('preserved: other errors still reject and emit error', async () => {\n\tconst queue = new PQueue({timeout: 500});\n\tconst errors = [];\n\tqueue.on('error', error => errors.push(error));\n\tawait assert.rejects(queue.add(async () => {\n\t\tthrow new RangeError('broken');\n\t}), RangeError);\n\tassert.equal(errors.length, 1);\n\tassert.ok(errors[0] instanceof RangeError);\n});\n\ncheck('preserved: priorities and results', async () => {\n\tconst queue = new PQueue({concurrency: 1, autoStart: false});\n\tconst order = [];\n\tconst pushes = value => async () => {\n\t\torder.push(value);\n\t\treturn value;\n\t};\n\n\tconst all = Promise.all([queue.add(pushes('low'), {priority: 0}), queue.add(pushes('high'), {priority: 5})]);\n\tqueue.start();\n\tassert.deepEqual(await all, ['low', 'high']);\n\tassert.deepEqual(order, ['high', 'low']);\n});\n\nlet failed = 0;\nfor (const [name, body] of checks) {\n\tlet timer;\n\ttry {\n\t\tawait Promise.race([body(), new Promise((resolve, reject) => {\n\t\t\ttimer = setTimeout(() => reject(new Error('timed out after 5000 ms: a promise never settled')), 5000);\n\t\t})]);\n\t\tconsole.log(`ok - ${name}`);\n\t} catch (error) {\n\t\tfailed++;\n\t\tconsole.log(`not ok - ${name}\\n${error?.stack ?? error}`);\n\t} finally {\n\t\tclearTimeout(timer);\n\t}\n}\n\nconsole.log(`${checks.length - failed}/${checks.length} behaviour checks passed`);\nprocess.exitCode = failed === 0 ? 0 : 1;\n"
+          }
+        ],
+        "extraArgv": [
+          [
+            "node",
+            "--import=tsx/esm",
+            "acceptance/hidden/behaviour-check.mjs"
+          ]
+        ]
+      },
+      "immutable": [],
+      "taskText": "p-queue (the PQueue class in source/index.ts, its options in source/options.ts) has a throwOnTimeout option, accepted by the constructor and by each add(), and false by default: when a task's timeout elapses, its promise resolves with undefined instead of rejecting, so a caller cannot tell a timed-out task from one that returned nothing, and add() is typed Promise<TaskResultType | void>. Remove the option, so that a timeout always rejects. With const queue = new PQueue({timeout: 300}): queue.add(async () => { await delay(400); return '🐌'; }) must reject with p-timeout's TimeoutError (today it resolves with undefined); a task that takes 200 ms must resolve with its value; queue.add(task, {timeout: 10}) for a task that takes 100 ms must reject with TimeoutError; and queue.add(task, {timeout: 500}) for a task that takes 400 ms must resolve with its value. A timed-out task emits the queue's error event with the TimeoutError and no completed event, and addAll() rejects when one of its tasks times out. Remove throwOnTimeout from the option types in source/options.ts and from the class, together with the add() and addAll() overloads that depended on it, so that add() is typed Promise<TaskResultType> and addAll() Promise<TaskResultsType[]> (for const queue = new PQueue(), queue.add(async () => '🦄') is Promise<string>). A throwOnTimeout that is still passed at run time is ignored: the timeout rejects all the same. What must not change: a task without a timeout runs to completion however long it takes; setting queue.timeout applies to the tasks added after it; a per-task timeout given to add() overrides the queue's; any other error from a task rejects its promise and emits error as today; after a timeout the queue goes on with the next tasks within its concurrency; and onIdle(), pending, size and priorities behave as today. Some existing tests in test/basic.ts and test/advanced.ts and the type test test-d/index.test-d.ts pass throwOnTimeout or expect a timed-out task to resolve; they describe the behaviour being removed, so change them to the new behaviour, keeping their other assertions. Add regression tests for this behaviour to the project's existing test suite. The project's tests run with npm test (xo, then node --test over test/*.ts through tsx, then tsc and tsd).",
+      "visible": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "node --import=tsx/esm acceptance/visible/check.mjs",
+        "source": "import assert from 'node:assert/strict';\nimport {setTimeout as delay} from 'node:timers/promises';\nimport PQueue from '../../source/index.js';\n\nconst queue = new PQueue({timeout: 20});\nawait assert.rejects(queue.add(async () => delay(100)), {name: 'TimeoutError'});\nconsole.log('visible check passed');\n"
+      }
+    }
+  ],
+  "launches": [
+    {
+      "task": "p-queue-compat-remove-throw-on-timeout",
+      "arm": "swarm",
+      "order": 0
+    },
+    {
+      "task": "p-queue-compat-remove-throw-on-timeout",
+      "arm": "swarm-control",
+      "order": 1
+    },
+    {
+      "task": "p-queue-compat-remove-throw-on-timeout",
+      "arm": "swarm-direct",
+      "order": 2
+    },
+    {
+      "task": "p-queue-compat-remove-throw-on-timeout",
+      "arm": "opencode",
+      "order": 3
+    },
+    {
+      "task": "fastify-refactor-kebab-case-file-names",
+      "arm": "swarm-control",
+      "order": 4
+    },
+    {
+      "task": "fastify-refactor-kebab-case-file-names",
+      "arm": "swarm-direct",
+      "order": 5
+    },
+    {
+      "task": "fastify-refactor-kebab-case-file-names",
+      "arm": "opencode",
+      "order": 6
+    },
+    {
+      "task": "fastify-refactor-kebab-case-file-names",
+      "arm": "swarm",
+      "order": 7
+    },
+    {
+      "task": "p-limit-bugfix-limit-function-clear-queue",
+      "arm": "swarm-direct",
+      "order": 8
+    },
+    {
+      "task": "p-limit-bugfix-limit-function-clear-queue",
+      "arm": "opencode",
+      "order": 9
+    },
+    {
+      "task": "p-limit-bugfix-limit-function-clear-queue",
+      "arm": "swarm",
+      "order": 10
+    },
+    {
+      "task": "p-limit-bugfix-limit-function-clear-queue",
+      "arm": "swarm-control",
+      "order": 11
+    },
+    {
+      "task": "p-limit-feature-reject-on-clear",
+      "arm": "opencode",
+      "order": 12
+    },
+    {
+      "task": "p-limit-feature-reject-on-clear",
+      "arm": "swarm",
+      "order": 13
+    },
+    {
+      "task": "p-limit-feature-reject-on-clear",
+      "arm": "swarm-control",
+      "order": 14
+    },
+    {
+      "task": "p-limit-feature-reject-on-clear",
+      "arm": "swarm-direct",
+      "order": 15
+    }
+  ]
+}

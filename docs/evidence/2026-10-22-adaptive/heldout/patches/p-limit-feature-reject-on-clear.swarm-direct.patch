@@ -1,0 +1,247 @@
+diff --git a/index.d.ts b/index.d.ts
+index 86aa91e..57a093f 100644
+--- a/index.d.ts
++++ b/index.d.ts
+@@ -92,6 +92,13 @@ export type Options = {
+ 	Minimum: `1`.
+ 	*/
+ 	readonly concurrency: number;
++
++	/**
++	Discard pending promises that are waiting to run and reject them with an AbortError.
++
++	Note: This does not cancel promises that are already running.
++	*/
++	rejectOnClear?: boolean;
+ };
+ 
+ /**
+diff --git a/index.js b/index.js
+index 63ba65c..7eaf9fa 100644
+--- a/index.js
++++ b/index.js
+@@ -1,11 +1,15 @@
+ import Queue from 'yocto-queue';
+ 
+ export default function pLimit(concurrency) {
++	let rejectOnClear = false;
++
+ 	if (typeof concurrency === 'object') {
++		rejectOnClear = concurrency.rejectOnClear;
+ 		concurrency = concurrency.concurrency;
+ 	}
+ 
+ 	validateConcurrency(concurrency);
++	validateRejectOnClear(rejectOnClear);
+ 
+ 	const queue = new Queue();
+ 	let activeCount = 0;
+@@ -23,12 +27,12 @@ export default function pLimit(concurrency) {
+ 		resumeNext();
+ 	};
+ 
+-	const run = async (function_, resolve, arguments_) => {
++	const run = async (userResolve, function_, arguments_) => {
+ 		// Execute the function and capture the result promise
+ 		const result = (async () => function_(...arguments_))();
+ 
+ 		// Resolve immediately with the promise (don't wait for completion)
+-		resolve(result);
++		userResolve(result);
+ 
+ 		// Wait for the function to complete (success or failure)
+ 		// We catch errors here to prevent unhandled rejections,
+@@ -41,12 +45,31 @@ export default function pLimit(concurrency) {
+ 		next();
+ 	};
+ 
+-	const enqueue = (function_, resolve, arguments_) => {
+-		// Queue the internal resolve function instead of the run function
+-		// to preserve the asynchronous execution context.
+-		new Promise(internalResolve => { // eslint-disable-line promise/param-names
++	let deferredRejecters = []; // array of user-facing promise reject functions
++
++	const enqueue = (function_, userResolve, arguments_) => {
++		if (!rejectOnClear) {
++			// Queue the internal resolve function instead of the run function
++			// to preserve the asynchronous execution context.
++			new Promise(internalResolve => { // eslint-disable-line promise/param-names
++				queue.enqueue(internalResolve);
++			}).then(run.bind(undefined, userResolve, function_, arguments_)); // eslint-disable-line promise/prefer-await-to-then
++
++			// Start processing immediately if we haven't reached the concurrency limit
++			if (activeCount < concurrency) {
++				resumeNext();
++			}
++			return;
++		}
++
++		// With rejectOnClear: track both internal resolve and user reject for pending tasks.
++		let userReject;
++		new Promise((internalResolve, uR) => { // eslint-disable-line promise/param-names
++			userReject = uR;
+ 			queue.enqueue(internalResolve);
+-		}).then(run.bind(undefined, function_, resolve, arguments_)); // eslint-disable-line promise/prefer-await-to-then
++		}).then(() => run(userResolve, function_, arguments_));
++
++		deferredRejecters.push(userResolve);
+ 
+ 		// Start processing immediately if we haven't reached the concurrency limit
+ 		if (activeCount < concurrency) {
+@@ -67,7 +90,19 @@ export default function pLimit(concurrency) {
+ 		},
+ 		clearQueue: {
+ 			value() {
+-				queue.clear();
++				if (rejectOnClear) {
++					const error = new Error('Task aborted');
++					error.name = 'AbortError';
++					while (queue.size > 0) {
++						queue.dequeue();
++					}
++					for (const reject of deferredRejecters) {
++						reject(error);
++					}
++					deferredRejecters.length = 0;
++				} else {
++					queue.clear();
++				}
+ 			},
+ 		},
+ 		concurrency: {
+@@ -108,3 +143,9 @@ function validateConcurrency(concurrency) {
+ 		throw new TypeError('Expected `concurrency` to be a number from 1 and up');
+ 	}
+ }
++
++function validateRejectOnClear(rejectOnClear) {
++	if (rejectOnClear !== undefined && rejectOnClear !== true && rejectOnClear !== false) {
++		throw new TypeError('Expected `rejectOnClear` to be a boolean');
++	}
++}
+diff --git a/test.js b/test.js
+index d7cb024..22b2d4c 100644
+--- a/test.js
++++ b/test.js
+@@ -333,3 +333,121 @@ test('limitFunction()', async t => {
+ 
+ 	await Promise.all(input);
+ });
++
++test('rejectOnClear throws with invalid value', t => {
++	t.throws(() => pLimit({concurrency: 1, rejectOnClear: 'nope'}), {is: TypeError});
++	t.throws(() => pLimit({concurrency: 1, rejectOnClear: 1}), {is: TypeError});
++	t.throws(() => pLimit({concurrency: 1, rejectOnClear: null}), {is: TypeError});
++});
++
++test('limitFunction rejects invalid rejectOnClear', t => {
++	t.throws(() => limitFunction(() => {}, {concurrency: 1, rejectOnClear: 'nope'}), {is: TypeError});
++});
++
++test('rejectOnClear: true rejects pending promises with AbortError', async t => {
++	const limit = pLimit({concurrency: 1, rejectOnClear: true});
++
++	let startedFirst = false;
++	const tasks = [
++		limit(async () => {
++			startedFirst = true;
++			await delay(50);
++			return 'first';
++		}),
++		limit(async () => 'second'),
++		limit(async () => 'third'),
++	];
++
++	// Let the first task start running
++	await delay(2);
++	t.true(startedFirst);
++	t.is(limit.pendingCount, 2);
++
++	// Clear queue while first is still running
++	limit.clearQueue();
++
++	t.is(limit.pendingCount, 0);
++
++	// First task should resolve normally
++	const [firstResult] = await Promise.allSettled(tasks.slice(0, 1));
++	t.is(firstResult.status, 'fulfilled');
++	t.is(firstResult.value, 'first');
++
++	// Remaining tasks should be rejected with AbortError
++	const remainingResults = await Promise.allSettled(tasks.slice(1));
++	for (const r of remainingResults) {
++		t.is(r.status, 'rejected');
++		t.is(r.reason.name, 'AbortError');
++	}
++});
++
++test('rejectOnClear: false behaves like default clearQueue', async t => {
++	const limit = pLimit({concurrency: 1, rejectOnClear: false});
++
++	limit(() => delay(50));
++	limit(() => delay(50));
++	limit(() => delay(50));
++
++	await delay(2);
++	t.is(limit.pendingCount, 2);
++
++	// Should not throw
++	limit.clearQueue();
++	t.is(limit.pendingCount, 0);
++});
++
++test('rejectOnClear with default (undefined) behaves like clearQueue', async t => {
++	const limit = pLimit({concurrency: 1});
++
++	limit(() => delay(50));
++	limit(() => delay(50));
++
++	await delay(2);
++	t.is(limit.pendingCount, 1);
++
++	limit.clearQueue();
++	t.is(limit.pendingCount, 0);
++});
++
++test('rejectOnClear: true limiter keeps working after clearQueue', async t => {
++	const limit = pLimit({concurrency: 1, rejectOnClear: true});
++
++	limit(() => delay(50));
++	limit(() => 'rejected2');
++	limit(() => 'rejected3');
++
++	await delay(2);
++	limit.clearQueue();
++	t.is(limit.pendingCount, 0);
++
++	// Tasks added after clearQueue should still work
++	const result = await limit(() => 'later');
++	t.is(result, 'later');
++});
++
++test('rejectOnClear: true rejects pending promises at once', async t => {
++	const limit = pLimit({concurrency: 1, rejectOnClear: true});
++	let secondCalled = false;
++
++	limit(async () => delay(50)); // First task runs
++	const third = limit(async () => {
++		secondCalled = true;
++		return 'second';
++	});
++	const fourth = limit(async () => 'third');
++
++	await delay(2);
++	t.is(limit.pendingCount, 2);
++
++	limit.clearQueue();
++
++	// Neither the second nor third should have been called
++	t.false(secondCalled);
++
++	// The promises for pending tasks should reject with AbortError immediately
++	const results = await Promise.allSettled([third, fourth]);
++	for (const r of results) {
++		t.is(r.status, 'rejected');
++		t.is(r.reason.name, 'AbortError');
++	}
++});

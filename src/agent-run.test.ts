@@ -6,12 +6,14 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { answerNowNotice, diagnosisSystemPrompt } from "./agent-decision-point.ts";
 import { type AgentTaskOptions, runAgentTask, systemPrompt } from "./agent-run.ts";
 import { createSystemClock } from "./cli-runtime-inputs.ts";
 import { taskGoalGate } from "./cli-task-goal.ts";
 import type { Clock } from "./core/clock.ts";
 import type { ModelClient, ModelRequest } from "./core/model-client.ts";
 import { createFixedRandom, createTestClock } from "./core/test-doubles.ts";
+import type { Hypothesis } from "./core/working-state.ts";
 import { buildAttestation, signAttestation } from "./evidence/attestation.ts";
 import { bundleSourceFromRecorder, exportBundle } from "./evidence/bundle.ts";
 import { asJsonValue, digestOfBytes, type JsonValue } from "./evidence/canonical-json.ts";
@@ -1908,5 +1910,526 @@ describe("a task loop that stopped at its step limit (the launch 2 shape)", () =
     });
     expect(result.green).toBe(false);
     expect(Object.values(result.verdict.reasons).join(" ")).toContain("the run was cancelled");
+  }, 60_000);
+});
+
+describe("bounded repair finishing", () => {
+  async function formatterFixture() {
+    await write(
+      "scripts/format.mjs",
+      [
+        "import { readFileSync } from 'node:fs';",
+        "const source = readFileSync('src/greet.js', 'utf8');",
+        "if (source.includes('  ;')) { console.error('remove spaces before semicolon'); process.exit(1); }",
+      ].join("\n"),
+    );
+    await git("add", ".");
+    await git("commit", "--quiet", "-m", "declare format check");
+  }
+
+  it.each([false, true])(
+    "finishes a useful repair before its full cycle when enabled=%s",
+    async (repairFinish) => {
+      await formatterFixture();
+      const unformatted =
+        "export function greet() {\n  return 'hello'  ;\n}\nexport const shout = 1;\n";
+      const result = await task(
+        [
+          ...goodTurns(broken),
+          respondWithToolCalls("repair behavior", [
+            {
+              callId: "repair",
+              toolName: "write",
+              input: { path: "src/greet.js", content: unformatted },
+            },
+          ]),
+          respondWithText("fixed"),
+          respondWithToolCalls("finish formatting", [
+            {
+              callId: "finish",
+              toolName: "write",
+              input: { path: "src/greet.js", content: stillGreen },
+            },
+          ]),
+          respondWithText("finished"),
+        ],
+        {
+          attempts: 1,
+          repairFinish,
+          gateOptions: {
+            commandOverrides: { ...gateOverrides, format: "node scripts/format.mjs" },
+          },
+        },
+      );
+      expect(result.green).toBe(repairFinish);
+      expect(readFileSync(join(workspace, "src/greet.js"), "utf8")).toBe(
+        repairFinish ? stillGreen : broken,
+      );
+      expect(result.gates.outcome.attempts).toHaveLength(1);
+      const checks = evidence
+        .records()
+        .filter((r) => r.type === "verification-command")
+        .map((r) => evidence.payloads().get(r.payloadDigest) as Record<string, unknown>)
+        .filter((p) => p.rule === "repair-finish-v1");
+      expect(checks).toHaveLength(repairFinish ? 1 : 0);
+      if (repairFinish) {
+        expect(checks[0]).toMatchObject({ attempt: 1, failed: ["format"] });
+        const prompts = evidence
+          .records()
+          .filter((r) => r.type === "model-call")
+          .map((r) => JSON.stringify(evidence.payloads().get(r.payloadDigest)));
+        expect(
+          prompts.some(
+            (p) => p.includes("remove spaces before semicolon") && p.includes("add a shout helper"),
+          ),
+        ).toBe(true);
+      }
+    },
+    60000,
+  );
+
+  it.each(["step limit", "ineffective finish", "stale observation"])(
+    "preserves rollback and the original allowance: %s",
+    async (condition) => {
+      await formatterFixture();
+      if (condition === "stale observation") {
+        await write(
+          "scripts/format.mjs",
+          [
+            "import {readFileSync, writeFileSync} from 'node:fs';",
+            "const path = 'src/greet.js'; const source = readFileSync(path, 'utf8');",
+            "if (source.includes('  ;')) {writeFileSync(path, source + '\\n'); console.error('invalid formatting'); process.exit(1);}",
+          ].join("\n"),
+        );
+        await git("add", ".");
+        await git("commit", "--quiet", "-m", "a check that changes its input");
+      }
+      const unformatted = "export function greet() {\n  return 'hello'  ;\n}\n";
+      const result = await task(
+        [
+          ...goodTurns(broken),
+          respondWithToolCalls("repair", [
+            {
+              callId: "repair",
+              toolName: "write",
+              input: { path: "src/greet.js", content: unformatted },
+            },
+          ]),
+          respondWithText("fixed"),
+          respondWithText("I think the formatting is already correct"),
+        ],
+        {
+          attempts: 1,
+          repairFinish: true,
+          maxSteps: condition === "step limit" ? 3 : 8,
+          gateOptions: {
+            commandOverrides: { ...gateOverrides, format: "node scripts/format.mjs" },
+          },
+        },
+      );
+      expect(result.green).toBe(false);
+      expect(readFileSync(join(workspace, "src/greet.js"), "utf8")).toBe(broken);
+      expect(result.gates.outcome.attempts).toHaveLength(1);
+      expect(evidence.records().filter((r) => r.type === "model-call")).toHaveLength(
+        condition === "ineffective finish" ? 6 : 5,
+      );
+      const finishes = evidence
+        .records()
+        .filter((r) => r.type === "verification-command")
+        .map((r) => evidence.payloads().get(r.payloadDigest) as Record<string, unknown>)
+        .filter((p) => p.rule === "repair-finish-v1");
+      if (condition === "step limit") expect(finishes).toHaveLength(0);
+      else
+        expect(finishes[0]).toMatchObject({
+          stale: condition === "stale observation",
+          dispatched: condition !== "stale observation",
+        });
+    },
+    60000,
+  );
+
+  it("adds no finish checks to a direct successful task", async () => {
+    const result = await task(goodTurns(stillGreen), {
+      repairFinish: true,
+    } as Partial<AgentTaskOptions>);
+    expect(result.green).toBe(true);
+    expect(evidence.records().filter((r) => r.type === "model-call")).toHaveLength(3);
+    expect(
+      evidence
+        .records()
+        .filter((r) => r.type === "verification-command")
+        .map((r) => evidence.payloads().get(r.payloadDigest) as Record<string, unknown>)
+        .some((p) => p.rule === "repair-finish-v1"),
+    ).toBe(false);
+  });
+});
+
+describe("the adaptive decision point (adaptive-decision-v1)", () => {
+  const probe = { command: "node scripts/probe.mjs" };
+
+  async function probeFixture() {
+    await write(
+      "scripts/probe.mjs",
+      "const m = await import('../src/greet.js');\nconsole.log(typeof m.shout);\n",
+    );
+    await git("add", ".");
+    await git("commit", "--quiet", "-m", "probe");
+  }
+
+  async function adaptiveTask(
+    turns: readonly FixtureTurn[],
+    overrides: Partial<AgentTaskOptions> = {},
+  ) {
+    const fixture = createFixtureModelClient({ modelId: "fixture:worker", turns });
+    const result = await runAgentTask({
+      task: "add a shout helper",
+      workspace,
+      baseRef: "HEAD",
+      maxSteps: 10,
+      attempts: 0,
+      model: createRecordingModelClient(fixture, evidence),
+      evidence,
+      fileSet: createFileSetRegistry(evidence),
+      clock,
+      random: createFixedRandom(),
+      emit: () => {},
+      confirm: () => Promise.resolve("no"),
+      approvalMode: "auto",
+      abortSignal: new AbortController().signal,
+      homeDir: scratch,
+      gateOptions: { commandOverrides: gateOverrides },
+      adaptive: true,
+      ...overrides,
+    });
+    const decisions = evidence
+      .records()
+      .filter((r) => r.type === "verification-command")
+      .map((r) => ({
+        sequence: r.sequence,
+        payload: evidence.payloads().get(r.payloadDigest) as Record<string, unknown>,
+      }))
+      .filter((entry) => entry.payload.rule === "adaptive-decision-v1");
+    const armed = decisions.filter((entry) => entry.payload.phase === "armed");
+    const decided = decisions.filter((entry) => entry.payload.phase === "decided");
+    const promptOf = (index: number) =>
+      (fixture.requests[index]?.messages ?? [])
+        .map((message) =>
+          message.role === "tool"
+            ? message.outcomes.map((one) => one.output).join("\n")
+            : message.text,
+        )
+        .join("\n");
+    return { result, requests: fixture.requests, decisions: decided, armed, promptOf };
+  }
+
+  const call = (callId: string, toolName: string, input: unknown) =>
+    respondWithToolCalls("", [{ callId, toolName, input }]);
+  const explore = [
+    call("w1", "shell", probe),
+    call("w2", "read", { path: "src/greet.js" }),
+    call("w3", "search", { pattern: "SHOUT", path: "src" }),
+    call("w4", "read", { path: "src/greet.test.js" }),
+  ];
+  const diagnosis = JSON.stringify({
+    question: "Where should shout be exported?",
+    hypotheses: [
+      {
+        statement: "shout is not exported from src/greet.js",
+        predicts: { outputIncludes: "undefined" },
+      },
+      { statement: "shout is exported but is a string", predicts: { outputIncludes: "string" } },
+    ],
+    test: probe,
+    locations: [
+      { path: "src/greet.js", line: 3, why: "add the export after greet" },
+      { path: "src/missing.js", line: 1, why: "a file that is not there" },
+    ],
+    approach: "Add export const shout = 1 at the end of src/greet.js.",
+  });
+
+  it("diagnoses before the allowance is spent, from the task and measured observations, and the edit and check follow", async () => {
+    await probeFixture();
+    const { result, requests, decisions, promptOf } = await adaptiveTask([
+      ...explore,
+      call("d1", "read", { path: "src/greet.js" }),
+      respondWithText(diagnosis),
+      call("w5", "declare_file_set", { files: ["src/greet.js"] }),
+      call("w6", "write", { path: "src/greet.js", content: stillGreen }),
+      call("w7", "shell", probe),
+      respondWithText("done"),
+    ]);
+
+    expect(decisions).toHaveLength(1);
+    const decision = decisions[0]?.payload as Record<string, unknown> & {
+      readonly remaining: { readonly maxSteps: number; readonly maxTokens: number };
+      readonly diagnosis: { readonly hypotheses: readonly Hypothesis[] };
+    };
+    expect(decision).toMatchObject({
+      loop: "task",
+      step: 4,
+      chosen: "diagnose",
+      chosenBy: "no-edit-at-decision-point",
+    });
+    expect(decision.remaining).toMatchObject({ maxSteps: 6, maxTokens: expect.any(Number) });
+    expect(decision.diagnosis).toMatchObject({
+      parsed: true,
+      actionable: true,
+      rejectedLocations: [expect.objectContaining({ path: "src/missing.js" })],
+      execution: expect.objectContaining({ command: probe.command, refused: false, exitCode: 0 }),
+    });
+    expect(decision.diagnosis.hypotheses.map((h: Hypothesis) => h.status)).toEqual([
+      "consistent",
+      "contradicted",
+    ]);
+
+    // The diagnosis is a fresh read-only context that receives the task and the measured observation.
+    expect(requests[4]?.system).toBe(diagnosisSystemPrompt);
+    expect(requests[4]?.tools.map((tool) => tool.name).sort()).toEqual(["list", "read", "search"]);
+    const diagnosisPrompt = promptOf(4);
+    expect(diagnosisPrompt).toContain("add a shout helper");
+    expect(diagnosisPrompt).toMatch(
+      /step 1: shell node scripts\/probe\.mjs; exit 0; current tree; record sha256:/,
+    );
+    expect(diagnosisPrompt).toContain("undefined");
+
+    // The worker's next turn carries the notice: located advice, the harness's execution, labels.
+    const notice = promptOf(6);
+    expect(notice).toContain("[harness decision point] Step 4 of 10");
+    expect(notice).toContain(
+      "prediction held when the harness ran it (says nothing beyond that prediction): H1",
+    );
+    expect(notice).toContain("prediction failed when the harness ran it: H2");
+    expect(notice).toContain("src/greet.js:3 (add the export after greet)");
+    expect(notice).not.toContain("src/missing.js:1");
+    expect(notice).toContain("the gates still decide acceptance".replace("the gates", "The gates"));
+
+    // Edit and check after the notice; within the original ten steps; the tree is accepted by the gates.
+    expect(readFileSync(join(workspace, "src/greet.js"), "utf8")).toBe(stillGreen);
+    const after = evidence
+      .records()
+      .filter((r) => r.type === "tool-call" && r.sequence > (decisions[0]?.sequence ?? 0))
+      .map((r) => evidence.payloads().get(r.payloadDigest) as Record<string, unknown>)
+      .filter((p) => p.decision === "allowed")
+      .map((p) => p.toolName);
+    expect(after).toEqual(["declare_file_set", "write", "shell"]);
+    expect(result.loop.steps).toBe(10);
+    expect(result.loop.tokensUsed).toBe(10 * 15);
+    expect(decision.spent).toMatchObject({ steps: 2, tokensUsed: 30 });
+    expect(result.green).toBe(true);
+  }, 60_000);
+
+  it("gives no status from a command that two hypotheses predict alike", async () => {
+    await probeFixture();
+    const alike = JSON.stringify({
+      ...JSON.parse(diagnosis),
+      hypotheses: [
+        { statement: "shout is missing", predicts: { exitCode: 0 } },
+        { statement: "shout is misspelled", predicts: { exitCode: 0 } },
+      ],
+    });
+    const { decisions } = await adaptiveTask([
+      ...explore,
+      respondWithText(alike),
+      call("w5", "declare_file_set", { files: ["src/greet.js"] }),
+      call("w6", "write", { path: "src/greet.js", content: stillGreen }),
+      respondWithText("done"),
+    ]);
+    const decision = decisions[0]?.payload as { diagnosis: { hypotheses: Hypothesis[] } };
+    expect(decision.diagnosis.hypotheses.map((h) => h.status)).toEqual(["proposed", "proposed"]);
+  }, 60_000);
+
+  it("names an observation made before a later edit as predating the tree it diagnoses", async () => {
+    await probeFixture();
+    const { decisions, promptOf } = await adaptiveTask([
+      call("w1", "shell", probe),
+      call("w2", "declare_file_set", { files: ["src/greet.js"] }),
+      call("w3", "write", { path: "src/greet.js", content: broken }),
+      call("w4", "shell", { command: "node --test" }),
+      respondWithText(
+        JSON.stringify({
+          locations: [{ path: "src/greet.js", line: 2, why: "the return value changed" }],
+          approach: "Restore return 'hello' in src/greet.js and add the shout export.",
+        }),
+      ),
+      call("w5", "write", { path: "src/greet.js", content: stillGreen }),
+      respondWithText("done"),
+    ]);
+    expect(decisions[0]?.payload).toMatchObject({
+      chosen: "diagnose",
+      chosenBy: "failing-check-at-current-tree",
+    });
+    const diagnosisPrompt = promptOf(4);
+    expect(diagnosisPrompt).toMatch(
+      /step 1: shell node scripts\/probe\.mjs; exit 0; before the edit of src\/greet\.js at step 3, so it predates the current tree/,
+    );
+    expect(diagnosisPrompt).toMatch(/step 4: shell node --test; exit 1; current tree/);
+  }, 60_000);
+
+  it("keeps a direct task on the cheap path: no decision before it finishes, and no model call when edits are landing", async () => {
+    const direct = await adaptiveTask(goodTurns(stillGreen), { maxSteps: 8 });
+    expect(direct.result.green).toBe(true);
+    expect(direct.decisions).toHaveLength(0);
+    // Armed all the same, so the record shows the run had the point and never reached it.
+    expect(direct.armed.map((entry) => entry.payload)).toEqual([
+      expect.objectContaining({ loop: "task", atStep: 4 }),
+    ]);
+    expect(direct.requests).toHaveLength(3);
+
+    await rm(join(scratch, "sessions"), { recursive: true, force: true });
+    evidence = await openEvidenceSession({
+      root: join(scratch, "sessions"),
+      sessionId: "again",
+      clock,
+    });
+    await git("checkout", "--quiet", "--", ".");
+    const landing = await adaptiveTask(
+      [
+        ...goodTurns(stillGreen).slice(0, 2),
+        call("w3", "read", { path: "src/greet.js" }),
+        call("w4", "read", { path: "src/greet.test.js" }),
+        respondWithText("done"),
+      ],
+      { maxSteps: 8 },
+    );
+    expect(landing.decisions.map((d) => d.payload)).toEqual([
+      expect.objectContaining({
+        chosen: "continue",
+        chosenBy: "edits-landed-no-failing-check",
+        notice: null,
+      }),
+    ]);
+    expect(landing.requests).toHaveLength(5);
+    expect(landing.result.loop.tokensUsed).toBe(5 * 15);
+  }, 60_000);
+
+  it("makes a diagnosis that keeps reading answer on its last step, with no tool to call", async () => {
+    await probeFixture();
+    // Ten steps put the point at step 4 and leave the diagnosis three: two to read, one to answer.
+    const { decisions, requests, result } = await adaptiveTask([
+      ...explore,
+      call("d1", "read", { path: "src/greet.js" }),
+      call("d2", "read", { path: "scripts/probe.mjs" }),
+      respondWithText(diagnosis),
+      call("w5", "declare_file_set", { files: ["src/greet.js"] }),
+      call("w6", "write", { path: "src/greet.js", content: stillGreen }),
+      respondWithText("done"),
+    ]);
+    expect(requests.slice(4, 6).map((request) => request.tools.length)).toEqual([3, 3]);
+    expect(requests[6]?.tools).toEqual([]);
+    const last = requests[6]?.messages.at(-1);
+    expect(last?.role === "user" ? last.text : "").toBe(answerNowNotice);
+    expect(decisions[0]?.payload).toMatchObject({
+      diagnosis: expect.objectContaining({
+        parsed: true,
+        actionable: true,
+        stopReason: "completed",
+      }),
+      spent: expect.objectContaining({ steps: 3 }),
+    });
+    expect(result.loop.steps).toBe(10);
+    expect(result.green).toBe(true);
+  }, 60_000);
+
+  it("gives no notice for an answer that is not actionable, and still charges what it cost", async () => {
+    const { decisions, promptOf, result } = await adaptiveTask([
+      call("w1", "read", { path: "src/greet.js" }),
+      call("w2", "read", { path: "src/greet.test.js" }),
+      call("w3", "list", { path: "src" }),
+      call("w4", "read", { path: "src/greet.js", startLine: 1, endLine: 2 }),
+      respondWithText("Read the code carefully, then fix the bug and run the tests."),
+      call("w5", "declare_file_set", { files: ["src/greet.js"] }),
+      call("w6", "write", { path: "src/greet.js", content: stillGreen }),
+      respondWithText("done"),
+    ]);
+    expect(decisions[0]?.payload).toMatchObject({
+      chosen: "diagnose",
+      notice: null,
+      diagnosis: expect.objectContaining({ parsed: false, actionable: false }),
+    });
+    expect(promptOf(5)).not.toContain("[harness decision point]");
+    expect(result.loop.steps).toBe(8);
+  }, 60_000);
+
+  it("withholds a diagnosis when too little of the loop remains to act on it", async () => {
+    const { decisions, requests } = await adaptiveTask(
+      [
+        call("w1", "read", { path: "src/greet.js" }),
+        call("w2", "read", { path: "src/greet.test.js" }),
+        respondWithText("done"),
+      ],
+      { maxSteps: 4 },
+    );
+    expect(decisions[0]?.payload).toMatchObject({
+      chosen: "diagnose",
+      action: "withheld",
+      notice: null,
+    });
+    expect(requests).toHaveLength(3);
+  }, 60_000);
+
+  it("lets no advice bypass acceptance: the diagnosis cannot write, and a weakened test is still refused", async () => {
+    const { result, decisions } = await adaptiveTask([
+      call("w1", "read", { path: "src/greet.js" }),
+      call("w2", "read", { path: "src/greet.test.js" }),
+      call("w3", "list", { path: "src" }),
+      call("w4", "list", { path: "." }),
+      call("d1", "write", { path: "src/greet.test.js", content: "" }),
+      respondWithText(
+        JSON.stringify({
+          locations: [{ path: "src/greet.test.js", line: 5, why: "the failing test" }],
+          approach: "Delete the test in src/greet.test.js so the suite passes.",
+        }),
+      ),
+      call("w5", "declare_file_set", { files: ["src/greet.js", "src/greet.test.js"] }),
+      call("w6", "write", {
+        path: "src/greet.test.js",
+        content: suite.split("\n").slice(0, 3).join("\n"),
+      }),
+      call("w7", "write", { path: "src/greet.js", content: stillGreen }),
+      respondWithText("done"),
+    ]);
+    const refusedByDiagnosis = evidence
+      .records()
+      .filter((r) => r.type === "tool-call")
+      .map((r) => evidence.payloads().get(r.payloadDigest) as Record<string, unknown>)
+      .filter((p) => p.callId === "d1" && p.decision !== "requested");
+    expect(refusedByDiagnosis.every((p) => p.decision !== "allowed")).toBe(true);
+    expect(decisions[0]?.payload).toMatchObject({
+      diagnosis: expect.objectContaining({ actionable: true }),
+    });
+    expect(result.green).toBe(false);
+    expect(result.gates.outcome.baseComparison.decision.accepted).toBe(false);
+  }, 60_000);
+
+  it("carries the working state and the run's explanations into a repair's fresh context", async () => {
+    await probeFixture();
+    const { result, promptOf, requests } = await adaptiveTask(
+      [
+        ...explore,
+        respondWithText(diagnosis),
+        call("w5", "declare_file_set", { files: ["src/greet.js"] }),
+        call("w6", "write", { path: "src/greet.js", content: broken }),
+        respondWithText("done"),
+        call("r1", "write", { path: "src/greet.js", content: stillGreen }),
+        respondWithText("fixed"),
+      ],
+      { attempts: 1 },
+    );
+    const repairIndex = requests.findIndex(
+      (request) =>
+        request.messages[0]?.role === "user" &&
+        request.messages[0].text.includes("A quality gate is failing"),
+    );
+    expect(repairIndex).toBeGreaterThan(0);
+    const brief = promptOf(repairIndex);
+    expect(brief).toContain("Working state, derived by the harness");
+    expect(brief).toMatch(
+      /step 1: shell node scripts\/probe\.mjs; exit 0; before the edit of src\/greet\.js at step 6, so it predates the previous loop's last tree, which may since have been rolled back/,
+    );
+    expect(brief).toContain(
+      "prediction held when the harness ran it (says nothing beyond that prediction): H1",
+    );
+    expect(brief).toContain("prediction failed when the harness ran it: H2");
+    expect(result.green).toBe(true);
   }, 60_000);
 });

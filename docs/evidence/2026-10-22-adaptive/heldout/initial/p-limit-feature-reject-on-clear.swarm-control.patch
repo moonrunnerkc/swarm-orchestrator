@@ -1,0 +1,64 @@
+diff --git a/index.d.ts b/index.d.ts
+index 86aa91e..fade0f8 100644
+--- a/index.d.ts
++++ b/index.d.ts
+@@ -94,0 +95,7 @@ export type Options = {
++
++	/**
++	Discard pending promises that are waiting to run and reject them with an `AbortError`.
++
++	Note: This does not cancel promises that are already running.
++	*/
++	readonly rejectOnClear?: boolean;
+diff --git a/index.js b/index.js
+index 63ba65c..b8b1409 100644
+--- a/index.js
++++ b/index.js
+@@ -3,0 +4,2 @@ export default function pLimit(concurrency) {
++	let rejectOnClear = false;
++
+@@ -4,0 +7,5 @@ export default function pLimit(concurrency) {
++		if (concurrency.rejectOnClear !== undefined && concurrency.rejectOnClear !== true && concurrency.rejectOnClear !== false) {
++			throw new TypeError('Expected `rejectOnClear` to be a boolean');
++		}
++
++		rejectOnClear = concurrency.rejectOnClear;
+@@ -17 +24,2 @@ export default function pLimit(concurrency) {
+-			queue.dequeue()();
++			const [internalResolve, runArgs] = queue.dequeue();
++			internalResolve(runArgs); // InternalResolve triggers .Then() to call Run.
+@@ -45,2 +53 @@ export default function pLimit(concurrency) {
+-		// Queue the internal resolve function instead of the run function
+-		// to preserve the asynchronous execution context.
++		const runArgs = [function_, resolve, arguments_];
+@@ -48,2 +55,2 @@ export default function pLimit(concurrency) {
+-			queue.enqueue(internalResolve);
+-		}).then(run.bind(undefined, function_, resolve, arguments_)); // eslint-disable-line promise/prefer-await-to-then
++			queue.enqueue([internalResolve, runArgs]);
++		}).then(runArgsToRun); // eslint-disable-line promise/prefer-await-to-then
+@@ -56,0 +64,4 @@ export default function pLimit(concurrency) {
++	const runArgsToRun = ([function_, resolve, arguments_]) => {
++		run(function_, resolve, arguments_);
++	};
++
+@@ -60,0 +72,7 @@ export default function pLimit(concurrency) {
++	class AbortError extends Error {
++		constructor() {
++			super('Aborted');
++			this.name = 'AbortError';
++		}
++	}
++
+@@ -69,0 +88,7 @@ export default function pLimit(concurrency) {
++				if (rejectOnClear) {
++					const error = new AbortError();
++					for (const entry of queue) {
++						entry[1][2](error); // Reject the user promise with AbortError
++					}
++				}
++
+@@ -99,0 +125,4 @@ export function limitFunction(function_, options) {
++	if (options.rejectOnClear !== undefined && options.rejectOnClear !== true && options.rejectOnClear !== false) {
++		throw new TypeError('Expected `rejectOnClear` to be a boolean');
++	}
++

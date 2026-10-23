@@ -19,7 +19,6 @@ import {
   applyPatch,
   cloneAtBase,
   commitVisibleCheck,
-  comparisonRoot,
   mirrorOf,
   prepare,
   tail,
@@ -118,6 +117,41 @@ export async function lintVerdict(log, task, base) {
   } finally {
     rmSync(tree.scratch, { recursive: true, force: true });
   }
+}
+
+/**
+ * The project's own lint over the delivered tree, beside the same reading of the base, both with
+ * the harness's acceptance directory removed so only the project's files and the change are
+ * linted. A candidate introduces a static failure only where the base passes and it does not;
+ * where the base already fails, its reading is reported and nothing is attributed to the change.
+ */
+export async function staticVerdict(log, task, base, patch) {
+  const read = async (label, change) => {
+    const tree = await freshTree(log, task, base, change, label);
+    try {
+      if (!tree.prepared.ok)
+        return { exit: null, detail: `preparation failed:\n${tree.prepared.detail}` };
+      const manifest = JSON.parse(readFileSync(join(tree.checkout, "package.json"), "utf8"));
+      if (typeof manifest.scripts?.lint !== "string")
+        return { exit: null, detail: "no lint script" };
+      rmSync(join(tree.checkout, "acceptance"), { recursive: true, force: true });
+      const lint = await run(log, task, tree.checkout, ["npm", "run", "--loglevel=error", "lint"]);
+      return { exit: lint.exitCode, detail: tail(lint, 40) };
+    } finally {
+      rmSync(tree.scratch, { recursive: true, force: true });
+    }
+  };
+  const atBase = await read("static-base", "");
+  const delivered = await read("static-candidate", patch);
+  const applicable = atBase.exit !== null;
+  return {
+    applicable,
+    baseExit: atBase.exit,
+    deliveredExit: delivered.exit,
+    introducedFailure: applicable && atBase.exit === 0 && delivered.exit !== 0,
+    passed: applicable ? delivered.exit === 0 : null,
+    detail: delivered.detail,
+  };
 }
 
 /**
@@ -243,7 +277,11 @@ export async function swarmGatePlanVerdict(log, task, base, pins, childHome, dec
  * reporter for that same suite as a different gate.
  */
 export async function structuredRewriteOf(pins, checkout, expected, effective) {
-  const script = /^npm run ([\w:.@/-]+)$/.exec(expected)?.[1];
+  // `npm test` and `npm t` are npm's own names for `npm run test`; the smoke of 2026-10-22 halted
+  // before inference on a task whose command was spelled that way.
+  const script = /^npm (?:test|t)$/.test(expected)
+    ? "test"
+    : /^npm run ([\w:.@/-]+)$/.exec(expected)?.[1];
   const module = join(dirname(pins.swarmCli), "gates", "structured-runner.js");
   if (script === undefined || effective === null || !existsSync(module)) return false;
   let body;
@@ -254,7 +292,14 @@ export async function structuredRewriteOf(pins, checkout, expected, effective) {
   }
   const { structuredRunner, renderRunnerArgv } = await import(pathToFileURL(module).href);
   const argv = structuredRunner(body);
-  return argv !== null && renderRunnerArgv(argv) === effective;
+  if (argv !== null) return renderRunnerArgv(argv) === effective;
+  // The other form the pinned build runs a script in: node's own runner with the harness's
+  // coverage reporters (gates/harness-reporting.js), rendered as the build renders it.
+  const reporting = join(dirname(pins.swarmCli), "gates", "harness-reporting.js");
+  if (!existsSync(reporting)) return false;
+  const { harnessReportingCommand } = await import(pathToFileURL(reporting).href);
+  const vector = harnessReportingCommand(body, pins.node ?? process.version);
+  return vector !== null && vector.join(" ") === effective;
 }
 
 /** The last line of a stream that parses as JSON with the named schema, or null. */
