@@ -52,3 +52,11 @@ files are recorded below as dated amendments before they are edited.
 
 - `src/cli-options.ts`: the `--adaptive` help line and option comment name the revised rule and its
   follow-up.
+
+## Amendment 3, October 23, 2026, before editing these files
+
+- `src/config/package-discovery.ts`, `src/config/package-discovery.test.ts`: a `pnpm-workspace.yaml`
+  that carries settings only (no top-level `packages` key, which pnpm 9 and later allow) is a
+  single-package project, not an unreadable workspace. Found by the fresh block's preflight: svgo's
+  file holds only `minimumReleaseAge` and `patchedDependencies`, and Swarm refused to choose a scope,
+  so it ran no check at all.
