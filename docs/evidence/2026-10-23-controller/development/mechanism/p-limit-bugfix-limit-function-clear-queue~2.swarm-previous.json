@@ -1,0 +1,90 @@
+{
+  "task": "p-limit-bugfix-limit-function-clear-queue",
+  "sample": 2,
+  "arm": "swarm-previous",
+  "outcome": "scored",
+  "scores": {
+    "visible": true,
+    "hidden": "pass",
+    "staticPassed": null
+  },
+  "productVerdict": true,
+  "wallMs": 419713,
+  "tokens": 1697862,
+  "decisions": [
+    {
+      "rule": "adaptive-decision-v1",
+      "phase": "decided",
+      "loop": "task",
+      "step": 16,
+      "action": "diagnose",
+      "chosenBy": "failing-check-at-current-tree",
+      "reason": null,
+      "notice": true,
+      "carriedOut": null,
+      "diagnosis": {
+        "actionable": true,
+        "locations": [
+          "index.js:92",
+          "test.js:370"
+        ],
+        "action": null,
+        "answer": "```json\n{\n  \"question\": \"Why is the test 'limitFunction().clearQueue does not affect another limiter' failing, specifically whether limited.clearQueue() properly isolates its internal pLimit instance from other limiters?\",\n  \"hypotheses\": [\n    {\n      \"statement\": \"The current implementation of limitFunction creates a new pLimit instance internally, but the clearQueue method is not being added correctly or the internal state (rejectOnClear) is not being shared properly with the delegated calls.\",\n      \"predicts\": {\n        \"exitCode\": 1,\n        \"outputIncludes\": [\n          \"Error\",\n       "
+      },
+      "spent": {
+        "callsWithUnknownUsage": 0,
+        "steps": 5,
+        "tokensUsed": 37721,
+        "wallMs": 18545
+      },
+      "nextWorkerEdit": {
+        "sequence": 191,
+        "paths": [
+          "test.js"
+        ]
+      }
+    },
+    {
+      "rule": "adaptive-decision-v1",
+      "phase": "decided",
+      "loop": "attempt 1",
+      "step": 16,
+      "action": "diagnose",
+      "chosenBy": "failing-check-at-current-tree",
+      "reason": null,
+      "notice": true,
+      "carriedOut": null,
+      "diagnosis": {
+        "actionable": true,
+        "locations": [
+          "index.js:132",
+          "test.js:418",
+          "index.js:5"
+        ],
+        "action": null,
+        "answer": "```json\n{\n  \"question\": \"Does the `limitFunction` implementation correctly pass the rejectOnClear flag to the internal pLimit and properly manage queue items so that clearQueue can reject them?\",\n  \"hypotheses\": [\n    {\n      \"statement\": \"The limitFunction wraps pLimit but the internal pLimit instance captures rejectOnClear incorrectly (defaulting to false) because options.rejectOnClear might not be passed explicitly or is lost when re-wrapping a boolean concurrency value.\",\n      \"predicts\": {\n        \"outputIncludes\": [\n          \"expected 'AbortError' but got: undefined\",\n          \"reject"
+      },
+      "spent": {
+        "callsWithUnknownUsage": 0,
+        "steps": 5,
+        "tokensUsed": 39909,
+        "wallMs": 21451
+      },
+      "nextWorkerEdit": {
+        "sequence": 462,
+        "paths": [
+          "test.js"
+        ]
+      }
+    }
+  ],
+  "rewriteHolds": [],
+  "batchEdits": [],
+  "stillOccursNotes": 0,
+  "shellEffects": {
+    "measured": 0,
+    "unmeasured": 0,
+    "changedTree": []
+  },
+  "followUps": []
+}

@@ -2530,7 +2530,7 @@ describe("the adaptive decision point (adaptive-decision-v2)", () => {
       line += 1;
       return call(id, "read", { path, startLine: 1 + (line % 3), endLine: 3 });
     };
-    const { decisions, requests, result } = await adaptiveTask(
+    const { decisions, requests, result, promptOf } = await adaptiveTask(
       [
         call("w1", "declare_file_set", { files: ["src/greet.js"] }),
         call("w2", "search", { pattern: "shoutHelper", path: "src" }),
@@ -2576,6 +2576,15 @@ describe("the adaptive decision point (adaptive-decision-v2)", () => {
       observed: { occurred: false, newReads: 0, newExecutions: 0 },
       carriedOut: { tool: "edit", refused: false },
     });
+    // The reassessment is told where its commands run, so it does not invent a directory to cd to.
+    const reassessIndex = requests.findIndex((request) =>
+      request.messages.some(
+        (message) => message.role === "user" && message.text.includes("intervened at step 8"),
+      ),
+    );
+    expect(promptOf(reassessIndex)).toContain(
+      `Every command already runs from the workspace root, ${workspace}: use workspace-relative paths and do not cd anywhere.`,
+    );
     // The worker's next turn is told what was done; the tree is the edited one and the gates pass.
     const told = requests.at(-1)?.messages.at(-1);
     expect(told?.role === "user" ? told.text : "").toContain(

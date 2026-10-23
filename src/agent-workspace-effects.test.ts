@@ -103,6 +103,7 @@ describe("the measured effect of a shell command", () => {
       expect(moved.output).toContain("[paths this command removed are still named at: ");
       expect(moved.output).toContain("lib/reply.js:1:const w = require('./wrapThenable')");
       expect(moved.output).toContain('package.json:1:{"scripts":{"t":"node lib/wrapThenable.js"}}');
+      expect(moved.output).toContain('One edit call with "edits": [{path, find, replace}, ...]');
       expect(moved.output.endsWith(trailer)).toBe(true);
       const looked = await measured.invoker.invoke(shell("look"));
       expect(looked.output).toBe(

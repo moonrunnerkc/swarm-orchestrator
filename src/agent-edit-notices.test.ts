@@ -131,7 +131,7 @@ describe("a rewrite that stops using an existing implementation", () => {
       replace: "from './limit.js'",
     });
     expect(applied.text).toContain(
-      `[the replaced text "from './index.js'" still occurs in third.js]`,
+      `[the replaced text "from './index.js'" still occurs in third.js; where they need the same change, one edit call with "edits" makes it in all of them]`,
     );
   });
 });

@@ -226,7 +226,7 @@ export function createEditReview(options: EditReviewOptions): EditReview {
           .filter((path) => path.length > 0 && !edited.has(path));
         if (elsewhere.length > 0)
           notes.push(
-            `[the replaced text ${JSON.stringify(find.length > 80 ? `${find.slice(0, 80)}...` : find)} still occurs in ${elsewhere.slice(0, 8).join(", ")}${elsewhere.length > 8 ? ` and ${elsewhere.length - 8} more file(s)` : ""}]`,
+            `[the replaced text ${JSON.stringify(find.length > 80 ? `${find.slice(0, 80)}...` : find)} still occurs in ${elsewhere.slice(0, 8).join(", ")}${elsewhere.length > 8 ? ` and ${elsewhere.length - 8} more file(s)` : ""}; where they need the same change, one edit call with "edits" makes it in all of them]`,
           );
       }
       return notes;
