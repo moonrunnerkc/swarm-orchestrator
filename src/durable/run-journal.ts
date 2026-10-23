@@ -12,8 +12,8 @@ import {
 } from "node:fs";
 import { dirname } from "node:path";
 import { z } from "zod";
-import { digestOfBytes } from "../evidence/canonical-json.ts";
-import { scrubJson } from "../evidence/scrub.ts";
+import { digestOfBytes, type JsonValue } from "../evidence/canonical-json.ts";
+import { scrubJson, scrubText } from "../evidence/scrub.ts";
 
 const entrySchema = z.object({
   sequence: z.number().int().nonnegative(),
@@ -139,13 +139,12 @@ export function openRunJournal<Projection extends object>(
           Record<string, unknown>
         >;
         const value = change(current.projection);
-        // Only what this operation changed is scrubbed, under its own collection and id so the
-        // name-governed rules read the same key path. Every held entry was scrubbed when it was
+        // Only what this operation changed is scrubbed. Every held entry was scrubbed when it was
         // appended; scrubbing the whole history again on every append made each tool call's
         // durable step cost a fifth of a second on a journal of eleven thousand operations.
-        const changes = scrubJson(
+        const changes = scrubbedChanges(
           JSON.parse(JSON.stringify(changedEntries(before, current.projection))),
-        ).value as Record<string, Record<string, unknown>>;
+        );
         const merged = JSON.parse(JSON.stringify(before)) as Record<
           string,
           Record<string, unknown>
@@ -195,6 +194,28 @@ export function openRunJournal<Projection extends object>(
       }
     },
   };
+}
+
+/**
+ * Each entry is scrubbed under its collection, which is a field name, and never under its id,
+ * which is data: a run id or a path such as `/tmp/controller-recovery-OtpGQ6` splits into the
+ * credential word "otp", and reading it as a name redacted every field of the entry, numbers
+ * included, so the store then rejected its own record. The id is still scanned as text for
+ * credential-shaped material.
+ */
+function scrubbedChanges(
+  changes: Record<string, Record<string, JsonValue>>,
+): Record<string, Record<string, unknown>> {
+  const scrubbed: Record<string, Record<string, unknown>> = {};
+  for (const [collection, entries] of Object.entries(changes)) {
+    const held: Record<string, unknown> = {};
+    for (const [id, entry] of Object.entries(entries)) {
+      const value = scrubJson({ [collection]: entry }).value as Record<string, JsonValue>;
+      held[scrubText(id).value] = value[collection];
+    }
+    scrubbed[scrubText(collection).value] = held;
+  }
+  return scrubbed;
 }
 
 /** Entries that differ between two projections, by collection; a removed entry is null. */
