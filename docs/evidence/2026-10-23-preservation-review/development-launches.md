@@ -65,4 +65,11 @@ that the build above corrects. None is a study launch, and their results are not
 
 ## Preflight
 
-(Recorded below once the zero-inference preflight finishes.)
+`study.mjs --preflight`: all 18 configurations passed every check, with no task inference.
+
+## Conditions
+
+- The scored launches started while the fresh block's evaluator author was still preparing
+  tasks on the same host: clones, installs and project test runs, one at a time and no model
+  inference. Every arm shares that load, since the order interleaves them, but it is not a
+  controlled resource, and a timing-sensitive failure in this study can be the host's.
