@@ -2598,6 +2598,69 @@ describe("the adaptive decision point (adaptive-decision-v2)", () => {
     expect(result.loop.steps).toBeLessThanOrEqual(20);
   }, 60_000);
 
+  /** A loop that searches, then rereads without learning anything, then gets one reassessment. */
+  function stuckThenReassessed(action: unknown, declare: boolean) {
+    let line = 0;
+    const reread = (id: string, path: string) => {
+      line += 1;
+      return call(id, "read", { path, startLine: 1 + (line % 3), endLine: 3 });
+    };
+    return [
+      declare
+        ? call("w1", "declare_file_set", { files: ["src/greet.js"] })
+        : reread("w1", "src/greet.js"),
+      call("w2", "search", { pattern: "shoutHelper", path: "src" }),
+      ...["w3", "w4", "w5", "w6", "w7", "w8", "w9", "w10", "w11"].map((id, index) =>
+        reread(id, index % 2 === 0 ? "src/greet.js" : "src/greet.test.js"),
+      ),
+      respondWithText(JSON.stringify({ locations: [{ path: "src/greet.js", line: 3 }], action })),
+      respondWithText("done"),
+    ];
+  }
+
+  it("declares the files of a reassessment's edit before carrying it out, as a worker must", async () => {
+    const { decisions, result } = await adaptiveTask(
+      stuckThenReassessed(
+        {
+          tool: "edit",
+          edits: [
+            {
+              path: "src/greet.js",
+              find: "  return 'hello';\n}\n",
+              replace: "  return 'hello';\n}\nexport const shout = 1;\n",
+            },
+          ],
+        },
+        false,
+      ),
+      { maxSteps: 20 },
+    );
+    expect(decisions[1]?.payload).toMatchObject({
+      action: "reassess",
+      carriedOut: { tool: "edit", refused: false },
+    });
+    expect(readFileSync(join(workspace, "src/greet.js"), "utf8")).toBe(stillGreen);
+    // The declaration came first, so the file-set gate holds.
+    expect(result.green).toBe(true);
+  }, 60_000);
+
+  it("does not carry out an inspection offered as a reassessment's action", async () => {
+    const { decisions } = await adaptiveTask(
+      stuckThenReassessed({ tool: "shell", command: "git diff --stat; ls src" }, true),
+      { maxSteps: 20 },
+    );
+    expect(decisions[1]?.payload).toMatchObject({
+      action: "reassess",
+      carriedOut: { tool: "shell", refused: true },
+    });
+    const ran = evidence
+      .records()
+      .filter((r) => r.type === "tool-call")
+      .map((r) => evidence.payloads().get(r.payloadDigest) as Record<string, unknown>)
+      .filter((p) => String(p.callId).includes("action-shell"));
+    expect(ran).toEqual([]);
+  }, 60_000);
+
   it("keeps the task's preservation words in a repair's brief, and owes a follow-up for requested tests that are missing", async () => {
     const asked =
       "add a shout helper. What must not change: greet() still returns hello. Add tests for shout to the existing test suite.";
