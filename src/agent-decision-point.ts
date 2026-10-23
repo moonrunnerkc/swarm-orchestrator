@@ -11,6 +11,7 @@ import type { ToolInvoker } from "./core/tool-invoker.ts";
 import {
   chooseDecision,
   decisionNoticePrefix,
+  decisionRule,
   decisionSignals,
   deriveWorkingState,
   describeWorkingState,
@@ -18,11 +19,13 @@ import {
   type Hypothesis,
   predictionHolds,
   type WorkingState,
+  type WorkingStateExecution,
 } from "./core/working-state.ts";
 import { asJsonValue, digestOfBytes } from "./evidence/canonical-json.ts";
 import type { EvidenceRecorder } from "./evidence/session.ts";
 import { diffAgainstBase } from "./gates/scratch-index.ts";
 import { parseUnifiedDiff } from "./gates/unified-diff.ts";
+import { classifyShellCommand } from "./tools/shell-observation.ts";
 
 /**
  * The adaptive decision point (adaptive-decision-v1): once per loop, at 40 percent of its steps or
@@ -78,6 +81,8 @@ export interface Diagnosis {
     readonly why?: string;
   }[];
   readonly approach?: string;
+  /** One concrete implementation action, carried out only on a reassessment. */
+  readonly action?: DiagnosedAction;
 }
 
 const cut = (value: unknown, limit: number): string | undefined =>
@@ -142,8 +147,12 @@ export function normalizeDiagnosis(value: unknown): { diagnosis: Diagnosis; drop
     dropped.push("a test command that is empty or longer than 400 characters");
   const question = cut(answer.question, 800);
   const approach = cut(answer.approach, 1500);
+  const action = normalizeAction(answer.action);
+  if (answer.action !== undefined && answer.action !== null && action === undefined)
+    dropped.push("an action that is neither an edit batch nor one shell command");
   return {
     diagnosis: {
+      ...(action === undefined ? {} : { action }),
       ...(question === undefined ? {} : { question }),
       ...(hypotheses.length === 0 ? {} : { hypotheses: hypotheses.slice(0, 3) }),
       ...(command === undefined ? {} : { test: { command } }),
@@ -163,7 +172,8 @@ export const diagnosisSystemPrompt = [
   ' "hypotheses": up to three competing explanations, each {"statement", "predicts": {"exitCode"?, "outputIncludes"?}} saying what the "test" command shows if that explanation is true,',
   ' "test": {"command": one short shell command, run from the workspace root, whose result distinguishes the hypotheses},',
   ' "locations": up to four {"path", "line", "why"} places in the workspace to change or to copy from,',
-  ' "approach": a concrete implementation approach naming files and functions}.',
+  ' "approach": a concrete implementation approach naming files and functions,',
+  ' "action": where asked for, the one next action: {"tool": "edit", "edits": [{"path", "find", "replace"}]} with exact text from files you read, or {"tool": "shell", "command"}}.',
   "Name only files you have seen. Do not restate the task or give general advice: an answer without a real location, a distinguishing command or a concrete approach is discarded.",
 ].join(" ");
 
@@ -189,6 +199,8 @@ export interface DecisionPointContext {
   readonly loopDependencies: Parameters<typeof runAgentLoop>[1];
   /** Run-level explanations, shared by every loop of the run so findings survive repairs. */
   readonly hypotheses: Hypothesis[];
+  /** The task's own sentences on what to keep and deliver, kept in view in every brief. */
+  readonly taskStatements?: readonly string[];
 }
 
 const noSpend: LoopUsage = {
@@ -198,6 +210,32 @@ const noSpend: LoopUsage = {
   cachedInputTokens: null,
 };
 
+/** The most interventions a loop gets: the first decision's, and one reassessment of it. */
+export const maxInterventionsPerLoop = 2;
+
+/**
+ * How many of the worker's steps pass before the point looks at what an intervention led to. Not a
+ * trigger: looking is free, and what follows depends on what the worker did in those steps.
+ */
+export function followUpWindow(maxSteps: number): number {
+  return Math.max(3, Math.ceil(maxSteps * 0.1));
+}
+
+/** What an intervention was for, so a later look can tell whether it happened. */
+interface Intervention {
+  readonly kind: "retrieve" | "diagnose" | "reassess";
+  readonly step: number;
+  /** A change landing on the tree, or the failures open at the time stopping being open. */
+  readonly intent: "change-lands" | "failure-resolves";
+  readonly generation: number;
+  readonly openSubjects: readonly string[];
+  readonly readPaths: ReadonlySet<string>;
+  readonly executions: number;
+  readonly notice: string | null;
+  /** Looks taken at it so far. */
+  looks: number;
+}
+
 /** The points of the loop the context names, built once per loop from that loop's budget. */
 export function createDecisionPoint(context: DecisionPointContext): DecisionPoint {
   let calls = 0;
@@ -205,10 +243,68 @@ export function createDecisionPoint(context: DecisionPointContext): DecisionPoin
     calls += 1;
     return `harness-decision-${context.loop.replace(/\W+/g, "-")}-${kind}-${calls}`;
   };
+  const interventions: Intervention[] = [];
   return {
     atStep: Math.max(1, Math.ceil(context.budget.maxSteps * decisionShare)),
     atElapsedMs: Math.floor(context.budget.maxWallTimeMs * decisionShare),
-    decide: (input) => decide(context, input, callId),
+    decide: (input) => {
+      const last = interventions.at(-1);
+      return last === undefined
+        ? decide(context, input, callId, interventions)
+        : followUp(context, input, callId, interventions, last);
+    },
+  };
+}
+
+const workingStateOf = (messages: DecisionPointInput["messages"]): WorkingState =>
+  deriveWorkingState(messages, { classifyShell: classifyShellCommand });
+
+function signalsRecord(signals: ReturnType<typeof decisionSignals>) {
+  const brief = (one: WorkingStateExecution) => ({
+    subject: one.subject,
+    exitCode: one.exitCode,
+    step: one.step,
+    record: one.record,
+  });
+  return {
+    landedEdits: signals.landedEdits,
+    failedEdits: signals.failedEdits,
+    failingEditedGenerations: signals.failingEditedGenerations,
+    openFailures: signals.openFailures.map(brief),
+    staleFailures: signals.staleFailures.map(brief),
+    latestCheckAtCurrentTree:
+      signals.latestCheckAtCurrentTree === null ? null : brief(signals.latestCheckAtCurrentTree),
+    missingNames: signals.missingNames,
+  };
+}
+
+function remainingRecord(input: DecisionPointInput) {
+  // Named as budgets are elsewhere on the chain: a field called "tokens" is scrubbed as a credential.
+  return {
+    maxSteps: input.remaining.steps,
+    maxTokens: input.remaining.tokens,
+    maxWallTimeMs: input.remaining.wallMs,
+  };
+}
+
+function interventionFrom(
+  kind: Intervention["kind"],
+  intent: Intervention["intent"],
+  state: WorkingState,
+  signals: ReturnType<typeof decisionSignals>,
+  step: number,
+  notice: string | null,
+): Intervention {
+  return {
+    kind,
+    intent,
+    step,
+    generation: state.generation,
+    openSubjects: signals.openFailures.map((one) => one.subject),
+    readPaths: new Set(state.reads.map((read) => read.path)),
+    executions: state.executions.length,
+    notice,
+    looks: 0,
   };
 }
 
@@ -216,37 +312,21 @@ async function decide(
   context: DecisionPointContext,
   input: DecisionPointInput,
   harnessCallId: (kind: string) => string,
+  interventions: Intervention[],
 ): Promise<DecisionPointOutcome> {
   const startedAt = context.clock.now();
-  const state = deriveWorkingState(input.messages);
+  const state = workingStateOf(input.messages);
   const signals = decisionSignals(state);
   const choice = chooseDecision(signals);
   const candidate = await measureCandidate(context);
+  const window = followUpWindow(context.budget.maxSteps);
   const base = {
-    rule: "adaptive-decision-v1",
+    rule: decisionRule,
     phase: "decided",
     loop: context.loop,
     step: input.steps,
-    // Named as budgets are elsewhere on the chain: a field called "tokens" is scrubbed as a credential.
-    remaining: {
-      maxSteps: input.remaining.steps,
-      maxTokens: input.remaining.tokens,
-      maxWallTimeMs: input.remaining.wallMs,
-    },
-    signals: {
-      landedEdits: signals.landedEdits,
-      failedEdits: signals.failedEdits,
-      failingEditedGenerations: signals.failingEditedGenerations,
-      latestAtCurrentTree:
-        signals.latestAtCurrentTree === null
-          ? null
-          : {
-              call: signals.latestAtCurrentTree.call,
-              exitCode: signals.latestAtCurrentTree.exitCode,
-              record: signals.latestAtCurrentTree.record,
-            },
-      missingNames: signals.missingNames,
-    },
+    remaining: remainingRecord(input),
+    signals: signalsRecord(signals),
     chosen: choice.kind,
     chosenBy: choice.rule,
     candidate: { digest: candidate.digest, changedFiles: candidate.changedFiles },
@@ -275,7 +355,7 @@ async function decide(
         }),
       });
     const notice = [
-      `${decisionNoticePrefix} Step ${input.steps} of ${context.budget.maxSteps} in this loop (rule ${choice.rule}). Searches in this loop matched nothing for names that look like code, so the harness searched the whole workspace for each as a whole word. This is a record, not an instruction or an authorization; the gates still decide acceptance.`,
+      `${decisionNoticePrefix} Step ${input.steps} of ${context.budget.maxSteps} in this loop (rule ${choice.rule}). Names that look like code were searched for in this loop and appear in nothing it has been shown, so the harness searched the whole workspace for each as a whole word. This is a record, not an instruction or an authorization; the gates still decide acceptance.`,
       ...found.map(
         ({ name, outcome }) =>
           `Search for ${name}${outcome.failed ? " was refused" : ""}:\n${bounded(outcome.output, 2400)}`,
@@ -284,9 +364,13 @@ async function decide(
         requiredChecks: context.requiredChecks,
         candidate,
         hypotheses: context.hypotheses,
+        taskStatements: context.taskStatements,
         remaining: input.remaining,
       }),
     ].join("\n\n");
+    interventions.push(
+      interventionFrom("retrieve", "change-lands", state, signals, input.steps, notice),
+    );
     await record(context, {
       ...base,
       action: "retrieve",
@@ -296,11 +380,279 @@ async function decide(
         recordOf: recordOf(outcome.output),
       })),
       notice: digestOfBytes(notice),
+      followUpAtStep: input.steps + window,
       spent: spent(context, startedAt, null),
     });
-    return { ...nothing(), notice };
+    return { ...nothing(), notice, followUpAtStep: input.steps + window };
   }
 
+  const diagnosed = await diagnose(context, input, state, candidate, harnessCallId, {
+    rule: choice.rule,
+    alternativePermitted: choice.alternativePermitted,
+    focus: null,
+  });
+  if (diagnosed === "withheld") {
+    await record(context, {
+      ...base,
+      action: "withheld",
+      reason: "too little of this loop's allowance remains to diagnose and act on the answer",
+      notice: null,
+      spent: spent(context, startedAt, null),
+    });
+    return nothing();
+  }
+  const followUpAtStep =
+    diagnosed.notice === null ? undefined : input.steps + diagnosed.charged.steps + window;
+  if (diagnosed.notice !== null)
+    interventions.push(
+      interventionFrom(
+        "diagnose",
+        choice.rule === "failing-check-at-current-tree" ? "failure-resolves" : "change-lands",
+        state,
+        signals,
+        input.steps,
+        diagnosed.notice,
+      ),
+    );
+  await record(context, {
+    ...base,
+    action: "diagnose",
+    alternativePermitted: choice.alternativePermitted,
+    diagnosis: diagnosed.account,
+    notice: diagnosed.notice === null ? null : digestOfBytes(diagnosed.notice),
+    ...(followUpAtStep === undefined ? {} : { followUpAtStep }),
+    spent: spent(context, startedAt, diagnosed.charged),
+    ...(diagnosed.notice !== null && choice.alternativePermitted && candidate.patch.length > 0
+      ? {
+          retainedCandidate: { digest: candidate.digest, patch: bounded(candidate.patch, 200_000) },
+        }
+      : {}),
+  });
+  return { ...diagnosed.charged, notice: diagnosed.notice, followUpAtStep };
+}
+
+/**
+ * A later look at the last intervention. If what it was for happened (a change landed; the
+ * failures it was about are no longer open on the current tree), the point is done. If the worker
+ * is still learning something new (reading files it had not read, running checks), it looks once
+ * more. Otherwise the intervention did not lead anywhere, and while the loop's intervention limit
+ * and allowance permit, one reassessment asks for a concrete action, which the harness carries out
+ * through the worker's own chokepoint, so its permissions, scope and records are the worker's.
+ */
+async function followUp(
+  context: DecisionPointContext,
+  input: DecisionPointInput,
+  harnessCallId: (kind: string) => string,
+  interventions: Intervention[],
+  last: Intervention,
+): Promise<DecisionPointOutcome> {
+  const startedAt = context.clock.now();
+  const state = workingStateOf(input.messages);
+  const signals = decisionSignals(state);
+  last.looks += 1;
+  const open = new Set(signals.openFailures.map((one) => one.subject));
+  const occurred =
+    last.intent === "change-lands"
+      ? state.generation > last.generation
+      : last.openSubjects.every((subject) => !open.has(subject));
+  const newReads = state.reads.filter((read) => !last.readPaths.has(read.path)).length;
+  const newExecutions = state.executions.filter((one) => one.step > last.step).length;
+  const learning = newReads > 0 || newExecutions > 0;
+  const window = followUpWindow(context.budget.maxSteps);
+  const base = {
+    rule: decisionRule,
+    phase: "followed-up",
+    loop: context.loop,
+    step: input.steps,
+    intervention: { kind: last.kind, step: last.step, intent: last.intent, looks: last.looks },
+    observed: { occurred, newReads, newExecutions, generation: state.generation },
+    remaining: remainingRecord(input),
+    signals: signalsRecord(signals),
+  };
+  if (occurred) {
+    await record(context, {
+      ...base,
+      action: "none",
+      reason: "the intervention's intended outcome occurred",
+      notice: null,
+      spent: spent(context, startedAt, null),
+    });
+    return nothing();
+  }
+  if (learning && last.looks < 2) {
+    await record(context, {
+      ...base,
+      action: "look-again",
+      reason: "the outcome has not occurred, but the worker is reading or running something new",
+      notice: null,
+      followUpAtStep: input.steps + window,
+      spent: spent(context, startedAt, null),
+    });
+    return { ...nothing(), followUpAtStep: input.steps + window };
+  }
+  if (interventions.length >= maxInterventionsPerLoop) {
+    await record(context, {
+      ...base,
+      action: "none",
+      reason: `this loop has had its ${maxInterventionsPerLoop} interventions`,
+      notice: null,
+      spent: spent(context, startedAt, null),
+    });
+    return nothing();
+  }
+
+  const candidate = await measureCandidate(context);
+  const rule = "intervention-without-effect";
+  const focus = [
+    `The controller intervened at step ${last.step} (${last.kind}) so that ${last.intent === "change-lands" ? "a change would land on the tree" : `the failing check(s) ${last.openSubjects.join(", ")} would be fixed`}. That has not happened: ${input.steps - last.step} worker steps later ${last.intent === "change-lands" ? "no change has landed" : "those checks still fail on the current tree"}${learning ? "" : ", and those steps read nothing new and ran nothing new"}.`,
+    'Decide what the worker should do now and give it as one concrete action in the answer\'s "action" field: either {"tool": "edit", "edits": [{"path", "find", "replace"}, ...]} with exact text from files you have read (several files at once if the change is mechanical), or {"tool": "shell", "command": one command that changes the workspace, such as moving files}. The harness carries out a valid action through the worker\'s own tools, and the worker sees its result. Where a fact is still missing, give the distinguishing command instead; general advice is discarded.',
+  ].join(" ");
+  const diagnosed = await diagnose(context, input, state, candidate, harnessCallId, {
+    rule,
+    alternativePermitted: false,
+    focus,
+  });
+  if (diagnosed === "withheld") {
+    await record(context, {
+      ...base,
+      action: "withheld",
+      reason: "too little of this loop's allowance remains to reassess and act on the answer",
+      notice: null,
+      spent: spent(context, startedAt, null),
+    });
+    return nothing();
+  }
+  const carried = await carryOut(context, diagnosed.action, harnessCallId);
+  const notice =
+    carried === null && diagnosed.notice === null
+      ? null
+      : [
+          `${decisionNoticePrefix} Step ${input.steps} of ${context.budget.maxSteps} in this loop (reassessment, rule ${rule}). The intervention at step ${last.step} was meant to ${last.intent === "change-lands" ? "lead to a change" : "lead to the failing checks being fixed"}, and it has not. One more read-only diagnosis was charged to this loop.`,
+          ...(carried === null
+            ? []
+            : [
+                carried.outcome.failed
+                  ? `The action it named was refused, so nothing changed: ${carried.summary}\n${bounded(carried.outcome.output, 1200)}`
+                  : `The harness carried out the action it named through this loop's own tools: ${carried.summary}\n${bounded(carried.outcome.output, 2400)}\nThe change is yours to keep, extend or revert; the gates still decide acceptance, and nothing here relaxes a check or the task's scope.`,
+              ]),
+          ...(diagnosed.notice === null ? [] : ["", diagnosed.notice]),
+        ].join("\n");
+  if (notice !== null)
+    interventions.push(
+      interventionFrom("reassess", last.intent, state, signals, input.steps, notice),
+    );
+  await record(context, {
+    ...base,
+    action: "reassess",
+    chosenBy: rule,
+    diagnosis: diagnosed.account,
+    carriedOut:
+      carried === null
+        ? null
+        : {
+            tool: carried.tool,
+            summary: carried.summary,
+            refused: carried.outcome.failed,
+            record: recordOf(carried.outcome.output),
+          },
+    notice: notice === null ? null : digestOfBytes(notice),
+    spent: spent(context, startedAt, diagnosed.charged),
+  });
+  return { ...diagnosed.charged, notice };
+}
+
+/** A concrete action a diagnosis named, in the shape the worker's own tools take. */
+export type DiagnosedAction =
+  | {
+      readonly tool: "edit";
+      readonly edits: readonly {
+        readonly path: string;
+        readonly find: string;
+        readonly replace: string;
+      }[];
+    }
+  | { readonly tool: "shell"; readonly command: string };
+
+/** The action field of an answer, if it has the declared shape; anything else is dropped. */
+export function normalizeAction(value: unknown): DiagnosedAction | undefined {
+  const action = objectOf(value);
+  if (action === null) return undefined;
+  if (action.tool === "shell") {
+    const command = typeof action.command === "string" ? action.command.trim() : "";
+    return command.length > 0 && command.length <= 2000 ? { tool: "shell", command } : undefined;
+  }
+  if (action.tool === "edit") {
+    const raw = Array.isArray(action.edits) ? action.edits : [action];
+    const edits = raw
+      .map(objectOf)
+      .filter((one): one is Record<string, unknown> => one !== null)
+      .filter(
+        (one) =>
+          typeof one.path === "string" &&
+          typeof one.find === "string" &&
+          one.find.length > 0 &&
+          typeof one.replace === "string",
+      )
+      .map((one) => ({
+        path: one.path as string,
+        find: one.find as string,
+        replace: one.replace as string,
+      }));
+    return edits.length > 0 && edits.length <= 50 ? { tool: "edit", edits } : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * The action, run as the worker would run it. An edit batch is applied whole or not at all by the
+ * edit tool itself; a shell command is guarded, and its measured effect is in its result.
+ */
+async function carryOut(
+  context: DecisionPointContext,
+  action: DiagnosedAction | undefined,
+  harnessCallId: (kind: string) => string,
+): Promise<{ tool: string; summary: string; outcome: ToolCallOutcome } | null> {
+  if (action === undefined) return null;
+  if (action.tool === "shell" && !context.shellAllowed) return null;
+  const invocation =
+    action.tool === "edit"
+      ? {
+          callId: harnessCallId("action-edit"),
+          toolName: "edit",
+          input: { edits: action.edits },
+          provenance: "model" as const,
+        }
+      : {
+          callId: harnessCallId("action-shell"),
+          toolName: "shell",
+          input: { command: action.command, timeoutMs: 60_000 },
+          provenance: "model" as const,
+        };
+  const outcome = await context.toolInvoker.invoke(invocation);
+  const summary =
+    action.tool === "edit"
+      ? `edit of ${[...new Set(action.edits.map((one) => one.path))].join(", ")} (${action.edits.length} replacement(s))`
+      : `shell ${bounded(action.command, 400)}`;
+  return { tool: action.tool, summary, outcome };
+}
+
+interface Diagnosed {
+  readonly notice: string | null;
+  readonly charged: Omit<DecisionPointOutcome, "notice">;
+  readonly account: Record<string, unknown>;
+  readonly action: DiagnosedAction | undefined;
+}
+
+/** One bounded read-only diagnosis and what the harness can establish about its answer. */
+async function diagnose(
+  context: DecisionPointContext,
+  input: DecisionPointInput,
+  state: WorkingState,
+  candidate: Candidate,
+  harnessCallId: (kind: string) => string,
+  framing: { rule: string; alternativePermitted: boolean; focus: string | null },
+): Promise<Diagnosed | "withheld"> {
+  const startedAt = context.clock.now();
   // A diagnosis needs room to act on afterwards; with too little left the point says so and
   // the loop goes on as it would have.
   const diagnosisBudget = {
@@ -316,23 +668,14 @@ async function decide(
     diagnosisBudget.maxSteps < 2 ||
     diagnosisBudget.maxTokens < 2 * maxOutput ||
     input.remaining.wallMs < minimumWallMs
-  ) {
-    await record(context, {
-      ...base,
-      action: "withheld",
-      reason: "too little of this loop's allowance remains to diagnose and act on the answer",
-      diagnosisBudget,
-      notice: null,
-      spent: spent(context, startedAt, null),
-    });
-    return nothing();
-  }
+  )
+    return "withheld";
 
   const readOnly = context.readOnly();
   // Every step but the last may read; the last is an answer with no tool to call. Live acorn run
   // 1 of the development study spent all five steps reading and never answered.
   const toolSteps = diagnosisBudget.maxSteps - 1;
-  const brief = diagnosisBrief(context, state, candidate, choice.rule, input, toolSteps);
+  const brief = diagnosisBrief(context, state, candidate, framing, input, toolSteps);
   const diagnosisDependencies = {
     ...context.loopDependencies,
     toolInvoker: readOnly.toolInvoker,
@@ -428,13 +771,13 @@ async function decide(
     },
   };
   const notice = actionable
-    ? diagnosisNotice(context, after, choice, state, candidate, parsed.diagnosis, checked)
+    ? diagnosisNotice(context, after, framing, state, candidate, parsed.diagnosis, checked)
     : null;
-  await record(context, {
-    ...base,
-    action: "diagnose",
-    alternativePermitted: choice.alternativePermitted,
-    diagnosis: {
+  return {
+    notice,
+    charged,
+    action: parsed.diagnosis?.action,
+    account: {
       stopReason: loop.stopReason,
       answerDigest: digestOfBytes(loop.completionClaim),
       answer: bounded(loop.completionClaim, 4000),
@@ -457,17 +800,10 @@ async function decide(
               exitCode: checked.execution.exitCode,
               record: recordOf(checked.execution.outcome.output),
             },
+      action: parsed.diagnosis?.action ?? null,
       hypotheses: proposed,
     },
-    notice: notice === null ? null : digestOfBytes(notice),
-    spent: spent(context, startedAt, charged),
-    ...(notice !== null && choice.alternativePermitted && candidate.patch.length > 0
-      ? {
-          retainedCandidate: { digest: candidate.digest, patch: bounded(candidate.patch, 200_000) },
-        }
-      : {}),
-  });
-  return { ...charged, notice };
+  };
 }
 
 interface Candidate {
@@ -496,14 +832,15 @@ function diagnosisBrief(
   context: DecisionPointContext,
   state: WorkingState,
   candidate: Candidate,
-  rule: string,
+  framing: { readonly rule: string; readonly focus: string | null },
   input: DecisionPointInput,
   toolSteps: number,
 ): string {
   const focus =
-    rule === "failing-check-at-current-tree"
+    framing.focus ??
+    (framing.rule === "failing-check-at-current-tree"
       ? "The latest execution against the current tree failed. Explain that failure from the code, name where to change it, and say how to tell competing explanations apart if more than one fits."
-      : "The agent has not landed an edit yet. Identify what blocks implementation: the exact places to change (and any helper or test example to copy), the approach, and a distinguishing command if competing explanations remain.";
+      : "The agent has not landed an edit yet. Identify what blocks implementation: the exact places to change (and any helper or test example to copy), the approach, and a distinguishing command if competing explanations remain.");
   return [
     focus,
     `You have at most ${toolSteps} reading step(s); your answer comes after them. The files the working state lists as read are known to the agent: read only what your answer needs.`,
@@ -661,7 +998,7 @@ async function checkDiagnosis(
 function diagnosisNotice(
   context: DecisionPointContext,
   input: DecisionPointInput,
-  choice: ReturnType<typeof chooseDecision>,
+  choice: { readonly rule: string; readonly alternativePermitted: boolean },
   state: WorkingState,
   candidate: Candidate,
   diagnosis: Diagnosis | null,
@@ -674,6 +1011,7 @@ function diagnosisNotice(
       requiredChecks: context.requiredChecks,
       candidate,
       hypotheses: context.hypotheses,
+      taskStatements: context.taskStatements,
       openQuestion: diagnosis?.question,
       remaining: input.remaining,
     }),

@@ -2064,7 +2064,7 @@ describe("bounded repair finishing", () => {
   });
 });
 
-describe("the adaptive decision point (adaptive-decision-v1)", () => {
+describe("the adaptive decision point (adaptive-decision-v2)", () => {
   const probe = { command: "node scripts/probe.mjs" };
 
   async function probeFixture() {
@@ -2108,9 +2108,10 @@ describe("the adaptive decision point (adaptive-decision-v1)", () => {
         sequence: r.sequence,
         payload: evidence.payloads().get(r.payloadDigest) as Record<string, unknown>,
       }))
-      .filter((entry) => entry.payload.rule === "adaptive-decision-v1");
+      .filter((entry) => entry.payload.rule === "adaptive-decision-v2");
     const armed = decisions.filter((entry) => entry.payload.phase === "armed");
-    const decided = decisions.filter((entry) => entry.payload.phase === "decided");
+    // The decision and any later look at what it led to, in order.
+    const decided = decisions.filter((entry) => entry.payload.phase !== "armed");
     const promptOf = (index: number) =>
       (fixture.requests[index]?.messages ?? [])
         .map((message) =>
@@ -2159,7 +2160,11 @@ describe("the adaptive decision point (adaptive-decision-v1)", () => {
       respondWithText("done"),
     ]);
 
-    expect(decisions).toHaveLength(1);
+    // The diagnosis, then one free look that finds the change it was for has landed.
+    expect(decisions.map((d) => [d.payload.phase, d.payload.action])).toEqual([
+      ["decided", "diagnose"],
+      ["followed-up", "none"],
+    ]);
     const decision = decisions[0]?.payload as Record<string, unknown> & {
       readonly remaining: { readonly maxSteps: number; readonly maxTokens: number };
       readonly diagnosis: { readonly hypotheses: readonly Hypothesis[] };
@@ -2294,7 +2299,7 @@ describe("the adaptive decision point (adaptive-decision-v1)", () => {
     expect(landing.decisions.map((d) => d.payload)).toEqual([
       expect.objectContaining({
         chosen: "continue",
-        chosenBy: "edits-landed-no-failing-check",
+        chosenBy: "edits-landed-no-open-failure",
         notice: null,
       }),
     ]);
@@ -2430,6 +2435,195 @@ describe("the adaptive decision point (adaptive-decision-v1)", () => {
       "prediction held when the harness ran it (says nothing beyond that prediction): H1",
     );
     expect(brief).toContain("prediction failed when the harness ran it: H2");
+    expect(result.green).toBe(true);
+  }, 60_000);
+
+  /** What the worker was shown for one of its calls. */
+  const resultOf = (requests: readonly ModelRequest[], callId: string) =>
+    requests
+      .flatMap((request) => request.messages)
+      .flatMap((message) => (message.role === "tool" ? message.outcomes : []))
+      .find((outcome) => outcome.callId === callId)?.output ?? "";
+
+  it("diagnoses a check failing on the current tree although an inspection succeeded after it (case A)", async () => {
+    const { decisions, requests } = await adaptiveTask([
+      call("w1", "declare_file_set", { files: ["src/greet.js"] }),
+      call("w2", "write", { path: "src/greet.js", content: broken }),
+      call("w3", "shell", { command: "node --test" }),
+      call("w4", "shell", { command: "ls src" }),
+      respondWithText(
+        JSON.stringify({
+          locations: [{ path: "src/greet.js", line: 2, why: "returns goodbye" }],
+          approach: "Restore return 'hello' in src/greet.js and add the shout export.",
+        }),
+      ),
+      call("w5", "write", { path: "src/greet.js", content: stillGreen }),
+      respondWithText("done"),
+    ]);
+    // adaptive-decision-v1 read `ls src` exiting 0 as the tree's latest result and continued.
+    expect(decisions[0]?.payload).toMatchObject({
+      chosen: "diagnose",
+      chosenBy: "failing-check-at-current-tree",
+      signals: { openFailures: [expect.objectContaining({ subject: "node --test", exitCode: 1 })] },
+    });
+    expect(resultOf(requests, "w4")).toContain("[workspace after this command: unchanged]");
+  }, 60_000);
+
+  it("counts a shell write after a passing check as a change, so the check no longer speaks for the tree (case B)", async () => {
+    const touch = `node -e "require('fs').appendFileSync('src/greet.js', '// touched\\n')"`;
+    const { decisions, result, requests } = await adaptiveTask([
+      call("w1", "declare_file_set", { files: ["src/greet.js"] }),
+      call("w2", "write", { path: "src/greet.js", content: stillGreen }),
+      call("w3", "shell", { command: "node --test" }),
+      call("w4", "shell", { command: touch }),
+      respondWithText("done"),
+    ]);
+    expect(resultOf(requests, "w4")).toContain(
+      "[workspace after this command: changed M src/greet.js]",
+    );
+    expect(decisions[0]?.payload).toMatchObject({
+      chosen: "continue",
+      signals: { landedEdits: 2, latestCheckAtCurrentTree: null, openFailures: [] },
+    });
+    const effects = evidence
+      .records()
+      .filter((r) => r.type === "verification-command")
+      .map((r) => evidence.payloads().get(r.payloadDigest) as Record<string, unknown>)
+      .filter((p) => p.rule === "workspace-effect-v1");
+    expect(effects.map((p) => p.changeCount)).toEqual([0, 1]);
+    expect(readFileSync(join(workspace, "src/greet.js"), "utf8")).toContain("// touched");
+    expect(result.green).toBe(true);
+  }, 60_000);
+
+  it("ends its attention once a retrieval leads to a change", async () => {
+    await write(
+      "lib/helpers.js",
+      "export function shoutHelper(text) {\n  return text.toUpperCase();\n}\n",
+    );
+    await git("add", ".");
+    await git("commit", "--quiet", "-m", "helper");
+    const { decisions, requests, result } = await adaptiveTask([
+      call("w1", "search", { pattern: "shoutHelper", path: "src" }),
+      call("w2", "read", { path: "src/greet.js" }),
+      call("w3", "read", { path: "src/greet.test.js" }),
+      call("w4", "list", { path: "src" }),
+      call("w5", "declare_file_set", { files: ["src/greet.js"] }),
+      call("w6", "write", { path: "src/greet.js", content: stillGreen }),
+      call("w7", "read", { path: "src/greet.js" }),
+      respondWithText("done"),
+    ]);
+    expect(decisions.map((d) => [d.payload.phase, d.payload.action])).toEqual([
+      ["decided", "retrieve"],
+      ["followed-up", "none"],
+    ]);
+    expect(decisions[1]?.payload).toMatchObject({ observed: { occurred: true } });
+    // No diagnosis model call: eight worker turns and nothing else.
+    expect(requests).toHaveLength(8);
+    expect(result.green).toBe(true);
+  }, 60_000);
+
+  it("reassesses a retrieval that led nowhere and carries out the action it names, inside the loop's allowance", async () => {
+    // Different ranges of files already read: not the identical repeat the stall rule stops, and
+    // nothing the loop had not read before.
+    let line = 0;
+    const reread = (id: string, path: string) => {
+      line += 1;
+      return call(id, "read", { path, startLine: 1 + (line % 3), endLine: 3 });
+    };
+    const { decisions, requests, result } = await adaptiveTask(
+      [
+        call("w1", "declare_file_set", { files: ["src/greet.js"] }),
+        call("w2", "search", { pattern: "shoutHelper", path: "src" }),
+        reread("w3", "src/greet.js"),
+        reread("w4", "src/greet.test.js"),
+        reread("w5", "src/greet.js"),
+        reread("w6", "src/greet.test.js"),
+        reread("w7", "src/greet.js"),
+        reread("w8", "src/greet.test.js"),
+        // Step 8: retrieval, which finds nothing. Three more steps learn nothing new.
+        reread("w9", "src/greet.js"),
+        reread("w10", "src/greet.test.js"),
+        reread("w11", "src/greet.js"),
+        // Step 11: the reassessment's one diagnosis answers with an edit.
+        respondWithText(
+          JSON.stringify({
+            question: "Where does shout go?",
+            locations: [{ path: "src/greet.js", line: 3, why: "after greet" }],
+            action: {
+              tool: "edit",
+              edits: [
+                {
+                  path: "src/greet.js",
+                  find: "  return 'hello';\n}\n",
+                  replace: "  return 'hello';\n}\nexport const shout = 1;\n",
+                },
+              ],
+            },
+          }),
+        ),
+        respondWithText("done"),
+      ],
+      { maxSteps: 20 },
+    );
+    expect(decisions.map((d) => [d.payload.phase, d.payload.action])).toEqual([
+      ["decided", "retrieve"],
+      ["followed-up", "reassess"],
+    ]);
+    const reassessment = decisions[1]?.payload as Record<string, unknown> & {
+      spent: { steps: number };
+    };
+    expect(reassessment).toMatchObject({
+      observed: { occurred: false, newReads: 0, newExecutions: 0 },
+      carriedOut: { tool: "edit", refused: false },
+    });
+    // The worker's next turn is told what was done; the tree is the edited one and the gates pass.
+    const told = requests.at(-1)?.messages.at(-1);
+    expect(told?.role === "user" ? told.text : "").toContain(
+      "The harness carried out the action it named through this loop's own tools",
+    );
+    expect(readFileSync(join(workspace, "src/greet.js"), "utf8")).toBe(stillGreen);
+    expect(result.green).toBe(true);
+    // Everything the reassessment spent came out of the loop's own twenty steps.
+    expect(reassessment.spent.steps).toBe(1);
+    expect(result.loop.steps).toBe(13);
+    expect(result.loop.steps).toBeLessThanOrEqual(20);
+  }, 60_000);
+
+  it("keeps the task's preservation words in a repair's brief, and owes a follow-up for requested tests that are missing", async () => {
+    const asked =
+      "add a shout helper. What must not change: greet() still returns hello. Add tests for shout to the existing test suite.";
+    const { result, promptOf, requests } = await adaptiveTask(
+      [
+        call("w1", "declare_file_set", { files: ["src/greet.js", "src/shout.test.js"] }),
+        call("w2", "write", { path: "src/greet.js", content: broken }),
+        respondWithText("done"),
+        call("r1", "write", { path: "src/greet.js", content: stillGreen }),
+        respondWithText("fixed"),
+        call("f1", "write", {
+          path: "src/shout.test.js",
+          content:
+            "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { shout } from './greet.js';\n\ntest('shout', () => { assert.equal(shout, 1); });\n",
+        }),
+        respondWithText("added"),
+      ],
+      { attempts: 2, task: asked },
+    );
+    const repairIndex = requests.findIndex(
+      (request) =>
+        request.messages[0]?.role === "user" &&
+        request.messages[0].text.includes("A quality gate is failing"),
+    );
+    expect(promptOf(repairIndex)).toContain(
+      "- the task says (its own words; no check here judges this): What must not change: greet() still returns hello.",
+    );
+    const followUpIndex = requests.findIndex(
+      (request) =>
+        request.messages[0]?.role === "user" &&
+        request.messages[0].text.includes("The task asks for tests"),
+    );
+    expect(followUpIndex).toBeGreaterThan(repairIndex);
+    expect(result.gates.outcome.followUp).toMatchObject({ state: "given", accepted: true });
+    expect(readFileSync(join(workspace, "src/shout.test.js"), "utf8")).toContain("test('shout'");
     expect(result.green).toBe(true);
   }, 60_000);
 });
