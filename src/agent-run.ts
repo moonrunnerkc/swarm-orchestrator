@@ -38,6 +38,7 @@ import { asJsonValue, digestOfBytes } from "./evidence/canonical-json.ts";
 import { recordRoutineClaims } from "./evidence/routine-claims.ts";
 import { recordRunAssessment, runLifecycle } from "./evidence/run-assessment.ts";
 import { sealRunSpec } from "./evidence/run-spec.ts";
+import { scrubText } from "./evidence/scrub.ts";
 import type { EvidenceRecorder } from "./evidence/session.ts";
 import { parseTaskContract, type TaskContract } from "./evidence/task-contract.ts";
 import type { RunVerdict } from "./evidence/verdict.ts";
@@ -906,6 +907,11 @@ async function executeAgentTask(
         workspaceRoot: options.workspace,
         baseRef: options.baseRef,
       });
+      // Scrubbed like every payload, so a patch whose code assigns to a credential-bearing name
+      // (`const tokens = state.tokens`) is not the tree byte for byte: that is said, with the
+      // digest of the unscrubbed patch, which names the tree without carrying it.
+      const kept = before.slice(0, candidateSnapshotChars);
+      const scrubbed = scrubText(kept);
       await options.evidence.record({
         type: "verification-command",
         actor: "harness",
@@ -916,7 +922,10 @@ async function executeAgentTask(
           attempt: request.attempt,
           owed: request.followUpKind ?? null,
           truncated: before.length > candidateSnapshotChars,
-          patch: before.slice(0, candidateSnapshotChars),
+          patchDigest: digestOfBytes(before),
+          scrubbed: scrubbed.value !== kept,
+          ...(scrubbed.redactions.length === 0 ? {} : { redactions: scrubbed.redactions }),
+          patch: kept,
         },
       });
       const alternate = await escalation?.select(request.cycle, {
