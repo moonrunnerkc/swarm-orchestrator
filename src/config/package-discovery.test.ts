@@ -46,6 +46,18 @@ describe("discovering workspace packages from declared patterns", () => {
     expect(await discoverPackages(root)).toEqual(["libs/core"]);
   });
 
+  it("reads a pnpm-workspace.yaml of settings only as the root project alone", async () => {
+    await writeFile(
+      join(root, "pnpm-workspace.yaml"),
+      "minimumReleaseAge: 10080\n\npatchedDependencies:\n  sax@1.6.1: patches/sax@1.6.1.patch\n",
+    );
+    await mkdir(join(root, "lib"), { recursive: true });
+    expect(await discoverPackages(root)).toEqual([]);
+    // A packages list it cannot read is still refused rather than guessed.
+    await writeFile(join(root, "pnpm-workspace.yaml"), "packages: ['libs/*']\n");
+    await expect(discoverPackages(root)).rejects.toThrow(/conventional packages list/);
+  });
+
   it("treats a dot as a literal character, not any character", async () => {
     await workspaces(["pkg.v1/*"], ["pkg.v1/a", "pkgXv1/b"]);
     expect(await discoverPackages(root)).toEqual(["pkg.v1/a"]);

@@ -141,6 +141,25 @@ async function trackedAnywhere(
 }
 
 /**
+ * Stage everything, then drop the caches from the index. Naming a cache as an exclude pathspec on
+ * `add` is refused by git (exit 1, "paths are ignored") the moment that cache exists and is
+ * gitignored, which is the ordinary state of a Python checkout after one test run; removing from
+ * the index afterwards is quiet whether the cache was staged, ignored or absent.
+ */
+async function stageWorkingTree(git: (args: readonly string[]) => Promise<string>): Promise<void> {
+  await git(["add", "-A", "--", "."]);
+  await git([
+    "rm",
+    "-r",
+    "--cached",
+    "--quiet",
+    "--ignore-unmatch",
+    "--",
+    ...interpreterCacheExclusions,
+  ]);
+}
+
+/**
  * Stages the whole tree against `baseRef` in a throwaway index and hands the caller a way to
  * run git against it. The index is removed afterwards whatever happens.
  */
@@ -156,21 +175,7 @@ export async function withScratchIndex<T>(
     // read-tree first: without it `add -A` has nothing to compare against and every path in
     // the tree reads as added, which would make the first measurement of a session enormous.
     await git(["read-tree", options.baseRef]);
-    // Stage everything, then drop the caches from the index. Naming a cache as an exclude
-    // pathspec on `add` is refused by git (exit 1, "paths are ignored") the moment that cache
-    // exists and is gitignored, which is the ordinary state of a Python checkout after one
-    // test run; removing from the index afterwards is quiet whether the cache was staged,
-    // ignored or absent.
-    await git(["add", "-A", "--", "."]);
-    await git([
-      "rm",
-      "-r",
-      "--cached",
-      "--quiet",
-      "--ignore-unmatch",
-      "--",
-      ...interpreterCacheExclusions,
-    ]);
+    await stageWorkingTree(git);
     const excluded = options.excludedEnvironments ?? [];
     if (excluded.length > 0) {
       // Checked again here rather than trusted: removing a tracked directory from this index
@@ -226,4 +231,84 @@ export async function patchAgainstBase(options: ScratchIndexOptions): Promise<st
       "--",
     ]),
   );
+}
+
+/** One path a change between two measured trees touched, as git names it. */
+export interface TreeChange {
+  /** A, M, D, R (renamed, with `from`), T or C. */
+  readonly status: string;
+  readonly path: string;
+  readonly from?: string;
+}
+
+/**
+ * The working tree's identity, measured as often as a caller asks, through one index kept for the
+ * whole run. The index's own stat cache is what makes a repeat cheap: `add -A` rehashes only what
+ * changed since the last measurement, where a fresh scratch index hashes every file each time.
+ * Nothing here touches the person's index, HEAD or refs; tree objects it writes are unreachable.
+ */
+export interface WorkspaceIdentity {
+  /** The tree id of the working tree as it stands, untracked files included, caches left out. */
+  measure(): Promise<string>;
+  /** What differs between two measured trees, renames paired. */
+  changes(from: string, to: string): Promise<readonly TreeChange[]>;
+  /**
+   * Lines of the last measured tree that match an extended regular expression, as `path:line:text`.
+   * Searched in the index, so ignored files (dependencies, build output) are not read.
+   */
+  matches(pattern: string, limit: number): Promise<readonly string[]>;
+  close(): Promise<void>;
+}
+
+export async function openWorkspaceIdentity(
+  options: Pick<ScratchIndexOptions, "workspaceRoot" | "baseRef">,
+): Promise<WorkspaceIdentity> {
+  const directory = await mkdtemp(join(tmpdir(), "swarm-identity-index-"));
+  const environment = gitEnvironment({ GIT_INDEX_FILE: join(directory, "index") });
+  const git = (args: readonly string[]) => runGit(options.workspaceRoot, args, environment);
+  let started = false;
+  return {
+    async measure() {
+      if (!started) {
+        await git(["read-tree", options.baseRef]);
+        started = true;
+      }
+      await stageWorkingTree(git);
+      return (await git(["write-tree"])).trim();
+    },
+    async changes(from, to) {
+      if (from === to) return [];
+      const fields = (await git(["diff-tree", "-r", "-M", "-z", "--name-status", from, to]))
+        .split("\0")
+        .filter((field) => field.length > 0);
+      const out: TreeChange[] = [];
+      for (let at = 0; at < fields.length; ) {
+        const status = (fields[at] ?? "").charAt(0);
+        if (status === "R" || status === "C") {
+          out.push({ status, from: fields[at + 1] ?? "", path: fields[at + 2] ?? "" });
+          at += 3;
+        } else {
+          out.push({ status, path: fields[at + 1] ?? "" });
+          at += 2;
+        }
+      }
+      return out;
+    },
+    async matches(pattern, limit) {
+      try {
+        const found = await git(["grep", "--cached", "-n", "-I", "-E", "-e", pattern]);
+        return found
+          .split("\n")
+          .filter((line) => line.length > 0)
+          .slice(0, limit);
+      } catch (cause) {
+        // git grep exits 1 for no match, which is an answer rather than a failure.
+        if ((cause as { code?: unknown }).code === 1) return [];
+        throw cause;
+      }
+    },
+    async close() {
+      await rm(directory, { recursive: true, force: true });
+    },
+  };
 }

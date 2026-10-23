@@ -1,9 +1,16 @@
 import { resolve } from "node:path";
 import { createDecisionPoint } from "./agent-decision-point.ts";
+import {
+  asksForTests,
+  couldHoldRequestedTests,
+  createEditReview,
+  taskStatements,
+} from "./agent-edit-notices.ts";
 import { createEscalationController } from "./agent-escalation.ts";
 import { describeJustificationRequest, runJustificationTurn } from "./agent-justification.ts";
 import { type WorkerPromptProfile, workerPrompt } from "./agent-prompt.ts";
 import { finishRepair } from "./agent-repair-finish.ts";
+import { withWorkspaceEffects } from "./agent-workspace-effects.ts";
 import { buildVersion } from "./build-version.ts";
 import type { ApprovalMode } from "./config/approval-mode.ts";
 import type { Clock } from "./core/clock.ts";
@@ -19,7 +26,12 @@ import type { ConversationMessage, ModelClient, SamplingSettings } from "./core/
 import type { RandomSource } from "./core/random-source.ts";
 import type { LoopBudget } from "./core/termination.ts";
 import type { ToolInvoker } from "./core/tool-invoker.ts";
-import { deriveWorkingState, describeWorkingState, type Hypothesis } from "./core/working-state.ts";
+import {
+  decisionRule,
+  deriveWorkingState,
+  describeWorkingState,
+  type Hypothesis,
+} from "./core/working-state.ts";
 import { openRunStore, type RunStore } from "./durable/run-store.ts";
 import { asJsonValue, digestOfBytes } from "./evidence/canonical-json.ts";
 import { recordRoutineClaims } from "./evidence/routine-claims.ts";
@@ -34,6 +46,7 @@ import type { ResourcePool } from "./exec/resource-pool.ts";
 import { describeEnvelopeForReader, establishExecutionEnvelope } from "./exec/run-envelope.ts";
 import { enforceContractExecution } from "./exec/task-contract-enforcement.ts";
 import { approvalsRequiredFor } from "./gates/approval.ts";
+import type { OwedFollowUp } from "./gates/auto-resolve.ts";
 import {
   describeRejectedCandidate,
   type FollowUpOutcome,
@@ -78,6 +91,7 @@ import {
   type PolicyGuard,
 } from "./tools/policy-guard.ts";
 import { createRecordedOutputTool } from "./tools/recorded-output-tool.ts";
+import { classifyShellCommand } from "./tools/shell-observation.ts";
 import type { ToolDefinition } from "./tools/tool-definition.ts";
 import { createWorkspaceTools } from "./tools/workspace-tools.ts";
 
@@ -139,7 +153,7 @@ export interface AgentTaskOptions {
   /** Experimental early static feedback within the existing repair allowance. */
   readonly repairFinish?: boolean;
   /**
-   * Experimental (adaptive-decision-v1, src/agent-decision-point.ts): one decision point per loop
+   * Experimental (adaptive-decision-v2, src/agent-decision-point.ts): one decision point per loop
    * that reads the loop's working state and may retrieve, diagnose or run a distinguishing
    * command, charged to that loop; repair briefs also carry the working state. Off unless asked for.
    */
@@ -392,13 +406,16 @@ export async function runAgentTask(input: AgentTaskOptions): Promise<AgentTaskRe
             cancellation.abort("recovery journal unavailable");
           }
         }, 200);
+  const release: (() => Promise<void>)[] = [];
   try {
     return await executeAgentTask(
       { ...options, abortSignal: stopping, verificationSignal: verifying },
       wall,
       store,
+      release,
     );
   } finally {
+    for (const one of release) await one().catch(() => {});
     if (watcher !== null) clearInterval(watcher);
     wall.release();
     store?.close();
@@ -409,6 +426,7 @@ async function executeAgentTask(
   options: AgentTaskOptions,
   wall: WallBudget,
   store: RunStore | undefined,
+  release: (() => Promise<void>)[],
 ): Promise<AgentTaskResult> {
   const pending = new Map<string, string>();
   const toolsetBase: Omit<ToolsetOptions, "tools"> = {
@@ -452,13 +470,21 @@ async function executeAgentTask(
     },
     ...(options.isolation === undefined ? {} : { isolation: options.isolation }),
   };
-  const { definitions, toolInvoker, guard } = assembleToolset({
+  // The task's own sentences on what to keep and deliver, quoted in edit results and briefs.
+  const statements = taskStatements(options.task);
+  const {
+    definitions,
+    toolInvoker: chokepoint,
+    guard,
+  } = assembleToolset({
     ...toolsetBase,
     tools: (guard) => [
-      ...createWorkspaceTools(guard, (path) => writeRefusal(options.fileSet.state(), path), {
-        backend: options.isolation,
-        pool: options.commandPool,
-      }).filter(
+      ...createWorkspaceTools(
+        guard,
+        (path) => writeRefusal(options.fileSet.state(), path),
+        { backend: options.isolation, pool: options.commandPool },
+        createEditReview({ workspace: options.workspace, taskStatements: statements }),
+      ).filter(
         (tool) =>
           options.contract === undefined ||
           options.contract.allowedTools.some((name) => name === tool.name),
@@ -482,6 +508,18 @@ async function executeAgentTask(
         : [options.checkTool]),
     ],
   });
+
+  // Every shell command's effect on the workspace is measured and named in its result, so a write
+  // the shell made is a change the working state, the stall detector and the worker all see.
+  const measured = withWorkspaceEffects(chokepoint, {
+    workspace: options.workspace,
+    baseRef: options.baseRef,
+    evidence: options.evidence,
+    measured: new Set(definitions.filter((tool) => tool.kind === "shell").map((tool) => tool.name)),
+    writers: new Set(definitions.filter((tool) => tool.kind === "write").map((tool) => tool.name)),
+  });
+  release.push(() => measured.close());
+  const toolInvoker = measured.invoker;
 
   await options.evidence.record({
     type: "session-started",
@@ -677,13 +715,14 @@ async function executeAgentTask(
       runLoop: runAgentLoop,
       loopDependencies: { ...loopDependencies, budget },
       hypotheses,
+      taskStatements: statements,
     });
     await options.evidence.record({
       type: "verification-command",
       actor: "harness",
       provenance: ["user"],
       payload: asJsonValue({
-        rule: "adaptive-decision-v1",
+        rule: decisionRule,
         phase: "armed",
         loop,
         atStep: point.atStep,
@@ -746,6 +785,13 @@ async function executeAgentTask(
       ? taskContinuation({ task: brief, steps: loop.steps, maxSteps: options.maxSteps })
       : undefined;
 
+  // A task that asks for tests, whose loop finished with no test file changed, is owed one bounded
+  // follow-up through the outcomes slot: held-out block 1's p-limit feature control delivered the
+  // option with no tests and was accepted. Measured on the candidate, never read from the claim;
+  // only where no planned follow-up already holds the slot, and the attempt cap still bounds it.
+  const followUp =
+    options.followUp ?? (await requestedTestsFollowUp(options).catch(() => undefined));
+
   // The model has said it is done, or was stopped. Nothing about that is a result yet: the gates
   // run now, and what they measure is what decides the outcome.
   if (wall.deadlineMs !== null) {
@@ -777,7 +823,7 @@ async function executeAgentTask(
     clock: options.clock,
     emit: options.emit,
     cap: options.attempts,
-    ...(options.followUp === undefined ? {} : { followUp: options.followUp }),
+    ...(followUp === undefined ? {} : { followUp }),
     ...(continuation === undefined ? {} : { continuation }),
     // The resolve loop stops at the wall deadline as it stops at a cancellation. The commands that
     // measure a cycle answer only to the run's cancellation and the end of its total allowance:
@@ -1083,6 +1129,32 @@ async function executeAgentTask(
     tokensUsed: finalLoop.tokensUsed,
   });
   return { loop: finalLoop, gates, green: verdict.acceptable, verdict };
+}
+
+/**
+ * The follow-up owed where the task asks for tests and the candidate, as measured against the
+ * base, changes no test file. Undefined where neither holds.
+ */
+async function requestedTestsFollowUp(
+  options: AgentTaskOptions,
+): Promise<OwedFollowUp | undefined> {
+  if (!asksForTests(options.task)) return undefined;
+  const changed = parseUnifiedDiff(
+    await diffAgainstBase({ workspaceRoot: options.workspace, baseRef: options.baseRef }),
+  ).map((file) => file.path);
+  if (changed.length === 0 || changed.some(couldHoldRequestedTests)) return undefined;
+  return {
+    identity: digestOfBytes(JSON.stringify({ rule: "requested-tests-v1", task: options.task })),
+    brief: [
+      "The task asks for tests, and the change as the harness measured it against the base touches no test file. The task's words:",
+      ...taskStatements(options.task)
+        .filter((statement) => /\btests?\b/i.test(statement))
+        .map((statement) => `- ${statement}`),
+      `Files the change touches: ${changed.join(", ")}.`,
+      "Add the tests the task asks for to the project's existing test suite, beside the tests already there, so that they exercise the behaviour the change adds or fixes; run them. Do not change the implementation unless a test you add shows it is wrong.",
+      "No sealed check states this, so it stays reported as unresolved either way; a change you make is judged by the gates as any repair is, and is kept only if nothing that passed now fails.",
+    ].join("\n"),
+  };
 }
 
 function criteriaRefOf(options: AgentTaskOptions): string {
@@ -1445,15 +1517,19 @@ async function resolveWithModel(
     ...(adaptive === undefined
       ? []
       : [
-          describeWorkingState(deriveWorkingState(adaptive.priorMessages), {
-            requiredChecks: options.contract?.requiredChecks ?? [],
-            candidate: {
-              digest: candidateDigest,
-              changedFiles: parseUnifiedDiff(candidateDiff).map((file) => file.path),
+          describeWorkingState(
+            deriveWorkingState(adaptive.priorMessages, { classifyShell: classifyShellCommand }),
+            {
+              requiredChecks: options.contract?.requiredChecks ?? [],
+              taskStatements: taskStatements(options.task),
+              candidate: {
+                digest: candidateDigest,
+                changedFiles: parseUnifiedDiff(candidateDiff).map((file) => file.path),
+              },
+              hypotheses: adaptive.hypotheses,
+              lastTree: "the previous loop's last tree, which may since have been rolled back",
             },
-            hypotheses: adaptive.hypotheses,
-            lastTree: "the previous loop's last tree, which may since have been rolled back",
-          }),
+          ),
           "",
         ]),
     ...(request.rejected === null ? [] : [describeRejectedCandidate(request.rejected), ""]),
