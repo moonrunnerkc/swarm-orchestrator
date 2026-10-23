@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -248,6 +248,31 @@ describe("the launch environment and arm flags", () => {
     expect(argvFor("locked")).toContain("--install");
     expect(argvFor("unlocked")).not.toContain("--install");
     expect(argvFor("unlocked")).not.toContain("--lockfile");
+  });
+
+  it("gives the arm the short temporary directory the runner made, and admits it in the profile", () => {
+    const directories = launchDirectories();
+    const tmpDir = mkdtempSync("/private/tmp/sws-test-");
+    try {
+      const launch = buildLaunch({
+        manifest: manifestWith({}),
+        arm: "swarm",
+        task,
+        prompt: "p",
+        base: "HEAD",
+        contractPath: "/c",
+        ...directories,
+        remainingMs: 60_000,
+        tokenAllowance: 1,
+        tmpDir,
+      });
+      expect(launch.env.TMPDIR).toBe(tmpDir);
+      // Room under macOS's 104-byte socket path limit for a test's own socket file name.
+      expect(`${launch.env.TMPDIR}/00000000-server.sock`.length).toBeLessThan(104);
+      expect(launch.profile).toContain(realpathSync(tmpDir));
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 
   it("freezes only named Swarm flags, so the ablation and the revised arm differ by declared flags", () => {

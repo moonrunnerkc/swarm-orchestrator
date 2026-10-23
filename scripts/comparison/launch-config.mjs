@@ -147,7 +147,7 @@ export function versionOfExecutable(path, versionArgs = ["--version"]) {
  * task's declared package manager where it declares one, and the system directories, in that
  * order; nothing from the experimenter's shell. HOME is the launch's own.
  */
-export function launchEnvironment({ manifest, taskPath, home, scratch, workspace, arm }) {
+export function launchEnvironment({ manifest, taskPath, home, scratch, workspace, arm, tmpDir }) {
   const nodeDirectory = dirname(manifest.pins.nodeBin);
   const path = [
     ...(taskPath ?? []),
@@ -158,7 +158,10 @@ export function launchEnvironment({ manifest, taskPath, home, scratch, workspace
     PATH: [...new Set(path)].join(":"),
     HOME: home,
     PWD: workspace,
-    TMPDIR: join(scratch, "tmp"),
+    // Short where the caller gives one: a project test that listens on a socket under TMPDIR
+    // fails past macOS's 104-byte socket path limit, and a launch directory named for its task
+    // is longer than that (held-out fastify, test/listen.3.test.js).
+    TMPDIR: tmpDir ?? join(scratch, "tmp"),
     LANG: "en_US.UTF-8",
     TERM: "dumb",
     PUPPETEER_SKIP_DOWNLOAD: "true",
@@ -276,12 +279,18 @@ export function buildLaunch({
   tokenAllowance,
   taskPath,
   ownRoots = [],
+  tmpDir,
 }) {
   const profile = sandboxProfile({
     protectedRoots: protectedRootsOf(manifest),
     readableRoots: manifest.isolation?.readableRoots ?? [],
     reprotectedRoots: manifest.isolation?.reprotectedRoots ?? [],
-    ownRoots: [scratch, ...ownRoots, ...(manifest.isolation?.sharedWritable ?? [])],
+    ownRoots: [
+      scratch,
+      ...(tmpDir === undefined ? [] : [tmpDir]),
+      ...ownRoots,
+      ...(manifest.isolation?.sharedWritable ?? []),
+    ],
   });
   const inner = armArgv({
     manifest,
@@ -299,7 +308,7 @@ export function buildLaunch({
     inner,
     profile,
     cwd: workspace,
-    env: launchEnvironment({ manifest, taskPath, home, scratch, workspace, arm }),
+    env: launchEnvironment({ manifest, taskPath, home, scratch, workspace, arm, tmpDir }),
   };
 }
 

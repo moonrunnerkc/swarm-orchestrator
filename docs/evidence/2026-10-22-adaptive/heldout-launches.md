@@ -37,3 +37,16 @@ the first of the cell's two permitted setup retries.
 Refrozen manifest `~/.cache/swarm-study-2026-10-22/heldout-2/manifest.json`, sha256
 `ff861dcf5bfca97a1c882882d7327d325d6b2c5594d7b47f40cd281c15d0c91b`; preflight passes all 16 configurations,
 with the harness lockfile committed and Swarm arms installing from it.
+
+## Setup correction 2, before the fastify launches' inference
+
+Launch 4 (fastify, `swarm-control`) stopped before its first model request: Swarm's goal setup
+found `test/listen.3.test.js` ("listen on socket") failing at the base for a different reason than
+in a candidate and refused to measure. Cause, reproduced outside the study: the runner gave every
+arm a TMPDIR inside the launch directory (97 characters for this task), the test listens on a socket
+file under TMPDIR, and macOS refuses socket paths past 104 bytes (`listen EINVAL`); with a short
+TMPDIR the same base passes 4/4. The evaluator's validation used the system temporary directory.
+Correction: each launch gets a short temporary directory (`/private/tmp/sws-*`), admitted in the
+shared profile and removed after the launch, for every arm. The four p-queue launches had already
+run with the long path, all four alike; p-queue's tests open no socket. Recorded through the
+runner's correction record with both harness digests; the manifest is unchanged.

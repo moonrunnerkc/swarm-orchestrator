@@ -247,6 +247,8 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
   const log = commandLog(blobs, { signal: interruption.controller.signal });
   mkdirSync(workRoot, { recursive: true });
   const scratch = mkdtempSync(join(workRoot, `${launch.task}.${launch.arm}-`));
+  // The launch's TMPDIR, short enough for a socket path under it (launch-config.mjs).
+  const tmpDir = mkdtempSync("/private/tmp/sws-");
   const workspace = join(scratch, "workspace");
   const home = join(scratch, "home");
   const record = {
@@ -393,6 +395,7 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
         deadlineMs - Date.now() - (isSwarmArm(launch.arm) ? budgets.swarmVerificationReserveMs : 0),
       tokenAllowance: budgets.swarmTokenCap,
       taskPath,
+      tmpDir,
     });
     const otherLaunch = join(workRoot, ".study-other-launch");
     mkdirSync(otherLaunch, { recursive: true });
@@ -428,6 +431,7 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
         { flag: "wx" },
       );
       rmSync(scratch, { recursive: true, force: true });
+      rmSync(tmpDir, { recursive: true, force: true });
       console.log(`${launch.order} ${launch.task} ${launch.arm}: preflight ok`);
       return { outcome: "preflight-ok", fatal: null };
     }
@@ -564,6 +568,7 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
     { flag: "wx" },
   );
   rmSync(scratch, { recursive: true, force: true });
+  rmSync(tmpDir, { recursive: true, force: true });
   console.log(
     `${launch.order} ${launch.task} ${launch.arm}: ${record.outcome}${record.scores ? `, hidden ${record.scores.hidden.verdict}, visible ${record.scores.visible.passed}` : ""}${fatal ? ` (${fatal.class}: ${fatal.message.split("\n")[0]})` : ""}`,
   );
