@@ -1191,6 +1191,9 @@ const maxGaps = 12;
 const shown = (text: string | null, limit = 400) =>
   text === null ? "(no answer)" : text.length > limit ? `${text.slice(0, limit)}...` : text;
 
+/** At most this many cases in a repair brief. */
+const maxBriefCases = 8;
+
 /**
  * The repair brief for established findings: each case's authority (the obligation the task
  * states), input, expected answer (the base's, observed), and what each tree gave, the probe's
@@ -1223,27 +1226,49 @@ export function findingsBrief(input: {
         ]),
     "",
   ];
-  for (const finding of ordered.slice(0, 6)) {
-    const probe = input.probes.find((one) => one.id === finding.probe) as ReviewProbe;
-    const statement = probe.statements?.[finding.index - 1];
-    const authority = input.authorities.find((one) => one.id === finding.authority);
-    const words = statement?.sentence ?? authority?.statement ?? probe.quote ?? "";
-    const expectation =
-      finding.reading === "requested-unmet"
-        ? "expected (the task's literal answer)"
-        : finding.reading === "relation-violated" && probe.id.startsWith("code-enumeration-")
-          ? "expected calls (one per entry of the existing function's answer on the unchanged base)"
-          : finding.reading === "relation-violated"
-            ? "expected (the reference's answer on the unchanged base)"
-            : "expected (the base's answer, observed)";
-    lines.push(
-      `Probe ${probe.id}, case ${finding.index} (${finding.reading}), under ${finding.authority}: "${shown(words, 600)}".`,
-      `  input: ${shown(JSON.stringify(finding.input) ?? "undefined")}`,
-      `  ${expectation}: ${shown(finding.reading === "preservation-regression" ? finding.base : finding.expected)}`,
-      `  your change gives: ${shown(finding.candidate)}`,
-    );
+  // Cases taken in turn from each probe, so every kind of counterexample is shown: on October 24
+  // the first six cases were all one relation's, and the callback asked twice was never shown.
+  const groups = new Map<string, CaseClassification[]>();
+  for (const one of ordered) groups.set(one.probe, [...(groups.get(one.probe) ?? []), one]);
+  const chosen: CaseClassification[] = [];
+  for (let round = 0; chosen.length < maxBriefCases; round += 1) {
+    const taken = [...groups.values()].flatMap((cases) => cases.slice(round, round + 1));
+    if (taken.length === 0) break;
+    chosen.push(...taken.slice(0, maxBriefCases - chosen.length));
   }
-  const programs = [...new Set(ordered.slice(0, 6).map((one) => one.probe))];
+  if (chosen.length < ordered.length)
+    lines.push(
+      `${ordered.length} established case(s) in all; up to ${maxBriefCases} are shown, taken in turn from each probe.`,
+      "",
+    );
+  for (const [id, cases] of groups) {
+    const shownHere = chosen.filter((one) => one.probe === id).sort((a, b) => a.index - b.index);
+    if (shownHere.length === 0) continue;
+    const probe = input.probes.find((one) => one.id === id) as ReviewProbe;
+    const first = shownHere[0] as CaseClassification;
+    const authority = input.authorities.find((one) => one.id === first.authority);
+    const words =
+      probe.statements?.[first.index - 1]?.sentence ?? authority?.statement ?? probe.quote ?? "";
+    lines.push(
+      `Probe ${probe.id} (${cases.length} established), under ${first.authority}: "${shown(words, 600)}".`,
+    );
+    for (const finding of shownHere) {
+      const expectation =
+        finding.reading === "requested-unmet"
+          ? "expected (the task's literal answer)"
+          : finding.reading === "relation-violated" && probe.id.startsWith("code-enumeration-")
+            ? "expected calls (one per entry of the existing function's answer on the unchanged base)"
+            : finding.reading === "relation-violated"
+              ? "expected (the reference's answer on the unchanged base)"
+              : "expected (the base's answer, observed)";
+      lines.push(
+        `  case ${finding.index} (${finding.reading}), input: ${shown(JSON.stringify(finding.input) ?? "undefined")}`,
+        `    ${expectation}: ${shown(finding.reading === "preservation-regression" ? finding.base : finding.expected)}`,
+        `    your change gives: ${shown(finding.candidate)}`,
+      );
+    }
+  }
+  const programs = [...new Set(chosen.map((one) => one.probe))];
   for (const id of programs) {
     const probe = input.probes.find((one) => one.id === id) as ReviewProbe;
     lines.push(

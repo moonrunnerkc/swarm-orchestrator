@@ -385,14 +385,51 @@ describe("what the repair is told", () => {
       candidate: "sha256:abc",
     });
     expect(brief).toContain(
-      'Probe default-parse, case 2 (preservation-regression), under task-keep-1: "Without the option, parse() behaves as it does today.".',
+      'Probe default-parse (1 established), under task-keep-1: "Without the option, parse() behaves as it does today.".',
     );
-    expect(brief).toContain('  input: "[1,]"');
-    expect(brief).toContain("  expected (the base's answer, observed): [1]");
-    expect(brief).toContain('  your change gives: {"threw":true}');
+    expect(brief).toContain('  case 2 (preservation-regression), input: "[1,]"');
+    expect(brief).toContain("    expected (the base's answer, observed): [1]");
+    expect(brief).toContain('    your change gives: {"threw":true}');
     expect(brief).toContain("read on the candidate sha256:abc");
     expect(brief).toContain("Program of probe default-parse");
     expect(brief).toContain("say which sentence asks for it");
+  });
+
+  it("shows every probe's counterexamples in turn, with each probe's words once", () => {
+    const relation = (id: string, count: number) =>
+      Array.from({ length: count }, (_, index) => ({
+        probe: id,
+        index: index + 1,
+        reading: "relation-violated" as const,
+        authority: id,
+        role: "requested" as const,
+        input: `/p${index}?x`,
+        base: '"a"',
+        candidate: '"b"',
+        expected: '"a"',
+        detail: "",
+      }));
+    const probe = (id: string): ReviewProbe => ({
+      id,
+      basis: "relation",
+      origin: "task",
+      quote: `the words of ${id}`,
+      program: "export default (x) => x;",
+      reference: "export default (x) => x;",
+      cases: [],
+    });
+    const brief = findingsBrief({
+      task,
+      probes: [probe("code-relation-1"), probe("code-enumeration-1")],
+      // Ten of the relation's cases first, then the callback's two.
+      findings: [...relation("code-relation-1", 10), ...relation("code-enumeration-1", 2)],
+      authorities: [],
+      candidate: "sha256:abc",
+    });
+    expect(brief).toContain("12 established case(s) in all; up to 8 are shown");
+    expect(brief).toContain("Probe code-enumeration-1 (2 established)");
+    expect(brief).toContain("expected calls (one per entry");
+    expect(brief.match(/the words of code-relation-1/g)).toHaveLength(1);
   });
 
   it("gives the prose control's objections as claims nothing has run", () => {
