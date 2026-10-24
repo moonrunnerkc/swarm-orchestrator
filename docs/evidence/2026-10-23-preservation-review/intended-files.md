@@ -185,3 +185,6 @@ missing tool and stops, so the lint findings the change introduced were never pu
   (`optionalAbsence`) carries its absence there. The correction therefore never fired in a live
   run. Stood-down checks are now skipped, with a test shaped like the recorded checks, and the rule
   was applied to every recorded verification of both blocks before rebuilding.
+- `scripts/check-doc-paths.mjs`: `src/punycode.ts`, a file of ufo's repository that the registered
+  confirmation protocol names, is listed with its reason, because that protocol is not edited after
+  its first launch.
