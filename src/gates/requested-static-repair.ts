@@ -12,7 +12,7 @@ import { taskSentences } from "./preservation-obligations.ts";
  */
 
 const repairVerb =
-  /\b(?:fix(?:es|ed|ing)?|resolv(?:e|es|ing)|repair(?:s|ing)?|correct(?:s|ing)?|clean(?:s|ing)? up|get rid of|make\s+(?:[\w`'".\/-]+\s+){0,5}pass)\b/i;
+  /\b(?:fix(?:es|ed|ing)?|resolv(?:e|es|ing)|repair(?:s|ing)?|correct(?:s|ing)?|clean(?:s|ing)? up|get rid of|make\s+(?:[\w`'"./-]+\s+){0,5}pass)\b/i;
 const negation =
   /\b(?:do not|don't|does not|doesn't|never|without|no need to|not)\b(?:\s+\S+){0,3}\s*$/i;
 
