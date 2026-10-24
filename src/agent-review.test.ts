@@ -421,6 +421,7 @@ describe("requested behaviour the task states (task-code-v1, relations)", () => 
     rule: "project-loader-v1" as const,
     entry: "./query.mjs",
     method: "native" as const,
+    entries: [{ entry: "./query.mjs", method: "native" as const }],
     preamble: 'const project = await import("./query.mjs");',
     exports: ["parse", "rebuild"],
   };
@@ -476,6 +477,14 @@ describe("requested behaviour the task states (task-code-v1, relations)", () => 
       classifyTaskExamples(kept, twice(answered('"/b"')), twice(answered('"/b"'))).map(
         (one) => one.reading,
       ),
+    ).toEqual(["provisional"]);
+    // A function no loaded entry exposes may live in a module no probe loaded: not judged.
+    expect(
+      classifyTaskExamples(
+        requested,
+        twice(answered("1")),
+        twice(answered('{"not a function of the project":"drop"}')),
+      ).map((one) => one.reading),
     ).toEqual(["provisional"]);
     expect(establishedReadings.has("requested-unmet")).toBe(true);
     expect(establishedReadings.has("provisional")).toBe(false);

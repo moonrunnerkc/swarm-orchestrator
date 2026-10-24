@@ -49,6 +49,25 @@ it("keeps the first candidate that loads and names exports, with every attempt",
     "it loaded and exposed no exports",
     "loaded, 2 exports",
   ]);
+  // Where the task's code calls names, the entry exposing most of them is kept, and an entry that
+  // alone exposes another wanted name is loaded beside it.
+  const exposing: Record<string, readonly string[]> = {
+    "./plugins/removeScripts.js": ["fn", "name"],
+    "./lib/svgo/tools.js": ["hasScripts", "isExecutableUrl"],
+    "./lib/svgo.js": ["optimize"],
+  };
+  const wanted = await groundLoader(
+    Object.keys(exposing).map((entry) => ({ entry, method: "native" as const })),
+    async (program) => ({
+      answer: exposing[/import\("(.+?)"\)/.exec(program)?.[1] ?? ""] ?? [],
+    }),
+    ["isExecutableUrl", "optimize"],
+  );
+  expect(wanted.loader?.entries.map((one) => one.entry)).toEqual([
+    "./lib/svgo/tools.js",
+    "./lib/svgo.js",
+  ]);
+  expect(wanted.loader?.preamble).toContain("Object.assign({}, loaded1, loaded0)");
   const none = await groundLoader([{ entry: "./a.js", method: "native" }], async () => ({
     failed: "boom",
   }));

@@ -708,6 +708,16 @@ export function classifyTaskExamples(
         role: null,
         detail: `on the candidate: ${onCandidate.detail}`,
       };
+    // The loaded entries expose no such function: the example may name one the project keeps in a
+    // module no probe loaded, so it is not judged against the candidate.
+    if (candidateText?.startsWith(missingFunction) === true)
+      return {
+        ...blank,
+        ...seen,
+        reading: "provisional",
+        role: null,
+        detail: `the loaded entries expose no such function (${candidateText}), so this is not judged`,
+      };
     return candidateText === expected
       ? {
           ...blank,
@@ -776,6 +786,16 @@ export function classifyRelation(
         reading: subject.failed,
         role: null,
         detail: `the subject on the candidate: ${subject.detail}`,
+      };
+    if (
+      candidate?.startsWith(missingFunction) === true ||
+      base?.startsWith(missingFunction) === true
+    )
+      return {
+        ...blank,
+        reading: "relation-unconfirmed" as const,
+        role: null,
+        detail: "the loaded entries expose no such function on one tree, so this is not judged",
       };
     if (base === candidate)
       return {
@@ -881,6 +901,9 @@ function compiles(call: string): boolean {
     return false;
   }
 }
+
+/** How a guarded call answers where the project exposes no function of the name. */
+const missingFunction = '{"not a function of the project":';
 
 /**
  * The guard and call of one written example: where a name it calls is not a function of the

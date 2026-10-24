@@ -26,6 +26,8 @@ export interface LoaderCandidate {
 
 export interface GroundedLoader extends LoaderCandidate {
   readonly rule: typeof loaderRule;
+  /** Every entry the preamble loads, the kept one first. */
+  readonly entries: readonly LoaderCandidate[];
   /** Module source that leaves the project's namespace in `project`. */
   readonly preamble: string;
   /** The names the namespace exposed on the base, sorted. */
@@ -131,19 +133,54 @@ export function loaderCandidates(facts: LoaderFacts): readonly LoaderCandidate[]
   return candidates.slice(0, maxCandidates);
 }
 
-/** Module source that leaves the project's namespace in `project`. */
-export function preambleFor(candidate: LoaderCandidate): string {
+/** The imports a loading method needs, once each, ahead of every namespace it loads. */
+const importsOf: Readonly<Record<LoaderMethod, readonly string[]>> = {
+  native: [],
+  jiti: ['import { createJiti } from "jiti";'],
+  "jiti-v1": [
+    'import { createRequire } from "node:module";',
+    'import { fileURLToPath } from "node:url";',
+  ],
+  tsx: ['import { tsImport } from "tsx/esm/api";'],
+};
+
+function loadExpression(candidate: LoaderCandidate): string {
   const entry = JSON.stringify(candidate.entry);
   switch (candidate.method) {
     case "native":
-      return `const project = await import(${entry});`;
+      return `await import(${entry})`;
     case "jiti":
-      return `import { createJiti } from "jiti";\nconst project = await createJiti(import.meta.url).import(${entry});`;
+      return `await createJiti(import.meta.url).import(${entry})`;
     case "jiti-v1":
-      return `import { createRequire } from "node:module";\nimport { fileURLToPath } from "node:url";\nconst project = createRequire(import.meta.url)("jiti")(fileURLToPath(import.meta.url), { interopDefault: true })(${entry});`;
+      return `createRequire(import.meta.url)("jiti")(fileURLToPath(import.meta.url), { interopDefault: true })(${entry})`;
     case "tsx":
-      return `import { tsImport } from "tsx/esm/api";\nconst project = await tsImport(${entry}, import.meta.url);`;
+      return `await tsImport(${entry}, import.meta.url)`;
   }
+}
+
+/**
+ * Module source that leaves the project's namespace in `project`: one entry's, or several merged,
+ * the first named winning a name more than one exposes.
+ */
+export function preambleOf(candidates: readonly LoaderCandidate[]): string {
+  const imports = [...new Set(candidates.flatMap((one) => importsOf[one.method]))];
+  if (candidates.length === 1)
+    return [
+      ...imports,
+      `const project = ${loadExpression(candidates[0] as LoaderCandidate)};`,
+    ].join("\n");
+  return [
+    ...imports,
+    ...candidates.map((one, index) => `const loaded${index} = ${loadExpression(one)};`),
+    `const project = Object.assign({}, ${candidates
+      .map((_, index) => `loaded${candidates.length - 1 - index}`)
+      .join(", ")});`,
+  ].join("\n");
+}
+
+/** Module source that leaves one candidate's namespace in `project`. */
+export function preambleFor(candidate: LoaderCandidate): string {
+  return preambleOf([candidate]);
 }
 
 /** The program that tries a candidate: it loads the project and answers its export names. */
@@ -152,18 +189,26 @@ export function exportsProgram(candidate: LoaderCandidate): string {
 }
 
 /**
- * The first candidate whose program loads and answers a nonempty list of export names, tried in
- * order through `run`, which reports the program's answer or why it gave none.
+ * The way to load the project, tried through `run`, which reports a program's answer or why it
+ * gave none. Every candidate is tried, one method per entry once an entry has loaded. The entry
+ * kept is the one exposing most of the names the task's code calls (`wanted`), the first in order
+ * on a tie; a wanted name only another loaded entry exposes brings that entry in too. With nothing
+ * wanted, the first entry that loads is kept.
  */
 export async function groundLoader(
   candidates: readonly LoaderCandidate[],
   run: (program: string) => Promise<{ readonly answer: unknown } | { readonly failed: string }>,
+  wanted: readonly string[] = [],
 ): Promise<{
   readonly loader: GroundedLoader | null;
   readonly attempts: readonly LoaderAttempt[];
 }> {
   const attempts: LoaderAttempt[] = [];
+  const loaded: { readonly candidate: LoaderCandidate; readonly names: readonly string[] }[] = [];
   for (const candidate of candidates) {
+    if (loaded.some((one) => one.candidate.entry === candidate.entry)) continue;
+    // Nothing wanted: the first entry that loads is the one kept, so no other is tried.
+    if (wanted.length === 0 && loaded.length > 0) break;
     const outcome = await run(exportsProgram(candidate));
     if ("failed" in outcome) {
       attempts.push({ ...candidate, outcome: outcome.failed.slice(0, 400) });
@@ -177,15 +222,27 @@ export async function groundLoader(
       continue;
     }
     attempts.push({ ...candidate, outcome: `loaded, ${names.length} exports` });
-    return {
-      loader: {
-        rule: loaderRule,
-        ...candidate,
-        preamble: preambleFor(candidate),
-        exports: [...names].sort(),
-      },
-      attempts,
-    };
+    loaded.push({ candidate, names });
   }
-  return { loader: null, attempts };
+  if (loaded.length === 0) return { loader: null, attempts };
+  const covers = (names: readonly string[]) => wanted.filter((name) => names.includes(name)).length;
+  const primary = loaded.reduce((best, one) =>
+    covers(one.names) > covers(best.names) ? one : best,
+  );
+  const chosen = [primary];
+  for (const name of wanted) {
+    if (chosen.some((one) => one.names.includes(name))) continue;
+    const other = loaded.find((one) => one.names.includes(name));
+    if (other !== undefined) chosen.push(other);
+  }
+  return {
+    loader: {
+      rule: loaderRule,
+      ...primary.candidate,
+      entries: chosen.map((one) => one.candidate),
+      preamble: preambleOf(chosen.map((one) => one.candidate)),
+      exports: [...new Set(chosen.flatMap((one) => one.names))].sort(),
+    },
+    attempts,
+  };
 }
