@@ -25,7 +25,7 @@
  * - `wedge-after:<n>`: `healthy` for the first n chat requests, then `chat-never` for the rest,
  *   while the listing keeps answering: a server that stops completing inference mid-launch.
  */
-import { appendFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, renameSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 
 const [readyFile, model = "fixture-model", port = "0", behaviour = "listing-only", requestLog] =
@@ -138,5 +138,10 @@ const server = createServer((request, response) => {
   response.end();
 });
 server.listen(Number(port), "127.0.0.1", () => {
-  writeFileSync(readyFile, JSON.stringify({ port: server.address().port, pid: process.pid }));
+  // Written whole, then renamed into place: a reader that waits for the file to exist reads it
+  // complete. Written in place, a loaded CI runner read it empty between its creation and its
+  // contents ("Unexpected end of JSON input").
+  const pending = `${readyFile}.pending`;
+  writeFileSync(pending, JSON.stringify({ port: server.address().port, pid: process.pid }));
+  renameSync(pending, readyFile);
 });
