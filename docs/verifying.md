@@ -278,10 +278,25 @@ distinguishes them.
 ## A failure the base already had is not a regression
 
 A failed check is compared with a controlled base run. Inheritance needs the same failure
-identities and causes, not merely two nonzero exits. Current runs use `failure-identity-v3`,
-including stable normalization of checkout paths; older records retain their original rule.
+identities and causes, not merely two nonzero exits. Current runs use `failure-identity-v4`:
+- **Identities.** Test runners name their tests. ESLint, Prettier's `--check` and TypeScript's
+  compiler are named by diagnostic (file, rule or code, and message, without line numbers).
+- **Incomplete runs.** A run the harness killed, or a `&&` chain that stopped before its last
+  command, is incomplete and proves no inheritance.
+- **Older records** keep their original rule.
+
 Base measurement removes candidate build output and rebuilds as required. A demonstrated
 inherited failure does not make `regression` fail; a new or changed failure does.
+
+A run that delivers a change reads its own gates the same way, under a sealed requirement per gate
+([check requirements](check-requirements.md)).
+- **`absolute-pass`.** The check must pass.
+- **`no-new-regression`.** The default for static checks. Inherited failures may remain, but none
+  may be added or changed.
+
+The loop's repair, the run's verdict and exit status, and the bundle's verifier all read this
+one rule. An acceptance says which it is: "all required checks pass", or "no new failures
+established; these inherited failures remain", with each named.
 
 This is not hypothetical. Dependencies install with `--ignore-scripts`, because install scripts
 run whatever the registry serves, so a project that builds on `prepare` is verified without its

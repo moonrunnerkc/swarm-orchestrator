@@ -12,9 +12,11 @@ import { assembleGateSet, defaultDiffBudget } from "../gates/engine.ts";
 import type { FileSetRegistry } from "../gates/file-set.ts";
 import type { GateContext, GateDefinition } from "../gates/gate-definition.ts";
 import {
+  type BaselineRun,
   describeFailuresForModel,
   type GateCycle,
   isGreen,
+  recordBaselineRun,
   runGateCycle,
 } from "../gates/gate-runner.ts";
 import { describeGateSet, sealGateSet } from "../gates/gate-set-seal.ts";
@@ -221,6 +223,26 @@ export async function runMergeQueue(options: MergeQueueOptions): Promise<MergeQu
   let baseline = await snapshot(baseContext, baseCycle);
   let baselineGates = baseCycle.statuses;
   let accepted = options.baseCommit;
+  // check-requirement-v1: the integrated tree's failures are read against this base cycle, as a
+  // single run's are against its base run. Each gate's base observation is recorded once as a
+  // gate-baseline record, the kind a candidate's reading names and the verifier re-derives from.
+  const baseRuns = new Map(baseCycle.runs.map((run) => [run.gateId, run]));
+  const recordedBaselines = new Map<string, Promise<BaselineRun | null>>();
+  const baselineOf = (gate: GateDefinition): Promise<BaselineRun | null> => {
+    const known = recordedBaselines.get(gate.id);
+    if (known !== undefined) return known;
+    const run = baseRuns.get(gate.id);
+    const recorded =
+      run === undefined || run.observation.unavailable !== null
+        ? Promise.resolve(null)
+        : recordBaselineRun(gate, run.observation, {
+            commands,
+            evidence: options.evidence,
+            emit: options.emit,
+          });
+    recordedBaselines.set(gate.id, recorded);
+    return recorded;
+  };
 
   const landings: QueueLanding[] = [];
 
@@ -240,6 +262,7 @@ export async function runMergeQueue(options: MergeQueueOptions): Promise<MergeQu
         snapshot,
         baseline,
         baselineGates,
+        baselineOf,
         accepted,
         options,
       });
@@ -281,6 +304,8 @@ interface CandidateAttempt {
   readonly snapshot: (context: GateContext, cycle: GateCycle) => Promise<MeasureSnapshot>;
   readonly baseline: MeasureSnapshot;
   readonly baselineGates: Readonly<Record<string, GateStatus>>;
+  /** The base cycle's run of a gate, recorded as its gate-baseline record. */
+  readonly baselineOf: (gate: GateDefinition) => Promise<BaselineRun | null>;
   readonly accepted: string;
   readonly options: MergeQueueOptions;
 }
@@ -346,6 +371,7 @@ async function tryCandidate(
     commands: attempt.commands,
     evidence: options.evidence,
     emit: options.emit,
+    baseline: attempt.baselineOf,
   });
   const measures = await attempt.snapshot(candidateContext, cycle);
 

@@ -52,6 +52,7 @@ import {
 } from "./cli-run-commands.ts";
 import {
   changedFilesOf,
+  checksResult,
   describeRunOutcome,
   exitCodeForStatus,
   interventionsOn,
@@ -1083,6 +1084,7 @@ async function run(options: RunCommand): Promise<number> {
           ...(strengthening === undefined ? {} : { strengthening }),
           outcome: {
             status,
+            checks: (({ result, inherited }) => ({ result, inherited }))(checksResult(verdict)),
             lifecycle: outcome.lifecycle,
             requirements: outcome.requirements,
             changedFiles: outcome.changedFiles,

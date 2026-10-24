@@ -3,9 +3,9 @@ import { asJsonValue } from "../evidence/canonical-json.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import { refusedBeforeSpawn } from "../exec/run-process.ts";
 import { type AttemptSummary, type EscalationPayload, escalationSchema } from "./escalation.ts";
-import { failureSignature } from "./failure-signature.ts";
 import type { GateContext, GateDefinition, GateObservation } from "./gate-definition.ts";
 import {
+  type BaselineRun,
   describeFailuresForModel,
   executedTheChange,
   type GateCycle,
@@ -289,10 +289,23 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
   let context = await deps.context();
   trackTestFiles(context, trackedTestFiles);
 
-  let cycle = await runGateCycle(deps.gates, context, 0, deps.cycleDeps);
+  // Every cycle reads a failed command gate against the same gate over the base, measured once
+  // per gate and recorded (check-requirement-v1). One reading, `attributeFailure`'s, decides
+  // what is inherited for green, repair, escalation, the verdict and the verifier alike.
+  const cycleDeps: GateCycleDependencies = {
+    ...deps.cycleDeps,
+    ...(deps.measureAtBase === undefined ? {} : { baseline: baselineMeasurer(deps) }),
+  };
+  let cycle = await runGateCycle(deps.gates, context, 0, cycleDeps);
   const firstCycle = cycle;
   let baseline = await snapshot(context, cycle, trackedTestFiles);
-  const { failing: failingAtBase, passing: passingAtBase } = await failuresTheBaseHas(deps, cycle);
+  const passingAtBase = new Map(
+    cycle.blockingFailures.flatMap((run) =>
+      run.inheritance?.baselineRecord != null && run.inheritance.baseStatus === "passed"
+        ? [[run.gateId, run.inheritance.baselineRecord] as const]
+        : [],
+    ),
+  );
 
   const attempts: AutoResolveAttempt[] = [];
   let rejected: RejectedCandidate | null = null;
@@ -393,7 +406,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
     const failure = await tryResolve(deps, {
       attempt,
       cap: deps.cap,
-      gateOutput: next === undefined ? describeFailuresForModel(cycle, failingAtBase) : "",
+      gateOutput: next === undefined ? describeFailuresForModel(cycle) : "",
       cycle,
       rejected,
       ...(next === undefined
@@ -438,12 +451,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
 
     const candidateContext = await deps.context();
     trackTestFiles(candidateContext, trackedTestFiles);
-    const candidateCycle = await runGateCycle(
-      deps.gates,
-      candidateContext,
-      attempt,
-      deps.cycleDeps,
-    );
+    const candidateCycle = await runGateCycle(deps.gates, candidateContext, attempt, cycleDeps);
     const candidate = await snapshot(candidateContext, candidateCycle, trackedTestFiles);
 
     const respecification = await findNewSpecifications(
@@ -523,7 +531,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
         candidateRecord: kept.record,
         changedFiles: kept.changedFiles,
         ...gateMovement(cycle, candidateCycle),
-        failures: bounded(describeFailuresForModel(candidateCycle, failingAtBase)),
+        failures: bounded(describeFailuresForModel(candidateCycle)),
         diff: kept.diff,
       };
       await deps.checkpoint.restore(before);
@@ -596,7 +604,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
     };
   }
 
-  const escalation = await escalate(deps, cycle, attempts, baseComparison, failingAtBase);
+  const escalation = await escalate(deps, cycle, attempts, baseComparison);
   return {
     settled: "escalated",
     firstCycle,
@@ -1025,43 +1033,26 @@ export function gatesTheHarnessCouldNotRun(cycle: GateCycle): ReadonlyMap<string
 }
 
 /**
- * Which of the first cycle's blocking failures the base tree already has, unchanged, and which
- * the base passed, with the record of that passing run. Each is measured once, by running the
- * gate over the base and comparing the failure's signature, and recorded as a gate-baseline
- * record whether or not it matched.
+ * The base run of a gate, measured the first time a cycle asks for it and recorded as a
+ * gate-baseline record whatever it showed; the base does not move during a run, so later cycles
+ * read the same record. Null where the base could not be put in place.
  */
-async function failuresTheBaseHas(
+function baselineMeasurer(
   deps: AutoResolveDependencies,
-  cycle: GateCycle,
-): Promise<{
-  readonly failing: ReadonlySet<string>;
-  readonly passing: ReadonlyMap<string, string>;
-}> {
-  const failing = new Set<string>();
-  const passing = new Map<string, string>();
-  if (deps.measureAtBase === undefined) {
-    return { failing, passing };
-  }
-  for (const run of cycle.blockingFailures) {
-    const gate = deps.gates.find((candidate) => candidate.id === run.gateId);
-    if (gate === undefined || gate.source.kind !== "command") {
-      continue;
-    }
-    const observation = await deps.measureAtBase(gate);
-    if (observation === null) {
-      continue;
-    }
-    const atBase = await recordBaselineRun(gate, observation, deps.cycleDeps);
-    if (
-      atBase.status === "failed" &&
-      failureSignature({ detail: atBase.detail, ...atBase.observation }) ===
-        failureSignature({ detail: run.detail, ...run.observation })
-    ) {
-      failing.add(run.gateId);
-    }
-    if (atBase.status === "passed") passing.set(run.gateId, atBase.record);
-  }
-  return { failing, passing };
+): (gate: GateDefinition) => Promise<BaselineRun | null> {
+  const measured = new Map<string, Promise<BaselineRun | null>>();
+  return (gate) => {
+    const known = measured.get(gate.id);
+    if (known !== undefined) return known;
+    const run = (async () => {
+      const observation = await deps.measureAtBase?.(gate);
+      return observation === null || observation === undefined
+        ? null
+        : recordBaselineRun(gate, observation, deps.cycleDeps);
+    })();
+    measured.set(gate.id, run);
+    return run;
+  };
 }
 
 async function escalate(
@@ -1069,9 +1060,15 @@ async function escalate(
   cycle: GateCycle,
   attempts: readonly AutoResolveAttempt[],
   base: BaseComparison,
-  failingAtBase: ReadonlySet<string>,
 ): Promise<EscalationPayload> {
   const blocking = cycle.blockingFailures[0];
+  // Gates whose every failure is the base's own: read off the cycle's records, so an absolute
+  // requirement that fails as the base does is named as that, and not as the change's.
+  const failingAtBase = new Set(
+    cycle.runs
+      .filter((run) => run.inheritance?.attribution === "inherited")
+      .map((run) => run.gateId),
+  );
   const rejected = attempts.filter((attempt) => !attempt.decision.accepted);
   // A run can reach here with every gate green and the base comparison rejected, which is
   // the erosion a cap-bounded retry loop never saw because it never had to retry.

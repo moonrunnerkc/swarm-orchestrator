@@ -1,4 +1,5 @@
 import { nearestName } from "../edit-distance.ts";
+import { capabilityOf } from "./gate-capability.ts";
 import { commandGate, noOutputParser, parserNameFor } from "./gate-command.ts";
 import {
   type GateContext,
@@ -6,6 +7,7 @@ import {
   type GateObservation,
   type GateOverride,
   type GateParser,
+  type GateRequirement,
   type GateSeverity,
   type OverrideParserName,
   unavailableObservation,
@@ -162,6 +164,18 @@ export interface GateSetOptions {
    */
   readonly commandOverrides?: Readonly<Record<string, GateOverride>>;
   /**
+   * Gates the task contract requires to pass (its `requiredChecks`). Each is sealed
+   * `absolute-pass`, whatever its default: a requirement a person wrote is not relaxed to "no new
+   * regression" by the policy for repository checks.
+   */
+  readonly requiredChecks?: readonly string[];
+  /**
+   * Every gate `absolute-pass`, for a command that reports on a tree rather than accepting a
+   * change a run made (`swarm check`, `swarm gates`): it says whether the declared checks pass,
+   * as a CI job would, and has no change of its own to attribute a failure to.
+   */
+  readonly absoluteRequirements?: boolean;
+  /**
    * The Node the gates will spawn node's runner with, which decides whether the coverage arm
    * can be asked for. Absent means the process assembling the gates, which is what runs them.
    */
@@ -267,9 +281,13 @@ export function assembleGates(
 
   const replaced = assembled.map((gate) => {
     const override = overrides[gate.id];
-    return override === undefined
-      ? gate
-      : overriddenGate(gate.id, gate.title, gate.severity, override, detection, nodeVersion);
+    return withRequirement(
+      override === undefined
+        ? gate
+        : overriddenGate(gate.id, gate.title, gate.severity, override, detection, nodeVersion),
+      override,
+      options.absoluteRequirements === true ? null : (options.requiredChecks ?? []),
+    );
   });
   const assembledIds = assembled.map((gate) => gate.id);
   const unmatched = Object.keys(overrides).filter((id) => !assembledIds.includes(id));
@@ -288,7 +306,36 @@ export function assembleGates(
   const added = unmatched
     .sort((left, right) => (left < right ? -1 : 1))
     .map((id) =>
-      overriddenGate(id, id, "blocking", overrides[id] as GateOverride, detection, nodeVersion),
+      withRequirement(
+        overriddenGate(id, id, "blocking", overrides[id] as GateOverride, detection, nodeVersion),
+        overrides[id],
+        options.absoluteRequirements === true ? null : (options.requiredChecks ?? []),
+      ),
     );
   return [...replaced, ...added];
+}
+
+/**
+ * The requirement a gate is sealed with (check-requirement-v1, docs/check-requirements.md). A
+ * static check the project declares (lint, format, typecheck, a build) is held to no new
+ * regression, since the base it starts from may already fail it for reasons outside the task. A
+ * check that executes the code must pass: a test the base fails is often the task's own subject,
+ * and reading it as inherited would accept a change that left it failing. An inspection rules on
+ * the change alone and has no base reading to compare with. A requirement named in `swarm.toml`,
+ * and a check the task contract requires, decide over these defaults.
+ */
+function withRequirement(
+  gate: GateDefinition,
+  override: GateOverride | undefined,
+  /** Null holds every gate to an absolute pass (`absoluteRequirements`). */
+  requiredChecks: readonly string[] | null,
+): GateDefinition {
+  if (requiredChecks === null) return { ...gate, requirement: "absolute-pass" };
+  const named = typeof override === "object" ? override.requirement : undefined;
+  const staticCommand =
+    gate.source.kind === "command" && (gate.capability ?? capabilityOf(gate.id)) === "static";
+  const requirement: GateRequirement = requiredChecks.includes(gate.id)
+    ? "absolute-pass"
+    : (named ?? (staticCommand ? "no-new-regression" : "absolute-pass"));
+  return { ...gate, requirement };
 }

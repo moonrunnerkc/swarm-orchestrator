@@ -42,6 +42,32 @@ export interface RunVerdict {
    * called "green": it does not mean the change is right, and no number here could.
    */
   readonly acceptable: boolean;
+  /**
+   * check-requirement-v1: blocking gates that failed only as the base fails them, under a
+   * no-new-regression requirement, with the failures that remain. Absent where there are none,
+   * which is every verdict before the requirement existed. Where present on an acceptable
+   * verdict, the acceptance is "no new failures established; these inherited failures remain",
+   * not "all required checks pass".
+   */
+  readonly inherited?:
+    | readonly { readonly gateId: string; readonly failures: readonly string[] }[]
+    | undefined;
+}
+
+/** The two kinds of acceptance, and refusal, in the words a person reads. */
+export function acceptanceKind(verdict: RunVerdict): string {
+  if (!verdict.acceptable) return "refused";
+  const inherited = verdict.inherited ?? [];
+  return inherited.length === 0
+    ? "accepted: all required checks pass"
+    : `accepted: no new failures established; these inherited failures remain: ${inherited
+        .map((one) => `${one.gateId} (${describeRemaining(one.failures)})`)
+        .join("; ")}`;
+}
+
+function describeRemaining(failures: readonly string[]): string {
+  if (failures.length === 0) return "the same output as the base";
+  return `${failures.slice(0, 5).join("; ")}${failures.length > 5 ? `; and ${failures.length - 5} more` : ""}`;
 }
 
 export const runVerdictSchema = z.strictObject({
@@ -57,6 +83,9 @@ export const runVerdictSchema = z.strictObject({
   humanApproval: z.enum(["approved", "rejected", "required", "not-required"]),
   reasons: z.record(z.string(), z.string()),
   acceptable: z.boolean(),
+  inherited: z
+    .array(z.strictObject({ gateId: z.string(), failures: z.array(z.string()) }))
+    .optional(),
 });
 
 interface VerdictInput {
@@ -102,6 +131,9 @@ interface CapabilityRun {
   readonly detail: string;
   readonly record: string;
   readonly measures: Readonly<Record<string, number>>;
+  /** Failed, under no-new-regression, with every failure the base's own (check-requirement-v1). */
+  readonly inheritedOnly?: boolean;
+  readonly inheritance?: { readonly inherited: readonly string[] } | null;
 }
 
 /** What an accepted worker assessment says. A final verification may still refuse the work. */
@@ -168,6 +200,9 @@ export function runVerdict(input: VerdictInput): RunVerdict {
       : []),
     ...(approval === "rejected" ? ["a person rejected the change"] : []),
   ];
+  const inherited = runs
+    .filter((run) => run.severity === "blocking" && run.inheritedOnly === true)
+    .map((run) => ({ gateId: run.gateId, failures: [...(run.inheritance?.inherited ?? [])] }));
   return {
     version: 1,
     integrity: input.integrity,
@@ -214,8 +249,16 @@ export function runVerdict(input: VerdictInput): RunVerdict {
           ? "the bundle was signed by a key the trust policy names"
           : "no expected signer was matched, so the signature shows the bundle is unchanged " +
             "since it was written and not who wrote it",
+      ...(inherited.length === 0
+        ? {}
+        : {
+            inherited: `no new failures established; these failures are the base's own and remain: ${inherited
+              .map((one) => `${one.gateId} (${describeRemaining(one.failures)})`)
+              .join("; ")}`,
+          }),
     },
     acceptable: refusals.length === 0,
+    ...(inherited.length === 0 ? {} : { inherited }),
   };
 }
 
@@ -290,7 +333,9 @@ function judge(
     return { answer: "unmeasured", reason: `no ${capability} gate was assembled for this run` };
   }
 
-  const failed = mine.filter((run) => run.status === "failed");
+  // A gate whose requirement is no new regression, failing only as the base does, met it: it is
+  // not a failure of this dimension, and the reason says what remains.
+  const failed = mine.filter((run) => run.status === "failed" && run.inheritedOnly !== true);
   if (failed.length > 0) {
     return {
       answer: "fail",
@@ -299,6 +344,15 @@ function judge(
   }
 
   const passed = mine.filter((run) => run.status === "passed");
+  const inherited = mine.filter((run) => run.status === "failed" && run.inheritedOnly === true);
+  if (inherited.length > 0)
+    return {
+      answer: "pass",
+      reason: [
+        ...(passed.length === 0 ? [] : [`${passed.map((run) => run.gateId).join(", ")} passed`]),
+        `${inherited.map((run) => run.gateId).join(", ")}: no new failures, the base's own remain`,
+      ].join("; "),
+    };
   if (passed.length === 0) {
     return {
       answer: "unmeasured",
@@ -334,7 +388,9 @@ export function describeVerdict(verdict: RunVerdict): readonly string[] {
     row("humanApproval", verdict.humanApproval),
     "",
     verdict.acceptable
-      ? "acceptable: yes (no blocking gate failed, no policy gate failed, and something executed the change)"
+      ? (verdict.inherited ?? []).length === 0
+        ? "acceptable: yes (all required checks pass, no policy gate failed, and something executed the change)"
+        : `acceptable: yes, with inherited failures (${acceptanceKind(verdict)})`
       : "acceptable: no",
   ];
 }

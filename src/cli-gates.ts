@@ -147,6 +147,9 @@ async function measureOpenedWorkspace(
   const gateOptions = {
     ...gateOptionsFrom(settings),
     ...(options.packages ? { packages: options.packages } : {}),
+    // A report on the tree, as a CI job gives one: every declared check must pass
+    // (docs/check-requirements.md). Only a run that made a change reads failures as inherited.
+    absoluteRequirements: true,
   };
   const diffBudget = diffBudgetFrom(settings);
   // Sealed before anything runs, exactly as a task run seals its criteria before the loop, so

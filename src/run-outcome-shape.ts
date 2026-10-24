@@ -76,6 +76,18 @@ export interface SetupUsage {
 export interface RunOutcomeReport {
   /** Added in 14.5.0; exit status 0 exactly when this is `accepted` or `unjudged`, 4 for `unverified`. */
   readonly status: OutcomeStatus;
+  /**
+   * Added in 14.6.0 (check-requirement-v1): which kind of acceptance the verdict is. Every
+   * required check passed, or no new failure was established and the base's own failures in the
+   * named checks remain. Both are acceptances; `refused` otherwise.
+   */
+  readonly checks?: {
+    readonly result: "all-required-pass" | "no-new-failures" | "refused";
+    readonly inherited: readonly {
+      readonly gateId: string;
+      readonly failures: readonly string[];
+    }[];
+  };
   readonly lifecycle: string;
   readonly requirements: readonly RequirementOutcome[] | null;
   readonly changedFiles: readonly string[];

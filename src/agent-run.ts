@@ -379,6 +379,9 @@ export async function runAgentTask(input: AgentTaskOptions): Promise<AgentTaskRe
             contract.budget.maxWallMs,
           ),
           fileSet: restrictFileSet(input.fileSet, contract),
+          // A check the contract requires is sealed absolute-pass: the person who wrote the
+          // contract asked for it to pass, not merely to fail no worse (check-requirement-v1).
+          gateOptions: { ...(input.gateOptions ?? {}), requiredChecks: contract.requiredChecks },
         };
   if (contract !== undefined) {
     await options.evidence.record({
