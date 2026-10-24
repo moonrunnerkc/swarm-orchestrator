@@ -1025,7 +1025,7 @@ async function runProgram(
 }
 
 /** One program run through the planned-check runner from `checkout`, as recorded. */
-async function programRun(
+export async function programRun(
   context: TaskGoalContext,
   checkout: string,
   script: string,

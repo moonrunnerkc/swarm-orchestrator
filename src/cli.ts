@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { type createCandidateReview, probeObligations, reviewRule } from "./agent-review.ts";
-import { reviewProbeRunner } from "./cli-review.ts";
+import { reviewProbeRunner, reviewTrialTool } from "./cli-review.ts";
 // Check the runtime before loading the command composition.
 import "./node-floor-check.ts";
 
@@ -98,7 +98,7 @@ import { verifyBundle } from "./cli-verify.ts";
 import type { LoopEvent } from "./core/loop-events.ts";
 import type { StopReason } from "./core/termination.ts";
 import { readBundle } from "./evidence/bundle.ts";
-import { asJsonValue } from "./evidence/canonical-json.ts";
+import { asJsonValue, digestOfBytes } from "./evidence/canonical-json.ts";
 import { buildEvidenceDag } from "./evidence/dag.ts";
 import {
   declareGoalContract,
@@ -131,9 +131,12 @@ import {
   initialObligations,
   preservationRule,
   recordObligations,
+  reviewAuthorities,
   settleObligations,
+  unclassifiedSentences,
 } from "./gates/preservation-obligations.ts";
 import { summarizeRatchet } from "./gates/ratchet-summary.ts";
+import { patchAgainstBase } from "./gates/scratch-index.ts";
 import { diagnose, remediesFor, runtimeFinding } from "./install/health.ts";
 import { inspectInstall } from "./install/inspect.ts";
 import { describeInstall } from "./install/report.ts";
@@ -488,7 +491,7 @@ async function run(options: RunCommand): Promise<number> {
     task: options.task,
     ...(sealedGoal === undefined ? {} : { contract: sealedGoal }),
   });
-  await recordObligations(evidence, obligations);
+  await recordObligations(evidence, obligations, options.task);
   if (options.review !== undefined)
     await evidence.record({
       type: "verification-command",
@@ -804,9 +807,15 @@ async function run(options: RunCommand): Promise<number> {
             review: {
               mode: options.review,
               runProbes: reviewProbeRunner({ ...goalContext, contract: goal }),
+              trialTool: reviewTrialTool({
+                ...goalContext,
+                contract: goal,
+                signal: modelWork.signal,
+              }),
               obligations: obligations.map(
-                (one) => `${one.statement} (${one.authority}: ${one.basis})`,
+                (one) => `${one.id}: ${one.statement} (${one.category}; ${one.basis})`,
               ),
+              authorities: reviewAuthorities(obligations),
               settled: (readings) => {
                 reviewState.readings = readings;
               },
@@ -1024,14 +1033,28 @@ async function run(options: RunCommand): Promise<number> {
     const preservation = settleObligations({
       obligations,
       regression: outcome.finalVerification?.regression ?? null,
+      inherited: (verdict.inherited ?? []).map((one) => one.gateId),
       requirements: (outcome.requirements ?? []).map(({ id, status }) => ({ id, status })),
-      probes: reviewState.readings === null ? [] : probeObligations(reviewState.readings),
+      probes:
+        reviewState.readings === null
+          ? []
+          : probeObligations(reviewState.readings, reviewAuthorities(obligations)),
     });
+    // The delivered tree the statuses were read on, by the digest of its patch against the base.
+    const deliveredPatch = digestOfBytes(
+      await patchAgainstBase({ workspaceRoot: options.workspace, baseRef: baseCommit }),
+    );
     await evidence.record({
       type: "verification-command",
       actor: "harness",
       provenance: ["tool-output"],
-      payload: asJsonValue({ rule: preservationRule, phase: "settled", statuses: preservation }),
+      payload: asJsonValue({
+        rule: preservationRule,
+        phase: "settled",
+        deliveredPatch,
+        statuses: preservation,
+        unclassified: unclassifiedSentences(options.task),
+      }),
     });
     ui.note(describePreservation(preservation));
     // The terminal, the result line and the exit status read one status, so a run the outcome
@@ -1109,6 +1132,8 @@ async function run(options: RunCommand): Promise<number> {
               ? {}
               : { repairsForGeneratedChecksOnly: outcome.repairsForGeneratedChecksOnly }),
             preservation,
+            unclassifiedTask: unclassifiedSentences(options.task),
+            deliveredPatch,
             ...(options.review === undefined
               ? {}
               : {
