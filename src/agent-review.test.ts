@@ -1,3 +1,6 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   admitObjections,
@@ -7,8 +10,10 @@ import {
   classifyProbe,
   classifyRelation,
   classifyTaskExamples,
+  createCandidateReview,
   establishedReadings,
   findingsBrief,
+  heldBackProbes,
   objectionsBrief,
   type ProbeRun,
   probeObligations,
@@ -16,8 +21,12 @@ import {
   readAnswers,
   remeasure,
   reviewParts,
+  statedGaps,
   taskProbes,
+  validatedViolations,
 } from "./agent-review.ts";
+import { createTestClock } from "./core/test-doubles.ts";
+import { openEvidenceSession } from "./evidence/session.ts";
 import { taskCodeStatements } from "./task-code-statements.ts";
 
 const task =
@@ -327,7 +336,7 @@ describe("the review's readings as ratchet parts", () => {
       ...classifyProbe(strict, twice(answered("[1]", "[1,2]")), twice(answered("[1]", "[1,2]"))),
     ];
     expect(reviewParts(classified)).toEqual({
-      parts: { "default-parse: kept": "failed" },
+      parts: { "default-parse#1: kept": "passed", "default-parse#2: kept": "failed" },
       claims: [],
     });
   });
@@ -344,13 +353,19 @@ describe("the review's readings as ratchet parts", () => {
       examined,
       new Map([["default-parse", twice(answered("[1,2]", "[1]"))]]),
     );
-    expect(reviewParts(repaired).parts).toEqual({ "default-parse: kept": "passed" });
+    expect(reviewParts(repaired).parts).toEqual({
+      "default-parse#1: kept": "passed",
+      "default-parse#2: kept": "passed",
+    });
     const broken = remeasure(
       [guarded],
       examined,
       new Map([["default-parse", twice({ kind: "did-not-load", detail: "x" })]]),
     );
-    expect(reviewParts(broken).parts).toEqual({ "default-parse: kept": "failed" });
+    expect(reviewParts(broken).parts).toEqual({
+      "default-parse#1: kept": "failed",
+      "default-parse#2: kept": "failed",
+    });
   });
 });
 
@@ -519,14 +534,31 @@ describe("requested behaviour the task states (task-code-v1, relations)", () => 
       twice(answered('"/a?x=1"', '"file://C:/x?x=1"')),
       twice(answered('"/a?x=1"', '"file:///C:/x?x=1"')),
     );
-    expect(reviewParts(examined).parts).toEqual({ "code-relation-1: requested": "failed" });
+    expect(reviewParts(examined).parts).toEqual({
+      "code-relation-1#1: requested": "passed",
+      "code-relation-1#2: requested": "failed",
+    });
     const repaired = remeasure(
       [relation],
       examined,
       new Map([[relation.id, twice(answered('"/a?x=1"', '"file://C:/x?x=1"'))]]),
     );
     expect(repaired.map((one) => one.reading)).toEqual(["related", "related"]);
-    expect(reviewParts(repaired).parts).toEqual({ "code-relation-1: requested": "passed" });
+    expect(reviewParts(repaired).parts).toEqual({
+      "code-relation-1#1: requested": "passed",
+      "code-relation-1#2: requested": "passed",
+    });
+    // A repair that fixes the open case and breaks the held one moves a part the wrong way, which
+    // one part per probe (failed on both sides) read as no change.
+    const traded = remeasure(
+      [relation],
+      examined,
+      new Map([[relation.id, twice(answered('"/a"', '"file://C:/x?x=1"'))]]),
+    );
+    expect(reviewParts(traded).parts).toEqual({
+      "code-relation-1#1: requested": "failed",
+      "code-relation-1#2: requested": "passed",
+    });
   });
 
   it("admits a reviewer's relation only with the task's words and a reference to functions they name", () => {
@@ -583,5 +615,221 @@ describe("requested behaviour the task states (task-code-v1, relations)", () => 
       ],
     });
     expect(admitted.probes.map((one) => one.id)).toEqual(["probe-1"]);
+  });
+});
+
+describe("the grounded path (candidate-review-v4)", () => {
+  const enumerationTask =
+    'Add pick(input: string, keep: (key: string, value: string) => boolean): string. Otherwise keep is called once for each key of entries(input), in that order, with the key and its value, and pick(input, () => true) equals rebuild(input) for every input that contains "?". Examples: pick("/a?k=1&j=2", (key) => key === "k") is "/a?k=1" and pick("/b", () => false) is "/b".';
+  const statements = taskCodeStatements(enumerationTask);
+  const loaderAt = (url: string) => ({
+    rule: "project-loader-v1" as const,
+    entry: "./query.mjs",
+    method: "native" as const,
+    entries: [{ entry: "./query.mjs", method: "native" as const }],
+    preamble: `const project = await import(${JSON.stringify(url)});`,
+    exports: ["entries", "pick", "rebuild"],
+  });
+  // A project module: `entries` lists a query's keys, and `pick` asks `keep` about them, either
+  // once per key or, like the October 24 candidate, once more about the first kept key.
+  const project = (twice: boolean) =>
+    [
+      "export const entries = (input) => {",
+      '  const out = {}; const at = input.indexOf("?"); if (at < 0) return out;',
+      '  for (const part of input.slice(at + 1).split("&")) { if (part === "") continue; const [key, value = ""] = part.split("="); out[key] = value; }',
+      "  return out;",
+      "};",
+      "export const rebuild = (input) => input;",
+      "export const pick = (input, keep) => {",
+      "  const found = entries(input);",
+      twice ? "  for (const key of Object.keys(found)) if (keep(key, found[key])) break;" : "",
+      "  for (const key of Object.keys(found)) keep(key, found[key]);",
+      "  return input;",
+      "};",
+    ].join("\n");
+
+  async function answersOf(directory: string, program: string, inputs: readonly unknown[]) {
+    const { writeFile } = await import("node:fs/promises");
+    const { pathToFileURL } = await import("node:url");
+    const file = join(directory, `probe-${Math.random().toString(36).slice(2)}.mjs`);
+    await writeFile(file, program);
+    const run = (await import(pathToFileURL(file).href)).default as (input: unknown) => unknown;
+    return Promise.all(inputs.map(async (input) => JSON.stringify(await run(input))));
+  }
+
+  it("runs an enumeration: a callback asked twice about one key is a counterexample, once per key is not", async () => {
+    const { mkdtemp, writeFile } = await import("node:fs/promises");
+    const { pathToFileURL } = await import("node:url");
+    const read = (twice: boolean) => async () => {
+      const directory = await mkdtemp(join(tmpdir(), "swarm-enumeration-"));
+      await writeFile(join(directory, "query.mjs"), project(twice));
+      const loader = loaderAt(pathToFileURL(join(directory, "query.mjs")).href);
+      const probe = taskProbes(statements, loader, enumerationTask).find(
+        (one) => one.id === "code-enumeration-1",
+      ) as ReviewProbe;
+      const inputs = probe.cases.map((one) => one.input);
+      return {
+        probe,
+        subject: await answersOf(directory, probe.program, inputs),
+        reference: await answersOf(directory, probe.reference as string, inputs),
+      };
+    };
+    const asked = await read(true)();
+    expect(asked.probe.origins?.[0]).toBe("task");
+    expect(asked.probe.cases[0]?.input).toBe("/a?k=1&j=2");
+    expect(asked.subject[0]).toBe('[["k","1"],["k","1"],["j","2"]]');
+    expect(asked.reference[0]).toBe('[["k","1"],["j","2"]]');
+    const fixed = await read(false)();
+    expect(fixed.subject).toEqual(fixed.reference);
+  });
+
+  it("keeps the validation batch apart, under its own id, and lists only the sentences no statement comes from as gaps", () => {
+    const loader = loaderAt("file:///nowhere/query.mjs");
+    const probes = taskProbes(statements, loader, enumerationTask);
+    const held = heldBackProbes(probes, statements, enumerationTask);
+    expect(held.map((one) => one.id)).toEqual(["code-relation-1-held", "code-enumeration-1-held"]);
+    for (const probe of held) {
+      const visible = probes.find((one) => `${one.id}-held` === probe.id) as ReviewProbe;
+      expect(probe.origins?.every((one) => one === "validation")).toBe(true);
+      for (const one of probe.cases)
+        expect(visible.cases.map((known) => known.input)).not.toContain(one.input);
+    }
+    expect(statedGaps(enumerationTask, statements)).toEqual([
+      "Add pick(input: string, keep: (key: string, value: string) => boolean): string.",
+    ]);
+  });
+
+  it("counts as a validated violation only an established case of the task's own supported code", () => {
+    const loader = loaderAt("file:///nowhere/query.mjs");
+    const enumeration = taskProbes(statements, loader, enumerationTask).find(
+      (one) => one.id === "code-enumeration-1",
+    ) as ReviewProbe;
+    const violated = classifyRelation(
+      { ...enumeration, cases: [{ input: "/a?k=1" }] },
+      twice(answered('[["k","1"]]')),
+      twice(answered('[["k","1"],["k","1"]]')),
+    );
+    expect(violated.map((one) => one.reading)).toEqual(["relation-violated"]);
+    expect(validatedViolations([enumeration], violated)).toHaveLength(1);
+    // The same difference under a provisional reading, or from a reviewer's probe, decides nothing.
+    expect(validatedViolations([{ ...enumeration, provisional: "unfollowed" }], violated)).toEqual(
+      [],
+    );
+    const { origin: _origin, ...reviewers } = enumeration;
+    expect(validatedViolations([reviewers], violated)).toEqual([]);
+  });
+
+  it("examines without a reviewer, holds the validation batch back until a repaired candidate is kept, then exposes it", async () => {
+    const root = await mkdtemp(join(tmpdir(), "swarm-grounded-"));
+    const evidence = await openEvidenceSession({
+      root,
+      sessionId: "grounded",
+      clock: createTestClock(1_700_000_000_000),
+    });
+    const loader = loaderAt("file:///nowhere/query.mjs");
+    const held = heldBackProbes(
+      taskProbes(statements, loader, enumerationTask),
+      statements,
+      enumerationTask,
+    );
+    const heldInput = held.find((one) => one.id === "code-enumeration-1-held")?.cases[0]
+      ?.input as string;
+    // The candidate under review: asks twice everywhere (v0), then once except on one input of the
+    // held batch (v1), then once everywhere (v2).
+    let version = 0;
+    const entriesOf = (input: string) => {
+      const out: [string, string][] = [];
+      const at = input.indexOf("?");
+      if (at < 0) return out;
+      for (const part of input.slice(at + 1).split("&")) {
+        if (part === "") continue;
+        const [key, value = ""] = part.split("=");
+        if (!out.some(([known]) => known === key)) out.push([key as string, value]);
+      }
+      return out;
+    };
+    const answer = (probe: ReviewProbe, input: unknown, tree: "base" | "candidate") => {
+      const text = String(input);
+      if (probe.id.endsWith("-ref"))
+        return probe.id.includes("enumeration") ? entriesOf(text) : text;
+      if (probe.id.startsWith("code-relation")) return text;
+      if (probe.id.startsWith("code-enumeration")) {
+        const once = entriesOf(text);
+        const doubled =
+          tree === "candidate" && (version === 0 || (version === 1 && text === heldInput));
+        return doubled && once.length > 0 ? [once[0], ...once] : once;
+      }
+      // The task's two examples, by their index: each answered as the task states on the candidate.
+      return tree === "base"
+        ? { "not a function of the project": "pick" }
+        : (["/a?k=1", "/b"][Number(input)] ?? null);
+    };
+    const runProbes = async (probes: readonly ReviewProbe[], tree: "base" | "candidate") => ({
+      runs: new Map(
+        probes.map((probe) => [
+          probe.id,
+          twice({
+            kind: "answered",
+            answers: probe.cases.map((one) => ({
+              kind: "result" as const,
+              text: JSON.stringify(answer(probe, one.input, tree)),
+            })),
+          }),
+        ]),
+      ),
+      records: [],
+    });
+    const review = createCandidateReview({
+      mode: "grounded",
+      task: enumerationTask,
+      evidence,
+      clock: createTestClock(1_700_000_000_000),
+      runProbes,
+      diff: async () => `diff for version ${version}`,
+      obligations: [],
+      authorities: [],
+      runLoop: () => {
+        throw new Error("the grounded path asked a reviewer");
+      },
+      loopDependencies: { maxOutputTokens: 1000 } as never,
+      readOnly: () => {
+        throw new Error("the grounded path opened the reviewer's tools");
+      },
+      remaining: () => ({ tokens: 0, wallMs: 600_000 }),
+      charge: async () => {
+        throw new Error("the grounded path charged a conversation");
+      },
+      grounding: async () => ({ loader, attempts: [], statements }),
+    });
+    const examination = await review.examine({ statuses: {}, runs: [] });
+    expect(examination.brief).toContain("expected calls (one per entry");
+    expect(examination.open.length).toBeGreaterThan(0);
+    // v1: every visible case holds, and the held batch shows the one input it was kept back for.
+    version = 1;
+    const repaired = await review.measure();
+    expect(repaired.exposed).toEqual([expect.stringContaining(JSON.stringify(heldInput))]);
+    expect(repaired.violations).toEqual(repaired.exposed);
+    expect(repaired.brief).toContain("held back from it");
+    expect(Object.keys(repaired.parts).some((part) => part.includes("-held"))).toBe(false);
+    review.adopt();
+    expect(review.readings().probes.some((one) => one.id.endsWith("-held"))).toBe(true);
+    // v2: the exposed case is now held like the others, and holds.
+    version = 2;
+    const finished = await review.measure();
+    expect(finished.violations).toEqual([]);
+    expect(Object.keys(finished.parts).some((part) => part.includes("-held"))).toBe(true);
+    const examined = evidence
+      .records()
+      .map(
+        (entry) =>
+          evidence.payloads().get(entry.payloadDigest) as { phase?: string; reviewer?: unknown },
+      )
+      .find((payload) => payload?.phase === "examined");
+    expect(examined?.reviewer).toEqual({
+      asked: false,
+      reason: "grounded mode: the harness's own checks only",
+      gaps: [],
+    });
+    await rm(root, { recursive: true, force: true });
   });
 });

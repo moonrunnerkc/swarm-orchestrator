@@ -16,7 +16,15 @@ import {
 import { scrubJson } from "./evidence/scrub.ts";
 import type { EvidenceRecorder } from "./evidence/session.ts";
 import type { GroundedLoader } from "./gates/project-loader.ts";
-import type { TaskCodeStatement, TaskExample, TaskRelation } from "./task-code-statements.ts";
+import {
+  codeSentences,
+  type GeneratedInputs,
+  generatedBatches,
+  type TaskCodeStatement,
+  type TaskEnumeration,
+  type TaskExample,
+  type TaskRelation,
+} from "./task-code-statements.ts";
 import { sentencesQuoted } from "./workers/planned-check-program.ts";
 
 /**
@@ -47,10 +55,23 @@ import { sentencesQuoted } from "./workers/planned-check-program.ts";
  *
  * `prose` is the control: the same conversation and the same attempt, with objections in words
  * and nothing run, so a difference can be told apart from the extra computation.
+ *
+ * candidate-review-v4 separates the harness's own checks from the reviewer:
+ * - **grounded**: only the harness's run of the task's code (task-code-v2), with no conversation.
+ *   Its success is the harness's, and is never attributed to a reviewer;
+ * - **executable**: the same, and then the reviewer, asked only about the task sentences no
+ *   harness check reaches (the stated gaps), and not asked where there are none;
+ * - each relation's generated validation batch is frozen at examination and held back from
+ *   repair. It first runs on a repaired candidate; once that candidate is kept its cases are
+ *   exposed, held like the others, and a counterexample among them may enter a later attempt;
+ * - every held case is its own ratchet part, so a repair that fixes one case and breaks another
+ *   is rolled back rather than read as no change;
+ * - a later attempt is owed while a validated counterexample stays open and the last attempt made
+ *   progress or exposed one, within the run's cap (`auto-resolve.ts`).
  */
-export const reviewRule = "candidate-review-v3";
+export const reviewRule = "candidate-review-v4";
 
-export type ReviewMode = "executable" | "prose";
+export type ReviewMode = "grounded" | "executable" | "prose";
 
 const probeId = z.string().regex(/^[a-z][a-z0-9-]{0,40}$/);
 const probeCaseSchema = z.object({
@@ -82,6 +103,13 @@ export type ReviewProbe = z.infer<typeof probeSchema> & {
   readonly statements?: readonly { readonly id: string; readonly sentence: string }[];
   /** Why every reading of this probe stays provisional, where one does. */
   readonly provisional?: string;
+  /**
+   * Where each case's input came from, in case order: the task's own literals (carried into a
+   * domain included), a generated discovery batch, or the held-back validation batch.
+   */
+  readonly origins?: readonly ("task" | "discovery" | "validation")[];
+  /** The generated batches the cases came from, with their seeds, for the record. */
+  readonly generated?: readonly GeneratedInputs[];
 };
 
 const objectionSchema = z.object({
@@ -825,11 +853,13 @@ export function classifyRelation(
 }
 
 /**
- * The cases' readings as ratchet parts, one per probe: `<probe>: kept` holds behaviour the base
- * showed under an obligation the task states. Only such cases are held, so a repair is never
- * rolled back for changing behaviour no task sentence protects (which the task may have asked
- * for), and a reviewer's expected answer is never held at all. Every kept case must hold for its
- * part to pass. No part is a claim.
+ * The cases' readings as ratchet parts, one per case: `<probe>#<case>: kept` holds behaviour the
+ * base showed under an obligation the task states, and `<probe>#<case>: requested` an answer the
+ * task states. Only such cases are held, so a repair is never rolled back for changing behaviour
+ * no task sentence protects (which the task may have asked for), and a reviewer's expected answer
+ * is never held at all. One part per case (candidate-review-v4), not per probe: under one part per
+ * probe a repair that fixed one case and broke another left the part failed on both sides and
+ * read as no change. No part is a claim.
  */
 export function reviewParts(classified: readonly CaseClassification[]): {
   readonly parts: Readonly<Record<string, GateStatus>>;
@@ -838,12 +868,37 @@ export function reviewParts(classified: readonly CaseClassification[]): {
   const parts: Record<string, GateStatus> = {};
   for (const one of classified) {
     if (one.role === null || one.authority === null) continue;
-    const name = `${one.probe}: ${one.role}`;
     const holds = one.reading === "kept" || one.reading === "met" || one.reading === "related";
-    parts[name] = parts[name] === "failed" || !holds ? "failed" : "passed";
+    parts[`${one.probe}#${one.index}: ${one.role}`] = holds ? "passed" : "failed";
   }
   return { parts, claims: [] };
 }
+
+/**
+ * A counterexample the run must resolve before it claims the requirement it bears on
+ * (task-violation-completion-v1): a case of the harness's own run of the task's code, its reading
+ * one that reaches repair, under a supported reading (not provisional). A reviewer's probe, a
+ * relation over a domain the reader could not follow, and a case that did not run twice the same
+ * way are not: they stay reported and never decide completion.
+ */
+export function validatedViolations(
+  probes: readonly ReviewProbe[],
+  classified: readonly CaseClassification[],
+): readonly CaseClassification[] {
+  return classified.filter((one) => {
+    const probe = probes.find((candidate) => candidate.id === one.probe);
+    return (
+      probe?.origin === "task" &&
+      probe.provisional === undefined &&
+      one.authority !== null &&
+      establishedReadings.has(one.reading)
+    );
+  });
+}
+
+/** A case's identity across candidates: its probe, its case number and its input. */
+export const caseIdentity = (one: Pick<CaseClassification, "probe" | "index" | "input">) =>
+  `${one.probe}#${one.index} ${textOf(one.input)}`;
 
 /**
  * A later candidate's answers read under the roles the examination fixed. Where a held case now
@@ -940,6 +995,8 @@ const maxTaskExamples = 6;
 export function taskProbes(
   statements: readonly TaskCodeStatement[],
   loader: GroundedLoader,
+  /** The task's text, which seeds the generated batches; absent, only the task's inputs run. */
+  task?: string,
 ): readonly ReviewProbe[] {
   const examples = (role: "requested" | "preserve") =>
     statements
@@ -973,30 +1030,166 @@ export function taskProbes(
     .filter((one) => compiles(one.subject) && compiles(one.reference))
     .slice(0, 2)
     .map(
-      (one): ReviewProbe => ({
-        id: one.id,
-        basis: "relation",
-        origin: "task",
-        quote: one.sentence,
-        program: `${destructured(loader, [one.subjectName])}\nexport default async (${one.variable}) => ${guardedCall([one.subjectName], one.subject)};`,
-        reference: `${destructured(loader, [one.referenceName])}\nexport default async (${one.variable}) => ${guardedCall([one.referenceName], one.reference)};`,
-        // Every input the extraction gives (at most `maxRelationInputs`), as one run of one program.
-        cases: one.inputs.map((input) => ({ input })),
-        statements: one.inputs.map(() => ({ id: one.id, sentence: one.sentence })),
-        ...(one.domain === "unfollowed"
-          ? {
-              provisional:
-                "the task states a domain for this relation that the reader could not apply, so an input may lie outside it",
-            }
-          : {}),
-      }),
+      (one): ReviewProbe =>
+        withDiscovery(task, one, {
+          id: one.id,
+          basis: "relation",
+          origin: "task",
+          quote: one.sentence,
+          program: `${destructured(loader, [one.subjectName])}\nexport default async (${one.variable}) => ${guardedCall([one.subjectName], one.subject)};`,
+          reference: `${destructured(loader, [one.referenceName])}\nexport default async (${one.variable}) => ${guardedCall([one.referenceName], one.reference)};`,
+          // Every input the extraction gives (at most `maxRelationInputs`), as one run of one program.
+          cases: one.inputs.map((input) => ({ input })),
+          statements: one.inputs.map(() => ({ id: one.id, sentence: one.sentence })),
+          ...(one.domain === "unfollowed"
+            ? {
+                provisional:
+                  "the task states a domain for this relation that the reader could not apply, so an input may lie outside it",
+              }
+            : {}),
+        }),
     );
+  const enumerations = statements
+    .filter((one): one is TaskEnumeration => one.kind === "enumeration" && one.inputs.length > 0)
+    .slice(0, 2)
+    .map((one) => withDiscovery(task, one, enumerationProbe(one, loader)));
   return [
     ...bundle("code-requested", "requirement", examples("requested")),
     ...bundle("code-kept", "preserve", examples("preserve")),
     ...relations,
+    ...enumerations,
   ];
 }
+
+/**
+ * A callback the task says is called once for each entry of an existing function's answer, as a
+ * relation: the subject records the callback's calls on the candidate (each call's first `arity`
+ * arguments), and the reference lists the entries of the existing function's answer on the
+ * unchanged base (an object's keys with their values, an array's elements with their indexes).
+ * Where the task states no order, both sides are sorted before they are compared.
+ */
+function enumerationProbe(one: TaskEnumeration, loader: GroundedLoader): ReviewProbe {
+  const passed = one.parameters.map((name) =>
+    name === one.variable ? one.variable : name === one.callback ? "swarm$callback" : "undefined",
+  );
+  while (passed.at(-1) === "undefined") passed.pop();
+  const settle = one.ordered ? "" : ".map((each) => JSON.stringify(each)).sort()";
+  return {
+    id: one.id,
+    basis: "relation",
+    origin: "task",
+    quote: one.sentence,
+    // The programs' own names carry a prefix no project exports, so a project function named
+    // `entries` or `calls` is never shadowed by them.
+    program: [
+      destructured(loader, [one.subjectName]),
+      `export default async (${one.variable}) => {`,
+      `  if (typeof ${one.subjectName} !== "function") return { "not a function of the project": ${JSON.stringify(one.subjectName)} };`,
+      "  const swarm$calls = [];",
+      `  const swarm$callback = (...given) => { swarm$calls.push(given.slice(0, ${one.arity})); return true; };`,
+      `  await ${one.subjectName}(${passed.join(", ")});`,
+      `  return swarm$calls${settle};`,
+      "};",
+    ].join("\n"),
+    reference: [
+      destructured(loader, [one.referenceName]),
+      `export default async (${one.variable}) => {`,
+      `  if (typeof ${one.referenceName} !== "function") return { "not a function of the project": ${JSON.stringify(one.referenceName)} };`,
+      `  const swarm$answer = await ${one.reference};`,
+      "  const swarm$entries = Array.isArray(swarm$answer)",
+      "    ? swarm$answer.map((value, index) => [value, index])",
+      '    : swarm$answer !== null && typeof swarm$answer === "object"',
+      "      ? Object.keys(swarm$answer).map((key) => [key, swarm$answer[key]])",
+      "      : [];",
+      `  return swarm$entries.map((entry) => entry.slice(0, ${one.arity}))${settle};`,
+      "};",
+    ].join("\n"),
+    cases: one.inputs.map((input) => ({ input })),
+    statements: one.inputs.map(() => ({ id: one.id, sentence: one.sentence })),
+    ...(one.domain === "unfollowed"
+      ? {
+          provisional:
+            "the task states a domain for this callback's calls that the reader could not apply, so an input may lie outside it",
+        }
+      : {}),
+  };
+}
+
+/** Whether an input can be recorded as given: one the evidence scrubber would redact cannot. */
+const recordableInput = (input: string) =>
+  scrubJson({ stdin: JSON.stringify({ inputs: [input] }) } as JsonValue).redactions.length === 0;
+
+/** A relation's probe with the generated discovery batch after the task's own inputs. */
+function withDiscovery(
+  task: string | undefined,
+  statement: TaskRelation | TaskEnumeration,
+  probe: ReviewProbe,
+): ReviewProbe {
+  const discovery =
+    task === undefined || statement.domain === "unfollowed"
+      ? null
+      : generatedBatches(task, statement).discovery;
+  const added = (discovery?.inputs ?? []).filter(recordableInput);
+  return {
+    ...probe,
+    cases: [...probe.cases, ...added.map((input) => ({ input }))],
+    statements: [
+      ...(probe.statements ?? []),
+      ...added.map(() => ({ id: statement.id, sentence: statement.sentence })),
+    ],
+    origins: [...probe.cases.map(() => "task" as const), ...added.map(() => "discovery" as const)],
+    ...(discovery === null ? {} : { generated: [discovery] }),
+  };
+}
+
+/**
+ * Each relation's validation batch as a probe of its own (`<id>-held`), generated with the
+ * discovery batch from a separate seed and excluding both its inputs and the task's. It is held
+ * back: it runs first on a repaired candidate, so what a repair is assessed on is not what it was
+ * shown.
+ */
+export function heldBackProbes(
+  probes: readonly ReviewProbe[],
+  statements: readonly TaskCodeStatement[],
+  task: string,
+): readonly ReviewProbe[] {
+  return probes.flatMap((probe) => {
+    const statement = statements.find(
+      (one): one is TaskRelation | TaskEnumeration =>
+        (one.kind === "relation" || one.kind === "enumeration") && one.id === probe.id,
+    );
+    if (probe.origin !== "task" || statement === undefined || probe.provisional !== undefined)
+      return [];
+    const validation = generatedBatches(task, statement).validation;
+    const inputs = validation.inputs.filter(recordableInput);
+    if (inputs.length === 0) return [];
+    const held: ReviewProbe = {
+      ...probe,
+      id: `${probe.id}-held`,
+      cases: inputs.map((input) => ({ input })),
+      statements: inputs.map(() => ({ id: statement.id, sentence: statement.sentence })),
+      origins: inputs.map(() => "validation" as const),
+      generated: [validation],
+    };
+    return recordable(held, 0)?.id === held.id ? [held] : [];
+  });
+}
+
+/**
+ * The task's sentences that no statement the harness runs comes from: the stated gaps, which are
+ * the only sentences the reviewer is asked about. Bounded, in the task's order.
+ */
+export function statedGaps(
+  task: string,
+  statements: readonly TaskCodeStatement[],
+): readonly string[] {
+  const covered = new Set(statements.map((one) => one.sentence));
+  return codeSentences(task)
+    .filter((sentence) => !covered.has(sentence))
+    .slice(0, maxGaps);
+}
+
+const maxGaps = 12;
 
 const shown = (text: string | null, limit = 400) =>
   text === null ? "(no answer)" : text.length > limit ? `${text.slice(0, limit)}...` : text;
@@ -1014,13 +1207,26 @@ export function findingsBrief(input: {
   readonly authorities: readonly ReviewAuthority[];
   /** The digest of the candidate patch the findings were read on. */
   readonly candidate: string;
+  /** Cases of the held-back validation batch this candidate is the first to show, by identity. */
+  readonly exposed?: readonly string[];
 }): string {
+  const exposed = new Set(input.exposed ?? []);
+  // The newly exposed cases first: they are what the last repair was not shown.
+  const ordered = [
+    ...input.findings.filter((one) => exposed.has(caseIdentity(one))),
+    ...input.findings.filter((one) => !exposed.has(caseIdentity(one))),
+  ];
   const lines = [
     "A separate review of your change ran these probes on fresh checkouts of the unchanged base and of your change. What each tree gave was observed by the harness. Each finding rests on the task's own words: behaviour the base had that the task requires kept, an example the task writes with its answer, or a relation the task states between your code and an existing function, whose answer on the unchanged base is the expectation.",
     `They were read on the candidate ${input.candidate}.`,
+    ...(exposed.size === 0
+      ? []
+      : [
+          `${exposed.size} of these come from inputs the harness generated inside the relation's stated domain before your last repair and held back from it; they are shown now, after it.`,
+        ]),
     "",
   ];
-  for (const finding of input.findings.slice(0, 6)) {
+  for (const finding of ordered.slice(0, 6)) {
     const probe = input.probes.find((one) => one.id === finding.probe) as ReviewProbe;
     const statement = probe.statements?.[finding.index - 1];
     const authority = input.authorities.find((one) => one.id === finding.authority);
@@ -1028,9 +1234,11 @@ export function findingsBrief(input: {
     const expectation =
       finding.reading === "requested-unmet"
         ? "expected (the task's literal answer)"
-        : finding.reading === "relation-violated"
-          ? "expected (the reference's answer on the unchanged base)"
-          : "expected (the base's answer, observed)";
+        : finding.reading === "relation-violated" && probe.id.startsWith("code-enumeration-")
+          ? "expected calls (one per entry of the existing function's answer on the unchanged base)"
+          : finding.reading === "relation-violated"
+            ? "expected (the reference's answer on the unchanged base)"
+            : "expected (the base's answer, observed)";
     lines.push(
       `Probe ${probe.id}, case ${finding.index} (${finding.reading}), under ${finding.authority}: "${shown(words, 600)}".`,
       `  input: ${shown(JSON.stringify(finding.input) ?? "undefined")}`,
@@ -1038,7 +1246,7 @@ export function findingsBrief(input: {
       `  your change gives: ${shown(finding.candidate)}`,
     );
   }
-  const programs = [...new Set(input.findings.slice(0, 6).map((one) => one.probe))];
+  const programs = [...new Set(ordered.slice(0, 6).map((one) => one.probe))];
   for (const id of programs) {
     const probe = input.probes.find((one) => one.id === id) as ReviewProbe;
     lines.push(
@@ -1090,7 +1298,7 @@ export const reviewSystemPrompt = {
     "You review a change another coding agent made to a repository; you did not write it, and its account of the work is not given to you.",
     "You may read, list and search the workspace, which holds the change; you cannot edit it or run commands, but try_probe runs a probe program on a copy of the change so you can check that it loads and calls the project as you intend before you answer.",
     "Before answering, read the changed files and the code that calls what they change.",
-    "Look for existing behaviour the change broke that the task requires kept (the obligations listed with an id), including in callers and neighbours of what it changed, and for behaviour the task asks for in words that the change does not implement.",
+    "The harness already runs the examples and relations the task writes as code. You are asked only about the task's sentences the request lists as gaps: existing behaviour they require kept that the change broke (the obligations listed with an id), including in callers and neighbours of what it changed, and behaviour they ask for in words that the change does not implement.",
     "A probe program is plain JavaScript, an ES module run as a .mjs file: no TypeScript syntax (no type annotations, no `as`, no interfaces). Begin it with the loading lines the request gives, which the harness ran on the unchanged base, and call the project as project.<name>. Every probe you submit is run once on a copy of the change before it counts; one that does not load or throws in its own code comes back to you once with its error. Try each program with try_probe first.",
     "Answer with one JSON object and nothing else:",
     '{"probes": up to 4 {"id": a short slug, "basis": "preserve", "requirement" or "relation",',
@@ -1127,6 +1335,8 @@ export function reviewRequest(input: {
   readonly loading?: string;
   /** The task's own examples and relations the harness runs itself. */
   readonly taskCode?: readonly string[];
+  /** The task's sentences no harness check reaches, which are all the reviewer is asked about. */
+  readonly gaps?: readonly string[];
 }): string {
   const diff =
     input.diff.length > 12_000
@@ -1153,6 +1363,13 @@ export function reviewRequest(input: {
           "",
           "Examples and relations the task writes as code, which the harness runs on both trees itself (do not repeat them):",
           ...input.taskCode.map((one) => `- ${one}`),
+        ]),
+    ...(input.gaps === undefined || input.gaps.length === 0
+      ? []
+      : [
+          "",
+          "The task's sentences no harness check reaches. These gaps are what you are asked about: probe only behaviour they state.",
+          ...input.gaps.map((one) => `- ${one}`),
         ]),
     "",
     `You have ${input.toolSteps} tool calls, then answer.`,
@@ -1219,7 +1436,7 @@ export async function converse(input: {
   const dependencies: AgentLoopDependencies = {
     ...input.loopDependencies,
     ...input.readOnly,
-    systemPrompt: reviewSystemPrompt[input.mode],
+    systemPrompt: reviewSystemPrompt[input.mode === "prose" ? "prose" : "executable"],
     emit: (event: LoopEvent) => {
       if (event.type !== "plan" && event.type !== "claim") input.loopDependencies.emit(event);
     },
@@ -1291,31 +1508,78 @@ export async function recordExamination(
     /** The loader found, every way tried, and the task's code statements read. */
     readonly grounding?: JsonValue;
     /** Each submitted probe's admission run: its tree, round, reading and whether it was reused. */
-    readonly validation?: readonly {
+    readonly validation?: readonly AdmissionRun[];
+    /** Whether the reviewer was asked, why not where it was not, and the gaps it was asked about. */
+    readonly reviewer?: {
+      readonly asked: boolean;
+      readonly reason?: string;
+      readonly gaps: readonly string[];
+    };
+    /** The validation batches held back from repair: each probe's inputs and how they were made. */
+    readonly heldBack?: readonly {
       readonly probe: string;
-      readonly round: number;
-      readonly tree: "base" | "candidate";
-      readonly kind: ProbeTrial["kind"];
-      readonly reused: boolean;
-      readonly detail: string;
+      readonly inputs: readonly unknown[];
+      readonly generated: readonly GeneratedInputs[];
     }[];
+    /** The held-back batch's readings on this candidate, which is the first to run it. */
+    readonly heldClassified?: readonly CaseClassification[];
+    /** The validated counterexamples to the task open on this candidate, by case identity. */
+    readonly violations?: readonly string[];
+    /** The run records on the base (references, examined base answers) and on the candidate. */
+    readonly baseRuns?: readonly string[];
+    readonly candidateRuns?: readonly string[];
   },
 ): Promise<string> {
+  // A model's words reach the record only through a reviewer's probes or objections; the
+  // harness's own probes of the task's code are the task's text, run by the harness.
+  const modelAuthored =
+    payload.objections !== undefined ||
+    payload.reviewer?.asked === true ||
+    (payload.probes ?? []).some((probe) => probe.origin !== "task");
   const recorded = await evidence.record({
     type: "verification-command",
     actor: "harness",
-    provenance:
-      payload.probes === undefined && payload.objections === undefined
-        ? ["tool-output"]
-        : ["model", "tool-output"],
+    provenance: modelAuthored ? ["model", "tool-output"] : ["tool-output"],
     payload: asJsonValue({
       rule: reviewRule,
       ...payload,
       limitation:
-        "probes are the reviewer's choice of inputs, run by the harness; a preservation case's expectation is the base's observed answer, which is not by itself what the project should do, and a requirement case's expectation is the reviewer's reading of the task. Nothing here decides acceptance.",
+        "a reviewer's probe is the reviewer's choice of inputs, run by the harness: a preservation case's expectation is the base's observed answer, which is not by itself what the project should do, and a requirement case's expectation is the reviewer's reading of the task. A probe of the task's own code is the task's: under task-violation-completion-v1 a validated counterexample among its cases, open on the delivered candidate, refuses completion. Nothing a reviewer's probe reads decides acceptance.",
     }),
   });
   return recorded.record.payloadDigest;
+}
+
+/** The readings a run reports: the probes, their cases on the kept candidate, and their record. */
+export interface ReviewReadings {
+  readonly probes: readonly ReviewProbe[];
+  readonly classified: readonly CaseClassification[];
+  /** The examination or remeasurement the readings were taken in; null where none was. */
+  readonly record: string | null;
+}
+
+/** One admission run of a submitted probe, as the examination records it. */
+export interface AdmissionRun {
+  readonly probe: string;
+  readonly round: number;
+  readonly tree: "base" | "candidate";
+  readonly kind: ProbeTrial["kind"];
+  readonly reused: boolean;
+  readonly detail: string;
+}
+
+/** A later candidate's readings, for the ratchet and for whether another attempt is owed. */
+export interface ReviewMeasurement {
+  readonly parts: Readonly<Record<string, GateStatus>>;
+  readonly claims: readonly string[];
+  /** The brief for the established cases open on this candidate, or null where none is. */
+  readonly brief: string | null;
+  /** The established cases open on this candidate, by identity. */
+  readonly open: readonly string[];
+  /** Those of them that are validated counterexamples to the task. */
+  readonly violations: readonly string[];
+  /** Established cases of the held-back batch, which this candidate is the first to show. */
+  readonly exposed: readonly string[];
 }
 
 /** Runs probes on a fresh checkout of one tree; supplied by the caller that owns checkouts. */
@@ -1413,9 +1677,10 @@ const repairFloorMs = 60_000;
 const identityOf = (value: unknown) => `review ${digestOfJson(asJsonValue(value))}`;
 
 /**
- * The hook the repair loop asks once the gates are green and nothing else is owed. Withheld,
- * on the record, where what is left cannot pay for the reviewer, the probes' runs, an attempt
- * and the cycle that measures it.
+ * The hook the repair loop asks once the gates are green and nothing else is owed. The harness's
+ * own checks are withheld only where what is left cannot pay for their runs, an attempt and the
+ * cycle that measures it; the reviewer, in executable mode, also where what is left cannot pay
+ * for its conversation, and it is never asked where there is no stated gap.
  */
 export function createCandidateReview(options: CandidateReviewOptions): {
   readonly examine: (cycle: {
@@ -1428,33 +1693,43 @@ export function createCandidateReview(options: CandidateReviewOptions): {
     readonly parts: Readonly<Record<string, GateStatus>>;
     readonly claims: readonly string[];
     readonly record: string;
+    /** The established cases on the examined candidate, by identity. */
+    readonly open: readonly string[];
   }>;
-  readonly measure: () => Promise<{
-    readonly parts: Readonly<Record<string, GateStatus>>;
-    readonly claims: readonly string[];
-  }>;
+  readonly measure: () => Promise<ReviewMeasurement>;
   readonly withhold: (reason: string) => Promise<string>;
   /** The ratchet kept the candidate last measured: its readings become the reported ones. */
   readonly adopt: () => void;
-  /** The probes and their readings on the kept candidate, for the report; empty before one. */
-  readonly readings: () => {
-    readonly probes: readonly ReviewProbe[];
-    readonly classified: readonly CaseClassification[];
-  };
+  /**
+   * The probes and their readings on the kept candidate, for the report and the assessment, with
+   * the record those readings were taken in; empty, with no record, before one.
+   */
+  readonly readings: () => ReviewReadings;
 } {
   let probes: readonly ReviewProbe[] = [];
+  // The records the reported readings were taken in, and the last measured candidate's.
+  let latestRecord: string | null = null;
+  let measuredRecord: string | null = null;
   let examined: readonly CaseClassification[] = [];
   let latest: readonly CaseClassification[] = [];
   // A later candidate's readings, held until the ratchet keeps that candidate: a rolled-back
   // candidate's readings are never the ones reported.
   let measured: readonly CaseClassification[] | null = null;
+  // The validation batches, frozen at examination and held back from repair. Their reference runs
+  // on the base once; their readings on a repaired candidate are exposed only if it is kept.
+  let heldBack: readonly ReviewProbe[] = [];
+  let heldReference: Awaited<ReturnType<ProbeRunner>> | null = null;
+  let heldMeasured: readonly CaseClassification[] | null = null;
   const nothing = (record: string) => ({
     identity: "",
     brief: null,
     parts: {},
     claims: [],
     record,
+    open: [],
   });
+  const runsOf = (reading: Awaited<ReturnType<ProbeRunner>>, id: string) =>
+    reading.runs.get(id) ?? [missingRun, missingRun];
   return {
     examine: async (cycle) => {
       const started = options.clock.now();
@@ -1467,72 +1742,45 @@ export function createCandidateReview(options: CandidateReviewOptions): {
         maxWallTimeMs: Math.min(reviewWallCapMs, Math.floor(remaining.wallMs * reviewWallShare)),
       };
       // Two checkouts for the probes cost about what one cycle's verification does, so that much
-      // is held for them, and an attempt and its cycle after.
-      const needed = reviewWallFloorMs + 2 * cycleMs + repairFloorMs + cycleMs;
-      if (
-        budget.maxTokens < 3 * maxOutput ||
-        remaining.wallMs < needed ||
-        budget.maxWallTimeMs < reviewWallFloorMs
-      )
+      // is held for them, and an attempt and its cycle after. The reviewer needs its own floor too.
+      const forChecks = 2 * cycleMs + repairFloorMs + cycleMs;
+      const needed = reviewWallFloorMs + forChecks;
+      const reviewerAffordable =
+        budget.maxTokens >= 3 * maxOutput &&
+        remaining.wallMs >= needed &&
+        budget.maxWallTimeMs >= reviewWallFloorMs;
+      if (options.mode === "prose" ? !reviewerAffordable : remaining.wallMs < forChecks)
         return nothing(
           await recordExamination(options.evidence, {
             mode: options.mode,
             phase: "withheld",
-            reason: `too little left: ${remaining.tokens} tokens and ${remaining.wallMs} ms, where the review, its probes, an attempt and its cycle need ${needed} ms and ${3 * maxOutput} tokens`,
+            reason:
+              options.mode === "prose"
+                ? `too little left: ${remaining.tokens} tokens and ${remaining.wallMs} ms, where the review, its probes, an attempt and its cycle need ${needed} ms and ${3 * maxOutput} tokens`
+                : `too little left: ${remaining.wallMs} ms, where the harness's checks, an attempt and its cycle need ${forChecks} ms`,
           }),
         );
       const diff = await options.diff();
       const checks = Object.entries(cycle.statuses).map(([id, status]) => `${id}: ${status}`);
-      const grounding =
-        options.mode === "executable" && options.grounding !== undefined
-          ? await options.grounding()
-          : null;
-      // A probe whose text the record's scrubber would redact cannot be held to what ran.
-      const harnessProbes =
-        grounding?.loader == null
-          ? []
-          : taskProbes(grounding.statements, grounding.loader).filter(
-              (probe) => recordable(probe, 0)?.id === probe.id,
-            );
-      const loading =
-        grounding === null
-          ? undefined
-          : grounding.loader === null
-            ? `The harness found no way to load the project from a probe; it tried: ${grounding.attempts.map((one) => `${one.entry} by ${one.method} (${one.outcome})`).join("; ") || "nothing it could name"}.`
-            : `How a probe loads the project (the harness ran this on the unchanged base, where it exposed ${grounding.loader.exports.slice(0, 60).join(", ")}):\n${grounding.loader.preamble}`;
-      const taskCode = harnessProbes.flatMap((probe) =>
-        probe.basis === "relation"
-          ? [
-              `${probe.id} (relation): ${(grounding?.statements.find((one) => one.id === probe.id) as TaskRelation | undefined)?.subject ?? ""} equals ${(grounding?.statements.find((one) => one.id === probe.id) as TaskRelation | undefined)?.reference ?? ""}, for inputs ${shown(JSON.stringify(probe.cases.map((one) => one.input)), 600)}`,
-            ]
-          : (probe.statements ?? []).map((statement, index) => {
-              const example = grounding?.statements.find((one) => one.id === statement.id) as
-                | TaskExample
-                | undefined;
-              return `${statement.id} (${probe.basis === "preserve" ? "kept" : "requested"}): ${example?.call ?? ""} gives ${JSON.stringify(probe.cases[index]?.expected)}`;
-            }),
-      );
-      const conversation = await converse({
-        mode: options.mode,
-        request: (toolSteps) =>
-          reviewRequest({
-            task: options.task,
-            diff,
-            obligations: options.obligations,
-            checks,
-            toolSteps,
-            ...(loading === undefined ? {} : { loading }),
-            taskCode,
-          }),
-        budget,
-        runLoop: options.runLoop,
-        loopDependencies: options.loopDependencies,
-        readOnly: options.readOnly(),
-        clock: options.clock,
-      });
-      await options.charge(conversation.charge);
-      const parsed = parseReviewAnswer(conversation.answer);
       if (options.mode === "prose") {
+        const conversation = await converse({
+          mode: "prose",
+          request: (toolSteps) =>
+            reviewRequest({
+              task: options.task,
+              diff,
+              obligations: options.obligations,
+              checks,
+              toolSteps,
+            }),
+          budget,
+          runLoop: options.runLoop,
+          loopDependencies: options.loopDependencies,
+          readOnly: options.readOnly(),
+          clock: options.clock,
+        });
+        await options.charge(conversation.charge);
+        const parsed = parseReviewAnswer(conversation.answer);
         const objections = admitObjections(parsed.value);
         const record = await recordExamination(options.evidence, {
           mode: "prose",
@@ -1553,173 +1801,82 @@ export function createCandidateReview(options: CandidateReviewOptions): {
               parts: {},
               claims: [],
               record,
+              open: [],
             };
       }
-      let admitted = admitProbes(options.task, parsed.value);
-      let charge = conversation.charge;
-      let answerError = parsed.error;
-      // One revision where every probe was dropped for its form, with the reasons: a probe that
-      // cannot run says nothing either way, and the first live answer gave paths for programs.
-      const spare = options.remaining();
-      if (
-        admitted.probes.length === 0 &&
-        (admitted.dropped.length > 0 || parsed.error !== null) &&
-        spare.tokens * reviewTokenShare >= 3 * maxOutput &&
-        spare.wallMs >= needed
-      ) {
-        const revision = await converse({
-          mode: "executable",
-          request: () =>
-            [
-              "None of your probes can run:",
-              ...(parsed.error === null ? [] : [`- the answer: ${parsed.error}`]),
-              ...admitted.dropped.map((one) => `- ${one.id}: ${one.reason}`),
-              "Answer again with the one JSON object, every program the full source text of a module with a default export, every probe with its cases.",
-            ].join("\n"),
-          budget: {
-            maxSteps: 3,
-            maxTokens: Math.floor(spare.tokens * reviewTokenShare),
-            maxWallTimeMs: Math.min(reviewWallCapMs, Math.floor(spare.wallMs * reviewWallShare)),
-          },
-          runLoop: options.runLoop,
-          loopDependencies: options.loopDependencies,
-          readOnly: options.readOnly(),
-          clock: options.clock,
-          history: conversation.messages,
-        });
-        await options.charge(revision.charge);
-        charge = addCharge(charge, revision.charge);
-        const revised = parseReviewAnswer(revision.answer);
-        answerError = revised.error;
-        const again = admitProbes(options.task, revised.value);
-        admitted = {
-          probes: again.probes,
-          dropped: [
-            ...admitted.dropped.map((one) => ({ ...one, reason: `first answer: ${one.reason}` })),
-            ...again.dropped,
-          ],
-        };
-      }
-      // Every probe the reviewer submitted runs once on a copy of the tree it is read on before it
-      // counts, by the harness and not at the reviewer's choice. One that does not load or throws
-      // in its own code goes back once with its error; still broken, what it would have measured
-      // is unmeasured, and says so.
-      const validation: {
-        readonly probe: string;
-        readonly round: number;
-        readonly tree: "base" | "candidate";
-        readonly kind: ProbeTrial["kind"];
-        readonly reused: boolean;
-        readonly detail: string;
-      }[] = [];
-      const validate = async (round: number, candidates: readonly ReviewProbe[]) => {
-        const broken: { readonly probe: ReviewProbe; readonly why: string }[] = [];
-        if (options.validate === undefined) return { valid: candidates, broken };
-        const valid: ReviewProbe[] = [];
-        for (const probe of candidates) {
-          const inputs = probe.cases.map((one) => one.input);
-          const trials: ["base" | "candidate", ProbeTrial][] = [
-            ["candidate", await options.validate(probe.program, inputs, "candidate")],
+      const grounding = options.grounding === undefined ? null : await options.grounding();
+      // A probe whose text the record's scrubber would redact cannot be held to what ran.
+      const harnessProbes =
+        grounding?.loader == null
+          ? []
+          : taskProbes(grounding.statements, grounding.loader, options.task).filter(
+              (probe) => recordable(probe, 0)?.id === probe.id,
+            );
+      heldBack =
+        grounding === null ? [] : heldBackProbes(harnessProbes, grounding.statements, options.task);
+      const loading =
+        grounding === null
+          ? undefined
+          : grounding.loader === null
+            ? `The harness found no way to load the project from a probe; it tried: ${grounding.attempts.map((one) => `${one.entry} by ${one.method} (${one.outcome})`).join("; ") || "nothing it could name"}.`
+            : `How a probe loads the project (the harness ran this on the unchanged base, where it exposed ${grounding.loader.exports.slice(0, 60).join(", ")}):\n${grounding.loader.preamble}`;
+      const statementOf = (id: string) => grounding?.statements.find((one) => one.id === id);
+      const taskCode = harnessProbes.flatMap((probe) => {
+        const statement = statementOf(probe.id);
+        if (statement?.kind === "relation")
+          return [
+            `${probe.id} (relation): ${statement.subject} equals ${statement.reference}, for inputs ${shown(JSON.stringify(probe.cases.map((one) => one.input)), 600)}`,
           ];
-          if (probe.reference !== undefined)
-            trials.push(["base", await options.validate(probe.reference, inputs, "base")]);
-          for (const [tree, trial] of trials)
-            validation.push({
-              probe: probe.id,
-              round,
-              tree,
-              ...trial,
-              detail: trial.detail.slice(0, 600),
-            });
-          const failed = trials.find(([, trial]) => brokenTrial(trial));
-          if (failed === undefined) valid.push(probe);
-          else
-            broken.push({
-              probe,
-              why: `${failed[0] === "base" ? "its reference, on the unchanged base" : "on a copy of the change"}: ${failed[1].kind}: ${failed[1].detail.slice(0, 400)}`,
-            });
-        }
-        return { valid, broken };
-      };
-      let checked = await validate(1, admitted.probes);
-      // Probes refused for their form get the same one correction as probes that did not run.
-      const refused = admitted.dropped.filter(
-        (one) => !/^at most \d+ probes run$|^the id was already used$/.test(one.reason),
-      );
-      const room = options.remaining();
-      if (
-        (checked.broken.length > 0 || refused.length > 0) &&
-        checked.valid.length < maxProbes &&
-        room.tokens * reviewTokenShare >= 3 * maxOutput &&
-        room.wallMs >= needed
-      ) {
-        const correction = await converse({
-          mode: "executable",
-          request: () =>
-            [
-              ...(checked.broken.length === 0
-                ? []
-                : [
-                    "These probes did not run as written; the harness ran each once:",
-                    ...checked.broken.map((one) => `- ${one.probe.id}: ${one.why}`),
-                  ]),
-              ...(refused.length === 0
-                ? []
-                : [
-                    "These probes were not admitted:",
-                    ...refused.map((one) => `- ${one.id}: ${one.reason}`),
-                  ]),
-              ...(loading === undefined ? [] : [loading]),
-              "Answer again with the one JSON object holding corrected versions of these probes only. Each is run once more; one still broken measures nothing.",
-            ].join("\n"),
-          budget: {
-            maxSteps: 3,
-            maxTokens: Math.floor(room.tokens * reviewTokenShare),
-            maxWallTimeMs: Math.min(reviewWallCapMs, Math.floor(room.wallMs * reviewWallShare)),
-          },
-          runLoop: options.runLoop,
-          loopDependencies: options.loopDependencies,
-          readOnly: options.readOnly(),
-          clock: options.clock,
-          history: conversation.messages,
+        if (statement?.kind === "enumeration")
+          return [
+            `${probe.id} (calls): ${statement.callback} is called once for each entry of ${statement.reference}, for inputs ${shown(JSON.stringify(probe.cases.map((one) => one.input)), 600)}`,
+          ];
+        return (probe.statements ?? []).map((one, index) => {
+          const example = statementOf(one.id) as TaskExample | undefined;
+          return `${one.id} (${probe.basis === "preserve" ? "kept" : "requested"}): ${example?.call ?? ""} gives ${JSON.stringify(probe.cases[index]?.expected)}`;
         });
-        await options.charge(correction.charge);
-        charge = addCharge(charge, correction.charge);
-        // A corrected probe is taken under whatever id it comes back with (a live reviewer gave
-        // every corrected probe a new id), never one that already ran, and only up to the limit.
-        const kept = new Set(checked.valid.map((one) => one.id));
-        const corrected = admitProbes(options.task, parseReviewAnswer(correction.answer).value);
-        const retried = await validate(
-          2,
-          corrected.probes
-            .filter((one) => !kept.has(one.id))
-            .slice(0, maxProbes - checked.valid.length),
-        );
-        // A probe corrected under its own id is read once, by its second run.
-        const retriedIds = new Set(
-          [...retried.valid, ...retried.broken.map((one) => one.probe)].map((one) => one.id),
-        );
-        checked = {
-          valid: [...checked.valid, ...retried.valid],
-          broken: [
-            ...checked.broken.filter((one) => !retriedIds.has(one.probe.id)),
-            ...retried.broken,
-          ],
-        };
-      }
-      admitted = {
-        probes: checked.valid,
-        dropped: [
-          ...admitted.dropped,
-          ...checked.broken.map((one) => ({
-            id: one.probe.id,
-            reason: `unmeasured: it did not run as written (${one.why})`,
-          })),
-        ],
+      });
+      // The reviewer is asked only about the stated gaps, and only in executable mode.
+      const gaps =
+        options.mode === "executable" ? statedGaps(options.task, grounding?.statements ?? []) : [];
+      const consulted =
+        options.mode !== "executable"
+          ? { asked: false as const, reason: "grounded mode: the harness's own checks only" }
+          : gaps.length === 0
+            ? {
+                asked: false as const,
+                reason: "no stated gap: every sentence of the task holds code the harness runs",
+              }
+            : !reviewerAffordable
+              ? {
+                  asked: false as const,
+                  reason: `too little left for the reviewer: ${remaining.tokens} tokens and ${remaining.wallMs} ms, where it needs ${needed} ms and ${3 * maxOutput} tokens`,
+                }
+              : {
+                  asked: true as const,
+                  ...(await consult({
+                    diff,
+                    checks,
+                    gaps,
+                    budget,
+                    needed,
+                    maxOutput,
+                    taskCode,
+                    ...(loading === undefined ? {} : { loading }),
+                  })),
+                };
+      const admitted = consulted.asked ? consulted.admitted : { probes: [], dropped: [] };
+      const charge = consulted.asked ? consulted.charge : null;
+      const answerError = consulted.asked ? consulted.answerError : null;
+      const validation = consulted.asked ? consulted.validation : [];
+      const reviewer = {
+        asked: consulted.asked,
+        ...(consulted.asked ? {} : { reason: consulted.reason }),
+        gaps,
       };
       // Inputs the reviewer added to a relation the task writes as code: the expectation is still
       // the reference's answer on the base, so the reviewer chooses only where to look.
-      const added = (parsed.value as { relationInputs?: unknown } | null)?.relationInputs;
+      const added = consulted.asked ? consulted.relationInputs : undefined;
       const runnable = [
         ...harnessProbes.map((probe) => {
           const extra =
@@ -1743,31 +1900,38 @@ export function createCandidateReview(options: CandidateReviewOptions): {
         }),
         ...admitted.probes,
       ];
+      const examinedPayload = {
+        reviewer,
+        heldBack: heldBack.map((probe) => ({
+          probe: probe.id,
+          inputs: probe.cases.map((one) => one.input),
+          generated: probe.generated ?? [],
+        })),
+        ...(grounding === null ? {} : { grounding: groundingRecord(grounding) }),
+        dropped: admitted.dropped,
+        validation,
+        ...(charge === null ? {} : { charge }),
+      };
       if (runnable.length === 0)
         return nothing(
           await recordExamination(options.evidence, {
-            mode: "executable",
+            mode: options.mode,
             phase: "examined",
             answerError,
-            dropped: admitted.dropped,
             probes: [],
-            ...(grounding === null ? {} : { grounding: groundingRecord(grounding) }),
-            validation,
-            charge,
+            ...examinedPayload,
             wallMs: options.clock.now() - started,
           }),
         );
       const left = options.remaining();
-      if (left.wallMs < 2 * cycleMs + repairFloorMs + cycleMs)
+      if (left.wallMs < forChecks)
         return nothing(
           await recordExamination(options.evidence, {
-            mode: "executable",
+            mode: options.mode,
             phase: "withheld",
-            reason: `the reviewer answered with ${left.wallMs} ms left, too little to run its probes and still give an attempt`,
+            reason: `the probes were ready with ${left.wallMs} ms left, too little to run them and still give an attempt`,
             probes: runnable,
-            dropped: admitted.dropped,
-            validation,
-            charge,
+            ...examinedPayload,
           }),
         );
       // A relation's reference runs as a probe of its own; its answer on the base is the
@@ -1779,8 +1943,6 @@ export function createCandidateReview(options: CandidateReviewOptions): {
       const base = await options.runProbes(withReferences, "base");
       const candidate = await options.runProbes(withReferences, "candidate");
       const runnableHere = (cycle.blockingFailures ?? []).length === 0;
-      const runsOf = (reading: typeof base, id: string) =>
-        reading.runs.get(id) ?? [missingRun, missingRun];
       const classified = runnable.flatMap((probe) =>
         probe.basis === "relation"
           ? classifyRelation(
@@ -1809,19 +1971,20 @@ export function createCandidateReview(options: CandidateReviewOptions): {
       const { parts, claims } = reviewParts(classified);
       const findings = classified.filter((one) => establishedReadings.has(one.reading));
       const record = await recordExamination(options.evidence, {
-        mode: "executable",
+        mode: options.mode,
         phase: "examined",
         answerError,
-        dropped: admitted.dropped,
         probes: runnable,
-        ...(grounding === null ? {} : { grounding: groundingRecord(grounding) }),
-        validation,
+        ...examinedPayload,
         classified,
         parts,
+        violations: validatedViolations(runnable, classified).map(caseIdentity),
         runs: [...base.records, ...candidate.records],
-        charge,
+        baseRuns: base.records,
+        candidateRuns: candidate.records,
         wallMs: options.clock.now() - started,
       });
+      latestRecord = record;
       return {
         identity: identityOf(runnable),
         brief:
@@ -1837,31 +2000,306 @@ export function createCandidateReview(options: CandidateReviewOptions): {
         parts,
         claims,
         record,
+        open: findings.map(caseIdentity),
       };
     },
     measure: async () => {
-      if (probes.length === 0) return { parts: {}, claims: [] };
-      const candidate = await options.runProbes(probes, "candidate");
+      if (probes.length === 0 && heldBack.length === 0)
+        return { parts: {}, claims: [], brief: null, open: [], violations: [], exposed: [] };
+      const candidate = await options.runProbes([...probes, ...heldBack], "candidate");
       const classified = remeasure(probes, examined, candidate.runs);
+      // The held-back batch, run on this candidate for the first time: its expectation is the
+      // reference's answer on the base, taken once.
+      let held: readonly CaseClassification[] = [];
+      if (heldBack.length > 0) {
+        heldReference ??= await options.runProbes(heldBack.map(referenceProbe), "base");
+        const reference = heldReference;
+        held = heldBack.flatMap((probe) =>
+          classifyRelation(
+            probe,
+            runsOf(reference, referenceProbe(probe).id),
+            runsOf(candidate, probe.id),
+          ),
+        );
+      }
+      // The held batch's cases are not parts of this attempt's ratchet: nothing measured them on
+      // the incumbent, and a part the worker was never shown is not one it could have kept.
       const { parts, claims } = reviewParts(classified);
-      await recordExamination(options.evidence, {
+      const all = [...classified, ...held];
+      const known = [...probes, ...heldBack];
+      const findings = all.filter((one) => establishedReadings.has(one.reading));
+      const exposed = held.filter((one) => establishedReadings.has(one.reading));
+      measuredRecord = await recordExamination(options.evidence, {
         mode: options.mode,
         phase: "remeasured",
         classified,
         parts,
-        runs: candidate.records,
+        ...(heldBack.length === 0
+          ? {}
+          : {
+              heldBack: heldBack.map((probe) => ({
+                probe: probe.id,
+                inputs: probe.cases.map((one) => one.input),
+                generated: probe.generated ?? [],
+              })),
+              heldClassified: held,
+            }),
+        violations: validatedViolations(known, all).map(caseIdentity),
+        runs: [...candidate.records, ...(heldReference?.records ?? [])],
+        baseRuns: heldReference?.records ?? [],
+        candidateRuns: candidate.records,
       });
       measured = classified;
-      return { parts, claims };
+      heldMeasured = heldBack.length === 0 ? null : held;
+      return {
+        parts,
+        claims,
+        brief:
+          findings.length === 0
+            ? null
+            : findingsBrief({
+                task: options.task,
+                probes: known,
+                findings,
+                authorities: options.authorities,
+                candidate: digestOfBytes(await options.diff()),
+                exposed: exposed.map(caseIdentity),
+              }),
+        open: findings.map(caseIdentity),
+        violations: validatedViolations(known, all).map(caseIdentity),
+        exposed: exposed.map(caseIdentity),
+      };
     },
     adopt: () => {
-      if (measured !== null) latest = measured;
+      if (measured !== null) {
+        latest = measured;
+        latestRecord = measuredRecord;
+      }
+      // The kept candidate is the repair the held batch assessed: the batch is exposed now, and
+      // held like every other case on every later candidate.
+      if (heldMeasured !== null) {
+        probes = [...probes, ...heldBack];
+        examined = [...examined, ...heldMeasured];
+        latest = [...latest, ...heldMeasured];
+        heldBack = [];
+      }
       measured = null;
+      heldMeasured = null;
     },
-    readings: () => ({ probes, classified: latest }),
+    readings: () => ({ probes, classified: latest, record: latestRecord }),
     withhold: (reason) =>
       recordExamination(options.evidence, { mode: options.mode, phase: "withheld", reason }),
   };
+
+  /**
+   * The reviewer's conversation about the stated gaps: its answer, one revision where every probe
+   * was dropped for its form, every submitted probe run once before it counts, and one correction
+   * of the broken and refused ones.
+   */
+  async function consult(input: {
+    readonly diff: string;
+    readonly checks: readonly string[];
+    readonly gaps: readonly string[];
+    readonly budget: {
+      readonly maxSteps: number;
+      readonly maxTokens: number;
+      readonly maxWallTimeMs: number;
+    };
+    readonly needed: number;
+    readonly maxOutput: number;
+    readonly taskCode: readonly string[];
+    readonly loading?: string;
+  }): Promise<{
+    readonly admitted: ProbeAdmission;
+    readonly charge: ReviewCharge;
+    readonly answerError: string | null;
+    readonly validation: readonly AdmissionRun[];
+    readonly relationInputs: unknown;
+  }> {
+    const { needed, maxOutput, loading } = input;
+    const conversation = await converse({
+      mode: "executable",
+      request: (toolSteps) =>
+        reviewRequest({
+          task: options.task,
+          diff: input.diff,
+          obligations: options.obligations,
+          checks: input.checks,
+          toolSteps,
+          ...(loading === undefined ? {} : { loading }),
+          taskCode: input.taskCode,
+          gaps: input.gaps,
+        }),
+      budget: input.budget,
+      runLoop: options.runLoop,
+      loopDependencies: options.loopDependencies,
+      readOnly: options.readOnly(),
+      clock: options.clock,
+    });
+    await options.charge(conversation.charge);
+    const parsed = parseReviewAnswer(conversation.answer);
+    let admitted = admitProbes(options.task, parsed.value);
+    let charge = conversation.charge;
+    let answerError = parsed.error;
+    // One revision where every probe was dropped for its form, with the reasons: a probe that
+    // cannot run says nothing either way, and the first live answer gave paths for programs.
+    const spare = options.remaining();
+    if (
+      admitted.probes.length === 0 &&
+      (admitted.dropped.length > 0 || parsed.error !== null) &&
+      spare.tokens * reviewTokenShare >= 3 * maxOutput &&
+      spare.wallMs >= needed
+    ) {
+      const revision = await converse({
+        mode: "executable",
+        request: () =>
+          [
+            "None of your probes can run:",
+            ...(parsed.error === null ? [] : [`- the answer: ${parsed.error}`]),
+            ...admitted.dropped.map((one) => `- ${one.id}: ${one.reason}`),
+            "Answer again with the one JSON object, every program the full source text of a module with a default export, every probe with its cases.",
+          ].join("\n"),
+        budget: {
+          maxSteps: 3,
+          maxTokens: Math.floor(spare.tokens * reviewTokenShare),
+          maxWallTimeMs: Math.min(reviewWallCapMs, Math.floor(spare.wallMs * reviewWallShare)),
+        },
+        runLoop: options.runLoop,
+        loopDependencies: options.loopDependencies,
+        readOnly: options.readOnly(),
+        clock: options.clock,
+        history: conversation.messages,
+      });
+      await options.charge(revision.charge);
+      charge = addCharge(charge, revision.charge);
+      const revised = parseReviewAnswer(revision.answer);
+      answerError = revised.error;
+      const again = admitProbes(options.task, revised.value);
+      admitted = {
+        probes: again.probes,
+        dropped: [
+          ...admitted.dropped.map((one) => ({ ...one, reason: `first answer: ${one.reason}` })),
+          ...again.dropped,
+        ],
+      };
+    }
+    // Every probe the reviewer submitted runs once on a copy of the tree it is read on before it
+    // counts, by the harness and not at the reviewer's choice. One that does not load or throws
+    // in its own code goes back once with its error; still broken, what it would have measured
+    // is unmeasured, and says so.
+    const validation: AdmissionRun[] = [];
+    const validate = async (round: number, candidates: readonly ReviewProbe[]) => {
+      const broken: { readonly probe: ReviewProbe; readonly why: string }[] = [];
+      if (options.validate === undefined) return { valid: candidates, broken };
+      const valid: ReviewProbe[] = [];
+      for (const probe of candidates) {
+        const inputs = probe.cases.map((one) => one.input);
+        const trials: ["base" | "candidate", ProbeTrial][] = [
+          ["candidate", await options.validate(probe.program, inputs, "candidate")],
+        ];
+        if (probe.reference !== undefined)
+          trials.push(["base", await options.validate(probe.reference, inputs, "base")]);
+        for (const [tree, trial] of trials)
+          validation.push({
+            probe: probe.id,
+            round,
+            tree,
+            ...trial,
+            detail: trial.detail.slice(0, 600),
+          });
+        const failed = trials.find(([, trial]) => brokenTrial(trial));
+        if (failed === undefined) valid.push(probe);
+        else
+          broken.push({
+            probe,
+            why: `${failed[0] === "base" ? "its reference, on the unchanged base" : "on a copy of the change"}: ${failed[1].kind}: ${failed[1].detail.slice(0, 400)}`,
+          });
+      }
+      return { valid, broken };
+    };
+    let checked = await validate(1, admitted.probes);
+    // Probes refused for their form get the same one correction as probes that did not run.
+    const refused = admitted.dropped.filter(
+      (one) => !/^at most \d+ probes run$|^the id was already used$/.test(one.reason),
+    );
+    const room = options.remaining();
+    if (
+      (checked.broken.length > 0 || refused.length > 0) &&
+      checked.valid.length < maxProbes &&
+      room.tokens * reviewTokenShare >= 3 * maxOutput &&
+      room.wallMs >= needed
+    ) {
+      const correction = await converse({
+        mode: "executable",
+        request: () =>
+          [
+            ...(checked.broken.length === 0
+              ? []
+              : [
+                  "These probes did not run as written; the harness ran each once:",
+                  ...checked.broken.map((one) => `- ${one.probe.id}: ${one.why}`),
+                ]),
+            ...(refused.length === 0
+              ? []
+              : [
+                  "These probes were not admitted:",
+                  ...refused.map((one) => `- ${one.id}: ${one.reason}`),
+                ]),
+            ...(loading === undefined ? [] : [loading]),
+            "Answer again with the one JSON object holding corrected versions of these probes only. Each is run once more; one still broken measures nothing.",
+          ].join("\n"),
+        budget: {
+          maxSteps: 3,
+          maxTokens: Math.floor(room.tokens * reviewTokenShare),
+          maxWallTimeMs: Math.min(reviewWallCapMs, Math.floor(room.wallMs * reviewWallShare)),
+        },
+        runLoop: options.runLoop,
+        loopDependencies: options.loopDependencies,
+        readOnly: options.readOnly(),
+        clock: options.clock,
+        history: conversation.messages,
+      });
+      await options.charge(correction.charge);
+      charge = addCharge(charge, correction.charge);
+      // A corrected probe is taken under whatever id it comes back with (a live reviewer gave
+      // every corrected probe a new id), never one that already ran, and only up to the limit.
+      const kept = new Set(checked.valid.map((one) => one.id));
+      const corrected = admitProbes(options.task, parseReviewAnswer(correction.answer).value);
+      const retried = await validate(
+        2,
+        corrected.probes
+          .filter((one) => !kept.has(one.id))
+          .slice(0, maxProbes - checked.valid.length),
+      );
+      // A probe corrected under its own id is read once, by its second run.
+      const retriedIds = new Set(
+        [...retried.valid, ...retried.broken.map((one) => one.probe)].map((one) => one.id),
+      );
+      checked = {
+        valid: [...checked.valid, ...retried.valid],
+        broken: [
+          ...checked.broken.filter((one) => !retriedIds.has(one.probe.id)),
+          ...retried.broken,
+        ],
+      };
+    }
+    return {
+      admitted: {
+        probes: checked.valid,
+        dropped: [
+          ...admitted.dropped,
+          ...checked.broken.map((one) => ({
+            id: one.probe.id,
+            reason: `unmeasured: it did not run as written (${one.why})`,
+          })),
+        ],
+      },
+      charge,
+      answerError,
+      validation,
+      relationInputs: (parsed.value as { relationInputs?: unknown } | null)?.relationInputs,
+    };
+  }
 }
 
 const missingRun: ProbeRun = { kind: "did-not-complete", detail: "the probe was not run" };

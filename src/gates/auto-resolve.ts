@@ -88,10 +88,16 @@ export interface CandidateReviewHook {
     readonly parts: Readonly<Record<string, GateStatus>>;
     readonly claims: readonly string[];
     readonly record: string;
+    /** The established cases on the examined candidate, by identity; absent is none. */
+    readonly open?: readonly string[];
   }>;
   readonly measure: () => Promise<{
     readonly parts: Readonly<Record<string, GateStatus>>;
     readonly claims: readonly string[];
+    /** A brief for the established cases still open on this candidate; absent or null is none. */
+    readonly brief?: string | null;
+    /** The established cases open on this candidate, by identity. */
+    readonly open?: readonly string[];
   }>;
   /** Records why the review was never asked, and returns that record. */
   readonly withhold: (reason: string) => Promise<string>;
@@ -332,8 +338,10 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
           { kind: "outcomes" as const, rule: "outcome-follow-up-v1" as const, work: deps.followUp },
         ]),
   ];
-  const owedStates = new Map<OwedKind, OwedState>(
-    owed.map((entry) => [entry.kind, { state: "pending" }]),
+  // Keyed by kind and identity, so a later review attempt owed on what stayed open is an item of
+  // its own beside the first, each with its attempt and the ratchet's decision on it.
+  const owedStates = new Map<string, OwedState>(
+    owed.map((entry) => [owedKey(entry), { state: "pending" }]),
   );
 
   // The review's readings of the state the workspace is in, once it has examined: held by the
@@ -341,10 +349,56 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
   let reviewExamined = false;
   let reviewExamination: string | null = null;
   let reviewReading: Awaited<ReturnType<CandidateReviewHook["measure"]>> | null = null;
+  // The established cases the last review attempt was given, and every case any attempt was given.
+  let reviewShown: readonly string[] = [];
+  const reviewEverShown = new Set<string>();
+
+  /**
+   * Whether the candidate just kept owes another review attempt (candidate-review-v4). It does
+   * while established cases stay open and the attempt that produced it was the review's and made
+   * progress (a case it was given no longer open) or the candidate shows a case no attempt was
+   * given (the held-back batch, now exposed). Where the same cases stayed open, no attempt is
+   * owed again and why is recorded: the repeated-failure stop. Attempts still come from the cap.
+   */
+  function reviewOwedAgain(
+    reading: Awaited<ReturnType<CandidateReviewHook["measure"]>>,
+    carriedBy: readonly OwedWork[],
+  ): { readonly entry: OwedWork; readonly state: OwedState } | null {
+    const open = reading.open ?? [];
+    if (reading.brief == null || open.length === 0) return null;
+    const fresh = open.filter((one) => !reviewEverShown.has(one));
+    const progressed =
+      carriedBy.some((one) => one.kind === "review") &&
+      reviewShown.some((one) => !open.includes(one));
+    if (!progressed && fresh.length === 0 && !carriedBy.some((one) => one.kind === "review"))
+      return null;
+    const owing = progressed || fresh.length > 0;
+    const entry: OwedWork = {
+      kind: "review",
+      rule: "candidate-review-attempt-v1",
+      work: {
+        identity: `review ${owing ? "open" : "stopped"} ${[...open].sort().join(" | ")}`,
+        brief: reading.brief,
+      },
+    };
+    if (owedStates.has(owedKey(entry))) return null;
+    return owing
+      ? { entry, state: { state: "pending" } }
+      : {
+          entry,
+          state: {
+            identity: entry.work.identity,
+            state: "withheld",
+            attempt: null,
+            accepted: null,
+            reason: `the same ${open.length} established case(s) stayed open after an attempt given them, so no further attempt is owed for them (repeated-failure stop)`,
+          },
+        };
+  }
 
   while (attempts.length < deps.cap && deps.abortSignal?.aborted !== true) {
     const pendingOwed = isGreen(cycle)
-      ? owed.filter((entry) => owedStates.get(entry.kind)?.state === "pending")
+      ? owed.filter((entry) => owedStates.get(owedKey(entry))?.state === "pending")
       : [];
     // What this attempt carries: the first owed item, or, once the review has findings, the
     // review's and the outcomes' follow-up together, so the review does not cost the follow-up
@@ -371,7 +425,9 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
           work: { identity: examined.identity, brief: examined.brief },
         };
         owed.push(entry);
-        owedStates.set("review", { state: "pending" });
+        owedStates.set(owedKey(entry), { state: "pending" });
+        reviewShown = examined.open ?? [];
+        for (const one of reviewShown) reviewEverShown.add(one);
         carried = [entry, ...pendingOwed.filter((one) => one.kind === "outcomes")];
         // A candidate reviewed with a static check failing carries that failure into the same
         // attempt: the brief names both, and the cycle after it measures both.
@@ -441,7 +497,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
       ...(carried.length > 1 ? { followUpCarries: carried.map((one) => one.kind) } : {}),
     });
     for (const entry of carried)
-      owedStates.set(entry.kind, {
+      owedStates.set(owedKey(entry), {
         identity: entry.work.identity,
         state: failure?.includes("repair stopped:") === true ? "withheld" : "given",
         attempt: failure?.includes("repair stopped:") === true ? null : attempt,
@@ -532,9 +588,9 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
       ratchetRecord: recorded.record.payloadDigest,
     });
     for (const entry of carried) {
-      const state = owedStates.get(entry.kind);
+      const state = owedStates.get(owedKey(entry));
       if (state !== undefined && state.state === "given")
-        owedStates.set(entry.kind, { ...state, accepted: decision.accepted });
+        owedStates.set(owedKey(entry), { ...state, accepted: decision.accepted });
     }
 
     if (!decision.accepted) {
@@ -565,6 +621,15 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
     if (reviewNow !== null && reviewNow !== undefined) {
       reviewReading = reviewNow;
       deps.review?.adopt?.();
+      const again = reviewOwedAgain(reviewNow, carried);
+      if (again !== null) {
+        owed.push(again.entry);
+        owedStates.set(owedKey(again.entry), again.state);
+        if (again.state.state === "pending") {
+          reviewShown = reviewNow.open ?? [];
+          for (const one of reviewShown) reviewEverShown.add(one);
+        }
+      }
     }
   }
 
@@ -581,7 +646,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
   // decision, or withheld with the reason.
   const settled = new Map<OwedKind, FollowUpOutcome>();
   for (const entry of owed) {
-    const state = owedStates.get(entry.kind) ?? { state: "pending" };
+    const state = owedStates.get(owedKey(entry)) ?? { state: "pending" };
     settled.set(
       entry.kind,
       await recordFollowUp(
@@ -705,6 +770,9 @@ interface OwedWork {
 }
 
 type OwedState = { readonly state: "pending" } | Omit<FollowUpOutcome, "record">;
+
+/** An owed item's key: its kind and the identity of the work it names. */
+const owedKey = (entry: OwedWork) => `${entry.kind} ${entry.work.identity}`;
 
 /** What became of an owed item, on the chain; the brief it was given is the attempt's own. */
 async function recordFollowUp(

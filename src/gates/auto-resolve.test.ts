@@ -1267,6 +1267,113 @@ describe("the experimental review of a green candidate", () => {
     });
   });
 
+  /** A review whose examination and later readings report open cases by marker in the source. */
+  const openReview = (
+    test: () => Harness,
+    calls: string[],
+    open: (source: string) => readonly string[],
+  ): CandidateReviewHook => ({
+    examine: () => {
+      calls.push("examine");
+      const now = open(test().workspace.files.get(sourcePath) ?? "");
+      return Promise.resolve({
+        identity: "review sha256:probes",
+        brief: `open: ${now.join(", ")}`,
+        parts: {},
+        claims: [],
+        record: "sha256:examination",
+        open: now,
+      });
+    },
+    measure: () => {
+      calls.push("measure");
+      const now = open(test().workspace.files.get(sourcePath) ?? "");
+      return Promise.resolve({
+        parts: {},
+        claims: [],
+        brief: now.length === 0 ? null : `open: ${now.join(", ")}`,
+        open: now,
+      });
+    },
+    withhold: () => Promise.resolve("sha256:withheld"),
+  });
+  const reviewAttempts = () =>
+    ledgerPayloads("verification-command").filter(
+      (one) => (one as { rule?: string }).rule === "candidate-review-attempt-v1",
+    );
+
+  it("owes another attempt while an attempt fixed some of the cases it was given, and stops where the same cases stay open", async () => {
+    const calls: string[] = [];
+    let test: Harness | null = null;
+    test = harness({
+      cap: 3,
+      review: openReview(
+        () => test as Harness,
+        calls,
+        (now) => ["case-a", "case-b"].filter((one) => !now.includes(`FIXED ${one}`)),
+      ),
+    });
+    test.workspace.write(sourcePath, fixedSource);
+    const briefs: string[] = [];
+    const outcome = await test.run((request) => {
+      briefs.push(request.followUp ?? "");
+      calls.push(`attempt ${request.attempt} ${request.followUpKind}`);
+      // The first attempt fixes one of its two cases; the second changes nothing.
+      if (request.attempt === 1) test?.workspace.write(sourcePath, source("FIXED case-a"));
+      return Promise.resolve();
+    });
+    expect(calls).toEqual([
+      "examine",
+      "attempt 1 review",
+      "measure",
+      "attempt 2 review",
+      "measure",
+    ]);
+    expect(briefs[1]).toBe("open: case-b");
+    expect(reviewAttempts().map((one) => [one.state, one.attempt])).toEqual([
+      ["given", 1],
+      ["given", 2],
+      ["withheld", null],
+    ]);
+    expect(reviewAttempts().at(-1)?.reason).toContain("repeated-failure stop");
+    expect(outcome.settled).toBe("green");
+  });
+
+  it("owes an attempt for a case the kept repair is the first to show, such as a held-back one", async () => {
+    const calls: string[] = [];
+    let test: Harness | null = null;
+    test = harness({
+      cap: 3,
+      review: openReview(
+        () => test as Harness,
+        calls,
+        // The examined candidate shows one case; the repair of it shows a held-back one.
+        (now) =>
+          now.includes("FIXED held") ? [] : now.includes("FIXED shown") ? ["held"] : ["shown"],
+      ),
+    });
+    test.workspace.write(sourcePath, fixedSource);
+    await test.run((request) => {
+      calls.push(`attempt ${request.attempt} ${request.followUpKind}`);
+      test?.workspace.write(
+        sourcePath,
+        source(request.attempt === 1 ? "FIXED shown" : "FIXED shown FIXED held"),
+      );
+      return Promise.resolve();
+    });
+    expect(calls).toEqual([
+      "examine",
+      "attempt 1 review",
+      "measure",
+      "attempt 2 review",
+      "measure",
+    ]);
+    expect(reviewAttempts().map((one) => [one.state, one.attempt, one.accepted])).toEqual([
+      ["given", 1, true],
+      ["given", 2, true],
+    ]);
+  });
+
   it("owes nothing where the review established nothing", async () => {
     const calls: string[] = [];
     const test = harness({ review: reviewOf({ brief: null }, calls) });

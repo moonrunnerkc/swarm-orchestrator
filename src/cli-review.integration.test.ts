@@ -282,7 +282,7 @@ function examination(bundle: string): {
         ) as { rule?: string; phase?: string; validation?: never[]; dropped?: never[] },
     );
   const found = payloads.find(
-    (one) => one.rule === "candidate-review-v3" && one.phase === "examined",
+    (one) => one.rule === "candidate-review-v4" && one.phase === "examined",
   );
   return { validation: found?.validation ?? [], dropped: found?.dropped ?? [] };
 }
@@ -812,13 +812,20 @@ describe("requested behaviour the task states, measured and repaired", () => {
     expect(result.outcome?.status, stdout.slice(-3000)).toBe("accepted");
     expect(result.outcome?.review?.attempt).toMatchObject({ state: "given", accepted: true });
     expect(readFileSync(join(directory, "query.mjs"), "utf8")).toBe(dropCorrect);
-    // Read again on the delivered candidate: every case of the task's code holds there.
-    expect(readingsOf(result)).toEqual([
+    // Read again on the delivered candidate: every case of the task's code holds there, the
+    // generated discovery inputs and the validation batch held back from the repair included.
+    const readings = readingsOf(result);
+    expect(readings.slice(0, 4)).toEqual([
       "code-requested#1 met",
       "code-requested#2 met",
       "code-relation-1#1 related",
       "code-relation-1#2 related",
     ]);
+    expect(readings.filter((one) => one.startsWith("code-relation-1#")).length).toBeGreaterThan(2);
+    expect(
+      readings.filter((one) => one.startsWith("code-relation-1-held#")).length,
+    ).toBeGreaterThan(0);
+    expect(readings.every((one) => / (met|related)$/.test(one))).toBe(true);
     const statuses = Object.fromEntries(
       (result.outcome?.preservation ?? []).map((one) => [one.id, one.status]),
     );
