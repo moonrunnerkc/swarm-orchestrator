@@ -365,7 +365,13 @@ export function assembleToolset(options: ToolsetOptions): AgentToolset {
   };
 }
 
-export async function runAgentTask(input: AgentTaskOptions): Promise<AgentTaskResult> {
+export async function runAgentTask(given: AgentTaskOptions): Promise<AgentTaskResult> {
+  // The task's own words reach the gates, which seal a static check absolute where the task asks
+  // for its failure fixed (failure-identity-v5).
+  const input: AgentTaskOptions = {
+    ...given,
+    gateOptions: { ...(given.gateOptions ?? {}), taskText: given.task },
+  };
   const contract = input.contract === undefined ? undefined : parseTaskContract(input.contract);
   const options: AgentTaskOptions =
     contract === undefined
