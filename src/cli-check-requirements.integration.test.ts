@@ -69,6 +69,32 @@ const eslintLike = [
   "",
 ].join("\n");
 
+/**
+ * A stand-in for ESLint's stylish report with real locations: each `var` in the files named on
+ * its command line, at its line and column. Run as `bin/eslint`, so npm echoes the command by its
+ * tool's name, as an installed ESLint is echoed.
+ */
+const eslintLocated = [
+  'import { readFileSync } from "node:fs";',
+  'import { resolve } from "node:path";',
+  "let problems = 0;",
+  "for (const file of process.argv.slice(2)) {",
+  '  const lines = readFileSync(file, "utf8").split("\\n");',
+  "  const found = lines.flatMap((line, index) => {",
+  "    const at = line.search(/\\bvar\\b/);",
+  "    return at === -1 ? [] : [`  ${index + 1}:${at + 1}  error  Unexpected var, use let or const instead  no-var`];",
+  "  });",
+  "  if (found.length === 0) continue;",
+  "  problems += found.length;",
+  '  console.log("\\n" + resolve(file) + "\\n" + found.join("\\n"));',
+  "}",
+  "if (problems > 0) {",
+  '  console.log(`\\n\\u2716 ${problems} problem${problems === 1 ? "" : "s"} (${problems} error${problems === 1 ? "" : "s"}, 0 warnings)\\n`);',
+  "  process.exit(1);",
+  "}",
+  "",
+].join("\n");
+
 const task =
   "Add an `upper` option to label(name, options): with { upper: true } the label is upper-case, so label('ann', { upper: true }) gives 'ANN:'. Without the option, label(name) behaves as it does today.";
 const base = "export function label(name) {\n  return name.trim() + ':';\n}\n";
@@ -97,6 +123,13 @@ async function workspace(lint: string, swarmToml?: string) {
   await writeFile(join(directory, "label.test.mjs"), suite);
   await writeFile(join(directory, "prettier-like.mjs"), prettierLike);
   await writeFile(join(directory, "eslint-like.mjs"), eslintLike);
+  await writeFile(join(directory, "eslint-located.mjs"), eslintLocated);
+  await mkdir(join(directory, "bin"), { recursive: true });
+  await writeFile(
+    join(directory, "bin", "eslint"),
+    '#!/bin/sh\nexec node "$(dirname "$0")/../eslint-located.mjs" "$@"\n',
+    { mode: 0o755 },
+  );
   await writeFile(join(directory, "acceptance", "check.mjs"), check);
   if (swarmToml !== undefined) await writeFile(join(directory, "swarm.toml"), swarmToml);
   await git(directory, "init", "-q");
@@ -156,6 +189,7 @@ async function swarm(
   turns: readonly ScriptedTurn[],
   lint = "node prettier-like.mjs",
   swarmToml?: string,
+  taskText = task,
 ): Promise<{ result: Result; code: number; stdout: string; directory: string }> {
   let worker = 0;
   const endpoint = await startScriptedEndpoint({
@@ -171,7 +205,7 @@ async function swarm(
       process.execPath,
       [
         resolve("src/cli.ts"),
-        task,
+        taskText,
         "--model",
         "local:stub",
         "--local-endpoint",
@@ -298,6 +332,117 @@ describe("a static check the base already fails, held to no new regression", () 
       "lint (a run did not report completely (cut short, cancelled, short of its plan, or a chained command stopped before the last one ran))",
     );
     expect(stdout).toContain("before model spending");
+  }, 240_000);
+});
+
+describe("failure-identity-v5: what a count of identities cannot show", () => {
+  it("stops before model work on a chain whose earlier command runs the failing tool too", async () => {
+    // `bin/eslint legacy.mjs` fails on the base, so `bin/eslint extra.mjs` never runs on either
+    // tree. Under v4 its report read as the last command's, and a change adding a `var` to
+    // extra.mjs was accepted.
+    const { result, code, stdout } = await swarm(
+      [
+        declare(["label.mjs", "extra.mjs"]),
+        write("label.mjs", correct),
+        write("extra.mjs", "var unseen = 1;\nexport { unseen };\n"),
+      ],
+      "bin/eslint legacy.mjs && bin/eslint extra.mjs",
+    );
+    expect(code).not.toBe(0);
+    expect(result.verdict).toBeUndefined();
+    expect(stdout).toContain("a chained command stopped before the last one ran");
+    expect(stdout).toContain("before model spending");
+  }, 240_000);
+
+  it("refuses a change that fixes the base's problem and adds an identical one in the same file", async () => {
+    const { result, code, stdout } = await swarm(
+      [
+        declare(["label.mjs", "legacy.mjs"]),
+        write("label.mjs", correct),
+        write(
+          "legacy.mjs",
+          `${marker}\nlet legacy = 1;\nexport { legacy };\nexport function later() {\n  var count = 2;\n  return count;\n}\n`,
+        ),
+      ],
+      "bin/eslint legacy.mjs",
+    );
+    expect(result.outcome?.status, stdout.slice(-3000)).toBe("not-accepted");
+    expect(code).toBe(1);
+    expect(result.verdict?.acceptable).toBe(false);
+    expect(stdout).toContain("could not be shown to be the base's own occurrences");
+    expect(stdout).toContain("legacy.mjs:5:3");
+    await independentlyChecked(result.bundleDirectory ?? "");
+  }, 240_000);
+
+  it("follows the base's problem an edit above it moved, and accepts it as inherited", async () => {
+    const { result, stdout } = await swarm(
+      [
+        declare(["label.mjs", "legacy.mjs"]),
+        write("label.mjs", correct),
+        write("legacy.mjs", `// a note\n// another\n${legacy}`),
+      ],
+      "bin/eslint legacy.mjs",
+    );
+    expect(result.outcome?.status, stdout.slice(-3000)).toBe("accepted");
+    expect(result.outcome?.checks).toEqual({
+      result: "no-new-failures",
+      inherited: [
+        {
+          gateId: "lint",
+          failures: ["eslint legacy.mjs › no-var: Unexpected var, use let or const instead"],
+        },
+      ],
+    });
+    expect(result.outcome?.finalVerification?.regression).toBe("pass");
+    await independentlyChecked(result.bundleDirectory ?? "");
+  }, 240_000);
+
+  it("never reads a formatting finding as the base's in a file the change edited", async () => {
+    // The base's legacy.mjs already fails the formatter; the change edits that file, and whether
+    // it added a finding of its own there cannot be told from a file-level report.
+    const { result, stdout } = await swarm([
+      declare(["label.mjs", "legacy.mjs"]),
+      write("label.mjs", correct),
+      write("legacy.mjs", `${legacy}export const    other =  [1,2,3];\n`),
+    ]);
+    expect(result.outcome?.status, stdout.slice(-3000)).toBe("not-accepted");
+    expect(result.verdict?.acceptable).toBe(false);
+    expect(stdout).toContain("prettier legacy.mjs at legacy.mjs");
+    await independentlyChecked(result.bundleDirectory ?? "");
+  }, 240_000);
+});
+
+describe("a static failure the task asks to fix", () => {
+  const asked = `Fix the lint error in legacy.mjs. ${task}`;
+
+  it("is not excused as inherited where the change leaves it", async () => {
+    const { result, code, stdout, directory } = await swarm(
+      [declare(["label.mjs"]), write("label.mjs", correct)],
+      "bin/eslint legacy.mjs",
+      undefined,
+      asked,
+    );
+    expect(result.outcome?.status, stdout.slice(-3000)).toBe("not-accepted");
+    expect(code).toBe(1);
+    expect(result.verdict?.reasons?.assessment).toContain("blocking gate(s) failed: lint");
+    expect(readFileSync(join(directory, "legacy.mjs"), "utf8")).toContain("var legacy");
+    await independentlyChecked(result.bundleDirectory ?? "");
+  }, 240_000);
+
+  it("is accepted as all required checks passing once the change fixes it", async () => {
+    const { result, stdout } = await swarm(
+      [
+        declare(["label.mjs", "legacy.mjs"]),
+        write("legacy.mjs", legacy.replace("var legacy", "let legacy")),
+        write("label.mjs", correct),
+      ],
+      "bin/eslint legacy.mjs",
+      undefined,
+      asked,
+    );
+    expect(result.outcome?.status, stdout.slice(-3000)).toBe("accepted");
+    expect(result.outcome?.checks).toEqual({ result: "all-required-pass", inherited: [] });
+    await independentlyChecked(result.bundleDirectory ?? "");
   }, 240_000);
 });
 
