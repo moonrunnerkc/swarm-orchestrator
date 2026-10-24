@@ -1,0 +1,122 @@
+{
+  "rule": "scripted-mechanics-v1",
+  "note": "Scripted responses: the reviewer's answer and the repair's files are fixed here. The repair writes a correct candidate's files of the same task. This shows controller mechanics on real trees, not model capability. The D4 and C2 probe inputs were chosen, after a first run whose inputs missed the regression, from the inputs where D4 and the base differ; the repair writes only the source file, so the candidate's own tests stay.",
+  "cases": [
+    {
+      "id": "D1",
+      "task": "ufo-feature-filter-query",
+      "start": "ufo-feature-missing-73a46956.patch",
+      "reviewer": {
+        "probes": []
+      },
+      "repairFrom": "ufo-feature-correct-f3142427.patch"
+    },
+    {
+      "id": "D2",
+      "task": "ufo-feature-filter-query",
+      "start": "ufo-feature-missing-fe4960db-replay.patch",
+      "reviewer": {
+        "probes": []
+      },
+      "repairFrom": "ufo-feature-correct-f3142427.patch"
+    },
+    {
+      "id": "D4",
+      "task": "ufo-bugfix-base-prefix-boundary",
+      "start": "ufo-bugfix-breaks-kept-ae10625e-replay.patch",
+      "reviewer": {
+        "probes": [
+          {
+            "id": "kept-at-boundary",
+            "basis": "preserve",
+            "quote": "wherever the base does end at such a boundary, or input does not start with the base text at all, both functions return exactly what they return today",
+            "keeps": "withBase where the base ends at a segment boundary or the input does not start with it",
+            "program": "import { createJiti } from \"jiti\";\nconst project = await createJiti(import.meta.url).import(\"./src/index.ts\");\nexport default (input) => project.withBase(input.path, input.base);\n",
+            "cases": [
+              {
+                "input": {
+                  "path": "/foo/bar",
+                  "base": "/api"
+                }
+              },
+              {
+                "input": {
+                  "path": "/a/b/c",
+                  "base": "/foo"
+                }
+              },
+              {
+                "input": {
+                  "path": "/api/v1",
+                  "base": "/a/b"
+                }
+              },
+              {
+                "input": {
+                  "path": "/admin/x",
+                  "base": "/admin"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "repairFrom": "ufo-bugfix-correct-ef94d44c-replay.patch",
+      "repairFiles": [
+        "src/utils.ts"
+      ]
+    },
+    {
+      "id": "C1",
+      "task": "ufo-feature-filter-query",
+      "start": "ufo-feature-correct-f3142427.patch",
+      "reviewer": {
+        "probes": []
+      },
+      "repairFrom": "ufo-feature-correct-f3142427.patch"
+    },
+    {
+      "id": "C2",
+      "task": "ufo-bugfix-base-prefix-boundary",
+      "start": "ufo-bugfix-correct-ef94d44c-replay.patch",
+      "reviewer": {
+        "probes": [
+          {
+            "id": "kept-at-boundary",
+            "basis": "preserve",
+            "quote": "wherever the base does end at such a boundary, or input does not start with the base text at all, both functions return exactly what they return today",
+            "keeps": "withBase where the base ends at a segment boundary or the input does not start with it",
+            "program": "import { createJiti } from \"jiti\";\nconst project = await createJiti(import.meta.url).import(\"./src/index.ts\");\nexport default (input) => project.withBase(input.path, input.base);\n",
+            "cases": [
+              {
+                "input": {
+                  "path": "/foo/bar",
+                  "base": "/api"
+                }
+              },
+              {
+                "input": {
+                  "path": "/a/b/c",
+                  "base": "/foo"
+                }
+              },
+              {
+                "input": {
+                  "path": "/api/v1",
+                  "base": "/a/b"
+                }
+              },
+              {
+                "input": {
+                  "path": "/admin/x",
+                  "base": "/admin"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "repairFrom": "ufo-bugfix-correct-ef94d44c-replay.patch"
+    }
+  ]
+}
