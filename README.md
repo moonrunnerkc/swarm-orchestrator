@@ -84,13 +84,15 @@ say the code is correct. If a first run fails, see
 ## Limitations
 
 Swarm is experimental. On small registered blocks of fresh public tasks with one local model it
-has not shown a general advantage over OpenCode: on the latest block of three tasks (two samples
-each) Swarm completed one of six launches and OpenCode none, at about 1.7 times OpenCode's wall
-time; on the block before it Swarm completed one of four and OpenCode two, three after an
-evaluator audit ([latest](docs/evidence/2026-10-23-controller/README.md),
-[previous](docs/evidence/2026-10-22-adaptive/README.md)). Swarm's verdict can still accept a
-change that misses a stated edge case no check exercises, and can refuse a refactor whose
-required configuration edit its anti-tampering rule rejects. Model-written checks
+has not shown a general advantage over OpenCode. On the latest block (three tasks, two samples
+each) Swarm produced 4 of 6 complete changes, OpenCode 5 and aider 3. Swarm's own verdict
+accepted none of its 4, so it delivered none
+([latest](docs/evidence/2026-10-23-preservation-review/README.md),
+[previous](docs/evidence/2026-10-23-controller/README.md)). On a project whose blocking lint
+already fails on the base, Swarm accepts no change that leaves that failure alone unless the gate
+is declared advisory. Its verdict can still accept a change that misses or breaks a behaviour no
+check exercises. The experimental candidate review (`--review`) has shown no benefit.
+Model-written checks
 (`--plan-checks`) guide repair but cannot establish a requirement alone. Commands run on your
 machine under a path policy, not a sandbox, unless you pass `--isolation`.
 

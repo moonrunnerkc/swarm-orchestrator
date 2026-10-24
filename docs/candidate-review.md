@@ -146,3 +146,6 @@ the bundle's own `verify.mjs` and `rederive.mjs`:
 - the prose control.
 
 Live results are in [the stage's evidence](evidence/2026-10-23-preservation-review/README.md).
+In the development study the review established 3 findings, and the offline assessor rated all 3
+as false accusations against the reference. Its 5 attempts changed no hidden verdict. In the fresh
+block it was never asked, because no Swarm run's gates went green. It stays off by default.
