@@ -599,7 +599,9 @@ function comparableOutput(observation, rule = "v2") {
     .split("\n")
     .map((line) => line.replace(/\s+$/, ""))
     .join("\n");
-  return rule === "v3" ? text.replace(/[^\n]+/g, (line) => withoutTemporaryNames(line)) : text;
+  return rule === "v3" || rule === "v4"
+    ? text.replace(/[^\n]+/g, (line) => withoutTemporaryNames(line))
+    : text;
 }
 
 /** Why a failed reading failed under v1: title identities, as sets. */
@@ -625,10 +627,160 @@ function tally(ids) {
   return found;
 }
 
+/** An absolute file a static tool names on a line of its own. */
+const absoluteFileLine = /^(\/[^\s:()]+\.[A-Za-z0-9]+)\s*$/;
+
+/** The directory every absolute file named in the texts shares; "" for one level or none. */
+function diagnosticsRoot(texts) {
+  const files = [];
+  for (const text of texts)
+    for (const line of stripColour(text).split("\n")) {
+      const found = absoluteFileLine.exec(line);
+      if (found !== null) files.push(found[1]);
+    }
+  if (files.length === 0) return "";
+  let shared = files[0].split("/").slice(0, -1);
+  for (const file of files.slice(1)) {
+    const parts = file.split("/").slice(0, -1);
+    let length = 0;
+    while (length < shared.length && shared[length] === parts[length]) length++;
+    shared = shared.slice(0, length);
+  }
+  return shared.length <= 1 ? "" : `${shared.join("/")}/`;
+}
+
+const relativeTo = (root, file) =>
+  root.length > 0 && file.startsWith(root) ? file.slice(root.length) : file;
+
+/**
+ * Static checks' diagnostics under failure-identity v4: ESLint's stylish problems by file, rule
+ * and message (warnings only where ESLint said there were too many), Prettier's `--check` files,
+ * and TypeScript's errors by file, code and message. Complete only where each tool's own summary
+ * agrees, the run was not killed (exit 128), and, for a script npm echoed as a chain of `&&`
+ * commands, the failures came from its last command. Mirrors `diagnosticPoints` in
+ * src/gates/failure-attribution.ts.
+ */
+function diagnosticsV4(observation, root) {
+  const lines = stripColour(`${observation.stdout ?? ""}\n${observation.stderr ?? ""}`).split("\n");
+  const tools = [];
+
+  let file = null;
+  let errors = 0;
+  let warnings = 0;
+  const eslint = [];
+  let eslintSummary = null;
+  const tooManyWarnings = lines.some((line) => line.includes("ESLint found too many warnings"));
+  for (const line of lines) {
+    const summary = /^\u2716 (\d+) problems? \((\d+) errors?, (\d+) warnings?\)/.exec(line);
+    if (summary !== null && eslintSummary === null) eslintSummary = summary;
+    const named = absoluteFileLine.exec(line);
+    if (named !== null) {
+      file = relativeTo(root, named[1]);
+      continue;
+    }
+    const problem =
+      /^\s+\d+:\d+\s+(error|warning)\s+(.+?)(?:\s{2,}(@?[\w-]+(?:\/[\w-]+)*))?\s*$/.exec(line);
+    if (problem === null || file === null) continue;
+    if (problem[1] === "error") errors++;
+    else warnings++;
+    if (problem[1] === "error" || tooManyWarnings)
+      eslint.push(
+        `eslint ${file} \u203a ${problem[3] ?? "(no rule)"}: ${withoutTemporaryNames(cause(problem[2]))}`,
+      );
+  }
+  if (eslintSummary !== null || eslint.length > 0)
+    tools.push({
+      tool: "eslint",
+      failed: eslint,
+      complete:
+        eslintSummary !== null &&
+        Number(eslintSummary[2]) === errors &&
+        Number(eslintSummary[3]) === warnings,
+    });
+
+  const prettier = [];
+  let counted = null;
+  const checking = lines.some((line) => /^Checking formatting\.\.\.\s*$/.test(line));
+  for (const line of lines) {
+    const summary =
+      /^\[warn\] Code style issues (?:were )?found in (?:(\d+) files|the above file(\(s\))?)/.exec(
+        line,
+      );
+    if (summary !== null) {
+      counted = summary[1] !== undefined ? Number(summary[1]) : summary[2] === undefined ? 1 : -1;
+      continue;
+    }
+    const warned = /^\[warn\] (\S.*?)\s*$/.exec(line);
+    if (warned !== null) prettier.push(`prettier ${warned[1]}`);
+    const error = /^\[error\] (\S+?): (.+?)\s*$/.exec(line);
+    if (error !== null)
+      prettier.push(
+        `prettier ${error[1]}: ${withoutTemporaryNames(cause(error[2].split(" (")[0]))}`,
+      );
+  }
+  if (checking || prettier.length > 0) {
+    const warnedCount = prettier.filter((one) => !one.includes(": ")).length;
+    tools.push({
+      tool: "prettier",
+      failed: prettier,
+      complete:
+        prettier.length === 0 ||
+        (counted !== null &&
+          (counted === warnedCount || counted === -1) &&
+          prettier.length === warnedCount),
+    });
+  }
+
+  const tsc = [];
+  let found = null;
+  for (const line of lines) {
+    const error =
+      /^(\S.*?)\((\d+),(\d+)\): error (TS\d+): (.+)$/.exec(line) ??
+      /^(\S.*?):(\d+):(\d+) - error (TS\d+): (.+)$/.exec(line);
+    if (error !== null)
+      tsc.push(
+        `tsc ${relativeTo(root, error[1])} \u203a ${error[4]}: ${withoutTemporaryNames(cause(error[5]))}`,
+      );
+    const summary = /^Found (\d+) errors?\b/.exec(line);
+    if (summary !== null && found === null) found = Number(summary[1]);
+  }
+  if (tsc.length > 0)
+    tools.push({ tool: "tsc", failed: tsc, complete: found === null || found === tsc.length });
+
+  const failing = tools.filter((one) => one.failed.length > 0);
+  if (failing.length === 0) return null;
+  // The echoed script, where its commands are joined by `&&` and nothing else.
+  const echoed = lines.findIndex((line) => /^> \S+@\S+ \S+/.test(line));
+  const script = echoed === -1 ? undefined : /^> (.+)$/.exec(lines[echoed + 1] ?? "")?.[1];
+  let chain = null;
+  if (script !== undefined && !/[|;&`<>]|\$\(/.test(script.split("&&").join(" ")))
+    chain = script.split("&&").map((one) => one.trim());
+  let last = null;
+  if (chain !== null) {
+    const words = chain[chain.length - 1].split(/\s+/).filter((word) => !/^\w+=/.test(word));
+    const program = ((words[0] === "npx" ? words[1] : words[0]) ?? "").split("/").pop();
+    last = ["eslint", "prettier", "tsc"].includes(program) ? program : null;
+  }
+  const wholeChainRan =
+    chain === null ||
+    chain.length === 1 ||
+    (failing.length === 1 && last !== null && failing[0].tool === last);
+  return {
+    failed: failing.flatMap((one) => one.failed),
+    passed: [],
+    causes: {},
+    complete:
+      observation.outputTruncated !== true &&
+      observation.exitCode !== 128 &&
+      wholeChainRan &&
+      failing.every((one) => one.complete),
+  };
+}
+
 /** A run's tests under the rule named: v3 is v2 with temporary names set aside in each cause. */
 function namedTests(observation, sharedRoot, rule) {
   const named = namedTestsV2(observation, sharedRoot);
-  if (named === null || rule !== "v3") return named;
+  if (named === null || (rule !== "v3" && rule !== "v4")) return named;
   return {
     ...named,
     causes: Object.fromEntries(
@@ -647,10 +799,19 @@ function attributionV2(failing, parser, baseObservation, rule = "v2") {
     return { attribution: "new", newFailures: [] };
   if (failing.outputTruncated === true || baseObservation.outputTruncated === true)
     return { attribution: "unattributed", newFailures: [] };
+  // v4: a run the harness killed (exit 128) stopped wherever it was.
+  if (rule === "v4" && (failing.exitCode === 128 || baseObservation.exitCode === 128))
+    return { attribution: "unattributed", newFailures: [] };
   const texts = [failing, baseObservation].map((one) => `${one.stdout ?? ""}\n${one.stderr ?? ""}`);
   const root = texts.every((text) => /^TAP version \d+/m.test(text)) ? locationRoot(texts) : "";
-  const patched = namedTests(failing, root, rule);
-  const base = namedTests(baseObservation, root, rule);
+  let patched = namedTests(failing, root, rule);
+  let base = namedTests(baseObservation, root, rule);
+  // v4: where neither run names tests, the static checks' diagnostics under one shared root.
+  if (rule === "v4" && patched === null && base === null) {
+    const shared = diagnosticsRoot(texts);
+    patched = diagnosticsV4(failing, shared);
+    base = diagnosticsV4(baseObservation, shared);
+  }
   if (patched !== null && base !== null && patched.failed.length > 0) {
     const before = tally(base.failed);
     const after = tally(patched.failed);
@@ -665,7 +826,7 @@ function attributionV2(failing, parser, baseObservation, rule = "v2") {
       ? { attribution: "inherited", newFailures: [] }
       : { attribution: "unattributed", newFailures: [] };
   }
-  if (rule === "v3" && patched !== null && base === null && patched.complete) {
+  if ((rule === "v3" || rule === "v4") && patched !== null && base === null && patched.complete) {
     const newFailures = failuresTheBaseNamedPassing(patched, baseObservation);
     if (newFailures.length > 0) return { attribution: "new", newFailures };
   }
@@ -695,11 +856,13 @@ function failuresTheBaseNamedPassing(patched, baseObservation) {
 
 /** The v2-family rule a record names; a record naming neither v2 nor v3 was written under v1. */
 function identityRule(check) {
-  return check.attributionRule === "failure-identity-v3"
-    ? "v3"
-    : check.attributionRule === "failure-identity-v2"
-      ? "v2"
-      : null;
+  return check.attributionRule === "failure-identity-v4"
+    ? "v4"
+    : check.attributionRule === "failure-identity-v3"
+      ? "v3"
+      : check.attributionRule === "failure-identity-v2"
+        ? "v2"
+        : null;
 }
 
 /** Why a failed reading failed, under the rule the record names. */
