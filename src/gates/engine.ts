@@ -27,7 +27,7 @@ import type {
   GateContext,
   GateDefinition,
 } from "./gate-definition.ts";
-import { observe } from "./gate-runner.ts";
+import { type GateCycle, observe } from "./gate-runner.ts";
 import { describeGateSet, sealGateSet } from "./gate-set-seal.ts";
 import { snapshotChanges, undoCheckWrites } from "./gate-side-effects.ts";
 import {
@@ -39,6 +39,7 @@ import { changesTheRunMade, type InheritedChanges } from "./inherited-changes.ts
 import { createNodeCommandRunner } from "./node-command-runner.ts";
 import { assemblePackageGates } from "./package-scope.ts";
 import { detectProject, type ProjectDetection } from "./project-type.ts";
+import type { TestRetention } from "./retained-tests.ts";
 
 /** Deliberately generous. The budget is advisory, and a budget nobody can meet is noise. */
 export const defaultDiffBudget: DiffBudget = { maxChangedFiles: 12, maxAddedLines: 600 };
@@ -67,6 +68,8 @@ interface GatesEngineOptions {
   readonly continuation?: OwedFollowUp;
   /** The experimental review of the candidate; absent is none. */
   readonly review?: CandidateReviewHook;
+  /** Tests the worker deleted or changed, run again on kept candidates; absent is none kept. */
+  readonly retention?: TestRetention;
   readonly budgets?: DiffBudget;
   readonly gateOptions?: GateSetOptions;
   /**
@@ -271,6 +274,17 @@ export async function runGatesEngine(options: GatesEngineOptions): Promise<Gates
     ...(options.followUp === undefined ? {} : { followUp: options.followUp }),
     ...(options.continuation === undefined ? {} : { continuation: options.continuation }),
     ...(options.review === undefined ? {} : { review: options.review }),
+    ...(options.retention === undefined
+      ? {}
+      : {
+          retention: {
+            measure: (cycle: GateCycle) =>
+              (options.retention as TestRetention).measure(cycle, {
+                commands,
+                testsGate: gates.find((gate) => gate.id === "tests") ?? null,
+              }),
+          },
+        }),
     cycleDeps: {
       commands,
       evidence: options.evidence,

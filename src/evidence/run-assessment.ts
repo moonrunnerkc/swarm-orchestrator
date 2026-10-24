@@ -407,7 +407,8 @@ function lifecycleStop(evidence: EvidenceRecorder) {
       (payload) =>
         payload?.rule === "outcome-follow-up-v1" ||
         payload?.rule === "task-continuation-v1" ||
-        payload?.rule === "candidate-review-attempt-v1",
+        payload?.rule === "candidate-review-attempt-v1" ||
+        payload?.rule === "test-retention-attempt-v1",
     );
   const kept = (attempt: unknown): boolean => {
     const record =

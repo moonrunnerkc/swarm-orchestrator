@@ -32,6 +32,7 @@ import {
   type RespecificationCandidate,
   type RespecificationFinding,
 } from "./respecification.ts";
+import type { RetentionReading } from "./retained-tests.ts";
 import type { CapturedWorkspace, WorkspaceCheckpoint } from "./workspace-changes.ts";
 
 export interface ResolveRequest {
@@ -69,7 +70,15 @@ export interface ResolveRequest {
  * continuation, where the loop that worked it stopped at its step limit before it reported the
  * task done, and then the follow-up on requested outcomes no sealed check states.
  */
-export type OwedKind = "continuation" | "outcomes" | "review";
+export type OwedKind = "continuation" | "outcomes" | "review" | "retained";
+
+/** The order owed items travel in one attempt: the review's findings, retained tests, outcomes. */
+const owedOrder: Readonly<Record<OwedKind, number>> = {
+  continuation: 0,
+  review: 1,
+  retained: 2,
+  outcomes: 3,
+};
 
 /** Where the review's readings sit among the ratchet's parts; no gate carries this id. */
 export const reviewPartsKey = "candidate-review";
@@ -237,6 +246,11 @@ interface AutoResolveDependencies {
   readonly continuation?: OwedFollowUp;
   /** Absent is no review, which is the default. */
   readonly review?: CandidateReviewHook;
+  /**
+   * Tests the worker deleted or changed, run again on the first cycle and on every kept candidate
+   * (test-retention-v1); an open one owes an attempt once the gates are green. Absent is none kept.
+   */
+  readonly retention?: { readonly measure: (cycle: GateCycle) => Promise<RetentionReading> };
 }
 
 interface AutoResolveAttempt {
@@ -272,6 +286,9 @@ export interface AutoResolveOutcome {
   readonly review?: FollowUpOutcome | null;
   /** The examination's record, where the review ran one. */
   readonly reviewExamination?: string | null;
+  /** The retained tests' attempt, where one was owed; and their last reading, where kept. */
+  readonly retained?: FollowUpOutcome | null;
+  readonly retention?: RetentionReading | null;
   /** The test deliverable as measured on the final state, against the base. */
   readonly regressionTests: RegressionTestAccount;
 }
@@ -349,35 +366,43 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
   let reviewExamined = false;
   let reviewExamination: string | null = null;
   let reviewReading: Awaited<ReturnType<CandidateReviewHook["measure"]>> | null = null;
-  // The established cases the last review attempt was given, and every case any attempt was given.
-  let reviewShown: readonly string[] = [];
-  const reviewEverShown = new Set<string>();
+  // For each kind owed on open cases (the review's, the retained tests'), the cases the last
+  // attempt of that kind was given, and every case any attempt of it was given.
+  const shownTo: Record<"review" | "retained", { shown: readonly string[]; ever: Set<string> }> = {
+    review: { shown: [], ever: new Set() },
+    retained: { shown: [], ever: new Set() },
+  };
+  // The retained tests' reading of the state the workspace is in (test-retention-v1).
+  let retentionReading: RetentionReading | null = null;
+  // What the last kept attempt carried, which decides whether open cases made progress.
+  let lastCarried: readonly OwedWork[] = [];
 
   /**
-   * Whether the candidate just kept owes another review attempt (candidate-review-v4). It does
-   * while established cases stay open and the attempt that produced it was the review's and made
-   * progress (a case it was given no longer open) or the candidate shows a case no attempt was
-   * given (the held-back batch, now exposed). Where the same cases stayed open, no attempt is
-   * owed again and why is recorded: the repeated-failure stop. Attempts still come from the cap.
+   * Whether open cases owe an attempt (candidate-review-v4, test-retention-v1). They do where no
+   * attempt of their kind was given them yet, or where the kept candidate came from such an
+   * attempt and it made progress (a case it was given no longer open), or where the candidate shows
+   * a case no attempt was given (a held-back batch, now exposed). Where the same cases stayed open
+   * after an attempt given them, nothing more is owed and why is recorded: the repeated-failure
+   * stop. Attempts still come from the cap.
    */
-  function reviewOwedAgain(
-    reading: Awaited<ReturnType<CandidateReviewHook["measure"]>>,
+  function owedOn(
+    kind: "review" | "retained",
+    reading: { readonly open?: readonly string[]; readonly brief?: string | null },
     carriedBy: readonly OwedWork[],
   ): { readonly entry: OwedWork; readonly state: OwedState } | null {
     const open = reading.open ?? [];
     if (reading.brief == null || open.length === 0) return null;
-    const fresh = open.filter((one) => !reviewEverShown.has(one));
-    const progressed =
-      carriedBy.some((one) => one.kind === "review") &&
-      reviewShown.some((one) => !open.includes(one));
-    if (!progressed && fresh.length === 0 && !carriedBy.some((one) => one.kind === "review"))
-      return null;
+    const track = shownTo[kind];
+    const given = carriedBy.some((one) => one.kind === kind);
+    const fresh = open.filter((one) => !track.ever.has(one));
+    const progressed = given && track.shown.some((one) => !open.includes(one));
+    if (!given && fresh.length === 0) return null;
     const owing = progressed || fresh.length > 0;
     const entry: OwedWork = {
-      kind: "review",
-      rule: "candidate-review-attempt-v1",
+      kind,
+      rule: kind === "review" ? "candidate-review-attempt-v1" : "test-retention-attempt-v1",
       work: {
-        identity: `review ${owing ? "open" : "stopped"} ${[...open].sort().join(" | ")}`,
+        identity: `${kind} ${owing ? "open" : "stopped"} ${[...open].sort().join(" | ")}`,
         brief: reading.brief,
       },
     };
@@ -391,19 +416,34 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
             state: "withheld",
             attempt: null,
             accepted: null,
-            reason: `the same ${open.length} established case(s) stayed open after an attempt given them, so no further attempt is owed for them (repeated-failure stop)`,
+            reason: `the same ${open.length} case(s) stayed open after an attempt given them, so no further attempt is owed for them (repeated-failure stop)`,
           },
         };
   }
+  const owe = (found: ReturnType<typeof owedOn>, open: readonly string[]) => {
+    if (found === null) return;
+    owed.push(found.entry);
+    owedStates.set(owedKey(found.entry), found.state);
+    if (found.state.state !== "pending") return;
+    const track = shownTo[found.entry.kind as "review" | "retained"];
+    track.shown = open;
+    for (const one of open) track.ever.add(one);
+  };
+  if (deps.retention !== undefined) retentionReading = await deps.retention.measure(cycle);
 
   while (attempts.length < deps.cap && deps.abortSignal?.aborted !== true) {
+    if (isGreen(cycle) && retentionReading !== null)
+      owe(owedOn("retained", retentionReading, lastCarried), retentionReading.open);
     const pendingOwed = isGreen(cycle)
       ? owed.filter((entry) => owedStates.get(owedKey(entry))?.state === "pending")
       : [];
-    // What this attempt carries: the first owed item, or, once the review has findings, the
-    // review's and the outcomes' follow-up together, so the review does not cost the follow-up
-    // its attempt under the same cap.
-    let carried: readonly OwedWork[] = pendingOwed.slice(0, 1);
+    // What this attempt carries: the task's continuation alone, or else every pending item
+    // together (the review's findings first, then retained tests, then the outcomes' follow-up),
+    // so one kind of owed work does not cost another its attempt under the same cap.
+    let carried: readonly OwedWork[] =
+      pendingOwed[0]?.kind === "continuation"
+        ? pendingOwed.slice(0, 1)
+        : [...pendingOwed].sort((left, right) => owedOrder[left.kind] - owedOrder[right.kind]);
     // The review asks once a finished candidate runs (`reviewable`), green or with only a static
     // check failing: after the task's own continuation, which may still change what it would
     // read, and before the follow-up on outcomes. A lint finding does not stop the candidate from
@@ -426,9 +466,9 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
         };
         owed.push(entry);
         owedStates.set(owedKey(entry), { state: "pending" });
-        reviewShown = examined.open ?? [];
-        for (const one of reviewShown) reviewEverShown.add(one);
-        carried = [entry, ...pendingOwed.filter((one) => one.kind === "outcomes")];
+        shownTo.review.shown = examined.open ?? [];
+        for (const one of shownTo.review.shown) shownTo.review.ever.add(one);
+        carried = [entry, ...carried];
         // A candidate reviewed with a static check failing carries that failure into the same
         // attempt: the brief names both, and the cycle after it measures both.
         if (!isGreen(cycle))
@@ -621,15 +661,14 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
     if (reviewNow !== null && reviewNow !== undefined) {
       reviewReading = reviewNow;
       deps.review?.adopt?.();
-      const again = reviewOwedAgain(reviewNow, carried);
-      if (again !== null) {
-        owed.push(again.entry);
-        owedStates.set(owedKey(again.entry), again.state);
-        if (again.state.state === "pending") {
-          reviewShown = reviewNow.open ?? [];
-          for (const one of reviewShown) reviewEverShown.add(one);
-        }
-      }
+      owe(owedOn("review", reviewNow, carried), reviewNow.open ?? []);
+    }
+    lastCarried = carried;
+    if (deps.retention !== undefined) {
+      retentionReading = await deps.retention.measure(cycle);
+      // A retained case still open after an attempt given it, with no progress, stops here.
+      if (carried.some((one) => one.kind === "retained"))
+        owe(owedOn("retained", retentionReading, carried), retentionReading.open);
     }
   }
 
@@ -672,6 +711,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
   const continuationOutcome = settled.get("continuation") ?? null;
   const followUpOutcome = settled.get("outcomes") ?? null;
   const reviewOutcome = settled.get("review") ?? null;
+  const retainedOutcome = settled.get("retained") ?? null;
 
   const baseComparison = await judgeAgainstBase(deps, cycle, baseline);
   const regressionTests = await accountForRegressionTests(deps, cycle, baseline);
@@ -688,6 +728,9 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
       followUp: followUpOutcome,
       continuation: continuationOutcome,
       ...(deps.review === undefined ? {} : { review: reviewOutcome, reviewExamination }),
+      ...(deps.retention === undefined
+        ? {}
+        : { retained: retainedOutcome, retention: retentionReading }),
       regressionTests,
     };
   }
@@ -765,7 +808,11 @@ async function judgeAgainstBase(
 interface OwedWork {
   readonly kind: OwedKind;
   /** The rule the outcome is recorded under; the bundled verifier reads both. */
-  readonly rule: "task-continuation-v1" | "outcome-follow-up-v1" | "candidate-review-attempt-v1";
+  readonly rule:
+    | "task-continuation-v1"
+    | "outcome-follow-up-v1"
+    | "candidate-review-attempt-v1"
+    | "test-retention-attempt-v1";
   readonly work: OwedFollowUp;
 }
 
@@ -792,7 +839,9 @@ async function recordFollowUp(
           ? "given means one attempt carried the task again with the interrupted loop's account and its candidate was judged as any repair's is; it does not establish that the task is done, which only the sealed checks and the final verification speak to"
           : rule === "candidate-review-attempt-v1"
             ? "given means one attempt carried the review's established findings and its candidate was judged as any repair's is, with the probes' kept cases held as parts; it does not establish that the findings were right, which no sealed check states"
-            : "given means one attempt carried the brief and its candidate was judged as any repair's is; it does not settle the work it names, which no sealed check states",
+            : rule === "test-retention-attempt-v1"
+              ? "given means one attempt carried tests the worker deleted that still failed, run again by the harness, and its candidate was judged as any repair's is; a retained test is the model's expectation, so it does not establish what the task requires"
+              : "given means one attempt carried the brief and its candidate was judged as any repair's is; it does not settle the work it names, which no sealed check states",
     }),
   });
   return { ...outcome, record: recorded.record.payloadDigest };

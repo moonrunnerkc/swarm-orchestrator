@@ -21,6 +21,7 @@ import {
   type ReviewReadings,
   validatedViolations,
 } from "./agent-review.ts";
+import { withTestVersions } from "./agent-test-versions.ts";
 import { withWorkspaceEffects } from "./agent-workspace-effects.ts";
 import { buildVersion } from "./build-version.ts";
 import type { ApprovalMode } from "./config/approval-mode.ts";
@@ -92,9 +93,11 @@ import { prepareDependencies } from "./gates/prepare-dependencies.ts";
 import { preservationTraceBrief, preservationTraceRule } from "./gates/preservation-trace.ts";
 import { detectProject } from "./gates/project-type.ts";
 import type { EscalationSettings } from "./gates/repair-policy.ts";
+import { createTestRetention } from "./gates/retained-tests.ts";
 import { diffAgainstBase, patchAgainstBase } from "./gates/scratch-index.ts";
 import { parseUnifiedDiff } from "./gates/unified-diff.ts";
 import { taskBrief } from "./task-brief.ts";
+import { taskCodeStatements } from "./task-code-statements.ts";
 import { taskContinuation } from "./task-continuation.ts";
 import { type ConfirmationPrompt, createToolChokepoint } from "./tools/chokepoint.ts";
 import { createLedgerChokepointRecorder } from "./tools/chokepoint-record.ts";
@@ -566,7 +569,19 @@ async function executeAgentTask(
     writers: new Set(definitions.filter((tool) => tool.kind === "write").map((tool) => tool.name)),
   });
   release.push(() => measured.close());
-  const toolInvoker = measured.invoker;
+  // Every version of a test file the worker's steps leave, so a test it writes and deletes keeps
+  // the question it asked (test-retention-v1).
+  const retention = createTestRetention({
+    workspaceRoot: options.workspace,
+    evidence: options.evidence,
+    statements: taskCodeStatements(options.task),
+  });
+  const toolInvoker = withTestVersions(measured.invoker, {
+    workspace: options.workspace,
+    retention,
+    writers: new Set(definitions.filter((tool) => tool.kind === "write").map((tool) => tool.name)),
+    shells: new Set(definitions.filter((tool) => tool.kind === "shell").map((tool) => tool.name)),
+  });
 
   await options.evidence.record({
     type: "session-started",
@@ -931,6 +946,7 @@ async function executeAgentTask(
     ...(followUp === undefined ? {} : { followUp }),
     ...(continuation === undefined ? {} : { continuation }),
     ...(review === undefined ? {} : { review }),
+    retention,
     // The resolve loop stops at the wall deadline as it stops at a cancellation. The commands that
     // measure a cycle answer only to the run's cancellation and the end of its total allowance:
     // C1's loop spent its wall, and that wall's end refused its final build, lint and tests.
@@ -1101,6 +1117,7 @@ async function executeAgentTask(
     ["continuation", gates.outcome.continuation],
     ["outcomes", gates.outcome.followUp ?? null],
     ["review", gates.outcome.review ?? null],
+    ["retained", gates.outcome.retained ?? null],
   ];
   if (review !== undefined) options.review?.settled?.(review.readings());
   const given = owedOutcomes.filter(([, outcome]) => outcome?.state === "given");

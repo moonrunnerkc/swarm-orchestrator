@@ -187,6 +187,7 @@ function harness(
     followUp?: OwedFollowUp;
     continuation?: OwedFollowUp;
     review?: CandidateReviewHook;
+    retention?: Parameters<typeof runAutoResolve>[0]["retention"];
   } = {},
 ): Harness {
   const workspace = createMemoryWorkspace({
@@ -253,6 +254,7 @@ function harness(
         ...(options.followUp === undefined ? {} : { followUp: options.followUp }),
         ...(options.continuation === undefined ? {} : { continuation: options.continuation }),
         ...(options.review === undefined ? {} : { review: options.review }),
+        ...(options.retention === undefined ? {} : { retention: options.retention }),
         ...(options.atBase === undefined
           ? {}
           : {
@@ -1372,6 +1374,45 @@ describe("the experimental review of a green candidate", () => {
       ["given", 1, true],
       ["given", 2, true],
     ]);
+  });
+
+  it("carries the review's open cases and open retained tests in one attempt, the review's first", async () => {
+    const calls: string[] = [];
+    let test: Harness | null = null;
+    test = harness({
+      cap: 2,
+      review: openReview(
+        () => test as Harness,
+        calls,
+        (now) => (now.includes("FIXED") ? [] : ["case-a"]),
+      ),
+      retention: {
+        measure: () => {
+          const now = test?.workspace.files.get(sourcePath) ?? "";
+          const open = now.includes("FIXED") ? [] : ["count.test.mjs > asks once per key"];
+          return Promise.resolve({
+            record: "sha256:retention",
+            cases: [],
+            open,
+            brief: open.length === 0 ? null : "retained: asks once per key",
+          });
+        },
+      },
+    });
+    test.workspace.write(sourcePath, fixedSource);
+    const requests: ResolveRequest[] = [];
+    const outcome = await test.run((request) => {
+      requests.push(request);
+      test?.workspace.write(sourcePath, source("FIXED"));
+      return Promise.resolve();
+    });
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.followUpKind).toBe("review");
+    expect(requests[0]?.followUpCarries).toEqual(["review", "retained"]);
+    expect(requests[0]?.followUp).toContain("open: case-a");
+    expect(requests[0]?.followUp).toContain("retained: asks once per key");
+    expect(outcome.retained).toMatchObject({ state: "given", attempt: 1, accepted: true });
+    expect(outcome.retention?.open).toEqual([]);
   });
 
   it("owes nothing where the review established nothing", async () => {

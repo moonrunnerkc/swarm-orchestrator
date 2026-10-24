@@ -1438,7 +1438,8 @@ function collectChecks(directory) {
         (payload) =>
           payload?.rule === "outcome-follow-up-v1" ||
           payload?.rule === "task-continuation-v1" ||
-          payload?.rule === "candidate-review-attempt-v1",
+          payload?.rule === "candidate-review-attempt-v1" ||
+          payload?.rule === "test-retention-attempt-v1",
       );
     const owedKept = (attempt) => {
       const record =
