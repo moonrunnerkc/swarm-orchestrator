@@ -24,6 +24,7 @@ import {
   type GateSeverity,
   requirementOf,
 } from "./gate-definition.ts";
+import { snapshotChanges, undoCheckWrites } from "./gate-side-effects.ts";
 import {
   gitInstrumentTrees,
   type InstrumentObservation,
@@ -70,6 +71,11 @@ const gateRunSchema = z.object({
    * Absent on records before it and on gates that run nothing; a reader applies the same rule.
    */
   instrument: instrumentObservationSchema.optional(),
+  /**
+   * Workspace files the check itself wrote, each put back before anything read the tree again
+   * (`undoCheckWrites`): a check's own output is not the change. Absent where it wrote none.
+   */
+  workspaceWrites: z.array(z.string()).optional(),
   /** check-requirement-v1: what this gate requires; absent on records before it. */
   requirement: z.enum(["absolute-pass", "no-new-regression"]).optional(),
   /** check-requirement-v1: a failed command gate read against the same gate run over the base. */
@@ -288,6 +294,7 @@ export async function runGateCycle(
       instrumented === null
         ? null
         : await observeInstrument(instrumented, await instrumentTrees(), { authorized });
+    const untouched = gate.source.kind === "command" ? await snapshotChanges(context.probe) : null;
     const { observation, coverageReport, testReport } = await observe(gate, context, deps);
     const instrument: InstrumentObservation | null =
       instrumented === null || before === null || observation.unavailable !== null
@@ -296,6 +303,11 @@ export async function runGateCycle(
             ...(await observeInstrument(instrumented, await instrumentTrees(), { authorized })),
             before: observationDigest(before),
           };
+    // What the check itself wrote to the workspace is put back: it is not the change's.
+    const workspaceWrites =
+      untouched === null
+        ? []
+        : await undoCheckWrites(context.workspaceRoot, context.probe, untouched);
     const reading = readUnderInstrument(gate.parse(observation), instrument);
     const blocking = gate.severity === "blocking";
     const inheritance =
@@ -305,7 +317,15 @@ export async function runGateCycle(
       deps.baseline !== undefined
         ? inheritanceOf(observation, instrument, await deps.baseline(gate))
         : null;
-    const payload = gateRunPayload(gate, observation, reading, attempt, instrument, inheritance);
+    const payload = gateRunPayload(
+      gate,
+      observation,
+      reading,
+      attempt,
+      instrument,
+      inheritance,
+      workspaceWrites,
+    );
     const inheritedOnly =
       reading.status === "failed" &&
       requirementOf(gate) === "no-new-regression" &&
@@ -528,6 +548,7 @@ function gateRunPayload(
   attempt: number,
   instrument: InstrumentObservation | null = null,
   inheritance: GateInheritance | null = null,
+  workspaceWrites: readonly string[] = [],
 ): z.infer<typeof gateRunSchema> {
   return gateRunSchema.parse({
     gateId: gate.id,
@@ -556,6 +577,7 @@ function gateRunPayload(
     measures: reading.measures,
     ...(instrument === null ? {} : { instrument }),
     ...(inheritance === null ? {} : { inheritance }),
+    ...(workspaceWrites.length === 0 ? {} : { workspaceWrites: [...workspaceWrites] }),
   });
 }
 
