@@ -995,8 +995,8 @@ const maxTaskExamples = 6;
 export function taskProbes(
   statements: readonly TaskCodeStatement[],
   loader: GroundedLoader,
-  /** The task's text, which seeds the generated batches; absent, only the task's inputs run. */
-  task?: string,
+  /** Whether relations run generated discovery inputs beside the task's own (task-code-v2). */
+  generate = false,
 ): readonly ReviewProbe[] {
   const examples = (role: "requested" | "preserve") =>
     statements
@@ -1031,7 +1031,7 @@ export function taskProbes(
     .slice(0, 2)
     .map(
       (one): ReviewProbe =>
-        withDiscovery(task, one, {
+        withDiscovery(generate, one, {
           id: one.id,
           basis: "relation",
           origin: "task",
@@ -1052,7 +1052,7 @@ export function taskProbes(
   const enumerations = statements
     .filter((one): one is TaskEnumeration => one.kind === "enumeration" && one.inputs.length > 0)
     .slice(0, 2)
-    .map((one) => withDiscovery(task, one, enumerationProbe(one, loader)));
+    .map((one) => withDiscovery(generate, one, enumerationProbe(one, loader)));
   return [
     ...bundle("code-requested", "requirement", examples("requested")),
     ...bundle("code-kept", "preserve", examples("preserve")),
@@ -1121,14 +1121,12 @@ const recordableInput = (input: string) =>
 
 /** A relation's probe with the generated discovery batch after the task's own inputs. */
 function withDiscovery(
-  task: string | undefined,
+  generate: boolean,
   statement: TaskRelation | TaskEnumeration,
   probe: ReviewProbe,
 ): ReviewProbe {
   const discovery =
-    task === undefined || statement.domain === "unfollowed"
-      ? null
-      : generatedBatches(task, statement).discovery;
+    !generate || statement.domain === "unfollowed" ? null : generatedBatches(statement).discovery;
   const added = (discovery?.inputs ?? []).filter(recordableInput);
   return {
     ...probe,
@@ -1151,7 +1149,6 @@ function withDiscovery(
 export function heldBackProbes(
   probes: readonly ReviewProbe[],
   statements: readonly TaskCodeStatement[],
-  task: string,
 ): readonly ReviewProbe[] {
   return probes.flatMap((probe) => {
     const statement = statements.find(
@@ -1160,7 +1157,7 @@ export function heldBackProbes(
     );
     if (probe.origin !== "task" || statement === undefined || probe.provisional !== undefined)
       return [];
-    const validation = generatedBatches(task, statement).validation;
+    const validation = generatedBatches(statement).validation;
     const inputs = validation.inputs.filter(recordableInput);
     if (inputs.length === 0) return [];
     const held: ReviewProbe = {
@@ -1809,11 +1806,10 @@ export function createCandidateReview(options: CandidateReviewOptions): {
       const harnessProbes =
         grounding?.loader == null
           ? []
-          : taskProbes(grounding.statements, grounding.loader, options.task).filter(
+          : taskProbes(grounding.statements, grounding.loader, true).filter(
               (probe) => recordable(probe, 0)?.id === probe.id,
             );
-      heldBack =
-        grounding === null ? [] : heldBackProbes(harnessProbes, grounding.statements, options.task);
+      heldBack = grounding === null ? [] : heldBackProbes(harnessProbes, grounding.statements);
       const loading =
         grounding === null
           ? undefined

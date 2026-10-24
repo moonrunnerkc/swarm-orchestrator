@@ -664,7 +664,7 @@ describe("the grounded path (candidate-review-v4)", () => {
       const directory = await mkdtemp(join(tmpdir(), "swarm-enumeration-"));
       await writeFile(join(directory, "query.mjs"), project(twice));
       const loader = loaderAt(pathToFileURL(join(directory, "query.mjs")).href);
-      const probe = taskProbes(statements, loader, enumerationTask).find(
+      const probe = taskProbes(statements, loader, true).find(
         (one) => one.id === "code-enumeration-1",
       ) as ReviewProbe;
       const inputs = probe.cases.map((one) => one.input);
@@ -685,8 +685,8 @@ describe("the grounded path (candidate-review-v4)", () => {
 
   it("keeps the validation batch apart, under its own id, and lists only the sentences no statement comes from as gaps", () => {
     const loader = loaderAt("file:///nowhere/query.mjs");
-    const probes = taskProbes(statements, loader, enumerationTask);
-    const held = heldBackProbes(probes, statements, enumerationTask);
+    const probes = taskProbes(statements, loader, true);
+    const held = heldBackProbes(probes, statements);
     expect(held.map((one) => one.id)).toEqual(["code-relation-1-held", "code-enumeration-1-held"]);
     for (const probe of held) {
       const visible = probes.find((one) => `${one.id}-held` === probe.id) as ReviewProbe;
@@ -701,7 +701,7 @@ describe("the grounded path (candidate-review-v4)", () => {
 
   it("counts as a validated violation only an established case of the task's own supported code", () => {
     const loader = loaderAt("file:///nowhere/query.mjs");
-    const enumeration = taskProbes(statements, loader, enumerationTask).find(
+    const enumeration = taskProbes(statements, loader, true).find(
       (one) => one.id === "code-enumeration-1",
     ) as ReviewProbe;
     const violated = classifyRelation(
@@ -727,11 +727,7 @@ describe("the grounded path (candidate-review-v4)", () => {
       clock: createTestClock(1_700_000_000_000),
     });
     const loader = loaderAt("file:///nowhere/query.mjs");
-    const held = heldBackProbes(
-      taskProbes(statements, loader, enumerationTask),
-      statements,
-      enumerationTask,
-    );
+    const held = heldBackProbes(taskProbes(statements, loader, true), statements);
     const heldInput = held.find((one) => one.id === "code-enumeration-1-held")?.cases[0]
       ?.input as string;
     // The candidate under review: asks twice everywhere (v0), then once except on one input of the

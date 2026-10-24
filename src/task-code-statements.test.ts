@@ -129,9 +129,15 @@ it("keeps the validation batch apart from the task's inputs and the discovery ba
     'Add drop(input, keep). drop(input, () => true) equals rebuild(input, {}) for every input that contains "?". Examples: drop("/a?x=1&y=2#f", (k) => k !== "x") is "/a?y=2#f", and drop("file:///C:/x", () => false) is "file:///C:/x".';
   const relation = taskCodeStatements(task).find((one) => one.kind === "relation");
   if (relation?.kind !== "relation") throw new Error("no relation read");
-  const { discovery, validation } = generatedBatches(task, relation);
-  expect(discovery.seed).toBe(batchSeed(task, relation.id, "discovery"));
-  expect(validation.seed).toBe(batchSeed(task, relation.id, "validation"));
+  const { discovery, validation } = generatedBatches(relation);
+  expect(discovery.seed).toBe(batchSeed(relation.sentence, relation.id, "discovery"));
+  expect(validation.seed).toBe(batchSeed(relation.sentence, relation.id, "validation"));
+  // Text a run appends to the task does not move the inputs.
+  const appended = taskCodeStatements(`${task}\nSealed objective: drop`).find(
+    (one) => one.kind === "relation",
+  );
+  if (appended?.kind !== "relation") throw new Error("no relation read");
+  expect(generatedBatches(appended).validation.inputs).toEqual(validation.inputs);
   expect(validation.seed).not.toBe(discovery.seed);
   for (const input of validation.inputs) {
     expect(relation.inputs).not.toContain(input);

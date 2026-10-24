@@ -32,7 +32,7 @@ import { createHash } from "node:crypto";
  *   on the unchanged base, in order where the sentence says so, so a callback asked twice about one
  *   entry, or never about one, is a counterexample whose every part is the task's;
  * - **generated inputs** inside a followed domain (`domain-inputs-v1`), from the task's own
- *   literals, with a seed derived from the task's text and recorded: a discovery batch beside the
+ *   literals, with a seed derived from the statement's sentence and recorded: a discovery batch beside the
  *   literals, and a separate validation batch kept back to test a repair beyond what it was shown.
  */
 export const taskCodeRule = "task-code-v2";
@@ -505,15 +505,19 @@ export const generatedCounts = { discovery: 6, validation: 12 } as const;
 const attemptsPerInput = 80;
 const maxGeneratedLength = 160;
 
-/** The seed a batch is generated from: the task, the statement and the batch, digested. */
+/**
+ * The seed a batch is generated from: the statement's own sentence, its id and the batch,
+ * digested. The sentence, not the whole text a run receives, so text a run appends to the task
+ * (a sealed contract's summary) does not move the inputs.
+ */
 export function batchSeed(
-  task: string,
+  sentence: string,
   statement: string,
   label: GeneratedInputs["label"],
 ): number {
   return Number.parseInt(
     createHash("sha256")
-      .update(`${domainInputsRule}\0${label}\0${statement}\0${task}`)
+      .update(`${domainInputsRule}\0${label}\0${statement}\0${sentence}`)
       .digest("hex")
       .slice(0, 8),
     16,
@@ -636,19 +640,19 @@ export function generateDomainInputs(
  * inputs, and validation, generated at the same time from a separate seed, excluding both, and held
  * back until a repair is assessed.
  */
-export function generatedBatches(
-  task: string,
-  statement: TaskRelation | TaskEnumeration,
-): { readonly discovery: GeneratedInputs; readonly validation: GeneratedInputs } {
+export function generatedBatches(statement: TaskRelation | TaskEnumeration): {
+  readonly discovery: GeneratedInputs;
+  readonly validation: GeneratedInputs;
+} {
   const discovery = generateDomainInputs(statement.inputs, statement.domain, {
     label: "discovery",
-    seed: batchSeed(task, statement.id, "discovery"),
+    seed: batchSeed(statement.sentence, statement.id, "discovery"),
     count: generatedCounts.discovery,
     exclude: statement.inputs,
   });
   const validation = generateDomainInputs(statement.inputs, statement.domain, {
     label: "validation",
-    seed: batchSeed(task, statement.id, "validation"),
+    seed: batchSeed(statement.sentence, statement.id, "validation"),
     count: generatedCounts.validation,
     exclude: [...statement.inputs, ...discovery.inputs],
   });
