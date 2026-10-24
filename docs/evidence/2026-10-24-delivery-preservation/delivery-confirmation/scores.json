@@ -1,0 +1,72 @@
+[
+  {
+    "task": "ufo-feature-filter-query",
+    "arm": "swarm-control",
+    "sample": 1,
+    "outcome": "scored",
+    "scoredBy": "runner",
+    "hidden": "pass",
+    "visible": true,
+    "static": false,
+    "lintIntroduced": false,
+    "requestedTests": {
+      "tests": [
+        "test/query.test.ts"
+      ],
+      "sensitive": true,
+      "onBase": 1,
+      "delivered": 0,
+      "detail": "(\"/foo?bar=1&baz=2\", () => false);\n       |                    ^\n    200|     expect(result).toBe(\"/foo\");\n    201|     expect(result).not.toContain(\"?\");\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/17]⎯\n\n FAIL  test/query.test.ts > filterQuery > ignore proto pollution keys\nTypeError: (0 , filterQuery) is not a function\n ❯ test/query.test.ts:207:5\n    205|   test(\"ignore proto pollution keys\", () => {\n    206|     const calls = [];\n    207|     filterQuery(\"/foo?__proto__=evil&bar=1\", (key, _value) => {\n       |     ^\n    208|       calls.push(key);\n    209|       return true;\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/17]⎯\n\n"
+    },
+    "complete": true,
+    "correctedScorer": {
+      "hidden": "pass",
+      "delivered": true,
+      "static": false,
+      "staticIntroduced": false,
+      "harnessLockfile": "sha256:7dd1273583912f56cb8f54694c0eb4798b743cb49da72e210258c64c17a350fe",
+      "complete": true
+    },
+    "productAcceptable": true,
+    "claimed": "claimed",
+    "wallMs": 279618,
+    "tokens": 1455652,
+    "unknownUsageCalls": 0,
+    "reviewAttempt": null
+  },
+  {
+    "task": "ufo-feature-filter-query",
+    "arm": "swarm",
+    "sample": 1,
+    "outcome": "scored",
+    "scoredBy": "runner",
+    "hidden": "fail",
+    "visible": true,
+    "static": false,
+    "lintIntroduced": false,
+    "requestedTests": {
+      "tests": [
+        "test/query.test.ts"
+      ],
+      "sensitive": true,
+      "onBase": 1,
+      "delivered": 0,
+      "detail": "\"\n FAIL  test/query.test.ts > filterQuery > ?a=1&b=2 filtered: \"?a=1\"\n FAIL  test/query.test.ts > filterQuery > /foo?bar=1#frag filtered: \"/foo\"\n FAIL  test/query.test.ts > filterQuery > https://x.com?x=a&y=b&type=c&type=d filtered: \"https://x.com?x=a&y=b\"\nTypeError: (0 , filterQuery) is not a function\n ❯ test/query.test.ts:191:14\n    189|   for (const t of filterTests) {\n    190|     test(`${t.input} filtered: ${JSON.stringify(t.out)}`, () => {\n    191|       expect(filterQuery(t.input, t.fn)).toBe(t.out);\n       |              ^\n    192|     });\n    193|   }\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/15]⎯\n\n"
+    },
+    "complete": false,
+    "correctedScorer": {
+      "hidden": "fail",
+      "delivered": true,
+      "static": false,
+      "staticIntroduced": false,
+      "harnessLockfile": "sha256:7dd1273583912f56cb8f54694c0eb4798b743cb49da72e210258c64c17a350fe",
+      "complete": false
+    },
+    "productAcceptable": true,
+    "claimed": "claimed",
+    "wallMs": 350331,
+    "tokens": 1533401,
+    "unknownUsageCalls": 0,
+    "reviewAttempt": null
+  }
+]

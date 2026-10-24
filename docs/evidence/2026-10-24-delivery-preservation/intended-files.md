@@ -39,3 +39,36 @@ other file is recorded below as a dated amendment before it is edited.
   protocols, launches and the report.
 - `scripts/comparison/` where the mechanism study needs a new arm setting; existing scores and
   scorers stay as they are.
+
+## Amendments
+
+All dated October 24, 2026. They were recorded at the end of the stage, not before each edit as
+the declaration above promised. Each file's commit names what it changed and why.
+
+1. **The merge queue.** `src/workers/merge-queue.ts`: the integration queue reads failures against
+   its base cycle under the same rule, so a parallel run does not refuse what a single run
+   accepts.
+2. **Tree reports.** `src/cli-gates.ts`: `swarm check` and `swarm gates` report on a tree and keep
+   every gate absolute.
+3. **Outcome shape.** `src/run-outcome-shape.ts`: the `checks` result and the v2 preservation
+   fields in the JSON outcome.
+4. **Trial runner.** `src/cli-task-goal.ts`: `programRun` exported for the reviewer's trial tool.
+5. **Policy-name tests.** Tests that name the policy or rule they read, updated to its new name or
+   requirement:
+   - `src/gates/acceptance.test.ts`;
+   - `src/gates/duplicate-titles.integration.test.ts`;
+   - `src/evidence/run-assessment-deadline.test.ts`;
+   - `src/workers/contract-enforcement.test.ts`;
+   - `src/cli-goal-budgets.integration.test.ts`;
+   - `src/cli-justification.integration.test.ts`;
+   - `src/gates/base-failure.test.ts`.
+6. **Check side effects.** After the mechanism study:
+   - `src/gates/gate-side-effects.ts` and its test (new);
+   - `src/gates/engine.ts`;
+   - `src/gates/gate-runner.ts`;
+   - `src/agent-run.test.ts` and `src/gates/attack-families.integration.test.ts`, whose checks
+     write into the workspace and so now have that write put back.
+7. **Evaluation scripts.** Under this stage's directory:
+   - `docs/evidence/2026-10-24-delivery-preservation/assess-review.mjs`;
+   - `audit/`;
+   - the protocols.
