@@ -37,7 +37,7 @@ Expected values to be strictly deep-equal:
 
 ### What was delivered (shared by all three)
 
-From `delivered.patch` (src/utils.ts):
+From `delivered.patch` (ufo/src/utils.ts):
 
 ```ts
   const queryIndex = input.indexOf("?");
@@ -77,7 +77,7 @@ From `delivered.patch` (src/utils.ts):
   return beforeQuery + "?" + queryString + fragment;
 ```
 
-For comparison, base `withQuery` (src/utils.ts lines 267-272) is `parseURL(input)` then `stringifyQuery`, then `stringifyParsedURL(parsed)`. The worker read this whole file at #50.
+For comparison, base `withQuery` (ufo/src/utils.ts lines 267-272) is `parseURL(input)` then `stringifyQuery`, then `stringifyParsedURL(parsed)`. The worker read this whole file at #50.
 
 ### Failures 1 and 2: `file:///C:/x?...` kept verbatim instead of rebuilt as withQuery rebuilds it
 
@@ -96,7 +96,7 @@ For comparison, base `withQuery` (src/utils.ts lines 267-272) is `parseURL(input
 
 (d) Why no correction: no observation ever failed on this behaviour, because no check had such an input. The repair prompts (#393, #505) named only lint findings (unicorn/no-negated-condition, then prettier test/query.test.ts). The requirement sentence was not an obligation: preservation-obligations-v2 at #2 put it under `unclassified` ("not read as an obligation, and nothing measures it"), and #651 shows it still there at settlement. Its "Working state" lists in #393 and #505 quote only keep sentences.
 
-(e) Origin: initial implementation. The first write of `filterQuery`, at #85 (08:56:52, initial loop), already builds the result as `pre + "?" + queryString`. Replaying every recorded `src/utils.ts` edit over the base (`replay-utils-edits.mjs`, final version byte-identical to the delivered file) and running the hidden check on each version: after #85 it fails 8 cases including both file:/// cases; after #128, #403 and #428 it fails exactly these 3 cases. #128 (initial loop) fixed fragment handling. #403 and #428 (repair attempt 1) were lint-only rewrites (`keepAny` renamed to `hasMatchingKey === false`, the `!== -1` branch inverted). Attempt 2 changed only formatting in `test/query.test.ts` (#509). Runner snapshots: attempt-0 candidate `80c3d348...`, attempt-1 candidate `79658bf2...`, delivered `73a46956...`. The attempt-1 and delivered `src/utils.ts` are identical (blob `9b35880`).
+(e) Origin: initial implementation. The first write of `filterQuery`, at #85 (08:56:52, initial loop), already builds the result as `pre + "?" + queryString`. Replaying every recorded `ufo/src/utils.ts` edit over the base (`replay-utils-edits.mjs`, final version byte-identical to the delivered file) and running the hidden check on each version: after #85 it fails 8 cases including both file:/// cases; after #128, #403 and #428 it fails exactly these 3 cases. #128 (initial loop) fixed fragment handling. #403 and #428 (repair attempt 1) were lint-only rewrites (`keepAny` renamed to `hasMatchingKey === false`, the `!== -1` branch inverted). Attempt 2 changed only formatting in `test/query.test.ts` (#509). Runner snapshots: attempt-0 candidate `80c3d348...`, attempt-1 candidate `79658bf2...`, delivered `73a46956...`. The attempt-1 and delivered `ufo/src/utils.ts` are identical (blob `9b35880`).
 
 ### Failure 3: predicate called twice for the first kept key
 
@@ -135,9 +135,9 @@ Observed:
   - 9 tool calls.
 - Tool calls:
   - #311 list `.`, #317 list `src`;
-  - #323 read `src/index.ts`, #329 read `src/utils.ts`, #335 read `test/query.test.ts`;
+  - #323 read `ufo/src/index.ts`, #329 read `ufo/src/utils.ts`, #335 read `test/query.test.ts`;
   - #341 list `acceptance/visible`, #347 read `acceptance/visible/check.mjs` (which imports the source through jiti);
-  - #353 read `src/query.ts`;
+  - #353 read `ufo/src/query.ts`;
   - #359 try_probe, "try 1 of 4", program `const { execSync } = require('child_process'); ... node acceptance/visible/check.mjs`, input `[{}]`. Result: "the program did not load: ReferenceError: require is not defined in ES module scope".
 - Answer (#365), four probes:
   - `visible-check-passes`: basis requirement, `keeps: null`, execSync of the visible check.
@@ -167,7 +167,7 @@ Inference about the dropped filterQuery probe:
 | #4 | 08:56:20 | Goal contract: one check, `visible-check` (`node acceptance/visible/check.mjs`). |
 | #10, #11 | 08:56:30 to 08:56:34 | Base preflight. The visible check is rejected on the base ("filterQuery is not a function"). Base lint fails (prettier src/punycode.ts). |
 | #14, #17, #19 | 08:56:34 to 08:56:35 | Session started (attemptCap 3, maxSteps 40). Gate set sealed. Checks: build, lint, tests. |
-| #75, #79 | 08:56:47 | File set declared (`src/index.ts`, `src/utils.ts`), then amended to add `test/query.test.ts`. |
+| #75, #79 | 08:56:47 | File set declared (`ufo/src/index.ts`, `ufo/src/utils.ts`), then amended to add `test/query.test.ts`. |
 | #85 | 08:56:52 | First write of filterQuery. All three defects are present from here. |
 | #115, #121 | 08:57:07 to 08:57:11 | Tests added. Two failures: the fragment case and the predicate test. |
 | #128 | 08:57:22 | Fragment handling fixed. |
@@ -205,4 +205,4 @@ These came from `extra-divergences.mjs`, which compares the delivered code with 
 
 ## Scripts (this directory)
 
-`dump-ledger.mjs`, `tool-calls.mjs`, `gates.mjs`, `indep.mjs`, `show.mjs`, `user-messages.mjs`, `assistant-texts.mjs` read the ledger. `replay-utils-edits.mjs` reconstructs each `src/utils.ts` version. `full-predicate-case.mjs` and `extra-divergences.mjs` run the cases. Checkouts are under `work/` (base, delivered, reference, and v85, v128, v403, v428). Patches: `delivered.patch`, `candidate-attempt0.patch`, `candidate-attempt1.patch`.
+`dump-ledger.mjs`, `tool-calls.mjs`, `gates.mjs`, `indep.mjs`, `show.mjs`, `user-messages.mjs`, `assistant-texts.mjs` read the ledger. `replay-utils-edits.mjs` reconstructs each `ufo/src/utils.ts` version. `full-predicate-case.mjs` and `extra-divergences.mjs` run the cases. Checkouts are under `work/` (base, delivered, reference, and v85, v128, v403, v428). Patches: `delivered.patch`, `candidate-attempt0.patch`, `candidate-attempt1.patch`.
