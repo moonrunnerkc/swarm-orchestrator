@@ -88,7 +88,10 @@ it("repairs a lint finding beside an acceptance reading the change left unmeasur
   const lint = failing("lint", "[warn] test/query.test.ts");
   expect(
     classifyRepair(
-      cycle([lint, failing("task-acceptance", "regression unmeasured: a check fails at the base")]),
+      cycle([
+        lint,
+        failing("task-acceptance", "unmeasured by the change: a check fails at the base"),
+      ]),
     ).kind,
   ).toBe("implementation");
   expect(
