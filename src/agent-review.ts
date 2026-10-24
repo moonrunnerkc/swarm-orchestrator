@@ -7,7 +7,13 @@ import {
   type LoopEvent,
   type LoopUsage,
 } from "./core/loop-events.ts";
-import { asJsonValue, digestOfBytes, digestOfJson } from "./evidence/canonical-json.ts";
+import {
+  asJsonValue,
+  digestOfBytes,
+  digestOfJson,
+  type JsonValue,
+} from "./evidence/canonical-json.ts";
+import { scrubJson } from "./evidence/scrub.ts";
 import type { EvidenceRecorder } from "./evidence/session.ts";
 import { sentencesQuoted } from "./workers/planned-check-program.ts";
 
@@ -107,8 +113,18 @@ export function admitProbes(task: string, answer: unknown): ProbeAdmission {
       });
       continue;
     }
+    // An optional field sent as null is a field not given: two live probes were dropped for
+    // `"keeps": null` and `"obligation": null`.
+    const supplied =
+      raw !== null && typeof raw === "object"
+        ? Object.fromEntries(
+            Object.entries(raw).filter(
+              ([key, value]) => !(value === null && optionalProbeFields.has(key)),
+            ),
+          )
+        : raw;
     const parsed = probeSchema.safeParse(
-      raw !== null && typeof raw === "object" ? { ...raw, id } : raw,
+      supplied !== null && typeof supplied === "object" ? { ...supplied, id } : supplied,
     );
     if (!parsed.success) {
       const issue = parsed.error.issues[0];
@@ -118,7 +134,15 @@ export function admitProbes(task: string, answer: unknown): ProbeAdmission {
       });
       continue;
     }
-    const probe = parsed.data;
+    const probe = recordable(parsed.data, index);
+    if (probe === null) {
+      dropped.push({
+        id,
+        reason:
+          "its program or inputs carry text the evidence scrubber redacts as a credential, so the record of what ran could not be held to what ran",
+      });
+      continue;
+    }
     if (seen.has(probe.id)) {
       dropped.push({ id, reason: "the id was already used" });
       continue;
@@ -161,6 +185,30 @@ export function admitProbes(task: string, answer: unknown): ProbeAdmission {
  */
 function quotesTask(task: string, quote: string): boolean {
   return quote.trim().length >= 12 && sentencesQuoted(task, [quote]).length > 0;
+}
+
+const optionalProbeFields: ReadonlySet<string> = new Set(["quote", "keeps", "obligation"]);
+
+/**
+ * The probe as it can be recorded byte for byte, or null. A probe's contract is recorded on the
+ * chain and held to its digest; where the shared credential scrubber would redact any of its text,
+ * the record and what ran differ and the bundle cannot verify. A reviewer's id
+ * `preserves-task-keep-1-...` matched the `sk-...` key pattern on October 24. An id is the
+ * harness's to rename; a program or input that would be redacted is not run.
+ */
+function recordable(probe: ReviewProbe, index: number): ReviewProbe | null {
+  // What the probe contract records of a probe (cli-review.ts's probeContract): its id, in the
+  // check ids and command, and its program and inputs as the JSON text of the checks' stdin. Read
+  // as the recorder reads a payload, so a program the recorder leaves whole is not refused.
+  const redacted = (one: ReviewProbe) =>
+    scrubJson({
+      id: one.id,
+      command: `review probe ${one.id}`,
+      stdin: JSON.stringify({ program: one.program, inputs: one.cases.map((c) => c.input) }),
+    } as JsonValue).redactions.length > 0;
+  if (!redacted(probe)) return probe;
+  const renamed = { ...probe, id: `probe-${index + 1}` };
+  return redacted(renamed) ? null : renamed;
 }
 
 /** A probe id as a slug: lower case, dashes for anything else, starting with a letter. */
