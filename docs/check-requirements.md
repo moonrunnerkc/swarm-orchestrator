@@ -83,6 +83,48 @@ own to attribute a failure to, so they seal every gate `absolute-pass`, as befor
 The implementation is `src/gates/failure-attribution.ts`. `src/evidence/verifier/status.mjs`
 reimplements it independently, and parity tests hold the two together.
 
+## Failure identity v5
+
+Written on October 24, 2026, before its implementation. Two cases read as inherited under v4
+when they were not:
+- **The chain.** `eslint src && eslint test` failed in its first command. The second command never
+  ran. v4 called the chain complete, because the failing tool was the tool of the last command.
+- **The occurrence.** A change fixed the base's ESLint error and added one with the same rule and
+  message elsewhere in the same file. v4 names ESLint problems without a location, so the counts
+  matched, and the new problem read as the base's.
+
+`failure-identity-v5` is v4 with these changes:
+- **A tool name does not show which command ran.** An echoed `&&` chain is complete only where the
+  failing tool's report can only have come from the chain's last command: that command runs the
+  tool, and no earlier command does. Otherwise the run is incomplete, and nothing is inherited.
+- **Equal counts do not show that an occurrence stayed.** A located diagnostic (ESLint, tsc) is
+  inherited only where it is shown to be one of the base's occurrences:
+  - The harness records the change's zero-context hunks for every file a failing diagnostic
+    names, beside the attribution (`sourceChanges`). A file with no hunks is unchanged.
+  - A base occurrence on a line the change did not touch moves to the line the hunks give it.
+  - A candidate occurrence is the base's only where it has the same identity, the same column,
+    and that moved line. Each base occurrence is matched once.
+  - A rising count is still new, as in v4.
+  - Any candidate occurrence left unmatched is unattributed. That includes one on a line the
+    change wrote, and one whose file's hunks the harness could not read. The harness abstains
+    rather than guess at a move.
+- **A file-level finding** (Prettier's `--check`) is inherited only where the file is unchanged.
+  A finding in a file the change edited cannot be told apart from a new one, so it is
+  unattributed.
+- **Where nothing was recorded.** A record without `sourceChanges` matches no located diagnostic.
+
+Records name the rule they were written under, and the verifier reads each by that rule. A v4
+record keeps its v4 reading.
+
+**A static check the task asks to fix.** No new regression would excuse leaving the task's own
+subject undone, where that subject is a static failure. So a static gate is sealed
+`absolute-pass` where one sentence of the task asks for its failure to be fixed. Such a sentence
+has a repair verb (fix, resolve, repair, correct, clean up, make ... pass) and names the gate or
+its tool (lint, ESLint, Prettier, formatting, tsc, type errors, typecheck, build), with no negation
+before the verb. This is a lexical reading, and the seal records the sentence that triggered it.
+A task that asks for a static repair in other words is not detected. A `swarm.toml` requirement
+or the contract's `requiredChecks` still decides over it.
+
 ## Records and verdicts
 
 - **`gate-run`.** A failed `no-new-regression` gate carries `requirement` and
