@@ -43,9 +43,9 @@ now reads `unmeasured by the change`, and none stopped as `setup` on it.
 | Launch | Attempts kept / used | Lint at attempt 0 | Lint after attempt 1 | Hidden before repair | Hidden delivered | Product |
 | --- | --- | --- | --- | --- | --- | --- |
 | ufo feature `swarm` | 0 / 3 | base finding + `test/query.test.ts` | base finding only | (no change kept) | fail | refused |
-| ufo feature `swarm-control` | 0 / 3 | base finding + `src/utils.ts`, `test/query.test.ts`, 1 eslint problem | base finding only | (no change kept) | fail | refused |
-| ufo bug fix `swarm` | 2 / 3 | base finding + `src/utils.ts`, `test/base.test.ts` | base finding only | pass | pass | refused |
-| ufo bug fix `swarm-control` | 3 / 3 | base finding + `src/utils.ts`, `test/base.test.ts` | base finding only | fail (kept check) | fail (kept check) | refused |
+| ufo feature `swarm-control` | 0 / 3 | base finding + ufo's `utils.ts`, `test/query.test.ts`, 1 eslint problem | base finding only | (no change kept) | fail | refused |
+| ufo bug fix `swarm` | 2 / 3 | base finding + ufo's `utils.ts`, `test/base.test.ts` | base finding only | pass | pass | refused |
+| ufo bug fix `swarm-control` | 3 / 3 | base finding + ufo's `utils.ts`, `test/base.test.ts` | base finding only | fail (kept check) | fail (kept check) | refused |
 | nanoid `swarm-control` | 2 / 3 | not applicable | not applicable | fail | fail | refused |
 | nanoid `swarm` | 0 / 0 (stopped as setup: its tests failed with `Cannot find module './random'`, a `require` its own module move broke; [amendment 11](intended-files.md)) | not applicable | not applicable | (no snapshot) | fail | refused |
 
