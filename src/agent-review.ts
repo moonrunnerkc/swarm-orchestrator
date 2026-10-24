@@ -979,8 +979,9 @@ export function taskProbes(
         quote: one.sentence,
         program: `${destructured(loader, [one.subjectName])}\nexport default async (${one.variable}) => ${guardedCall([one.subjectName], one.subject)};`,
         reference: `${destructured(loader, [one.referenceName])}\nexport default async (${one.variable}) => ${guardedCall([one.referenceName], one.reference)};`,
-        cases: one.inputs.slice(0, 6).map((input) => ({ input })),
-        statements: one.inputs.slice(0, 6).map(() => ({ id: one.id, sentence: one.sentence })),
+        // Every input the extraction gives (at most `maxRelationInputs`), as one run of one program.
+        cases: one.inputs.map((input) => ({ input })),
+        statements: one.inputs.map(() => ({ id: one.id, sentence: one.sentence })),
         ...(one.domain === "unfollowed"
           ? {
               provisional:

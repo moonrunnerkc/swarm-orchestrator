@@ -335,5 +335,13 @@ export function relationInputs(
   const carried = seeds
     .filter((one) => !one.includes(domain.contains))
     .flatMap((one) => tails.map((tail) => `${one}${domain.contains}${tail}`));
-  return [...new Set([...inside, ...carried])].slice(0, maxRelationInputs);
+  // Alternated, so a cap never cuts every carried input: they are why the domain is followed.
+  const alternated = Array.from({ length: Math.max(inside.length, carried.length) }, (_, index) => [
+    inside[index],
+    carried[index],
+  ]).flat();
+  return [...new Set(alternated.filter((one): one is string => one !== undefined))].slice(
+    0,
+    maxRelationInputs,
+  );
 }

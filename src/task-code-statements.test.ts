@@ -46,6 +46,11 @@ it("keeps a domain it cannot follow as unfollowed, and reads no literal it would
 
 it("carries seeds into a contains-domain and caps the inputs", () => {
   expect(relationInputs(["a?1", "b"], { contains: "?" })).toEqual(["a?1", "b?1"]);
+  // Twelve seeds already inside the domain do not crowd out the one carried into it.
+  const inside = Array.from({ length: 12 }, (_, index) => `/p${index}?k=${index}`);
+  expect(relationInputs([...inside, "file:///C:/x"], { contains: "?" })).toContain(
+    "file:///C:/x?k=0",
+  );
   expect(relationInputs(["a", "b"], null)).toEqual(["a", "b"]);
   expect(
     relationInputs(
