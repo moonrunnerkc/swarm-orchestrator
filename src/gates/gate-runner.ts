@@ -7,6 +7,7 @@ import type { EvidenceRecorder } from "../evidence/session.ts";
 import {
   attributeFailure,
   attributionRule,
+  diagnosticFiles,
   type FailureAttribution,
   failingIdentities,
   unattributedReason,
@@ -34,6 +35,8 @@ import {
   observeInstrument,
   readUnderInstrument,
 } from "./instrument-identity.ts";
+import { diffAgainstBase } from "./scratch-index.ts";
+import { changesOfPrinted, namesOf, type SourceChanges } from "./source-changes.ts";
 
 /** Big enough to hold a real failing suite, small enough that one gate cannot fill a disk. */
 const maxRecordedOutputChars = 256_000;
@@ -90,6 +93,19 @@ const gateRunSchema = z.object({
       /** The failures that remain, each one the base also has; empty unless inherited. */
       inherited: z.array(z.string()),
       reason: z.string(),
+      /**
+       * failure-identity-v5: the change's zero-context hunks of each file a static check's
+       * failing diagnostics name, keyed as printed. Absent where none named a file.
+       */
+      sourceChanges: z
+        .record(
+          z.string(),
+          z.union([
+            z.array(z.tuple([z.number(), z.number(), z.number(), z.number()])),
+            z.literal("unmappable"),
+          ]),
+        )
+        .optional(),
     })
     .optional(),
 });
@@ -108,6 +124,8 @@ export interface GateInheritance {
   readonly newFailures: readonly string[];
   readonly inherited: readonly string[];
   readonly reason: string;
+  /** The hunks the attribution followed diagnostics through, where a diagnostic named a file. */
+  readonly sourceChanges?: SourceChanges;
 }
 
 interface GateRun {
@@ -315,7 +333,7 @@ export async function runGateCycle(
       gate.source.kind === "command" &&
       observation.unavailable === null &&
       deps.baseline !== undefined
-        ? inheritanceOf(observation, instrument, await deps.baseline(gate))
+        ? await inheritanceOf(observation, instrument, await deps.baseline(gate), context)
         : null;
     const payload = gateRunPayload(
       gate,
@@ -466,11 +484,12 @@ export function describeIdentities(ids: readonly string[]): string {
  * A failed command gate against its base run, both read in the form they are recorded in, so the
  * verifier that re-derives this from the two records reads the same bytes.
  */
-function inheritanceOf(
+async function inheritanceOf(
   observation: GateObservation,
   instrument: InstrumentObservation | null,
   base: BaselineRun | null,
-): GateInheritance {
+  context: GateContext,
+): Promise<GateInheritance> {
   const recorded = recordedObservation(observation);
   if (base === null)
     return {
@@ -495,10 +514,13 @@ function inheritanceOf(
       inherited: [],
       reason: `this change altered the check's instrument (${changes.slice(0, 6).join(", ")}), so its failures cannot be held to the base's`,
     };
+  const sourceChanges =
+    base.status === "failed" ? await sourceChangesOf([recorded, atBase], context) : undefined;
   const attributed = attributeFailure({
     withPatch: recorded,
     baseStatus: base.status,
     atBase,
+    ...(sourceChanges === undefined ? {} : { sourceChanges }),
   });
   return {
     rule: attributionRule,
@@ -507,6 +529,7 @@ function inheritanceOf(
     attribution: attributed.attribution,
     newFailures: [...attributed.newFailures],
     inherited: attributed.attribution === "inherited" ? [...failingIdentities(recorded)] : [],
+    ...(sourceChanges === undefined ? {} : { sourceChanges }),
     reason:
       attributed.attribution === "inherited"
         ? "every failure is one the base has, for the same cause"
@@ -514,8 +537,28 @@ function inheritanceOf(
           ? base.status === "failed"
             ? "the change fails it in ways the base does not"
             : `the base ${base.status === "passed" ? "passes" : "did not run"} it`
-          : unattributedReason(recorded, atBase),
+          : unattributedReason(recorded, atBase, sourceChanges),
   };
+}
+
+/**
+ * The change's hunks of every file the two runs' static diagnostics name, read from the
+ * workspace's diff against the base as it stands when the gate ran (failure-identity-v5). Where
+ * the diff cannot be taken, every named file is unmappable, which shows nothing inherited.
+ */
+async function sourceChangesOf(
+  observations: readonly GateObservation[],
+  context: GateContext,
+): Promise<SourceChanges | undefined> {
+  const printed = [...new Set(observations.flatMap((one) => diagnosticFiles(one)))];
+  if (printed.length === 0) return undefined;
+  const diff = await diffAgainstBase({
+    workspaceRoot: context.workspaceRoot,
+    baseRef: context.changes.baseRef,
+  }).catch(() => null);
+  return diff === null
+    ? Object.fromEntries(printed.map((path) => [path, "unmappable" as const]))
+    : changesOfPrinted(printed, diff, await namesOf(context.workspaceRoot));
 }
 
 /** An observation as its record keeps it: each stream cut at the recorded length, and marked. */

@@ -29,6 +29,7 @@ import {
 import {
   attributeFailure,
   attributionRule,
+  diagnosticFiles,
   type FailureAttribution,
   testPoints,
   unattributedReason,
@@ -71,6 +72,7 @@ import {
   withWitnesses,
   witnessFiles,
 } from "./runner-witness.ts";
+import { changesOfPrinted, namesOf, type SourceChanges } from "./source-changes.ts";
 import { parseUnifiedDiff } from "./unified-diff.ts";
 import { observeUpgradeResolution } from "./upgrade-resolution.ts";
 import { readV8Coverage } from "./v8-coverage.ts";
@@ -120,6 +122,11 @@ export interface IndependentCheck {
   readonly attributionRule?: typeof attributionRule;
   /** The tests that failed with the patch and not at the base, where the runs name tests. */
   readonly newFailures?: readonly string[];
+  /**
+   * failure-identity-v5: the patch's zero-context hunks of each file a static check's failing
+   * diagnostics name, keyed as printed, which the attribution followed them through.
+   */
+  readonly sourceChanges?: SourceChanges;
   /**
    * The same check run with the base's runner configuration restored, where the patch changed
    * any (`configurationFiles`). A check that passes only under the patch's configuration fails
@@ -924,6 +931,7 @@ export async function verifyIndependently(
                                 ? check.configurationObservation
                                 : check.observation,
                               check.baseObservation,
+                              check.sourceChanges,
                             )})`,
                         )
                         .join(
@@ -1503,6 +1511,7 @@ async function attributeFailures(
     );
   }
   const atBase = await runChecks(checkout, options, timeoutMs);
+  const checkoutNames = await namesOf(checkout);
   return withPatch.map((check) => {
     const same = atBase.find((one) => one.id === check.id);
     const baseObservation =
@@ -1537,6 +1546,12 @@ async function attributeFailures(
       decided.regressedUnderBaseConfiguration !== undefined && decided.configurationObservation
         ? decided.configurationObservation
         : decided.observation;
+    // Both sides ran in this one checkout, so a path either prints names the same file.
+    const printed = [failing, same?.observation].flatMap((one) =>
+      one === undefined ? [] : diagnosticFiles(one),
+    );
+    const sourceChanges =
+      printed.length === 0 ? undefined : changesOfPrinted(printed, options.patch, checkoutNames);
     const attributed =
       failing === undefined
         ? { attribution: "unattributed" as const, newFailures: [] }
@@ -1544,12 +1559,14 @@ async function attributeFailures(
             withPatch: failing,
             baseStatus: same?.status,
             atBase: same?.observation,
+            ...(sourceChanges === undefined ? {} : { sourceChanges }),
           });
     return {
       ...decided,
       inheritedFromBase: attributed.attribution === "inherited",
       attribution: attributed.attribution,
       attributionRule,
+      ...(sourceChanges === undefined ? {} : { sourceChanges }),
       ...(attributed.newFailures.length === 0 ? {} : { newFailures: attributed.newFailures }),
       ...baseObservation,
     };
