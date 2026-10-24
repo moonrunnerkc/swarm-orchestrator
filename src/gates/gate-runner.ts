@@ -4,6 +4,13 @@ import { asJsonValue } from "../evidence/canonical-json.ts";
 import { claimPayloadSchema, evaluateClaim } from "../evidence/claim.ts";
 import { indexCitedRecords } from "../evidence/record-index.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
+import {
+  attributeFailure,
+  attributionRule,
+  type FailureAttribution,
+  failingIdentities,
+  unattributedReason,
+} from "./failure-attribution.ts";
 import { capabilityOf, type GateCapability } from "./gate-capability.ts";
 import {
   defaultGateTimeoutMs,
@@ -13,11 +20,14 @@ import {
   type GateMeasures,
   type GateObservation,
   type GateReading,
+  type GateRequirement,
   type GateSeverity,
+  requirementOf,
 } from "./gate-definition.ts";
 import {
   gitInstrumentTrees,
   type InstrumentObservation,
+  instrumentChanges,
   instrumentObservationSchema,
   observationDigest,
   observeInstrument,
@@ -60,7 +70,39 @@ const gateRunSchema = z.object({
    * Absent on records before it and on gates that run nothing; a reader applies the same rule.
    */
   instrument: instrumentObservationSchema.optional(),
+  /** check-requirement-v1: what this gate requires; absent on records before it. */
+  requirement: z.enum(["absolute-pass", "no-new-regression"]).optional(),
+  /** check-requirement-v1: a failed command gate read against the same gate run over the base. */
+  inheritance: z
+    .strictObject({
+      rule: z.string(),
+      /** The gate-baseline record compared with; null where the base could not be run. */
+      baselineRecord: z.string().nullable(),
+      baseStatus: z.enum(["passed", "failed", "not-applicable"]).nullable(),
+      attribution: z.enum(["inherited", "new", "unattributed"]),
+      newFailures: z.array(z.string()),
+      /** The failures that remain, each one the base also has; empty unless inherited. */
+      inherited: z.array(z.string()),
+      reason: z.string(),
+    })
+    .optional(),
 });
+
+/**
+ * A failed command gate read against the same gate over the base tree (check-requirement-v1).
+ * `inherited` only where `attributeFailure` proves every failure the base's own, and only where
+ * the change left the gate's instrument as the base has it: a configuration the change edited
+ * could hide the change's own failures and leave the base's showing.
+ */
+export interface GateInheritance {
+  readonly rule: string;
+  readonly baselineRecord: string | null;
+  readonly baseStatus: GateStatus | null;
+  readonly attribution: FailureAttribution;
+  readonly newFailures: readonly string[];
+  readonly inherited: readonly string[];
+  readonly reason: string;
+}
 
 interface GateRun {
   readonly gateId: string;
@@ -70,9 +112,17 @@ interface GateRun {
   readonly capability: GateCapability;
   readonly title: string;
   readonly severity: GateSeverity;
+  readonly requirement: GateRequirement;
   readonly status: GateStatus;
   readonly detail: string;
   readonly measures: GateMeasures;
+  /** A failed command gate read against the base, where the base could be run; else null. */
+  readonly inheritance: GateInheritance | null;
+  /**
+   * A failed gate whose requirement is met: `no-new-regression`, and every failure inherited.
+   * It still failed, and says so; it is not one of the cycle's blocking failures.
+   */
+  readonly inheritedOnly: boolean;
   /** The gate's named parts, where it reports any (see `GateReading.parts`). */
   readonly parts: Readonly<Record<string, GateStatus>>;
   /** Which of those parts are the planner's claim alone (see `GateReading.claims`). */
@@ -122,6 +172,12 @@ export interface GateCycleDependencies {
   readonly commands: GateCommandRunner;
   readonly evidence: EvidenceRecorder;
   readonly emit: (event: LoopEvent) => void;
+  /**
+   * The same gate run over the base tree, measured once per gate and recorded as a gate-baseline
+   * record, or null where the base cannot be run. Absent, no failure is read against the base and
+   * every failure of a blocking gate blocks, which is the strict direction.
+   */
+  readonly baseline?: (gate: GateDefinition) => Promise<BaselineRun | null>;
 }
 
 /**
@@ -242,7 +298,18 @@ export async function runGateCycle(
           };
     const reading = readUnderInstrument(gate.parse(observation), instrument);
     const blocking = gate.severity === "blocking";
-    const payload = gateRunPayload(gate, observation, reading, attempt, instrument);
+    const inheritance =
+      reading.status === "failed" &&
+      gate.source.kind === "command" &&
+      observation.unavailable === null &&
+      deps.baseline !== undefined
+        ? inheritanceOf(observation, instrument, await deps.baseline(gate))
+        : null;
+    const payload = gateRunPayload(gate, observation, reading, attempt, instrument, inheritance);
+    const inheritedOnly =
+      reading.status === "failed" &&
+      requirementOf(gate) === "no-new-regression" &&
+      inheritance?.attribution === "inherited";
 
     const recorded = await deps.evidence.record({
       type: "gate-run",
@@ -257,9 +324,12 @@ export async function runGateCycle(
       capability: gate.capability ?? capabilityOf(gate.id),
       title: gate.title,
       severity: gate.severity,
+      requirement: requirementOf(gate),
       status: reading.status,
       detail: reading.detail,
       measures: reading.measures,
+      inheritance,
+      inheritedOnly,
       parts: reading.parts ?? {},
       claims: reading.claims ?? [],
       observation,
@@ -278,8 +348,10 @@ export async function runGateCycle(
       type: "gate",
       gateId: gate.id,
       status: reading.status,
-      blocking,
-      detail: reading.detail,
+      blocking: blocking && !inheritedOnly,
+      detail: inheritedOnly
+        ? `${reading.detail}; no new failures: every failure is the base's own (${describeIdentities(inheritance?.inherited ?? [])})`
+        : reading.detail,
       record: recorded.record.payloadDigest,
     });
   }
@@ -296,7 +368,9 @@ export async function runGateCycle(
         .filter((run) => (run.claims ?? []).length > 0)
         .map((run) => [run.gateId, run.claims ?? []]),
     ),
-    blockingFailures: runs.filter((run) => run.status === "failed" && run.severity === "blocking"),
+    blockingFailures: runs.filter(
+      (run) => run.status === "failed" && run.severity === "blocking" && !run.inheritedOnly,
+    ),
     advisoryFailures: runs.filter((run) => run.status === "failed" && run.severity === "advisory"),
     measures,
     coverageReports: runs
@@ -362,6 +436,81 @@ export async function observe(
   };
 }
 
+/** At most five identities, and how many more, for a line a person reads. */
+export function describeIdentities(ids: readonly string[]): string {
+  if (ids.length === 0) return "the same output";
+  return `${ids.slice(0, 5).join("; ")}${ids.length > 5 ? `; and ${ids.length - 5} more` : ""}`;
+}
+
+/**
+ * A failed command gate against its base run, both read in the form they are recorded in, so the
+ * verifier that re-derives this from the two records reads the same bytes.
+ */
+function inheritanceOf(
+  observation: GateObservation,
+  instrument: InstrumentObservation | null,
+  base: BaselineRun | null,
+): GateInheritance {
+  const recorded = recordedObservation(observation);
+  if (base === null)
+    return {
+      rule: attributionRule,
+      baselineRecord: null,
+      baseStatus: null,
+      attribution: "unattributed",
+      newFailures: [],
+      inherited: [],
+      reason: "the base could not be put in place to run this check",
+    };
+  const atBase = recordedObservation(base.observation);
+  const changes =
+    instrument === null ? ["no instrument was observed"] : instrumentChanges(instrument);
+  if (base.status === "failed" && changes.length > 0)
+    return {
+      rule: attributionRule,
+      baselineRecord: base.record,
+      baseStatus: base.status,
+      attribution: "unattributed",
+      newFailures: [],
+      inherited: [],
+      reason: `this change altered the check's instrument (${changes.slice(0, 6).join(", ")}), so its failures cannot be held to the base's`,
+    };
+  const attributed = attributeFailure({
+    withPatch: recorded,
+    baseStatus: base.status,
+    atBase,
+  });
+  return {
+    rule: attributionRule,
+    baselineRecord: base.record,
+    baseStatus: base.status,
+    attribution: attributed.attribution,
+    newFailures: [...attributed.newFailures],
+    inherited: attributed.attribution === "inherited" ? [...failingIdentities(recorded)] : [],
+    reason:
+      attributed.attribution === "inherited"
+        ? "every failure is one the base has, for the same cause"
+        : attributed.attribution === "new"
+          ? base.status === "failed"
+            ? "the change fails it in ways the base does not"
+            : `the base ${base.status === "passed" ? "passes" : "did not run"} it`
+          : unattributedReason(recorded, atBase),
+  };
+}
+
+/** An observation as its record keeps it: each stream cut at the recorded length, and marked. */
+function recordedObservation(observation: GateObservation): GateObservation {
+  return {
+    ...observation,
+    stdout: truncate(observation.stdout),
+    stderr: truncate(observation.stderr),
+    outputTruncated:
+      observation.outputTruncated === true ||
+      observation.stdout.length > maxRecordedOutputChars ||
+      observation.stderr.length > maxRecordedOutputChars,
+  };
+}
+
 function truncate(text: string): string {
   return text.length <= maxRecordedOutputChars
     ? text
@@ -378,11 +527,13 @@ function gateRunPayload(
   reading: GateReading,
   attempt: number,
   instrument: InstrumentObservation | null = null,
+  inheritance: GateInheritance | null = null,
 ): z.infer<typeof gateRunSchema> {
   return gateRunSchema.parse({
     gateId: gate.id,
     title: gate.title,
     severity: gate.severity,
+    requirement: requirementOf(gate),
     capability: gate.capability ?? capabilityOf(gate.id),
     status: reading.status,
     blocking: gate.severity === "blocking",
@@ -404,6 +555,7 @@ function gateRunPayload(
       observation.stderr.length > maxRecordedOutputChars,
     measures: reading.measures,
     ...(instrument === null ? {} : { instrument }),
+    ...(inheritance === null ? {} : { inheritance }),
   });
 }
 
@@ -483,23 +635,17 @@ export async function recordBaselineRun(
 }
 
 /**
- * What the model is shown after a failure: the gate's own bytes, not a summary of them. A
- * failure the base tree already has, unchanged, is said to be one, so the model is not sent
- * off fixing four hundred type errors it did not write and widening its diff to do it.
+ * What the model is shown after a failure: the gate's own bytes, not a summary of them, with what
+ * the base run of the same gate showed. A failure the base already has, unchanged, is said to be
+ * one, so the model is not sent off fixing four hundred type errors it did not write and widening
+ * its diff to do it; where some of a check's failures are new, those are named.
  */
-export function describeFailuresForModel(
-  cycle: GateCycle,
-  failingAtBase: ReadonlySet<string> = new Set(),
-): string {
+export function describeFailuresForModel(cycle: GateCycle): string {
   const sections = cycle.blockingFailures.map((run) =>
     [
       `gate ${run.gateId} (${run.title}) FAILED: ${run.detail}`,
       `evidence record: ${run.record} kind gate-run:${run.gateId}`,
-      failingAtBase.has(run.gateId)
-        ? "This gate fails the same way at the base commit, before this change: the failure is " +
-          "not caused by it. Do not edit unrelated files to make it pass; if it is outside the " +
-          "task, say so and leave it."
-        : "",
+      againstTheBase(run),
       run.observation.stdout.trim().length === 0
         ? ""
         : `stdout:\n${excerptForModel(run.observation.stdout)}`,
@@ -543,4 +689,23 @@ export function describeFailuresForModel(
       ];
 
   return [...unmeasured, ...sections, ...advisory].join("\n\n");
+}
+
+/** What the base run of a failed gate says about its failures, for the model; "" for nothing. */
+function againstTheBase(run: GateRun): string {
+  const inheritance = run.inheritance ?? null;
+  if (inheritance === null || inheritance.baseStatus !== "failed") return "";
+  if (inheritance.attribution === "inherited")
+    return (
+      "This gate fails the same way at the base commit, before this change: the failure is " +
+      "not caused by it. It is required to pass outright here, so it still blocks; do not edit " +
+      "unrelated files to make it pass. If it is outside the task, say so and leave it."
+    );
+  if (inheritance.attribution === "new" && inheritance.newFailures.length > 0)
+    return (
+      `The base commit fails this gate too. These failures are new with this change: ${describeIdentities(inheritance.newFailures)}. ` +
+      "Fix those. The base's own failures in this gate are not yours to fix and do not block, " +
+      "as long as no new one is added."
+    );
+  return `The base commit fails this gate too, and whether this change added a failure could not be established: ${inheritance.reason}.`;
 }

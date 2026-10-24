@@ -355,7 +355,10 @@ confirm_timeout_minutes = 30   # an unanswered confirmation refuses itself; 0 wa
 A gate line is a command alone, or a table naming the severity it blocks at and the rule that
 reads its output; an id the harness has no slot for, such as `build`, adds a gate. Where the
 harness has no parser for a test runner's output, `swarm init` writes that gate advisory and
-says why in the comment above it.
+says why in the comment above it. A table may also name the gate's `requirement`:
+`"absolute-pass"` (it must pass) or `"no-new-regression"` (failures the base already has may
+remain, and none may be added). Static checks default to the second, and the tests gate to the
+first ([check requirements](check-requirements.md)).
 
 `local_thinking` matters on a reasoning model served locally. Left unset, nothing is sent and
 the server's own default stands, which is the only safe default: the field is a vendor

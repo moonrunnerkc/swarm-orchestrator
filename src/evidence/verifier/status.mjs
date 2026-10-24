@@ -1055,3 +1055,44 @@ export function capturedRegression(checks) {
     return null;
   }
 }
+
+/**
+ * A failed command gate's reading against the gate-baseline record it names
+ * (check-requirement-v1), re-derived from the two records alone under failure-identity v4.
+ * Inherited only where the gate's instrument is the base's (`instrumentChanges` empty) and every
+ * failure is proven the base's own. Mirrors `inheritanceOf` in src/gates/gate-runner.ts. Returns
+ * null where the records cannot be read for it.
+ */
+export function gateInheritance(run, baseline) {
+  if (run === undefined || run === null || run.status !== "failed") return null;
+  const observe = (payload) => ({
+    exitCode: payload.exitCode,
+    stdout: payload.stdout ?? "",
+    stderr: payload.stderr ?? "",
+    outputTruncated: payload.outputTruncated === true,
+    unavailable: payload.unavailable ?? null,
+  });
+  if (baseline === undefined || baseline === null)
+    return { baseStatus: null, attribution: "unattributed", newFailures: [], inherited: [] };
+  if (baseline.gateId !== run.gateId || baseline.command !== run.command) return null;
+  const failing = observe(run);
+  const atBase = observe(baseline);
+  const baseStatus = readStatus(run.parser, atBase);
+  const changes = run.instrument === undefined ? ["none"] : instrumentChanges(run.instrument);
+  if (baseStatus === "failed" && changes.length > 0)
+    return { baseStatus, attribution: "unattributed", newFailures: [], inherited: [] };
+  const derived = attributionV2(failing, run.parser, atBase, "v4");
+  const own = `${failing.stdout}\n${failing.stderr}`;
+  const inherited =
+    derived.attribution === "inherited"
+      ? (namedTests(failing, undefined, "v4")?.failed ??
+        diagnosticsV4(failing, diagnosticsRoot([own]))?.failed ??
+        [])
+      : [];
+  return {
+    baseStatus,
+    attribution: derived.attribution,
+    newFailures: derived.newFailures,
+    inherited,
+  };
+}

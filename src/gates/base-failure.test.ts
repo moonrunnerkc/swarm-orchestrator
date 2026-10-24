@@ -56,13 +56,14 @@ afterEach(async () => {
 });
 
 describe("a lint that fails before the run changed anything", () => {
-  it("is measured at the base, named in the escalation, and leaves the working tree as the run left it", async () => {
+  const legacyLint = "node -e \"console.error('src/legacy.js:1:1 error no-var'); process.exit(1)\"";
+
+  async function changeAndRun(requirement?: "absolute-pass" | "no-new-regression") {
     const changed = "export function greet() {\n  return 'hello';\n}\nexport const one = 1;\n";
     await writeFile(join(workspace, "src/greet.js"), changed);
     const fileSet = createFileSetRegistry(evidence);
     await fileSet.declare(["src/greet.js"], "test");
     const baseRef = (await run("git", ["rev-parse", "HEAD"], { cwd: workspace })).stdout.trim();
-
     const engine = await runGatesEngine({
       workspaceRoot: workspace,
       baseRef,
@@ -75,22 +76,44 @@ describe("a lint that fails before the run changed anything", () => {
       gateOptions: {
         commandOverrides: {
           // Fails whatever the tree holds, which is what a pre-existing failure is.
-          lint: "node -e \"console.error('src/legacy.js:1:1 error no-var'); process.exit(1)\"",
+          lint: requirement === undefined ? legacyLint : { command: legacyLint, requirement },
         },
       },
     });
+    return { engine, changed };
+  }
 
-    expect(engine.outcome.settled).toBe("escalated");
-    expect(engine.outcome.escalation?.gateId).toBe("lint");
-    expect(engine.outcome.escalation?.failingAtBase).toEqual(["lint"]);
-    expect(engine.outcome.escalation?.reason).toContain("fails the same way at the base commit");
+  it("is measured at the base and, held to no new regression, settles with the failure named as the base's", async () => {
+    const { engine, changed } = await changeAndRun();
+    expect(engine.outcome.settled).toBe("green");
+    expect(engine.outcome.attempts).toHaveLength(0);
+    const lint = engine.outcome.finalCycle.runs.find((one) => one.gateId === "lint");
+    expect(lint).toMatchObject({
+      status: "failed",
+      requirement: "no-new-regression",
+      inheritedOnly: true,
+      inheritance: { attribution: "inherited" },
+    });
+    expect(engine.outcome.finalCycle.blockingFailures).toEqual([]);
     const baseline = evidence.records().find((record) => record.type === "gate-baseline");
-    expect(baseline).toBeDefined();
     expect(evidence.payloads().get(baseline?.payloadDigest ?? "")).toMatchObject({
       gateId: "lint",
       status: "failed",
     });
+    // The gate-run record names the base record it was read against.
+    const record = evidence.payloads().get(lint?.record ?? "") as {
+      inheritance?: { baselineRecord?: string };
+    };
+    expect(record.inheritance?.baselineRecord).toBe(baseline?.payloadDigest);
     // The swap to the base tree and back left the run's change where it was.
     expect(await readFile(join(workspace, "src/greet.js"), "utf8")).toBe(changed);
+  }, 60_000);
+
+  it("still blocks where the gate must pass outright, and the escalation names it as the base's", async () => {
+    const { engine } = await changeAndRun("absolute-pass");
+    expect(engine.outcome.settled).toBe("escalated");
+    expect(engine.outcome.escalation?.gateId).toBe("lint");
+    expect(engine.outcome.escalation?.failingAtBase).toEqual(["lint"]);
+    expect(engine.outcome.escalation?.reason).toContain("fails the same way at the base commit");
   }, 60_000);
 });

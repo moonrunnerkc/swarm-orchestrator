@@ -41,13 +41,26 @@ Sealed before the first model call, on the `gate-set-sealed` record:
 
 | Gate | Requirement |
 | --- | --- |
-| Repository checks assembled from the project or `swarm.toml` (build, typecheck, lint, format, tests, added gates) | `no-new-regression` |
+| Static repository checks assembled from the project or `swarm.toml` (build, typecheck, lint, format, and added gates not declared dynamic) | `no-new-regression` |
+| The tests gate and any other check that executes the code | `absolute-pass` |
 | A gate the task contract lists in `requiredChecks` | `absolute-pass` |
-| A `swarm.toml` gate with `requirement = "absolute-pass"` | `absolute-pass` |
+| A `swarm.toml` gate with `requirement = "..."` | as named |
 | Policy and inspection gates (file set, placeholders, secrets, diff budget), task acceptance, task diagnostics | `absolute-pass` |
+
+**Amendment, October 24, 2026, before any run under this policy.** The first version made every
+repository check, tests included, `no-new-regression` by default. The engine's own acceptance
+test showed the hazard: where the base already fails a test, that test is often the task's own
+subject ("fix the failing test"). As inherited, it would settle green before any repair, and a run
+that changed nothing would be accepted. So a check that executes the code keeps the absolute
+requirement by default. A project whose base carries an unrelated failing test can name
+`requirement = "no-new-regression"` for its tests gate in `swarm.toml`, and that choice is sealed
+and shown like any other.
 
 A seal without the field is read as `absolute-pass` for every gate, which is what every earlier
 run meant.
+
+`swarm check` and `swarm gates` report on a tree as a CI job would. They have no change of their
+own to attribute a failure to, so they seal every gate `absolute-pass`, as before.
 
 ## Failure identity v4
 

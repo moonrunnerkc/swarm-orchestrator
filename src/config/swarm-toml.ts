@@ -36,6 +36,7 @@ const rawFileSchema = z.strictObject({
           parser: z
             .enum(["exit-code", "test-output", "structured-test-output", "no-output"])
             .optional(),
+          requirement: z.enum(["absolute-pass", "no-new-regression"]).optional(),
         }),
       ]),
     )
@@ -217,6 +218,7 @@ export function parseSwarmToml(text: string, source: string): SwarmToml {
               command: override.command,
               ...(override.severity === undefined ? {} : { severity: override.severity }),
               ...(override.parser === undefined ? {} : { parser: override.parser }),
+              ...(override.requirement === undefined ? {} : { requirement: override.requirement }),
             },
       ]),
     ),

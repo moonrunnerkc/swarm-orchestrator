@@ -318,7 +318,7 @@ describe("the final checks' share of the total allowance", () => {
       verdict: { acceptable: boolean; reasons: Record<string, string> };
     }[];
     expect(worker?.inputs).toMatchObject({
-      policy: "run-acceptance-v5",
+      policy: "run-acceptance-v6",
       lifecycle: "max-wall-time",
       wallStop: { beforeDeadline: true, effectsSettled: true },
     });
