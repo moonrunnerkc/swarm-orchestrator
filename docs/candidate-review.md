@@ -125,8 +125,10 @@ tree it is read on, whether or not the reviewer tried it. Each run is read as on
 - a project exception, which is an answer;
 - an observation.
 
-A probe that does not run goes back to the reviewer once with its error. Still broken, it is left
-out as `unmeasured`, never read as nothing found. A `try_probe` trial is reused only where the
+A probe that does not run goes back to the reviewer once with its error, together with any probe
+refused for its form and the reason it was refused. A corrected probe is taken under whatever id
+it comes back with, up to the limit. Still broken, it is left out as `unmeasured`, never read as
+nothing found. A `try_probe` trial is reused only where the
 program, inputs, tree, candidate patch and environment all match.
 
 **What the harness does.** Every probe runs twice on a fresh checkout of the base and twice on one
