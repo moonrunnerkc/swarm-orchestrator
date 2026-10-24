@@ -11,6 +11,7 @@ import {
   type ScriptedTurnSource,
   startScriptedEndpoint,
 } from "./providers/scripted-endpoint.ts";
+import { generatedBatches, taskCodeStatements } from "./task-code-statements.ts";
 
 const run = promisify(execFile);
 
@@ -172,7 +173,10 @@ function roles(input: {
 
 interface Result {
   readonly bundleDirectory?: string;
-  readonly verdict?: { readonly acceptable?: boolean };
+  readonly verdict?: {
+    readonly acceptable?: boolean;
+    readonly reasons?: Readonly<Record<string, string>>;
+  };
   readonly outcome?: {
     readonly status?: string;
     readonly checks?: { readonly result: string };
@@ -189,6 +193,7 @@ interface Result {
       readonly examination: string | null;
       readonly attempt: { state: string; accepted: boolean | null } | null;
       readonly readings: readonly { probe: string; index: number; reading: string }[];
+      readonly violations?: readonly string[];
     };
   };
 }
@@ -197,7 +202,7 @@ async function swarm(
   task: string,
   check: string,
   turns: readonly ScriptedTurnSource[],
-  mode: "executable" | "prose" = "executable",
+  mode: "grounded" | "executable" | "prose" = "executable",
   suite = baseTest,
   extra: Extra = {},
 ): Promise<{ result: Result; code: number; stdout: string; directory: string }> {
@@ -929,6 +934,173 @@ describe("requested behaviour the task states, measured and repaired", () => {
     expect(result.outcome?.status, stdout.slice(-3000)).toBe("accepted");
     expect(result.outcome?.review?.attempt).toBeNull();
     expect(readingsOf(result)).toContain("keep-call-order#2 relation-unconfirmed");
+    await independentlyChecked(result.bundleDirectory ?? "");
+  }, 240_000);
+});
+
+/**
+ * The grounded path (candidate-review-v4): the harness's own run of the task's code, with no
+ * reviewer, through the ordinary command line on a scripted model. Scripted repairs establish the
+ * controller's mechanics, not what a model would write.
+ */
+describe("the grounded path, the held-back batch and the completion policy", () => {
+  const dropWorkspace = { files: { "query.mjs": queryBase } };
+  /** Keeps `file:///` as given and puts the kept keys in reverse: two kinds of counterexample. */
+  const dropBothWrong = dropVerbatim.replace(
+    "Object.entries(parse(input)).filter",
+    "Object.entries(parse(input)).reverse().filter",
+  );
+  // The first input of the relation's validation batch, generated from the task's text and held
+  // back from the repair it assesses.
+  const relation = taskCodeStatements(dropTask).find((one) => one.kind === "relation");
+  const heldInput =
+    relation?.kind === "relation" ? generatedBatches(relation).validation.inputs[0] : "";
+  /** Correct on every input the run shows a repair, and wrong on that one held-back input. */
+  const dropWrongWhereHeld = dropCorrect.replace(
+    'if (!input.includes("?")) return input;',
+    `if (!input.includes("?")) return input;\n  if (input === ${JSON.stringify(heldInput)}) return "/held";`,
+  );
+  const owedAttempts = (bundle: string) => {
+    const session = join(bundle, "..");
+    return readFileSync(join(session, "ledger.jsonl"), "utf8")
+      .split("\n")
+      .filter((line) => line.length > 0)
+      .map((line) => JSON.parse(line) as { type: string; payloadDigest: string })
+      .filter((one) => one.type === "verification-command")
+      .map(
+        (one) =>
+          JSON.parse(
+            readFileSync(join(session, "blobs", `${one.payloadDigest.slice(7)}.json`), "utf8"),
+          ) as { rule?: string; state?: string; attempt?: number | null; reason?: string },
+      )
+      .filter((one) => one.rule === "candidate-review-attempt-v1");
+  };
+
+  /**
+   * The worker's turns in order, and one scripted turn per owed attempt: an attempt's first call
+   * ends with the brief as its last message, and its later calls are answered as done. Every brief
+   * is kept, in attempt order.
+   */
+  const perAttempt = (
+    worker: readonly ScriptedTurn[],
+    repairs: readonly ScriptedTurn[],
+    briefs: string[] = [],
+  ): readonly ScriptedTurnSource[] => {
+    let first = 0;
+    const route: ScriptedTurnSource = (request) => {
+      const messages = (request as { messages?: readonly { role?: string; content?: unknown }[] })
+        .messages;
+      const last = messages?.at(-1);
+      const text = JSON.stringify(last?.content ?? "");
+      if (JSON.stringify(request).includes("A separate review of your change")) {
+        if (last?.role !== "user" || !text.includes("A separate review of your change"))
+          return { text: "Done." };
+        briefs.push(text);
+        return repairs[briefs.length - 1] ?? { text: "Done." };
+      }
+      return worker[first++] ?? { text: "Done." };
+    };
+    return Array.from({ length: 60 }, () => route);
+  };
+
+  it("finds the relation's counterexample with no reviewer, and keeps the correct repair", async () => {
+    const { result, stdout, directory } = await swarm(
+      dropTask,
+      dropCheck,
+      roles({
+        worker: [declare(["query.mjs"]), write("query.mjs", dropVerbatim)],
+        reviewer: { probes: [] },
+        repair: [write("query.mjs", dropCorrect)],
+      }),
+      "grounded",
+      baseTest,
+      dropWorkspace,
+    );
+    expect(result.outcome?.status, stdout.slice(-3000)).toBe("accepted");
+    expect(stdout).not.toContain("You review a change another coding agent made");
+    expect(readFileSync(join(directory, "query.mjs"), "utf8")).toBe(dropCorrect);
+    expect(result.outcome?.review?.violations).toEqual([]);
+    expect(readingsOf(result).every((one) => / (met|related)$/.test(one))).toBe(true);
+    await independentlyChecked(result.bundleDirectory ?? "");
+  }, 240_000);
+
+  it("a repair that fixes some counterexamples is kept and owed another attempt, which finishes the work", async () => {
+    const { result, stdout, directory } = await swarm(
+      dropTask,
+      dropCheck,
+      // The first repair fixes the order and leaves `file:///` as given; the second fixes that.
+      perAttempt(
+        [declare(["query.mjs"]), write("query.mjs", dropBothWrong)],
+        [write("query.mjs", dropVerbatim), write("query.mjs", dropCorrect)],
+      ),
+      "grounded",
+      baseTest,
+      dropWorkspace,
+    );
+    expect(result.outcome?.status, stdout.slice(-3000)).toBe("accepted");
+    expect(readFileSync(join(directory, "query.mjs"), "utf8")).toBe(dropCorrect);
+    expect(
+      owedAttempts(result.bundleDirectory ?? "").map((one) => [one.state, one.attempt]),
+    ).toEqual([
+      ["given", 1],
+      ["given", 2],
+    ]);
+    await independentlyChecked(result.bundleDirectory ?? "");
+  }, 240_000);
+
+  it("a repair that meets every case it was shown and fails the held-back batch is caught, and the exposed case is repaired", async () => {
+    const briefs: string[] = [];
+    const { result, stdout, directory } = await swarm(
+      dropTask,
+      dropCheck,
+      perAttempt(
+        [declare(["query.mjs"]), write("query.mjs", dropVerbatim)],
+        [write("query.mjs", dropWrongWhereHeld), write("query.mjs", dropCorrect)],
+        briefs,
+      ),
+      "grounded",
+      baseTest,
+      dropWorkspace,
+    );
+    expect(result.outcome?.status, stdout.slice(-3000)).toBe("accepted");
+    expect(readFileSync(join(directory, "query.mjs"), "utf8")).toBe(dropCorrect);
+    // The first brief never shows the held input; the second is about it, and says so.
+    const shown = JSON.stringify(JSON.stringify(heldInput)).slice(1, -1);
+    expect(briefs[0]).not.toContain(shown);
+    expect(briefs[1]).toContain(shown);
+    expect(briefs[1]).toContain("held back from it");
+    expect(readingsOf(result).some((one) => one.startsWith("code-relation-1-held#"))).toBe(true);
+    await independentlyChecked(result.bundleDirectory ?? "");
+  }, 240_000);
+
+  it("a known violation the repair leaves in place refuses the run, by the verifier's own reading too", async () => {
+    const { result, stdout, directory } = await swarm(
+      dropTask,
+      dropCheck,
+      perAttempt(
+        [declare(["query.mjs"]), write("query.mjs", dropVerbatim)],
+        [{ text: "The code is right as it is." }, { text: "The code is right as it is." }],
+      ),
+      "grounded",
+      baseTest,
+      dropWorkspace,
+    );
+    expect(readFileSync(join(directory, "query.mjs"), "utf8")).toBe(dropVerbatim);
+    expect(result.verdict?.acceptable, stdout.slice(-3000)).toBe(false);
+    expect(result.outcome?.status).not.toBe("accepted");
+    expect(result.outcome?.review?.violations).toContain(
+      'code-relation-1#2 "file:///C:/x?x=1&y=2"',
+    );
+    expect(result.verdict?.reasons?.assessment).toContain("unresolved task violation(s)");
+    // The first attempt changed nothing, and its candidate was the first to run the held-back
+    // batch, which showed new cases: one more attempt, then the repeated-failure stop.
+    expect(
+      owedAttempts(result.bundleDirectory ?? "").map((one) => [one.state, one.attempt]),
+    ).toEqual([
+      ["given", 1],
+      ["given", 2],
+      ["withheld", null],
+    ]);
     await independentlyChecked(result.bundleDirectory ?? "");
   }, 240_000);
 });
