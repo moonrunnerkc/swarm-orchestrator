@@ -20,6 +20,7 @@ export { nodeScriptCandidates } from "./node-gates.ts";
 import { inspectionGates } from "./inspection-gates.ts";
 import { exitCodeParser, testOutputParser } from "./parsers.ts";
 import type { ProjectDetection, ProjectType } from "./project-type.ts";
+import { staticRepairRequested } from "./requested-static-repair.ts";
 import { readRunnerResult } from "./runner-results.ts";
 
 /**
@@ -170,6 +171,11 @@ export interface GateSetOptions {
    */
   readonly requiredChecks?: readonly string[];
   /**
+   * The task as the run states it. A static check whose failure a sentence of it asks fixed is
+   * sealed `absolute-pass`, with that sentence (failure-identity-v5, docs/check-requirements.md).
+   */
+  readonly taskText?: string;
+  /**
    * Every gate `absolute-pass`, for a command that reports on a tree rather than accepting a
    * change a run made (`swarm check`, `swarm gates`): it says whether the declared checks pass,
    * as a CI job would, and has no change of its own to attribute a failure to.
@@ -287,6 +293,7 @@ export function assembleGates(
         : overriddenGate(gate.id, gate.title, gate.severity, override, detection, nodeVersion),
       override,
       options.absoluteRequirements === true ? null : (options.requiredChecks ?? []),
+      options.taskText,
     );
   });
   const assembledIds = assembled.map((gate) => gate.id);
@@ -310,6 +317,7 @@ export function assembleGates(
         overriddenGate(id, id, "blocking", overrides[id] as GateOverride, detection, nodeVersion),
         overrides[id],
         options.absoluteRequirements === true ? null : (options.requiredChecks ?? []),
+        options.taskText,
       ),
     );
   return [...replaced, ...added];
@@ -322,18 +330,33 @@ export function assembleGates(
  * check that executes the code must pass: a test the base fails is often the task's own subject,
  * and reading it as inherited would accept a change that left it failing. An inspection rules on
  * the change alone and has no base reading to compare with. A requirement named in `swarm.toml`,
- * and a check the task contract requires, decide over these defaults.
+ * and a check the task contract requires, decide over these defaults. So does a task that asks for
+ * a static check's failure fixed: no new regression would excuse leaving its own subject undone.
  */
 function withRequirement(
   gate: GateDefinition,
   override: GateOverride | undefined,
   /** Null holds every gate to an absolute pass (`absoluteRequirements`). */
   requiredChecks: readonly string[] | null,
+  taskText?: string,
 ): GateDefinition {
   if (requiredChecks === null) return { ...gate, requirement: "absolute-pass" };
   const named = typeof override === "object" ? override.requirement : undefined;
   const staticCommand =
     gate.source.kind === "command" && (gate.capability ?? capabilityOf(gate.id)) === "static";
+  const requested =
+    staticCommand && named === undefined && !requiredChecks.includes(gate.id)
+      ? staticRepairRequested(taskText, {
+          id: gate.id,
+          command: gate.source.kind === "command" ? gate.source.command : null,
+        })
+      : null;
+  if (requested !== null)
+    return {
+      ...gate,
+      requirement: "absolute-pass",
+      requirementBasis: `the task asks for this check's failure fixed: "${requested.slice(0, 400)}"`,
+    };
   const requirement: GateRequirement = requiredChecks.includes(gate.id)
     ? "absolute-pass"
     : (named ?? (staticCommand ? "no-new-regression" : "absolute-pass"));

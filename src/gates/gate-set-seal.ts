@@ -27,6 +27,8 @@ export const gateSetSealSchema = z.object({
        * `absolute-pass`, the only meaning a blocking gate had then.
        */
       requirement: z.enum(["absolute-pass", "no-new-regression"]).optional(),
+      /** The task sentence that set the requirement over the gate's default, where one did. */
+      requirementBasis: z.string().optional(),
       source: z.enum(["command", "inspection"]),
       optionalAbsence: z.boolean().optional(),
       /** How the run reads to a person, for a command; null for an inspection. */
@@ -76,6 +78,7 @@ export function describeGateSet(input: {
       title: gate.title,
       severity: gate.severity,
       requirement: requirementOf(gate),
+      ...(gate.requirementBasis === undefined ? {} : { requirementBasis: gate.requirementBasis }),
       source: gate.source.kind,
       ...(gate.source.kind === "inspection" && gate.source.optionalAbsence === true
         ? { optionalAbsence: true }

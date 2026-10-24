@@ -194,6 +194,11 @@ export interface GateDefinition {
   readonly capability?: GateCapability;
   /** Absent is `absolute-pass` (see `requirementOf`). */
   readonly requirement?: GateRequirement;
+  /**
+   * Why the requirement is not the gate's default, where a sentence of the task decided it: the
+   * task asks for this static check's failure fixed (`staticRepairRequested`).
+   */
+  readonly requirementBasis?: string;
   readonly source: GateSource;
   readonly parse: GateParser;
   /** Absent means the exit-code rule, which is what an unnamed parser has always been. */
