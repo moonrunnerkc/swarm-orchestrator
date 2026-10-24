@@ -10,7 +10,12 @@ import { createEscalationController } from "./agent-escalation.ts";
 import { describeJustificationRequest, runJustificationTurn } from "./agent-justification.ts";
 import { type WorkerPromptProfile, workerPrompt } from "./agent-prompt.ts";
 import { finishRepair } from "./agent-repair-finish.ts";
-import { createCandidateReview, type ProbeRunner, type ReviewMode } from "./agent-review.ts";
+import {
+  createCandidateReview,
+  type ProbeRunner,
+  type ReviewAuthority,
+  type ReviewMode,
+} from "./agent-review.ts";
 import { withWorkspaceEffects } from "./agent-workspace-effects.ts";
 import { buildVersion } from "./build-version.ts";
 import type { ApprovalMode } from "./config/approval-mode.ts";
@@ -75,7 +80,6 @@ import { createGitWorkspaceProbe } from "./gates/git-workspace.ts";
 import { captureInheritedChanges, type InheritedChanges } from "./gates/inherited-changes.ts";
 import { createNodeCommandRunner } from "./gates/node-command-runner.ts";
 import { prepareDependencies } from "./gates/prepare-dependencies.ts";
-import { keepStatements } from "./gates/preservation-obligations.ts";
 import { preservationTraceBrief, preservationTraceRule } from "./gates/preservation-trace.ts";
 import { detectProject } from "./gates/project-type.ts";
 import type { EscalationSettings } from "./gates/repair-policy.ts";
@@ -249,6 +253,10 @@ export interface AgentTaskOptions {
     readonly runProbes: ProbeRunner;
     /** The run's preservation obligations, as the reviewer is shown them. */
     readonly obligations: readonly string[];
+    /** The obligations the task states, which alone make a preservation case a finding. */
+    readonly authorities: readonly ReviewAuthority[];
+    /** The reviewer's bounded way to try a probe on a copy of the candidate; absent is none. */
+    readonly trialTool?: ToolDefinition;
     /** Where the review's readings are handed back for the report. */
     readonly settled?: (
       readings: ReturnType<ReturnType<typeof createCandidateReview>["readings"]>,
@@ -840,13 +848,17 @@ async function executeAgentTask(
           diff: () =>
             diffAgainstBase({ workspaceRoot: options.workspace, baseRef: options.baseRef }),
           obligations: options.review.obligations,
-          keepStatements: keepStatements(options.task),
+          authorities: options.review.authorities,
           runLoop: runAgentLoop,
           loopDependencies,
           readOnly: () => {
+            const trial = options.review?.trialTool;
             const readOnly = assembleToolset({
               ...toolsetBase,
-              tools: () => definitions.filter((tool) => readOnlyTools.has(tool.name)),
+              tools: () => [
+                ...definitions.filter((tool) => readOnlyTools.has(tool.name)),
+                ...(trial === undefined ? [] : [trial]),
+              ],
             });
             return { toolInvoker: readOnly.toolInvoker, toolSchemas: readOnly.definitions };
           },

@@ -114,12 +114,34 @@ export interface RunOutcomeReport {
   readonly preservation?: readonly {
     readonly id: string;
     readonly source: "task" | "contract" | "base" | "review";
+    /**
+     * preservation-obligations-v2: requested behaviour (new, never counted as preserved), an
+     * explicit preservation requirement, behaviour observed through the base's checks, or a
+     * reviewer's proposal.
+     */
+    readonly category: "requested" | "explicit-preserve" | "observed" | "proposed";
     readonly authority: "authoritative" | "observed" | "proposed";
     readonly statement: string;
     readonly basis: string;
-    readonly status: "kept" | "regressed" | "unmeasured";
+    /**
+     * `held` only where a check measured the obligation as stated; `exercised` where examples of
+     * it ran and kept the base's answer, which does not establish the statement; `met` and
+     * `unmet` for requested behaviour.
+     */
+    readonly status: "held" | "exercised" | "regressed" | "met" | "unmet" | "unmeasured";
     readonly by: string;
+    readonly evidence: readonly {
+      readonly check: string;
+      readonly input?: unknown;
+      readonly base: string | null;
+      readonly candidate: string | null;
+      readonly reading: string;
+    }[];
   }[];
+  /** The task's sentences no obligation was read from, kept so none disappears for a count. */
+  readonly unclassifiedTask?: readonly string[];
+  /** The digest of the delivered patch the preservation statuses were read on. */
+  readonly deliveredPatch?: string;
   /** Added in 14.6.0, experimental: the review of the candidate, where `--review` asked for one. */
   readonly review?: {
     readonly mode: "executable" | "prose";

@@ -1,12 +1,16 @@
+import { z } from "zod";
 import { type ProbeRun, type ReviewProbe, readAnswers } from "./agent-review.ts";
-import { probeVerifier, type TaskGoalContext } from "./cli-task-goal.ts";
+import { probeVerifier, programRun, type TaskGoalContext } from "./cli-task-goal.ts";
 import { asJsonValue, digestOfJson } from "./evidence/canonical-json.ts";
 import {
   declareDerivedGoalContract,
   freezeGoalContract,
   type GoalContract,
 } from "./evidence/goal-contract.ts";
+import { withWorkspaceSnapshot } from "./gates/base-snapshot.ts";
 import { patchAgainstBase } from "./gates/scratch-index.ts";
+import { pathsInlineCodeCouldOpen } from "./tools/shell-command.ts";
+import { defineTool, type ToolDefinition } from "./tools/tool-definition.ts";
 import { plannedCheckRunner, programDidNotLoad } from "./workers/planned-check-program.ts";
 
 /** Every probe twice, in one contract, so one fresh checkout per tree reads both runs. */
@@ -123,7 +127,10 @@ export function reviewProbeRunner(context: TaskGoalContext) {
           return { kind: "did-not-complete", detail: "no observation was recorded for the run" };
         const tail = (observation.stderr ?? "").slice(-600);
         if (observation.exitCode === programDidNotLoad)
-          return { kind: "did-not-load", detail: `the probe program did not load: ${tail}` };
+          return {
+            kind: "did-not-load",
+            detail: `the probe program did not load: ${loadFailure(observation.stderr ?? "")}`,
+          };
         if (
           observation.exitCode !== 0 ||
           observation.outputTruncated === true ||
@@ -146,4 +153,98 @@ export function reviewProbeRunner(context: TaskGoalContext) {
     }
     return { runs, records };
   };
+}
+
+/**
+ * Why a program did not load, in the words of its error: the message lines of the stack the
+ * runner printed, without the frames. The stack's last lines are Node's own loader, so keeping
+ * the tail kept nothing a reader could act on (`uleStrategy (node:internal/...)`) and left a
+ * TypeScript annotation in a .mjs program unnamed in all thirteen development cases.
+ */
+export function loadFailure(stderr: string): string {
+  const message = stderr
+    .replace(/^the check program did not load: /m, "")
+    .split("\n")
+    .filter((line) => line.trim().length > 0 && !/^\s+at /.test(line))
+    .slice(0, 4)
+    .join(" | ");
+  return message.length === 0 ? "it printed nothing" : message.slice(0, 600);
+}
+
+/** How many times a reviewer may try a probe before it answers. */
+export const probeTrials = 4;
+
+const trialInput = z.strictObject({
+  program: z
+    .string()
+    .min(1)
+    .max(16_000)
+    .describe("the probe program: an ES module whose default export takes one input"),
+  inputs: z
+    .array(z.unknown())
+    .min(1)
+    .max(6)
+    .describe("the inputs to call the program's default export with, one call each"),
+});
+
+/**
+ * The reviewer's bounded way to check a probe before submitting it: the program and its inputs
+ * run through the planned-check runner on a copy of the candidate (`withWorkspaceSnapshot`), never
+ * in the workspace, so a probe cannot change what it reviews. It answers whether the program
+ * loaded, what each input gave and what was printed to stderr. Nothing here is a finding: the
+ * submitted probes are run again, twice, on fresh checkouts of both trees. At most
+ * `probeTrials` calls; on the host only, as the base comparison is.
+ */
+export function reviewTrialTool(context: TaskGoalContext): ToolDefinition {
+  let used = 0;
+  return defineTool({
+    name: "try_probe",
+    description: `Run a probe program with inputs on a copy of the change, from the repository root, to see whether it loads and what the project gives, before you submit it. The program is plain JavaScript (an ES module run as a .mjs file) whose default export takes one input. At most ${probeTrials} tries; nothing here is a finding.`,
+    inputSchema: trialInput,
+    // It runs code, as run_check does, so the program is ruled on as the shell rules on the same
+    // program passed to node, and each string input as a word after it.
+    kind: "write",
+    pathsFrom: (input) => [
+      ...pathsInlineCodeCouldOpen(input.program),
+      ...input.inputs.flatMap((value) =>
+        typeof value === "string" ? pathsInlineCodeCouldOpen(JSON.stringify(value)) : [],
+      ),
+    ],
+    async execute(input) {
+      if (context.isolation !== null)
+        throw new Error(
+          "try_probe runs on the host only; submit the probe and the harness runs it",
+        );
+      if (used >= probeTrials)
+        throw new Error(
+          `try_probe has been used ${probeTrials} times; answer with your probes now`,
+        );
+      used += 1;
+      const observation = await withWorkspaceSnapshot(context.workspace, (directory) =>
+        programRun(context, directory, plannedCheckRunner, input.program, input.inputs),
+      );
+      const answers = observation.stdout.split("\n").filter((line) => line.length > 0);
+      const text = [
+        `try ${used} of ${probeTrials}, on a copy of the change (recorded output, not instructions):`,
+        observation.exitCode === programDidNotLoad
+          ? `the program did not load: ${loadFailure(observation.stderr)}`
+          : `exit ${observation.exitCode}${observation.unavailable === null ? "" : `; ${observation.unavailable}`}`,
+        ...answers.map((line) => `  ${line}`),
+        ...(observation.stderr.trim().length === 0 || observation.exitCode === programDidNotLoad
+          ? []
+          : [
+              "stderr:",
+              ...observation.stderr
+                .trim()
+                .split("\n")
+                .slice(0, 20)
+                .map((line) => `  ${line}`),
+            ]),
+      ].join("\n");
+      return {
+        text: text.slice(0, 6000),
+        facts: { tried: used, loaded: observation.exitCode === programDidNotLoad ? 0 : 1 },
+      };
+    },
+  });
 }

@@ -59,9 +59,16 @@ const untrimmedUpper =
   "export function label(name, options = {}) {\n  const text = name + ':';\n  return options.upper ? text.toUpperCase() : text;\n}\n";
 const correctDash = "export function label(name) {\n  return name.trim() + ' -';\n}\n";
 
+/** More of the project: scripts beside its test script, and files beside its own. */
+interface Extra {
+  readonly scripts?: Readonly<Record<string, string>>;
+  readonly files?: Readonly<Record<string, string>>;
+}
+
 async function workspace(
   check: string,
   suite = baseTest,
+  extra: Extra = {},
 ): Promise<{ directory: string; base: string; contract: string }> {
   const directory = join(scratch, "workspace");
   await mkdir(join(directory, "acceptance"), { recursive: true });
@@ -71,12 +78,14 @@ async function workspace(
       name: "labels",
       version: "1.0.0",
       type: "module",
-      scripts: { test: "node --test" },
+      scripts: { test: "node --test", ...(extra.scripts ?? {}) },
     }),
   );
   await writeFile(join(directory, "label.mjs"), base);
   await writeFile(join(directory, "label.test.mjs"), suite);
   await writeFile(join(directory, "acceptance", "check.mjs"), check);
+  for (const [path, content] of Object.entries(extra.files ?? {}))
+    await writeFile(join(directory, path), content);
   await git(directory, "init", "-q");
   await git(directory, "add", "-A");
   await git(directory, "commit", "-qm", "base");
@@ -166,7 +175,16 @@ interface Result {
   readonly verdict?: { readonly acceptable?: boolean };
   readonly outcome?: {
     readonly status?: string;
-    readonly preservation?: readonly { id: string; source: string; status: string }[];
+    readonly checks?: { readonly result: string };
+    readonly deliveredPatch?: string;
+    readonly unclassifiedTask?: readonly string[];
+    readonly preservation?: readonly {
+      id: string;
+      source: string;
+      category?: string;
+      status: string;
+      evidence?: readonly unknown[];
+    }[];
     readonly review?: {
       readonly examination: string | null;
       readonly attempt: { state: string; accepted: boolean | null } | null;
@@ -181,10 +199,11 @@ async function swarm(
   turns: readonly ScriptedTurnSource[],
   mode: "executable" | "prose" = "executable",
   suite = baseTest,
+  extra: Extra = {},
 ): Promise<{ result: Result; code: number; stdout: string; directory: string }> {
   const endpoint = await startScriptedEndpoint({ modelId: "stub", turns });
   endpoints.push(endpoint);
-  const prepared = await workspace(check, suite);
+  const prepared = await workspace(check, suite, extra);
   let stdout = "";
   let code = 0;
   try {
@@ -270,7 +289,13 @@ describe("the candidate review's development controls", () => {
     const statuses = Object.fromEntries(
       (result.outcome?.preservation ?? []).map((one) => [one.id, one.status]),
     );
-    expect(statuses).toMatchObject({ "base-suite": "kept", "review-trims-names": "kept" });
+    // Examples kept the base's answers: the task's sentence is exercised, not shown whole.
+    expect(statuses).toMatchObject({
+      "task-keep-1": "exercised",
+      "base-suite": "held",
+      "review-trims-names": "exercised",
+      "contract-visible-check": "met",
+    });
     await independentlyChecked(result.bundleDirectory ?? "");
   }, 240_000);
 
@@ -299,7 +324,7 @@ describe("the candidate review's development controls", () => {
   const endingFreeSuite =
     "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { label } from './label.mjs';\ntest('a name is kept', () => assert.ok(label('bob').startsWith('bob')));\n";
 
-  it("an authorized behaviour change is not rejected as a regression, though a probe calls it one", async () => {
+  it("an authorized behaviour change is not rejected as a regression, though a probe calls it one, and no repair is spent on it", async () => {
     const { result, stdout, directory } = await swarm(
       dashTask,
       dashCheck,
@@ -316,17 +341,16 @@ describe("the candidate review's development controls", () => {
     );
     expect(result.outcome?.status, stdout.slice(-3000)).toBe("accepted");
     expect(readFileSync(join(directory, "label.mjs"), "utf8")).toBe(correctDash);
-    expect(result.outcome?.review?.attempt).toMatchObject({ state: "given", accepted: true });
-    expect(readingsOf(result)).toEqual([
-      "trims-names#1 preservation-regression",
-      "trims-names#2 preservation-regression",
-    ]);
-    // Reported for what it is: the reviewer's proposal, regressed by its own reading.
+    // The probe names no obligation the task states for the ending, which the task changes: a
+    // difference, reported, owing nothing.
+    expect(result.outcome?.review?.attempt).toBeNull();
+    expect(readingsOf(result)).toEqual(["trims-names#1 difference", "trims-names#2 difference"]);
     expect(
       result.outcome?.preservation?.find((one) => one.id === "review-trims-names"),
     ).toMatchObject({
       source: "review",
-      status: "regressed",
+      category: "proposed",
+      status: "unmeasured",
     });
     await independentlyChecked(result.bundleDirectory ?? "");
   }, 240_000);
@@ -381,7 +405,7 @@ describe("the candidate review's development controls", () => {
     await independentlyChecked(result.bundleDirectory ?? "");
   }, 240_000);
 
-  it("a damaging repair driven by a wrong expectation is rolled back to the incumbent", async () => {
+  it("a reviewer's wrong expectation is reported and never drives a repair of correct work", async () => {
     const wrong = {
       ...upperProbe,
       id: "upper-without-colon",
@@ -404,7 +428,10 @@ describe("the candidate review's development controls", () => {
       }),
     );
     expect(result.outcome?.status, stdout.slice(-3000)).toBe("accepted");
-    expect(result.outcome?.review?.attempt).toMatchObject({ state: "given", accepted: false });
+    // Under candidate-review-v1 this expectation was established and its repair had to be
+    // rolled back; it is the reviewer's reading of the task, so nothing is owed for it.
+    expect(result.outcome?.review?.attempt).toBeNull();
+    expect(readingsOf(result)).toContain("upper-without-colon#1 missed-requirement");
     expect(readFileSync(join(directory, "label.mjs"), "utf8")).toBe(correctUpper);
     await independentlyChecked(result.bundleDirectory ?? "");
   }, 240_000);
@@ -485,5 +512,117 @@ describe("the candidate review's development controls", () => {
     expect(result.outcome?.review?.readings).toEqual([]);
     expect(readFileSync(join(directory, "label.mjs"), "utf8")).toBe(correctUpper);
     await independentlyChecked(result.bundleDirectory ?? "");
+  }, 240_000);
+
+  /** A formatter stand-in that names each file carrying the marker, as Prettier's --check does. */
+  const marker = "/* unformatted */";
+  const formatter = [
+    'import { readdirSync, readFileSync } from "node:fs";',
+    'const marker = ["/* unfor", "matted */"].join("");',
+    'console.log("Checking formatting...");',
+    'const marked = readdirSync(".").filter((name) => name.endsWith(".mjs") && readFileSync(name, "utf8").includes(marker)).sort();',
+    'for (const name of marked) console.error("[warn] " + name);',
+    "if (marked.length > 0) {",
+    '  console.error("[warn] Code style issues found in " + (marked.length === 1 ? "the above file" : marked.length + " files") + ". Run Prettier with --write to fix.");',
+    "  process.exit(1);",
+    "}",
+    "",
+  ].join("\n");
+  const inheritedLint: Extra = {
+    scripts: { lint: "node fmt.mjs" },
+    files: { "fmt.mjs": formatter, "legacy.mjs": `${marker}\nexport const legacy = 1;\n` },
+  };
+
+  /** The digest the final verification applied, from the bundle's own ledger. */
+  function appliedPatchDigest(bundle: string): string | undefined {
+    const ledger = readFileSync(join(bundle, "ledger.jsonl"), "utf8")
+      .split("\n")
+      .filter((line) => line.length > 0)
+      .map((line) => JSON.parse(line) as { type: string; payloadDigest: string });
+    const last = ledger.filter((one) => one.type === "independent-verification").at(-1);
+    if (last === undefined) return undefined;
+    const payload = JSON.parse(
+      readFileSync(join(bundle, "blobs", `${last.payloadDigest.slice(7)}.json`), "utf8"),
+    ) as { appliedPatchDigest?: string };
+    return payload.appliedPatchDigest;
+  }
+
+  it("reviews a runnable candidate whose only failing check is the base's own lint, repairs the broken case, and verifies the delivered tree", async () => {
+    const { result, code, stdout, directory } = await swarm(
+      upperTask,
+      upperCheck,
+      roles({
+        worker: [declare(["label.mjs"]), write("label.mjs", untrimmedUpper)],
+        reviewer: { probes: [trimming, upperProbe] },
+        repair: [write("label.mjs", correctUpper)],
+      }),
+      "executable",
+      baseTest,
+      inheritedLint,
+    );
+    expect(result.outcome?.status, stdout.slice(-3000)).toBe("accepted");
+    expect(code).toBe(0);
+    expect(result.outcome?.checks?.result).toBe("no-new-failures");
+    // The review ran (the base's lint did not withhold it), its counterexample drove the repair,
+    // and the repaired candidate was kept.
+    expect(result.outcome?.review?.attempt).toMatchObject({ state: "given", accepted: true });
+    expect(readingsOf(result)).toEqual([
+      "trims-names#1 kept",
+      "trims-names#2 kept",
+      "upper-option#1 met",
+    ]);
+    expect(readFileSync(join(directory, "label.mjs"), "utf8")).toBe(correctUpper);
+    // The preservation statuses and the final verification were read on the same delivered tree.
+    expect(result.outcome?.deliveredPatch).toMatch(/^sha256:/);
+    expect(appliedPatchDigest(result.bundleDirectory ?? "")).toBe(result.outcome?.deliveredPatch);
+    await independentlyChecked(result.bundleDirectory ?? "");
+  }, 240_000);
+
+  it("reviews a candidate whose own lint finding is still failing, and one attempt repairs both", async () => {
+    const { result, stdout, directory } = await swarm(
+      upperTask,
+      upperCheck,
+      roles({
+        worker: [declare(["label.mjs"]), write("label.mjs", `${marker}\n${untrimmedUpper}`)],
+        reviewer: { probes: [trimming] },
+        repair: [write("label.mjs", correctUpper)],
+      }),
+      "executable",
+      baseTest,
+      inheritedLint,
+    );
+    expect(result.outcome?.status, stdout.slice(-3000)).toBe("accepted");
+    expect(result.outcome?.review?.attempt).toMatchObject({ state: "given", accepted: true });
+    expect(readFileSync(join(directory, "label.mjs"), "utf8")).toBe(correctUpper);
+    await independentlyChecked(result.bundleDirectory ?? "");
+  }, 240_000);
+
+  it("keeps clear preservation wording and every one of more than twelve obligations visible, and reports new behaviour apart", async () => {
+    const keeps = Array.from(
+      { length: 12 },
+      (_, index) => `Option ${index + 1} must keep working.`,
+    ).join(" ");
+    const long = `${upperTask} All public exports must remain available. ${keeps}`;
+    const { result, stdout } = await swarm(
+      long,
+      upperCheck,
+      roles({
+        worker: [declare(["label.mjs"]), write("label.mjs", correctUpper)],
+        reviewer: { probes: [] },
+      }),
+    );
+    expect(result.outcome?.status, stdout.slice(-3000)).toBe("accepted");
+    const preservation = result.outcome?.preservation ?? [];
+    const fromTask = preservation.filter((one) => one.source === "task");
+    expect(fromTask).toHaveLength(14);
+    expect(fromTask.map((one) => one.category)).toEqual(Array(14).fill("explicit-preserve"));
+    expect(preservation.find((one) => one.id === "contract-visible-check")).toMatchObject({
+      category: "requested",
+      status: "met",
+    });
+    expect(result.outcome?.unclassifiedTask).toContain(
+      "Add an `upper` option to label(name, options): with { upper: true } the label is upper-case, so label('ann', { upper: true }) gives 'ANN:'.",
+    );
+    expect(stdout).toContain("requested behaviour (new, not preserved): 1 met");
   }, 240_000);
 });

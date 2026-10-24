@@ -14,6 +14,7 @@ import {
   type RejectedCandidate,
   type ResolveAttempt,
   type ResolveRequest,
+  reviewable,
   runAutoResolve,
 } from "./auto-resolve.ts";
 import type { FileSetState } from "./file-set.ts";
@@ -23,7 +24,7 @@ import type {
   GateDefinition,
   GateObservation,
 } from "./gate-definition.ts";
-import { justifiedRecords, outstandingJustifications } from "./gate-runner.ts";
+import { type GateCycle, justifiedRecords, outstandingJustifications } from "./gate-runner.ts";
 import { diffBudgetGate } from "./inspection-gates.ts";
 import { measureTestFile } from "./measures.ts";
 import { exitCodeParser, testOutputParser } from "./parsers.ts";
@@ -1328,5 +1329,72 @@ describe("the experimental review of a green candidate", () => {
     ]);
     expect(outcome.reviewExamination).toBe("sha256:withheld");
     expect(outcome.review).toBeNull();
+  });
+});
+
+describe("which candidates the review may read", () => {
+  type Run = GateCycle["runs"][number];
+  const runOf = (overrides: Partial<Run>): Run =>
+    ({
+      gateId: "x",
+      kind: "command",
+      capability: "static",
+      severity: "blocking",
+      status: "passed",
+      parts: {},
+      inheritedOnly: false,
+      ...overrides,
+    }) as Run;
+  const cycleOf = (runs: readonly Run[]): GateCycle =>
+    ({
+      runs,
+      blockingFailures: runs.filter(
+        (one) => one.status === "failed" && one.severity === "blocking" && !one.inheritedOnly,
+      ),
+      measures: { changedFiles: 1 },
+    }) as unknown as GateCycle;
+  const tests = runOf({ gateId: "tests", capability: "dynamic" });
+
+  it("reads a candidate whose tests ran it and whose only failure is static", () => {
+    expect(reviewable(cycleOf([tests, runOf({ gateId: "lint", status: "failed" })]))).toBe(true);
+    // Task acceptance that failed with every one of its own checks passing failed on the suite's
+    // reading of that same lint finding, not on the code.
+    const acceptance = runOf({
+      gateId: "task-acceptance",
+      kind: "inspection",
+      capability: "dynamic",
+      status: "failed",
+      parts: { "visible-check": "passed" },
+    });
+    expect(
+      reviewable(cycleOf([tests, runOf({ gateId: "lint", status: "failed" }), acceptance])),
+    ).toBe(true);
+  });
+
+  it("does not read a candidate whose code failed when run, broke a policy, or was never run", () => {
+    expect(reviewable(cycleOf([runOf({ ...tests, status: "failed" })]))).toBe(false);
+    expect(
+      reviewable(
+        cycleOf([
+          tests,
+          runOf({
+            gateId: "task-acceptance",
+            kind: "inspection",
+            capability: "dynamic",
+            status: "failed",
+            parts: { "visible-check": "failed" },
+          }),
+        ]),
+      ),
+    ).toBe(false);
+    expect(
+      reviewable(
+        cycleOf([
+          tests,
+          runOf({ gateId: "file-set", kind: "inspection", capability: "policy", status: "failed" }),
+        ]),
+      ),
+    ).toBe(false);
+    expect(reviewable(cycleOf([runOf({ ...tests, status: "not-applicable" })]))).toBe(false);
   });
 });

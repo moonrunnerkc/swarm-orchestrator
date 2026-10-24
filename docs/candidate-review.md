@@ -2,150 +2,161 @@
 
 Two parts. The first applies to every run. The second is experimental and off by default.
 
-## Preservation obligations (every run)
+## Obligations (every run)
 
-Before the first model call, a run records what it must preserve
-(`preservation-obligations-v1`). Each obligation is tied to its source:
+Before the first model call, a run records what it must produce and what it must keep
+(`preservation-obligations-v2`). Each obligation is tied to its source and kept in one of four
+categories:
 
-| Source | Authority | What it is | What settles it |
+| Category | Source | What it is | What settles it |
 | --- | --- | --- | --- |
-| the task | authoritative | the task's own sentences about behaviour to keep ("behaves as today", "exports exactly what it exported before", "must keep passing", ...) | a review probe that quotes the sentence; otherwise **unmeasured**, since the task's word is not a measurement |
-| the supplied contract | authoritative | each requirement a person supplied in `--goal-contract` | its checks' decided status |
-| the base | observed | the project's own checks that pass on the base still pass | the final verification's regression reading, which already leaves out failures the base had |
-| the review | proposed | probes a reviewer chose once a candidate existed (experimental, below) | the probe's own case readings |
+| requested | the supplied contract | a requirement for new or changed behaviour (any requirement without `"intent": "preserve"`) | its checks: `met` or `unmet`. A met requirement is new behaviour, never preserved behaviour |
+| explicit preserve | the task, the supplied contract | the task's sentences about behaviour to keep ("behaves as today", "must keep passing", "must remain available", ...), and a requirement marked `"intent": "preserve"` | a supplied requirement's own check (`held`); a task sentence only through review probes that name it, and then only `exercised` |
+| observed | the base | the project's own checks that pass on the base still pass | the final verification's regression reading, which leaves out failures the base had (`held`, naming any that remain) |
+| proposed | the review | probes a reviewer chose once a candidate existed (experimental, below) | the probe's own cases, `exercised` at most |
 
-The run reports one line, `preservation: N kept, M regressed, K unmeasured, of T obligation(s)`,
-and the JSON result carries every obligation with its status and what decided it. Two rules hold:
+**Statuses.**
+- `held` is said only where a check measured the obligation as it is stated.
+- `exercised` means examples of it ran and each kept the base's answer. That is a sample, and it
+  does not establish a broad statement such as "all public exports remain available".
+- `regressed` means something that measured the obligation failed.
+- `unmeasured` means nothing decided it.
 
-- An obligation nothing measured is `unmeasured`, never kept.
-- A run in which nothing was measured says `preservation: nothing measured`, never that it
-  preserved anything.
+**What each status records.** Every status carries the measurement behind it:
+- the check or probe case that ran, with its input;
+- the base's answer and the candidate's answer;
+- the reading.
 
-What the base does is what currently happens, not by itself what should happen. The base
-obligation is therefore the suite's, and a behaviour the task authorizes changing is not held to
-the base. The set examined is finite, so a run that keeps every obligation has not shown backward
-compatibility in general.
+The settled record also names the delivered patch by its digest, the same tree the final
+verification applied.
 
-The planner and the reviewer can add obligations. They cannot remove one: those come from the
-task's text, the sealed contract and the harness.
+**Extraction and its limit.** Every task sentence is kept, with no count limit.
+- **Keep wording becomes an obligation.** That includes modal forms such as "must remain" and
+  "should continue to".
+- **Any other sentence is retained as unclassified task text** (`unclassifiedTask` in the
+  result).
+- **What it can miss.** Extraction reads wording. A sentence that asks for behaviour to be kept
+  in other words is listed, not read as an obligation, and nothing measures it.
+- **The precise route** is a supplied requirement with `"intent": "preserve"` and a check of its
+  own.
+
+The run prints one line that keeps the two apart. For example:
+`preservation: 1 held, 1 exercised by examples only, 0 regressed, 2 unmeasured, of 4 obligation(s) ...; requested behaviour (new, not preserved): 1 met, 0 unmet, 0 unjudged`.
+
+What the base does is what currently happens, not by itself what should happen. A behaviour the
+task authorizes changing is not held to the base. The set examined is finite, so a run that keeps
+every obligation has not shown backward compatibility in general.
 
 ## Candidate review (experimental: `--review executable|prose`)
 
-Once the gates are green and nothing else is owed, a separate conversation that did not write
-the change reviews the actual candidate (`candidate-review-v1`). It needs `--goal-contract` or
-`--plan-checks`, because its probes run on fresh checkouts the way the sealed checks do.
+A separate conversation that did not write the change reviews the actual candidate
+(`candidate-review-v2`). It needs `--goal-contract` or `--plan-checks`, because its probes run on
+fresh checkouts the way the sealed checks do.
 
-**What the reviewer is shown:**
+**When it runs.** Once the candidate *runs*. Something that executes the code must have run the
+change, and every blocking failure must be a static check (lint, format, typecheck, a build) or a
+gate whose own named checks all passed. A lint finding does not withhold the review: the review's
+findings and the lint failure travel in the same attempt. The review is withheld, on the record,
+where:
+- a test or a policy check fails;
+- a blocking command stood down;
+- what is left cannot pay for the review, its probes, an attempt and the cycle that measures it.
 
-- the task;
-- the candidate's diff;
-- the run's preservation obligations with their sources;
-- what the run's checks reported.
+**What the reviewer is shown and may do.**
+- **Shown:** the task, the candidate's diff, the run's obligations with their ids, and what the
+  checks reported.
+- **May:** read, list and search the workspace, and try a probe up to four times with
+  `try_probe`. That tool runs the program on a copy of the candidate, so a probe never changes
+  what it reviews, and it reports whether the program loaded and what each input gave.
+- **May not:** edit anything or run commands.
+- **Never sees:** the implementer's account, a hidden evaluator, a reference patch or a scored
+  verdict.
 
-It may read, list and search the workspace. It cannot edit or run commands, and it is never given
-the implementer's account. It never sees a hidden evaluator, a reference patch or a scored
-verdict.
+**What it answers** (executable mode): up to four probes, each a plain JavaScript module that
+calls the project, with up to six inputs.
+- **Preservation probe.** It names the obligation it exercises (by id, or by quoting its words) and
+  chooses inputs whose behaviour the task does not change. The harness takes the expected answer
+  from the unchanged base.
+- **Requirement probe.** It quotes the task and gives the answer it reads there. That stays the
+  reviewer's reading.
 
-**What it answers** (executable mode): up to four probes. Each is a program that calls the
-project, with up to six inputs.
+**What the harness does.** Every probe runs twice on a fresh checkout of the base and twice on one
+of the candidate, through the planned-check runner, and each case is qualified:
 
-- A **preservation** probe chooses inputs whose behaviour the task does not change. The harness
-  takes the expected answer from the unchanged base, as observed, so no model writes it.
-- A **requirement** probe quotes the task's own words, which the harness checks against the task
-  text, and gives the expected answer those words imply. It stays the reviewer's reading of the
-  task.
+| Reading | Meaning | Acted on |
+| --- | --- | --- |
+| `kept` | the candidate answers as the base does | held by the ratchet where an obligation the task states covers it |
+| `preservation-regression` | the base answered, an obligation the task states covers the input, and the candidate answers otherwise (or, on a candidate whose checks all run, no longer loads what the base loaded) | **the only established finding** |
+| `difference` | the candidate differs from the base, and no stated obligation covers it: the task may have asked for it | reported only |
+| `base-raised` | the base raised where the candidate answers: what the base lacked, often the requested feature | reported only |
+| `met` / `missed-requirement` | the candidate gives, or does not give, the reviewer's expected answer | reported only; the expectation is the reviewer's |
+| `unstable`, `defective-program`, `did-not-load`, `did-not-complete` | nothing was established: a broken or unavailable probe. A load error names its message | reported only |
 
-**What the harness does with them:**
-
-1. Each probe contract is declared on the chain, beside the root contract it derives from (lineage
-   `review-probe`).
-2. Every probe runs twice on a fresh checkout of the base and twice on one of the candidate,
-   through the planned-check runner, with the project's own checks skipped.
-3. Each case is classified from what ran:
-
-| Reading | Meaning |
-| --- | --- |
-| `kept` / `met` | the candidate answers as the base does, or gives the expected answer |
-| `preservation-regression` | the candidate differs from the base's observed answer (or from an expectation the base also meets) |
-| `missed-requirement` | neither tree gives the answer the reviewer read in the task |
-| `unstable` | two runs on one tree answered differently, so nothing is established |
-| `defective-program` | the probe's own code threw |
-| `did-not-load` / `did-not-complete` | the probe never answered |
-
-Only `preservation-regression` and `missed-requirement` are established findings.
-
-**What follows from a finding.** An established finding earns one attempt from the run's existing
-attempt cap, under the ratchet. The brief gives, for each case:
-
-- the basis, with its quote;
+**What follows from a finding.** One attempt from the run's existing attempt cap, under the
+ratchet. The brief gives, for each case:
+- the obligation and its words;
 - the input;
-- the expected answer and where it comes from;
-- what each tree gave;
-- the probe's program.
+- the base's observed answer and the candidate's answer;
+- the probe's program;
+- the digest of the candidate it was read on.
 
-The brief also says to leave the code as it is where the task authorizes the change, and to say
-which. After the attempt, every probe runs again on the candidate:
+The attempt is told to leave the code where the task asks for the change, and to say which
+sentence asks for it. Every probe then runs again on each later candidate. A repair that breaks a
+held case the incumbent kept is rolled back.
 
-- Each probe's kept cases are ratchet parts, so a repair that breaks a case the incumbent
-  satisfied is rolled back to the incumbent.
-- A requested case is a claim. It yields to a repair that restores base-backed behaviour, as
-  planned claims do.
-- The same holds for every later candidate, so a passing reading is never reused after the tree
-  changes.
+**What a finding never does.** It never decides acceptance, never changes a sealed gate, and never
+enters the final verification, which judges the delivered tree as before. A model's expectation
+is never acted on.
 
-**What a finding never does:**
-
-- decide acceptance, or change a sealed gate;
-- enter the final verification, which judges the delivered tree exactly as before;
-- appear in the verdict. A finding still standing at the end is reported in the result's `review`
-  block and, through its obligation, as `regressed`, labelled as the reviewer's proposal.
-
-**Prose mode** is the control. It runs the same conversation and the same attempt, the reviewer
-answers with objections in words, and nothing runs. It tells executable feedback apart from extra
-computation.
+**Prose mode** is the control. It runs the same conversation and the same attempt, with objections
+in words and nothing run.
 
 **Cost.** The reviewer takes at most:
-
 - ten steps;
 - a quarter of the remaining tokens;
 - 30% of the remaining wall, capped at four minutes.
 
-The probes cost two fresh checkouts. The review is withheld, on the record, where what is left
-cannot pay for it, its probes, an attempt and the cycle that measures it. Every token and step is
-charged to the run's own allowance, and the verification reserve is untouched.
+The probes cost two fresh checkouts. Every token is charged to the run's own allowance, and the
+verification reserve is untouched.
 
 ## Limits
 
-- The reviewer is the same untrained local model with a different prompt, not a separately
-  trained test agent. In ExecCritic ([arXiv 2609.09133](https://arxiv.org/abs/2609.09133)) the
-  untrained Qwen 35B test agent's tests lowered the resolve rate.
-- A probe's inputs are the reviewer's choice. A preservation probe on an input the task
-  authorizes changing reports a regression that is not one. The worker is told it may leave the
-  code, and the report labels the probe a proposal, but nothing here can tell such a probe from a
-  real regression.
-- A requirement probe's expectation is a reading of the task. Execution shows what each tree
-  does, not that the reading is right.
-- Probes call the project through its module exports with JSON inputs and JSON results. Behaviour
-  that needs a process, a file system fixture or a browser is out of their reach.
-- An authorized behaviour change that rewrites an existing test's expectation is left
-  `unverified` by the final verification's base-tests reading, review or not
-  (`src/cli-review.integration.test.ts` keeps that case as a documented limit).
+- **Not a trained test agent.** The reviewer is the same untrained local model with a different
+  prompt. In ExecCritic ([arXiv 2609.09133](https://arxiv.org/abs/2609.09133)) the untrained
+  Qwen 35B test agent's tests lowered the resolve rate.
+- **Coverage of a statement is the reviewer's reading.** Whether a probe's input is one the named
+  obligation covers is the reviewer's reading. Naming a stated obligation is what lets a
+  difference count, but the harness cannot check that the input falls within it.
+- **Narrow reach.** Probes call the project through its module exports with JSON inputs and
+  results. Behaviour that needs a process, a file system fixture or a browser is out of reach.
+- **Shared dependencies.** `try_probe` copies the candidate's files but links its installed
+  dependencies, so a program that writes through `node_modules` reaches the workspace's own.
+- **Rewritten test expectations.** An authorized change that rewrites an existing test's
+  expectation is left `unverified` by the final verification's base-tests reading, review or not.
 
 ## Evidence
 
 The deterministic controls are in `src/cli-review.integration.test.ts`. Each drives the ordinary
 command line on a scripted model, through the real gates, ratchet and final verification, and then
-the bundle's own `verify.mjs` and `rederive.mjs`:
+the bundle's own `verify.mjs` and `rederive.mjs`. A scripted model shows what the controller does
+with a given answer, not what a real model would answer.
 
+The controls:
 - a correct change;
-- a plausible change that breaks an old case, repaired;
-- an authorized change a probe calls a regression, delivered;
-- a weakened test hiding damage, refused;
-- a wrong expectation whose damaging repair is rolled back;
-- broken probes that establish nothing;
-- the prose control.
+- a counterexample repaired;
+- a review despite the base's own lint;
+- a review despite a lint finding of the change's own;
+- an authorized change a probe calls a regression (no attempt spent);
+- a wrong expectation (never acted on);
+- broken probes;
+- a weakened test;
+- the prose control;
+- more than twelve obligations kept visible.
 
-Live results are in [the stage's evidence](evidence/2026-10-23-preservation-review/README.md).
-In the development study the review established 3 findings, and the offline assessor rated all 3
-as false accusations against the reference. Its 5 attempts changed no hidden verdict. In the fresh
-block it was never asked, because no Swarm run's gates went green. It stays off by default.
+The two development false accusations of October 23 are unit cases in `src/agent-review.test.ts`:
+- a base that raised for want of the requested rule;
+- an expectation all three trees contradict.
+
+Live results:
+- [October 23](evidence/2026-10-23-preservation-review/README.md);
+- [October 24](evidence/2026-10-24-delivery-preservation/README.md).

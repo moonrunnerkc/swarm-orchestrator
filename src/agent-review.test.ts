@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   admitObjections,
   admitProbes,
+  authorityOf,
   type CaseAnswer,
   classifyProbe,
+  establishedReadings,
   findingsBrief,
   objectionsBrief,
   type ProbeRun,
@@ -110,51 +112,113 @@ describe("reading the runner's lines", () => {
   });
 });
 
+const keep = {
+  id: "task-keep-1",
+  statement: "Without the option, parse() behaves as it does today.",
+};
+const guarded: ReviewProbe = { ...preserve, obligation: "task-keep-1" };
+
 describe("what a probe's cases establish", () => {
-  it("reads a preservation case against the base's observed answer", () => {
+  it("reads a difference under a stated obligation as a regression, and without one as a difference", () => {
     const classified = classifyProbe(
-      preserve,
+      guarded,
       twice(answered("[1,2]", "[1]")),
-      twice(answered("[1,2]", "threw")),
+      twice(answered("[1,2]", '"[1]"')),
+      keep,
     );
-    expect(classified.map((one) => [one.reading, one.role])).toEqual([
-      ["kept", "kept"],
-      ["preservation-regression", "kept"],
+    expect(classified.map((one) => [one.reading, one.role, one.authority])).toEqual([
+      ["kept", "kept", "task-keep-1"],
+      ["preservation-regression", "kept", "task-keep-1"],
     ]);
     expect(classified[1]?.base).toBe("[1]");
-    expect(classified[1]?.candidate).toBe('{"threw":true}');
+    // The same answers with no obligation the task states: the task may have asked for it.
+    expect(
+      classifyProbe(
+        preserve,
+        twice(answered("[1,2]", "[1]")),
+        twice(answered("[1,2]", '"[1]"')),
+      ).map((one) => [one.reading, one.role]),
+    ).toEqual([
+      ["kept", null],
+      ["difference", null],
+    ]);
   });
 
-  it("reads a requirement case against the reviewer's expectation, and the base where it agrees", () => {
+  it("finds the authority a quote of the task's keep sentence names", () => {
+    expect(authorityOf({ ...preserve, quote: "parse() behaves as it does today" }, [keep])).toEqual(
+      keep,
+    );
+    expect(authorityOf({ ...preserve, quote: "a trailing comma throws" }, [keep])).toBeNull();
+    expect(authorityOf({ ...preserve, obligation: "task-keep-9" }, [keep])).toBeNull();
+  });
+
+  it("reads a base that raised as the base lacking it, not as behaviour to keep (markdown-it, development launch 2)", () => {
+    // The probe disabled a rule the task adds: the base threw for want of it, the candidate and
+    // the reference answer. Under v1 the base's throw was the expectation and this was a finding.
     const classified = classifyProbe(
-      strict,
-      twice(answered("[1]", "[1,2]")),
-      twice(answered("[1]", "[1,2]")),
+      { ...guarded, cases: [{ input: "[foo]: /url" }] },
+      twice(answered("threw")),
+      twice(answered('{"identical":true}')),
+      keep,
+    );
+    expect(classified.map((one) => [one.reading, one.role])).toEqual([["base-raised", null]]);
+  });
+
+  it("keeps a requirement case the reviewer's reading, never a finding (svgo, development launch 1)", () => {
+    // The reviewer expected true; the base, the candidate and the reference all answer false,
+    // because its input spelled a tab as a backslash and a t.
+    const whitespace: ReviewProbe = {
+      ...strict,
+      id: "whitespace-in-scheme",
+      cases: [{ input: { value: "java\\tscript:alert(1)" }, expected: true }],
+    };
+    const classified = classifyProbe(
+      whitespace,
+      twice(answered("false")),
+      twice(answered("false")),
     );
     expect(classified.map((one) => [one.reading, one.role])).toEqual([
-      ["missed-requirement", "requested"],
-      ["met", "kept"],
+      ["missed-requirement", null],
     ]);
-    const broken = classifyProbe(
-      strict,
-      twice(answered("[1]", "[1,2]")),
-      twice(answered("threw", "[2]")),
-    );
-    expect(broken.map((one) => [one.reading, one.role])).toEqual([
-      ["met", "requested"],
-      ["preservation-regression", "kept"],
+    expect(establishedReadings.has("missed-requirement")).toBe(false);
+    expect(
+      classifyProbe(strict, twice(answered("[1]", "[1,2]")), twice(answered("[1]", "[1,2]"))).map(
+        (one) => [one.reading, one.role],
+      ),
+    ).toEqual([
+      ["missed-requirement", null],
+      ["met", null],
     ]);
   });
 
-  it("reads a probe the base answers and the candidate no longer loads as a regression", () => {
-    const lost = classifyProbe(
-      preserve,
-      twice(answered("[1,2]", "[1]")),
-      twice({ kind: "did-not-load", detail: "does not provide an export named parse" }),
-    );
-    expect(lost.map((one) => [one.reading, one.role, one.base])).toEqual([
+  it("reads a probe the base answers and the candidate no longer loads as a regression only under a stated obligation and a runnable candidate", () => {
+    const gone = twice({
+      kind: "did-not-load",
+      detail: "does not provide an export named parse",
+    } as const);
+    expect(
+      classifyProbe(guarded, twice(answered("[1,2]", "[1]")), gone, keep).map((one) => [
+        one.reading,
+        one.role,
+        one.base,
+      ]),
+    ).toEqual([
       ["preservation-regression", "kept", "[1,2]"],
       ["preservation-regression", "kept", "[1]"],
+    ]);
+    expect(
+      classifyProbe(preserve, twice(answered("[1,2]", "[1]")), gone).map((one) => one.reading),
+    ).toEqual(["difference", "difference"]);
+    // A static check failed in a new way on the candidate, a build among them: the probe may be
+    // reading output that was never built, so its silence is no finding.
+    expect(
+      classifyProbe(guarded, twice(answered("[1,2]", "[1]")), gone, keep, false).map((one) => [
+        one.reading,
+        one.role,
+      ]),
+    ).toEqual([
+      ["did-not-load", null],
+      ["did-not-load", null],
     ]);
   });
 
@@ -168,20 +232,26 @@ describe("what a probe's cases establish", () => {
   it("establishes nothing where two runs disagree, the program raised, or nothing answered", () => {
     expect(
       classifyProbe(
-        preserve,
+        guarded,
         [answered("[1,2]", "[1]"), answered("[1,2]", "[2]")],
         twice(answered("[1,2]", "[1]")),
+        keep,
       ).map((one) => one.reading),
     ).toEqual(["kept", "unstable"]);
     expect(
-      classifyProbe(preserve, twice(answered("raised", "[1]")), twice(answered("raised", "[1]")))[0]
-        ?.reading,
+      classifyProbe(
+        guarded,
+        twice(answered("raised", "[1]")),
+        twice(answered("raised", "[1]")),
+        keep,
+      )[0]?.reading,
     ).toBe("defective-program");
     expect(
       classifyProbe(
-        preserve,
+        guarded,
         twice({ kind: "did-not-load", detail: "SyntaxError" }),
         twice(answered("[1,2]", "[1]")),
+        keep,
       ).map((one) => [one.reading, one.role]),
     ).toEqual([
       ["did-not-load", null],
@@ -191,39 +261,42 @@ describe("what a probe's cases establish", () => {
 });
 
 describe("the review's readings as ratchet parts", () => {
-  it("holds kept cases as a part and the reviewer's requested cases as a claim", () => {
+  it("holds only kept cases a stated obligation covers, and no claim", () => {
     const classified = [
       ...classifyProbe(
-        preserve,
+        guarded,
         twice(answered("[1,2]", "[1]")),
-        twice(answered("[1,2]", "threw")),
+        twice(answered("[1,2]", "[2]")),
+        keep,
+      ),
+      ...classifyProbe(
+        { ...preserve, id: "unguarded" },
+        twice(answered("[1,2]", "[1]")),
+        twice(answered("[3]", "[1]")),
       ),
       ...classifyProbe(strict, twice(answered("[1]", "[1,2]")), twice(answered("[1]", "[1,2]"))),
     ];
     expect(reviewParts(classified)).toEqual({
-      parts: {
-        "default-parse: kept": "failed",
-        "strict-comma: requested": "failed",
-        "strict-comma: kept": "passed",
-      },
-      claims: ["strict-comma: requested"],
+      parts: { "default-parse: kept": "failed" },
+      claims: [],
     });
   });
 
   it("reads a later candidate under the roles the examination fixed, and fails a part that no longer answers", () => {
     const examined = classifyProbe(
-      preserve,
+      guarded,
       twice(answered("[1,2]", "[1]")),
       twice(answered("[1,2]", "threw")),
+      keep,
     );
     const repaired = remeasure(
-      [preserve],
+      [guarded],
       examined,
       new Map([["default-parse", twice(answered("[1,2]", "[1]"))]]),
     );
     expect(reviewParts(repaired).parts).toEqual({ "default-parse: kept": "passed" });
     const broken = remeasure(
-      [preserve],
+      [guarded],
       examined,
       new Map([["default-parse", twice({ kind: "did-not-load", detail: "x" })]]),
     );
@@ -232,32 +305,29 @@ describe("the review's readings as ratchet parts", () => {
 });
 
 describe("what the repair is told", () => {
-  it("names each finding's basis, input, expectation and where the expectation comes from", () => {
-    const findings = [
-      ...classifyProbe(
-        preserve,
-        twice(answered("[1,2]", "[1]")),
-        twice(answered("[1,2]", "threw")),
-      ),
-      ...classifyProbe(strict, twice(answered("[1]", "[1,2]")), twice(answered("[1]", "[1,2]"))),
-    ].filter(
-      (one) => one.reading === "preservation-regression" || one.reading === "missed-requirement",
-    );
+  it("names each finding's authority, input, observed expectation, answer, program and candidate", () => {
+    const findings = classifyProbe(
+      guarded,
+      twice(answered("[1,2]", "[1]")),
+      twice(answered("[1,2]", "threw")),
+      keep,
+    ).filter((one) => establishedReadings.has(one.reading));
     const brief = findingsBrief({
       task,
-      probes: [preserve, strict],
+      probes: [guarded],
       findings,
-      keepStatements: ["Without the option, parse() behaves as it does today."],
+      authorities: [keep],
+      candidate: "sha256:abc",
     });
     expect(brief).toContain(
-      "Probe default-parse, case 2 (preservation-regression): existing behaviour (parse without options); the expected answer is the base's, as observed.",
+      'Probe default-parse, case 2 (preservation-regression), under task-keep-1: "Without the option, parse() behaves as it does today.".',
     );
-    expect(brief).toContain("  expected: [1]");
-    expect(brief).toContain(
-      "the reviewer's reading of the task's words \"With strict: true, a trailing comma throws a SyntaxError\"",
-    );
-    expect(brief).toContain("leave the code as it is and say which");
-    expect(brief).toContain("Without the option, parse() behaves as it does today.");
+    expect(brief).toContain('  input: "[1,]"');
+    expect(brief).toContain("  expected (the base's answer, observed): [1]");
+    expect(brief).toContain('  your change gives: {"threw":true}');
+    expect(brief).toContain("read on the candidate sha256:abc");
+    expect(brief).toContain("Program of probe default-parse");
+    expect(brief).toContain("say which sentence asks for it");
   });
 
   it("gives the prose control's objections as claims nothing has run", () => {
@@ -271,17 +341,26 @@ describe("what the repair is told", () => {
 });
 
 describe("the review's probes as preservation obligations", () => {
-  it("keeps only cases that hold behaviour the base showed", () => {
+  it("keeps a preservation probe's cases with both trees' answers and the obligation it names", () => {
     const classified = [
-      ...classifyProbe(preserve, twice(answered("[1,2]", "[1]")), twice(answered("[1,2]", "[1]"))),
+      ...classifyProbe(
+        guarded,
+        twice(answered("[1,2]", "[1]")),
+        twice(answered("[1,2]", "[1]")),
+        keep,
+      ),
       ...classifyProbe(strict, twice(answered("[2]", "[3]")), twice(answered("[1]", "[1,2]"))),
     ];
-    expect(probeObligations({ probes: [preserve, strict], classified })).toEqual([
+    expect(probeObligations({ probes: [guarded, strict], classified }, [keep])).toEqual([
       {
         probe: "default-parse",
         statement: "parse without options",
         quote: null,
-        readings: ["kept", "kept"],
+        obligation: "task-keep-1",
+        cases: [
+          { index: 1, input: "[1,2]", base: "[1,2]", candidate: "[1,2]", reading: "kept" },
+          { index: 2, input: "[1,]", base: "[1]", candidate: "[1]", reading: "kept" },
+        ],
       },
     ]);
   });

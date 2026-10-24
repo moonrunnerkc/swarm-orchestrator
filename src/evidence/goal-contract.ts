@@ -18,6 +18,14 @@ export const goalContractSchema = z.strictObject({
         /** The checks that decide this requirement. Empty leaves it unjudged. */
         checks: z.array(id),
         /**
+         * What the requirement is about (preservation-obligations-v2): `change`, behaviour the
+         * task adds or alters, or `preserve`, existing behaviour the task requires kept. Only a
+         * `preserve` requirement is reported as preserved behaviour; absent reads as `change`, so
+         * a passing new feature is never counted as something the change kept. Additive: a
+         * contract without it digests as before.
+         */
+        intent: z.enum(["change", "preserve"]).optional(),
+        /**
          * Present on a requirement a planner read from the task rather than one the user supplied.
          * Its generated checks are diagnostics: they run wherever the contract is judged, their
          * results are recorded and reported, and they drive repair, but they never decide the

@@ -345,10 +345,12 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
     // review's and the outcomes' follow-up together, so the review does not cost the follow-up
     // its attempt under the same cap.
     let carried: readonly OwedWork[] = pendingOwed.slice(0, 1);
-    // The review asks once a finished candidate is green: after the task's own continuation,
-    // which may still change what it would read, and before the follow-up on outcomes.
+    // The review asks once a finished candidate runs (`reviewable`), green or with only a static
+    // check failing: after the task's own continuation, which may still change what it would
+    // read, and before the follow-up on outcomes. A lint finding does not stop the candidate from
+    // running, so it does not withhold the semantic review; its findings travel with the failure.
     if (
-      isGreen(cycle) &&
+      reviewable(cycle) &&
       deps.review !== undefined &&
       !reviewExamined &&
       carried[0]?.kind !== "continuation"
@@ -366,6 +368,19 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
         owed.push(entry);
         owedStates.set("review", { state: "pending" });
         carried = [entry, ...pendingOwed.filter((one) => one.kind === "outcomes")];
+        // A candidate reviewed with a static check failing carries that failure into the same
+        // attempt: the brief names both, and the cycle after it measures both.
+        if (!isGreen(cycle))
+          carried = [
+            {
+              ...entry,
+              work: {
+                identity: entry.work.identity,
+                brief: `${entry.work.brief}\n\nThe checks also report these failures on the same candidate:\n${describeFailuresForModel(cycle)}`,
+              },
+            },
+            ...carried.slice(1),
+          ];
       }
     }
     const next: OwedWork | undefined =
@@ -549,8 +564,8 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
     reviewExamination = await deps.review.withhold(
       deps.abortSignal?.aborted === true
         ? "model work ended before the review could be asked"
-        : !isGreen(cycle)
-          ? "the gates were not green when the attempts ended, so there was no candidate to review"
+        : !reviewable(cycle)
+          ? "the candidate never ran with only static checks failing: its tests did not execute the change, or a check that runs the code, a policy check or a stood-down command blocked it"
           : `no attempt was left under the cap of ${deps.cap} for what a review could find`,
     );
 
@@ -1030,6 +1045,31 @@ export function gatesTheHarnessCouldNotRun(cycle: GateCycle): ReadonlyMap<string
     )
       notRun.set(run.gateId, run.observation.unavailable);
   return notRun;
+}
+
+/**
+ * Whether a candidate can be reviewed (candidate-review-v2): something that runs the code executed
+ * the change, and no blocking failure says the code failed when it ran. A static check (lint,
+ * format, typecheck, a build) does not stop the candidate from running. Nor does a gate that runs
+ * code and names its own checks as parts, every one of which passed: it failed on something
+ * outside them, as task acceptance does when the suite's regression reading counts a lint finding
+ * the change added. A failing test, a policy failure or a blocking command gate that stood down
+ * leaves no candidate whose behaviour a probe should read.
+ */
+export function reviewable(cycle: GateCycle): boolean {
+  const ranAndPassedItsOwnChecks = (run: GateCycle["runs"][number]) =>
+    Object.keys(run.parts).length > 0 &&
+    Object.values(run.parts).every((status) => status === "passed");
+  return (
+    executedTheChange(cycle) &&
+    cycle.blockingFailures.every(
+      (run) => run.capability === "static" || ranAndPassedItsOwnChecks(run),
+    ) &&
+    !cycle.runs.some(
+      (run) =>
+        run.kind === "command" && run.severity === "blocking" && run.status === "not-applicable",
+    )
+  );
 }
 
 /**
