@@ -69,3 +69,29 @@ it("stops repair where every failing gate says its failures are held checks", ()
     classifyRepair(cycle([failing("diagnostics", { unrepairable: 1 }), failing("tests", {})])).kind,
   ).toBe("implementation");
 });
+
+it("repairs a lint finding beside an acceptance reading the change left unmeasured, and stops on setup", () => {
+  const failing = (gateId: string, stderr: string) =>
+    ({
+      gateId,
+      kind: "inspection",
+      capability: "dynamic",
+      severity: "blocking",
+      status: "failed",
+      detail: "",
+      measures: {},
+      parts: {},
+      observation: { exitCode: 1, stdout: "", stderr, durationMs: 0, unavailable: null },
+    }) as unknown as GateCycle["runs"][number];
+  const cycle = (runs: GateCycle["runs"]) =>
+    ({ runs, blockingFailures: runs }) as unknown as GateCycle;
+  const lint = failing("lint", "[warn] test/query.test.ts");
+  expect(
+    classifyRepair(
+      cycle([lint, failing("task-acceptance", "regression unmeasured: a check fails at the base")]),
+    ).kind,
+  ).toBe("implementation");
+  expect(
+    classifyRepair(cycle([lint, failing("task-acceptance", "setup unavailable: no runner")])).kind,
+  ).toBe("setup");
+});

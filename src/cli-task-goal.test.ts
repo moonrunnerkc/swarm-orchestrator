@@ -268,6 +268,41 @@ describe("what the acceptance gate makes of a verification", () => {
   it("does not ask for a repair over a generated check that could not run", () => {
     expect(readAcceptance(contract, verification("accepted", "unjudged")).passes).toBe(true);
   });
+
+  // The fresh block's ufo candidates: the supplied check passed, and the lint ufo's base already
+  // fails gave other output, because the change added findings to it. That left regression
+  // unmeasured, which read as setup and stopped every repair.
+  it("reads a regression left unmeasured by a base-failing check's changed output as no setup problem", () => {
+    const unattributed = {
+      ...verification("accepted", "accepted"),
+      unmeasured: true,
+      regression: "unmeasured",
+      install: { succeeded: true },
+      checks: [{ attribution: "unattributed" }, { attribution: "none" }],
+    };
+    expect(readAcceptance(contract, unattributed)).toMatchObject({
+      passes: false,
+      unavailable: true,
+      regressionUnmeasured: true,
+    });
+    // A failed install, or a deciding check that could not run, is setup as before.
+    expect(
+      readAcceptance(contract, { ...unattributed, install: { succeeded: false } })
+        .regressionUnmeasured,
+    ).toBe(false);
+    expect(
+      readAcceptance(contract, {
+        ...unattributed,
+        ...verification("unjudged", "accepted"),
+        unmeasured: true,
+        checks: unattributed.checks,
+      }).regressionUnmeasured,
+    ).toBe(false);
+    expect(
+      readAcceptance(contract, { ...unattributed, checks: [{ attribution: "none" }] })
+        .regressionUnmeasured,
+    ).toBe(false);
+  });
 });
 
 describe("run_check's own diagnostic program", () => {

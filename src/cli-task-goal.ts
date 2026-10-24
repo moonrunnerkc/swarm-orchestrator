@@ -422,6 +422,9 @@ export function taskGoalGates(context: TaskGoalContext): {
     const reading = readAcceptance(context.contract, result);
     // A refusal is a decision against the change and reads as one; an unmeasured setup is
     // something to prepare. The repair feedback is this text, so the two must not be confused.
+    // Nor may a regression reading the change itself left unmeasured read as setup: the repair
+    // policy stops on setup, and the fresh block's ufo candidates were refused with every repair
+    // attempt unused over lint findings they had added.
     // The findings again as plain lines: inside the JSON above, a check's detail reaches the
     // repair brief escaped, and a worker reads the line it got wrong more easily here.
     const failed = (result.goalAcceptance?.checkResults ?? [])
@@ -447,9 +450,11 @@ export function taskGoalGates(context: TaskGoalContext): {
       stderr:
         result.refusal !== null && !result.unmeasured
           ? `refused: ${result.refusal}`
-          : reading.unavailable
-            ? `setup unavailable: ${result.advice || result.refusal || "required acceptance instrument is unmeasured"}`
-            : failed.join("\n"),
+          : reading.regressionUnmeasured
+            ? `regression unmeasured: ${result.advice}`
+            : reading.unavailable
+              ? `setup unavailable: ${result.advice || result.refusal || "required acceptance instrument is unmeasured"}`
+              : failed.join("\n"),
     };
   });
   const diagnostic = diagnosticChecks(context.contract);
@@ -672,6 +677,8 @@ export function readAcceptance(
     readonly unmeasured: boolean;
     readonly refusal: string | null;
     readonly regression: string;
+    readonly checks?: readonly { readonly attribution?: string }[];
+    readonly install?: { readonly succeeded: boolean } | null;
     readonly goalAcceptance?: {
       readonly obligations: readonly { readonly id: string; readonly status: string }[];
       readonly checkResults?: readonly { readonly id: string; readonly status: string }[];
@@ -680,6 +687,12 @@ export function readAcceptance(
 ): {
   readonly passes: boolean;
   readonly unavailable: boolean;
+  /**
+   * The reading is unavailable only because a check that fails on the base too gave output the
+   * change altered, so whether the change added a failure inside it is unmeasured. That is not a
+   * missing tool, and the change can be repaired toward the base's output.
+   */
+  readonly regressionUnmeasured: boolean;
   readonly diagnostic: ReadonlySet<string>;
 } {
   const diagnostic = diagnosticChecks(contract);
@@ -689,10 +702,15 @@ export function readAcceptance(
   const obligations = (result.goalAcceptance?.obligations ?? []).filter((one) =>
     decided.has(one.id),
   );
-  const unavailable =
-    result.unmeasured ||
-    result.goalAcceptance === undefined ||
-    obligations.some((one) => one.status === "unjudged");
+  const unjudged =
+    result.goalAcceptance === undefined || obligations.some((one) => one.status === "unjudged");
+  const unavailable = result.unmeasured || unjudged;
+  const regressionUnmeasured =
+    result.unmeasured &&
+    !unjudged &&
+    result.refusal === null &&
+    result.install?.succeeded !== false &&
+    (result.checks ?? []).some((check) => check.attribution === "unattributed");
   return {
     passes:
       result.refusal === null &&
@@ -700,6 +718,7 @@ export function readAcceptance(
       result.regression === "pass" &&
       obligations.every((one) => one.status === "accepted"),
     unavailable,
+    regressionUnmeasured,
     diagnostic,
   };
 }
