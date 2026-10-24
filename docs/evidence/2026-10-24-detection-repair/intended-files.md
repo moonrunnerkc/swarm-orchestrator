@@ -54,3 +54,6 @@ before it is edited.
   `scripts/comparison/starting-candidate.mjs` with its test. A registered launch may start from a
   frozen retained candidate, which both arms of a cell receive. This is the setting the
   development set and the matched study need.
+- October 24, before editing it: `scripts/comparison/run.test.mjs`. Its stall test measured the
+  deadline from the endpoint's receipt of a request, which comes just after the arm announces it.
+  The push CI run at `8405f69ce` read 1,983 ms against a 2,000 ms floor.
