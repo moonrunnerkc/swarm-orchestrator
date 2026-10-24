@@ -205,4 +205,4 @@ node scripts/evidence-pack.mjs restore docs/evidence/2026-10-24-delivery-preserv
 The session ledgers, manifests and configurations of all eleven launches are archived on the branch
 `evidence/2026-10-24-delivery-preservation-sessions`
 (`delivery-preservation-sessions.tar.xz`, sha256
-`9e844491cfad61fe5077a303a881a878f197f126dfe50a75e72497157f6815d6`).
+`3456a92a0fa43306b55a8190a4065754d956859846a1b338a17ebb57f149c023`).
