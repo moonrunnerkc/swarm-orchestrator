@@ -14,6 +14,13 @@ export interface SetupEffect {
   readonly directory?: string;
   readonly networkProbe?: OfflineProof;
   readonly toolDirectory?: string;
+  /**
+   * Files the command's own tool rewrites as a documented side effect, which setup must leave as
+   * they were: npm updates a `yarn.lock` beside the `package-lock.json` it installs from. Their
+   * bytes are written back after the command, before the source is compared, and the record
+   * names each one that differed. Any other change still fails setup.
+   */
+  readonly keep?: readonly string[];
   readonly describe: (outcome: {
     readonly observed: GateObservation;
     readonly succeeded: boolean;

@@ -60,6 +60,13 @@ Source on `v13-main`; not published until a release names it.
 - The ratchet compares parts under a key that is no gate, as the bundled verifier already did.
 - `swarm check` no longer refuses a project whose `yarn.lock` sits beside a `package-lock.json` or
   `pnpm-lock.yaml`; only a project whose one lockfile is yarn's or bun's is out of its reach.
+- A directory a check's command names (`prettier -c src test`) no longer reads as a changed
+  instrument file. The base side printed the directory's listing where the checkout read nothing,
+  so an unchanged tree's pass was withheld, and putting the directory back stopped the run before
+  its first model call.
+- `--install` from a `package-lock.json` no longer fails on the `yarn.lock` npm rewrites beside
+  it (npm does so even with `--no-save`). That file's bytes are put back and the install record
+  names it under `restored`; any other source change still fails setup.
 
 - **Experimental, off by default: `--repair-trace` (preservation-trace-v1).** Where a failing gate
   passed in the harness's own run over the base, the repair attempt is told so with the

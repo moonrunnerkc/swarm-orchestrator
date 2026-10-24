@@ -331,6 +331,51 @@ describe("deferred setup after the scripts-off install", () => {
     expect(observed.detail).toContain("changed source files");
   });
 
+  // nanoid keeps a yarn.lock beside the package-lock.json npm installs from, and npm rewrites it
+  // on every install, `--no-save` included; setup refused the fresh checkout before a model call.
+  it("puts back the yarn.lock npm rewrites beside its own lockfile, and records it", async () => {
+    await writeFile(join(workspace, "yarn.lock"), "# yarn lockfile v1\n");
+    const options = await settings();
+    const { commands } = scripted(async (argv) => {
+      if (argv[1] === "ci") await writeFile(join(workspace, "yarn.lock"), "# rewritten by npm\n");
+      return ok();
+    });
+    const observed = await installFromLockfile({
+      ...options,
+      commands,
+      probeNetwork: refused,
+      lockfile: "package-lock.json",
+    });
+    expect(observed.succeeded).toBe(true);
+    expect(observed.detail).toContain("yarn.lock rewritten by the installer was put back");
+    expect(await readFile(join(workspace, "yarn.lock"), "utf8")).toBe("# yarn lockfile v1\n");
+    expect(
+      payloads(options.evidence).find(
+        (payload) => (payload as { phase?: string }).phase === "completed",
+      ),
+    ).toMatchObject({ restored: ["yarn.lock"], succeeded: true });
+  });
+
+  it("still fails setup where the install changes any other source file", async () => {
+    await writeFile(join(workspace, "yarn.lock"), "# yarn lockfile v1\n");
+    const options = await settings();
+    const { commands } = scripted(async (argv) => {
+      if (argv[1] === "ci") {
+        await writeFile(join(workspace, "yarn.lock"), "# rewritten by npm\n");
+        await writeFile(join(workspace, "package.json"), "{}\n");
+      }
+      return ok();
+    });
+    const observed = await installFromLockfile({
+      ...options,
+      commands,
+      probeNetwork: refused,
+      lockfile: "package-lock.json",
+    });
+    expect(observed.succeeded).toBe(false);
+    expect(observed.detail).toContain("changed source files");
+  });
+
   it("keeps the pnpm it fetched for the install and names its directory for the checks' PATH", async () => {
     await rm(join(workspace, "package-lock.json"));
     await writeFile(join(workspace, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
