@@ -2030,8 +2030,10 @@ describe("bounded repair finishing", () => {
       expect(result.green).toBe(false);
       expect(readFileSync(join(workspace, "src/greet.js"), "utf8")).toBe(broken);
       expect(result.gates.outcome.attempts).toHaveLength(1);
+      // A check that rewrites its input has its write put back (gate-side-effects.ts), so the
+      // observation of the candidate stands and the finish is dispatched, as for any other.
       expect(evidence.records().filter((r) => r.type === "model-call")).toHaveLength(
-        condition === "ineffective finish" ? 6 : 5,
+        condition === "step limit" ? 5 : 6,
       );
       const finishes = evidence
         .records()
@@ -2039,11 +2041,7 @@ describe("bounded repair finishing", () => {
         .map((r) => evidence.payloads().get(r.payloadDigest) as Record<string, unknown>)
         .filter((p) => p.rule === "repair-finish-v1");
       if (condition === "step limit") expect(finishes).toHaveLength(0);
-      else
-        expect(finishes[0]).toMatchObject({
-          stale: condition === "stale observation",
-          dispatched: condition !== "stale observation",
-        });
+      else expect(finishes[0]).toMatchObject({ stale: false, dispatched: true });
     },
     60000,
   );
