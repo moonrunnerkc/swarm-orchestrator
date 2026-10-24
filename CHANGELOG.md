@@ -58,6 +58,8 @@ Source on `v13-main`; not published until a release names it.
   `pnpm test`) was read as no package script at all. That left a `test` script replaced by an
   echo of a passing summary outside the instrument of every check spelled that way.
 - The ratchet compares parts under a key that is no gate, as the bundled verifier already did.
+- `swarm check` no longer refuses a project whose `yarn.lock` sits beside a `package-lock.json` or
+  `pnpm-lock.yaml`; only a project whose one lockfile is yarn's or bun's is out of its reach.
 
 - **Experimental, off by default: `--repair-trace` (preservation-trace-v1).** Where a failing gate
   passed in the harness's own run over the base, the repair attempt is told so with the

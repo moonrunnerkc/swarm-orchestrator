@@ -174,4 +174,12 @@ describe("planning a check from a project's files", () => {
     const plan = await planCheck({ workspace: root, path: await toolPath() });
     expect(plan.prerequisites[0]?.what).toContain("yarn.lock");
   });
+
+  it("drives a project whose yarn.lock sits beside an npm lockfile", async () => {
+    await write("package.json", '{"scripts":{"test":"node --test"}}');
+    await write("yarn.lock", "");
+    await write("package-lock.json", '{"lockfileVersion":3,"packages":{}}');
+    const plan = await planCheck({ workspace: root, path: await toolPath() });
+    expect(plan.prerequisites.map((one) => one.what).join("\n")).not.toContain("yarn.lock");
+  });
 });
