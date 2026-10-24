@@ -6,7 +6,8 @@
 //   the task's own runner. File level: a changed test file that fails on base source is taken as
 //   carrying a test that fails without the change.
 // - complete: hidden pass, visible check and project tests pass, lint passes where the base passes
-//   it (the runner's static reading), and requested tests as above.
+//   it (the runner's static reading: no failure the base did not have), and requested tests as
+//   above.
 // - the review's attempt: the runner's own snapshot of the candidate before the attempt the
 //   product recorded as the review's (`candidate-review-attempt-v1`), and the delivered patch, each
 //   scored by the hidden evaluator through rescore.mjs, so a gain, damage or no change is measured.
@@ -147,6 +148,7 @@ function hidden(task, arm, patch, name) {
     hidden: read.hiddenOverlay?.verdict ?? null,
     delivered: read.deliveredTree?.passed ?? null,
     static: read.staticReading?.passed ?? null,
+    staticIntroduced: read.staticReading?.introducedFailure ?? null,
     harnessLockfile: read.harnessLockfile ?? null,
   };
 }
@@ -191,14 +193,21 @@ for (const record of records) {
     : {
         hidden: { verdict: corrected?.hidden ?? null },
         visible: { passed: corrected?.delivered ?? null },
-        static: { passed: corrected?.static ?? null },
+        static: {
+          passed: corrected?.static ?? null,
+          introducedFailure: corrected?.staticIntroduced ?? null,
+        },
       };
+  // Lint counts only where the base passes it: a failure the base already has is not the change's.
   const isComplete = (reading) =>
-    reading.hidden === "pass" && reading.visible === true && reading.static !== false && tests.sensitive;
+    reading.hidden === "pass" &&
+    reading.visible === true &&
+    reading.lintIntroduced !== true &&
+    tests.sensitive;
   const complete = isComplete({
     hidden: scores.hidden.verdict,
     visible: scores.visible.passed,
-    static: scores.static?.passed,
+    lintIntroduced: scores.static?.introducedFailure,
   });
   const review = record.arm.startsWith("swarm") ? reviewAttempt(record) : null;
   let reviewEffect = null;
@@ -229,6 +238,7 @@ for (const record of records) {
     hidden: scores.hidden.verdict,
     visible: scores.visible.passed,
     static: scores.static?.passed ?? null,
+    lintIntroduced: scores.static?.introducedFailure ?? null,
     requestedTests: tests,
     complete,
     correctedScorer:
@@ -239,7 +249,7 @@ for (const record of records) {
             complete: isComplete({
               hidden: corrected.hidden,
               visible: corrected.delivered,
-              static: corrected.static,
+              lintIntroduced: corrected.staticIntroduced,
             }),
           },
     productAcceptable: record.invocation?.productVerdict?.acceptable ?? null,
