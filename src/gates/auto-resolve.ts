@@ -95,6 +95,11 @@ export interface CandidateReviewHook {
   }>;
   /** Records why the review was never asked, and returns that record. */
   readonly withhold: (reason: string) => Promise<string>;
+  /**
+   * Called when the ratchet keeps the candidate last measured, so the review's readings for the
+   * report are the delivered candidate's, never a rolled-back one's. Absent, nothing is adopted.
+   */
+  readonly adopt?: () => void;
 }
 
 /**
@@ -557,7 +562,10 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
     cycle = candidateCycle;
     baseline = candidate;
     rejected = null;
-    if (reviewNow !== null && reviewNow !== undefined) reviewReading = reviewNow;
+    if (reviewNow !== null && reviewNow !== undefined) {
+      reviewReading = reviewNow;
+      deps.review?.adopt?.();
+    }
   }
 
   if (deps.review !== undefined && !reviewExamined)

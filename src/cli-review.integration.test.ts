@@ -794,6 +794,37 @@ describe("requested behaviour the task states, measured and repaired", () => {
     await independentlyChecked(result.bundleDirectory ?? "");
   }, 240_000);
 
+  it("a repair the ratchet rolls back leaves the delivered candidate's readings in the report", async () => {
+    // The repair fixes the relation and breaks the visible example, so the gates refuse it, and
+    // the delivered tree is the first candidate: what is reported is what that tree does.
+    const brokenRepair = dropCorrect.replace(
+      "filter(([key, value]) => keep(key, value))",
+      "filter(() => true)",
+    );
+    const { result, stdout, directory } = await swarm(
+      dropTask,
+      dropCheck,
+      roles({
+        worker: [declare(["query.mjs"]), write("query.mjs", dropVerbatim)],
+        reviewer: { probes: [] },
+        repair: [write("query.mjs", brokenRepair)],
+      }),
+      "executable",
+      baseTest,
+      dropWorkspace,
+    );
+    expect(result.outcome?.review?.attempt, stdout.slice(-3000)).toMatchObject({
+      state: "given",
+      accepted: false,
+    });
+    expect(readFileSync(join(directory, "query.mjs"), "utf8")).toBe(dropVerbatim);
+    expect(readingsOf(result)).toContain("code-relation-1#2 relation-violated");
+    expect(
+      (result.outcome?.preservation ?? []).find((one) => one.id === "code-relation-1")?.status,
+    ).toBe("unmet");
+    await independentlyChecked(result.bundleDirectory ?? "");
+  }, 240_000);
+
   it("a reviewer's relation over an existing function finds a callback called twice, and the repair fixes it", async () => {
     const { result, stdout, directory } = await swarm(
       dropTask,
