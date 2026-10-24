@@ -144,13 +144,35 @@ export interface RunOutcomeReport {
   readonly deliveredPatch?: string;
   /** Added in 14.6.0, experimental: the review of the candidate, where `--review` asked for one. */
   readonly review?: {
-    readonly mode: "executable" | "prose";
+    readonly mode: "grounded" | "executable" | "prose";
     /** The examination's record, or null where the review never examined. */
     readonly examination: string | null;
-    /** The attempt its findings were owed, or null where none was. */
+    /** The last attempt its findings were owed, or null where none was. */
     readonly attempt: unknown;
     readonly probes: readonly string[];
     readonly readings: readonly unknown[];
+    /**
+     * Added in 14.6.0: the validated counterexamples to the task open on the delivered candidate
+     * (known-violation-completion-v1). Any refuses the run.
+     */
+    readonly violations?: readonly string[];
+  };
+  /**
+   * Added in 14.6.0: tests the worker deleted or changed during the run, as they last stood, run
+   * again on the delivered candidate (test-retention-v1). Model-written expectations: an open one
+   * is reported and never refuses. Present where the run kept any.
+   */
+  readonly retained?: {
+    readonly record: string;
+    readonly open: readonly string[];
+    readonly cases: readonly {
+      readonly identity: string;
+      readonly kind: string;
+      readonly state: string;
+      readonly reason: string;
+    }[];
+    /** The last attempt owed on open retained tests, or null where none was. */
+    readonly attempt: unknown;
   };
   /**
    * Added in 14.5.0: requested outcomes the planner identified from the task (a requirement, the

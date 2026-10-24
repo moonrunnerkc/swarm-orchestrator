@@ -59,11 +59,12 @@ export interface RunCommand {
   /** Experimental: one decision point per loop over its working state (adaptive-decision-v2). */
   readonly adaptive?: boolean;
   /**
-   * Experimental (candidate-review-v1): once the gates are green, a separate review of the
-   * candidate whose findings are owed one attempt. `executable` runs its probes; `prose` is the
-   * control with the same conversation and attempt and nothing run.
+   * Experimental (candidate-review-v4): once the gates are green, a review of the candidate whose
+   * established findings are owed an attempt. `grounded` runs only the harness's checks of the
+   * task's own code, with no reviewer; `executable` adds a reviewer asked about the sentences those
+   * checks do not reach; `prose` is the control with a reviewer's objections and nothing run.
    */
-  readonly review?: "executable" | "prose";
+  readonly review?: "grounded" | "executable" | "prose";
   /** The worker's system prompt. Absent is the historical default, `legacy`. */
   readonly promptProfile?: "legacy" | "concise";
   readonly installDependencies?: boolean;
@@ -367,9 +368,11 @@ export const usage = [
   "  --adaptive                  experimental: one decision point per loop reads its working state and",
   "                              may retrieve, diagnose or run a distinguishing command, then looks at",
   "                              whether that led anywhere and may reassess once, within its budget",
-  "  --review executable|prose   experimental: once the gates are green, a separate review of the change;",
-  "                              executable runs its probes on the base and the change, prose only",
-  "                              objects; findings get one attempt and never decide acceptance (needs",
+  "  --review grounded|executable|prose",
+  "                              experimental: once the gates are green, a review of the change;",
+  "                              grounded runs the task's own code on the base and the change with no",
+  "                              reviewer, executable adds a reviewer's probes for what that code does",
+  "                              not reach, prose only objects; findings are owed attempts (needs",
   "                              --goal-contract or --plan-checks)",
   "  --repair-trace              experimental: a repair of a check the base passed traces one preserved",
   "                              case on the base and the workspace through run_check before editing",
@@ -720,8 +723,13 @@ function commandFrom(
   if (goalContract !== undefined && goalContract.trim().length === 0)
     throw invalid("--goal-contract needs the path of a sealed goal contract file");
   const review = flags.get("review");
-  if (review !== undefined && review !== "executable" && review !== "prose")
-    throw invalid("--review must be executable or prose");
+  if (
+    review !== undefined &&
+    review !== "grounded" &&
+    review !== "executable" &&
+    review !== "prose"
+  )
+    throw invalid("--review must be grounded, executable or prose");
   if (review !== undefined && goalContract === undefined && !flags.has("plan-checks"))
     throw invalid(
       "--review needs --goal-contract or --plan-checks: its probes run on fresh checkouts the way the sealed checks do",

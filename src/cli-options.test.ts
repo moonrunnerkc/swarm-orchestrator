@@ -825,6 +825,6 @@ it("keeps the candidate review opt-in and tied to checks it can run beside", () 
     "--review needs --goal-contract or --plan-checks",
   );
   expect(() => parseRun(["fix it", "--review", "judge", "--plan-checks"])).toThrow(
-    "--review must be executable or prose",
+    "--review must be grounded, executable or prose",
   );
 });

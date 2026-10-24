@@ -1,5 +1,11 @@
 #!/usr/bin/env node
-import { type createCandidateReview, probeObligations, reviewRule } from "./agent-review.ts";
+import {
+  caseIdentity,
+  type createCandidateReview,
+  probeObligations,
+  reviewRule,
+  validatedViolations,
+} from "./agent-review.ts";
 import {
   createTrialLog,
   reviewGrounding,
@@ -507,7 +513,12 @@ async function run(options: RunCommand): Promise<number> {
         rule: reviewRule,
         phase: "declared",
         mode: options.review,
-        note: "experimental: once the gates are green, one review of the candidate; established findings are owed one attempt from the cap, probe kept cases are ratchet parts, and nothing it finds decides acceptance",
+        note:
+          options.review === "grounded"
+            ? "experimental: once the gates are green, the harness runs the task's own code on the base and the candidate with no reviewer; established cases are owed attempts from the cap while they stay open and an attempt makes progress, every held case is a ratchet part, and an open validated counterexample refuses completion under known-violation-completion-v1"
+            : options.review === "executable"
+              ? "experimental: once the gates are green, the harness runs the task's own code, then a reviewer is asked only about the task's sentences that code does not reach; established cases are owed attempts from the cap while they stay open and an attempt makes progress, every held case is a ratchet part, and only a validated counterexample of the task's own code refuses completion"
+              : "experimental: once the gates are green, one prose review of the candidate; its objections are owed one attempt from the cap, nothing is run, and nothing it raises decides acceptance",
       },
     });
   // Filled in by the run once the review has examined; read back for the report.
@@ -1160,6 +1171,29 @@ async function run(options: RunCommand): Promise<number> {
                     attempt: gates.outcome.review ?? null,
                     probes: reviewState.readings?.probes.map((one) => one.id) ?? [],
                     readings: reviewState.readings?.classified ?? [],
+                    violations:
+                      reviewState.readings === null
+                        ? []
+                        : validatedViolations(
+                            reviewState.readings.probes,
+                            reviewState.readings.classified,
+                          ).map(caseIdentity),
+                  },
+                }),
+            ...(gates.outcome.retention == null ||
+            (gates.outcome.retention.cases.length === 0 && gates.outcome.retained == null)
+              ? {}
+              : {
+                  retained: {
+                    record: gates.outcome.retention.record,
+                    open: gates.outcome.retention.open,
+                    cases: gates.outcome.retention.cases.map((one) => ({
+                      identity: one.identity,
+                      kind: one.kind,
+                      state: one.state,
+                      reason: one.reason,
+                    })),
+                    attempt: gates.outcome.retained ?? null,
                   },
                 }),
           },
