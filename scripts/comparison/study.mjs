@@ -84,6 +84,7 @@ import { taskSchema } from "./schema.mjs";
 import { createStallWatch, inferenceDeadlineMs, pollStallWatch } from "./stall.mjs";
 import {
   cloneAtBase,
+  commitHarnessLockfile,
   commitVisibleCheck,
   declaredPackageManager,
   finalPatch,
@@ -385,6 +386,7 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
     // committed beside the visible check, so every arm installs the same versions, Swarm can
     // install from a fresh checkout, and the file is never part of an arm's change.
     const lockInput = manifest.harnessLockfiles?.[task.id];
+    let harnessLockBytes = null;
     if (lockInput !== undefined) {
       const found = resolveFrozenInput(manifest, lockInput);
       if (found === null)
@@ -392,31 +394,14 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
           "configuration",
           `the frozen lockfile ${lockInput.digest} for ${task.id} is not under the registered input roots`,
         );
-      writeFileSync(join(workspace, "package-lock.json"), found.bytes);
-      for (const argv of [
-        ["add", "--force", "package-lock.json"],
-        [
-          "-c",
-          "user.name=comparison",
-          "-c",
-          "user.email=comparison@localhost",
-          "commit",
-          "-qm",
-          "Lockfile the harness resolved for the task's base",
-        ],
-      ]) {
-        const ran = await log.run(["git", ...argv], { cwd: workspace, timeoutMs: 60_000 });
-        if (ran.exitCode !== 0)
-          throw new FatalError(
-            "preparation",
-            `committing the harness lockfile failed: ${ran.stderr.toString()}`,
-          );
-      }
-      base = (
-        await log.run(["git", "rev-parse", "HEAD"], { cwd: workspace, timeoutMs: 60_000 })
-      ).stdout
-        .toString()
-        .trim();
+      harnessLockBytes = found.bytes;
+      const committed = await commitHarnessLockfile(log, workspace, found.bytes);
+      if (committed.base === null)
+        throw new FatalError(
+          "preparation",
+          `committing the harness lockfile failed: ${committed.detail}`,
+        );
+      base = committed.base;
       record.harnessLockfile = { digest: lockInput.digest, base };
     }
     const prepared = await prepare(log, task, workspace);
@@ -448,6 +433,7 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
         pins,
         gatePlanHome,
         manifest.swarmGates?.[task.id] ?? {},
+        harnessLockBytes,
       );
       record.gatePlan = gatePlan;
       if (!gatePlan.ok)

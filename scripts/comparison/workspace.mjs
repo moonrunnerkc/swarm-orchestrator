@@ -163,6 +163,34 @@ export async function commitVisibleCheck(log, task, directory) {
   return (await git(log, directory, "rev-parse", "HEAD")).stdout.toString().trim();
 }
 
+/**
+ * The lockfile the harness resolved for a base that has none, committed beside the visible check
+ * so it is never part of an arm's change. Every tree prepared as a launch's workspace commits it
+ * the same way. Returns the new commit, or null where git refused.
+ */
+export async function commitHarnessLockfile(log, directory, bytes) {
+  writeFileSync(join(directory, "package-lock.json"), bytes);
+  for (const argv of [
+    ["add", "--force", "package-lock.json"],
+    [
+      "-c",
+      "user.name=comparison",
+      "-c",
+      "user.email=comparison@localhost",
+      "commit",
+      "-qm",
+      "Lockfile the harness resolved for the task's base",
+    ],
+  ]) {
+    const ran = await log.run(["git", ...argv], { cwd: directory, timeoutMs: 60_000 });
+    if (ran.exitCode !== 0) return { base: null, detail: ran.stderr.toString() };
+  }
+  return {
+    base: (await git(log, directory, "rev-parse", "HEAD")).stdout.toString().trim(),
+    detail: "",
+  };
+}
+
 /** The task's install argv list, in order; false with the failing step when one fails. */
 export async function prepare(log, task, directory, { timeoutMs = 900_000 } = {}) {
   for (const argv of task.install) {

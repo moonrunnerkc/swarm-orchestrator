@@ -105,3 +105,20 @@ Declared before editing:
 
 - `CHANGELOG.md`, `packages/swarm-verify/CHANGELOG.md`: the stage's entries (the verifier's for
   `rename-transport-v1`, the lifecycle alias and the review's owed-attempt rule).
+
+## Amendment 7, October 23, 2026, before editing these files
+
+Found by the fresh block's zero-inference preflight, which refused every Swarm launch of two of
+its three tasks:
+
+- `scripts/comparison/checks.mjs`, `scripts/comparison/study.mjs`, `scripts/comparison/workspace.mjs`:
+  the gate plan's tree did not commit the harness lockfile that the launch's workspace commits, so
+  every locked dependency read as one the change introduced, and the npm aliases in ufo's lockfile
+  (`string-width-cjs` and two more) read as dependencies from outside the registry. One helper now
+  commits the lockfile for both. The scoring trees are unchanged. A first attempt that read an
+  alias by its lockfile `name` was reverted: it would have weakened the check that refuses a
+  package renamed on the way in.
+- `src/gates/check-plan.ts` and its test: a tracked `yarn.lock` beside a `package-lock.json` (or
+  `pnpm-lock.yaml`) is not a project only yarn can drive, and `swarm check` no longer refuses it.
+  Installing is unchanged: `--install` with several lockfiles still needs `--lockfile` or a
+  `packageManager` declaration.

@@ -18,6 +18,7 @@ import { changePolicyVerdict, describePolicy } from "./change-policy.mjs";
 import {
   applyPatch,
   cloneAtBase,
+  commitHarnessLockfile,
   commitVisibleCheck,
   mirrorOf,
   prepare,
@@ -27,12 +28,25 @@ import {
   writeArmConfiguration,
 } from "./workspace.mjs";
 
-async function freshTree(log, task, base, patch, label) {
+async function freshTree(log, task, base, patch, label, harnessLock = null) {
   mkdirSync(workRoot, { recursive: true });
   const scratch = mkdtempSync(join(workRoot, `${label}-${task.id}-`));
   const checkout = join(scratch, "checkout");
   await cloneAtBase(log, task, base, checkout);
   await commitVisibleCheck(log, task, checkout);
+  if (
+    harnessLock !== null &&
+    (await commitHarnessLockfile(log, checkout, harnessLock)).base === null
+  )
+    return {
+      scratch,
+      checkout,
+      prepared: {
+        ok: false,
+        failed: ["git", "commit"],
+        detail: "the harness lockfile was not committed",
+      },
+    };
   if (!(await applyPatch(log, checkout, patch)))
     return {
       scratch,
@@ -164,7 +178,15 @@ export async function staticVerdict(log, task, base, patch) {
  * mismatch or a failing gate is the supervisor's configuration or environment, never the arm's
  * outcome, and stops the launch before it is dispatched.
  */
-export async function swarmGatePlanVerdict(log, task, base, pins, childHome, declaredGates = {}) {
+export async function swarmGatePlanVerdict(
+  log,
+  task,
+  base,
+  pins,
+  childHome,
+  declaredGates = {},
+  harnessLock = null,
+) {
   const expected = task.projectTest.join(" ");
   const verdict = (ok, detail, extra = {}) => ({
     ok,
@@ -175,7 +197,9 @@ export async function swarmGatePlanVerdict(log, task, base, pins, childHome, dec
     detail,
     ...extra,
   });
-  const tree = await freshTree(log, task, base, "", "gate-plan");
+  // The launch's workspace commits the harness lockfile before preparing, so this tree does too;
+  // without it every locked dependency reads as one the change introduced.
+  const tree = await freshTree(log, task, base, "", "gate-plan", harnessLock);
   try {
     if (!tree.prepared.ok)
       return verdict(
