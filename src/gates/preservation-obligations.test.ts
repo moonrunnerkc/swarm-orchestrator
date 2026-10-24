@@ -221,3 +221,17 @@ describe("what ran says about each obligation", () => {
     });
   });
 });
+
+it("does not read a sentence whose own code asks for a change as behaviour to keep", () => {
+  const task =
+    'Fix strip(input, prefix). When the prefix is not present, strip returns input unchanged (strip("/admin-x", "/admin") is "/admin-x"). Today strip("/admin-x", "/admin") returns "-x" unchanged as if it matched. What must not change: strip("/admin/y", "/admin") stays "/y".';
+  // The first two have keep wording ("unchanged") and only requested or today's examples.
+  expect(keepStatements(task)).toEqual([
+    'What must not change: strip("/admin/y", "/admin") stays "/y".',
+  ]);
+  expect(unclassifiedSentences(task)).toEqual([
+    "Fix strip(input, prefix).",
+    'When the prefix is not present, strip returns input unchanged (strip("/admin-x", "/admin") is "/admin-x").',
+    'Today strip("/admin-x", "/admin") returns "-x" unchanged as if it matched.',
+  ]);
+});
