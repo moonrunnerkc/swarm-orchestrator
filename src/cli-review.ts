@@ -405,20 +405,29 @@ export function reviewGrounding(
           return typeof version === "string" ? version : null;
         },
       });
-      const grounded = await groundLoader(candidates, async (program) => {
-        const observation = await programRun(context, directory, plannedCheckRunner, program, [
-          null,
-        ]);
-        const answers = readAnswers(observation.stdout, 1);
-        const first = answers?.[0];
-        if (first?.kind === "result") return { answer: JSON.parse(first.text) as unknown };
-        return { failed: readTrial(observation, 1).detail };
-      });
-      return {
-        loader: grounded.loader,
-        attempts: grounded.attempts,
-        statements: taskCodeStatements(task),
-      };
+      const statements = taskCodeStatements(task);
+      // The names the task's code calls, which decide the entry kept where several load.
+      const wanted = [
+        ...new Set(
+          statements.flatMap((one) =>
+            one.kind === "relation" ? [one.subjectName, one.referenceName] : one.names,
+          ),
+        ),
+      ];
+      const grounded = await groundLoader(
+        candidates,
+        async (program) => {
+          const observation = await programRun(context, directory, plannedCheckRunner, program, [
+            null,
+          ]);
+          const answers = readAnswers(observation.stdout, 1);
+          const first = answers?.[0];
+          if (first?.kind === "result") return { answer: JSON.parse(first.text) as unknown };
+          return { failed: readTrial(observation, 1).detail };
+        },
+        wanted,
+      );
+      return { loader: grounded.loader, attempts: grounded.attempts, statements };
     });
     return found;
   };
