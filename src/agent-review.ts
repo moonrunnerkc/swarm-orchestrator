@@ -1433,7 +1433,9 @@ export function createCandidateReview(options: CandidateReviewOptions): {
     readonly claims: readonly string[];
   }>;
   readonly withhold: (reason: string) => Promise<string>;
-  /** The probes and their latest readings, for the report; empty before an examination. */
+  /** The ratchet kept the candidate last measured: its readings become the reported ones. */
+  readonly adopt: () => void;
+  /** The probes and their readings on the kept candidate, for the report; empty before one. */
   readonly readings: () => {
     readonly probes: readonly ReviewProbe[];
     readonly classified: readonly CaseClassification[];
@@ -1442,6 +1444,9 @@ export function createCandidateReview(options: CandidateReviewOptions): {
   let probes: readonly ReviewProbe[] = [];
   let examined: readonly CaseClassification[] = [];
   let latest: readonly CaseClassification[] = [];
+  // A later candidate's readings, held until the ratchet keeps that candidate: a rolled-back
+  // candidate's readings are never the ones reported.
+  let measured: readonly CaseClassification[] | null = null;
   const nothing = (record: string) => ({
     identity: "",
     brief: null,
@@ -1827,8 +1832,12 @@ export function createCandidateReview(options: CandidateReviewOptions): {
         parts,
         runs: candidate.records,
       });
-      latest = classified;
+      measured = classified;
       return { parts, claims };
+    },
+    adopt: () => {
+      if (measured !== null) latest = measured;
+      measured = null;
     },
     readings: () => ({ probes, classified: latest }),
     withhold: (reason) =>
