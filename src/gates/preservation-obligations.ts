@@ -1,7 +1,7 @@
 import { asJsonValue } from "../evidence/canonical-json.ts";
 import type { GoalContract } from "../evidence/goal-contract.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
-import { taskCodeStatements } from "../task-code-statements.ts";
+import { type TaskExample, taskCodeStatements } from "../task-code-statements.ts";
 
 /**
  * What a run must do and keep, each obligation tied to where it comes from
@@ -74,7 +74,7 @@ export interface ObligationStatus extends PreservationObligation {
  * text rather than read as an obligation, and nothing measures it.
  */
 export const extractionLimit =
-  "task sentences are classified by keep wording (unchanged, preserved, still, as today, must remain, must continue, and the like); any other sentence is retained as unclassified task text, not read as an obligation, and nothing measures it";
+  "task sentences are classified by keep wording (unchanged, preserved, still, as today, must remain, must continue, and the like), except a sentence whose own code examples are all ones the task asks for or describes as today's behaviour; any other sentence is retained as unclassified task text, not read as an obligation, and nothing measures it";
 
 // "still" only where a behaviour follows it: "invalid options still throw" keeps something,
 // "the calls still waiting to run" describes the base. A modal followed by a verb of staying
@@ -91,14 +91,30 @@ export function taskSentences(task: string): readonly string[] {
     .filter((one) => one.length > 0);
 }
 
+/**
+ * Whether a sentence's own code says it states new behaviour: it writes examples, and none is one
+ * to keep. "withoutBase returns input unchanged (withoutBase(\"/admin-dashboard\", \"/admin/\")
+ * is \"/admin-dashboard\")" has keep wording and asks for a change; read as an obligation to keep,
+ * it let a reviewer's probe call the requested answer a regression (October 24, C2).
+ */
+function statesNewBehaviour(sentence: string, task: string): boolean {
+  const examples = taskCodeStatements(task).filter(
+    (one): one is TaskExample => one.kind === "example" && sentence.includes(one.call),
+  );
+  return examples.length > 0 && examples.every((one) => one.role !== "preserve");
+}
+
+const keeps = (sentence: string, task: string) =>
+  keepSentence.test(sentence) && !statesNewBehaviour(sentence, task);
+
 /** The task's sentences about behaviour to keep, in its order, every one of them. */
 export function keepStatements(task: string): readonly string[] {
-  return taskSentences(task).filter((one) => keepSentence.test(one));
+  return taskSentences(task).filter((one) => keeps(one, task));
 }
 
 /** The task's other sentences, retained as they are: neither an obligation nor dropped. */
 export function unclassifiedSentences(task: string): readonly string[] {
-  return taskSentences(task).filter((one) => !keepSentence.test(one));
+  return taskSentences(task).filter((one) => !keeps(one, task));
 }
 
 /** The obligations a run starts with: the task's, the supplied contract's, and the base suite. */
