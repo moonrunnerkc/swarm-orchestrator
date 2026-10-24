@@ -67,6 +67,10 @@ Source on `v13-main`; not published until a release names it.
 - `--install` from a `package-lock.json` no longer fails on the `yarn.lock` npm rewrites beside
   it (npm does so even with `--no-save`). That file's bytes are put back and the install record
   names it under `restored`; any other source change still fails setup.
+- A regression reading left unmeasured only because a check that fails on the base too gave
+  output the change altered is no longer reported as `setup unavailable`. The repair policy
+  stopped on that label, so a change that added findings to a base-failing lint was refused with
+  every repair attempt unused; it now reads `regression unmeasured` and repair proceeds.
 
 - **Experimental, off by default: `--repair-trace` (preservation-trace-v1).** Where a failing gate
   passed in the harness's own run over the base, the repair attempt is told so with the
