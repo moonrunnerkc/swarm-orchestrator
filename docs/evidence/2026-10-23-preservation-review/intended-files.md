@@ -188,3 +188,14 @@ missing tool and stops, so the lint findings the change introduced were never pu
 - `scripts/check-doc-paths.mjs`: `src/punycode.ts`, a file of ufo's repository that the registered
   confirmation protocol names, is listed with its reason, because that protocol is not edited after
   its first launch.
+
+## Amendment 11, October 23, 2026, before editing these files
+
+Found by confirmation round 2: nanoid `swarm` stopped repair as `setup` with every attempt unused.
+Its tests gate failed with `Cannot find module './random' from 'index.js'`, a relative `require`
+the change's own module move left broken, and the repair policy reads any `Cannot find module`
+as a missing tool.
+
+- `src/gates/repair-policy.ts` and `src/gates/repair-policy.test.ts`: `Cannot find module` names
+  setup only for a package (a bare specifier). A relative or absolute path that cannot be found is
+  the change's own, and is repaired.
