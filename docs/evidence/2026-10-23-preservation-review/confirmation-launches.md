@@ -47,7 +47,7 @@ now reads `unmeasured by the change`, and none stopped as `setup` on it.
 | ufo bug fix `swarm` | 2 / 3 | base finding + `src/utils.ts`, `test/base.test.ts` | base finding only | pass | pass | refused |
 | ufo bug fix `swarm-control` | 3 / 3 | base finding + `src/utils.ts`, `test/base.test.ts` | base finding only | fail (kept check) | fail (kept check) | refused |
 | nanoid `swarm-control` | 2 / 3 | not applicable | not applicable | fail | fail | refused |
-| nanoid `swarm` | 0 / 0 (stopped as setup on a failed preparation of its own check) | not applicable | not applicable | (no snapshot) | fail | refused |
+| nanoid `swarm` | 0 / 0 (stopped as setup: its tests failed with `Cannot find module './random'`, a `require` its own module move broke; [amendment 11](intended-files.md)) | not applicable | not applicable | (no snapshot) | fail | refused |
 
 "Base finding" is prettier's report of `src/punycode.ts`, which the unchanged base has.
 
