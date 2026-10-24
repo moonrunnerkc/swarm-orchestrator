@@ -105,3 +105,20 @@ tests gate passing on the base.
 `study.mjs --preflight` on the third freeze: all 24 configurations passed every check, with no
 task inference. Every Swarm configuration's gate plan now also reports "the run's own preflight
 over the base completed".
+
+## During the block
+
+- **Launch 8 (ufo bug fix, `aider`): a scorer stop.** The arm's patch changed `package-lock.json`.
+  The launch's workspace commits the frozen harness lockfile and the patch is taken against that
+  commit, but the scoring trees did not commit it, so the patch applied to nothing. The hidden
+  scorer could not judge it, and the runner stopped there, as registered. The outcome stands: its
+  inference had run.
+  - Corrected in `60c3ed799` ([amendment 9](intended-files.md)): every scoring tree commits the
+    lockfile. A tree prepared that way applies the patch; one without the lockfile does not.
+  - Launch 8's retained patch was scored with the corrected scorer into
+    `runs/sealed-supplemental/`, unread until the reveal.
+  - The runner resumed under `--correction` from a worktree of `60c3ed799`, with the product
+    build unchanged. The correction is recorded in `runs/correction-1.json` with the harness
+    digests before and after.
+  - Launches 0 to 7 were scored before the correction. Their original scores stand, and each is
+    scored again with the corrected scorer after the block and reported beside the original.

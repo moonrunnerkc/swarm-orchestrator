@@ -10,6 +10,9 @@
 // - the review's attempt: the runner's own snapshot of the candidate before the attempt the
 //   product recorded as the review's (`candidate-review-attempt-v1`), and the delivered patch, each
 //   scored by the hidden evaluator through rescore.mjs, so a gain, damage or no change is measured.
+// - the corrected scorer: every delivered patch scored again through rescore.mjs, whose trees
+//   commit the frozen harness lockfile as the launch's did (amendment 9). It is reported beside
+//   the runner's own scores. A launch the runner's scorer could not judge is scored by it alone.
 //
 // usage: node score-study.mjs --manifest <manifest.json> --revealed <runs/revealed.json> --out <file>
 import { spawnSync } from "node:child_process";
@@ -131,15 +134,21 @@ function requestedTests(task, patch) {
   };
 }
 
-/** The hidden evaluator's reading of a patch, through the comparison's rescore. */
+/** The corrected scorer's readings of a patch, through the comparison's rescore. */
 function hidden(task, arm, patch, name) {
   const path = join(work, `${name}.patch`);
   writeFileSync(path, patch);
   const out = join(work, `${name}.rescore.json`);
-  run([process.execPath, join(repository, "scripts/comparison/rescore.mjs"), "--stage", stage, "--task", task.id, "--arm", arm.startsWith("swarm") ? "swarm" : "opencode", "--patch", path, "--out", out], repository);
+  if (!existsSync(out))
+    run([process.execPath, join(repository, "scripts/comparison/rescore.mjs"), "--stage", stage, "--task", task.id, "--arm", arm, "--patch", path, "--blobs", join(work, "rescore-blobs"), "--out", out], repository);
   if (!existsSync(out)) return null;
   const read = JSON.parse(readFileSync(out, "utf8"));
-  return { hidden: read.hiddenOverlay?.verdict ?? null, delivered: read.deliveredTree?.passed ?? null };
+  return {
+    hidden: read.hiddenOverlay?.verdict ?? null,
+    delivered: read.deliveredTree?.passed ?? null,
+    static: read.staticReading?.passed ?? null,
+    harnessLockfile: read.harnessLockfile ?? null,
+  };
 }
 
 /** The attempt the product recorded as the review's, from the kept session. */
@@ -165,35 +174,48 @@ function reviewAttempt(record) {
 
 const scored = [];
 for (const record of records) {
-  if (record.outcome !== "scored") {
+  if (record.finalPatchDigest === undefined || record.scores === undefined) {
     scored.push({ task: record.task, arm: record.arm, sample: record.sample ?? 1, outcome: record.outcome });
     continue;
   }
   const task = manifest.tasks.find((one) => one.id === record.task);
   const patch = blob(record.finalPatchDigest).toString("utf8");
   const tests = requestedTests(task, patch);
-  const scores = record.scores;
-  const complete =
-    scores.hidden.verdict === "pass" &&
-    scores.visible.passed === true &&
-    scores.static?.passed !== false &&
-    tests.sensitive;
+  const name = `${record.task}~${record.sample ?? 1}.${record.arm}`;
+  const corrected = hidden(task, record.arm, patch, `${name}.delivered`);
+  // The runner's own scores where it judged; the corrected scorer's where it could not.
+  const judged =
+    record.outcome === "scored" && ["pass", "fail"].includes(record.scores.hidden?.verdict);
+  const scores = judged
+    ? record.scores
+    : {
+        hidden: { verdict: corrected?.hidden ?? null },
+        visible: { passed: corrected?.delivered ?? null },
+        static: { passed: corrected?.static ?? null },
+      };
+  const isComplete = (reading) =>
+    reading.hidden === "pass" && reading.visible === true && reading.static !== false && tests.sensitive;
+  const complete = isComplete({
+    hidden: scores.hidden.verdict,
+    visible: scores.visible.passed,
+    static: scores.static?.passed,
+  });
   const review = record.arm.startsWith("swarm") ? reviewAttempt(record) : null;
   let reviewEffect = null;
   if (review !== null) {
     const before = record.attemptSnapshots?.find((one) => one.attempt === review.attempt);
-    const name = `${record.task}~${record.sample ?? 1}.${record.arm}`;
     const initial = before?.patchDigest ? hidden(task, record.arm, blob(before.patchDigest).toString("utf8"), `${name}.before-review`) : null;
     reviewEffect = {
       ...review,
       before: initial,
-      delivered: { hidden: scores.hidden.verdict },
+      // Both through the corrected scorer, so the comparison is one scorer's.
+      delivered: { hidden: corrected?.hidden ?? null },
       change:
-        initial === null
+        initial === null || corrected === null
           ? "unmeasured"
-          : initial.hidden === scores.hidden.verdict
+          : initial.hidden === corrected.hidden
             ? "no change"
-            : initial.hidden === "fail" && scores.hidden.verdict === "pass"
+            : initial.hidden === "fail" && corrected.hidden === "pass"
               ? "gain"
               : "damage",
     };
@@ -203,11 +225,23 @@ for (const record of records) {
     arm: record.arm,
     sample: record.sample ?? 1,
     outcome: record.outcome,
+    scoredBy: judged ? "runner" : "corrected scorer (the runner could not judge)",
     hidden: scores.hidden.verdict,
     visible: scores.visible.passed,
     static: scores.static?.passed ?? null,
     requestedTests: tests,
     complete,
+    correctedScorer:
+      corrected === null
+        ? null
+        : {
+            ...corrected,
+            complete: isComplete({
+              hidden: corrected.hidden,
+              visible: corrected.delivered,
+              static: corrected.static,
+            }),
+          },
     productAcceptable: record.invocation?.productVerdict?.acceptable ?? null,
     claimed: record.invocation?.completion?.claim ?? null,
     wallMs: record.invocation?.wallMs ?? null,
