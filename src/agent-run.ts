@@ -13,7 +13,9 @@ import { finishRepair } from "./agent-repair-finish.ts";
 import {
   createCandidateReview,
   type ProbeRunner,
+  type ProbeValidator,
   type ReviewAuthority,
+  type ReviewGrounding,
   type ReviewMode,
 } from "./agent-review.ts";
 import { withWorkspaceEffects } from "./agent-workspace-effects.ts";
@@ -257,6 +259,10 @@ export interface AgentTaskOptions {
     readonly authorities: readonly ReviewAuthority[];
     /** The reviewer's bounded way to try a probe on a copy of the candidate; absent is none. */
     readonly trialTool?: ToolDefinition;
+    /** The loader and the task's own code, found once on the base; absent is neither. */
+    readonly grounding?: () => Promise<ReviewGrounding>;
+    /** Runs each submitted probe once before it counts; absent is no admission run. */
+    readonly validate?: ProbeValidator;
     /** Where the review's readings are handed back for the report. */
     readonly settled?: (
       readings: ReturnType<ReturnType<typeof createCandidateReview>["readings"]>,
@@ -855,6 +861,10 @@ async function executeAgentTask(
             diffAgainstBase({ workspaceRoot: options.workspace, baseRef: options.baseRef }),
           obligations: options.review.obligations,
           authorities: options.review.authorities,
+          ...(options.review.grounding === undefined
+            ? {}
+            : { grounding: options.review.grounding }),
+          ...(options.review.validate === undefined ? {} : { validate: options.review.validate }),
           runLoop: runAgentLoop,
           loopDependencies,
           readOnly: () => {

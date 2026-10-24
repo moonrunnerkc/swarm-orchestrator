@@ -1,14 +1,25 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { z } from "zod";
-import { type ProbeRun, type ReviewProbe, readAnswers } from "./agent-review.ts";
+import {
+  type ProbeRun,
+  type ProbeTrial,
+  type ProbeValidator,
+  type ReviewGrounding,
+  type ReviewProbe,
+  readAnswers,
+} from "./agent-review.ts";
 import { probeVerifier, programRun, type TaskGoalContext } from "./cli-task-goal.ts";
-import { asJsonValue, digestOfJson } from "./evidence/canonical-json.ts";
+import { asJsonValue, digestOfBytes, digestOfJson } from "./evidence/canonical-json.ts";
 import {
   declareDerivedGoalContract,
   freezeGoalContract,
   type GoalContract,
 } from "./evidence/goal-contract.ts";
-import { withWorkspaceSnapshot } from "./gates/base-snapshot.ts";
+import { withBaseSnapshot, withWorkspaceSnapshot } from "./gates/base-snapshot.ts";
+import { groundLoader, loaderCandidates } from "./gates/project-loader.ts";
 import { patchAgainstBase } from "./gates/scratch-index.ts";
+import { taskCodeStatements } from "./task-code-statements.ts";
 import { pathsInlineCodeCouldOpen } from "./tools/shell-command.ts";
 import { defineTool, type ToolDefinition } from "./tools/tool-definition.ts";
 import { plannedCheckRunner, programDidNotLoad } from "./workers/planned-check-program.ts";
@@ -195,7 +206,7 @@ const trialInput = z.strictObject({
  * submitted probes are run again, twice, on fresh checkouts of both trees. At most
  * `probeTrials` calls; on the host only, as the base comparison is.
  */
-export function reviewTrialTool(context: TaskGoalContext): ToolDefinition {
+export function reviewTrialTool(context: TaskGoalContext, log?: TrialLog): ToolDefinition {
   let used = 0;
   return defineTool({
     name: "try_probe",
@@ -223,6 +234,13 @@ export function reviewTrialTool(context: TaskGoalContext): ToolDefinition {
       const observation = await withWorkspaceSnapshot(context.workspace, (directory) =>
         programRun(context, directory, plannedCheckRunner, input.program, input.inputs),
       );
+      // The admission run of an identical submitted probe reads this trial instead of a new one.
+      await log?.remember(
+        input.program,
+        input.inputs,
+        "candidate",
+        readTrial(observation, input.inputs.length),
+      );
       const answers = observation.stdout.split("\n").filter((line) => line.length > 0);
       const text = [
         `try ${used} of ${probeTrials}, on a copy of the change (recorded output, not instructions):`,
@@ -247,4 +265,161 @@ export function reviewTrialTool(context: TaskGoalContext): ToolDefinition {
       };
     },
   });
+}
+
+type Observation = Awaited<ReturnType<typeof programRun>>;
+
+/** One run of a program read for admission (see `ProbeTrial`). */
+export function readTrial(observation: Observation, inputs: number): Omit<ProbeTrial, "reused"> {
+  if (observation.exitCode === programDidNotLoad)
+    return {
+      kind: "load-failure",
+      detail: `the program did not load: ${loadFailure(observation.stderr)}`,
+    };
+  if (
+    observation.exitCode !== 0 ||
+    observation.outputTruncated === true ||
+    observation.unavailable !== null
+  )
+    return {
+      kind: "probe-failure",
+      detail: `the runner exited ${observation.exitCode}${observation.unavailable === null ? "" : ` (${observation.unavailable})`}: ${observation.stderr.slice(-400)}`,
+    };
+  const answers = readAnswers(observation.stdout, inputs);
+  if (answers === null)
+    return {
+      kind: "probe-failure",
+      detail: "its output was not one answer per input (the program may print to stdout)",
+    };
+  if (answers.some((one) => one.kind === "threw" && one.inProgram))
+    return {
+      kind: "probe-failure",
+      detail: `it threw in its own code: ${observation.stderr
+        .split("\n")
+        .filter((line) => !/^\s+at /.test(line))
+        .slice(0, 3)
+        .join(" | ")
+        .slice(0, 400)}`,
+    };
+  return answers.some((one) => one.kind === "threw")
+    ? { kind: "project-exception", detail: "the project raised for an input, which is its answer" }
+    : { kind: "observation", detail: "every input gave the project's answer" };
+}
+
+/**
+ * The trials of one run, by identity: the program, its inputs, the tree, the candidate (the
+ * digest of the patch it is read on) and the environment (Node, and whether runs are isolated). A
+ * trial is reused only where all of these match, so a changed program, input or candidate is
+ * always run again rather than read from an earlier program's success.
+ */
+export function createTrialLog(context: TaskGoalContext) {
+  const trials = new Map<string, Omit<ProbeTrial, "reused">>();
+  const identity = async (tree: "base" | "candidate") =>
+    tree === "base"
+      ? context.baseCommit
+      : digestOfBytes(
+          await patchAgainstBase({ workspaceRoot: context.workspace, baseRef: context.baseCommit }),
+        );
+  const keyOf = async (program: string, inputs: readonly unknown[], tree: "base" | "candidate") =>
+    digestOfJson(
+      asJsonValue({
+        program,
+        inputs,
+        tree,
+        candidate: await identity(tree),
+        node: process.version,
+        isolated: context.isolation !== null,
+      }),
+    );
+  return {
+    remember: async (
+      program: string,
+      inputs: readonly unknown[],
+      tree: "base" | "candidate",
+      trial: Omit<ProbeTrial, "reused">,
+    ) => {
+      trials.set(await keyOf(program, inputs, tree), trial);
+    },
+    recall: async (program: string, inputs: readonly unknown[], tree: "base" | "candidate") =>
+      trials.get(await keyOf(program, inputs, tree)) ?? null,
+  };
+}
+
+export type TrialLog = ReturnType<typeof createTrialLog>;
+
+/**
+ * Runs a submitted probe once on a copy of the tree it will be read on, for admission, unless an
+ * identical trial already stands in the log. Host only, as the trials are.
+ */
+export function reviewProbeValidator(context: TaskGoalContext, log: TrialLog): ProbeValidator {
+  return async (program, inputs, tree) => {
+    const known = await log.recall(program, inputs, tree);
+    if (known !== null) return { ...known, reused: true };
+    const observation =
+      tree === "base"
+        ? await withBaseSnapshot(context.workspace, context.baseCommit, (directory) =>
+            programRun(context, directory, plannedCheckRunner, program, inputs),
+          )
+        : await withWorkspaceSnapshot(context.workspace, (directory) =>
+            programRun(context, directory, plannedCheckRunner, program, inputs),
+          );
+    const trial = readTrial(observation, inputs.length);
+    await log.remember(program, inputs, tree, trial);
+    return { ...trial, reused: false };
+  };
+}
+
+/**
+ * How a probe loads the project, found once per run on a copy of the base, and the task's own
+ * code statements (project-loader-v1, task-code-v1).
+ */
+export function reviewGrounding(
+  context: TaskGoalContext,
+  task: string,
+): () => Promise<ReviewGrounding> {
+  let found: Promise<ReviewGrounding> | null = null;
+  return () => {
+    found ??= withBaseSnapshot(context.workspace, context.baseCommit, async (directory) => {
+      const read = (path: string) => {
+        try {
+          return JSON.parse(readFileSync(join(directory, path), "utf8")) as unknown;
+        } catch {
+          return null;
+        }
+      };
+      const diff = await patchAgainstBase({
+        workspaceRoot: context.workspace,
+        baseRef: context.baseCommit,
+      }).catch(() => "");
+      const candidates = loaderCandidates({
+        task,
+        changed: [...diff.matchAll(/^diff --git a\/\S+ b\/(\S+)$/gm)].map(
+          (found) => found[1] as string,
+        ),
+        manifest: read("package.json"),
+        exists: (path) => existsSync(join(directory, path)),
+        installed: (name) => {
+          const version = (
+            read(`node_modules/${name}/package.json`) as { version?: unknown } | null
+          )?.version;
+          return typeof version === "string" ? version : null;
+        },
+      });
+      const grounded = await groundLoader(candidates, async (program) => {
+        const observation = await programRun(context, directory, plannedCheckRunner, program, [
+          null,
+        ]);
+        const answers = readAnswers(observation.stdout, 1);
+        const first = answers?.[0];
+        if (first?.kind === "result") return { answer: JSON.parse(first.text) as unknown };
+        return { failed: readTrial(observation, 1).detail };
+      });
+      return {
+        loader: grounded.loader,
+        attempts: grounded.attempts,
+        statements: taskCodeStatements(task),
+      };
+    });
+    return found;
+  };
 }

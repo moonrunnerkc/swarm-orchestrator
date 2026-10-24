@@ -5,6 +5,8 @@ import {
   authorityOf,
   type CaseAnswer,
   classifyProbe,
+  classifyRelation,
+  classifyTaskExamples,
   establishedReadings,
   findingsBrief,
   objectionsBrief,
@@ -14,7 +16,9 @@ import {
   readAnswers,
   remeasure,
   reviewParts,
+  taskProbes,
 } from "./agent-review.ts";
+import { taskCodeStatements } from "./task-code-statements.ts";
 
 const task =
   "Add a `strict` option to parse(). Without the option, parse() behaves as it does today. With strict: true, a trailing comma throws a SyntaxError.";
@@ -409,5 +413,166 @@ describe("the review's probes as preservation obligations", () => {
         ],
       },
     ]);
+  });
+});
+
+describe("requested behaviour the task states (task-code-v1, relations)", () => {
+  const loader = {
+    rule: "project-loader-v1" as const,
+    entry: "./query.mjs",
+    method: "native" as const,
+    preamble: 'const project = await import("./query.mjs");',
+    exports: ["parse", "rebuild"],
+  };
+  const statements = taskCodeStatements(
+    'Add drop(input, keep). drop(input, () => true) equals rebuild(input, {}) for every input that contains "?". drop("/a?x=1", (key) => key !== "x") is "/a"; keep(key, value) returns true; rebuild("/b?y", {}) stays "/b?y". Today rebuild("/c", {}) returns "/c".',
+  );
+  const probes = taskProbes(statements, loader);
+  /** The relation over its first two inputs, the task's own and one carried into its domain. */
+  const relationOf = (): ReviewProbe => {
+    const whole = probes[2] as ReviewProbe;
+    return {
+      ...whole,
+      cases: [{ input: "/a?x=1" }, { input: "file:///C:/x?x=1" }],
+      statements: (whole.statements ?? []).slice(0, 2),
+    };
+  };
+
+  it("builds one probe of the requested examples, one of the kept, and one per relation", () => {
+    expect(probes.map((one) => [one.id, one.basis, one.cases.length])).toEqual([
+      ["code-requested", "requirement", 1],
+      ["code-kept", "preserve", 1],
+      ["code-relation-1", "relation", 4],
+    ]);
+    // A name the project does not export is the candidate's answer, not a broken probe.
+    expect(probes[0]?.program).toContain(
+      'if (typeof drop !== "function") return { "not a function of the project": "drop" };',
+    );
+    expect(probes[2]?.reference).toContain("rebuild(input, {})");
+  });
+
+  it("holds a requested example to the task's literal, and a kept one first to the base", () => {
+    const requested = probes[0] as ReviewProbe;
+    expect(
+      classifyTaskExamples(
+        requested,
+        twice(answered('{"not a function":1}')),
+        twice(answered('"/a?x=1"')),
+      ).map((one) => [one.reading, one.expected, one.authority]),
+    ).toEqual([["requested-unmet", '"/a"', "code-example-1"]]);
+    expect(
+      classifyTaskExamples(requested, twice(answered("1")), twice(answered('"/a"'))).map(
+        (one) => one.reading,
+      ),
+    ).toEqual(["met"]);
+    const kept = probes[1] as ReviewProbe;
+    expect(
+      classifyTaskExamples(kept, twice(answered('"/b?y"')), twice(answered('"/b?y="'))).map(
+        (one) => one.reading,
+      ),
+    ).toEqual(["preservation-regression"]);
+    // The base does not give what the task says it keeps: the sentence may be misread.
+    expect(
+      classifyTaskExamples(kept, twice(answered('"/b"')), twice(answered('"/b"'))).map(
+        (one) => one.reading,
+      ),
+    ).toEqual(["provisional"]);
+    expect(establishedReadings.has("requested-unmet")).toBe(true);
+    expect(establishedReadings.has("provisional")).toBe(false);
+  });
+
+  it("establishes a relation's difference only where its reading is supported", () => {
+    const relation = relationOf();
+    const onBase = twice(answered('"/a?x=1"', '"file://C:/x?x=1"'));
+    const verbatim = twice(answered('"/a?x=1"', '"file:///C:/x?x=1"'));
+    expect(classifyRelation(relation, onBase, verbatim).map((one) => one.reading)).toEqual([
+      "related",
+      "relation-violated",
+    ]);
+    // A reviewer's relation that agrees nowhere is its own reading.
+    const { origin: _origin, ...unowned } = relation;
+    const reviewers: ReviewProbe = { ...unowned, id: "mine" };
+    expect(
+      classifyRelation(reviewers, onBase, twice(answered('"x"', '"y"'))).map((one) => one.reading),
+    ).toEqual(["relation-unconfirmed", "relation-unconfirmed"]);
+    // A domain the reader could not follow leaves every difference provisional.
+    expect(
+      classifyRelation({ ...relation, provisional: "unfollowed" }, onBase, verbatim).map(
+        (one) => one.reading,
+      ),
+    ).toEqual(["related", "relation-unconfirmed"]);
+  });
+
+  it("holds a requested case to its expectation on a later candidate", () => {
+    const relation = relationOf();
+    const examined = classifyRelation(
+      relation,
+      twice(answered('"/a?x=1"', '"file://C:/x?x=1"')),
+      twice(answered('"/a?x=1"', '"file:///C:/x?x=1"')),
+    );
+    expect(reviewParts(examined).parts).toEqual({ "code-relation-1: requested": "failed" });
+    const repaired = remeasure(
+      [relation],
+      examined,
+      new Map([[relation.id, twice(answered('"/a?x=1"', '"file://C:/x?x=1"'))]]),
+    );
+    expect(repaired.map((one) => one.reading)).toEqual(["related", "related"]);
+    expect(reviewParts(repaired).parts).toEqual({ "code-relation-1: requested": "passed" });
+  });
+
+  it("admits a reviewer's relation only with the task's words and a reference to functions they name", () => {
+    const quote = "keep is called once for each key of parse(input), in that order";
+    const relationTask = `Add drop(input, keep). ${quote}.`;
+    const base = {
+      id: "calls",
+      basis: "relation",
+      quote,
+      program: "export default () => 1;",
+      cases: [{ input: "/a" }],
+    };
+    const admitted = admitProbes(relationTask, {
+      probes: [
+        { ...base, reference: "export default (input) => Object.entries(project.parse(input));" },
+        {
+          ...base,
+          id: "unnamed",
+          reference: "export default (input) => project.rebuild(input, {});",
+        },
+        { ...base, id: "nothing", reference: "export default () => [];" },
+        {
+          ...base,
+          id: "unquoted",
+          quote: "keep is called twice for each key",
+          reference: "export default (i) => project.parse(i);",
+        },
+      ],
+    });
+    expect(admitted.probes.map((one) => one.id)).toEqual(["calls"]);
+    expect(admitted.dropped.map((one) => [one.id, one.reason])).toEqual([
+      ["unnamed", "the reference calls rebuild, which the quoted words do not name"],
+      [
+        "nothing",
+        "a relation's reference must call the project's existing functions as project.<name>",
+      ],
+      ["unquoted", "a relation probe must quote the task's own words"],
+    ]);
+  });
+
+  it("renames or refuses a probe whose recorded strings the scrubber would redact, check ids included", () => {
+    // Alone the id passes; its check ids (`mask-parse-call-ref-run-1`) carry sixteen characters
+    // after `sk-`, which the record's scrubber redacts.
+    const admitted = admitProbes("Keep parse(input) as it is. parse(input) must not change.", {
+      probes: [
+        {
+          id: "mask-parse-call",
+          basis: "relation",
+          quote: "Keep parse(input) as it is",
+          program: "export default () => 1;",
+          reference: "export default (input) => project.parse(input);",
+          cases: [{ input: "/a" }],
+        },
+      ],
+    });
+    expect(admitted.probes.map((one) => one.id)).toEqual(["probe-1"]);
   });
 });

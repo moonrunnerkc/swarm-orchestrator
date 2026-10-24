@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 import { type createCandidateReview, probeObligations, reviewRule } from "./agent-review.ts";
-import { reviewProbeRunner, reviewTrialTool } from "./cli-review.ts";
+import {
+  createTrialLog,
+  reviewGrounding,
+  reviewProbeRunner,
+  reviewProbeValidator,
+  reviewTrialTool,
+} from "./cli-review.ts";
 // Check the runtime before loading the command composition.
 import "./node-floor-check.ts";
 
@@ -792,6 +798,8 @@ async function run(options: RunCommand): Promise<number> {
       throw new Error(
         "preset preflight exhausted implementation allowance; final verification time stays reserved",
       );
+    // One log of the reviewer's trials for the run, which admission reads before running again.
+    const trialLog = goalContext === undefined ? null : createTrialLog(goalContext);
     const implementation = (
       goal: typeof sealedGoal,
       repairFeedback?: string,
@@ -807,11 +815,20 @@ async function run(options: RunCommand): Promise<number> {
             review: {
               mode: options.review,
               runProbes: reviewProbeRunner({ ...goalContext, contract: goal }),
-              trialTool: reviewTrialTool({
-                ...goalContext,
-                contract: goal,
-                signal: modelWork.signal,
-              }),
+              trialTool: reviewTrialTool(
+                { ...goalContext, contract: goal, signal: modelWork.signal },
+                trialLog ?? undefined,
+              ),
+              grounding: reviewGrounding({ ...goalContext, contract: goal }, options.task),
+              // Admission runs on the host only, as the trials do.
+              ...(goalContext.isolation === null && trialLog !== null
+                ? {
+                    validate: reviewProbeValidator(
+                      { ...goalContext, contract: goal, signal: modelWork.signal },
+                      trialLog,
+                    ),
+                  }
+                : {}),
               obligations: obligations.map(
                 (one) => `${one.id}: ${one.statement} (${one.category}; ${one.basis})`,
               ),
