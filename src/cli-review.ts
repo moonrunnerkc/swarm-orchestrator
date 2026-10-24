@@ -410,7 +410,7 @@ export function reviewGrounding(
       const wanted = [
         ...new Set(
           statements.flatMap((one) =>
-            one.kind === "relation" ? [one.subjectName, one.referenceName] : one.names,
+            one.kind === "example" ? one.names : [one.subjectName, one.referenceName],
           ),
         ),
       ];

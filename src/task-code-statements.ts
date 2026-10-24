@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 /**
  * Examples and relations the task writes as code, read without a model (task-code-v1).
  *
@@ -22,8 +24,18 @@
  *
  * The literal is a string, number, boolean or null. An array or object literal is left unread
  * rather than parsed loosely.
+ *
+ * task-code-v2 adds one statement and inputs beyond the task's literals:
+ * - **enumeration**: `<callback> is called once for each <entry> of <reference>(<input>)`, where
+ *   the task declares a function with both names as parameters (`f(input: string, callback: (key:
+ *   string, value: string) => boolean)`). The expectation is the entries of the reference's answer
+ *   on the unchanged base, in order where the sentence says so, so a callback asked twice about one
+ *   entry, or never about one, is a counterexample whose every part is the task's;
+ * - **generated inputs** inside a followed domain (`domain-inputs-v1`), from the task's own
+ *   literals, with a seed derived from the task's text and recorded: a discovery batch beside the
+ *   literals, and a separate validation batch kept back to test a repair beyond what it was shown.
  */
-export const taskCodeRule = "task-code-v1";
+export const taskCodeRule = "task-code-v2";
 
 export type TaskExampleRole = "requested" | "preserve" | "base";
 
@@ -62,7 +74,34 @@ export interface TaskRelation {
   readonly inputs: readonly string[];
 }
 
-export type TaskCodeStatement = TaskExample | TaskRelation;
+/**
+ * A callback the task says is called once for each entry of an existing function's answer
+ * (task-code-v2). Run as a relation: the subject records the callback's calls on the candidate,
+ * and the reference lists the entries of its answer on the unchanged base.
+ */
+export interface TaskEnumeration {
+  readonly kind: "enumeration";
+  readonly id: string;
+  readonly sentence: string;
+  /** The function the task declares, which takes both the input and the callback. */
+  readonly subjectName: string;
+  /** Its declared parameters, in order. */
+  readonly parameters: readonly string[];
+  readonly callback: string;
+  /** The parameter each input is bound to, which the reference call also takes. */
+  readonly variable: string;
+  /** The reference call, verbatim: the function whose answer's entries the callback must see. */
+  readonly reference: string;
+  readonly referenceName: string;
+  /** How many of each call's arguments are compared: the entry's key, and its value if stated. */
+  readonly arity: 1 | 2;
+  /** Whether the sentence states the order ("in that order"); otherwise calls compare as a set. */
+  readonly ordered: boolean;
+  readonly domain: TaskRelation["domain"];
+  readonly inputs: readonly string[];
+}
+
+export type TaskCodeStatement = TaskExample | TaskRelation | TaskEnumeration;
 
 const requestedVerb =
   /^(?:is|returns|gives|equals|becomes|yields|evaluates to|must (?:return|give|be)|should (?:return|give|be)|===?|->|\u2192)\s+/;
@@ -201,7 +240,7 @@ const bareName = /^[A-Za-z_$][\w$]*$/;
  * before a letter or a parenthesis) but never inside a string literal, and with the literals'
  * own spacing kept: `"ab  "` is two spaces, which a folded sentence would make one.
  */
-function codeSentences(task: string): readonly string[] {
+export function codeSentences(task: string): readonly string[] {
   const sentences: string[] = [];
   let from = 0;
   for (let at = 0; at < task.length; at += 1) {
@@ -310,7 +349,96 @@ export function taskCodeStatements(task: string): readonly TaskCodeStatement[] {
       });
     }
   }
-  return statements;
+  return [...statements, ...taskEnumerations(sentences, allCalls, statements)];
+}
+
+const enumeration =
+  /\b([A-Za-z_$][\w$]*) is (?:called|invoked) (?:exactly )?once (?:for each|for every|per) (?:[A-Za-z]+ ){0,2}?(?:of|in) ([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\)/g;
+const declaredParameter = /^([A-Za-z_$][\w$]*)(\??)\s*:/;
+
+/**
+ * The callbacks the task says are called once for each entry of an existing function's answer,
+ * where the task declares the function that takes them. A declaration is a call whose every
+ * argument is `name: type`; a parameter besides the input and the callback must be optional
+ * (`name?: type`), since the harness has nothing of the task's to pass for it.
+ */
+function taskEnumerations(
+  sentences: readonly string[],
+  allCalls: readonly Call[],
+  read: readonly TaskCodeStatement[],
+): readonly TaskEnumeration[] {
+  const declarations = allCalls.flatMap((one) => {
+    const parameters = one.args.map((arg) => declaredParameter.exec(arg));
+    return one.args.length > 0 && parameters.every((match) => match !== null)
+      ? [{ call: one, parameters: parameters as RegExpExecArray[] }]
+      : [];
+  });
+  const found: TaskEnumeration[] = [];
+  for (const sentence of sentences) {
+    for (const match of sentence.matchAll(enumeration)) {
+      const [, callback, referenceName, variable] = match as unknown as [
+        string,
+        string,
+        string,
+        string,
+      ];
+      const declared = declarations.find(({ parameters }) => {
+        const names = parameters.map((one) => one[1]);
+        return names.includes(callback) && names.includes(variable) && callback !== variable;
+      });
+      if (declared === undefined) continue;
+      const names = declared.parameters.map((one) => one[1] as string);
+      if (
+        declared.parameters.some(
+          (one) => one[1] !== callback && one[1] !== variable && one[2] !== "?",
+        )
+      )
+        continue;
+      // The callback's declared type gives its arguments: `(key: string, value: ...) => boolean`.
+      const type = (declared.call.args[names.indexOf(callback)] ?? "").replace(
+        declaredParameter,
+        "",
+      );
+      const open = type.indexOf("(");
+      const close = open === -1 ? -1 : closing(type, open);
+      const declaredArity = close === -1 ? 1 : topLevelArgs(type.slice(open + 1, close)).length;
+      const after = sentence.slice((match.index ?? 0) + match[0].length);
+      const relation = read.find(
+        (one): one is TaskRelation =>
+          one.kind === "relation" &&
+          one.subjectName === declared.call.name &&
+          one.variable === variable,
+      );
+      const domain =
+        relation !== undefined && relation.sentence === sentence ? relation.domain : null;
+      const position = names.indexOf(variable);
+      const literals = [
+        ...new Set(
+          allCalls.flatMap((one) => {
+            const literal =
+              one.name === declared.call.name ? literalAt(one.args[position] ?? "") : null;
+            return literal !== null && typeof literal.value === "string" ? [literal.value] : [];
+          }),
+        ),
+      ];
+      found.push({
+        kind: "enumeration",
+        id: `code-enumeration-${found.length + 1}`,
+        sentence,
+        subjectName: declared.call.name,
+        parameters: names,
+        callback,
+        variable,
+        reference: `${referenceName}(${variable})`,
+        referenceName,
+        arity: declaredArity >= 2 && /\bvalues?\b/.test(after) ? 2 : 1,
+        ordered: /\bin (?:that|the same|this|their) order\b|\bin order\b/.test(sentence),
+        domain,
+        inputs: relation?.inputs ?? relationInputs(literals, domain),
+      });
+    }
+  }
+  return found;
 }
 
 /** At most this many inputs per relation, the task's own first. */
@@ -344,4 +472,185 @@ export function relationInputs(
     0,
     maxRelationInputs,
   );
+}
+
+/**
+ * Inputs generated inside a domain from the task's own literals (domain-inputs-v1), reproducible
+ * from the recorded seed. Each literal is cut into segments, each starting at a character that is
+ * not a letter or digit (`/foo?a=1#h` is `/foo`, `?a`, `=1`, `#h`), and one input is made by one
+ * operation on one or two literals: splicing the head of one onto the tail of another, moving,
+ * dropping, repeating or blanking a segment, or inserting another literal's segment. An input is
+ * kept only inside the domain, at most `maxLength` long, new, and of a shape (its letters and digits
+ * folded) no input chosen or excluded already has, so near-duplicates do not fill the batch; where
+ * new shapes run out, a second pass takes new strings of a shape already seen.
+ */
+export const domainInputsRule = "domain-inputs-v1";
+
+export interface GeneratedInputs {
+  readonly rule: typeof domainInputsRule;
+  readonly label: "discovery" | "validation";
+  readonly seed: number;
+  readonly inputs: readonly string[];
+  /** How each input was made, in input order. */
+  readonly provenance: readonly string[];
+  readonly limits: {
+    readonly count: number;
+    readonly attempts: number;
+    readonly maxLength: number;
+  };
+}
+
+/** A discovery batch beside the task's literals, and a validation batch kept apart from both. */
+export const generatedCounts = { discovery: 6, validation: 12 } as const;
+const attemptsPerInput = 80;
+const maxGeneratedLength = 160;
+
+/** The seed a batch is generated from: the task, the statement and the batch, digested. */
+export function batchSeed(
+  task: string,
+  statement: string,
+  label: GeneratedInputs["label"],
+): number {
+  return Number.parseInt(
+    createHash("sha256")
+      .update(`${domainInputsRule}\0${label}\0${statement}\0${task}`)
+      .digest("hex")
+      .slice(0, 8),
+    16,
+  );
+}
+
+/** A small deterministic generator (mulberry32): the same seed gives the same sequence. */
+function sequence(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let mixed = state;
+    mixed = Math.imul(mixed ^ (mixed >>> 15), mixed | 1);
+    mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), mixed | 61);
+    return ((mixed ^ (mixed >>> 14)) >>> 0) / 4_294_967_296;
+  };
+}
+
+const segmentsOf = (text: string): readonly string[] =>
+  text.match(/[^A-Za-z0-9]?[A-Za-z0-9]*/g)?.filter((one) => one.length > 0) ?? [];
+const shapeOf = (text: string) => text.replace(/[A-Za-z0-9]+/g, "a");
+
+export function generateDomainInputs(
+  seeds: readonly string[],
+  domain: TaskRelation["domain"],
+  options: {
+    readonly label: GeneratedInputs["label"];
+    readonly seed: number;
+    readonly count: number;
+    readonly exclude: readonly string[];
+  },
+): GeneratedInputs {
+  const limits = {
+    count: options.count,
+    attempts: options.count * attemptsPerInput,
+    maxLength: maxGeneratedLength,
+  };
+  const blank = {
+    rule: domainInputsRule,
+    label: options.label,
+    seed: options.seed,
+    limits,
+  } as const;
+  const usable = seeds.filter((one) => one.length > 0);
+  if (domain === "unfollowed" || usable.length === 0 || options.count <= 0)
+    return { ...blank, inputs: [], provenance: [] };
+  const random = sequence(options.seed);
+  const pick = <T>(items: readonly T[]): T => items[Math.floor(random() * items.length)] as T;
+  const at = (length: number) => Math.floor(random() * (length + 1));
+  const operations = [
+    (a: readonly string[], b: readonly string[]) => [
+      [...a.slice(0, at(a.length)), ...b.slice(at(b.length))],
+      "splice",
+    ],
+    (a: readonly string[]) => {
+      const moved = [...a];
+      const [segment] = moved.splice(Math.floor(random() * moved.length), 1);
+      moved.splice(at(moved.length), 0, segment as string);
+      return [moved, "move"];
+    },
+    (a: readonly string[]) => {
+      const dropped = [...a];
+      dropped.splice(Math.floor(random() * dropped.length), 1);
+      return [dropped, "drop"];
+    },
+    (a: readonly string[]) => {
+      const repeated = [...a];
+      const index = Math.floor(random() * repeated.length);
+      repeated.splice(index, 0, repeated[index] as string);
+      return [repeated, "repeat"];
+    },
+    (a: readonly string[]) => {
+      const blanked = [...a];
+      const index = Math.floor(random() * blanked.length);
+      blanked[index] = (blanked[index] as string).replace(/[A-Za-z0-9]+$/, "");
+      return [blanked, "blank"];
+    },
+    (a: readonly string[], b: readonly string[]) => {
+      const inserted = [...a];
+      inserted.splice(at(inserted.length), 0, pick(b));
+      return [inserted, "insert"];
+    },
+  ] as const;
+  const taken = new Set(options.exclude);
+  const shapes = new Set(options.exclude.map(shapeOf));
+  const inputs: string[] = [];
+  const provenance: string[] = [];
+  for (const pass of ["new-shape", "new-string"] as const) {
+    for (
+      let attempt = 0;
+      attempt < limits.attempts && inputs.length < options.count;
+      attempt += 1
+    ) {
+      const first = pick(usable);
+      const second = pick(usable);
+      const operation = pick(operations);
+      const [segments, name] = operation(segmentsOf(first), segmentsOf(second));
+      const made = (segments as readonly string[]).join("");
+      if (
+        made.length === 0 ||
+        made.length > limits.maxLength ||
+        taken.has(made) ||
+        (domain !== null && !made.includes(domain.contains)) ||
+        (pass === "new-shape" && shapes.has(shapeOf(made)))
+      )
+        continue;
+      taken.add(made);
+      shapes.add(shapeOf(made));
+      inputs.push(made);
+      provenance.push(
+        `${name} of ${JSON.stringify(first)}${name === "splice" || name === "insert" ? ` and ${JSON.stringify(second)}` : ""}`,
+      );
+    }
+  }
+  return { ...blank, inputs, provenance };
+}
+
+/**
+ * A relation's or enumeration's two generated batches: discovery, which runs with the task's own
+ * inputs, and validation, generated at the same time from a separate seed, excluding both, and held
+ * back until a repair is assessed.
+ */
+export function generatedBatches(
+  task: string,
+  statement: TaskRelation | TaskEnumeration,
+): { readonly discovery: GeneratedInputs; readonly validation: GeneratedInputs } {
+  const discovery = generateDomainInputs(statement.inputs, statement.domain, {
+    label: "discovery",
+    seed: batchSeed(task, statement.id, "discovery"),
+    count: generatedCounts.discovery,
+    exclude: statement.inputs,
+  });
+  const validation = generateDomainInputs(statement.inputs, statement.domain, {
+    label: "validation",
+    seed: batchSeed(task, statement.id, "validation"),
+    count: generatedCounts.validation,
+    exclude: [...statement.inputs, ...discovery.inputs],
+  });
+  return { discovery, validation };
 }

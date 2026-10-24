@@ -144,34 +144,46 @@ export function initialObligations(input: {
           ? "a supplied requirement no check decides"
           : `a supplied requirement decided by ${requirement.checks.join(", ")}`,
     }));
-  // The task's own examples and relations written as code (task-code-v1): each is an obligation
+  // The task's own examples and relations written as code (task-code-v2): each is an obligation
   // as exact as its literal, requested or kept by the sentence's own verb. One the task describes
-  // as today's behaviour is what it asks to change, and is no obligation.
+  // as today's behaviour is what it asks to change, and is no obligation. A callback the task says
+  // is called once for each entry of an existing function's answer is requested.
   const fromCode = taskCodeStatements(input.task).flatMap((one) =>
-    one.kind === "relation"
+    one.kind === "enumeration"
       ? [
           {
             id: one.id,
             source: "task" as const,
             category: "requested" as const,
             authority: "authoritative" as const,
-            statement: `${one.subject} equals ${one.reference}${one.domain === null ? "" : one.domain === "unfollowed" ? " (over a domain the reader could not apply)" : ` for every ${one.variable} containing ${JSON.stringify(one.domain.contains)}`}`,
+            statement: `${one.subjectName} calls ${one.callback} once for each entry of ${one.reference}${one.ordered ? ", in order" : ""}`,
             basis: `the task's own code: "${one.sentence}"`,
           },
         ]
-      : one.role === "base"
-        ? []
-        : [
+      : one.kind === "relation"
+        ? [
             {
               id: one.id,
               source: "task" as const,
-              category:
-                one.role === "preserve" ? ("explicit-preserve" as const) : ("requested" as const),
+              category: "requested" as const,
               authority: "authoritative" as const,
-              statement: `${one.call} gives ${JSON.stringify(one.expected)}`,
+              statement: `${one.subject} equals ${one.reference}${one.domain === null ? "" : one.domain === "unfollowed" ? " (over a domain the reader could not apply)" : ` for every ${one.variable} containing ${JSON.stringify(one.domain.contains)}`}`,
               basis: `the task's own code: "${one.sentence}"`,
             },
-          ],
+          ]
+        : one.role === "base"
+          ? []
+          : [
+              {
+                id: one.id,
+                source: "task" as const,
+                category:
+                  one.role === "preserve" ? ("explicit-preserve" as const) : ("requested" as const),
+                authority: "authoritative" as const,
+                statement: `${one.call} gives ${JSON.stringify(one.expected)}`,
+                basis: `the task's own code: "${one.sentence}"`,
+              },
+            ],
   );
   return [
     ...fromTask,

@@ -1,5 +1,11 @@
 import { expect, it } from "vitest";
-import { relationInputs, taskCodeStatements } from "./task-code-statements.ts";
+import {
+  batchSeed,
+  generateDomainInputs,
+  generatedBatches,
+  relationInputs,
+  taskCodeStatements,
+} from "./task-code-statements.ts";
 
 it("reads examples the task writes as code, each with its role", () => {
   const task =
@@ -58,4 +64,78 @@ it("carries seeds into a contains-domain and caps the inputs", () => {
       null,
     ),
   ).toHaveLength(12);
+});
+
+it("reads a callback the task says is called once for each entry of an existing function's answer", () => {
+  const task =
+    'Add pick(record: string, keep: (name: string, value: string) => boolean): string. Otherwise keep is called once for each field of fields(record), in that order, with the name and the value fields gives it, and pick(record, () => true) equals format(record) for every record that contains "=". Example: pick("a=1;b=2", (name) => name === "a") is "a=1".';
+  const enumeration = taskCodeStatements(task).find((one) => one.kind === "enumeration");
+  expect(enumeration).toMatchObject({
+    id: "code-enumeration-1",
+    subjectName: "pick",
+    parameters: ["record", "keep"],
+    callback: "keep",
+    variable: "record",
+    reference: "fields(record)",
+    referenceName: "fields",
+    arity: 2,
+    ordered: true,
+    domain: { contains: "=" },
+  });
+  // The relation in the same sentence gives its domain and its inputs.
+  expect(enumeration?.kind === "enumeration" ? enumeration.inputs : []).toEqual(["a=1;b=2"]);
+});
+
+it("reads no enumeration without a declaration that takes both names, or with a required parameter it cannot fill", () => {
+  expect(
+    taskCodeStatements(
+      "keep is called once for each field of fields(record). pick(record, keep) returns a string.",
+    ).filter((one) => one.kind === "enumeration"),
+  ).toEqual([]);
+  expect(
+    taskCodeStatements(
+      "Add pick(record: string, keep: (name: string) => boolean, limit: number). keep is called once for each field of fields(record).",
+    ).filter((one) => one.kind === "enumeration"),
+  ).toEqual([]);
+  // An optional parameter is left out of the call, and a key alone is compared where no value is stated.
+  expect(
+    taskCodeStatements(
+      "Add pick(record: string, keep: (name: string, value: string) => boolean, limit?: number). keep is called once per field of fields(record).",
+    ).find((one) => one.kind === "enumeration"),
+  ).toMatchObject({ arity: 1, ordered: false, domain: null });
+});
+
+it("generates inputs inside the domain from the task's literals, reproducibly and apart from the excluded", () => {
+  const seeds = ["/a?x=1&y=2#h", "file:///C:/x", "/b?k"];
+  const options = { label: "discovery", seed: 7, count: 6, exclude: seeds } as const;
+  const first = generateDomainInputs(seeds, { contains: "?" }, options);
+  expect(generateDomainInputs(seeds, { contains: "?" }, options)).toEqual(first);
+  expect(first).toMatchObject({ rule: "domain-inputs-v1", seed: 7, label: "discovery" });
+  expect(first.inputs.length).toBeGreaterThan(0);
+  expect(first.provenance).toHaveLength(first.inputs.length);
+  for (const input of first.inputs) {
+    expect(input).toContain("?");
+    expect(seeds).not.toContain(input);
+  }
+  expect(new Set(first.inputs).size).toBe(first.inputs.length);
+  expect(
+    generateDomainInputs(seeds, { contains: "?" }, { ...options, seed: 8 }).inputs,
+  ).not.toEqual(first.inputs);
+  expect(generateDomainInputs(seeds, "unfollowed", options).inputs).toEqual([]);
+});
+
+it("keeps the validation batch apart from the task's inputs and the discovery batch", () => {
+  const task =
+    'Add drop(input, keep). drop(input, () => true) equals rebuild(input, {}) for every input that contains "?". Examples: drop("/a?x=1&y=2#f", (k) => k !== "x") is "/a?y=2#f", and drop("file:///C:/x", () => false) is "file:///C:/x".';
+  const relation = taskCodeStatements(task).find((one) => one.kind === "relation");
+  if (relation?.kind !== "relation") throw new Error("no relation read");
+  const { discovery, validation } = generatedBatches(task, relation);
+  expect(discovery.seed).toBe(batchSeed(task, relation.id, "discovery"));
+  expect(validation.seed).toBe(batchSeed(task, relation.id, "validation"));
+  expect(validation.seed).not.toBe(discovery.seed);
+  for (const input of validation.inputs) {
+    expect(relation.inputs).not.toContain(input);
+    expect(discovery.inputs).not.toContain(input);
+  }
+  expect(validation.inputs.length).toBeGreaterThan(discovery.inputs.length);
 });
