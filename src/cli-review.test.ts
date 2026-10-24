@@ -5,11 +5,17 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import type { ReviewProbe } from "./agent-review.ts";
-import { loadFailure, probeContract, probeTrials, reviewTrialTool } from "./cli-review.ts";
+import {
+  loadFailure,
+  probeContract,
+  probeTrials,
+  readTrial,
+  reviewTrialTool,
+} from "./cli-review.ts";
 import { createSystemClock } from "./cli-runtime-inputs.ts";
 import type { TaskGoalContext } from "./cli-task-goal.ts";
 import { freezeGoalContract } from "./evidence/goal-contract.ts";
-import { plannedCheckRunner } from "./workers/planned-check-program.ts";
+import { plannedCheckRunner, programDidNotLoad } from "./workers/planned-check-program.ts";
 
 const probe: ReviewProbe = {
   id: "trims-names",
@@ -113,4 +119,44 @@ describe("the reviewer's trial of a probe", () => {
       await rm(workspace, { recursive: true, force: true });
     }
   }, 60_000);
+});
+
+describe("admission runs of submitted probes", () => {
+  const observation = (exitCode: number, stdout: string, stderr = "") => ({
+    exitCode,
+    stdout,
+    stderr,
+    durationMs: 1,
+    unavailable: null,
+    outputTruncated: false,
+  });
+
+  it("tells a load failure, a probe failure, a project exception and an observation apart", () => {
+    expect(
+      readTrial(
+        observation(
+          programDidNotLoad,
+          "",
+          "the check program did not load: Error: Cannot find module './src/utils'",
+        ),
+        1,
+      ),
+    ).toMatchObject({ kind: "load-failure" });
+    expect(
+      readTrial(
+        observation(0, '{"input":1,"threw":true,"thrownIn":"check-program"}\n', "TypeError: x"),
+        1,
+      ),
+    ).toMatchObject({ kind: "probe-failure" });
+    expect(readTrial(observation(0, '{"input":1,"result":1}\nextra\n'), 1)).toMatchObject({
+      kind: "probe-failure",
+      detail: expect.stringContaining("not one answer per input"),
+    });
+    expect(readTrial(observation(0, '{"input":1,"threw":true}\n'), 1)).toMatchObject({
+      kind: "project-exception",
+    });
+    expect(readTrial(observation(0, '{"input":1,"result":[1]}\n'), 1)).toMatchObject({
+      kind: "observation",
+    });
+  });
 });

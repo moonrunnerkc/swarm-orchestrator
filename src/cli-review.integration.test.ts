@@ -264,6 +264,29 @@ async function independentlyChecked(bundle: string): Promise<void> {
   expect(rederived.stdout).not.toMatch(/DISAGREES/);
 }
 
+/** The review's examination record, read from the session ledger beside the bundle. */
+function examination(bundle: string): {
+  readonly validation: readonly { probe: string; round: number; kind: string; reused: boolean }[];
+  readonly dropped: readonly { id: string; reason: string }[];
+} {
+  const session = join(bundle, "..");
+  const payloads = readFileSync(join(session, "ledger.jsonl"), "utf8")
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => JSON.parse(line) as { type: string; payloadDigest: string })
+    .filter((one) => one.type === "verification-command")
+    .map(
+      (one) =>
+        JSON.parse(
+          readFileSync(join(session, "blobs", `${one.payloadDigest.slice(7)}.json`), "utf8"),
+        ) as { rule?: string; phase?: string; validation?: never[]; dropped?: never[] },
+    );
+  const found = payloads.find(
+    (one) => one.rule === "candidate-review-v3" && one.phase === "examined",
+  );
+  return { validation: found?.validation ?? [], dropped: found?.dropped ?? [] };
+}
+
 const readingsOf = (result: Result) =>
   (result.outcome?.review?.readings ?? []).map((one) => `${one.probe}#${one.index} ${one.reading}`);
 
@@ -280,6 +303,7 @@ describe("the candidate review's development controls", () => {
     expect(result.outcome?.status, stdout.slice(-3000)).toBe("accepted");
     expect(code).toBe(0);
     expect(readingsOf(result)).toEqual([
+      "code-requested#1 met",
       "trims-names#1 kept",
       "trims-names#2 kept",
       "upper-option#1 met",
@@ -312,6 +336,7 @@ describe("the candidate review's development controls", () => {
     expect(result.outcome?.status, stdout.slice(-3000)).toBe("accepted");
     expect(result.outcome?.review?.attempt).toMatchObject({ state: "given", accepted: true });
     expect(readingsOf(result)).toEqual([
+      "code-requested#1 met",
       "trims-names#1 kept",
       "trims-names#2 kept",
       "upper-option#1 met",
@@ -344,7 +369,11 @@ describe("the candidate review's development controls", () => {
     // The probe names no obligation the task states for the ending, which the task changes: a
     // difference, reported, owing nothing.
     expect(result.outcome?.review?.attempt).toBeNull();
-    expect(readingsOf(result)).toEqual(["trims-names#1 difference", "trims-names#2 difference"]);
+    expect(readingsOf(result)).toEqual([
+      "code-requested#1 met",
+      "trims-names#1 difference",
+      "trims-names#2 difference",
+    ]);
     expect(
       result.outcome?.preservation?.find((one) => one.id === "review-trims-names"),
     ).toMatchObject({
@@ -380,10 +409,10 @@ describe("the candidate review's development controls", () => {
     expect(result.outcome?.preservation?.find((one) => one.id === "base-suite")?.status).toBe(
       "unmeasured",
     );
-    // The review was withheld on the record, since there was no green candidate to review.
+    // The reviewer proposed nothing; the harness ran the task's own example, which the change meets.
     expect(result.outcome?.review?.examination).toMatch(/^sha256:/);
     expect(result.outcome?.review?.attempt).toBeNull();
-    expect(result.outcome?.review?.readings).toEqual([]);
+    expect(readingsOf(result)).toEqual(["code-requested#1 met"]);
   }, 240_000);
 
   it("a weakened check that hides damage is refused", async () => {
@@ -462,11 +491,25 @@ describe("the candidate review's development controls", () => {
     );
     expect(result.outcome?.status, stdout.slice(-3000)).toBe("accepted");
     expect(result.outcome?.review?.attempt).toBeNull();
-    expect(readingsOf(result)).toEqual([
-      "missing-module#1 did-not-load",
-      "missing-module#2 did-not-load",
-      "throws-itself#1 defective-program",
-      "throws-itself#2 defective-program",
+    // Admission ran each once, sent both back once with their errors, ran the same programs again,
+    // and left them out as unmeasured: neither reads as nothing wrong found.
+    expect(readingsOf(result)).toEqual(["code-requested#1 met"]);
+    const examined = examination(result.bundleDirectory ?? "");
+    expect(examined.validation.map((one) => `${one.probe} ${one.round} ${one.kind}`)).toEqual([
+      "missing-module 1 load-failure",
+      "throws-itself 1 probe-failure",
+      "missing-module 2 load-failure",
+      "throws-itself 2 probe-failure",
+    ]);
+    // The second round ran the same program on the same candidate, so it read the first's trial.
+    expect(examined.validation.map((one) => one.reused)).toEqual([false, false, true, true]);
+    expect(examined.dropped.map((one) => one.reason)).toEqual([
+      expect.stringMatching(
+        /^unmeasured: it did not run as written \(on a copy of the change: load-failure: the program did not load: .*missing\.mjs/,
+      ),
+      expect.stringMatching(
+        /^unmeasured: it did not run as written \(on a copy of the change: probe-failure: it threw in its own code/,
+      ),
     ]);
     expect(readFileSync(join(directory, "label.mjs"), "utf8")).toBe(correctUpper);
     await independentlyChecked(result.bundleDirectory ?? "");
@@ -487,7 +530,11 @@ describe("the candidate review's development controls", () => {
     );
     expect(result.outcome?.status, stdout.slice(-3000)).toBe("accepted");
     expect(result.outcome?.review?.attempt).toMatchObject({ state: "given", accepted: true });
-    expect(readingsOf(result)).toEqual(["trims-names#1 kept", "trims-names#2 kept"]);
+    expect(readingsOf(result)).toEqual([
+      "code-requested#1 met",
+      "trims-names#1 kept",
+      "trims-names#2 kept",
+    ]);
     expect(readFileSync(join(directory, "label.mjs"), "utf8")).toBe(correctUpper);
     await independentlyChecked(result.bundleDirectory ?? "");
   }, 240_000);
@@ -567,6 +614,7 @@ describe("the candidate review's development controls", () => {
     // and the repaired candidate was kept.
     expect(result.outcome?.review?.attempt).toMatchObject({ state: "given", accepted: true });
     expect(readingsOf(result)).toEqual([
+      "code-requested#1 met",
       "trims-names#1 kept",
       "trims-names#2 kept",
       "upper-option#1 met",
@@ -614,15 +662,199 @@ describe("the candidate review's development controls", () => {
     expect(result.outcome?.status, stdout.slice(-3000)).toBe("accepted");
     const preservation = result.outcome?.preservation ?? [];
     const fromTask = preservation.filter((one) => one.source === "task");
-    expect(fromTask).toHaveLength(14);
-    expect(fromTask.map((one) => one.category)).toEqual(Array(14).fill("explicit-preserve"));
+    // Fourteen sentences, and the example the task writes as code.
+    expect(fromTask).toHaveLength(15);
+    expect(fromTask.map((one) => one.category)).toEqual([
+      ...Array(14).fill("explicit-preserve"),
+      "requested",
+    ]);
     expect(preservation.find((one) => one.id === "contract-visible-check")).toMatchObject({
+      category: "requested",
+      status: "met",
+    });
+    // The task's own example, run by the review on the delivered candidate.
+    expect(preservation.find((one) => one.id === "code-example-1")).toMatchObject({
       category: "requested",
       status: "met",
     });
     expect(result.outcome?.unclassifiedTask).toContain(
       "Add an `upper` option to label(name, options): with { upper: true } the label is upper-case, so label('ann', { upper: true }) gives 'ANN:'.",
     );
-    expect(stdout).toContain("requested behaviour (new, not preserved): 1 met");
+    expect(stdout).toContain("requested behaviour (new, not preserved): 2 met");
+  }, 240_000);
+});
+
+/**
+ * Requested behaviour the task states in terms of existing functions (task-code-v1 and relation
+ * probes). query.mjs has parse(input) and rebuild(input, extra), and rebuild writes `file:///` as
+ * `file://`. The task asks for drop(input, keep) and relates it to both, and the visible check has
+ * one example, which every candidate here meets.
+ */
+const queryBase = [
+  "export function parse(input) {",
+  '  const at = input.indexOf("?");',
+  "  const out = Object.create(null);",
+  "  if (at === -1) return out;",
+  '  for (const part of input.slice(at + 1).split("&")) {',
+  "    if (part.length === 0) continue;",
+  '    const [rawKey, rawValue = ""] = part.split("=");',
+  "    const key = decodeURIComponent(rawKey);",
+  "    const value = decodeURIComponent(rawValue);",
+  "    out[key] = key in out ? [].concat(out[key], value) : value;",
+  "  }",
+  "  return out;",
+  "}",
+  "const encoded = (query) =>",
+  "  Object.entries(query)",
+  '    .flatMap(([key, value]) => [].concat(value).map((one) => encodeURIComponent(key) + "=" + encodeURIComponent(one)))',
+  '    .join("&");',
+  "export function rebuild(input, extra) {",
+  '  const at = input.indexOf("?");',
+  '  const head = (at === -1 ? input : input.slice(0, at)).replace(/^file:\\/\\/\\//, "file://");',
+  "  const text = encoded({ ...parse(input), ...extra });",
+  '  return text.length === 0 ? head : head + "?" + text;',
+  "}",
+  "",
+].join("\n");
+const dropTask =
+  'query.mjs has parse(input) and rebuild(input, extra). Add drop(input, keep) to query.mjs, returning input with only the parameters for which keep(key, value) returns true. keep is called once for each key of parse(input), in that order, with the key and the value parse gives it. drop(input, () => true) equals rebuild(input, {}) for every input that contains "?". Examples: drop("/a?x=1&y=2", (key) => key !== "x") is "/a?y=2", and drop("file:///C:/x", () => false) is "file:///C:/x".';
+const dropCheck =
+  "import assert from 'node:assert/strict';\nimport { drop } from '../query.mjs';\nassert.equal(drop('/a?x=1&y=2', (key) => key !== 'x'), '/a?y=2');\n";
+/** Rebuilds the head as given, not as rebuild does: wrong for `file:///C:/x?...`. */
+const dropVerbatim = `${queryBase}export function drop(input, keep) {
+  const at = input.indexOf("?");
+  if (at === -1) return input;
+  const kept = Object.fromEntries(Object.entries(parse(input)).filter(([key, value]) => keep(key, value)));
+  const text = encoded(kept);
+  return text.length === 0 ? input.slice(0, at) : \`\${input.slice(0, at)}?\${text}\`;
+}
+`;
+/** Rebuilds through rebuild, but asks keep about the first key twice. */
+const dropTwice = `${queryBase}export function drop(input, keep) {
+  if (!input.includes("?")) return input;
+  const entries = Object.entries(parse(input));
+  if (entries.length > 0 && !keep(entries[0][0], entries[0][1]) && entries.length === 1)
+    return rebuild(input.slice(0, input.indexOf("?")), {});
+  const kept = Object.fromEntries(entries.filter(([key, value]) => keep(key, value)));
+  return rebuild(input.slice(0, input.indexOf("?")), kept);
+}
+`;
+const dropCorrect = `${queryBase}export function drop(input, keep) {
+  if (!input.includes("?")) return input;
+  const kept = Object.fromEntries(Object.entries(parse(input)).filter(([key, value]) => keep(key, value)));
+  return rebuild(input.slice(0, input.indexOf("?")), kept);
+}
+`;
+const callOrder = {
+  id: "keep-call-order",
+  basis: "relation",
+  quote:
+    "keep is called once for each key of parse(input), in that order, with the key and the value parse gives it",
+  program:
+    'const project = await import("./query.mjs");\nexport default (input) => {\n  const calls = [];\n  project.drop(input, (key, value) => {\n    calls.push([key, value]);\n    return true;\n  });\n  return calls;\n};\n',
+  reference:
+    'const project = await import("./query.mjs");\nexport default (input) => Object.entries(project.parse(input));\n',
+  cases: [{ input: "/a" }, { input: "/a?x=1&y=2&x=3" }],
+};
+
+describe("requested behaviour the task states, measured and repaired", () => {
+  const dropWorkspace = { files: { "query.mjs": queryBase } };
+
+  it("a relation the task writes as code finds the counterexample, the repair fixes it, and the delivered tree is the one measured", async () => {
+    const { result, stdout, directory } = await swarm(
+      dropTask,
+      dropCheck,
+      roles({
+        worker: [declare(["query.mjs"]), write("query.mjs", dropVerbatim)],
+        reviewer: { probes: [] },
+        repair: [write("query.mjs", dropCorrect)],
+      }),
+      "executable",
+      baseTest,
+      dropWorkspace,
+    );
+    expect(result.outcome?.status, stdout.slice(-3000)).toBe("accepted");
+    expect(result.outcome?.review?.attempt).toMatchObject({ state: "given", accepted: true });
+    expect(readFileSync(join(directory, "query.mjs"), "utf8")).toBe(dropCorrect);
+    // Read again on the delivered candidate: every case of the task's code holds there.
+    expect(readingsOf(result)).toEqual([
+      "code-requested#1 met",
+      "code-requested#2 met",
+      "code-relation-1#1 related",
+      "code-relation-1#2 related",
+    ]);
+    const statuses = Object.fromEntries(
+      (result.outcome?.preservation ?? []).map((one) => [one.id, one.status]),
+    );
+    expect(statuses).toMatchObject({
+      "code-example-1": "met",
+      "code-example-2": "met",
+      "code-relation-1": "exercised",
+    });
+    await independentlyChecked(result.bundleDirectory ?? "");
+  }, 240_000);
+
+  it("a reviewer's relation over an existing function finds a callback called twice, and the repair fixes it", async () => {
+    const { result, stdout, directory } = await swarm(
+      dropTask,
+      dropCheck,
+      roles({
+        worker: [declare(["query.mjs"]), write("query.mjs", dropTwice)],
+        reviewer: { probes: [callOrder] },
+        repair: [write("query.mjs", dropCorrect)],
+      }),
+      "executable",
+      baseTest,
+      dropWorkspace,
+    );
+    expect(result.outcome?.status, stdout.slice(-3000)).toBe("accepted");
+    expect(result.outcome?.review?.attempt).toMatchObject({ state: "given", accepted: true });
+    expect(readFileSync(join(directory, "query.mjs"), "utf8")).toBe(dropCorrect);
+    expect(readingsOf(result)).toContain("keep-call-order#2 related");
+    await independentlyChecked(result.bundleDirectory ?? "");
+  }, 240_000);
+
+  it("a correct candidate is not accused, and nothing is owed", async () => {
+    const { result, stdout, directory } = await swarm(
+      dropTask,
+      dropCheck,
+      roles({
+        worker: [declare(["query.mjs"]), write("query.mjs", dropCorrect)],
+        reviewer: { probes: [callOrder] },
+      }),
+      "executable",
+      baseTest,
+      dropWorkspace,
+    );
+    expect(result.outcome?.status, stdout.slice(-3000)).toBe("accepted");
+    expect(result.outcome?.review?.attempt).toBeNull();
+    expect(readFileSync(join(directory, "query.mjs"), "utf8")).toBe(dropCorrect);
+    expect(readingsOf(result).every((one) => / (met|related)$/.test(one))).toBe(true);
+    await independentlyChecked(result.bundleDirectory ?? "");
+  }, 240_000);
+
+  it("a reviewer's relation that holds on no input is its own reading, and owes nothing", async () => {
+    // Its reference answers in other terms (the keys alone), so no input agrees: a translation
+    // nothing confirms, whatever the candidate does.
+    const mistranslated = {
+      ...callOrder,
+      reference:
+        'const project = await import("./query.mjs");\nexport default (input) => Object.keys(project.parse(input)).concat("x");\n',
+    };
+    const { result, stdout } = await swarm(
+      dropTask,
+      dropCheck,
+      roles({
+        worker: [declare(["query.mjs"]), write("query.mjs", dropCorrect)],
+        reviewer: { probes: [mistranslated] },
+      }),
+      "executable",
+      baseTest,
+      dropWorkspace,
+    );
+    expect(result.outcome?.status, stdout.slice(-3000)).toBe("accepted");
+    expect(result.outcome?.review?.attempt).toBeNull();
+    expect(readingsOf(result)).toContain("keep-call-order#2 relation-unconfirmed");
+    await independentlyChecked(result.bundleDirectory ?? "");
   }, 240_000);
 });
