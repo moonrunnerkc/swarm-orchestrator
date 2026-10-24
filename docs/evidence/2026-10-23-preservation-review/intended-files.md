@@ -180,3 +180,8 @@ missing tool and stops, so the lint findings the change introduced were never pu
   and a real failing test in the tests gate. Repair then proceeds on the failing gates. A missing
   tool, a failed install or an unjudged deciding check is still setup.
 - `src/gates/repair-policy.test.ts`: the classification of both labels.
+- Same files, after the first confirmation round: the rule required no check to carry an
+  `unavailable` text, and a check that stands down because the project declares no such script
+  (`optionalAbsence`) carries its absence there. The correction therefore never fired in a live
+  run. Stood-down checks are now skipped, with a test shaped like the recorded checks, and the rule
+  was applied to every recorded verification of both blocks before rebuilding.

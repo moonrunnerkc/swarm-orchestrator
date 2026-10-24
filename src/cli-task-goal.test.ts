@@ -292,6 +292,21 @@ describe("what the acceptance gate makes of a verification", () => {
         checks: [{ baseTestsFiles: ["test/browser.test.js"] }],
       }).unmeasuredByChange,
     ).toBe(true);
+    // The checks as a live run records them: a script the project does not declare stands down
+    // with its absence as the unavailable text, which is no missing tool.
+    expect(
+      readAcceptance(contract, {
+        ...unattributed,
+        checks: [
+          {
+            optionalAbsence: true,
+            observation: { unavailable: "package.json declares no typecheck script" },
+            baseTestsFiles: ["test/base.test.ts"],
+          },
+          { attribution: "unattributed", observation: { unavailable: null } },
+        ],
+      }).unmeasuredByChange,
+    ).toBe(true);
     // A tool that was not there is setup, whatever else the change did.
     expect(
       readAcceptance(contract, {

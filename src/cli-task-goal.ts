@@ -681,6 +681,7 @@ export function readAcceptance(
       readonly attribution?: string;
       readonly baseTestsFiles?: readonly string[];
       readonly configurationFiles?: readonly string[];
+      readonly optionalAbsence?: boolean;
       readonly observation?: { readonly unavailable: string | null };
     }[];
     readonly install?: { readonly succeeded: boolean } | null;
@@ -716,7 +717,12 @@ export function readAcceptance(
     !unjudged &&
     result.refusal === null &&
     result.install?.succeeded !== false &&
-    checks.every((check) => (check.observation?.unavailable ?? null) === null) &&
+    // A check that stood down because the project declares no such script names that as its
+    // unavailability; only a check that should have run and could not is a missing tool.
+    checks.every(
+      (check) =>
+        check.optionalAbsence === true || (check.observation?.unavailable ?? null) === null,
+    ) &&
     checks.some(
       (check) =>
         check.attribution === "unattributed" ||
