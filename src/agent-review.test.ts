@@ -82,6 +82,52 @@ describe("admitting a reviewer's probes", () => {
     ]);
   });
 
+  it("reads an optional field sent as null as not given, as two live probes sent it", () => {
+    const admitted = admitProbes(task, {
+      probes: [{ ...preserve, keeps: null, obligation: null, quote: null }],
+    });
+    expect(admitted.dropped).toEqual([]);
+    expect(admitted.probes[0]).not.toHaveProperty("keeps");
+  });
+
+  it("renames an id the credential scrubber would redact, and runs no program it would redact", () => {
+    // A program the recorder leaves whole is kept, though a plain text scan would flag it.
+    const tokens = admitProbes(task, {
+      probes: [
+        {
+          ...preserve,
+          program:
+            "import { parse } from './index.js';\nexport default (text) => { const tokens = parse(text); return tokens; };",
+        },
+      ],
+    });
+    expect(tokens.probes.map((one) => one.id)).toEqual(["default-parse"]);
+    // The reviewer's id of October 24, whose "sk-" run the scrubber read as an API key: the
+    // recorded probe contract then no longer matched its digest, and the bundle failed to verify.
+    const admitted = admitProbes(task, {
+      probes: [
+        {
+          ...preserve,
+          id: "preserves-task-keep-1-with-query-behaviour",
+          obligation: "task-keep-1",
+        },
+        {
+          ...preserve,
+          id: "carries-a-key",
+          program: `export default () => "sk-${"a".repeat(24)}";`,
+        },
+      ],
+    });
+    expect(admitted.probes.map((one) => one.id)).toEqual(["probe-1"]);
+    expect(admitted.dropped).toEqual([
+      {
+        id: "carries-a-key",
+        reason:
+          "its program or inputs carry text the evidence scrubber redacts as a credential, so the record of what ran could not be held to what ran",
+      },
+    ]);
+  });
+
   it("keeps at most four objections, each with a scenario and an expectation", () => {
     expect(
       admitObjections({
