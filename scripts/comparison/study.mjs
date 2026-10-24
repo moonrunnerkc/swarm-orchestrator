@@ -83,6 +83,11 @@ import { frozenOrder } from "./order.mjs";
 import { taskSchema } from "./schema.mjs";
 import { createStallWatch, inferenceDeadlineMs, pollStallWatch } from "./stall.mjs";
 import {
+  candidateFiles,
+  startCandidateProxy,
+  startingCandidateRule,
+} from "./starting-candidate.mjs";
+import {
   cloneAtBase,
   commitHarnessLockfile,
   commitVisibleCheck,
@@ -295,6 +300,9 @@ async function freeze(configPath, outPath) {
     exposureMarkers: config.exposureMarkers ?? [],
     lockfiles,
     harnessLockfiles: config.harnessLockfiles ?? {},
+    // Retained candidates a launch may start from (starting-candidate-v1), each a patch frozen by
+    // digest under the registered input roots and named by the launches that use it.
+    startingCandidates: config.startingCandidates ?? {},
     tasks: resolved,
     launches:
       config.order === "listed"
@@ -352,6 +360,7 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
   };
   let fatal = null;
   let stdout = "";
+  let candidateProxy = null;
   try {
     // The model must answer a chat and a tool round trip in the product's wire shape before the
     // arm is given the task; a listing alone dispatches nothing.
@@ -412,10 +421,39 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
     };
     if (!prepared.ok)
       throw new FatalError("preparation", `preparation failed: ${prepared.failed.join(" ")}`);
+    // A launch that starts from a retained candidate: the product's first worker loop is the
+    // candidate replayed through its own chokepoint, and every later call reaches the model.
+    if (launch.candidate !== undefined) {
+      const input = manifest.startingCandidates?.[launch.candidate];
+      const found = input === undefined ? null : resolveFrozenInput(manifest, input);
+      if (found === null)
+        throw new FatalError(
+          "configuration",
+          `the starting candidate ${launch.candidate} is not frozen under the registered input roots`,
+        );
+      if (!isSwarmArm(launch.arm))
+        throw new FatalError("configuration", "only a Swarm arm can start from a candidate");
+      const files = candidateFiles(workspace, found.bytes, tmpDir);
+      candidateProxy = await startCandidateProxy({
+        files,
+        upstream: pins.endpoint,
+        model: pins.model,
+      });
+      record.startingCandidate = {
+        rule: startingCandidateRule,
+        name: launch.candidate,
+        digest: input.digest,
+        files: Object.keys(files),
+        replayTurns: candidateProxy.replayTurns,
+      };
+    }
+    const endpoint = candidateProxy?.url ?? pins.endpoint;
+    const launchManifest =
+      candidateProxy === null ? manifest : { ...manifest, pins: { ...pins, endpoint } };
     writeArmConfiguration(
       workspace,
       launch.arm,
-      pins.endpoint,
+      endpoint,
       pins.model,
       task,
       manifest.swarmGates?.[task.id] ?? {},
@@ -460,7 +498,7 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
         ? []
         : [join(packageManagerToolchain(declared.name, declared.version), "node_modules", ".bin")];
     const launchSpec = buildLaunch({
-      manifest,
+      manifest: launchManifest,
       arm: launch.arm,
       task,
       prompt: taskPrompt(task),
@@ -712,6 +750,15 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
       cause instanceof FatalError
         ? cause
         : new FatalError("harness", String(cause?.stack ?? cause));
+  }
+  if (candidateProxy !== null) {
+    const routed = candidateProxy.routed();
+    record.startingCandidate = {
+      ...record.startingCandidate,
+      replayed: routed.filter((one) => one.route === "replay").length,
+      forwarded: routed.filter((one) => one.route === "upstream" && one.chat !== null).length,
+    };
+    await candidateProxy.close();
   }
   // A stop after inference keeps what the product wrote, as a scored launch does.
   if (record.evidence === undefined && existsSync(home))

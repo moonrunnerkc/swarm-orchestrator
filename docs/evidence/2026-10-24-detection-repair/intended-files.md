@@ -50,3 +50,7 @@ before it is edited.
   and `src/gates/gate-definition.ts`, to carry the sentence that set a requirement onto the seal.
 - October 24, before creating them: `src/task-code-statements.ts` and its test, the extraction
   of examples and relations the task writes as code, kept apart from the review that runs them.
+- October 24, before editing them: `scripts/comparison/study.mjs` and the new
+  `scripts/comparison/starting-candidate.mjs` with its test. A registered launch may start from a
+  frozen retained candidate, which both arms of a cell receive. This is the setting the
+  development set and the matched study need.
