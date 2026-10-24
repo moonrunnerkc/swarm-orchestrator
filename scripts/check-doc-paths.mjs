@@ -100,6 +100,10 @@ const documentedAsRemoved = new Map([
     "a file of the entities task's repository, which the 2026-10-22 repair-trace protocol names; that protocol is not edited after its first launch",
   ],
   [
+    "scripts/screen3.mjs",
+    "the fresh block's evaluator author's screening script, archived with the held-out material on evidence/2026-10-23-preservation-review-sessions; the selection record naming it is published as it was released",
+  ],
+  [
     "src/punycode.ts",
     "a file of the ufo task's repository, which the 2026-10-23 confirmation protocol names; that protocol is not edited after its first launch",
   ],
