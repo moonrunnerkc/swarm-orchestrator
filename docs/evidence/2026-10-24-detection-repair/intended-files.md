@@ -48,3 +48,5 @@ before it is edited.
 - October 24, before creating them: `src/gates/requested-static-repair.ts` and its test, the
   lexical rule `default-gates.ts` applies, kept in a module of its own; `src/gates/gate-set-seal.ts`
   and `src/gates/gate-definition.ts`, to carry the sentence that set a requirement onto the seal.
+- October 24, before creating them: `src/task-code-statements.ts` and its test, the extraction
+  of examples and relations the task writes as code, kept apart from the review that runs them.
