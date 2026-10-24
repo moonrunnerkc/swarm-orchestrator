@@ -3,15 +3,17 @@
 // sample 1, and the same tasks with the arms rotated one place further for sample 2, so no arm
 // holds one position in every task.
 //
-// usage: node study-config.mjs dev|fresh <swarm revision> <out config.json> [tasks module]
+// usage: node study-config.mjs dev|fresh|confirm <swarm revision> <out config.json> [tasks module]
 import { readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { studyOrder } from "../../../scripts/comparison/study.mjs";
 
 const [block, revision, out, tasksModuleArgument] = process.argv.slice(2);
-if (!["dev", "fresh"].includes(block) || !revision || !out)
-  throw new Error("usage: node study-config.mjs dev|fresh <swarm revision> <out> [tasks module]");
+if (!["dev", "fresh", "confirm"].includes(block) || !revision || !out)
+  throw new Error(
+    "usage: node study-config.mjs dev|fresh|confirm <swarm revision> <out> [tasks module]",
+  );
 
 const home = homedir();
 const cache = (path) => join(home, ".cache", path);
@@ -48,6 +50,23 @@ const studies = {
       "swarm-control": { flags: ["--adaptive"] },
     },
   },
+  // After the fresh block, on its now exposed tasks: one sample of the two Swarm arms on the build
+  // that reads a reading the change left unmeasured as the change's (confirmation-protocol.md).
+  confirm: {
+    tasksModule: tasksModuleArgument ?? cache("swarm-heldout-2026-10-23c/sealed/heldout-tasks.mjs"),
+    taskIds: [
+      "ufo-feature-filter-query",
+      "ufo-bugfix-base-prefix-boundary",
+      "nanoid-refactor-module-subdirectories",
+    ],
+    protocol: resolve("docs/evidence/2026-10-23-preservation-review/confirmation-protocol.md"),
+    arms: ["swarm", "swarm-control"],
+    samples: 1,
+    armSettings: {
+      swarm: { flags: ["--adaptive", "--review", "executable"] },
+      "swarm-control": { flags: ["--adaptive"] },
+    },
+  },
 };
 
 const study = studies[block];
@@ -58,7 +77,9 @@ const sample1 = studyOrder(study.taskIds, study.arms);
 const sample2 = studyOrder(study.taskIds, rotate(study.arms, 1));
 const launches = [
   ...sample1.map((launch) => ({ ...launch, sample: 1 })),
-  ...sample2.map((launch) => ({ ...launch, order: launch.order + sample1.length, sample: 2 })),
+  ...(study.samples === 1
+    ? []
+    : sample2.map((launch) => ({ ...launch, order: launch.order + sample1.length, sample: 2 }))),
 ];
 
 const config = {
