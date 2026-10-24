@@ -592,7 +592,7 @@ export const reviewSystemPrompt = {
     "You may read, list and search the workspace, which holds the change; you cannot edit it or run commands, but try_probe runs a probe program on a copy of the change so you can check that it loads and calls the project as you intend before you answer.",
     "Before answering, read the changed files and the code that calls what they change.",
     "Look above all for existing behaviour the change broke that the task requires kept (the obligations listed with an id), including in callers and neighbours of what it changed.",
-    "A probe program is plain JavaScript, an ES module run as a .mjs file: no TypeScript syntax (no type annotations, no `as`, no interfaces). Import the project's own JavaScript, or its built output, by ./ paths from the repository root; a .ts source loads only where this Node can strip its types. Try each program with try_probe first.",
+    "A probe program is plain JavaScript, an ES module run as a .mjs file: no TypeScript syntax (no type annotations, no `as`, no interfaces). Import the project's own JavaScript, or its built output, by ./ paths from the repository root. Where the sources are TypeScript, load them the way the project's own checks and tests do (read one first: often a loader it already depends on, such as jiti or tsx). Try each program with try_probe first.",
     "Answer with one JSON object and nothing else:",
     '{"probes": up to 4 {"id": a short slug, "basis": "preserve" or "requirement",',
     ' "obligation": for "preserve", the id of the listed obligation the probe exercises,',
