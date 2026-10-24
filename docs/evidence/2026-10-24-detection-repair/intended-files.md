@@ -43,4 +43,8 @@ before it is edited.
 
 ## Amendments
 
-None yet.
+- October 24, before editing it: `src/gates/duplicate-titles.integration.test.ts`, which pins the
+  rule name a record carries (`failure-identity-v4`, now v5).
+- October 24, before creating them: `src/gates/requested-static-repair.ts` and its test, the
+  lexical rule `default-gates.ts` applies, kept in a module of its own; `src/gates/gate-set-seal.ts`
+  and `src/gates/gate-definition.ts`, to carry the sentence that set a requirement onto the seal.

@@ -278,11 +278,17 @@ distinguishes them.
 ## A failure the base already had is not a regression
 
 A failed check is compared with a controlled base run. Inheritance needs the same failure
-identities and causes, not merely two nonzero exits. Current runs use `failure-identity-v4`:
+identities and causes, not merely two nonzero exits. Current runs use `failure-identity-v5`:
 - **Identities.** Test runners name their tests. ESLint, Prettier's `--check` and TypeScript's
-  compiler are named by diagnostic (file, rule or code, and message, without line numbers).
-- **Incomplete runs.** A run the harness killed, or a `&&` chain that stopped before its last
-  command, is incomplete and proves no inheritance.
+  compiler are named by diagnostic (file, rule or code, and message).
+- **Occurrences.** An equal count is not enough for a static check. Each ESLint or tsc diagnostic
+  must be a base occurrence that the change's recorded hunks carry to the same line and column.
+  A Prettier finding is inherited only in a file the change left alone. Anything else is
+  unattributed.
+- **Incomplete runs.** A run the harness killed is incomplete and proves no inheritance. So is a
+  `&&` chain that stopped before its last command, including one where an earlier command runs
+  the same tool as the last.
+- **A static failure the task asks to fix** seals that check `absolute-pass`.
 - **Older records** keep their original rule.
 
 Base measurement removes candidate build output and rebuilds as required. A demonstrated
