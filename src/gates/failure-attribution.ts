@@ -1,5 +1,6 @@
 import type { GateObservation } from "./gate-definition.ts";
 import { runnerTestPoints, unreconciledRunnerPoints } from "./runner-results.ts";
+import { movedLine, type SourceChanges } from "./source-changes.ts";
 
 /**
  * Whether a check that failed with the patch failed because of it.
@@ -24,9 +25,12 @@ export type FailureAttribution = "inherited" | "new" | "unattributed";
  * The rule new records are attributed under; records without it were written under v1. v3 is v2
  * with temporary names set aside in causes and outputs (see `withoutTemporaryNames`). v4 is v3
  * with static checks' diagnostics named (`diagnosticPoints`), and with a run the harness killed
- * (exit 128) or a `&&` chain that stopped before its last command read as incomplete.
+ * (exit 128) or a `&&` chain that stopped before its last command read as incomplete. v5 is v4
+ * where a chain is complete only if no earlier command runs the failing tool, and where a located
+ * diagnostic is inherited only as an occurrence the change's hunks follow to the same place
+ * (`sourceChanges`; docs/check-requirements.md).
  */
-export const attributionRule = "failure-identity-v4";
+export const attributionRule = "failure-identity-v5";
 
 /** What the command runner records for a run it timed out or cancelled. */
 const killedExitCode = 128;
@@ -371,7 +375,15 @@ function counts(ids: readonly string[]): Map<string, number> {
 function pairedPoints(
   withPatch: GateObservation,
   atBase: GateObservation,
-): { readonly patched: TestPoints | null; readonly base: TestPoints | null } {
+): {
+  readonly patched: TestPoints | null;
+  readonly base: TestPoints | null;
+  /** The two runs' diagnostics where they were read as a static check's; null for tests. */
+  readonly occurrences?: {
+    readonly patched: readonly Occurrence[];
+    readonly base: readonly Occurrence[];
+  };
+} {
   const texts = [withPatch, atBase].map((one) => `${one.stdout}\n${one.stderr}`);
   if (texts.every((text) => /^TAP version \d+/m.test(text))) {
     const root = sharedLocationRoot(texts);
@@ -384,7 +396,16 @@ function pairedPoints(
   const base = testPoints(atBase);
   if (patched !== null || base !== null) return { patched, base };
   const root = diagnosticRoot(texts);
-  return { patched: diagnosticPoints(withPatch, root), base: diagnosticPoints(atBase, root) };
+  const patchedReading = diagnosticReading(withPatch, root);
+  const baseReading = diagnosticReading(atBase, root);
+  return {
+    patched: patchedReading?.points ?? null,
+    base: baseReading?.points ?? null,
+    occurrences: {
+      patched: patchedReading?.occurrences ?? [],
+      base: baseReading?.occurrences ?? [],
+    },
+  };
 }
 
 /** A run's failures by identity: its tests where it names any, otherwise its diagnostics. */
@@ -403,8 +424,21 @@ interface ToolDiagnostics {
   /** Whether the tool printed anything, which shows it ran even where it found nothing. */
   readonly ran: boolean;
   readonly failed: readonly string[];
+  /** Each failure where the tool printed it: one per entry of `failed`, in the same order. */
+  readonly occurrences: readonly Occurrence[];
   /** Whether the tool's own summary agrees with what it named. */
   readonly complete: boolean;
+}
+
+/**
+ * One diagnostic where its tool put it: the file as printed, and the line and column where the
+ * tool gives them. Prettier's `--check` names a file and nothing within it.
+ */
+export interface Occurrence {
+  readonly identity: string;
+  readonly path: string;
+  readonly line: number | null;
+  readonly column: number | null;
 }
 
 /** An absolute file path a static tool names, at the start of a line. */
@@ -444,29 +478,41 @@ function eslintDiagnostics(lines: readonly string[], root: string): ToolDiagnost
     .find((found) => found !== null);
   const warningsFail = lines.some((line) => /ESLint found too many warnings/.test(line));
   const failed: string[] = [];
+  const occurrences: Occurrence[] = [];
   let errors = 0;
   let warnings = 0;
   let file: string | null = null;
+  let printed: string | null = null;
   for (const line of lines) {
     const named = absoluteFile.exec(line)?.[1];
     if (named !== undefined) {
       file = root.length > 0 && named.startsWith(root) ? named.slice(root.length) : named;
+      printed = named;
       continue;
     }
     const problem =
-      /^\s+\d+:\d+\s+(error|warning)\s+(.+?)(?:\s{2,}(@?[\w-]+(?:\/[\w-]+)*))?\s*$/.exec(line);
+      /^\s+(\d+):(\d+)\s+(error|warning)\s+(.+?)(?:\s{2,}(@?[\w-]+(?:\/[\w-]+)*))?\s*$/.exec(line);
     if (problem === null || file === null) continue;
-    const [, severity, message, rule] = problem;
+    const [, at, column, severity, message, rule] = problem;
     if (severity === "error") errors++;
     else warnings++;
-    if (severity === "error" || warningsFail)
-      failed.push(`eslint ${file} › ${rule ?? "(no rule)"}: ${normalizedCause(message ?? "")}`);
+    if (severity === "error" || warningsFail) {
+      const identity = `eslint ${file} › ${rule ?? "(no rule)"}: ${normalizedCause(message ?? "")}`;
+      failed.push(identity);
+      occurrences.push({
+        identity,
+        path: printed ?? file,
+        line: Number(at),
+        column: Number(column),
+      });
+    }
   }
   if (summary === undefined && failed.length === 0) return null;
   return {
     tool: "eslint",
     ran: true,
     failed,
+    occurrences,
     complete:
       summary !== undefined &&
       summary !== null &&
@@ -482,6 +528,7 @@ function eslintDiagnostics(lines: readonly string[], root: string): ToolDiagnost
 function prettierDiagnostics(lines: readonly string[]): ToolDiagnostics | null {
   const ran = lines.some((line) => /^Checking formatting\.\.\.\s*$/.test(line));
   const failed: string[] = [];
+  const occurrences: Occurrence[] = [];
   let counted: number | null = null;
   for (const line of lines) {
     // Prettier 3 counts ("in 3 files", "in the above file"); Prettier 2 says "the above
@@ -495,10 +542,16 @@ function prettierDiagnostics(lines: readonly string[]): ToolDiagnostics | null {
       continue;
     }
     const warned = /^\[warn\] (\S.*?)\s*$/.exec(line)?.[1];
-    if (warned !== undefined) failed.push(`prettier ${warned}`);
+    if (warned !== undefined) {
+      failed.push(`prettier ${warned}`);
+      occurrences.push({ identity: `prettier ${warned}`, path: warned, line: null, column: null });
+    }
     const error = /^\[error\] (\S+?): (.+?)\s*$/.exec(line);
-    if (error !== null)
-      failed.push(`prettier ${error[1]}: ${normalizedCause(error[2]?.split(" (")[0] ?? "")}`);
+    if (error !== null) {
+      const identity = `prettier ${error[1]}: ${normalizedCause(error[2]?.split(" (")[0] ?? "")}`;
+      failed.push(identity);
+      occurrences.push({ identity, path: error[1] ?? "", line: null, column: null });
+    }
   }
   if (!ran && failed.length === 0) return null;
   const warned = failed.filter((one) => !one.includes(": ")).length;
@@ -506,6 +559,7 @@ function prettierDiagnostics(lines: readonly string[]): ToolDiagnostics | null {
     tool: "prettier",
     ran: true,
     failed,
+    occurrences,
     complete:
       failed.length === 0 ||
       (counted !== null && (counted === warned || counted === -1) && failed.length === warned),
@@ -515,6 +569,7 @@ function prettierDiagnostics(lines: readonly string[]): ToolDiagnostics | null {
 /** TypeScript's compiler, in either of its formats: named by file, code and message. */
 function tscDiagnostics(lines: readonly string[], root: string): ToolDiagnostics | null {
   const failed: string[] = [];
+  const occurrences: Occurrence[] = [];
   for (const line of lines) {
     const found =
       /^(\S.*?)\((\d+),(\d+)\): error (TS\d+): (.+)$/.exec(line) ??
@@ -522,7 +577,9 @@ function tscDiagnostics(lines: readonly string[], root: string): ToolDiagnostics
     if (found === null) continue;
     const named = found[1] ?? "";
     const file = root.length > 0 && named.startsWith(root) ? named.slice(root.length) : named;
-    failed.push(`tsc ${file} › ${found[4]}: ${normalizedCause(found[5] ?? "")}`);
+    const identity = `tsc ${file} › ${found[4]}: ${normalizedCause(found[5] ?? "")}`;
+    failed.push(identity);
+    occurrences.push({ identity, path: named, line: Number(found[2]), column: Number(found[3]) });
   }
   const counted = lines
     .map((line) => /^Found (\d+) errors?\b/.exec(line)?.[1])
@@ -532,6 +589,7 @@ function tscDiagnostics(lines: readonly string[], root: string): ToolDiagnostics
     tool: "tsc",
     ran: true,
     failed,
+    occurrences,
     complete: counted === undefined || Number(counted) === failed.length,
   };
 }
@@ -569,6 +627,14 @@ function toolOf(command: string): ToolDiagnostics["tool"] | null {
  * unknown, so nothing can be shown inherited from such a run (it can still show a failure new).
  */
 export function diagnosticPoints(observation: GateObservation, root: string): TestPoints | null {
+  return diagnosticReading(observation, root)?.points ?? null;
+}
+
+/** A static check's diagnostics as points, with where each one was printed. */
+function diagnosticReading(
+  observation: GateObservation,
+  root: string,
+): { readonly points: TestPoints; readonly occurrences: readonly Occurrence[] } | null {
   const lines = `${observation.stdout}\n${observation.stderr}`.replace(colourCode, "").split("\n");
   const found = [
     eslintDiagnostics(lines, root),
@@ -579,22 +645,78 @@ export function diagnosticPoints(observation: GateObservation, root: string): Te
   if (failing.length === 0) return null;
   const chain = echoedChain(lines);
   const last = chain === null ? null : toolOf(chain.at(-1) ?? "");
-  // One command has nothing after it to leave unrun.
+  // One command has nothing after it to leave unrun. Otherwise the failing report must be the
+  // last command's, and a tool's name shows that only where no earlier command runs the same
+  // tool: in `eslint src && eslint test` a report from the first reads like one from the last.
   const wholeChainRan =
     chain === null ||
     chain.length === 1 ||
-    (failing.length === 1 && last !== null && failing[0]?.tool === last);
+    (failing.length === 1 &&
+      last !== null &&
+      failing[0]?.tool === last &&
+      chain.filter((command) => toolOf(command) === last).length === 1);
   return {
-    failed: failing.flatMap((one) => one.failed),
-    passed: [],
-    causes: {},
-    complete:
-      observation.outputTruncated !== true &&
-      observation.exitCode !== killedExitCode &&
-      wholeChainRan &&
-      failing.every((one) => one.complete),
+    points: {
+      failed: failing.flatMap((one) => one.failed),
+      passed: [],
+      causes: {},
+      complete:
+        observation.outputTruncated !== true &&
+        observation.exitCode !== killedExitCode &&
+        wholeChainRan &&
+        failing.every((one) => one.complete),
+    },
+    occurrences: failing.flatMap((one) => one.occurrences),
   };
 }
+
+/**
+ * The files a static check's failing diagnostics name, as printed, for the harness to record the
+ * change's hunks of beside an attribution.
+ */
+export function diagnosticFiles(observation: GateObservation): readonly string[] {
+  const root = diagnosticRoot([`${observation.stdout}\n${observation.stderr}`]);
+  return [
+    ...new Set(diagnosticReading(observation, root)?.occurrences.map((one) => one.path) ?? []),
+  ].sort();
+}
+
+/**
+ * The candidate's occurrences no base occurrence accounts for. A base occurrence is followed to
+ * where the change's hunks put it; one on a line the change wrote, or in a file whose hunks were
+ * not recorded or cannot be followed, accounts for nothing. A file-level finding is followed only
+ * through an unchanged file. Each base occurrence accounts for one candidate occurrence at most.
+ */
+export function unaccountedOccurrences(
+  patched: readonly Occurrence[],
+  base: readonly Occurrence[],
+  changes: SourceChanges | undefined,
+): readonly Occurrence[] {
+  const followed = base.map((one) => {
+    const file = changes?.[one.path];
+    if (file === undefined) return null;
+    if (one.line === null) return file !== "unmappable" && file.length === 0 ? one : null;
+    const line = movedLine(file, one.line);
+    return line === null ? null : { ...one, line };
+  });
+  const unaccounted: Occurrence[] = [];
+  for (const one of patched) {
+    const index = followed.findIndex(
+      (candidate) =>
+        candidate !== null &&
+        candidate.identity === one.identity &&
+        candidate.path === one.path &&
+        candidate.line === one.line &&
+        candidate.column === one.column,
+    );
+    if (index === -1) unaccounted.push(one);
+    else followed[index] = null;
+  }
+  return unaccounted;
+}
+
+const placed = (one: Occurrence) =>
+  one.line === null ? one.path : `${one.path}:${one.line}:${one.column ?? 0}`;
 
 function namedList(ids: readonly string[]): string {
   return `${ids.slice(0, 5).join("; ")}${ids.length > 5 ? `; and ${ids.length - 5} more` : ""}`;
@@ -607,6 +729,7 @@ function namedList(ids: readonly string[]): string {
 export function unattributedReason(
   withPatch: GateObservation | undefined,
   atBase: GateObservation | undefined,
+  sourceChanges?: SourceChanges,
 ): string {
   if (withPatch === undefined || atBase === undefined)
     return "the base could not be put in place to run it";
@@ -614,7 +737,7 @@ export function unattributedReason(
     return "a run's output was cut short, and nothing after the cut can be compared";
   if (withPatch.exitCode === killedExitCode || atBase.exitCode === killedExitCode)
     return "a run was stopped by the harness (timed out or cancelled), so it did not finish reporting";
-  const { patched, base } = pairedPoints(withPatch, atBase);
+  const { patched, base, occurrences } = pairedPoints(withPatch, atBase);
   if (patched === null && base === null)
     return "its output names no tests to compare and differs from the base's";
   if (patched === null)
@@ -624,7 +747,7 @@ export function unattributedReason(
   const after = counts(patched.failed);
   const before = counts(base.failed);
   const reasons: string[] = [];
-  if ([...after, ...before].some(([, count]) => count > 1))
+  if (occurrences === undefined && [...after, ...before].some(([, count]) => count > 1))
     reasons.push("a failing test's name repeats, so its failures cannot be told apart");
   const changed = [...after.keys()].filter((id) => patched.causes[id] !== base.causes[id]);
   if (changed.length > 0)
@@ -636,6 +759,14 @@ export function unattributedReason(
       "a run did not report completely (cut short, cancelled, short of its plan, or a chained command stopped before the last one ran)",
     );
   if (patched.failed.length === 0) reasons.push("it failed without naming a failing test");
+  const unaccounted =
+    occurrences === undefined
+      ? []
+      : unaccountedOccurrences(occurrences.patched, occurrences.base, sourceChanges);
+  if (unaccounted.length > 0)
+    reasons.push(
+      `the same failures count as many as the base's, but these could not be shown to be the base's own occurrences, which the change's hunks would have to carry to the same place: ${namedList(unaccounted.map((one) => `${one.identity} at ${placed(one)}`))}`,
+    );
   return reasons.length > 0
     ? reasons.join("; ")
     : "its failures could not be matched one to one with the base's";
@@ -671,6 +802,11 @@ export function attributeFailure(input: {
   readonly withPatch: GateObservation;
   readonly baseStatus: string | undefined;
   readonly atBase: GateObservation | undefined;
+  /**
+   * The change's hunks of each file a static check's diagnostics name (`sourceChanges`), which
+   * alone can show a located diagnostic is the base's occurrence. Absent, none can be.
+   */
+  readonly sourceChanges?: SourceChanges;
 }): { readonly attribution: FailureAttribution; readonly newFailures: readonly string[] } {
   if (input.baseStatus !== "failed" || input.atBase === undefined)
     return { attribution: "new", newFailures: [] };
@@ -683,7 +819,7 @@ export function attributeFailure(input: {
     input.atBase.exitCode === killedExitCode
   )
     return { attribution: "unattributed", newFailures: [] };
-  const { patched, base } = pairedPoints(input.withPatch, input.atBase);
+  const { patched, base, occurrences } = pairedPoints(input.withPatch, input.atBase);
   if (patched !== null && base !== null && patched.failed.length > 0) {
     const before = counts(base.failed);
     const after = counts(patched.failed);
@@ -694,7 +830,18 @@ export function attributeFailure(input: {
     if (newFailures.length > 0) return { attribution: "new", newFailures };
     const repeated = [...after, ...before].some(([, count]) => count > 1);
     const causeChanged = [...after.keys()].some((id) => patched.causes[id] !== base.causes[id]);
-    return patched.complete && base.complete && !repeated && !causeChanged
+    // Equal counts do not show an occurrence stayed: each must be the base's, followed.
+    const unaccounted =
+      occurrences === undefined
+        ? []
+        : unaccountedOccurrences(occurrences.patched, occurrences.base, input.sourceChanges);
+    // A repeated identity cannot be told apart among tests; among located diagnostics the
+    // occurrences tell them apart, so there it is the occurrences that decide.
+    return patched.complete &&
+      base.complete &&
+      (!repeated || occurrences !== undefined) &&
+      !causeChanged &&
+      unaccounted.length === 0
       ? { attribution: "inherited", newFailures: [] }
       : { attribution: "unattributed", newFailures: [] };
   }
