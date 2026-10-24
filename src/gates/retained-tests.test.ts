@@ -24,7 +24,8 @@ describe("the tests a file declares", () => {
       "});",
       "test(name, () => {});",
       'test.skip("skipped", () => {});',
-      "test(`templated ${x}`, () => {});",
+      // Source text holding a template placeholder, written without one in this file.
+      `test(\`templated $${"{x}"}\`, () => {});`,
       'test("adds (one)", () => {});',
     ].join("\n");
     expect(testBlocks(text)).toEqual([
