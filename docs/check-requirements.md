@@ -137,6 +137,9 @@ or the contract's `requiredChecks` still decides over it.
   failed under `no-new-regression` with an `inherited` attribution does not refuse. The verifier
   re-derives that attribution from the two records, and a recorded value it does not reproduce
   fails verification.
+- **`run-acceptance-v7`.** v6, under the run's declared `known-violation-completion-v1`: a
+  validated counterexample of the task's own code, open on the delivered candidate, refuses
+  ([known violations](candidate-review.md#known-violations-decide-completion-every-run)).
 - **The verdict says which of two results it is:**
   - "all required checks pass";
   - "no new failures established; these inherited failures remain", with each check and the

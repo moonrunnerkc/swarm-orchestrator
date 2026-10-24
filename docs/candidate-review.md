@@ -1,6 +1,6 @@
-# Preservation obligations and the candidate review
+# Preservation obligations, known violations, retained tests and the candidate review
 
-Two parts. The first applies to every run. The second is experimental and off by default.
+Four parts. The first three apply to every run. The fourth is experimental and off by default.
 
 ## Obligations (every run)
 
@@ -11,7 +11,7 @@ categories:
 | Category | Source | What it is | What settles it |
 | --- | --- | --- | --- |
 | requested | the supplied contract | a requirement for new or changed behaviour (any requirement without `"intent": "preserve"`) | its checks: `met` or `unmet`. A met requirement is new behaviour, never preserved behaviour |
-| requested | the task's own code | an example the task writes as code (`f("a") is "b"`), or a relation between two calls (`f(input, x) equals g(input, {})`), `task-code-v1` | the review's run of that code on the delivered candidate: `met`, `unmet`, or for a relation `exercised` at the inputs run |
+| requested | the task's own code | an example the task writes as code (`f("a") is "b"`), a relation between two calls (`f(input, x) equals g(input, {})`), or a callback's stated calls (`cb is called once for each key of g(input)`), `task-code-v2` | the review's run of that code on the delivered candidate: `met`, `unmet`, or for a relation `exercised` at the inputs run |
 | explicit preserve | the task, the supplied contract | the task's sentences about behaviour to keep ("behaves as today", "must keep passing", "must remain available", ...), an example the task writes with "stays" or "still returns", and a requirement marked `"intent": "preserve"` | a supplied requirement's own check (`held`); a kept example by its own call (`held`); a task sentence only through review probes that name it, and then only `exercised` |
 | observed | the base | the project's own checks that pass on the base still pass | the final verification's regression reading, which leaves out failures the base had (`held`, naming any that remain) |
 | proposed | the review | probes a reviewer chose once a candidate existed (experimental, below) | the probe's own cases, `exercised` at most |
@@ -48,11 +48,56 @@ What the base does is what currently happens, not by itself what should happen. 
 task authorizes changing is not held to the base. The set examined is finite, so a run that keeps
 every obligation has not shown backward compatibility in general.
 
-## Candidate review (experimental: `--review executable|prose`)
+## Known violations decide completion (every run)
 
-A separate conversation that did not write the change reviews the actual candidate
-(`candidate-review-v3`). It needs `--goal-contract` or `--plan-checks`, because its probes run on
-fresh checkouts the way the sealed checks do.
+A run declares `known-violation-completion-v1` before its first model call, and is assessed under
+`run-acceptance-v7`.
+- **A validated counterexample** is a case of the harness's own run of the task's code (below),
+  under a supported reading, that gave the same answer on two runs of the delivered candidate and
+  is not the task's expectation.
+- **It refuses the run** while it stays open on the delivered candidate, with the case named in
+  the verdict's reason.
+- **It stays visible to repair.** It is checked on every later candidate within the run's attempt
+  and time limits.
+- **What never refuses:** a reviewer's probe, a model-written test, a relation over a domain the
+  reader could not follow, and a case that did not run twice the same way.
+- **Re-derived independently.** The bundle's `verify.mjs` reads the delivered reading from the
+  ratchet decisions, each held case from its two candidate runs' recorded output, and a
+  relation's expectation from the reference's run on the base. Records under v1 to v6 keep their
+  meaning.
+
+## Retained tests (every run)
+
+A test a worker writes and then deletes or changes keeps the question it asked
+(`test-retention-v1`).
+- **What is kept.** Every version of a test file a worker's write or shell step leaves, whether or
+  not any gate cycle saw it. A failure that ran through a pipe, which records exit 0, is kept the
+  same way.
+- **When it runs again.** At the first gate cycle and on every kept candidate whose tests pass:
+  each named test the worker has since deleted or changed, as it last stood, appended to its file,
+  through the tests gate's own command for that file. The file is put back byte for byte.
+- **The reading.**
+  - `passes`: the candidate meets it.
+  - `open`: a deleted test that fails. It is owed an attempt once the gates are green, and stops
+    at the repeated-failure rule.
+  - `corrected`: a changed test whose earlier version fails where the current one passes. The
+    record keeps both versions.
+  - `unmeasured`: the tests did not pass, or the command could not run the file.
+- **It decides nothing.** A retained test is a model's expectation, and can be wrong. Its link to
+  the task is only which of the task's stated functions it calls. Deleting it again does not
+  answer it; passing does.
+
+## Candidate review (experimental: `--review grounded|executable|prose`)
+
+The harness's own checks of the task's code, and optionally a separate conversation that did not
+write the change, review the actual candidate (`candidate-review-v4`). It needs `--goal-contract`
+or `--plan-checks`, because its probes run on fresh checkouts the way the sealed checks do.
+
+**Three modes.**
+- `grounded`: only the harness's run of the task's code. No conversation, no tokens.
+- `executable`: the same, then a reviewer asked only about the task sentences no harness check
+  reaches (the stated gaps). It is not asked where there are none.
+- `prose`: the control, with a reviewer's objections in words and nothing run.
 
 **When it runs.** Once the candidate *runs*. Something that executes the code must have run the
 change, and every blocking failure must be a static check (lint, format, typecheck, a build) or a
@@ -83,7 +128,7 @@ It keeps the first that loads and exposes exports. The reviewer is given those l
 the exports. Every probe the harness builds starts with them. Where none loads, every attempt is
 recorded with its error, and what the probes would have measured is unmeasured.
 
-**The task's own code** (`task-code-v1`). The harness reads examples and relations the task
+**The task's own code** (`task-code-v2`). The harness reads examples and relations the task
 writes as code, with no model involved, and runs them itself on both trees:
 - `f(args) is literal` (also returns, gives, equals): a requested example. Its expectation is the
   task's literal.
@@ -98,8 +143,23 @@ writes as code, with no model involved, and runs them itself on both trees:
   position. Where the domain is "contains S", literals without S are carried into it. The
   reviewer may add inputs. A domain the reader cannot apply leaves every difference
   provisional.
+- `cb is called once for each key of g(input)`, where the task declares a function taking both
+  (`f(input: string, cb: (key, value) => boolean)`): the callback's stated calls. The candidate's
+  calls of `cb` are compared with the entries of `g(input)` on the unchanged base, in order where
+  the sentence says so, and with the values where it names them. Of the 28 comparison tasks and
+  the held-out texts, only the ufo feature task states one.
 - A call over bare names (`keep(key, value) returns true`) describes a signature, and is not read
   as an example. A function the candidate does not export answers as such, as an observation.
+
+**Generated inputs** (`domain-inputs-v1`). Inside a relation's followed domain, inputs are made
+from the task's own literals by one operation each (splice, move, drop, repeat or blank a
+segment, or insert another literal's), kept only where they are new, inside the domain and of a
+new shape. The seed is the statement's own sentence, digested, and is recorded with how each input
+was made.
+- A **discovery batch** of six runs beside the task's inputs.
+- A **validation batch** of twelve, from a separate seed, excludes both and is held back. It runs
+  first on a repaired candidate. Once that candidate is kept its cases are exposed, held like the
+  others, and a counterexample among them may enter a later attempt, whose brief says so.
 
 **What it answers** (executable mode): up to four probes, each a plain JavaScript module that
 calls the project, with up to six inputs.
@@ -147,8 +207,11 @@ of the candidate, through the planned-check runner, and each case is qualified:
 | `met` / `missed-requirement` | the candidate gives, or does not give, the reviewer's expected answer | reported only; the expectation is the reviewer's |
 | `unstable`, `defective-program`, `did-not-load`, `did-not-complete` | nothing was established: a broken or unavailable probe. A load error names its message | reported only |
 
-**What follows from a finding.** One attempt from the run's existing attempt cap, under the
-ratchet. The brief gives, for each case:
+**What follows from a finding.** An attempt from the run's existing attempt cap, under the
+ratchet. Another is owed while established cases stay open and the last attempt fixed one of them
+or a newly exposed case appeared. Where the same cases stay open after an attempt given them, the
+repeated-failure stop is recorded and nothing more is owed. Open review cases and open retained
+tests travel in one attempt. The brief gives, for each case:
 - the obligation and its words;
 - the input;
 - the expectation (the base's observed answer, the task's literal, or the reference's answer on
@@ -157,12 +220,13 @@ ratchet. The brief gives, for each case:
 - the digest of the candidate it was read on.
 
 The attempt is told to leave the code where the task asks for the change, and to say which
-sentence asks for it. Every probe then runs again on each later candidate. A repair that breaks a
-held case the incumbent kept, or a requested case it met, is rolled back.
+sentence asks for it. Every probe then runs again on each later candidate. Every held case is its
+own ratchet part, so a repair that breaks a held case the incumbent kept, or a requested case it
+met, is rolled back, even where it fixes another case of the same probe.
 
-**What a finding never does.** It never decides acceptance, never changes a sealed gate, and never
-enters the final verification, which judges the delivered tree as before. A model's expectation
-is never acted on.
+**What decides and what does not.** A validated counterexample of the task's own code refuses
+completion (above). Nothing a reviewer's probe reads decides acceptance, changes a sealed gate or
+enters the final verification. A model's expectation is never acted on.
 
 **Prose mode** is the control. It runs the same conversation and the same attempt, with objections
 in words and nothing run.
@@ -182,11 +246,10 @@ verification reserve is untouched.
   Qwen 35B test agent's tests lowered the resolve rate.
 - **Only code-shaped task text is read without a model.** Prose requirements reach a measurement
   only through a reviewer's relation probe, and only where an existing function the task names
-  can serve as the expectation. A relation's inputs are the task's literals and the reviewer's,
-  a sample of the domain and not the domain.
-- **A finding still decides nothing.** An established requested finding earns one repair
-  attempt. If the attempt does not fix it, the run's acceptance is decided by its gates as before,
-  and the requested obligation is reported `unmet`.
+  can serve as the expectation. A relation's inputs are the task's literals, eighteen generated
+  ones and the reviewer's: a sample of the domain, not the domain.
+- **A reviewer's finding still decides nothing.** Only the harness's run of the task's code
+  refuses a run, and only through a counterexample that stays open.
 - **Coverage of a statement is the reviewer's reading.** Whether a probe's input is one the named
   obligation covers is the reviewer's reading. Naming a stated obligation is what lets a
   difference count, but the harness cannot check that the input falls within it.
@@ -199,7 +262,8 @@ verification reserve is untouched.
 
 ## Evidence
 
-The deterministic controls are in `src/cli-review.integration.test.ts`. Each drives the ordinary
+The deterministic controls are in `src/cli-review.integration.test.ts` and
+`src/cli-retained-tests.integration.test.ts`. Each drives the ordinary
 command line on a scripted model, through the real gates, ratchet and final verification, and then
 the bundle's own `verify.mjs` and `rederive.mjs`. A scripted model shows what the controller does
 with a given answer, not what a real model would answer.
@@ -214,7 +278,12 @@ The controls:
 - broken probes;
 - a weakened test;
 - the prose control;
-- more than twelve obligations kept visible.
+- more than twelve obligations kept visible;
+- the grounded path: a counterexample found with no reviewer, a repair that fixes some cases and
+  is owed another attempt, a repair that meets every case it was shown and fails the held-back
+  batch, and a known violation left in place refusing the run;
+- retained tests: a failure deleted before the first gate cycle and then repaired, the same
+  deletion left unresolved, and a wrong test the worker corrected.
 
 The two development false accusations of October 23 are unit cases in `src/agent-review.test.ts`:
 - a base that raised for want of the requested rule;
@@ -222,4 +291,6 @@ The two development false accusations of October 23 are unit cases in `src/agent
 
 Live results:
 - [October 23](evidence/2026-10-23-preservation-review/README.md);
-- [October 24](evidence/2026-10-24-delivery-preservation/README.md).
+- [October 24](evidence/2026-10-24-delivery-preservation/README.md);
+- [October 24, detection and repair](evidence/2026-10-24-detection-repair/README.md);
+- [October 24, retained counterexamples](evidence/2026-10-24-retained-counterexamples/README.md).
