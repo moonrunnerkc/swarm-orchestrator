@@ -546,6 +546,8 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
         `${JSON.stringify({ ...record, commands: log.commands }, null, 2)}\n`,
         { flag: "wx" },
       );
+      // The replay's proxy holds a listening socket, which would keep this process alive.
+      await candidateProxy?.close();
       rmSync(scratch, { recursive: true, force: true });
       rmSync(tmpDir, { recursive: true, force: true });
       console.log(`${launch.order} ${launch.task} ${launch.arm}: preflight ok`);
