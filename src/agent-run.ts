@@ -11,12 +11,15 @@ import { describeJustificationRequest, runJustificationTurn } from "./agent-just
 import { type WorkerPromptProfile, workerPrompt } from "./agent-prompt.ts";
 import { finishRepair } from "./agent-repair-finish.ts";
 import {
+  caseIdentity,
   createCandidateReview,
   type ProbeRunner,
   type ProbeValidator,
   type ReviewAuthority,
   type ReviewGrounding,
   type ReviewMode,
+  type ReviewReadings,
+  validatedViolations,
 } from "./agent-review.ts";
 import { withWorkspaceEffects } from "./agent-workspace-effects.ts";
 import { buildVersion } from "./build-version.ts";
@@ -43,7 +46,11 @@ import {
 import { openRunStore, type RunStore } from "./durable/run-store.ts";
 import { asJsonValue, digestOfBytes } from "./evidence/canonical-json.ts";
 import { recordRoutineClaims } from "./evidence/routine-claims.ts";
-import { recordRunAssessment, runLifecycle } from "./evidence/run-assessment.ts";
+import {
+  declareTaskViolationPolicy,
+  recordRunAssessment,
+  runLifecycle,
+} from "./evidence/run-assessment.ts";
 import { sealRunSpec } from "./evidence/run-spec.ts";
 import { scrubText } from "./evidence/scrub.ts";
 import type { EvidenceRecorder } from "./evidence/session.ts";
@@ -575,6 +582,8 @@ async function executeAgentTask(
       attemptCap: options.attempts,
     },
   });
+  // Before anything it governs runs: a validated counterexample to the task decides completion.
+  await declareTaskViolationPolicy(options.evidence);
 
   // After the record that opens the turn and before the first tool call: what a run executed
   // under is measured rather than assumed, and the measurement is a record. A reader should
@@ -1247,6 +1256,7 @@ async function executeAgentTask(
     // verdict refuses that lifecycle on its own.
     (options.verificationSignal ?? options.abortSignal).aborted,
     options.contract,
+    taskViolationsOf(review?.readings()),
   );
   recordRunEnd(options, verdict.acceptable, store);
   options.emit({
@@ -1775,4 +1785,21 @@ function usageFields(loop: Pick<AgentLoopOutcome, "usage" | "reservedTokens">) {
     cachedInputTokens: loop.usage.cachedInputTokens,
     ...(loop.reservedTokens === 0 ? {} : { reservedTokens: loop.reservedTokens }),
   };
+}
+
+/**
+ * The delivered candidate's validated counterexamples to the task, from the review's readings of
+ * it, for the assessment (known-violation-completion-v1). A run with no review read the task's code
+ * on no candidate and has none.
+ */
+function taskViolationsOf(readings: ReviewReadings | undefined): {
+  readonly readingRecord: string | null;
+  readonly open: readonly string[];
+} {
+  return readings === undefined
+    ? { readingRecord: null, open: [] }
+    : {
+        readingRecord: readings.record,
+        open: validatedViolations(readings.probes, readings.classified).map(caseIdentity),
+      };
 }

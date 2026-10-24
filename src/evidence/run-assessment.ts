@@ -42,7 +42,9 @@ const wallStopSchema = z.strictObject({
  * still applies to the checked tree. Under v1 to v4 a wall stop refuses on its own, and their
  * records keep that meaning. v6 is v5 with check-requirement-v1: a blocking gate sealed
  * no-new-regression that failed with every failure proven the base's own does not refuse; under
- * v1 to v5 every blocking failure refuses. The bundled verifier re-derives each by its own rule.
+ * v1 to v5 every blocking failure refuses. v7 is v6 with known-violation-completion-v1, declared at
+ * the run's start: a validated counterexample to the task, open on the delivered candidate,
+ * refuses (`taskViolations`). The bundled verifier re-derives each by its own rule.
  */
 export const assessmentInputsSchema = z.object({
   policy: z.enum([
@@ -51,6 +53,7 @@ export const assessmentInputsSchema = z.object({
     "run-acceptance-v4",
     "run-acceptance-v5",
     "run-acceptance-v6",
+    "run-acceptance-v7",
   ]),
   requiredChecks: z.array(z.string().min(1)).optional(),
   contractRecord: z.string().optional(),
@@ -67,7 +70,49 @@ export const assessmentInputsSchema = z.object({
   justifications: z
     .array(z.strictObject({ gateRecord: z.string(), claimRecord: z.string() }))
     .optional(),
+  taskViolations: z
+    .strictObject({
+      /** The declaration of known-violation-completion-v1 this run made at its start. */
+      policyRecord: z.string(),
+      /** The examination or remeasurement whose readings are the delivered candidate's; null where none. */
+      readingRecord: z.string().nullable(),
+      open: z.array(z.string()),
+    })
+    .optional(),
 });
+
+/**
+ * known-violation-completion-v1, declared at a run's start: a validated counterexample to an
+ * applicable task requirement must be resolved before the run claims that requirement done. A
+ * counterexample is validated where it is a case of the harness's own run of the task's code
+ * (task-code-v2: an example's literal, a relation's or an enumeration's reference answer on the
+ * unchanged base, over a domain the reader followed), read the same way on two runs of the
+ * delivered candidate. A reviewer's probe, a model-written test and a provisional reading are
+ * reported and never refuse. Within the run's attempt and time limits the counterexample stays
+ * visible to repair, is checked on every later candidate, and an open one refuses the run.
+ */
+// Not "task-...": the shared scrubber reads "sk-" followed by twenty characters as a key, and a
+// rule name redacted on write would no longer name its rule.
+export const taskViolationRule = "known-violation-completion-v1";
+
+export async function declareTaskViolationPolicy(evidence: EvidenceRecorder): Promise<string> {
+  const recorded = await evidence.record({
+    type: "verification-command",
+    actor: "harness",
+    provenance: ["tool-output"],
+    payload: {
+      rule: taskViolationRule,
+      phase: "declared",
+      assessment: "run-acceptance-v7",
+      validated:
+        "a case of the harness's run of the task's own code, with a supported reading, read the same way twice on the delivered candidate",
+      provisional:
+        "a reviewer's probe, a model-written test, a relation over a domain the reader could not follow, and a case that did not run twice the same way",
+      effect: "an open validated counterexample on the delivered candidate refuses the run",
+    },
+  });
+  return recorded.record.payloadDigest;
+}
 
 export async function recordRunAssessment(
   evidence: EvidenceRecorder,
@@ -76,10 +121,31 @@ export async function recordRunAssessment(
   executionTrust: RunVerdict["executionTrust"],
   cancelled: boolean,
   contract?: TaskContract,
+  /** The delivered candidate's reading of the task's code, where the run took one. */
+  violations?: { readonly readingRecord: string | null; readonly open: readonly string[] },
 ): Promise<RunVerdict> {
   const stop = lifecycleStop(evidence);
+  const declared = recordsOfThisRun(evidence).findLast(
+    (entry) =>
+      entry.type === "verification-command" &&
+      (
+        evidence.payloads().get(entry.payloadDigest) as
+          | { rule?: unknown; phase?: unknown }
+          | undefined
+      )?.rule === taskViolationRule,
+  );
   const inputs = assessmentInputsSchema.parse({
-    policy: "run-acceptance-v6",
+    // A run that declared the policy is assessed under it; one that did not keeps v6.
+    policy: declared === undefined ? "run-acceptance-v6" : "run-acceptance-v7",
+    ...(declared === undefined
+      ? {}
+      : {
+          taskViolations: {
+            policyRecord: declared.payloadDigest,
+            readingRecord: violations?.readingRecord ?? null,
+            open: violations?.open ?? [],
+          },
+        }),
     ...(contract === undefined
       ? {}
       : {

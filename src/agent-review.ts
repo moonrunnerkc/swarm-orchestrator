@@ -876,7 +876,7 @@ export function reviewParts(classified: readonly CaseClassification[]): {
 
 /**
  * A counterexample the run must resolve before it claims the requirement it bears on
- * (task-violation-completion-v1): a case of the harness's own run of the task's code, its reading
+ * (known-violation-completion-v1): a case of the harness's own run of the task's code, its reading
  * one that reaches repair, under a supported reading (not provisional). A reviewer's probe, a
  * relation over a domain the reader could not follow, and a case that did not run twice the same
  * way are not: they stay reported and never decide completion.
@@ -1544,7 +1544,7 @@ export async function recordExamination(
       rule: reviewRule,
       ...payload,
       limitation:
-        "a reviewer's probe is the reviewer's choice of inputs, run by the harness: a preservation case's expectation is the base's observed answer, which is not by itself what the project should do, and a requirement case's expectation is the reviewer's reading of the task. A probe of the task's own code is the task's: under task-violation-completion-v1 a validated counterexample among its cases, open on the delivered candidate, refuses completion. Nothing a reviewer's probe reads decides acceptance.",
+        "a reviewer's probe is the reviewer's choice of inputs, run by the harness: a preservation case's expectation is the base's observed answer, which is not by itself what the project should do, and a requirement case's expectation is the reviewer's reading of the task. A probe of the task's own code is the task's: under known-violation-completion-v1 a validated counterexample among its cases, open on the delivered candidate, refuses completion. Nothing a reviewer's probe reads decides acceptance.",
     }),
   });
   return recorded.record.payloadDigest;

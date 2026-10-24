@@ -291,7 +291,7 @@ describe("an advisory size budget through the ordinary command line", () => {
     expect(ran.code).toBe(0);
     expect(outcomeLines(ran.stdout)).toEqual({ outcome: "outcome: accepted", blocked: null });
     const worker = ran.assessments[0];
-    expect(worker?.inputs.policy).toBe("run-acceptance-v6");
+    expect(worker?.inputs.policy).toBe("run-acceptance-v7");
     expect(worker?.inputs.justifications).toHaveLength(1);
     expect(worker?.verdict.policy).toBe("pass");
     expect(ran.result.verdict?.acceptable).toBe(true);

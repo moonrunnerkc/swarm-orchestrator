@@ -110,6 +110,11 @@ interface VerdictInput {
     readonly justifications?:
       | readonly { readonly gateRecord: string; readonly claimRecord: string }[]
       | undefined;
+    /**
+     * run-acceptance-v7 (known-violation-completion-v1): the validated counterexamples to the task
+     * open on the delivered candidate, by case identity. Any refuses. Absent under earlier policies.
+     */
+    readonly taskViolations?: { readonly open: readonly string[] } | undefined;
   };
   /** Approvals the run's spec said it would need, and whether they were given. */
   readonly approvals?: {
@@ -441,6 +446,9 @@ function assessmentRefusals(
     complete.cancelled ? "the run was cancelled" : null,
     complete.changedFiles === 0 && complete.lifecycle !== "completed"
       ? `nothing changed and the run stopped as ${complete.lifecycle}`
+      : null,
+    (complete.taskViolations?.open.length ?? 0) > 0
+      ? `unresolved task violation(s) on the delivered candidate: ${complete.taskViolations?.open.join("; ")}`
       : null,
   ].filter((reason): reason is string => reason !== null);
 }

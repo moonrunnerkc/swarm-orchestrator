@@ -33,6 +33,7 @@ const workerAssessmentPolicies = [
   "run-acceptance-v4",
   "run-acceptance-v5",
   "run-acceptance-v6",
+  "run-acceptance-v7",
 ];
 /** How a loop can stop, as run assessments name it (src/evidence/run-assessment.ts keeps the same list). */
 const loopLifecycles = [
@@ -1493,11 +1494,13 @@ function collectChecks(directory) {
                   entry.timestamp < window.modelWorkEnds),
             ),
           };
-    consistent &&= ["run-acceptance-v5", "run-acceptance-v6"].includes(inputs?.policy)
+    consistent &&= ["run-acceptance-v5", "run-acceptance-v6", "run-acceptance-v7"].includes(
+      inputs?.policy,
+    )
       ? canonicalJson(inputs.wallStop ?? null) === canonicalJson(wallStop)
       : inputs?.wallStop === undefined;
     const cutAtModelWork =
-      ["run-acceptance-v5", "run-acceptance-v6"].includes(inputs?.policy) &&
+      ["run-acceptance-v5", "run-acceptance-v6", "run-acceptance-v7"].includes(inputs?.policy) &&
       wallStop?.beforeDeadline === true &&
       wallStop.effectsSettled === true;
     consistent &&=
@@ -1526,7 +1529,12 @@ function collectChecks(directory) {
     consistent &&= JSON.stringify(blockingVacuous) === JSON.stringify(inputs?.vacuousBlockingBonds);
     const contracted =
       inputs?.policy === "run-acceptance-v2" ||
-      (["run-acceptance-v4", "run-acceptance-v5", "run-acceptance-v6"].includes(inputs?.policy) &&
+      ([
+        "run-acceptance-v4",
+        "run-acceptance-v5",
+        "run-acceptance-v6",
+        "run-acceptance-v7",
+      ].includes(inputs?.policy) &&
         inputs.contractRecord !== undefined);
     const requiredChecks = contracted ? inputs.requiredChecks : [];
     if (contracted) {
@@ -1547,7 +1555,8 @@ function collectChecks(directory) {
     // run over the base, and give the same reading. A blocking gate sealed no-new-regression
     // whose every failure that reading proves the base's own does not refuse. Before v6 every
     // blocking failure refuses, whatever a record says about it.
-    const v6 = inputs?.policy === "run-acceptance-v6";
+    // v7 is v6 with known-violation-completion-v1, so it reads inheritance as v6 does.
+    const v6 = ["run-acceptance-v6", "run-acceptance-v7"].includes(inputs?.policy);
     const inheritedOnly = gates.map((gate, index) => {
       if (!v6 || gate?.inheritance === undefined) return false;
       const baselineEntry = prior.find(
@@ -1583,9 +1592,12 @@ function collectChecks(directory) {
     // v4 and v5: an advisory gate whose own measure demanded a justification is answered by a
     // worker claim, before this assessment, that cites the gate's record under its own kind,
     // carries a narrative, and that this verifier evaluates as verified.
-    const justifications = ["run-acceptance-v4", "run-acceptance-v5", "run-acceptance-v6"].includes(
-      inputs?.policy,
-    )
+    const justifications = [
+      "run-acceptance-v4",
+      "run-acceptance-v5",
+      "run-acceptance-v6",
+      "run-acceptance-v7",
+    ].includes(inputs?.policy)
       ? inputs.justifications
       : [];
     consistent &&= Array.isArray(justifications);
@@ -1633,7 +1645,13 @@ function collectChecks(directory) {
         ? dynamicMet && !dynamicFailed
         : dynamic.some((gate) => gate.status === "passed") &&
           !dynamic.some((gate) => gate.status === "failed"));
+    // v7 (known-violation-completion-v1): the delivered candidate's open validated counterexamples to
+    // the task, re-derived from the probes' recorded runs; any refuses. Earlier policies carry none.
+    const v7 = inputs?.policy === "run-acceptance-v7";
+    const violations = v7 ? rederiveTaskViolations(inputs.taskViolations, thisRun, payloads) : null;
+    consistent &&= v7 ? violations.consistent : inputs?.taskViolations === undefined;
     const acceptable =
+      (violations === null || violations.open.length === 0) &&
       requiredPassed &&
       inputs?.settled === "green" &&
       base?.accepted === true &&
@@ -1658,6 +1676,140 @@ function collectChecks(directory) {
   const vacuous = bonds.filter((entry) => entry.payload.verdict === "vacuous");
 
   return { checks, verdicts, payloads, manifest, vacuous };
+}
+
+/**
+ * The open validated counterexamples to the task on a run's delivered candidate
+ * (known-violation-completion-v1), re-derived here from what ran rather than read off the review's
+ * own readings. Mirrors, by its own code, src/agent-review.ts (remeasure, validatedViolations,
+ * caseIdentity) and the adoption of a reading in src/gates/auto-resolve.ts:
+ * - the delivered reading is the examination, or the latest remeasurement whose next ratchet
+ *   decision accepted its candidate;
+ * - every held case of a probe of the task's own code is read again from its two candidate runs'
+ *   recorded output, against its expectation: the task's literal, the base's answer for a kept
+ *   case, or for a relation the reference's recorded answer on the base, which is checked too;
+ * - a case is open where it does not hold, under a supported reading of the task's code.
+ */
+export function rederiveTaskViolations(claimed, thisRun, payloads) {
+  const fail = { consistent: false, open: [] };
+  if (claimed === null || typeof claimed !== "object" || !Array.isArray(claimed.open)) return fail;
+  const ofRule = (rule) =>
+    thisRun.filter(
+      (entry) =>
+        entry.type === "verification-command" && payloads.get(entry.payloadDigest)?.rule === rule,
+    );
+  const declared = ofRule("known-violation-completion-v1").at(-1);
+  if (declared === undefined || declared.payloadDigest !== claimed.policyRecord) return fail;
+  const readings = ofRule("candidate-review-v4").filter((entry) => {
+    const payload = payloads.get(entry.payloadDigest);
+    return (
+      (payload?.phase === "examined" || payload?.phase === "remeasured") &&
+      Array.isArray(payload.classified)
+    );
+  });
+  let delivered = null;
+  for (const entry of readings) {
+    if (payloads.get(entry.payloadDigest).phase === "examined") {
+      delivered = entry;
+      continue;
+    }
+    const decision = payloads.get(
+      thisRun.find(
+        (candidate) => candidate.type === "ratchet-decision" && candidate.sequence > entry.sequence,
+      )?.payloadDigest,
+    );
+    if (decision?.scope === "retry" && decision.accepted === true) delivered = entry;
+  }
+  if ((delivered?.payloadDigest ?? null) !== (claimed.readingRecord ?? null)) return fail;
+  if (delivered === null) return { consistent: claimed.open.length === 0, open: [] };
+  const examination = payloads.get(
+    readings.find((entry) => payloads.get(entry.payloadDigest).phase === "examined")?.payloadDigest,
+  );
+  const reading = payloads.get(delivered.payloadDigest);
+  const probes = new Map((examination?.probes ?? []).map((probe) => [probe.id, probe]));
+  const probeOf = (id) =>
+    probes.get(id) ?? (id.endsWith("-held") ? probes.get(id.slice(0, -"-held".length)) : undefined);
+  // Every run record on the base the review took, and the delivered reading's candidate runs.
+  const baseRuns = readings.flatMap((entry) => payloads.get(entry.payloadDigest).baseRuns ?? []);
+  const candidateRuns = reading.candidateRuns ?? [];
+  const answersOf = (digests, checkId, cases) => {
+    const payload = digests
+      .map((digest) => payloads.get(digest))
+      .find((one) => one?.checkId === checkId && one?.phase === "completed");
+    const observation = payload?.observation;
+    if (
+      observation === undefined ||
+      observation.exitCode !== 0 ||
+      observation.outputTruncated === true ||
+      (observation.unavailable ?? null) !== null
+    )
+      return null;
+    const lines = String(observation.stdout ?? "")
+      .split("\n")
+      .filter((line) => line.length > 0);
+    if (lines.length !== cases) return null;
+    try {
+      return lines.map((line) => {
+        const read = JSON.parse(line);
+        // As the review reads a throw: one answer, whoever threw (readAnswers, answerText).
+        if (read.threw === true) return '{"threw":true}';
+        if (!("result" in read)) throw new Error("no answer");
+        return canonicalAnswer(read.result);
+      });
+    } catch {
+      return null;
+    }
+  };
+  const runId = (id, run) => `${id}-run-${run}`.slice(0, 64);
+  let consistent = true;
+  const open = [];
+  for (const one of [...reading.classified, ...(reading.heldClassified ?? [])]) {
+    if (one?.role !== "kept" && one?.role !== "requested") continue;
+    const probe = probeOf(one.probe);
+    if (probe === undefined) {
+      consistent = false;
+      continue;
+    }
+    const cases = one.probe.endsWith("-held")
+      ? (examination?.heldBack ?? []).find((held) => held.probe === one.probe)?.inputs.length
+      : probe.cases.length;
+    const first = answersOf(candidateRuns, runId(one.probe, 1), cases)?.[one.index - 1];
+    const second = answersOf(candidateRuns, runId(one.probe, 2), cases)?.[one.index - 1];
+    const target = one.role === "requested" ? one.expected : one.base;
+    if (probe.origin === "task" && probe.basis === "relation") {
+      const reference = `${one.probe}-ref`.slice(0, 41);
+      const onBase = answersOf(baseRuns, runId(reference, 1), cases)?.[one.index - 1];
+      consistent &&= onBase !== undefined && onBase !== null && onBase === one.expected;
+    } else if (probe.origin === "task" && one.role === "requested") {
+      consistent &&= one.expected === canonicalAnswer(probe.cases[one.index - 1]?.expected);
+    }
+    const holds = first != null && first === target && first === second;
+    consistent &&= holds === ["kept", "met", "related"].includes(one.reading);
+    if (
+      !holds &&
+      probe.origin === "task" &&
+      probe.provisional === undefined &&
+      one.authority !== null
+    )
+      open.push(`${one.probe}#${one.index} ${canonicalAnswer(one.input)}`);
+  }
+  consistent &&= canonicalJson([...open].sort()) === canonicalJson([...claimed.open].sort());
+  return { consistent, open };
+}
+
+/** An answer as the review compares answers: JSON with every object's keys sorted. */
+function canonicalAnswer(value) {
+  const sorted = (one) =>
+    Array.isArray(one)
+      ? one.map(sorted)
+      : one !== null && typeof one === "object"
+        ? Object.fromEntries(
+            Object.keys(one)
+              .sort()
+              .map((key) => [key, sorted(one[key])]),
+          )
+        : one;
+  return JSON.stringify(sorted(value)) ?? "null";
 }
 
 /** Does any payload in this bundle name that chain head? That is the coordinator's linkage. */

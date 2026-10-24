@@ -45,3 +45,12 @@ export declare function goalSelectionConformance(
   records: readonly Pick<LedgerRecord, "type" | "sequence" | "actor" | "payloadDigest">[],
   payloads: ReadonlyMap<string, JsonValue>,
 ): readonly { sequence: number; problems: readonly string[] }[];
+/**
+ * run-acceptance-v7: the delivered candidate's open validated counterexamples to the task,
+ * re-derived from the probes' recorded runs, and whether the claimed set agrees with them.
+ */
+export declare function rederiveTaskViolations(
+  claimed: JsonValue | undefined,
+  thisRun: readonly Pick<LedgerRecord, "type" | "sequence" | "payloadDigest">[],
+  payloads: ReadonlyMap<string, JsonValue>,
+): { readonly consistent: boolean; readonly open: readonly string[] };

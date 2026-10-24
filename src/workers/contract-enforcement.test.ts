@@ -191,7 +191,7 @@ describe("task contracts through public parallel execution", () => {
       (payload) => typeof payload === "object" && payload !== null && "inputs" in payload,
     );
     expect(assessment).toMatchObject({
-      inputs: { policy: "run-acceptance-v6", requiredChecks: ["special"] },
+      inputs: { policy: "run-acceptance-v7", requiredChecks: ["special"] },
       verdict: { acceptable: false },
     });
     expect(outcome.workers[0]?.commit).toBeNull();
