@@ -515,6 +515,42 @@ describe("the candidate review's development controls", () => {
     await independentlyChecked(result.bundleDirectory ?? "");
   }, 240_000);
 
+  it("a broken probe corrected under a new id runs, and an empty optional field is read as absent", async () => {
+    const { result, stdout } = await swarm(
+      upperTask,
+      upperCheck,
+      roles({
+        worker: [declare(["label.mjs"]), write("label.mjs", correctUpper)],
+        reviewer: [
+          {
+            probes: [
+              {
+                ...trimming,
+                id: "missing-module",
+                program:
+                  "import { label } from './missing.mjs';\nexport default (input) => label(input.name);\n",
+              },
+            ],
+          },
+          { probes: [{ ...trimming, id: "trims-again", keeps: "" }] },
+        ],
+      }),
+    );
+    expect(result.outcome?.status, stdout.slice(-3000)).toBe("accepted");
+    expect(readingsOf(result)).toEqual([
+      "code-requested#1 met",
+      "trims-again#1 kept",
+      "trims-again#2 kept",
+    ]);
+    const examined = examination(result.bundleDirectory ?? "");
+    expect(examined.validation.map((one) => `${one.probe} ${one.round} ${one.kind}`)).toEqual([
+      "missing-module 1 load-failure",
+      "trims-again 2 observation",
+    ]);
+    expect(examined.dropped.map((one) => one.id)).toEqual(["missing-module"]);
+    await independentlyChecked(result.bundleDirectory ?? "");
+  }, 240_000);
+
   it("a first answer whose programs are paths gets one revision, and the revised probes run", async () => {
     const { result, stdout, directory } = await swarm(
       upperTask,

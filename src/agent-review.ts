@@ -133,7 +133,8 @@ export function admitProbes(task: string, answer: unknown): ProbeAdmission {
       raw !== null && typeof raw === "object"
         ? Object.fromEntries(
             Object.entries(raw).filter(
-              ([key, value]) => !(value === null && optionalProbeFields.has(key)),
+              // An empty string is a field not given too: a live probe was dropped for `"keeps": ""`.
+              ([key, value]) => !((value === null || value === "") && optionalProbeFields.has(key)),
             ),
           )
         : raw;
@@ -1641,9 +1642,14 @@ export function createCandidateReview(options: CandidateReviewOptions): {
         return { valid, broken };
       };
       let checked = await validate(1, admitted.probes);
+      // Probes refused for their form get the same one correction as probes that did not run.
+      const refused = admitted.dropped.filter(
+        (one) => !/^at most \d+ probes run$|^the id was already used$/.test(one.reason),
+      );
       const room = options.remaining();
       if (
-        checked.broken.length > 0 &&
+        (checked.broken.length > 0 || refused.length > 0) &&
+        checked.valid.length < maxProbes &&
         room.tokens * reviewTokenShare >= 3 * maxOutput &&
         room.wallMs >= needed
       ) {
@@ -1651,10 +1657,20 @@ export function createCandidateReview(options: CandidateReviewOptions): {
           mode: "executable",
           request: () =>
             [
-              "These probes did not run as written; the harness ran each once:",
-              ...checked.broken.map((one) => `- ${one.probe.id}: ${one.why}`),
+              ...(checked.broken.length === 0
+                ? []
+                : [
+                    "These probes did not run as written; the harness ran each once:",
+                    ...checked.broken.map((one) => `- ${one.probe.id}: ${one.why}`),
+                  ]),
+              ...(refused.length === 0
+                ? []
+                : [
+                    "These probes were not admitted:",
+                    ...refused.map((one) => `- ${one.id}: ${one.reason}`),
+                  ]),
               ...(loading === undefined ? [] : [loading]),
-              "Answer again with the one JSON object holding corrected versions of these probes only, under the same ids. Each is run again once; one still broken measures nothing.",
+              "Answer again with the one JSON object holding corrected versions of these probes only. Each is run once more; one still broken measures nothing.",
             ].join("\n"),
           budget: {
             maxSteps: 3,
@@ -1669,21 +1685,24 @@ export function createCandidateReview(options: CandidateReviewOptions): {
         });
         await options.charge(correction.charge);
         charge = addCharge(charge, correction.charge);
-        const brokenIds = new Set(checked.broken.map((one) => one.probe.id));
+        // A corrected probe is taken under whatever id it comes back with (a live reviewer gave
+        // every corrected probe a new id), never one that already ran, and only up to the limit.
+        const kept = new Set(checked.valid.map((one) => one.id));
         const corrected = admitProbes(options.task, parseReviewAnswer(correction.answer).value);
         const retried = await validate(
           2,
-          corrected.probes.filter((one) => brokenIds.has(one.id)),
+          corrected.probes
+            .filter((one) => !kept.has(one.id))
+            .slice(0, maxProbes - checked.valid.length),
         );
-        const fixedIds = new Set(retried.valid.map((one) => one.id));
+        // A probe corrected under its own id is read once, by its second run.
+        const retriedIds = new Set(
+          [...retried.valid, ...retried.broken.map((one) => one.probe)].map((one) => one.id),
+        );
         checked = {
           valid: [...checked.valid, ...retried.valid],
           broken: [
-            ...checked.broken.filter(
-              (one) =>
-                !fixedIds.has(one.probe.id) &&
-                !retried.broken.some((again) => again.probe.id === one.probe.id),
-            ),
+            ...checked.broken.filter((one) => !retriedIds.has(one.probe.id)),
             ...retried.broken,
           ],
         };
