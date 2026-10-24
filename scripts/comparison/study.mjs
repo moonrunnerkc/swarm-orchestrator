@@ -434,6 +434,13 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
         gatePlanHome,
         manifest.swarmGates?.[task.id] ?? {},
         harnessLockBytes,
+        {
+          contract: swarmContract(task),
+          lockfile:
+            manifest.lockfiles?.[task.id] === null
+              ? null
+              : (manifest.lockfiles?.[task.id] ?? "package-lock.json"),
+        },
       );
       record.gatePlan = gatePlan;
       if (!gatePlan.ok)

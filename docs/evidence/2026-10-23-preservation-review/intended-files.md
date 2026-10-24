@@ -122,3 +122,27 @@ its three tasks:
   `pnpm-lock.yaml`) is not a project only yarn can drive, and `swarm check` no longer refuses it.
   Installing is unchanged: `--install` with several lockfiles still needs `--lockfile` or a
   `packageManager` declaration.
+
+## Amendment 8, October 23, 2026, before editing these files
+
+Found by the fresh block's first launch, which stopped before its first model call (`execution
+failed`, `rm returned EISDIR … /src`):
+
+- `src/gates/independent-checks.ts`, `src/gates/git-workspace.ts`, `src/gates/git-workspace.test.ts`
+  and a new `src/gates/independent-checks.test.ts`: the base side of an instrument comparison
+  read a path with `git show`, which prints a directory's listing. ufo's lint names `src` to
+  prettier, so an unchanged checkout's lint read as run under a changed instrument, and putting
+  `src` back failed. Both base readers now read a blob only, so a directory is no file on either
+  side.
+- `src/gates/dependency-install.ts`, `src/gates/setup-effect.ts` and
+  `src/gates/dependency-install.test.ts`: found by a model-free check of each task's run
+  preflight (the goal check over an empty patch with `--install`, on a launch-shaped tree), which
+  the harness's own preflight does not reach. npm rewrites a tracked `yarn.lock` beside the
+  `package-lock.json` it installs from, `--no-save` included, and setup refused nanoid's fresh
+  checkout as an install that changed source. The npm install now puts that one file's bytes back
+  and records it as `restored`; any other change still fails setup.
+- `scripts/comparison/checks.mjs`, `scripts/comparison/study.mjs`: the harness's gate plan now
+  also runs the run's own preflight with no model (`ci` over an empty patch with the launch's
+  install and sealed contract, `swarm.toml` committed in the throwaway tree because `ci` reads the
+  base's configuration). The preflight that passed all 24 configurations never reached the step
+  where the first launch stopped.

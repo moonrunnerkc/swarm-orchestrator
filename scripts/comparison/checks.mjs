@@ -186,6 +186,7 @@ export async function swarmGatePlanVerdict(
   childHome,
   declaredGates = {},
   harnessLock = null,
+  runPreflight = null,
 ) {
   const expected = task.projectTest.join(" ");
   const verdict = (ok, detail, extra = {}) => ({
@@ -282,9 +283,74 @@ export async function swarmGatePlanVerdict(
           extra,
         );
     }
+    // The run's own preflight, with no model: the goal check over an empty patch with the
+    // launch's install, which a run makes before its first model call. `check` does not reach it,
+    // and three fresh-block defects stopped a run there that every check above had passed.
+    // `ci` reads its gates from the base commit's swarm.toml where a run reads the workspace's,
+    // so the configuration is committed in this throwaway tree first.
+    if (runPreflight !== null) {
+      for (const argv of [
+        ["add", "--force", "swarm.toml"],
+        [
+          "-c",
+          "user.name=comparison",
+          "-c",
+          "user.email=comparison@localhost",
+          "commit",
+          "-qm",
+          "The run's configuration, where ci reads it",
+        ],
+      ]) {
+        const ran = await log.run(["git", ...argv], { cwd: tree.checkout, timeoutMs: 60_000 });
+        if (ran.exitCode !== 0)
+          return verdict(
+            false,
+            `committing swarm.toml for the run preflight failed: ${tail(ran)}`,
+            extra,
+          );
+      }
+      const contractPath = join(tree.scratch, "preflight-contract.json");
+      const patchPath = join(tree.scratch, "preflight-empty.patch");
+      writeFileSync(contractPath, JSON.stringify(runPreflight.contract, null, 2));
+      writeFileSync(patchPath, "");
+      const goal = await log.run(
+        [
+          "node",
+          pins.swarmCli,
+          "ci",
+          "--workspace",
+          tree.checkout,
+          "--patch",
+          patchPath,
+          "--base",
+          "HEAD",
+          "--goal-contract",
+          contractPath,
+          ...(runPreflight.lockfile === null
+            ? []
+            : ["--install", "--lockfile", runPreflight.lockfile]),
+          "--json",
+        ],
+        {
+          cwd: tree.checkout,
+          timeoutMs: 900_000,
+          env: { ...taskEnvironment(task), [swarmChildHomeName]: childHome },
+        },
+      );
+      const read = lastJsonLine(goal.stdout.toString(), "swarm.ci.v1");
+      const preflight =
+        read === null
+          ? `the run preflight printed no report (exit ${goal.exitCode}):\n${tail(goal)}`
+          : read.refusal !== null && read.refusal !== undefined
+            ? `the run preflight refused the base: ${read.refusal}`
+            : read.unmeasured === true
+              ? `the run preflight left the base unmeasured: ${read.advice ?? ""}`
+              : null;
+      if (preflight !== null) return verdict(false, preflight, extra);
+    }
     return verdict(
       true,
-      `the product runs ${effective} as its blocking tests gate and it passes on the base; the override was read back by ${pinnedParser ? "the pinned build's parser" : "the TOML library the product parses with"}`,
+      `the product runs ${effective} as its blocking tests gate and it passes on the base; the override was read back by ${pinnedParser ? "the pinned build's parser" : "the TOML library the product parses with"}${runPreflight === null ? "" : "; the run's own preflight over the base completed"}`,
       extra,
     );
   } finally {
