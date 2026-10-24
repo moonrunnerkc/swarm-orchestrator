@@ -272,7 +272,7 @@ describe("what the acceptance gate makes of a verification", () => {
   // The fresh block's ufo candidates: the supplied check passed, and the lint ufo's base already
   // fails gave other output, because the change added findings to it. That left regression
   // unmeasured, which read as setup and stopped every repair.
-  it("reads a regression left unmeasured by a base-failing check's changed output as no setup problem", () => {
+  it("reads a reading the change left unmeasured as no setup problem", () => {
     const unattributed = {
       ...verification("accepted", "accepted"),
       unmeasured: true,
@@ -283,12 +283,26 @@ describe("what the acceptance gate makes of a verification", () => {
     expect(readAcceptance(contract, unattributed)).toMatchObject({
       passes: false,
       unavailable: true,
-      regressionUnmeasured: true,
+      unmeasuredByChange: true,
     });
+    // nanoid's: the change edited test files, and their base versions were read again.
+    expect(
+      readAcceptance(contract, {
+        ...unattributed,
+        checks: [{ baseTestsFiles: ["test/browser.test.js"] }],
+      }).unmeasuredByChange,
+    ).toBe(true);
+    // A tool that was not there is setup, whatever else the change did.
+    expect(
+      readAcceptance(contract, {
+        ...unattributed,
+        checks: [{ attribution: "unattributed", observation: { unavailable: "npx: not found" } }],
+      }).unmeasuredByChange,
+    ).toBe(false);
     // A failed install, or a deciding check that could not run, is setup as before.
     expect(
       readAcceptance(contract, { ...unattributed, install: { succeeded: false } })
-        .regressionUnmeasured,
+        .unmeasuredByChange,
     ).toBe(false);
     expect(
       readAcceptance(contract, {
@@ -296,11 +310,11 @@ describe("what the acceptance gate makes of a verification", () => {
         ...verification("unjudged", "accepted"),
         unmeasured: true,
         checks: unattributed.checks,
-      }).regressionUnmeasured,
+      }).unmeasuredByChange,
     ).toBe(false);
     expect(
       readAcceptance(contract, { ...unattributed, checks: [{ attribution: "none" }] })
-        .regressionUnmeasured,
+        .unmeasuredByChange,
     ).toBe(false);
   });
 });

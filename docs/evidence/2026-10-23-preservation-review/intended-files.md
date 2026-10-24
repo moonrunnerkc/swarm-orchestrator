@@ -171,9 +171,12 @@ that already fails on the base. The verification's regression reading was theref
 and the acceptance gate labelled that `setup unavailable:`. The repair policy reads that label as a
 missing tool and stops, so the lint findings the change introduced were never put to a repair.
 
-- `src/cli-task-goal.ts` and `src/cli-task-goal.test.ts`: a regression reading left unmeasured only
-  by a check that fails on the base too, with output the change altered (`attribution:
-  "unattributed"`), is labelled `regression unmeasured:` rather than `setup unavailable:`. Repair
-  then proceeds on the failing gates. A missing tool, a failed install or an unjudged deciding
-  check is still setup.
+- `src/cli-task-goal.ts` and `src/cli-task-goal.test.ts`: a reading the change itself left
+  unmeasured is labelled `unmeasured by the change:` rather than `setup unavailable:`. That covers
+  a check that fails on the base too with output the change altered (`attribution:
+  "unattributed"`, the ufo launches), and a check read again without the tests or runner
+  configuration the change edited (`baseTestsFiles`, `configurationFiles`). Three of the four
+  nanoid Swarm launches stopped the same way, over the tests they had edited, with attempts left
+  and a real failing test in the tests gate. Repair then proceeds on the failing gates. A missing
+  tool, a failed install or an unjudged deciding check is still setup.
 - `src/gates/repair-policy.test.ts`: the classification of both labels.
