@@ -49,9 +49,12 @@ export function classifyRepair(cycle: GateCycle): {
       signature,
       remedy: unavailable.map((run) => run.observation.unavailable).join("; "),
     };
+  // A package that cannot be found is a missing install. A relative or absolute path that cannot
+  // be found is the change's own: nanoid's moved modules left `require('./random')` broken, and
+  // reading that as setup stopped the repair that could fix it.
   if (
     failures.some((run) =>
-      /setup unavailable:|ENOENT|ModuleNotFoundError|Cannot find module|Executable doesn't exist/.test(
+      /setup unavailable:|ENOENT|ModuleNotFoundError|Cannot find module ['"`](?![./\\])|Executable doesn't exist/.test(
         run.observation.stderr,
       ),
     )

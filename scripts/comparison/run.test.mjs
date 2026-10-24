@@ -591,7 +591,10 @@ describe("stopping the comparison when the experiment is invalid", () => {
       budgets: { wallMsPerInvocation: 1500, wallGraceMs: 500 },
     });
     const result = await runRunner(fixture.env, fixture.path, [], "hang");
-    expect(result.code).toBe(0);
+    expect(
+      result.code,
+      JSON.stringify(halts(fixture.runs).map((name) => readJson(join(fixture.runs, name)))),
+    ).toBe(0);
     expect(halts(fixture.runs)).toEqual([]);
     expect(recordsOf(fixture.runs)).toHaveLength(2);
     expect(launchLines(fixture.env)).toHaveLength(2);
@@ -1201,7 +1204,13 @@ describe("readiness before dispatch and a request that stalls during a launch", 
     ]);
     const armRequestAt = seen[3].at;
     const detectedAt = Date.parse(halt.detectedAt);
-    expect(detectedAt - armRequestAt).toBeGreaterThanOrEqual(2_000);
+    // The watch counts the deadline from the arm's own announcement of its request, which it
+    // prints just before sending it, and the endpoint's clock here starts at receipt, a little
+    // later: a macOS CI runner measured the stall 1,983 ms after receipt. The halt's message
+    // (above) is the watch's own count past the deadline; against receipt it is bounded below by
+    // the deadline less that gap.
+    const announcementSlackMs = 250;
+    expect(detectedAt - armRequestAt).toBeGreaterThanOrEqual(2_000 - announcementSlackMs);
     expect(detectedAt - armRequestAt).toBeLessThanOrEqual(2_000 + 2_000 + detectionDeadlineMs);
     expect(stoppedAt - detectedAt).toBeLessThanOrEqual(terminationDeadlineMs);
     // Nothing was sent to the endpoint between the arm's request and the arm's end; the probe

@@ -69,6 +69,9 @@ is one of:
 
 - **accepted** (exit 0): every requirement you supplied in a
   [goal contract](docs/broad-use.md) was met by its checks; the scope line says what they cover.
+  The `checks:` line says whether every check passed, or whether failures your base already had
+  remain (a static check such as lint is held to no new failures by default; see
+  [check requirements](docs/check-requirements.md)).
 - **gates passed; the task itself was not judged** (exit 0): your checks passed but nothing
   tested the task, as in the plain run above.
 - **partially checked**, **unresolved**, **not accepted** (exit 1) or **unverified** (exit 4):
@@ -84,15 +87,18 @@ say the code is correct. If a first run fails, see
 ## Limitations
 
 Swarm is experimental. On small registered blocks of fresh public tasks with one local model it
-has not shown a general advantage over OpenCode: on the latest block of three tasks (two samples
-each) Swarm completed one of six launches and OpenCode none, at about 1.7 times OpenCode's wall
-time; on the block before it Swarm completed one of four and OpenCode two, three after an
-evaluator audit ([latest](docs/evidence/2026-10-23-controller/README.md),
-[previous](docs/evidence/2026-10-22-adaptive/README.md)). Swarm's verdict can still accept a
-change that misses a stated edge case no check exercises, and can refuse a refactor whose
-required configuration edit its anti-tampering rule rejects. Model-written checks
-(`--plan-checks`) guide repair but cannot establish a requirement alone. Commands run on your
-machine under a path policy, not a sandbox, unless you pass `--isolation`.
+has not shown a general advantage over OpenCode. On the last fresh block, every complete change
+from every agent added a lint finding the base did not have, and Swarm delivered none. Since then,
+on exposed tasks whose base already fails lint, Swarm delivered four of four correct bug fixes,
+and after a further correction it delivered a feature in both arms, one correctly and one a false
+accept ([previous](docs/evidence/2026-10-24-delivery-preservation/README.md)). Its verdict can
+still accept a change that misses a behaviour no check exercises. The experimental candidate
+review (`--review`) now runs the examples and relations a task writes as code. Starting from
+retained defective candidates, it found the defect live and its repair fixed it in two of four
+launches. A registered matched study then showed no gain over the same build with the review off
+([latest](docs/evidence/2026-10-24-detection-repair/README.md)). Model-written checks (`--plan-checks`) guide repair but
+cannot establish a requirement alone. Commands run on your machine under a path policy, not a
+sandbox, unless you pass `--isolation`.
 
 ## Learn more
 

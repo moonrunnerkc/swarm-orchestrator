@@ -41,6 +41,8 @@ import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { commandLog, storeBlob } from "../campaign/exec.mjs";
 import {
+  aiderTokens,
+  aiderUsage,
   claimedSuccess,
   completionAccount,
   opencodeTokens,
@@ -66,6 +68,7 @@ import { endpointPort, instanceChange, probeEndpoint, watchInstance } from "./en
 import { harnessDigest } from "./harness-identity.mjs";
 import { createInferenceLease, establishReadiness, probeTotals } from "./inference.mjs";
 import {
+  aiderAnalyticsLog,
   buildLaunch,
   inferenceBegan,
   isSwarmArm,
@@ -80,7 +83,13 @@ import { frozenOrder } from "./order.mjs";
 import { taskSchema } from "./schema.mjs";
 import { createStallWatch, inferenceDeadlineMs, pollStallWatch } from "./stall.mjs";
 import {
+  candidateFiles,
+  startCandidateProxy,
+  startingCandidateRule,
+} from "./starting-candidate.mjs";
+import {
   cloneAtBase,
+  commitHarnessLockfile,
   commitVisibleCheck,
   declaredPackageManager,
   finalPatch,
@@ -89,6 +98,7 @@ import {
   prepare,
   prepareLaunchHome,
   resolveFull,
+  snapshotPatch,
   workRoot,
   writeArmConfiguration,
 } from "./workspace.mjs";
@@ -140,6 +150,65 @@ export function classifyStop({ fatal, inference }) {
 }
 
 /** Whether any text an arm left names a route to sealed material; the markers are the manifest's. */
+/**
+ * The line printed as a launch ends: what ran, how it ended and what it spent. Never a verdict:
+ * the frozen block's hidden results are read only after its last launch is scored, and on
+ * October 23 the implementer read three of them off this line while diagnosing a setup failure.
+ * The visible check's result is left out with them, since it is a correctness reading as well.
+ */
+export function progressLine(launch, record, fatal) {
+  const wall = record.invocation?.wallMs;
+  const tokens = record.invocation?.tokens;
+  const health = [
+    record.outcome,
+    ...(typeof wall === "number" ? [`${Math.round(wall / 1000)} s`] : []),
+    ...(typeof tokens === "number" ? [`${tokens} tokens`] : []),
+    ...(record.scores === undefined ? [] : ["scored, sealed"]),
+  ];
+  return `${launch.order} ${launch.task} ${launch.arm}: ${health.join(", ")}${fatal ? ` (${fatal.class}: ${fatal.message.split("\n")[0]})` : ""}`;
+}
+
+/** Where a record's hidden verdict is kept until `reveal`. */
+export const sealedDirectory = "sealed-hidden";
+
+/** Writes a launch's hidden verdict apart from its record, readable by the owner alone. */
+export function sealHidden(runsDirectory, recordName, hidden) {
+  const directory = join(runsDirectory, sealedDirectory);
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const bytes = `${JSON.stringify(hidden, null, 2)}\n`;
+  writeFileSync(join(directory, recordName), bytes, { flag: "wx", mode: 0o600 });
+  return { sealed: `${sealedDirectory}/${recordName}`, digest: digestOf(Buffer.from(bytes)) };
+}
+
+/**
+ * Every record of the block with its hidden verdict put back, once every registered launch has an
+ * outcome: a block with a launch still pending, or stopped, is not revealed. Each sealed file must
+ * be the bytes its record names.
+ */
+export function revealHidden(runsDirectory, launches) {
+  const pending = [];
+  const revealed = [];
+  for (const launch of launches) {
+    const cell = cellState(runsDirectory, cellKey(launch), launch.arm);
+    if (!cell.recorded) {
+      pending.push(`${launch.order} ${launch.task} ${launch.arm}`);
+      continue;
+    }
+    const record = JSON.parse(readFileSync(join(runsDirectory, cell.record), "utf8"));
+    const sealed = record.scores?.hidden;
+    if (sealed?.sealed !== undefined) {
+      const bytes = readFileSync(join(runsDirectory, sealed.sealed));
+      if (digestOf(bytes) !== sealed.digest)
+        throw new Error(`${sealed.sealed} is not the verdict ${cell.record} sealed`);
+      record.scores = { ...record.scores, hidden: JSON.parse(bytes.toString("utf8")) };
+    }
+    revealed.push(record);
+  }
+  if (pending.length > 0)
+    throw new Error(`the block is not finished; pending: ${pending.join("; ")}`);
+  return revealed;
+}
+
 export function exposureHits(texts, markers) {
   const hits = [];
   for (const [label, text] of texts)
@@ -188,6 +257,7 @@ async function freeze(configPath, outPath) {
   const opencode = config.arms.includes("opencode")
     ? versionOfExecutable(config.pins.opencodeBin)
     : null;
+  const aider = config.arms.includes("aider") ? versionOfExecutable(config.pins.aiderBin) : null;
   const manifest = {
     schema: manifestSchemaName,
     frozenAt: new Date().toISOString(),
@@ -200,6 +270,7 @@ async function freeze(configPath, outPath) {
       swarmCliDigest: digestOf(readFileSync(config.pins.swarmCli)),
       swarmBuildDigest: treeDigest(dirname(config.pins.swarmCli)),
       ...(opencode === null ? {} : { opencode: opencode.version }),
+      ...(aider === null ? {} : { aider: aider.version }),
     },
     // An arm with its own pinned build carries that build's digests, frozen as the main pin's are.
     arms: Object.fromEntries(
@@ -229,6 +300,9 @@ async function freeze(configPath, outPath) {
     exposureMarkers: config.exposureMarkers ?? [],
     lockfiles,
     harnessLockfiles: config.harnessLockfiles ?? {},
+    // Retained candidates a launch may start from (starting-candidate-v1), each a patch frozen by
+    // digest under the registered input roots and named by the launches that use it.
+    startingCandidates: config.startingCandidates ?? {},
     tasks: resolved,
     launches:
       config.order === "listed"
@@ -286,6 +360,7 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
   };
   let fatal = null;
   let stdout = "";
+  let candidateProxy = null;
   try {
     // The model must answer a chat and a tool round trip in the product's wire shape before the
     // arm is given the task; a listing alone dispatches nothing.
@@ -320,6 +395,7 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
     // committed beside the visible check, so every arm installs the same versions, Swarm can
     // install from a fresh checkout, and the file is never part of an arm's change.
     const lockInput = manifest.harnessLockfiles?.[task.id];
+    let harnessLockBytes = null;
     if (lockInput !== undefined) {
       const found = resolveFrozenInput(manifest, lockInput);
       if (found === null)
@@ -327,31 +403,14 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
           "configuration",
           `the frozen lockfile ${lockInput.digest} for ${task.id} is not under the registered input roots`,
         );
-      writeFileSync(join(workspace, "package-lock.json"), found.bytes);
-      for (const argv of [
-        ["add", "--force", "package-lock.json"],
-        [
-          "-c",
-          "user.name=comparison",
-          "-c",
-          "user.email=comparison@localhost",
-          "commit",
-          "-qm",
-          "Lockfile the harness resolved for the task's base",
-        ],
-      ]) {
-        const ran = await log.run(["git", ...argv], { cwd: workspace, timeoutMs: 60_000 });
-        if (ran.exitCode !== 0)
-          throw new FatalError(
-            "preparation",
-            `committing the harness lockfile failed: ${ran.stderr.toString()}`,
-          );
-      }
-      base = (
-        await log.run(["git", "rev-parse", "HEAD"], { cwd: workspace, timeoutMs: 60_000 })
-      ).stdout
-        .toString()
-        .trim();
+      harnessLockBytes = found.bytes;
+      const committed = await commitHarnessLockfile(log, workspace, found.bytes);
+      if (committed.base === null)
+        throw new FatalError(
+          "preparation",
+          `committing the harness lockfile failed: ${committed.detail}`,
+        );
+      base = committed.base;
       record.harnessLockfile = { digest: lockInput.digest, base };
     }
     const prepared = await prepare(log, task, workspace);
@@ -362,10 +421,39 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
     };
     if (!prepared.ok)
       throw new FatalError("preparation", `preparation failed: ${prepared.failed.join(" ")}`);
+    // A launch that starts from a retained candidate: the product's first worker loop is the
+    // candidate replayed through its own chokepoint, and every later call reaches the model.
+    if (launch.candidate !== undefined) {
+      const input = manifest.startingCandidates?.[launch.candidate];
+      const found = input === undefined ? null : resolveFrozenInput(manifest, input);
+      if (found === null)
+        throw new FatalError(
+          "configuration",
+          `the starting candidate ${launch.candidate} is not frozen under the registered input roots`,
+        );
+      if (!isSwarmArm(launch.arm))
+        throw new FatalError("configuration", "only a Swarm arm can start from a candidate");
+      const files = candidateFiles(workspace, found.bytes, tmpDir);
+      candidateProxy = await startCandidateProxy({
+        files,
+        upstream: pins.endpoint,
+        model: pins.model,
+      });
+      record.startingCandidate = {
+        rule: startingCandidateRule,
+        name: launch.candidate,
+        digest: input.digest,
+        files: Object.keys(files),
+        replayTurns: candidateProxy.replayTurns,
+      };
+    }
+    const endpoint = candidateProxy?.url ?? pins.endpoint;
+    const launchManifest =
+      candidateProxy === null ? manifest : { ...manifest, pins: { ...pins, endpoint } };
     writeArmConfiguration(
       workspace,
       launch.arm,
-      pins.endpoint,
+      endpoint,
       pins.model,
       task,
       manifest.swarmGates?.[task.id] ?? {},
@@ -383,6 +471,14 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
         pins,
         gatePlanHome,
         manifest.swarmGates?.[task.id] ?? {},
+        harnessLockBytes,
+        {
+          contract: swarmContract(task),
+          lockfile:
+            manifest.lockfiles?.[task.id] === null
+              ? null
+              : (manifest.lockfiles?.[task.id] ?? "package-lock.json"),
+        },
       );
       record.gatePlan = gatePlan;
       if (!gatePlan.ok)
@@ -402,7 +498,7 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
         ? []
         : [join(packageManagerToolchain(declared.name, declared.version), "node_modules", ".bin")];
     const launchSpec = buildLaunch({
-      manifest,
+      manifest: launchManifest,
       arm: launch.arm,
       task,
       prompt: taskPrompt(task),
@@ -450,6 +546,8 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
         `${JSON.stringify({ ...record, commands: log.commands }, null, 2)}\n`,
         { flag: "wx" },
       );
+      // The replay's proxy holds a listening socket, which would keep this process alive.
+      await candidateProxy?.close();
       rmSync(scratch, { recursive: true, force: true });
       rmSync(tmpDir, { recursive: true, force: true });
       console.log(`${launch.order} ${launch.task} ${launch.arm}: preflight ok`);
@@ -476,6 +574,44 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
               watch.abort(new FatalError("endpoint", reason, at));
             },
           });
+    // The harness's own snapshot of the candidate each time a Swarm arm announces an attempt:
+    // the product's snapshot is scrubbed like all its evidence, and an initial candidate whose
+    // code assigns to a credential-bearing name cannot be rebuilt from it. Taken through a
+    // separate index as the attempt starts, before its first model call returns; the record
+    // says when, against the attempt event.
+    const snapshots = [];
+    const snapshotting = [];
+    let pendingLine = "";
+    const observeAttempts = isSwarmArm(launch.arm)
+      ? (chunk) => {
+          const text = pendingLine + chunk.toString();
+          const lines = text.split("\n");
+          pendingLine = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.includes('"type":"attempt"')) continue;
+            let attempt;
+            try {
+              attempt = JSON.parse(line).event?.attempt;
+            } catch {
+              continue;
+            }
+            if (typeof attempt !== "number") continue;
+            const seenAt = Date.now();
+            snapshotting.push(
+              snapshotPatch(log, workspace, base, join(tmpDir, `snapshot-${attempt}.index`)).then(
+                (patch) => {
+                  snapshots.push({
+                    attempt,
+                    eventAt: new Date(seenAt).toISOString(),
+                    tookMs: Date.now() - seenAt,
+                    patchDigest: patch === null ? null : storeBlob(blobs, Buffer.from(patch)),
+                  });
+                },
+              ),
+            );
+          }
+        }
+      : null;
     const release = inferenceLease.hold(`${launch.arm} invocation of ${launch.task}`);
     let ran;
     try {
@@ -485,7 +621,13 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
         timeoutMs: Math.max(0, deadlineMs - Date.now()),
         killConfirmMs: Math.min(terminationDeadlineMs, budgets.wallGraceMs),
         signal: AbortSignal.any([watch.signal, interruption.controller.signal]),
-        onStdout: stallWatch === null ? null : (chunk) => stallWatch.observe(chunk),
+        onStdout:
+          stallWatch === null
+            ? null
+            : (chunk) => {
+                stallWatch.observe(chunk);
+                observeAttempts?.(chunk);
+              },
       });
     } finally {
       stopWatch?.();
@@ -493,15 +635,34 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
       release();
     }
     stdout = ran.stdout.toString();
+    await Promise.allSettled(snapshotting);
+    if (snapshots.length > 0)
+      record.attemptSnapshots = snapshots.sort((a, b) => a.attempt - b.attempt);
     record.inferenceBegan = inferenceBegan(launch.arm, stdout);
+    // aider's token counts are in its analytics log, not its stdout.
+    const analytics =
+      family === "aider" && existsSync(aiderAnalyticsLog(home))
+        ? readFileSync(aiderAnalyticsLog(home), "utf8")
+        : null;
+    if (analytics !== null) record.aiderAnalyticsDigest = storeBlob(blobs, Buffer.from(analytics));
     record.invocation = {
       exitCode: ran.exitCode,
       signal: ran.signal,
       wallMs: ran.wallMs,
       stdoutDigest: storeBlob(blobs, ran.stdout),
       stderrDigest: storeBlob(blobs, ran.stderr),
-      tokens: family === "swarm" ? swarmTokens(stdout) : opencodeTokens(stdout),
-      usage: family === "swarm" ? swarmUsage(stdout) : opencodeUsage(stdout),
+      tokens:
+        family === "swarm"
+          ? swarmTokens(stdout)
+          : family === "aider"
+            ? aiderTokens(analytics)
+            : opencodeTokens(stdout),
+      usage:
+        family === "swarm"
+          ? swarmUsage(stdout)
+          : family === "aider"
+            ? aiderUsage(analytics)
+            : opencodeUsage(stdout),
       claimedSuccess: claimedSuccess(family, ran.exitCode, stdout),
       completion: completionAccount(family, ran.exitCode, ran.signal, stdout),
       productVerdict: family === "swarm" ? (swarmResult(stdout)?.verdict ?? null) : null,
@@ -535,9 +696,24 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
     const patch = await finalPatch(log, workspace, base);
     record.finalPatchDigest = storeBlob(blobs, Buffer.from(patch));
     record.finalPatchBytes = Buffer.byteLength(patch);
-    const visible = await visibleVerdict(log, task, task.baseCommit, patch);
-    const hidden = await hiddenVerdict(log, task, task.baseCommit, task.upstreamCommit, patch);
-    const statics = await staticVerdict(log, task, task.baseCommit, patch);
+    const visible = await visibleVerdict(log, task, task.baseCommit, patch, {
+      harnessLock: harnessLockBytes,
+    });
+    // The hidden scorer runs under a log of its own: the record carries every command the launch
+    // ran, and the exit status of the hidden tests in it is the verdict by another name. Its
+    // commands are sealed with the verdict.
+    const hiddenLog = commandLog(blobs, { signal: interruption.controller.signal });
+    const hidden = await hiddenVerdict(
+      hiddenLog,
+      task,
+      task.baseCommit,
+      task.upstreamCommit,
+      patch,
+      { harnessLock: harnessLockBytes },
+    );
+    const statics = await staticVerdict(log, task, task.baseCommit, patch, {
+      harnessLock: harnessLockBytes,
+    });
     record.scores = {
       visible: {
         passed: visible.passed,
@@ -545,12 +721,15 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
         projectTestExit: visible.projectTestExit,
         detailDigest: storeBlob(blobs, Buffer.from(visible.detail)),
       },
-      hidden: {
+      // Sealed until the block ends: the record a person reads while diagnosing a launch says
+      // where the verdict is kept, not what it is (`reveal` releases every one at once).
+      hidden: sealHidden(runsDirectory, cell.record, {
         verdict: hidden.verdict,
         basis: hidden.basis,
         detailDigest: storeBlob(blobs, Buffer.from(hidden.detail ?? "")),
         policy: hidden.policy ?? null,
-      },
+        commands: hiddenLog.commands,
+      }),
       static: {
         ...statics,
         detail: undefined,
@@ -574,6 +753,15 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
         ? cause
         : new FatalError("harness", String(cause?.stack ?? cause));
   }
+  if (candidateProxy !== null) {
+    const routed = candidateProxy.routed();
+    record.startingCandidate = {
+      ...record.startingCandidate,
+      replayed: routed.filter((one) => one.route === "replay").length,
+      forwarded: routed.filter((one) => one.route === "upstream" && one.chat !== null).length,
+    };
+    await candidateProxy.close();
+  }
   // A stop after inference keeps what the product wrote, as a scored launch does.
   if (record.evidence === undefined && existsSync(home))
     keepSessions(record, home, runsDirectory, launch);
@@ -589,9 +777,7 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
   );
   rmSync(scratch, { recursive: true, force: true });
   rmSync(tmpDir, { recursive: true, force: true });
-  console.log(
-    `${launch.order} ${launch.task} ${launch.arm}: ${record.outcome}${record.scores ? `, hidden ${record.scores.hidden.verdict}, visible ${record.scores.visible.passed}` : ""}${fatal ? ` (${fatal.class}: ${fatal.message.split("\n")[0]})` : ""}`,
-  );
+  console.log(progressLine(launch, record, fatal));
   return { outcome: record.outcome, fatal };
 }
 
@@ -655,6 +841,13 @@ async function main() {
       (!args.has("only") || args.get("only") === launch.task) &&
       (!args.has("arm") || args.get("arm") === launch.arm),
   );
+  if (args.has("reveal")) {
+    const revealed = revealHidden(runsDirectory, manifest.launches);
+    const out = join(runsDirectory, "revealed.json");
+    writeFileSync(out, `${JSON.stringify(revealed, null, 2)}\n`, { flag: "wx" });
+    console.log(`${revealed.length} records with their hidden verdicts: ${out}`);
+    return 0;
+  }
   if (args.has("status")) {
     for (const launch of selected) {
       const cell = cellState(runsDirectory, cellKey(launch), launch.arm);

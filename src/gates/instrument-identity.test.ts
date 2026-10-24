@@ -895,3 +895,102 @@ describe("an authorized instrument difference", () => {
     ).toBe(false);
   });
 });
+
+describe("a lifecycle alias of a package script", () => {
+  it("is the script it runs, so a test script replaced by a printed pass is the instrument", async () => {
+    const reference = { "package.json": manifest({ test: "node --test" }), "a.test.js": "t" };
+    const forged = {
+      ...reference,
+      "package.json": manifest({ test: "echo '# pass 12' && echo '# fail 0'" }),
+    };
+    for (const command of ["npm test", "npm t", "pnpm test", "yarn test", "npm --silent test"])
+      expect(await changes({ command, argv: null }, reference, forged)).toEqual([
+        "package.json#scripts.test",
+      ]);
+  });
+});
+
+describe("a configuration change that only follows the patch's renames", () => {
+  const lint = (ignored: string, extra = "") =>
+    `module.exports = [{ ignores: ['${ignored}', 'test/types/import.js'] }${extra}]\n`;
+  const reference = {
+    "package.json": manifest({ lint: "eslint" }),
+    "eslint.config.js": lint("lib/configValidator.js"),
+    "lib/configValidator.js": "// generated\nmodule.exports = {}\n",
+  };
+  const renamed = {
+    "package.json": manifest({ lint: "eslint" }),
+    "eslint.config.js": lint("lib/config-validator.js"),
+    "lib/config-validator.js": "// generated\nmodule.exports = {}\n",
+  };
+
+  it("is the base's instrument with its references moved, and the verifier reads it the same way", async () => {
+    expect(await changes(npm("lint"), reference, renamed)).toEqual([]);
+    const observation = await observeInstrument(npm("lint"), trees(reference, renamed));
+    expect(observation.transport?.renames.map(({ from, to }) => [from, to])).toEqual([
+      ["lib/configValidator.js", "lib/config-validator.js"],
+    ]);
+    expect(observation.files.find((file) => file.path === "eslint.config.js")).toMatchObject({
+      transported: true,
+    });
+  });
+
+  it.each([
+    ["a rule switched off", lint("lib/config-validator.js", ", { rules: { 'no-undef': 'off' } }")],
+    ["the whole library ignored", lint("lib/")],
+    ["an ignore entry moved to a file nothing renamed", lint("lib/fastify.js")],
+  ])("stays the instrument when the change also has %s", async (_name, edited) => {
+    expect(
+      await changes(npm("lint"), reference, { ...renamed, "eslint.config.js": edited }),
+    ).toEqual(["eslint.config.js"]);
+  });
+
+  it("stays the instrument when the renamed file is not the file it was", async () => {
+    expect(
+      await changes(npm("lint"), reference, {
+        ...renamed,
+        "lib/config-validator.js": "module.exports = { stub: true }\n",
+      }),
+    ).toEqual(["eslint.config.js"]);
+  });
+
+  it("never reads a configuration the tool finds by name as transported once it is moved", async () => {
+    const reference = {
+      "package.json": manifest({ test: "mocha" }),
+      ".mocharc.json": '{ "spec": "test/**/*.js", "forbidOnly": true }\n',
+      "test/a.js": "t",
+    };
+    const moved = {
+      "package.json": manifest({ test: "mocha" }),
+      "config/mocharc.json": reference[".mocharc.json"],
+      "test/a.js": "t",
+    };
+    expect(await changes({ command: "npm test", argv: null }, reference, moved)).toEqual([
+      ".mocharc.json",
+    ]);
+  });
+
+  it("is refused offline where a recorded move names no recorded rename", async () => {
+    const observation = await observeInstrument(npm("lint"), trees(reference, renamed));
+    const forged = JSON.parse(JSON.stringify(observation));
+    const entry = forged.files.find((file: { path: string }) => file.path === "eslint.config.js");
+    entry.moves = [{ was: "'no-undef': 'error'", now: "'no-undef': 'off'" }];
+    expect(offlineChanges(forged)).toEqual(["eslint.config.js"]);
+    delete entry.moves;
+    expect(offlineChanges(forged)).toEqual(["eslint.config.js"]);
+  });
+
+  it("is refused offline when a record claims a transport it does not carry", async () => {
+    const observation = await observeInstrument(npm("lint"), trees(reference, renamed));
+    const { transport: _transport, ...stripped } = JSON.parse(JSON.stringify(observation));
+    expect(offlineChanges(stripped)).toEqual(["eslint.config.js"]);
+    const forged = JSON.parse(JSON.stringify(observation));
+    forged.files.push({
+      path: "vitest.config.js",
+      reference: forged.files[0].reference,
+      current: null,
+      transported: true,
+    });
+    expect(offlineChanges(forged)).toEqual(["vitest.config.js"]);
+  });
+});

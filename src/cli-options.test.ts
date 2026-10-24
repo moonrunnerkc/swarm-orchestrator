@@ -814,3 +814,17 @@ it("keeps the adaptive decision point opt-in", () => {
   expect(parseRun(["--adaptive", "fix the build"]).adaptive).toBe(true);
   expect(parseRun(["fix the build"]).adaptive).toBeUndefined();
 });
+
+it("keeps the candidate review opt-in and tied to checks it can run beside", () => {
+  expect(parseRun(["fix the build"]).review).toBeUndefined();
+  expect(
+    parseRun(["fix it", "--review", "executable", "--goal-contract", "goal.json"]).review,
+  ).toBe("executable");
+  expect(parseRun(["fix it", "--review", "prose", "--plan-checks"]).review).toBe("prose");
+  expect(() => parseRun(["fix it", "--review", "executable"])).toThrow(
+    "--review needs --goal-contract or --plan-checks",
+  );
+  expect(() => parseRun(["fix it", "--review", "judge", "--plan-checks"])).toThrow(
+    "--review must be executable or prose",
+  );
+});

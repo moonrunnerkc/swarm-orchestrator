@@ -12,6 +12,71 @@ Source on `v13-main`; not published until a release names it.
 
 ### Added
 
+- **A configuration change that only follows the patch's own renames is read as the base's
+  instrument (rename-transport-v1).**
+  - A refactor that renames files has to edit the files naming them: a lint ignore list, a build
+    script's entry point, a test's `require`. The instrument rule withheld those passes, and
+    putting the base's version back measured a tree whose named files were gone. Both complete
+    refactor deliveries of the October 23 stage were refused that way.
+  - A changed instrument file or base test file now counts as transported where it differs from
+    the base only in words that name a renamed file before and its new path after. A pair counts
+    as a rename only where the added file is the deleted one under the same reading, verified
+    under the whole set.
+  - Every other configuration edit is decided as before: a rule switched off, a glob narrowed, a
+    status swallowed, a printed pass, a build output left unwritten.
+  - The standalone verifier re-derives the decision from the recorded renames and digests.
+  - On the 12 published candidates of the two refactor tasks, both that the hidden evaluator
+    passes now verify, and all ten it fails stay refused
+    (`docs/evidence/2026-10-23-preservation-review/`).
+- **Preservation obligations, on every run (preservation-obligations-v1).** What a run must
+  preserve is recorded by source before the first model call:
+  - the task's own words;
+  - the supplied contract's requirements;
+  - the base suite;
+  - later, review probes.
+
+  Each obligation is settled only from what measured it on the delivered tree, and the result
+  carries `outcome.preservation`. An obligation nothing measured is unmeasured, and a run with none
+  measured says so.
+- **Experimental, off by default: `--review executable|prose` (candidate-review-v1).** Once the
+  gates are green, a separate read-only review of the actual candidate proposes probes, which the
+  harness runs twice on fresh checkouts of the base and of the candidate:
+  - a preservation case's expectation is the base's observed answer;
+  - a requirement case quotes the task.
+
+  An established finding gets one attempt from the existing cap, with the outcomes follow-up's
+  brief in the same attempt. Each probe's kept cases are then ratchet parts. Findings never decide
+  acceptance. `prose` is the equal-budget control: the same conversation and attempt, with
+  objections and nothing run. See `docs/candidate-review.md`.
+- **Every repair attempt starts with a whole candidate snapshot on the chain
+  (`candidate-snapshot-v1`).** The snapshot says when scrubbing altered it and carries the
+  unscrubbed patch's digest.
+
+### Fixed
+
+- **`npm test` is the `test` script.** A lifecycle alias (`npm test`, `npm t`, `yarn test`,
+  `pnpm test`) was read as no package script at all. That left a `test` script replaced by an
+  echo of a passing summary outside the instrument of every check spelled that way.
+- The ratchet compares parts under a key that is no gate, as the bundled verifier already did.
+- `swarm check` no longer refuses a project whose `yarn.lock` sits beside a `package-lock.json` or
+  `pnpm-lock.yaml`; only a project whose one lockfile is yarn's or bun's is out of its reach.
+- A directory a check's command names (`prettier -c src test`) no longer reads as a changed
+  instrument file. The base side printed the directory's listing where the checkout read nothing,
+  so an unchanged tree's pass was withheld, and putting the directory back stopped the run before
+  its first model call.
+- `--install` from a `package-lock.json` no longer fails on the `yarn.lock` npm rewrites beside
+  it (npm does so even with `--no-save`). That file's bytes are put back and the install record
+  names it under `restored`; any other source change still fails setup.
+- A reading the change itself left unmeasured is no longer reported as `setup unavailable`: a
+  check that fails on the base too with output the change altered, or a check read again without
+  the tests or runner configuration the change edited. The repair policy stopped on that label,
+  so a change that added findings to a base-failing lint was refused with every repair attempt
+  unused; it now reads `unmeasured by the change` and repair proceeds. A missing tool, a failed
+  install or an unjudged deciding check is still setup.
+- A test that fails with `Cannot find module './x'` is the change's to repair, not a missing tool.
+  Only a package that cannot be found (a bare specifier) stops repair as setup; a module move that
+  left a relative `require` broken was refused with every attempt unused.
+
 - **Experimental, off by default: `--repair-trace` (preservation-trace-v1).** Where a failing gate
   passed in the harness's own run over the base, the repair attempt is told so with the
   gate-baseline record and asked to reproduce one preserved case on both trees, narrow to the first

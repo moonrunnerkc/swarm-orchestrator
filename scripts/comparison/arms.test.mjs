@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  aiderTokens,
+  aiderUsage,
   claimedSuccess,
   completionAccount,
   correctionPrompt,
@@ -401,5 +403,26 @@ describe("Swarm's frozen workflow flags", () => {
     expect(() => swarmWorkflowFlags(["--prompt-profile", "terse"])).toThrow(
       "takes legacy or concise",
     );
+  });
+});
+
+describe("aider's usage", () => {
+  it("is read from its analytics log's message_send events, and nothing else", () => {
+    const log = [
+      JSON.stringify({ event: "message_send_starting", properties: {} }),
+      JSON.stringify({
+        event: "message_send",
+        properties: { prompt_tokens: 1200, completion_tokens: 80 },
+      }),
+      "not json",
+      JSON.stringify({
+        event: "message_send",
+        properties: { prompt_tokens: 900, completion_tokens: 20 },
+      }),
+    ].join("\n");
+    expect(aiderUsage(log)).toMatchObject({ input: 2100, output: 100, unknownCalls: 0 });
+    expect(aiderTokens(log)).toBe(2200);
+    expect(aiderTokens("")).toBeNull();
+    expect(aiderTokens(null)).toBeNull();
   });
 });

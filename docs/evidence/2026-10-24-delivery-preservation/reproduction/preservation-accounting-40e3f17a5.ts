@@ -1,0 +1,13 @@
+import { keepStatements, initialObligations, settleObligations } from "../../../../src/gates/preservation-obligations.ts";
+const exportsTask = "Add a filterQuery helper. All public exports must remain available.";
+console.log("D1 'All public exports must remain available' captured:", keepStatements(exportsTask));
+const many = Array.from({ length: 14 }, (_, i) => `Option ${i + 1} must keep working.`).join(" ");
+console.log("D2 14 keep sentences ->", keepStatements(many).length, "obligations");
+const contract = { version: 1, goal: "g", requirements: [{ id: "filter-query", description: "filterQuery(input, predicate) returns a query with only matching keys (new)", checks: ["c1"] }], checks: [], immutablePaths: [], selection: "stable" } as never;
+const obligations = initialObligations({ task: "Add filterQuery.", contract });
+const settled = settleObligations({ obligations, regression: "pass", requirements: [{ id: "filter-query", status: "accepted" }], probes: [] });
+console.log("D3 new-feature requirement status:", settled.find((o) => o.id === "contract-filter-query")?.status, "(authority", settled.find((o) => o.id === "contract-filter-query")?.authority + ")");
+const task = "withBase(input, base) must still return the input unchanged when it does not start with base, for every input and every base.";
+const ob = initialObligations({ task });
+const s2 = settleObligations({ obligations: ob, regression: null, requirements: [], probes: [{ probe: "p", statement: "x", quote: "must still return the input unchanged when it does not start with base", readings: ["kept"] }] });
+console.log("D4 one passing case + half-quote settles the whole sentence:", s2.find((o) => o.id === "task-keep-1")?.status);

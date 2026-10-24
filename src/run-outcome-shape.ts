@@ -76,6 +76,18 @@ export interface SetupUsage {
 export interface RunOutcomeReport {
   /** Added in 14.5.0; exit status 0 exactly when this is `accepted` or `unjudged`, 4 for `unverified`. */
   readonly status: OutcomeStatus;
+  /**
+   * Added in 14.6.0 (check-requirement-v1): which kind of acceptance the verdict is. Every
+   * required check passed, or no new failure was established and the base's own failures in the
+   * named checks remain. Both are acceptances; `refused` otherwise.
+   */
+  readonly checks?: {
+    readonly result: "all-required-pass" | "no-new-failures" | "refused";
+    readonly inherited: readonly {
+      readonly gateId: string;
+      readonly failures: readonly string[];
+    }[];
+  };
   readonly lifecycle: string;
   readonly requirements: readonly RequirementOutcome[] | null;
   readonly changedFiles: readonly string[];
@@ -95,6 +107,51 @@ export interface RunOutcomeReport {
    * A repair can satisfy a wrong expectation; nothing independent says these were right.
    */
   readonly repairsForGeneratedChecksOnly?: readonly number[];
+  /**
+   * Added in 14.6.0: what the run had to preserve, each obligation with its source and the status
+   * what ran gave it (preservation-obligations-v1). An obligation nothing measured is unmeasured.
+   */
+  readonly preservation?: readonly {
+    readonly id: string;
+    readonly source: "task" | "contract" | "base" | "review";
+    /**
+     * preservation-obligations-v2: requested behaviour (new, never counted as preserved), an
+     * explicit preservation requirement, behaviour observed through the base's checks, or a
+     * reviewer's proposal.
+     */
+    readonly category: "requested" | "explicit-preserve" | "observed" | "proposed";
+    readonly authority: "authoritative" | "observed" | "proposed";
+    readonly statement: string;
+    readonly basis: string;
+    /**
+     * `held` only where a check measured the obligation as stated; `exercised` where examples of
+     * it ran and kept the base's answer, which does not establish the statement; `met` and
+     * `unmet` for requested behaviour.
+     */
+    readonly status: "held" | "exercised" | "regressed" | "met" | "unmet" | "unmeasured";
+    readonly by: string;
+    readonly evidence: readonly {
+      readonly check: string;
+      readonly input?: unknown;
+      readonly base: string | null;
+      readonly candidate: string | null;
+      readonly reading: string;
+    }[];
+  }[];
+  /** The task's sentences no obligation was read from, kept so none disappears for a count. */
+  readonly unclassifiedTask?: readonly string[];
+  /** The digest of the delivered patch the preservation statuses were read on. */
+  readonly deliveredPatch?: string;
+  /** Added in 14.6.0, experimental: the review of the candidate, where `--review` asked for one. */
+  readonly review?: {
+    readonly mode: "executable" | "prose";
+    /** The examination's record, or null where the review never examined. */
+    readonly examination: string | null;
+    /** The attempt its findings were owed, or null where none was. */
+    readonly attempt: unknown;
+    readonly probes: readonly string[];
+    readonly readings: readonly unknown[];
+  };
   /**
    * Added in 14.5.0: requested outcomes the planner identified from the task (a requirement, the
    * words a check quoted, and whether its cases change or keep behaviour) that no check retained

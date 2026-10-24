@@ -40,7 +40,9 @@ const wallStopSchema = z.strictObject({
  * a loop cut at the end of its model work, before the run's deadline and with no effect in flight,
  * is not refused for the cut, as a loop stopped at its step limit is not; every other condition
  * still applies to the checked tree. Under v1 to v4 a wall stop refuses on its own, and their
- * records keep that meaning. The bundled verifier re-derives each by its own rule.
+ * records keep that meaning. v6 is v5 with check-requirement-v1: a blocking gate sealed
+ * no-new-regression that failed with every failure proven the base's own does not refuse; under
+ * v1 to v5 every blocking failure refuses. The bundled verifier re-derives each by its own rule.
  */
 export const assessmentInputsSchema = z.object({
   policy: z.enum([
@@ -48,6 +50,7 @@ export const assessmentInputsSchema = z.object({
     "run-acceptance-v2",
     "run-acceptance-v4",
     "run-acceptance-v5",
+    "run-acceptance-v6",
   ]),
   requiredChecks: z.array(z.string().min(1)).optional(),
   contractRecord: z.string().optional(),
@@ -76,7 +79,7 @@ export async function recordRunAssessment(
 ): Promise<RunVerdict> {
   const stop = lifecycleStop(evidence);
   const inputs = assessmentInputsSchema.parse({
-    policy: "run-acceptance-v5",
+    policy: "run-acceptance-v6",
     ...(contract === undefined
       ? {}
       : {
@@ -336,7 +339,9 @@ function lifecycleStop(evidence: EvidenceRecorder) {
     )
     .filter(
       (payload) =>
-        payload?.rule === "outcome-follow-up-v1" || payload?.rule === "task-continuation-v1",
+        payload?.rule === "outcome-follow-up-v1" ||
+        payload?.rule === "task-continuation-v1" ||
+        payload?.rule === "candidate-review-attempt-v1",
     );
   const kept = (attempt: unknown): boolean => {
     const record =

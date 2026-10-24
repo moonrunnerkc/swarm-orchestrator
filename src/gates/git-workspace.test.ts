@@ -1,5 +1,9 @@
+import { execFileSync } from "node:child_process";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { firstGitDiagnostic } from "./git-workspace.ts";
+import { createGitWorkspaceProbe, firstGitDiagnostic } from "./git-workspace.ts";
 
 describe("what git said, and what git printed because it thought you mistyped", () => {
   /**
@@ -40,5 +44,26 @@ describe("what git said, and what git printed because it thought you mistyped", 
 
   it("says so rather than returning an empty string when there is nothing to report", () => {
     expect(firstGitDiagnostic(new Error(""))).toBe("git produced no output");
+  });
+});
+
+describe("reading a path at the base commit", () => {
+  it("reads a file's bytes, and a directory as no file", async () => {
+    const root = await mkdtemp(join(tmpdir(), "swarm-read-base-"));
+    try {
+      await mkdir(join(root, "src"));
+      await writeFile(join(root, "src", "index.ts"), "export const one = 1;\n");
+      const git = (...args: string[]) =>
+        execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: root });
+      git("init", "-q");
+      git("add", ".");
+      git("commit", "-qm", "base");
+      const probe = createGitWorkspaceProbe({ workspaceRoot: root, baseRef: "HEAD" });
+      expect(await probe.readBase("src/index.ts")).toBe("export const one = 1;\n");
+      expect(await probe.readBase("src")).toBeNull();
+      expect(await probe.readBase("absent.ts")).toBeNull();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

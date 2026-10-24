@@ -1,11 +1,11 @@
-import type { LoopEvent } from "../core/loop-events.ts";
+import type { GateStatus, LoopEvent } from "../core/loop-events.ts";
 import { asJsonValue } from "../evidence/canonical-json.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import { refusedBeforeSpawn } from "../exec/run-process.ts";
 import { type AttemptSummary, type EscalationPayload, escalationSchema } from "./escalation.ts";
-import { failureSignature } from "./failure-signature.ts";
 import type { GateContext, GateDefinition, GateObservation } from "./gate-definition.ts";
 import {
+  type BaselineRun,
   describeFailuresForModel,
   executedTheChange,
   type GateCycle,
@@ -54,6 +54,8 @@ export interface ResolveRequest {
   readonly followUp?: string;
   /** Which owed work the brief is: a task's own continuation, or its unresolved outcomes. */
   readonly followUpKind?: OwedKind;
+  /** Every owed kind the attempt carries, where it carries more than its `followUpKind`. */
+  readonly followUpCarries?: readonly OwedKind[];
   /**
    * The failing gates this attempt is asked to fix that passed when run over the base, each with
    * the gate-baseline record of that run: behaviour the base had and the change lost, as the
@@ -67,7 +69,38 @@ export interface ResolveRequest {
  * continuation, where the loop that worked it stopped at its step limit before it reported the
  * task done, and then the follow-up on requested outcomes no sealed check states.
  */
-export type OwedKind = "continuation" | "outcomes";
+export type OwedKind = "continuation" | "outcomes" | "review";
+
+/** Where the review's readings sit among the ratchet's parts; no gate carries this id. */
+export const reviewPartsKey = "candidate-review";
+
+/**
+ * The experimental review of the candidate (candidate-review-v1), asked once the gates are green
+ * and nothing else is owed. Its examination may owe one attempt, from the same cap; after it,
+ * every candidate is measured again so the probes' kept cases are held by the ratchet as parts.
+ */
+export interface CandidateReviewHook {
+  /** Asked with the incumbent's cycle: what its checks reported and what a cycle costs. */
+  readonly examine: (cycle: GateCycle) => Promise<{
+    readonly identity: string;
+    /** The attempt's brief, or null where the review established nothing to act on. */
+    readonly brief: string | null;
+    readonly parts: Readonly<Record<string, GateStatus>>;
+    readonly claims: readonly string[];
+    readonly record: string;
+  }>;
+  readonly measure: () => Promise<{
+    readonly parts: Readonly<Record<string, GateStatus>>;
+    readonly claims: readonly string[];
+  }>;
+  /** Records why the review was never asked, and returns that record. */
+  readonly withhold: (reason: string) => Promise<string>;
+  /**
+   * Called when the ratchet keeps the candidate last measured, so the review's readings for the
+   * report are the delivered candidate's, never a rolled-back one's. Absent, nothing is adopted.
+   */
+  readonly adopt?: () => void;
+}
 
 /**
  * Work the gates do not measure that the controller owes one bounded attempt before the run is
@@ -196,6 +229,8 @@ interface AutoResolveDependencies {
    * and nothing resumed the task. Absent is none owed.
    */
   readonly continuation?: OwedFollowUp;
+  /** Absent is no review, which is the default. */
+  readonly review?: CandidateReviewHook;
 }
 
 interface AutoResolveAttempt {
@@ -227,6 +262,10 @@ export interface AutoResolveOutcome {
   readonly followUp?: FollowUpOutcome | null;
   /** The task's own continuation, where its loop was interrupted; null where none was owed. */
   readonly continuation: FollowUpOutcome | null;
+  /** The review's attempt, where its examination owed one; null otherwise. */
+  readonly review?: FollowUpOutcome | null;
+  /** The examination's record, where the review ran one. */
+  readonly reviewExamination?: string | null;
   /** The test deliverable as measured on the final state, against the base. */
   readonly regressionTests: RegressionTestAccount;
 }
@@ -255,16 +294,29 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
   let context = await deps.context();
   trackTestFiles(context, trackedTestFiles);
 
-  let cycle = await runGateCycle(deps.gates, context, 0, deps.cycleDeps);
+  // Every cycle reads a failed command gate against the same gate over the base, measured once
+  // per gate and recorded (check-requirement-v1). One reading, `attributeFailure`'s, decides
+  // what is inherited for green, repair, escalation, the verdict and the verifier alike.
+  const cycleDeps: GateCycleDependencies = {
+    ...deps.cycleDeps,
+    ...(deps.measureAtBase === undefined ? {} : { baseline: baselineMeasurer(deps) }),
+  };
+  let cycle = await runGateCycle(deps.gates, context, 0, cycleDeps);
   const firstCycle = cycle;
   let baseline = await snapshot(context, cycle, trackedTestFiles);
-  const { failing: failingAtBase, passing: passingAtBase } = await failuresTheBaseHas(deps, cycle);
+  const passingAtBase = new Map(
+    cycle.blockingFailures.flatMap((run) =>
+      run.inheritance?.baselineRecord != null && run.inheritance.baseStatus === "passed"
+        ? [[run.gateId, run.inheritance.baselineRecord] as const]
+        : [],
+    ),
+  );
 
   const attempts: AutoResolveAttempt[] = [];
   let rejected: RejectedCandidate | null = null;
   // What the run owes once the gates are green, in the order it is owed. Each is pending until an
   // attempt carries it, then given once and never again.
-  const owed: readonly OwedWork[] = [
+  const owed: OwedWork[] = [
     ...(deps.continuation === undefined
       ? []
       : [
@@ -284,10 +336,68 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
     owed.map((entry) => [entry.kind, { state: "pending" }]),
   );
 
+  // The review's readings of the state the workspace is in, once it has examined: held by the
+  // ratchet beside the gates' own parts for every later candidate.
+  let reviewExamined = false;
+  let reviewExamination: string | null = null;
+  let reviewReading: Awaited<ReturnType<CandidateReviewHook["measure"]>> | null = null;
+
   while (attempts.length < deps.cap && deps.abortSignal?.aborted !== true) {
-    const next: OwedWork | undefined = isGreen(cycle)
-      ? owed.find((entry) => owedStates.get(entry.kind)?.state === "pending")
-      : undefined;
+    const pendingOwed = isGreen(cycle)
+      ? owed.filter((entry) => owedStates.get(entry.kind)?.state === "pending")
+      : [];
+    // What this attempt carries: the first owed item, or, once the review has findings, the
+    // review's and the outcomes' follow-up together, so the review does not cost the follow-up
+    // its attempt under the same cap.
+    let carried: readonly OwedWork[] = pendingOwed.slice(0, 1);
+    // The review asks once a finished candidate runs (`reviewable`), green or with only a static
+    // check failing: after the task's own continuation, which may still change what it would
+    // read, and before the follow-up on outcomes. A lint finding does not stop the candidate from
+    // running, so it does not withhold the semantic review; its findings travel with the failure.
+    if (
+      reviewable(cycle) &&
+      deps.review !== undefined &&
+      !reviewExamined &&
+      carried[0]?.kind !== "continuation"
+    ) {
+      reviewExamined = true;
+      const examined = await deps.review.examine(cycle);
+      reviewExamination = examined.record;
+      reviewReading = { parts: examined.parts, claims: examined.claims };
+      if (examined.brief !== null) {
+        const entry: OwedWork = {
+          kind: "review",
+          rule: "candidate-review-attempt-v1",
+          work: { identity: examined.identity, brief: examined.brief },
+        };
+        owed.push(entry);
+        owedStates.set("review", { state: "pending" });
+        carried = [entry, ...pendingOwed.filter((one) => one.kind === "outcomes")];
+        // A candidate reviewed with a static check failing carries that failure into the same
+        // attempt: the brief names both, and the cycle after it measures both.
+        if (!isGreen(cycle))
+          carried = [
+            {
+              ...entry,
+              work: {
+                identity: entry.work.identity,
+                brief: `${entry.work.brief}\n\nThe checks also report these failures on the same candidate:\n${describeFailuresForModel(cycle)}`,
+              },
+            },
+            ...carried.slice(1),
+          ];
+      }
+    }
+    const next: OwedWork | undefined =
+      carried.length <= 1
+        ? carried[0]
+        : {
+            ...(carried[0] as OwedWork),
+            work: {
+              identity: (carried[0] as OwedWork).work.identity,
+              brief: carried.map((one) => one.work.brief).join("\n\n"),
+            },
+          };
     if (isGreen(cycle) && next === undefined) break;
     const classification = next === undefined ? classifyRepair(cycle) : null;
     if (
@@ -316,7 +426,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
     const failure = await tryResolve(deps, {
       attempt,
       cap: deps.cap,
-      gateOutput: next === undefined ? describeFailuresForModel(cycle, failingAtBase) : "",
+      gateOutput: next === undefined ? describeFailuresForModel(cycle) : "",
       cycle,
       rejected,
       ...(next === undefined
@@ -328,16 +438,22 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
           }
         : {}),
       ...(next === undefined ? {} : { followUp: next.work.brief, followUpKind: next.kind }),
+      ...(carried.length > 1 ? { followUpCarries: carried.map((one) => one.kind) } : {}),
     });
-    if (next !== undefined)
-      owedStates.set(next.kind, {
-        identity: next.work.identity,
+    for (const entry of carried)
+      owedStates.set(entry.kind, {
+        identity: entry.work.identity,
         state: failure?.includes("repair stopped:") === true ? "withheld" : "given",
         attempt: failure?.includes("repair stopped:") === true ? null : attempt,
         accepted: null,
         reason:
           failure === null
-            ? "given once the gates were green"
+            ? carried.length > 1
+              ? `given once the gates were green, in one attempt with ${carried
+                  .filter((one) => one !== entry)
+                  .map((one) => one.kind)
+                  .join(", ")}`
+              : "given once the gates were green"
             : failure.includes("repair stopped:")
               ? failure
               : `given, and the attempt produced nothing to judge: ${failure}`,
@@ -355,12 +471,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
 
     const candidateContext = await deps.context();
     trackTestFiles(candidateContext, trackedTestFiles);
-    const candidateCycle = await runGateCycle(
-      deps.gates,
-      candidateContext,
-      attempt,
-      deps.cycleDeps,
-    );
+    const candidateCycle = await runGateCycle(deps.gates, candidateContext, attempt, cycleDeps);
     const candidate = await snapshot(candidateContext, candidateCycle, trackedTestFiles);
 
     const respecification = await findNewSpecifications(
@@ -368,14 +479,30 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
       deps.baseControl,
     );
 
+    const reviewNow = reviewReading === null ? null : await deps.review?.measure();
+    const withReview = (
+      parts: GateCycle["parts"],
+      reading: Awaited<ReturnType<CandidateReviewHook["measure"]>> | null | undefined,
+    ) =>
+      reading === null || reading === undefined
+        ? parts
+        : { ...(parts ?? {}), [reviewPartsKey]: reading.parts };
     const input = {
       baselineGates: cycle.statuses,
       candidateGates: candidateCycle.statuses,
-      baselineParts: cycle.parts,
-      candidateParts: candidateCycle.parts,
+      baselineParts: withReview(cycle.parts, reviewReading),
+      candidateParts: withReview(candidateCycle.parts, reviewNow),
       // The claims are the sealed contract's, the same on both sides; the candidate's reading
-      // names them for every part it reported.
-      partClaims: candidateCycle.claims ?? {},
+      // names them for every part it reported. The review's requested cases are claims too.
+      partClaims:
+        reviewNow === null || reviewNow === undefined
+          ? (candidateCycle.claims ?? {})
+          : {
+              ...(candidateCycle.claims ?? {}),
+              [reviewPartsKey]: [
+                ...new Set([...(reviewReading?.claims ?? []), ...reviewNow.claims]),
+              ],
+            },
       baseline,
       candidate,
       newSpecifications: clearedTests(respecification),
@@ -404,9 +531,11 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
       respecification,
       ratchetRecord: recorded.record.payloadDigest,
     });
-    const carried = next === undefined ? undefined : owedStates.get(next.kind);
-    if (next !== undefined && carried !== undefined && carried.state === "given")
-      owedStates.set(next.kind, { ...carried, accepted: decision.accepted });
+    for (const entry of carried) {
+      const state = owedStates.get(entry.kind);
+      if (state !== undefined && state.state === "given")
+        owedStates.set(entry.kind, { ...state, accepted: decision.accepted });
+    }
 
     if (!decision.accepted) {
       const kept = await keepRejectedCandidate(
@@ -422,7 +551,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
         candidateRecord: kept.record,
         changedFiles: kept.changedFiles,
         ...gateMovement(cycle, candidateCycle),
-        failures: bounded(describeFailuresForModel(candidateCycle, failingAtBase)),
+        failures: bounded(describeFailuresForModel(candidateCycle)),
         diff: kept.diff,
       };
       await deps.checkpoint.restore(before);
@@ -433,7 +562,20 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
     cycle = candidateCycle;
     baseline = candidate;
     rejected = null;
+    if (reviewNow !== null && reviewNow !== undefined) {
+      reviewReading = reviewNow;
+      deps.review?.adopt?.();
+    }
   }
+
+  if (deps.review !== undefined && !reviewExamined)
+    reviewExamination = await deps.review.withhold(
+      deps.abortSignal?.aborted === true
+        ? "model work ended before the review could be asked"
+        : !reviewable(cycle)
+          ? "the candidate never ran with only static checks failing: its tests did not execute the change, or a check that runs the code, a policy check or a stood-down command blocked it"
+          : `no attempt was left under the cap of ${deps.cap} for what a review could find`,
+    );
 
   // What became of each owed item, on the chain in the order it was owed: given with the ratchet's
   // decision, or withheld with the reason.
@@ -464,6 +606,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
   }
   const continuationOutcome = settled.get("continuation") ?? null;
   const followUpOutcome = settled.get("outcomes") ?? null;
+  const reviewOutcome = settled.get("review") ?? null;
 
   const baseComparison = await judgeAgainstBase(deps, cycle, baseline);
   const regressionTests = await accountForRegressionTests(deps, cycle, baseline);
@@ -479,11 +622,12 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
       escalation: null,
       followUp: followUpOutcome,
       continuation: continuationOutcome,
+      ...(deps.review === undefined ? {} : { review: reviewOutcome, reviewExamination }),
       regressionTests,
     };
   }
 
-  const escalation = await escalate(deps, cycle, attempts, baseComparison, failingAtBase);
+  const escalation = await escalate(deps, cycle, attempts, baseComparison);
   return {
     settled: "escalated",
     firstCycle,
@@ -494,6 +638,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
     escalation,
     followUp: followUpOutcome,
     continuation: continuationOutcome,
+    ...(deps.review === undefined ? {} : { review: reviewOutcome, reviewExamination }),
     regressionTests,
   };
 
@@ -555,7 +700,7 @@ async function judgeAgainstBase(
 interface OwedWork {
   readonly kind: OwedKind;
   /** The rule the outcome is recorded under; the bundled verifier reads both. */
-  readonly rule: "task-continuation-v1" | "outcome-follow-up-v1";
+  readonly rule: "task-continuation-v1" | "outcome-follow-up-v1" | "candidate-review-attempt-v1";
   readonly work: OwedFollowUp;
 }
 
@@ -577,7 +722,9 @@ async function recordFollowUp(
       limitation:
         rule === "task-continuation-v1"
           ? "given means one attempt carried the task again with the interrupted loop's account and its candidate was judged as any repair's is; it does not establish that the task is done, which only the sealed checks and the final verification speak to"
-          : "given means one attempt carried the brief and its candidate was judged as any repair's is; it does not settle the work it names, which no sealed check states",
+          : rule === "candidate-review-attempt-v1"
+            ? "given means one attempt carried the review's established findings and its candidate was judged as any repair's is, with the probes' kept cases held as parts; it does not establish that the findings were right, which no sealed check states"
+            : "given means one attempt carried the brief and its candidate was judged as any repair's is; it does not settle the work it names, which no sealed check states",
     }),
   });
   return { ...outcome, record: recorded.record.payloadDigest };
@@ -909,43 +1056,51 @@ export function gatesTheHarnessCouldNotRun(cycle: GateCycle): ReadonlyMap<string
 }
 
 /**
- * Which of the first cycle's blocking failures the base tree already has, unchanged, and which
- * the base passed, with the record of that passing run. Each is measured once, by running the
- * gate over the base and comparing the failure's signature, and recorded as a gate-baseline
- * record whether or not it matched.
+ * Whether a candidate can be reviewed (candidate-review-v2): something that runs the code executed
+ * the change, and no blocking failure says the code failed when it ran. A static check (lint,
+ * format, typecheck, a build) does not stop the candidate from running. Nor does a gate that runs
+ * code and names its own checks as parts, every one of which passed: it failed on something
+ * outside them, as task acceptance does when the suite's regression reading counts a lint finding
+ * the change added. A failing test, a policy failure or a blocking command gate that stood down
+ * leaves no candidate whose behaviour a probe should read.
  */
-async function failuresTheBaseHas(
+export function reviewable(cycle: GateCycle): boolean {
+  const ranAndPassedItsOwnChecks = (run: GateCycle["runs"][number]) =>
+    Object.keys(run.parts).length > 0 &&
+    Object.values(run.parts).every((status) => status === "passed");
+  return (
+    executedTheChange(cycle) &&
+    cycle.blockingFailures.every(
+      (run) => run.capability === "static" || ranAndPassedItsOwnChecks(run),
+    ) &&
+    !cycle.runs.some(
+      (run) =>
+        run.kind === "command" && run.severity === "blocking" && run.status === "not-applicable",
+    )
+  );
+}
+
+/**
+ * The base run of a gate, measured the first time a cycle asks for it and recorded as a
+ * gate-baseline record whatever it showed; the base does not move during a run, so later cycles
+ * read the same record. Null where the base could not be put in place.
+ */
+function baselineMeasurer(
   deps: AutoResolveDependencies,
-  cycle: GateCycle,
-): Promise<{
-  readonly failing: ReadonlySet<string>;
-  readonly passing: ReadonlyMap<string, string>;
-}> {
-  const failing = new Set<string>();
-  const passing = new Map<string, string>();
-  if (deps.measureAtBase === undefined) {
-    return { failing, passing };
-  }
-  for (const run of cycle.blockingFailures) {
-    const gate = deps.gates.find((candidate) => candidate.id === run.gateId);
-    if (gate === undefined || gate.source.kind !== "command") {
-      continue;
-    }
-    const observation = await deps.measureAtBase(gate);
-    if (observation === null) {
-      continue;
-    }
-    const atBase = await recordBaselineRun(gate, observation, deps.cycleDeps);
-    if (
-      atBase.status === "failed" &&
-      failureSignature({ detail: atBase.detail, ...atBase.observation }) ===
-        failureSignature({ detail: run.detail, ...run.observation })
-    ) {
-      failing.add(run.gateId);
-    }
-    if (atBase.status === "passed") passing.set(run.gateId, atBase.record);
-  }
-  return { failing, passing };
+): (gate: GateDefinition) => Promise<BaselineRun | null> {
+  const measured = new Map<string, Promise<BaselineRun | null>>();
+  return (gate) => {
+    const known = measured.get(gate.id);
+    if (known !== undefined) return known;
+    const run = (async () => {
+      const observation = await deps.measureAtBase?.(gate);
+      return observation === null || observation === undefined
+        ? null
+        : recordBaselineRun(gate, observation, deps.cycleDeps);
+    })();
+    measured.set(gate.id, run);
+    return run;
+  };
 }
 
 async function escalate(
@@ -953,9 +1108,15 @@ async function escalate(
   cycle: GateCycle,
   attempts: readonly AutoResolveAttempt[],
   base: BaseComparison,
-  failingAtBase: ReadonlySet<string>,
 ): Promise<EscalationPayload> {
   const blocking = cycle.blockingFailures[0];
+  // Gates whose every failure is the base's own: read off the cycle's records, so an absolute
+  // requirement that fails as the base does is named as that, and not as the change's.
+  const failingAtBase = new Set(
+    cycle.runs
+      .filter((run) => run.inheritance?.attribution === "inherited")
+      .map((run) => run.gateId),
+  );
   const rejected = attempts.filter((attempt) => !attempt.decision.accepted);
   // A run can reach here with every gate green and the base comparison rejected, which is
   // the erosion a cap-bounded retry loop never saw because it never had to retry.

@@ -13,6 +13,7 @@ import type { ResolveAttempt } from "./auto-resolve.ts";
 import { runGatesEngine } from "./engine.ts";
 import { describeEscalation } from "./escalation.ts";
 import { createFileSetRegistry, type FileSetRegistry } from "./file-set.ts";
+import type { GateOverride } from "./gate-definition.ts";
 
 /**
  * The phase acceptance run, against a real git repository with real test execution. The
@@ -121,7 +122,11 @@ const gateOverrides = {
   format: "node --check src/math.test.js",
 };
 
-function runGates(resolve: ResolveAttempt, cap = 3) {
+function runGates(
+  resolve: ResolveAttempt,
+  cap = 3,
+  overrides: Readonly<Record<string, GateOverride>> = gateOverrides,
+) {
   return runGatesEngine({
     workspaceRoot: workspace,
     baseRef: "HEAD",
@@ -133,7 +138,7 @@ function runGates(resolve: ResolveAttempt, cap = 3) {
     },
     resolve,
     cap,
-    gateOptions: { commandOverrides: gateOverrides },
+    gateOptions: { commandOverrides: overrides },
     // No override for the control runs: the seeded project declares node's own runner, so the
     // engine builds the control command the way it does in production, artifact and all. The
     // override this replaces printed TAP and wrote no artifact, which now attributes nothing.
@@ -396,11 +401,18 @@ describe("a retry that erodes coverage of the lines it changed", () => {
       "  if (value > 1000) {\n    return 'huge';\n  }\n  return 'other';",
     );
 
-    const { outcome } = await runGates(async ({ attempt }) => {
-      // Attempt 1 fixes the tests and leaves lint failing. Attempt 2 fixes lint and smuggles
-      // in a branch no test reaches.
-      await write("src/math.js", attempt === 1 ? withCoveredFix : withDeadBranch);
-    }, 2);
+    // Lint must pass outright here. Held to no new regression (its default), the var the base
+    // already carries would be inherited and the loop would stop after attempt 1, before the
+    // attempt this test is about.
+    const { outcome } = await runGates(
+      async ({ attempt }) => {
+        // Attempt 1 fixes the tests and leaves lint failing. Attempt 2 fixes lint and smuggles
+        // in a branch no test reaches.
+        await write("src/math.js", attempt === 1 ? withCoveredFix : withDeadBranch);
+      },
+      2,
+      { ...gateOverrides, lint: { command: gateOverrides.lint, requirement: "absolute-pass" } },
+    );
 
     const [first, second] = outcome.attempts;
     expect(first?.decision.accepted).toBe(true);

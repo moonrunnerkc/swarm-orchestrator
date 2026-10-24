@@ -240,7 +240,8 @@ async function readVerifierScript(): Promise<string> {
     ]);
   const controllerImport = 'import { readControllerHistory } from "./controller.mjs";';
   const cryptoImport = 'import { createHash } from "node:crypto";';
-  const statusImport = 'import { authorizedWithin, capturedRegression } from "./status.mjs";';
+  const statusImport =
+    'import { authorizedWithin, capturedRegression, gateInheritance } from "./status.mjs";';
   if (
     !verifier.includes(controllerImport) ||
     !verifier.includes(statusImport) ||
@@ -280,9 +281,9 @@ async function readVerifierScript(): Promise<string> {
         `const strengtheningAgrees = (() => {${embeddedStrengthening}\nreturn strengtheningAgrees;})();`,
     )
     .replace(
-      'import { authorizedWithin, capturedRegression } from "./status.mjs";',
+      statusImport,
       () =>
-        `const { authorizedWithin, capturedRegression } = (() => {${embeddedStatus}\nreturn { authorizedWithin, capturedRegression };})();`,
+        `const { authorizedWithin, capturedRegression, gateInheritance } = (() => {${embeddedStatus}\nreturn { authorizedWithin, capturedRegression, gateInheritance };})();`,
     )
     .replace(
       'import { upgradeControlPasses } from "./upgrade.mjs";',

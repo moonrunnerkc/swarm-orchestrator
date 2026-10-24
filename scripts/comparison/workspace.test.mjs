@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import {
   existsSync,
   lstatSync,
@@ -11,6 +12,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import { describe, expect, it } from "vitest";
+import { commandLog } from "../campaign/exec.mjs";
 import {
   browserCacheIn,
   npmToolchain,
@@ -18,6 +20,7 @@ import {
   parsePackageManager,
   prepareLaunchHome,
   sharedNpmCache,
+  snapshotPatch,
   swarmConfigurationText,
   writeArmConfiguration,
 } from "./workspace.mjs";
@@ -133,5 +136,37 @@ describe("the package manager a base declares", () => {
     expect(packageManagerToolchain("pnpm", "10.34.5")).toBe(
       join(homedir(), ".cache", "swarm-capability-tools", "pnpm-10.34.5"),
     );
+  });
+});
+
+describe("the harness's snapshot of a candidate", () => {
+  it("reads the change, untracked files included, through its own index and leaves the arm's alone", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "comparison-snapshot-"));
+    const git = (...args) =>
+      execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], {
+        cwd: directory,
+        encoding: "utf8",
+      });
+    git("init", "-q");
+    writeFileSync(join(directory, "a.js"), "export const tokens = [];\n");
+    git("add", "-A");
+    git("commit", "-qm", "base");
+    const base = git("rev-parse", "HEAD").trim();
+    writeFileSync(join(directory, "a.js"), "export const tokens = state.tokens;\n");
+    writeFileSync(join(directory, "b.js"), "new\n");
+    writeFileSync(join(directory, ".aider.chat.history.md"), "mine\n");
+    git("add", "a.js");
+    const staged = git("diff", "--cached", "--name-only");
+    const log = commandLog(join(directory, ".blobs"));
+    const patch = await snapshotPatch(
+      log,
+      directory,
+      base,
+      join(tmpdir(), `snapshot-${process.pid}.index`),
+    );
+    expect(patch).toContain("export const tokens = state.tokens;");
+    expect(patch).toContain("b/b.js");
+    expect(patch).not.toContain("aider");
+    expect(git("diff", "--cached", "--name-only")).toBe(staged);
   });
 });

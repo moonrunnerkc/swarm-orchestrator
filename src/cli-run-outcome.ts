@@ -1,6 +1,6 @@
 import type { GoalContract } from "./evidence/goal-contract.ts";
 import type { EvidenceRecorder } from "./evidence/session.ts";
-import { blockingReason, type RunVerdict } from "./evidence/verdict.ts";
+import { acceptanceKind, blockingReason, type RunVerdict } from "./evidence/verdict.ts";
 import type { AutoResolveOutcome } from "./gates/auto-resolve.ts";
 import type { GateCycle } from "./gates/gate-runner.ts";
 import { exitCodes } from "./machine-output.ts";
@@ -147,6 +147,28 @@ export function outcomeStatus(
   return "not-accepted";
 }
 
+/**
+ * Which acceptance a verdict is (check-requirement-v1): every required check passed, or no new
+ * failure was established and the base's own failures remain, named. Both exit as accepted; the
+ * report and the machine output say which.
+ */
+export function checksResult(verdict: RunVerdict): {
+  readonly result: "all-required-pass" | "no-new-failures" | "refused";
+  readonly inherited: readonly { readonly gateId: string; readonly failures: readonly string[] }[];
+  readonly line: string;
+} {
+  const inherited = verdict.inherited ?? [];
+  return {
+    result: !verdict.acceptable
+      ? "refused"
+      : inherited.length === 0
+        ? "all-required-pass"
+        : "no-new-failures",
+    inherited,
+    line: acceptanceKind(verdict),
+  };
+}
+
 /** What the process exits with for a status: the taxonomy in machine-output.ts, read one way. */
 export function exitCodeForStatus(status: OutcomeStatus): number {
   return status === "accepted" || status === "unjudged"
@@ -203,6 +225,8 @@ export function describeRunOutcome(input: RunOutcomeInput): readonly string[] {
       `policy ${input.verdict.policy}, execution ${input.verdict.executionTrust}; ` +
       `the loop stopped as ${input.lifecycle}`,
   );
+  // check-requirement-v1: an acceptance says which of its two kinds it is.
+  if (input.verdict.acceptable) say(`  checks: ${checksResult(input.verdict).line}`);
   // Accepted over a cut: the report says the acceptance is the checks', not the model's finish.
   if (input.verdict.acceptable && input.verdict.reasons.lifecycle !== undefined)
     say(`  lifecycle: ${input.verdict.reasons.lifecycle}`);
@@ -604,7 +628,9 @@ export function interventionsOn(evidence: EvidenceRecorder): InterventionCounts 
       .map((record) => payloads.get(record.payloadDigest) as { rule?: string; attempt?: unknown })
       .filter(
         (payload) =>
-          payload?.rule === "outcome-follow-up-v1" || payload?.rule === "task-continuation-v1",
+          payload?.rule === "outcome-follow-up-v1" ||
+          payload?.rule === "task-continuation-v1" ||
+          payload?.rule === "candidate-review-attempt-v1",
       )
       .flatMap((payload) => (typeof payload.attempt === "number" ? [payload.attempt] : [])),
   );

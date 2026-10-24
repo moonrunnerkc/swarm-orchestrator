@@ -71,6 +71,23 @@ tree's, so a patch that rewrites the test script does not get to choose the inst
 measures it. A patch touching a path you declared immutable is refused before anything runs. A
 patch that will not apply reports that no check happened rather than passing on an unchanged tree.
 
+**A configuration change that only follows the patch's renames** (`rename-transport-v1`) is the
+one difference to the instrument the base's instrument is read through:
+
+- An ignore entry, a build entry point, or a test's `require` that names a file the same patch
+  renames, now under its new path, counts as the base's instrument with its references moved.
+- A deleted file and an added file are a rename only where the added one is the deleted one under
+  the same reading, so a stub left at the new path is not.
+- Any other configuration edit is withheld and read again under the base's configuration:
+  - a rule switched off, or a file or directory ignored;
+  - a test glob narrowed;
+  - a status swallowed with `|| true`;
+  - a printed pass;
+  - a build output left unwritten.
+- What this does not establish:
+  - that a renamed file still behaves as before, which is the tests' question;
+  - that a configuration's globs still select the same files after a move.
+
 ## Two answers, not one
 
 ```
@@ -261,10 +278,31 @@ distinguishes them.
 ## A failure the base already had is not a regression
 
 A failed check is compared with a controlled base run. Inheritance needs the same failure
-identities and causes, not merely two nonzero exits. Current runs use `failure-identity-v3`,
-including stable normalization of checkout paths; older records retain their original rule.
+identities and causes, not merely two nonzero exits. Current runs use `failure-identity-v5`:
+- **Identities.** Test runners name their tests. ESLint, Prettier's `--check` and TypeScript's
+  compiler are named by diagnostic (file, rule or code, and message).
+- **Occurrences.** An equal count is not enough for a static check. Each ESLint or tsc diagnostic
+  must be a base occurrence that the change's recorded hunks carry to the same line and column.
+  A Prettier finding is inherited only in a file the change left alone. Anything else is
+  unattributed.
+- **Incomplete runs.** A run the harness killed is incomplete and proves no inheritance. So is a
+  `&&` chain that stopped before its last command, including one where an earlier command runs
+  the same tool as the last.
+- **A static failure the task asks to fix** seals that check `absolute-pass`.
+- **Older records** keep their original rule.
+
 Base measurement removes candidate build output and rebuilds as required. A demonstrated
 inherited failure does not make `regression` fail; a new or changed failure does.
+
+A run that delivers a change reads its own gates the same way, under a sealed requirement per gate
+([check requirements](check-requirements.md)).
+- **`absolute-pass`.** The check must pass.
+- **`no-new-regression`.** The default for static checks. Inherited failures may remain, but none
+  may be added or changed.
+
+The loop's repair, the run's verdict and exit status, and the bundle's verifier all read this
+one rule. An acceptance says which it is: "all required checks pass", or "no new failures
+established; these inherited failures remain", with each named.
 
 This is not hypothetical. Dependencies install with `--ignore-scripts`, because install scripts
 run whatever the registry serves, so a project that builds on `prepare` is verified without its

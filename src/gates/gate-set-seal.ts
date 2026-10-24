@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { JsonValue } from "../evidence/canonical-json.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
-import type { DiffBudget, GateDefinition } from "./gate-definition.ts";
+import { type DiffBudget, type GateDefinition, requirementOf } from "./gate-definition.ts";
 import type { ProjectDetection } from "./project-type.ts";
 
 /**
@@ -22,6 +22,13 @@ export const gateSetSealSchema = z.object({
       id: z.string(),
       title: z.string(),
       severity: z.enum(["blocking", "advisory"]),
+      /**
+       * check-requirement-v1. Absent on seals written before it, which every reader takes as
+       * `absolute-pass`, the only meaning a blocking gate had then.
+       */
+      requirement: z.enum(["absolute-pass", "no-new-regression"]).optional(),
+      /** The task sentence that set the requirement over the gate's default, where one did. */
+      requirementBasis: z.string().optional(),
       source: z.enum(["command", "inspection"]),
       optionalAbsence: z.boolean().optional(),
       /** How the run reads to a person, for a command; null for an inspection. */
@@ -70,6 +77,8 @@ export function describeGateSet(input: {
       id: gate.id,
       title: gate.title,
       severity: gate.severity,
+      requirement: requirementOf(gate),
+      ...(gate.requirementBasis === undefined ? {} : { requirementBasis: gate.requirementBasis }),
       source: gate.source.kind,
       ...(gate.source.kind === "inspection" && gate.source.optionalAbsence === true
         ? { optionalAbsence: true }

@@ -3,10 +3,12 @@ import { capturedRegression } from "../evidence/verifier/status.mjs";
 import {
   attributeFailure,
   attributionRule,
+  diagnosticFiles,
   testPoints,
   unattributedReason,
   withoutTemporaryNames,
 } from "./failure-attribution.ts";
+import { changesOfPrinted, type SourceChanges } from "./source-changes.ts";
 
 /**
  * Vitest's text reporters, as a project script with flags the structured runner does not take
@@ -566,4 +568,332 @@ it("never makes a crash into a pass or into evidence the base did not give", () 
   expect(vitestRecord(brokenHead, { ...crashedBase, outputTruncated: true }).live.attribution).toBe(
     "unattributed",
   );
+});
+
+/**
+ * ufo's lint as the fresh block ran it: `npm run --loglevel=error lint`, whose script is
+ * `eslint . && prettier -c src test`. The base's prettier reports one file it would reformat.
+ */
+const esc = String.fromCharCode(27);
+const ufoLint = (prettierFiles: readonly string[], eslint: string | null = null) => ({
+  exitCode: 1,
+  stdout: [
+    "",
+    "> ufo@1.6.2 lint",
+    "> eslint . && prettier -c src test",
+    "",
+    ...(eslint === null ? ["Checking formatting..."] : [eslint]),
+    "",
+  ].join("\n"),
+  stderr:
+    eslint !== null
+      ? ""
+      : [
+          ...prettierFiles.map((file) => `[${esc}[33mwarn${esc}[39m] ${file}`),
+          `[${esc}[33mwarn${esc}[39m] Code style issues found in ${prettierFiles.length === 1 ? "the above file" : `${prettierFiles.length} files`}. Run Prettier with --write to fix.`,
+          "",
+        ].join("\n"),
+  durationMs: 1,
+  unavailable: null,
+});
+const eslintReport = (root: string, problems: readonly string[]) =>
+  [
+    "",
+    `${root}/src/utils.ts`,
+    ...problems,
+    "",
+    `✖ ${problems.length} problem${problems.length === 1 ? "" : "s"} (${problems.length} error${problems.length === 1 ? "" : "s"}, 0 warnings)`,
+    "",
+  ].join("\n");
+
+/** Every file either run names, unchanged: what the harness records where the change left them. */
+function unchanged(...observations: ReturnType<typeof ufoLint>[]): SourceChanges {
+  return Object.fromEntries(
+    observations.flatMap((one) => diagnosticFiles(one)).map((path) => [path, []]),
+  );
+}
+
+function lintRecord(
+  withPatch: ReturnType<typeof ufoLint>,
+  atBase: ReturnType<typeof ufoLint>,
+  sourceChanges: SourceChanges = unchanged(withPatch, atBase),
+) {
+  const live = attributeFailure({ withPatch, baseStatus: "failed", atBase, sourceChanges });
+  return {
+    live,
+    check: {
+      id: "lint",
+      parser: "exit-code",
+      severity: "blocking",
+      status: "failed",
+      observation: withPatch,
+      baseObservation: atBase,
+      attribution: live.attribution,
+      attributionRule,
+      sourceChanges,
+      inheritedFromBase: live.attribution === "inherited",
+      ...(live.newFailures.length === 0 ? {} : { newFailures: live.newFailures }),
+    },
+  };
+}
+
+const passingTests = {
+  id: "tests",
+  parser: "exit-code",
+  severity: "blocking",
+  status: "passed",
+  observation: { exitCode: 0, stdout: "", stderr: "", durationMs: 1, unavailable: null },
+};
+
+it("reads exactly the base's prettier finding as inherited, and the offline reader agrees", () => {
+  const base = ufoLint(["src/punycode.ts"]);
+  const { live, check } = lintRecord(ufoLint(["src/punycode.ts"]), base);
+  expect(live).toEqual({ attribution: "inherited", newFailures: [] });
+  expect(capturedRegression([check, passingTests])).toBe("pass");
+});
+
+it("names a finding the change added, however many the base had", () => {
+  const base = ufoLint(["src/punycode.ts"]);
+  const { live, check } = lintRecord(
+    ufoLint(["src/punycode.ts", "src/utils.ts", "test/base.test.ts"]),
+    base,
+  );
+  expect(live).toEqual({
+    attribution: "new",
+    newFailures: ["prettier src/utils.ts", "prettier test/base.test.ts"],
+  });
+  expect(capturedRegression([check, passingTests])).toBe("fail");
+});
+
+it("does not let a fixed finding pay for a new one at the same count", () => {
+  const { live, check } = lintRecord(ufoLint(["src/utils.ts"]), ufoLint(["src/punycode.ts"]));
+  expect(live).toEqual({ attribution: "new", newFailures: ["prettier src/utils.ts"] });
+  expect(capturedRegression([check, passingTests])).toBe("fail");
+});
+
+it("accepts fixing one of the base's findings while the rest remain", () => {
+  const { live, check } = lintRecord(
+    ufoLint(["src/punycode.ts"]),
+    ufoLint(["src/punycode.ts", "src/encoding.ts"]),
+  );
+  expect(live).toEqual({ attribution: "inherited", newFailures: [] });
+  expect(capturedRegression([check, passingTests])).toBe("pass");
+});
+
+it("names an ESLint problem the change added, while prettier never ran after it", () => {
+  const root = "/tmp/swarm-check-a1b2c3/ufo";
+  const { live, check } = lintRecord(
+    ufoLint(
+      [],
+      eslintReport(root, [
+        "  12:7  error  'x' is assigned a value but never used  @typescript-eslint/no-unused-vars",
+      ]),
+    ),
+    ufoLint(["src/punycode.ts"]),
+  );
+  expect(live).toEqual({
+    attribution: "new",
+    newFailures: [
+      // Named under the directory both runs share, which with one file is that file's own.
+      "eslint utils.ts › @typescript-eslint/no-unused-vars: 'x' is assigned a value but never used",
+    ],
+  });
+  expect(capturedRegression([check, passingTests])).toBe("fail");
+});
+
+it("never shows an inheritance from a chain that stopped before its last command", () => {
+  // ESLint failed the same way on both, so prettier ran on neither, and whatever the change did
+  // to formatting is unobserved.
+  const report = (line: number) =>
+    eslintReport("/work/ufo", [
+      `  ${line}:7  error  'x' is assigned a value but never used  no-unused-vars`,
+    ]);
+  const { live, check } = lintRecord(ufoLint([], report(30)), ufoLint([], report(12)));
+  expect(live).toEqual({ attribution: "unattributed", newFailures: [] });
+  expect(capturedRegression([check, passingTests])).toBe("unmeasured");
+  expect(unattributedReason(ufoLint([], report(30)), ufoLint([], report(12)))).toMatch(
+    /chained command stopped/,
+  );
+});
+
+const directEslint = (...problems: readonly string[]) => ({
+  exitCode: 1,
+  stdout: eslintReport("/work/ufo", problems),
+  stderr: "",
+  durationMs: 1,
+  unavailable: null,
+});
+const unusedAt = (line: number) =>
+  `  ${line}:7  error  'x' is assigned a value but never used  no-unused-vars`;
+const varAt = (line: number) =>
+  `  ${line}:1  error  Unexpected var, use let or const instead  no-var`;
+/** The change's hunks to /work/ufo/src/utils.ts, as the harness records them from its diff. */
+const utilsChanges = (diff: string) =>
+  changesOfPrinted(["/work/ufo/src/utils.ts"], diff, "/work/ufo");
+
+it("follows an ESLint problem an edit above it moved, through the change's hunks", () => {
+  // Eighteen lines inserted after line 4: the base's problem on line 12 is now on line 30.
+  const inserted = [
+    "diff --git a/src/utils.ts b/src/utils.ts",
+    "--- a/src/utils.ts",
+    "+++ b/src/utils.ts",
+    "@@ -4,0 +5,18 @@",
+    ...Array.from({ length: 18 }, (_, index) => `+const added${index} = ${index};`),
+    "",
+  ].join("\n");
+  const { live, check } = lintRecord(
+    directEslint(unusedAt(30)),
+    directEslint(unusedAt(12)),
+    utilsChanges(inserted),
+  );
+  expect(live).toEqual({ attribution: "inherited", newFailures: [] });
+  expect(capturedRegression([check, passingTests])).toBe("pass");
+  // Without the hunks nothing shows the problem moved rather than one fixed and one added.
+  const { live: unrecorded, check: unrecordedCheck } = lintRecord(
+    directEslint(unusedAt(30)),
+    directEslint(unusedAt(12)),
+    {},
+  );
+  expect(unrecorded).toEqual({ attribution: "unattributed", newFailures: [] });
+  expect(capturedRegression([unrecordedCheck, passingTests])).toBe("unmeasured");
+});
+
+it("does not read a fixed ESLint problem and an identical new one as the base's (failure-identity-v5)", () => {
+  // The change rewrote line 2 (`var` to `let`) and added a function with a `var` on line 6.
+  const fixedAndAdded = [
+    "diff --git a/src/utils.ts b/src/utils.ts",
+    "--- a/src/utils.ts",
+    "+++ b/src/utils.ts",
+    "@@ -2 +2 @@",
+    "-var legacy = 1;",
+    "+let legacy = 1;",
+    "@@ -3,0 +4,5 @@",
+    "+",
+    "+export function later() {",
+    "+  var count = 2;",
+    "+  return count;",
+    "+}",
+    "",
+  ].join("\n");
+  const withPatch = directEslint(varAt(6));
+  const atBase = directEslint(varAt(2));
+  const { live, check } = lintRecord(withPatch, atBase, utilsChanges(fixedAndAdded));
+  expect(live).toEqual({ attribution: "unattributed", newFailures: [] });
+  expect(capturedRegression([check, passingTests])).toBe("unmeasured");
+  expect(unattributedReason(withPatch, atBase, utilsChanges(fixedAndAdded))).toMatch(
+    /could not be shown to be the base's own occurrences.*no-var.*utils\.ts:6:1/,
+  );
+  // An unchanged line with the same problem stays the base's, and a second problem with the same
+  // rule and message beside it is told apart by where it is, not refused for repeating.
+  const kept = lintRecord(
+    directEslint(varAt(2), varAt(9)),
+    directEslint(varAt(2), varAt(5)),
+    utilsChanges(
+      [
+        "diff --git a/src/utils.ts b/src/utils.ts",
+        "--- a/src/utils.ts",
+        "+++ b/src/utils.ts",
+        "@@ -3,0 +4,4 @@",
+        "+// a",
+        "+// b",
+        "+// c",
+        "+// d",
+        "",
+      ].join("\n"),
+    ),
+  );
+  expect(kept.live).toEqual({ attribution: "inherited", newFailures: [] });
+  expect(capturedRegression([kept.check, passingTests])).toBe("pass");
+});
+
+it("never inherits a Prettier finding in a file the change edited", () => {
+  const base = ufoLint(["src/punycode.ts"]);
+  const edited = lintRecord(ufoLint(["src/punycode.ts"]), base, {
+    "src/punycode.ts": [[10, 0, 11, 2]],
+  });
+  expect(edited.live).toEqual({ attribution: "unattributed", newFailures: [] });
+  expect(capturedRegression([edited.check, passingTests])).toBe("unmeasured");
+  // The live October 24 case: the change left src/punycode.ts as it was.
+  const untouched = lintRecord(ufoLint(["src/punycode.ts"]), base);
+  expect(untouched.live).toEqual({ attribution: "inherited", newFailures: [] });
+  expect(capturedRegression([untouched.check, passingTests])).toBe("pass");
+});
+
+it("never reads a chain as complete where an earlier command runs the failing tool too", () => {
+  const chained = (problem: string) => ({
+    exitCode: 1,
+    stdout: [
+      "",
+      "> pkg@1.0.0 lint",
+      "> eslint src && eslint test",
+      "",
+      eslintReport("/work/ufo", [problem]),
+    ].join("\n"),
+    stderr: "",
+    durationMs: 1,
+    unavailable: null,
+  });
+  const { live, check } = lintRecord(chained(varAt(2)), chained(varAt(2)));
+  expect(live).toEqual({ attribution: "unattributed", newFailures: [] });
+  expect(capturedRegression([check, passingTests])).toBe("unmeasured");
+  expect(unattributedReason(chained(varAt(2)), chained(varAt(2)))).toMatch(
+    /chained command stopped/,
+  );
+  // A record written under v4 keeps the reading it was written with.
+  const legacy = {
+    ...check,
+    attribution: "inherited",
+    inheritedFromBase: true,
+    attributionRule: "failure-identity-v4",
+  };
+  expect(capturedRegression([legacy, passingTests])).toBe("pass");
+});
+
+it("reads TypeScript's errors by file, code and message, and refuses a run that was killed", () => {
+  const tsc = (errors: readonly string[], exitCode = 2) => ({
+    exitCode,
+    stdout: [...errors, "", `Found ${errors.length} error${errors.length === 1 ? "" : "s"}.`].join(
+      "\n",
+    ),
+    stderr: "",
+    durationMs: 1,
+    unavailable: null,
+  });
+  const inherited =
+    "src/a.ts(3,5): error TS2322: Type 'string' is not assignable to type 'number'.";
+  const added = "src/b.ts(9,1): error TS2304: Cannot find name 'later'.";
+  const untouched = { "src/a.ts": [], "src/b.ts": [] };
+  expect(
+    attributeFailure({
+      withPatch: tsc([inherited]),
+      baseStatus: "failed",
+      atBase: tsc([inherited]),
+      sourceChanges: untouched,
+    }),
+  ).toEqual({ attribution: "inherited", newFailures: [] });
+  expect(
+    attributeFailure({
+      withPatch: tsc([inherited, added]),
+      baseStatus: "failed",
+      atBase: tsc([inherited]),
+    }),
+  ).toEqual({
+    attribution: "new",
+    newFailures: ["tsc src/b.ts › TS2304: Cannot find name 'later'."],
+  });
+  expect(
+    attributeFailure({
+      withPatch: tsc([inherited], 128),
+      baseStatus: "failed",
+      atBase: tsc([inherited]),
+    }).attribution,
+  ).toBe("unattributed");
+  // A summary that counts more than it names did not name them all.
+  expect(
+    attributeFailure({
+      withPatch: { ...tsc([inherited]), stdout: `${inherited}\n\nFound 2 errors.` },
+      baseStatus: "failed",
+      atBase: tsc([inherited]),
+    }).attribution,
+  ).toBe("unattributed");
 });

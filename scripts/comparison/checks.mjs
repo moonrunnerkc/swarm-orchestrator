@@ -18,6 +18,7 @@ import { changePolicyVerdict, describePolicy } from "./change-policy.mjs";
 import {
   applyPatch,
   cloneAtBase,
+  commitHarnessLockfile,
   commitVisibleCheck,
   mirrorOf,
   prepare,
@@ -27,12 +28,30 @@ import {
   writeArmConfiguration,
 } from "./workspace.mjs";
 
-async function freshTree(log, task, base, patch, label) {
+/**
+ * A launch's workspace commits the frozen harness lockfile beside the visible check, and the
+ * arm's patch is taken against that commit, so a tree the patch is applied to commits it too: an
+ * arm that changed package-lock.json otherwise had a patch that applied to nothing.
+ */
+async function freshTree(log, task, base, patch, label, harnessLock = null) {
   mkdirSync(workRoot, { recursive: true });
   const scratch = mkdtempSync(join(workRoot, `${label}-${task.id}-`));
   const checkout = join(scratch, "checkout");
   await cloneAtBase(log, task, base, checkout);
   await commitVisibleCheck(log, task, checkout);
+  if (
+    harnessLock !== null &&
+    (await commitHarnessLockfile(log, checkout, harnessLock)).base === null
+  )
+    return {
+      scratch,
+      checkout,
+      prepared: {
+        ok: false,
+        failed: ["git", "commit"],
+        detail: "the harness lockfile was not committed",
+      },
+    };
   if (!(await applyPatch(log, checkout, patch)))
     return {
       scratch,
@@ -47,8 +66,8 @@ const run = (log, task, checkout, argv, timeoutMs = 900_000) =>
   log.run(argv, { cwd: checkout, timeoutMs, env: taskEnvironment(task) });
 
 /** The visible verdict and the text the supervisor hands back on failure. */
-export async function visibleVerdict(log, task, base, patch) {
-  const tree = await freshTree(log, task, base, patch, "visible");
+export async function visibleVerdict(log, task, base, patch, { harnessLock = null } = {}) {
+  const tree = await freshTree(log, task, base, patch, "visible", harnessLock);
   try {
     if (!tree.prepared.ok)
       return {
@@ -125,9 +144,9 @@ export async function lintVerdict(log, task, base) {
  * linted. A candidate introduces a static failure only where the base passes and it does not;
  * where the base already fails, its reading is reported and nothing is attributed to the change.
  */
-export async function staticVerdict(log, task, base, patch) {
+export async function staticVerdict(log, task, base, patch, { harnessLock = null } = {}) {
   const read = async (label, change) => {
-    const tree = await freshTree(log, task, base, change, label);
+    const tree = await freshTree(log, task, base, change, label, harnessLock);
     try {
       if (!tree.prepared.ok)
         return { exit: null, detail: `preparation failed:\n${tree.prepared.detail}` };
@@ -164,7 +183,16 @@ export async function staticVerdict(log, task, base, patch) {
  * mismatch or a failing gate is the supervisor's configuration or environment, never the arm's
  * outcome, and stops the launch before it is dispatched.
  */
-export async function swarmGatePlanVerdict(log, task, base, pins, childHome, declaredGates = {}) {
+export async function swarmGatePlanVerdict(
+  log,
+  task,
+  base,
+  pins,
+  childHome,
+  declaredGates = {},
+  harnessLock = null,
+  runPreflight = null,
+) {
   const expected = task.projectTest.join(" ");
   const verdict = (ok, detail, extra = {}) => ({
     ok,
@@ -175,7 +203,9 @@ export async function swarmGatePlanVerdict(log, task, base, pins, childHome, dec
     detail,
     ...extra,
   });
-  const tree = await freshTree(log, task, base, "", "gate-plan");
+  // The launch's workspace commits the harness lockfile before preparing, so this tree does too;
+  // without it every locked dependency reads as one the change introduced.
+  const tree = await freshTree(log, task, base, "", "gate-plan", harnessLock);
   try {
     if (!tree.prepared.ok)
       return verdict(
@@ -258,9 +288,74 @@ export async function swarmGatePlanVerdict(log, task, base, pins, childHome, dec
           extra,
         );
     }
+    // The run's own preflight, with no model: the goal check over an empty patch with the
+    // launch's install, which a run makes before its first model call. `check` does not reach it,
+    // and three fresh-block defects stopped a run there that every check above had passed.
+    // `ci` reads its gates from the base commit's swarm.toml where a run reads the workspace's,
+    // so the configuration is committed in this throwaway tree first.
+    if (runPreflight !== null) {
+      for (const argv of [
+        ["add", "--force", "swarm.toml"],
+        [
+          "-c",
+          "user.name=comparison",
+          "-c",
+          "user.email=comparison@localhost",
+          "commit",
+          "-qm",
+          "The run's configuration, where ci reads it",
+        ],
+      ]) {
+        const ran = await log.run(["git", ...argv], { cwd: tree.checkout, timeoutMs: 60_000 });
+        if (ran.exitCode !== 0)
+          return verdict(
+            false,
+            `committing swarm.toml for the run preflight failed: ${tail(ran)}`,
+            extra,
+          );
+      }
+      const contractPath = join(tree.scratch, "preflight-contract.json");
+      const patchPath = join(tree.scratch, "preflight-empty.patch");
+      writeFileSync(contractPath, JSON.stringify(runPreflight.contract, null, 2));
+      writeFileSync(patchPath, "");
+      const goal = await log.run(
+        [
+          "node",
+          pins.swarmCli,
+          "ci",
+          "--workspace",
+          tree.checkout,
+          "--patch",
+          patchPath,
+          "--base",
+          "HEAD",
+          "--goal-contract",
+          contractPath,
+          ...(runPreflight.lockfile === null
+            ? []
+            : ["--install", "--lockfile", runPreflight.lockfile]),
+          "--json",
+        ],
+        {
+          cwd: tree.checkout,
+          timeoutMs: 900_000,
+          env: { ...taskEnvironment(task), [swarmChildHomeName]: childHome },
+        },
+      );
+      const read = lastJsonLine(goal.stdout.toString(), "swarm.ci.v1");
+      const preflight =
+        read === null
+          ? `the run preflight printed no report (exit ${goal.exitCode}):\n${tail(goal)}`
+          : read.refusal !== null && read.refusal !== undefined
+            ? `the run preflight refused the base: ${read.refusal}`
+            : read.unmeasured === true
+              ? `the run preflight left the base unmeasured: ${read.advice ?? ""}`
+              : null;
+      if (preflight !== null) return verdict(false, preflight, extra);
+    }
     return verdict(
       true,
-      `the product runs ${effective} as its blocking tests gate and it passes on the base; the override was read back by ${pinnedParser ? "the pinned build's parser" : "the TOML library the product parses with"}`,
+      `the product runs ${effective} as its blocking tests gate and it passes on the base; the override was read back by ${pinnedParser ? "the pinned build's parser" : "the TOML library the product parses with"}${runPreflight === null ? "" : "; the run's own preflight over the base completed"}`,
       extra,
     );
   } finally {
@@ -354,7 +449,7 @@ export async function hiddenVerdict(
   base,
   upstream,
   patch,
-  { executeEmpty = false } = {},
+  { executeEmpty = false, harnessLock = null } = {},
 ) {
   if (patch.trim() === "" && task.workType !== "refactor" && !executeEmpty)
     return {
@@ -378,7 +473,7 @@ export async function hiddenVerdict(
         detail: "",
       };
   }
-  const tree = await freshTree(log, task, base, patch, "hidden");
+  const tree = await freshTree(log, task, base, patch, "hidden", harnessLock);
   try {
     if (!tree.prepared.ok)
       return {

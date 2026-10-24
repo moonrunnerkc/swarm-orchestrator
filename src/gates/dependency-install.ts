@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { lstat, readFile, readlink } from "node:fs/promises";
+import { lstat, readFile, readlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
@@ -62,6 +62,8 @@ const observationSchema = z.strictObject({
   lockDigest: z.string(),
   sourceDigest: z.string(),
   succeeded: z.boolean().optional(),
+  /** Files the command rewrote that were put back to their bytes from before it (`keep`). */
+  restored: z.array(z.string()).optional(),
   sourceAfter: z.string().optional(),
   exitCode: z.number().int().nullable().optional(),
   unavailable: z.string().nullable().optional(),
@@ -184,6 +186,7 @@ export async function installFromLockfile(options: InstallOptions): Promise<Depe
       {
         argv,
         network: "registry",
+        ...(candidate.manager === "npm" ? { keep: ["yarn.lock"] } : {}),
         describe: ({ observed, succeeded }) =>
           succeeded
             ? `installed from ${candidate.file} using the declared locked preparation command`
@@ -272,14 +275,27 @@ async function recordedEffect(
     });
   await record("intent");
   // A thrown runner call has ambiguous effects. Keep the intent unanswered for reconciliation.
+  const unit = planned.directory === undefined ? workspace : join(workspace, planned.directory);
+  const kept = new Map<string, Buffer>();
+  for (const path of planned.keep ?? []) {
+    const bytes = await readFile(join(unit, path)).catch(() => null);
+    if (bytes !== null) kept.set(path, bytes);
+  }
+  const restored: string[] = [];
   let observed: GateObservation;
   let after: string;
   try {
     observed = await options.commands.runVouched(planned.argv, {
-      cwd: planned.directory === undefined ? workspace : join(workspace, planned.directory),
+      cwd: unit,
       timeoutMs: Math.max(1, options.timeoutMs),
       ...(planned.network === "registry" ? { network: "registry" as const } : {}),
     });
+    for (const [path, bytes] of kept) {
+      const now = await readFile(join(unit, path)).catch(() => null);
+      if (now?.equals(bytes)) continue;
+      await writeFile(join(unit, path), bytes);
+      restored.push(path);
+    }
     after = await sourceFingerprint(workspace, options.signal);
   } catch (cause) {
     throw new DependencySetupReconciliationError(
@@ -290,10 +306,11 @@ async function recordedEffect(
   const succeeded = observed.exitCode === 0 && observed.unavailable === null && !sourceChanged;
   const detail = sourceChanged
     ? "dependency setup changed source files; preserve the checkout and inspect the changes"
-    : planned.describe({ observed, succeeded });
+    : `${planned.describe({ observed, succeeded })}${restored.length === 0 ? "" : `; ${restored.join(", ")} rewritten by the installer was put back as it was`}`;
   await record("completed", {
     succeeded,
     detail,
+    ...(restored.length === 0 ? {} : { restored }),
     sourceAfter: after,
     exitCode: observed.exitCode,
     unavailable: observed.unavailable,

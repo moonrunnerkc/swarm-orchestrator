@@ -1,0 +1,218 @@
+{
+  "schema": "swarm-heldout-2026-10-23c.public-summary.v1",
+  "builtAt": "2026-10-23T21:29:38.893Z",
+  "sealedModuleDigest": "sha256:09a267a6f98cbe217cc9c34433d383f517df8496a02fe320641d9ebab64d5d5f",
+  "registryDigest": "sha256:5e9cf75f4755a7571f866c9a771b852d0216f447b6945c1093ecf892c0a5d167",
+  "tasks": [
+    {
+      "id": "ufo-feature-filter-query",
+      "repository": "unjs/ufo",
+      "family": "api-change",
+      "workType": "feature",
+      "baseCommit": "7959de5b49f52e7eb2919a33a9bfe30911e05712",
+      "install": [
+        [
+          "npm",
+          "install",
+          "--ignore-scripts",
+          "--no-audit",
+          "--no-fund",
+          "--before=2026-10-23T00:00:00.000Z"
+        ]
+      ],
+      "projectTest": [
+        "npx",
+        "vitest",
+        "run",
+        "--typecheck"
+      ],
+      "taskText": "ufo (URL utilities, TypeScript under src/, every module re-exported from src/index.ts) can add or overwrite query parameters with withQuery(input, query) and read them with getQuery(input), both in src/utils.ts, but it has no way to drop parameters selectively. Add, beside withQuery, and export from the package entry src/index.ts a function filterQuery(input: string, predicate: (key: string, value: string | string[]) => boolean): string that returns input keeping only the query parameters for which predicate returns true. Its rules: an input that contains no \"?\" is returned exactly as given (filterQuery(\"file:///C:/x\", () => false) is \"file:///C:/x\", not normalized). Otherwise predicate is called once for each key of getQuery(input), in that order, with the decoded key and the value getQuery gives it (a string, or an array of strings for a repeated key, so a repeated key is kept or dropped as a whole), and the URL is rebuilt the way withQuery rebuilds it: filterQuery(input, () => true) equals withQuery(input, {}) for every input that contains \"?\"; protocol, auth, host, path and fragment are kept as withQuery keeps them; the kept parameters are encoded as withQuery encodes them; and the \"?\" is left out when no parameter remains. Examples: filterQuery(\"/foo?bar=1&baz=2\", (key) => key !== \"bar\") is \"/foo?baz=2\"; filterQuery(\"/foo?bar=1\", (key) => key !== \"bar\") is \"/foo\"; filterQuery(\"/foo?a=1&a=2&bar=3#frag\", (key) => key !== \"bar\") is \"/foo?a=1&a=2#frag\"; filterQuery(\"https://example.com/p?q=%20x&bar=1\", (key, value) => value !== \"1\") is \"https://example.com/p?q=+x\". What must not change: every existing export keeps its name and its behaviour for every input, in particular withQuery, getQuery, parseQuery, stringifyQuery, parseURL and stringifyParsedURL return exactly what they return today (for example withQuery(\"/x?bar\", {}) stays \"/x?bar\", withQuery(\"/foo?\", {}) stays \"/foo\" and withQuery(\"/p?x=1&&bar=2&\", {}) stays \"/p?x=1&bar=2\"), and getQuery and parseQuery still return an object that does not inherit from Object.prototype and still ignore __proto__ and constructor keys. The tests are vitest files under test/, with the query utilities in test/query.test.ts. Add regression tests for filterQuery to the project's existing test suite. The project's tests run with npx vitest run --typecheck (npm test runs pnpm lint first; on the unchanged base under this install, prettier already reports src/punycode.ts, so lint is not part of the required test command).",
+      "visibleCheck": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "node acceptance/visible/check.mjs",
+        "source": "import assert from \"node:assert/strict\";\nimport { createJiti } from \"jiti\";\n\nconst { filterQuery } = await createJiti(import.meta.url).import(\n  \"../../src/index.ts\",\n);\n\nassert.equal(\n  filterQuery(\"/foo?bar=1&baz=2\", (key) => key !== \"bar\"),\n  \"/foo?baz=2\",\n);\nconsole.log(\"visible check passed\");\n"
+      },
+      "deliverables": [
+        "Deliverables, all required; the task is not done until each is in the tree:",
+        "1. The implementation of the behaviour described above, in the project's own source.",
+        "2. Regression tests: at least one new test case, in the project's own test directory and style, that fails on the current code and passes with your change, adding at least one new assertion. A change without a new test is incomplete.",
+        "3. The visible acceptance check (node acceptance/visible/check.mjs) and the project's own test command (npx vitest run --typecheck) both passing on the final tree."
+      ],
+      "harnessLockfile": {
+        "name": "ufo-feature-filter-query/package-lock.json",
+        "digest": "sha256:7dd1273583912f56cb8f54694c0eb4798b743cb49da72e210258c64c17a350fe"
+      },
+      "hiddenFileDigests": [
+        "sha256:22637d9d86ec570f65ef40f77088cc23c2a19d8a289e4d5864f0ea4ce42ed05e",
+        "sha256:3b2a4f33d98ac3b5d8b2cff4953d413a8eb0437866414ef2e6910944d729e28a"
+      ],
+      "controlPatchDigests": [
+        "sha256:3207b3cd62896ecbfff46e9a1397ea7b95f20702ce8ad564746bf293b03c30d6",
+        "sha256:53fa452f6a313ff175f29f2ed2ee4e3b7bb15a0fbdc5daedfadb23d0be769bf3",
+        "sha256:563b5939bbcdb5eb758f7b596f3f7aa3c8e8f751b86499025c71f51bd1a632ba",
+        "sha256:75e72f8db4190dd0e3cea2d24fe05c2f0afde98c9e586bd7c545361e2ee1a533",
+        "sha256:8e33854cbd57853df4e35cd9c7c84db771e9732806fb07cd8e6192197e4cda09",
+        "sha256:cc5656f2388eb9d9b062567ae2f1680a663301bf2b55be4d5f09996a6f021a16",
+        "sha256:dd02e0871b35470d1da178fc4e5be0c6a027a8237954192f6441c16144a70fc3",
+        "sha256:e447c23896f3ba2fcecb5f7f6668f1dfd0e6a4d9356b425514db27d4f99b436a"
+      ],
+      "validation": {
+        "baseFailsVisible": true,
+        "baseFailsHidden": true,
+        "keptBehaviourCheckPassesOnBase": true,
+        "referencePassesVisibleAndProjectTests": true,
+        "referencePassesHidden": true,
+        "referencePassesPolicy": true,
+        "referenceLint": "fails on the base already; nothing introduced",
+        "alternativePasses": "1/1",
+        "absenceAssertionPasses": "1/1",
+        "faultyControlsFail": "6/6",
+        "faultyThatBreakKeptBehaviourFail": "3/3",
+        "valid": true
+      }
+    },
+    {
+      "id": "ufo-bugfix-base-prefix-boundary",
+      "repository": "unjs/ufo",
+      "family": "bugfix",
+      "workType": "bugfix",
+      "baseCommit": "5fb179d51384301ffb66b48e213863a27cadd1ff",
+      "install": [
+        [
+          "npm",
+          "install",
+          "--ignore-scripts",
+          "--no-audit",
+          "--no-fund",
+          "--before=2026-10-23T00:00:00.000Z"
+        ]
+      ],
+      "projectTest": [
+        "npx",
+        "vitest",
+        "run",
+        "--typecheck"
+      ],
+      "taskText": "ufo's withBase(input, base) and withoutBase(input, base) in src/utils.ts (exported from src/index.ts) decide whether input already starts with base by a plain string prefix test, after dropping a trailing slash from base. So a path whose first segment merely begins with the base's text is taken as being under the base: today withoutBase(\"/admin-dashboard\", \"/admin\") returns \"/-dashboard\", withoutBase(\"/administrator\", \"/admin/\") returns \"/istrator\", withBase(\"/admin-dashboard\", \"/admin\") returns \"/admin-dashboard\" unchanged as if the base were already there, and withBase(\"/apix\", \"/api\") returns \"/apix\". Fix both functions so that the base counts as present only when it ends at a boundary of input: input equals the base (without its trailing slash), or the character right after it is \"/\" or \"?\". When it is not present, withBase joins the base in front of input as it does for any other path (withBase(\"/admin-dashboard\", \"/admin\") is \"/admin/admin-dashboard\", withBase(\"/a/bc\", \"/a/b/\") is \"/a/b/a/bc\") and withoutBase returns input unchanged (withoutBase(\"/admin-dashboard\", \"/admin/\") is \"/admin-dashboard\", withoutBase(\"/v10/items\", \"/v1\") is \"/v10/items\"). What must not change: wherever the base does end at such a boundary, or input does not start with the base text at all, both functions return exactly what they return today, including a base followed by a query (withBase(\"/api?x=1\", \"/api\") stays \"/api?x=1\", withoutBase(\"/api?test\", \"/api\") stays \"/?test\"), a base equal to input (withoutBase(\"/base\", \"/base/\") stays \"/\", withBase(\"/a/b\", \"/a/b\") stays \"/a/b\"), nested paths (withoutBase(\"/admin/admin-dashboard\", \"/admin/\") stays \"/admin-dashboard\"), an empty or \"/\" base, an input with a protocol given to withBase, and full URL bases (withoutBase(\"https://x.com/base/p\", \"https://x.com/base\") stays \"/p\"); joinURL, withoutTrailingSlash, hasProtocol, isEmptyURL and every other export are unchanged. The tests are vitest files under test/, with these two functions in test/base.test.ts. Add regression tests for this behaviour to the project's existing test suite. The project's tests run with npx vitest run --typecheck (npm test runs pnpm lint first; on the unchanged base under this install, prettier already reports src/punycode.ts, so lint is not part of the required test command).",
+      "visibleCheck": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "node acceptance/visible/check.mjs",
+        "source": "import assert from \"node:assert/strict\";\nimport { createJiti } from \"jiti\";\n\nconst { withoutBase } = await createJiti(import.meta.url).import(\n  \"../../src/index.ts\",\n);\n\nassert.equal(withoutBase(\"/admin-dashboard\", \"/admin\"), \"/admin-dashboard\");\nconsole.log(\"visible check passed\");\n"
+      },
+      "deliverables": [
+        "Deliverables, all required; the task is not done until each is in the tree:",
+        "1. The implementation of the behaviour described above, in the project's own source.",
+        "2. Regression tests: at least one new test case, in the project's own test directory and style, that fails on the current code and passes with your change, adding at least one new assertion. A change without a new test is incomplete.",
+        "3. The visible acceptance check (node acceptance/visible/check.mjs) and the project's own test command (npx vitest run --typecheck) both passing on the final tree."
+      ],
+      "harnessLockfile": {
+        "name": "ufo-bugfix-base-prefix-boundary/package-lock.json",
+        "digest": "sha256:18c73b9b38b4e280822d70fcf7ef3754662ff32ac7421ed695b0dee182c26c8f"
+      },
+      "hiddenFileDigests": [
+        "sha256:30c9d2b52c9ab4b0d7a0a274869e88d5a8417565503ce8d03d11506a99db17d8",
+        "sha256:a9c6dce64e78d32edfe70a9e3df7795353c1b208247677cf6d7965cb591c3615"
+      ],
+      "controlPatchDigests": [
+        "sha256:278535f21ca37f58667f0701e2e71f3ad7118af392eb43c0eeedc9cb1dd5b82d",
+        "sha256:333a7fded8205c557ace311a40fea5eac37ba5f09a2139f194a7cfe08ddf785b",
+        "sha256:6d8ad0ac2fd0a976e54575321a8702ee3f54c8ff4a0a8ecbd4cd06c4a468a19f",
+        "sha256:978cedadc5587f730a347b6376af8a71c3a344409b1eea7a77d9451db1a80b3e",
+        "sha256:ace0d10c09cd85ad08c32327d876bf3e66d0823f0944c6444c35aa48fc11c7ea",
+        "sha256:bc58b5745087eb13cee9ecf42658cf35da2f844d98c2aaae9c6cc54462d9d5e7",
+        "sha256:bce4c5a8712f2cb0835a8dbef38bd7dbc30e5788c55522c18e99a4750b12cba3"
+      ],
+      "validation": {
+        "baseFailsVisible": true,
+        "baseFailsHidden": true,
+        "keptBehaviourCheckPassesOnBase": true,
+        "referencePassesVisibleAndProjectTests": true,
+        "referencePassesHidden": true,
+        "referencePassesPolicy": true,
+        "referenceLint": "fails on the base already; nothing introduced",
+        "alternativePasses": "1/1",
+        "absenceAssertionPasses": "1/1",
+        "faultyControlsFail": "5/5",
+        "faultyThatBreakKeptBehaviourFail": "2/2",
+        "valid": true
+      }
+    },
+    {
+      "id": "nanoid-refactor-module-subdirectories",
+      "repository": "ai/nanoid",
+      "family": "mechanical-transformation-reaching-configuration",
+      "workType": "refactor",
+      "baseCommit": "a58703bd9ae5355af23fc871d9b955127334d21f",
+      "install": [
+        [
+          "npm",
+          "install",
+          "--ignore-scripts",
+          "--no-audit",
+          "--no-fund",
+          "--before=2026-10-23T00:00:00.000Z"
+        ],
+        [
+          "git",
+          "checkout",
+          "--quiet",
+          "--",
+          "yarn.lock"
+        ]
+      ],
+      "projectTest": [
+        "npx",
+        "jest"
+      ],
+      "taskText": "nanoid keeps each public module as one file named after it: format.js, random.js, generate.js and url.js at the package root, non-secure/generate.js, and async/format.js, async/generate.js and async/random.js, with browser and React Native builds beside them (format.browser.js, random.browser.js, async/format.browser.js, async/random.browser.js, async/random.rn.js). Move each of these thirteen files into a directory named after its module, as index.js, index.browser.js or index.rn.js, with behaviour unchanged: format.js to format/index.js, format.browser.js to format/index.browser.js, random.js to random/index.js, random.browser.js to random/index.browser.js, generate.js to generate/index.js, url.js to url/index.js, non-secure/generate.js to non-secure/generate/index.js, async/format.js to async/format/index.js, async/format.browser.js to async/format/index.browser.js, async/generate.js to async/generate/index.js, async/random.js to async/random/index.js, async/random.browser.js to async/random/index.browser.js, and async/random.rn.js to async/random/index.rn.js. index.js, index.browser.js, async/index.js, async/index.browser.js and non-secure/index.js stay where they are. Leave nothing at the old paths (no re-exporting stubs), and do not change the moved code apart from the module paths in its require calls. Update every reference to an old path: the relative requires between the modules, the requires in the tests under test/, and in package.json the browser field (which maps each Node file to its browser build), the react-native field (the same for React Native) and the size-limit entries, so that each names the moved files with the same mappings and the same limits. Change nothing else in package.json (scripts, jest, eslintConfig, eslintIgnore and every other field stay exactly as they are) and add no other configuration file. What must not change: require(\"nanoid\") and every subpath (format, random, generate, url, non-secure, non-secure/generate, async, async/format, async/generate, async/random) still resolve, now to the moved modules, and export exactly what they export today; a bundler that applies the browser or react-native field gets the same browser and React Native builds as today; ESLint (npx eslint ., which passes on the base) lints each moved file with the rules its old path got and ignores none of them; and every existing test still runs and passes. The tests are Jest files under test/. The project's tests run with npx jest (npm test also runs jest-ci with a 100% coverage threshold, eslint-ci, size-limit and a yarn spelling check; on the unchanged base under this install the coverage threshold is already missed, so those steps are not part of the required test command).",
+      "visibleCheck": {
+        "path": "acceptance/visible/check.mjs",
+        "command": "node acceptance/visible/check.mjs",
+        "source": "import assert from 'node:assert/strict'\nimport { existsSync } from 'node:fs'\nimport { createRequire } from 'node:module'\n\nconst require = createRequire(import.meta.url)\nassert.equal(existsSync(new URL('../../format/index.js', import.meta.url)), true)\nassert.equal(existsSync(new URL('../../format.js', import.meta.url)), false)\nassert.equal(require('../../generate')('abc', 8).length, 8)\nconsole.log('visible check passed')\n"
+      },
+      "deliverables": [
+        "Deliverables, all required; the task is not done until each is in the tree:",
+        "1. The implementation of the behaviour described above, in the project's own source.",
+        "2. Regression tests: at least one new test case, in the project's own test directory and style, that fails on the current code and passes with your change, adding at least one new assertion. A change without a new test is incomplete.",
+        "3. The visible acceptance check (node acceptance/visible/check.mjs) and the project's own test command (npx jest) both passing on the final tree."
+      ],
+      "harnessLockfile": {
+        "name": "nanoid-refactor-module-subdirectories/package-lock.json",
+        "digest": "sha256:489ec77d36151f493d93736578ae1506298759e052fe1a120b1f53d3ba01644f"
+      },
+      "hiddenFileDigests": [
+        "sha256:0ef05ba13eb34ca3aa77994f85c375771fe98b9afc10bdd94038931189025a21",
+        "sha256:3e11bb43b45235ddfeac2b74d06904976e7adb8d5518c4cbfbc5bc366eb54ef8"
+      ],
+      "controlPatchDigests": [
+        "sha256:031e43e85e7ae10b0f57aaac3fd15a78c495f7f1c041bf42e2ab5e9dc1e5cca4",
+        "sha256:062841403031f5413d2452faa5c50aa3906a8161903b6ac790eb299ee5df5d2c",
+        "sha256:0f08bd509a61485e50298ca5ea8a9246d54ff38d5fa8b2913a3cc366c217271a",
+        "sha256:12aeae56a4f17310af08284911bbb3a1128055577dada30ef00e493c0f7860e9",
+        "sha256:203e5076f49b0bf1aafe43464147ba06c8aac2ee2594cb49d24c339ce944132b",
+        "sha256:29e8c57d56dbc52efa82cf2edb318fcdd72a88f14cfa3befbaf082eb1422e9b0",
+        "sha256:37dd3e38214468cc2d4954699cf63f3c4fcca92a851e88bc6d53321127e09d36",
+        "sha256:69309f748bc335e39c93bf06eab403d69a238fa122865197e5b9f883f7b43e08",
+        "sha256:765640c22b666c5f5e3eedb122c8c9db8afa3b3b9cb5fe127abfda698f976f05",
+        "sha256:c3f27be0a913e2a87200bfc6e344918a24a77cc24f4c45c5775f859ce7c6f4ef",
+        "sha256:cc0482be015aba272dacdab246d851602ef4d8b5f565f5e1c1ba078eb66e7c59",
+        "sha256:f569ea8bffab2a8575c2db838d38991a7e01aafc307bcb2e09c458c4efefd526"
+      ],
+      "validation": {
+        "baseFailsVisible": true,
+        "baseFailsHidden": true,
+        "keptBehaviourCheckPassesOnBase": true,
+        "referencePassesVisibleAndProjectTests": true,
+        "referencePassesHidden": true,
+        "referencePassesPolicy": true,
+        "referenceLint": "no lint script",
+        "alternativePasses": "1/1",
+        "absenceAssertionPasses": "1/1",
+        "faultyControlsFail": "5/5",
+        "faultyThatBreakKeptBehaviourFail": "1/1",
+        "configurationHidingControlsFail": "5/5",
+        "valid": true
+      }
+    }
+  ]
+}

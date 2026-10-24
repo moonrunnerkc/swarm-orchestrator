@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -291,9 +292,10 @@ describe("families 7 and 10: the instrument changes while, or after, the check r
     const report = JSON.parse(first.stdout) as { result: string; conclusions: unknown };
     expect(report.result).toBe("incomplete");
     expect(JSON.stringify(report.conclusions)).toContain(".npmrc");
-    // Nothing is reused: with the rewrite undone and the suite no longer rewriting, the next run
-    // measures the tree as it now stands and passes.
-    await rm(join(repository, ".npmrc"));
+    // The harness put the rewrite back itself, and named it: a check's own write is not the
+    // change. Nothing is reused: with the suite no longer rewriting, the next run measures the
+    // tree as it now stands and passes.
+    expect(existsSync(join(repository, ".npmrc"))).toBe(false);
     git(["rm", "-q", "drift.test.mjs"]);
     git(["commit", "-qm", "the suite no longer rewrites npm's configuration"]);
     const second = JSON.parse((await checkProcess(home)).stdout) as { result: string };

@@ -5,13 +5,16 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { LoopEvent } from "../core/loop-events.ts";
 import { createTestClock } from "../core/test-doubles.ts";
 import { type EvidenceRecorder, openEvidenceSession } from "../evidence/session.ts";
+import { rederiveRatchet } from "../evidence/verifier/rederive.mjs";
 import {
   type AutoResolveOutcome,
+  type CandidateReviewHook,
   describeRejectedCandidate,
   type OwedFollowUp,
   type RejectedCandidate,
   type ResolveAttempt,
   type ResolveRequest,
+  reviewable,
   runAutoResolve,
 } from "./auto-resolve.ts";
 import type { FileSetState } from "./file-set.ts";
@@ -21,7 +24,7 @@ import type {
   GateDefinition,
   GateObservation,
 } from "./gate-definition.ts";
-import { justifiedRecords, outstandingJustifications } from "./gate-runner.ts";
+import { type GateCycle, justifiedRecords, outstandingJustifications } from "./gate-runner.ts";
 import { diffBudgetGate } from "./inspection-gates.ts";
 import { measureTestFile } from "./measures.ts";
 import { exitCodeParser, testOutputParser } from "./parsers.ts";
@@ -183,6 +186,7 @@ function harness(
     atBase?: (gate: GateDefinition) => { exitCode: number; stdout: string } | null;
     followUp?: OwedFollowUp;
     continuation?: OwedFollowUp;
+    review?: CandidateReviewHook;
   } = {},
 ): Harness {
   const workspace = createMemoryWorkspace({
@@ -248,6 +252,7 @@ function harness(
         cap: options.cap ?? 3,
         ...(options.followUp === undefined ? {} : { followUp: options.followUp }),
         ...(options.continuation === undefined ? {} : { continuation: options.continuation }),
+        ...(options.review === undefined ? {} : { review: options.review }),
         ...(options.atBase === undefined
           ? {}
           : {
@@ -1186,5 +1191,210 @@ describe("the continuation owed to a task loop that stopped at its step limit", 
       state: "withheld",
       reason: expect.stringContaining("the gates were not green"),
     });
+  });
+});
+
+describe("the experimental review of a green candidate", () => {
+  const reviewOf = (
+    examined: { brief: string | null },
+    calls: string[],
+    measured: () => Record<string, "passed" | "failed"> = () => ({}),
+  ): CandidateReviewHook => ({
+    examine: () => {
+      calls.push("examine");
+      return Promise.resolve({
+        identity: "review sha256:probes",
+        brief: examined.brief,
+        parts: { "probe: kept": "passed", "probe: requested": "failed" },
+        claims: ["probe: requested"],
+        record: "sha256:examination",
+      });
+    },
+    measure: () => {
+      calls.push("measure");
+      return Promise.resolve({ parts: measured(), claims: ["probe: requested"] });
+    },
+    withhold: (reason) => {
+      calls.push(`withhold: ${reason}`);
+      return Promise.resolve("sha256:withheld");
+    },
+  });
+  const source = (marker: string) => `${fixedSource}\n// ${marker}\n`;
+  const reading = (test: Harness) => () => {
+    const now = test.workspace.files.get(sourcePath) ?? "";
+    return {
+      "probe: kept": now.includes("BROKE_KEPT") ? ("failed" as const) : ("passed" as const),
+      "probe: requested": now.includes("MET_REQUEST") ? ("passed" as const) : ("failed" as const),
+    };
+  };
+
+  it("is examined once the gates are green, before the follow-up on outcomes, and its findings get one attempt", async () => {
+    const calls: string[] = [];
+    const owed = { identity: "sha256:outcomes", brief: "outcomes" };
+    let test: Harness | null = null;
+    test = harness({
+      followUp: owed,
+      review: reviewOf({ brief: "Probe probe, case 1 (missed-requirement)" }, calls, () =>
+        reading(test as Harness)(),
+      ),
+    });
+    test.workspace.write(sourcePath, fixedSource);
+    const requests: ResolveRequest[] = [];
+    const outcome = await test.run((request) => {
+      requests.push(request);
+      calls.push(`attempt ${request.attempt} ${request.followUpKind}`);
+      if (request.followUpKind === "review")
+        test?.workspace.write(sourcePath, source("MET_REQUEST"));
+      return Promise.resolve();
+    });
+    // The review is asked before the follow-up on outcomes, whose brief rides in its attempt.
+    expect(calls).toEqual(["examine", "attempt 1 review", "measure"]);
+    expect(requests[0]?.followUp).toContain("missed-requirement");
+    expect(requests[0]?.followUp).toContain("outcomes");
+    expect(outcome.review).toMatchObject({ state: "given", attempt: 1, accepted: true });
+    expect(outcome.followUp).toMatchObject({ state: "given", attempt: 1, accepted: true });
+    expect(outcome.reviewExamination).toBe("sha256:examination");
+    const decision = ledgerPayloads("ratchet-decision").find((one) => one.attempt === 1) as {
+      parts: { before: Record<string, unknown>; after: Record<string, unknown> };
+    };
+    expect(decision.parts.before["candidate-review"]).toEqual({
+      "probe: kept": "passed",
+      "probe: requested": "failed",
+    });
+    expect(decision.parts.after["candidate-review"]).toEqual({
+      "probe: kept": "passed",
+      "probe: requested": "passed",
+    });
+  });
+
+  it("owes nothing where the review established nothing", async () => {
+    const calls: string[] = [];
+    const test = harness({ review: reviewOf({ brief: null }, calls) });
+    test.workspace.write(sourcePath, fixedSource);
+    let attempts = 0;
+    const outcome = await test.run(() => {
+      attempts += 1;
+      return Promise.resolve();
+    });
+    expect(attempts).toBe(0);
+    expect(calls).toEqual(["examine"]);
+    expect(outcome.reviewExamination).toBe("sha256:examination");
+    expect(outcome.review).toBeNull();
+    expect(outcome.settled).toBe("green");
+  });
+
+  it("rolls back an attempt that meets the review's request by breaking a case its kept part held", async () => {
+    const calls: string[] = [];
+    let test: Harness | null = null;
+    test = harness({
+      review: reviewOf({ brief: "findings" }, calls, () => reading(test as Harness)()),
+    });
+    test.workspace.write(sourcePath, fixedSource);
+    const outcome = await test.run(() => {
+      test?.workspace.write(sourcePath, source("MET_REQUEST BROKE_KEPT"));
+      return Promise.resolve();
+    });
+    expect(outcome.review).toMatchObject({ state: "given", accepted: false });
+    expect(test.workspace.files.get(sourcePath)).toBe(fixedSource);
+    expect(outcome.settled).toBe("green");
+    const decision = ledgerPayloads("ratchet-decision").find((one) => one.attempt === 1) as {
+      violations: { kind: string; detail: string }[];
+    };
+    expect(decision.violations).toEqual([
+      expect.objectContaining({
+        kind: "gate-part-regressed",
+        detail:
+          "probe: kept in the candidate-review readings passed before this attempt and now reports failed",
+      }),
+    ]);
+    // The bundled verifier re-derives the same refusal from the decision's own record.
+    expect(rederiveRatchet(decision).violations).toEqual(["gate-part-regressed"]);
+  });
+
+  it("waits for the task's continuation, and says so when no attempt is left to act on a finding", async () => {
+    const calls: string[] = [];
+    const test = harness({
+      cap: 1,
+      continuation: { identity: "sha256:continuation", brief: "continue" },
+      review: reviewOf({ brief: "findings" }, calls),
+    });
+    test.workspace.write(sourcePath, fixedSource);
+    const outcome = await test.run((request) => {
+      calls.push(`attempt ${request.attempt} ${request.followUpKind}`);
+      return Promise.resolve();
+    });
+    expect(calls).toEqual([
+      "attempt 1 continuation",
+      "withhold: no attempt was left under the cap of 1 for what a review could find",
+    ]);
+    expect(outcome.reviewExamination).toBe("sha256:withheld");
+    expect(outcome.review).toBeNull();
+  });
+});
+
+describe("which candidates the review may read", () => {
+  type Run = GateCycle["runs"][number];
+  const runOf = (overrides: Partial<Run>): Run =>
+    ({
+      gateId: "x",
+      kind: "command",
+      capability: "static",
+      severity: "blocking",
+      status: "passed",
+      parts: {},
+      inheritedOnly: false,
+      ...overrides,
+    }) as Run;
+  const cycleOf = (runs: readonly Run[]): GateCycle =>
+    ({
+      runs,
+      blockingFailures: runs.filter(
+        (one) => one.status === "failed" && one.severity === "blocking" && !one.inheritedOnly,
+      ),
+      measures: { changedFiles: 1 },
+    }) as unknown as GateCycle;
+  const tests = runOf({ gateId: "tests", capability: "dynamic" });
+
+  it("reads a candidate whose tests ran it and whose only failure is static", () => {
+    expect(reviewable(cycleOf([tests, runOf({ gateId: "lint", status: "failed" })]))).toBe(true);
+    // Task acceptance that failed with every one of its own checks passing failed on the suite's
+    // reading of that same lint finding, not on the code.
+    const acceptance = runOf({
+      gateId: "task-acceptance",
+      kind: "inspection",
+      capability: "dynamic",
+      status: "failed",
+      parts: { "visible-check": "passed" },
+    });
+    expect(
+      reviewable(cycleOf([tests, runOf({ gateId: "lint", status: "failed" }), acceptance])),
+    ).toBe(true);
+  });
+
+  it("does not read a candidate whose code failed when run, broke a policy, or was never run", () => {
+    expect(reviewable(cycleOf([runOf({ ...tests, status: "failed" })]))).toBe(false);
+    expect(
+      reviewable(
+        cycleOf([
+          tests,
+          runOf({
+            gateId: "task-acceptance",
+            kind: "inspection",
+            capability: "dynamic",
+            status: "failed",
+            parts: { "visible-check": "failed" },
+          }),
+        ]),
+      ),
+    ).toBe(false);
+    expect(
+      reviewable(
+        cycleOf([
+          tests,
+          runOf({ gateId: "file-set", kind: "inspection", capability: "policy", status: "failed" }),
+        ]),
+      ),
+    ).toBe(false);
+    expect(reviewable(cycleOf([runOf({ ...tests, status: "not-applicable" })]))).toBe(false);
   });
 });

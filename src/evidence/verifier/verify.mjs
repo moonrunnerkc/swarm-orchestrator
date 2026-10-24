@@ -18,7 +18,7 @@ import { pathToFileURL } from "node:url";
 import { behaviorStatus } from "./behavior.mjs";
 import { challengeVerdictsAgree } from "./challenges.mjs";
 import { readControllerHistory } from "./controller.mjs";
-import { authorizedWithin, capturedRegression } from "./status.mjs";
+import { authorizedWithin, capturedRegression, gateInheritance } from "./status.mjs";
 import { strengtheningAgrees } from "./strengthening.mjs";
 import { upgradeControlPasses } from "./upgrade.mjs";
 
@@ -32,6 +32,7 @@ const workerAssessmentPolicies = [
   "run-acceptance-v2",
   "run-acceptance-v4",
   "run-acceptance-v5",
+  "run-acceptance-v6",
 ];
 /** How a loop can stop, as run assessments name it (src/evidence/run-assessment.ts keeps the same list). */
 const loopLifecycles = [
@@ -457,6 +458,16 @@ export function sealConformance(records, payloads) {
     if (declared.severity !== payload.severity) {
       problems.push(
         `record ${sequence} ran ${payload.gateId} as ${payload.severity}; the seal declared ${declared.severity}`,
+      );
+    }
+    // check-requirement-v1: a gate runs under the requirement the seal declared for it, and a
+    // seal or record without one is absolute-pass, as every gate was before it.
+    if (
+      payload.requirement !== undefined &&
+      (declared.requirement ?? "absolute-pass") !== payload.requirement
+    ) {
+      problems.push(
+        `record ${sequence} ran ${payload.gateId} under ${payload.requirement}; the seal declared ${declared.requirement ?? "absolute-pass"}`,
       );
     }
     if (payload.parser !== undefined && declared.parser !== payload.parser) {
@@ -1424,7 +1435,9 @@ function collectChecks(directory) {
       .map((candidate) => payloads.get(candidate.payloadDigest))
       .filter(
         (payload) =>
-          payload?.rule === "outcome-follow-up-v1" || payload?.rule === "task-continuation-v1",
+          payload?.rule === "outcome-follow-up-v1" ||
+          payload?.rule === "task-continuation-v1" ||
+          payload?.rule === "candidate-review-attempt-v1",
       );
     const owedKept = (attempt) => {
       const record =
@@ -1480,12 +1493,11 @@ function collectChecks(directory) {
                   entry.timestamp < window.modelWorkEnds),
             ),
           };
-    consistent &&=
-      inputs?.policy === "run-acceptance-v5"
-        ? canonicalJson(inputs.wallStop ?? null) === canonicalJson(wallStop)
-        : inputs?.wallStop === undefined;
+    consistent &&= ["run-acceptance-v5", "run-acceptance-v6"].includes(inputs?.policy)
+      ? canonicalJson(inputs.wallStop ?? null) === canonicalJson(wallStop)
+      : inputs?.wallStop === undefined;
     const cutAtModelWork =
-      inputs?.policy === "run-acceptance-v5" &&
+      ["run-acceptance-v5", "run-acceptance-v6"].includes(inputs?.policy) &&
       wallStop?.beforeDeadline === true &&
       wallStop.effectsSettled === true;
     consistent &&=
@@ -1514,7 +1526,7 @@ function collectChecks(directory) {
     consistent &&= JSON.stringify(blockingVacuous) === JSON.stringify(inputs?.vacuousBlockingBonds);
     const contracted =
       inputs?.policy === "run-acceptance-v2" ||
-      (["run-acceptance-v4", "run-acceptance-v5"].includes(inputs?.policy) &&
+      (["run-acceptance-v4", "run-acceptance-v5", "run-acceptance-v6"].includes(inputs?.policy) &&
         inputs.contractRecord !== undefined);
     const requiredChecks = contracted ? inputs.requiredChecks : [];
     if (contracted) {
@@ -1530,11 +1542,50 @@ function collectChecks(directory) {
       requiredChecks.every((id) =>
         gates.some((gate) => gate?.gateId === id && gate.status === "passed"),
       );
-    const failed = gates.some((gate) => gate?.severity === "blocking" && gate.status === "failed");
+    // v6 (check-requirement-v1): every recorded reading of a failed gate against the base is
+    // re-derived from the gate-baseline record it names, which must come before it, be that gate
+    // run over the base, and give the same reading. A blocking gate sealed no-new-regression
+    // whose every failure that reading proves the base's own does not refuse. Before v6 every
+    // blocking failure refuses, whatever a record says about it.
+    const v6 = inputs?.policy === "run-acceptance-v6";
+    const inheritedOnly = gates.map((gate, index) => {
+      if (!v6 || gate?.inheritance === undefined) return false;
+      const baselineEntry = prior.find(
+        (candidate) =>
+          candidate.type === "gate-baseline" &&
+          candidate.payloadDigest === gate.inheritance.baselineRecord,
+      );
+      const runEntry = prior.find((candidate) => candidate.payloadDigest === gateRecords[index]);
+      const derived = gateInheritance(
+        gate,
+        baselineEntry === undefined || baselineEntry.sequence > (runEntry?.sequence ?? -1)
+          ? gate.inheritance.baselineRecord === null
+            ? null
+            : undefined
+          : payloads.get(baselineEntry.payloadDigest),
+      );
+      consistent &&=
+        derived !== null &&
+        derived.attribution === gate.inheritance.attribution &&
+        derived.baseStatus === (gate.inheritance.baseStatus ?? null) &&
+        canonicalJson(derived.newFailures) === canonicalJson(gate.inheritance.newFailures) &&
+        canonicalJson(derived.inherited) === canonicalJson(gate.inheritance.inherited);
+      return (
+        derived?.attribution === "inherited" &&
+        gate.requirement === "no-new-regression" &&
+        gate.status === "failed"
+      );
+    });
+    const failed = gates.some(
+      (gate, index) =>
+        gate?.severity === "blocking" && gate.status === "failed" && !inheritedOnly[index],
+    );
     // v4 and v5: an advisory gate whose own measure demanded a justification is answered by a
     // worker claim, before this assessment, that cites the gate's record under its own kind,
     // carries a narrative, and that this verifier evaluates as verified.
-    const justifications = ["run-acceptance-v4", "run-acceptance-v5"].includes(inputs?.policy)
+    const justifications = ["run-acceptance-v4", "run-acceptance-v5", "run-acceptance-v6"].includes(
+      inputs?.policy,
+    )
       ? inputs.justifications
       : [];
     consistent &&= Array.isArray(justifications);
@@ -1567,10 +1618,21 @@ function collectChecks(directory) {
         !answered.has(gateRecords[index]),
     );
     const dynamic = gates.filter((gate) => gate?.capability === "dynamic");
+    const dynamicFailed = gates.some(
+      (gate, index) =>
+        gate?.capability === "dynamic" && gate.status === "failed" && !inheritedOnly[index],
+    );
+    const dynamicMet = gates.some(
+      (gate, index) =>
+        gate?.capability === "dynamic" &&
+        (gate.status === "passed" || (gate.status === "failed" && inheritedOnly[index])),
+    );
     const executed =
       inputs?.changedFiles === 0 ||
-      (dynamic.some((gate) => gate.status === "passed") &&
-        !dynamic.some((gate) => gate.status === "failed"));
+      (v6
+        ? dynamicMet && !dynamicFailed
+        : dynamic.some((gate) => gate.status === "passed") &&
+          !dynamic.some((gate) => gate.status === "failed"));
     const acceptable =
       requiredPassed &&
       inputs?.settled === "green" &&

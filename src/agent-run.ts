@@ -10,6 +10,14 @@ import { createEscalationController } from "./agent-escalation.ts";
 import { describeJustificationRequest, runJustificationTurn } from "./agent-justification.ts";
 import { type WorkerPromptProfile, workerPrompt } from "./agent-prompt.ts";
 import { finishRepair } from "./agent-repair-finish.ts";
+import {
+  createCandidateReview,
+  type ProbeRunner,
+  type ProbeValidator,
+  type ReviewAuthority,
+  type ReviewGrounding,
+  type ReviewMode,
+} from "./agent-review.ts";
 import { withWorkspaceEffects } from "./agent-workspace-effects.ts";
 import { buildVersion } from "./build-version.ts";
 import type { ApprovalMode } from "./config/approval-mode.ts";
@@ -21,7 +29,7 @@ import {
   type StallIntervention,
 } from "./core/loop.ts";
 import { describePriorLoop, priorLoopAccount } from "./core/loop-account.ts";
-import type { LoopEvent, LoopUsage } from "./core/loop-events.ts";
+import { combineUsage, type LoopEvent } from "./core/loop-events.ts";
 import type { ConversationMessage, ModelClient, SamplingSettings } from "./core/model-client.ts";
 import type { RandomSource } from "./core/random-source.ts";
 import type { LoopBudget } from "./core/termination.ts";
@@ -37,6 +45,7 @@ import { asJsonValue, digestOfBytes } from "./evidence/canonical-json.ts";
 import { recordRoutineClaims } from "./evidence/routine-claims.ts";
 import { recordRunAssessment, runLifecycle } from "./evidence/run-assessment.ts";
 import { sealRunSpec } from "./evidence/run-spec.ts";
+import { scrubText } from "./evidence/scrub.ts";
 import type { EvidenceRecorder } from "./evidence/session.ts";
 import { parseTaskContract, type TaskContract } from "./evidence/task-contract.ts";
 import type { RunVerdict } from "./evidence/verdict.ts";
@@ -76,7 +85,7 @@ import { prepareDependencies } from "./gates/prepare-dependencies.ts";
 import { preservationTraceBrief, preservationTraceRule } from "./gates/preservation-trace.ts";
 import { detectProject } from "./gates/project-type.ts";
 import type { EscalationSettings } from "./gates/repair-policy.ts";
-import { diffAgainstBase } from "./gates/scratch-index.ts";
+import { diffAgainstBase, patchAgainstBase } from "./gates/scratch-index.ts";
 import { parseUnifiedDiff } from "./gates/unified-diff.ts";
 import { taskBrief } from "./task-brief.ts";
 import { taskContinuation } from "./task-continuation.ts";
@@ -237,6 +246,28 @@ export interface AgentTaskOptions {
    * attempt cap and under the ratchet: requested outcomes no sealed check states. Absent is none.
    */
   readonly followUp?: import("./gates/auto-resolve.ts").OwedFollowUp;
+  /**
+   * Experimental (candidate-review-v1): a separate review of the candidate once the gates are
+   * green, whose established findings are owed one attempt from the cap. Absent is none.
+   */
+  readonly review?: {
+    readonly mode: ReviewMode;
+    readonly runProbes: ProbeRunner;
+    /** The run's preservation obligations, as the reviewer is shown them. */
+    readonly obligations: readonly string[];
+    /** The obligations the task states, which alone make a preservation case a finding. */
+    readonly authorities: readonly ReviewAuthority[];
+    /** The reviewer's bounded way to try a probe on a copy of the candidate; absent is none. */
+    readonly trialTool?: ToolDefinition;
+    /** The loader and the task's own code, found once on the base; absent is neither. */
+    readonly grounding?: () => Promise<ReviewGrounding>;
+    /** Runs each submitted probe once before it counts; absent is no admission run. */
+    readonly validate?: ProbeValidator;
+    /** Where the review's readings are handed back for the report. */
+    readonly settled?: (
+      readings: ReturnType<ReturnType<typeof createCandidateReview>["readings"]>,
+    ) => void;
+  };
   readonly coordination?: readonly ToolDefinition[];
   /**
    * Set only where a task is being tried several ways at once, so the attempts can diverge
@@ -340,7 +371,13 @@ export function assembleToolset(options: ToolsetOptions): AgentToolset {
   };
 }
 
-export async function runAgentTask(input: AgentTaskOptions): Promise<AgentTaskResult> {
+export async function runAgentTask(given: AgentTaskOptions): Promise<AgentTaskResult> {
+  // The task's own words reach the gates, which seal a static check absolute where the task asks
+  // for its failure fixed (failure-identity-v5).
+  const input: AgentTaskOptions = {
+    ...given,
+    gateOptions: { ...(given.gateOptions ?? {}), taskText: given.task },
+  };
   const contract = input.contract === undefined ? undefined : parseTaskContract(input.contract);
   const options: AgentTaskOptions =
     contract === undefined
@@ -362,6 +399,9 @@ export async function runAgentTask(input: AgentTaskOptions): Promise<AgentTaskRe
             contract.budget.maxWallMs,
           ),
           fileSet: restrictFileSet(input.fileSet, contract),
+          // A check the contract requires is sealed absolute-pass: the person who wrote the
+          // contract asked for it to pass, not merely to fail no worse (check-requirement-v1).
+          gateOptions: { ...(input.gateOptions ?? {}), requiredChecks: contract.requiredChecks },
         };
   if (contract !== undefined) {
     await options.evidence.record({
@@ -806,6 +846,62 @@ async function executeAgentTask(
       },
     });
   }
+  // The experimental review runs read-only through the worker's own chokepoint and draws from
+  // the same allowance: what it spends is charged here and recorded as its own stop.
+  const review =
+    options.review === undefined
+      ? undefined
+      : createCandidateReview({
+          mode: options.review.mode,
+          task: options.task,
+          evidence: options.evidence,
+          clock: options.clock,
+          runProbes: options.review.runProbes,
+          diff: () =>
+            diffAgainstBase({ workspaceRoot: options.workspace, baseRef: options.baseRef }),
+          obligations: options.review.obligations,
+          authorities: options.review.authorities,
+          ...(options.review.grounding === undefined
+            ? {}
+            : { grounding: options.review.grounding }),
+          ...(options.review.validate === undefined ? {} : { validate: options.review.validate }),
+          runLoop: runAgentLoop,
+          loopDependencies,
+          readOnly: () => {
+            const trial = options.review?.trialTool;
+            const readOnly = assembleToolset({
+              ...toolsetBase,
+              tools: () => [
+                ...definitions.filter((tool) => readOnlyTools.has(tool.name)),
+                ...(trial === undefined ? [] : [trial]),
+              ],
+            });
+            return { toolInvoker: readOnly.toolInvoker, toolSchemas: readOnly.definitions };
+          },
+          remaining: () => ({ tokens: remainingTokens, wallMs: wall.loopBudgetMs() }),
+          charge: async (charge) => {
+            remainingTokens -= charge.tokensUsed;
+            callsWithUnknownUsage += charge.callsWithUnknownUsage;
+            usageTotal = combineUsage(usageTotal, charge.usage);
+            totalSteps += charge.steps;
+            await options.evidence.record({
+              type: "session-stopped",
+              actor: "harness",
+              provenance: ["model"],
+              payload: {
+                stopReason: "candidate-review",
+                review: true,
+                steps: charge.steps,
+                tokensUsed: charge.tokensUsed,
+                inputTokens: charge.usage.inputTokens,
+                outputTokens: charge.usage.outputTokens,
+                reasoningTokens: charge.usage.reasoningTokens,
+                cachedInputTokens: charge.usage.cachedInputTokens,
+                callsWithUnknownUsage: charge.callsWithUnknownUsage,
+              },
+            });
+          },
+        });
   const escalation =
     options.escalation === undefined
       ? undefined
@@ -825,6 +921,7 @@ async function executeAgentTask(
     cap: options.attempts,
     ...(followUp === undefined ? {} : { followUp }),
     ...(continuation === undefined ? {} : { continuation }),
+    ...(review === undefined ? {} : { review }),
     // The resolve loop stops at the wall deadline as it stops at a cancellation. The commands that
     // measure a cycle answer only to the run's cancellation and the end of its total allowance:
     // C1's loop spent its wall, and that wall's end refused its final build, lint and tests.
@@ -834,6 +931,34 @@ async function executeAgentTask(
     criteriaSealed,
     criteriaRef: criteriaRefOf(options),
     resolve: async (request) => {
+      // The candidate this attempt starts from, whole, so what an attempt changed can be rebuilt
+      // from the chain: a repair brief carries a truncated diff, and on October 23 that was the
+      // only trace of an initial candidate whose repair gain was then unmeasurable.
+      const before = await patchAgainstBase({
+        workspaceRoot: options.workspace,
+        baseRef: options.baseRef,
+      });
+      // Scrubbed like every payload, so a patch whose code assigns to a credential-bearing name
+      // (`const tokens = state.tokens`) is not the tree byte for byte: that is said, with the
+      // digest of the unscrubbed patch, which names the tree without carrying it.
+      const kept = before.slice(0, candidateSnapshotChars);
+      const scrubbed = scrubText(kept);
+      await options.evidence.record({
+        type: "verification-command",
+        actor: "harness",
+        provenance: ["tool-output"],
+        payload: {
+          rule: "candidate-snapshot-v1",
+          boundary: "before attempt",
+          attempt: request.attempt,
+          owed: request.followUpKind ?? null,
+          truncated: before.length > candidateSnapshotChars,
+          patchDigest: digestOfBytes(before),
+          scrubbed: scrubbed.value !== kept,
+          ...(scrubbed.redactions.length === 0 ? {} : { redactions: scrubbed.redactions }),
+          patch: kept,
+        },
+      });
       const alternate = await escalation?.select(request.cycle, {
         remainingTokens,
         remainingMs: wall.loopBudgetMs(),
@@ -896,7 +1021,8 @@ async function executeAgentTask(
         priorLoopAccount(latestLoop.messages, latestLoop.stopReason, latestLoop.steps),
       );
       if (request.followUpKind !== undefined)
-        beforeOwed.set(request.followUpKind, { completionClaim, messages, latestLoop });
+        for (const kind of request.followUpCarries ?? [request.followUpKind])
+          beforeOwed.set(kind, { completionClaim, messages, latestLoop });
       const repairBudget = { ...loopDependencies.budget, ...attemptBudget };
       const repairPoint = await decisionPointFor(`attempt ${request.attempt}`, repairBudget);
       const repair = await resolveWithModel(
@@ -935,6 +1061,7 @@ async function executeAgentTask(
           // task's continuation is named as such beside the follow-up marker both kinds carry.
           ...(request.followUpKind === undefined ? {} : { followUp: true }),
           ...(request.followUpKind === "continuation" ? { continuation: true } : {}),
+          ...(request.followUpKind === "review" ? { review: true } : {}),
           // A narrow repair that finished finished the repair, not the task: its stop is not the
           // run's lifecycle. Launch 2 of the 2026-10-21 trial read a lint repair's finish as the
           // completion of a loop that had stopped at its step cap with a deliverable unwritten. A
@@ -964,7 +1091,9 @@ async function executeAgentTask(
   const owedOutcomes: readonly (readonly [OwedKind, FollowUpOutcome | null])[] = [
     ["continuation", gates.outcome.continuation],
     ["outcomes", gates.outcome.followUp ?? null],
+    ["review", gates.outcome.review ?? null],
   ];
+  if (review !== undefined) options.review?.settled?.(review.readings());
   const given = owedOutcomes.filter(([, outcome]) => outcome?.state === "given");
   const firstNotKept = given.findIndex(([, outcome]) => outcome?.accepted !== true);
   const restoreTo =
@@ -1171,6 +1300,9 @@ const defaultRunTokens = 1_000_000;
  * once, if at all, and the attempt's gates then run over a tree it never touched.
  */
 const minimumAttemptWallMs = 60_000;
+/** The most of a candidate's patch a snapshot keeps; one past this is marked truncated. */
+const candidateSnapshotChars = 4_000_000;
+
 /** One local answer with a claim in it, measured at a few seconds; a justification needs no more. */
 const justificationFloorMs = 15_000;
 const attemptWallFraction = 20;
@@ -1642,16 +1774,5 @@ function usageFields(loop: Pick<AgentLoopOutcome, "usage" | "reservedTokens">) {
     reasoningTokens: loop.usage.reasoningTokens,
     cachedInputTokens: loop.usage.cachedInputTokens,
     ...(loop.reservedTokens === 0 ? {} : { reservedTokens: loop.reservedTokens }),
-  };
-}
-
-function combineUsage(left: LoopUsage, right: LoopUsage): LoopUsage {
-  const add = (a: number | null, b: number | null): number | null =>
-    a === null && b === null ? null : (a ?? 0) + (b ?? 0);
-  return {
-    inputTokens: left.inputTokens + right.inputTokens,
-    outputTokens: left.outputTokens + right.outputTokens,
-    reasoningTokens: add(left.reasoningTokens, right.reasoningTokens),
-    cachedInputTokens: add(left.cachedInputTokens, right.cachedInputTokens),
   };
 }

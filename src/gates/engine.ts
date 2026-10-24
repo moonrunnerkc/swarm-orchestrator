@@ -7,6 +7,7 @@ import type { IsolationBackend } from "../exec/execution-mode.ts";
 import type { ResourcePool } from "../exec/resource-pool.ts";
 import {
   type AutoResolveOutcome,
+  type CandidateReviewHook,
   defaultAttemptCap,
   type OwedFollowUp,
   type ResolveAttempt,
@@ -28,6 +29,7 @@ import type {
 } from "./gate-definition.ts";
 import { observe } from "./gate-runner.ts";
 import { describeGateSet, sealGateSet } from "./gate-set-seal.ts";
+import { snapshotChanges, undoCheckWrites } from "./gate-side-effects.ts";
 import {
   createGitCheckpoint,
   createGitWorkspaceProbe,
@@ -63,6 +65,8 @@ interface GatesEngineOptions {
   readonly followUp?: OwedFollowUp;
   /** The task's own continuation, owed before the follow-up where its loop was interrupted. */
   readonly continuation?: OwedFollowUp;
+  /** The experimental review of the candidate; absent is none. */
+  readonly review?: CandidateReviewHook;
   readonly budgets?: DiffBudget;
   readonly gateOptions?: GateSetOptions;
   /**
@@ -266,6 +270,7 @@ export async function runGatesEngine(options: GatesEngineOptions): Promise<Gates
     ...(options.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
     ...(options.followUp === undefined ? {} : { followUp: options.followUp }),
     ...(options.continuation === undefined ? {} : { continuation: options.continuation }),
+    ...(options.review === undefined ? {} : { review: options.review }),
     cycleDeps: {
       commands,
       evidence: options.evidence,
@@ -288,6 +293,7 @@ export async function runGatesEngine(options: GatesEngineOptions): Promise<Gates
       if (gate.source.kind !== "command") {
         return null;
       }
+      const untouched = await snapshotChanges(probe);
       const swap = await revertSourceToBase(workspace, () => false);
       try {
         return (
@@ -299,6 +305,9 @@ export async function runGatesEngine(options: GatesEngineOptions): Promise<Gates
         ).observation;
       } finally {
         await swap.restore();
+        // A check run over the base can write as one run over the change can (a build that
+        // regenerates documentation); the workspace goes back to the change as it stood.
+        await undoCheckWrites(options.workspaceRoot, probe, untouched);
       }
     },
   });

@@ -9,6 +9,17 @@ verifier's implementation, `swarm-orchestrator`, keeps its own changelog at the 
 
 ### Added
 
+- **`rename-transport-v1` is re-derived.** An instrument entry marked `transported` is left out
+  of the changes that withhold a pass only where:
+  - the record carries the renames it rests on (`transport`);
+  - a side of a rename is one of them, with the digest the entry carries.
+
+  An entry that borrows a rename it is not, or a record that drops `transport`, reads as changed.
+  Records without these fields keep their meaning. Reading the texts for moved references is the
+  harness's; the verifier checks what follows from what it recorded.
+- **The review's owed attempt (`candidate-review-attempt-v1`) counts in the run lifecycle as the
+  other owed kinds do.** Its stop is the run's only where its candidate was kept.
+
 - **`run-acceptance-v5` is re-derived.** It is `run-acceptance-v4` with one more input, `wallStop`,
   read for a loop that stopped at its wall: the run's last `verification-reserve-v1` record, whether
   the loop's stop came before the deadline that record names, and whether every write and shell

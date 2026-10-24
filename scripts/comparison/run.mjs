@@ -762,8 +762,9 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory, owner)
       `the record could not be written to ${destination}: ${cause.message}`,
     );
   }
+  // Health only: a verdict read off this line during a frozen block is a protocol departure.
   console.log(
-    `  ${launch.task} ${launch.arm}: hidden ${record.hidden.verdict}, corrections ${record.corrections}, visible ${record.resolvedVisible ? "resolved" : "unresolved"}, ${Math.round(record.totals.agentWallMs / 1000)}s agent, tokens ${record.totals.tokens ?? "unknown"}${fatal ? `, HALT (${fatal.class}): ${fatal.message.split("\n")[0]}` : ""}`,
+    `  ${launch.task} ${launch.arm}: corrections ${record.corrections}, ${Math.round(record.totals.agentWallMs / 1000)}s agent, tokens ${record.totals.tokens ?? "unknown"}${fatal ? `, HALT (${fatal.class}): ${fatal.message.split("\n")[0]}` : ""}`,
   );
   if (fatal === null) {
     if (!args.has("keep")) rmSync(scratch, { recursive: true, force: true });

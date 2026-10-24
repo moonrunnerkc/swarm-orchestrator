@@ -1,0 +1,103 @@
+{
+  "results": [
+    {
+      "id": "D1",
+      "task": "ufo-feature-filter-query",
+      "patch": "ufo-feature-missing-73a46956.patch",
+      "digest": "sha256:73a4695697359dd49bdf3cdae745a3e5bdffcc28f8199d54fa995be0e3605e32",
+      "expected": "requested-defect",
+      "verdict": "fail",
+      "basis": "node acceptance/hidden/behaviour-check.mjs exited 1",
+      "detail": "3 behaviour check(s) failed:\n- accept all: \"file:///C:/x?bar=1&k=v\": Expected values to be strictly equal: | + actual - expected |  | + 'file:///C:/x?bar=1&k=v' | - 'file://C:/x?bar=1&k=v' |           ^\n- filter: \"file:///C:/x?bar=1&k=v\" with (key) => key !== \"bar\": Expected values to be strictly equal: | + actual - expected |  | + 'file:///C:/x?k=v' | - 'file://C:/x?k=v' |           ^\n- the predicate sees each decoded key once, in order, with getQuery's value: Expected values to be strictly deep-equal: | + actual - expected |  |   [ |     [ |       'b',",
+      "wallMs": 2924
+    },
+    {
+      "id": "D2",
+      "task": "ufo-feature-filter-query",
+      "patch": "ufo-feature-missing-fe4960db-replay.patch",
+      "digest": "sha256:d8c8e60f4e348013440c0c8a3dae04b0608d3fa665b944f5ece10fcb85adfce8",
+      "expected": "requested-defect",
+      "verdict": "fail",
+      "basis": "node acceptance/hidden/behaviour-check.mjs exited 1",
+      "detail": "1 behaviour check(s) failed:\n- accept all: \"/foo?\": Expected values to be strictly equal: |  | '/foo?' !== '/foo' |",
+      "wallMs": 3002
+    },
+    {
+      "id": "D3",
+      "task": "ufo-feature-filter-query",
+      "patch": "ufo-feature-missing-512a0025-replay.patch",
+      "digest": "sha256:1dd976396512c7383830410bcb5eb0facd790c738457d708b57c25568433dfa2",
+      "expected": "requested-defect",
+      "verdict": "fail",
+      "basis": "node acceptance/hidden/behaviour-check.mjs exited 1",
+      "detail": "4 behaviour check(s) failed:\n- accept all: \"//cdn.example.com/x?bar=1&y\": Expected values to be strictly equal: | + actual - expected |  | + '//cdn.example.com/x?bar=1' | - '//cdn.example.com/x?bar=1&y' |                             ^\n- accept all: \"http://a.com/b?x=a%26b&bar=&y=%3D\": Expected values to be strictly equal: | + actual - expected |  | + 'http://a.com/b?x=a%26b&y==' | - 'http://a.com/b?x=a%26b&bar&y==' |                           ^\n- filter: \"//cdn.example.com/x?bar=1&y\" with (key) => key !== \"bar\": Expected values to be strictly equal: | + actual - expected |  | + '//cdn.example.com/x' | - '//cdn.example.com/x?y' |                       ^\n- the predicate sees each decoded key once, in order, with getQuery's value: Expected values to be strictly deep-equal: | + actual - expected | ... Skipped lines |  |   [ |     [",
+      "wallMs": 2952
+    },
+    {
+      "id": "D4",
+      "task": "ufo-bugfix-base-prefix-boundary",
+      "patch": "ufo-bugfix-breaks-kept-ae10625e-replay.patch",
+      "digest": "sha256:f24744ca446056b6102591c36646223bd199b8c00a6088014392e5d4e70f8feb",
+      "expected": "preservation-defect",
+      "verdict": "fail",
+      "basis": "node acceptance/hidden/kept-check.mjs exited 1",
+      "detail": "kept behaviour changed (1):\n- withBase differs from the base: Expected values to be strictly deep-equal: | + actual - expected | ... Skipped lines |  |   [ |     '/admin', |     '/admin/', |     '/admin/x', |     '/admin/x/y/', | ... |     '/a/b/api', | +   '/api/v1',",
+      "wallMs": 2766
+    },
+    {
+      "id": "D5",
+      "task": "svgo-bugfix-remove-scripts-anchor-bypass",
+      "patch": "svgo-bugfix-missing-eac61996.patch",
+      "digest": "sha256:eac61996b6bb4adf4df12f2def0d5a71b432939ec06999478df430d24ee3e28b",
+      "expected": "requested-defect",
+      "verdict": "fail",
+      "basis": "hidden tests (npx vitest run test/plugins/_index.test.js) exited 1",
+      "detail": "RUN  v4.1.12 /Users/brad/swarm-comparison-work/hidden-svgo-bugfix-remove-scripts-anchor-bypass-zmhtxp/checkout\n\n ❯ test/plugins/_index.test.js (375 tests | 1 failed) 104ms\n     × removeScripts.11 3ms\n\n Test Files  1 failed (1)\n      Tests  1 failed | 374 passed (375)\nType Errors  no errors\n   Start at  09:16:57\n   Duration  339ms (transform 103ms, setup 0ms, import 181ms, tests 104ms, environment 0ms)\n\n\nTesting types with tsc and vue-tsc is an experimental feature.\nBreaking changes might not follow SemVer, please pin Vitest's version when using it.\n\n⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯\n\n FAIL  test/plugins/_index.test.js > plugins tests > removeScripts.11\nAssertionError: expected '<svg xmlns=\"http://www.w3.org/2000/sv…' to strictly equal '<svg xmlns=\"http://www.w3.org/2000/sv…'\n\n- Expected\n+ Received\n\n@@ -1,8 +1,10 @@\n  <svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:svg=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" xmlns:custom=\"https://example.com/custom\">\n      <text y=\"10\">Prefixed anchor</text>\n-     <text y=\"20\">Locally declared prefix</text>\n+     <alias:a xmlns:alias=\"http://www.w3.org/2000/svg\" href=\"javascript:alert(1)\">\n+         <text y=\"20\">Locally declared prefix</text>\n+     </alias:a>\n      <text y=\"30\">Tab</text>\n      <text y=\"40\">Line feed</text>\n      <text y=\"50\">Carriage return</text>\n      <custom:a href=\"javascript:alert(1)\">\n          <text y=\"60\">Custom anchor</text>\n\n ❯ test/plugins/_index.test.js:49:44\n     47|             lastResultData = result.data;\n     48|             //FIXME: results.data has a '\\n' at the end while it shoul…\n     49|             expect(normalize(result.data)).toStrictEqual(should);\n       |                                            ^\n     50|           }\n     51|         });\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯",
+      "wallMs": 2680
+    },
+    {
+      "id": "D6",
+      "task": "p-limit-bugfix-limit-function-clear-queue",
+      "patch": "plimit-bugfix-missing-319f88cf.patch",
+      "digest": "sha256:319f88cf8611cfbb8a4f54a2ced67b23f35873f9bcb54703da72a5a4b9bf1645",
+      "expected": "requested-defect",
+      "verdict": "fail",
+      "basis": "hidden tests (npx ava test.js) exited 1",
+      "detail": "✔ throws on invalid concurrency argument\n  ✔ clearQueue\n  ✘ [fail]: limitFunction exposes clearQueue Rejected promise returned by test\n  ✔ accepts additional arguments\n  ✔ continues after sync throw\n  ✔ runs all tasks asynchronously\n  ✔ non-promise returning function\n  ✔ map accepts an iterable (set)\n  ✔ map accepts an iterable (array iterator)\n  ✔ map\n  ✔ propagates async execution context properly\n  ✔ shared context with a limited provider helper\n  ✔ map passes index and preserves order with concurrency\n  ✔ map works when detached from the limit\n  ✔ clearQueue rejects pending promises when enabled (102ms)\n  ✔ accepts options object (102ms)\n  ✔ does not ignore errors (112ms)\n  ✔ change concurrency to bigger value (155ms)\n  ✔ change concurrency to smaller value (207ms)\n  ✔ concurrency: 1 (607ms)\n  ✔ concurrency: 4 (2.3s)\n  ✔ limitFunction() (2.4s)\n  ✔ activeCount and pendingCount properties (3s)\n\n  Unhandled rejection in test.js\n\n  test.js:223\n\n   222:                                \n   223:   limitedFunction.clearQueue();\n   224:                                \n\n  AbortError: This operation was aborted\n\n  › limiter.value (file://index.js:187:33)\n  › file://test.js:223:18\n\n  ✘ test.js exited with a non-zero exit code: 1\n  ─\n\n  limitFunction exposes clearQueue\n\n  Rejected promise returned by test. Reason:\n\n  DOMException {}\n\n  AbortError: This operation was aborted\n      at new DOMException (node:internal/per_context/domexception:76:18)\n      at AbortSignal.abort (node:internal/abort_controller:230:14)\n      at limiter.value (file:///Users/brad/swarm-comparison-work/hidden-p-limit-bugfix-limit-function-clear-queue-W6nIMo/checkout/index.js:187:33)\n      at file:///Users/brad/swarm-comparison-work/hidden-p-limit-bugfix-limit-function-clear-queue-W6nIMo/checkout/test.js:223:18\n      at Test.callFn (file:///Users/brad/swarm-comparison-work/hidden-p-limit-bugfix-limit-function-clear-queue-W6nIMo/checkout/node_modules/ava/lib/test.js:525:26)\n      at Test.run (file:///Users/brad/swarm-comparison-work/hidden-p-limit-bugfix-limit-function-clear-queue-W6nIMo/checkout/node_modules/ava/lib/test.js:534:33)\n      at Runner.runSingle (file:///Users/brad/swarm-comparison-work/hidden-p-limit-bugfix-limit-function-clear-queue-W6nIMo/checkout/node_modules/ava/lib/runner.js:280:33)\n      at Runner.runTest (file:///Users/brad/swarm-comparison-work/hidden-p-limit-bugfix-limit-function-clear-queue-W6nIMo/checkout/node_modules/ava/lib/runner.js:362:30)\n      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n      at async Promise.all (index 12)\n\n  ─\n\n  1 test failed\n  1 unhandled rejection",
+      "wallMs": 13018
+    },
+    {
+      "id": "C1",
+      "task": "ufo-feature-filter-query",
+      "patch": "ufo-feature-correct-f3142427.patch",
+      "digest": "sha256:f314242787e0c61a0d4c927fea37f82bcffe3d5d3b5eed30cc04799f8b050d5d",
+      "expected": "correct",
+      "verdict": "pass",
+      "basis": "hidden tests, project tests and every structural or version requirement passed",
+      "detail": "allowed-change policy satisfied (14 assertion(s) added in 1 test file(s), 0 removed)\nthe patch wrote test/query.test.ts and the sealed overlay displaced it: the project-test result here is the overlaid tree's, not the delivered tree's",
+      "wallMs": 3983
+    },
+    {
+      "id": "C2",
+      "task": "ufo-bugfix-base-prefix-boundary",
+      "patch": "ufo-bugfix-correct-ef94d44c-replay.patch",
+      "digest": "sha256:143b19144a0366bb406aa18ea3a873a48e0e9228f22f9c2ba5bf060e27ebff6f",
+      "expected": "correct-authorized-change",
+      "verdict": "pass",
+      "basis": "hidden tests, project tests and every structural or version requirement passed",
+      "detail": "allowed-change policy satisfied (6 assertion(s) added in 1 test file(s), 0 removed)\nthe patch wrote test/base.test.ts and the sealed overlay displaced it: the project-test result here is the overlaid tree's, not the delivered tree's",
+      "wallMs": 4011
+    },
+    {
+      "id": "C3",
+      "task": "p-limit-bugfix-limit-function-clear-queue",
+      "patch": "plimit-bugfix-correct-13d26e89.patch",
+      "digest": "sha256:13d26e895d448a68149b2cf3afd3d212d4fc91fd7cc851e47dfe43f60b57d377",
+      "expected": "correct",
+      "verdict": "pass",
+      "basis": "hidden tests, project tests and every structural or version requirement passed",
+      "detail": "allowed-change policy satisfied (0 assertion(s) added in 0 test file(s), 0 removed)\nthe patch wrote test.js and the sealed overlay displaced it: the project-test result here is the overlaid tree's, not the delivered tree's",
+      "wallMs": 14268
+    }
+  ]
+}

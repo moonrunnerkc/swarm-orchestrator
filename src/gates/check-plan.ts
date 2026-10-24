@@ -329,7 +329,13 @@ async function prerequisitesOf(
             ? "install npm"
             : `install ${manager}: \`npm install -g ${manager}\` (the version the manifest pins under packageManager, where it pins one), or \`corepack enable\``,
       });
-    if (lockfiles.includes("yarn.lock") || lockfiles.includes("bun.lockb"))
+    // A yarn or bun lockfile beside one npm or pnpm reads is a project npm or pnpm drives; only a
+    // project whose one lockfile is yarn's or bun's is out of reach.
+    if (
+      (lockfiles.includes("yarn.lock") || lockfiles.includes("bun.lockb")) &&
+      !lockfiles.includes("package-lock.json") &&
+      !lockfiles.includes("pnpm-lock.yaml")
+    )
       missing.push({
         what: `the lockfile is ${lockfiles.includes("yarn.lock") ? "yarn.lock" : "bun.lockb"}, which this verifier does not drive`,
         remedy: "npm and pnpm projects are supported; name the exact command with --command",

@@ -203,9 +203,10 @@ export function createGitWorkspaceProbe(options: GitWorkspaceOptions): Workspace
 
     async readBase(path: string): Promise<string | null> {
       try {
-        return await git(workspaceRoot, ["show", `${baseRef}:${path}`]);
+        return await git(workspaceRoot, ["cat-file", "blob", `${baseRef}:${path}`]);
       } catch {
-        // Absent at the base commit, which is a fact about the file, not an error.
+        // Absent at the base commit, or a directory there, which is a fact about the path, not
+        // an error.
         return null;
       }
     },

@@ -1,0 +1,185 @@
+diff --git a/src/utils.ts b/src/utils.ts
+index e534261..c62798a 100644
+--- a/src/utils.ts
++++ b/src/utils.ts
+@@ -288,6 +288,69 @@ export function getQuery<T extends ParsedQuery = ParsedQuery>(
+   return parseQuery<T>(parseURL(input).search);
+ }
+ 
++/**
++ * Filters query parameters from a URL using a predicate function.
++ *
++ * @example
++ *
++ * ```js
++ * filterQuery("/foo?bar=1&baz=2", (key) => key !== "bar"); // "/foo?baz=2"
++ * filterQuery("/foo?bar=1", (key) => key !== "bar"); // "/foo"
++ * filterQuery("/foo?a=1&a=2&bar=3#frag", (key) => key !== "bar"); // "/foo?a=1&a=2#frag"
++ * ```
++ *
++ * @group utils
++ */
++export function filterQuery(
++  input: string,
++  predicate: (key: string, value: string | string[]) => boolean,
++): string {
++  const queryIndex = input.indexOf("?");
++  if (queryIndex === -1) {
++    return input;
++  }
++
++  const beforeQuery = input.slice(0, queryIndex);
++  // The fragment is after any "?" so find it after the query
++  const fragmentStart = input.indexOf("#", queryIndex);
++  let postQuery: string;
++  let fragment: string;
++  if (fragmentStart !== -1) {
++    postQuery = input.slice(queryIndex + 1, fragmentStart);
++    fragment = input.slice(fragmentStart);
++  } else {
++    postQuery = input.slice(queryIndex + 1);
++    fragment = "";
++  }
++
++  const parsed: ParsedQuery = parseQuery(postQuery);
++  const keys = Object.keys(parsed);
++
++  // Check if any key passes the predicate
++  let keepAny = false;
++  for (const k of keys) {
++    if (predicate(k, parsed[k])) {
++      keepAny = true;
++      break;
++    }
++  }
++
++  if (!keepAny) {
++    return beforeQuery || "/";
++  }
++
++  // Rebuild query string from kept keys
++  const keptQuery: QueryObject = {};
++  for (const k of keys) {
++    if (predicate(k, parsed[k])) {
++      keptQuery[k] = parsed[k];
++    }
++  }
++
++  const queryString = stringifyQuery(keptQuery);
++  return beforeQuery + "?" + queryString + fragment;
++}
++
+ /**
+  * Checks if the input URL is empty or `/`.
+  *
+diff --git a/test/query.test.ts b/test/query.test.ts
+index a9c2e7b..d1455c3 100644
+--- a/test/query.test.ts
++++ b/test/query.test.ts
+@@ -1,5 +1,5 @@
+ import { describe, expect, test } from "vitest";
+-import { getQuery, withQuery } from "../src";
++import { filterQuery, getQuery, withQuery } from "../src";
+ 
+ describe("withQuery", () => {
+   const tests = [
+@@ -95,3 +95,99 @@ describe("getQuery", () => {
+     });
+   }
+ });
++
++describe("filterQuery", () => {
++  const filterTests: Array<{ input: string; fn: (key: string, value: string | string[]) => boolean; out: string }> =
++    [
++      {
++        input: "/foo?bar=1&baz=2",
++        fn: (key) => key !== "bar",
++        out: "/foo?baz=2",
++      },
++      {
++        input: "/foo?bar=1",
++        fn: (key) => key !== "bar",
++        out: "/foo",
++      },
++      {
++        input: "/foo?a=1&a=2&bar=3#frag",
++        fn: (key) => key !== "bar",
++        out: "/foo?a=1&a=2#frag",
++      },
++      {
++        input: "/foo?bar=1",
++        fn: () => true,
++        out: "/foo?bar=1",
++      },
++      {
++        input: "/foo?bar=1",
++        fn: () => false,
++        out: "/foo",
++      },
++      {
++        input: "file:///C:/x",
++        fn: () => false,
++        out: "file:///C:/x",
++      },
++      // No query string - return as-is
++      {
++        input: "#hash",
++        fn: () => false,
++        out: "#hash",
++      },
++      {
++        input: "/foo",
++        fn: () => false,
++        out: "/foo",
++      },
++      // filterQuery(input, () => true) should equal withQuery(input, {}) for inputs with "?"
++      {
++        input: "/foo?bar=1&baz=2",
++        fn: () => true,
++        out: withQuery("/foo?bar=1&baz=2", {}),
++      },
++      {
++        input: "/foo?",
++        fn: () => true,
++        out: withQuery("/foo?", {}),
++      },
++      // Repeated params kept/dropped as whole
++      {
++        input: "/foo?a=1&a=2&bar=3",
++        fn: (key) => key !== "bar",
++        out: "/foo?a=1&a=2",
++      },
++      // Encoded values in predicate - decoding is applied
++      {
++        input: "https://example.com/p?q=%20x&bar=1",
++        fn: (key, value) => String(value) !== "1",
++        out: "https://example.com/p?q=+x",
++      },
++      // Empty string with query sign returns filtered result
++      {
++        input: "?a=1&b=2",
++        fn: (key) => key === "a",
++        out: "?a=1",
++      },
++      // Fragment preserved when params removed
++      {
++        input: "/foo?bar=1#frag",
++        fn: () => false,
++        out: "/foo",
++      },
++      // Multiple repeated values - keep whole key
++      {
++        input: "https://x.com?x=a&y=b&type=c&type=d",
++        fn: (key) => key !== "type",
++        out: "https://x.com?x=a&y=b",
++      },
++    ];
++
++  for (const t of filterTests) {
++    test(`${t.input} filtered: ${JSON.stringify(t.out)}`, () => {
++      expect(filterQuery(t.input, t.fn)).toBe(t.out);
++    });
++  }
++
++
++});

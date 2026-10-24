@@ -268,6 +268,70 @@ describe("what the acceptance gate makes of a verification", () => {
   it("does not ask for a repair over a generated check that could not run", () => {
     expect(readAcceptance(contract, verification("accepted", "unjudged")).passes).toBe(true);
   });
+
+  // The fresh block's ufo candidates: the supplied check passed, and the lint ufo's base already
+  // fails gave other output, because the change added findings to it. That left regression
+  // unmeasured, which read as setup and stopped every repair.
+  it("reads a reading the change left unmeasured as no setup problem", () => {
+    const unattributed = {
+      ...verification("accepted", "accepted"),
+      unmeasured: true,
+      regression: "unmeasured",
+      install: { succeeded: true },
+      checks: [{ attribution: "unattributed" }, { attribution: "none" }],
+    };
+    expect(readAcceptance(contract, unattributed)).toMatchObject({
+      passes: false,
+      unavailable: true,
+      unmeasuredByChange: true,
+    });
+    // nanoid's: the change edited test files, and their base versions were read again.
+    expect(
+      readAcceptance(contract, {
+        ...unattributed,
+        checks: [{ baseTestsFiles: ["test/browser.test.js"] }],
+      }).unmeasuredByChange,
+    ).toBe(true);
+    // The checks as a live run records them: a script the project does not declare stands down
+    // with its absence as the unavailable text, which is no missing tool.
+    expect(
+      readAcceptance(contract, {
+        ...unattributed,
+        checks: [
+          {
+            optionalAbsence: true,
+            observation: { unavailable: "package.json declares no typecheck script" },
+            baseTestsFiles: ["test/base.test.ts"],
+          },
+          { attribution: "unattributed", observation: { unavailable: null } },
+        ],
+      }).unmeasuredByChange,
+    ).toBe(true);
+    // A tool that was not there is setup, whatever else the change did.
+    expect(
+      readAcceptance(contract, {
+        ...unattributed,
+        checks: [{ attribution: "unattributed", observation: { unavailable: "npx: not found" } }],
+      }).unmeasuredByChange,
+    ).toBe(false);
+    // A failed install, or a deciding check that could not run, is setup as before.
+    expect(
+      readAcceptance(contract, { ...unattributed, install: { succeeded: false } })
+        .unmeasuredByChange,
+    ).toBe(false);
+    expect(
+      readAcceptance(contract, {
+        ...unattributed,
+        ...verification("unjudged", "accepted"),
+        unmeasured: true,
+        checks: unattributed.checks,
+      }).unmeasuredByChange,
+    ).toBe(false);
+    expect(
+      readAcceptance(contract, { ...unattributed, checks: [{ attribution: "none" }] })
+        .unmeasuredByChange,
+    ).toBe(false);
+  });
 });
 
 describe("run_check's own diagnostic program", () => {

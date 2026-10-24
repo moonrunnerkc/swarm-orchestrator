@@ -204,7 +204,7 @@ describe("a run whose model work was cut before its deadline", () => {
   it("is decided by the complete passing checks of the delivered tree, and keeps its lifecycle", async () => {
     const worker = await assess(await recordRun());
     expect(workerInputs()).toMatchObject({
-      policy: "run-acceptance-v5",
+      policy: "run-acceptance-v6",
       lifecycle: "max-wall-time",
       wallStop: { beforeDeadline: true, effectsSettled: true },
     });
@@ -296,7 +296,7 @@ describe("the end of the run's own allowance and cancellation still refuse", () 
 
   it("refuses a wall stop in a run that recorded no reserve, as every earlier policy did", async () => {
     const worker = await assess(await recordRun({ reserve: false }));
-    expect(workerInputs()).toMatchObject({ policy: "run-acceptance-v5", wallStop: null });
+    expect(workerInputs()).toMatchObject({ policy: "run-acceptance-v6", wallStop: null });
     expect(worker.acceptable).toBe(false);
     expect(worker.reasons.assessment).toBe("the run stopped as max-wall-time");
     await expectRederived();

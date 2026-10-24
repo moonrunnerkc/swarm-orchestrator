@@ -24,7 +24,11 @@ export function instrumentChanges(instrument) {
   const changed = [];
   const authorized = instrument.authorized ?? [];
   for (const file of instrument.files ?? [])
-    if (file.reference !== file.current && !authorized.includes(file.path.split("#")[0]))
+    if (
+      file.reference !== file.current &&
+      !authorized.includes(file.path.split("#")[0]) &&
+      !transportedFile(instrument, file)
+    )
       changed.push(file.path);
   for (const dependency of instrument.dependencies ?? [])
     if (
@@ -46,6 +50,54 @@ export function instrumentChanges(instrument) {
     if (now !== instrument.before) changed.push("the instrument changed while the check ran");
   }
   return changed;
+}
+
+/**
+ * Whether a recorded instrument difference is only references moved along the patch's own renames
+ * (rename-transport-v1). Mirrors `transportedFile` in src/gates/instrument-identity.ts: the entry
+ * says so, the record carries the renames it rests on, and a side of a rename is one of them with
+ * the digest the entry carries. Reading the texts for moved references was the harness's; this
+ * checks what follows from what it recorded.
+ */
+function transportedFile(instrument, file) {
+  const transport = instrument.transport;
+  if (
+    file.transported !== true ||
+    transport === null ||
+    typeof transport !== "object" ||
+    transport.rule !== "rename-transport-v1" ||
+    !Array.isArray(transport.renames) ||
+    transport.renames.length === 0 ||
+    file.reference === null ||
+    file.current === null ||
+    !Array.isArray(file.moves) ||
+    file.moves.length === 0
+  )
+    return false;
+  return file.moves.every((move) =>
+    transport.renames.some((rename) => moveNamesRename(move, rename)),
+  );
+}
+
+/** Mirrors `moveNamesRename` in src/gates/rename-transport.ts. */
+function moveNamesRename(move, rename) {
+  const tail = (word) =>
+    String(word)
+      .replace(/[?#].*$/, "")
+      .replace(/^(?:\.{1,2}\/)+|^\/+/, "");
+  const names = (word, path) => {
+    const text = tail(word);
+    if (typeof path !== "string" || text.length === 0) return false;
+    const stems = [
+      path,
+      path.replace(/(\.d)?\.[^./]+$/, ""),
+      path.replace(/\/index(\.d)?\.[^./]+$/, ""),
+    ];
+    return stems.some(
+      (stem) => stem === text || stem.endsWith(`/${text}`) || text.endsWith(`/${stem}`),
+    );
+  };
+  return names(move?.was, rename?.from) && names(move?.now, rename?.to);
 }
 
 /**
@@ -547,7 +599,9 @@ function comparableOutput(observation, rule = "v2") {
     .split("\n")
     .map((line) => line.replace(/\s+$/, ""))
     .join("\n");
-  return rule === "v3" ? text.replace(/[^\n]+/g, (line) => withoutTemporaryNames(line)) : text;
+  return rule === "v3" || rule === "v4"
+    ? text.replace(/[^\n]+/g, (line) => withoutTemporaryNames(line))
+    : text;
 }
 
 /** Why a failed reading failed under v1: title identities, as sets. */
@@ -573,10 +627,194 @@ function tally(ids) {
   return found;
 }
 
+/** An absolute file a static tool names on a line of its own. */
+const absoluteFileLine = /^(\/[^\s:()]+\.[A-Za-z0-9]+)\s*$/;
+
+/** The directory every absolute file named in the texts shares; "" for one level or none. */
+function diagnosticsRoot(texts) {
+  const files = [];
+  for (const text of texts)
+    for (const line of stripColour(text).split("\n")) {
+      const found = absoluteFileLine.exec(line);
+      if (found !== null) files.push(found[1]);
+    }
+  if (files.length === 0) return "";
+  let shared = files[0].split("/").slice(0, -1);
+  for (const file of files.slice(1)) {
+    const parts = file.split("/").slice(0, -1);
+    let length = 0;
+    while (length < shared.length && shared[length] === parts[length]) length++;
+    shared = shared.slice(0, length);
+  }
+  return shared.length <= 1 ? "" : `${shared.join("/")}/`;
+}
+
+const relativeTo = (root, file) =>
+  root.length > 0 && file.startsWith(root) ? file.slice(root.length) : file;
+
+/**
+ * Static checks' diagnostics under failure-identity v4: ESLint's stylish problems by file, rule
+ * and message (warnings only where ESLint said there were too many), Prettier's `--check` files,
+ * and TypeScript's errors by file, code and message. Complete only where each tool's own summary
+ * agrees, the run was not killed (exit 128), and, for a script npm echoed as a chain of `&&`
+ * commands, the failures came from its last command. Mirrors `diagnosticPoints` in
+ * src/gates/failure-attribution.ts.
+ */
+function diagnosticsV4(observation, root, rule = "v4") {
+  const lines = stripColour(`${observation.stdout ?? ""}\n${observation.stderr ?? ""}`).split("\n");
+  const tools = [];
+
+  let file = null;
+  let printed = null;
+  const eslintAt = [];
+  let errors = 0;
+  let warnings = 0;
+  const eslint = [];
+  let eslintSummary = null;
+  const tooManyWarnings = lines.some((line) => line.includes("ESLint found too many warnings"));
+  for (const line of lines) {
+    const summary = /^\u2716 (\d+) problems? \((\d+) errors?, (\d+) warnings?\)/.exec(line);
+    if (summary !== null && eslintSummary === null) eslintSummary = summary;
+    const named = absoluteFileLine.exec(line);
+    if (named !== null) {
+      file = relativeTo(root, named[1]);
+      printed = named[1];
+      continue;
+    }
+    const problem =
+      /^\s+(\d+):(\d+)\s+(error|warning)\s+(.+?)(?:\s{2,}(@?[\w-]+(?:\/[\w-]+)*))?\s*$/.exec(line);
+    if (problem === null || file === null) continue;
+    if (problem[3] === "error") errors++;
+    else warnings++;
+    if (problem[3] === "error" || tooManyWarnings) {
+      const identity = `eslint ${file} \u203a ${problem[5] ?? "(no rule)"}: ${withoutTemporaryNames(cause(problem[4]))}`;
+      eslint.push(identity);
+      eslintAt.push({
+        identity,
+        path: printed,
+        line: Number(problem[1]),
+        column: Number(problem[2]),
+      });
+    }
+  }
+  if (eslintSummary !== null || eslint.length > 0)
+    tools.push({
+      tool: "eslint",
+      failed: eslint,
+      at: eslintAt,
+      complete:
+        eslintSummary !== null &&
+        Number(eslintSummary[2]) === errors &&
+        Number(eslintSummary[3]) === warnings,
+    });
+
+  const prettier = [];
+  const prettierAt = [];
+  let counted = null;
+  const checking = lines.some((line) => /^Checking formatting\.\.\.\s*$/.test(line));
+  for (const line of lines) {
+    const summary =
+      /^\[warn\] Code style issues (?:were )?found in (?:(\d+) files|the above file(\(s\))?)/.exec(
+        line,
+      );
+    if (summary !== null) {
+      counted = summary[1] !== undefined ? Number(summary[1]) : summary[2] === undefined ? 1 : -1;
+      continue;
+    }
+    const warned = /^\[warn\] (\S.*?)\s*$/.exec(line);
+    if (warned !== null) {
+      prettier.push(`prettier ${warned[1]}`);
+      prettierAt.push({
+        identity: `prettier ${warned[1]}`,
+        path: warned[1],
+        line: null,
+        column: null,
+      });
+    }
+    const error = /^\[error\] (\S+?): (.+?)\s*$/.exec(line);
+    if (error !== null) {
+      const identity = `prettier ${error[1]}: ${withoutTemporaryNames(cause(error[2].split(" (")[0]))}`;
+      prettier.push(identity);
+      prettierAt.push({ identity, path: error[1], line: null, column: null });
+    }
+  }
+  if (checking || prettier.length > 0) {
+    const warnedCount = prettier.filter((one) => !one.includes(": ")).length;
+    tools.push({
+      tool: "prettier",
+      failed: prettier,
+      at: prettierAt,
+      complete:
+        prettier.length === 0 ||
+        (counted !== null &&
+          (counted === warnedCount || counted === -1) &&
+          prettier.length === warnedCount),
+    });
+  }
+
+  const tsc = [];
+  const tscAt = [];
+  let found = null;
+  for (const line of lines) {
+    const error =
+      /^(\S.*?)\((\d+),(\d+)\): error (TS\d+): (.+)$/.exec(line) ??
+      /^(\S.*?):(\d+):(\d+) - error (TS\d+): (.+)$/.exec(line);
+    if (error !== null) {
+      const identity = `tsc ${relativeTo(root, error[1])} \u203a ${error[4]}: ${withoutTemporaryNames(cause(error[5]))}`;
+      tsc.push(identity);
+      tscAt.push({ identity, path: error[1], line: Number(error[2]), column: Number(error[3]) });
+    }
+    const summary = /^Found (\d+) errors?\b/.exec(line);
+    if (summary !== null && found === null) found = Number(summary[1]);
+  }
+  if (tsc.length > 0)
+    tools.push({
+      tool: "tsc",
+      failed: tsc,
+      at: tscAt,
+      complete: found === null || found === tsc.length,
+    });
+
+  const failing = tools.filter((one) => one.failed.length > 0);
+  if (failing.length === 0) return null;
+  // The echoed script, where its commands are joined by `&&` and nothing else.
+  const echoed = lines.findIndex((line) => /^> \S+@\S+ \S+/.test(line));
+  const script = echoed === -1 ? undefined : /^> (.+)$/.exec(lines[echoed + 1] ?? "")?.[1];
+  let chain = null;
+  if (script !== undefined && !/[|;&`<>]|\$\(/.test(script.split("&&").join(" ")))
+    chain = script.split("&&").map((one) => one.trim());
+  const toolOfCommand = (command) => {
+    const words = command.split(/\s+/).filter((word) => !/^\w+=/.test(word));
+    const program = ((words[0] === "npx" ? words[1] : words[0]) ?? "").split("/").pop();
+    return ["eslint", "prettier", "tsc"].includes(program) ? program : null;
+  };
+  const last = chain === null ? null : toolOfCommand(chain[chain.length - 1]);
+  // v5: the failing tool's name shows its report is the last command's only where no earlier
+  // command of the chain runs that tool too.
+  const wholeChainRan =
+    chain === null ||
+    chain.length === 1 ||
+    (failing.length === 1 &&
+      last !== null &&
+      failing[0].tool === last &&
+      (rule !== "v5" || chain.filter((command) => toolOfCommand(command) === last).length === 1));
+  return {
+    failed: failing.flatMap((one) => one.failed),
+    occurrences: failing.flatMap((one) => one.at),
+    passed: [],
+    causes: {},
+    complete:
+      observation.outputTruncated !== true &&
+      observation.exitCode !== 128 &&
+      wholeChainRan &&
+      failing.every((one) => one.complete),
+  };
+}
+
 /** A run's tests under the rule named: v3 is v2 with temporary names set aside in each cause. */
 function namedTests(observation, sharedRoot, rule) {
   const named = namedTestsV2(observation, sharedRoot);
-  if (named === null || rule !== "v3") return named;
+  if (named === null || (rule !== "v3" && rule !== "v4" && rule !== "v5")) return named;
   return {
     ...named,
     causes: Object.fromEntries(
@@ -590,15 +828,27 @@ function namedTests(observation, sharedRoot, rule) {
  * tests apart, counted, with their causes, from two complete runs. v3 sets temporary names aside.
  * Mirrors `attributeFailure` in src/gates/failure-attribution.ts, which writes v3.
  */
-function attributionV2(failing, parser, baseObservation, rule = "v2") {
+function attributionV2(failing, parser, baseObservation, rule = "v2", sourceChanges = undefined) {
   if (baseObservation === undefined || readStatus(parser, baseObservation) !== "failed")
     return { attribution: "new", newFailures: [] };
   if (failing.outputTruncated === true || baseObservation.outputTruncated === true)
     return { attribution: "unattributed", newFailures: [] };
+  const fromV4 = rule === "v4" || rule === "v5";
+  // v4: a run the harness killed (exit 128) stopped wherever it was.
+  if (fromV4 && (failing.exitCode === 128 || baseObservation.exitCode === 128))
+    return { attribution: "unattributed", newFailures: [] };
   const texts = [failing, baseObservation].map((one) => `${one.stdout ?? ""}\n${one.stderr ?? ""}`);
   const root = texts.every((text) => /^TAP version \d+/m.test(text)) ? locationRoot(texts) : "";
-  const patched = namedTests(failing, root, rule);
-  const base = namedTests(baseObservation, root, rule);
+  let patched = namedTests(failing, root, rule);
+  let base = namedTests(baseObservation, root, rule);
+  // v4: where neither run names tests, the static checks' diagnostics under one shared root.
+  let diagnostic = false;
+  if (fromV4 && patched === null && base === null) {
+    const shared = diagnosticsRoot(texts);
+    patched = diagnosticsV4(failing, shared, rule);
+    base = diagnosticsV4(baseObservation, shared, rule);
+    diagnostic = rule === "v5";
+  }
   if (patched !== null && base !== null && patched.failed.length > 0) {
     const before = tally(base.failed);
     const after = tally(patched.failed);
@@ -609,11 +859,20 @@ function attributionV2(failing, parser, baseObservation, rule = "v2") {
     if (newFailures.length > 0) return { attribution: "new", newFailures };
     const repeated = [...after, ...before].some(([, count]) => count > 1);
     const changed = [...after.keys()].some((id) => patched.causes[id] !== base.causes[id]);
-    return patched.complete && base.complete && !repeated && !changed
+    // v5: each located diagnostic must be a base occurrence the recorded hunks carry to the same
+    // place; there, occurrences rather than names tell repeated identities apart.
+    const unaccounted = diagnostic
+      ? unaccountedV5(patched.occurrences ?? [], base?.occurrences ?? [], sourceChanges)
+      : 0;
+    return patched.complete &&
+      base.complete &&
+      (!repeated || diagnostic) &&
+      !changed &&
+      unaccounted === 0
       ? { attribution: "inherited", newFailures: [] }
       : { attribution: "unattributed", newFailures: [] };
   }
-  if (rule === "v3" && patched !== null && base === null && patched.complete) {
+  if ((rule === "v3" || fromV4) && patched !== null && base === null && patched.complete) {
     const newFailures = failuresTheBaseNamedPassing(patched, baseObservation);
     if (newFailures.length > 0) return { attribution: "new", newFailures };
   }
@@ -621,6 +880,54 @@ function attributionV2(failing, parser, baseObservation, rule = "v2") {
   return comparableOutput(failing, rule) === comparableOutput(baseObservation, rule)
     ? { attribution: "inherited", newFailures: [] }
     : { attribution: "unattributed", newFailures: [] };
+}
+
+/**
+ * Where a base line is after a change, under the recorded zero-context hunks
+ * `[oldStart, oldLines, newStart, newLines]`: null where a hunk removed or rewrote it. A pure
+ * insertion (`oldLines` 0) names the line it follows. Mirrors `movedLine` in
+ * src/gates/source-changes.ts.
+ */
+function lineAfterChange(hunks, line) {
+  if (!Array.isArray(hunks)) return null;
+  let shift = 0;
+  for (const hunk of hunks) {
+    const [oldStart, oldLines, , newLines] = hunk;
+    if (oldLines > 0 && line >= oldStart && line < oldStart + oldLines) return null;
+    const before = oldLines === 0 ? oldStart < line : oldStart + oldLines - 1 < line;
+    if (before) shift += newLines - oldLines;
+  }
+  return line + shift;
+}
+
+/**
+ * Under v5, how many of the patched run's diagnostics no base occurrence accounts for: a base
+ * occurrence is followed through its file's recorded hunks (a file-level one only through an
+ * unchanged file), and each accounts for one patched occurrence with the same identity, file,
+ * line and column. Mirrors `unaccountedOccurrences` in src/gates/failure-attribution.ts.
+ */
+function unaccountedV5(patched, base, sourceChanges) {
+  const followed = base.map((one) => {
+    const hunks = sourceChanges?.[one.path];
+    if (hunks === undefined) return null;
+    if (one.line === null) return Array.isArray(hunks) && hunks.length === 0 ? one : null;
+    const line = lineAfterChange(hunks, one.line);
+    return line === null ? null : { ...one, line };
+  });
+  let unaccounted = 0;
+  for (const one of patched) {
+    const index = followed.findIndex(
+      (candidate) =>
+        candidate !== null &&
+        candidate.identity === one.identity &&
+        candidate.path === one.path &&
+        candidate.line === one.line &&
+        candidate.column === one.column,
+    );
+    if (index === -1) unaccounted += 1;
+    else followed[index] = null;
+  }
+  return unaccounted;
 }
 
 /**
@@ -643,11 +950,15 @@ function failuresTheBaseNamedPassing(patched, baseObservation) {
 
 /** The v2-family rule a record names; a record naming neither v2 nor v3 was written under v1. */
 function identityRule(check) {
-  return check.attributionRule === "failure-identity-v3"
-    ? "v3"
-    : check.attributionRule === "failure-identity-v2"
-      ? "v2"
-      : null;
+  return check.attributionRule === "failure-identity-v5"
+    ? "v5"
+    : check.attributionRule === "failure-identity-v4"
+      ? "v4"
+      : check.attributionRule === "failure-identity-v3"
+        ? "v3"
+        : check.attributionRule === "failure-identity-v2"
+          ? "v2"
+          : null;
 }
 
 /** Why a failed reading failed, under the rule the record names. */
@@ -655,7 +966,7 @@ function attribution(check, failing) {
   const rule = identityRule(check);
   return rule === null
     ? attributionV1(failing, check.parser, check.baseObservation)
-    : attributionV2(failing, check.parser, check.baseObservation, rule);
+    : attributionV2(failing, check.parser, check.baseObservation, rule, check.sourceChanges);
 }
 
 /**
@@ -839,4 +1150,47 @@ export function capturedRegression(checks) {
   } catch {
     return null;
   }
+}
+
+/**
+ * A failed command gate's reading against the gate-baseline record it names
+ * (check-requirement-v1), re-derived from the two records alone under failure-identity v4.
+ * Inherited only where the gate's instrument is the base's (`instrumentChanges` empty) and every
+ * failure is proven the base's own. Mirrors `inheritanceOf` in src/gates/gate-runner.ts. Returns
+ * null where the records cannot be read for it.
+ */
+export function gateInheritance(run, baseline) {
+  if (run === undefined || run === null || run.status !== "failed") return null;
+  const observe = (payload) => ({
+    exitCode: payload.exitCode,
+    stdout: payload.stdout ?? "",
+    stderr: payload.stderr ?? "",
+    outputTruncated: payload.outputTruncated === true,
+    unavailable: payload.unavailable ?? null,
+  });
+  if (baseline === undefined || baseline === null)
+    return { baseStatus: null, attribution: "unattributed", newFailures: [], inherited: [] };
+  if (baseline.gateId !== run.gateId || baseline.command !== run.command) return null;
+  const failing = observe(run);
+  const atBase = observe(baseline);
+  const baseStatus = readStatus(run.parser, atBase);
+  const changes = run.instrument === undefined ? ["none"] : instrumentChanges(run.instrument);
+  if (baseStatus === "failed" && changes.length > 0)
+    return { baseStatus, attribution: "unattributed", newFailures: [], inherited: [] };
+  // The rule the reading names: v4 for records before v5, which keep their v4 reading.
+  const rule = run.inheritance?.rule === "failure-identity-v5" ? "v5" : "v4";
+  const derived = attributionV2(failing, run.parser, atBase, rule, run.inheritance?.sourceChanges);
+  const own = `${failing.stdout}\n${failing.stderr}`;
+  const inherited =
+    derived.attribution === "inherited"
+      ? (namedTests(failing, undefined, rule)?.failed ??
+        diagnosticsV4(failing, diagnosticsRoot([own]), rule)?.failed ??
+        [])
+      : [];
+  return {
+    baseStatus,
+    attribution: derived.attribution,
+    newFailures: derived.newFailures,
+    inherited,
+  };
 }

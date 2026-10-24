@@ -5,6 +5,21 @@ import type { WorkspaceChanges, WorkspaceProbe } from "./workspace-changes.ts";
 
 export type GateSeverity = "blocking" | "advisory";
 
+/**
+ * What a blocking gate requires of the delivered tree (check-requirement-v1, see
+ * docs/check-requirements.md). `absolute-pass`: the check passes. `no-new-regression`: the check
+ * passes, or every failure it reports is proven the base's own by `attributeFailure`; anything
+ * that cannot be proven either way blocks. A gate without one is `absolute-pass`, which is what
+ * every gate meant before the requirement was recorded.
+ */
+export type GateRequirement = "absolute-pass" | "no-new-regression";
+
+export const gateRequirements: readonly GateRequirement[] = ["absolute-pass", "no-new-regression"];
+
+export function requirementOf(gate: { readonly requirement?: GateRequirement }): GateRequirement {
+  return gate.requirement ?? "absolute-pass";
+}
+
 /** Named numbers a gate measured. Flat keys, so a claim predicate can address one directly. */
 export type GateMeasures = Readonly<Record<string, number>>;
 
@@ -165,6 +180,7 @@ export type GateOverride =
       readonly command: string;
       readonly severity?: GateSeverity;
       readonly parser?: OverrideParserName;
+      readonly requirement?: GateRequirement;
     };
 
 export interface GateDefinition {
@@ -176,6 +192,13 @@ export interface GateDefinition {
    * assembled gate does; an override that runs the code says so rather than being guessed at.
    */
   readonly capability?: GateCapability;
+  /** Absent is `absolute-pass` (see `requirementOf`). */
+  readonly requirement?: GateRequirement;
+  /**
+   * Why the requirement is not the gate's default, where a sentence of the task decided it: the
+   * task asks for this static check's failure fixed (`staticRepairRequested`).
+   */
+  readonly requirementBasis?: string;
   readonly source: GateSource;
   readonly parse: GateParser;
   /** Absent means the exit-code rule, which is what an unnamed parser has always been. */

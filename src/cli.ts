@@ -1,4 +1,12 @@
 #!/usr/bin/env node
+import { type createCandidateReview, probeObligations, reviewRule } from "./agent-review.ts";
+import {
+  createTrialLog,
+  reviewGrounding,
+  reviewProbeRunner,
+  reviewProbeValidator,
+  reviewTrialTool,
+} from "./cli-review.ts";
 // Check the runtime before loading the command composition.
 import "./node-floor-check.ts";
 
@@ -50,6 +58,7 @@ import {
 } from "./cli-run-commands.ts";
 import {
   changedFilesOf,
+  checksResult,
   describeRunOutcome,
   exitCodeForStatus,
   interventionsOn,
@@ -95,7 +104,7 @@ import { verifyBundle } from "./cli-verify.ts";
 import type { LoopEvent } from "./core/loop-events.ts";
 import type { StopReason } from "./core/termination.ts";
 import { readBundle } from "./evidence/bundle.ts";
-import { asJsonValue } from "./evidence/canonical-json.ts";
+import { asJsonValue, digestOfBytes } from "./evidence/canonical-json.ts";
 import { buildEvidenceDag } from "./evidence/dag.ts";
 import {
   declareGoalContract,
@@ -123,7 +132,17 @@ import { recordedContainerBackend } from "./exec/runtime-resource.ts";
 import { defaultDiffBudget } from "./gates/engine.ts";
 import { createFileSetRegistry } from "./gates/file-set.ts";
 import { requireBaseCommit } from "./gates/git-workspace.ts";
+import {
+  describePreservation,
+  initialObligations,
+  preservationRule,
+  recordObligations,
+  reviewAuthorities,
+  settleObligations,
+  unclassifiedSentences,
+} from "./gates/preservation-obligations.ts";
 import { summarizeRatchet } from "./gates/ratchet-summary.ts";
+import { patchAgainstBase } from "./gates/scratch-index.ts";
 import { diagnose, remediesFor, runtimeFinding } from "./install/health.ts";
 import { inspectInstall } from "./install/inspect.ts";
 import { describeInstall } from "./install/report.ts";
@@ -471,6 +490,30 @@ async function run(options: RunCommand): Promise<number> {
   // person's answer go through the terminal, which the screen then owns. The planner reads
   // the workspace with read-only tools on a chain of its own; what it pins is sealed on this
   // chain below exactly as a supplied contract is, and stays labelled model-authored.
+  // What the run must preserve, from the task's words, the supplied contract and the base's own
+  // checks, recorded before the first model call (preservation-obligations-v1); and the
+  // experimental review, declared before anything it governs runs.
+  const obligations = initialObligations({
+    task: options.task,
+    ...(sealedGoal === undefined ? {} : { contract: sealedGoal }),
+  });
+  await recordObligations(evidence, obligations, options.task);
+  if (options.review !== undefined)
+    await evidence.record({
+      type: "verification-command",
+      actor: "harness",
+      provenance: ["user"],
+      payload: {
+        rule: reviewRule,
+        phase: "declared",
+        mode: options.review,
+        note: "experimental: once the gates are green, one review of the candidate; established findings are owed one attempt from the cap, probe kept cases are ratchet parts, and nothing it finds decides acceptance",
+      },
+    });
+  // Filled in by the run once the review has examined; read back for the report.
+  const reviewState: {
+    readings: ReturnType<ReturnType<typeof createCandidateReview>["readings"]> | null;
+  } = { readings: null };
   let planning: PlanChecksOutcome | null = null;
   if (options.planChecks === true && options.recovery === undefined) {
     const interactive =
@@ -755,6 +798,8 @@ async function run(options: RunCommand): Promise<number> {
       throw new Error(
         "preset preflight exhausted implementation allowance; final verification time stays reserved",
       );
+    // One log of the reviewer's trials for the run, which admission reads before running again.
+    const trialLog = goalContext === undefined ? null : createTrialLog(goalContext);
     const implementation = (
       goal: typeof sealedGoal,
       repairFeedback?: string,
@@ -764,6 +809,35 @@ async function run(options: RunCommand): Promise<number> {
       ...(options.repairTrace === true ? { repairTrace: true } : {}),
       ...(options.repairFinish === true ? { repairFinish: true } : {}),
       ...(options.adaptive === true ? { adaptive: true } : {}),
+      ...(options.review === undefined || goalContext === undefined || goal === undefined
+        ? {}
+        : {
+            review: {
+              mode: options.review,
+              runProbes: reviewProbeRunner({ ...goalContext, contract: goal }),
+              trialTool: reviewTrialTool(
+                { ...goalContext, contract: goal, signal: modelWork.signal },
+                trialLog ?? undefined,
+              ),
+              grounding: reviewGrounding({ ...goalContext, contract: goal }, options.task),
+              // Admission runs on the host only, as the trials do.
+              ...(goalContext.isolation === null && trialLog !== null
+                ? {
+                    validate: reviewProbeValidator(
+                      { ...goalContext, contract: goal, signal: modelWork.signal },
+                      trialLog,
+                    ),
+                  }
+                : {}),
+              obligations: obligations.map(
+                (one) => `${one.id}: ${one.statement} (${one.category}; ${one.basis})`,
+              ),
+              authorities: reviewAuthorities(obligations),
+              settled: (readings) => {
+                reviewState.readings = readings;
+              },
+            },
+          }),
       ...(repairFeedback === undefined ? {} : { repairFeedback }),
       ...(options.escalationModel === undefined
         ? {}
@@ -973,6 +1047,33 @@ async function run(options: RunCommand): Promise<number> {
       },
     });
     keepChildHome = outcome.resumable;
+    const preservation = settleObligations({
+      obligations,
+      regression: outcome.finalVerification?.regression ?? null,
+      inherited: (verdict.inherited ?? []).map((one) => one.gateId),
+      requirements: (outcome.requirements ?? []).map(({ id, status }) => ({ id, status })),
+      probes:
+        reviewState.readings === null
+          ? []
+          : probeObligations(reviewState.readings, reviewAuthorities(obligations)),
+    });
+    // The delivered tree the statuses were read on, by the digest of its patch against the base.
+    const deliveredPatch = digestOfBytes(
+      await patchAgainstBase({ workspaceRoot: options.workspace, baseRef: baseCommit }),
+    );
+    await evidence.record({
+      type: "verification-command",
+      actor: "harness",
+      provenance: ["tool-output"],
+      payload: asJsonValue({
+        rule: preservationRule,
+        phase: "settled",
+        deliveredPatch,
+        statuses: preservation,
+        unclassified: unclassifiedSentences(options.task),
+      }),
+    });
+    ui.note(describePreservation(preservation));
     // The terminal, the result line and the exit status read one status, so a run the outcome
     // calls partially checked cannot exit as if it were accepted.
     const status = outcomeStatus(outcome);
@@ -1023,6 +1124,7 @@ async function run(options: RunCommand): Promise<number> {
           ...(strengthening === undefined ? {} : { strengthening }),
           outcome: {
             status,
+            checks: (({ result, inherited }) => ({ result, inherited }))(checksResult(verdict)),
             lifecycle: outcome.lifecycle,
             requirements: outcome.requirements,
             changedFiles: outcome.changedFiles,
@@ -1046,6 +1148,20 @@ async function run(options: RunCommand): Promise<number> {
             ...(outcome.repairsForGeneratedChecksOnly === undefined
               ? {}
               : { repairsForGeneratedChecksOnly: outcome.repairsForGeneratedChecksOnly }),
+            preservation,
+            unclassifiedTask: unclassifiedSentences(options.task),
+            deliveredPatch,
+            ...(options.review === undefined
+              ? {}
+              : {
+                  review: {
+                    mode: options.review,
+                    examination: gates.outcome.reviewExamination ?? null,
+                    attempt: gates.outcome.review ?? null,
+                    probes: reviewState.readings?.probes.map((one) => one.id) ?? [],
+                    readings: reviewState.readings?.classified ?? [],
+                  },
+                }),
           },
           ...(planning === null
             ? {}

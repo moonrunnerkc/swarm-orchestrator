@@ -58,6 +58,12 @@ export interface RunCommand {
   readonly repairFinish?: boolean;
   /** Experimental: one decision point per loop over its working state (adaptive-decision-v2). */
   readonly adaptive?: boolean;
+  /**
+   * Experimental (candidate-review-v1): once the gates are green, a separate review of the
+   * candidate whose findings are owed one attempt. `executable` runs its probes; `prose` is the
+   * control with the same conversation and attempt and nothing run.
+   */
+  readonly review?: "executable" | "prose";
   /** The worker's system prompt. Absent is the historical default, `legacy`. */
   readonly promptProfile?: "legacy" | "concise";
   readonly installDependencies?: boolean;
@@ -361,6 +367,10 @@ export const usage = [
   "  --adaptive                  experimental: one decision point per loop reads its working state and",
   "                              may retrieve, diagnose or run a distinguishing command, then looks at",
   "                              whether that led anywhere and may reassess once, within its budget",
+  "  --review executable|prose   experimental: once the gates are green, a separate review of the change;",
+  "                              executable runs its probes on the base and the change, prose only",
+  "                              objects; findings get one attempt and never decide acceptance (needs",
+  "                              --goal-contract or --plan-checks)",
   "  --repair-trace              experimental: a repair of a check the base passed traces one preserved",
   "                              case on the base and the workspace through run_check before editing",
   "  --escalate-model <provider:id>     authorize one bounded capability escalation",
@@ -709,6 +719,13 @@ function commandFrom(
   const goalContract = flags.get("goal-contract");
   if (goalContract !== undefined && goalContract.trim().length === 0)
     throw invalid("--goal-contract needs the path of a sealed goal contract file");
+  const review = flags.get("review");
+  if (review !== undefined && review !== "executable" && review !== "prose")
+    throw invalid("--review must be executable or prose");
+  if (review !== undefined && goalContract === undefined && !flags.has("plan-checks"))
+    throw invalid(
+      "--review needs --goal-contract or --plan-checks: its probes run on fresh checkouts the way the sealed checks do",
+    );
   const challenges = flags.get("challenges");
   if (challenges !== undefined && !["off", "report", "required"].includes(challenges))
     throw invalid("--challenges must be off, report, or required");
@@ -761,6 +778,7 @@ function commandFrom(
     ...(flags.has("plan-checks") ? { planChecks: true } : {}),
     ...(flags.has("repair-finish") ? { repairFinish: true } : {}),
     ...(flags.has("adaptive") ? { adaptive: true } : {}),
+    ...(review === undefined ? {} : { review }),
     ...(flags.has("repair-trace") ? { repairTrace: true } : {}),
     ...(promptProfile === undefined ? {} : { promptProfile }),
     ...(flags.has("escalate-model")

@@ -6,7 +6,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { stringify as stringifyToml } from "smol-toml";
@@ -60,7 +60,14 @@ export const mirrorOf = (repository) =>
 export const tagOf = (task) => `comparison/${task.id}/base`;
 
 /** Paths an arm may create that are not the change: configuration the harness wrote, and acceptance material. */
-export const excludedFromPatch = ["acceptance/visible", "swarm.toml", "opencode.json", ".swarm"];
+export const excludedFromPatch = [
+  "acceptance/visible",
+  "swarm.toml",
+  "opencode.json",
+  ".swarm",
+  // aider's own history and repository-map cache, written where it runs.
+  ".aider*",
+];
 
 const git = (log, cwd, ...args) => log.run(["git", ...args], { cwd, timeoutMs: 600_000 });
 
@@ -154,6 +161,34 @@ export async function commitVisibleCheck(log, task, directory) {
   );
   if (committed.exitCode !== 0) throw new Error(`${task.id}: committing the visible check failed`);
   return (await git(log, directory, "rev-parse", "HEAD")).stdout.toString().trim();
+}
+
+/**
+ * The lockfile the harness resolved for a base that has none, committed beside the visible check
+ * so it is never part of an arm's change. Every tree prepared as a launch's workspace commits it
+ * the same way. Returns the new commit, or null where git refused.
+ */
+export async function commitHarnessLockfile(log, directory, bytes) {
+  writeFileSync(join(directory, "package-lock.json"), bytes);
+  for (const argv of [
+    ["add", "--force", "package-lock.json"],
+    [
+      "-c",
+      "user.name=comparison",
+      "-c",
+      "user.email=comparison@localhost",
+      "commit",
+      "-qm",
+      "Lockfile the harness resolved for the task's base",
+    ],
+  ]) {
+    const ran = await log.run(["git", ...argv], { cwd: directory, timeoutMs: 60_000 });
+    if (ran.exitCode !== 0) return { base: null, detail: ran.stderr.toString() };
+  }
+  return {
+    base: (await git(log, directory, "rev-parse", "HEAD")).stdout.toString().trim(),
+    detail: "",
+  };
 }
 
 /** The task's install argv list, in order; false with the failing step when one fails. */
@@ -262,6 +297,35 @@ export async function finalPatch(log, directory, base) {
   );
   await git(log, directory, "reset", "--quiet");
   return diff.stdout.toString();
+}
+
+/**
+ * The workspace's change as a patch, read through an index of its own so the arm's index (and
+ * any index the arm is using) is never touched: the harness's own record of a candidate at a
+ * boundary the arm announces, exact where the arm's evidence is scrubbed.
+ */
+export async function snapshotPatch(log, directory, base, indexPath) {
+  const env = { ...process.env, GIT_INDEX_FILE: indexPath };
+  try {
+    await log.run(["git", "read-tree", base], { cwd: directory, env, timeoutMs: 120_000 });
+    await log.run(["git", "add", "--all"], { cwd: directory, env, timeoutMs: 120_000 });
+    const diff = await log.run(
+      [
+        "git",
+        "diff",
+        "--cached",
+        "--binary",
+        base,
+        "--",
+        ".",
+        ...excludedFromPatch.map((path) => `:(exclude)${path}`),
+      ],
+      { cwd: directory, env, timeoutMs: 120_000 },
+    );
+    return diff.exitCode === 0 ? diff.stdout.toString() : null;
+  } finally {
+    rmSync(indexPath, { force: true });
+  }
 }
 
 export async function applyPatch(log, directory, patch) {
