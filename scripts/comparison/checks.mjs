@@ -28,6 +28,11 @@ import {
   writeArmConfiguration,
 } from "./workspace.mjs";
 
+/**
+ * A launch's workspace commits the frozen harness lockfile beside the visible check, and the
+ * arm's patch is taken against that commit, so a tree the patch is applied to commits it too: an
+ * arm that changed package-lock.json otherwise had a patch that applied to nothing.
+ */
 async function freshTree(log, task, base, patch, label, harnessLock = null) {
   mkdirSync(workRoot, { recursive: true });
   const scratch = mkdtempSync(join(workRoot, `${label}-${task.id}-`));
@@ -61,8 +66,8 @@ const run = (log, task, checkout, argv, timeoutMs = 900_000) =>
   log.run(argv, { cwd: checkout, timeoutMs, env: taskEnvironment(task) });
 
 /** The visible verdict and the text the supervisor hands back on failure. */
-export async function visibleVerdict(log, task, base, patch) {
-  const tree = await freshTree(log, task, base, patch, "visible");
+export async function visibleVerdict(log, task, base, patch, { harnessLock = null } = {}) {
+  const tree = await freshTree(log, task, base, patch, "visible", harnessLock);
   try {
     if (!tree.prepared.ok)
       return {
@@ -139,9 +144,9 @@ export async function lintVerdict(log, task, base) {
  * linted. A candidate introduces a static failure only where the base passes and it does not;
  * where the base already fails, its reading is reported and nothing is attributed to the change.
  */
-export async function staticVerdict(log, task, base, patch) {
+export async function staticVerdict(log, task, base, patch, { harnessLock = null } = {}) {
   const read = async (label, change) => {
-    const tree = await freshTree(log, task, base, change, label);
+    const tree = await freshTree(log, task, base, change, label, harnessLock);
     try {
       if (!tree.prepared.ok)
         return { exit: null, detail: `preparation failed:\n${tree.prepared.detail}` };
@@ -444,7 +449,7 @@ export async function hiddenVerdict(
   base,
   upstream,
   patch,
-  { executeEmpty = false } = {},
+  { executeEmpty = false, harnessLock = null } = {},
 ) {
   if (patch.trim() === "" && task.workType !== "refactor" && !executeEmpty)
     return {
@@ -468,7 +473,7 @@ export async function hiddenVerdict(
         detail: "",
       };
   }
-  const tree = await freshTree(log, task, base, patch, "hidden");
+  const tree = await freshTree(log, task, base, patch, "hidden", harnessLock);
   try {
     if (!tree.prepared.ok)
       return {

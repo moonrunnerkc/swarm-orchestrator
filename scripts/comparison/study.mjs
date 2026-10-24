@@ -656,7 +656,9 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
     const patch = await finalPatch(log, workspace, base);
     record.finalPatchDigest = storeBlob(blobs, Buffer.from(patch));
     record.finalPatchBytes = Buffer.byteLength(patch);
-    const visible = await visibleVerdict(log, task, task.baseCommit, patch);
+    const visible = await visibleVerdict(log, task, task.baseCommit, patch, {
+      harnessLock: harnessLockBytes,
+    });
     // The hidden scorer runs under a log of its own: the record carries every command the launch
     // ran, and the exit status of the hidden tests in it is the verdict by another name. Its
     // commands are sealed with the verdict.
@@ -667,8 +669,11 @@ async function runLaunch(manifest, manifestDigest, launch, runsDirectory) {
       task.baseCommit,
       task.upstreamCommit,
       patch,
+      { harnessLock: harnessLockBytes },
     );
-    const statics = await staticVerdict(log, task, task.baseCommit, patch);
+    const statics = await staticVerdict(log, task, task.baseCommit, patch, {
+      harnessLock: harnessLockBytes,
+    });
     record.scores = {
       visible: {
         passed: visible.passed,

@@ -28,7 +28,8 @@ import { hostname } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { commandLog } from "../campaign/exec.mjs";
 import { packedFiles, readStageRecord, stageRecordNames } from "../pilot/stage-files.mjs";
-import { hiddenVerdict, visibleVerdict } from "./checks.mjs";
+import { hiddenVerdict, staticVerdict, visibleVerdict } from "./checks.mjs";
+import { resolveFrozenInput } from "./launch-config.mjs";
 import { taskSchema } from "./schema.mjs";
 import { comparisonRoot, ensureMirror, resolveFull } from "./workspace.mjs";
 
@@ -121,9 +122,20 @@ export async function rescore({ stage, taskId, arm, patchFile, blobs }) {
   const log = commandLog(blobs);
   await ensureMirror(log, task);
   const commits = await resolveFull(log, task);
+  // The launch committed the frozen lockfile under the patch, so the scored trees do too.
+  const lockInput = manifest.harnessLockfiles?.[taskId];
+  const lock = lockInput === undefined ? null : resolveFrozenInput(manifest, lockInput);
+  if (lockInput !== undefined && lock === null)
+    throw new Error(
+      `the frozen lockfile ${lockInput.digest} for ${taskId} is not under the stage's input roots`,
+    );
+  const harnessLock = lock?.bytes ?? null;
   const started = Date.now();
-  const delivered = await visibleVerdict(log, task, commits.base, source.text);
-  const overlay = await hiddenVerdict(log, task, commits.base, commits.upstream, source.text);
+  const delivered = await visibleVerdict(log, task, commits.base, source.text, { harnessLock });
+  const overlay = await hiddenVerdict(log, task, commits.base, commits.upstream, source.text, {
+    harnessLock,
+  });
+  const statics = await staticVerdict(log, task, commits.base, source.text, { harnessLock });
   return {
     schema: "swarm-ordinary-comparison.rescore.v1",
     kind: "supplemental scoring from pinned commits; the launch's frozen record is not changed",
@@ -132,6 +144,7 @@ export async function rescore({ stage, taskId, arm, patchFile, blobs }) {
     task: taskId,
     arm,
     commits,
+    harnessLockfile: lockInput?.digest ?? null,
     patch: {
       path: source.path,
       digest: source.digest,
@@ -145,6 +158,15 @@ export async function rescore({ stage, taskId, arm, patchFile, blobs }) {
       checkExit: delivered.checkExit,
       projectTestExit: delivered.projectTestExit,
       detail: delivered.detail.slice(-3000),
+    },
+    staticReading: {
+      reading:
+        "the project's lint over the delivered tree beside the base's, the acceptance directory removed",
+      applicable: statics.applicable,
+      baseExit: statics.baseExit,
+      deliveredExit: statics.deliveredExit,
+      passed: statics.passed,
+      introducedFailure: statics.introducedFailure,
     },
     hiddenOverlay: {
       reading:

@@ -146,3 +146,17 @@ failed`, `rm returned EISDIR … /src`):
   install and sealed contract, `swarm.toml` committed in the throwaway tree because `ci` reads the
   base's configuration). The preflight that passed all 24 configurations never reached the step
   where the first launch stopped.
+
+## Amendment 9, October 23, 2026, before editing these files
+
+Found by fresh-block launch 8 (ufo bug fix, `aider`), whose outcome stands after inference: the
+scorer could not judge it, because the arm's patch changes `package-lock.json` and does not apply
+to the base.
+
+- `scripts/comparison/checks.mjs`, `scripts/comparison/study.mjs`, `scripts/comparison/rescore.mjs`:
+  the launch commits the frozen harness lockfile, and the arm's patch is taken against that commit.
+  The visible, hidden and static scoring trees did not commit it, so a patch touching the lockfile
+  applied to nothing. Every scoring tree now commits it, and `rescore.mjs` does the same, with a
+  static reading beside the other two. Launches 0 to 7 were scored before this correction. Their
+  original scores stand, and each is scored again with the corrected scorer as a supplemental
+  reading, reported beside the original.
