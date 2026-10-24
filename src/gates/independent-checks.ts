@@ -46,7 +46,9 @@ export async function checkoutTrees(
     changed: await changedInCheckout(checkout, baseCommit),
     readReference: async (path) => {
       try {
-        const { stdout } = await runGit("git", ["show", `${baseCommit}:${path}`], {
+        // A blob only: `git show` of a directory prints its listing, which read as a changed
+        // file beside the checkout's unreadable directory.
+        const { stdout } = await runGit("git", ["cat-file", "blob", `${baseCommit}:${path}`], {
           cwd: checkout,
           maxBuffer: 64_000_000,
         });
