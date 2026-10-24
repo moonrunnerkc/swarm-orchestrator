@@ -1,6 +1,7 @@
 import { asJsonValue } from "../evidence/canonical-json.ts";
 import type { GoalContract } from "../evidence/goal-contract.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
+import { taskCodeStatements } from "../task-code-statements.ts";
 
 /**
  * What a run must do and keep, each obligation tied to where it comes from
@@ -127,8 +128,38 @@ export function initialObligations(input: {
           ? "a supplied requirement no check decides"
           : `a supplied requirement decided by ${requirement.checks.join(", ")}`,
     }));
+  // The task's own examples and relations written as code (task-code-v1): each is an obligation
+  // as exact as its literal, requested or kept by the sentence's own verb. One the task describes
+  // as today's behaviour is what it asks to change, and is no obligation.
+  const fromCode = taskCodeStatements(input.task).flatMap((one) =>
+    one.kind === "relation"
+      ? [
+          {
+            id: one.id,
+            source: "task" as const,
+            category: "requested" as const,
+            authority: "authoritative" as const,
+            statement: `${one.subject} equals ${one.reference}${one.domain === null ? "" : one.domain === "unfollowed" ? " (over a domain the reader could not apply)" : ` for every ${one.variable} containing ${JSON.stringify(one.domain.contains)}`}`,
+            basis: `the task's own code: "${one.sentence}"`,
+          },
+        ]
+      : one.role === "base"
+        ? []
+        : [
+            {
+              id: one.id,
+              source: "task" as const,
+              category:
+                one.role === "preserve" ? ("explicit-preserve" as const) : ("requested" as const),
+              authority: "authoritative" as const,
+              statement: `${one.call} gives ${JSON.stringify(one.expected)}`,
+              basis: `the task's own code: "${one.sentence}"`,
+            },
+          ],
+  );
   return [
     ...fromTask,
+    ...fromCode,
     ...fromContract,
     {
       id: "base-suite",
@@ -194,6 +225,8 @@ export interface ProbeObligation {
   }[];
   /** The obligation this probe's quote names, where it names an authoritative one. */
   readonly obligation: string | null;
+  /** `task` where the harness built the probe from the task's own code: not a proposal. */
+  readonly origin?: "task";
 }
 
 /**
@@ -222,6 +255,18 @@ export function settleObligations(input: {
     return readings.length > 0 && readings.every((one) => one === "kept")
       ? "exercised"
       : "unmeasured";
+  };
+  // A statement of the task's code: an example is measured as stated, by its one call; a relation
+  // only at the inputs it was run on. Anything a case could not read leaves it unmeasured.
+  const codeStatus = (obligation: PreservationObligation, cases: ProbeObligation["cases"]) => {
+    const readings = cases.map((one) => one.reading);
+    if (readings.includes("preservation-regression")) return "regressed" as const;
+    if (readings.includes("requested-unmet") || readings.includes("relation-violated"))
+      return "unmet" as const;
+    if (readings.length === 0 || !readings.every((one) => ["kept", "met", "related"].includes(one)))
+      return "unmeasured" as const;
+    if (readings.every((one) => one === "kept")) return "held" as const;
+    return obligation.id.startsWith("code-relation-") ? ("exercised" as const) : ("met" as const);
   };
   const evidenceOf = (probe: ProbeObligation): readonly ObligationEvidence[] =>
     probe.cases.map((one) => ({
@@ -272,6 +317,21 @@ export function settleObligations(input: {
       };
     }
     const naming = input.probes.filter((probe) => probe.obligation === obligation.id);
+    if (/^code-(example|relation)-\d+$/.test(obligation.id)) {
+      const cases = naming.flatMap((probe) => probe.cases);
+      const status = codeStatus(obligation, cases);
+      return {
+        ...obligation,
+        status,
+        by:
+          naming.length === 0
+            ? "not run: the review did not examine this run, or found no way to load the project"
+            : status === "exercised"
+              ? `the relation held at ${cases.length} input(s) the review ran, on the delivered candidate; the statement as a whole is not established`
+              : `the task's own code, run by the review on the delivered candidate`,
+        evidence: naming.flatMap(evidenceOf),
+      };
+    }
     const status = probeStatus(naming.flatMap((probe) => probe.cases));
     return {
       ...obligation,
@@ -285,7 +345,7 @@ export function settleObligations(input: {
       evidence: naming.flatMap(evidenceOf),
     };
   });
-  for (const probe of input.probes)
+  for (const probe of input.probes.filter((one) => one.origin !== "task"))
     settled.push({
       id: `review-${probe.probe}`,
       source: "review",
@@ -315,7 +375,8 @@ export function describePreservation(statuses: readonly ObligationStatus[]): str
     measured === 0
       ? `preservation: nothing measured (${keep.length} obligation(s), every one unmeasured)`
       : `preservation: ${count("held")} held, ${count("exercised")} exercised by examples only, ${count("regressed")} regressed, ${count("unmeasured")} unmeasured, of ${keep.length} obligation(s) from the task, the supplied contract, the base suite and review probes`;
+  const exercised = count("exercised", false);
   return requested.length === 0
     ? preserved
-    : `${preserved}; requested behaviour (new, not preserved): ${count("met", false)} met, ${count("unmet", false)} unmet, ${count("unmeasured", false)} unjudged`;
+    : `${preserved}; requested behaviour (new, not preserved): ${count("met", false)} met, ${exercised === 0 ? "" : `${exercised} exercised by examples only, `}${count("unmet", false)} unmet, ${count("unmeasured", false)} unjudged`;
 }
