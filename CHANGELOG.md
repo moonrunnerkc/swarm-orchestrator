@@ -73,6 +73,9 @@ Source on `v13-main`; not published until a release names it.
   so a change that added findings to a base-failing lint was refused with every repair attempt
   unused; it now reads `unmeasured by the change` and repair proceeds. A missing tool, a failed
   install or an unjudged deciding check is still setup.
+- A test that fails with `Cannot find module './x'` is the change's to repair, not a missing tool.
+  Only a package that cannot be found (a bare specifier) stops repair as setup; a module move that
+  left a relative `require` broken was refused with every attempt unused.
 
 - **Experimental, off by default: `--repair-trace` (preservation-trace-v1).** Where a failing gate
   passed in the harness's own run over the base, the repair attempt is told so with the

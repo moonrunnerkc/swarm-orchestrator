@@ -98,3 +98,33 @@ it("repairs a lint finding beside an acceptance reading the change left unmeasur
     classifyRepair(cycle([lint, failing("task-acceptance", "setup unavailable: no runner")])).kind,
   ).toBe("setup");
 });
+
+it("reads a missing package as setup and a missing path the change broke as its own", () => {
+  const failing = (stderr: string) =>
+    ({
+      gateId: "tests",
+      kind: "command",
+      capability: "dynamic",
+      severity: "blocking",
+      status: "failed",
+      detail: "",
+      measures: {},
+      parts: {},
+      observation: { exitCode: 1, stdout: "", stderr, durationMs: 0, unavailable: null },
+    }) as unknown as GateCycle["runs"][number];
+  const kind = (stderr: string) =>
+    classifyRepair({
+      runs: [failing(stderr)],
+      blockingFailures: [failing(stderr)],
+    } as unknown as GateCycle).kind;
+  expect(kind("Cannot find module 'vitest' from 'test/a.test.ts'")).toBe("setup");
+  expect(kind("Error: Cannot find module '@scope/pkg'")).toBe("setup");
+  // The fresh confirmation's nanoid run: the change moved a module and left this require broken.
+  expect(kind("Cannot find module './random' from 'index.js'")).toBe("implementation");
+  expect(kind("Cannot find module '../index.browser' from 'browser.test.js'")).toBe(
+    "implementation",
+  );
+  expect(
+    kind("Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/w/src/a.js' imported from /w/b.js"),
+  ).toBe("implementation");
+});
