@@ -199,3 +199,6 @@ as a missing tool.
 - `src/gates/repair-policy.ts` and `src/gates/repair-policy.test.ts`: `Cannot find module` names
   setup only for a package (a bare specifier). A relative or absolute path that cannot be found is
   the change's own, and is repaired.
+- `scripts/check-doc-paths.mjs`, again: `scripts/screen3.mjs`, the evaluator author's script that
+  the released selection record names, is listed with its reason; it is archived with the
+  held-out material, and the record is published as it was released.
