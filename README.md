@@ -92,11 +92,14 @@ from every agent added a lint finding the base did not have, and Swarm delivered
 on exposed tasks whose base already fails lint, Swarm delivered four of four correct bug fixes,
 and after a further correction it delivered a feature in both arms, one correctly and one a false
 accept ([previous](docs/evidence/2026-10-24-delivery-preservation/README.md)). Its verdict can
-still accept a change that misses a behaviour no check exercises. The experimental candidate
-review (`--review`) now runs the examples and relations a task writes as code. Starting from
-retained defective candidates, it found the defect live and its repair fixed it in two of four
-launches. A registered matched study then showed no gain over the same build with the review off
-([latest](docs/evidence/2026-10-24-detection-repair/README.md)). Model-written checks (`--plan-checks`) guide repair but
+still accept a change that misses a behaviour no check exercises. Every run keeps the tests its
+worker deleted and runs them again ([policy](docs/candidate-review.md)). The experimental
+grounded review (`--review grounded`) runs the examples and relations a task writes as code, and
+inputs generated from them, with no model, and an open counterexample among them refuses the run. In a
+registered ablation on retained candidates, its repairs fixed the requested defects in three of
+four ufo launches but broke another case each time. No arm delivered a complete correct repair,
+and the model reviewer added nothing
+([latest](docs/evidence/2026-10-24-retained-counterexamples/README.md)). Model-written checks (`--plan-checks`) guide repair but
 cannot establish a requirement alone. Commands run on your machine under a path policy, not a
 sandbox, unless you pass `--isolation`.
 

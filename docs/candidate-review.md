@@ -51,7 +51,8 @@ every obligation has not shown backward compatibility in general.
 ## Known violations decide completion (every run)
 
 A run declares `known-violation-completion-v1` before its first model call, and is assessed under
-`run-acceptance-v7`.
+`run-acceptance-v7`. Only `--review grounded` or `executable` runs the task's code, so a run
+without either has no counterexample of it to refuse.
 - **A validated counterexample** is a case of the harness's own run of the task's code (below),
   under a supported reading, that gave the same answer on two runs of the delivered candidate and
   is not the task's expectation.
