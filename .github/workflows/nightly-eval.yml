@@ -1,0 +1,22 @@
+name: nightly-eval
+
+# Runs the three-arm evaluation and the tamper evaluation on a self-hosted runner and publishes
+# docs/results.md. The evaluation runner does not exist yet; until it lands this workflow only
+# checks that the repository builds on that runner.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: [self-hosted, swarm-eval]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck

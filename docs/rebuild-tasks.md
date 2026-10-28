@@ -7,7 +7,7 @@ Marked `[x]` when finished and committed. On resume, continue from the first `[ 
 - [x] 1.1 Archive evidence, campaign, redteam, fuzz, history, ADRs 0001-0011, research scripts
 - [x] 1.3 Delete workers, cli-parallel, select, eval, tui, install; drop ink/react/playwright/jazzer
 - [x] 1.4 Reduce subcommands to run, verify, init, ci, doctor; docs/integrations.md
-- [ ] 1.5 Reduce workflows to ci.yml, release.yml, nightly-eval.yml stub
+- [x] 1.5 Reduce workflows to ci.yml, release.yml, nightly-eval.yml stub
 - [x] 1.6 Squash CHANGELOG history, ADR 0014, one CLAUDE.md with AGENTS.md copy
 - [x] 1.7 scripts/check-caps.mjs (`npm run caps`)
 
