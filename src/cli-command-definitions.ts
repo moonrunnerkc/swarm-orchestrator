@@ -2,47 +2,56 @@ export interface CommandDefinition {
   readonly name: string;
   readonly syntax: string;
   readonly description: string;
-  /** What the packaged CLI must do when the command is run with these arguments. */
-  readonly smoke: {
-    readonly args: readonly string[];
-    readonly exits: readonly number[];
-    /** A pattern the combined output must match. */
-    readonly output: string;
-  };
-  /**
-   * `none` where the command runs with no provider key and no local backend, which
-   * src/cli-verify-only.test.ts holds by running it that way. Absent where nothing establishes
-   * that either way, which is not the same as needing one.
-   */
-  readonly model?: "none";
+  /** Whether the standalone swarm-verify binary carries it: true for everything but the agent. */
+  readonly verifier: boolean;
 }
 
-/** Help, typo suggestions and packaged behavioral smoke checks share these command contracts. */
+/** The subcommands, in the order help lists them. Help and the caps check both read this. */
 export const commandDefinitions: readonly CommandDefinition[] = [
   {
+    name: "verify",
+    syntax: "verify [--base <ref>] [--patch <file> | --range <a..b>] [--out <dir>] [--sigstore]",
+    description: "rerun the declared checks on a change in a clean checkout and sign the verdict",
+    verifier: true,
+  },
+  {
     name: "init",
-    syntax: "init [--workspace <dir>] [--package <dir>] [--list-packages]",
-    description: "configure declared Node/Python checks without installing dependencies",
-    smoke: { args: [], exits: [0], output: "swarm\\.toml|already exists" },
+    syntax: "init [--seal <glob>]",
+    description: "write swarm.toml from the project's manifests, or seal held-out checks",
+    verifier: true,
+  },
+  {
+    name: "ci",
+    syntax: "ci [--base <ref>] [--out <dir>] [--sigstore]",
+    description: "verify HEAD's change against the pull request's base branch",
+    verifier: true,
   },
   {
     name: "doctor",
     syntax: "doctor [--fix] [--offline]",
-    description: "inspect the installed command and prerequisites",
-    smoke: { args: ["--offline"], exits: [0, 1], output: "swarm|Node|node|install" },
-  },
-  {
-    name: "verify",
-    syntax: "verify <bundle directory> [--signer <fp>]",
-    description: "check integrity and an independently expected signer",
-    smoke: { args: ["absent-bundle"], exits: [2], output: "integrity:.*unverified" },
-    model: "none",
-  },
-  {
-    name: "ci",
-    syntax: "ci --patch <file> | --branch <ref> | --pr <PR> [--base <ref>] [--json]",
-    description: "verify a patch independently",
-    smoke: { args: ["--patch", "absent.diff"], exits: [1], output: "absent\\.diff" },
-    model: "none",
+    description: "report what owns the installed command",
+    verifier: false,
   },
 ];
+
+/** A command line this program cannot read: exit code 2, with the usage. */
+export class UsageError extends Error {
+  constructor(problem: string) {
+    super(problem);
+    this.name = "UsageError";
+  }
+}
+
+export function usageFor(program: string, verifierOnly: boolean): string {
+  const shown = commandDefinitions.filter((command) => command.verifier || !verifierOnly);
+  return [
+    `${program} <command> [options]`,
+    "",
+    ...shown.flatMap((command) => [
+      `  ${program} ${command.syntax}`,
+      `      ${command.description}`,
+    ]),
+    "",
+    "Every command takes --workspace <dir> where it reads a repository; the default is here.",
+  ].join("\n");
+}

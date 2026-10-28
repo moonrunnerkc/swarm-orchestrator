@@ -14,34 +14,11 @@
  */
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { copyFile, mkdir, readdir, rm, writeFile } from "node:fs/promises";
-import { dirname, join, relative, sep } from "node:path";
+import { rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { argv, exit, stdout } from "node:process";
 
 const root = join(import.meta.dirname, "..");
-
-/**
- * A directory whose contents a test reads and the runtime never does. It sits under src/
- * because a fixture belongs beside the test that asserts against it, and it stays out of the
- * package for the same reason the test file does.
- */
-const fixtureDirectory = "fixtures";
-
-/** Every file under `directory` that tsc will not emit and the runtime does read. */
-export async function assetsUnder(directory) {
-  const found = [];
-  for (const entry of await readdir(directory, { withFileTypes: true, recursive: true })) {
-    if (!entry.isFile() || entry.name.endsWith(".ts")) {
-      continue;
-    }
-    const path = relative(directory, join(entry.parentPath, entry.name));
-    if (path.split(sep).includes(fixtureDirectory)) {
-      continue;
-    }
-    found.push(path);
-  }
-  return found.sort();
-}
 
 /**
  * The compiler this build needs, or an error saying why it is not there.
@@ -66,7 +43,6 @@ export function compilerPath(root) {
 }
 
 async function build() {
-  const source = join(root, "src");
   const destination = join(root, "dist");
 
   const compiler = compilerPath(root);
@@ -76,19 +52,13 @@ async function build() {
     stdio: "inherit",
   });
 
-  const assets = await assetsUnder(source);
-  for (const asset of assets) {
-    const target = join(destination, asset);
-    await mkdir(dirname(target), { recursive: true });
-    await copyFile(join(source, asset), target);
-  }
   // Which commit this build is, so `swarm --version` can tell a release from a build of source
   // ahead of it: both carry the manifest's version until a release names a new one.
   await writeFile(
     join(destination, "source.json"),
     `${JSON.stringify({ describe: sourceDescription(root) })}\n`,
   );
-  stdout.write(`build: dist/ emitted, ${assets.length} asset(s) copied\n`);
+  stdout.write("build: dist/ emitted\n");
 }
 
 /**

@@ -16,10 +16,10 @@ Marked `[x]` when finished and committed. On resume, continue from the first `[ 
 - [ ] 2.2 Delete the controller and mid-run gates; trim swarm.toml config
 
 ## Phase 3: verifier
-- [ ] 3.1 src/verify/ checkout, apply, protected paths, declared checks
-- [ ] 3.2 Held-out checks (`swarm init --seal`)
-- [ ] 3.3 Changed-line coverage and mutation witness
-- [ ] 3.4 in-toto Statement, DSSE, ed25519 and cosign signing; verify.mjs
+- [x] 3.1 src/verify/ checkout, apply, protected paths, declared checks
+- [x] 3.2 Held-out checks (`swarm init --seal`)
+- [x] 3.3 Changed-line coverage and mutation witness
+- [x] 3.4 in-toto Statement, DSSE, ed25519 and cosign signing; verify.mjs
 - [ ] 3.5 Tamper demo and node:24 clean-container demo under docs/demos/
 - [ ] 3.6 Five surfaces call one path; caps pass and join gates
 

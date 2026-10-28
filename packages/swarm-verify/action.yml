@@ -1,12 +1,12 @@
 name: Swarm Verify
-description: Rerun a project's declared checks on a pull request's change in a clean checkout and record the verdict.
+description: Rerun a project's declared checks on a pull request's change in a clean checkout and sign the verdict.
 author: Brad Kinnard
 branding:
   icon: check-square
   color: green
 inputs:
   base:
-    description: Base commit to verify against. Defaults to the pull request's base.
+    description: Base ref to verify against. Defaults to the pull request's base branch.
     default: ""
   version:
     description: The swarm-verify version to run.
@@ -20,6 +20,6 @@ runs:
     - name: Verify
       shell: bash
       env:
-        BASE: ${{ inputs.base || github.event.pull_request.base.sha }}
+        BASE: ${{ inputs.base }}
         VERSION: ${{ inputs.version }}
-      run: npx --yes "swarm-verify@${VERSION}" ci --branch HEAD --base "${BASE}"
+      run: npx --yes "swarm-verify@${VERSION}" ci ${BASE:+--base "$BASE"}

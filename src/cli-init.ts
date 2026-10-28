@@ -1,70 +1,48 @@
-import { execFile } from "node:child_process";
-import { statSync } from "node:fs";
-import { access, readFile, writeFile } from "node:fs/promises";
-import { promisify } from "node:util";
-import { initializeSwarmToml, type PlannedGate } from "./config/init.ts";
-import { discoverPackages } from "./config/package-discovery.ts";
+import { access, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { parseArgs } from "node:util";
+import { detectChecks, renderSwarmToml } from "./config/detect.ts";
+import { readSwarmToml, swarmTomlFileName } from "./config/swarm-toml.ts";
+import { seal } from "./verify/held-out.ts";
 
-const _runProcess = promisify(execFile);
+const write = (text: string) => process.stdout.write(`${text}\n`);
 
-const initOnDisk = (workspace: string) => ({
-  workspace,
-  exists: (path: string) =>
-    access(path).then(
-      () => true,
-      () => false,
-    ),
-  readFile: (path: string) =>
-    readFile(path, "utf8").catch((cause: NodeJS.ErrnoException) => {
-      if (cause.code === "ENOENT") {
-        return null;
-      }
-      throw cause;
-    }),
-  writeFile: (path: string, text: string) => writeFile(path, text, "utf8"),
-});
+/**
+ * `init`: write swarm.toml from the manifests where there is none. With --seal, move the files
+ * a glob matches out of the workspace into the sealed store as held-out checks.
+ */
+export async function init(args: readonly string[]): Promise<number> {
+  const { values } = parseArgs({
+    args: [...args],
+    options: { workspace: { type: "string" }, seal: { type: "string" } },
+  });
+  const workspace = resolve(values.workspace ?? process.cwd());
+  const configured = await readSwarmToml(workspace);
+  const checks = configured?.checks ?? (await detectChecks(workspace));
 
-function describePlannedGate(gate: PlannedGate): string {
-  return (
-    `  ${gate.id}: ${gate.command} (${gate.parser}, ${gate.severity}) from scripts.${gate.script}` +
-    (gate.reason === null ? "" : `\n    ${gate.reason}`)
-  );
-}
-
-export interface InitCommand {
-  readonly workspace: string;
-  readonly packages?: readonly string[];
-  readonly listPackages?: boolean;
-}
-
-/** `swarm init`: the file a first run can work from, from what package.json declares. */
-export async function init(options: InitCommand): Promise<number> {
-  if (!statSync(options.workspace, { throwIfNoEntry: false })?.isDirectory()) {
-    throw new Error(
-      `workspace ${options.workspace} is not a directory. Create it, or pass --workspace.`,
-    );
-  }
-  if (options.listPackages) {
-    writeOut(
-      (await discoverPackages(options.workspace)).join("\n") ||
-        "No declared Node workspace packages; Python directories can be selected explicitly with --package.",
-    );
+  if (values.seal !== undefined) {
+    const { directory, sealed } = await seal(workspace, values.seal, checks);
+    write(`sealed ${sealed.files.length} file(s) matching ${sealed.glob} into ${directory}`);
+    for (const check of sealed.checks) write(`  held-out check ${check.name}: ${check.command}`);
+    write("They were removed from the workspace; commit that removal if they were tracked.");
     return 0;
   }
-  const outcome = await initializeSwarmToml({
-    ...initOnDisk(options.workspace),
-    ...(options.packages ? { packages: options.packages } : {}),
-  });
-  writeOut(`wrote ${outcome.path}`);
-  for (const gate of outcome.gates) {
-    writeOut(describePlannedGate(gate));
-  }
-  if (outcome.gates.length === 0) {
-    writeOut("  no gate written: package.json declares none of test, lint, typecheck or build");
-  }
-  return 0;
-}
 
-function writeOut(line: string): void {
-  process.stdout.write(`${line}\n`);
+  const path = join(workspace, swarmTomlFileName);
+  const exists = await access(path).then(
+    () => true,
+    () => false,
+  );
+  if (exists) {
+    write(`${path} already exists; it declares ${checks.length} check(s).`);
+    return 0;
+  }
+  if (checks.length === 0) {
+    write("No checks found in package.json scripts or a Python project; nothing was written.");
+    return 4;
+  }
+  await writeFile(path, renderSwarmToml(checks));
+  write(`wrote ${path}`);
+  for (const check of checks) write(`  ${check.name}: ${check.command}`);
+  return 0;
 }

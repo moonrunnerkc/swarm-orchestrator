@@ -1,4 +1,3 @@
-import type { ApprovalMode } from "../config/approval-mode.ts";
 import {
   describeUnknownError,
   type ProvenanceTag,
@@ -28,6 +27,9 @@ import {
   explainUndecodedFields,
 } from "./tool-argument-decoding.ts";
 import type { ToolDefinition, ToolKind, ToolOutput } from "./tool-definition.ts";
+
+/** Whether an off-allowlist shell command is answered by the run or by a person. */
+export type ApprovalMode = "ask" | "auto";
 
 export interface ConfirmationRequest {
   readonly toolName: string;

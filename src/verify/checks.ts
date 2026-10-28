@@ -1,0 +1,157 @@
+import { createHash } from "node:crypto";
+import { lstat, mkdir, readFile, symlink } from "node:fs/promises";
+import { join } from "node:path";
+import type { DeclaredCheck } from "../config/swarm-toml.ts";
+import { childEnvironment } from "../exec/child-environment.ts";
+import { runProcessGroup } from "../exec/run-process.ts";
+import { gitText } from "./git.ts";
+import type { CheckResult, Predicate } from "./predicate.ts";
+
+export interface CheckRun {
+  readonly result: CheckResult;
+  /** The end of what the check printed, for the person or agent reading a failure. */
+  readonly outputTail: string;
+}
+
+export interface CheckContext {
+  readonly dir: string;
+  /** A private HOME for the checks; never the operator's. */
+  readonly home: string;
+  readonly timeoutMs: number;
+  readonly signal?: AbortSignal | undefined;
+}
+
+const maxOutputBytes = 4 * 1024 * 1024;
+const tailBytes = 4000;
+
+/** Runs one check through the shell in the checkout, under an environment built here. */
+export async function runCheck(
+  check: DeclaredCheck,
+  context: CheckContext,
+  extraEnv: Readonly<Record<string, string>> = {},
+): Promise<CheckRun> {
+  const { variables } = childEnvironment(process.env, { homeDir: context.home });
+  const started = Date.now();
+  const ran = await runProcessGroup("/bin/sh", ["-c", check.command], {
+    cwd: context.dir,
+    env: { ...variables, ...extraEnv },
+    timeoutMs: context.timeoutMs,
+    maxOutputBytes,
+    signal: context.signal,
+  });
+  const output = `${ran.stdout}${ran.stderr}`;
+  const failedToRun = ran.startFailure !== null || ran.timedOut || ran.cancelled;
+  const note = ran.timedOut
+    ? "\n[timed out]"
+    : ran.startFailure === null
+      ? ""
+      : `\n[${ran.startFailure}]`;
+  return {
+    result: {
+      name: check.name,
+      command: check.command,
+      kind: check.kind,
+      result: failedToRun ? "error" : ran.exitCode === 0 ? "pass" : "fail",
+      exitCode: failedToRun ? null : ran.exitCode,
+      durationMs: Date.now() - started,
+      outputSha256: createHash("sha256").update(output).digest("hex"),
+    },
+    outputTail: `${output.slice(-tailBytes)}${note}`,
+  };
+}
+
+export async function runChecks(
+  checks: readonly DeclaredCheck[],
+  context: CheckContext,
+  envFor: (check: DeclaredCheck) => Readonly<Record<string, string>> = () => ({}),
+): Promise<readonly CheckRun[]> {
+  const runs: CheckRun[] = [];
+  for (const check of checks) runs.push(await runCheck(check, context, envFor(check)));
+  return runs;
+}
+
+const linkable = ["node_modules", ".venv"];
+
+/**
+ * Gives the clean checkout the workspace's installed dependencies. A setup command from the
+ * base's swarm.toml runs instead where there is one. Linking is sound because a change that
+ * also touches a lockfile is refused unless swarm.toml allows it.
+ */
+export async function prepareDependencies(
+  workspace: string,
+  setup: string | null,
+  context: CheckContext,
+): Promise<{ readonly mode: "linked" | "setup" | "none"; readonly failure: CheckRun | null }> {
+  if (setup !== null) {
+    const ran = await runCheck({ name: "setup", command: setup, kind: "other" }, context);
+    return { mode: "setup", failure: ran.result.result === "pass" ? null : ran };
+  }
+  let linked = false;
+  for (const name of linkable) {
+    const source = join(workspace, name);
+    const isDirectory = await lstat(source).then(
+      (stats) => stats.isDirectory(),
+      () => false,
+    );
+    const taken = await lstat(join(context.dir, name)).then(
+      () => true,
+      () => false,
+    );
+    if (!isDirectory || taken) continue;
+    await symlink(source, join(context.dir, name), "dir");
+    linked = true;
+  }
+  return { mode: linked ? "linked" : "none", failure: null };
+}
+
+export async function privateHome(scratch: string): Promise<string> {
+  const home = join(scratch, "home");
+  await mkdir(home, { recursive: true, mode: 0o700 });
+  return home;
+}
+
+export function passRate(runs: readonly CheckResult[]): number {
+  return runs.length === 0 ? 0 : runs.filter((run) => run.result === "pass").length / runs.length;
+}
+
+const lockfiles = [
+  "package-lock.json",
+  "pnpm-lock.yaml",
+  "yarn.lock",
+  "bun.lock",
+  "uv.lock",
+  "poetry.lock",
+];
+
+/**
+ * What the checks ran on, and one digest over it: toolchain, platform, the check commands and
+ * the lockfiles in the checkout. Two runs with the same digest ran the same declared commands
+ * against the same pinned dependencies on the same toolchain.
+ */
+export async function environmentOf(
+  dir: string,
+  checks: readonly DeclaredCheck[],
+  dependencies: Predicate["environment"]["dependencies"],
+): Promise<Predicate["environment"]> {
+  const git = (await gitText(dir, ["--version"])).replace(/^git version /, "");
+  const locks: Record<string, string> = {};
+  for (const name of lockfiles) {
+    const content = await readFile(join(dir, name)).catch(() => null);
+    if (content !== null) locks[name] = createHash("sha256").update(content).digest("hex");
+  }
+  const described = {
+    node: process.version,
+    platform: `${process.platform}-${process.arch}`,
+    git,
+    dependencies,
+    checks: checks.map(({ name, command }) => ({ name, command })),
+    lockfiles: locks,
+  };
+  return {
+    sha256: createHash("sha256").update(JSON.stringify(described)).digest("hex"),
+    node: described.node,
+    platform: described.platform,
+    git,
+    dependencies,
+  };
+}

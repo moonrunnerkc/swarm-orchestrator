@@ -9,10 +9,21 @@ The verifier-first rebuild ([ADR 0014](docs/adr/0014-verifier-first-rebuild.md))
 14.5.0 work (the adaptive controller, planned checks, repair and review stages) is superseded and
 remains in the history of pull request #101.
 
+### Changed
+
+- `swarm verify` and `swarm ci` rerun the declared checks on a change (working tree, ref range
+  or patch) in a clean checkout of the base, refuse protected paths changed together with
+  source, run held-out checks sealed with `swarm init --seal`, measure changed-line coverage
+  and one mutation, and write an in-toto Statement in a DSSE envelope inside a Sigstore bundle.
+  `packages/swarm-verify/verify.mjs` checks it with no dependencies; so does
+  `cosign verify-blob-attestation`.
+
 ### Removed
 
 - The parallel worker layer, model selection and calibration, the research evaluation code, the
-  terminal interface, and every subcommand except `verify`, `init`, `ci` and `doctor`.
+  terminal interface, the old gates engine, the custom evidence bundle format and its verifier,
+  the container isolation backend, and every subcommand except `verify`, `init`, `ci` and
+  `doctor`.
 - The research evidence, campaigns, red-team passes, fuzz targets and research scripts, moved to
   the archive named in [docs/evidence/README.md](docs/evidence/README.md).
 

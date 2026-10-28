@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { readFile, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { parseArgs } from "node:util";
 import { describeRunningVersion } from "./build-version.ts";
 import { diagnose, remediesFor, runtimeFinding } from "./install/health.ts";
 import { inspectInstall } from "./install/inspect.ts";
@@ -89,4 +90,13 @@ export async function runningVersion(packageRoot: string): Promise<string> {
   } catch {
     return "unknown";
   }
+}
+
+/** `doctor`, from its command line. */
+export function doctorCommand(args: readonly string[]): Promise<number> {
+  const { values } = parseArgs({
+    args: [...args],
+    options: { fix: { type: "boolean" }, offline: { type: "boolean" } },
+  });
+  return doctor({ fix: values.fix === true, askRegistry: values.offline !== true });
 }

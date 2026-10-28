@@ -5,9 +5,9 @@ project's declared checks on a change in a clean checkout of the base and report
 change did to them, without a model, a key or a configuration file.
 
 ```sh
-npx swarm-verify ci --branch HEAD --base main     # verify a branch's change against main
-npx swarm-verify ci --patch change.diff           # verify a patch against HEAD
-npx swarm-verify verify <bundle>                  # check a recorded bundle offline
+npx swarm-verify verify --range main..feature     # verify a branch's change against main
+npx swarm-verify verify --patch change.diff       # verify a patch against HEAD
+node verify.mjs attestation.sigstore.json --key attestation.pub.pem   # check it offline
 ```
 
 This package is being rebuilt around in-toto Statements in DSSE envelopes

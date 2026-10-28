@@ -20,3 +20,17 @@ One line per open choice made during the verifier-first rebuild (ADR 0014), with
 - src/swarm-verify-boundary.test.ts fell out of the Phase 1 cut with the modules it named; Phase 3 restores the closure rule as a build-time check in the verifier's build.
 - Product documentation for removed commands (cli, using, verifying, verify-only, agent, build guide, security coverage, claims, examples, engineering policy) was deleted in the cut; README, integrations and results pages replace it.
 - ADRs 0012 and 0013 were archived with 0001 to 0011, so the ADR index is the archive pointer plus 0014 alone.
+- The attestation is written as a Sigstore bundle (v0.3) wrapping the DSSE envelope, because cosign 3 verifies blob attestations only from a bundle; `cosign verify-attestation` is for OCI images, so the blob form `cosign verify-blob-attestation --bundle --key --insecure-ignore-tlog` is the cosign check used.
+- DSSE signatures carry an empty keyid: cosign's verifier skips a signature whose keyid differs from its own, and DSSE defines keyid as an optional, unauthenticated hint; the bundle's public-key hint carries the SHA-256 fingerprint of the key instead.
+- `--sigstore` passes the finished Statement to `cosign attest-blob --statement` for keyless signing, so both signing paths produce the same bundle format.
+- The tree subject digest is SHA-256 over `<mode> <sha256> <path>` lines for the tracked files of the resulting tree (submodules excluded), so verify.mjs can recompute it from a plain export without git.
+- Checks, the protected-path allowance and held-out commands are read from the base commit, never from the change, so a change cannot rewrite what judges it.
+- The held-out run restores every protected path the change touched to its base version before overlaying the sealed files, so edited expectations, deleted assertions and a patched scorer do not reach the held-out result.
+- Dependencies for checks in the clean checkout are linked from the workspace (node_modules, .venv) unless swarm.toml names a setup command; the predicate records which was used.
+- Exit codes: 0 pass, 1 fail (including protected-path violations and a change that does not apply), 2 an unreadable command line, 4 unmeasured (no checks declared).
+- A surviving mutant and uncovered changed lines are reported, not verdict-failing: they measure the tests' strength, not the change's correctness.
+- The container isolation backend was deleted with the old gates: checks run on the host in a clean temporary checkout under the built child environment, which needs no Docker daemon and removed the only skipped tests.
+- The packed-CLI smoke script was deleted: it drove per-command smoke contracts that no longer exist, and ci.yml runs the gates directly.
+- Both binaries share one dispatcher (src/cli-main.ts) and one command list, so `swarm` and `swarm-verify` parse, print help and exit identically; `swarm` adds doctor and run.
+- The mutation witness tries comparison, logical, boolean, arithmetic, min/max and numeric-literal operators, then drops a returned value as a last resort, so a changed return of a call is still mutated.
+- A sealed set lives under SWARM_HOME (default ~/.swarm)/sealed/<hash of the workspace path>, owner-only, outside every workspace the agent sees.

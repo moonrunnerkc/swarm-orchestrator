@@ -1,187 +1,71 @@
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse as parseToml, TomlError } from "smol-toml";
 import { z } from "zod";
-import type { GateOverride } from "../gates/gate-definition.ts";
-import { type ApprovalMode, approvalModes } from "./approval-mode.ts";
-
-/**
- * The one optional configuration file (build guide 4.2): provider keys and endpoints, gate
- * overrides, budgets, model pins, and what the screen looks like and answers to. Nothing else
- * belongs here; a setting that does not fit one of these tables is a design question, not a
- * schema addition. The three interface tables are here rather than in a second config path
- * because a second config path is the design question already answered.
- */
 
 export const swarmTomlFileName = "swarm.toml";
 
-const nonEmptyString = z.string().min(1);
-const positiveWholeNumber = z.number().int().positive();
-const httpUrl = z.url({ protocol: /^https?$/ });
+/** What a protected-path allowance can name. */
+export const protectedCategories = ["tests", "ci", "lockfiles", "manifests", "config"] as const;
+export type ProtectedCategory = (typeof protectedCategories)[number];
 
-const rawFileSchema = z.strictObject({
-  providers: z
-    .strictObject({
-      local_endpoint: httpUrl.optional(),
-      local_thinking: z.boolean().optional(),
-    })
-    .optional(),
-  gates: z
+const nonEmpty = z.string().min(1);
+const positive = z.number().int().positive();
+
+const fileSchema = z.strictObject({
+  checks: z
     .record(
-      nonEmptyString,
+      nonEmpty,
       z.union([
-        nonEmptyString,
-        z.strictObject({
-          command: nonEmptyString,
-          severity: z.enum(["blocking", "advisory"]).optional(),
-          parser: z
-            .enum(["exit-code", "test-output", "structured-test-output", "no-output"])
-            .optional(),
-          requirement: z.enum(["absolute-pass", "no-new-regression"]).optional(),
-        }),
+        nonEmpty,
+        z.strictObject({ command: nonEmpty, kind: z.enum(["test", "other"]).optional() }),
       ]),
     )
     .optional(),
-  budgets: z
+  protect: z.strictObject({ allow: z.array(z.enum(protectedCategories)).optional() }).optional(),
+  verify: z
+    .strictObject({ setup: nonEmpty.optional(), timeout_minutes: positive.optional() })
+    .optional(),
+  agent: z
     .strictObject({
-      max_steps: positiveWholeNumber.optional(),
-      attempts: positiveWholeNumber.optional(),
-      max_wall_minutes: positiveWholeNumber.optional(),
-      max_changed_files: positiveWholeNumber.optional(),
-      max_added_lines: positiveWholeNumber.optional(),
+      endpoint: z.url({ protocol: /^https?$/ }).optional(),
+      model: nonEmpty.optional(),
+      // The name of the variable holding the key, never the key: this file is committed.
+      api_key_env: z
+        .string()
+        .regex(/^[A-Z_][A-Z0-9_]*$/)
+        .optional(),
+      max_steps: positive.optional(),
+      max_tokens: positive.optional(),
     })
     .optional(),
-  models: z
-    .strictObject({
-      pin: nonEmptyString.optional(),
-    })
-    .optional(),
-  tools: z
-    .strictObject({
-      approval: z.enum(approvalModes).optional(),
-    })
-    .optional(),
-  interface: z
-    .strictObject({
-      tui: z.boolean().optional(),
-      color: z.enum(["auto", "always", "never"]).optional(),
-      open_evidence: z.enum(["ask", "always", "never"]).optional(),
-      confirm_timeout_minutes: z.number().int().min(0).optional(),
-    })
-    .optional(),
-  // Validated for shape here and for meaning where they are used: an unknown colour slot or
-  // key action names itself in the error rather than in a schema dump (src/tui/theme.ts,
-  // src/tui/key-bindings.ts).
-  theme: z.record(nonEmptyString, nonEmptyString).optional(),
-  keys: z.record(nonEmptyString, nonEmptyString).optional(),
 });
 
+export interface DeclaredCheck {
+  readonly name: string;
+  readonly command: string;
+  readonly kind: "test" | "other";
+}
+
 export interface SwarmToml {
-  readonly providers: {
-    readonly localEndpoint: string | null;
-    /**
-     * Whether the model behind the local endpoint should reason before it answers. Absent
-     * sends nothing and leaves the server's own default alone, which is the only safe
-     * default: the field is a vendor extension, and a server that rejects what it does not
-     * recognise would fail every call.
-     */
-    readonly localThinking: boolean | null;
-  };
-  /** Overrides by gate id, handed to the gate assembler verbatim. */
-  readonly gates: Readonly<Record<string, GateOverride>>;
-  readonly budgets: {
+  readonly checks: readonly DeclaredCheck[];
+  readonly allow: readonly ProtectedCategory[];
+  readonly setup: string | null;
+  readonly timeoutMinutes: number;
+  readonly agent: {
+    readonly endpoint: string | null;
+    readonly model: string | null;
+    readonly apiKeyEnv: string | null;
     readonly maxSteps: number | null;
-    readonly attempts: number | null;
-    readonly maxWallMinutes: number | null;
-    readonly maxChangedFiles: number | null;
-    readonly maxAddedLines: number | null;
+    readonly maxTokens: number | null;
   };
-  readonly models: {
-    readonly pin: string | null;
-  };
-  readonly tools: {
-    /** Whether shell-allowlist prompts are answered by the run or by the person. */
-    readonly approval: ApprovalMode | null;
-  };
-  readonly interface: {
-    readonly tui: boolean | null;
-    readonly color: "auto" | "always" | "never" | null;
-    readonly openEvidence: "ask" | "always" | "never" | null;
-    /** How long a confirmation waits for an answer before refusing it. 0 waits for ever. */
-    readonly confirmTimeoutMinutes: number | null;
-  };
-  /** Colour per slot, handed to the theme resolver verbatim. */
-  readonly theme: Readonly<Record<string, string>>;
-  /** Key per action, handed to the binding resolver verbatim. */
-  readonly keys: Readonly<Record<string, string>>;
 }
 
 export class MalformedSwarmTomlError extends Error {
-  readonly source: string;
-
-  constructor(source: string, problem: string) {
-    super(`${source} is not usable: ${problem}`);
+  constructor(source: string, detail: string) {
+    super(`${source} cannot be used: ${detail}. Fix the file or delete it.`);
     this.name = "MalformedSwarmTomlError";
-    this.source = source;
   }
-}
-
-const acceptedTables = "providers, gates, budgets, models, tools, interface, theme, keys";
-
-const acceptedKeysByTable: Readonly<Record<string, string>> = {
-  providers: "local_endpoint, local_thinking",
-  budgets: "max_steps, attempts, max_wall_minutes, max_changed_files, max_added_lines",
-  models: "pin",
-  tools: "approval",
-  interface: "tui, color, open_evidence, confirm_timeout_minutes",
-};
-
-/** What each value must look like, said in the error rather than left to a schema dump. */
-const acceptedValueByKey: Readonly<Record<string, string>> = {
-  "providers.local_endpoint": 'an http(s) URL such as "http://127.0.0.1:11434/v1"',
-  "providers.local_thinking": "true or false",
-  "interface.confirm_timeout_minutes": "a whole number of minutes, or 0 to wait for ever",
-  "budgets.max_steps": "a positive whole number",
-  "budgets.attempts": "a positive whole number",
-  "budgets.max_wall_minutes": "a positive whole number of minutes",
-  "budgets.max_changed_files": "a positive whole number",
-  "budgets.max_added_lines": "a positive whole number",
-  "models.pin": 'a model spec such as "anthropic:claude-opus-5"',
-  "tools.approval": '"ask" or "auto"',
-  "interface.tui": "true or false",
-  "interface.color": '"auto", "always" or "never"',
-  "interface.open_evidence": '"ask", "always" or "never"',
-};
-
-/**
- * swarm.toml is repository-controlled: it is committed, cloned and diffed, and a run against a
- * repository somebody else wrote reads whatever that repository put there. A provider key does
- * not belong in a file with those properties. Refused rather than warned about, because a
- * warning that leaves the key working preserves exactly the assurance it breaks: the key is
- * already in a file by the time anyone reads the warning.
- */
-const repositoryCredentialKeys: readonly string[] = [
-  "anthropic_api_key",
-  "openai_api_key",
-  "google_api_key",
-];
-
-function refuseRepositoryCredentials(value: unknown, source: string): void {
-  const providers = (value as { providers?: Record<string, unknown> } | null)?.providers;
-  if (providers === undefined || providers === null) {
-    return;
-  }
-  const named = repositoryCredentialKeys.filter((key) => key in providers);
-  if (named.length === 0) {
-    return;
-  }
-  throw new MalformedSwarmTomlError(
-    source,
-    `it carries a provider credential (${named.join(", ")}). ` +
-      "swarm.toml is committed and cloned, so a key in it has been shared with everyone who " +
-      "has the repository. Rotate the key now, delete the setting, and pass the new key " +
-      "through the environment (ANTHROPIC_API_KEY, OPENAI_API_KEY, " +
-      "GOOGLE_GENERATIVE_AI_API_KEY) or your OS keychain instead",
-  );
 }
 
 export function parseSwarmToml(text: string, source: string): SwarmToml {
@@ -189,144 +73,45 @@ export function parseSwarmToml(text: string, source: string): SwarmToml {
   try {
     value = parseToml(text);
   } catch (error) {
-    const detail =
-      error instanceof TomlError
-        ? `its TOML syntax is broken at line ${error.line}: ${error.message.split("\n")[0]}`
-        : `its TOML syntax is broken (${error instanceof Error ? error.message : String(error)})`;
-    throw new MalformedSwarmTomlError(source, detail);
+    const where = error instanceof TomlError ? ` at line ${error.line}` : "";
+    const message = error instanceof Error ? (error.message.split("\n")[0] ?? "") : String(error);
+    throw new MalformedSwarmTomlError(source, `its TOML syntax is broken${where}: ${message}`);
   }
-
-  refuseRepositoryCredentials(value, source);
-
-  const parsed = rawFileSchema.safeParse(value);
+  const parsed = fileSchema.safeParse(value);
   if (!parsed.success) {
-    throw new MalformedSwarmTomlError(source, describeIssues(parsed.error, value));
+    const issue = parsed.error.issues[0];
+    const path = issue?.path.join(".") ?? "";
+    throw new MalformedSwarmTomlError(source, `${path || "the file"}: ${issue?.message ?? ""}`);
   }
-
   const raw = parsed.data;
   return {
-    providers: {
-      localEndpoint: raw.providers?.local_endpoint ?? null,
-      localThinking: raw.providers?.local_thinking ?? null,
+    checks: Object.entries(raw.checks ?? {}).map(([name, entry]) => {
+      const command = typeof entry === "string" ? entry : entry.command;
+      const declared = typeof entry === "string" ? undefined : entry.kind;
+      return { name, command, kind: declared ?? (name === "test" ? "test" : "other") };
+    }),
+    allow: raw.protect?.allow ?? [],
+    setup: raw.verify?.setup ?? null,
+    timeoutMinutes: raw.verify?.timeout_minutes ?? 20,
+    agent: {
+      endpoint: raw.agent?.endpoint ?? null,
+      model: raw.agent?.model ?? null,
+      apiKeyEnv: raw.agent?.api_key_env ?? null,
+      maxSteps: raw.agent?.max_steps ?? null,
+      maxTokens: raw.agent?.max_tokens ?? null,
     },
-    gates: Object.fromEntries(
-      Object.entries(raw.gates ?? {}).map(([id, override]) => [
-        id,
-        typeof override === "string"
-          ? override
-          : {
-              command: override.command,
-              ...(override.severity === undefined ? {} : { severity: override.severity }),
-              ...(override.parser === undefined ? {} : { parser: override.parser }),
-              ...(override.requirement === undefined ? {} : { requirement: override.requirement }),
-            },
-      ]),
-    ),
-    budgets: {
-      maxSteps: raw.budgets?.max_steps ?? null,
-      maxWallMinutes: raw.budgets?.max_wall_minutes ?? null,
-      attempts: raw.budgets?.attempts ?? null,
-      maxChangedFiles: raw.budgets?.max_changed_files ?? null,
-      maxAddedLines: raw.budgets?.max_added_lines ?? null,
-    },
-    models: {
-      pin: raw.models?.pin ?? null,
-    },
-    tools: {
-      approval: raw.tools?.approval ?? null,
-    },
-    interface: {
-      tui: raw.interface?.tui ?? null,
-      color: raw.interface?.color ?? null,
-      openEvidence: raw.interface?.open_evidence ?? null,
-      confirmTimeoutMinutes: raw.interface?.confirm_timeout_minutes ?? null,
-    },
-    theme: raw.theme ?? {},
-    keys: raw.keys ?? {},
   };
 }
 
-/**
- * Every issue names the key it is about, what was found there, and what would have been
- * accepted, because "invalid input" against a config file is a message to a person mid-edit.
- */
-function describeIssues(error: z.ZodError, value: unknown): string {
-  const lines = error.issues.map((issue) => {
-    if (issue.code === "unrecognized_keys") {
-      return issue.keys.map((key) => describeUnknownKey(issue.path, key)).join("\n");
-    }
-    return describeBadValue(issue, value);
-  });
-  return lines.join("\n");
-}
-
-function describeUnknownKey(path: readonly PropertyKey[], key: string): string {
-  if (path.length === 0) {
-    return `"${key}" is not a table this build reads. Accepted tables: ${acceptedTables}.`;
-  }
-  const table = path.map(String).join(".");
-  const accepted = acceptedKeysByTable[table];
-  return (
-    `[${table}] ${key} is not a key this build reads.` +
-    (accepted === undefined ? "" : ` Accepted keys: ${accepted}.`)
-  );
-}
-
-function describeBadValue(issue: z.core.$ZodIssue, value: unknown): string {
-  const path = issue.path.map(String);
-  const label = path.length > 1 ? `[${path.slice(0, -1).join(".")}] ${path.at(-1)}` : path.join("");
-  const accepted =
-    acceptedValueByKey[path.join(".")] ??
-    (path[0] === "gates"
-      ? 'a command string, or a table with command and optionally severity ("blocking" or "advisory") and parser ("exit-code", "test-output", "structured-test-output" or "no-output")'
-      : path[0] === "theme"
-        ? "a colour name or a hex colour"
-        : path[0] === "keys"
-          ? 'a key such as "p", "ctrl+d" or "enter"'
-          : issue.message);
-  return `${label}: expected ${accepted}, found ${JSON.stringify(valueAt(value, path))}`;
-}
-
-function valueAt(value: unknown, path: readonly string[]): unknown {
-  let current: unknown = value;
-  for (const step of path) {
-    if (current === null || typeof current !== "object") {
-      return current;
-    }
-    // A read, never a write: this walk exists to quote a bad value back in a config error,
-    // and nothing is assigned into the object it walks.
-    // nosemgrep: javascript.lang.security.audit.prototype-pollution.prototype-pollution-loop.prototype-pollution-loop
-    current = (current as Record<string, unknown>)[step];
-  }
-  return current;
-}
-
-interface SwarmTomlReader {
-  /** The workspace root, which is the one place the file is looked for. */
-  readonly directory: string;
-  readonly readFile: (path: string) => Promise<string>;
-}
-
-interface FoundSwarmToml {
-  readonly toml: SwarmToml;
-  readonly path: string;
-}
-
-/**
- * Null when the file does not exist: that is the zero-config default, not a failure. A file
- * that exists but does not validate raises, because running on silent defaults against an
- * edited config would honour none of what the edit asked for.
- */
-export async function readSwarmToml(reader: SwarmTomlReader): Promise<FoundSwarmToml | null> {
-  const path = join(reader.directory, swarmTomlFileName);
+/** The workspace's swarm.toml, or null where it has none. */
+export async function readSwarmToml(workspace: string): Promise<SwarmToml | null> {
+  const path = join(workspace, swarmTomlFileName);
   let text: string;
   try {
-    text = await reader.readFile(path);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return null;
-    }
-    throw error;
+    text = await readFile(path, "utf8");
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw cause;
   }
-  return { toml: parseSwarmToml(text, path), path };
+  return parseSwarmToml(text, path);
 }
