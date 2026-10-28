@@ -1,118 +1,25 @@
 # Swarm Orchestrator
 
-`swarm` is a command-line coding agent for git repositories. You describe a change in plain
-words; it edits your working tree with a local or hosted model, runs your project's checks,
-repairs failures within a fixed number of attempts, and reports what was actually established,
-with a signed record of every command it ran. A loop that hits its step limit before it reports
-the task done is continued once, from the same attempts and allowances, once the checks are
-green; the report says whether that happened and what the test files add against the base.
+This repository is being rebuilt as two small products on one implementation
+([ADR 0014](docs/adr/0014-verifier-first-rebuild.md)):
+
+- **swarm-verify**, a verifier that reruns a project's declared checks on a change in a clean
+  checkout and records a signed verdict anyone can check offline.
+- **swarm run**, a plain single-bash-tool agent loop that calls the verifier.
+
+During the rebuild the `swarm` command has `verify`, `init`, `ci` and `doctor`; `run` returns
+as the new loop. Research evidence from earlier versions moved to the archive named in
+[docs/evidence/README.md](docs/evidence/README.md).
 
 ```sh
-swarm "make slugify in slug.js turn each run of spaces into one dash, and add a test for it" \
-  --model local:qwen3.6:35b-a3b
+npm install
+npm run gates          # checks, typecheck, lint, tests
+node src/cli.ts --help
 ```
 
-## Why use it
+Integrations are described in [docs/integrations.md](docs/integrations.md). Measured results,
+when they exist, are only in [docs/results.md](docs/results.md).
 
-Use it when "done" should be decided by checks, not by the model's summary. A repair may not
-delete tests to turn a check green, and a requirement no trusted check covers is reported as not
-established, never as passed.
+## License
 
-## What you need
-
-- Node 22 or newer (24 recommended), git, and a repository whose tests run with one command.
-- A model: this page is verified with [Ollama](https://ollama.com/download) serving
-  `qwen3.6:35b-a3b` (about 24 GB of memory). For hosted models, see
-  [docs/cli.md](docs/cli.md#choosing-a-model).
-
-## Install
-
-`npm install -g swarm-orchestrator` installs release 14.4.0, which predates this page. Build the
-source instead:
-
-```sh
-git clone https://github.com/moonrunnerkc/swarm-orchestrator.git
-cd swarm-orchestrator
-npm ci
-npm pack
-npm install -g ./swarm-orchestrator-*.tgz
-swarm --version
-```
-
-The version line should say `source build`.
-
-## Try it on a scratch repository
-
-```sh
-ollama pull qwen3.6:35b-a3b
-mkdir slug-demo && cd slug-demo && git init -q
-echo '{ "type": "module", "scripts": { "test": "node --test" } }' > package.json
-echo 'export const slugify = (text) => text.toLowerCase();' > slug.js
-cat > slug.test.js <<'EOF'
-import test from "node:test";
-import assert from "node:assert/strict";
-import { slugify } from "./slug.js";
-test("lowercases", () => assert.equal(slugify("Hello"), "hello"));
-EOF
-git add -A && git commit -qm "start"
-swarm "make slugify in slug.js turn each run of spaces into one dash, and add a test for it" \
-  --model local:qwen3.6:35b-a3b
-```
-
-On a terminal, the first run asks once whether to approve unlisted commands automatically.
-
-## Reading the result
-
-Swarm edits files in place and does not commit: review with `git diff`, then commit or
-`git restore .` (and delete any new files `git status` lists). The outcome block's first line
-is one of:
-
-- **accepted** (exit 0): every requirement you supplied in a
-  [goal contract](docs/broad-use.md) was met by its checks; the scope line says what they cover.
-  The `checks:` line says whether every check passed, or whether failures your base already had
-  remain (a static check such as lint is held to no new failures by default; see
-  [check requirements](docs/check-requirements.md)).
-- **gates passed; the task itself was not judged** (exit 0): your checks passed but nothing
-  tested the task, as in the plain run above.
-- **partially checked**, **unresolved**, **not accepted** (exit 1) or **unverified** (exit 4):
-  a supplied requirement went undecided, a model-written check disagrees, a check refused the
-  change, or the model or verification environment was unavailable. The block says which, and
-  what to do next.
-
-The run ends by printing its evidence bundle's path. `node <bundle>/verify.mjs <bundle>` checks,
-with nothing installed, that the record is intact and its verdicts follow from it; it does not
-say the code is correct. If a first run fails, see
-[troubleshooting](docs/using.md#when-a-first-run-fails).
-
-## Limitations
-
-Swarm is experimental. On small registered blocks of fresh public tasks with one local model it
-has not shown a general advantage over OpenCode. On the last fresh block, every complete change
-from every agent added a lint finding the base did not have, and Swarm delivered none. Since then,
-on exposed tasks whose base already fails lint, Swarm delivered four of four correct bug fixes,
-and after a further correction it delivered a feature in both arms, one correctly and one a false
-accept ([previous](docs/evidence/2026-10-24-delivery-preservation/README.md)). Its verdict can
-still accept a change that misses a behaviour no check exercises. Every run keeps the tests its
-worker deleted and runs them again ([policy](docs/candidate-review.md)). The experimental
-grounded review (`--review grounded`) runs the examples and relations a task writes as code, and
-inputs generated from them, with no model, and an open counterexample among them refuses the run. In a
-registered ablation on retained candidates, its repairs fixed the requested defects in three of
-four ufo launches but broke another case each time. No arm delivered a complete correct repair,
-and the model reviewer added nothing
-([latest](docs/evidence/2026-10-24-retained-counterexamples/README.md)). Model-written checks (`--plan-checks`) guide repair but
-cannot establish a requirement alone. Commands run on your machine under a path policy, not a
-sandbox, unless you pass `--isolation`.
-
-## Learn more
-
-- [docs/using.md](docs/using.md): the workflow
-- [docs/cli.md](docs/cli.md): commands, flags, settings, exit codes
-- [docs/verifying.md](docs/verifying.md): verification, and what is not claimed
-- [docs/agent.md](docs/agent.md): measurements, an example run, version history
-- [SECURITY.md](SECURITY.md): execution boundaries
-- [Swarm Verify](packages/swarm-verify/README.md): the verifier alone, no model needed
-- Contributing: [docs/build-guide.md](docs/build-guide.md); `npm run gates` must pass
-
-ISC licensed. Contact: bradkinnard@proton.me.
-
-Experimental controller work and its limits: [execution-guided delivery study](docs/capability-study-2026-10-22.md).
+ISC. See [LICENSE](LICENSE).

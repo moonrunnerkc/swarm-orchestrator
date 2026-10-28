@@ -19,23 +19,6 @@ export const lockfileChoices: readonly string[] = [
   "uv.lock",
 ];
 
-/** Runs the gates over a workspace and reports, with no model and no retries. */
-export interface GatesCommand {
-  readonly isolation?: string | null;
-  readonly packages?: readonly string[];
-  readonly command: "gates";
-  readonly workspace: string;
-  readonly baseRef: string;
-  readonly bundleDirectory: string | null;
-  /**
-   * Files the caller authorised, or null for none. With none the file-set gate reports the
-   * observed scope and abstains, because nothing authorised anything: this command has no
-   * planner, and failing for a declaration nobody was there to make rejects every changed
-   * repository the command exists to check.
-   */
-  readonly allowedFiles: readonly string[] | null;
-}
-
 /**
  * Verifies a patch somebody else produced, without trusting the tree it came from: a fresh
  * checkout of the base, the patch applied there, and the checks run in that checkout.
@@ -106,72 +89,7 @@ export interface VerifyCommand {
   readonly expectedSigners: readonly string[];
 }
 
-/**
- * The first-run command: discover what the project declares, run it unattended, and report
- * what that establishes and what it leaves unmeasured. No configuration file, no model.
- */
-export interface CheckCommand {
-  readonly command: "check";
-  readonly workspace: string;
-  readonly baseRef: string;
-  readonly packages?: readonly string[];
-  readonly bundleDirectory: string | null;
-  /** Print the plan and run nothing. */
-  readonly explain: boolean;
-  readonly json: boolean;
-}
-
-/** Checks a signed verdict document against the evidence beside it and an expected signer. */
-export interface VerdictCommand {
-  readonly command: "verdict";
-  readonly verdictPath: string;
-  readonly evidenceDirectory: string | null;
-  readonly repository: string | null;
-  readonly signerWorkflow: string | null;
-  /** The head the reader is deciding about; a verdict made for another head is refused. */
-  readonly expectedHead: string | null;
-}
-
-/** The Claude Code hook: install into or remove from a settings file, or run one event. */
-export interface HookCommand {
-  readonly command: "hook";
-  readonly step: "install" | "uninstall" | "run" | "help";
-  readonly settingsPath: string | null;
-  readonly scope: "project" | "user";
-  readonly workspace: string;
-}
-
-/** The local MCP server over stdio, confined to a root. */
-export interface McpCommand {
-  readonly command: "mcp";
-  readonly root: string;
-  readonly describe: boolean;
-}
-
-/** Verify the staged tree, or install or remove the git hook that does. */
-export interface PreCommitCommand {
-  readonly command: "pre-commit";
-  readonly step: "run" | "install" | "uninstall";
-  readonly workspace: string;
-  readonly json: boolean;
-}
-
-/** One step of the GitHub Action, driven by the runner's environment rather than by flags. */
-export interface ActionCommand {
-  readonly command: "action";
-  readonly step: "verify" | "comment" | "retain";
-}
-
-export type VerifyOnlyCommand =
-  | VerifyCommand
-  | CiCommand
-  | GatesCommand
-  | CheckCommand
-  | VerdictCommand
-  | HookCommand
-  | McpCommand
-  | PreCommitCommand
-  | ActionCommand;
+export type VerifyOnlyCommand = VerifyCommand | CiCommand;
 
 export class InvalidCommandLineError extends Error {
   constructor(problem: string, usageText: string) {
@@ -349,103 +267,6 @@ export function parseVerifyOnlyCommand(
       command: "verify",
       bundleDirectory: resolve(context.currentDirectory, target),
       expectedSigners: commaList(flags.get("signer")),
-    };
-  }
-
-  if (words[0] === "check") {
-    const bundleFlag = flags.get("bundle");
-    return {
-      command: "check",
-      ...(flags.has("package") ? { packages: flags.get("package")?.split("\0") ?? [] } : {}),
-      workspace: resolve(context.currentDirectory, flags.get("workspace") ?? "."),
-      baseRef: flags.get("base") ?? defaultBaseRef,
-      bundleDirectory:
-        bundleFlag === undefined ? null : resolve(context.currentDirectory, bundleFlag),
-      explain: flags.has("explain"),
-      json: flags.has("json"),
-    };
-  }
-
-  if (words[0] === "verdict") {
-    // The bare form reads the document the Action names, in the directory the reader is in.
-    const target = words.slice(1).join(" ").trim() || "verdict.json";
-    const repository = flags.get("repo") ?? null;
-    if (repository !== null && !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository))
-      throw invalid("--repo must be OWNER/REPO");
-    const expectedHead = flags.get("head") ?? null;
-    if (expectedHead !== null && !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(expectedHead))
-      throw invalid("--head must be a full commit id");
-    return {
-      command: "verdict",
-      verdictPath: resolve(context.currentDirectory, target),
-      evidenceDirectory: flags.has("evidence")
-        ? resolve(context.currentDirectory, flags.get("evidence") as string)
-        : null,
-      repository,
-      signerWorkflow: flags.get("signer-workflow") ?? null,
-      expectedHead,
-    };
-  }
-
-  if (words[0] === "hook") {
-    const step = words[1] ?? "help";
-    if (step !== "install" && step !== "uninstall" && step !== "run" && step !== "help")
-      throw invalid("hook needs one of install, uninstall, or run");
-    const scope = flags.get("scope") ?? "project";
-    if (scope !== "project" && scope !== "user") throw invalid("--scope must be project or user");
-    return {
-      command: "hook",
-      step,
-      settingsPath: flags.has("settings")
-        ? resolve(context.currentDirectory, flags.get("settings") as string)
-        : null,
-      scope,
-      workspace: resolve(context.currentDirectory, flags.get("workspace") ?? "."),
-    };
-  }
-
-  if (words[0] === "mcp") {
-    return {
-      command: "mcp",
-      root: resolve(context.currentDirectory, flags.get("root") ?? "."),
-      describe: flags.has("describe"),
-    };
-  }
-
-  if (words[0] === "pre-commit") {
-    const step = words[1] ?? "run";
-    if (step !== "install" && step !== "uninstall" && step !== "run")
-      throw invalid("pre-commit takes install, uninstall, or nothing to verify the staged tree");
-    return {
-      command: "pre-commit",
-      step,
-      workspace: resolve(context.currentDirectory, flags.get("workspace") ?? "."),
-      json: flags.has("json"),
-    };
-  }
-
-  if (words[0] === "action") {
-    // The bare form is the producer step, which is the one a person would run by hand.
-    const step = words[1] ?? "verify";
-    if (step !== "verify" && step !== "comment" && step !== "retain")
-      throw invalid("action needs one of verify, comment, or retain");
-    return { command: "action", step };
-  }
-
-  if (words[0] === "gates") {
-    const bundleFlag = flags.get("bundle");
-    const allowed = flags.get("allowed-files");
-    return {
-      command: "gates",
-      ...(flags.has("package") ? { packages: flags.get("package")?.split("\0") ?? [] } : {}),
-      ...(flags.has("isolation") ? { isolation: flags.get("isolation") ?? null } : {}),
-      // Resolved against the injected directory, not the ambient cwd, so a relative
-      // --workspace lands where the caller says it does.
-      workspace: resolve(context.currentDirectory, flags.get("workspace") ?? "."),
-      baseRef: flags.get("base") ?? defaultBaseRef,
-      bundleDirectory:
-        bundleFlag === undefined ? null : resolve(context.currentDirectory, bundleFlag),
-      allowedFiles: allowed === undefined ? null : commaList(allowed),
     };
   }
 

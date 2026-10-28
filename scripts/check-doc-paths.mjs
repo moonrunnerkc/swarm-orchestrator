@@ -1,363 +1,142 @@
 /**
- * Resolves every path a documentation file names, and reports the ones that miss.
+ * Resolves every path a tracked markdown file names and reports the ones that miss.
  *
- * This is the defect class the 08-18 run found in `redteam/pass5`: a document pointing at a
- * file that is not there. A reader following the pointer discovers it; nothing else does.
+ * Paths resolve against what git tracks, not the disk, so a pointer that only works on the
+ * machine that wrote it still fails. A markdown link is relative to its file; a backticked
+ * mention is repo-root-relative (or file-relative) and only counts when it starts with a
+ * directory this repository has and ends like a path. A path git ignores names generated
+ * output and is reported, not failed.
  *
- * Resolved against what git tracks, not against the filesystem. A pointer that resolves only
- * on the machine that wrote it is the same broken pointer to everyone who clones the
- * repository, and checking the working tree hides exactly that: an earlier spelling of this
- * script passed here and failed in CI, on three paths that exist on this disk and in no commit.
- *
- * Three outcomes rather than two, because a path git deliberately ignores is a third thing:
- *
- *   - **tracked**: the pointer resolves for anyone.
- *   - **generated**: git ignores it, so it names build or run output that exists once
- *     something makes it (`dist/`, a driver's state directory). Naming one is not a broken
- *     pointer, and it is counted and reported rather than passed over in silence.
- *   - **missing**: neither of those. That is the defect.
- *
- * Two kinds of reference, because the documents use two:
- *
- *   - A markdown link, `[text](path)`, is relative to the file that holds it. That is what
- *     markdown means by a relative link and what a reader's viewer will do with it.
- *   - A path named in backticks inside prose is written repo-root-relative in these files
- *     (`src/tools/chokepoint.ts` means the one at the root, read from any document), and is
- *     accepted against either the root or the file's own directory.
- *
- * A backtick mention is only read as a pointer where it claims to be one: it has to start with
- * a directory this repository actually has. Prose says `verify.mjs` meaning the thing rather
- * than a location, `verifier/verify.mjs` as a fragment of a longer path, `~/.swarm/` for
- * somewhere else, and `coverage/` quoting a line of .gitignore. Resolving any of those would
- * invent a pointer nobody wrote and bury the real misses under them.
+ * A released changelog section (`## 1.2.3 - 2026-01-01`) describes the tree of that release,
+ * so its paths resolve against the release tag's tree as well as today's.
  *
  *   node scripts/check-doc-paths.mjs [repository root]
  */
-import { execFile, spawn } from "node:child_process";
-import { readdir, readFile } from "node:fs/promises";
+import { execFile, spawnSync } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 
 const runGit = promisify(execFile);
-
-/** `[text](target)`, with any anchor left for the caller to strip. */
 const linkPattern = /\[[^\]]*\]\(([^)\s]+)\)/g;
-
-/** Anything in backticks, which is then filtered down to what looks like a path. */
 const backtickPattern = /`([^`\n]+)`/g;
-
-/** The directories a rooted reference can start with. A mention outside these is not a claim. */
-const rootedPrefixes = [
-  "src/",
-  "docs/",
-  "fuzz/",
-  "scripts/",
-  "redteam/",
-  ".github/",
-  "dist/",
-  "campaign/",
-  "packages/",
-  // The documents under docs/ write this one rooted at their own directory rather than at the
-  // repository root. Both spellings are tried for every mention, so accepting it costs nothing,
-  // and without it a shelf of evidence pointers is read as prose and never resolved.
-  "evidence/",
-];
-
-const pathSuffixes = [
-  ".md",
-  ".ts",
-  ".mjs",
-  ".cjs",
-  ".json",
-  ".jsonl",
-  ".html",
-  ".txt",
-  ".toml",
-  ".yml",
-  ".yaml",
-  ".cast",
-  ".lock",
-];
-
-/**
- * Paths a document names in order to say they are gone. A record of a removal is not a
- * dangling pointer, and the two are indistinguishable without reading the sentence, which is
- * the judge this project does not build. Named here, with the reason, rather than by widening
- * the rules above until they stop showing up.
- */
-const documentedAsRemoved = new Map([
-  [
-    "../../2026-08-18/shakedown/bundles/task-05-retry-resolved/review.html.gz",
-    "packed losslessly as review.html into that bundle's packed-derived/review-page-2026-08-18; Python's gzip.compress(page, compresslevel=9, mtime=0) of the restored page reproduces the original file, sha256 9d6482763560f28aecec5d4cc77f693efc60cb0207256d8f5ed7299da6e60ba2",
-  ],
-  ["redteam/leep/", "removed by the 08-18 run, which the documents naming it record"],
-  [
-    "src/Mime.ts",
-    "a file of the mime task's repository, which the 2026-10-18 generated-check protocol names; that protocol is not edited after its first launch",
-  ],
-  [
-    "src/escape.ts",
-    "a file of the entities task's repository, which the 2026-10-22 repair-trace protocol names; that protocol is not edited after its first launch",
-  ],
-  [
-    "scripts/screen3.mjs",
-    "the fresh block's evaluator author's screening script, archived with the held-out material on evidence/2026-10-23-preservation-review-sessions; the selection record naming it is published as it was released",
-  ],
-  [
-    "src/punycode.ts",
-    "a file of the ufo task's repository, which the 2026-10-23 confirmation protocol names; that protocol is not edited after its first launch",
-  ],
-  [
-    "src/rules.ts",
-    "a file of the marked task's repository, which the 2026-10-20 repair-handoff protocol names; that protocol is not edited after its first launch",
-  ],
-  [
-    "campaign/corpus/local-ollama/refined-github__refined-github/",
-    "packed whole and losslessly into campaign/corpus/local-ollama/packed-derived/local-ollama-corpus, whose payloads were already outside the repository; restore gives the bundle back byte for byte",
-  ],
-  [
-    "docs/evidence/2026-08-23/live-task.cast",
-    "packed losslessly into docs/evidence/2026-08-23/packed-derived/terminal-recordings-2026-08; the record naming it stands",
-  ],
-  [
-    "docs/evidence/2026-08-23/open-evidence.cast",
-    "packed losslessly into docs/evidence/2026-08-23/packed-derived/terminal-recordings-2026-08; the record naming it stands",
-  ],
-  [
-    "docs/evidence/2026-08-23/interface.cast",
-    "packed losslessly into docs/evidence/2026-08-23/packed-derived/terminal-recordings-2026-08; the record naming it stands",
-  ],
-  [
-    "campaign/pr-tasks/scored.json",
-    "packed losslessly into campaign/pr-tasks/packed-derived/scored-tasks on 2026-10-21 to keep the tree's weight headroom; restore gives the bytes back, and the 2026-09-11 audit names it as it was",
-  ],
-  [
-    "scripts/action-artifacts.mjs",
-    "moved into src/action/artifacts.ts when the Action became a client of the installed verifier; the 2026-09-27 execution record names it as it was",
-  ],
-  [
-    "scripts/action-verify.mjs",
-    "moved into src/action/verify.ts when the Action became a client of the installed verifier",
-  ],
+const releasedHeading = /^## (\d+\.\d+\.\d+) - \d{4}-\d{2}-\d{2}/;
+const rootedPrefixes = ["src/", "docs/", "scripts/", ".github/", "dist/", "packages/", "eval/"];
+const pathSuffixes = [".ts", ".mjs", ".js", ".json", ".md", ".yml", ".yaml", ".toml", ".sh"];
+/** Changelogs and the tag prefix their releases carry. */
+const changelogTags = new Map([
+  ["CHANGELOG.md", "v"],
+  ["packages/swarm-verify/CHANGELOG.md", "swarm-verify-v"],
 ]);
 
-/**
- * Prose mentions a lot of things in backticks that are not paths: identifiers, flags, commands,
- * JSON fragments, shell lines. A reference has to look like a path and only like a path.
- */
 function looksLikeAPath(raw) {
-  if (raw.length === 0 || raw.startsWith("http") || raw.startsWith("#")) {
-    return false;
-  }
-  // A space, a quote, or a shell operator makes it a command or a sentence, not a path.
-  if (/[\s()<>*|$"'{}[\],;=]/.test(raw)) {
-    return false;
-  }
-  // A colon spells a revision and a path, `schema-v1:src/contract/schema/v1.json`, which names
-  // a file at a commit rather than one in this tree.
-  if (raw.includes(":")) {
-    return false;
-  }
-  if (!rootedPrefixes.some((prefix) => raw.startsWith(prefix))) {
-    return false;
-  }
+  if (/[\s*?<>{}$|]/.test(raw) || raw.includes("://")) return false;
+  if (!rootedPrefixes.some((prefix) => raw.startsWith(prefix))) return false;
   return raw.endsWith("/") || pathSuffixes.some((suffix) => raw.endsWith(suffix));
 }
 
-/** Every path in the index, plus every directory on the way to one. */
-async function trackedPaths(root) {
-  const { stdout } = await runGit("git", ["ls-files", "-z"], { cwd: root, maxBuffer: 64_000_000 });
-  const tracked = new Set();
-  for (const path of stdout.split("\0")) {
-    if (path.length === 0) {
-      continue;
-    }
-    tracked.add(path);
+/** Every path in a tree, plus every directory on the way to one. */
+async function pathsAt(root, ref) {
+  const args = ref === null ? ["ls-files", "-z"] : ["ls-tree", "-r", "-z", "--name-only", ref];
+  const { stdout } = await runGit("git", args, { cwd: root, maxBuffer: 64_000_000 });
+  const paths = new Set();
+  for (const path of stdout.split("\0").filter((entry) => entry.length > 0)) {
+    paths.add(path);
     const parts = path.split("/");
     for (let depth = 1; depth < parts.length; depth += 1) {
-      tracked.add(`${parts.slice(0, depth).join("/")}/`);
+      paths.add(`${parts.slice(0, depth).join("/")}/`);
     }
   }
-  return tracked;
+  return paths;
 }
 
-/**
- * What git is told to ignore, asked in one batch rather than once per path. Spawned rather
- * than run through execFile, which takes no stdin: handed one it waits on a pipe nobody
- * writes to, which is a hang rather than an error.
- */
 function ignoredAmong(root, candidates) {
-  if (candidates.length === 0) {
-    return Promise.resolve(new Set());
-  }
-
-  return new Promise((settle) => {
-    const child = spawn("git", ["check-ignore", "--stdin", "-z"], { cwd: root });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    // Exit 1 means nothing matched, which is an answer; exit 128 means git refused a path and
-    // stopped reading, which is said rather than crashed on; an error means git could not be
-    // asked, and then nothing is called generated rather than everything being.
-    child.on("close", (code) => {
-      if (code === 128) {
-        console.error(`git check-ignore refused the candidate list: ${stderr.trim()}`);
-      }
-      settle(new Set(stdout.split("\0").filter((path) => path.length > 0)));
-    });
-    child.on("error", () => {
-      settle(new Set());
-    });
-    // git stops reading once it has refused a path, and the write that follows is not a defect
-    // of this script: the refusal is reported above.
-    child.stdin.on("error", () => {});
-    child.stdin.end(`${candidates.join("\0")}\0`);
+  if (candidates.length === 0) return new Set();
+  const ran = spawnSync("git", ["check-ignore", "--stdin", "-z"], {
+    cwd: root,
+    input: `${candidates.join("\0")}\0`,
+    encoding: "utf8",
   });
+  return new Set((ran.stdout ?? "").split("\0").filter((path) => path.length > 0));
 }
 
-/**
- * Every markdown file under docs/ and campaign/, plus the ones at the root that carry the
- * same pointers.
- */
-async function documentationFiles(root, tracked) {
-  const files = [];
-  for (const shelf of ["docs", "campaign"]) {
-    if (!tracked.has(`${shelf}/`)) {
-      continue;
-    }
-    for (const entry of await readdir(join(root, shelf), {
-      withFileTypes: true,
-      recursive: true,
-    })) {
-      const path = join(entry.parentPath, entry.name);
-      // Tracked documents only. The campaign shelf holds cloned repositories under work/ and
-      // run bundles under corpus/, thousands of markdown files that are not this project's
-      // documents and point at trees this repository does not hold.
-      if (entry.isFile() && entry.name.endsWith(".md") && tracked.has(relative(root, path))) {
-        files.push(path);
-      }
-    }
+/** The file split into sections, each with the tag whose tree it describes (null for now). */
+function sectionsOf(path, text) {
+  const prefix = changelogTags.get(path);
+  if (prefix === undefined) return [{ ref: null, text }];
+  const sections = [{ ref: null, lines: [] }];
+  for (const line of text.split("\n")) {
+    const released = releasedHeading.exec(line);
+    if (released !== null) sections.push({ ref: `${prefix}${released[1]}`, lines: [] });
+    else if (line.startsWith("## ")) sections.push({ ref: null, lines: [] });
+    sections.at(-1).lines.push(line);
   }
-  for (const name of ["README.md", "CHANGELOG.md", "CLAUDE.md", "AGENTS.md", "fuzz/README.md"]) {
-    if (tracked.has(name)) {
-      files.push(join(root, name));
-    }
-  }
-  return files.sort();
+  return sections.map((section) => ({ ref: section.ref, text: section.lines.join("\n") }));
 }
 
-/** Repo-relative, with a trailing slash kept, which is how the tracked set spells a directory. */
 function repoRelative(root, target, wantsDirectory) {
   const path = relative(root, target).split(sep).join("/");
   return wantsDirectory && !path.endsWith("/") ? `${path}/` : path;
 }
 
 export async function checkDocumentationPaths(root) {
-  const tracked = await trackedPaths(root);
-  const files = await documentationFiles(root, tracked);
-  const misses = [];
-  const known = [];
-  const generated = [];
+  const trees = new Map([[null, await pathsAt(root, null)]]);
+  const treeAt = async (ref) => {
+    if (!trees.has(ref)) trees.set(ref, await pathsAt(root, ref).catch(() => null));
+    return trees.get(ref);
+  };
+  const files = [...trees.get(null)].filter(
+    (path) => path.endsWith(".md") && !path.startsWith("src/fixtures/"),
+  );
   const unresolved = [];
   let checked = 0;
 
-  const record = (file, raw, kind, candidates) => {
-    checked += 1;
-    if (candidates.some((candidate) => tracked.has(candidate))) {
-      return;
-    }
-    const reason = documentedAsRemoved.get(raw);
-    if (reason !== undefined) {
-      known.push({ file, raw, reason });
-      return;
-    }
-    unresolved.push({ file, raw, kind });
-  };
-
-  for (const file of files) {
-    const text = await readFile(file, "utf8");
+  for (const path of files.sort()) {
+    const file = join(root, path);
     const here = dirname(file);
-
-    for (const match of text.matchAll(linkPattern)) {
-      const raw = (match[1] ?? "").split("#")[0] ?? "";
-      if (raw.length === 0 || raw.startsWith("http") || raw.startsWith("mailto:")) {
-        continue;
+    for (const section of sectionsOf(path, await readFile(file, "utf8"))) {
+      const now = trees.get(null);
+      const then = section.ref === null ? now : ((await treeAt(section.ref)) ?? now);
+      const record = (raw, kind, candidates) => {
+        checked += 1;
+        if (!candidates.some((candidate) => now.has(candidate) || then.has(candidate))) {
+          unresolved.push({ file, raw, kind });
+        }
+      };
+      for (const match of section.text.matchAll(linkPattern)) {
+        const raw = (match[1] ?? "").split("#")[0] ?? "";
+        if (raw.length === 0 || /^(https?|mailto):/.test(raw)) continue;
+        const target = isAbsolute(raw) ? raw : resolve(here, raw);
+        record(raw, "link", [
+          repoRelative(root, target, raw.endsWith("/")),
+          repoRelative(root, target, true),
+        ]);
       }
-      const target = isAbsolute(raw) ? raw : resolve(here, raw);
-      record(file, raw, "link", [
-        repoRelative(root, target, raw.endsWith("/")),
-        repoRelative(root, target, true),
-      ]);
-    }
-
-    for (const match of text.matchAll(backtickPattern)) {
-      const raw = (match[1] ?? "").trim();
-      if (!looksLikeAPath(raw) || isAbsolute(raw)) {
-        continue;
+      for (const match of section.text.matchAll(backtickPattern)) {
+        const raw = (match[1] ?? "").trim();
+        if (!looksLikeAPath(raw)) continue;
+        record(raw, "mention", [raw, repoRelative(root, resolve(here, raw), raw.endsWith("/"))]);
       }
-      record(file, raw, "mention", [
-        raw,
-        repoRelative(root, resolve(root, raw), raw.endsWith("/")),
-        repoRelative(root, resolve(here, raw), raw.endsWith("/")),
-      ]);
     }
   }
 
-  // Asked once, at the end: a path git ignores names something generated rather than a pointer
-  // that broke, and asking per path would spawn git several hundred times.
-  // A reference that leaves the repository is not something git can call ignored, and handing it
-  // one costs far more than the answer about it: git refuses the whole list at the first such path
-  // and stops reading, so every candidate after it is classified as a broken pointer. One wrong
-  // link in one document reported five misses, four of them in files nobody had touched.
-  const insideTheRepository = (raw) => {
-    const target = resolve(root, raw);
-    return target === root || target.startsWith(`${root}${sep}`);
-  };
-  const ignored = await ignoredAmong(
-    root,
-    unresolved.map((entry) => entry.raw).filter(insideTheRepository),
-  );
-  for (const entry of unresolved) {
-    if (ignored.has(entry.raw)) {
-      generated.push(entry);
-    } else {
-      misses.push(entry);
-    }
-  }
-
-  return { fileCount: files.length, checked, misses, known, generated };
+  const inside = (raw) => resolve(root, raw).startsWith(`${root}${sep}`);
+  const ignored = ignoredAmong(root, unresolved.map((entry) => entry.raw).filter(inside));
+  const generated = unresolved.filter((entry) => ignored.has(entry.raw));
+  const misses = unresolved.filter((entry) => !ignored.has(entry.raw));
+  return { fileCount: files.length, checked, misses, generated };
 }
 
 if (import.meta.filename === process.argv[1]) {
   const root = resolve(process.argv[2] ?? join(import.meta.dirname, ".."));
-  const { fileCount, checked, misses, known, generated } = await checkDocumentationPaths(root);
-
-  process.stdout.write(
-    `resolved ${checked} path reference(s) across ${fileCount} documentation file(s), ` +
-      "against what git tracks\n",
-  );
+  const { fileCount, checked, misses, generated } = await checkDocumentationPaths(root);
+  process.stdout.write(`resolved ${checked} path reference(s) across ${fileCount} file(s)\n`);
   for (const entry of generated) {
     process.stdout.write(`  generated: ${entry.file}: ${entry.raw} (git ignores it)\n`);
   }
-  for (const entry of known) {
-    process.stdout.write(`  known: ${entry.file}: ${entry.raw} (${entry.reason})\n`);
+  process.stdout.write(`${misses.length} miss(es)\n`);
+  for (const miss of misses) {
+    process.stdout.write(`  ${miss.file}: ${miss.raw} (${miss.kind})\n`);
   }
-  if (misses.length === 0) {
-    process.stdout.write(
-      `zero misses, ${known.length} known and named, ${generated.length} generated\n`,
-    );
-  } else {
-    process.stdout.write(`${misses.length} miss(es):\n`);
-    for (const miss of misses) {
-      process.stdout.write(`  ${miss.file}: ${miss.raw} (${miss.kind})\n`);
-    }
-    process.exitCode = 1;
-  }
+  if (misses.length > 0) process.exitCode = 1;
 }

@@ -13,7 +13,7 @@ const run = promisify(execFile);
  * entry points has to produce the same bytes and the same exit code, with and without an
  * expected signer.
  */
-const committedBundle = resolve("docs/evidence/2026-09-02/gates-bonded");
+const committedBundle = resolve("src/fixtures/legacy-bundles/gates-bonded");
 
 let scratch = "";
 let workspace = "";
@@ -103,11 +103,11 @@ describe("swarm-verify beside swarm", () => {
 
   it("refuses a bundle one byte later, the same way", async () => {
     // The demo's own subject, since the script flips one named record of that bundle.
-    const demoBundle = resolve("docs/evidence/2026-08-18/live-frontier");
+    const demoBundle = resolve("src/fixtures/legacy-bundles/live-frontier");
     const demoSigner = "sha256:db270183c40c65843cacd2b3dcf20ee249d146d98c56699b2f3512ebeb84a52a";
     const tampered = join(scratch, "tampered");
     await run(process.execPath, [
-      resolve("docs/evidence/2026-08-18/tamper-demo/flip-one-byte.mjs"),
+      resolve("src/fixtures/legacy-bundles/tamper-demo/flip-one-byte.mjs"),
       demoBundle,
       tampered,
     ]);
@@ -120,34 +120,12 @@ describe("swarm-verify beside swarm", () => {
     expect(standalone.code).toBe(1);
   });
 
-  it("measures a workspace the same way, apart from the session it wrote", async () => {
-    const through = await invoke("cli", ["gates", "--workspace", workspace]);
-    const standalone = await invoke("swarm-verify", ["gates", "--workspace", workspace]);
-
-    // Set aside what belongs to the run rather than to the command: the session path it wrote,
-    // and the signing notice, which reports the machine's keychain as it stood for that run.
-    const settled = (ran: Ran) =>
-      ran.stdout
-        .split("\n")
-        .filter((line) => !line.includes(join(scratch, "home")) && !line.startsWith("[signing]"))
-        .join("\n");
-    expect(through.stdout).toContain("acceptable: yes");
-    expect(settled(standalone)).toBe(settled(through));
-    expect(standalone.code).toBe(through.code);
-  });
-
-  it("prints its own usage for --help, and checks the workspace for no command", async () => {
+  it("prints its own usage for --help", async () => {
     const help = await invoke("swarm-verify", ["--help"]);
-    const bare = await invoke("swarm-verify", ["--workspace", workspace]);
 
     expect(help.code).toBe(0);
     expect(help.stdout).toContain("swarm-verify verify <bundle directory>");
     expect(help.stdout).toContain("swarm-verify ci --patch <file>");
-    expect(help.stdout).toContain("swarm-verify gates");
-    expect(help.stdout).toContain("swarm-verify check");
-    // No subcommand is the first-run interface: the same as `check` over the workspace.
-    expect(bare.stdout).toContain("result       regression-only pass");
-    expect(bare.code).toBe(0);
   });
 
   it("refuses a command the full CLI has and this binary does not, naming its own usage", async () => {

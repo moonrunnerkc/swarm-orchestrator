@@ -346,7 +346,7 @@ describe("detection keyed on the name rather than the shape of the value", () =>
  * and none of them was a shape anybody would have thought to write down.
  */
 describe("the write-time scrub and the export scan agree", () => {
-  const artifacts = readdirSync(join(import.meta.dirname, "../../fuzz/findings"))
+  const artifacts = readdirSync(join(import.meta.dirname, "fixtures/scrub-findings"))
     // Only this boundary's artifacts. Other harnesses keep theirs in the same directory, and
     // a diff or an lcov report is not a scrub regression case.
     .filter((entry) => entry.startsWith("scrub-") && entry.endsWith(".input"))
@@ -358,7 +358,10 @@ describe("the write-time scrub and the export scan agree", () => {
 
   for (const artifact of artifacts) {
     it(`leaves nothing for the export scan to find in ${artifact}`, () => {
-      const text = readFileSync(join(import.meta.dirname, "../../fuzz/findings", artifact), "utf8");
+      const text = readFileSync(
+        join(import.meta.dirname, "fixtures/scrub-findings", artifact),
+        "utf8",
+      );
       const once = scrubText(text);
 
       // The property, stated as the invariant states it: whatever write-time scrubbing

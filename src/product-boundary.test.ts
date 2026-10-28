@@ -26,14 +26,6 @@ interface Manifest {
 const orchestrator = JSON.parse(read("package.json")) as Manifest;
 const verifier = JSON.parse(read("packages/swarm-verify/package.json")) as Manifest;
 
-/** The phrases of the inversion, which no current product document may carry. */
-const inverted = [
-  /optional beta coding agent/i,
-  /advanced beta/i,
-  /main source repository for Swarm Verify/i,
-  /Falsifying Swarm Orchestrator/i,
-];
-
 describe("the two products' identities", () => {
   it("names the root package as the coding agent and its binary as swarm", () => {
     expect(orchestrator.name).toBe("swarm-orchestrator");
@@ -75,36 +67,5 @@ describe("the two products' identities", () => {
     ).toBe(true);
     expect(read("packages/swarm-verify/CHANGELOG.md")).toMatch(/^## 1\.\d+\.\d+/m);
     expect(read("CHANGELOG.md")).not.toMatch(/^## 1\.\d+\.\d+ /m);
-  });
-
-  it("opens the repository README with Swarm Orchestrator, the coding agent", () => {
-    const readme = read("README.md");
-    const heading = /<h1>([^<]+)<\/h1>|^# (.+)$/m.exec(readme);
-    expect(heading?.[1] ?? heading?.[2]).toBe("Swarm Orchestrator");
-    expect(readme.indexOf("Swarm Orchestrator")).toBeLessThan(readme.indexOf("Swarm Verify"));
-    expect(readme).toMatch(/coding agent/);
-    for (const phrase of inverted) {
-      expect(readme).not.toMatch(phrase);
-    }
-  });
-
-  it("opens the verifier README with Swarm Verify, standing on its own", () => {
-    const readme = read("packages/swarm-verify/README.md");
-    expect(readme.startsWith("# Swarm Verify\n")).toBe(true);
-    expect(readme).toContain("npx swarm-verify");
-    expect(readme).toMatch(/No model, no API key/);
-    for (const phrase of inverted) {
-      expect(readme).not.toMatch(phrase);
-    }
-  });
-
-  it("keeps the inversion out of the documents a reader is pointed at", () => {
-    for (const path of ["docs/README.md", "docs/agent.md", "docs/verify-only.md", "SUPPORT.md"]) {
-      for (const phrase of inverted) {
-        expect({ path, text: read(path) }).not.toMatchObject({
-          text: expect.stringMatching(phrase),
-        });
-      }
-    }
   });
 });

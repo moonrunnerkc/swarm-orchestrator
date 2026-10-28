@@ -59,22 +59,6 @@ describe("what counts as a pointer", () => {
     expect(found.misses.map((miss) => miss.raw)).toEqual(["src/tools/gone.ts"]);
   });
 
-  /**
-   * The documents under docs/ point at their own evidence shelf this way, so a spelling that
-   * only the repository root recognized left thirty-odd pointers unread by the check that
-   * exists to read them.
-   */
-  it("resolves a mention rooted at the document's own directory", async () => {
-    const found = await doc("a.md", "the run is in `evidence/run.md`\n");
-    expect(found.misses).toEqual([]);
-    expect(found.checked).toBe(1);
-  });
-
-  it("reports one of those that resolves to nothing", async () => {
-    const found = await doc("a.md", "the run is in `evidence/gone.md`\n");
-    expect(found.misses.map((miss) => miss.raw)).toEqual(["evidence/gone.md"]);
-  });
-
   it("resolves a directory by the files tracked under it", async () => {
     const found = await doc("a.md", "the tools live in `src/tools/`\n");
     expect(found.misses).toEqual([]);
@@ -121,12 +105,12 @@ describe("a file on the disk and in no commit", () => {
   });
 
   it("is generated for a nested pattern nothing has created either", async () => {
-    await writeFile(join(root, ".gitignore"), "dist/\nredteam/loop/state-*/\n");
+    await writeFile(join(root, ".gitignore"), "dist/\neval/results/*/\n");
     await track();
-    const found = await doc("a.md", "the driver writes `redteam/loop/state-wake/`\n");
+    const found = await doc("a.md", "the runner writes `eval/results/run-1/`\n");
 
     expect(found.misses).toEqual([]);
-    expect(found.generated.map((entry) => entry.raw)).toEqual(["redteam/loop/state-wake/"]);
+    expect(found.generated.map((entry) => entry.raw)).toEqual(["eval/results/run-1/"]);
   });
 });
 
@@ -160,20 +144,31 @@ describe("what is not a pointer, and must not be reported as one", () => {
   });
 });
 
-describe("a path a document names in order to say it is gone", () => {
-  it("is reported as known rather than as a miss, with the reason", async () => {
-    const found = await doc("a.md", "`redteam/leep/` removed (empty and untracked)\n");
+describe("a released changelog section", () => {
+  async function released() {
+    await writeFile(join(root, "src", "tools", "old.ts"), "export const old = 1;\n");
+    await track();
+    await run("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "1.0.0"], {
+      cwd: root,
+    });
+    await run("git", ["tag", "v1.0.0"], { cwd: root });
+    await run("git", ["rm", "-q", "src/tools/old.ts"], { cwd: root });
+  }
 
+  it("resolves against the tree of its release tag", async () => {
+    await released();
+    await writeFile(join(root, "CHANGELOG.md"), "## 1.0.0 - 2026-01-01\n\n- `src/tools/old.ts`\n");
+    await track();
+    const found = await checkDocumentationPaths(root);
     expect(found.misses).toEqual([]);
-    expect(found.known.map((entry) => entry.raw)).toEqual(["redteam/leep/"]);
-    expect(found.known[0].reason).toContain("removed by the 08-18 run");
   });
 
-  it("does not let any other missing path through with it", async () => {
-    const found = await doc("a.md", "`redteam/leep/` is gone, and so is `src/tools/gone.ts`\n");
-
-    expect(found.misses.map((miss) => miss.raw)).toEqual(["src/tools/gone.ts"]);
-    expect(found.known).toHaveLength(1);
+  it("does not lend that tree to the unreleased section", async () => {
+    await released();
+    await writeFile(join(root, "CHANGELOG.md"), "## 2.0.0 - unreleased\n\n- `src/tools/old.ts`\n");
+    await track();
+    const found = await checkDocumentationPaths(root);
+    expect(found.misses.map((miss) => miss.raw)).toEqual(["src/tools/old.ts"]);
   });
 });
 

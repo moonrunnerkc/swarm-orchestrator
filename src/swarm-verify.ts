@@ -2,12 +2,7 @@
 // Check the runtime before loading the command composition.
 import "./node-floor-check.ts";
 
-import { action } from "./cli-action.ts";
-import { check } from "./cli-check.ts";
 import { commandDefinitions } from "./cli-command-definitions.ts";
-import { gates } from "./cli-gates.ts";
-import { integration } from "./cli-integrations.ts";
-import { verifyVerdict } from "./cli-verdict.ts";
 import { verifyBundle } from "./cli-verify.ts";
 import {
   InvalidCommandLineError,
@@ -29,7 +24,6 @@ const verifyOnlyNames = new Set(
 export const usage = [
   "swarm-verify [command] [options]",
   "",
-  "  swarm-verify                                             check the current directory (the same as `check`)",
   ...commandDefinitions
     .filter((command) => verifyOnlyNames.has(command.name))
     .map((command) => `  swarm-verify ${command.syntax.padEnd(42)} ${command.description}`),
@@ -49,31 +43,12 @@ async function main(): Promise<number> {
     process.stdout.write(`${(await import("./build-version.ts")).buildVersion}\n`);
     return exitCodes.acceptable;
   }
-  // No subcommand is the first-run interface: check the directory the reader is standing in.
-  const parsed: VerifyOnlyCommand | null = parseVerifyOnlyCommand(
-    line.words.length === 0 ? { words: ["check"], flags: line.flags } : line,
-    context,
-  );
+  const parsed: VerifyOnlyCommand | null = parseVerifyOnlyCommand(line, context);
   if (parsed === null) {
     throw new InvalidCommandLineError(`"${line.words[0]}" is not a command this binary has`, usage);
   }
   if (parsed.command === "verify") {
     return verifyBundle(parsed);
-  }
-  if (parsed.command === "gates") {
-    return gates(parsed);
-  }
-  if (parsed.command === "check") {
-    return check(parsed);
-  }
-  if (parsed.command === "action") {
-    return action(parsed);
-  }
-  if (parsed.command === "verdict") {
-    return verifyVerdict(parsed);
-  }
-  if (parsed.command === "hook" || parsed.command === "mcp" || parsed.command === "pre-commit") {
-    return integration(parsed);
   }
   return (await import("./cli-ci.ts")).verifyPatch(parsed);
 }
