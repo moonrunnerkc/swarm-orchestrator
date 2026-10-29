@@ -24,6 +24,7 @@ export interface RunOptions {
   readonly model: ModelClient;
   readonly maxSteps: number;
   readonly maxTokens: number;
+  readonly turnTokens: number;
   readonly approval: ApprovalMode;
   readonly confirm: ConfirmationPrompt;
   readonly version: string;
@@ -84,7 +85,9 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
     attestation = written.bundle;
     const predicate = outcome.statement.predicate;
     const feedback = [...predicate.reasons, outcome.failureText].filter(Boolean).join("\n\n");
-    return { verdict: predicate.verdict, feedback };
+    const mutant = predicate.mutation;
+    const survivedMutant = mutant.status === "survived" ? `${mutant.path}:${mutant.line}` : null;
+    return { verdict: predicate.verdict, feedback, survivedMutant };
   };
 
   const result = await runLoop({
@@ -103,6 +106,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
     verify,
     maxSteps: options.maxSteps,
     maxTokens: options.maxTokens,
+    turnTokens: options.turnTokens,
     signal: options.signal,
     log: options.log,
   });
@@ -110,7 +114,16 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
     type: "session-stopped",
     actor: "harness",
     provenance: ["tool-output"],
-    payload: { ...result, attestation },
+    payload: {
+      stop: result.stop,
+      reason: result.reason,
+      verdict: result.verification?.verdict ?? null,
+      steps: result.steps,
+      tokens: result.tokens,
+      estimatedTurns: result.estimatedTurns,
+      verifications: result.verifications,
+      attestation,
+    },
   });
   return { ...result, sessionDirectory: evidence.directory, attestation };
 }

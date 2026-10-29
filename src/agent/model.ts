@@ -11,16 +11,29 @@ export interface Reply {
   readonly content: string;
   /** Tokens the endpoint reported, or null where it reported none. */
   readonly tokens: number | null;
+  /** The endpoint stopped at the turn's completion cap. */
+  readonly truncated: boolean;
+}
+
+export interface TurnOptions {
+  readonly signal?: AbortSignal | undefined;
+  /** The completion cap for this turn, sent as max_tokens. */
+  readonly maxTokens: number;
 }
 
 export interface ModelClient {
   readonly model: string;
-  complete(messages: readonly Message[], signal?: AbortSignal): Promise<Reply>;
+  complete(messages: readonly Message[], options: TurnOptions): Promise<Reply>;
 }
 
 const responseSchema = z.object({
   choices: z
-    .array(z.object({ message: z.object({ content: z.string().nullable().optional() }) }))
+    .array(
+      z.object({
+        message: z.object({ content: z.string().nullable().optional() }),
+        finish_reason: z.string().nullable().optional(),
+      }),
+    )
     .min(1),
   usage: z
     .object({
@@ -30,6 +43,7 @@ const responseSchema = z.object({
     .optional(),
 });
 
+/** The endpoint failed for good: the run stops, and the verifier judges the tree as it is. */
 export class ModelError extends Error {
   constructor(detail: string) {
     super(`the model endpoint failed: ${detail}`);
@@ -68,9 +82,12 @@ export const nodePost: Post = (url, headers, body, { signal }) =>
     outgoing.end(body);
   });
 
+const pause = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
+
 /**
  * Chat completions over any OpenAI-compatible endpoint (Ollama, vLLM, MLX servers, hosted
- * APIs), at temperature 0. Network failures and 5xx answers are retried twice.
+ * APIs), at temperature 0. A refused connection or a 4xx other than 429 fails at once; other
+ * network failures and 5xx answers fail on the third in a row; 429 waits and retries.
  */
 export function openAiCompatible(options: {
   readonly endpoint: string;
@@ -78,14 +95,18 @@ export function openAiCompatible(options: {
   readonly apiKey: string | null;
   readonly timeoutMs?: number;
   readonly post?: Post;
+  readonly sleep?: (ms: number) => Promise<void>;
 }): ModelClient {
   const send = options.post ?? nodePost;
+  const sleep = options.sleep ?? pause;
   const url = `${options.endpoint.replace(/\/+$/, "")}/chat/completions`;
   return {
     model: options.model,
-    async complete(messages, signal) {
+    async complete(messages, { signal, maxTokens }) {
       let lastProblem = "";
-      for (let attempt = 0; attempt < 3; attempt += 1) {
+      let failures = 0;
+      let waits = 0;
+      while (failures < 3) {
         const timeout = AbortSignal.timeout(options.timeoutMs ?? 600_000);
         let response: { readonly status: number; readonly text: string };
         try {
@@ -95,17 +116,34 @@ export function openAiCompatible(options: {
               "content-type": "application/json",
               ...(options.apiKey === null ? {} : { authorization: `Bearer ${options.apiKey}` }),
             },
-            JSON.stringify({ model: options.model, messages, temperature: 0, stream: false }),
+            JSON.stringify({
+              model: options.model,
+              messages,
+              temperature: 0,
+              stream: false,
+              max_tokens: maxTokens,
+            }),
             { signal: signal === undefined ? timeout : AbortSignal.any([signal, timeout]) },
           );
         } catch (error) {
           if (signal?.aborted) throw error;
-          lastProblem = error instanceof Error ? error.message : String(error);
+          const code = (error as NodeJS.ErrnoException).code;
+          // A refused connection to localhost arrives as an AggregateError with no message.
+          const problem = (error instanceof Error && error.message) || code || String(error);
+          if (code === "ECONNREFUSED") throw new ModelError(`connection refused at ${url}`);
+          lastProblem = problem;
+          failures += 1;
           continue;
         }
         const { status, text } = response;
+        if (status === 429 && waits < 6) {
+          waits += 1;
+          await sleep(Math.min(60_000, 2 ** waits * 1000));
+          continue;
+        }
         if (status >= 500) {
           lastProblem = `HTTP ${status}: ${text.slice(0, 300)}`;
+          failures += 1;
           continue;
         }
         if (status < 200 || status >= 300)
@@ -120,9 +158,10 @@ export function openAiCompatible(options: {
         return {
           content: (parsed.choices[0]?.message.content ?? "").replace(thinking, "").trim(),
           tokens: usage === undefined ? null : usage.prompt_tokens + usage.completion_tokens,
+          truncated: parsed.choices[0]?.finish_reason === "length",
         };
       }
-      throw new ModelError(lastProblem);
+      throw new ModelError(`${lastProblem} (three attempts in a row)`);
     },
   };
 }

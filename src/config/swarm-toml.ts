@@ -37,6 +37,7 @@ const fileSchema = z.strictObject({
         .optional(),
       max_steps: positive.optional(),
       max_tokens: positive.optional(),
+      turn_tokens: positive.optional(),
       approval: z.enum(["ask", "auto"]).optional(),
     })
     .optional(),
@@ -59,6 +60,7 @@ export interface SwarmToml {
     readonly apiKeyEnv: string | null;
     readonly maxSteps: number | null;
     readonly maxTokens: number | null;
+    readonly turnTokens: number | null;
     /** Whether off-allowlist commands are approved by the run (auto) or by a person (ask). */
     readonly approval: "ask" | "auto" | null;
   };
@@ -102,6 +104,7 @@ export function parseSwarmToml(text: string, source: string): SwarmToml {
       apiKeyEnv: raw.agent?.api_key_env ?? null,
       maxSteps: raw.agent?.max_steps ?? null,
       maxTokens: raw.agent?.max_tokens ?? null,
+      turnTokens: raw.agent?.turn_tokens ?? null,
       approval: raw.agent?.approval ?? null,
     },
   };

@@ -5,9 +5,11 @@ export const stubReply = "```bash\nls\n```";
 
 /**
  * An OpenAI-compatible chat endpoint that always answers with the same command, so the harness
- * can run end to end with no model. Nothing it produces is a model result.
+ * can run end to end with no model. Nothing it produces is a model result. With `status`, it
+ * answers every completion with that HTTP status instead; `requests` holds every body it read.
  */
-export function startStubModel(port = 0) {
+export function startStubModel({ port = 0, status = 200 } = {}) {
+  const requests = [];
   const server = createServer((request, response) => {
     let body = "";
     request.on("data", (chunk) => {
@@ -24,6 +26,12 @@ export function startStubModel(port = 0) {
       if (request.method !== "POST" || !request.url?.endsWith("/chat/completions")) {
         return json(404, { error: { message: `no route ${request.method} ${request.url}` } });
       }
+      try {
+        requests.push(JSON.parse(body));
+      } catch {
+        requests.push(body);
+      }
+      if (status !== 200) return json(status, { error: { message: `stub status ${status}` } });
       const promptTokens = Math.ceil(body.length / 4);
       const usage = {
         prompt_tokens: promptTokens,
@@ -60,7 +68,11 @@ export function startStubModel(port = 0) {
   return new Promise((settle) => {
     server.listen(port, "127.0.0.1", () => {
       const address = server.address();
-      settle({ port: address.port, close: () => new Promise((done) => server.close(done)) });
+      settle({
+        port: address.port,
+        requests,
+        close: () => new Promise((done) => server.close(done)),
+      });
     });
   });
 }

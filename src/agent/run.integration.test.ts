@@ -57,7 +57,11 @@ function scripted(replies: readonly string[]): ModelClient & { seen: Message[][]
     seen,
     async complete(messages) {
       seen.push([...messages]);
-      return { content: replies[seen.length - 1] ?? replies.at(-1) ?? "", tokens: 100 };
+      return {
+        content: replies[seen.length - 1] ?? replies.at(-1) ?? "",
+        tokens: 100,
+        truncated: false,
+      };
     },
   };
 }
@@ -70,6 +74,7 @@ const run = (model: ModelClient, maxSteps = 10, maxTokens = 100_000) =>
     model,
     maxSteps,
     maxTokens,
+    turnTokens: 1000,
     approval: "ask",
     confirm: null,
     version: "test",
@@ -112,5 +117,12 @@ describe("swarm run", () => {
   it("never renders a pass from the model's own say-so", async () => {
     const report = await run(scripted([`It is fixed and all tests pass.\n${completionMarker}`]));
     expect(report.stop).not.toBe("verified");
+  });
+
+  it("names the changed line whose mutant the checks did not kill", async () => {
+    const both = "export const half = (n) => (n >= 0 ? n / 2 : n / 2);";
+    const report = await run(scripted([write(both), completionMarker]));
+    expect(report).toMatchObject({ stop: "verified" });
+    expect(report.verification?.survivedMutant).toBe("half.mjs:1");
   });
 });

@@ -20,6 +20,7 @@ export const genesisHash = "genesis";
 export const recordTypes = [
   "session-started",
   "model-call",
+  "model-error",
   "tool-call",
   "confirmation",
   "verification",

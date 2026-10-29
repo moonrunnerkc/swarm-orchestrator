@@ -28,6 +28,7 @@ describe("swarm.toml", () => {
       maxSteps: 40,
       apiKeyEnv: "OPENAI_API_KEY",
       maxTokens: null,
+      turnTokens: null,
     });
   });
 

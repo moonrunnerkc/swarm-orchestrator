@@ -45,6 +45,7 @@ export async function run(args: readonly string[]): Promise<number> {
       model: { type: "string" },
       "max-steps": { type: "string" },
       "max-tokens": { type: "string" },
+      "turn-tokens": { type: "string" },
       approve: { type: "string" },
     },
   });
@@ -71,6 +72,8 @@ export async function run(args: readonly string[]): Promise<number> {
     model: openAiCompatible({ endpoint, model, apiKey: process.env[keyName] ?? null }),
     maxSteps: count(values["max-steps"], "--max-steps") ?? agent?.maxSteps ?? 50,
     maxTokens: count(values["max-tokens"], "--max-tokens") ?? agent?.maxTokens ?? 1_000_000,
+    // Room for a reasoning model's thinking and one command, and a bound on a looping reply.
+    turnTokens: count(values["turn-tokens"], "--turn-tokens") ?? agent?.turnTokens ?? 16_384,
     approval,
     confirm: terminalPrompt(),
     version: buildVersion,
@@ -78,6 +81,10 @@ export async function run(args: readonly string[]): Promise<number> {
     log: (line) => process.stderr.write(`${line}\n`),
   });
   write(`stop         ${report.stop}`);
+  if (report.reason !== null) write(`reason       ${report.reason}`);
+  write(`verdict      ${report.verification?.verdict ?? "not verified"}`);
+  const mutant = report.verification?.survivedMutant ?? null;
+  if (mutant !== null) write(`mutant       survived at ${mutant}: no check failed when it changed`);
   write(`steps        ${report.steps}`);
   write(
     `tokens       ${report.tokens}${report.estimatedTurns > 0 ? ` (${report.estimatedTurns} turn(s) estimated: the endpoint reported no usage)` : ""}`,
