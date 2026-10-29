@@ -89,7 +89,8 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
     const survivedMutant = mutant.status === "survived" ? `${mutant.path}:${mutant.line}` : null;
     const inherited = predicate.checks.some((check) => check.result === "pre-existing-failure");
     const actionable = predicate.verdict === "fail" || inherited;
-    return { verdict: predicate.verdict, feedback, survivedMutant, actionable };
+    const reasons = predicate.reasons.join("\n");
+    return { verdict: predicate.verdict, feedback, survivedMutant, actionable, reasons };
   };
 
   const result = await runLoop({

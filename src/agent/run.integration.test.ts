@@ -126,4 +126,11 @@ describe("swarm run", () => {
     expect(report).toMatchObject({ stop: "verified" });
     expect(report.verification?.survivedMutant).toBe("half.mjs:1");
   });
+
+  it("hands back an inherited failure once, and stops when the model completes over it again", async () => {
+    const model = scripted([write("export const half = (n) => n * 2;"), completionMarker]);
+    const report = await run(model);
+    expect(report).toMatchObject({ stop: "unmeasured", steps: 3, verifications: 2 });
+    expect(model.seen[2]?.at(-1)?.content).toContain("could not measure the change");
+  });
 });

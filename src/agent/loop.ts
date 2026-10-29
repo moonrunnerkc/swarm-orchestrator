@@ -11,6 +11,8 @@ export interface Verification {
   readonly survivedMutant: string | null;
   /** A failure, or a check that fails at base and still fails: something the model can fix. */
   readonly actionable: boolean;
+  /** The verdict's reasons, which stay the same while nothing the checks report changes. */
+  readonly reasons: string;
 }
 
 export interface LoopOptions {
@@ -58,6 +60,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
   let estimatedTurns = 0;
   let verifications = 0;
   let verification: Verification | null = null;
+  let lastReasons: string | null = null;
   const result = (stop: StopReason, reason: string | null = null): LoopResult => ({
     stop,
     reason,
@@ -141,8 +144,14 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
     const judged = await judge();
     if (judged.verdict === "pass") return result("verified");
     if (!judged.actionable) return result("unmeasured");
+    // Completing again over the same unmeasured reasons says the inherited failure is not its own.
+    if (judged.verdict === "unmeasured" && judged.reasons === lastReasons)
+      return result("unmeasured");
+    lastReasons = judged.verdict === "unmeasured" ? judged.reasons : null;
     failure = judged.feedback;
     note =
-      "The verifier refused the change. Fix what it reports, then mark the task complete again.";
+      judged.verdict === "fail"
+        ? "The verifier refused the change. Fix what it reports, then mark the task complete again."
+        : "The verifier could not measure the change: a check fails at the base commit and still fails. Fix it if the task needs that; otherwise mark the task complete again.";
   }
 }

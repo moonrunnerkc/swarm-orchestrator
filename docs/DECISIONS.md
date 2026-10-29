@@ -92,3 +92,7 @@ One line per open choice made during the verifier-first rebuild (ADR 0014), with
 - docs/integrations.md pins the Action to `@swarm-verify-v2.0.0`: the branch it named (`main`) is deleted from origin with the other non-default branches.
 - The verifier package's `prepublishOnly` ran a release-validation script the rebuild had deleted, so every publish would have failed before uploading; the hook was removed rather than pointed at something new.
 - The rebuild's before and after numbers had no stored record, so the README could not cite them. `eval/rebuild.mjs` measures them from git (the caps' line, dependency and subcommand counts at the rebuild's base commit and at HEAD) and times each tree's own `npm test` after `npm ci` in a scratch worktree; docs/results.md reports its latest result. It is run after the three-arm evaluation, so neither suite is timed beside it.
+
+## Found by eval
+
+- On astropy__astropy-12907 `swarm run` got an unmeasured verdict (a check failing at base and with the change), was told the verifier had refused the change, and spent its remaining 45 steps repeating `git diff`. An unmeasured verdict now gets its own note (fix the failure if the task needs it, otherwise complete again), and a second completion over the same unmeasured reasons stops the run as `unmeasured`.
