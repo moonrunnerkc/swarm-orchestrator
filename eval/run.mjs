@@ -166,7 +166,8 @@ async function main() {
     const tasks = readTaskList(join(root, "eval", suites[suite].list)).slice(0, limit);
     for (const armName of chosenArms) {
       for (const task of tasks) {
-        const job = `${run}-${armName}-${task}`;
+        // Unique per invocation: Harbor reuses a finished job of the same name instead of running it.
+        const job = `${stamp}-${armName}-${task}`;
         const args = [
           "run",
           "-d",
