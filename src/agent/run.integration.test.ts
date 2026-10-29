@@ -133,4 +133,24 @@ describe("swarm run", () => {
     expect(report).toMatchObject({ stop: "unmeasured", steps: 3, verifications: 2 });
     expect(model.seen[2]?.at(-1)?.content).toContain("could not measure the change");
   });
+
+  it("says so when a command and its output repeat the last turn's", async () => {
+    const model = scripted(["```bash\nls\n```"]);
+    await run(model, 3);
+    expect(model.seen[1]?.at(-1)?.content).not.toContain("command you ran last turn");
+    expect(model.seen[2]?.at(-1)?.content).toContain("This is the command you ran last turn");
+  });
+
+  it("keeps the token count in the evidence instead of redacting it", async () => {
+    const report = await run(scripted(["```bash\nls\n```"]), 2);
+    const records = (await readFile(join(report.sessionDirectory, "ledger.jsonl"), "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    const digest = records.at(-1).payloadDigest.replace("sha256:", "");
+    const stopped = JSON.parse(
+      await readFile(join(report.sessionDirectory, "blobs", `${digest}.json`), "utf8"),
+    );
+    expect(stopped).toMatchObject({ tokensUsed: 200 });
+  });
 });

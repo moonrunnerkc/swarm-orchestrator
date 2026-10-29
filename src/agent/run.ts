@@ -122,7 +122,8 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
       reason: result.reason,
       verdict: result.verification?.verdict ?? null,
       steps: result.steps,
-      tokens: result.tokens,
+      // tokensUsed, not tokens: the scrubber reads a bare `tokens` key as a credential.
+      tokensUsed: result.tokens,
       estimatedTurns: result.estimatedTurns,
       verifications: result.verifications,
       attestation,

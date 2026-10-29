@@ -61,6 +61,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
   let verifications = 0;
   let verification: Verification | null = null;
   let lastReasons: string | null = null;
+  let previous = { command: "", output: "" };
   const result = (stop: StopReason, reason: string | null = null): LoopResult => ({
     stop,
     reason,
@@ -123,7 +124,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
       payload: {
         step: steps,
         reply: reply.content,
-        tokens: used,
+        tokensUsed: used,
         estimated: reply.tokens === null,
       },
     });
@@ -137,7 +138,13 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
     if (parsed.kind === "command") {
       options.log(`$ ${parsed.command.split("\n")[0]}`);
       const outcome = await options.chokepoint.run(parsed.command);
-      note = `${outcome.decision === "allowed" ? `exit code: ${outcome.exitCode}` : outcome.decision}\n${truncate(outcome.output)}`;
+      // At temperature 0 a repeated command and its unchanged output can repeat forever.
+      const repeated = parsed.command === previous.command && outcome.output === previous.output;
+      previous = { command: parsed.command, output: outcome.output };
+      const again = repeated
+        ? "This is the command you ran last turn, and its output is unchanged.\n"
+        : "";
+      note = `${again}${outcome.decision === "allowed" ? `exit code: ${outcome.exitCode}` : outcome.decision}\n${truncate(outcome.output)}`;
       continue;
     }
 

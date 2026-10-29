@@ -60,6 +60,13 @@ class SwarmAgent(BaseInstalledAgent):
         result = await self.exec_as_agent(environment, command=command)
         output = f"{getattr(result, 'stdout', '') or ''}"
         (self.logs_dir / "swarm-run.txt").write_text(output + (getattr(result, "stderr", "") or ""))
+        evidence = re.search(r"^evidence\s+(\S+)", output, re.MULTILINE)
+        if evidence is not None:
+            # The session ledger shows why a run stopped; it would otherwise stay in the container.
+            try:
+                await environment.download_dir(evidence.group(1), self.logs_dir / "session")
+            except Exception as error:  # noqa: BLE001 - a missing ledger is noted, never a failed trial
+                (self.logs_dir / "session-download-error.txt").write_text(repr(error))
         tokens = re.search(r"^tokens\s+(\d+)", output, re.MULTILINE)
         if tokens is not None:
             # swarm reports one total; it is recorded as input so the runner's sum stays exact.
