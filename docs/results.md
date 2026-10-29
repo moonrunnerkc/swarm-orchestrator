@@ -5,13 +5,13 @@ from the files the evaluation recorded; nothing here is entered by hand.
 
 ## Three-arm evaluation
 
-Run `2026-10-29T01-15-57-642Z-smoke`: 3 task(s) from swebench-verified, model `qwen3.6:35b-a3b` for every arm, judged by the benchmark's own tests through Harbor. A trial the tests never judged is counted under Tasks but not Judged.
+Run `2026-10-29T01-15-57-642Z-smoke`: 3 task(s) from swebench-verified, model `qwen3.6:35b-a3b` for every arm, judged by the benchmark's own tests through Harbor. A trial the tests never judged is counted under Tasks but not Judged. Commits: mini-swe-agent not recorded; opencode not recorded; swarm 0a7ca584d.
 
 | Arm | Tasks | Judged | Passed | pass@1 | Wilson 95% | Median wall (s) | Tokens |
 | --- | ---: | ---: | ---: | ---: | --- | ---: | ---: |
 | mini-swe-agent | 3 | 3 | 1 | 33.3% | 6.1% to 79.2% | 579 | 4462097 (3 reported) |
 | opencode | 3 | 3 | 1 | 33.3% | 6.1% to 79.2% | 156 | 757644 (3 reported) |
-| swarm | 3 | 3 | 2 | 66.7% | 20.8% to 93.9% | 180 | 1797632 (2 reported) |
+| swarm | 3 | 3 | 2 | 66.7% | 20.8% to 93.9% | 234 | 1797632 (2 reported) |
 
 | Pair | Both judged | First only | Second only | McNemar p |
 | --- | ---: | ---: | ---: | ---: |

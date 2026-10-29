@@ -24,11 +24,11 @@ Marked `[x]` when finished and committed. On resume, continue from the first `[ 
 - [x] 3.6 Five surfaces call one path; caps pass and join gates
 
 ## Phase 4: evaluation
-- [ ] 4.1 eval/ runner, frozen task lists, three arms
-- [ ] 4.2 eval/report.mjs and docs/results.md; delete number-asserting pages
+- [x] 4.1 eval/ runner, frozen task lists, three arms
+- [x] 4.2 eval/report.mjs and docs/results.md; delete number-asserting pages
 - [x] 4.3 eval/tamper generator and runner; table in docs/results.md
 - [x] 4.4 nightly-eval.yml
-- [ ] 4.5 Smoke run and full tamper run
+- [x] 4.5 Smoke run and full tamper run
 
 ## Phase 5: front door
 - [x] 5.1 README under 120 lines
