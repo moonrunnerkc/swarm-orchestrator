@@ -35,7 +35,14 @@ export const arms = {
     env: { MSWEA_COST_TRACKING: "ignore_errors" },
   },
   // OpenCode calls the Responses API for a provider named openai, so the slug names another.
-  opencode: { agent: "opencode", provider: "local", connection: true, env: {} },
+  opencode: {
+    agent: "opencode",
+    provider: "local",
+    connection: true,
+    env: {},
+    // 1.19.5 never exits after its last turn; 1.14.48 is the version earlier comparisons ran.
+    kwargs: { version: "1.14.48" },
+  },
   // The adapter reads the endpoint from SWARM_EVAL_ENDPOINT rather than Harbor's overrides.
   swarm: { agent: "swarm_agent:SwarmAgent", provider: "openai", connection: false, env: {} },
 };
@@ -162,6 +169,10 @@ async function main() {
             : []),
           ...Object.entries(arms[armName].env).flatMap(([key, value]) => [
             "--ae",
+            `${key}=${value}`,
+          ]),
+          ...Object.entries(arms[armName].kwargs ?? {}).flatMap(([key, value]) => [
+            "--ak",
             `${key}=${value}`,
           ]),
           "-n",

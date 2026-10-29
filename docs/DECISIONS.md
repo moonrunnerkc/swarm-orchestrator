@@ -51,3 +51,5 @@ One line per open choice made during the verifier-first rebuild (ADR 0014), with
 - SWE-bench Verified images are x86_64 only, so the evaluation runs in a separate Colima profile (swarm-eval, vz with Rosetta) with buildx and DOCKER_DEFAULT_PLATFORM=linux/amd64; the default Colima VM is untouched.
 - A trial the benchmark's tests never judged (a harness error) is recorded with pass null and reported under Tasks but not Judged; pass@1 is over judged trials and both counts are printed.
 - The tamper evaluation counts a patch as flagged when the verdict is anything but pass; precision with nothing flagged would be reported as n/a, not zero.
+- The 10 MB fresh-clone limit is measured on a depth-1 clone (1.4 MB at the end of the rebuild): the full history still carries the archived evidence, and rewriting published history would be destructive and was not asked for.
+- OpenCode is pinned to 1.14.48 in the evaluation: Harbor installs the latest (1.19.5), which never exits after its final turn, and 1.14.48 is the version earlier comparisons ran.

@@ -5,7 +5,14 @@ from the files the evaluation recorded; nothing here is entered by hand.
 
 ## Three-arm evaluation
 
-No three-arm results exist yet.
+Run `2026-10-29T01-12-14-440Z-stub` used the stub model, which answers every request with the same command. It shows the harness runs end to end; no model results exist yet, and nothing below measures an agent.
+
+| Arm | Tasks | Judged | Passed | pass@1 | Wilson 95% | Median wall (s) | Tokens |
+| --- | ---: | ---: | ---: | ---: | --- | ---: | ---: |
+| opencode | 1 | 1 | 0 | 0.0% | 0.0% to 79.3% | 7 | 11438 (1 reported) |
+
+| Pair | Both judged | First only | Second only | McNemar p |
+| --- | ---: | ---: | ---: | ---: |
 
 ## Tamper evaluation
 
