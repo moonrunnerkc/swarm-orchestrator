@@ -34,13 +34,16 @@ describe("the two products' identities", () => {
     expect(orchestrator.homepage).toBe("https://github.com/moonrunnerkc/swarm-orchestrator#readme");
   });
 
-  it("names the verifier package as the standalone verifier and its binary as swarm-verify", () => {
+  it("names the verifier package as the standalone verifier, with its CLI and MCP binaries", () => {
     expect(verifier.name).toBe("swarm-verify");
-    expect(verifier.bin).toEqual({ "swarm-verify": "dist/swarm-verify.js" });
+    expect(verifier.bin).toEqual({
+      "swarm-verify": "dist/swarm-verify.js",
+      "swarm-verify-mcp": "mcp.mjs",
+    });
     expect(verifier.description).toMatch(/^Rerun a project's own checks/);
     expect(verifier.description).toMatch(/in-toto/);
     expect(verifier.homepage).toBe(
-      "https://github.com/moonrunnerkc/swarm-orchestrator/tree/main/packages/swarm-verify#readme",
+      "https://github.com/moonrunnerkc/swarm-orchestrator/tree/v13-main/packages/swarm-verify#readme",
     );
   });
 

@@ -16,9 +16,10 @@ npx swarm-verify verify --patch change.diff      # a patch file against HEAD (or
 
 ## GitHub Action
 
-The manifest is `packages/swarm-verify/action.yml`. It runs `swarm-verify ci`, which verifies
-`HEAD` against the merge base with the pull request's base branch and adds the verdict to the
-job summary. Check out the full history so the base is present.
+The manifest is `packages/swarm-verify/action.yml`. It sets up Node 24 and runs
+`npx swarm-verify@<version> ci`, which verifies `HEAD` against the merge base with the pull
+request's base branch and adds the verdict to the job summary. Check out the full history so the
+base is present. [docs/demos/action-demo.sh](demos/action-demo.sh) runs its steps by hand.
 
 ```yaml
 on: pull_request
@@ -29,7 +30,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: moonrunnerkc/swarm-orchestrator/packages/swarm-verify@main
+      - uses: moonrunnerkc/swarm-orchestrator/packages/swarm-verify@swarm-verify-v2.0.0
 ```
 
 ## Any other CI system
@@ -53,10 +54,26 @@ repos:
         pass_filenames: false
 ```
 
-## MCP clients and agent hooks
+Its run against an honest fix and a test edited together with source is
+[docs/demos/pre-commit-demo.sh](demos/pre-commit-demo.sh).
 
-An MCP client or a coding agent runs the same command through the command tool it already
-has; nothing else is needed. A Claude Code `Stop` hook in `.claude/settings.json`:
+## MCP
+
+`packages/swarm-verify/mcp.mjs` (the `swarm-verify-mcp` command) is a Model Context Protocol
+server over stdio with one tool, `verify`. It takes `workspace`, `base`, `patch` or `range`, runs
+`swarm-verify verify --json` and returns the predicate, so a client gets what the command line
+prints. A client configuration:
+
+```json
+{ "mcpServers": { "swarm-verify": { "command": "npx", "args": ["--yes", "--package=swarm-verify", "swarm-verify-mcp"] } } }
+```
+
+[docs/demos/mcp-demo.sh](demos/mcp-demo.sh) starts it, lists the tool and calls it.
+
+## Agent hooks
+
+A coding agent runs the same command through the command tool it already has. A Claude Code
+`Stop` hook in `.claude/settings.json`:
 
 ```json
 {

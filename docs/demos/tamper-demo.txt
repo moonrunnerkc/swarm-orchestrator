@@ -1,6 +1,7 @@
 # Transcript of sh docs/demos/tamper-demo.sh, recorded 2026-10-29 on v24.15.0 with cosign v3.1.4.
 # $REPO is this checkout and $SCRATCH the demo's temporary directory.
 
+
 $ node $REPO/src/cli.ts init
 wrote $SCRATCH/demo/swarm.toml
   test: npm run test
@@ -11,9 +12,10 @@ $ printf 'export const half = (n) => n / 2;\n' > half.mjs
 
 $ node $REPO/src/cli.ts verify --out out
 verdict      pass
-base         eef1a18ac8444a593176bfaf037a6d422a54e646
+base         4c64ef5185a9271f034a3cf128af2609a6af42c5
 change       1 file(s) from the working-tree
 check        test: pass (npm run test)
+baseline     0 of 1 check(s) pass at the base commit
 held-out     unmeasured: no held-out checks are sealed for this workspace
 protected    0 protected path(s) changed, none together with source
 coverage     1 of 1 changed line(s) covered (v8)
@@ -52,3 +54,4 @@ WARNING: Skipping tlog verification is an insecure practice that lacks transpare
 Error: failed to verify signature: could not verify envelope: accepted signatures do not match threshold, Found: 0, Expected 1
 error during command execution: failed to verify signature: could not verify envelope: accepted signatures do not match threshold, Found: 0, Expected 1
 [exit 1]
+[script exit 0]

@@ -1,0 +1,58 @@
+# Transcript of sh docs/demos/pre-commit-demo.sh, recorded 2026-10-29 on v24.15.0.
+# $REPO is this checkout and $SCRATCH the demo's temporary directory.
+
+
+$ cat .git/hooks/pre-commit
+#!/bin/sh
+sh -c 'git diff --cached --binary > .git/swarm-staged.patch && npx --yes swarm-verify verify --patch .git/swarm-staged.patch'
+[exit 0]
+
+$ printf 'export const half = () => 2;\n' > half.mjs && sed -i.bak 's/half(4), 2/half(4), half(4)/' test/half.test.mjs && rm test/half.test.mjs.bak
+[exit 0]
+
+$ git add half.mjs test/half.test.mjs && git commit -qm 'Make the test pass'
+verdict      fail
+reason       test/half.test.mjs (tests) changed together with source
+base         3083c49f442bb34d43c8a216b7b52d6ee538a254
+change       2 file(s) from the patch
+check        test: pass (node --test)
+baseline     0 of 1 check(s) pass at the base commit
+held-out     unmeasured: no held-out checks are sealed for this workspace
+protected    1 violation(s): test/half.test.mjs
+coverage     1 of 1 changed line(s) covered (v8)
+mutation     survived: number plus one at half.mjs:1
+environment  sha256:f8df84aa93cbacc6ca34a3142946a704d5f04a7d3b8851ab166e908c9e51d303 (dependencies linked)
+
+protected paths changed together with source: test/half.test.mjs
+
+attestation  $SCRATCH/demo/.swarm/verify/attestation.sigstore.json
+public key   $SCRATCH/demo/.swarm/verify/attestation.pub.pem
+[exit 1]
+
+$ git log --oneline
+3083c49 base
+[exit 0]
+
+$ git reset -q && git checkout -q -- test/half.test.mjs && printf 'export const half = (n) => n / 2;\n' > half.mjs
+[exit 0]
+
+$ git add half.mjs && git commit -qm 'Halve the number'
+verdict      pass
+base         3083c49f442bb34d43c8a216b7b52d6ee538a254
+change       1 file(s) from the patch
+check        test: pass (node --test)
+baseline     0 of 1 check(s) pass at the base commit (reused)
+held-out     unmeasured: no held-out checks are sealed for this workspace
+protected    0 protected path(s) changed, none together with source
+coverage     1 of 1 changed line(s) covered (v8)
+mutation     killed: number plus one at half.mjs:1
+environment  sha256:f8df84aa93cbacc6ca34a3142946a704d5f04a7d3b8851ab166e908c9e51d303 (dependencies linked)
+attestation  $SCRATCH/demo/.swarm/verify/attestation.sigstore.json
+public key   $SCRATCH/demo/.swarm/verify/attestation.pub.pem
+[exit 0]
+
+$ git log --oneline
+4cd4d2d Halve the number
+3083c49 base
+[exit 0]
+[script exit 0]

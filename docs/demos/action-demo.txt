@@ -1,0 +1,48 @@
+# Transcript of sh docs/demos/action-demo.sh, recorded 2026-10-29 on v24.15.0.
+# $REPO is this checkout and $SCRATCH the demo's temporary directory.
+
+
+$ node --version
+v24.15.0
+[exit 0]
+
+$ npx --yes "swarm-verify@${VERSION}" ci ${BASE:+--base "$BASE"}
+verdict      pass
+base         9367bd87cbd2f71c26b2f7df4217cc468e478e62
+change       1 file(s) from the range
+check        test: pass (node --test)
+baseline     0 of 1 check(s) pass at the base commit
+held-out     unmeasured: no held-out checks are sealed for this workspace
+protected    0 protected path(s) changed, none together with source
+coverage     1 of 1 changed line(s) covered (v8)
+mutation     killed: number plus one at half.mjs:1
+environment  sha256:1bc24a881b6619c17b12e5c2b95f0e82426b7a5f8a17d65e81ba059c5ae2271b (dependencies none)
+attestation  $SCRATCH/workspace/.swarm/verify/attestation.sigstore.json
+public key   $SCRATCH/workspace/.swarm/verify/attestation.pub.pem
+[exit 0]
+
+$ ls .swarm/verify
+attestation.pub.pem
+attestation.sigstore.json
+change.patch
+[exit 0]
+
+$ node -p 'require("./.swarm/verify/attestation.sigstore.json").mediaType'
+application/vnd.dev.sigstore.bundle.v0.3+json
+[exit 0]
+
+$ node $REPO/packages/swarm-verify/verify.mjs .swarm/verify/attestation.sigstore.json --key .swarm/verify/attestation.pub.pem --patch .swarm/verify/change.patch
+ok     envelope  application/vnd.in-toto+json
+ok     signature verifies under the given key
+ok     statement https://in-toto.io/Statement/v1 with https://swarm-verify.dev/verdict/v1
+ok     patch     sha256:ea075aa37fb74e1641c6b97cae87c2aa5eca4407609e464261178a9ec6d7c7bc
+verdict   pass
+[exit 0]
+
+$ head -4 $SCRATCH/summary.md
+### swarm-verify: pass
+
+| | |
+| --- | --- |
+[exit 0]
+[script exit 0]
