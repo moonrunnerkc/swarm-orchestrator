@@ -35,4 +35,4 @@ Marked `[x]` when finished and committed. On resume, continue from the first `[ 
 - [x] 5.2 Package descriptions, 15.0.0 and swarm-verify 2.0.0 unreleased
 
 ## Definition of done
-- [ ] All thirteen checks hold; final report
+- [x] All thirteen checks hold; final report
