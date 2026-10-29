@@ -19,67 +19,11 @@ export const genesisHash = "genesis";
  */
 export const recordTypes = [
   "session-started",
-  "run-assessment",
-  "acceptance-contract",
-  "contract-verification",
-  "verification-command",
-  "independent-verification",
-  "campaign-protocol",
-  "campaign-observation",
-  "first-run-observation",
-  "run-spec-sealed",
-  "task-contract",
-  "controller-event",
-  "controller-graph",
-  "controller-configuration",
-  "bootstrap-stage",
-  "dependency-install",
-  "controller-launch",
-  "goal-candidate-verification",
-  "goal-attempt-selection",
-  "controller-transition",
-  "controller-candidate",
-  "coordination-event",
-  "goal-contract",
-  "controller-assessment",
-  "goal-check",
-  "goal-verification",
-  "execution-envelope",
-  "execution-resource",
-  "local-endpoint",
   "model-call",
-  "model-call-started",
-  "transcript-component",
   "tool-call",
   "confirmation",
-  "run-allowance",
-  "model-default",
-  "claim",
+  "verification",
   "session-stopped",
-  "session-budget",
-  "gate-run",
-  "gate-baseline",
-  "gate-set-sealed",
-  "gate-bond",
-  "ratchet-decision",
-  "file-set-declared",
-  "file-set-amended",
-  "escalation",
-  "workspace-diff",
-  "inherited-changes",
-  "calibration-canary",
-  "calibration-preflight",
-  "calibration-run",
-  "calibration-summary",
-  "calibration-verdict",
-  "routing-decision",
-  "reward",
-  "worker-started",
-  "worker-finished",
-  "merge-attempt",
-  "attempt-selection",
-  "task-graph",
-  "task-graph-outcome",
 ] as const;
 
 export type RecordType = (typeof recordTypes)[number];
@@ -88,32 +32,21 @@ const digestSchema = z.string().regex(digestPattern, "expected a sha256:<hex> di
 
 const provenanceTagSchema = z.enum(["user", "model", "tool-output", "file"]);
 
-export const ledgerRecordSchema = z
-  .object({
-    schemaVersion: z.literal(ledgerSchemaVersion),
-    sequence: z.number().int().nonnegative(),
-    previousHash: z.union([z.literal(genesisHash), digestSchema]),
-    /** Milliseconds from the injected clock, never a direct Date.now call. */
-    timestamp: z.number().int(),
-    type: z.enum(recordTypes),
-    /** Model id for model-authored actions, "harness" for everything the harness did. */
-    actor: z.string().min(1),
-    payloadDigest: digestSchema,
-    provenance: z.array(provenanceTagSchema),
-    promptDigest: digestSchema.optional(),
-    responseDigest: digestSchema.optional(),
-  })
-  .superRefine((record, context) => {
-    if (record.type !== "model-call") {
-      return;
-    }
-    if (record.promptDigest === undefined || record.responseDigest === undefined) {
-      context.addIssue({
-        code: "custom",
-        message: "a model-call record carries both a promptDigest and a responseDigest",
-      });
-    }
-  });
+/** Where an input came from: a person, the model, tool output or a file. */
+export type ProvenanceTag = z.infer<typeof provenanceTagSchema>;
+
+export const ledgerRecordSchema = z.object({
+  schemaVersion: z.literal(ledgerSchemaVersion),
+  sequence: z.number().int().nonnegative(),
+  previousHash: z.union([z.literal(genesisHash), digestSchema]),
+  /** Milliseconds from the injected clock, never a direct Date.now call. */
+  timestamp: z.number().int(),
+  type: z.enum(recordTypes),
+  /** Model id for model-authored actions, "harness" for everything the harness did. */
+  actor: z.string().min(1),
+  payloadDigest: digestSchema,
+  provenance: z.array(provenanceTagSchema),
+});
 
 export type LedgerRecord = z.infer<typeof ledgerRecordSchema>;
 

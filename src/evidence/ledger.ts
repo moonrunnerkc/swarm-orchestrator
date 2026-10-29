@@ -1,7 +1,5 @@
 import { readFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { Clock } from "../core/clock.ts";
-import type { ProvenanceTag } from "../core/model-client.ts";
 import { appendLedgerLine } from "./ledger-file.ts";
 import {
   genesisHash,
@@ -9,6 +7,7 @@ import {
   type LedgerRecord,
   ledgerRecordSchema,
   ledgerSchemaVersion,
+  type ProvenanceTag,
   type RecordType,
   serializeRecord,
 } from "./ledger-record.ts";
@@ -41,8 +40,6 @@ interface LedgerAppend {
   readonly actor: string;
   readonly payloadDigest: string;
   readonly provenance: readonly ProvenanceTag[];
-  readonly promptDigest?: string;
-  readonly responseDigest?: string;
 }
 
 export interface ChainHead {
@@ -61,7 +58,8 @@ export interface Ledger {
 
 interface LedgerOptions {
   readonly path: string;
-  readonly clock: Clock;
+  /** Milliseconds since the epoch, injected so a test controls time. */
+  readonly now: () => number;
   /** Injected so a test can drive the abort path without breaking a real filesystem. */
   readonly write?: (path: string, line: string) => Promise<void>;
 }
@@ -102,13 +100,11 @@ export async function openLedger(options: LedgerOptions): Promise<Ledger> {
       schemaVersion: ledgerSchemaVersion,
       sequence,
       previousHash,
-      timestamp: options.clock.now(),
+      timestamp: options.now(),
       type: entry.type,
       actor: entry.actor,
       payloadDigest: entry.payloadDigest,
       provenance: [...entry.provenance],
-      ...(entry.promptDigest === undefined ? {} : { promptDigest: entry.promptDigest }),
-      ...(entry.responseDigest === undefined ? {} : { responseDigest: entry.responseDigest }),
     });
 
     try {

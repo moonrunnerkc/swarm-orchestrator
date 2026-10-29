@@ -1,19 +1,6 @@
-import { existsSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { isCredentialName } from "../evidence/scrub.ts";
-import {
-  childEnvironment,
-  childHomeEnvironmentName,
-  defaultChildHome,
-  harnessChildEnvironment,
-  overlaidEnvironment,
-  UnauthorizableEnvironmentName,
-  UnusableChildHome,
-  UnusableToolDirectory,
-  withToolDirectories,
-} from "./child-environment.ts";
+import { isCredentialName } from "../evidence/credential-names.ts";
+import { childEnvironment } from "./child-environment.ts";
 
 const workerHome = "/tmp/worker-home";
 
@@ -156,39 +143,6 @@ describe("what a child process inherits", () => {
     });
   });
 
-  it("gives a run the child HOME a supervisor named, so one run's installs cannot satisfy another's", () => {
-    const named = join(tmpdir(), `swarm-child-home-test-${process.pid}`);
-    try {
-      expect(defaultChildHome({ [childHomeEnvironmentName]: named })).toBe(named);
-      expect(existsSync(named)).toBe(true);
-      expect(harnessChildEnvironment().variables.HOME).not.toBe(named);
-    } finally {
-      rmSync(named, { recursive: true, force: true });
-    }
-  });
-
-  it("refuses a relative child HOME rather than resolving it against whatever the cwd is", () => {
-    expect(() => defaultChildHome({ [childHomeEnvironmentName]: "child-home" })).toThrow(
-      UnusableChildHome,
-    );
-    // Blank is the same as unset: the process's own private home, not a refusal and not
-    // one directory shared by every run on the machine.
-    expect(defaultChildHome({ [childHomeEnvironmentName]: "  " })).toBe(defaultChildHome({}));
-    expect(defaultChildHome({ [childHomeEnvironmentName]: "  " })).not.toBe(
-      join(tmpdir(), "swarm-child-home"),
-    );
-  });
-
-  it("names a scratch directory that exists, because a missing one is measured as nothing", () => {
-    // A TMPDIR naming a directory that is not there does not fail: node's test runner writes a
-    // zero-byte lcov report, and invariant 7 reads an incomplete report as not measured. The
-    // coverage arm went quiet rather than loud.
-    const built = harnessChildEnvironment();
-
-    expect(existsSync(built.variables.TMPDIR ?? "")).toBe(true);
-    expect(existsSync(built.variables.HOME ?? "")).toBe(true);
-  });
-
   it("rules on a credential name with the one detector the scrub and the gate already share", () => {
     expect(isCredentialName("anthropic_api_key")).toBe(true);
     expect(isCredentialName("Aws_Session_Token")).toBe(true);
@@ -203,68 +157,5 @@ describe("a name a run authorizes that may never travel", () => {
         childEnvironment({ [name]: "/tmp/hook.so" }, { homeDir: workerHome, passThrough: [name] }),
       ).toThrow(/any process/);
     }
-  });
-});
-
-describe("a command's own environment overlay", () => {
-  const built = () => childEnvironment({ PATH: "/usr/bin" }, { homeDir: workerHome }).variables;
-
-  // The reach measurement asks node to write a coverage artifact to a directory the harness
-  // named. That is where the process writes, not what it loads, and it is the one NODE_ name
-  // this allows: the blanket refusal of the rest stays, because the family is where a preload
-  // arrives under whatever spelling comes next.
-  it("carries the coverage destination the harness named", () => {
-    const overlaid = overlaidEnvironment(built(), { NODE_V8_COVERAGE: "/tmp/reach-abc" });
-
-    expect(overlaid.NODE_V8_COVERAGE).toBe("/tmp/reach-abc");
-    expect(overlaid.PATH).toBe("/usr/bin");
-  });
-
-  it("refuses a name that decides what node loads, whoever asked for it", () => {
-    expect(() => overlaidEnvironment(built(), { NODE_OPTIONS: "--require=./hook.js" })).toThrow(
-      UnauthorizableEnvironmentName,
-    );
-    expect(() => overlaidEnvironment(built(), { NODE_PATH: "/evil" })).toThrow(
-      UnauthorizableEnvironmentName,
-    );
-    expect(() => overlaidEnvironment(built(), { DYLD_INSERT_LIBRARIES: "/evil.dylib" })).toThrow(
-      UnauthorizableEnvironmentName,
-    );
-  });
-
-  it("refuses a credential name, so an overlay cannot put back what the build withheld", () => {
-    expect(() => overlaidEnvironment(built(), { ANTHROPIC_API_KEY: "sk-ant-x" })).toThrow(
-      UnauthorizableEnvironmentName,
-    );
-  });
-
-  it("leaves the environment it was given alone", () => {
-    const base = built();
-    overlaidEnvironment(base, { TZ: "America/New_York" });
-
-    expect(base.TZ).toBeUndefined();
-  });
-});
-
-describe("a tool directory the harness prepared", () => {
-  it("goes first on the built PATH and changes nothing else", () => {
-    const built = { PATH: "/usr/bin:/bin", HOME: workerHome };
-    expect(
-      withToolDirectories(built, ["/work/node_modules/.swarm-pnpm/node_modules/.bin"]),
-    ).toEqual({
-      PATH: "/work/node_modules/.swarm-pnpm/node_modules/.bin:/usr/bin:/bin",
-      HOME: workerHome,
-    });
-    expect(built.PATH).toBe("/usr/bin:/bin");
-    expect(withToolDirectories(built, [])).toEqual(built);
-  });
-
-  it("is refused rather than put on PATH where it is relative or would split into two entries", () => {
-    expect(() => withToolDirectories({ PATH: "/bin" }, ["node_modules/.bin"])).toThrow(
-      UnusableToolDirectory,
-    );
-    expect(() => withToolDirectories({ PATH: "/bin" }, ["/work:/elsewhere"])).toThrow(
-      UnusableToolDirectory,
-    );
   });
 });

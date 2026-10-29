@@ -11,6 +11,10 @@ remains in the history of pull request #101.
 
 ### Changed
 
+- `swarm run "<task>"` is a single-bash-tool loop: one command per turn through the chokepoint
+  and path policy, the task, `git status --short` and the last verifier failure verbatim at the
+  top of every turn, and the verifier as the only judge of completion. It stops on a verified
+  tree, the step budget or the token budget, and says which.
 - `swarm verify` and `swarm ci` rerun the declared checks on a change (working tree, ref range
   or patch) in a clean checkout of the base, refuse protected paths changed together with
   source, run held-out checks sealed with `swarm init --seal`, measure changed-line coverage

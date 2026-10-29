@@ -21,6 +21,7 @@ import { readShellCommand } from "./shell-command.ts";
 const policy: PolicyGuardRules = {
   workspaceRoot: "/work/repo",
   homeDir: "/home/dev",
+  childHomeDir: "/tmp/swarm-test-child-home",
   shellAllowlist: defaultShellAllowlist,
   deniedRoots: ["/work/repo/.swarm"],
   realpath: (path) => path,
@@ -235,6 +236,7 @@ describe("the same attacks against a real workspace", () => {
     realGuard = createPolicyGuard({
       workspaceRoot: workspace,
       homeDir: "/home/dev",
+      childHomeDir: "/tmp/swarm-test-child-home",
       shellAllowlist: defaultShellAllowlist,
       deniedRoots: [],
     });

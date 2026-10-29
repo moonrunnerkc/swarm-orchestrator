@@ -9,6 +9,13 @@ export interface CommandDefinition {
 /** The subcommands, in the order help lists them. Help and the caps check both read this. */
 export const commandDefinitions: readonly CommandDefinition[] = [
   {
+    name: "run",
+    syntax:
+      'run "<task>" [--endpoint <url>] [--model <name>] [--max-steps <n>] [--max-tokens <n>] [--approve ask|auto]',
+    description: "work on the task with one bash tool until the verifier passes the working tree",
+    verifier: false,
+  },
+  {
     name: "verify",
     syntax: "verify [--base <ref>] [--patch <file> | --range <a..b>] [--out <dir>] [--sigstore]",
     description: "rerun the declared checks on a change in a clean checkout and sign the verdict",

@@ -9,8 +9,7 @@ Two small products on one implementation ([ADR 0014](docs/adr/0014-verifier-firs
 
 ## Commands
 
-- `npm run gates`: checks, typecheck, lint and the full test suite. This defines green. The
-  caps check joins it once the rebuild brings the tree under the caps.
+- `npm run gates`: checks, caps, typecheck, lint and the full test suite. This defines green.
 - `npm run checks`: documentation paths resolve against what git tracks.
 - `npm run caps`: the size caps below.
 - `npm run typecheck`, `npm run lint`, `npm test`, `npm run format`.
@@ -21,14 +20,19 @@ commits, pushed code, passing CI and published packages are separate facts.
 
 ## Layout
 
-- `src/cli.ts`: the `swarm` entry and its subcommands, one small module each.
+- `src/cli.ts`: the `swarm` entry and its subcommands (`run`, `verify`, `init`, `ci`, `doctor`),
+  one small module each, dispatched by `src/cli-main.ts`.
+- `src/agent`: the `run` loop. One bash tool, one command per turn, the verifier as the only judge.
+- `src/verify`: clean checkout, protected paths, declared and held-out checks, coverage, one
+  mutation, the in-toto Statement and its DSSE signature.
 - `src/swarm-verify.ts`: the verifier's entry. Its closure may not reach a model client, the
   agent loop or a terminal interface; the verifier build enforces that.
 - `src/tools`: the one execution chokepoint and the lexical path policy.
 - `src/exec`: child environments built from scratch, process groups, the process runner.
 - `src/evidence`: append-only hash-chained records, canonical JSON, signing, scrubbing.
 - `src/config`: `swarm.toml`, validated with Zod.
-- `packages/swarm-verify`: the published verifier package and its GitHub Action manifest.
+- `packages/swarm-verify`: the published verifier package, its GitHub Action manifest and
+  `verify.mjs`, the dependency-free checker.
 
 ## Invariants
 

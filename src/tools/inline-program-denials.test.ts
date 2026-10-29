@@ -17,6 +17,7 @@ const workspace =
 const guard = createPolicyGuard({
   workspaceRoot: workspace,
   homeDir: "/Users/brad",
+  childHomeDir: "/tmp/swarm-test-child-home",
   shellAllowlist: ["node"],
   deniedRoots: [],
   realpath: (path) => path,

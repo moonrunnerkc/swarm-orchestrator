@@ -4,6 +4,7 @@ import { createPolicyGuard, defaultShellAllowlist, type PolicyGuardRules } from 
 const policy: PolicyGuardRules = {
   workspaceRoot: "/work/repo",
   homeDir: "/home/dev",
+  childHomeDir: "/tmp/swarm-test-child-home",
   shellAllowlist: ["git", "npm"],
   deniedRoots: ["/home/dev/.swarm"],
   // No real filesystem in these tests: every path resolves to itself.

@@ -100,6 +100,6 @@ describe("swarm verify and verify.mjs", () => {
   it("lists exactly the commands it has", () => {
     const help = node([cli, "--help"]).stdout;
     const listed = [...help.matchAll(/^ {2}swarm (\S+)/gm)].map((match) => match[1]);
-    expect(listed).toEqual(["verify", "init", "ci", "doctor"]);
+    expect(listed).toEqual(["run", "verify", "init", "ci", "doctor"]);
   });
 });

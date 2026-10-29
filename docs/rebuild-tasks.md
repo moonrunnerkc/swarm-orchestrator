@@ -12,8 +12,8 @@ Marked `[x]` when finished and committed. On resume, continue from the first `[ 
 - [x] 1.7 scripts/check-caps.mjs (`npm run caps`)
 
 ## Phase 2: agent loop
-- [ ] 2.1 src/agent/ single bash tool loop (at most five files, 500 lines)
-- [ ] 2.2 Delete the controller and mid-run gates; trim swarm.toml config
+- [x] 2.1 src/agent/ single bash tool loop (at most five files, 500 lines)
+- [x] 2.2 Delete the controller and mid-run gates; trim swarm.toml config
 
 ## Phase 3: verifier
 - [x] 3.1 src/verify/ checkout, apply, protected paths, declared checks

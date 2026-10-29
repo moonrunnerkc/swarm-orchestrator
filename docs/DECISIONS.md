@@ -34,3 +34,12 @@ One line per open choice made during the verifier-first rebuild (ADR 0014), with
 - Both binaries share one dispatcher (src/cli-main.ts) and one command list, so `swarm` and `swarm-verify` parse, print help and exit identically; `swarm` adds doctor and run.
 - The mutation witness tries comparison, logical, boolean, arithmetic, min/max and numeric-literal operators, then drops a returned value as a last resort, so a changed return of a call is still mutated.
 - A sealed set lives under SWARM_HOME (default ~/.swarm)/sealed/<hash of the workspace path>, owner-only, outside every workspace the agent sees.
+- Each turn carries at most 10,000 bytes of command output (or verifier failure), keeping the start and the end, which is where errors and summaries are.
+- The model protocol is one fenced bash block per reply and a completion marker alone on a line, over the OpenAI-compatible chat API at temperature 0, so any local or hosted endpoint works without tool-calling support.
+- Where an endpoint reports no token usage, the token budget counts an estimate (characters / 4) for that turn and the run reports how many turns were estimated.
+- The chokepoint was narrowed to the one bash tool: JSON argument decoding, the tool registry and the derivation heuristic went, because with nobody in the loop the heuristic's confirmations could only become refusals of ordinary commands.
+- Off-allowlist commands are approved by `--approve auto` or `[agent] approval = "auto"`, asked of a person on a terminal, and refused when nobody is there to ask.
+- `run` judges against the commit it started from and writes its final attestation to `.swarm/verify/` in the workspace, carrying the model name and the prompt digest.
+- The shell reader now reads heredocs: a body is data for most programs, the program itself for node and python (read by the same inline-program reader as -c and -e), and unreadable for a shell or where an unquoted body would expand a substitution. Before this, body lines were read as commands, so every heredoc file write was refused.
+- The policy guard resolves denied roots through symlinks as it does requested paths; before, a denied root under a symlinked directory (macOS /var, /tmp) never matched.
+- src/core went with the AI SDK model client; the ledger takes a `now` function instead of a clock object.

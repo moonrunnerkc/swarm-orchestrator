@@ -1,10 +1,6 @@
 import { realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import {
-  type ChildEnvironment,
-  childEnvironment,
-  defaultChildHome,
-} from "../exec/child-environment.ts";
+import { type ChildEnvironment, childEnvironment } from "../exec/child-environment.ts";
 import { readShellCommand } from "./shell-command.ts";
 
 /**
@@ -76,7 +72,7 @@ export interface PolicyGuardRules {
    * HOME for a child process the run spawns. Never the operator's own: a command whose effect
    * a shell decides can reach `$HOME/.ssh` without naming a path anything here could rule on.
    */
-  readonly childHomeDir?: string | undefined;
+  readonly childHomeDir: string;
   /** Task variables this run authorized by name, passed to child processes. */
   readonly authorizedEnvironmentNames?: readonly string[] | undefined;
 }
@@ -105,13 +101,18 @@ export function createPolicyGuard(policy: PolicyGuardRules): PolicyGuard {
   const realpath = policy.realpath ?? defaultRealpath;
   const workspaceRoot = realpath(resolve(policy.workspaceRoot));
   const homeDirectory = resolve(policy.homeDir);
+  // Resolved through links like every request is, or a denied root under a symlinked directory
+  // (macOS's /var and /tmp) never matches the resolved path a command names.
   const deniedRoots = [
     resolve(policy.homeDir, ".aws"),
     resolve(policy.homeDir, ".ssh"),
     ...policy.deniedRoots.map((path) => resolve(path)),
-  ];
+  ].flatMap((path) => {
+    const resolved = resolveThroughLinks(path, realpath);
+    return resolved === path ? [path] : [path, resolved];
+  });
 
-  const childHome = resolve(policy.childHomeDir ?? defaultChildHome());
+  const childHome = resolve(policy.childHomeDir);
 
   return {
     workspaceRoot,

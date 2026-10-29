@@ -21,7 +21,7 @@ const packageRoot = join(root, "packages", "swarm-verify");
 const destination = join(packageRoot, "dist");
 
 // The agent loop, its chokepoint and model client, and the swarm entry stay out of the verifier.
-const forbidden = /^(agent|tools|core)\/|^cli(-doctor)?\.js$/;
+const forbidden = /^(agent|tools|core)\/|^cli(-doctor|-run)?\.js$/;
 
 /** Every emitted JavaScript file, relative to dist, so the closure is read off what tsc wrote. */
 export async function emittedModules(directory) {

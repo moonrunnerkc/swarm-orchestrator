@@ -174,3 +174,29 @@ describe("comments inside a program passed inline", () => {
     expect(operands).toContain("~/.ssh/id_rsa");
   });
 });
+
+describe("a heredoc", () => {
+  it("is data for the command, so its body names no path and runs no program", () => {
+    expect(readShellCommand("cat > half.mjs <<'EOF'\nexport const half = 1;\nEOF")).toEqual({
+      executables: ["cat"],
+      operands: ["half.mjs"],
+    });
+    expect(readShellCommand("cat <<-EOF > b.txt\n\thi\n\tEOF\nls")?.executables).toEqual([
+      "cat",
+      "ls",
+    ]);
+  });
+
+  it("is read as the program when an interpreter is handed it", () => {
+    expect(
+      readShellCommand("python3 - <<'PY'\nprint(open('.env').read())\nPY")?.operands,
+    ).toContain(".env");
+  });
+
+  it("is unreadable where it would expand, where it never ends, or where a shell runs it", () => {
+    expect(readShellCommand("cat > a.js <<EOF\nconst user = $(whoami)\nEOF")).toBeNull();
+    expect(readShellCommand("cat <<EOF\nno end")).toBeNull();
+    expect(readShellCommand("bash <<EOF\nls\nEOF")).toBeNull();
+    expect(readShellCommand("cat <<< hi")).toBeNull();
+  });
+});
