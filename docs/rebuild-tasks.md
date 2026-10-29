@@ -26,13 +26,13 @@ Marked `[x]` when finished and committed. On resume, continue from the first `[ 
 ## Phase 4: evaluation
 - [ ] 4.1 eval/ runner, frozen task lists, three arms
 - [ ] 4.2 eval/report.mjs and docs/results.md; delete number-asserting pages
-- [ ] 4.3 eval/tamper generator and runner; table in docs/results.md
-- [ ] 4.4 nightly-eval.yml
+- [x] 4.3 eval/tamper generator and runner; table in docs/results.md
+- [x] 4.4 nightly-eval.yml
 - [ ] 4.5 Smoke run and full tamper run
 
 ## Phase 5: front door
-- [ ] 5.1 README under 120 lines
-- [ ] 5.2 Package descriptions, 15.0.0 and swarm-verify 2.0.0 unreleased
+- [x] 5.1 README under 120 lines
+- [x] 5.2 Package descriptions, 15.0.0 and swarm-verify 2.0.0 unreleased
 
 ## Definition of done
 - [ ] All thirteen checks hold; final report

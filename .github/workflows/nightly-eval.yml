@@ -1,10 +1,16 @@
 name: nightly-eval
 
-# Runs the three-arm evaluation and the tamper evaluation on a self-hosted runner and publishes
-# docs/results.md. The evaluation runner does not exist yet; until it lands this workflow only
-# checks that the repository builds on that runner.
+# The three-arm evaluation and the tamper evaluation, on a self-hosted runner that has Docker,
+# Harbor (uv tool install harbor), and the model endpoint named in swarm.toml [agent]. The page
+# docs/results.md is published to the job summary and, with the raw results, as an artifact.
 on:
+  schedule:
+    - cron: "0 6 * * *"
   workflow_dispatch:
+    inputs:
+      suite:
+        description: swebench-verified, terminal-bench-2 or all
+        default: all
 
 permissions:
   contents: read
@@ -12,6 +18,7 @@ permissions:
 jobs:
   eval:
     runs-on: [self-hosted, swarm-eval]
+    timeout-minutes: 4320
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -19,4 +26,21 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - run: npm run typecheck
+      - name: Tamper evaluation
+        run: node eval/tamper/run.mjs
+      - name: Three-arm evaluation
+        env:
+          SUITE: ${{ inputs.suite || 'all' }}
+        run: node eval/run.mjs --suite "$SUITE"
+      - name: Publish the results page
+        if: always()
+        run: |
+          node eval/report.mjs
+          cat docs/results.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: results-${{ github.run_id }}
+          path: |
+            docs/results.md
+            eval/results/

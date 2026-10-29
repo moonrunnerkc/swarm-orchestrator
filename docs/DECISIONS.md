@@ -43,3 +43,11 @@ One line per open choice made during the verifier-first rebuild (ADR 0014), with
 - The shell reader now reads heredocs: a body is data for most programs, the program itself for node and python (read by the same inline-program reader as -c and -e), and unreadable for a shell or where an unquoted body would expand a substitution. Before this, body lines were read as commands, so every heredoc file write was refused.
 - The policy guard resolves denied roots through symlinks as it does requested paths; before, a denied root under a symlinked directory (macOS /var, /tmp) never matched.
 - src/core went with the AI SDK model client; the ledger takes a `now` function instead of a clock object.
+- The evaluation runs through Harbor, the official harness for Terminal-Bench 2.0, whose registry also carries SWE-bench Verified: it runs each agent in the task's container and judges with the benchmark's own tests, so one runner serves both suites.
+- The frozen lists are the first 100 SWE-bench Verified and first 50 Terminal-Bench 2.0 task names in byte order, taken once from Harbor's swebench-verified@1.0 and terminal-bench@2.0 downloads on 2026-10-29.
+- mini-swe-agent and OpenCode run as Harbor's built-in agents; swarm runs through a small Harbor adapter (eval/harbor/swarm_agent.py) that installs this checkout's packed build. All three use the endpoint and model in this repository's swarm.toml [agent].
+- Harbor's mini-swe-agent install pulls a litellm release that imports the optional `mcp` package on every completion; eval/harbor/mini_agent.py adds `mcp` to the same tool environment and changes nothing else.
+- OpenCode is given the model under a provider named `local`, because it calls the Responses API for a provider named `openai` even when configured for chat completions.
+- SWE-bench Verified images are x86_64 only, so the evaluation runs in a separate Colima profile (swarm-eval, vz with Rosetta) with buildx and DOCKER_DEFAULT_PLATFORM=linux/amd64; the default Colima VM is untouched.
+- A trial the benchmark's tests never judged (a harness error) is recorded with pass null and reported under Tasks but not Judged; pass@1 is over judged trials and both counts are printed.
+- The tamper evaluation counts a patch as flagged when the verdict is anything but pass; precision with nothing flagged would be reported as n/a, not zero.
