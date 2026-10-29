@@ -1,6 +1,7 @@
 # Follow-ups
 
-One line per thing deliberately not done during the verifier-first rebuild.
-- Dependencies are linked from the workspace; a monorepo whose node_modules symlinks workspace packages resolves them to the workspace rather than the checkout. A per-run install or a link rewrite would fix that.
-- Submodules are left out of the tree digest; verify.mjs cannot recompute a gitlink from an export.
-- The evaluation smoke ran three SWE-bench Verified tasks only; the Terminal-Bench 2.0 list and the remaining frozen tasks have not been run.
+One line per thing deliberately not done, each of which would change the product's shape, with
+why it waits.
+
+- Running checks in a sandbox (a container or a VM per verification) would put the judge's report, the base-run cache and the sealed store out of reach of the code under test; it waits because it brings back the container runtime and daemon dependency the rebuild removed.
+- Judging base runs per test instead of per declared check would tell an inherited failure from an unfixed one inside one suite; it waits because it needs a reader for every test runner's report format, where the verifier today reads only exit codes.
