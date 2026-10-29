@@ -12,11 +12,19 @@ function lines(predicate: Predicate): readonly (readonly [string, string])[] {
   ]);
   for (const check of predicate.checks)
     rows.push(["check", `${check.name}: ${check.result} (${check.command})`]);
+  const baseline = predicate.baseline;
+  const atBase = baseline.status === "measured" ? baseline.checks : [];
+  rows.push([
+    "baseline",
+    baseline.status === "measured"
+      ? `${atBase.filter((check) => check.result === "pass").length} of ${atBase.length} check(s) pass at the base commit${baseline.cached ? " (reused)" : ""}`
+      : `unmeasured: ${baseline.reason}`,
+  ]);
   const heldOut = predicate.heldOut;
   rows.push([
     "held-out",
     heldOut.status === "measured"
-      ? `visible ${percent(heldOut.visiblePassRate)}, held-out ${percent(heldOut.heldOutPassRate)}, gap ${percent(heldOut.gap)}`
+      ? `visible ${percent(heldOut.visiblePassRate)}, held-out ${percent(heldOut.heldOutPassRate)}, gap ${percent(heldOut.gap)}, judged in ${heldOut.judge.processes} process(es)`
       : `unmeasured: ${heldOut.reason}`,
   ]);
   const protectedPaths = predicate.protectedPaths;

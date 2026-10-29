@@ -84,6 +84,11 @@ export async function restoreFromBase(
   }
 }
 
+/** Undoes what a base run wrote to tracked files, so the change applies to the base as committed. */
+export async function resetTracked(checkout: BaseCheckout): Promise<void> {
+  await git(checkout.dir, ["checkout", "--quiet", "--", "."]);
+}
+
 async function changedFiles(dir: string, baseCommit: string): Promise<readonly ChangedFile[]> {
   const listing = (
     await git(dir, ["diff", "--cached", "--name-status", "-z", "--no-renames", baseCommit])

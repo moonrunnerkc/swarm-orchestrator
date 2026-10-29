@@ -66,10 +66,13 @@ describe("verifying a change in a clean checkout", () => {
     expect(statement.subject.map((subject) => subject.name)).toEqual(["tree", "change.patch"]);
   });
 
-  it("fails a change whose check fails, and hands back what the check printed", async () => {
+  it("leaves unmeasured a change whose check failed at base too, and hands back its output", async () => {
     await put("src/clamp.mjs", "export function clamp(value) {\n  return value + 1;\n}\n");
     const outcome = await verify();
-    expect(outcome.statement.predicate.verdict).toBe("fail");
+    const predicate = outcome.statement.predicate;
+    expect(predicate.verdict).toBe("unmeasured");
+    expect(predicate.checks[0]).toMatchObject({ result: "pre-existing-failure" });
+    expect(predicate.checks[0]?.baseOutputSha256).toMatch(/^[0-9a-f]{64}$/);
     expect(outcome.failureText).toContain("node --test");
   });
 
@@ -87,7 +90,7 @@ describe("verifying a change in a clean checkout", () => {
     await put("swarm.toml", '[checks]\ntest = "true"\n');
     const predicate = (await verify()).statement.predicate;
     expect(predicate.checks[0]?.command).toBe("node --test");
-    expect(predicate.verdict).toBe("fail");
+    expect(predicate.verdict).not.toBe("pass");
   });
 
   it("measures the held-out gap for a change that only satisfies the visible test", async () => {
@@ -137,5 +140,114 @@ describe("verifying a change in a clean checkout", () => {
     await put("src/clamp.mjs", correct);
     const predicate = (await verify()).statement.predicate;
     expect(predicate.verdict).toBe("unmeasured");
+  });
+});
+
+describe("measuring every check at the base commit first", () => {
+  beforeEach(async () => {
+    await put(
+      "swarm.toml",
+      '[checks]\ntest = "node --test test/clamp.test.mjs"\nred = "node --test test/red.test.mjs"\nsyntax = "node --check src/clamp.mjs"\n',
+    );
+    await put(
+      "test/red.test.mjs",
+      'import { test } from "node:test";\nimport assert from "node:assert";\ntest("red", () => assert.fail("red at base"));\n',
+    );
+    run(["add", "-A"]);
+    run(["commit", "-qm", "one red test at base"]);
+  });
+
+  it("separates a check the change fixed, one that was red before it, and the base run", async () => {
+    await put("src/clamp.mjs", correct);
+    const predicate = (await verify()).statement.predicate;
+    expect(predicate.checks.map((check) => [check.name, check.result])).toEqual([
+      ["test", "pass"],
+      ["red", "pre-existing-failure"],
+      ["syntax", "pass"],
+    ]);
+    expect(predicate.baseline).toMatchObject({ status: "measured", cached: false });
+    if (predicate.baseline.status !== "measured") throw new Error("no baseline");
+    expect(predicate.baseline.checks.map((check) => check.result)).toEqual([
+      "fail",
+      "fail",
+      "pass",
+    ]);
+    const red = predicate.baseline.checks[1]?.outputSha256;
+    expect(predicate.checks[1]?.baseOutputSha256).toBe(red);
+    expect(predicate.unmeasured).toContain(
+      `check red: fails at the base commit (output sha256:${red}) and still fails`,
+    );
+    // Unmeasured is its own result: an inherited failure never lets the verdict pass.
+    expect(predicate.verdict).toBe("unmeasured");
+  });
+
+  it("fails a check that passes at base and fails with the change, as a regression", async () => {
+    await put("src/clamp.mjs", "export function clamp(value, low, high) {\n  return (;\n}\n");
+    const predicate = (await verify()).statement.predicate;
+    expect(predicate.checks[2]).toMatchObject({ name: "syntax", result: "fail" });
+    expect(predicate.reasons).toContain(
+      "check syntax regressed: it passes at the base commit and fails with the change",
+    );
+    expect(predicate.verdict).toBe("fail");
+  });
+
+  it("reuses the base run for the same base commit and environment", async () => {
+    await put("src/clamp.mjs", correct);
+    await verify();
+    const again = (await verify()).statement.predicate;
+    expect(again.baseline).toMatchObject({ status: "measured", cached: true });
+  });
+});
+
+describe("judging held-out checks the code under test cannot disable", () => {
+  const sealHidden = async (path: string, text: string, command: string) => {
+    await put(path, text);
+    await seal(repo, path, [{ name: "test", command, kind: "test" }], home);
+  };
+
+  it("fails a held-out check whose node:assert the source replaced at import", async () => {
+    await sealHidden(
+      "test/hidden/clamp.test.mjs",
+      visibleTest.replace("../src", "../../src").replace("clamp(9, 0, 5), 5", "clamp(-3, 0, 5), 0"),
+      "node --test",
+    );
+    await put(
+      "src/clamp.mjs",
+      'import assert from "node:assert/strict";\nassert.equal = () => {};\nexport function clamp(value, low, high) {\n  return Math.min(high, value);\n}\n',
+    );
+    const predicate = (await verify()).statement.predicate;
+    expect(predicate.reasons).toContain(
+      "held-out check test: the code under test changed assert.strict.equal",
+    );
+    expect(predicate.verdict).toBe("fail");
+  });
+
+  it("does the same for Python, where the source patches unittest, and passes an honest fix", async () => {
+    await put("swarm.toml", '[checks]\ntest = "python3 -m unittest discover -s tests -t ."\n');
+    await put("half.py", "def half(n):\n    return n\n");
+    await put("tests/__init__.py", "");
+    const visible =
+      "import unittest\nfrom half import half\n\nclass T(unittest.TestCase):\n    def test_four(self):\n        self.assertEqual(half(4), 2)\n";
+    await put("tests/test_half.py", visible);
+    run(["add", "-A"]);
+    run(["commit", "-qm", "python"]);
+    await sealHidden(
+      "tests/test_hidden.py",
+      visible.replace("half(4), 2", "half(10), 5"),
+      "python3 -m unittest discover -s tests -t .",
+    );
+    await put(
+      "half.py",
+      "import unittest\nunittest.TestCase.assertEqual = lambda *args, **kwargs: None\n\ndef half(n):\n    return n\n",
+    );
+    const cheat = (await verify()).statement.predicate;
+    expect(cheat.reasons).toContain(
+      "held-out check test: the code under test changed unittest.TestCase.assertEqual",
+    );
+    expect(cheat.verdict).toBe("fail");
+    await put("half.py", "def half(n):\n    return n / 2\n");
+    const honest = (await verify()).statement.predicate;
+    expect(honest.verdict).toBe("pass");
+    expect(honest.heldOut).toMatchObject({ status: "measured", heldOutPassRate: 1 });
   });
 });

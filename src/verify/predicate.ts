@@ -12,10 +12,12 @@ export const checkResultSchema = z.object({
   name: z.string().min(1),
   command: z.string().min(1),
   kind: z.enum(["test", "other"]),
-  result: z.enum(["pass", "fail", "error"]),
+  // pre-existing-failure: failed at the base commit and still fails, so it measures nothing here.
+  result: z.enum(["pass", "fail", "error", "pre-existing-failure"]),
   exitCode: z.number().int().nullable(),
   durationMs: z.number().int().nonnegative(),
   outputSha256: sha256,
+  baseOutputSha256: sha256.optional(),
 });
 export type CheckResult = z.infer<typeof checkResultSchema>;
 
@@ -53,10 +55,29 @@ export const heldOutSchema = z.discriminatedUnion("status", [
     visiblePassRate: rate,
     heldOutPassRate: rate,
     gap: z.number().min(-1).max(1),
+    /** Processes that loaded the judge, and the node:assert calls they made. */
+    judge: z.object({
+      processes: z.number().int().nonnegative(),
+      assertionCalls: z.number().int().nonnegative(),
+    }),
   }),
   unmeasured,
 ]);
 export type HeldOut = z.infer<typeof heldOutSchema>;
+
+/** Every declared and held-out check, run at the base commit before the change applied. */
+export const baselineSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("measured"),
+    /** Reused from an earlier run with the same base, environment, sealed set and judge. */
+    cached: z.boolean(),
+    environmentSha256: sha256,
+    checks: z.array(checkResultSchema),
+    heldOut: z.array(checkResultSchema),
+  }),
+  unmeasured,
+]);
+export type Baseline = z.infer<typeof baselineSchema>;
 
 export const predicateSchema = z.object({
   verdict: z.enum(["pass", "fail", "unmeasured"]),
@@ -70,6 +91,7 @@ export const predicateSchema = z.object({
     ),
   }),
   checks: z.array(checkResultSchema),
+  baseline: baselineSchema,
   heldOut: heldOutSchema,
   protectedPaths: z.object({
     changed: z.array(finding),

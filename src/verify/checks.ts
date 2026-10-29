@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
-import { lstat, mkdir, readFile, symlink } from "node:fs/promises";
+import { lstat, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { z } from "zod";
 import type { DeclaredCheck } from "../config/swarm-toml.ts";
 import { childEnvironment } from "../exec/child-environment.ts";
 import { runProcessGroup } from "../exec/run-process.ts";
 import { gitText } from "./change.ts";
-import type { CheckResult, Predicate } from "./predicate.ts";
+import { type CheckResult, checkResultSchema, type Predicate } from "./predicate.ts";
 
 export interface CheckRun {
   readonly result: CheckResult;
@@ -110,8 +111,12 @@ export async function privateHome(scratch: string): Promise<string> {
   return home;
 }
 
+/** The share of measured checks that passed; a pre-existing failure is not measured. */
 export function passRate(runs: readonly CheckResult[]): number {
-  return runs.length === 0 ? 0 : runs.filter((run) => run.result === "pass").length / runs.length;
+  const measured = runs.filter((run) => run.result !== "pre-existing-failure");
+  return measured.length === 0
+    ? 0
+    : measured.filter((run) => run.result === "pass").length / measured.length;
 }
 
 const lockfiles = [
@@ -153,5 +158,44 @@ export async function environmentOf(
     platform: described.platform,
     git,
     dependencies,
+  };
+}
+
+const storedBaseSchema = z.object({
+  checks: z.array(checkResultSchema),
+  heldOut: z.array(checkResultSchema),
+});
+export type StoredBase = z.infer<typeof storedBaseSchema>;
+
+/**
+ * Base results kept under SWARM_HOME, owner-only, one file per key. A file that does not parse
+ * is ignored and the base is run again; nothing here is trusted past its schema.
+ */
+export const baseCache = {
+  file: (home: string, key: string) => join(home, "baselines", `${key}.json`),
+  async read(file: string): Promise<StoredBase | null> {
+    const text = await readFile(file, "utf8").catch(() => null);
+    if (text === null) return null;
+    try {
+      return storedBaseSchema.parse(JSON.parse(text));
+    } catch {
+      return null;
+    }
+  },
+  async write(file: string, value: StoredBase): Promise<void> {
+    await mkdir(join(file, ".."), { recursive: true, mode: 0o700 });
+    await writeFile(file, `${JSON.stringify(value)}\n`, { mode: 0o600 });
+  },
+};
+
+/**
+ * A check judged against its base run: one that failed at base and still fails measures
+ * nothing about the change; one that failed at base and passes now was fixed by it.
+ */
+export function againstBase(run: CheckRun, base: CheckResult | undefined): CheckRun {
+  if (base === undefined || base.result === "pass" || run.result.result === "pass") return run;
+  return {
+    ...run,
+    result: { ...run.result, result: "pre-existing-failure", baseOutputSha256: base.outputSha256 },
   };
 }

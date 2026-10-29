@@ -5,6 +5,10 @@ import { dirname, join } from "node:path";
 import { z } from "zod";
 import type { DeclaredCheck } from "../config/swarm-toml.ts";
 import { gitText } from "./change.ts";
+import { type BaseCheckout, resetTracked, restoreFromBase } from "./checkout.ts";
+import { baseCache, type CheckContext, type CheckRun, runCheck, runChecks } from "./checks.ts";
+import { judgeSha256, prepareJudge, readJudge } from "./judge.ts";
+import type { Baseline, Predicate } from "./predicate.ts";
 
 const sealedSchema = z.object({
   glob: z.string().min(1),
@@ -123,4 +127,90 @@ export async function overlaySealed(
     await mkdir(dirname(join(dir, file.path)), { recursive: true });
     await writeFile(join(dir, file.path), content);
   }
+}
+
+export interface SealedRun {
+  readonly runs: readonly CheckRun[];
+  readonly processes: number;
+  readonly assertionCalls: number;
+  /** What the judge found, one line per check it failed. */
+  readonly problems: readonly string[];
+}
+
+/**
+ * Runs the sealed checks with the judge loaded into their Node and Python processes. A check
+ * whose assertions the code under test changed fails, whatever its exit code says.
+ */
+export async function runSealed(
+  sealed: SealedSet,
+  context: CheckContext,
+  scratch: string,
+): Promise<SealedRun> {
+  const runs: CheckRun[] = [];
+  const problems: string[] = [];
+  let processes = 0;
+  let assertionCalls = 0;
+  for (const check of sealed.checks) {
+    const judge = await prepareJudge(scratch, check.name);
+    const run = await runCheck(check, context, judge.env);
+    const reading = await readJudge(judge.report);
+    processes += reading.processes;
+    assertionCalls += reading.assertionCalls;
+    if (reading.problem === null) {
+      runs.push(run);
+      continue;
+    }
+    problems.push(`held-out check ${check.name}: ${reading.problem}`);
+    runs.push({ ...run, result: { ...run.result, result: "fail" } });
+  }
+  return { runs, processes, assertionCalls, problems };
+}
+
+/** A digest of the sealed set, so a base run is reused only for the same held-out checks. */
+export function sealedSha256(sealed: SealedSet | null): string {
+  return createHash("sha256").update(JSON.stringify(sealed)).digest("hex");
+}
+
+/**
+ * Every declared and held-out check at the base commit, before the change applies, reused from
+ * SWARM_HOME when the same base, environment, sealed set and judge were measured before. The
+ * checkout is put back to the base as committed afterwards.
+ */
+export async function measureBase(input: {
+  readonly checkout: BaseCheckout;
+  readonly checks: readonly DeclaredCheck[];
+  readonly sealed: SealedSet | null;
+  readonly context: CheckContext;
+  readonly home: string;
+  readonly environment: Predicate["environment"];
+  readonly workspace: string;
+}): Promise<Baseline> {
+  const key = createHash("sha256")
+    .update(
+      JSON.stringify([
+        input.checkout.baseCommit,
+        input.environment.sha256,
+        sealedSha256(input.sealed),
+        judgeSha256,
+      ]),
+    )
+    .digest("hex");
+  const file = baseCache.file(input.home, key);
+  const environmentSha256 = input.environment.sha256;
+  const cached = await baseCache.read(file);
+  if (cached !== null) return { status: "measured", cached: true, environmentSha256, ...cached };
+  const checks = (await runChecks(input.checks, input.context)).map((run) => run.result);
+  let heldOut: CheckRun["result"][] = [];
+  if (input.sealed !== null) {
+    await overlaySealed(input.workspace, input.sealed, input.checkout.dir, input.home);
+    const scratch = dirname(input.checkout.dir);
+    heldOut = (await runSealed(input.sealed, input.context, scratch)).runs.map((run) => run.result);
+    await restoreFromBase(
+      input.checkout,
+      input.sealed.files.map((entry) => entry.path),
+    );
+  }
+  await resetTracked(input.checkout);
+  await baseCache.write(file, { checks, heldOut });
+  return { status: "measured", cached: false, environmentSha256, checks, heldOut };
 }

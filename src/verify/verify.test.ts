@@ -20,6 +20,10 @@ describe("protected paths", () => {
     ["package.json", "manifests"],
     ["swarm.toml", "config"],
     [".swarm/verify/change.patch", "config"],
+    // Startup hooks decide what loads before the judge of a held-out check.
+    [".npmrc", "config"],
+    ["sitecustomize.py", "config"],
+    ["lib/site-packages/hook.pth", "config"],
   ])("puts %s in %s", (path, category) => {
     expect(categoryOf(path)).toBe(category);
   });

@@ -9,6 +9,8 @@ export interface Verification {
   readonly feedback: string;
   /** `path:line` of a changed line whose mutant the checks did not kill, or null. */
   readonly survivedMutant: string | null;
+  /** A failure, or a check that fails at base and still fails: something the model can fix. */
+  readonly actionable: boolean;
 }
 
 export interface LoopOptions {
@@ -138,7 +140,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
 
     const judged = await judge();
     if (judged.verdict === "pass") return result("verified");
-    if (judged.verdict === "unmeasured") return result("unmeasured");
+    if (!judged.actionable) return result("unmeasured");
     failure = judged.feedback;
     note =
       "The verifier refused the change. Fix what it reports, then mark the task complete again.";

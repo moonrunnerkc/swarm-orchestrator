@@ -101,7 +101,8 @@ describe("swarm run", () => {
     expect(report).toMatchObject({ stop: "verified", steps: 4, verifications: 2 });
     const afterRefusal = model.seen[2]?.at(-1)?.content ?? "";
     expect(afterRefusal).toContain("Most recent verifier failure:");
-    expect(afterRefusal).toContain("check test failed");
+    expect(afterRefusal).toContain("check test fails at the base commit too");
+    expect(afterRefusal).toContain("AssertionError");
   });
 
   it("reports the step budget when it runs out", async () => {

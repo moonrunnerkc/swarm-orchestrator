@@ -36,12 +36,15 @@ const testFile =
   /(?:\.(?:test|spec)\.[cm]?[jt]sx?$|^test_.*\.py$|_test\.py$|_test\.go$|Test\.java$|_spec\.rb$)/;
 const ciFiles = new Set([".gitlab-ci.yml", ".travis.yml", "azure-pipelines.yml", "Jenkinsfile"]);
 const ciDirectories = [".github/", ".circleci/", ".buildkite/"];
+// Files that change how a check's Node or Python processes start, and so what loads first.
+const startupFiles = /^(?:\.npmrc|\.yarnrc(?:\.yml)?|sitecustomize\.py|usercustomize\.py|.*\.pth)$/;
 
 /** The protected category a path belongs to, or null for source. */
 export function categoryOf(path: string): ProtectedCategory | null {
   const segments = path.split("/");
   const name = segments.at(-1) ?? path;
-  if (path === "swarm.toml" || path.startsWith(".swarm/")) return "config";
+  if (path === "swarm.toml" || path.startsWith(".swarm/") || startupFiles.test(name))
+    return "config";
   if (ciFiles.has(path) || ciDirectories.some((prefix) => path.startsWith(prefix))) return "ci";
   if (lockfiles.has(name)) return "lockfiles";
   if (manifests.has(name)) return "manifests";
