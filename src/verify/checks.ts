@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { DeclaredCheck } from "../config/swarm-toml.ts";
 import { childEnvironment } from "../exec/child-environment.ts";
 import { runProcessGroup } from "../exec/run-process.ts";
-import { gitText } from "./git.ts";
+import { gitText } from "./change.ts";
 import type { CheckResult, Predicate } from "./predicate.ts";
 
 export interface CheckRun {

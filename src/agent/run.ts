@@ -9,8 +9,8 @@ import {
   createChokepoint,
 } from "../tools/chokepoint.ts";
 import { createPolicyGuard, defaultShellAllowlist } from "../tools/policy-guard.ts";
+import { gitText } from "../verify/change.ts";
 import { writeAttestation } from "../verify/dsse.ts";
-import { gitText } from "../verify/git.ts";
 import { swarmHome } from "../verify/held-out.ts";
 import { resolveSigningKey } from "../verify/signing.ts";
 import { verifyChange } from "../verify/verify.ts";

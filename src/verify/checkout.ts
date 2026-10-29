@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { lstat, readFile, readlink, realpath, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { git, runGit, scratchDirectory } from "./git.ts";
+import { git, runGit, scratchDirectory } from "./change.ts";
 
 export interface ChangedFile {
   readonly path: string;

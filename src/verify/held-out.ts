@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { z } from "zod";
 import type { DeclaredCheck } from "../config/swarm-toml.ts";
-import { gitText } from "./git.ts";
+import { gitText } from "./change.ts";
 
 const sealedSchema = z.object({
   glob: z.string().min(1),
