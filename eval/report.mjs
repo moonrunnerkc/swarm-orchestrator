@@ -149,6 +149,26 @@ function describe(rows, runs) {
   return `${tasks} task(s), model ${models} for every arm, judged by the benchmark's own tests through Harbor, from run(s) ${runs.map((run) => `\`${run}\``).join(", ")}. A trial the tests never judged is counted under Tasks but not Judged. Commits: ${commitsByArm(rows)}.`;
 }
 
+/** The tree the rebuild started from beside the tree at HEAD, from eval/rebuild.mjs. */
+function rebuildText(name) {
+  const result = JSON.parse(readFileSync(join(resultsDir, name), "utf8"));
+  const { before, after } = result;
+  const suite = (side) =>
+    side.testSuite.seconds === null
+      ? side.testSuite.note
+      : `${side.testSuite.seconds.toFixed(1)} (exit ${side.testSuite.exitCode}; ${side.testSuite.summary ?? "no summary"})`;
+  return [
+    `\`${name}\`, from \`node eval/rebuild.mjs\` on ${result.platform} with Node ${result.node}: the caps' measures read from each commit, and each tree's own \`npm test\` timed after \`npm ci\` in a scratch worktree.`,
+    "",
+    `| Measure | Before (\`${before.commit}\`) | After (\`${after.commit}\`) |`,
+    "| --- | ---: | ---: |",
+    `| Non-test TypeScript lines under src/ | ${before.srcNonTestLines} | ${after.srcNonTestLines} |`,
+    `| Runtime dependencies | ${before.runtimeDependencies} | ${after.runtimeDependencies} |`,
+    `| Subcommands | ${before.subcommands} | ${after.subcommands} |`,
+    `| \`npm test\` wall time (s) | ${suite(before)} | ${suite(after)} |`,
+  ];
+}
+
 export function renderPage() {
   const page = [
     "# Results",
@@ -186,6 +206,13 @@ export function renderPage() {
   for (const name of tamperNames.slice(0, -1).reverse()) {
     page.push("", "### Tamper (superseded)", "", ...tamperText(name));
   }
+  const rebuildName = existsSync(resultsDir)
+    ? readdirSync(resultsDir)
+        .filter((name) => /^rebuild-.*\.json$/.test(name))
+        .sort()
+        .at(-1)
+    : undefined;
+  if (rebuildName !== undefined) page.push("", "## Rebuild", "", ...rebuildText(rebuildName));
   const smoke = directoriesIn()
     .filter((name) => name.endsWith("-smoke"))
     .at(-1);
