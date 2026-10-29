@@ -25,7 +25,8 @@ node verify.mjs attestation.sigstore.json --key attestation.pub.pem --patch chan
 
 `cosign verify-blob-attestation --bundle attestation.sigstore.json --key attestation.pub.pem
 --type https://swarm-verify.dev/verdict/v1 --insecure-ignore-tlog=true change.patch` checks the
-same bundle. The GitHub Action manifest is `action.yml` in this package; integrations with
+same bundle. `swarm-verify-mcp` (`mcp.mjs`) serves one `verify` tool to an MCP client over
+stdio. The GitHub Action manifest is `action.yml` in this package; integrations with
 pre-commit, CI jobs and agent hooks are in the source repository's `docs/integrations.md`.
 
 Requires Node 22 or newer and git. ISC licensed. Source:

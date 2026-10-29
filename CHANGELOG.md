@@ -3,7 +3,7 @@
 The agent. The verifier it is built on, `swarm-verify`, has its own changelog at
 [packages/swarm-verify/CHANGELOG.md](packages/swarm-verify/CHANGELOG.md).
 
-## 15.0.0 - unreleased (not published)
+## 15.0.0 - 2026-10-29
 
 The verifier-first rebuild ([ADR 0014](docs/adr/0014-verifier-first-rebuild.md)). The unreleased
 14.5.0 work (the adaptive controller, planned checks, repair and review stages) is superseded and
@@ -14,13 +14,30 @@ remains in the history of pull request #101.
 - `swarm run "<task>"` is a single-bash-tool loop: one command per turn through the chokepoint
   and path policy, the task, `git status --short` and the last verifier failure verbatim at the
   top of every turn, and the verifier as the only judge of completion. It stops on a verified
-  tree, the step budget or the token budget, and says which.
+  tree, the step budget or the token budget, and says which. Every turn sends `max_tokens`
+  (`--turn-tokens`, 16,384 by default). A permanent endpoint failure (a refused connection, a
+  4xx other than 429, a third 5xx in a row) stops the run as `model-error`; the verifier still
+  judges the tree and the outcome block prints the reason and the verdict, and a `mutant` line
+  when the mutant of a changed line survived.
 - `swarm verify` and `swarm ci` rerun the declared checks on a change (working tree, ref range
   or patch) in a clean checkout of the base, refuse protected paths changed together with
   source, run held-out checks sealed with `swarm init --seal`, measure changed-line coverage
   and one mutation, and write an in-toto Statement in a DSSE envelope inside a Sigstore bundle.
   `packages/swarm-verify/verify.mjs` checks it with no dependencies; so does
   `cosign verify-blob-attestation`.
+- Every check runs at the base commit first: one that fails there and still fails is a
+  `pre-existing-failure` and leaves the verdict unmeasured, one that passes there and fails with
+  the change is a regression. Held-out checks run with a judge loaded before any project module
+  that fails them when the code under test patches `node:assert`, `node:test`, `unittest`,
+  pytest's hooks, the builtins they compare with, or the project's own test helpers.
+  [docs/verifying.md](docs/verifying.md) has the details and the limits.
+
+### Added
+
+- The evaluation: Harbor runs of mini-SWE-agent, OpenCode and `swarm run` on frozen SWE-bench
+  Verified and Terminal-Bench 2.0 lists, a committed results store, a nightly workflow for a
+  self-hosted runner ([docs/eval.md](docs/eval.md)), and the tamper evaluation of the verifier.
+  [docs/results.md](docs/results.md) is the only page with measured numbers.
 
 ### Removed
 

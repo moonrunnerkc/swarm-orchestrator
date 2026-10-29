@@ -5,9 +5,9 @@ at `packages/swarm-verify/action.yml` in the source repository. Versions before 
 14.2.0 on 2026-09-27) carried no changelog of their own. The coding agent that shares this
 verifier's implementation, `swarm-orchestrator`, keeps its own changelog at the repository root.
 
-## 2.0.0 - unreleased (not published)
+## 2.0.0 - 2026-10-29
 
-Rebuilt with the verifier-first rebuild ([ADR 0014](https://github.com/moonrunnerkc/swarm-orchestrator/blob/main/docs/adr/0014-verifier-first-rebuild.md)).
+Rebuilt with the verifier-first rebuild ([ADR 0014](https://github.com/moonrunnerkc/swarm-orchestrator/blob/v13-main/docs/adr/0014-verifier-first-rebuild.md)).
 The earlier unreleased work (instrument re-derivation and related checks) is superseded and
 remains in the repository's history.
 
@@ -23,12 +23,27 @@ remains in the repository's history.
 - `verify.mjs` ships with the package: a dependency-free checker for the signature and the
   subject digests. `cosign verify-blob-attestation` checks the same bundle.
 - `swarm-verify ci` verifies `HEAD` against a pull request's base; the Action calls it.
+- Every declared and held-out check runs at the base commit before the change applies, and the
+  result is kept under `$SWARM_HOME/baselines`. A check that fails at base and still fails is
+  `pre-existing-failure` with its base output digest and leaves the verdict `unmeasured`; one
+  that passes at base and fails with the change is a regression. The predicate gains
+  `baseline`, `baseOutputSha256` and `heldOut.judge`.
+- Held-out checks load a judge before any project module (`--import` for Node, a
+  `sitecustomize` for Python) and fail when the code under test changed `node:assert`,
+  `node:test`, `unittest`, pytest's hooks, the builtins they compare with, or the exported
+  methods of the project's own test helpers. `.npmrc`, `.yarnrc`, `sitecustomize.py`,
+  `usercustomize.py` and `*.pth` files are protected as config.
+
+### Added
+
+- `swarm-verify-mcp` (`mcp.mjs`): a Model Context Protocol server over stdio with one tool,
+  `verify`, which runs `swarm-verify verify --json` and returns the predicate.
 
 ### Removed
 
-- The custom evidence bundle format and its verifier, `check`, `gates`, `verdict`, `action`,
-  `hook`, `mcp` and `pre-commit` (integrations call `verify` or `ci`; see the repository's
-  `docs/integrations.md`).
+- The custom evidence bundle format and its verifier, and the `check`, `gates`, `verdict`,
+  `action`, `hook`, `mcp` and `pre-commit` subcommands (integrations call `verify` or `ci`, and
+  MCP clients the new server; see the repository's `docs/integrations.md`).
 
 ## 1.3.1 - 2026-10-08
 
