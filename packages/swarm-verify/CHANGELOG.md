@@ -1,46 +1,34 @@
 # Changelog: swarm-verify
 
-The standalone verifier, published to npm as `swarm-verify` and distributed as the GitHub Action
-`moonrunnerkc/swarm-verify`. Versions before 1.0.0 (0.2.0, released with Swarm Orchestrator
+The standalone verifier, published to npm as `swarm-verify`, with its GitHub Action manifest
+at `packages/swarm-verify/action.yml` in the source repository. Versions before 1.0.0 (0.2.0, released with Swarm Orchestrator
 14.2.0 on 2026-09-27) carried no changelog of their own. The coding agent that shares this
 verifier's implementation, `swarm-orchestrator`, keeps its own changelog at the repository root.
 
-## Unreleased
+## 2.0.0 - unreleased (not published)
 
-### Added
+Rebuilt with the verifier-first rebuild ([ADR 0014](https://github.com/moonrunnerkc/swarm-orchestrator/blob/main/docs/adr/0014-verifier-first-rebuild.md)).
+The earlier unreleased work (instrument re-derivation and related checks) is superseded and
+remains in the repository's history.
 
-- **`rename-transport-v1` is re-derived.** An instrument entry marked `transported` is left out
-  of the changes that withhold a pass only where:
-  - the record carries the renames it rests on (`transport`);
-  - a side of a rename is one of them, with the digest the entry carries.
+### Changed
 
-  An entry that borrows a rename it is not, or a record that drops `transport`, reads as changed.
-  Records without these fields keep their meaning. Reading the texts for moved references is the
-  harness's; the verifier checks what follows from what it recorded.
-- **The review's owed attempt (`candidate-review-attempt-v1`) counts in the run lifecycle as the
-  other owed kinds do.** Its stop is the run's only where its candidate was kept.
+- `swarm-verify verify` reruns the base commit's declared checks on a change (the working tree,
+  `--range a..b` or `--patch <file>`) in a clean checkout, refuses protected paths changed
+  together with source, runs held-out checks sealed with `swarm-verify init --seal <glob>`,
+  measures changed-line coverage and one mutant, and lists what it could not measure.
+- The verdict is an in-toto Statement v1 (predicate type `https://swarm-verify.dev/verdict/v1`)
+  in a DSSE envelope inside a Sigstore bundle, signed with ed25519 from `SWARM_SIGNING_KEY` or
+  the OS keychain, or keylessly with `--sigstore`.
+- `verify.mjs` ships with the package: a dependency-free checker for the signature and the
+  subject digests. `cosign verify-blob-attestation` checks the same bundle.
+- `swarm-verify ci` verifies `HEAD` against a pull request's base; the Action calls it.
 
-- **`run-acceptance-v5` is re-derived.** It is `run-acceptance-v4` with one more input, `wallStop`,
-  read for a loop that stopped at its wall: the run's last `verification-reserve-v1` record, whether
-  the loop's stop came before the deadline that record names, and whether every write and shell
-  call requested settled, none that ran at or after the model-work cutoff. Where all hold, the wall
-  stop is a cut of model work that left the rest of the allowance to the checks, and it does not
-  refuse on its own; the checks of the delivered tree, cancellation and every other condition still
-  do. The verifier recomputes `wallStop` from the chain and refuses a record whose value differs.
-  Records under v1, v2 and v4 keep their meaning: a wall stop refuses, and a v4 record carrying
-  `wallStop` is not re-derived.
+### Removed
 
-### Fixed
-
-- **A run whose last attempt was rolled back verifies.** The run-assessment re-derivation required
-  the assessment to name the latest gate runs on the chain; after a rolled-back attempt those
-  measured a tree that was undone, and every such bundle failed its own check ("recorded false,
-  evidence implies false"). The gate runs an assessment must name are now those of the cycle the
-  ratchet decisions leave the workspace in: the last accepted retry, or the first cycle. A chain
-  whose gate runs name no cycle is read as before.
-- **A follow-up that was not kept is not the run's lifecycle.** The stop of an attempt marked
-  `followUp: true` is skipped when choosing the lifecycle record unless the run's
-  `outcome-follow-up-v1` record says its candidate was kept.
+- The custom evidence bundle format and its verifier, `check`, `gates`, `verdict`, `action`,
+  `hook`, `mcp` and `pre-commit` (integrations call `verify` or `ci`; see the repository's
+  `docs/integrations.md`).
 
 ## 1.3.1 - 2026-10-08
 

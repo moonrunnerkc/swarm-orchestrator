@@ -1,20 +1,32 @@
 # Swarm Verify
 
-A verifier for software changes from any source, AI coding agents or people. It reruns a
-project's declared checks on a change in a clean checkout of the base and reports what the
-change did to them, without a model, a key or a configuration file.
+Reruns a project's own checks on a change in a clean checkout of its base, refuses changes that
+edit their tests or other protected paths alongside source, runs held-out checks the change's
+author never saw, measures changed-line coverage and one mutant, and signs the verdict as an
+in-toto Statement in a DSSE envelope. It works the same for a change from a coding agent or a
+person, and needs no model.
 
 ```sh
-npx swarm-verify verify --range main..feature     # verify a branch's change against main
-npx swarm-verify verify --patch change.diff       # verify a patch against HEAD
-node verify.mjs attestation.sigstore.json --key attestation.pub.pem   # check it offline
+npx swarm-verify init                             # write swarm.toml from the project's scripts
+npx swarm-verify verify                           # the working tree against HEAD
+npx swarm-verify verify --range main..feature     # a branch's change
+npx swarm-verify verify --patch change.diff       # a patch against HEAD
+npx swarm-verify ci --base origin/main            # HEAD against a pull request's base
 ```
 
-This package is being rebuilt around in-toto Statements in DSSE envelopes
-([ADR 0014](https://github.com/moonrunnerkc/swarm-orchestrator/blob/v13-main/docs/adr/0014-verifier-first-rebuild.md)).
-Integrations (GitHub Action, pre-commit, agent hooks, MCP clients) are described in the
-source repository's `docs/integrations.md`.
+Each run writes `.swarm/verify/attestation.sigstore.json`, the patch it judged and the public
+key, and exits 0 for pass, 1 for fail, 2 for a command line it cannot read and 4 when nothing
+was measured. `verify.mjs`, shipped in this package, checks an attestation with nothing but
+Node:
 
-Requires Node 22 or newer and git.
+```sh
+node verify.mjs attestation.sigstore.json --key attestation.pub.pem --patch change.patch
+```
 
-ISC licensed. Source: [moonrunnerkc/swarm-orchestrator](https://github.com/moonrunnerkc/swarm-orchestrator).
+`cosign verify-blob-attestation --bundle attestation.sigstore.json --key attestation.pub.pem
+--type https://swarm-verify.dev/verdict/v1 --insecure-ignore-tlog=true change.patch` checks the
+same bundle. The GitHub Action manifest is `action.yml` in this package; integrations with
+pre-commit, CI jobs and agent hooks are in the source repository's `docs/integrations.md`.
+
+Requires Node 22 or newer and git. ISC licensed. Source:
+[moonrunnerkc/swarm-orchestrator](https://github.com/moonrunnerkc/swarm-orchestrator).

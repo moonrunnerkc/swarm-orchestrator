@@ -37,9 +37,11 @@ describe("the two products' identities", () => {
   it("names the verifier package as the standalone verifier and its binary as swarm-verify", () => {
     expect(verifier.name).toBe("swarm-verify");
     expect(verifier.bin).toEqual({ "swarm-verify": "dist/swarm-verify.js" });
-    expect(verifier.description).toMatch(/^Independent verification/);
-    expect(verifier.description).not.toMatch(/beta/i);
-    expect(verifier.homepage).toBe("https://github.com/moonrunnerkc/swarm-verify#readme");
+    expect(verifier.description).toMatch(/^Rerun a project's own checks/);
+    expect(verifier.description).toMatch(/in-toto/);
+    expect(verifier.homepage).toBe(
+      "https://github.com/moonrunnerkc/swarm-orchestrator/tree/main/packages/swarm-verify#readme",
+    );
   });
 
   it("builds the verifier from this tree, which its provenance record has to name", () => {
@@ -58,7 +60,8 @@ describe("the two products' identities", () => {
     }
   });
 
-  it("ships each product's own changelog with it", () => {
+  it("ships each product's own changelog, and the dependency-free checker with the verifier", () => {
+    expect(verifier.files).toContain("verify.mjs");
     expect(orchestrator.files).toContain("CHANGELOG.md");
     expect(verifier.files).toContain("CHANGELOG.md");
     expect(read("CHANGELOG.md").startsWith("# Changelog: swarm-orchestrator\n")).toBe(true);

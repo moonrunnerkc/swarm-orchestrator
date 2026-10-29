@@ -3,7 +3,7 @@
 The agent. The verifier it is built on, `swarm-verify`, has its own changelog at
 [packages/swarm-verify/CHANGELOG.md](packages/swarm-verify/CHANGELOG.md).
 
-## 15.0.0 - unreleased
+## 15.0.0 - unreleased (not published)
 
 The verifier-first rebuild ([ADR 0014](docs/adr/0014-verifier-first-rebuild.md)). The unreleased
 14.5.0 work (the adaptive controller, planned checks, repair and review stages) is superseded and
