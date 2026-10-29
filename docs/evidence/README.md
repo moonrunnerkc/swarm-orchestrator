@@ -3,8 +3,9 @@
 The evidence bundles, campaigns, red-team passes, fuzz targets, policy history, ADRs 0001 to 0011
 and research scripts that used to live in this repository moved to
 [moonrunnerkc/swarm-orchestrator-archive](https://github.com/moonrunnerkc/swarm-orchestrator-archive)
-(private) with their paths unchanged, from commit `cce83b6de`. The same files remain in this
-repository's git history at that commit.
+(private) with their paths unchanged, from commit `cce83b6de`. This repository's history was
+rewritten without them; the archive keeps the original commits under the tag
+`pre-rebuild-history` and the `pre-rebuild/` refs.
 
 A bundle is a directory holding a `manifest.json` (the retired bundle format) or a standalone
 archive file. The digest is the SHA-256 of the manifest or archive bytes, which in turn name
