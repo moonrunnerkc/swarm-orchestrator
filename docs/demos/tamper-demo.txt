@@ -1,0 +1,54 @@
+# Transcript of sh docs/demos/tamper-demo.sh, recorded 2026-10-29 on v24.15.0 with cosign v3.1.4.
+# $REPO is this checkout and $SCRATCH the demo's temporary directory.
+
+$ node $REPO/src/cli.ts init
+wrote $SCRATCH/demo/swarm.toml
+  test: npm run test
+[exit 0]
+
+$ printf 'export const half = (n) => n / 2;\n' > half.mjs
+[exit 0]
+
+$ node $REPO/src/cli.ts verify --out out
+verdict      pass
+base         eef1a18ac8444a593176bfaf037a6d422a54e646
+change       1 file(s) from the working-tree
+check        test: pass (npm run test)
+held-out     unmeasured: no held-out checks are sealed for this workspace
+protected    0 protected path(s) changed, none together with source
+coverage     1 of 1 changed line(s) covered (v8)
+mutation     killed: number plus one at half.mjs:1
+environment  sha256:d5c256d7ded61d8df8fcfd242bb2434b75c857716b8b3893acf824ae30c66d49 (dependencies none)
+attestation  $SCRATCH/demo/out/attestation.sigstore.json
+public key   $SCRATCH/demo/out/attestation.pub.pem
+[exit 0]
+
+$ node $REPO/packages/swarm-verify/verify.mjs out/attestation.sigstore.json --key out/attestation.pub.pem --patch out/change.patch
+ok     envelope  application/vnd.in-toto+json
+ok     signature verifies under the given key
+ok     statement https://in-toto.io/Statement/v1 with https://swarm-verify.dev/verdict/v1
+ok     patch     sha256:ea075aa37fb74e1641c6b97cae87c2aa5eca4407609e464261178a9ec6d7c7bc
+verdict   pass
+[exit 0]
+
+$ cosign verify-blob-attestation --bundle out/attestation.sigstore.json --key out/attestation.pub.pem --type https://swarm-verify.dev/verdict/v1 --insecure-ignore-tlog=true out/change.patch
+WARNING: Skipping tlog verification is an insecure practice that lacks transparency and auditability verification for the blob attestation.
+Verified OK
+[exit 0]
+
+$ node -e 'const f=require("fs");const b=f.readFileSync("out/attestation.sigstore.json");const i=b.indexOf("\"payload\": \"")+40;b[i]^=1;f.writeFileSync("out/attestation.sigstore.json",b);console.log("flipped one bit of byte",i)'
+flipped one bit of byte 343
+[exit 0]
+
+$ node $REPO/packages/swarm-verify/verify.mjs out/attestation.sigstore.json --key out/attestation.pub.pem --patch out/change.patch
+ok     envelope  application/vnd.in-toto+json
+FAILED signature does not verify under the given key
+FAILED statement https://in-xoto.io/Statement/v1 with https://swarm-verify.dev/verdict/v1
+ok     patch     sha256:ea075aa37fb74e1641c6b97cae87c2aa5eca4407609e464261178a9ec6d7c7bc
+[exit 1]
+
+$ cosign verify-blob-attestation --bundle out/attestation.sigstore.json --key out/attestation.pub.pem --type https://swarm-verify.dev/verdict/v1 --insecure-ignore-tlog=true out/change.patch
+WARNING: Skipping tlog verification is an insecure practice that lacks transparency and auditability verification for the blob attestation.
+Error: failed to verify signature: could not verify envelope: accepted signatures do not match threshold, Found: 0, Expected 1
+error during command execution: failed to verify signature: could not verify envelope: accepted signatures do not match threshold, Found: 0, Expected 1
+[exit 1]

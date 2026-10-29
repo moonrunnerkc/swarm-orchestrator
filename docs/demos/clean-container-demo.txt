@@ -1,0 +1,40 @@
+# Transcript of sh docs/demos/clean-container-demo.sh, recorded 2026-10-29. Host v24.15.0; image node@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413.
+# The container ran with --network none and no volume or bind mount; the four files arrived over stdin.
+
+$ swarm verify --out out   (on the host)
+verdict      pass
+$ tar -c verify.mjs attestation.sigstore.json attestation.pub.pem change.patch | docker run -i --rm --network none node:24 sh
+
+# node --version
+v24.22.2
+[exit 0]
+
+# ls /check
+attestation.pub.pem
+attestation.sigstore.json
+change.patch
+verify.mjs
+[exit 0]
+
+# node -e "fetch(\"https://registry.npmjs.org\").then(() => console.log(\"network reachable\"), (e) => console.log(\"no network:\", e.cause?.code ?? e.message))"
+no network: EAI_AGAIN
+[exit 0]
+
+# node verify.mjs attestation.sigstore.json --key attestation.pub.pem --patch change.patch
+ok     envelope  application/vnd.in-toto+json
+ok     signature verifies under the given key
+ok     statement https://in-toto.io/Statement/v1 with https://swarm-verify.dev/verdict/v1
+ok     patch     sha256:ea075aa37fb74e1641c6b97cae87c2aa5eca4407609e464261178a9ec6d7c7bc
+verdict   pass
+[exit 0]
+
+# node -e "const f=require(\"fs\");const b=f.readFileSync(\"attestation.sigstore.json\");const i=b.indexOf(\"\\\"payload\\\": \\\"\")+40;b[i]^=1;f.writeFileSync(\"attestation.sigstore.json\",b);console.log(\"flipped one bit of byte\",i)"
+flipped one bit of byte 343
+[exit 0]
+
+# node verify.mjs attestation.sigstore.json --key attestation.pub.pem --patch change.patch
+ok     envelope  application/vnd.in-toto+json
+FAILED signature does not verify under the given key
+FAILED statement https://in-xoto.io/Statement/v1 with https://swarm-verify.dev/verdict/v1
+ok     patch     sha256:ea075aa37fb74e1641c6b97cae87c2aa5eca4407609e464261178a9ec6d7c7bc
+[exit 1]

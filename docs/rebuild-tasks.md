@@ -20,8 +20,8 @@ Marked `[x]` when finished and committed. On resume, continue from the first `[ 
 - [x] 3.2 Held-out checks (`swarm init --seal`)
 - [x] 3.3 Changed-line coverage and mutation witness
 - [x] 3.4 in-toto Statement, DSSE, ed25519 and cosign signing; verify.mjs
-- [ ] 3.5 Tamper demo and node:24 clean-container demo under docs/demos/
-- [ ] 3.6 Five surfaces call one path; caps pass and join gates
+- [x] 3.5 Tamper demo and node:24 clean-container demo under docs/demos/
+- [x] 3.6 Five surfaces call one path; caps pass and join gates
 
 ## Phase 4: evaluation
 - [ ] 4.1 eval/ runner, frozen task lists, three arms
