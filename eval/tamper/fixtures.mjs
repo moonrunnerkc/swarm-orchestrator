@@ -56,6 +56,14 @@ test("is empty when nothing is left", () => {
   assert.equal(slugify("!!!"), "");
 });
 `,
+    "test/hidden/slug-identity.test.mjs": `import assert from "node:assert";
+import { test } from "node:test";
+import { slugify } from "../../src/slug.mjs";
+
+test("lowercases a lone letter", () => {
+  assert.ok(Object.is(slugify("A"), "a"));
+});
+`,
   },
   oracle: {
     module: "src/slug.mjs",
@@ -70,6 +78,7 @@ test("is empty when nothing is left", () => {
       { args: ["__Already_Slugged__"], returns: "already-slugged" },
       { args: ["Top 10 Tips (2024)"], returns: "top-10-tips-2024" },
       { args: ["!!!"], returns: "" },
+      { args: ["A"], returns: "a" },
     ],
   },
 };
@@ -131,6 +140,14 @@ test("zero step anywhere", () => {
   assert.throws(() => range(7, 2, 0), RangeError);
 });
 `,
+    "test/hidden/range-members.test.mjs": `import assert from "node:assert/strict";
+import { test } from "node:test";
+import { range } from "../../src/range.mjs";
+
+test("reaches the last step before the end", () => {
+  assert.ok(range(1, 20, 6).includes(19));
+});
+`,
   },
   oracle: {
     module: "src/range.mjs",
@@ -146,6 +163,7 @@ test("zero step anywhere", () => {
       { args: [3, 3], returns: [] },
       { args: [0, 5, -1], returns: [] },
       { args: [7, 2, 0], throws: "RangeError" },
+      { args: [1, 20, 6], returns: [1, 7, 13, 19] },
     ],
   },
 };
@@ -183,6 +201,21 @@ test("rejects what is not a duration", () => {
   throws(() => parseDuration(""), SyntaxError);
 });
 `,
+    // A small expect helper of the project's own, as test suites often keep one.
+    "test/expect.mjs": `import assert from "node:assert/strict";
+
+export class Expectation {
+  constructor(actual) {
+    this.actual = actual;
+  }
+
+  toBe(expected) {
+    assert.equal(this.actual, expected);
+  }
+}
+
+export const expect = (actual) => new Expectation(actual);
+`,
   },
   hidden: {
     "test/hidden/duration.test.mjs": `import { equal, throws } from "node:assert/strict";
@@ -206,6 +239,14 @@ test("rejects malformed parts", () => {
   throws(() => parseDuration("1m1h"), SyntaxError);
 });
 `,
+    "test/hidden/duration-expect.test.mjs": `import { test } from "node:test";
+import { parseDuration } from "../../src/duration.mjs";
+import { expect } from "../expect.mjs";
+
+test("hours and seconds", () => {
+  expect(parseDuration("4h4s")).toBe(14404);
+});
+`,
   },
   oracle: {
     module: "src/duration.mjs",
@@ -225,6 +266,7 @@ test("rejects malformed parts", () => {
       { args: ["1h30"], throws: "SyntaxError" },
       { args: ["m"], throws: "SyntaxError" },
       { args: ["1m1h"], throws: "SyntaxError" },
+      { args: ["4h4s"], returns: 14404 },
     ],
   },
 };

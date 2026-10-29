@@ -3,13 +3,7 @@ import { dirname } from "node:path";
 import { detectChecks } from "../config/detect.ts";
 import { readSwarmToml, type SwarmToml } from "../config/swarm-toml.ts";
 import { type ChangeRequest, resolveChange } from "./change.ts";
-import {
-  applyChange,
-  type BaseCheckout,
-  cloneBase,
-  resetTracked,
-  restoreFromBase,
-} from "./checkout.ts";
+import { applyChange, cloneBase, restoreFromBase } from "./checkout.ts";
 import {
   againstBase,
   type CheckRun,

@@ -10,9 +10,28 @@ import { pathToFileURL } from "node:url";
  * under test changed any of it. It is a tripwire for patched assertions, not a sandbox: code
  * that attacks the judge itself is out of its reach.
  */
+// Appends to every ES module under a test directory of the checkout a call that hands the
+// judge its namespace, so a test helper's methods are recorded once it has evaluated.
+const nodeHooks = String.raw`let root = "";
+const testPath = /(?:^|\/)(?:test|tests|__tests__|spec|specs|testing)\/|\.(?:test|spec)\.[cm]?js$/;
+export function initialize(data) {
+  root = data.root;
+}
+export async function load(url, context, next) {
+  const loaded = await next(url, context);
+  const inside = url.startsWith(root) && !url.includes("/node_modules/");
+  if (loaded.format !== "module" || !inside || !testPath.test(url.slice(root.length))) return loaded;
+  const text = typeof loaded.source === "string" ? loaded.source : new TextDecoder().decode(loaded.source);
+  const self = JSON.stringify(url);
+  const label = JSON.stringify(url.slice(root.length));
+  const tail = "\nimport * as __swarmJudgeSelf from " + self + ";\nglobalThis[Symbol.for(\"swarm-verify.judge\")](" + label + ", __swarmJudgeSelf);\n";
+  return { ...loaded, source: text + tail };
+}
+`;
+
 const nodeJudge = String.raw`import { createHash, randomBytes } from "node:crypto";
 import { appendFileSync } from "node:fs";
-import { createRequire, syncBuiltinESMExports } from "node:module";
+import { createRequire, register, syncBuiltinESMExports } from "node:module";
 
 const report = process.env.SWARM_JUDGE_REPORT;
 if (report) {
@@ -77,6 +96,21 @@ if (report) {
     ["Function.prototype", Function.prototype, ["call", "apply"]],
   ];
   for (const [label, holder, keys] of builtins) for (const key of keys) record(label, holder, key);
+  // A test helper's exported functions, their prototypes' methods and exported objects' methods.
+  const helper = (url, namespace) => {
+    for (const key of keysOf(namespace)) {
+      const value = namespace[key];
+      const holders = typeof value === "function" ? [value, value.prototype] : [value];
+      for (const holder of holders) {
+        if (holder === null || (typeof holder !== "object" && typeof holder !== "function")) continue;
+        for (const name of keysOf(holder))
+          if (typeof describe(holder, name)?.value === "function") record(url + "#" + String(key), holder, name);
+      }
+    }
+  };
+  define(globalThis, Symbol.for("swarm-verify.judge"), { value: helper });
+  const root = process.env.SWARM_JUDGE_ROOT;
+  if (root) register(process.env.SWARM_JUDGE_HOOKS, import.meta.url, { data: { root } });
   appendFileSync(report, "start " + createHash("sha256").update(nonce).digest("hex") + "\n");
   process.on("exit", () => {
     for (const [name, holder, key, found] of watched) {
@@ -150,7 +184,11 @@ if _report:
 `;
 
 /** A digest of the judge's code, so a cached base run made by another judge is never reused. */
-export const judgeSha256 = createHash("sha256").update(nodeJudge).update(pythonJudge).digest("hex");
+export const judgeSha256 = createHash("sha256")
+  .update(nodeHooks)
+  .update(nodeJudge)
+  .update(pythonJudge)
+  .digest("hex");
 
 export interface Judge {
   /** The variables that load the judge into a check's Node and Python processes. */
@@ -158,12 +196,13 @@ export interface Judge {
   readonly report: string;
 }
 
-/** Writes the judge into the run's scratch directory, outside the checkout. */
-export async function prepareJudge(scratch: string, name: string): Promise<Judge> {
+/** Writes the judge into the run's scratch directory, outside the checkout `root`. */
+export async function prepareJudge(scratch: string, name: string, root: string): Promise<Judge> {
   const dir = join(scratch, "judge");
   await mkdir(dir, { recursive: true, mode: 0o700 });
   for (const [file, text] of [
     ["judge.mjs", nodeJudge],
+    ["judge-hooks.mjs", nodeHooks],
     ["sitecustomize.py", pythonJudge],
   ] as const) {
     await rm(join(dir, file), { force: true });
@@ -177,6 +216,8 @@ export async function prepareJudge(scratch: string, name: string): Promise<Judge
       NODE_OPTIONS: `--import ${JSON.stringify(pathToFileURL(join(dir, "judge.mjs")).href)}`,
       PYTHONPATH: dir,
       SWARM_JUDGE_REPORT: report,
+      SWARM_JUDGE_ROOT: `${pathToFileURL(root).href}/`,
+      SWARM_JUDGE_HOOKS: pathToFileURL(join(dir, "judge-hooks.mjs")).href,
     },
   };
 }

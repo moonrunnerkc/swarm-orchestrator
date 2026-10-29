@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { buildFixture, fixtures } from "./fixtures.mjs";
 import { generatePatches } from "./generate.mjs";
 
-// Runs `swarm verify` on 20 honest and 20 cheating patches and reports what it flagged.
+// Runs `swarm verify` on every honest and cheating patch and reports what it flagged.
 // Usage: node eval/tamper/run.mjs [--keep]   (--keep leaves the scratch directory in place)
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");

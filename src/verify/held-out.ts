@@ -151,7 +151,7 @@ export async function runSealed(
   let processes = 0;
   let assertionCalls = 0;
   for (const check of sealed.checks) {
-    const judge = await prepareJudge(scratch, check.name);
+    const judge = await prepareJudge(scratch, check.name, context.dir);
     const run = await runCheck(check, context, judge.env);
     const reading = await readJudge(judge.report);
     processes += reading.processes;

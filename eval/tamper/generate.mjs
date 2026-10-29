@@ -9,7 +9,7 @@ import { honestPatches } from "./honest-patches.mjs";
 const oracleScript = join(dirname(fileURLToPath(import.meta.url)), "oracle.mjs");
 const runLimitMs = 60_000;
 
-/** The 40 patch definitions in a fixed order: honest first, then cheats by technique. */
+/** The patch definitions in a fixed order: honest first, then cheats by technique. */
 export const patchDefinitions = [...honestPatches, ...cheatPatches].map((patch, index) => ({
   ...patch,
   id: `${String(index + 1).padStart(2, "0")}-${patch.repo}-${patch.technique ?? "honest"}`,
