@@ -1,18 +1,40 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
 import { ModelError, openAiCompatible } from "./model.ts";
 
-const answer = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+const answer = async (body: unknown, status = 200) => ({ status, text: JSON.stringify(body) });
 
 describe("the chat client", () => {
+  it("speaks plain HTTP to a real server, answered only when generation ends", async () => {
+    const server = createServer((request, response) => {
+      request.resume();
+      request.on("end", () =>
+        setTimeout(() => {
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(JSON.stringify({ choices: [{ message: { content: "done" } }] }));
+        }, 50),
+      );
+    });
+    await new Promise<void>((ready) => server.listen(0, "127.0.0.1", ready));
+    const { port } = server.address() as AddressInfo;
+    const client = openAiCompatible({
+      endpoint: `http://127.0.0.1:${port}/v1`,
+      model: "m",
+      apiKey: null,
+    });
+    expect((await client.complete([{ role: "user", content: "go" }])).content).toBe("done");
+    server.close();
+  });
+
   it("returns the content without a reasoning preamble, and the tokens reported", async () => {
     const sent: unknown[] = [];
     const client = openAiCompatible({
       endpoint: "http://model.test/v1/",
       model: "m",
       apiKey: "k",
-      fetch: async (url, init) => {
-        sent.push([url, JSON.parse(String(init?.body))]);
+      post: async (url, _headers, body) => {
+        sent.push([url, JSON.parse(body)]);
         return answer({
           choices: [{ message: { content: "<think>hmm</think>\n```bash\nls\n```" } }],
           usage: { prompt_tokens: 10, completion_tokens: 5 },
@@ -32,7 +54,7 @@ describe("the chat client", () => {
       endpoint: "http://model.test/v1",
       model: "m",
       apiKey: null,
-      fetch: async () => answer({ choices: [{ message: { content: "x" } }] }),
+      post: async () => answer({ choices: [{ message: { content: "x" } }] }),
     });
     expect((await client.complete([])).tokens).toBeNull();
   });
@@ -43,7 +65,7 @@ describe("the chat client", () => {
       endpoint: "http://model.test/v1",
       model: "m",
       apiKey: null,
-      fetch: async () => {
+      post: async () => {
         calls += 1;
         return calls === 1
           ? answer({}, 503)
@@ -55,7 +77,7 @@ describe("the chat client", () => {
       endpoint: "http://model.test/v1",
       model: "m",
       apiKey: null,
-      fetch: async () => answer({ error: "no such model" }, 404),
+      post: async () => answer({ error: "no such model" }, 404),
     });
     await expect(refused.complete([])).rejects.toThrow(ModelError);
   });

@@ -1,3 +1,5 @@
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { z } from "zod";
 
 export interface Message {
@@ -38,6 +40,34 @@ export class ModelError extends Error {
 /** Reasoning some local models print before the answer; it is not the answer. */
 const thinking = /<think>[\s\S]*?<\/think>/g;
 
+/** One HTTP exchange: what came back, or a thrown error where nothing did. */
+export type Post = (
+  url: string,
+  headers: Record<string, string>,
+  body: string,
+  options: { readonly signal: AbortSignal },
+) => Promise<{ readonly status: number; readonly text: string }>;
+
+/**
+ * POST over node:http(s) with no deadline but the caller's signal. Not fetch: an endpoint that
+ * answers without streaming sends its headers only when generation ends, and fetch's built-in
+ * five-minute headers timeout cut long turns off before the client's own timeout.
+ */
+export const nodePost: Post = (url, headers, body, { signal }) =>
+  new Promise((settle, fail) => {
+    const send = url.startsWith("https:") ? httpsRequest : httpRequest;
+    const outgoing = send(url, { method: "POST", headers, signal }, (response) => {
+      const chunks: Buffer[] = [];
+      response.on("data", (chunk: Buffer) => chunks.push(chunk));
+      response.on("end", () =>
+        settle({ status: response.statusCode ?? 0, text: Buffer.concat(chunks).toString("utf8") }),
+      );
+      response.on("error", fail);
+    });
+    outgoing.on("error", fail);
+    outgoing.end(body);
+  });
+
 /**
  * Chat completions over any OpenAI-compatible endpoint (Ollama, vLLM, MLX servers, hosted
  * APIs), at temperature 0. Network failures and 5xx answers are retried twice.
@@ -47,9 +77,9 @@ export function openAiCompatible(options: {
   readonly model: string;
   readonly apiKey: string | null;
   readonly timeoutMs?: number;
-  readonly fetch?: typeof fetch;
+  readonly post?: Post;
 }): ModelClient {
-  const send = options.fetch ?? fetch;
+  const send = options.post ?? nodePost;
   const url = `${options.endpoint.replace(/\/+$/, "")}/chat/completions`;
   return {
     model: options.model,
@@ -57,28 +87,29 @@ export function openAiCompatible(options: {
       let lastProblem = "";
       for (let attempt = 0; attempt < 3; attempt += 1) {
         const timeout = AbortSignal.timeout(options.timeoutMs ?? 600_000);
-        let response: Response;
+        let response: { readonly status: number; readonly text: string };
         try {
-          response = await send(url, {
-            method: "POST",
-            headers: {
+          response = await send(
+            url,
+            {
               "content-type": "application/json",
               ...(options.apiKey === null ? {} : { authorization: `Bearer ${options.apiKey}` }),
             },
-            body: JSON.stringify({ model: options.model, messages, temperature: 0, stream: false }),
-            signal: signal === undefined ? timeout : AbortSignal.any([signal, timeout]),
-          });
+            JSON.stringify({ model: options.model, messages, temperature: 0, stream: false }),
+            { signal: signal === undefined ? timeout : AbortSignal.any([signal, timeout]) },
+          );
         } catch (error) {
           if (signal?.aborted) throw error;
           lastProblem = error instanceof Error ? error.message : String(error);
           continue;
         }
-        const text = await response.text();
-        if (response.status >= 500) {
-          lastProblem = `HTTP ${response.status}: ${text.slice(0, 300)}`;
+        const { status, text } = response;
+        if (status >= 500) {
+          lastProblem = `HTTP ${status}: ${text.slice(0, 300)}`;
           continue;
         }
-        if (!response.ok) throw new ModelError(`HTTP ${response.status}: ${text.slice(0, 300)}`);
+        if (status < 200 || status >= 300)
+          throw new ModelError(`HTTP ${status}: ${text.slice(0, 300)}`);
         let parsed: z.infer<typeof responseSchema>;
         try {
           parsed = responseSchema.parse(JSON.parse(text));

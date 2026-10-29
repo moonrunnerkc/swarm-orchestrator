@@ -5,6 +5,7 @@
  *
  *   node eval/run.mjs [--smoke] [--stub] [--suite swebench-verified|terminal-bench-2|all]
  *                     [--arms mini-swe-agent,opencode,swarm] [--limit n] [--max-steps n]
+ *                     [--into <earlier run>]
  *
  * --smoke runs the first three SWE-bench Verified tasks. --stub replaces the model with a server
  * that answers every request with the same command, so the harness runs end to end without
@@ -12,7 +13,14 @@
  * eval/results/<run>/, then eval/report.mjs rewrites docs/results.md.
  */
 import { execFileSync, spawn } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -104,6 +112,7 @@ async function main() {
       arms: { type: "string", default: Object.keys(arms).join(",") },
       limit: { type: "string" },
       "max-steps": { type: "string" },
+      into: { type: "string" },
     },
   });
   const agent = parseSwarmToml(readFileSync(join(root, "swarm.toml"), "utf8"), "swarm.toml").agent;
@@ -119,9 +128,20 @@ async function main() {
   const chosenArms = values.arms.split(",").map((name) => name.trim());
   for (const name of chosenArms) if (!(name in arms)) throw new Error(`no arm named ${name}`);
   const limit = values.smoke ? 3 : values.limit === undefined ? Infinity : Number(values.limit);
-  const run = `${new Date().toISOString().replace(/[:.]/g, "-")}${values.smoke ? "-smoke" : ""}${stub ? "-stub" : ""}`;
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  // --into reruns arms inside an earlier run; their earlier rows are kept beside, not deleted.
+  const run = values.into ?? `${stamp}${values.smoke ? "-smoke" : ""}${stub ? "-stub" : ""}`;
   const results = join(root, "eval", "results", run);
   mkdirSync(results, { recursive: true });
+  for (const name of chosenArms) {
+    const earlier = join(results, `${name}.jsonl`);
+    if (values.into !== undefined && existsSync(earlier))
+      renameSync(earlier, `${earlier}.superseded-${stamp}`);
+  }
+  const commit = execFileSync("git", ["rev-parse", "--short", "HEAD"], {
+    cwd: root,
+    encoding: "utf8",
+  }).trim();
 
   // The swarm arm installs exactly this checkout, packed the way npm would publish it.
   const packDir = join(cache, "package");
@@ -190,7 +210,7 @@ async function main() {
         const trialDir = (existsSync(jobDir) ? readdirSync(jobDir) : []).find((entry) =>
           entry.startsWith(`${task}__`),
         );
-        const context = { run, suite, task, arm: armName, model, stub: stub !== null };
+        const context = { run, commit, suite, task, arm: armName, model, stub: stub !== null };
         const row =
           trialDir === undefined
             ? {

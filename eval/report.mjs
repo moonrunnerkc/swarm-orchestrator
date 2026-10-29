@@ -94,6 +94,21 @@ export function tamperTable(result) {
   return lines.join("\n");
 }
 
+/** Which commit of this repository each arm ran at, where the rows recorded it. */
+function commitsByArm(rows) {
+  const arms = [...new Set(rows.map((row) => row.arm))].sort();
+  return arms
+    .map((arm) => {
+      const commits = [
+        ...new Set(
+          rows.filter((row) => row.arm === arm).map((row) => row.commit ?? "not recorded"),
+        ),
+      ];
+      return `${arm} ${commits.join(", ")}`;
+    })
+    .join("; ");
+}
+
 function latest(names) {
   return names.sort().at(-1) ?? null;
 }
@@ -125,7 +140,7 @@ function main() {
     page.push(
       stub
         ? `Run \`${runName}\` used the stub model, which answers every request with the same command. It shows the harness runs end to end; no model results exist yet, and nothing below measures an agent.`
-        : `Run \`${runName}\`: ${tasks} task(s) from ${suites}, model \`${rows[0].model}\` for every arm, judged by the benchmark's own tests through Harbor. A trial the tests never judged is counted under Tasks but not Judged.`,
+        : `Run \`${runName}\`: ${tasks} task(s) from ${suites}, model \`${rows[0].model}\` for every arm, judged by the benchmark's own tests through Harbor. A trial the tests never judged is counted under Tasks but not Judged. Commits: ${commitsByArm(rows)}.`,
       "",
       armTable(rows),
     );

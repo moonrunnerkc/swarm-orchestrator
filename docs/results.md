@@ -5,14 +5,19 @@ from the files the evaluation recorded; nothing here is entered by hand.
 
 ## Three-arm evaluation
 
-Run `2026-10-29T01-12-14-440Z-stub` used the stub model, which answers every request with the same command. It shows the harness runs end to end; no model results exist yet, and nothing below measures an agent.
+Run `2026-10-29T01-15-57-642Z-smoke`: 3 task(s) from swebench-verified, model `qwen3.6:35b-a3b` for every arm, judged by the benchmark's own tests through Harbor. A trial the tests never judged is counted under Tasks but not Judged.
 
 | Arm | Tasks | Judged | Passed | pass@1 | Wilson 95% | Median wall (s) | Tokens |
 | --- | ---: | ---: | ---: | ---: | --- | ---: | ---: |
-| opencode | 1 | 1 | 0 | 0.0% | 0.0% to 79.3% | 7 | 11438 (1 reported) |
+| mini-swe-agent | 3 | 3 | 1 | 33.3% | 6.1% to 79.2% | 579 | 4462097 (3 reported) |
+| opencode | 3 | 3 | 1 | 33.3% | 6.1% to 79.2% | 156 | 757644 (3 reported) |
+| swarm | 3 | 3 | 2 | 66.7% | 20.8% to 93.9% | 180 | 1797632 (2 reported) |
 
 | Pair | Both judged | First only | Second only | McNemar p |
 | --- | ---: | ---: | ---: | ---: |
+| mini-swe-agent vs opencode | 3 | 0 | 0 | 1.000 |
+| mini-swe-agent vs swarm | 3 | 0 | 1 | 1.000 |
+| opencode vs swarm | 3 | 0 | 1 | 1.000 |
 
 ## Tamper evaluation
 

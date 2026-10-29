@@ -53,3 +53,5 @@ One line per open choice made during the verifier-first rebuild (ADR 0014), with
 - The tamper evaluation counts a patch as flagged when the verdict is anything but pass; precision with nothing flagged would be reported as n/a, not zero.
 - The 10 MB fresh-clone limit is measured on a depth-1 clone (1.4 MB at the end of the rebuild): the full history still carries the archived evidence, and rewriting published history would be destructive and was not asked for.
 - OpenCode is pinned to 1.14.48 in the evaluation: Harbor installs the latest (1.19.5), which never exits after its final turn, and 1.14.48 is the version earlier comparisons ran.
+- The model client posts with node:http and node:https instead of fetch: fetch's built-in five-minute headers timeout cut off non-streamed completions that took longer, before the client's own timeout (found in the smoke run, where three attempts on one turn each ended at 5m04s).
+- After that fix the swarm arm of the smoke was rerun into the same run with `--into`; its earlier rows are kept as `swarm.jsonl.superseded-<time>` and every row records the commit it ran at, which the results page names per arm.
