@@ -159,14 +159,15 @@ async function main() {
   const chosenArms = values.arms.split(",").map((name) => name.trim());
   for (const name of chosenArms) if (!(name in arms)) throw new Error(`no arm named ${name}`);
   const limit = values.smoke ? 3 : values.limit === undefined ? Infinity : Number(values.limit);
+  // --limit bounds the lists in both modes, so --next never reaches past the first n tasks.
   const lists = chosenSuites.map((suite) => ({
     suite,
-    tasks: readTaskList(join(root, "eval", suites[suite].list)),
+    tasks: readTaskList(join(root, "eval", suites[suite].list)).slice(0, limit),
   }));
   const plan =
     values.next === undefined
       ? lists.flatMap(({ suite, tasks }) =>
-          tasks.slice(0, limit).map((task) => ({ suite, task, arms: chosenArms })),
+          tasks.map((task) => ({ suite, task, arms: chosenArms })),
         )
       : nextUnrun(lists, evaluationRows(), chosenArms, Number(values.next));
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
