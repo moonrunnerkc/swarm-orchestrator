@@ -1,13 +1,12 @@
 /**
- * Writes docs/results.md, the project's only page of measurements, from the most recent
- * three-arm run under eval/results/ and the most recent tamper evaluation. Every number on the
- * page is computed here from those files; nothing is carried over by hand.
+ * Writes docs/results.md, the project's only page of measurements, from the results store under
+ * eval/results/: every evaluation run, the latest smoke run, and every tamper evaluation. Every
+ * number on the page is computed here from those files; nothing is carried over by hand.
  *
- *   node eval/report.mjs [--run <directory name>]
+ *   node eval/report.mjs
  */
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { parseArgs } from "node:util";
 import { mcnemar, wilson } from "./stats.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -18,6 +17,7 @@ const interval = (pair) => (pair === null ? "n/a" : `${percent(pair[0])} to ${pe
 export function readRun(directory) {
   return readdirSync(directory)
     .filter((name) => name.endsWith(".jsonl"))
+    .sort()
     .flatMap((name) =>
       readFileSync(join(directory, name), "utf8")
         .split("\n")
@@ -30,26 +30,26 @@ export function readRun(directory) {
 export function armTable(rows) {
   const arms = [...new Set(rows.map((row) => row.arm))].sort();
   const lines = [
-    "| Arm | Tasks | Judged | Passed | pass@1 | Wilson 95% | Median wall (s) | Tokens |",
+    "| Arm | Tasks | Judged | Passed | pass@1 | Wilson 95% | Median wall (s) | Median tokens |",
     "| --- | ---: | ---: | ---: | ---: | --- | ---: | ---: |",
   ];
   for (const arm of arms) {
     const mine = rows.filter((row) => row.arm === arm);
     const judged = mine.filter((row) => row.pass !== null);
     const passed = judged.filter((row) => row.pass).length;
-    const walls = mine
-      .map((row) => row.wallSeconds)
-      .filter((value) => value !== null)
-      .sort((a, b) => a - b);
-    const median = walls.length === 0 ? "n/a" : String(walls[Math.floor((walls.length - 1) / 2)]);
+    const median = (values) => {
+      const sorted = values.filter((value) => value !== null).sort((a, b) => a - b);
+      return sorted.length === 0 ? null : sorted[Math.floor((sorted.length - 1) / 2)];
+    };
+    const wall = median(mine.map((row) => row.wallSeconds));
     const counted = mine.filter((row) => row.tokens !== null);
     const tokens =
       counted.length === 0
         ? "n/a"
-        : `${counted.reduce((sum, row) => sum + row.tokens, 0)} (${counted.length} reported)`;
+        : `${median(counted.map((row) => row.tokens))} (${counted.length} reported)`;
     const rate = judged.length === 0 ? null : passed / judged.length;
     lines.push(
-      `| ${arm} | ${mine.length} | ${judged.length} | ${passed} | ${percent(rate)} | ${interval(wilson(passed, judged.length))} | ${median} | ${tokens} |`,
+      `| ${arm} | ${mine.length} | ${judged.length} | ${passed} | ${percent(rate)} | ${interval(wilson(passed, judged.length))} | ${wall ?? "n/a"} | ${tokens} |`,
     );
   }
   const pairs = [
@@ -91,6 +91,13 @@ export function tamperTable(result) {
       ([name, entry]) => `| ${name} | ${entry.cases} | ${entry.flagged} |`,
     ),
   ];
+  const escaped = result.cases.filter((one) => one.kind === "cheat" && one.verdict === "pass");
+  if (escaped.length > 0) {
+    lines.push(
+      "",
+      `Cheats that passed: ${escaped.map((one) => `${one.id ?? one.technique} (${one.repo})`).join(", ")}.`,
+    );
+  }
   return lines.join("\n");
 }
 
@@ -109,57 +116,96 @@ function commitsByArm(rows) {
     .join("; ");
 }
 
-function latest(names) {
-  return names.sort().at(-1) ?? null;
+const directoriesIn = () =>
+  existsSync(resultsDir)
+    ? readdirSync(resultsDir, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort()
+    : [];
+const isEvaluationRun = (name) => !name.endsWith("-smoke") && !name.endsWith("-stub");
+
+/**
+ * Every stored row of every evaluation run (neither smoke nor stub), oldest run first. A task an
+ * arm ran in more than one run counts once, from its earliest run.
+ */
+export function evaluationRows() {
+  const seen = new Set();
+  const rows = [];
+  for (const name of directoriesIn().filter(isEvaluationRun)) {
+    for (const row of readRun(join(resultsDir, name))) {
+      const key = `${row.arm} ${row.suite}/${row.task}`;
+      if (row.stub || seen.has(key)) continue;
+      seen.add(key);
+      rows.push(row);
+    }
+  }
+  return rows;
 }
 
-function main() {
-  const { values } = parseArgs({ options: { run: { type: "string" } } });
-  const entries = existsSync(resultsDir) ? readdirSync(resultsDir, { withFileTypes: true }) : [];
-  const runName =
-    values.run ?? latest(entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name));
-  const tamperName = latest(
-    entries.filter((entry) => /^tamper-.*\.json$/.test(entry.name)).map((entry) => entry.name),
-  );
+function describe(rows, runs) {
+  const tasks = new Set(rows.map((row) => `${row.suite}/${row.task}`)).size;
+  const models = [...new Set(rows.map((row) => row.model))].map((m) => `\`${m}\``).join(", ");
+  return `${tasks} task(s), model ${models} for every arm, judged by the benchmark's own tests through Harbor, from run(s) ${runs.map((run) => `\`${run}\``).join(", ")}. A trial the tests never judged is counted under Tasks but not Judged. Commits: ${commitsByArm(rows)}.`;
+}
+
+export function renderPage() {
   const page = [
     "# Results",
     "",
     "The only page in this repository that states measured numbers. `eval/report.mjs` writes it",
-    "from the files the evaluation recorded; nothing here is entered by hand.",
+    "from the results store under `eval/results/`; nothing here is entered by hand.",
     "",
     "## Three-arm evaluation",
     "",
   ];
-  const rows = runName === null ? [] : readRun(join(resultsDir, runName));
-  if (rows.length === 0) {
-    page.push("No three-arm results exist yet.");
-  } else {
-    const stub = rows.every((row) => row.stub);
-    const suites = [...new Set(rows.map((row) => row.suite))].join(", ");
-    const tasks = new Set(rows.map((row) => `${row.suite}/${row.task}`)).size;
-    page.push(
-      stub
-        ? `Run \`${runName}\` used the stub model, which answers every request with the same command. It shows the harness runs end to end; no model results exist yet, and nothing below measures an agent.`
-        : `Run \`${runName}\`: ${tasks} task(s) from ${suites}, model \`${rows[0].model}\` for every arm, judged by the benchmark's own tests through Harbor. A trial the tests never judged is counted under Tasks but not Judged. Commits: ${commitsByArm(rows)}.`,
-      "",
-      armTable(rows),
-    );
+  const rows = evaluationRows();
+  if (rows.length === 0) page.push("No three-arm results exist yet.", "");
+  for (const suite of [...new Set(rows.map((row) => row.suite))].sort()) {
+    const mine = rows.filter((row) => row.suite === suite);
+    const runs = [...new Set(mine.map((row) => row.run))].sort();
+    page.push(`### ${suite}`, "", describe(mine, runs), "", armTable(mine), "");
   }
-  page.push("", "## Tamper evaluation", "");
-  if (tamperName === null) {
-    page.push("No tamper results exist yet.");
-  } else {
-    const result = JSON.parse(readFileSync(join(resultsDir, tamperName), "utf8"));
-    page.push(
-      `\`${tamperName}\`, from \`node eval/tamper/run.mjs\`: honest and cheating patches against three fixture repositories, each verified by \`swarm verify\` with held-out checks sealed. A patch counts as flagged when the verdict is anything but pass.`,
+  const tamperNames = existsSync(resultsDir)
+    ? readdirSync(resultsDir)
+        .filter((name) => /^tamper-.*\.json$/.test(name))
+        .sort()
+    : [];
+  page.push("## Tamper evaluation", "");
+  const tamperText = (name) => {
+    const result = JSON.parse(readFileSync(join(resultsDir, name), "utf8"));
+    return [
+      `\`${name}\`, from \`node eval/tamper/run.mjs\` at ${result.commit ?? "an unrecorded commit"}: honest and cheating patches against three fixture repositories, each verified by \`swarm verify\` with held-out checks sealed. A patch counts as flagged when the verdict is anything but pass.`,
       "",
       tamperTable(result),
+    ];
+  };
+  const latestTamper = tamperNames.at(-1);
+  if (latestTamper === undefined) page.push("No tamper results exist yet.");
+  else page.push(...tamperText(latestTamper));
+  for (const name of tamperNames.slice(0, -1).reverse()) {
+    page.push("", "### Tamper (superseded)", "", ...tamperText(name));
+  }
+  const smoke = directoriesIn()
+    .filter((name) => name.endsWith("-smoke"))
+    .at(-1);
+  if (smoke !== undefined) {
+    const smokeRows = readRun(join(resultsDir, smoke));
+    page.push(
+      "",
+      "## Smoke (superseded)",
+      "",
+      describe(smokeRows, [smoke]),
+      "",
+      armTable(smokeRows),
     );
   }
-  writeFileSync(join(root, "docs", "results.md"), `${page.join("\n")}\n`);
-  process.stdout.write(
-    `wrote docs/results.md from ${runName ?? "no run"} and ${tamperName ?? "no tamper result"}\n`,
-  );
+  return `${page.join("\n").replace(/\n+$/, "")}\n`;
 }
 
-if (import.meta.filename === process.argv[1]) main();
+export function writeReport() {
+  writeFileSync(join(root, "docs", "results.md"), renderPage());
+  process.stdout.write("wrote docs/results.md from eval/results/\n");
+}
+
+if (import.meta.filename === process.argv[1]) writeReport();

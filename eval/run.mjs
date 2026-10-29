@@ -4,13 +4,17 @@
  * benchmark's own tests. Every arm uses the endpoint and model named in swarm.toml's [agent].
  *
  *   node eval/run.mjs [--smoke] [--stub] [--suite swebench-verified|terminal-bench-2|all]
- *                     [--arms mini-swe-agent,opencode,swarm] [--limit n] [--max-steps n]
- *                     [--into <earlier run>]
+ *                     [--arms mini-swe-agent,opencode,swarm] [--limit n | --next n]
+ *                     [--max-steps n] [--into <earlier run>]
+ *   node eval/run.mjs --report
  *
- * --smoke runs the first three SWE-bench Verified tasks. --stub replaces the model with a server
- * that answers every request with the same command, so the harness runs end to end without
- * one; nothing a stub run records is a model result. One JSONL file per arm per run lands in
- * eval/results/<run>/, then eval/report.mjs rewrites docs/results.md.
+ * --smoke runs the first three SWE-bench Verified tasks. --next n runs, for each arm, the first n
+ * tasks of the frozen lists that arm has no stored row for. --stub replaces the model with a
+ * server that answers every request with the same command, so the harness runs end to end
+ * without one; nothing a stub run records is a model result. Tasks run in list order with every
+ * arm on a task before the next task starts. One JSONL file per arm per run lands in
+ * eval/results/<run>/ (the committed results store), then docs/results.md is rewritten from the
+ * store; --report only rewrites it.
  */
 import { execFileSync, spawn } from "node:child_process";
 import {
@@ -25,6 +29,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { parseSwarmToml } from "../src/config/swarm-toml.ts";
+import { evaluationRows, writeReport } from "./report.mjs";
 import { startStubModel } from "./stub-model.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -103,6 +108,26 @@ function harbor(args, env) {
   });
 }
 
+/**
+ * For each arm, the first n tasks of the lists (in list order) it has no stored row for, merged
+ * into one schedule of tasks, each with the arms that still need it.
+ */
+export function nextUnrun(lists, stored, armNames, n) {
+  const done = new Set(stored.map((row) => `${row.arm} ${row.suite}/${row.task}`));
+  const wanted = new Map(armNames.map((arm) => [arm, 0]));
+  const plan = [];
+  for (const { suite, tasks } of lists) {
+    for (const task of tasks) {
+      const needing = armNames.filter(
+        (arm) => wanted.get(arm) < n && !done.has(`${arm} ${suite}/${task}`),
+      );
+      for (const arm of needing) wanted.set(arm, wanted.get(arm) + 1);
+      if (needing.length > 0) plan.push({ suite, task, arms: needing });
+    }
+  }
+  return plan;
+}
+
 async function main() {
   const { values } = parseArgs({
     options: {
@@ -113,8 +138,14 @@ async function main() {
       limit: { type: "string" },
       "max-steps": { type: "string" },
       into: { type: "string" },
+      next: { type: "string" },
+      report: { type: "boolean" },
     },
   });
+  if (values.report) {
+    writeReport();
+    return;
+  }
   const agent = parseSwarmToml(readFileSync(join(root, "swarm.toml"), "utf8"), "swarm.toml").agent;
   const stub = values.stub ? await startStubModel() : null;
   const endpoint = stub === null ? agent.endpoint : `http://127.0.0.1:${stub.port}/v1`;
@@ -128,6 +159,16 @@ async function main() {
   const chosenArms = values.arms.split(",").map((name) => name.trim());
   for (const name of chosenArms) if (!(name in arms)) throw new Error(`no arm named ${name}`);
   const limit = values.smoke ? 3 : values.limit === undefined ? Infinity : Number(values.limit);
+  const lists = chosenSuites.map((suite) => ({
+    suite,
+    tasks: readTaskList(join(root, "eval", suites[suite].list)),
+  }));
+  const plan =
+    values.next === undefined
+      ? lists.flatMap(({ suite, tasks }) =>
+          tasks.slice(0, limit).map((task) => ({ suite, task, arms: chosenArms })),
+        )
+      : nextUnrun(lists, evaluationRows(), chosenArms, Number(values.next));
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   // --into reruns arms inside an earlier run; their earlier rows are kept beside, not deleted.
   const run = values.into ?? `${stamp}${values.smoke ? "-smoke" : ""}${stub ? "-stub" : ""}`;
@@ -162,80 +203,74 @@ async function main() {
     DOCKER_DEFAULT_PLATFORM: process.env.DOCKER_DEFAULT_PLATFORM ?? "linux/amd64",
   };
 
-  for (const suite of chosenSuites) {
-    const tasks = readTaskList(join(root, "eval", suites[suite].list)).slice(0, limit);
-    for (const armName of chosenArms) {
-      for (const task of tasks) {
-        // Unique per invocation: Harbor reuses a finished job of the same name instead of running it.
-        const job = `${stamp}-${armName}-${task}`;
-        const args = [
-          "run",
-          "-d",
-          suites[suite].dataset,
-          "-i",
-          task,
-          "-a",
-          arms[armName].agent,
-          "-m",
-          `${arms[armName].provider}/${model}`,
-          ...(arms[armName].connection
-            ? [
-                "--base-url",
-                containerEndpoint(endpoint),
-                "--api-format",
-                "openai_chat_completions",
-                "--api-key-name",
-                "SWARM_EVAL_API_KEY",
-              ]
-            : []),
-          ...Object.entries(arms[armName].env).flatMap(([key, value]) => [
-            "--ae",
-            `${key}=${value}`,
-          ]),
-          ...Object.entries(arms[armName].kwargs ?? {}).flatMap(([key, value]) => [
-            "--ak",
-            `${key}=${value}`,
-          ]),
-          "-n",
-          "1",
-          "-o",
-          join(cache, "jobs"),
-          "--job-name",
-          job,
-          "-y",
-          "-q",
-        ];
-        process.stderr.write(`${suite} ${armName} ${task}: running\n`);
-        const ran = await harbor(args, env);
-        const jobDir = join(cache, "jobs", job);
-        const trialDir = (existsSync(jobDir) ? readdirSync(jobDir) : []).find((entry) =>
-          entry.startsWith(`${task}__`),
-        );
-        const context = { run, commit, suite, task, arm: armName, model, stub: stub !== null };
-        const row =
-          trialDir === undefined
-            ? {
-                ...context,
-                reward: null,
-                pass: null,
-                wallSeconds: null,
-                tokens: null,
-                error: `harbor exited ${ran.code}: ${ran.log.slice(-300)}`,
-              }
-            : rowFromTrial(
-                JSON.parse(readFileSync(join(cache, "jobs", job, trialDir, "result.json"), "utf8")),
-                context,
-              );
-        appendFileSync(join(results, `${armName}.jsonl`), `${JSON.stringify(row)}\n`);
-        process.stderr.write(
-          `${suite} ${armName} ${task}: pass ${row.pass} reward ${row.reward} ${row.wallSeconds}s tokens ${row.tokens}${row.error ? ` error ${row.error}` : ""}\n`,
-        );
-      }
+  for (const { suite, task, arms: needing } of plan) {
+    for (const armName of needing) {
+      // Unique per invocation: Harbor reuses a finished job of the same name instead of running it.
+      const job = `${stamp}-${armName}-${task}`;
+      const args = [
+        "run",
+        "-d",
+        suites[suite].dataset,
+        "-i",
+        task,
+        "-a",
+        arms[armName].agent,
+        "-m",
+        `${arms[armName].provider}/${model}`,
+        ...(arms[armName].connection
+          ? [
+              "--base-url",
+              containerEndpoint(endpoint),
+              "--api-format",
+              "openai_chat_completions",
+              "--api-key-name",
+              "SWARM_EVAL_API_KEY",
+            ]
+          : []),
+        ...Object.entries(arms[armName].env).flatMap(([key, value]) => ["--ae", `${key}=${value}`]),
+        ...Object.entries(arms[armName].kwargs ?? {}).flatMap(([key, value]) => [
+          "--ak",
+          `${key}=${value}`,
+        ]),
+        "-n",
+        "1",
+        "-o",
+        join(cache, "jobs"),
+        "--job-name",
+        job,
+        "-y",
+        "-q",
+      ];
+      process.stderr.write(`${suite} ${armName} ${task}: running\n`);
+      const ran = await harbor(args, env);
+      const jobDir = join(cache, "jobs", job);
+      const trialDir = (existsSync(jobDir) ? readdirSync(jobDir) : []).find((entry) =>
+        entry.startsWith(`${task}__`),
+      );
+      const context = { run, commit, suite, task, arm: armName, model, stub: stub !== null };
+      const row =
+        trialDir === undefined
+          ? {
+              ...context,
+              reward: null,
+              pass: null,
+              wallSeconds: null,
+              tokens: null,
+              error: `harbor exited ${ran.code}: ${ran.log.slice(-300)}`,
+            }
+          : rowFromTrial(
+              JSON.parse(readFileSync(join(cache, "jobs", job, trialDir, "result.json"), "utf8")),
+              context,
+            );
+      appendFileSync(join(results, `${armName}.jsonl`), `${JSON.stringify(row)}\n`);
+      process.stderr.write(
+        `${suite} ${armName} ${task}: pass ${row.pass} reward ${row.reward} ${row.wallSeconds}s tokens ${row.tokens}${row.error ? ` error ${row.error}` : ""}\n`,
+      );
     }
   }
   await stub?.close();
   process.stdout.write(`results in ${results}\n`);
-  execFileSync(process.execPath, [join(root, "eval", "report.mjs")], { stdio: "inherit" });
+  writeReport();
 }
 
 if (import.meta.filename === process.argv[1]) {

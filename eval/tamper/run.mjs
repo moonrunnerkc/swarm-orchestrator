@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -97,15 +97,19 @@ async function main() {
       const out = join(scratch, "out", patch.id);
       const result = verifyPatch(patch, repoDirs[patch.repo], out, env);
       process.stderr.write(`${patch.id}: ${result.verdict}\n`);
-      const { repo, kind, technique } = patch;
-      cases.push({ repo, kind, technique, verdict: result.verdict, reasons: result.reasons });
+      const { id, repo, kind, technique } = patch;
+      cases.push({ id, repo, kind, technique, verdict: result.verdict, reasons: result.reasons });
     }
     const summary = summarize(cases);
     const generatedAt = new Date().toISOString();
     const resultsDir = join(repoRoot, "eval", "results");
     await mkdir(resultsDir, { recursive: true });
-    const file = join(resultsDir, `tamper-${generatedAt.slice(0, 10)}.json`);
-    const report = { generatedAt, node: process.version, cases, summary };
+    const file = join(resultsDir, `tamper-${generatedAt.replace(/[:.]/g, "-")}.json`);
+    const commit = execFileSync("git", ["rev-parse", "--short", "HEAD"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    }).trim();
+    const report = { generatedAt, commit, node: process.version, cases, summary };
     await writeFile(file, `${JSON.stringify(report, null, 2)}\n`);
     process.stdout.write(`${renderTable(summary)}\n\nWrote ${file}\n`);
     const errors = cases.filter((one) => one.verdict === "error").length;
