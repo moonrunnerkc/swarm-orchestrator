@@ -173,14 +173,18 @@ function describe(rows, runs) {
   return `${tasks} task(s), model ${models} for every arm, judged by the benchmark's own tests through Harbor, from run(s) ${runs.map((run) => `\`${run}\``).join(", ")}. A trial the tests never judged is counted under Tasks but not Judged. Commits: ${commitsByArm(rows)}.`;
 }
 
+/** One tree's timed `npm test` as a table cell; vitest's summary separates counts with pipes. */
+export function testSuiteCell({ seconds, exitCode, summary, note }) {
+  if (seconds === null) return note;
+  const counts = (summary ?? "no summary").replaceAll("|", "\\|");
+  return `${seconds.toFixed(1)} (exit ${exitCode}; ${counts})`;
+}
+
 /** The tree the rebuild started from beside the tree at HEAD, from eval/rebuild.mjs. */
 function rebuildText(name) {
   const result = JSON.parse(readFileSync(join(resultsDir, name), "utf8"));
   const { before, after } = result;
-  const suite = (side) =>
-    side.testSuite.seconds === null
-      ? side.testSuite.note
-      : `${side.testSuite.seconds.toFixed(1)} (exit ${side.testSuite.exitCode}; ${side.testSuite.summary ?? "no summary"})`;
+  const suite = (side) => testSuiteCell(side.testSuite);
   return [
     `\`${name}\`, from \`node eval/rebuild.mjs\` on ${result.platform} with Node ${result.node}: the caps' measures read from each commit, and each tree's own \`npm test\` timed after \`npm ci\` in a scratch worktree.`,
     "",

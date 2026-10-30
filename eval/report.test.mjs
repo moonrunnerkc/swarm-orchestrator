@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { endingTable } from "./report.mjs";
+import { endingTable, testSuiteCell } from "./report.mjs";
 
 describe("how the runs ended", () => {
   it("counts trials and benchmark passes per stop reason and verdict", () => {
@@ -21,5 +21,12 @@ describe("how the runs ended", () => {
 
   it("prints nothing when no row records how it ended", () => {
     expect(endingTable([{ arm: "swarm", pass: true }])).toBeNull();
+  });
+});
+
+describe("a timed test suite in the rebuild table", () => {
+  it("escapes the pipes in vitest's summary so the cell stays one cell", () => {
+    const run = { seconds: 7.25, exitCode: 1, summary: "1 failed | 293 passed (294)" };
+    expect(testSuiteCell(run)).toBe("7.3 (exit 1; 1 failed \\| 293 passed (294))");
   });
 });
