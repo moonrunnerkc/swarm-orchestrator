@@ -35,7 +35,9 @@ export async function runCheck(
   const started = Date.now();
   const ran = await runProcessGroup("/bin/sh", ["-c", check.command], {
     cwd: context.dir,
-    env: { ...variables, ...extraEnv },
+    // The base run, the change and the mutant rewrite the same files within seconds, often at the
+    // same size; a .pyc written by one run would be trusted by the next.
+    env: { ...variables, PYTHONDONTWRITEBYTECODE: "1", ...extraEnv },
     timeoutMs: context.timeoutMs,
     maxOutputBytes,
     signal: context.signal,
