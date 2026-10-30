@@ -300,10 +300,10 @@ agent itself gained; the verifier stays the primary product and the agent its ad
   difference 0.0 points, 95% CI [-4.0, +4.0]. Three repairs changed bytes, none narrowed the
   implementation, two left scratch files behind. Six of the nine refusals named a tsd type-test
   file no runner executes. The protocol, rows, patches and a report that re-derives from the rows
-  are in [`docs/evidence/2026-09-17/reach-pressure-experiment/`](docs/evidence/2026-09-17/reach-pressure-experiment/report.md).
+  are in the archive's [docs/evidence/2026-09-17/reach-pressure-experiment/](https://github.com/moonrunnerkc/swarm-orchestrator-archive/blob/main/docs/evidence/2026-09-17/reach-pressure-experiment/report.md).
   Two earlier generations were stopped on instrument defects and are kept beside it. The instrument
   defects it exposed, and what closed each without touching a row, are in
-  [`docs/evidence/2026-09-18/reach-pressure-hardening/`](docs/evidence/2026-09-18/reach-pressure-hardening/README.md).
+  the archive's [docs/evidence/2026-09-18/reach-pressure-hardening/](https://github.com/moonrunnerkc/swarm-orchestrator-archive/blob/main/docs/evidence/2026-09-18/reach-pressure-hardening/README.md).
 
 ### Changed
 
