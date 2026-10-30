@@ -101,6 +101,30 @@ export function tamperTable(result) {
   return lines.join("\n");
 }
 
+/**
+ * How each arm's runs ended where the rows record it (swarm's stop reason and its verifier's
+ * last verdict), beside the benchmark's judgment of the same trials.
+ */
+export function endingTable(rows) {
+  const recorded = rows.filter((row) => row.stop !== undefined);
+  if (recorded.length === 0) return null;
+  const groups = new Map();
+  for (const row of recorded) {
+    const key = `| ${row.arm} | ${row.stop ?? "not printed"} | ${row.verdict ?? "not printed"} |`;
+    const group = groups.get(key) ?? { trials: 0, passed: 0 };
+    group.trials += 1;
+    if (row.pass) group.passed += 1;
+    groups.set(key, group);
+  }
+  return [
+    "| Arm | Stop | Verifier verdict | Trials | Passed |",
+    "| --- | --- | --- | ---: | ---: |",
+    ...[...groups.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, group]) => `${key} ${group.trials} | ${group.passed} |`),
+  ].join("\n");
+}
+
 /** Which commit of this repository each arm ran at, where the rows recorded it. */
 function commitsByArm(rows) {
   const arms = [...new Set(rows.map((row) => row.arm))].sort();
@@ -185,6 +209,15 @@ export function renderPage() {
     const mine = rows.filter((row) => row.suite === suite);
     const runs = [...new Set(mine.map((row) => row.run))].sort();
     page.push(`### ${suite}`, "", describe(mine, runs), "", armTable(mine), "");
+    const endings = endingTable(mine);
+    if (endings !== null) {
+      page.push(
+        "How the runs ended, from the outcome block `swarm run` prints in each trial; Passed is the benchmark's judgment.",
+        "",
+        endings,
+        "",
+      );
+    }
   }
   const tamperNames = existsSync(resultsDir)
     ? readdirSync(resultsDir)

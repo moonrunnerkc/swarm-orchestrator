@@ -91,6 +91,12 @@ export function rowFromTrial(trial, context) {
   };
 }
 
+/** How a `swarm run` trial ended, from the outcome block its own output prints. */
+export function swarmOutcome(text) {
+  const field = (name) => text.match(new RegExp(`^${name} +(.+)$`, "m"))?.[1]?.trim() ?? null;
+  return { stop: field("stop"), verdict: field("verdict") };
+}
+
 function harbor(args, env) {
   return new Promise((settle) => {
     const child = spawn("harbor", args, {
@@ -263,6 +269,10 @@ async function main() {
               JSON.parse(readFileSync(join(cache, "jobs", job, trialDir, "result.json"), "utf8")),
               context,
             );
+      const swarmOutput = join(jobDir, trialDir ?? "", "agent", "swarm-run.txt");
+      if (trialDir !== undefined && existsSync(swarmOutput)) {
+        Object.assign(row, swarmOutcome(readFileSync(swarmOutput, "utf8")));
+      }
       appendFileSync(join(results, `${armName}.jsonl`), `${JSON.stringify(row)}\n`);
       process.stderr.write(
         `${suite} ${armName} ${task}: pass ${row.pass} reward ${row.reward} ${row.wallSeconds}s tokens ${row.tokens}${row.error ? ` error ${row.error}` : ""}\n`,

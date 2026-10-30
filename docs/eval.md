@@ -25,7 +25,8 @@ node eval/run.mjs --report                                         # rewrite doc
 an arm ran in more than one run counts once, from its earliest run. A trial the benchmark's tests
 never judged (a harness error) is counted under Tasks and not under Judged. pass@1 is over judged
 trials, with a Wilson 95% interval; each pair of arms gets an exact McNemar test over the tasks
-both judged.
+both judged. For `swarm run`, each row also records the stop reason and the verifier's last verdict from
+the outcome block the trial printed, and the page counts them beside the benchmark's judgment.
 
 ### What it needs
 
