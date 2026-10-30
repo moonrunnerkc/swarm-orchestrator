@@ -31,6 +31,9 @@ remains in the history of pull request #101.
   that fails them when the code under test patches `node:assert`, `node:test`, `unittest`,
   pytest's hooks, the builtins they compare with, or the project's own test helpers.
   [docs/verifying.md](docs/verifying.md) has the details and the limits.
+- Checks run with `PYTHONDONTWRITEBYTECODE=1`: the base run, the change and the mutant rewrite
+  one file within a second, often at the same size, and Python would otherwise run the bytecode
+  cached from the previous version.
 
 ### Added
 

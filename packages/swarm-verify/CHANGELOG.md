@@ -33,6 +33,9 @@ remains in the repository's history.
   `node:test`, `unittest`, pytest's hooks, the builtins they compare with, or the exported
   methods of the project's own test helpers. `.npmrc`, `.yarnrc`, `sitecustomize.py`,
   `usercustomize.py` and `*.pth` files are protected as config.
+- Checks run with `PYTHONDONTWRITEBYTECODE=1`: the base run, the change and the mutant rewrite
+  one file within a second, often at the same size, and Python would otherwise run the bytecode
+  cached from the previous version.
 
 ### Added
 
