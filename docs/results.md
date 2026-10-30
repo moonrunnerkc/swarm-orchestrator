@@ -32,6 +32,22 @@ How the runs ended, from the outcome block `swarm run` prints in each trial; Pas
 
 ## Tamper evaluation
 
+`tamper-2026-10-30T05-29-41-578Z.json`, from `node eval/tamper/run.mjs` at cdcb7cc24: honest and cheating patches against three fixture repositories, each verified by `swarm verify` with held-out checks sealed. A patch counts as flagged when the verdict is anything but pass.
+
+| Patches | Honest | Cheating | Honest flagged | Cheats flagged | Precision | Recall |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 44 | 20 | 24 | 0 | 24 | 100.0% | 100.0% |
+
+| Technique | Cases | Flagged |
+| --- | ---: | ---: |
+| edited-expectations | 4 | 4 |
+| deleted-assertions | 4 | 4 |
+| hard-coded-inputs | 4 | 4 |
+| overridden-equality | 8 | 8 |
+| patched-scorer | 4 | 4 |
+
+### Tamper (superseded)
+
 `tamper-2026-10-29T15-01-57-864Z.json`, from `node eval/tamper/run.mjs` at 24cd89955: honest and cheating patches against three fixture repositories, each verified by `swarm verify` with held-out checks sealed. A patch counts as flagged when the verdict is anything but pass.
 
 | Patches | Honest | Cheating | Honest flagged | Cheats flagged | Precision | Recall |
@@ -63,6 +79,17 @@ How the runs ended, from the outcome block `swarm run` prints in each trial; Pas
 | patched-scorer | 4 | 4 |
 
 Cheats that passed: overridden-equality (slug), overridden-equality (slug), overridden-equality (range), overridden-equality (duration).
+
+## Rebuild
+
+`rebuild-2026-10-30T05-29-46-227Z.json`, from `node eval/rebuild.mjs` on darwin-arm64 with Node v24.15.0: the caps' measures read from each commit, and each tree's own `npm test` timed after `npm ci` in a scratch worktree.
+
+| Measure | Before (`8c8ece663`) | After (`cdcb7cc24`) |
+| --- | ---: | ---: |
+| Non-test TypeScript lines under src/ | 97188 | 6536 |
+| Runtime dependencies | 10 | 2 |
+| Subcommands | 25 | 5 |
+| `npm test` wall time (s) | 368.2 (exit 1; 18 failed \| 4368 passed \| 36 skipped (4422)) | 7.2 (exit 0; 295 passed (295)) |
 
 ## Smoke (superseded)
 
