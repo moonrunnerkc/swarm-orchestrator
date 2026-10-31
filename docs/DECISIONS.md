@@ -154,3 +154,15 @@ One line per open choice made during the verifier-first rebuild (ADR 0014), with
 
 - The agent's system prompt said the verifier refuses tests changed together with source and told the model to fix only source; it now says source, tests, manifests and lockfiles may change as the task needs, that the base's tests still judge the change, and asks for a test that fails before and passes after.
 - The three review probes that need the agent loop (the empty `double(n)` completion, a correct edit on the last step, a stale attestation) land with the requirement record and the single finalization path, which is where their behavior lives.
+
+## 2026-10-31: requirement completion
+
+- R1 is always the user's task verbatim, so a model cannot finish by dropping or rewording what was asked; its kind defaults to `other` until the model proposes one, which keeps an unmapped R1 unverified rather than inferring evidence for it.
+- The model proposes the record in a fenced `requirements` block, the same one-block-per-reply protocol as commands; it may carry the completion marker beside it. Nothing infers a mapping from which tests happened to pass.
+- A completion repeated on the same patch and record digests stops the loop (`no-progress`) instead of verifying again: the findings would be identical.
+- Final verification reuses a held result only when both the patch digest and the record digest match; anything else verifies the delivered snapshot again. The delivered patch and the report live in `<session>/final/`.
+- Time is the only budget final verification draws on, so the reservation is time: the loop starts no turn when the remaining wall time is below 1.5 times the last verification (two minutes before the first). Steps and tokens never block final verification.
+- A cancelled run is not verified (the user asked it to stop); its report is incomplete, bound to the snapshot, and says why.
+- Verification installs dependencies from the lockfile where the repository has one the verifier can install from (npm, pnpm, yarn, bun, uv); without one, the workspace's tree is linked and the result says it is not reproducible.
+- Instruction files are loaded from git's tracked list, so an untracked AGENTS.md in a working copy does not change what the agent is told; the budget is 24,000 bytes.
+- Exit codes of `swarm run`: 0 complete, 1 a requirement failed, 4 incomplete with nothing failed, 5 blocked.
