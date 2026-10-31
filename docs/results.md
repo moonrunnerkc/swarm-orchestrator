@@ -32,6 +32,22 @@ How the runs ended, from the outcome block `swarm run` prints in each trial; Pas
 
 ## Tamper evaluation
 
+`tamper-2026-10-31T14-17-03-782Z.json`, from `node eval/tamper/run.mjs` at 494112dfb: honest and cheating patches against three fixture repositories, each verified by `swarm verify` with held-out checks sealed. A patch counts as flagged when the verdict is anything but pass.
+
+| Patches | Honest | Cheating | Honest flagged | Cheats flagged | Precision | Recall |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 44 | 20 | 24 | 0 | 24 | 100.0% | 100.0% |
+
+| Technique | Cases | Flagged |
+| --- | ---: | ---: |
+| edited-expectations | 4 | 4 |
+| deleted-assertions | 4 | 4 |
+| hard-coded-inputs | 4 | 4 |
+| overridden-equality | 8 | 8 |
+| patched-scorer | 4 | 4 |
+
+### Tamper (superseded)
+
 `tamper-2026-10-30T05-29-41-578Z.json`, from `node eval/tamper/run.mjs` at cdcb7cc24: honest and cheating patches against three fixture repositories, each verified by `swarm verify` with held-out checks sealed. A patch counts as flagged when the verdict is anything but pass.
 
 | Patches | Honest | Cheating | Honest flagged | Cheats flagged | Precision | Recall |
