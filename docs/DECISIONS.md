@@ -139,3 +139,13 @@ One line per open choice made during the verifier-first rebuild (ADR 0014), with
 - docs/results.md keeps its generated content; the dated note that it predates the recovery is emitted by eval/report.mjs, so regenerating the page still reproduces the committed file.
 - The scheduled evaluation keeps its file name (nightly-eval.yml) with only workflow_dispatch, so the run history on GitHub stays attached to it.
 - The README describes the product as this branch delivers it; anything the branch does not finish is corrected there before the branch is pushed.
+
+## 2026-10-31: the verifier becomes a dependency
+
+- swarm-verify exports its child-environment builder, process-group runner and credential detector as `swarm-verify/execution`, and the chokepoint, policy guard and scrubber import them: one environment builder and one credential detector for agent commands and checks, instead of two copies that could drift.
+- `swarm verify`, `swarm init` and `swarm ci` run `swarm-verify/cli`'s handlers, and help lists the verifier's own descriptions of them, so the agent's binary carries no second verifier command line.
+- The `[agent]` table of swarm.toml belongs to the agent (src/config/agent-config.ts); the verifier treats it as an opaque table.
+- package.json pins `swarm-verify` to `2.0.0` exactly, and package-lock.json names the registry URL and the integrity of the tarball packed from swarm-verify recovery/2026-10-31. `npm pack` of that branch is byte-reproducible from a fresh clone (two packs, same sha512), so a release from the same commit satisfies the lockfile. Until 2.0.0 is on npm, `npm ci` works only where the tarball is in the npm cache (scripts/adopt-verifier.mjs puts it there); CI on GitHub fails at `npm ci` until Brad publishes swarm-verify first.
+- The packed-consumer test reads the exact tarball from npm's content-addressed cache by the lockfile's integrity rather than repacking node_modules/swarm-verify, which produces different bytes.
+- swarm run writes each verification into `<session>/verifications/<n>/`, outside the workspace and under the policy's denied root, instead of the workspace's `.swarm/verify`.
+- Until the requirement record lands, swarm run sends no requirements, so its results are regression-only and the loop maps `complete` to the old `verified` stop.
