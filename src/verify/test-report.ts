@@ -1,5 +1,6 @@
 import { isAbsolute, relative } from "node:path";
 import { z } from "zod";
+import type { TestJudgment } from "./predicate.ts";
 
 export const runners = ["pytest", "jest", "vitest", "mocha", "go"] as const;
 export type Runner = (typeof runners)[number];
@@ -26,67 +27,6 @@ export const testEvidenceSchema = z.object({
   judge: z.string().nullable(),
 });
 export type TestEvidence = z.infer<typeof testEvidenceSchema>;
-
-/** How a declared command is run so that it also writes a report the verifier can read. */
-export interface ReportPlan {
-  readonly runner: Runner;
-  command(file: string): string;
-}
-
-const quote = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
-
-const flags: Record<Exclude<Runner, "go">, (file: string) => string> = {
-  pytest: (file) => `--junitxml=${quote(file)}`,
-  jest: (file) => `--json --outputFile=${quote(file)}`,
-  // The default reporter stays, so a failure still prints what the agent acts on.
-  vitest: (file) => `--reporter=default --reporter=json --outputFile.json=${quote(file)}`,
-  mocha: (file) => `--reporter json --reporter-option output=${quote(file)}`,
-};
-
-const patterns: readonly (readonly [Runner, RegExp])[] = [
-  ["pytest", /(?:^|[\s/])(?:py\.test|pytest)(?=\s|$)/],
-  ["jest", /(?:^|[\s/])jest(?=\s|$)/],
-  ["vitest", /(?:^|[\s/])vitest(?=\s|$)/],
-  ["mocha", /(?:^|[\s/])mocha(?=\s|$)/],
-  ["go", /(?:^|\s)go\s+test(?=\s|$)/],
-];
-// A command that chains, pipes or redirects has no one place a reporter flag belongs.
-const shellSyntax = /[;&|<>`\n]|\$\(/;
-const managed = /^(npm|pnpm|yarn|bun)\s+(?:run(?:-script)?\s+(\S+)|(test|t))(\s.*)?$/;
-
-/**
- * The test runner a command invokes, directly or through one package.json script, and how to
- * append its machine-readable reporter. Null where no runner, or more than one, is recognized.
- */
-export function reportPlan(
-  command: string,
-  scripts: Readonly<Record<string, unknown>>,
-): ReportPlan | null {
-  const trimmed = command.trim();
-  if (shellSyntax.test(trimmed)) return null;
-  const script = managed.exec(trimmed);
-  if (script !== null) {
-    const [, manager, named, short, rest = ""] = script;
-    // `bun test` is bun's own runner, not a script.
-    if (manager === "bun" && short !== undefined) return null;
-    const body = scripts[named ?? "test"];
-    const inner = typeof body === "string" ? reportPlan(body, {}) : null;
-    if (inner === null || inner.runner === "go") return null;
-    const separator = manager === "npm" && !/(?:^|\s)--(?:\s|$)/.test(rest) ? " --" : "";
-    const append = flags[inner.runner];
-    return { runner: inner.runner, command: (file) => `${trimmed}${separator} ${append(file)}` };
-  }
-  const found = patterns.filter(([, pattern]) => pattern.test(trimmed));
-  const [only] = found;
-  if (only === undefined || found.length > 1) return null;
-  const [runner] = only;
-  if (runner === "go") {
-    // go test -json prints its events on stdout, so they go to the report file.
-    const inserted = trimmed.replace(/(^|\s)go\s+test(?=\s|$)/, "$1go test -json");
-    return { runner, command: (file) => `${inserted} > ${quote(file)}` };
-  }
-  return { runner, command: (file) => `${trimmed} ${flags[runner](file)}` };
-}
 
 const rank: Record<Status, number> = { skip: 0, pass: 1, fail: 2 };
 
@@ -266,4 +206,55 @@ export function livesIn(file: string | null, path: string): boolean {
   }
   const stem = path.replace(/\.[^./]+$/, "");
   return file === path || file === stem || file.startsWith(`${stem}/`);
+}
+
+type Lists = Omit<TestJudgment, "runner" | "counts">;
+
+/**
+ * Test by test: passing at base and not with the change is a regression; failing at base and
+ * passing is fixed; failing at both is pre-existing; present at base and missing is a deletion,
+ * allowed only where `deletable` says the change may edit the file the test lived in. A test
+ * that did not run at base and fails with the change is newly failing.
+ */
+export function compareReports(
+  base: TestReport,
+  head: TestReport,
+  deletable: (file: string | null) => boolean,
+): Omit<TestJudgment, "runner"> {
+  const lists: { [key in keyof Lists]: string[] } = {
+    fixed: [],
+    regressed: [],
+    preExisting: [],
+    deleted: [],
+    allowedDeletions: [],
+    newlyFailing: [],
+  };
+  let passing = 0;
+  let added = 0;
+  let skipped = 0;
+  for (const [id, before] of Object.entries(base)) {
+    const after = head[id];
+    if (after === undefined) {
+      (deletable(before.file) ? lists.allowedDeletions : lists.deleted).push(id);
+    } else if (before.status === "pass") {
+      if (after.status === "pass") passing += 1;
+      else lists.regressed.push(id);
+    } else if (after.status === "pass") lists.fixed.push(id);
+    else if (before.status === "fail") lists.preExisting.push(id);
+    else if (after.status === "fail") lists.newlyFailing.push(id);
+    else skipped += 1;
+  }
+  for (const [id, after] of Object.entries(head)) {
+    if (id in base) continue;
+    if (after.status === "pass") added += 1;
+    else if (after.status === "fail") lists.newlyFailing.push(id);
+    else skipped += 1;
+  }
+  const counts = { passing, added, skipped } as TestJudgment["counts"];
+  const capped = {} as Lists;
+  for (const [key, ids] of Object.entries(lists) as [keyof Lists, string[]][]) {
+    counts[key] = ids.length;
+    capped[key] = ids.slice(0, 100);
+  }
+  return { counts, ...capped };
 }

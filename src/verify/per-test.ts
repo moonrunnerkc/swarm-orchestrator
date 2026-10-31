@@ -3,15 +3,9 @@ import { join } from "node:path";
 import type { DeclaredCheck } from "../config/swarm-toml.ts";
 import { againstBase, type CheckContext, type CheckRun, runCheck } from "./checks.ts";
 import { prepareJudge, readJudge } from "./judge.ts";
-import type { CheckResult, TestJudgment } from "./predicate.ts";
-import {
-  livesIn,
-  parseReport,
-  type ReportPlan,
-  reportPlan,
-  type TestEvidence,
-  type TestReport,
-} from "./test-report.ts";
+import type { CheckResult } from "./predicate.ts";
+import { type ReportPlan, reportPlan } from "./report-plan.ts";
+import { compareReports, livesIn, parseReport, type TestEvidence } from "./test-report.ts";
 
 export interface MeasuredRun {
   readonly run: CheckRun;
@@ -84,57 +78,6 @@ export async function runMeasured(input: {
           ? `the ${plan.runner} report could not be parsed`
           : null;
   return { run, evidence: { runner: plan.runner, report, unreadable, judge: judged } };
-}
-
-type Lists = Omit<TestJudgment, "runner" | "counts">;
-
-/**
- * Test by test: passing at base and not with the change is a regression; failing at base and
- * passing is fixed; failing at both is pre-existing; present at base and missing is a deletion,
- * allowed only where `deletable` says the change may edit the file the test lived in. A test
- * that did not run at base and fails with the change is newly failing.
- */
-export function compareReports(
-  base: TestReport,
-  head: TestReport,
-  deletable: (file: string | null) => boolean,
-): Omit<TestJudgment, "runner"> {
-  const lists: { [key in keyof Lists]: string[] } = {
-    fixed: [],
-    regressed: [],
-    preExisting: [],
-    deleted: [],
-    allowedDeletions: [],
-    newlyFailing: [],
-  };
-  let passing = 0;
-  let added = 0;
-  let skipped = 0;
-  for (const [id, before] of Object.entries(base)) {
-    const after = head[id];
-    if (after === undefined) {
-      (deletable(before.file) ? lists.allowedDeletions : lists.deleted).push(id);
-    } else if (before.status === "pass") {
-      if (after.status === "pass") passing += 1;
-      else lists.regressed.push(id);
-    } else if (after.status === "pass") lists.fixed.push(id);
-    else if (before.status === "fail") lists.preExisting.push(id);
-    else if (after.status === "fail") lists.newlyFailing.push(id);
-    else skipped += 1;
-  }
-  for (const [id, after] of Object.entries(head)) {
-    if (id in base) continue;
-    if (after.status === "pass") added += 1;
-    else if (after.status === "fail") lists.newlyFailing.push(id);
-    else skipped += 1;
-  }
-  const counts = { passing, added, skipped } as TestJudgment["counts"];
-  const capped = {} as Lists;
-  for (const [key, ids] of Object.entries(lists) as [keyof Lists, string[]][]) {
-    counts[key] = ids.length;
-    capped[key] = ids.slice(0, 100);
-  }
-  return { counts, ...capped };
 }
 
 export interface CheckJudgment {
@@ -217,6 +160,7 @@ export function judgeCheck(
   }
   const compared = compareReports(base.evidence.report, head.evidence.report, deletable);
   const { counts } = compared;
+  const tests = { runner: head.evidence.runner, ...compared };
   const reasons: string[] = [];
   if (counts.regressed > 0) {
     reasons.push(
@@ -252,13 +196,25 @@ export function judgeCheck(
     );
   }
   const blocks = testsBlock || tampered !== null || exitedWorse !== null;
+  // Nothing passing with the change cannot tell it from no change: the runner ran no test (a
+  // collection that stopped early) or every test it ran failed.
+  if (!blocks && counts.passing + counts.fixed + counts.added === 0) {
+    const why = `no test in its report passes with the change (${counts.preExisting} failing, ${counts.skipped} skipped)`;
+    return {
+      run: { ...head.run, result: { ...head.run.result, result: "unmeasured", tests } },
+      reasons: [`check ${name} is unmeasured: ${why}`, ...reasons],
+      failure: null,
+      inherited: counts.preExisting > 0 ? output : null,
+      unmeasured: `check ${name}: ${why}`,
+    };
+  }
   return {
     run: {
       ...head.run,
       result: {
         ...head.run.result,
         result: blocks ? "fail" : "pass",
-        tests: { runner: head.evidence.runner, ...compared },
+        tests,
       },
     },
     reasons,

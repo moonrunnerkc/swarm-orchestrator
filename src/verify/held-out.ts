@@ -10,7 +10,8 @@ import { baseCache, type CheckContext, type CheckRun, runCheck } from "./checks.
 import { judgeSha256, prepareJudge, readJudge } from "./judge.ts";
 import { runMeasured } from "./per-test.ts";
 import type { Baseline, Predicate } from "./predicate.ts";
-import type { ReportPlan, TestEvidence } from "./test-report.ts";
+import type { ReportPlan } from "./report-plan.ts";
+import type { TestEvidence } from "./test-report.ts";
 
 const sealedSchema = z.object({
   glob: z.string().min(1),

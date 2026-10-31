@@ -2,9 +2,15 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { CheckRun } from "./checks.ts";
-import { compareReports, judgeCheck, killedBy, type MeasuredRun } from "./per-test.ts";
+import { judgeCheck, killedBy, type MeasuredRun } from "./per-test.ts";
 import type { CheckResult } from "./predicate.ts";
-import { parseReport, type Runner, type TestEvidence, type TestReport } from "./test-report.ts";
+import {
+  compareReports,
+  parseReport,
+  type Runner,
+  type TestEvidence,
+  type TestReport,
+} from "./test-report.ts";
 
 const fixture = (name: string) =>
   readFileSync(join(import.meta.dirname, "fixtures", "reports", name), "utf8");
@@ -75,6 +81,7 @@ const never = () => false;
 
 const pass = (file = "tests/test_a") => ({ status: "pass" as const, file });
 const fail = (file = "tests/test_a") => ({ status: "fail" as const, file });
+const skip = (file = "tests/test_a") => ({ status: "skip" as const, file });
 
 describe("a check's verdict from its reports", () => {
   it("is measured and passes where a test was fixed though the command fails at both commits", () => {
@@ -125,6 +132,25 @@ describe("a check's verdict from its reports", () => {
       run: { result: { result: "unmeasured" } },
       unmeasured: "check test: at the base commit, the command could not run: it timed out",
     });
+  });
+
+  it("is unmeasured where no test in the report passes with the change", () => {
+    // pytest with a module that fails to import at both commits and nothing else collected.
+    const report = { "astropy.coordinates.tests.test_frames": fail(), "a::slow": skip() };
+    const judged = judgeCheck(measured(2, evidence(report)), atBase(2, evidence(report)), never);
+    expect(judged.run.result.result).toBe("unmeasured");
+    expect(judged.unmeasured).toBe(
+      "check test: no test in its report passes with the change (1 failing, 1 skipped)",
+    );
+  });
+
+  it("still fails a change that broke the only passing test", () => {
+    const judged = judgeCheck(
+      measured(1, evidence({ "a::one": fail() })),
+      atBase(0, evidence({ "a::one": pass() })),
+      never,
+    );
+    expect(judged.run.result.result).toBe("fail");
   });
 
   it("falls back to the exit code where no runner is recognized, and says so", () => {
