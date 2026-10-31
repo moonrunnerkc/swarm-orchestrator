@@ -3,6 +3,9 @@
 The only page in this repository that states measured numbers. `eval/report.mjs` writes it
 from the results store under `eval/results/`; nothing here is entered by hand.
 
+These results predate the product recovery of 2026-10-31 (ADR 0015) and are kept as history.
+They measure the verifier-first rebuild, not the requirement-driven agent that replaced it.
+
 ## Three-arm evaluation
 
 ### swebench-verified

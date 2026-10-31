@@ -53,10 +53,10 @@ deleted assertions, hard-coded inputs, overridden equality and a patched scorer.
 patch counts as flagged when the verdict is anything but pass. It needs only Node, git and
 Python 3, and writes `eval/results/tamper-<time>.json`.
 
-## Nightly
+## Manual runs
 
-`.github/workflows/nightly-eval.yml` runs `node eval/run.mjs --next 10` at 06:00 UTC and on
-demand, on a self-hosted runner labeled `swarm-eval`: each arm's next ten unrun tasks from the
+`.github/workflows/nightly-eval.yml` runs `node eval/run.mjs --next 10` when started by hand
+(its daily schedule stopped on 2026-10-31, ADR 0015), on a self-hosted runner labeled `swarm-eval`: each arm's next ten unrun tasks from the
 frozen lists, SWE-bench Verified first. It commits the new rows and the rewritten
 `docs/results.md` and pushes them. Every ref of this repository is under a ruleset that only a
 bypass actor may update, and the workflow's own token is not one, so the job checks out and
@@ -83,4 +83,4 @@ foreground instead. `./config.sh remove --token "$token"` unregisters it.
 
 Status on 2026-10-29: no self-hosted runner is registered for this repository
 (`gh api repos/moonrunnerkc/swarm-orchestrator/actions/runners` lists none) and the push secret
-is not set, so the nightly job waits in the queue until both exist.
+is not set, so a started job waits in the queue until both exist.
