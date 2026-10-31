@@ -149,3 +149,8 @@ One line per open choice made during the verifier-first rebuild (ADR 0014), with
 - The packed-consumer test reads the exact tarball from npm's content-addressed cache by the lockfile's integrity rather than repacking node_modules/swarm-verify, which produces different bytes.
 - swarm run writes each verification into `<session>/verifications/<n>/`, outside the workspace and under the policy's denied root, instead of the workspace's `.swarm/verify`.
 - Until the requirement record lands, swarm run sends no requirements, so its results are regression-only and the loop maps `complete` to the old `verified` stop.
+
+## 2026-10-31: verification semantics, agent side
+
+- The agent's system prompt said the verifier refuses tests changed together with source and told the model to fix only source; it now says source, tests, manifests and lockfiles may change as the task needs, that the base's tests still judge the change, and asks for a test that fails before and passes after.
+- The three review probes that need the agent loop (the empty `double(n)` completion, a correct edit on the last step, a stale attestation) land with the requirement record and the single finalization path, which is where their behavior lives.

@@ -17,11 +17,12 @@ export const systemPrompt = [
   "code and output. Use cat, grep, sed, heredocs and the project's own tools to read and edit.",
   "",
   `When the task is done, reply with ${completionMarker} on a line of its own and no bash block.`,
-  "An independent verifier then reruns the project's checks on your working tree in a clean",
-  "checkout. If it refuses the change, its output comes back to you and you continue.",
+  "An independent verifier then runs the project's checks on your working tree in a clean",
+  "checkout. If it finds a problem, its output comes back to you and you continue.",
   "",
-  "The verifier refuses a change that edits tests, CI configuration, lockfiles, package",
-  "manifests or swarm.toml together with source files. Fix the source.",
+  "Change source, tests, manifests and lockfiles as the task needs. The base commit's own tests",
+  "still judge your change: rewriting a test's expectation does not make a failing original pass.",
+  "Add a test that fails before your change and passes after it for each behavior you add or fix.",
 ].join("\n");
 
 /** The top of every turn: the task, the tree's status and the last refusal, all verbatim. */
