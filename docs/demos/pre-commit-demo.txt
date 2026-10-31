@@ -1,4 +1,4 @@
-# Transcript of sh docs/demos/pre-commit-demo.sh, recorded 2026-10-29 on v24.15.0.
+# Transcript of sh docs/demos/pre-commit-demo.sh, recorded 2026-10-31 on v24.15.0.
 # $REPO is this checkout and $SCRATCH the demo's temporary directory.
 
 
@@ -12,8 +12,9 @@ $ printf 'export const half = () => 2;\n' > half.mjs && sed -i.bak 's/half(4), 2
 
 $ git add half.mjs test/half.test.mjs && git commit -qm 'Make the test pass'
 verdict      fail
+reason       check test: no test runner is recognized in its command, so its exit code judged it
 reason       test/half.test.mjs (tests) changed together with source
-base         3083c49f442bb34d43c8a216b7b52d6ee538a254
+base         87e1345fc4b3d007d56e42df31fca2fd60cf0675
 change       2 file(s) from the patch
 check        test: pass (node --test)
 baseline     0 of 1 check(s) pass at the base commit
@@ -30,7 +31,7 @@ public key   $SCRATCH/demo/.swarm/verify/attestation.pub.pem
 [exit 1]
 
 $ git log --oneline
-3083c49 base
+87e1345 base
 [exit 0]
 
 $ git reset -q && git checkout -q -- test/half.test.mjs && printf 'export const half = (n) => n / 2;\n' > half.mjs
@@ -38,7 +39,8 @@ $ git reset -q && git checkout -q -- test/half.test.mjs && printf 'export const 
 
 $ git add half.mjs && git commit -qm 'Halve the number'
 verdict      pass
-base         3083c49f442bb34d43c8a216b7b52d6ee538a254
+reason       check test: no test runner is recognized in its command, so its exit code judged it
+base         87e1345fc4b3d007d56e42df31fca2fd60cf0675
 change       1 file(s) from the patch
 check        test: pass (node --test)
 baseline     0 of 1 check(s) pass at the base commit (reused)
@@ -52,7 +54,7 @@ public key   $SCRATCH/demo/.swarm/verify/attestation.pub.pem
 [exit 0]
 
 $ git log --oneline
-4cd4d2d Halve the number
-3083c49 base
+a0706f1 Halve the number
+87e1345 base
 [exit 0]
 [script exit 0]

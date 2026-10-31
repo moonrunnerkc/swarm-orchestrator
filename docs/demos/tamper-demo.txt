@@ -1,4 +1,4 @@
-# Transcript of sh docs/demos/tamper-demo.sh, recorded 2026-10-29 on v24.15.0 with cosign v3.1.4.
+# Transcript of sh docs/demos/tamper-demo.sh, recorded 2026-10-31 on v24.15.0 with cosign v3.1.4.
 # $REPO is this checkout and $SCRATCH the demo's temporary directory.
 
 
@@ -12,7 +12,8 @@ $ printf 'export const half = (n) => n / 2;\n' > half.mjs
 
 $ node $REPO/src/cli.ts verify --out out
 verdict      pass
-base         4c64ef5185a9271f034a3cf128af2609a6af42c5
+reason       check test: no test runner is recognized in its command, so its exit code judged it
+base         a75e4020208dcc37c55c7300f95f4ddd15980e7c
 change       1 file(s) from the working-tree
 check        test: pass (npm run test)
 baseline     0 of 1 check(s) pass at the base commit
@@ -30,7 +31,7 @@ ok     envelope  application/vnd.in-toto+json
 ok     signature verifies under the given key
 ok     statement https://in-toto.io/Statement/v1 with https://swarm-verify.dev/verdict/v1
 ok     patch     sha256:ea075aa37fb74e1641c6b97cae87c2aa5eca4407609e464261178a9ec6d7c7bc
-verdict   pass
+verdict   pass: check test: no test runner is recognized in its command, so its exit code judged it
 [exit 0]
 
 $ cosign verify-blob-attestation --bundle out/attestation.sigstore.json --key out/attestation.pub.pem --type https://swarm-verify.dev/verdict/v1 --insecure-ignore-tlog=true out/change.patch
