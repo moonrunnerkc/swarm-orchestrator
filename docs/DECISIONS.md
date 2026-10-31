@@ -130,3 +130,12 @@ One line per open choice made during the verifier-first rebuild (ADR 0014), with
 - The replay test (src/verify/replay.test.ts) re-runs astropy-12907's change in its task image: the trial's command, the task environment active, and a `[verify] setup` that copies the workspace's untracked build products into the checkout, standing in for the build the image's environment cannot repeat (it lacks `extension_helpers`). The whole suite exits 1 at both commits. Judged test by test the verdict is measured and passes, with no test regressed, the inherited failures reported and the mutant killed; judged by exit code the same reports are a pre-existing failure. The two junit reports are stored trimmed of failure, error and skip bodies.
 - The first replay found the two defects fixed alongside it: pytest stopping at collection when one module fails to import, and a report with no passing test reading as a measured pass.
 - Django's tests run through `tests/runtests.py`, which is none of the five runners, so a django check stays judged by exit code; with a suite that fails at base that is unmeasured, as it says.
+
+## 2026-10-31: product direction (ADR 0015)
+
+- The recovery branch starts from origin/v13-main 5f1b5472b plus the seven unpushed per-test judgment commits from the local checkout (cherry-picked as 129039465..61cd81095 at Brad's choice), so per-test normalization builds on parsing that already exists.
+- The plan lives at docs/plans/2026-10-31-product-recovery.md; the root `plans/` ignore rule is anchored so that directory is tracked.
+- AGENTS.md stays a link to CLAUDE.md, so both conventions read one file and cannot drift.
+- docs/results.md keeps its generated content; the dated note that it predates the recovery is emitted by eval/report.mjs, so regenerating the page still reproduces the committed file.
+- The scheduled evaluation keeps its file name (nightly-eval.yml) with only workflow_dispatch, so the run history on GitHub stays attached to it.
+- The README describes the product as this branch delivers it; anything the branch does not finish is corrected there before the branch is pushed.
