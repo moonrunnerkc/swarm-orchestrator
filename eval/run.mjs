@@ -36,8 +36,20 @@ const root = resolve(import.meta.dirname, "..");
 const cache = process.env.SWARM_EVAL_CACHE ?? join(homedir(), ".cache", "swarm-eval");
 
 export const suites = {
-  "swebench-verified": { list: "tasks/swebench-verified.txt", dataset: "swebench-verified@1.0" },
-  "terminal-bench-2": { list: "tasks/terminal-bench-2.txt", dataset: "terminal-bench@2.0" },
+  "swebench-verified": {
+    list: "tasks/swebench-verified.txt",
+    dataset: "swebench-verified@1.0",
+    // The images activate the task's conda environment only in .bashrc, which an agent's
+    // commands never source; without this every arm's python3 is the base one, without pytest.
+    env: {
+      PATH: "/opt/miniconda3/envs/testbed/bin:/opt/miniconda3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    },
+  },
+  "terminal-bench-2": {
+    list: "tasks/terminal-bench-2.txt",
+    dataset: "terminal-bench@2.0",
+    env: {},
+  },
 };
 
 export const arms = {
@@ -234,7 +246,9 @@ async function main() {
               "SWARM_EVAL_API_KEY",
             ]
           : []),
-        ...Object.entries(arms[armName].env).flatMap(([key, value]) => ["--ae", `${key}=${value}`]),
+        ...Object.entries({ ...suites[suite].env, ...arms[armName].env }).flatMap(
+          ([key, value]) => ["--ae", `${key}=${value}`],
+        ),
         ...Object.entries(arms[armName].kwargs ?? {}).flatMap(([key, value]) => [
           "--ak",
           `${key}=${value}`,
