@@ -1,11 +1,19 @@
 # Changelog: swarm-orchestrator
 
-The agent. The verifier it is built on, `swarm-verify`, has its own changelog at
-[packages/swarm-verify/CHANGELOG.md](packages/swarm-verify/CHANGELOG.md).
+The agent. The verifier it consumes, `swarm-verify`, has its own changelog in
+[moonrunnerkc/swarm-verify](https://github.com/moonrunnerkc/swarm-verify/blob/main/CHANGELOG.md).
 
 ## Unreleased
 
 ### Changed
+
+- **The verifier is a dependency, not a copy.** The embedded `src/verify`, its CLI modules and
+  `packages/swarm-verify` moved with their history to moonrunnerkc/swarm-verify (ADR 0015).
+  The agent depends on an exact `swarm-verify` version and calls its public API;
+  `swarm verify`, `swarm init` and `swarm ci` are the installed verifier's own commands. A
+  packed-consumer test installs both tarballs into a fresh prefix and runs a task through them.
+- Verification artifacts of `swarm run` are written into the session directory, outside the
+  workspace, one directory per verification.
 
 - `swarm verify` judges a declared test check test by test. It recognizes pytest, jest,
   vitest, mocha and go test in the command, or in the `package.json` script the command names,
@@ -16,7 +24,7 @@ The agent. The verifier it is built on, `swarm-verify`, has its own changelog at
   reports parse, whatever the command's exit code; it is unmeasured only when the command could
   not run, its report could not be parsed, or no test in it passes with the change. A command
   with no recognized runner is judged by exit code as before, and the verdict says so. See
-  [docs/verifying.md](docs/verifying.md).
+  [docs/verifying.md](https://github.com/moonrunnerkc/swarm-verify/blob/main/docs/verifying.md).
 
 ## 15.0.0 - 2026-10-29
 
@@ -107,7 +115,7 @@ carried is `swarm-verify` 1.3.1, whose engine is 1.3.0's.
 
 The coding agent, `swarm-orchestrator`, released for the first time since the verifier-first
 work began. The `swarm` binary shares its verifier with `swarm-verify`, so every change published
-for `swarm-verify` 1.0.0 through 1.3.0 (now in [packages/swarm-verify/CHANGELOG.md](packages/swarm-verify/CHANGELOG.md))
+for `swarm-verify` 1.0.0 through 1.3.0 (now in [swarm-verify's changelog](https://github.com/moonrunnerkc/swarm-verify/blob/main/CHANGELOG.md))
 is in this release too. What follows is what the
 agent itself gained; the verifier stays the primary product and the agent its advanced mode.
 

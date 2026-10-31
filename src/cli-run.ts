@@ -5,7 +5,7 @@ import { openAiCompatible } from "./agent/model.ts";
 import { runAgent } from "./agent/run.ts";
 import { buildVersion } from "./build-version.ts";
 import { UsageError } from "./cli-command-definitions.ts";
-import { readSwarmToml } from "./config/swarm-toml.ts";
+import { readAgentConfig } from "./config/agent-config.ts";
 import type { ConfirmationPrompt } from "./tools/chokepoint.ts";
 
 const write = (text: string) => process.stdout.write(`${text}\n`);
@@ -52,7 +52,7 @@ export async function run(args: readonly string[]): Promise<number> {
   const task = positionals.join(" ").trim();
   if (task.length === 0) throw new UsageError("run needs the task, in quotes");
   const workspace = resolve(values.workspace ?? process.cwd());
-  const agent = (await readSwarmToml(workspace))?.agent;
+  const agent = await readAgentConfig(workspace);
   const endpoint = values.endpoint ?? agent?.endpoint;
   const model = values.model ?? agent?.model;
   if (endpoint === undefined || endpoint === null || model === undefined || model === null) {
@@ -82,7 +82,7 @@ export async function run(args: readonly string[]): Promise<number> {
   });
   write(`stop         ${report.stop}`);
   if (report.reason !== null) write(`reason       ${report.reason}`);
-  write(`verdict      ${report.verification?.verdict ?? "not verified"}`);
+  write(`state        ${report.verification?.state ?? "not verified"}`);
   const mutant = report.verification?.survivedMutant ?? null;
   if (mutant !== null) write(`mutant       survived at ${mutant}: no check failed when it changed`);
   write(`steps        ${report.steps}`);

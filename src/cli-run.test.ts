@@ -78,7 +78,7 @@ describe("swarm run against the stub endpoint", () => {
     expect(ran.code).toBe(1);
     expect(ran.stdout).toMatch(/^stop {9}model-error$/m);
     expect(ran.stdout).toMatch(/^reason {7}the model endpoint failed: HTTP 404/m);
-    expect(ran.stdout).toMatch(/^verdict {6}pass$/m);
+    expect(ran.stdout).toMatch(/^state {8}complete$/m);
     expect(ran.stdout).toMatch(/^tokens {7}0$/m);
   });
 
@@ -88,6 +88,6 @@ describe("swarm run against the stub endpoint", () => {
     const ran = await swarmRun(`http://127.0.0.1:${stub.port}/v1`);
     expect(ran.code).toBe(1);
     expect(ran.stdout).toMatch(/^reason {7}the model endpoint failed: connection refused at/m);
-    expect(ran.stdout).toMatch(/^verdict {6}pass$/m);
+    expect(ran.stdout).toMatch(/^state {8}complete$/m);
   });
 });

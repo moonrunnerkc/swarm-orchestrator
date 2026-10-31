@@ -32,13 +32,16 @@ commits, pushed code, passing CI and published packages are separate facts.
 
 - `src/cli.ts`: the `swarm` entry and its subcommands (`run`, `verify`, `init`, `ci`, `doctor`),
   one small module each, dispatched by `src/cli-main.ts`.
+  `verify`, `init` and `ci` are the installed verifier's own commands (`swarm-verify/cli`).
 - `src/agent`: the `run` loop. One bash tool, one command per turn, the verifier as the judge.
-- `src/verify`, `packages/swarm-verify`: the verifier while it moves to its own repository;
-  nothing new is built here.
-- `src/tools`: the one execution chokepoint and the lexical path policy.
-- `src/exec`: child environments built from scratch, process groups, the process runner.
-- `src/evidence`: append-only hash-chained records, canonical JSON, scrubbing.
-- `src/config`: `swarm.toml`, optional, validated with Zod.
+- `src/tools`: the one execution chokepoint and the lexical path policy. Child environments and
+  process groups come from `swarm-verify/execution`, so agent commands and checks are run alike.
+- `src/evidence`: append-only hash-chained records, canonical JSON, scrubbing with the
+  verifier's credential detector.
+- `src/config`: the `[agent]` table of `swarm.toml`, optional, validated with Zod.
+- `scripts/adopt-verifier.mjs`: pins `swarm-verify` to an exact packed tarball by integrity.
+- `scripts/packed-consumer.test.mjs`: installs the packed agent beside the pinned verifier
+  tarball in a fresh prefix and runs one task through both.
 
 ## Invariants
 

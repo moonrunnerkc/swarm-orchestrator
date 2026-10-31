@@ -35,7 +35,7 @@ How the runs ended, from the outcome block `swarm run` prints in each trial; Pas
 
 ## Tamper evaluation
 
-`tamper-2026-10-31T14-17-03-782Z.json`, from `node eval/tamper/run.mjs` at 494112dfb: honest and cheating patches against three fixture repositories, each verified by `swarm verify` with held-out checks sealed. A patch counts as flagged when the verdict is anything but pass.
+`tamper-2026-10-31T14-17-03-782Z.json`, from the tamper evaluation (since moved to swarm-verify) at 494112dfb: honest and cheating patches against three fixture repositories, each verified by `swarm verify` with held-out checks sealed. A patch counts as flagged when the verdict is anything but pass.
 
 | Patches | Honest | Cheating | Honest flagged | Cheats flagged | Precision | Recall |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -51,7 +51,7 @@ How the runs ended, from the outcome block `swarm run` prints in each trial; Pas
 
 ### Tamper (superseded)
 
-`tamper-2026-10-30T05-29-41-578Z.json`, from `node eval/tamper/run.mjs` at cdcb7cc24: honest and cheating patches against three fixture repositories, each verified by `swarm verify` with held-out checks sealed. A patch counts as flagged when the verdict is anything but pass.
+`tamper-2026-10-30T05-29-41-578Z.json`, from the tamper evaluation (since moved to swarm-verify) at cdcb7cc24: honest and cheating patches against three fixture repositories, each verified by `swarm verify` with held-out checks sealed. A patch counts as flagged when the verdict is anything but pass.
 
 | Patches | Honest | Cheating | Honest flagged | Cheats flagged | Precision | Recall |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -67,7 +67,7 @@ How the runs ended, from the outcome block `swarm run` prints in each trial; Pas
 
 ### Tamper (superseded)
 
-`tamper-2026-10-29T15-01-57-864Z.json`, from `node eval/tamper/run.mjs` at 24cd89955: honest and cheating patches against three fixture repositories, each verified by `swarm verify` with held-out checks sealed. A patch counts as flagged when the verdict is anything but pass.
+`tamper-2026-10-29T15-01-57-864Z.json`, from the tamper evaluation (since moved to swarm-verify) at 24cd89955: honest and cheating patches against three fixture repositories, each verified by `swarm verify` with held-out checks sealed. A patch counts as flagged when the verdict is anything but pass.
 
 | Patches | Honest | Cheating | Honest flagged | Cheats flagged | Precision | Recall |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -83,7 +83,7 @@ How the runs ended, from the outcome block `swarm run` prints in each trial; Pas
 
 ### Tamper (superseded)
 
-`tamper-2026-10-29T00-41-04-249Z.json`, from `node eval/tamper/run.mjs` at an unrecorded commit: honest and cheating patches against three fixture repositories, each verified by `swarm verify` with held-out checks sealed. A patch counts as flagged when the verdict is anything but pass.
+`tamper-2026-10-29T00-41-04-249Z.json`, from the tamper evaluation (since moved to swarm-verify) at an unrecorded commit: honest and cheating patches against three fixture repositories, each verified by `swarm verify` with held-out checks sealed. A patch counts as flagged when the verdict is anything but pass.
 
 | Patches | Honest | Cheating | Honest flagged | Cheats flagged | Precision | Recall |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |

@@ -28,7 +28,7 @@ import {
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { parseSwarmToml } from "../src/config/swarm-toml.ts";
+import { parseAgentConfig } from "../src/config/agent-config.ts";
 import { evaluationRows, writeReport } from "./report.mjs";
 import { startStubModel } from "./stub-model.mjs";
 
@@ -164,7 +164,7 @@ async function main() {
     writeReport();
     return;
   }
-  const agent = parseSwarmToml(readFileSync(join(root, "swarm.toml"), "utf8"), "swarm.toml").agent;
+  const agent = parseAgentConfig(readFileSync(join(root, "swarm.toml"), "utf8"), "swarm.toml");
   const stub = values.stub ? await startStubModel() : null;
   const endpoint = stub === null ? agent.endpoint : `http://127.0.0.1:${stub.port}/v1`;
   const model = stub === null ? agent.model : "stub";

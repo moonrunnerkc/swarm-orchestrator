@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { requestVersion, snapshotWorkingTree, verifierVersion, verify } from "swarm-verify";
 import { createSessionId, openEvidenceSession } from "../evidence/session.ts";
 import {
   type ApprovalMode,
@@ -9,11 +10,7 @@ import {
   createChokepoint,
 } from "../tools/chokepoint.ts";
 import { createPolicyGuard, defaultShellAllowlist } from "../tools/policy-guard.ts";
-import { gitText } from "../verify/change.ts";
-import { writeAttestation } from "../verify/dsse.ts";
-import { swarmHome } from "../verify/held-out.ts";
-import { resolveSigningKey } from "../verify/signing.ts";
-import { verifyChange } from "../verify/verify.ts";
+import { gitText } from "./git.ts";
 import { type LoopResult, runLoop, type Verification } from "./loop.ts";
 import type { ModelClient } from "./model.ts";
 import { systemPrompt } from "./prompt.ts";
@@ -35,6 +32,11 @@ export interface RunOptions {
 export interface RunReport extends LoopResult {
   readonly sessionDirectory: string;
   readonly attestation: string | null;
+}
+
+/** Where sessions, baselines and sealed checks live: SWARM_HOME, or ~/.swarm. */
+export function swarmHome(env: Readonly<Record<string, string | undefined>> = process.env): string {
+  return env.SWARM_HOME ?? join(homedir(), ".swarm");
 }
 
 /** Runs the loop on a workspace, judged by the verifier against the commit it started from. */
@@ -68,29 +70,49 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
   });
 
   let attestation: string | null = null;
-  const verify = async (): Promise<Verification> => {
-    const outcome = await verifyChange({
-      workspace,
-      request: { kind: "working-tree", base },
-      producer: { model: options.model.model, promptSha256 },
-      version: options.version,
-      ...(options.signal === undefined ? {} : { signal: options.signal }),
-    });
-    const written = await writeAttestation(
-      outcome.statement,
-      outcome.patch,
-      join(workspace, ".swarm", "verify"),
-      { sigstore: false, resolveKey: () => resolveSigningKey() },
+  let judged = 0;
+  // Each verification gets its own directory in the session, outside the workspace and out of
+  // the agent's reach, and judges an immutable snapshot of the working tree.
+  const verifyTree = async (): Promise<Verification> => {
+    judged += 1;
+    const directory = join(evidence.directory, "verifications", String(judged));
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    const snapshot = await snapshotWorkingTree(workspace, base, join(directory, "candidate.patch"));
+    const result = await verify(
+      {
+        version: requestVersion,
+        repository: workspace,
+        base: { commit: base },
+        candidate: { kind: "patch", path: snapshot.path, sha256: snapshot.sha256 },
+        policy: { execution: { mode: "host", network: "open", dependencies: "linked" } },
+        artifacts: { directory },
+        producer: {
+          name: "swarm-orchestrator",
+          version: options.version,
+          model: options.model.model,
+          promptSha256,
+        },
+      },
+      {
+        verifierVersion,
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+      },
     );
-    attestation = written.bundle;
-    const predicate = outcome.statement.predicate;
-    const feedback = [...predicate.reasons, outcome.failureText].filter(Boolean).join("\n\n");
-    const mutant = predicate.mutation;
+    attestation = result.evidence.bundle;
+    const feedback = [...result.reasons, result.failureOutput].filter(Boolean).join("\n\n");
+    const mutant = result.mutation;
     const survivedMutant = mutant.status === "survived" ? `${mutant.path}:${mutant.line}` : null;
-    const inherited = predicate.checks.some((check) => check.result === "pre-existing-failure");
-    const actionable = predicate.verdict === "fail" || inherited;
-    const reasons = predicate.reasons.join("\n");
-    return { verdict: predicate.verdict, feedback, survivedMutant, actionable, reasons };
+    const failed = result.regression.status === "found" || !result.change.applied;
+    const inherited =
+      result.regression.inherited.length > 0 || result.regression.unresolved.length > 0;
+    return {
+      state: result.state,
+      failed,
+      feedback,
+      survivedMutant,
+      actionable: failed || inherited,
+      reasons: result.reasons.join("\n"),
+    };
   };
 
   const result = await runLoop({
@@ -106,7 +128,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
     }),
     evidence,
     status: () => gitText(workspace, ["status", "--short", "--", ".", ":(exclude).swarm"]),
-    verify,
+    verify: verifyTree,
     maxSteps: options.maxSteps,
     maxTokens: options.maxTokens,
     turnTokens: options.turnTokens,
@@ -120,7 +142,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
     payload: {
       stop: result.stop,
       reason: result.reason,
-      verdict: result.verification?.verdict ?? null,
+      state: result.verification?.state ?? null,
       steps: result.steps,
       // tokensUsed, not tokens: the scrubber reads a bare `tokens` key as a credential.
       tokensUsed: result.tokens,

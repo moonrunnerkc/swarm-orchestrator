@@ -48,8 +48,9 @@ The verifier signs an in-toto Statement in a DSSE envelope over the patch and th
 measured. That is tamper-evident evidence: a changed bundle no longer verifies against the
 key. It does not prove the code is correct, that the tests were comprehensive, or that nothing
 unobserved happened. Execution assurance (how the checks were contained) and evidence integrity
-(whether the record is intact) are separate fields. [docs/verifying.md](docs/verifying.md)
-says what each part of a verdict means and where its reach ends.
+(whether the record is intact) are separate fields. The verifier's
+[docs/verifying.md](https://github.com/moonrunnerkc/swarm-verify/blob/main/docs/verifying.md) says
+what each part of a result means and where its reach ends.
 
 ## Where things are
 
@@ -57,8 +58,8 @@ says what each part of a verdict means and where its reach ends.
   verifier are two products, and which owns what.
 - [docs/plans/2026-10-31-product-recovery.md](docs/plans/2026-10-31-product-recovery.md): the
   specification the current work follows.
-- [docs/verifying.md](docs/verifying.md): what the verifier runs and what a result means.
-- [docs/integrations.md](docs/integrations.md): CI, pre-commit, MCP and editor hooks.
+- [moonrunnerkc/swarm-verify](https://github.com/moonrunnerkc/swarm-verify): the verifier, its
+  API, its GitHub Action and its integrations with CI, pre-commit and MCP.
 - [docs/results.md](docs/results.md): earlier evaluation results, kept as history.
 - [docs/eval.md](docs/eval.md): how those evaluations ran.
 

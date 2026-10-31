@@ -46,12 +46,12 @@ the outcome block the trial printed, and the page counts them beside the benchma
 
 ## Tamper evaluation
 
-`node eval/tamper/run.mjs` builds three fixture repositories, seals their held-out tests, and runs
-`swarm verify` on honest patches and on cheating ones in five techniques: edited expectations,
-deleted assertions, hard-coded inputs, overridden equality and a patched scorer.
-`eval/tamper/oracle.mjs` decides which patches are really correct without going through `node:assert`. A
-patch counts as flagged when the verdict is anything but pass. It needs only Node, git and
-Python 3, and writes `eval/results/tamper-<time>.json`.
+The tamper evaluation measures the verifier, so it moved with the verifier's source to
+[moonrunnerkc/swarm-verify](https://github.com/moonrunnerkc/swarm-verify) on 2026-10-31, where
+`node eval/tamper/run.mjs` builds three fixture repositories, seals their held-out tests, and
+verifies honest patches and cheating ones in five techniques: edited expectations, deleted
+assertions, hard-coded inputs, overridden equality and a patched scorer. The tamper results
+stored under `eval/results/` here are its earlier runs from this repository.
 
 ## Manual runs
 

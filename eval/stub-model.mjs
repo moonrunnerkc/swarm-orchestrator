@@ -6,9 +6,10 @@ export const stubReply = "```bash\nls\n```";
 /**
  * An OpenAI-compatible chat endpoint that always answers with the same command, so the harness
  * can run end to end with no model. Nothing it produces is a model result. With `status`, it
- * answers every completion with that HTTP status instead; `requests` holds every body it read.
+ * answers every completion with that HTTP status instead; with `replies`, it answers the nth
+ * completion with the nth reply and the last one after that; `requests` holds every body it read.
  */
-export function startStubModel({ port = 0, status = 200 } = {}) {
+export function startStubModel({ port = 0, status = 200, replies = [stubReply] } = {}) {
   const requests = [];
   const server = createServer((request, response) => {
     let body = "";
@@ -38,7 +39,8 @@ export function startStubModel({ port = 0, status = 200 } = {}) {
         completion_tokens: 4,
         total_tokens: promptTokens + 4,
       };
-      const message = { role: "assistant", content: stubReply };
+      const content = replies[Math.min(requests.length, replies.length) - 1] ?? stubReply;
+      const message = { role: "assistant", content };
       let streamed = false;
       try {
         streamed = JSON.parse(body).stream === true;

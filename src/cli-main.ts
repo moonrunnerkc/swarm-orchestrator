@@ -3,13 +3,13 @@ import { UsageError, usageFor } from "./cli-command-definitions.ts";
 
 export type Handler = (args: readonly string[]) => Promise<number>;
 
-/** Dispatches one command line; both binaries share it so they read and exit the same way. */
+/** Dispatches one command line, with usage errors exiting 2. */
 export async function dispatch(
   program: string,
   handlers: Readonly<Record<string, Handler>>,
   argv: readonly string[],
 ): Promise<number> {
-  const usage = usageFor(program, !("doctor" in handlers));
+  const usage = usageFor(program);
   const [command, ...rest] = argv;
   if (command === undefined || command === "help" || command === "--help" || command === "-h") {
     process.stdout.write(`${usage}\n`);

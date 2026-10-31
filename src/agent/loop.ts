@@ -4,7 +4,10 @@ import { type Message, type ModelClient, ModelError, type Reply } from "./model.
 import { parseReply, systemPrompt, truncate, turnHeader } from "./prompt.ts";
 
 export interface Verification {
-  readonly verdict: "pass" | "fail" | "unmeasured";
+  /** The verifier's overall state for the tree it judged. */
+  readonly state: "complete" | "incomplete" | "blocked";
+  /** Whether something failed outright, as opposed to staying unverified or unresolved. */
+  readonly failed: boolean;
   /** What the verifier printed about a refusal, handed back to the model verbatim. */
   readonly feedback: string;
   /** `path:line` of a changed line whose mutant the checks did not kill, or null. */
@@ -80,7 +83,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
       type: "verification",
       actor: "harness",
       provenance: ["tool-output"],
-      payload: { verdict: verification.verdict, feedback: verification.feedback },
+      payload: { state: verification.state, feedback: verification.feedback },
     });
     return verification;
   };
@@ -149,16 +152,14 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
     }
 
     const judged = await judge();
-    if (judged.verdict === "pass") return result("verified");
+    if (judged.state === "complete") return result("verified");
     if (!judged.actionable) return result("unmeasured");
     // Completing again over the same unmeasured reasons says the inherited failure is not its own.
-    if (judged.verdict === "unmeasured" && judged.reasons === lastReasons)
-      return result("unmeasured");
-    lastReasons = judged.verdict === "unmeasured" ? judged.reasons : null;
+    if (!judged.failed && judged.reasons === lastReasons) return result("unmeasured");
+    lastReasons = judged.failed ? null : judged.reasons;
     failure = judged.feedback;
-    note =
-      judged.verdict === "fail"
-        ? "The verifier refused the change. Fix what it reports, then mark the task complete again."
-        : "The verifier could not measure the change: a check fails at the base commit and still fails. Fix it if the task needs that; otherwise mark the task complete again.";
+    note = judged.failed
+      ? "The verifier refused the change. Fix what it reports, then mark the task complete again."
+      : "The verifier could not measure the change: a check fails at the base commit and still fails. Fix it if the task needs that; otherwise mark the task complete again.";
   }
 }

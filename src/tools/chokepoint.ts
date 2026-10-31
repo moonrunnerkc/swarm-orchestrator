@@ -1,5 +1,5 @@
+import { runProcessGroup } from "swarm-verify/execution";
 import type { EvidenceRecorder } from "../evidence/session.ts";
-import { runProcessGroup } from "../exec/run-process.ts";
 import type { PolicyGuard } from "./policy-guard.ts";
 import { readShellCommand } from "./shell-command.ts";
 

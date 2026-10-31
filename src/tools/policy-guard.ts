@@ -1,6 +1,6 @@
 import { realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { type ChildEnvironment, childEnvironment } from "../exec/child-environment.ts";
+import { type ChildEnvironment, childEnvironment } from "swarm-verify/execution";
 import { readShellCommand } from "./shell-command.ts";
 
 /**

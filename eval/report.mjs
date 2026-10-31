@@ -235,7 +235,7 @@ export function renderPage() {
   const tamperText = (name) => {
     const result = JSON.parse(readFileSync(join(resultsDir, name), "utf8"));
     return [
-      `\`${name}\`, from \`node eval/tamper/run.mjs\` at ${result.commit ?? "an unrecorded commit"}: honest and cheating patches against three fixture repositories, each verified by \`swarm verify\` with held-out checks sealed. A patch counts as flagged when the verdict is anything but pass.`,
+      `\`${name}\`, from the tamper evaluation (since moved to swarm-verify) at ${result.commit ?? "an unrecorded commit"}: honest and cheating patches against three fixture repositories, each verified by \`swarm verify\` with held-out checks sealed. A patch counts as flagged when the verdict is anything but pass.`,
       "",
       tamperTable(result),
     ];

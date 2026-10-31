@@ -1,5 +1,5 @@
+import { assignmentLabel, fieldLabel } from "swarm-verify/execution";
 import type { JsonValue } from "./canonical-json.ts";
-import { assignmentLabel, fieldLabel } from "./credential-names.ts";
 // Text can carry JSON, so text scrubbing hands it to the JSON traversal and back.
 import { scrubValue } from "./scrub-json.ts";
 import { type SecretSpan, secretSpans, type ValueVerdict } from "./secret-spans.ts";
