@@ -3,12 +3,10 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * Two products ship from this tree: Swarm Orchestrator, the coding agent, from the root
- * package, and Swarm Verify, the standalone verifier, from packages/swarm-verify. Their
- * identities inverted once, in the 14.3.0 README and the repository description, with the
- * agent described as an optional beta of the verifier it is built on. This holds the front
- * matter of each product to what it is, and the package metadata to the product it names, so
- * the inversion cannot return quietly through a documentation edit.
+ * Swarm Orchestrator is the coding agent and Swarm Verify the standalone verifier it consumes
+ * (ADR 0015). Their identities inverted twice: in the 14.3.0 README, and in 15.0.0, whose
+ * README was headed swarm-verify. This holds each product's front matter and package metadata
+ * to what it is, so the inversion cannot return quietly through a documentation edit.
  */
 const root = resolve(import.meta.dirname, "..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
@@ -27,10 +25,19 @@ const orchestrator = JSON.parse(read("package.json")) as Manifest;
 const verifier = JSON.parse(read("packages/swarm-verify/package.json")) as Manifest;
 
 describe("the two products' identities", () => {
+  it("heads the root README with the agent and its product promise", () => {
+    const readme = read("README.md");
+    expect(readme.startsWith("# swarm-orchestrator\n")).toBe(true);
+    expect(readme).toMatch(
+      /^Give Swarm an engineering task\. It makes the change, checks each requirement/m,
+    );
+  });
+
   it("names the root package as the coding agent and its binary as swarm", () => {
     expect(orchestrator.name).toBe("swarm-orchestrator");
     expect(orchestrator.bin).toEqual({ swarm: "dist/cli.js" });
     expect(orchestrator.description).toMatch(/coding agent/i);
+    expect(orchestrator.description).not.toMatch(/judged by|refuse/i);
     expect(orchestrator.homepage).toBe("https://github.com/moonrunnerkc/swarm-orchestrator#readme");
   });
 
@@ -40,7 +47,9 @@ describe("the two products' identities", () => {
       "swarm-verify": "dist/swarm-verify.js",
       "swarm-verify-mcp": "mcp.mjs",
     });
-    expect(verifier.description).toMatch(/^Rerun a project's own checks/);
+    expect(verifier.description).toMatch(
+      /^Measure a candidate change against a project's own checks/,
+    );
     expect(verifier.description).toMatch(/in-toto/);
     expect(verifier.homepage).toBe(
       "https://github.com/moonrunnerkc/swarm-orchestrator/tree/v13-main/packages/swarm-verify#readme",

@@ -1,110 +1,65 @@
-# swarm-verify
+# swarm-orchestrator
 
-**swarm-verify reruns a repository's own checks on a change in a clean checkout of its base,
-refuses changes that edit their tests alongside the code, runs tests the change's author never
-saw, and signs the verdict, for anyone merging AI-written changes from any agent.**
+Give Swarm an engineering task. It makes the change, checks each requirement, repairs supported
+failures, and returns the patch with evidence of what is complete and what remains uncertain.
 
 [![ci](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml/badge.svg?branch=v13-main)](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml)
 [![license: ISC](https://img.shields.io/badge/license-ISC-blue)](LICENSE)
 
-## Try it
-
-Node 22 or newer and git. The packages aren't on npm at this version yet, so it runs from a
-checkout:
-
 ```sh
-git clone https://github.com/moonrunnerkc/swarm-orchestrator && cd swarm-orchestrator
-npm ci
-export SWARM="$PWD" && swarm() { node "$SWARM/dist/cli.js" "$@"; }
+swarm run "Add a --json option to the status command and keep the text output as it is"
 ```
 
-A scratch repository with a broken function and a test that says so, the fix, the verdict, then
-the attestation checked before and after one bit of it flips:
+Features, fixes, refactors and upgrades are all ordinary work. Source, tests, manifests and
+lockfiles may change together when the task needs it; what the change cannot touch is the
+authority that judges it.
+
+## How a run works
+
+1. Swarm reads the task and the repository's `AGENTS.md` (or `CLAUDE.md`) instructions.
+2. It records the requirements it was given, with stable IDs, and the assumptions it made.
+3. A local model edits the code through one bash tool. Every command goes through one
+   chokepoint under a lexical path policy and lands on a hash-chained ledger outside the
+   workspace.
+4. [Swarm Verify](https://github.com/moonrunnerkc/swarm-verify), the standalone verifier, measures
+   the candidate: the base commit's tests against the new source, new tests as labeled
+   evidence, test by test against the base.
+5. A supported failure goes back to the model for repair while the run budget allows.
+6. Every exit, including a budget running out or an interrupted run, ends in one finalization
+   that verifies the exact delivered snapshot, or writes an incomplete report bound to it.
+
+The final report lists each requirement as `satisfied`, `failed`, `unverified` or `blocked`,
+with the evidence that decided it. The run is `complete` only when every required obligation is
+satisfied, no new regression is unresolved, and the evidence matches the delivered patch.
+
+## Install
+
+Node 22 or newer and git. Swarm runs against a local model: Ollama, or any OpenAI-compatible
+endpoint you name with `--endpoint`.
 
 ```sh
-cd "$(mktemp -d)" && git init -q && mkdir test
-printf 'export const half = (n) => n;\n' > half.mjs
-printf 'import { test } from "node:test";\nimport assert from "node:assert/strict";\nimport { half } from "../half.mjs";\ntest("half", () => assert.equal(half(4), 2));\n' > test/half.test.mjs
-printf '{ "type": "module", "scripts": { "test": "node --test" } }\n' > package.json
-git add -A && git -c user.email=me@example.com -c user.name=me commit -qm base
-swarm init && git add swarm.toml && git -c user.email=me@example.com -c user.name=me commit -qm checks
-printf 'export const half = (n) => n / 2;\n' > half.mjs
-swarm verify --out out
-node "$SWARM/packages/swarm-verify/verify.mjs" out/attestation.sigstore.json --key out/attestation.pub.pem --patch out/change.patch; echo "exit $?"
-node -e 'const f=require("fs");const p="out/attestation.sigstore.json";const b=f.readFileSync(p);b[b.indexOf("\"payload\": \"")+40]^=1;f.writeFileSync(p,b)'
-node "$SWARM/packages/swarm-verify/verify.mjs" out/attestation.sigstore.json --key out/attestation.pub.pem --patch out/change.patch; echo "exit $?"
+npm install -g swarm-orchestrator
+swarm run "<task>" --endpoint http://localhost:11434/v1 --model <name>
 ```
 
-`swarm verify` runs the test at the base commit (it fails there), applies the change, runs it
-again (it passes now), measures the changed line's coverage and one mutant, and writes an
-in-toto Statement in a DSSE envelope inside a Sigstore bundle. `verify.mjs` needs nothing but
-Node; it prints `exit 0`, then `exit 1` once the signature no longer matches. `cosign
-verify-blob-attestation` gives the same two answers. The first run on a desktop keeps an
-ed25519 key in the OS keychain; `SWARM_SIGNING_KEY` or `--sigstore` sign another way.
+## What the evidence is, and is not
 
-## What it catches
-
-The tamper evaluation verifies 20 honest patches and 24 cheating ones against three fixture
-repositories with held-out tests sealed: precision 100.0%, recall 100.0%
-([docs/results.md](docs/results.md)).
-
-| Patches | Cases | Flagged |
-| --- | ---: | ---: |
-| honest | 20 | 0 |
-| edited-expectations | 4 | 4 |
-| deleted-assertions | 4 | 4 |
-| hard-coded-inputs | 4 | 4 |
-| overridden-equality | 8 | 8 |
-| patched-scorer | 4 | 4 |
-
-Each cheat makes the visible tests pass while the behavior stays wrong. Edited expectations,
-deleted assertions and a patched scorer change tests or scoring together with source, which the
-protected-path rule refuses. Hard-coded inputs fail tests sealed with `swarm init --seal`. The
-overridden-equality cheats patch `node:assert`, `Object.is`, `Array.prototype.includes` or the
-project's own `expect` helper from the source under test; a judge loaded into the held-out test
-processes before any project module catches them. The fixtures, patches and oracle are in
-`eval/tamper/`.
-
-## What a pass means, and what it doesn't
-
-A pass means the checks you declared and the tests you sealed agree the change didn't break
-them, measured on a clean checkout. pytest, jest, vitest, mocha and go test are judged test by
-test, so a test that already failed at base is reported, not counted; any other runner is judged
-by exit code, and an inherited failure there leaves the verdict unmeasured. It doesn't mean the code is correct: that's only as strong as the checks, and the
-coverage and mutant lines in every verdict say how strong they are. The judge is a tripwire, not
-a sandbox; [docs/verifying.md](docs/verifying.md) lists what is out of its reach.
-
-## The rebuild
-
-This repository used to hold a research system around the same idea: 25 subcommands, 97,188
-non-test lines of TypeScript under `src/`, 10 runtime dependencies, and a test suite that took
-368.2 s in a fresh worktree and ended with 18 failures. [ADR 0014](docs/adr/0014-verifier-first-rebuild.md)
-cut it to the verifier and one agent loop: 5 subcommands, 6,536 lines, 2 dependencies, and 295
-tests that pass in 7.2 s.
-
-## swarm run
-
-`swarm run "<task>" --endpoint <url> --model <name>` is a loop with one bash tool over any
-OpenAI-compatible endpoint. Every command goes through one chokepoint under a lexical path
-policy and lands on a hash-chained ledger outside the workspace. When the model says it's done,
-the verifier judges the tree; a refusal goes back to the model until the verifier passes it or a
-budget runs out. On the first 30 SWE-bench Verified tasks, with `qwen3.6:35b-a3b` behind every
-arm and the benchmark's own tests judging, `swarm run` passed 14 (46.7%, Wilson 95% 30.2% to
-63.9%), mini-SWE-agent 15 and OpenCode 10, and no pair differs significantly (McNemar p 0.125 or
-more). Its verifier measured none of them: in every run that reached it, the check it detected
-could not run a test (the images activate their Python environment only in interactive shells,
-and Django's detected `npm run test` has no linter installed), and the others ran out of steps
-or tokens first. The harness now gives every arm the task's environment.
+The verifier signs an in-toto Statement in a DSSE envelope over the patch and the tree it
+measured. That is tamper-evident evidence: a changed bundle no longer verifies against the
+key. It does not prove the code is correct, that the tests were comprehensive, or that nothing
+unobserved happened. Execution assurance (how the checks were contained) and evidence integrity
+(whether the record is intact) are separate fields. [docs/verifying.md](docs/verifying.md)
+says what each part of a verdict means and where its reach ends.
 
 ## Where things are
 
-- [docs/results.md](docs/results.md): every measured number, written by the evaluation.
-- [docs/demos/](docs/demos/): five recorded demos, each with the transcript it printed.
-- [docs/verifying.md](docs/verifying.md): what the verifier runs, and where its reach ends.
-- [docs/integrations.md](docs/integrations.md): the GitHub Action, CI, pre-commit, MCP, hooks.
-- [docs/eval.md](docs/eval.md): how the evaluation runs, and the nightly runner.
-- [moonrunnerkc/swarm-orchestrator-archive](https://github.com/moonrunnerkc/swarm-orchestrator-archive)
-  (private): the research history this repository carried before the rebuild.
-- [ADR 0014](docs/adr/0014-verifier-first-rebuild.md): why the project is shaped this way.
+- [ADR 0015](docs/adr/0015-coding-agent-consumes-standalone-verifier.md): why the agent and the
+  verifier are two products, and which owns what.
+- [docs/plans/2026-10-31-product-recovery.md](docs/plans/2026-10-31-product-recovery.md): the
+  specification the current work follows.
+- [docs/verifying.md](docs/verifying.md): what the verifier runs and what a result means.
+- [docs/integrations.md](docs/integrations.md): CI, pre-commit, MCP and editor hooks.
+- [docs/results.md](docs/results.md): earlier evaluation results, kept as history.
+- [docs/eval.md](docs/eval.md): how those evaluations ran.
 
 ISC licensed; see [LICENSE](LICENSE).
