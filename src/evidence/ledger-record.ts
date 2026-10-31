@@ -24,6 +24,7 @@ export const recordTypes = [
   "tool-call",
   "confirmation",
   "verification",
+  "requirements",
   "session-stopped",
 ] as const;
 

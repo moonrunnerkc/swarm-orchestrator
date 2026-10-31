@@ -1,156 +1,151 @@
-import { execFileSync } from "node:child_process";
-import { generateKeyPairSync } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { Message, ModelClient } from "./model.ts";
+import { describe, expect, it } from "vitest";
+import { type ModelClient, ModelError } from "./model.ts";
 import { completionMarker } from "./prompt.ts";
-import { runAgent } from "./run.ts";
+import { fixture, recordAndComplete, scripted, write } from "./test-doubles.ts";
 
-let root = "";
-let repo = "";
-const saved = { home: process.env.SWARM_HOME, key: process.env.SWARM_SIGNING_KEY };
+const fix = write("half.mjs", "export const half = (n) => n / 2;");
+const mapped = recordAndComplete([
+  { id: "R1", text: "x", kind: "fix", evidence: { tests: [{ name: "half" }] } },
+]);
 
-beforeAll(() => {
-  process.env.SWARM_SIGNING_KEY = generateKeyPairSync("ed25519")
-    .privateKey.export({ type: "pkcs8", format: "pem" })
-    .toString();
-});
-afterAll(() => {
-  for (const [name, value] of [
-    ["SWARM_HOME", saved.home],
-    ["SWARM_SIGNING_KEY", saved.key],
-  ] as const) {
-    if (value === undefined) delete process.env[name];
-    else process.env[name] = value;
-  }
-});
-
-beforeEach(async () => {
-  root = await mkdtemp(join(tmpdir(), "agent-run-"));
-  repo = join(root, "repo");
-  process.env.SWARM_HOME = join(root, "home");
-  await mkdir(join(repo, "test"), { recursive: true });
-  const git = (...args: string[]) => execFileSync("git", args, { cwd: repo });
-  git("init", "-q", "-b", "main");
-  git("config", "user.email", "t@example.com");
-  git("config", "user.name", "t");
-  await writeFile(join(repo, "swarm.toml"), '[checks]\ntest = "node --test"\n');
-  await writeFile(join(repo, "half.mjs"), "export const half = (n) => n;\n");
-  await writeFile(
-    join(repo, "test", "half.test.mjs"),
-    'import { test } from "node:test";\nimport assert from "node:assert/strict";\nimport { half } from "../half.mjs";\ntest("half", () => assert.equal(half(4), 2));\n',
+async function ledger(
+  session: string,
+): Promise<{ type: string; payload: Record<string, unknown> }[]> {
+  const lines = (await readFile(join(session, "ledger.jsonl"), "utf8")).trim().split("\n");
+  return Promise.all(
+    lines.map(async (line) => {
+      const record = JSON.parse(line);
+      const digest = record.payloadDigest.replace("sha256:", "");
+      const payload = JSON.parse(await readFile(join(session, "blobs", `${digest}.json`), "utf8"));
+      return { type: record.type, payload };
+    }),
   );
-  git("add", "-A");
-  git("commit", "-qm", "base");
-});
-afterEach(async () => {
-  await rm(root, { recursive: true, force: true });
-});
-
-/** A model that replies from a script and keeps every conversation it was shown. */
-function scripted(replies: readonly string[]): ModelClient & { seen: Message[][] } {
-  const seen: Message[][] = [];
-  return {
-    model: "scripted",
-    seen,
-    async complete(messages) {
-      seen.push([...messages]);
-      return {
-        content: replies[seen.length - 1] ?? replies.at(-1) ?? "",
-        tokens: 100,
-        truncated: false,
-      };
-    },
-  };
 }
 
-const write = (body: string) => `\`\`\`bash\ncat > half.mjs <<'EOF'\n${body}\nEOF\n\`\`\``;
-const run = (model: ModelClient, maxSteps = 10, maxTokens = 100_000) =>
-  runAgent({
-    workspace: repo,
-    task: "Make half(n) return n / 2.",
-    model,
-    maxSteps,
-    maxTokens,
-    turnTokens: 1000,
-    approval: "ask",
-    confirm: null,
-    version: "test",
-    log: () => {},
-  });
-
 describe("swarm run", () => {
-  it("stops verified once the verifier passes the working tree", async () => {
-    const model = scripted([write("export const half = (n) => n / 2;"), completionMarker]);
-    const report = await run(model);
-    expect(report).toMatchObject({ stop: "verified", steps: 2, verifications: 1, tokens: 200 });
-    expect(await readFile(join(repo, "half.mjs"), "utf8")).toContain("n / 2");
-    expect(report.attestation).not.toBeNull();
+  it("completes once the verifier finds every requirement satisfied", async () => {
+    const probe = await fixture();
+    const ran = await probe.run(scripted([fix, mapped]));
+    expect(ran).toMatchObject({
+      stop: "complete",
+      report: { state: "complete", verification: "reused" },
+    });
+    expect(ran.report.resources).toMatchObject({ steps: 2, verifications: 1, tokens: 200 });
   });
 
-  it("hands a refusal back verbatim and continues from the same budgets", async () => {
+  it("hands the verifier's findings back and continues from the same budgets", async () => {
+    const probe = await fixture();
     const model = scripted([
-      write("export const half = (n) => n * 2;"),
-      completionMarker,
-      write("export const half = (n) => n / 2;"),
-      completionMarker,
+      write("half.mjs", "export const half = (n) => n * 2;"),
+      mapped,
+      fix,
+      mapped,
     ]);
-    const report = await run(model);
-    expect(report).toMatchObject({ stop: "verified", steps: 4, verifications: 2 });
-    const afterRefusal = model.seen[2]?.at(-1)?.content ?? "";
-    expect(afterRefusal).toContain("Most recent verifier failure:");
-    expect(afterRefusal).toContain("no test in its report passes against the candidate");
-    expect(afterRefusal).toContain("AssertionError");
-  });
-
-  it("reports the step budget when it runs out", async () => {
-    const report = await run(scripted(["```bash\nls\n```"]), 3);
-    expect(report).toMatchObject({ stop: "step-budget", steps: 3, verifications: 0 });
-  });
-
-  it("reports the token budget when it runs out", async () => {
-    const report = await run(scripted(["```bash\nls\n```"]), 50, 250);
-    expect(report).toMatchObject({ stop: "token-budget", steps: 3 });
+    const ran = await probe.run(model);
+    expect(ran).toMatchObject({
+      stop: "complete",
+      report: { resources: { steps: 4, verifications: 2 } },
+    });
+    const afterFindings = model.seen[2]?.at(-1)?.content ?? "";
+    expect(afterFindings).toContain("Latest verifier findings:");
+    expect(afterFindings).toContain("R1 failed: failing: test/half.test.mjs::half");
+    expect(afterFindings).toContain("AssertionError");
   });
 
   it("never renders a pass from the model's own say-so", async () => {
-    const report = await run(scripted([`It is fixed and all tests pass.\n${completionMarker}`]));
-    expect(report.stop).not.toBe("verified");
+    const probe = await fixture();
+    const ran = await probe.run(scripted([`It is fixed and all tests pass.\n${completionMarker}`]));
+    expect(ran.report.state).not.toBe("complete");
   });
 
-  it("names the changed line whose mutant the checks did not kill", async () => {
-    const both = "export const half = (n) => (n >= 0 ? n / 2 : n / 2);";
-    const report = await run(scripted([write(both), completionMarker]));
-    expect(report).toMatchObject({ stop: "verified" });
-    expect(report.verification?.survivedMutant).toBe("half.mjs:1");
+  it("finalizes on the step and token budgets", async () => {
+    const steps = await (await fixture()).run(scripted(["```bash\nls\n```"]), { maxSteps: 3 });
+    expect(steps).toMatchObject({
+      stop: "step-budget",
+      report: { verification: "fresh", resources: { steps: 3 } },
+    });
+    const tokens = await (await fixture()).run(scripted(["```bash\nls\n```"]), { maxTokens: 250 });
+    expect(tokens).toMatchObject({
+      stop: "token-budget",
+      report: { verification: "fresh", resources: { steps: 3 } },
+    });
   });
 
-  it("hands back an inherited failure once, and stops when the model completes over it again", async () => {
-    const model = scripted([write("export const half = (n) => n * 2;"), completionMarker]);
-    const report = await run(model);
-    expect(report).toMatchObject({ stop: "unmeasured", steps: 3, verifications: 2 });
-    expect(model.seen[2]?.at(-1)?.content).toContain("could not measure the change");
+  it("stops before a turn that would eat the time reserved for final verification, then verifies", async () => {
+    const probe = await fixture();
+    const ran = await probe.run(scripted([fix]), { maxWallMs: 60_000 });
+    expect(ran.stop).toBe("time-budget");
+    expect(ran.report.resources.steps).toBe(0);
+    expect(ran.report.verification).toBe("fresh");
+  });
+
+  it("finalizes the tree a provider failure leaves", async () => {
+    const probe = await fixture();
+    let turns = 0;
+    const failing: ModelClient = {
+      model: "failing",
+      async complete() {
+        turns += 1;
+        if (turns === 1) return { content: fix, tokens: 10, truncated: false };
+        throw new ModelError("HTTP 500: overloaded (three attempts in a row)");
+      },
+    };
+    const ran = await probe.run(failing);
+    expect(ran.stop).toBe("model-error");
+    expect(ran.report.verification).toBe("fresh");
+    expect(ran.result?.checks[0]?.tests?.fixed).toEqual(["test/half.test.mjs::half"]);
+  });
+
+  it("writes an incomplete report bound to the tree when the run is cancelled", async () => {
+    const probe = await fixture();
+    const controller = new AbortController();
+    let turns = 0;
+    const cancelling: ModelClient = {
+      model: "cancelling",
+      async complete() {
+        turns += 1;
+        if (turns === 1) return { content: fix, tokens: 10, truncated: false };
+        controller.abort(new Error("interrupted"));
+        throw controller.signal.reason;
+      },
+    };
+    const ran = await probe.run(cancelling, { signal: controller.signal });
+    expect(ran.stop).toBe("cancelled");
+    expect(ran.report).toMatchObject({ state: "incomplete", verification: "not run" });
+    expect(ran.report.snapshot.patchSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(ran.report.requirements[0]?.limitation).toBe(
+      "final verification did not run: the run was cancelled",
+    );
+  });
+
+  it("loads repository instructions into the prompt and digests them into the evidence", async () => {
+    const probe = await fixture({ "AGENTS.md": "Write tests with node:test.\n" });
+    const model = scripted([fix, mapped]);
+    const ran = await probe.run(model);
+    expect(model.seen[0]?.[0]?.content).toContain(
+      "--- AGENTS.md (applies to the whole repository) ---",
+    );
+    expect(ran.report.instructions).toEqual([
+      { path: "AGENTS.md", sha256: expect.stringMatching(/^[0-9a-f]{64}$/) },
+    ]);
+    const started = (await ledger(ran.sessionDirectory)).find(
+      (one) => one.type === "session-started",
+    );
+    expect(started?.payload.instructions).toEqual(ran.report.instructions);
   });
 
   it("says so when a command and its output repeat the last turn's", async () => {
     const model = scripted(["```bash\nls\n```"]);
-    await run(model, 3);
+    await (await fixture()).run(model, { maxSteps: 3 });
     expect(model.seen[1]?.at(-1)?.content).not.toContain("command you ran last turn");
     expect(model.seen[2]?.at(-1)?.content).toContain("This is the command you ran last turn");
   });
 
   it("keeps the token count in the evidence instead of redacting it", async () => {
-    const report = await run(scripted(["```bash\nls\n```"]), 2);
-    const records = (await readFile(join(report.sessionDirectory, "ledger.jsonl"), "utf8"))
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line));
-    const digest = records.at(-1).payloadDigest.replace("sha256:", "");
-    const stopped = JSON.parse(
-      await readFile(join(report.sessionDirectory, "blobs", `${digest}.json`), "utf8"),
-    );
-    expect(stopped).toMatchObject({ tokensUsed: 200 });
+    const ran = await (await fixture()).run(scripted(["```bash\nls\n```"]), { maxSteps: 2 });
+    const stopped = (await ledger(ran.sessionDirectory)).find((one) => one.type === "model-call");
+    expect(stopped?.payload).toMatchObject({ tokensUsed: 100 });
   });
 });

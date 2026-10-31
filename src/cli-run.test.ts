@@ -75,19 +75,22 @@ describe("swarm run against the stub endpoint", () => {
     const ran = await swarmRun(`http://127.0.0.1:${stub.port}/v1`);
     await stub.close();
     expect(stub.requests).toHaveLength(1);
-    expect(ran.code).toBe(1);
-    expect(ran.stdout).toMatch(/^stop {9}model-error$/m);
-    expect(ran.stdout).toMatch(/^reason {7}the model endpoint failed: HTTP 404/m);
-    expect(ran.stdout).toMatch(/^state {8}complete$/m);
-    expect(ran.stdout).toMatch(/^tokens {7}0$/m);
+    // The fix is in the tree but no evidence was mapped to the task, so R1 stays unverified.
+    expect(ran.code).toBe(4);
+    expect(ran.stdout).toMatch(/^stop {9}model-error: the model endpoint failed: HTTP 404/m);
+    expect(ran.stdout).toMatch(/^state {8}incomplete$/m);
+    expect(ran.stdout).toMatch(/^R1 {11}unverified {3}no executed evidence is mapped/m);
+    expect(ran.stdout).toMatch(/^regression {3}none$/m);
   });
 
   it("stops on a refused connection the same way", async () => {
     const stub = await startStubModel();
     await stub.close();
     const ran = await swarmRun(`http://127.0.0.1:${stub.port}/v1`);
-    expect(ran.code).toBe(1);
-    expect(ran.stdout).toMatch(/^reason {7}the model endpoint failed: connection refused at/m);
-    expect(ran.stdout).toMatch(/^state {8}complete$/m);
+    expect(ran.code).toBe(4);
+    expect(ran.stdout).toMatch(
+      /^stop {9}model-error: the model endpoint failed: connection refused at/m,
+    );
+    expect(ran.stdout).toMatch(/^regression {3}none$/m);
   });
 });

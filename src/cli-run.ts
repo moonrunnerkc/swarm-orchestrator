@@ -2,7 +2,8 @@ import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
 import { openAiCompatible } from "./agent/model.ts";
-import { runAgent } from "./agent/run.ts";
+import { summaryLines } from "./agent/report.ts";
+import { type RunReport, runAgent } from "./agent/run.ts";
 import { buildVersion } from "./build-version.ts";
 import { UsageError } from "./cli-command-definitions.ts";
 import { readAgentConfig } from "./config/agent-config.ts";
@@ -46,6 +47,7 @@ export async function run(args: readonly string[]): Promise<number> {
       "max-steps": { type: "string" },
       "max-tokens": { type: "string" },
       "turn-tokens": { type: "string" },
+      "max-minutes": { type: "string" },
       approve: { type: "string" },
     },
   });
@@ -66,31 +68,36 @@ export async function run(args: readonly string[]): Promise<number> {
   const controller = new AbortController();
   process.once("SIGINT", () => controller.abort(new Error("interrupted")));
 
-  const report = await runAgent({
+  const maxMinutes = count(values["max-minutes"], "--max-minutes");
+  write(`task         ${task}`);
+  write(
+    `model        ${model} (named by ${values.model === undefined ? "swarm.toml" : "--model"})`,
+  );
+  const ran = await runAgent({
     workspace,
     task,
     model: openAiCompatible({ endpoint, model, apiKey: process.env[keyName] ?? null }),
+    modelReason: `named by ${values.model === undefined ? "swarm.toml" : "--model"}`,
     maxSteps: count(values["max-steps"], "--max-steps") ?? agent?.maxSteps ?? 50,
     maxTokens: count(values["max-tokens"], "--max-tokens") ?? agent?.maxTokens ?? 1_000_000,
     // Room for a reasoning model's thinking and one command, and a bound on a looping reply.
     turnTokens: count(values["turn-tokens"], "--turn-tokens") ?? agent?.turnTokens ?? 16_384,
+    maxWallMs: maxMinutes === undefined ? null : maxMinutes * 60_000,
     approval,
     confirm: terminalPrompt(),
     version: buildVersion,
     signal: controller.signal,
     log: (line) => process.stderr.write(`${line}\n`),
   });
-  write(`stop         ${report.stop}`);
-  if (report.reason !== null) write(`reason       ${report.reason}`);
-  write(`state        ${report.verification?.state ?? "not verified"}`);
-  const mutant = report.verification?.survivedMutant ?? null;
-  if (mutant !== null) write(`mutant       survived at ${mutant}: no check failed when it changed`);
-  write(`steps        ${report.steps}`);
-  write(
-    `tokens       ${report.tokens}${report.estimatedTurns > 0 ? ` (${report.estimatedTurns} turn(s) estimated: the endpoint reported no usage)` : ""}`,
-  );
-  write(`verified     ${report.verifications} time(s)`);
-  write(`evidence     ${report.sessionDirectory}`);
-  if (report.attestation !== null) write(`attestation  ${report.attestation}`);
-  return report.stop === "verified" ? 0 : report.stop === "unmeasured" ? 4 : 1;
+  for (const line of summaryLines(ran.report, { markdown: ran.reportPath })) write(line);
+  write(`evidence     ${ran.sessionDirectory}`);
+  if (ran.report.attestation !== null) write(`attestation  ${ran.report.attestation}`);
+  return exitCodeOf(ran.report.state, ran.report.requirements);
+}
+
+/** 0 complete, 1 a requirement failed or the run stopped short, 4 unverified only, 5 blocked. */
+function exitCodeOf(state: string, requirements: RunReport["report"]["requirements"]): number {
+  if (state === "complete") return 0;
+  if (state === "blocked") return 5;
+  return requirements.some((one) => one.status === "failed") ? 1 : 4;
 }

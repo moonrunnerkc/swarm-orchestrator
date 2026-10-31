@@ -11,8 +11,9 @@ export const commandDefinitions: readonly CommandDefinition[] = [
   {
     name: "run",
     syntax:
-      'run "<task>" [--endpoint <url>] [--model <name>] [--max-steps <n>] [--max-tokens <n>] [--turn-tokens <n>] [--approve ask|auto]',
-    description: "work on the task with one bash tool until the verifier passes the working tree",
+      'run "<task>" [--endpoint <url>] [--model <name>] [--max-steps <n>] [--max-tokens <n>] [--turn-tokens <n>] [--max-minutes <n>] [--approve ask|auto]',
+    description:
+      "make the change, check each requirement, and report what is complete and what is not",
   },
   // The verifier's own commands, described where they are implemented.
   ...verifierDefinitions,

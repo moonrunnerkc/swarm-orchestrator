@@ -13,9 +13,26 @@ describe("reading a reply", () => {
     expect(parseReply(`All done.\n${completionMarker}\n`)).toEqual({ kind: "complete" });
   });
 
-  it("refuses two commands, or neither a command nor the marker", () => {
+  it("refuses two blocks, or neither a block nor the marker", () => {
     expect(parseReply("```bash\nls\n```\n```bash\npwd\n```").kind).toBe("malformed");
+    expect(parseReply("```bash\nls\n```\n```requirements\n[]\n```").kind).toBe("malformed");
     expect(parseReply("I think it works.").kind).toBe("malformed");
+  });
+
+  it("takes a requirements block, with or without the marker beside it", () => {
+    const json = '[{"id": "R1", "text": "t", "kind": "fix"}]';
+    expect(parseReply(`\`\`\`requirements\n${json}\n\`\`\``)).toEqual({
+      kind: "requirements",
+      json,
+      complete: false,
+    });
+    expect(parseReply(`\`\`\`requirements\n${json}\n\`\`\`\n${completionMarker}`)).toMatchObject({
+      complete: true,
+    });
+  });
+
+  it("does not read the marker inside a block as completion", () => {
+    expect(parseReply(`\`\`\`bash\necho ${completionMarker}\n\`\`\``).kind).toBe("command");
   });
 });
 
