@@ -5,6 +5,19 @@ at `packages/swarm-verify/action.yml` in the source repository. Versions before 
 14.2.0 on 2026-09-27) carried no changelog of their own. The coding agent that shares this
 verifier's implementation, `swarm-orchestrator`, keeps its own changelog at the repository root.
 
+## Unreleased
+
+### Changed
+
+- Declared test checks are judged test by test from the runner's own report (pytest junit,
+  jest and vitest JSON, mocha JSON, go test events), with the judge loaded at both commits; a
+  check whose runner is not recognized is judged by exit code and says so. Check results carry
+  `tests`: the runner, counts, and the ids fixed, regressed, pre-existing, deleted and newly
+  failing. The check result `unmeasured` is new: the command could not run, its report could
+  not be parsed, or no test in it passes with the change.
+- pytest runs with `--continue-on-collection-errors`, so a module that fails to import at both
+  commits does not stop the rest of the suite from being measured.
+
 ## 2.0.0 - 2026-10-29
 
 Rebuilt with the verifier-first rebuild ([ADR 0014](https://github.com/moonrunnerkc/swarm-orchestrator/blob/v13-main/docs/adr/0014-verifier-first-rebuild.md)).

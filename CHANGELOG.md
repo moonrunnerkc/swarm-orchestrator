@@ -3,6 +3,21 @@
 The agent. The verifier it is built on, `swarm-verify`, has its own changelog at
 [packages/swarm-verify/CHANGELOG.md](packages/swarm-verify/CHANGELOG.md).
 
+## Unreleased
+
+### Changed
+
+- `swarm verify` judges a declared test check test by test. It recognizes pytest, jest,
+  vitest, mocha and go test in the command, or in the `package.json` script the command names,
+  appends the runner's machine-readable report at base and with the change, and reads each
+  test as fixed, regressed, pre-existing, deleted or newly failing. A regression, a deletion
+  outside test files the change may edit, or a newly failing test fails the check; a test that
+  fails at both commits is reported and does not block. The verdict is measured whenever both
+  reports parse, whatever the command's exit code; it is unmeasured only when the command could
+  not run, its report could not be parsed, or no test in it passes with the change. A command
+  with no recognized runner is judged by exit code as before, and the verdict says so. See
+  [docs/verifying.md](docs/verifying.md).
+
 ## 15.0.0 - 2026-10-29
 
 The verifier-first rebuild ([ADR 0014](docs/adr/0014-verifier-first-rebuild.md)). The unreleased
