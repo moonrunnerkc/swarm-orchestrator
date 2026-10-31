@@ -24,12 +24,11 @@ describe("the caps", () => {
       subcommands: caps.subcommands + 1,
       workflows: caps.workflows + 1,
     });
-    expect(found).toHaveLength(6);
+    expect(found).toHaveLength(5);
     expect(found[0]).toContain("src/big.ts");
   });
 
-  it("allow test lines equal to source lines but not above", () => {
-    expect(violations({ ...within, srcTestLines: 1000 })).toEqual([]);
-    expect(violations({ ...within, srcTestLines: 1001 })).toHaveLength(1);
+  it("never cap the test lines, which boundary tests need", () => {
+    expect(violations({ ...within, srcTestLines: within.srcNonTestLines * 3 })).toEqual([]);
   });
 });

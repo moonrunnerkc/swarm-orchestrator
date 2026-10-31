@@ -1,6 +1,7 @@
 /**
- * Fails when the tree outgrows the caps ADR 0014 sets. Counts tracked files only, so a local
- * scratch file cannot pass or fail it.
+ * Fails when the tree outgrows its size caps: lines per file, non-test lines under src/, runtime
+ * dependencies, subcommands and workflows. Tests are reported, never capped. Counts tracked
+ * files only, so a local scratch file cannot pass or fail it.
  *
  *   node scripts/check-caps.mjs [repository root]
  */
@@ -55,8 +56,6 @@ export function violations(measured) {
   );
   if (measured.srcNonTestLines > caps.srcNonTestLines)
     found.push(`src/ has ${measured.srcNonTestLines} non-test lines (cap ${caps.srcNonTestLines})`);
-  if (measured.srcTestLines > measured.srcNonTestLines)
-    found.push(`src/ has ${measured.srcTestLines} test lines, above its non-test lines`);
   if (measured.runtimeDependencies > caps.runtimeDependencies)
     found.push(
       `${measured.runtimeDependencies} runtime dependencies (cap ${caps.runtimeDependencies})`,
