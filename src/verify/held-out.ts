@@ -6,9 +6,11 @@ import { z } from "zod";
 import type { DeclaredCheck } from "../config/swarm-toml.ts";
 import { gitText } from "./change.ts";
 import { type BaseCheckout, resetTracked, restoreFromBase } from "./checkout.ts";
-import { baseCache, type CheckContext, type CheckRun, runCheck, runChecks } from "./checks.ts";
+import { baseCache, type CheckContext, type CheckRun, runCheck } from "./checks.ts";
 import { judgeSha256, prepareJudge, readJudge } from "./judge.ts";
+import { runMeasured } from "./per-test.ts";
 import type { Baseline, Predicate } from "./predicate.ts";
+import type { ReportPlan, TestEvidence } from "./test-report.ts";
 
 const sealedSchema = z.object({
   glob: z.string().min(1),
@@ -173,18 +175,20 @@ export function sealedSha256(sealed: SealedSet | null): string {
 
 /**
  * Every declared and held-out check at the base commit, before the change applies, reused from
- * SWARM_HOME when the same base, environment, sealed set and judge were measured before. The
- * checkout is put back to the base as committed afterwards.
+ * SWARM_HOME when the same base, environment (which holds the commands), sealed set and judge
+ * were measured before. Declared checks run with their runner's reporter and the judge, as they
+ * will with the change. The checkout is put back to the base as committed afterwards.
  */
 export async function measureBase(input: {
   readonly checkout: BaseCheckout;
   readonly checks: readonly DeclaredCheck[];
+  readonly plans: readonly (ReportPlan | null)[];
   readonly sealed: SealedSet | null;
   readonly context: CheckContext;
   readonly home: string;
   readonly environment: Predicate["environment"];
   readonly workspace: string;
-}): Promise<Baseline> {
+}): Promise<{ readonly baseline: Baseline; readonly tests: readonly TestEvidence[] }> {
   const key = createHash("sha256")
     .update(
       JSON.stringify([
@@ -198,12 +202,25 @@ export async function measureBase(input: {
   const file = baseCache.file(input.home, key);
   const environmentSha256 = input.environment.sha256;
   const cached = await baseCache.read(file);
-  if (cached !== null) return { status: "measured", cached: true, environmentSha256, ...cached };
-  const checks = (await runChecks(input.checks, input.context)).map((run) => run.result);
+  if (cached !== null) {
+    const { checks, heldOut, tests } = cached;
+    return {
+      baseline: { status: "measured", cached: true, environmentSha256, checks, heldOut },
+      tests,
+    };
+  }
+  const scratch = dirname(input.checkout.dir);
+  const measured = [];
+  for (const [at, check] of input.checks.entries()) {
+    const plan = input.plans[at] ?? null;
+    const context = input.context;
+    measured.push(await runMeasured({ check, plan, context, scratch, label: "base", judge: true }));
+  }
+  const checks = measured.map((one) => one.run.result);
+  const tests = measured.map((one) => one.evidence);
   let heldOut: CheckRun["result"][] = [];
   if (input.sealed !== null) {
     await overlaySealed(input.workspace, input.sealed, input.checkout.dir, input.home);
-    const scratch = dirname(input.checkout.dir);
     heldOut = (await runSealed(input.sealed, input.context, scratch)).runs.map((run) => run.result);
     await restoreFromBase(
       input.checkout,
@@ -211,6 +228,9 @@ export async function measureBase(input: {
     );
   }
   await resetTracked(input.checkout);
-  await baseCache.write(file, { checks, heldOut });
-  return { status: "measured", cached: false, environmentSha256, checks, heldOut };
+  await baseCache.write(file, { checks, tests, heldOut });
+  return {
+    baseline: { status: "measured", cached: false, environmentSha256, checks, heldOut },
+    tests,
+  };
 }

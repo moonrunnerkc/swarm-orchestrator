@@ -7,11 +7,14 @@ import { childEnvironment } from "../exec/child-environment.ts";
 import { runProcessGroup } from "../exec/run-process.ts";
 import { gitText } from "./change.ts";
 import { type CheckResult, checkResultSchema, type Predicate } from "./predicate.ts";
+import { testEvidenceSchema } from "./test-report.ts";
 
 export interface CheckRun {
   readonly result: CheckResult;
   /** The end of what the check printed, for the person or agent reading a failure. */
   readonly outputTail: string;
+  /** Why the command could not run (it timed out, was cancelled or never started), or null. */
+  readonly notRun: string | null;
 }
 
 export interface CheckContext {
@@ -43,13 +46,21 @@ export async function runCheck(
     signal: context.signal,
   });
   const output = `${ran.stdout}${ran.stderr}`;
-  const failedToRun = ran.startFailure !== null || ran.timedOut || ran.cancelled;
+  const notRun = ran.timedOut
+    ? "it timed out"
+    : ran.cancelled
+      ? "it was cancelled"
+      : ran.startFailure === null
+        ? null
+        : `it never started (${ran.startFailure})`;
+  const failedToRun = notRun !== null;
   const note = ran.timedOut
     ? "\n[timed out]"
     : ran.startFailure === null
       ? ""
       : `\n[${ran.startFailure}]`;
   return {
+    notRun,
     result: {
       name: check.name,
       command: check.command,
@@ -61,16 +72,6 @@ export async function runCheck(
     },
     outputTail: `${output.slice(-tailBytes)}${note}`,
   };
-}
-
-export async function runChecks(
-  checks: readonly DeclaredCheck[],
-  context: CheckContext,
-  envFor: (check: DeclaredCheck) => Readonly<Record<string, string>> = () => ({}),
-): Promise<readonly CheckRun[]> {
-  const runs: CheckRun[] = [];
-  for (const check of checks) runs.push(await runCheck(check, context, envFor(check)));
-  return runs;
 }
 
 const linkable = ["node_modules", ".venv"];
@@ -115,7 +116,9 @@ export async function privateHome(scratch: string): Promise<string> {
 
 /** The share of measured checks that passed; a pre-existing failure is not measured. */
 export function passRate(runs: readonly CheckResult[]): number {
-  const measured = runs.filter((run) => run.result !== "pre-existing-failure");
+  const measured = runs.filter(
+    (run) => run.result !== "pre-existing-failure" && run.result !== "unmeasured",
+  );
   return measured.length === 0
     ? 0
     : measured.filter((run) => run.result === "pass").length / measured.length;
@@ -165,6 +168,8 @@ export async function environmentOf(
 
 const storedBaseSchema = z.object({
   checks: z.array(checkResultSchema),
+  /** Each declared check's runner report at base, in the same order as `checks`. */
+  tests: z.array(testEvidenceSchema),
   heldOut: z.array(checkResultSchema),
 });
 export type StoredBase = z.infer<typeof storedBaseSchema>;

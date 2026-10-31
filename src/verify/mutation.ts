@@ -1,8 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { DeclaredCheck } from "../config/swarm-toml.ts";
 import type { ChangedFile } from "./checkout.ts";
-import { type CheckContext, runChecks } from "./checks.ts";
+import type { CheckContext } from "./checks.ts";
 import type { Coverage, Mutation } from "./predicate.ts";
 
 type Replacement = string | ((matched: string, python: boolean) => string);
@@ -66,16 +65,16 @@ export function mutateLine(
 }
 
 /**
- * One mutant on a changed source line, preferring lines the tests covered, then the test
- * checks once more. Killed means some test noticed; survived means none did.
+ * One mutant on a changed source line, preferring lines the tests covered, then `killed` runs
+ * the test checks once more. Killed means some test noticed; survived means none did.
  */
 export async function mutationWitness(
   source: readonly ChangedFile[],
   coverage: Coverage,
-  tests: readonly DeclaredCheck[],
+  killed: (() => Promise<boolean>) | null,
   context: CheckContext,
 ): Promise<Mutation> {
-  if (tests.length === 0) return { status: "unmeasured", reason: "no test check is declared" };
+  if (killed === null) return { status: "unmeasured", reason: "no test check is declared" };
   const covered = (path: string, line: number) =>
     coverage.status === "measured" &&
     coverage.files.some((file) => file.path === path && file.covered.includes(line));
@@ -92,9 +91,8 @@ export async function mutationWitness(
     lines[candidate.line - 1] = mutant.text;
     await writeFile(absolute, lines.join("\n"));
     try {
-      const runs = await runChecks(tests, context);
-      const killed = runs.some((run) => run.result.result !== "pass");
-      return { status: killed ? "killed" : "survived", ...candidate, operator: mutant.operator };
+      const status = (await killed()) ? "killed" : "survived";
+      return { status, ...candidate, operator: mutant.operator };
     } finally {
       await writeFile(absolute, original);
     }

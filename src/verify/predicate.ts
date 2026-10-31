@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { protectedCategories } from "../config/swarm-toml.ts";
 import { statementType } from "./dsse.ts";
+import { runners } from "./test-report.ts";
 
 export const predicateType = "https://swarm-verify.dev/verdict/v1";
 
@@ -8,16 +9,46 @@ const sha256 = z.string().regex(/^[0-9a-f]{64}$/);
 const rate = z.number().min(0).max(1);
 const unmeasured = z.object({ status: z.literal("unmeasured"), reason: z.string().min(1) });
 
+const testIds = z.array(z.string());
+
+/**
+ * A check judged test by test from its runner's report at the base commit and with the change.
+ * Each list holds at most its first 100 ids; `counts` has the totals.
+ */
+export const testJudgmentSchema = z.object({
+  runner: z.enum(runners),
+  counts: z.object({
+    passing: z.number().int().nonnegative(),
+    fixed: z.number().int().nonnegative(),
+    regressed: z.number().int().nonnegative(),
+    preExisting: z.number().int().nonnegative(),
+    deleted: z.number().int().nonnegative(),
+    allowedDeletions: z.number().int().nonnegative(),
+    newlyFailing: z.number().int().nonnegative(),
+    added: z.number().int().nonnegative(),
+    skipped: z.number().int().nonnegative(),
+  }),
+  fixed: testIds,
+  regressed: testIds,
+  preExisting: testIds,
+  deleted: testIds,
+  allowedDeletions: testIds,
+  newlyFailing: testIds,
+});
+export type TestJudgment = z.infer<typeof testJudgmentSchema>;
+
 export const checkResultSchema = z.object({
   name: z.string().min(1),
   command: z.string().min(1),
   kind: z.enum(["test", "other"]),
-  // pre-existing-failure: failed at the base commit and still fails, so it measures nothing here.
-  result: z.enum(["pass", "fail", "error", "pre-existing-failure"]),
+  // pre-existing-failure: judged by exit code, failed at the base commit and still fails, so it
+  // measures nothing here. unmeasured: a runner's report was expected and could not be read.
+  result: z.enum(["pass", "fail", "error", "pre-existing-failure", "unmeasured"]),
   exitCode: z.number().int().nullable(),
   durationMs: z.number().int().nonnegative(),
   outputSha256: sha256,
   baseOutputSha256: sha256.optional(),
+  tests: testJudgmentSchema.optional(),
 });
 export type CheckResult = z.infer<typeof checkResultSchema>;
 

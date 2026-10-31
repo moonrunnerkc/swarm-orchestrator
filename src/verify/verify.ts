@@ -5,21 +5,28 @@ import { readSwarmToml, type SwarmToml } from "../config/swarm-toml.ts";
 import { type ChangeRequest, resolveChange } from "./change.ts";
 import { applyChange, cloneBase, restoreFromBase } from "./checkout.ts";
 import {
-  againstBase,
   type CheckRun,
   environmentOf,
   passRate,
   prepareDependencies,
   privateHome,
   runCheck,
-  runChecks,
 } from "./checks.ts";
 import { instrument } from "./coverage.ts";
 import { measureBase, overlaySealed, readSealed, runSealed, swarmHome } from "./held-out.ts";
 import { mutationWitness } from "./mutation.ts";
+import {
+  deletableIn,
+  judgeCheck,
+  killedBy,
+  type MeasuredRun,
+  reportPlans,
+  runMeasured,
+} from "./per-test.ts";
 import type { Baseline, Coverage, HeldOut, Mutation, Predicate, Statement } from "./predicate.ts";
 import { buildStatement } from "./predicate.ts";
 import { categoryOf, checkProtectedPaths } from "./protected-paths.ts";
+import type { TestEvidence } from "./test-report.ts";
 
 export interface VerifyOptions {
   readonly workspace: string;
@@ -59,7 +66,9 @@ export async function verifyChange(options: VerifyOptions): Promise<VerifyOutcom
     const failures: string[] = [];
     // What inherited failures printed: not a refusal, but what an agent would act on.
     const inheritedText: string[] = [];
+    const unmeasuredChecks: string[] = [];
     let runs: readonly CheckRun[] = [];
+    let baseTests: readonly TestEvidence[] = [];
     let baseline: Baseline = skipped("no checks are declared");
     let heldOut: HeldOut = skipped("no held-out checks are sealed for this workspace");
     let coverage: Coverage = skipped("the checks did not run");
@@ -69,18 +78,23 @@ export async function verifyChange(options: VerifyOptions): Promise<VerifyOutcom
       config?.setup ?? null,
       context,
     );
+    // Runners are read from the base's package.json, as the checks themselves are.
+    const plans = await reportPlans(checkout.dir, checks);
     if (checks.length > 0 && dependencies.failure === null) {
       const environment = await environmentOf(checkout.dir, checks, dependencies.mode);
       const workspace = options.workspace;
-      baseline = await measureBase({
+      const measured = await measureBase({
         checkout,
         checks,
+        plans,
         sealed,
         context,
         home,
         environment,
         workspace,
       });
+      baseline = measured.baseline;
+      baseTests = measured.tests;
     }
     const applied = await applyChange(checkout, change.patch);
     const paths = applied.applied ? applied.result.changed.map((file) => file.path) : [];
@@ -109,34 +123,49 @@ export async function verifyChange(options: VerifyOptions): Promise<VerifyOutcom
         (file) => file.status !== "deleted" && categoryOf(file.path) === null,
       );
       const instrumented = await instrument(checks, source, scratch, context);
-      const wrapped = "wrap" in instrumented ? instrumented.wrap : null;
-      runs = (
-        await runChecks(
-          checks.map((check) => wrapped?.(check).check ?? check),
-          context,
-          (check) => wrapped?.(check).env ?? {},
-        )
-      ).map((run, at) => againstBase(run, base[at]));
-      coverage = "read" in instrumented ? await instrumented.read() : instrumented;
-      for (const [at, run] of runs.entries()) {
-        const { name, result } = run.result;
-        if (result === "pass") continue;
-        if (result === "pre-existing-failure") {
-          reasons.push(`check ${name} fails at the base commit too, so it measures nothing here`);
-          inheritedText.push(`$ ${run.result.command}\n${run.outputTail}`);
-          continue;
-        }
-        const broke = result === "fail" ? "fails" : "could not run";
-        reasons.push(
-          base[at]?.result === "pass"
-            ? `check ${name} regressed: it passes at the base commit and ${broke} with the change`
-            : `check ${name} ${result === "fail" ? "failed" : "could not run"}`,
+      const wrap = "wrap" in instrumented ? instrumented.wrap : null;
+      const heads: MeasuredRun[] = [];
+      for (const [at, check] of checks.entries()) {
+        const plan = plans[at] ?? null;
+        heads.push(
+          await runMeasured({ check, plan, context, scratch, label: "head", judge: true, wrap }),
         );
-        failures.push(`$ ${run.result.command}\n${run.outputTail}`);
       }
-      const tests = checks.filter((check) => check.kind === "test");
+      coverage = "read" in instrumented ? await instrumented.read() : instrumented;
+      const deletable = deletableIn(paths, (config?.allow ?? []).includes("tests"));
+      const judged = heads.map((head, at) => {
+        const result = base[at];
+        const evidence = baseTests[at];
+        const before =
+          result === undefined || evidence === undefined ? undefined : { result, evidence };
+        return judgeCheck(head, before, deletable);
+      });
+      runs = judged.map((one) => one.run);
+      for (const one of judged) {
+        reasons.push(...one.reasons);
+        if (one.failure !== null) failures.push(one.failure);
+        if (one.inherited !== null) inheritedText.push(one.inherited);
+        if (one.unmeasured !== null) unmeasuredChecks.push(one.unmeasured);
+      }
+      const tests = checks.flatMap((check, at) => (check.kind === "test" ? [at] : []));
+      const killed = async () => {
+        for (const at of tests) {
+          const check = checks[at] as (typeof checks)[number];
+          const plan = plans[at] ?? null;
+          const mutant = await runMeasured({
+            check,
+            plan,
+            context,
+            scratch,
+            label: "mutant",
+            judge: false,
+          });
+          if (killedBy(heads[at] as MeasuredRun, mutant)) return true;
+        }
+        return false;
+      };
       mutation = runs.every((run) => run.result.result === "pass")
-        ? await mutationWitness(source, coverage, tests, context)
+        ? await mutationWitness(source, coverage, tests.length === 0 ? null : killed, context)
         : skipped("a check did not pass, so no mutant can be told apart from that failure");
       if (sealed !== null) {
         await restoreFromBase(
@@ -174,7 +203,9 @@ export async function verifyChange(options: VerifyOptions): Promise<VerifyOutcom
       failures.length > 0 ||
       (heldOut.status === "measured" && heldOut.heldOutPassRate < 1);
     // A check that fails at base and still fails leaves the change unmeasured, never passed.
-    const inherited = runs.some((run) => run.result.result === "pre-existing-failure");
+    const inherited = runs.some(
+      (run) => run.result.result === "pre-existing-failure" || run.result.result === "unmeasured",
+    );
     const verdict = failed ? "fail" : checks.length === 0 || inherited ? "unmeasured" : "pass";
     const predicate: Predicate = {
       verdict,
@@ -206,6 +237,7 @@ export async function verifyChange(options: VerifyOptions): Promise<VerifyOutcom
             (run) =>
               `check ${run.result.name}: fails at the base commit (output sha256:${run.result.baseOutputSha256}) and still fails`,
           ),
+        ...unmeasuredChecks,
         ...(baseline.status === "measured" ? baseline.heldOut : [])
           .filter((check) => check.result === "pass")
           .map(
