@@ -283,3 +283,6 @@ One line per open choice made during the verifier-first rebuild (ADR 0014), with
 - `startingState.python` in `report.json`, and the session-started record, bind the command, the worktree's interpreter path, the version that interpreter reports (validated with Zod) and the `uv.lock` sha256.
 - CI and the release workflow install uv 0.11.13 with `astral-sh/setup-uv`, pinned by commit (v10.3.3), because both run `npm run gates` and the new tests lock and sync a small project offline; they fail rather than skip without uv.
 - `node_modules` is still copied. npm links workspace packages and `file:` dependencies by relative paths, so they resolve inside the copy, or to the same sibling the repository uses. A user's own absolute link back into their tree (an `npm link` of the repository itself) would still point there; it is left as it is.
+## 2026-11-01: which words of a command are paths
+
+- Two redirect forms escaped the path check: a redirect written before the program (`> /tmp/x echo hi`) had its target dropped, and `>&/tmp/x`, which bash reads as both streams into that file, was read as a descriptor duplicate with the file left as the program's argument. Redirect targets are now kept apart from arguments and always offered to the guard, and `>|` and a redirect with no program beside it are unreadable.

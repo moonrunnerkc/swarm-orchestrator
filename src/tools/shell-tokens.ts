@@ -120,13 +120,14 @@ export function tokenize(command: string): Token[] | null {
         after += 1;
       }
       if (command[after] === "&") {
-        // `2>&1` duplicates a descriptor and names no file, so there is no target to check.
         after += 1;
-        while (/[\d-]/.test(command[after] ?? "")) {
-          after += 1;
+        const duplicated = /^(\d+|-)(?=$|[\s;|&<>])/.exec(command.slice(after));
+        if (duplicated !== null) {
+          // `2>&1` duplicates a descriptor and `>&-` closes one: neither names a file.
+          at = after + duplicated[0].length - 1;
+          continue;
         }
-        at = after - 1;
-        continue;
+        // `>&name` is bash's spelling of both streams into the file `name`.
       }
       at = after - 1;
       tokens.push({ kind: "redirect" });

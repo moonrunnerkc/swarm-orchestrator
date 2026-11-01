@@ -31,8 +31,10 @@ const shells = new Set(["sh", "bash", "zsh", "dash", "ksh"]);
 /** One simple command of a string: its program, and the words it was given, in order. */
 export interface SimpleShellCommand {
   readonly executable: string;
-  /** Everything after the program, flags and paths alike, in the order it was written. */
+  /** Everything after the program, flags and operands alike, in the order it was written. */
   readonly arguments: readonly string[];
+  /** The files its redirects open, wherever in the command they were written. */
+  readonly redirects: readonly string[];
   /** The bodies of the heredocs handed to it on standard input. */
   readonly heredocs: readonly string[];
 }
@@ -49,30 +51,47 @@ export function readShellPipeline(command: string): readonly SimpleShellCommand[
     return null;
   }
 
-  const commands: { executable: string; arguments: string[]; heredocs: string[] }[] = [];
-  let current: { executable: string; arguments: string[]; heredocs: string[] } | null = null;
+  const commands: SimpleShellCommand[] = [];
+  let words: string[] = [];
+  let redirects: string[] = [];
+  let heredocs: string[] = [];
   let awaitingTarget = false;
 
+  // A redirect with no program beside it (`cat a; > /tmp/x`) still opens its file, and there is
+  // no command to hang it on, so the string is not read rather than the target dropped.
+  const close = (): boolean => {
+    const [executable, ...rest] = words;
+    if (executable === undefined) {
+      return redirects.length === 0 && heredocs.length === 0;
+    }
+    commands.push({ executable, arguments: rest, redirects, heredocs });
+    words = [];
+    redirects = [];
+    heredocs = [];
+    return true;
+  };
+
   for (const token of tokens) {
+    if (awaitingTarget && token.kind !== "word") {
+      // `>|` and `> ;` leave the redirect without a target this reader can name.
+      return null;
+    }
     if (token.kind === "separator") {
-      current = null;
+      if (!close()) return null;
     } else if (token.kind === "heredoc") {
-      current?.heredocs.push(token.body);
+      heredocs.push(token.body);
     } else if (token.kind === "redirect") {
       awaitingTarget = true;
     } else if (awaitingTarget) {
       awaitingTarget = false;
-      current?.arguments.push(token.text);
-    } else if (current === null) {
-      current = { executable: token.text, arguments: [], heredocs: [] };
-      commands.push(current);
+      redirects.push(token.text);
     } else {
-      current.arguments.push(token.text);
+      words.push(token.text);
     }
   }
 
   // A dangling redirect, or a string with no command in it, is not something to rule on.
-  if (awaitingTarget || commands.length === 0) {
+  if (awaitingTarget || !close() || commands.length === 0) {
     return null;
   }
   return commands;
@@ -146,6 +165,7 @@ export function readShellCommand(command: string): ShellCommand | null {
         ...(language === null
           ? []
           : one.heredocs.flatMap((body) => pathsInlineCodeCouldOpen(body, language))),
+        ...one.redirects.flatMap(pathsAWordCouldOpen),
       ];
     }),
   };
