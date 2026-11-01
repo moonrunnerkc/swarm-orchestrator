@@ -42,7 +42,10 @@ export interface RunReportFile {
     readonly outputTokens: number;
     /** Turns whose counts were estimated from the text because the runtime reported none. */
     readonly estimatedTurns: number;
+    /** Inference time over the turns that reported it; see inferenceTurns. */
     readonly inferenceMs: number;
+    /** Turns whose inference time the runtime reported. */
+    readonly inferenceTurns: number;
     readonly wallMs: number;
     readonly retries: number;
     readonly escalations: number;
@@ -80,6 +83,15 @@ export function summaryLines(
 
 const cell = (text: string) => text.replaceAll("|", "\\|").replaceAll("\n", " ");
 
+/** Inference time as measured: never a zero for turns whose runtime reported none. */
+function inferenceOf(resources: RunReportFile["resources"]): string {
+  if (resources.inferenceTurns === 0) return "inference time not reported by the runtime";
+  const seconds = `${Math.round(resources.inferenceMs / 1000)} s of inference`;
+  return resources.inferenceTurns < resources.steps
+    ? `${seconds} over the ${resources.inferenceTurns} of ${resources.steps} turn(s) that reported it`
+    : seconds;
+}
+
 export function renderMarkdown(report: RunReportFile): string {
   return [
     `# swarm run: ${report.state}`,
@@ -103,7 +115,7 @@ export function renderMarkdown(report: RunReportFile): string {
     `- Execution: ${report.execution ?? "not measured"}.`,
     `- Attestation: ${report.attestation ?? "none"}.`,
     `- Instructions loaded: ${report.instructions.map((one) => `${one.path} (sha256 ${one.sha256})`).join(", ") || "none"}.`,
-    `- Resources: ${report.resources.steps} model turn(s); ${report.resources.inputTokens} input and ${report.resources.outputTokens} output token(s)${report.resources.estimatedTurns > 0 ? ` (${report.resources.estimatedTurns} turn(s) estimated from text)` : " (reported by the runtime)"}; ${Math.round(report.resources.inferenceMs / 1000)} s of inference and ${Math.round(report.resources.wallMs / 1000)} s of wall time; ${report.resources.retries} retried request(s); ${report.resources.escalations} escalation(s); ${report.resources.verifications} verification(s) in the loop; cost: ${report.resources.cost}.`,
+    `- Resources: ${report.resources.steps} model turn(s); ${report.resources.inputTokens} input and ${report.resources.outputTokens} output token(s)${report.resources.estimatedTurns > 0 ? ` (${report.resources.estimatedTurns} turn(s) estimated from text)` : " (reported by the runtime)"}; ${inferenceOf(report.resources)} and ${Math.round(report.resources.wallMs / 1000)} s of wall time; ${report.resources.retries} retried request(s); ${report.resources.escalations} escalation(s); ${report.resources.verifications} verification(s) in the loop; cost: ${report.resources.cost}.`,
     ...report.notes.map((note) => `- Note: ${note}`),
     "",
   ].join("\n");
@@ -169,6 +181,7 @@ export function assembleReport(input: {
       outputTokens: sum((loop) => loop.usage.outputTokens),
       estimatedTurns: sum((loop) => loop.usage.estimatedTurns),
       inferenceMs: sum((loop) => loop.usage.inferenceMs),
+      inferenceTurns: sum((loop) => loop.usage.inferenceTurns),
       wallMs: Date.now() - input.startedAt,
       retries: sum((loop) => loop.usage.retries),
       escalations: Math.max(0, loops.length - 1),

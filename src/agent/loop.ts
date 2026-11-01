@@ -72,6 +72,8 @@ export interface Usage {
   readonly estimatedTurns: number;
   /** Inference time the runtime reported; turns that reported none are not in it. */
   readonly inferenceMs: number;
+  /** Turns whose inference time the runtime reported. */
+  readonly inferenceTurns: number;
   /** Requests the client sent again after a transient failure. */
   readonly retries: number;
 }
@@ -110,6 +112,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
     outputTokens: 0,
     estimatedTurns: 0,
     inferenceMs: 0,
+    inferenceTurns: 0,
     retries: 0,
   };
   let verifications = 0;
@@ -205,6 +208,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
       outputTokens: usage.outputTokens + output,
       estimatedTurns: usage.estimatedTurns + (estimated ? 1 : 0),
       inferenceMs: usage.inferenceMs + (reply.inferenceMs ?? 0),
+      inferenceTurns: usage.inferenceTurns + (reply.inferenceMs === null ? 0 : 1),
       retries: usage.retries + reply.retries,
     };
     const read = readReply(reply.content, reply.reasoning);

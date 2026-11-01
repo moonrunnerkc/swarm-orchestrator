@@ -111,6 +111,31 @@ describe("swarm run", () => {
     expect(ran.report.verification).toBe("fresh");
   });
 
+  it("says inference time was not reported where the endpoint reported none, never zero", async () => {
+    const probe = await fixture();
+    const replies = [fix, mapped];
+    let turn = 0;
+    const silent: ModelClient = {
+      model: "silent",
+      async complete() {
+        turn += 1;
+        return {
+          content: replies[turn - 1] ?? mapped,
+          inputTokens: 9,
+          outputTokens: 1,
+          inferenceMs: null,
+          retries: 0,
+          truncated: false,
+        };
+      },
+    };
+    const ran = await probe.run(silent);
+    expect(ran.report.resources).toMatchObject({ steps: 2, inferenceMs: 0, inferenceTurns: 0 });
+    const markdown = await readFile(join(ran.sessionDirectory, "final", "report.md"), "utf8");
+    expect(markdown).toContain("inference time not reported by the runtime");
+    expect(markdown).not.toContain("0 s of inference");
+  });
+
   it("finalizes the tree a provider failure leaves", async () => {
     const probe = await fixture();
     let turns = 0;
