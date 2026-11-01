@@ -135,6 +135,17 @@ describe("swarm run", () => {
     );
   });
 
+  it("lists the files the delivered patch changes, naming any it deletes", async () => {
+    const probe = await fixture({ "NOTES.md": "release notes\n" });
+    const ran = await probe.run(scripted([bash("rm NOTES.md"), fix, mapped]));
+    expect(ran.report.changed).toEqual([
+      { path: "NOTES.md", status: "deleted" },
+      { path: "half.mjs", status: "modified" },
+    ]);
+    const markdown = await readFile(join(ran.sessionDirectory, "final", "report.md"), "utf8");
+    expect(markdown).toContain("- Changed: half.mjs (modified); NOTES.md (deleted).");
+  });
+
   it("never renders a pass from the model's own say-so", async () => {
     const probe = await fixture();
     const ran = await probe.run(scripted([`It is fixed and all tests pass.\n${completionMarker}`]));

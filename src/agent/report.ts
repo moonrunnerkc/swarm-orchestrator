@@ -25,6 +25,8 @@ export interface RunReportFile {
   readonly verification: Finalized["verification"];
   /** Why the final verification is blocked, in the verifier's words, where it is. */
   readonly blocked: string | null;
+  /** Every file the delivered patch changes, as the verifier read it. */
+  readonly changed: readonly { readonly path: string; readonly status: string }[];
   readonly requirements: readonly RequirementOutcome[];
   readonly regression: string | null;
   readonly execution: string | null;
@@ -79,6 +81,11 @@ export function summaryLines(
     const why = one.limitation === null ? "" : `  ${one.limitation}`;
     lines.push(`${pad(one.id, 12)} ${pad(one.status, 11)}${why}`);
   }
+  if (report.changed.length > 0) {
+    const deleted = report.changed.filter((one) => one.status === "deleted").map((one) => one.path);
+    const also = deleted.length === 0 ? "" : `, deleting ${deleted.join(", ")}`;
+    lines.push(`${pad("changed", 12)} ${report.changed.length} file(s)${also}`);
+  }
   if (report.regression !== null) lines.push(`${pad("regression", 12)} ${report.regression}`);
   if (report.execution !== null) lines.push(`${pad("execution", 12)} ${report.execution}`);
   lines.push(
@@ -121,6 +128,15 @@ function reviewLine(review: NonNullable<RunReportFile["review"]>): string {
   }
 }
 
+/** The patch's files, deletions last so they are not lost in the middle of the list. */
+function changedLine(changed: RunReportFile["changed"]): string {
+  const ordered = [
+    ...changed.filter((one) => one.status !== "deleted"),
+    ...changed.filter((one) => one.status === "deleted"),
+  ];
+  return ordered.map((one) => `${one.path} (${one.status})`).join("; ");
+}
+
 export function renderMarkdown(report: RunReportFile): string {
   return [
     `# swarm run: ${report.state}`,
@@ -138,6 +154,7 @@ export function renderMarkdown(report: RunReportFile): string {
     "",
     `- Delivered patch: \`${report.snapshot.patch}\`, sha256 ${report.snapshot.patchSha256}, against base ${report.snapshot.base}.`,
     `- Verification of that patch: ${report.verification}.`,
+    ...(report.changed.length === 0 ? [] : [`- Changed: ${changedLine(report.changed)}.`]),
     ...(report.blocked === null ? [] : [`- Blocked: ${report.blocked}.`]),
     `- Starting state: HEAD ${report.startingState.head}${report.startingState.edits.length > 0 ? ` with your uncommitted edits to ${report.startingState.edits.join(", ")}` : ", no uncommitted edits"}.`,
     `- Applied to the workspace: ${report.delivery.applied ? "yes" : `no, ${report.delivery.reason}`}.`,
@@ -198,6 +215,7 @@ export function assembleReport(input: {
     },
     verification: finalized.verification,
     blocked: result?.state === "blocked" ? (result.reasons[0] ?? null) : null,
+    changed: (result?.change.files ?? []).map(({ path, status }) => ({ path, status })),
     requirements: finalized.requirements,
     regression:
       result === null
