@@ -1,0 +1,238 @@
+{
+  "state": "complete",
+  "scope": "requirements",
+  "reasons": [],
+  "base": {
+    "commit": "1d325c297757e83f048be593b59cfda7681a5448"
+  },
+  "change": {
+    "source": "patch",
+    "applied": true,
+    "files": [
+      {
+        "path": "src/ironroot/cli/promote.py",
+        "status": "modified"
+      },
+      {
+        "path": "src/ironroot/cli/promote_report.py",
+        "status": "added"
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "Move Severity, Finding and PromotionReport from src/ironroot/cli/promote.py into cli/promote_report.py and re-export them from promote.py.",
+      "source": "user",
+      "kind": "refactor",
+      "required": true,
+      "assumptions": [
+        "The classes Severity, Finding, and PromotionReport are defined in src/ironroot/cli/promote.py",
+        "Other modules import these from ironroot.cli.promote",
+        "After the move, imports from ironroot.cli.promote should still work via re-exports"
+      ],
+      "expected": {
+        "tests": [],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "status": "satisfied",
+      "evidence": [
+        {
+          "kind": "change",
+          "ref": "src/ironroot/cli/promote.py, src/ironroot/cli/promote_report.py",
+          "authority": "pre-existing",
+          "outcome": "observed",
+          "detail": "2 source file(s) changed"
+        }
+      ],
+      "limitation": null,
+      "nextAction": null
+    }
+  ],
+  "regression": {
+    "status": "none",
+    "newFailures": [],
+    "inherited": [],
+    "removed": [],
+    "unresolved": []
+  },
+  "checks": [
+    {
+      "name": "test",
+      "command": "python3 -m pytest -q",
+      "kind": "test",
+      "authority": "pre-existing",
+      "result": "pass",
+      "collected": 331,
+      "exitCode": 0,
+      "durationMs": 43026,
+      "outputSha256": "5c9a92c2db61215f63f78c1d3e6843b10cd547a13de538dd0601992f9daca404",
+      "tests": {
+        "runner": "pytest",
+        "collected": {
+          "base": 331,
+          "candidate": 331
+        },
+        "counts": {
+          "preserved": 331,
+          "renamed": 0,
+          "fixed": 0,
+          "newFailures": 0,
+          "inherited": 0,
+          "removed": 0,
+          "superseded": 0,
+          "expectationChanges": 0,
+          "added": 0,
+          "addedFailing": 0,
+          "witnesses": 0,
+          "skipped": 0
+        },
+        "fixed": [],
+        "newFailures": [],
+        "inherited": [],
+        "removed": [],
+        "renamed": [],
+        "superseded": [],
+        "expectationChanges": [],
+        "added": [],
+        "addedFailing": [],
+        "witnesses": []
+      }
+    }
+  ],
+  "baseline": {
+    "status": "measured",
+    "cached": false,
+    "environmentSha256": "e0283aff0ad3efe4093ddb407efed4462b3a1a39cfe7389b2fec9a998dec0c6a",
+    "checks": [
+      {
+        "name": "test",
+        "command": "python3 -m pytest -q",
+        "kind": "test",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": 331,
+        "exitCode": 0,
+        "durationMs": 38029,
+        "outputSha256": "de50682860f7a86a2661a8a6546c303f56a27b819734575c04809f0f33ed4a7b"
+      }
+    ],
+    "heldOut": []
+  },
+  "heldOut": {
+    "status": "unmeasured",
+    "reason": "no held-out checks are sealed for this workspace"
+  },
+  "artifacts": [
+    {
+      "path": "src/ironroot/cli/promote.py",
+      "category": "source"
+    },
+    {
+      "path": "src/ironroot/cli/promote_report.py",
+      "category": "source"
+    }
+  ],
+  "testFiles": {
+    "added": [],
+    "modified": [],
+    "deleted": [],
+    "moved": [],
+    "relocated": []
+  },
+  "coverage": {
+    "status": "unmeasured",
+    "reason": "coverage.py wrote no report"
+  },
+  "mutation": {
+    "status": "survived",
+    "path": "src/ironroot/cli/promote_report.py",
+    "line": 17,
+    "operator": "True to False",
+    "syntax": "valid",
+    "rejected": 0
+  },
+  "producer": {
+    "name": "swarm-orchestrator",
+    "version": "15.0.0",
+    "model": "swarm-redesign-qwen36-32k:latest",
+    "promptSha256": "1a75fb3a5fb2632d14ab7f63fbda4c79efd437ba4fba123c836dbe23ef2e9e21",
+    "ledgerSha256": "66ba7f9f92fd2946bf5c20bbeea420c656b620cb4c1dd7a4c3de5396e1ded197",
+    "ledgerRecords": 118,
+    "reportSha256": "fae0edf8be70fd3f2822d7d6b8d66db7edc58ea52c1d156e54a054c25c4563b8",
+    "instructions": [
+      {
+        "path": "CLAUDE.md",
+        "sha256": "ed6eeb9c65511c2f23fcaf1a57177860324b6f0203054fb483758a70ceaa41d9"
+      }
+    ]
+  },
+  "environment": {
+    "sha256": "e0283aff0ad3efe4093ddb407efed4462b3a1a39cfe7389b2fec9a998dec0c6a",
+    "node": "in ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248 (sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248)",
+    "platform": "linux-arm64",
+    "git": "2.54.0 (Apple Git-157)",
+    "dependencies": "prepared",
+    "dependencyTreeSha256": "885d7eeeb052b2c0222882f9e2dd7a991bd9cd90d8a807649c878ea19ca94adb",
+    "reproducible": true
+  },
+  "execution": {
+    "mode": "isolated",
+    "statement": "isolated: docker ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248, network closed for checks and open only while dependencies were prepared",
+    "network": "closed",
+    "image": "ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248 (sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248 arm64)",
+    "dependencies": {
+      "mode": "prepared",
+      "reproducible": true,
+      "lockfiles": {
+        "uv.lock": "732fe7a6860c6a46dd72840b1a6bfa1b022b8099d5c0cc7dbb9dddd84c37356b"
+      },
+      "treeSha256": "885d7eeeb052b2c0222882f9e2dd7a991bd9cd90d8a807649c878ea19ca94adb",
+      "note": "prepared from the lockfile and digested"
+    },
+    "policyMet": true,
+    "problems": []
+  },
+  "policy": {
+    "behaviorChange": "none"
+  },
+  "unmeasured": [
+    "held-out: no held-out checks are sealed for this workspace",
+    "coverage: coverage.py wrote no report"
+  ],
+  "logs": [
+    {
+      "name": "logs/test.txt",
+      "sha256": "5c9a92c2db61215f63f78c1d3e6843b10cd547a13de538dd0601992f9daca404"
+    }
+  ],
+  "verifier": {
+    "name": "swarm-verify",
+    "version": "2.0.0"
+  },
+  "version": "swarm-verify.result/v1",
+  "snapshot": {
+    "base": "1d325c297757e83f048be593b59cfda7681a5448",
+    "patchSha256": "2b70f1fea86e9c2ebbd53e250886529063530c3a8e3bbba18db1fc016dea4d07",
+    "treeSha256": "58923b3de309c8f7f6ddfedd0063ac2f1bafb25fbb5bfcd87a6c1d47c9017538"
+  },
+  "integrity": {
+    "signed": true,
+    "signer": {
+      "kind": "key",
+      "fingerprint": "8c5ed5b218745e42c16a99d98024241cbf74c7aa7bf570fd6e5495491d0b5dae"
+    },
+    "statementSha256": "8a47b2d7be386faa9d42a49ee79debb3e0aa756cdd80363419c1d793d509f8ab",
+    "problems": []
+  },
+  "evidence": {
+    "directory": "/Users/brad/.swarm/sessions/20261101T054940-b71a2a/verifications/1",
+    "bundle": "/Users/brad/.swarm/sessions/20261101T054940-b71a2a/verifications/1/attestation.sigstore.json",
+    "statement": "/Users/brad/.swarm/sessions/20261101T054940-b71a2a/verifications/1/statement.json",
+    "patch": "/Users/brad/.swarm/sessions/20261101T054940-b71a2a/verifications/1/change.patch",
+    "publicKey": "/Users/brad/.swarm/sessions/20261101T054940-b71a2a/verifications/1/attestation.pub.pem"
+  },
+  "failureOutput": ""
+}

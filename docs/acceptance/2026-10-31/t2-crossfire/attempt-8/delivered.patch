@@ -1,0 +1,107 @@
+diff --git a/src/config/schema.ts b/src/config/schema.ts
+index 7903d76..9d36c53 100644
+--- a/src/config/schema.ts
++++ b/src/config/schema.ts
+@@ -101,7 +101,7 @@ const FuzzConfigSchema = z
+ 
+ const SemgrepConfigSchema = z.strictObject({
+   enabled: z.boolean().default(true),
+-  ruleset: z.string().min(1),
++  ruleset: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]),
+   timeBudgetMs: positiveMs,
+ });
+ 
+diff --git a/src/detection/semgrep.ts b/src/detection/semgrep.ts
+index a92f97a..4e3b1b8 100644
+--- a/src/detection/semgrep.ts
++++ b/src/detection/semgrep.ts
+@@ -68,11 +68,13 @@ function classOf(result: SemgrepResult): string {
+  * dynamic proof when it promotes the candidate to confirmed.
+  */
+ function reproCommand(config: SemgrepConfig, result: SemgrepResult): string {
++  const rulesets = Array.isArray(config.ruleset) ? config.ruleset : [config.ruleset];
++  const configArgs = rulesets.flatMap((r) => ["--config", shellQuote(r)]);
++
+   const scan = [
+     "semgrep",
+     "scan",
+-    "--config",
+-    shellQuote(config.ruleset),
++    ...configArgs,
+     "--json",
+     "--quiet",
+     "--metrics=off",
+@@ -208,10 +210,12 @@ export function createSemgrepScanner(config: SemgrepConfig): Scanner {
+         };
+       }
+ 
++      const rulesets = Array.isArray(config.ruleset) ? config.ruleset : [config.ruleset];
++      const configArgs = rulesets.flatMap((r) => ["--config", r]);
++
+       const args = [
+         "scan",
+-        "--config",
+-        config.ruleset,
++        ...configArgs,
+         "--json",
+         "--quiet",
+         "--metrics=off",
+diff --git a/test/scanner.test.ts b/test/scanner.test.ts
+index 06058bf..d351895 100644
+--- a/test/scanner.test.ts
++++ b/test/scanner.test.ts
+@@ -384,6 +384,54 @@ describe("osv-scanner", () => {
+   });
+ });
+ 
++
++
++
++  test("generates correct repro command for multiple rulesets", () => {
++    const config = {
++      enabled: true,
++      ruleset: ["rules1.yml", "rules2.yml"],
++      timeBudgetMs: 1000,
++    };
++    const result = {
++      check_id: "test-rule",
++      path: "src/test.c",
++      start: { line: 10, offset: 5 },
++      extra: { message: "test", severity: "WARNING" },
++    };
++    
++    const findings = normalizeSemgrepOutput(
++      { results: [result] },
++      config as any,
++      "/repo"
++    );
++
++    expect(findings[0]?.repro_command).toContain("--config 'rules1.yml' --config 'rules2.yml'");
++  });
++
++  test("generates correct repro command for single ruleset string", () => {
++    const config = {
++      enabled: true,
++      ruleset: "rules1.yml",
++      timeBudgetMs: 1000,
++    };
++    const result = {
++      check_id: "test-rule",
++      path: "src/test.c",
++      start: { line: 10, offset: 5 },
++      extra: { message: "test", severity: "WARNING" },
++    };
++    
++    const findings = normalizeSemgrepOutput(
++      { results: [result] },
++      config as any,
++      "/repo"
++    );
++
++    expect(findings[0]?.repro_command).toContain("--config 'rules1.yml'");
++    expect(findings[0]?.repro_command).not.toContain("--config 'rules2.yml'");
++  });
++
+ describe("cross scanner deduplication", () => {
+   function candidate(overrides: Partial<Finding>): Finding {
+     return {

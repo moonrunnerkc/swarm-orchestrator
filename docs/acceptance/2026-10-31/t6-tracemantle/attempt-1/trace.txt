@@ -1,0 +1,60 @@
+$ find . -type f -name "*.py" | head -50
+$ find . -type f -name "*.py" | grep -E "(history|mypy|pyproject|hatch)" | head -30
+$ ls -la core/ && echo "---" && cat pyproject.toml | head -80
+$ find . -maxdepth 2 -type d | grep -v ".venv" | grep -v ".git" | sort
+$ find ./src -type f -name "*.py" | sort && echo "---" && cat pyproject.toml
+$ cat src/tracemantle/core/history_io.py && echo "===END===" && cat src/tracemantle/history_store.py
+$ grep -r "from tracemantle.core.history_io import\|from tracemantle.core import history_io\|from tracemantle.history_store import\|import tracemantle.history_store" --include="*.py" src/ tests/ | grep -v ".pyc"
+$ cat src/tracemantle/core/history.py
+$ cat src/skillcheck/core/history_io.py
+$ cat tests/test_history_io.py | head -30 && echo "===END===" && cat tests/test_history_model.py | head -30 && echo "===END===" && cat tests/test_history_regression.py | head -30
+requirements R1
+$ # Step 1: Create the new tracemantle/history/ package directory and __init__.py
+$ # Step 2: Move history_io.py into the new package
+$ # Step 3: Move history_store.py into the new package
+$ # Step 4: Now I need to update the moved files' internal imports and create re-export shims.
+$ # Step 5: Update imports in history/io.py - it references tracemantle.history_store which no longer exists at that path
+$ # Step 6: Update the import in io.py that references history_store - change it to use the new location
+$ # Fix the sed command - need to escape properly
+$ # The issue is the 'y' in 'history_store'. Let me use a different approach with python
+$ # Step 7: Update the store.py file's imports - it references tracemantle.core.history_io which no longer exists at that path
+$ # Step 8: Create the __init__.py for the history package with re-exports
+$ # Step 9: Create the re-export shim at tracemantle/core/history_io.py
+$ # Step 10: Create the re-export shim at tracemantle/history_store.py
+$ # Step 11: Update the skillcheck/core/history_io.py shim to point to the new location
+$ # Step 12: Update core/history.py to import from the new location
+$ # Step 13: Update product_commands.py to import from the new location
+$ # Step 14: Update commands.py to import from the new location
+$ # Step 15: Move the test files into tests/history/ directory
+$ # Step 16: Update the imports in the moved test files to use the new package paths
+$ # The test files import from tracemantle.core.history and tracemantle.history_store which still work via shims.
+$ # Need to install the package first or use PYTHONPATH
+$ # There's a circular import issue. The store.py imports from tracemantle.__version__ which triggers the full package init.
+$ # The issue is that store.py imports __version__ from tracemantle, which triggers the full package init.
+$ # Let me check how bundle.py accesses __version__ and what the circular import chain looks like
+$ # The circular import chain is:
+$ # The circular import is caused by store.py importing __version__ from tracemantle.
+$ # Now update store.py to import from _version instead of tracemantle
+$ # Now update the main __init__.py to import __version__ from _version instead of defining it inline
+$ # Now let's test if the imports work
+$ # The circular import is: history.py -> history/io.py -> history/store.py -> core.history (load_ledger)
+$ # store.py imports load_ledger from core.history. But load_ledger is defined in history/io.py (the new location).
+$ # Test again
+$ # Great! Now let's test the history_store shim too
+$ # Now let's update the hatch packages in pyproject.toml to include the new history package
+$ # The task says "update the mypy files list and hatch packages". Let me check if there's a specific mypy config that lists files explicitly
+$ grep -A10 "\[tool.mypy\]" pyproject.toml
+$ # The mypy files list already covers src/tracemantle which includes the new history/ subpackage.
+$ # pytest-cov might not be installed in this environment. Let's try without coverage
+$ # The pyproject.toml has addopts with --cov which requires pytest-cov. Let's override it
+$ # Some tests are failing because they reference fixtures that may not exist at the new path. Let me check what's happening with the fixture paths
+$ # The tests reference fixtures at tests/fixtures/history/ which exists. But the test is using Path(__file__).parent which now points to tests/history/. Let me check if the fixture path is correct
+$ # The fixtures are at tests/fixtures/history/ but the test now looks for tests/history/fixtures/history/.
+$ # Now run the tests again
+$ PYTHONPATH=src python3 -m pytest tests/test_cli_history.py tests/test_build_plan_product.py tests/test_fail_on_regression.py tests/test_build_plan_acceptance.py tests/test_untrusted_input.py tests/test_io_limits.py -v -o addopts="" 2>&1 | tail -40
+$ # Add __init__.py to tests/history/ for proper package structure
+$ # Let me also check if there are any other files that import from the old paths that I might have missed
+$ PYTHONPATH=src python3 -m pytest tests/ -v -o addopts="" 2>&1 | tail -60
+$ # Fix __init__.py to keep the __version__ assignment visible for test_version_coherence
+$ # Now let's verify the circular import is still resolved
+$ # Now run the full test suite again to verify everything passes

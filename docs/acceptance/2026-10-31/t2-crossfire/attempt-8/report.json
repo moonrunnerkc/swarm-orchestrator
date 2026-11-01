@@ -1,0 +1,339 @@
+{
+  "version": "swarm-orchestrator.report/v1",
+  "task": "Let detectors.semgrep.ruleset be either a string or an array of strings, and pass one --config per ruleset to semgrep and to the repro command. Existing string configs must behave exactly as before.",
+  "model": {
+    "name": "gemma4-31b-greedy-128k:latest",
+    "reason": "ranked above swarm-redesign-qwen36-32k:latest (2 of 5 finished tasks complete) and qwen3.6:35b-a3b (1 of 3 finished tasks complete), whose records are worse, needs 25.3 GiB at a 65536-token context, 23.8 tok/s in its probe; no finished tasks recorded for it here yet"
+  },
+  "stop": "time-budget",
+  "reason": "the time left is reserved for final verification",
+  "state": "incomplete",
+  "snapshot": {
+    "base": "cd76297e5dff5a31436d6c6419f69dab1f6260af",
+    "patchSha256": "10528c7263fc95ee3e9ed458ac0e08fed44bad1dfcb82e5f81a11554381e641a",
+    "patch": "/Users/brad/.swarm/sessions/20261101T092628-0b3280/final/delivered.patch",
+    "treeSha256": "3deb704ede93f094619ca203be2ed942d95e2813cd659630e3d3b886e26c3ca9"
+  },
+  "verification": "reused",
+  "blocked": null,
+  "changed": [
+    {
+      "path": "src/config/schema.ts",
+      "status": "modified"
+    },
+    {
+      "path": "src/detection/semgrep.ts",
+      "status": "modified"
+    },
+    {
+      "path": "test/scanner.test.ts",
+      "status": "modified"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "Let detectors.semgrep.ruleset be either a string or an array of strings, and pass one --config per ruleset to semgrep and to the repro command. Existing string configs must behave exactly as before.",
+      "source": "user",
+      "kind": "feature",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [
+          {
+            "name": "test/scanner.test.ts"
+          }
+        ],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "status": "unverified",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::semgrep scanner > surfaces the seeded finding as a candidate with the right file and class",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "skipped"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::semgrep scanner > a clean directory yields no findings",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "skipped"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::semgrep scanner > normalizes a rule without CWE metadata using the check id",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::semgrep scanner > one construct is one finding, however many links the rule matches",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::semgrep scanner > two separate matches of one rule in one file stay two findings",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::semgrep scanner > a finding keeps its id when a fix above it shifts the line",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::semgrep scanner > a different construct in the same file is a different finding",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::semgrep scanner > drops the line when semgrep reports no location",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::osv-scanner > surfaces the seeded vulnerable dependency as a candidate",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "skipped"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::osv-scanner > normalizes an advisory group into a candidate finding",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::osv-scanner > maps CVSS bands onto the severity scale and floors unscored advisories",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::cross scanner deduplication > collapses findings that share an id, keeping the more severe report",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::cross scanner deduplication > keeps distinct findings and orders them deterministically",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::detector subprocess handling > a missing binary is reported, not swallowed",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::detector subprocess handling > a blown time budget is reported as a timeout",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::detector subprocess handling > disabled scanners produce skipped runs rather than silence",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::generates correct repro command for multiple rulesets",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::generates correct repro command for single ruleset string",
+          "authority": "implementation-authored",
+          "outcome": "passes before and after",
+          "detail": "passes against the base's source too"
+        }
+      ],
+      "limitation": "not observed: test/scanner.test.ts::semgrep scanner > surfaces the seeded finding as a candidate with the right file and class, test/scanner.test.ts::semgrep scanner > a clean directory yields no findings, test/scanner.test.ts::osv-scanner > surfaces the seeded vulnerable dependency as a candidate",
+      "nextAction": "run a check that exercises it"
+    },
+    {
+      "id": "R2",
+      "text": "Existing string configs must behave exactly as before.",
+      "source": "inferred",
+      "kind": "feature",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [
+          {
+            "name": "test/scanner.test.ts"
+          }
+        ],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "status": "unverified",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::semgrep scanner > surfaces the seeded finding as a candidate with the right file and class",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "skipped"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::semgrep scanner > a clean directory yields no findings",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "skipped"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::semgrep scanner > normalizes a rule without CWE metadata using the check id",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::semgrep scanner > one construct is one finding, however many links the rule matches",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::semgrep scanner > two separate matches of one rule in one file stay two findings",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::semgrep scanner > a finding keeps its id when a fix above it shifts the line",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::semgrep scanner > a different construct in the same file is a different finding",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::semgrep scanner > drops the line when semgrep reports no location",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::osv-scanner > surfaces the seeded vulnerable dependency as a candidate",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "skipped"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::osv-scanner > normalizes an advisory group into a candidate finding",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::osv-scanner > maps CVSS bands onto the severity scale and floors unscored advisories",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::cross scanner deduplication > collapses findings that share an id, keeping the more severe report",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::cross scanner deduplication > keeps distinct findings and orders them deterministically",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::detector subprocess handling > a missing binary is reported, not swallowed",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::detector subprocess handling > a blown time budget is reported as a timeout",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::detector subprocess handling > disabled scanners produce skipped runs rather than silence",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::generates correct repro command for multiple rulesets",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::generates correct repro command for single ruleset string",
+          "authority": "implementation-authored",
+          "outcome": "passes before and after",
+          "detail": "passes against the base's source too"
+        }
+      ],
+      "limitation": "not observed: test/scanner.test.ts::semgrep scanner > surfaces the seeded finding as a candidate with the right file and class, test/scanner.test.ts::semgrep scanner > a clean directory yields no findings, test/scanner.test.ts::osv-scanner > surfaces the seeded vulnerable dependency as a candidate",
+      "nextAction": "run a check that exercises it"
+    }
+  ],
+  "regression": "none (1 inherited failure(s))",
+  "execution": "isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared",
+  "attestation": "/Users/brad/.swarm/sessions/20261101T092628-0b3280/verifications/3/attestation.sigstore.json",
+  "startingState": {
+    "head": "cd76297e5dff5a31436d6c6419f69dab1f6260af",
+    "base": "cd76297e5dff5a31436d6c6419f69dab1f6260af",
+    "edits": []
+  },
+  "delivery": {
+    "applied": true
+  },
+  "instructions": [
+    {
+      "path": "CLAUDE.md",
+      "sha256": "47b46c17b5e57e9b1e6a2295c2432bb3ff336a50fcf69e36fec1c6ddc319a0a8"
+    }
+  ],
+  "notes": [],
+  "review": null,
+  "resources": {
+    "steps": 47,
+    "inputTokens": 1489915,
+    "outputTokens": 23095,
+    "estimatedTurns": 0,
+    "inferenceMs": 2318217,
+    "inferenceTurns": 47,
+    "wallMs": 3163251,
+    "retries": 0,
+    "escalations": 0,
+    "verifications": 3,
+    "cost": "none (local runtime)"
+  }
+}

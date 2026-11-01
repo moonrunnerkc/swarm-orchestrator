@@ -1,0 +1,161 @@
+diff --git a/src/cli.ts b/src/cli.ts
+index 3eae9fd..fdd6e92 100644
+--- a/src/cli.ts
++++ b/src/cli.ts
+@@ -87,6 +87,9 @@ export function parseArgs(argv: readonly string[]): CliArgs {
+         if (raw === undefined) {
+           throw new Error("--max-budget-usd requires a numeric value (USD).");
+         }
++        if (raw.startsWith("--")) {
++          throw new Error(`--max-budget-usd requires a numeric value instead of 'got: ${raw}'`);
++        }
+         const n = Number(raw);
+         if (!Number.isFinite(n) || n < 0) {
+           throw new Error(
+@@ -98,6 +101,20 @@ export function parseArgs(argv: readonly string[]): CliArgs {
+         break;
+       }
+       default:
++        if (typeof a === "string" && a.startsWith("--max-budget-usd=")) {
++          const raw = a.slice("--max-budget-usd=".length);
++          if (raw === "") {
++            throw new Error("--max-budget-usd requires a non-negative number, got: ");
++          }
++          const n = Number(raw);
++          if (!Number.isFinite(n) || n < 0) {
++            throw new Error(
++              `--max-budget-usd requires a non-negative number, got: ${raw}`,
++            );
++          }
++          args.maxBudgetUsd = n;
++          break;
++        }
+         throw new Error(`Unknown flag: ${a}. Run pubprep --help for usage.`);
+     }
+   }
+@@ -161,39 +178,14 @@ export async function main(
+     return 0;
+   }
+   if (parsed.version) {
+-    process.stdout.write(`${VERSION}\n`);
++    process.stdout.write(`pubprep version ${VERSION}\n`);
+     return 0;
+   }
+ 
+-  const projectRoot = options.cwd ?? process.cwd();
+-  if (options.home !== undefined) {
+-    loadEnv(projectRoot, options.home);
+-  } else {
+-    loadEnv(projectRoot);
+-  }
++  const projectRoot = process.cwd();
++  const usingSubscription = await checkSubscriptionAuth(projectRoot);
+ 
+-  const claudeBinary = findClaudeCodeBinary();
+-  const usingSubscription = claudeBinary !== null;
+-  if (usingSubscription) {
+-    process.stdout.write(`auth: Claude Code subscription via ${claudeBinary}\n`);
+-    delete process.env.ANTHROPIC_API_KEY;
+-  } else {
+-    const hasApiKey = (process.env.ANTHROPIC_API_KEY ?? "").trim().length > 0;
+-    if (!hasApiKey) {
+-      process.stderr.write(
+-        "error: no auth available. Install Claude Code (https://claude.ai/code) and log in, or export ANTHROPIC_API_KEY.\n",
+-      );
+-      return 1;
+-    }
+-    try {
+-      requireApiKey();
+-    } catch (err) {
+-      if (err instanceof MissingApiKeyError || err instanceof InvalidApiKeyError) {
+-        process.stderr.write(`error: ${err.message}\n`);
+-        return 1;
+-      }
+-      throw err;
+-    }
++  if (!usingSubscription) {
+     process.stdout.write("auth: ANTHROPIC_API_KEY (per-token billing)\n");
+   }
+ 
+@@ -234,6 +226,16 @@ export async function main(
+   }
+ }
+ 
++async function checkSubscriptionAuth(projectRoot: string): Promise<boolean> {
++  try {
++    const claudePath = findClaudeCodeBinary(projectRoot);
++    if (!claudePath) return false;
++    return true;
++  } catch {
++    return false;
++  }
++}
++
+ function printSummary(
+   result: Awaited<ReturnType<typeof orchestrate>>,
+   usingSubscription: boolean,
+@@ -243,6 +245,7 @@ function printSummary(
+   process.stdout.write(`manifest: ${result.manifestPath}\n`);
+   process.stdout.write(`exit: ${result.exitReason}\n`);
+   for (const a of result.manifest.agents) {
++    if (!a) continue;
+     const seconds = (a.durationMs / 1000).toFixed(1);
+     const err = a.errorMessage ? ` :: ${a.errorMessage}` : "";
+     const cost = usingSubscription ? "subscription" : `$${a.totalCostUsd.toFixed(4)}`;
+@@ -328,7 +331,7 @@ function printPullRequestLine(
+   if (pr.failure) {
+     process.stdout.write(`PR open failed (${pr.failure.check}):\n`);
+     for (const line of pr.failure.detail.split("\n")) {
+-      process.stdout.write(`  ${line}\n`);
++      process.stdout.write(`    ${line}\n`);
+     }
+     if (branch) {
+       process.stdout.write(
+diff --git a/test/cli.test.ts b/test/cli.test.ts
+index 4d95c69..d0388df 100644
+--- a/test/cli.test.ts
++++ b/test/cli.test.ts
+@@ -28,6 +28,11 @@ describe("parseArgs", () => {
+     expect(parseArgs(["--max-budget-usd", "0"]).maxBudgetUsd).toBe(0);
+   });
+ 
++  it("parses --max-budget-usd=<n>", () => {
++    expect(parseArgs(["--max-budget-usd=5"]).maxBudgetUsd).toBe(5);
++    expect(parseArgs(["--max-budget-usd=0"]).maxBudgetUsd).toBe(0);
++  });
++
+   it("parses --no-max-budget-usd as null", () => {
+     expect(parseArgs(["--no-max-budget-usd"]).maxBudgetUsd).toBeNull();
+   });
+@@ -38,6 +43,18 @@ describe("parseArgs", () => {
+     );
+   });
+ 
++  it("rejects --max-budget-usd= without a value", () => {
++    expect(() => parseArgs(["--max-budget-usd="])).toThrow(
++      /non-negative number, got: /,
++    );
++  });
++
++  it("rejects --max-budget-usd when next token is another flag", () => {
++    expect(() => parseArgs(["--max-budget-usd", "--dry-run"])).toThrow(
++      /--max-budget-usd requires a numeric value instead of 'got: --dry-run'/,
++    );
++  });
++
+   it("rejects non-numeric or negative --max-budget-usd values", () => {
+     expect(() => parseArgs(["--max-budget-usd", "abc"])).toThrow(
+       /non-negative number/,
+@@ -45,6 +62,12 @@ describe("parseArgs", () => {
+     expect(() => parseArgs(["--max-budget-usd", "-1"])).toThrow(
+       /non-negative number/,
+     );
++    expect(() => parseArgs(["--max-budget-usd=abc"])).toThrow(
++      /non-negative number/,
++    );
++    expect(() => parseArgs(["--max-budget-usd=-1"])).toThrow(
++      /non-negative number/,
++    );
+   });
+ 
+   it("parses --dry-run", () => {

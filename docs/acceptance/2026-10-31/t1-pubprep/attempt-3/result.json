@@ -1,0 +1,310 @@
+{
+  "state": "incomplete",
+  "scope": "requirements",
+  "reasons": [
+    "check test: 1 test(s) pass at the base commit and fail against the candidate: test/cli.test.ts::parseArgs > rejects non-numeric or negative --max-budget-usd values",
+    "check test: 2 test(s) the candidate added fail against it: test/cli.test.ts::parses --max-budget-usd=<n> inline format, test/cli.test.ts::rejects --max-budget-usd= with empty value"
+  ],
+  "base": {
+    "commit": "99d8d054753b4e8979431eb58792895c754fbdc9"
+  },
+  "change": {
+    "source": "patch",
+    "applied": true,
+    "files": [
+      {
+        "path": "patch.py",
+        "status": "added"
+      },
+      {
+        "path": "src/cli.ts",
+        "status": "modified"
+      },
+      {
+        "path": "test/cli.test.ts",
+        "status": "modified"
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "Make --max-budget-usd also accept --max-budget-usd=<n>. Reject an empty value (--max-budget-usd=). When the next token is another flag (--max-budget-usd --dry-run), report that it requires a numeric value instead of 'got: --dry-run'. 0 stays valid.",
+      "source": "user",
+      "kind": "fix",
+      "required": true,
+      "assumptions": [
+        "The project has existing tests for --max-budget-usd that I need to preserve and extend"
+      ],
+      "expected": {
+        "tests": [],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "status": "unverified",
+      "evidence": [],
+      "limitation": "no executed evidence is mapped to this requirement",
+      "nextAction": "map the tests that exercise it; these fail before the change and pass after it: reports missing numeric value when next token is a flag"
+    }
+  ],
+  "regression": {
+    "status": "found",
+    "newFailures": [
+      "test/cli.test.ts::parseArgs > rejects non-numeric or negative --max-budget-usd values",
+      "test/cli.test.ts::parses --max-budget-usd=<n> inline format",
+      "test/cli.test.ts::rejects --max-budget-usd= with empty value"
+    ],
+    "inherited": [],
+    "removed": [],
+    "unresolved": []
+  },
+  "checks": [
+    {
+      "name": "test",
+      "command": "npm run test",
+      "kind": "test",
+      "authority": "pre-existing",
+      "result": "fail",
+      "collected": 98,
+      "exitCode": 1,
+      "durationMs": 3196,
+      "outputSha256": "04f521629fd8d51f416969c62cefd9016fff80ca18c1cfe5a12f6930719a7ebd",
+      "tests": {
+        "runner": "vitest",
+        "collected": {
+          "base": 98,
+          "candidate": 101
+        },
+        "counts": {
+          "preserved": 97,
+          "renamed": 0,
+          "fixed": 0,
+          "newFailures": 1,
+          "inherited": 0,
+          "removed": 0,
+          "superseded": 0,
+          "expectationChanges": 0,
+          "added": 1,
+          "addedFailing": 2,
+          "witnesses": 1,
+          "skipped": 0
+        },
+        "fixed": [],
+        "newFailures": [
+          "test/cli.test.ts::parseArgs > rejects non-numeric or negative --max-budget-usd values"
+        ],
+        "inherited": [],
+        "removed": [],
+        "renamed": [],
+        "superseded": [],
+        "expectationChanges": [],
+        "added": [
+          "test/cli.test.ts::reports missing numeric value when next token is a flag"
+        ],
+        "addedFailing": [
+          "test/cli.test.ts::parses --max-budget-usd=<n> inline format",
+          "test/cli.test.ts::rejects --max-budget-usd= with empty value"
+        ],
+        "witnesses": [
+          "test/cli.test.ts::reports missing numeric value when next token is a flag"
+        ]
+      }
+    },
+    {
+      "name": "typecheck",
+      "command": "npm run typecheck",
+      "kind": "other",
+      "authority": "pre-existing",
+      "result": "pass",
+      "collected": null,
+      "exitCode": 0,
+      "durationMs": 1982,
+      "outputSha256": "b6652eb70d76698652f8b1a399f51d25ecd0298f54db900b7b0ae7f8a459a2b8"
+    },
+    {
+      "name": "build",
+      "command": "npm run build",
+      "kind": "other",
+      "authority": "pre-existing",
+      "result": "pass",
+      "collected": null,
+      "exitCode": 0,
+      "durationMs": 2037,
+      "outputSha256": "8d04e5c3aa7f22ed93fae0bd7f93cfa65fba4e9aaaaeb76b6e03e59c7420f6fb"
+    }
+  ],
+  "baseline": {
+    "status": "measured",
+    "cached": false,
+    "environmentSha256": "c02b38fa9528fba62aac82392ef588fcd0409e2cdd8df657c93cb2037567b48e",
+    "checks": [
+      {
+        "name": "test",
+        "command": "npm run test",
+        "kind": "test",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": 98,
+        "exitCode": 0,
+        "durationMs": 3116,
+        "outputSha256": "76215fc672aebfadb97a1b54b69037e7aecb7ac6c1ad4e6d80b2488e71b254fd"
+      },
+      {
+        "name": "typecheck",
+        "command": "npm run typecheck",
+        "kind": "other",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": null,
+        "exitCode": 0,
+        "durationMs": 2010,
+        "outputSha256": "b6652eb70d76698652f8b1a399f51d25ecd0298f54db900b7b0ae7f8a459a2b8"
+      },
+      {
+        "name": "build",
+        "command": "npm run build",
+        "kind": "other",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": null,
+        "exitCode": 0,
+        "durationMs": 2047,
+        "outputSha256": "8d04e5c3aa7f22ed93fae0bd7f93cfa65fba4e9aaaaeb76b6e03e59c7420f6fb"
+      }
+    ],
+    "heldOut": []
+  },
+  "heldOut": {
+    "status": "unmeasured",
+    "reason": "no held-out checks are sealed for this workspace"
+  },
+  "artifacts": [
+    {
+      "path": "patch.py",
+      "category": "source"
+    },
+    {
+      "path": "src/cli.ts",
+      "category": "source"
+    },
+    {
+      "path": "test/cli.test.ts",
+      "category": "tests"
+    }
+  ],
+  "testFiles": {
+    "added": [],
+    "modified": [
+      "test/cli.test.ts"
+    ],
+    "deleted": [],
+    "moved": [],
+    "relocated": []
+  },
+  "coverage": {
+    "status": "unmeasured",
+    "reason": "the change spans languages, and coverage is measured for one at a time"
+  },
+  "mutation": {
+    "status": "unmeasured",
+    "reason": "a check failed, so no mutant can be told apart from that failure"
+  },
+  "producer": {
+    "name": "swarm-orchestrator",
+    "version": "15.0.0",
+    "model": "qwen3.6:35b-a3b",
+    "promptSha256": "c36f09a1a815958a2b38c29e0308cd430e582a47c152321807c38dd1a8dac8d3",
+    "ledgerSha256": "dfcb47961b9975b1f21256bad3593d6bcf6fe32fc34e5fd6ce32b1552b507c8f",
+    "ledgerRecords": 61,
+    "reportSha256": "d61c61a460c43f8e29044e662ca673905cc4c365e617654c428ace4a5588aabc",
+    "instructions": []
+  },
+  "environment": {
+    "sha256": "c02b38fa9528fba62aac82392ef588fcd0409e2cdd8df657c93cb2037567b48e",
+    "node": "in node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 (sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413)",
+    "platform": "linux-arm64",
+    "git": "2.54.0 (Apple Git-157)",
+    "dependencies": "prepared",
+    "dependencyTreeSha256": "463290721f5522f7c1dfa5d2749ccfe9756d16c10420e544f8d338ba6bd921af",
+    "reproducible": true
+  },
+  "execution": {
+    "mode": "isolated",
+    "statement": "isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared",
+    "network": "closed",
+    "image": "node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 (sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 arm64)",
+    "dependencies": {
+      "mode": "prepared",
+      "reproducible": true,
+      "lockfiles": {
+        "package-lock.json": "42aaee4eb1e81dd26bb63d1abd96ca4018759bfff3bc8b6c72cf6573ce83e3b3"
+      },
+      "treeSha256": "463290721f5522f7c1dfa5d2749ccfe9756d16c10420e544f8d338ba6bd921af",
+      "note": "prepared from the lockfile and digested"
+    },
+    "policyMet": true,
+    "problems": []
+  },
+  "policy": {
+    "behaviorChange": "none"
+  },
+  "unmeasured": [
+    "held-out: no held-out checks are sealed for this workspace",
+    "coverage: the change spans languages, and coverage is measured for one at a time",
+    "mutation: a check failed, so no mutant can be told apart from that failure"
+  ],
+  "logs": [
+    {
+      "name": "logs/test.txt",
+      "sha256": "a8cd00c34c6aabc5782150262b5a42b147ed5e021946a2c8e7e48dd9a41bd9b5"
+    },
+    {
+      "name": "logs/test.base-tests.txt",
+      "sha256": "04f521629fd8d51f416969c62cefd9016fff80ca18c1cfe5a12f6930719a7ebd"
+    },
+    {
+      "name": "logs/typecheck.txt",
+      "sha256": "b6652eb70d76698652f8b1a399f51d25ecd0298f54db900b7b0ae7f8a459a2b8"
+    },
+    {
+      "name": "logs/typecheck.base-tests.txt",
+      "sha256": "b6652eb70d76698652f8b1a399f51d25ecd0298f54db900b7b0ae7f8a459a2b8"
+    },
+    {
+      "name": "logs/build.txt",
+      "sha256": "8d04e5c3aa7f22ed93fae0bd7f93cfa65fba4e9aaaaeb76b6e03e59c7420f6fb"
+    },
+    {
+      "name": "logs/build.base-tests.txt",
+      "sha256": "8d04e5c3aa7f22ed93fae0bd7f93cfa65fba4e9aaaaeb76b6e03e59c7420f6fb"
+    }
+  ],
+  "verifier": {
+    "name": "swarm-verify",
+    "version": "2.0.0"
+  },
+  "version": "swarm-verify.result/v1",
+  "snapshot": {
+    "base": "99d8d054753b4e8979431eb58792895c754fbdc9",
+    "patchSha256": "1d9594ad37d89d40a84f6b2ac4103501e6a2790b2cb0c117d8ad01cfcf736539",
+    "treeSha256": "09e860b0cfea6318dbd8ad6c49621c85b0b98cf46b0208ddd007f59da1c1f5e0"
+  },
+  "integrity": {
+    "signed": true,
+    "signer": {
+      "kind": "key",
+      "fingerprint": "8c5ed5b218745e42c16a99d98024241cbf74c7aa7bf570fd6e5495491d0b5dae"
+    },
+    "statementSha256": "e7461552ecb6924749ff8e75a9e4cf5a3fc9da3aae2facba5551c7b453ba9ba1",
+    "problems": []
+  },
+  "evidence": {
+    "directory": "/Users/brad/.swarm/sessions/20261101T014419-992d7f/final/verification",
+    "bundle": "/Users/brad/.swarm/sessions/20261101T014419-992d7f/final/verification/attestation.sigstore.json",
+    "statement": "/Users/brad/.swarm/sessions/20261101T014419-992d7f/final/verification/statement.json",
+    "patch": "/Users/brad/.swarm/sessions/20261101T014419-992d7f/final/verification/change.patch",
+    "publicKey": "/Users/brad/.swarm/sessions/20261101T014419-992d7f/final/verification/attestation.pub.pem"
+  },
+  "failureOutput": "$ npm run test\ns\u001b[39m\n\u001b[31m     → expected [Function] to throw error matching /non-negative number/ but got '--max-budget-usd requires a numeric v…'\u001b[39m\n\u001b[31m   \u001b[33m❯\u001b[31m test/cli.test.ts\u001b[2m > \u001b[22mparses --max-budget-usd=<n> inline format\u001b[39m\n\u001b[31m     → Unknown flag: --max-budget-usd=5. Run pubprep --help for usage.\u001b[39m\n\u001b[31m   \u001b[33m❯\u001b[31m test/cli.test.ts\u001b[2m > \u001b[22mrejects --max-budget-usd= with empty value\u001b[39m\n\u001b[31m     → expected [Function] to throw error matching /--max-budget-usd requires a numeric v…/ but got 'Unknown flag: --max-budget-usd=. Run …'\u001b[39m\n \u001b[32m✓\u001b[39m test/paths.test.ts \u001b[2m (\u001b[22m\u001b[2m8 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[90m 2\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m test/publish-gate.test.ts \u001b[2m (\u001b[22m\u001b[2m7 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[33m 517\u001b[2mms\u001b[22m\u001b[39m\n\n\u001b[2m Test Files \u001b[22m \u001b[1m\u001b[31m1 failed\u001b[39m\u001b[22m\u001b[2m | \u001b[22m\u001b[1m\u001b[32m7 passed\u001b[39m\u001b[22m\u001b[90m (8)\u001b[39m\n\u001b[2m      Tests \u001b[22m \u001b[1m\u001b[31m3 failed\u001b[39m\u001b[22m\u001b[2m | \u001b[22m\u001b[1m\u001b[32m98 passed\u001b[39m\u001b[22m\u001b[90m (101)\u001b[39m\n\u001b[2m   Start at \u001b[22m 01:45:30\n\u001b[2m   Duration \u001b[22m 1.32s\u001b[2m (transform 169ms, setup 0ms, collect 345ms, tests 1.21s, environment 1ms, prepare 781ms)\u001b[22m\n\nJSON report written to /Users/brad/.swarm/work/swarm-verify-ZkJn53/reports/candidate-test.report\n\u001b[31m⎯⎯⎯⎯⎯⎯⎯\u001b[1m\u001b[7m Failed Tests 3 \u001b[27m\u001b[22m⎯⎯⎯⎯⎯⎯⎯\u001b[39m\n\n\u001b[31m\u001b[1m\u001b[7m FAIL \u001b[27m\u001b[22m\u001b[39m test/cli.test.ts\u001b[2m > \u001b[22mparseArgs\u001b[2m > \u001b[22mrejects non-numeric or negative --max-budget-usd values\n\u001b[31m\u001b[1mAssertionError\u001b[22m: expected [Function] to throw error matching /non-negative number/ but got '--max-budget-usd requires a numeric v…'\u001b[39m\n\n\u001b[32m- Expected:\u001b[39m \n/non-negative number/\n\n\u001b[31m+ Received:\u001b[39m \n\"--max-budget-usd requires a numeric value instead of 'got: -1'.\"\n\n\u001b[36m \u001b[2m❯\u001b[22m test/cli.test.ts:\u001b[2m45:57\u001b[22m\u001b[39m\n    \u001b[90m 43| \u001b[39m      \u001b[36m/non-negative number/\u001b[39m\u001b[33m,\u001b[39m\n    \u001b[90m 44| \u001b[39m    )\u001b[33m;\u001b[39m\n    \u001b[90m 45| \u001b[39m    \u001b[34mexpect\u001b[39m(() \u001b[33m=>\u001b[39m \u001b[34mparseArgs\u001b[39m([\u001b[32m\"--max-budget-usd\"\u001b[39m\u001b[33m,\u001b[39m \u001b[32m\"-1\"\u001b[39m]))\u001b[33m.\u001b[39m\u001b[34mtoThrow\u001b[39m(\n    \u001b[90m   | \u001b[39m                                                        \u001b[31m^\u001b[39m\n    \u001b[90m 46| \u001b[39m      \u001b[36m/non-negative number/\u001b[39m\u001b[33m,\u001b[39m\n    \u001b[90m 47| \u001b[39m    )\u001b[33m;\u001b[39m\n\n\u001b[31m\u001b[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯\u001b[22m\u001b[39m\n\n\u001b[31m\u001b[1m\u001b[7m FAIL \u001b[27m\u001b[22m\u001b[39m test/cli.test.ts\u001b[2m > \u001b[22mparses --max-budget-usd=<n> inline format\n\u001b[31m\u001b[1mError\u001b[22m: Unknown flag: --max-budget-usd=5. Run pubprep --help for usage.\u001b[39m\n\u001b[36m \u001b[2m❯\u001b[22m Module.parseArgs src/cli.ts:\u001b[2m123:15\u001b[22m\u001b[39m\n    \u001b[90m121| \u001b[39m      }\n    \u001b[90m122| \u001b[39m      \u001b[35mdefault\u001b[39m\u001b[33m:\u001b[39m\n    \u001b[90m123| \u001b[39m        \u001b[35mthrow\u001b[39m \u001b[35mnew\u001b[39m \u001b[33mError\u001b[39m(\u001b[32m`Unknown flag: \u001b[39m\u001b[36m${\u001b[39ma\u001b[36m}\u001b[39m\u001b[32m. Run pubprep --help for us\u001b[39m…\n    \u001b[90m   | \u001b[39m              \u001b[31m^\u001b[39m\n    \u001b[90m124| \u001b[39m    }\n    \u001b[90m125| \u001b[39m  }\n\u001b[90m \u001b[2m❯\u001b[22m test/cli.test.ts:\u001b[2m93:12\u001b[22m\u001b[39m\n\n\u001b[31m\u001b[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯\u001b[22m\u001b[39m\n\n\u001b[31m\u001b[1m\u001b[7m FAIL \u001b[27m\u001b[22m\u001b[39m test/cli.test.ts\u001b[2m > \u001b[22mrejects --max-budget-usd= with empty value\n\u001b[31m\u001b[1mAssertionError\u001b[22m: expected [Function] to throw error matching /--max-budget-usd requires a numeric v…/ but got 'Unknown flag: --max-budget-usd=. Run …'\u001b[39m\n\n\u001b[32m- Expected:\u001b[39m \n/--max-budget-usd requires a numeric value/\n\n\u001b[31m+ Received:\u001b[39m \n\"Unknown flag: --max-budget-usd=. Run pubprep --help for usage.\"\n\n\u001b[36m \u001b[2m❯\u001b[22m test/cli.test.ts:\u001b[2m98:52\u001b[22m\u001b[39m\n    \u001b[90m 96| \u001b[39m\n    \u001b[90m 97| \u001b[39m  \u001b[34mit\u001b[39m(\u001b[32m\"rejects --max-budget-usd= with empty value\"\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n    \u001b[90m 98| \u001b[39m    \u001b[34mexpect\u001b[39m(() \u001b[33m=>\u001b[39m \u001b[34mparseArgs\u001b[39m([\u001b[32m\"--max-budget-usd=\"\u001b[39m]))\u001b[33m.\u001b[39m\u001b[34mtoThrow\u001b[39m(\n    \u001b[90m   | \u001b[39m                                                   \u001b[31m^\u001b[39m\n    \u001b[90m 99| \u001b[39m      \u001b[36m/--max-budget-usd requires a numeric value/\u001b[39m\u001b[33m,\u001b[39m\n    \u001b[90m100| \u001b[39m    )\u001b[33m;\u001b[39m\n\n\u001b[31m\u001b[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯\u001b[22m\u001b[39m\n\n"
+}

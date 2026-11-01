@@ -1,0 +1,341 @@
+{
+  "state": "complete",
+  "scope": "requirements",
+  "reasons": [
+    "check test: 1 test(s) fail at the base commit and still fail, which does not block: test/conventions.test.ts::CLAUDE.md conventions > no tracked file contains an em dash"
+  ],
+  "base": {
+    "commit": "cd76297e5dff5a31436d6c6419f69dab1f6260af"
+  },
+  "change": {
+    "source": "patch",
+    "applied": true,
+    "files": [
+      {
+        "path": "src/policy/exclusions.ts",
+        "status": "modified"
+      },
+      {
+        "path": "test/policy-repro.test.ts",
+        "status": "added"
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "In src/policy/exclusions.ts, check() treats an in-repo file like ..notes.md as outside the repo because it uses rel.startsWith('..'); match only '..' path segments, with a test.",
+      "source": "user",
+      "kind": "fix",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [
+          {
+            "name": "path scope '..' prefix bug > allows a file starting with '..' inside the repo"
+          }
+        ],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "status": "satisfied",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "test/policy-repro.test.ts::path scope '..' prefix bug > allows a file starting with '..' inside the repo",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        }
+      ],
+      "limitation": null,
+      "nextAction": null
+    }
+  ],
+  "regression": {
+    "status": "none",
+    "newFailures": [],
+    "inherited": [
+      "test/conventions.test.ts::CLAUDE.md conventions > no tracked file contains an em dash"
+    ],
+    "removed": [],
+    "unresolved": []
+  },
+  "checks": [
+    {
+      "name": "test",
+      "command": "npm run test",
+      "kind": "test",
+      "authority": "pre-existing",
+      "result": "inherited-failures",
+      "collected": 327,
+      "exitCode": 1,
+      "durationMs": 73777,
+      "outputSha256": "97e46b395fc45442a1ade8478dedb324f25eeaa67b80b03d6e5538d19fff3b39",
+      "tests": {
+        "runner": "vitest",
+        "collected": {
+          "base": 325,
+          "candidate": 327
+        },
+        "counts": {
+          "preserved": 306,
+          "renamed": 0,
+          "fixed": 0,
+          "newFailures": 0,
+          "inherited": 1,
+          "removed": 0,
+          "superseded": 0,
+          "expectationChanges": 0,
+          "added": 2,
+          "addedFailing": 0,
+          "witnesses": 1,
+          "skipped": 18
+        },
+        "fixed": [],
+        "newFailures": [],
+        "inherited": [
+          "test/conventions.test.ts::CLAUDE.md conventions > no tracked file contains an em dash"
+        ],
+        "removed": [],
+        "renamed": [],
+        "superseded": [],
+        "expectationChanges": [],
+        "added": [
+          "test/policy-repro.test.ts::path scope '..' prefix bug > allows a file starting with '..' inside the repo",
+          "test/policy-repro.test.ts::path scope '..' prefix bug > still denies a path that actually escapes the repo"
+        ],
+        "addedFailing": [],
+        "witnesses": [
+          "test/policy-repro.test.ts::path scope '..' prefix bug > allows a file starting with '..' inside the repo"
+        ]
+      }
+    },
+    {
+      "name": "lint",
+      "command": "npm run lint",
+      "kind": "other",
+      "authority": "pre-existing",
+      "result": "pass",
+      "collected": null,
+      "exitCode": 0,
+      "durationMs": 2681,
+      "outputSha256": "75a2d4c6e7113db9cfec5b1af34c848e52bd6afade857752c29f3a4da82b49e5"
+    },
+    {
+      "name": "typecheck",
+      "command": "npm run typecheck",
+      "kind": "other",
+      "authority": "pre-existing",
+      "result": "pass",
+      "collected": null,
+      "exitCode": 0,
+      "durationMs": 2492,
+      "outputSha256": "d20b02b7ba85c590623a3b4de22ce712d90618727daa97e95c0be0a7c381ce70"
+    },
+    {
+      "name": "build",
+      "command": "npm run build",
+      "kind": "other",
+      "authority": "pre-existing",
+      "result": "pass",
+      "collected": null,
+      "exitCode": 0,
+      "durationMs": 2366,
+      "outputSha256": "a09bf4d5166c0632eedd4cb6f0edfbb837a0bd022b1495ee299de18694a47c80"
+    }
+  ],
+  "baseline": {
+    "status": "measured",
+    "cached": true,
+    "environmentSha256": "964aaec6ed9ed80829de9f4b57c72786cec1d5b15a5ded04d27715472d0feae8",
+    "checks": [
+      {
+        "name": "test",
+        "command": "npm run test",
+        "kind": "test",
+        "authority": "pre-existing",
+        "result": "fail",
+        "collected": 325,
+        "exitCode": 1,
+        "durationMs": 73788,
+        "outputSha256": "285b9a3c5b41c38ce8cbc6d32ee7932c3c5dbc8730ea3134ec1d9027a4e09249"
+      },
+      {
+        "name": "lint",
+        "command": "npm run lint",
+        "kind": "other",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": null,
+        "exitCode": 0,
+        "durationMs": 2664,
+        "outputSha256": "75a2d4c6e7113db9cfec5b1af34c848e52bd6afade857752c29f3a4da82b49e5"
+      },
+      {
+        "name": "typecheck",
+        "command": "npm run typecheck",
+        "kind": "other",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": null,
+        "exitCode": 0,
+        "durationMs": 2491,
+        "outputSha256": "d20b02b7ba85c590623a3b4de22ce712d90618727daa97e95c0be0a7c381ce70"
+      },
+      {
+        "name": "build",
+        "command": "npm run build",
+        "kind": "other",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": null,
+        "exitCode": 0,
+        "durationMs": 2397,
+        "outputSha256": "a09bf4d5166c0632eedd4cb6f0edfbb837a0bd022b1495ee299de18694a47c80"
+      }
+    ],
+    "heldOut": []
+  },
+  "heldOut": {
+    "status": "unmeasured",
+    "reason": "no held-out checks are sealed for this workspace"
+  },
+  "artifacts": [
+    {
+      "path": "src/policy/exclusions.ts",
+      "category": "source"
+    },
+    {
+      "path": "test/policy-repro.test.ts",
+      "category": "tests"
+    }
+  ],
+  "testFiles": {
+    "added": [
+      "test/policy-repro.test.ts"
+    ],
+    "modified": [],
+    "deleted": [],
+    "moved": [],
+    "relocated": []
+  },
+  "coverage": {
+    "status": "measured",
+    "tool": "v8",
+    "changedLines": 3,
+    "coveredLines": 0,
+    "files": [
+      {
+        "path": "src/policy/exclusions.ts",
+        "covered": [],
+        "uncovered": [
+          56,
+          93,
+          95
+        ]
+      }
+    ]
+  },
+  "mutation": {
+    "status": "killed",
+    "path": "src/policy/exclusions.ts",
+    "line": 93,
+    "operator": "=== to !==",
+    "syntax": "valid",
+    "rejected": 0
+  },
+  "producer": {
+    "name": "swarm-orchestrator",
+    "version": "15.0.0",
+    "model": "gemma4-31b-greedy-128k:latest",
+    "promptSha256": "492bf0af1b1fca6287d923f88a717391d9ebb163b3b0033c376a33ebf0e4c48a",
+    "ledgerSha256": "10f97152e0184abd94988462ad8c5921c1ba9531bdae8f30e9d02cb4551799ec",
+    "ledgerRecords": 67,
+    "reportSha256": "40196621c371e76fb1273ab1c2bcd027dd81d8d775b687e501ea9d85c4efa906",
+    "instructions": [
+      {
+        "path": "CLAUDE.md",
+        "sha256": "47b46c17b5e57e9b1e6a2295c2432bb3ff336a50fcf69e36fec1c6ddc319a0a8"
+      }
+    ]
+  },
+  "environment": {
+    "sha256": "964aaec6ed9ed80829de9f4b57c72786cec1d5b15a5ded04d27715472d0feae8",
+    "node": "in node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 (sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413)",
+    "platform": "linux-arm64",
+    "git": "2.54.0 (Apple Git-157)",
+    "dependencies": "prepared",
+    "dependencyTreeSha256": "2cfd780e222c8ce2a923a0a90bf17ce938516d49b205328bfe65d60c5aa4115c",
+    "reproducible": true
+  },
+  "execution": {
+    "mode": "isolated",
+    "statement": "isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared",
+    "network": "closed",
+    "image": "node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 (sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 arm64)",
+    "dependencies": {
+      "mode": "prepared",
+      "reproducible": true,
+      "lockfiles": {
+        "package-lock.json": "d77ea0ba7184e17c003cd3f3aa9b93261e81a86c9e41dccdd21c9d95c90fc720"
+      },
+      "treeSha256": "2cfd780e222c8ce2a923a0a90bf17ce938516d49b205328bfe65d60c5aa4115c",
+      "note": "prepared from the lockfile and digested"
+    },
+    "policyMet": true,
+    "problems": []
+  },
+  "policy": {
+    "behaviorChange": "none"
+  },
+  "unmeasured": [
+    "held-out: no held-out checks are sealed for this workspace"
+  ],
+  "logs": [
+    {
+      "name": "logs/test.txt",
+      "sha256": "97e46b395fc45442a1ade8478dedb324f25eeaa67b80b03d6e5538d19fff3b39"
+    },
+    {
+      "name": "logs/lint.txt",
+      "sha256": "75a2d4c6e7113db9cfec5b1af34c848e52bd6afade857752c29f3a4da82b49e5"
+    },
+    {
+      "name": "logs/typecheck.txt",
+      "sha256": "d20b02b7ba85c590623a3b4de22ce712d90618727daa97e95c0be0a7c381ce70"
+    },
+    {
+      "name": "logs/build.txt",
+      "sha256": "a09bf4d5166c0632eedd4cb6f0edfbb837a0bd022b1495ee299de18694a47c80"
+    }
+  ],
+  "verifier": {
+    "name": "swarm-verify",
+    "version": "2.0.0"
+  },
+  "version": "swarm-verify.result/v1",
+  "snapshot": {
+    "base": "cd76297e5dff5a31436d6c6419f69dab1f6260af",
+    "patchSha256": "c96fefb58267701751fbb51df73e78231526d02bf29783e82ac8a015ba4e187a",
+    "treeSha256": "9d7148330d39f8a3c01e88653463a25dd7553dad5aca9d00ee6b5f25e92d5404"
+  },
+  "integrity": {
+    "signed": true,
+    "signer": {
+      "kind": "key",
+      "fingerprint": "8c5ed5b218745e42c16a99d98024241cbf74c7aa7bf570fd6e5495491d0b5dae"
+    },
+    "statementSha256": "356a27c7a8de9363e50362832a3a46b4012c892baecd60abf2591bebef2722e2",
+    "problems": []
+  },
+  "evidence": {
+    "directory": "/Users/brad/.swarm/sessions/20261101T103024-67e6ba/verifications/3",
+    "bundle": "/Users/brad/.swarm/sessions/20261101T103024-67e6ba/verifications/3/attestation.sigstore.json",
+    "statement": "/Users/brad/.swarm/sessions/20261101T103024-67e6ba/verifications/3/statement.json",
+    "patch": "/Users/brad/.swarm/sessions/20261101T103024-67e6ba/verifications/3/change.patch",
+    "publicKey": "/Users/brad/.swarm/sessions/20261101T103024-67e6ba/verifications/3/attestation.pub.pem"
+  },
+  "failureOutput": "$ npm run test\n\n \u001b[32m✓\u001b[39m test/transport.test.ts \u001b[2m(\u001b[22m\u001b[2m24 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[33m 2648\u001b[2mms\u001b[22m\u001b[39m\n     \u001b[33m\u001b[2m✓\u001b[22m\u001b[39m a permission request for an edit is refused for Grok and allowed for Claude \u001b[33m 319\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m test/agent-runner.test.ts \u001b[2m(\u001b[22m\u001b[2m18 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[33m 745\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m test/ledger.test.ts \u001b[2m(\u001b[22m\u001b[2m25 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 13\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m test/config.test.ts \u001b[2m(\u001b[22m\u001b[2m28 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 10\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m test/prompts.test.ts \u001b[2m(\u001b[22m\u001b[2m23 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 12\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m test/policy.test.ts \u001b[2m(\u001b[22m\u001b[2m28 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 18\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m test/contracts.test.ts \u001b[2m(\u001b[22m\u001b[2m33 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 8\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m test/cli.test.ts \u001b[2m(\u001b[22m\u001b[2m12 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 193\u001b[2mms\u001b[22m\u001b[39m\n \u001b[2m\u001b[90m↓\u001b[39m\u001b[22m test/integration.test.ts \u001b[2m(\u001b[22m\u001b[2m1 test\u001b[22m\u001b[2m | \u001b[22m\u001b[33m1 skipped\u001b[39m\u001b[2m)\u001b[22m\n \u001b[2m\u001b[90m↓\u001b[39m\u001b[22m test/smoke.test.ts \u001b[2m(\u001b[22m\u001b[2m2 tests\u001b[22m\u001b[2m | \u001b[22m\u001b[33m2 skipped\u001b[39m\u001b[2m)\u001b[22m\n \u001b[32m✓\u001b[39m test/router.test.ts \u001b[2m(\u001b[22m\u001b[2m8 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 4\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m test/obs.test.ts \u001b[2m(\u001b[22m\u001b[2m5 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 275\u001b[2mms\u001b[22m\u001b[39m\n \u001b[31m❯\u001b[39m test/conventions.test.ts \u001b[2m(\u001b[22m\u001b[2m3 tests\u001b[22m\u001b[2m | \u001b[22m\u001b[31m1 failed\u001b[39m\u001b[2m)\u001b[22m\u001b[32m 5\u001b[2mms\u001b[22m\u001b[39m\n     \u001b[32m✓\u001b[39m the constitution sits at the repo root\u001b[32m 1\u001b[2mms\u001b[22m\u001b[39m\n     \u001b[32m✓\u001b[39m the em dash detector finds an em dash\u001b[32m 0\u001b[2mms\u001b[22m\u001b[39m\n\u001b[31m     \u001b[31m×\u001b[31m no tracked file contains an em dash\u001b[39m\u001b[32m 3\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m test/policy-repro.test.ts \u001b[2m(\u001b[22m\u001b[2m2 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 2\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m test/jazzer.test.ts \u001b[2m(\u001b[22m\u001b[2m18 tests\u001b[22m\u001b[2m | \u001b[22m\u001b[33m3 skipped\u001b[39m\u001b[2m)\u001b[22m\u001b[32m 9\u001b[2mms\u001b[22m\u001b[39m\n\n\u001b[2m Test Files \u001b[22m \u001b[1m\u001b[31m1 failed\u001b[39m\u001b[22m\u001b[2m | \u001b[22m\u001b[1m\u001b[32m16 passed\u001b[39m\u001b[22m\u001b[2m | \u001b[22m\u001b[33m2 skipped\u001b[39m\u001b[90m (19)\u001b[39m\n\u001b[2m      Tests \u001b[22m \u001b[1m\u001b[31m1 failed\u001b[39m\u001b[22m\u001b[2m | \u001b[22m\u001b[1m\u001b[32m308 passed\u001b[39m\u001b[22m\u001b[2m | \u001b[22m\u001b[33m18 skipped\u001b[39m\u001b[90m (327)\u001b[39m\n\u001b[2m   Start at \u001b[22m 10:42:07\n\u001b[2m   Duration \u001b[22m 72.80s\u001b[2m (transform 541ms, setup 0ms, import 73.50s, tests 6.29s, environment 1ms)\u001b[22m\n\nJSON report written to /Users/brad/.swarm/work/swarm-verify-Gaa6qp/reports/candidate-test.report\n\u001b[90mstderr\u001b[2m | test/gates.test.ts\n\u001b[22m\u001b[39mgate tests that need the fuzz harness are skipped, it did not build: Command failed: ./build.sh vulnerable\n\n\u001b[90mstderr\u001b[2m | test/fuzzer.test.ts\n\u001b[22m\u001b[39mfuzz integration tests skipped, the fixture harness did not build: Command failed: ./build.sh vulnerable\n\nfatal: not a git repository (or any parent up to mount point /Users/brad/.swarm/work)\nStopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).\n\u001b[90mstderr\u001b[2m | test/jazzer.test.ts\n\u001b[22m\u001b[39mJazzer.js integration tests skipped, the fixture did not install: Command failed: ./build.sh\n\n\n\u001b[31m⎯⎯⎯⎯⎯⎯⎯\u001b[39m\u001b[1m\u001b[41m Failed Tests 1 \u001b[49m\u001b[22m\u001b[31m⎯⎯⎯⎯⎯⎯⎯\u001b[39m\n\n\u001b[41m\u001b[1m FAIL \u001b[22m\u001b[49m test/conventions.test.ts\u001b[2m > \u001b[22mCLAUDE.md conventions\u001b[2m > \u001b[22mno tracked file contains an em dash\n\u001b[31m\u001b[1mError\u001b[22m: Command failed: git ls-files -z\nfatal: not a git repository (or any parent up to mount point /Users/brad/.swarm/work)\nStopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).\n\u001b[39m\n\u001b[36m \u001b[2m❯\u001b[22m trackedFiles test/conventions.test.ts:\u001b[2m17:18\u001b[22m\u001b[39m\n    \u001b[90m 15|\u001b[39m\n    \u001b[90m 16|\u001b[39m \u001b[35mfunction\u001b[39m \u001b[34mtrackedFiles\u001b[39m()\u001b[33m:\u001b[39m string[] {\n    \u001b[90m 17|\u001b[39m   const output = execFileSync(\"git\", [\"ls-files\", \"-z\"], { cwd: REPO_R…\n    \u001b[90m   |\u001b[39m                  \u001b[31m^\u001b[39m\n    \u001b[90m 18|\u001b[39m   \u001b[35mreturn\u001b[39m output\n    \u001b[90m 19|\u001b[39m     \u001b[33m.\u001b[39m\u001b[34msplit\u001b[39m(\u001b[32m\"\\0\"\u001b[39m)\n\u001b[90m \u001b[2m❯\u001b[22m test/conventions.test.ts:\u001b[2m36:24\u001b[22m\u001b[39m\n\n\u001b[31m\u001b[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯\u001b[22m\u001b[39m\n\n"
+}

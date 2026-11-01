@@ -1,0 +1,21 @@
+requirements R1
+$ find . -type f -name "*.py" | head -30 && echo "---" && grep -rn "deny_flags\|allowlist\|allow_list" --include="*.py" . 2>/dev/null | head -30
+$ cat config/allowlist.toml
+$ cat resident/tools/allowlist.py
+$ find . -path ./.venv -prune -o -type f -name "*.py" -print | xargs grep -l "deny_flags\|Allowlist" 2>/dev/null
+$ cat src/resident/tools/allowlist.py
+$ cat tests/test_allowlist.py
+$ cat config/allowlist.toml | grep -A5 "\[commands.rg\]" && echo "---" && cat config/allowlist.toml | grep -A10 "\[commands.git\]"
+$ cat > /tmp/patch_allowlist.py << 'PYEOF'
+$ cat > .swarm/scratch/patch_allowlist.py << 'PYEOF'
+$ mkdir -p .swarm/scratch && cat > .swarm/scratch/patch_allowlist.py << 'PYEOF'
+$ cat config/allowlist.toml | grep -A6 "\[commands.rg\]" && echo "---" && cat config/allowlist.toml | grep -A12 "\[commands.git\]"
+$ cat >> tests/test_allowlist.py << 'PYEOF'
+$ uv run pytest tests/test_allowlist.py -v
+$ uv run pytest -v --tb=short 2>&1 | tail -60
+$ uv run pytest tests/test_allowlist.py -v --tb=short 2>&1 | tail -20
+$ git diff config/allowlist.toml tests/test_allowlist.py
+requirements R1
+$ uv run pytest tests/test_allowlist.py -v --tb=short 2>&1 | tail -10
+$ rm -rf .swarm/scratch
+verifying the working tree

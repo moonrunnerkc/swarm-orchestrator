@@ -1,0 +1,21 @@
+$ cd /home/user/repo && cat pyproject.toml | grep -A5 "\[tool.uv\|dependencies"
+$ pwd && ls -la
+$ cat pyproject.toml
+$ uv lock --upgrade-package pytest 2>&1
+$ grep -A2 '"pytest"' uv.lock | head -20
+$ grep -n 'pytest' pyproject.toml
+$ sed -i '' 's/pytest==9.0.2/pytest==9.2.0/' pyproject.toml && grep pytest pyproject.toml
+$ uv lock --upgrade-package pytest 2>&1
+$ uv sync 2>&1
+$ uv run pytest 2>&1
+$ git diff --stat
+requirements R1
+$ git diff pyproject.toml
+$ git diff uv.lock | head -40
+$ git status --short
+verifying the working tree
+$ git stash && uv run pytest -q 2>&1 | tail -5
+$ git stash pop && uv run pytest -q 2>&1 | tail -5
+$ git diff --stat
+$ git diff --stat
+$ git diff --stat

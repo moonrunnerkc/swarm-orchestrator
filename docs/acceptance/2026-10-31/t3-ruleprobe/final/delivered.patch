@@ -1,0 +1,27 @@
+diff --git a/src/utils/safe-path.ts b/src/utils/safe-path.ts
+index 846c3f2..c250051 100644
+--- a/src/utils/safe-path.ts
++++ b/src/utils/safe-path.ts
+@@ -32,7 +32,8 @@ export function resolveSafePath(
+   cwd?: string,
+   options?: SafePathOptions,
+ ): string {
+-  const boundary = cwd ?? process.cwd();
++  const rawCwd = cwd ?? process.cwd();
++  const boundary = realpathSync(rawCwd);
+   const resolved = resolve(boundary, userPath);
+ 
+   let real: string;
+@@ -55,7 +56,11 @@ export function resolveSafePath(
+     }
+   }
+ 
+-  return real;
++  // Normalize the real path back to use the original cwd prefix so that
++  // callers get a path consistent with what they passed in. This avoids
++  // macOS /var/folders vs /private/var/folders mismatches.
++  const normalizedReal = real.replace(boundary, rawCwd);
++  return normalizedReal;
+ }
+ 
+ /**

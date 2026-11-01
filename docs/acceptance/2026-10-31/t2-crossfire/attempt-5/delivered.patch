@@ -1,0 +1,159 @@
+diff --git a/src/config/schema.ts b/src/config/schema.ts
+index 7903d76..9d36c53 100644
+--- a/src/config/schema.ts
++++ b/src/config/schema.ts
+@@ -101,7 +101,7 @@ const FuzzConfigSchema = z
+ 
+ const SemgrepConfigSchema = z.strictObject({
+   enabled: z.boolean().default(true),
+-  ruleset: z.string().min(1),
++  ruleset: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]),
+   timeBudgetMs: positiveMs,
+ });
+ 
+diff --git a/src/detection/semgrep.ts b/src/detection/semgrep.ts
+index a92f97a..a408d14 100644
+--- a/src/detection/semgrep.ts
++++ b/src/detection/semgrep.ts
+@@ -68,11 +68,12 @@ function classOf(result: SemgrepResult): string {
+  * dynamic proof when it promotes the candidate to confirmed.
+  */
+ function reproCommand(config: SemgrepConfig, result: SemgrepResult): string {
++  const configs = Array.isArray(config.ruleset) ? config.ruleset : [config.ruleset];
++  const configFlags = configs.flatMap((r) => ["--config", shellQuote(r)]).join(" ");
+   const scan = [
+     "semgrep",
+     "scan",
+-    "--config",
+-    shellQuote(config.ruleset),
++    configFlags,
+     "--json",
+     "--quiet",
+     "--metrics=off",
+@@ -208,10 +209,10 @@ export function createSemgrepScanner(config: SemgrepConfig): Scanner {
+         };
+       }
+ 
++      const configs = Array.isArray(config.ruleset) ? config.ruleset : [config.ruleset];
+       const args = [
+         "scan",
+-        "--config",
+-        config.ruleset,
++        ...configs.flatMap((r) => ["--config", r]),
+         "--json",
+         "--quiet",
+         "--metrics=off",
+diff --git a/test/config.test.ts b/test/config.test.ts
+index 3003704..ca1bef7 100644
+--- a/test/config.test.ts
++++ b/test/config.test.ts
+@@ -266,3 +266,40 @@ describe("loadRunConfig", () => {
+     expect(() => loadRunConfig(writeConfig(raw))).toThrow(ConfigError);
+   });
+ });
++
++describe("semgrep ruleset accepts arrays", () => {
++  test("accepts a string ruleset (existing behavior)", () => {
++    const raw = minimalConfig();
++    (raw.detectors as Record<string, Record<string, unknown>>).semgrep!.ruleset = "p/security-audit";
++
++    const config = loadRunConfig(writeConfig(raw));
++
++    expect(config.detectors.semgrep.ruleset).toBe("p/security-audit");
++  });
++
++  test("accepts an array of rulesets", () => {
++    const raw = minimalConfig();
++    (raw.detectors as Record<string, Record<string, unknown>>).semgrep!.ruleset = [
++      "p/security-audit",
++      "p/secrets",
++    ];
++
++    const config = loadRunConfig(writeConfig(raw));
++
++    expect(config.detectors.semgrep.ruleset).toEqual(["p/security-audit", "p/secrets"]);
++  });
++
++  test("rejects an array with an empty string", () => {
++    const raw = minimalConfig();
++    (raw.detectors as Record<string, Record<string, unknown>>).semgrep!.ruleset = ["", "p/security-audit"];
++
++    expect(() => loadRunConfig(writeConfig(raw))).toThrow(/detectors\.semgrep\.ruleset/);
++  });
++
++  test("rejects an empty array", () => {
++    const raw = minimalConfig();
++    (raw.detectors as Record<string, Record<string, unknown>>).semgrep!.ruleset = [];
++
++    expect(() => loadRunConfig(writeConfig(raw))).toThrow(/detectors\.semgrep\.ruleset/);
++  });
++});
+diff --git a/test/scanner.test.ts b/test/scanner.test.ts
+index 06058bf..43a7352 100644
+--- a/test/scanner.test.ts
++++ b/test/scanner.test.ts
+@@ -464,3 +464,64 @@ describe("detector subprocess handling", () => {
+     expect(result.findings).toEqual([]);
+   });
+ });
++
++describe("semgrep ruleset as array", () => {
++  test("passes one --config per ruleset entry", () => {
++    const findings = normalizeSemgrepOutput(
++      {
++        results: [
++          {
++            check_id: "c.lang.security.insecure-use-gets-fn.insecure-use-gets-fn",
++            path: "src/input.c",
++            start: { line: 12 },
++            extra: { message: "gets is unbounded", severity: "WARNING" },
++          },
++        ],
++      },
++      { enabled: true, ruleset: ["p/security-audit", "p/secrets"], timeBudgetMs: 1000 },
++      FIXTURE,
++    );
++
++    expect(findings).toHaveLength(1);
++    expect(findings[0]?.class).toBe("insecure-use-gets-fn");
++  });
++
++  test("reproCommand includes all configs when ruleset is an array", () => {
++    const findings = normalizeSemgrepOutput(
++      {
++        results: [
++          {
++            check_id: "c.lang.security.insecure-use-gets-fn.insecure-use-gets-fn",
++            path: "src/input.c",
++            start: { line: 12 },
++            extra: { message: "gets is unbounded", severity: "WARNING" },
++          },
++        ],
++      },
++      { enabled: true, ruleset: ["p/security-audit", "p/secrets"], timeBudgetMs: 1000 },
++      FIXTURE,
++    );
++
++    expect(findings[0]?.repro_command).toContain("--config 'p/security-audit'");
++    expect(findings[0]?.repro_command).toContain("--config 'p/secrets'");
++  });
++
++  test("reproCommand includes the single config when ruleset is a string", () => {
++    const findings = normalizeSemgrepOutput(
++      {
++        results: [
++          {
++            check_id: "c.lang.security.insecure-use-gets-fn.insecure-use-gets-fn",
++            path: "src/input.c",
++            start: { line: 12 },
++            extra: { message: "gets is unbounded", severity: "WARNING" },
++          },
++        ],
++      },
++      { enabled: true, ruleset: "p/security-audit", timeBudgetMs: 1000 },
++      FIXTURE,
++    );
++
++    expect(findings[0]?.repro_command).toContain("--config 'p/security-audit'");
++  });
++});

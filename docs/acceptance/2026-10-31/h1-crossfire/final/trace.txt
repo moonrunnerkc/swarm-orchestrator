@@ -1,0 +1,23 @@
+$ ls -R src/policy/
+$ cat src/policy/exclusions.ts
+requirements R1
+$ ls src/policy/exclusions.test.ts
+$ find src -name "*.test.ts" | grep exclusions
+$ ls tests/
+$ find . -name "*.test.ts"
+$ cat test/policy.test.ts
+$ cat <<EOF > test/policy-repro.test.ts
+$ npx vitest test/policy-repro.test.ts
+$ sed -i 's/if (rel.startsWith("..") || isAbsolute(rel)) {/if ((rel === ".." || rel.startsWith("..\/") || rel.startsWith("..\\")) || isAbsolute(rel)) {/' src/policy/exclusions.ts
+$ # Using a different sed syntax for macOS/BSD compatibility or just using a temporary file
+$ npx vitest test/policy-repro.test.ts
+$ # I will use a simpler approach to fix the logic.
+$ # I will use a temporary file to avoid shell expansion issues with the heredoc.
+$ npx vitest test/policy-repro.test.ts
+$ rm test/policy-repro.test.ts
+verifying the working tree
+$ cat <<'EOF' > test/policy-repro.test.ts
+$ npx vitest test/policy-repro.test.ts
+verifying the working tree
+requirements R1
+verifying the working tree

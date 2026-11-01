@@ -1,0 +1,84 @@
+diff --git a/src/utils/safe-path.ts b/src/utils/safe-path.ts
+index 846c3f2..2d3f987 100644
+--- a/src/utils/safe-path.ts
++++ b/src/utils/safe-path.ts
+@@ -32,8 +32,20 @@ export function resolveSafePath(
+   cwd?: string,
+   options?: SafePathOptions,
+ ): string {
+-  const boundary = cwd ?? process.cwd();
+-  const resolved = resolve(boundary, userPath);
++  const rawBoundary = cwd ?? process.cwd();
++
++  // Resolve the boundary to its real path so that comparisons work correctly
++  // on systems where cwd may be a symlink or use different prefix paths (e.g.
++  // macOS /var vs /private/var).
++  let realBoundary: string;
++  try {
++    realBoundary = realpathSync(rawBoundary);
++  } catch {
++    // If the boundary itself can't be resolved, fall back to the raw value.
++    realBoundary = rawBoundary;
++  }
++
++  const resolved = resolve(realBoundary, userPath);
+ 
+   let real: string;
+   try {
+@@ -45,17 +57,52 @@ export function resolveSafePath(
+   }
+ 
+   if (!options?.allowExternal) {
+-    const normalizedBoundary = boundary.endsWith(sep) ? boundary : boundary + sep;
++    const normalizedBoundary = realBoundary.endsWith(sep) ? realBoundary : realBoundary + sep;
+ 
+-    if (real !== boundary && !real.startsWith(normalizedBoundary)) {
++    if (real !== realBoundary && !real.startsWith(normalizedBoundary)) {
+       throw new Error(
+-        `Path ${real} is outside the working directory ${boundary}. ` +
++        `Path ${real} is outside the working directory ${rawBoundary}. ` +
+         'Use --allow-symlinks if this is intentional.',
+       );
+     }
+   }
+ 
+-  return real;
++  // Determine whether to return the real path or a raw-resolved path.
++  // When the user passes a symlink, they expect the real target path.
++  // When there are no symlinks in the path, they expect a path consistent
++  // with the raw boundary (e.g. /var/folders/... not /private/var/folders/...).
++  const rawResolved = resolve(rawBoundary, userPath);
++
++  // Check if any component of the resolved path is a symlink by comparing
++  // the realpath of each intermediate directory component against its raw form.
++  let hasSymlinkInPath = false;
++  try {
++    const parts = real.split(sep).filter(Boolean);
++    let accumulated = sep;
++
++    for (const part of parts) {
++      accumulated = join(accumulated, part);
++      const realPart = realpathSync(accumulated);
++      if (realPart !== accumulated) {
++        hasSymlinkInPath = true;
++        break;
++      }
++    }
++  } catch {
++    // If we can't check intermediate components, fall back to returning real.
++    return real;
++  }
++
++  if (hasSymlinkInPath) {
++    // The path contains a symlink. Return the real path so callers see
++    // where the symlink actually points.
++    return real;
++  }
++
++  // No symlinks in the path. Return rawResolved for consistency with what
++  // callers expect based on the raw boundary (avoids /private/var vs /var
++  // prefix differences on macOS).
++  return rawResolved;
+ }
+ 
+ /**

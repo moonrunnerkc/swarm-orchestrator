@@ -1,0 +1,435 @@
+{
+  "state": "incomplete",
+  "scope": "requirements",
+  "reasons": [
+    "check test: 1 test(s) fail at the base commit and still fail, which does not block: test/conventions.test.ts::CLAUDE.md conventions > no tracked file contains an em dash"
+  ],
+  "base": {
+    "commit": "cd76297e5dff5a31436d6c6419f69dab1f6260af"
+  },
+  "change": {
+    "source": "patch",
+    "applied": true,
+    "files": [
+      {
+        "path": "src/config/schema.ts",
+        "status": "modified"
+      },
+      {
+        "path": "src/detection/semgrep.ts",
+        "status": "modified"
+      },
+      {
+        "path": "test/config.test.ts",
+        "status": "modified"
+      },
+      {
+        "path": "test/scanner.test.ts",
+        "status": "modified"
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "Let detectors.semgrep.ruleset be either a string or an array of strings, and pass one --config per ruleset to semgrep and to the repro command. Existing string configs must behave exactly as before.",
+      "source": "user",
+      "kind": "feature",
+      "required": true,
+      "assumptions": [
+        "The config schema is defined in src/config/schema.ts and validated with zod"
+      ],
+      "expected": {
+        "tests": [
+          {
+            "name": "loadRunConfig > accepts an array of rulesets"
+          },
+          {
+            "name": "semgrep scanner > passes one --config per ruleset when ruleset is an array"
+          }
+        ],
+        "checks": [
+          "test"
+        ],
+        "structure": [
+          {
+            "path": "src/config/schema.ts",
+            "contains": "ruleset"
+          },
+          {
+            "path": "src/detection/semgrep.ts",
+            "contains": "ruleset"
+          }
+        ],
+        "packages": []
+      },
+      "status": "unverified",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "test/config.test.ts::loadRunConfig > accepts an array of rulesets",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::semgrep scanner > passes one --config per ruleset when ruleset is an array",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        },
+        {
+          "kind": "check",
+          "ref": "test",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "inherited-failures"
+        },
+        {
+          "kind": "structure",
+          "ref": "src/config/schema.ts contains \"ruleset\"",
+          "authority": "pre-existing",
+          "outcome": "observed",
+          "detail": "expected contains"
+        },
+        {
+          "kind": "structure",
+          "ref": "src/detection/semgrep.ts contains \"ruleset\"",
+          "authority": "pre-existing",
+          "outcome": "observed",
+          "detail": "expected contains"
+        }
+      ],
+      "limitation": "not observed: test",
+      "nextAction": "run a check that exercises it"
+    }
+  ],
+  "regression": {
+    "status": "none",
+    "newFailures": [],
+    "inherited": [
+      "test/conventions.test.ts::CLAUDE.md conventions > no tracked file contains an em dash"
+    ],
+    "removed": [],
+    "unresolved": []
+  },
+  "checks": [
+    {
+      "name": "test",
+      "command": "npm run test",
+      "kind": "test",
+      "authority": "pre-existing",
+      "result": "inherited-failures",
+      "collected": 325,
+      "exitCode": 1,
+      "durationMs": 75797,
+      "outputSha256": "f7f4395519d41a80e155f12e6b07bb9dc1dd17a9db0179feb887be05f8b9b64b",
+      "tests": {
+        "runner": "vitest",
+        "collected": {
+          "base": 325,
+          "candidate": 330
+        },
+        "counts": {
+          "preserved": 306,
+          "renamed": 0,
+          "fixed": 0,
+          "newFailures": 0,
+          "inherited": 1,
+          "removed": 0,
+          "superseded": 0,
+          "expectationChanges": 0,
+          "added": 5,
+          "addedFailing": 0,
+          "witnesses": 2,
+          "skipped": 18
+        },
+        "fixed": [],
+        "newFailures": [],
+        "inherited": [
+          "test/conventions.test.ts::CLAUDE.md conventions > no tracked file contains an em dash"
+        ],
+        "removed": [],
+        "renamed": [],
+        "superseded": [],
+        "expectationChanges": [],
+        "added": [
+          "test/config.test.ts::loadRunConfig > accepts a string ruleset",
+          "test/config.test.ts::loadRunConfig > accepts an array of rulesets",
+          "test/config.test.ts::loadRunConfig > rejects an empty string in a ruleset array",
+          "test/config.test.ts::loadRunConfig > rejects an empty ruleset array",
+          "test/scanner.test.ts::semgrep scanner > passes one --config per ruleset when ruleset is an array"
+        ],
+        "addedFailing": [],
+        "witnesses": [
+          "test/config.test.ts::loadRunConfig > accepts an array of rulesets",
+          "test/scanner.test.ts::semgrep scanner > passes one --config per ruleset when ruleset is an array"
+        ]
+      }
+    },
+    {
+      "name": "lint",
+      "command": "npm run lint",
+      "kind": "other",
+      "authority": "pre-existing",
+      "result": "pass",
+      "collected": null,
+      "exitCode": 0,
+      "durationMs": 2591,
+      "outputSha256": "75a2d4c6e7113db9cfec5b1af34c848e52bd6afade857752c29f3a4da82b49e5"
+    },
+    {
+      "name": "typecheck",
+      "command": "npm run typecheck",
+      "kind": "other",
+      "authority": "pre-existing",
+      "result": "pass",
+      "collected": null,
+      "exitCode": 0,
+      "durationMs": 2463,
+      "outputSha256": "d20b02b7ba85c590623a3b4de22ce712d90618727daa97e95c0be0a7c381ce70"
+    },
+    {
+      "name": "build",
+      "command": "npm run build",
+      "kind": "other",
+      "authority": "pre-existing",
+      "result": "pass",
+      "collected": null,
+      "exitCode": 0,
+      "durationMs": 2334,
+      "outputSha256": "a09bf4d5166c0632eedd4cb6f0edfbb837a0bd022b1495ee299de18694a47c80"
+    }
+  ],
+  "baseline": {
+    "status": "measured",
+    "cached": true,
+    "environmentSha256": "964aaec6ed9ed80829de9f4b57c72786cec1d5b15a5ded04d27715472d0feae8",
+    "checks": [
+      {
+        "name": "test",
+        "command": "npm run test",
+        "kind": "test",
+        "authority": "pre-existing",
+        "result": "fail",
+        "collected": 325,
+        "exitCode": 1,
+        "durationMs": 73780,
+        "outputSha256": "9e097fbcf3891aa5d55f0e0a4d430d1770c32ef5d4c9df3a77f7bc2ab4ebca42"
+      },
+      {
+        "name": "lint",
+        "command": "npm run lint",
+        "kind": "other",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": null,
+        "exitCode": 0,
+        "durationMs": 2669,
+        "outputSha256": "75a2d4c6e7113db9cfec5b1af34c848e52bd6afade857752c29f3a4da82b49e5"
+      },
+      {
+        "name": "typecheck",
+        "command": "npm run typecheck",
+        "kind": "other",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": null,
+        "exitCode": 0,
+        "durationMs": 2490,
+        "outputSha256": "d20b02b7ba85c590623a3b4de22ce712d90618727daa97e95c0be0a7c381ce70"
+      },
+      {
+        "name": "build",
+        "command": "npm run build",
+        "kind": "other",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": null,
+        "exitCode": 0,
+        "durationMs": 2375,
+        "outputSha256": "a09bf4d5166c0632eedd4cb6f0edfbb837a0bd022b1495ee299de18694a47c80"
+      }
+    ],
+    "heldOut": []
+  },
+  "heldOut": {
+    "status": "unmeasured",
+    "reason": "no held-out checks are sealed for this workspace"
+  },
+  "artifacts": [
+    {
+      "path": "src/config/schema.ts",
+      "category": "source"
+    },
+    {
+      "path": "src/detection/semgrep.ts",
+      "category": "source"
+    },
+    {
+      "path": "test/config.test.ts",
+      "category": "tests"
+    },
+    {
+      "path": "test/scanner.test.ts",
+      "category": "tests"
+    }
+  ],
+  "testFiles": {
+    "added": [],
+    "modified": [
+      "test/config.test.ts",
+      "test/scanner.test.ts"
+    ],
+    "deleted": [],
+    "moved": [],
+    "relocated": []
+  },
+  "coverage": {
+    "status": "measured",
+    "tool": "v8",
+    "changedLines": 10,
+    "coveredLines": 0,
+    "files": [
+      {
+        "path": "src/config/schema.ts",
+        "covered": [],
+        "uncovered": [
+          104
+        ]
+      },
+      {
+        "path": "src/detection/semgrep.ts",
+        "covered": [],
+        "uncovered": [
+          71,
+          72,
+          76,
+          212,
+          213,
+          214,
+          215,
+          216,
+          219
+        ]
+      }
+    ]
+  },
+  "mutation": {
+    "status": "killed",
+    "path": "src/config/schema.ts",
+    "line": 104,
+    "operator": "min to max",
+    "syntax": "valid",
+    "rejected": 0
+  },
+  "producer": {
+    "name": "swarm-orchestrator",
+    "version": "15.0.0",
+    "model": "swarm-redesign-qwen36-32k:latest",
+    "promptSha256": "6b3ac0d926301899fbe0a91eedabe24cad8d59ee4fdd1b515533424f0b776ccd",
+    "ledgerSha256": "03fcc1c5595b421822c734d8191d0242233577641d688b961789c45761752f18",
+    "ledgerRecords": 174,
+    "reportSha256": "84a900a741d2d5a459ae94f21f5957d6f248515f419e0f20d901ced1a0cd05cb",
+    "instructions": [
+      {
+        "path": "CLAUDE.md",
+        "sha256": "47b46c17b5e57e9b1e6a2295c2432bb3ff336a50fcf69e36fec1c6ddc319a0a8"
+      }
+    ]
+  },
+  "environment": {
+    "sha256": "964aaec6ed9ed80829de9f4b57c72786cec1d5b15a5ded04d27715472d0feae8",
+    "node": "in node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 (sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413)",
+    "platform": "linux-arm64",
+    "git": "2.54.0 (Apple Git-157)",
+    "dependencies": "prepared",
+    "dependencyTreeSha256": "2cfd780e222c8ce2a923a0a90bf17ce938516d49b205328bfe65d60c5aa4115c",
+    "reproducible": true
+  },
+  "execution": {
+    "mode": "isolated",
+    "statement": "isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared",
+    "network": "closed",
+    "image": "node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 (sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 arm64)",
+    "dependencies": {
+      "mode": "prepared",
+      "reproducible": true,
+      "lockfiles": {
+        "package-lock.json": "d77ea0ba7184e17c003cd3f3aa9b93261e81a86c9e41dccdd21c9d95c90fc720"
+      },
+      "treeSha256": "2cfd780e222c8ce2a923a0a90bf17ce938516d49b205328bfe65d60c5aa4115c",
+      "note": "prepared from the lockfile and digested"
+    },
+    "policyMet": true,
+    "problems": []
+  },
+  "policy": {
+    "behaviorChange": "none"
+  },
+  "unmeasured": [
+    "held-out: no held-out checks are sealed for this workspace"
+  ],
+  "logs": [
+    {
+      "name": "logs/test.txt",
+      "sha256": "e0ac1117a9bad2c6c1de685f103e7cf729064599a282aefd2e4a6c4f36fc2bbe"
+    },
+    {
+      "name": "logs/test.base-tests.txt",
+      "sha256": "f7f4395519d41a80e155f12e6b07bb9dc1dd17a9db0179feb887be05f8b9b64b"
+    },
+    {
+      "name": "logs/lint.txt",
+      "sha256": "75a2d4c6e7113db9cfec5b1af34c848e52bd6afade857752c29f3a4da82b49e5"
+    },
+    {
+      "name": "logs/lint.base-tests.txt",
+      "sha256": "75a2d4c6e7113db9cfec5b1af34c848e52bd6afade857752c29f3a4da82b49e5"
+    },
+    {
+      "name": "logs/typecheck.txt",
+      "sha256": "d20b02b7ba85c590623a3b4de22ce712d90618727daa97e95c0be0a7c381ce70"
+    },
+    {
+      "name": "logs/typecheck.base-tests.txt",
+      "sha256": "d20b02b7ba85c590623a3b4de22ce712d90618727daa97e95c0be0a7c381ce70"
+    },
+    {
+      "name": "logs/build.txt",
+      "sha256": "a09bf4d5166c0632eedd4cb6f0edfbb837a0bd022b1495ee299de18694a47c80"
+    },
+    {
+      "name": "logs/build.base-tests.txt",
+      "sha256": "a09bf4d5166c0632eedd4cb6f0edfbb837a0bd022b1495ee299de18694a47c80"
+    }
+  ],
+  "verifier": {
+    "name": "swarm-verify",
+    "version": "2.0.0"
+  },
+  "version": "swarm-verify.result/v1",
+  "snapshot": {
+    "base": "cd76297e5dff5a31436d6c6419f69dab1f6260af",
+    "patchSha256": "3b70be5484aee0031111c1729751ae7ed1d9823e554d5487f2836046bb16b614",
+    "treeSha256": "2893934d9596cb1e4ba9b2ae502942772d1f6933c5493088e6540cc87a377c0d"
+  },
+  "integrity": {
+    "signed": true,
+    "signer": {
+      "kind": "key",
+      "fingerprint": "8c5ed5b218745e42c16a99d98024241cbf74c7aa7bf570fd6e5495491d0b5dae"
+    },
+    "statementSha256": "981f3296851326518bc17b3ac8a5511b1e5e822674cf25461baaad50eb21da65",
+    "problems": []
+  },
+  "evidence": {
+    "directory": "/Users/brad/.swarm/sessions/20261101T023752-7721a4/verifications/4",
+    "bundle": "/Users/brad/.swarm/sessions/20261101T023752-7721a4/verifications/4/attestation.sigstore.json",
+    "statement": "/Users/brad/.swarm/sessions/20261101T023752-7721a4/verifications/4/statement.json",
+    "patch": "/Users/brad/.swarm/sessions/20261101T023752-7721a4/verifications/4/change.patch",
+    "publicKey": "/Users/brad/.swarm/sessions/20261101T023752-7721a4/verifications/4/attestation.pub.pem"
+  },
+  "failureOutput": "$ npm run test\nst.ts \u001b[2m(\u001b[22m\u001b[2m19 tests\u001b[22m\u001b[2m | \u001b[22m\u001b[33m5 skipped\u001b[39m\u001b[2m)\u001b[22m\u001b[33m 854\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m test/config.test.ts \u001b[2m(\u001b[22m\u001b[2m32 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 10\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m test/transport.test.ts \u001b[2m(\u001b[22m\u001b[2m24 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[33m 2681\u001b[2mms\u001b[22m\u001b[39m\n     \u001b[33m\u001b[2m✓\u001b[22m\u001b[39m a permission request for an edit is refused for Grok and allowed for Claude \u001b[33m 321\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m test/ledger.test.ts \u001b[2m(\u001b[22m\u001b[2m25 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 11\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m test/agent-runner.test.ts \u001b[2m(\u001b[22m\u001b[2m18 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[33m 694\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m test/prompts.test.ts \u001b[2m(\u001b[22m\u001b[2m23 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 14\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m test/policy.test.ts \u001b[2m(\u001b[22m\u001b[2m28 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 17\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m test/contracts.test.ts \u001b[2m(\u001b[22m\u001b[2m33 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 9\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m test/cli.test.ts \u001b[2m(\u001b[22m\u001b[2m12 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 196\u001b[2mms\u001b[22m\u001b[39m\n \u001b[2m\u001b[90m↓\u001b[39m\u001b[22m test/integration.test.ts \u001b[2m(\u001b[22m\u001b[2m1 test\u001b[22m\u001b[2m | \u001b[22m\u001b[33m1 skipped\u001b[39m\u001b[2m)\u001b[22m\n \u001b[2m\u001b[90m↓\u001b[39m\u001b[22m test/smoke.test.ts \u001b[2m(\u001b[22m\u001b[2m2 tests\u001b[22m\u001b[2m | \u001b[22m\u001b[33m2 skipped\u001b[39m\u001b[2m)\u001b[22m\n \u001b[32m✓\u001b[39m test/router.test.ts \u001b[2m(\u001b[22m\u001b[2m8 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 4\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m test/obs.test.ts \u001b[2m(\u001b[22m\u001b[2m5 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 276\u001b[2mms\u001b[22m\u001b[39m\n \u001b[31m❯\u001b[39m test/conventions.test.ts \u001b[2m(\u001b[22m\u001b[2m3 tests\u001b[22m\u001b[2m | \u001b[22m\u001b[31m1 failed\u001b[39m\u001b[2m)\u001b[22m\u001b[32m 5\u001b[2mms\u001b[22m\u001b[39m\n     \u001b[32m✓\u001b[39m the constitution sits at the repo root\u001b[32m 1\u001b[2mms\u001b[22m\u001b[39m\n     \u001b[32m✓\u001b[39m the em dash detector finds an em dash\u001b[32m 0\u001b[2mms\u001b[22m\u001b[39m\n\u001b[31m     \u001b[31m×\u001b[31m no tracked file contains an em dash\u001b[39m\u001b[32m 3\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m test/jazzer.test.ts \u001b[2m(\u001b[22m\u001b[2m18 tests\u001b[22m\u001b[2m | \u001b[22m\u001b[33m3 skipped\u001b[39m\u001b[2m)\u001b[22m\u001b[32m 9\u001b[2mms\u001b[22m\u001b[39m\n\n\u001b[2m Test Files \u001b[22m \u001b[1m\u001b[31m1 failed\u001b[39m\u001b[22m\u001b[2m | \u001b[22m\u001b[1m\u001b[32m15 passed\u001b[39m\u001b[22m\u001b[2m | \u001b[22m\u001b[33m2 skipped\u001b[39m\u001b[90m (18)\u001b[39m\n\u001b[2m      Tests \u001b[22m \u001b[1m\u001b[31m1 failed\u001b[39m\u001b[22m\u001b[2m | \u001b[22m\u001b[1m\u001b[32m311 passed\u001b[39m\u001b[22m\u001b[2m | \u001b[22m\u001b[33m18 skipped\u001b[39m\u001b[90m (330)\u001b[39m\n\u001b[2m   Start at \u001b[22m 02:58:56\n\u001b[2m   Duration \u001b[22m 72.83s\u001b[2m (transform 585ms, setup 0ms, import 73.65s, tests 6.27s, environment 1ms)\u001b[22m\n\nJSON report written to /Users/brad/.swarm/work/swarm-verify-oWH3F9/reports/candidate-test.report\n\u001b[90mstderr\u001b[2m | test/gates.test.ts\n\u001b[22m\u001b[39mgate tests that need the fuzz harness are skipped, it did not build: Command failed: ./build.sh vulnerable\n\n\u001b[90mstderr\u001b[2m | test/fuzzer.test.ts\n\u001b[22m\u001b[39mfuzz integration tests skipped, the fixture harness did not build: Command failed: ./build.sh vulnerable\n\nfatal: not a git repository (or any parent up to mount point /Users/brad/.swarm/work)\nStopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).\n\u001b[90mstderr\u001b[2m | test/jazzer.test.ts\n\u001b[22m\u001b[39mJazzer.js integration tests skipped, the fixture did not install: Command failed: ./build.sh\n\n\n\u001b[31m⎯⎯⎯⎯⎯⎯⎯\u001b[39m\u001b[1m\u001b[41m Failed Tests 1 \u001b[49m\u001b[22m\u001b[31m⎯⎯⎯⎯⎯⎯⎯\u001b[39m\n\n\u001b[41m\u001b[1m FAIL \u001b[22m\u001b[49m test/conventions.test.ts\u001b[2m > \u001b[22mCLAUDE.md conventions\u001b[2m > \u001b[22mno tracked file contains an em dash\n\u001b[31m\u001b[1mError\u001b[22m: Command failed: git ls-files -z\nfatal: not a git repository (or any parent up to mount point /Users/brad/.swarm/work)\nStopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).\n\u001b[39m\n\u001b[36m \u001b[2m❯\u001b[22m trackedFiles test/conventions.test.ts:\u001b[2m17:18\u001b[22m\u001b[39m\n    \u001b[90m 15|\u001b[39m\n    \u001b[90m 16|\u001b[39m \u001b[35mfunction\u001b[39m \u001b[34mtrackedFiles\u001b[39m()\u001b[33m:\u001b[39m string[] {\n    \u001b[90m 17|\u001b[39m   const output = execFileSync(\"git\", [\"ls-files\", \"-z\"], { cwd: REPO_R…\n    \u001b[90m   |\u001b[39m                  \u001b[31m^\u001b[39m\n    \u001b[90m 18|\u001b[39m   \u001b[35mreturn\u001b[39m output\n    \u001b[90m 19|\u001b[39m     \u001b[33m.\u001b[39m\u001b[34msplit\u001b[39m(\u001b[32m\"\\0\"\u001b[39m)\n\u001b[90m \u001b[2m❯\u001b[22m test/conventions.test.ts:\u001b[2m36:24\u001b[22m\u001b[39m\n\n\u001b[31m\u001b[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯\u001b[22m\u001b[39m\n\n"
+}

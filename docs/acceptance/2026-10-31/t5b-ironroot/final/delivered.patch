@@ -1,0 +1,143 @@
+diff --git a/src/ironroot/cli/promote.py b/src/ironroot/cli/promote.py
+index ccc48d9..6862cf0 100644
+--- a/src/ironroot/cli/promote.py
++++ b/src/ironroot/cli/promote.py
+@@ -33,10 +33,10 @@ import importlib
+ import json
+ import re
+ import sys
+-from dataclasses import asdict, dataclass, field
+-from enum import StrEnum
+ from pathlib import Path
+-from typing import Any
++
++# Re-export data types from promote_report so existing imports still work.
++from ironroot.cli.promote_report import Finding, PromotionReport, Severity  # noqa: F401
+ 
+ REPO_ROOT = Path(__file__).resolve().parents[3]
+ SRC_ROOT = REPO_ROOT / "src" / "ironroot"
+@@ -44,58 +44,6 @@ TESTS_PROMOTION_ROOT = REPO_ROOT / "tests" / "promotion"
+ DOCS_INVARIANTS_ROOT = REPO_ROOT / "docs" / "invariants"
+ 
+ 
+-class Severity(StrEnum):
+-    OK = "ok"
+-    WARN = "warn"
+-    FAIL = "fail"
+-
+-
+-@dataclass(frozen=True)
+-class Finding:
+-    """One promotion check's outcome."""
+-
+-    check: str
+-    severity: Severity
+-    message: str
+-    recommendation: str | None = None
+-    details: dict[str, Any] = field(default_factory=dict)
+-
+-
+-@dataclass
+-class PromotionReport:
+-    """Aggregate audit result for one subsystem."""
+-
+-    prefix: str
+-    findings: list[Finding] = field(default_factory=list)
+-
+-    def add(self, finding: Finding) -> None:
+-        self.findings.append(finding)
+-
+-    @property
+-    def worst(self) -> Severity:
+-        if any(f.severity == Severity.FAIL for f in self.findings):
+-            return Severity.FAIL
+-        if any(f.severity == Severity.WARN for f in self.findings):
+-            return Severity.WARN
+-        return Severity.OK
+-
+-    @property
+-    def eligible(self) -> bool:
+-        """Subsystem is eligible for promotion iff there are no FAIL findings."""
+-        return self.worst != Severity.FAIL
+-
+-    def exit_code(self) -> int:
+-        return 1 if self.worst == Severity.FAIL else 0
+-
+-    def to_dict(self) -> dict[str, Any]:
+-        return {
+-            "prefix": self.prefix,
+-            "worst": str(self.worst),
+-            "eligible": self.eligible,
+-            "findings": [asdict(f) for f in self.findings],
+-        }
+-
+-
+ # ---------------------------------------------------------------------------
+ # Helpers
+ # ---------------------------------------------------------------------------
+diff --git a/src/ironroot/cli/promote_report.py b/src/ironroot/cli/promote_report.py
+new file mode 100644
+index 0000000..ba93fce
+--- /dev/null
++++ b/src/ironroot/cli/promote_report.py
+@@ -0,0 +1,60 @@
++# Author: Bradley R. Kinnard
++"""Promotion audit data types: Severity, Finding, PromotionReport."""
++
++from __future__ import annotations
++
++from dataclasses import asdict, dataclass, field
++from enum import StrEnum
++from typing import Any
++
++
++class Severity(StrEnum):
++    OK = "ok"
++    WARN = "warn"
++    FAIL = "fail"
++
++
++@dataclass(frozen=True)
++class Finding:
++    """One promotion check's outcome."""
++
++    check: str
++    severity: Severity
++    message: str
++    recommendation: str | None = None
++    details: dict[str, Any] = field(default_factory=dict)
++
++
++@dataclass
++class PromotionReport:
++    """Aggregate audit result for one subsystem."""
++
++    prefix: str
++    findings: list[Finding] = field(default_factory=list)
++
++    def add(self, finding: Finding) -> None:
++        self.findings.append(finding)
++
++    @property
++    def worst(self) -> Severity:
++        if any(f.severity == Severity.FAIL for f in self.findings):
++            return Severity.FAIL
++        if any(f.severity == Severity.WARN for f in self.findings):
++            return Severity.WARN
++        return Severity.OK
++
++    @property
++    def eligible(self) -> bool:
++        """Subsystem is eligible for promotion iff there are no FAIL findings."""
++        return self.worst != Severity.FAIL
++
++    def exit_code(self) -> int:
++        return 1 if self.worst == Severity.FAIL else 0
++
++    def to_dict(self) -> dict[str, Any]:
++        return {
++            "prefix": self.prefix,
++            "worst": str(self.worst),
++            "eligible": self.eligible,
++            "findings": [asdict(f) for f in self.findings],
++        }

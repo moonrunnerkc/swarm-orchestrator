@@ -1,0 +1,31 @@
+$ cat package.json && git status --short && node -e "console.log(process.version)"
+$ npm view vitest versions --json 2>/dev/null | tail -30; npm view @stryker-mutator/core versions --json 2>/dev/null | tail -30; npm view @stryker-mutator/vitest-runner versions --json 2>/dev/null | tail -30
+$ grep -n "strykerVersionFor" -r src/ && sed -n '1,120p' src/adapters/worktree-toolchain.ts
+$ grep -rn "strykerVersionFor\|9.6.1\|8.7.1" src/ test/ tests/ 2>/dev/null | grep -v node_modules; ls; find . -path ./node_modules -prune -o -name "*.test.ts" -print | head -30
+$ ls test/ src/adapters/ && grep -rn "worktree-toolchain" test/ src/ --include="*.ts" | grep -v node_modules
+$ grep -n "strykerVersionFor" src/adapters/worktree-toolchain.ts; grep -rn "strykerVersionFor" src/adapters/*.test.ts; sed -n '120,200p' src/adapters/worktree-toolchain.ts
+$ npm install --save-dev vitest@4.1.10 @vitest/coverage-v8@4.1.10 --save-exact=false --no-audit --no-fund 2>&1 | tail -5; git diff package.json
+$ grep -n "\"vitest\"\|\"@vitest/coverage-v8\"" package-lock.json | head; node -e "const l=require('./package-lock.json'); console.log(l.packages['node_modules/vitest'].version, l.packages['node_modules/@vitest/coverage-v8'].version)"
+$ npm test 2>&1 | tail -15
+$ sed -n '1,60p' src/adapters/install-strategy.test.ts; sed -n '1,40p' src/adapters/install-strategy.ts
+$ grep -n "^export" src/adapters/worktree-toolchain.ts; grep -rn "strykerVersionFor" src/adapters/*.test.ts; sed -n '1,30p' src/adapters/vitest-run.test.ts
+$ sed -n '30,50p' src/adapters/worktree-toolchain.ts
+$ sed -i 's/function strykerVersionFor/export function strykerVersionFor/' src/adapters/worktree-toolchain.ts && sed -n '44,48p' src/adapters/worktree-toolchain.ts
+$ sed -i 's/function strykerVersionFor/export function strykerVersionFor/' src/adapters/worktree-toolchain.ts && sed -n '44,48p' src/adapters/worktree-toolchain.ts
+$ grep -n "strykerVersionFor" src/adapters/worktree-toolchain.ts
+$ sed -i '45s/function strykerVersionFor/export function strykerVersionFor/' src/adapters/worktree-toolchain.ts && sed -n '45p' src/adapters/worktree-toolchain.ts
+$ node -e '
+$ cat > src/adapters/worktree-toolchain.test.ts <<'EOF'
+$ npm run typecheck 2>&1 | tail -3 && git diff --stat && git status --short
+$ npm run eval 2>&1 | tail -15
+requirements R1
+verifying the working tree
+$ npm test 2>&1 | tail -5 && npm run typecheck 2>&1 | tail -3 && npm run build 2>&1 | tail -3 && git status --short
+$ rm -rf dist && npm run build 2>&1 | tail -3 && git status --short && git check-ignore dist && echo "dist ignored"
+$ npm run eval 2>&1 | tail -8
+$ rm -rf dist && git status --short && git diff --stat
+$ npm test 2>&1 | tail -4 && npm run typecheck 2>&1 | tail -2 && npm run build 2>&1 | tail -2 && npm run eval 2>&1 | tail -6 && rm -rf dist && git status --short
+$ rm -rf dist && git status --short && git diff --stat
+$ rm -rf dist && git status --short && git diff --stat && node -e "const l=require('./package-lock.json'); console.log('vitest', l.packages['node_modules/vitest'].version, 'coverage-v8', l.packages['node_modules/@vitest/coverage-v8'].version)"
+$ rm -rf dist && git status --short && git diff --stat && node -e "const l=require('./package-lock.json'); console.log('vitest', l.packages['node_modules/vitest'].version, 'coverage-v8', l.packages['node_modules/@vitest/coverage-v8'].version)"
+$ rm -rf dist && git status --short && git diff --stat && node -e "const l=require('./package-lock.json'); console.log('vitest', l.packages['node_modules/vitest'].version, 'coverage-v8', l.packages['node_modules/@vitest/coverage-v8'].version)"

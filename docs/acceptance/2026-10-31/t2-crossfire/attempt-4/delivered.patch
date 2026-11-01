@@ -1,0 +1,129 @@
+diff --git a/src/config/schema.ts b/src/config/schema.ts
+index 7903d76..eaa8cbf 100644
+--- a/src/config/schema.ts
++++ b/src/config/schema.ts
+@@ -101,7 +101,7 @@ const FuzzConfigSchema = z
+ 
+ const SemgrepConfigSchema = z.strictObject({
+   enabled: z.boolean().default(true),
+-  ruleset: z.string().min(1),
++  ruleset: z.union([z.string().min(1), z.array(z.string().min(1)).min(1, 'at least one ruleset is required')]),
+   timeBudgetMs: positiveMs,
+ });
+ 
+diff --git a/src/detection/semgrep.ts b/src/detection/semgrep.ts
+index a92f97a..c0d9529 100644
+--- a/src/detection/semgrep.ts
++++ b/src/detection/semgrep.ts
+@@ -68,11 +68,12 @@ function classOf(result: SemgrepResult): string {
+  * dynamic proof when it promotes the candidate to confirmed.
+  */
+ function reproCommand(config: SemgrepConfig, result: SemgrepResult): string {
++  const configs = Array.isArray(config.ruleset) ? config.ruleset : [config.ruleset];
++  const configFlags = configs.map((r) => `--config ${shellQuote(r)}`).join(" ");
+   const scan = [
+     "semgrep",
+     "scan",
+-    "--config",
+-    shellQuote(config.ruleset),
++    configFlags,
+     "--json",
+     "--quiet",
+     "--metrics=off",
+@@ -208,10 +209,14 @@ export function createSemgrepScanner(config: SemgrepConfig): Scanner {
+         };
+       }
+ 
++      const configs = Array.isArray(config.ruleset) ? config.ruleset : [config.ruleset];
++      const configArgs: string[] = [];
++      for (const ruleset of configs) {
++        configArgs.push("--config", ruleset);
++      }
+       const args = [
+         "scan",
+-        "--config",
+-        config.ruleset,
++        ...configArgs,
+         "--json",
+         "--quiet",
+         "--metrics=off",
+diff --git a/test/config.test.ts b/test/config.test.ts
+index 3003704..9bec865 100644
+--- a/test/config.test.ts
++++ b/test/config.test.ts
+@@ -265,4 +265,40 @@ describe("loadRunConfig", () => {
+ 
+     expect(() => loadRunConfig(writeConfig(raw))).toThrow(ConfigError);
+   });
++
++
++  test("accepts a string ruleset", () => {
++    const raw = minimalConfig();
++    (raw.detectors as Record<string, Record<string, unknown>>).semgrep!.ruleset = "p/security-audit";
++
++    const config = loadRunConfig(writeConfig(raw));
++
++    expect(config.detectors.semgrep.ruleset).toBe("p/security-audit");
++  });
++
++  test("accepts an array of rulesets", () => {
++    const raw = minimalConfig();
++    (raw.detectors as Record<string, Record<string, unknown>>).semgrep!.ruleset = [
++      "p/security-audit",
++      "p/secrets",
++    ];
++
++    const config = loadRunConfig(writeConfig(raw));
++
++    expect(config.detectors.semgrep.ruleset).toEqual(["p/security-audit", "p/secrets"]);
++  });
++
++  test("rejects an empty string in a ruleset array", () => {
++    const raw = minimalConfig();
++    (raw.detectors as Record<string, Record<string, unknown>>).semgrep!.ruleset = ["p/security-audit", ""];
++
++    expect(() => loadRunConfig(writeConfig(raw))).toThrow(/detectors\.semgrep\.ruleset/);
++  });
++
++  test("rejects an empty ruleset array", () => {
++    const raw = minimalConfig();
++    (raw.detectors as Record<string, Record<string, unknown>>).semgrep!.ruleset = [];
++
++    expect(() => loadRunConfig(writeConfig(raw))).toThrow(/detectors\.semgrep\.ruleset/);
++  });
+ });
+diff --git a/test/scanner.test.ts b/test/scanner.test.ts
+index 06058bf..9dd040e 100644
+--- a/test/scanner.test.ts
++++ b/test/scanner.test.ts
+@@ -147,6 +147,30 @@ describe("semgrep scanner", () => {
+     expect(findings[0]?.line).toBe(12);
+   });
+ 
++
++  test("passes one --config per ruleset when ruleset is an array", () => {
++    const findings = normalizeSemgrepOutput(
++      {
++        results: [
++          {
++            check_id: "c.lang.security.insecure-use-gets-fn.insecure-use-gets-fn",
++            path: "src/input.c",
++            start: { line: 12 },
++            extra: { message: "gets is unbounded", severity: "WARNING" },
++          },
++        ],
++      },
++      { enabled: true, ruleset: ["p/security-audit", "p/secrets"], timeBudgetMs: 1000 },
++      FIXTURE,
++    );
++
++    expect(findings).toHaveLength(1);
++    expect(findings[0]?.class).toBe("insecure-use-gets-fn");
++    expect(findings[0]?.severity).toBe("medium");
++    expect(findings[0]?.line).toBe(12);
++  });
++
++
+   test("one construct is one finding, however many links the rule matches", () => {
+     // A rule that matches a chained expression reports it once per link, each match one call
+     // longer than the last. Every one is a different flagged source and so a different id,

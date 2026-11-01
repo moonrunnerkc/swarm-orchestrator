@@ -1,0 +1,178 @@
+{
+  "version": "swarm-orchestrator.report/v1",
+  "task": "Make --max-budget-usd also accept --max-budget-usd=<n>. Reject an empty value (--max-budget-usd=). When the next token is another flag (--max-budget-usd --dry-run), report that it requires a numeric value instead of 'got: --dry-run'. 0 stays valid.",
+  "model": {
+    "name": "qwen3.8:27b",
+    "reason": "named by --model"
+  },
+  "stop": "complete",
+  "reason": null,
+  "state": "complete",
+  "snapshot": {
+    "base": "99d8d054753b4e8979431eb58792895c754fbdc9",
+    "patchSha256": "39cc68d382de9284f1a4b924442956d74c99453c30b256f477b88a5627949161",
+    "patch": "/Users/brad/.swarm/sessions/20261101T140245-7b55bf/final/delivered.patch",
+    "treeSha256": "ca49abb7bf358683056d6d4fe3a79f24b40adefa44b78505060afc76bb86e02b"
+  },
+  "verification": "reused",
+  "blocked": null,
+  "unchecked": null,
+  "changed": [
+    {
+      "path": "src/cli.ts",
+      "status": "modified"
+    },
+    {
+      "path": "test/cli.test.ts",
+      "status": "modified"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "Make --max-budget-usd also accept --max-budget-usd=<n>. Reject an empty value (--max-budget-usd=). When the next token is another flag (--max-budget-usd --dry-run), report that it requires a numeric value instead of 'got: --dry-run'. 0 stays valid.",
+      "source": "user",
+      "kind": "feature",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [
+          {
+            "name": "parseArgs > parses --max-budget-usd=<n>"
+          }
+        ],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "status": "satisfied",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "test/cli.test.ts::parseArgs > parses --max-budget-usd=<n>",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        }
+      ],
+      "limitation": null,
+      "nextAction": null
+    },
+    {
+      "id": "R2",
+      "text": "Reject empty value --max-budget-usd= with a non-negative-number error",
+      "source": "inferred",
+      "kind": "fix",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [
+          {
+            "name": "parseArgs > rejects --max-budget-usd= with an empty value"
+          }
+        ],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "status": "satisfied",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "test/cli.test.ts::parseArgs > rejects --max-budget-usd= with an empty value",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        }
+      ],
+      "limitation": null,
+      "nextAction": null
+    },
+    {
+      "id": "R3",
+      "text": "When next token is another flag, report 'requires a numeric value' instead of 'got: <flag>'",
+      "source": "inferred",
+      "kind": "fix",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [
+          {
+            "name": "parseArgs > rejects --max-budget-usd followed by another flag"
+          }
+        ],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "status": "satisfied",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "test/cli.test.ts::parseArgs > rejects --max-budget-usd followed by another flag",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        }
+      ],
+      "limitation": null,
+      "nextAction": null
+    },
+    {
+      "id": "R4",
+      "text": "0 stays valid for --max-budget-usd",
+      "source": "inferred",
+      "kind": "other",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [
+          {
+            "name": "parseArgs > parses --max-budget-usd <n>"
+          }
+        ],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "status": "satisfied",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "test/cli.test.ts::parseArgs > parses --max-budget-usd <n>",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        }
+      ],
+      "limitation": null,
+      "nextAction": null
+    }
+  ],
+  "regression": "none",
+  "execution": "isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared",
+  "attestation": "/Users/brad/.swarm/sessions/20261101T140245-7b55bf/verifications/1/attestation.sigstore.json",
+  "startingState": {
+    "head": "99d8d054753b4e8979431eb58792895c754fbdc9",
+    "base": "99d8d054753b4e8979431eb58792895c754fbdc9",
+    "edits": []
+  },
+  "delivery": {
+    "applied": true
+  },
+  "instructions": [],
+  "notes": [],
+  "review": null,
+  "resources": {
+    "steps": 32,
+    "inputTokens": 290094,
+    "outputTokens": 6135,
+    "estimatedTurns": 0,
+    "inferenceMs": 0,
+    "inferenceTurns": 0,
+    "wallMs": 425192,
+    "retries": 0,
+    "escalations": 0,
+    "verifications": 1,
+    "cost": "unknown: the endpoint reports no price"
+  }
+}

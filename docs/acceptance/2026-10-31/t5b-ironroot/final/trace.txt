@@ -1,0 +1,39 @@
+requirements R1
+$ cat src/ironroot/cli/promote.py
+$ cat src/ironroot/cli/promote.py | head -100
+$ wc -l src/ironroot/cli/promote.py
+$ cat -n src/ironroot/cli/promote.py | sed -n '1,100p'
+$ cat -n src/ironroot/cli/promote.py | sed -n '95,130p'
+$ cat -n src/ironroot/cli/promote.py | sed -n '46,97p'
+$ grep -rn "from.*promote.*import.*Severity\|from.*promote.*import.*Finding\|from.*promote.*import.*PromotionReport\|from ironroot.cli.promote import" --include="*.py" .
+$ cat -n ./tests/unit/test_promote.py | sed -n '20,30p'
+$ cat -n ./tests/unit/test_promote.py | sed -n '30,45p'
+$ cat -n ./tests/unit/test_promote.py | sed -n '130,145p'
+$ cat -n src/ironroot/cli/promote.py | sed -n '100,200p'
+$ cat -n src/ironroot/cli/promote.py | sed -n '200,350p'
+$ cat -n src/ironroot/cli/promote.py | sed -n '350,450p'
+$ cat -n src/ironroot/cli/promote.py | sed -n '450,545p'
+$ cat > src/ironroot/cli/promote_report.py << 'PYEOF'
+$ cat > src/ironroot/cli/promote.py << 'PYEOF'
+$ python -c "from ironroot.cli.promote import Severity, Finding, PromotionReport; print('Severity:', Severity); print('Finding:', Finding); print('PromotionReport:', PromotionReport)"
+$ which python3 && python3 -c "from ironroot.cli.promote import Severity, Finding, PromotionReport; print('Severity:', Severity); print('Finding:', Finding); print('PromotionReport:', PromotionReport)"
+$ cd /home/user/repo && python3 -c "from ironroot.cli.promote import Severity, Finding, PromotionReport; print('Severity:', Severity); print('Finding:', Finding); print('PromotionReport:', PromotionReport)"
+$ python3 -c "import sys; sys.path.insert(0, 'src'); from ironroot.cli.promote import Severity, Finding, PromotionReport; print('Severity:', Severity); print('Finding:', Finding); print('PromotionReport:', PromotionReport)"
+$ python3 -c "import sys; sys.path.insert(0, 'src'); from ironroot.cli.promote_report import Severity, Finding, PromotionReport; print('Direct import works:', Severity, Finding, PromotionReport)"
+$ python3 -c "import sys; sys.path.insert(0, 'src'); from ironroot.cli.promote import audit, main, _flat_name, _check_subsystem_exists, Severity, Finding, PromotionReport; print('All imports OK')"
+$ python3 -c "import sys; sys.path.insert(0, 'src'); from ironroot.cli.promote import _RAW_BELIEF_WRITE_PATTERNS, _scan_for_patterns; print('Private helpers also accessible:', _RAW_BELIEF_WRITE_PATTERNS, _scan_for_patterns)"
+$ python3 -c "import sys; sys.path.insert(0, 'src'); from ironroot.cli.promote import Severity, Finding, PromotionReport; f = Finding(check='test', severity=Severity.OK, message='hello'); r = PromotionReport(prefix='test'); r.add(f); print('worst:', r.worst); print('eligible:', r.eligible); print('to_dict:', r.to_dict())"
+$ python3 -c "import sys; sys.path.insert(0, 'src'); from ironroot.cli.promote import Severity, Finding, PromotionReport; f = Finding(check='test', severity=Severity.FAIL, message='fail'); r = PromotionReport(prefix='test'); r.add(f); print('worst:', r.worst); print('eligible:', r.eligible); print('exit_code:', r.exit_code())"
+$ git diff --stat && echo "---" && wc -l src/ironroot/cli/promote.py src/ironroot/cli/promote_report.py
+$ git diff src/ironroot/cli/promote.py | head -80
+$ cat src/ironroot/cli/promote_report.py
+$ git status --short
+$ git add src/ironroot/cli/promote_report.py src/ironroot/cli/promote.py && git status --short
+$ python3 -c "import sys; sys.path.insert(0, 'src'); from ironroot.cli.promote import Severity, Finding, PromotionReport, audit, main, _flat_name, _check_subsystem_exists, _RAW_BELIEF_WRITE_PATTERNS, _scan_for_patterns; print('All public and private names accessible via promote.py')"
+$ python3 -c "import sys; sys.path.insert(0, 'src'); from ironroot.cli.promote_report import Severity, Finding, PromotionReport; print('Direct import from promote_report also works')"
+$ python3 -c "import sys; sys.path.insert(0, 'src'); from ironroot.cli.promote import Severity, Finding, PromotionReport; f = Finding(check='test', severity=Severity.FAIL, message='fail'); r = PromotionReport(prefix='test'); r.add(f); assert r.worst == Severity.FAIL; assert not r.eligible; assert r.exit_code() == 1; print('Behavior verified: FAIL -> worst=fail, eligible=False, exit_code=1')"
+$ python3 -c "import sys; sys.path.insert(0, 'src'); from ironroot.cli.promote import Severity, Finding, PromotionReport; f = Finding(check='test', severity=Severity.WARN, message='warn'); r = PromotionReport(prefix='test'); r.add(f); assert r.worst == Severity.WARN; assert not r.eligible; assert r.exit_code() == 0; print('Behavior verified: WARN -> worst=warn, eligible=False, exit_code=0')"
+$ python3 -c "import sys; sys.path.insert(0, 'src'); from ironroot.cli.promote import Severity, Finding, PromotionReport; f = Finding(check='test', severity=Severity.WARN, message='warn'); r = PromotionReport(prefix='test'); r.add(f); print('worst:', r.worst); print('eligible:', r.eligible); print('exit_code:', r.exit_code())"
+$ python3 -c "import sys; sys.path.insert(0, 'src'); from ironroot.cli.promote import Severity, Finding, PromotionReport; f = Finding(check='test', severity=Severity.OK, message='ok'); r = PromotionReport(prefix='test'); r.add(f); print('worst:', r.worst); print('eligible:', r.eligible); print('exit_code:', r.exit_code())"
+$ git status --short
+verifying the working tree

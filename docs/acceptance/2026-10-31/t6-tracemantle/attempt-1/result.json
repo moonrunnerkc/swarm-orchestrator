@@ -1,0 +1,374 @@
+{
+  "state": "incomplete",
+  "scope": "requirements",
+  "reasons": [
+    "check test is unresolved: with the candidate, the pytest report could not be parsed: the command wrote none"
+  ],
+  "base": {
+    "commit": "47203d2903394cbb8904637cad71b7b525b9ada7"
+  },
+  "change": {
+    "source": "patch",
+    "applied": true,
+    "files": [
+      {
+        "path": "src/skillcheck/core/history_io.py",
+        "status": "modified"
+      },
+      {
+        "path": "src/tracemantle/_version.py",
+        "status": "added"
+      },
+      {
+        "path": "src/tracemantle/commands.py",
+        "status": "modified"
+      },
+      {
+        "path": "src/tracemantle/core/history.py",
+        "status": "modified"
+      },
+      {
+        "path": "src/tracemantle/core/history_io.py",
+        "status": "modified"
+      },
+      {
+        "path": "src/tracemantle/history/__init__.py",
+        "status": "added"
+      },
+      {
+        "path": "src/tracemantle/history/io.py",
+        "status": "added"
+      },
+      {
+        "path": "src/tracemantle/history/store.py",
+        "status": "added"
+      },
+      {
+        "path": "src/tracemantle/history_store.py",
+        "status": "modified"
+      },
+      {
+        "path": "src/tracemantle/product_commands.py",
+        "status": "modified"
+      },
+      {
+        "path": "tests/history/__init__.py",
+        "status": "added"
+      },
+      {
+        "path": "tests/history/test_io.py",
+        "status": "added"
+      },
+      {
+        "path": "tests/history/test_model.py",
+        "status": "added"
+      },
+      {
+        "path": "tests/history/test_regression.py",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_history_io.py",
+        "status": "deleted"
+      },
+      {
+        "path": "tests/test_history_model.py",
+        "status": "deleted"
+      },
+      {
+        "path": "tests/test_history_regression.py",
+        "status": "deleted"
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "Move core/history_io.py and history_store.py into a new tracemantle/history/ package, leaving re-export shims at the old paths, and move tests/test_history_{io,model,regression}.py into tests/history/; update the mypy files list and hatch packages.",
+      "source": "user",
+      "kind": "refactor",
+      "required": true,
+      "assumptions": [
+        "The existing imports from tracemantle.core.history_io and tracemantle.history_store must continue to work via re-export shims"
+      ],
+      "expected": {
+        "tests": [
+          {
+            "name": "test_history_io"
+          },
+          {
+            "name": "test_history_model"
+          },
+          {
+            "name": "test_history_regression"
+          }
+        ],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "status": "unverified",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "test_history_io",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "no executed test has this name"
+        },
+        {
+          "kind": "test",
+          "ref": "test_history_model",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "no executed test has this name"
+        },
+        {
+          "kind": "test",
+          "ref": "test_history_regression",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "no executed test has this name"
+        },
+        {
+          "kind": "change",
+          "ref": "src/skillcheck/core/history_io.py, src/tracemantle/_version.py, src/tracemantle/commands.py, src/tracemantle/core/history.py, src/tracemantle/core/history_io.py",
+          "authority": "pre-existing",
+          "outcome": "observed",
+          "detail": "10 source file(s) changed"
+        }
+      ],
+      "limitation": "not observed: test_history_io, test_history_model, test_history_regression",
+      "nextAction": "name tests as they ran (a title, a suite, or a path such as suite > test title) in place of test_history_io, test_history_model, test_history_regression"
+    }
+  ],
+  "regression": {
+    "status": "unresolved",
+    "newFailures": [],
+    "inherited": [],
+    "removed": [],
+    "unresolved": [
+      "check test"
+    ]
+  },
+  "checks": [
+    {
+      "name": "test",
+      "command": "python3 -m pytest -q",
+      "kind": "test",
+      "authority": "pre-existing",
+      "result": "unresolved",
+      "collected": 1425,
+      "exitCode": 1,
+      "durationMs": 310791,
+      "outputSha256": "7bd7abb2b2e007a572a5bc78deaa27ce15b2d34c9b0c93e5d7b316773049c1c3"
+    }
+  ],
+  "baseline": {
+    "status": "measured",
+    "cached": false,
+    "environmentSha256": "98c6d00ec732efc0712e89615e8f8e91a9e3133e210b91125f0e4a73c052b678",
+    "checks": [
+      {
+        "name": "test",
+        "command": "python3 -m pytest -q",
+        "kind": "test",
+        "authority": "pre-existing",
+        "result": "fail",
+        "collected": 1407,
+        "exitCode": 1,
+        "durationMs": 310407,
+        "outputSha256": "a538b170af5197bda42cb6e4797f0cdc5e884c3c9ae41151efea41b4c578dac2"
+      }
+    ],
+    "heldOut": []
+  },
+  "heldOut": {
+    "status": "unmeasured",
+    "reason": "no held-out checks are sealed for this workspace"
+  },
+  "artifacts": [
+    {
+      "path": "src/skillcheck/core/history_io.py",
+      "category": "source"
+    },
+    {
+      "path": "src/tracemantle/_version.py",
+      "category": "source"
+    },
+    {
+      "path": "src/tracemantle/commands.py",
+      "category": "source"
+    },
+    {
+      "path": "src/tracemantle/core/history.py",
+      "category": "source"
+    },
+    {
+      "path": "src/tracemantle/core/history_io.py",
+      "category": "source"
+    },
+    {
+      "path": "src/tracemantle/history/__init__.py",
+      "category": "source"
+    },
+    {
+      "path": "src/tracemantle/history/io.py",
+      "category": "source"
+    },
+    {
+      "path": "src/tracemantle/history/store.py",
+      "category": "source"
+    },
+    {
+      "path": "src/tracemantle/history_store.py",
+      "category": "source"
+    },
+    {
+      "path": "src/tracemantle/product_commands.py",
+      "category": "source"
+    },
+    {
+      "path": "tests/history/__init__.py",
+      "category": "tests"
+    },
+    {
+      "path": "tests/history/test_io.py",
+      "category": "tests"
+    },
+    {
+      "path": "tests/history/test_model.py",
+      "category": "tests"
+    },
+    {
+      "path": "tests/history/test_regression.py",
+      "category": "tests"
+    },
+    {
+      "path": "tests/test_history_io.py",
+      "category": "tests"
+    },
+    {
+      "path": "tests/test_history_model.py",
+      "category": "tests"
+    },
+    {
+      "path": "tests/test_history_regression.py",
+      "category": "tests"
+    }
+  ],
+  "testFiles": {
+    "added": [
+      "tests/history/__init__.py",
+      "tests/history/test_io.py"
+    ],
+    "modified": [],
+    "deleted": [
+      "tests/test_history_io.py"
+    ],
+    "moved": [
+      {
+        "from": "tests/test_history_model.py",
+        "to": "tests/history/test_model.py"
+      },
+      {
+        "from": "tests/test_history_regression.py",
+        "to": "tests/history/test_regression.py"
+      }
+    ],
+    "relocated": []
+  },
+  "coverage": {
+    "status": "unmeasured",
+    "reason": "coverage.py wrote no report"
+  },
+  "mutation": {
+    "status": "survived",
+    "path": "src/tracemantle/history/__init__.py",
+    "line": 1,
+    "operator": " and to or",
+    "syntax": "valid",
+    "rejected": 0
+  },
+  "producer": {
+    "name": "swarm-orchestrator",
+    "version": "15.0.0",
+    "model": "swarm-redesign-qwen36-32k:latest",
+    "promptSha256": "1d863c671e8261adb6daff24bb0f91bfbb2106a0f9fc54cd4a3061ab00b60109",
+    "ledgerSha256": "181ee4fba9cc90a62a48d68c4e1cf44a0ca2746ce4f5fcb36fdd4ec250e8ec4f",
+    "ledgerRecords": 237,
+    "reportSha256": "88fa83ed3259e3f5381df213119e2fa0d2608be518e3bbcb2e51370f4a0ce423",
+    "instructions": []
+  },
+  "environment": {
+    "sha256": "98c6d00ec732efc0712e89615e8f8e91a9e3133e210b91125f0e4a73c052b678",
+    "node": "in ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248 (sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248)",
+    "platform": "linux-arm64",
+    "git": "2.54.0 (Apple Git-157)",
+    "dependencies": "prepared",
+    "dependencyTreeSha256": "469114e4e68f0d4749b8d0b5d5aa47a223b9586f75b6a24620db4d3b21c31006",
+    "reproducible": true
+  },
+  "execution": {
+    "mode": "isolated",
+    "statement": "isolated: docker ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248, network closed for checks and open only while dependencies were prepared",
+    "network": "closed",
+    "image": "ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248 (sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248 arm64)",
+    "dependencies": {
+      "mode": "prepared",
+      "reproducible": true,
+      "lockfiles": {
+        "uv.lock": "52a0d148c378e8d9fec2fca3de971ab3bf0688256a4010f377a02894db54490e"
+      },
+      "treeSha256": "469114e4e68f0d4749b8d0b5d5aa47a223b9586f75b6a24620db4d3b21c31006",
+      "note": "prepared from the lockfile and digested"
+    },
+    "policyMet": true,
+    "problems": []
+  },
+  "policy": {
+    "behaviorChange": "none"
+  },
+  "unmeasured": [
+    "check test: with the candidate, the pytest report could not be parsed: the command wrote none",
+    "held-out: no held-out checks are sealed for this workspace",
+    "coverage: coverage.py wrote no report"
+  ],
+  "logs": [
+    {
+      "name": "logs/test.txt",
+      "sha256": "3f68f29984f66d86eb20f98ee1c888aff104aa156e44995f346cfda935f1d8a9"
+    },
+    {
+      "name": "logs/test.base-tests.txt",
+      "sha256": "7bd7abb2b2e007a572a5bc78deaa27ce15b2d34c9b0c93e5d7b316773049c1c3"
+    }
+  ],
+  "verifier": {
+    "name": "swarm-verify",
+    "version": "2.0.0"
+  },
+  "version": "swarm-verify.result/v1",
+  "snapshot": {
+    "base": "47203d2903394cbb8904637cad71b7b525b9ada7",
+    "patchSha256": "f827eae3f8421d068faddbaa428e42edc17bd73df9e56f6eaeb9e12b0f8fa6cf",
+    "treeSha256": "f6fe1d1feacbdb39f362a2ed4a05b6ed679592dbbdf4549e3df3c8c2425dcbe7"
+  },
+  "integrity": {
+    "signed": true,
+    "signer": {
+      "kind": "key",
+      "fingerprint": "8c5ed5b218745e42c16a99d98024241cbf74c7aa7bf570fd6e5495491d0b5dae"
+    },
+    "statementSha256": "f38a55d4c645f1a3d7a9c7b093d7ff234db809939d69be0fa15f456581cc597f",
+    "problems": []
+  },
+  "evidence": {
+    "directory": "/Users/brad/.swarm/sessions/20261101T055541-5d24f7/final/verification",
+    "bundle": "/Users/brad/.swarm/sessions/20261101T055541-5d24f7/final/verification/attestation.sigstore.json",
+    "statement": "/Users/brad/.swarm/sessions/20261101T055541-5d24f7/final/verification/statement.json",
+    "patch": "/Users/brad/.swarm/sessions/20261101T055541-5d24f7/final/verification/change.patch",
+    "publicKey": "/Users/brad/.swarm/sessions/20261101T055541-5d24f7/final/verification/attestation.pub.pem"
+  },
+  "failureOutput": ""
+}

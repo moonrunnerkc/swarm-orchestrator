@@ -1,0 +1,145 @@
+{
+  "version": "swarm-orchestrator.report/v1",
+  "task": "Let detectors.semgrep.ruleset be either a string or an array of strings, and pass one --config per ruleset to semgrep and to the repro command. Existing string configs must behave exactly as before.",
+  "model": {
+    "name": "swarm-redesign-qwen36-32k:latest",
+    "reason": "conservative default: the largest installed model that fits and passed its readiness probe, needs 27.2 GiB at a 65536-token context, 121.6 tok/s in its probe; no finished tasks recorded for it here yet"
+  },
+  "stop": "step-budget",
+  "reason": null,
+  "state": "incomplete",
+  "snapshot": {
+    "base": "cd76297e5dff5a31436d6c6419f69dab1f6260af",
+    "patchSha256": "537c30028416f5bdbc1dbe3987b6adc6e5ab3d7e61e5f63e3e01464e0777cf41",
+    "patch": "/Users/brad/.swarm/sessions/20261101T033749-e1498f/final/delivered.patch",
+    "treeSha256": "a5582d7bb7c125d3c5ff0e4ffc260244c882141f28bc00ccefe885537c1aabc7"
+  },
+  "verification": "fresh",
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "Let detectors.semgrep.ruleset be either a string or an array of strings, and pass one --config per ruleset to semgrep and to the repro command. Existing string configs must behave exactly as before.",
+      "source": "user",
+      "kind": "feature",
+      "required": true,
+      "assumptions": [
+        "The config schema is defined in src/config/schema.ts and validated with zod"
+      ],
+      "expected": {
+        "tests": [
+          {
+            "name": "test/config.test.ts > semgrep ruleset accepts arrays > accepts a string ruleset (existing behavior)"
+          },
+          {
+            "name": "test/config.test.ts > semgrep ruleset accepts arrays > accepts an array of rulesets"
+          },
+          {
+            "name": "test/config.test.ts > semgrep ruleset accepts arrays > rejects an array with an empty string"
+          },
+          {
+            "name": "test/config.test.ts > semgrep ruleset accepts arrays > rejects an empty array"
+          },
+          {
+            "name": "test/scanner.test.ts > semgrep ruleset as array > passes one --config per ruleset when ruleset is an array"
+          },
+          {
+            "name": "test/scanner.test.ts > semgrep ruleset as array > passes a single --config when ruleset is a string"
+          }
+        ],
+        "checks": [
+          "test"
+        ],
+        "structure": [],
+        "packages": []
+      },
+      "status": "unverified",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "test/config.test.ts > semgrep ruleset accepts arrays > accepts a string ruleset (existing behavior)",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "no executed test has this name"
+        },
+        {
+          "kind": "test",
+          "ref": "test/config.test.ts > semgrep ruleset accepts arrays > accepts an array of rulesets",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "no executed test has this name"
+        },
+        {
+          "kind": "test",
+          "ref": "test/config.test.ts > semgrep ruleset accepts arrays > rejects an array with an empty string",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "no executed test has this name"
+        },
+        {
+          "kind": "test",
+          "ref": "test/config.test.ts > semgrep ruleset accepts arrays > rejects an empty array",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "no executed test has this name"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts > semgrep ruleset as array > passes one --config per ruleset when ruleset is an array",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "no executed test has this name"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts > semgrep ruleset as array > passes a single --config when ruleset is a string",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "no executed test has this name"
+        },
+        {
+          "kind": "check",
+          "ref": "test",
+          "authority": "pre-existing",
+          "outcome": "passes but for inherited failures",
+          "detail": "inherited-failures"
+        }
+      ],
+      "limitation": "not observed: test/config.test.ts > semgrep ruleset accepts arrays > accepts a string ruleset (existing behavior), test/config.test.ts > semgrep ruleset accepts arrays > accepts an array of rulesets, test/config.test.ts > semgrep ruleset accepts arrays > rejects an array with an empty string, test/config.test.ts > semgrep ruleset accepts arrays > rejects an empty array, test/scanner.test.ts > semgrep ruleset as array > passes one --config per ruleset when ruleset is an array, test/scanner.test.ts > semgrep ruleset as array > passes a single --config when ruleset is a string",
+      "nextAction": "name tests as they ran (a title, a suite, or a path such as the agent runner over a live ACP handle > returns what the agent said as one string) in place of test/config.test.ts > semgrep ruleset accepts arrays > accepts a string ruleset (existing behavior), test/config.test.ts > semgrep ruleset accepts arrays > accepts an array of rulesets, test/config.test.ts > semgrep ruleset accepts arrays > rejects an array with an empty string, test/config.test.ts > semgrep ruleset accepts arrays > rejects an empty array, test/scanner.test.ts > semgrep ruleset as array > passes one --config per ruleset when ruleset is an array, test/scanner.test.ts > semgrep ruleset as array > passes a single --config when ruleset is a string; these tests fail before the change and pass after it, and this requirement does not map them: semgrep ruleset accepts arrays > accepts an array of rulesets, semgrep ruleset as array > passes one --config per ruleset when ruleset is an array"
+    }
+  ],
+  "regression": "none (1 inherited failure(s))",
+  "execution": "isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared",
+  "attestation": "/Users/brad/.swarm/sessions/20261101T033749-e1498f/final/verification/attestation.sigstore.json",
+  "startingState": {
+    "head": "cd76297e5dff5a31436d6c6419f69dab1f6260af",
+    "base": "cd76297e5dff5a31436d6c6419f69dab1f6260af",
+    "edits": []
+  },
+  "delivery": {
+    "applied": true
+  },
+  "instructions": [
+    {
+      "path": "CLAUDE.md",
+      "sha256": "47b46c17b5e57e9b1e6a2295c2432bb3ff336a50fcf69e36fec1c6ddc319a0a8"
+    }
+  ],
+  "notes": [
+    "the last verification described an earlier tree or record, so the delivered one was verified again"
+  ],
+  "review": null,
+  "resources": {
+    "steps": 60,
+    "inputTokens": 1534617,
+    "outputTokens": 6130,
+    "estimatedTurns": 0,
+    "inferenceMs": 122588,
+    "inferenceTurns": 60,
+    "wallMs": 856449,
+    "retries": 0,
+    "escalations": 0,
+    "verifications": 1,
+    "cost": "none (local runtime)"
+  }
+}

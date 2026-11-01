@@ -1,0 +1,137 @@
+diff --git a/src/config/schema.ts b/src/config/schema.ts
+index 7903d76..9d36c53 100644
+--- a/src/config/schema.ts
++++ b/src/config/schema.ts
+@@ -101,7 +101,7 @@ const FuzzConfigSchema = z
+ 
+ const SemgrepConfigSchema = z.strictObject({
+   enabled: z.boolean().default(true),
+-  ruleset: z.string().min(1),
++  ruleset: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]),
+   timeBudgetMs: positiveMs,
+ });
+ 
+diff --git a/src/detection/semgrep.ts b/src/detection/semgrep.ts
+index a92f97a..31398b9 100644
+--- a/src/detection/semgrep.ts
++++ b/src/detection/semgrep.ts
+@@ -62,17 +62,24 @@ function classOf(result: SemgrepResult): string {
+   return toSlug(result.check_id.split(".").at(-1) ?? result.check_id);
+ }
+ 
++/** One --config per ruleset, in the order the run config lists them. */
++function rulesets(config: SemgrepConfig): readonly string[] {
++  return Array.isArray(config.ruleset) ? config.ruleset : [config.ruleset];
++}
++
+ /**
+  * A candidate's repro asks the scanner the same question again, narrowed to the
+  * one file: exit 0 while the rule still fires there. Grok replaces this with a
+  * dynamic proof when it promotes the candidate to confirmed.
+  */
+ function reproCommand(config: SemgrepConfig, result: SemgrepResult): string {
++  const configs = rulesets(config)
++    .map((ruleset) => `--config ${shellQuote(ruleset)}`)
++    .join(" ");
+   const scan = [
+     "semgrep",
+     "scan",
+-    "--config",
+-    shellQuote(config.ruleset),
++    configs,
+     "--json",
+     "--quiet",
+     "--metrics=off",
+@@ -210,8 +217,7 @@ export function createSemgrepScanner(config: SemgrepConfig): Scanner {
+ 
+       const args = [
+         "scan",
+-        "--config",
+-        config.ruleset,
++        ...rulesets(config).flatMap((ruleset) => ["--config", ruleset]),
+         "--json",
+         "--quiet",
+         "--metrics=off",
+diff --git a/test/config.test.ts b/test/config.test.ts
+index 3003704..8e335d7 100644
+--- a/test/config.test.ts
++++ b/test/config.test.ts
+@@ -121,6 +121,25 @@ describe("loadRunConfig", () => {
+     expect(config.target.scanExcludes).toEqual([]);
+   });
+ 
++  test("accepts a semgrep ruleset as a string or an array of strings", () => {
++    const raw = minimalConfig();
++    const semgrep = (raw.detectors as Record<string, unknown>).semgrep as Record<string, unknown>;
++    semgrep.ruleset = ["p/security-audit", "p/default"];
++    const config = loadRunConfig(writeConfig(raw));
++    expect(config.detectors.semgrep.ruleset).toEqual(["p/security-audit", "p/default"]);
++
++    const raw2 = minimalConfig();
++    const config2 = loadRunConfig(writeConfig(raw2));
++    expect(config2.detectors.semgrep.ruleset).toBe("p/security-audit");
++  });
++
++  test("rejects an empty semgrep ruleset array", () => {
++    const raw = minimalConfig();
++    const semgrep = (raw.detectors as Record<string, unknown>).semgrep as Record<string, unknown>;
++    semgrep.ruleset = [];
++    expect(() => loadRunConfig(writeConfig(raw))).toThrow(/semgrep.ruleset/);
++  });
++
+   test("rejects an unknown top level key", () => {
+     const raw = minimalConfig();
+     raw.mode = "yolo";
+diff --git a/test/scanner.test.ts b/test/scanner.test.ts
+index 06058bf..d24cb30 100644
+--- a/test/scanner.test.ts
++++ b/test/scanner.test.ts
+@@ -147,6 +147,48 @@ describe("semgrep scanner", () => {
+     expect(findings[0]?.line).toBe(12);
+   });
+ 
++  test("a string ruleset produces a single --config in the repro command", () => {
++    const findings = normalizeSemgrepOutput(
++      {
++        results: [
++          {
++            check_id: "c.lang.security.insecure-use-gets-fn.insecure-use-gets-fn",
++            path: "src/input.c",
++            start: { line: 12 },
++            extra: { severity: "WARNING" },
++          },
++        ],
++      },
++      { enabled: true, ruleset: "p/security-audit", timeBudgetMs: 1000 },
++      FIXTURE,
++    );
++
++    expect(findings[0]?.repro_command).toBe(
++      "semgrep scan --config 'p/security-audit' --json --quiet --metrics=off 'src/input.c' | grep -q 'c.lang.security.insecure-use-gets-fn.insecure-use-gets-fn'",
++    );
++  });
++
++  test("an array ruleset produces one --config per ruleset in the repro command", () => {
++    const findings = normalizeSemgrepOutput(
++      {
++        results: [
++          {
++            check_id: "c.lang.security.insecure-use-gets-fn.insecure-use-gets-fn",
++            path: "src/input.c",
++            start: { line: 12 },
++            extra: { severity: "WARNING" },
++          },
++        ],
++      },
++      { enabled: true, ruleset: ["p/security-audit", "p/default"], timeBudgetMs: 1000 },
++      FIXTURE,
++    );
++
++    expect(findings[0]?.repro_command).toBe(
++      "semgrep scan --config 'p/security-audit' --config 'p/default' --json --quiet --metrics=off 'src/input.c' | grep -q 'c.lang.security.insecure-use-gets-fn.insecure-use-gets-fn'",
++    );
++  });
++
+   test("one construct is one finding, however many links the rule matches", () => {
+     // A rule that matches a chained expression reports it once per link, each match one call
+     // longer than the last. Every one is a different flagged source and so a different id,

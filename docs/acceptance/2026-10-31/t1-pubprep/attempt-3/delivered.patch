@@ -1,0 +1,154 @@
+diff --git a/patch.py b/patch.py
+new file mode 100644
+index 0000000..300b5ff
+--- /dev/null
++++ b/patch.py
+@@ -0,0 +1,86 @@
++with open("src/cli.ts", "r") as f:
++    content = f.read()
++
++# Replace the entire --max-budget-usd case block with a simpler approach
++old_block = '''      case "--max-budget-usd": {
++        // Support --max-budget-usd=<n> inline format
++        if (a.includes("=")) {
++          const eqIdx = a.indexOf("=");
++          const raw = a.slice(eqIdx + 1);
++          if (raw === "") {
++            throw new Error("--max-budget-usd requires a numeric value (USD).");
++          }
++          const n = Number(raw);
++          if (!Number.isFinite(n) || n < 0) {
++            throw new Error(
++              `--max-budget-usd requires a non-negative number, got: ${raw}`,
++            );
++          }
++          args.maxBudgetUsd = n;
++          break;
++        }
++        const raw = argv[i + 1];
++        if (raw === undefined) {
++          throw new Error("--max-budget-usd requires a numeric value (USD).");
++        }
++        // If the next token looks like another flag, report it as missing value
++        if (raw.startsWith("-")) {
++          throw new Error(
++            `--max-budget-usd requires a numeric value instead of 'got: ${raw}'.`,
++          );
++        }
++        const n = Number(raw);
++        if (!Number.isFinite(n) || n < 0) {
++          throw new Error(
++            `--max-budget-usd requires a non-negative number, got: ${raw}`,
++          );
++        }
++        args.maxBudgetUsd = n;
++        i++;
++        break;
++      }'''
++
++new_block = '''      case "--max-budget-usd": {
++        // Support --max-budget-usd=<n> inline format
++        if (a.includes("=")) {
++          const eqIdx = a.indexOf("=");
++          const raw = a.slice(eqIdx + 1);
++          if (raw === "") {
++            throw new Error("--max-budget-usd requires a numeric value (USD).");
++          }
++          const n = Number(raw);
++          if (!Number.isFinite(n) || n < 0) {
++            throw new Error(
++              `--max-budget-usd requires a non-negative number, got: ${raw}`,
++            );
++          }
++          args.maxBudgetUsd = n;
++          break;
++        }
++        const raw = argv[i + 1];
++        if (raw === undefined) {
++          throw new Error("--max-budget-usd requires a numeric value (USD).");
++        }
++        // If the next token looks like another flag, report it as missing value
++        if (raw.startsWith("-")) {
++          throw new Error(
++            `--max-budget-usd requires a numeric value instead of 'got: ${raw}'.`,
++          );
++        }
++        const n = Number(raw);
++        if (!Number.isFinite(n) || n < 0) {
++          throw new Error(
++            `--max-budget-usd requires a non-negative number, got: ${raw}`,
++          );
++        }
++        args.maxBudgetUsd = n;
++        i++;
++        break;
++      }'''
++
++content = content.replace(old_block, new_block)
++
++with open("src/cli.ts", "w") as f:
++    f.write(content)
++
++print("Done patching src/cli.ts")
+diff --git a/src/cli.ts b/src/cli.ts
+index 3eae9fd..4b3ed82 100644
+--- a/src/cli.ts
++++ b/src/cli.ts
+@@ -83,10 +83,32 @@ export function parseArgs(argv: readonly string[]): CliArgs {
+         args.openPr = false;
+         break;
+       case "--max-budget-usd": {
++        // Support --max-budget-usd=<n> inline format
++        if (a.includes("=")) {
++          const eqIdx = a.indexOf("=");
++          const raw = a.slice(eqIdx + 1);
++          if (raw === "") {
++            throw new Error("--max-budget-usd requires a numeric value (USD).");
++          }
++          const n = Number(raw);
++          if (!Number.isFinite(n) || n < 0) {
++            throw new Error(
++              `--max-budget-usd requires a non-negative number, got: ${raw}`,
++            );
++          }
++          args.maxBudgetUsd = n;
++          break;
++        }
+         const raw = argv[i + 1];
+         if (raw === undefined) {
+           throw new Error("--max-budget-usd requires a numeric value (USD).");
+         }
++        // If the next token looks like another flag, report it as missing value
++        if (raw.startsWith("-")) {
++          throw new Error(
++            `--max-budget-usd requires a numeric value instead of 'got: ${raw}'.`,
++          );
++        }
+         const n = Number(raw);
+         if (!Number.isFinite(n) || n < 0) {
+           throw new Error(
+diff --git a/test/cli.test.ts b/test/cli.test.ts
+index 4d95c69..66fc716 100644
+--- a/test/cli.test.ts
++++ b/test/cli.test.ts
+@@ -88,3 +88,20 @@ describe("CLI constants", () => {
+     expect(VERSION).toMatch(/^\d+\.\d+\.\d+/);
+   });
+ });
++
++  it("parses --max-budget-usd=<n> inline format", () => {
++    expect(parseArgs(["--max-budget-usd=5"]).maxBudgetUsd).toBe(5);
++    expect(parseArgs(["--max-budget-usd=0"]).maxBudgetUsd).toBe(0);
++  });
++
++  it("rejects --max-budget-usd= with empty value", () => {
++    expect(() => parseArgs(["--max-budget-usd="])).toThrow(
++      /--max-budget-usd requires a numeric value/,
++    );
++  });
++
++  it("reports missing numeric value when next token is a flag", () => {
++    expect(() => parseArgs(["--max-budget-usd", "--dry-run"])).toThrow(
++      /requires a numeric value instead of 'got: --dry-run'/,
++    );
++  });

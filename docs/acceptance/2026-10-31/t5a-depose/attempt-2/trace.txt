@@ -1,0 +1,60 @@
+$ cat packages/narrative/src/render.ts
+$ cat packages/narrative/src/render.ts | head -5
+$ wc -l packages/narrative/src/render.ts && grep -n 'MD_TEMPLATE\|HTML_TEMPLATE' packages/narrative/src/render.ts
+$ cat -n packages/narrative/src/render.ts | sed -n '31,200p'
+$ cat -n packages/narrative/src/render.ts | sed -n '380,420p'
+$ cat -n packages/narrative/src/render.ts | sed -n '500,530p'
+$ wc -l packages/narrative/src/render.ts && tail -5 packages/narrative/src/render.ts
+$ find packages/narrative -name '*.test.*' -o -name '*.spec.*' | head -20
+$ cat packages/narrative/test/render.test.ts | head -50
+$ cat > packages/narrative/src/templates.ts << 'TEMPLATE_EOF'
+$ cat > packages/narrative/src/render.ts << 'RENDER_EOF'
+$ cd packages/narrative && npx tsc --noEmit 2>&1 | head -30
+$ cd packages/narrative && npm run build 2>&1 | tail -20
+$ cd packages/narrative && npm install 2>&1 | tail -10
+$ cd / && ls -la node_modules/@depose/core 2>&1 | head -5
+$ ls -la node_modules/@depose/core 2>&1 | head -5
+$ cat package.json | grep -A5 '"workspaces"'
+$ cat package.json | head -30
+$ pnpm install 2>&1 | tail -10
+$ pnpm --filter @depose/narrative build 2>&1
+$ pnpm --filter @depose/core build 2>&1
+$ pnpm --filter @depose/narrative build 2>&1
+$ grep -n 'ruleViolations\|\.command' packages/narrative/src/render.ts | head -10
+$ grep -n 'ruleViolations\|\.command' packages/narrative/src/render.ts.orig 2>/dev/null; git diff packages/narrative/src/render.ts | grep -A2 -B2 'ruleViolations\|\.command' | head -30
+$ grep -n 'ruleViolations\|command' packages/core/src/types.ts | head -20
+$ find packages/core -name '*.ts' | head -10
+$ find packages/core/src -name '*.ts' | head -10
+$ grep -rn 'ruleViolations\|command' packages/core/src/reconstruct/timeline.ts | head -20
+$ grep -n 'ToolCallExecutedPayload' packages/core/src/reconstruct/timeline.ts | head -10
+$ grep -rn 'ToolCallExecutedPayload' packages/core/src/ | head -10
+$ sed -n '118,140p' packages/core/src/events/schema.ts
+$ git diff packages/narrative/src/render.ts | grep -B5 -A5 'ruleViolations\|p\.command' | head -40
+$ git stash && pnpm --filter @depose/narrative build 2>&1
+$ git stash pop && grep -rn 'ruleViolations' packages/core/src/ | head -10
+$ grep -rn 'ruleViolations' packages/core/src/ | head -10
+$ grep -rn 'ruleViolations' packages/core/ | head -10
+$ grep -rn 'ruleViolations' . --include='*.ts' | head -10
+$ grep -rn 'declare module\|interface.*ToolCallExecuted' packages/core/src/ | head -10
+$ grep -rn 'command' packages/core/src/events/schema.ts | head -10
+$ git show HEAD:packages/narrative/src/render.ts | grep -n 'ruleViolations\|\.command' | head -10
+$ git show HEAD:packages/narrative/src/render.ts | sed -n '320,360p'
+$ grep -n 'destructiveOps\|gaps' packages/core/src/reconstruct/timeline.ts | head -20
+$ git checkout packages/narrative/src/render.ts
+$ cat -n packages/narrative/src/render.ts | sed -n '280,370p'
+$ cat -n packages/narrative/src/render.ts | sed -n '370,420p'
+$ # First, get the exact line numbers for MD_TEMPLATE and HTML_TEMPLATE in the original
+$ # MD_TEMPLATE: lines 31-115 (ends with `;` before the blank line at 116)
+$ # MD_TEMPLATE ends at line 115 (`;`), blank line 116, then comment at 117
+$ sed -i '31,116d' packages/narrative/src/render.ts && echo ok
+$ cd packages/narrative/src && sed -i '31,116d' render.ts && echo ok
+$ cd /Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t5a-depose && sed -i '' '31,116d' packages/narrative/src/render.ts && echo ok
+$ pwd && sed -i '' '31,116d' packages/narrative/src/render.ts && echo ok
+$ # Now find the new line number for HTML_TEMPLATE block (was 413, shifted by -86 = 327)
+$ # HTML_TEMPLATE block: lines 327-407 (comment + const). Let me verify the end.
+$ # HTML_TEMPLATE block: lines 327-407 (comment at 327, const at 329, ends at 407)
+$ # Now add the import line and verify the file compiles
+$ # Need to add the import for templates. Insert after line 27 (after the ReconstructionTimeline import)
+$ sed -i '' '27a\' packages/narrative/src/render.ts && sed -i '' '28i import { MD_TEMPLATE, HTML_TEMPLATE } from '\''./templates.js'\'';' packages/narrative/src/render.ts && echo ok
+$ head -30 packages/narrative/src/render.ts | cat -n
+$ # Insert import line after line 27 using a temp file approach

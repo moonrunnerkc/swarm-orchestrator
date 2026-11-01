@@ -1,0 +1,62 @@
+requirements R1
+$ find . -type f -name "*.py" | head -20 && echo "---" && find . -type f -name "*.js" | head -20 && echo "---" && find . -type f -name "*.ts" | head -20 && echo "---" && ls -la
+$ grep -rn "max-budget-usd" src/ test/ --include="*.ts" --include="*.js"
+$ cat src/cli.ts
+$ cat test/cli.test.ts
+$ cat src/cli.ts | head -100
+$ cat -n src/cli.ts | sed -n '80,100p'
+$ cat -n src/cli.ts | sed -n '55,105p'
+$ cat -n src/cli.ts | sed -n '85,99p'
+$ cat > /tmp/patch.py << 'PYEOF'
+$ cat > /tmp/patch.py << 'PYEOF'
+$ cat > src/cli.ts << 'ENDOFFILE'
+$ npm test -- --run 2>&1 | tail -40
+$ cat > src/cli.ts << 'ENDOFFILE'
+$ npm test -- --run 2>&1 | tail -40
+$ git diff src/cli.ts | head -80
+$ git checkout src/cli.ts
+$ cat -n src/cli.ts | sed -n '85,99p'
+$ sed -i '' '85,99c\      case "--max-budget-usd": {\n        // Support --max-budget-usd=<n> inline format\n        if (a.startsWith("--max-budget-usd=")) {\n          const raw = a.slice("--max-budget-usd=".length);\n          if (raw === "") {\n            throw new Error("--max-budget-usd requires a numeric value (USD).");\n          }\n          const n = Number(raw);\n          if (!Number.isFinite(n) || n < 0) {\n            throw new Error(\n              `--max-budget-usd requires a non-negative number, got: ${raw}`,\n            );\n          }\n          args.maxBudgetUsd = n;\n          break;\n        }\n        const raw = argv[i + 1];\n        if (raw === undefined) {\n          throw new Error("--max-budget-usd requires a numeric value (USD).");\n        }\n        // If the next token looks like another flag (starts with --), report it as missing value\n        if (raw.startsWith("--")) {\n          throw new Error(\n            `--max-budget-usd requires a numeric value (USD), got: ${raw}`,\n          );\n        }\n        const n = Number(raw);\n        if (!Number.isFinite(n) || n < 0) {\n          throw new Error(\n            `--max-budget-usd requires a non-negative number, got: ${raw}`,\n          );\n        }\n        args.maxBudgetUsd = n;\n        i++;\n        break;\n      }' src/cli.ts
+$ cat > /tmp/apply_patch.py << 'PYEOF'
+$ python3 -c "
+$ npm test -- --run 2>&1 | tail -30
+$ git diff src/cli.ts
+verifying the working tree
+compacted earlier turns (19701 of 32768 context tokens)
+$ cat test/cli.test.ts
+$ cat > /tmp/add_tests.py << 'PYEOF'
+$ python3 -c "
+$ npm test -- --run 2>&1 | tail -30
+$ cat -n src/cli.ts | sed -n '60,120p'
+$ cat -n src/cli.ts | sed -n '50,130p'
+$ python3 -c "
+$ npm test -- --run 2>&1 | tail -30
+verifying the working tree
+$ cat -n src/cli.ts | sed -n '55,75p'
+$ python3 -c "
+$ npm run typecheck 2>&1 | head -20
+$ cat -n src/cli.ts | sed -n '59,78p'
+$ cat tsconfig.json
+$ grep -n 'const a' src/cli.ts
+$ cat -n src/cli.ts | sed -n '59,80p'
+$ python3 -c "
+$ npm run typecheck 2>&1 | head -20
+$ cat -n src/cli.ts | sed -n '59,80p'
+$ git diff src/cli.ts | head -60
+$ git stash && npm run typecheck 2>&1 | head -10
+$ git stash pop && cat -n src/cli.ts | sed -n '58,130p'
+$ python3 -c "
+$ npm run typecheck 2>&1 | head -10
+$ cat -n src/cli.ts | sed -n '58,68p'
+$ git show HEAD:src/cli.ts | cat -n | sed -n '58,70p'
+$ git diff src/cli.ts | grep -n '^\+' | head -30
+$ git checkout src/cli.ts && cat -n src/cli.ts | sed -n '58,125p'
+$ python3 -c "
+compacted earlier turns (19766 of 32768 context tokens)
+$ npm run typecheck 2>&1 | head -20
+$ cat -n src/cli.ts | sed -n '58,75p'
+$ cat -n src/cli.ts | sed -n '80,110p'
+$ cat -n src/cli.ts | sed -n '110,130p'
+$ cat -n src/cli.ts | sed -n '55,80p'
+$ python3 -c "
+$ npm run typecheck 2>&1 | head -20

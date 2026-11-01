@@ -1,0 +1,38 @@
+$ find . -path ./node_modules -prune -o -type f -name '*.ts' -print | head -50 && echo --- && cat package.json
+$ grep -rn "semgrep" src/ | head -40
+$ sed -n '1,120p' src/detection/semgrep.ts
+$ sed -n '120,290p' src/detection/semgrep.ts
+$ sed -n '140,190p' src/config/schema.ts && grep -n "ruleset" -r src/ test/ config/ fixtures/ 2>/dev/null
+$ sed -n '95,115p' src/config/schema.ts && sed -n '1,120p' test/scanner.test.ts
+$ sed -n '120,300p' test/scanner.test.ts
+$ sed -n '1,60p' src/detection/exec.ts && grep -rn "repro_command" src/ | head
+$ sed -n '95,112p' src/config/schema.ts
+$ sed -n '1,80p' test/config.test.ts
+$ cd src/detection && python3 - <<'EOF'
+$ cd /workspace && git status --short && ls
+$ sed -n '60,110p' src/detection/semgrep.ts
+$ sed -n '40,115p' src/detection/semgrep.ts
+$ python3 - <<'EOF'
+$ grep -n "config.ruleset\|--config" src/detection/semgrep.ts
+$ python3 - <<'EOF'
+$ grep -n "repro_command\|describe\|test(" test/scanner.test.ts | head -40
+$ sed -n '128,150p' test/scanner.test.ts
+$ python3 - <<'EOF'
+$ sed -n '80,140p' test/config.test.ts
+$ python3 - <<'EOF'
+$ npm run typecheck && npx vitest run test/scanner.test.ts test/config.test.ts 2>&1 | tail -30
+$ python3 - <<'EOF'
+$ grep -n "shellQuote" src/detection/exec.ts && sed -n "$(grep -n 'shellQuote' src/detection/exec.ts | head -1 | cut -d: -f1),+15p" src/detection/exec.ts
+$ grep -n "shellQuote" src/detection/exec.ts
+$ sed -n '89,105p' src/detection/exec.ts
+$ python3 - <<'EOF'
+$ npx vitest run test/scanner.test.ts 2>&1 | grep -A 25 "FAIL\|Error\|note" | head -60
+$ grep -n "semgrep\|ruleset" crossfire.sample.json
+$ cd fixtures/vulnerable-repo && semgrep scan --config .semgrep/crossfire-c.yml --json --quiet --metrics=off --disable-version-check src 2>&1 | head -20; echo "exit: $?"
+$ cd fixtures/vulnerable-repo && semgrep scan --config .semgrep/crossfire-c.yml --json --quiet --metrics=off --disable-version-check src
+$ git stash && npx vitest run test/scanner.test.ts 2>&1 | tail -8; git stash pop
+$ npx vitest run 2>&1 | tail -25
+$ npm run typecheck && npm run lint 2>&1 | tail -15
+$ git diff
+requirements R1
+verifying the working tree

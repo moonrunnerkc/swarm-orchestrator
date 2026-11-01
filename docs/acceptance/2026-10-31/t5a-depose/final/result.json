@@ -1,0 +1,512 @@
+{
+  "state": "incomplete",
+  "scope": "requirements",
+  "reasons": [
+    "check test: 17 test(s) fail at the base commit and still fail, which does not block: packages/bundle/test/e2e.acceptance.test.ts, packages/bundle/test/phase3-acceptance.test.ts, packages/bundle/test/roundtrip.test.ts, packages/bundle/test/writer.deterministic.test.ts, packages/bundle/test/writer.mode-contract.test.ts and 12 more",
+    "check typecheck is unresolved: it fails at the base commit and with the candidate, and no per-test report tells a new failure from an old one",
+    "check build is unresolved: it fails at the base commit and with the candidate, and no per-test report tells a new failure from an old one"
+  ],
+  "base": {
+    "commit": "830f36638df85eb611912ff89a305d4a326af3c7"
+  },
+  "change": {
+    "source": "patch",
+    "applied": true,
+    "files": [
+      {
+        "path": "packages/narrative/src/render.ts",
+        "status": "modified"
+      },
+      {
+        "path": "packages/narrative/src/templates.ts",
+        "status": "added"
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "Move MD_TEMPLATE and HTML_TEMPLATE out of packages/narrative/src/render.ts into a new templates.ts with no change to output.",
+      "source": "user",
+      "kind": "other",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "status": "unverified",
+      "evidence": [],
+      "limitation": "no executed evidence is mapped to this requirement",
+      "nextAction": "map a test or check that exercises it"
+    }
+  ],
+  "regression": {
+    "status": "unresolved",
+    "newFailures": [],
+    "inherited": [
+      "packages/bundle/test/e2e.acceptance.test.ts",
+      "packages/bundle/test/phase3-acceptance.test.ts",
+      "packages/bundle/test/roundtrip.test.ts",
+      "packages/bundle/test/writer.deterministic.test.ts",
+      "packages/bundle/test/writer.mode-contract.test.ts",
+      "packages/bundle/test/writer.ruleset-integrity.test.ts",
+      "packages/chain/test/hash-chain.test.ts",
+      "packages/chain/test/key-fingerprint.test.ts",
+      "packages/capture-claude/test/hook-entry.test.ts",
+      "packages/cli/test/commands.captures.test.ts",
+      "packages/cli/test/commands.commander.test.ts",
+      "packages/cli/test/commands.install.test.ts::Phase 3: installShellShims > creates shim directory and reports installed binaries",
+      "packages/cli/test/commands.install.test.ts::Phase 3: installShellShims > creates capture directory",
+      "packages/cli/test/commands.install.test.ts::Phase 3: installShellShims > returns empty installed binaries without real shim binary",
+      "packages/cli/test/commands.key.test.ts",
+      "packages/cli/test/commands.reconstruct.test.ts",
+      "packages/cli/test/commands.rules-default.test.ts"
+    ],
+    "removed": [],
+    "unresolved": [
+      "check typecheck",
+      "check build"
+    ]
+  },
+  "checks": [
+    {
+      "name": "test",
+      "command": "pnpm run test",
+      "kind": "test",
+      "authority": "pre-existing",
+      "result": "inherited-failures",
+      "collected": 217,
+      "exitCode": 1,
+      "durationMs": 4533,
+      "outputSha256": "fa355dafcf0bce553d44e6262821fba5114f14608cd8bd7528f92501989fa71d",
+      "tests": {
+        "runner": "vitest",
+        "collected": {
+          "base": 217,
+          "candidate": 217
+        },
+        "counts": {
+          "preserved": 200,
+          "renamed": 0,
+          "fixed": 0,
+          "newFailures": 0,
+          "inherited": 17,
+          "removed": 0,
+          "superseded": 0,
+          "expectationChanges": 0,
+          "added": 0,
+          "addedFailing": 0,
+          "witnesses": 0,
+          "skipped": 0
+        },
+        "fixed": [],
+        "newFailures": [],
+        "inherited": [
+          "packages/bundle/test/e2e.acceptance.test.ts",
+          "packages/bundle/test/phase3-acceptance.test.ts",
+          "packages/bundle/test/roundtrip.test.ts",
+          "packages/bundle/test/writer.deterministic.test.ts",
+          "packages/bundle/test/writer.mode-contract.test.ts",
+          "packages/bundle/test/writer.ruleset-integrity.test.ts",
+          "packages/chain/test/hash-chain.test.ts",
+          "packages/chain/test/key-fingerprint.test.ts",
+          "packages/capture-claude/test/hook-entry.test.ts",
+          "packages/cli/test/commands.captures.test.ts",
+          "packages/cli/test/commands.commander.test.ts",
+          "packages/cli/test/commands.install.test.ts::Phase 3: installShellShims > creates shim directory and reports installed binaries",
+          "packages/cli/test/commands.install.test.ts::Phase 3: installShellShims > creates capture directory",
+          "packages/cli/test/commands.install.test.ts::Phase 3: installShellShims > returns empty installed binaries without real shim binary",
+          "packages/cli/test/commands.key.test.ts",
+          "packages/cli/test/commands.reconstruct.test.ts",
+          "packages/cli/test/commands.rules-default.test.ts"
+        ],
+        "removed": [],
+        "renamed": [],
+        "superseded": [],
+        "expectationChanges": [],
+        "added": [],
+        "addedFailing": [],
+        "witnesses": []
+      }
+    },
+    {
+      "name": "lint",
+      "command": "pnpm run lint",
+      "kind": "other",
+      "authority": "pre-existing",
+      "result": "pass",
+      "collected": null,
+      "exitCode": 0,
+      "durationMs": 2858,
+      "outputSha256": "19155a44356b3c29ed3cc6e26e026f172cc0fb01fbdfc8663e578fb65aece703"
+    },
+    {
+      "name": "typecheck",
+      "command": "pnpm run typecheck",
+      "kind": "other",
+      "authority": "pre-existing",
+      "result": "unresolved",
+      "collected": null,
+      "exitCode": 2,
+      "durationMs": 2402,
+      "outputSha256": "c0834309f369f01d1e9042053280c2f9f499da15854f01db6862f8e5bb78b9ce"
+    },
+    {
+      "name": "build",
+      "command": "pnpm run build",
+      "kind": "other",
+      "authority": "pre-existing",
+      "result": "unresolved",
+      "collected": null,
+      "exitCode": 2,
+      "durationMs": 2726,
+      "outputSha256": "e72d3d1eb7dac8d59d68ebfc3d937671df512301aeacf53c8e7dc775cfc20932"
+    }
+  ],
+  "baseline": {
+    "status": "measured",
+    "cached": false,
+    "environmentSha256": "ecb7bc4fd0ba20b21383f9e1ba0abf91e73a9c1cdb43d03b7bf90365deeed923",
+    "checks": [
+      {
+        "name": "test",
+        "command": "pnpm run test",
+        "kind": "test",
+        "authority": "pre-existing",
+        "result": "fail",
+        "collected": 217,
+        "exitCode": 1,
+        "durationMs": 4143,
+        "outputSha256": "240edf0fda130d013b520090cdee28cb23538bd5b819d87f6533b8662d66da95"
+      },
+      {
+        "name": "lint",
+        "command": "pnpm run lint",
+        "kind": "other",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": null,
+        "exitCode": 0,
+        "durationMs": 2898,
+        "outputSha256": "19155a44356b3c29ed3cc6e26e026f172cc0fb01fbdfc8663e578fb65aece703"
+      },
+      {
+        "name": "typecheck",
+        "command": "pnpm run typecheck",
+        "kind": "other",
+        "authority": "pre-existing",
+        "result": "fail",
+        "collected": null,
+        "exitCode": 2,
+        "durationMs": 2460,
+        "outputSha256": "c0834309f369f01d1e9042053280c2f9f499da15854f01db6862f8e5bb78b9ce"
+      },
+      {
+        "name": "build",
+        "command": "pnpm run build",
+        "kind": "other",
+        "authority": "pre-existing",
+        "result": "fail",
+        "collected": null,
+        "exitCode": 2,
+        "durationMs": 2766,
+        "outputSha256": "e72d3d1eb7dac8d59d68ebfc3d937671df512301aeacf53c8e7dc775cfc20932"
+      }
+    ],
+    "heldOut": []
+  },
+  "heldOut": {
+    "status": "unmeasured",
+    "reason": "no held-out checks are sealed for this workspace"
+  },
+  "artifacts": [
+    {
+      "path": "packages/narrative/src/render.ts",
+      "category": "source"
+    },
+    {
+      "path": "packages/narrative/src/templates.ts",
+      "category": "source"
+    }
+  ],
+  "testFiles": {
+    "added": [],
+    "modified": [],
+    "deleted": [],
+    "moved": [],
+    "relocated": []
+  },
+  "coverage": {
+    "status": "measured",
+    "tool": "v8",
+    "changedLines": 148,
+    "coveredLines": 0,
+    "files": [
+      {
+        "path": "packages/narrative/src/render.ts",
+        "covered": [],
+        "uncovered": [
+          28
+        ]
+      },
+      {
+        "path": "packages/narrative/src/templates.ts",
+        "covered": [],
+        "uncovered": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          7,
+          9,
+          10,
+          11,
+          12,
+          14,
+          16,
+          18,
+          19,
+          21,
+          22,
+          23,
+          25,
+          26,
+          27,
+          28,
+          30,
+          32,
+          34,
+          35,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          44,
+          46,
+          48,
+          50,
+          51,
+          52,
+          53,
+          54,
+          55,
+          56,
+          58,
+          60,
+          62,
+          63,
+          64,
+          65,
+          66,
+          67,
+          68,
+          70,
+          71,
+          72,
+          73,
+          74,
+          75,
+          76,
+          77,
+          79,
+          81,
+          83,
+          84,
+          85,
+          86,
+          88,
+          90,
+          91,
+          93,
+          94,
+          95,
+          96,
+          97,
+          98,
+          99,
+          100,
+          101,
+          102,
+          103,
+          104,
+          105,
+          106,
+          107,
+          108,
+          109,
+          110,
+          111,
+          112,
+          113,
+          114,
+          115,
+          116,
+          117,
+          118,
+          119,
+          120,
+          121,
+          122,
+          123,
+          124,
+          125,
+          126,
+          127,
+          128,
+          129,
+          130,
+          131,
+          132,
+          133,
+          134,
+          135,
+          136,
+          137,
+          138,
+          139,
+          140,
+          141,
+          142,
+          143,
+          144,
+          145,
+          146,
+          147,
+          148,
+          149,
+          150,
+          151,
+          152,
+          153,
+          154,
+          155,
+          156,
+          157,
+          158,
+          159,
+          160,
+          161,
+          162,
+          163,
+          164,
+          165,
+          166,
+          167,
+          168,
+          169,
+          170,
+          171,
+          172
+        ]
+      }
+    ]
+  },
+  "mutation": {
+    "status": "survived",
+    "path": "packages/narrative/src/templates.ts",
+    "line": 26,
+    "operator": "- to +",
+    "syntax": "valid",
+    "rejected": 0
+  },
+  "producer": {
+    "name": "swarm-orchestrator",
+    "version": "15.0.0",
+    "model": "qwen3.8:27b",
+    "promptSha256": "3cba86804639790c62d8880cde4afb9182aa70bd113006061d47e55e836978e0",
+    "ledgerSha256": "4df9bcaa468e737795cc0a558628b7c79e8baa68221bafad196d35afe6c100b4",
+    "ledgerRecords": 145,
+    "reportSha256": "ac499c61c7276d577f511cc4ffb7deef6ceae9625afd340975eab7538e88e2c6",
+    "instructions": [
+      {
+        "path": "CLAUDE.md",
+        "sha256": "4103e80d78d0eb89d23120221d48d8f735665612df5edbe175c8dd9808ca04eb"
+      }
+    ]
+  },
+  "environment": {
+    "sha256": "ecb7bc4fd0ba20b21383f9e1ba0abf91e73a9c1cdb43d03b7bf90365deeed923",
+    "node": "in node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 (sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413)",
+    "platform": "linux-arm64",
+    "git": "2.54.0 (Apple Git-157)",
+    "dependencies": "prepared",
+    "dependencyTreeSha256": "9aeef0d47dd5776a1ead414d4274ee440759b544c9eb2c1c03c009dd9e67ff53",
+    "reproducible": true
+  },
+  "execution": {
+    "mode": "isolated",
+    "statement": "isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared",
+    "network": "closed",
+    "image": "node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 (sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 arm64)",
+    "dependencies": {
+      "mode": "prepared",
+      "reproducible": true,
+      "lockfiles": {
+        "pnpm-lock.yaml": "adda6ac5da6a84d08099160c0515b2e9eaa833c63d5c3663e22588018ef10373"
+      },
+      "treeSha256": "9aeef0d47dd5776a1ead414d4274ee440759b544c9eb2c1c03c009dd9e67ff53",
+      "note": "prepared from the lockfile and digested"
+    },
+    "policyMet": true,
+    "problems": []
+  },
+  "policy": {
+    "behaviorChange": "none"
+  },
+  "unmeasured": [
+    "check typecheck: it fails at the base commit and with the candidate, and no per-test report tells a new failure from an old one",
+    "check build: it fails at the base commit and with the candidate, and no per-test report tells a new failure from an old one",
+    "held-out: no held-out checks are sealed for this workspace"
+  ],
+  "logs": [
+    {
+      "name": "logs/test.txt",
+      "sha256": "fa355dafcf0bce553d44e6262821fba5114f14608cd8bd7528f92501989fa71d"
+    },
+    {
+      "name": "logs/lint.txt",
+      "sha256": "19155a44356b3c29ed3cc6e26e026f172cc0fb01fbdfc8663e578fb65aece703"
+    },
+    {
+      "name": "logs/typecheck.txt",
+      "sha256": "c0834309f369f01d1e9042053280c2f9f499da15854f01db6862f8e5bb78b9ce"
+    },
+    {
+      "name": "logs/build.txt",
+      "sha256": "e72d3d1eb7dac8d59d68ebfc3d937671df512301aeacf53c8e7dc775cfc20932"
+    }
+  ],
+  "verifier": {
+    "name": "swarm-verify",
+    "version": "2.0.0"
+  },
+  "version": "swarm-verify.result/v1",
+  "snapshot": {
+    "base": "830f36638df85eb611912ff89a305d4a326af3c7",
+    "patchSha256": "689bff7fc5ec54f5b1d5b178f1cdf7b0fc77ead09fc90b845674104d0e037501",
+    "treeSha256": "3538b87be1a9b3bff4d3ecff32510ec3ae97492787c03742f64b2b9156236d3d"
+  },
+  "integrity": {
+    "signed": true,
+    "signer": {
+      "kind": "key",
+      "fingerprint": "8c5ed5b218745e42c16a99d98024241cbf74c7aa7bf570fd6e5495491d0b5dae"
+    },
+    "statementSha256": "a17bf95328f3932210511fce9750d8dab025b678da177811165a6e08ecda648f",
+    "problems": []
+  },
+  "evidence": {
+    "directory": "/Users/brad/.swarm/sessions/20261101T155037-25f560/final/verification",
+    "bundle": "/Users/brad/.swarm/sessions/20261101T155037-25f560/final/verification/attestation.sigstore.json",
+    "statement": "/Users/brad/.swarm/sessions/20261101T155037-25f560/final/verification/statement.json",
+    "patch": "/Users/brad/.swarm/sessions/20261101T155037-25f560/final/verification/change.patch",
+    "publicKey": "/Users/brad/.swarm/sessions/20261101T155037-25f560/final/verification/attestation.pub.pem"
+  },
+  "failureOutput": "$ pnpm run test\ndist/node/chunks/config.js:\u001b[2m27131:22\u001b[22m\u001b[39m\n\u001b[90m \u001b[2m❯\u001b[22m node_modules/.pnpm/vite@7.3.3_@types+node@24.12.4_yaml@2.9.0/node_modules/vite/dist/node/chunks/config.js:\u001b[2m27197:32\u001b[22m\u001b[39m\n\n\u001b[31m\u001b[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/17]⎯\u001b[22m\u001b[39m\n\n\n\u001b[31m⎯⎯⎯⎯⎯⎯⎯\u001b[39m\u001b[1m\u001b[41m Failed Tests 3 \u001b[49m\u001b[22m\u001b[31m⎯⎯⎯⎯⎯⎯⎯\u001b[39m\n\n\u001b[41m\u001b[1m FAIL \u001b[22m\u001b[49m packages/cli/test/commands.install.test.ts\u001b[2m > \u001b[22mPhase 3: installShellShims\u001b[2m > \u001b[22mcreates shim directory and reports installed binaries\n\u001b[31m\u001b[1mError\u001b[22m: depose-shim binary not found. Build it first:\n  (cd apps/capture-shim && make build-local)\nOr install a release that includes depose-shim. Refusing to install shell shims because that would leave dangling symlinks (including \"rm\") on your PATH.\u001b[39m\n\u001b[36m \u001b[2m❯\u001b[22m installShellShims packages/cli/src/commands/install-shell.ts:\u001b[2m85:11\u001b[22m\u001b[39m\n    \u001b[90m 83| \u001b[39m  \u001b[35mconst\u001b[39m shimBinary \u001b[33m=\u001b[39m options\u001b[33m.\u001b[39mshimBinary \u001b[33m||\u001b[39m \u001b[34mfindShimBinary\u001b[39m()\u001b[33m;\u001b[39m\n    \u001b[90m 84| \u001b[39m  \u001b[35mif\u001b[39m (\u001b[33m!\u001b[39mshimBinary \u001b[33m||\u001b[39m \u001b[33m!\u001b[39m\u001b[34mexistsSync\u001b[39m(shimBinary)) {\n    \u001b[90m 85| \u001b[39m    \u001b[35mthrow\u001b[39m \u001b[35mnew\u001b[39m \u001b[33mError\u001b[39m(\n    \u001b[90m   | \u001b[39m          \u001b[31m^\u001b[39m\n    \u001b[90m 86| \u001b[39m      \u001b[32m'depose-shim binary not found. Build it first:\\n'\u001b[39m \u001b[33m+\u001b[39m\n    \u001b[90m 87| \u001b[39m      \u001b[32m'  (cd apps/capture-shim && make build-local)\\n'\u001b[39m \u001b[33m+\u001b[39m\n\u001b[90m \u001b[2m❯\u001b[22m packages/cli/test/commands.install.test.ts:\u001b[2m130:20\u001b[22m\u001b[39m\n\n\u001b[31m\u001b[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/17]⎯\u001b[22m\u001b[39m\n\n\u001b[41m\u001b[1m FAIL \u001b[22m\u001b[49m packages/cli/test/commands.install.test.ts\u001b[2m > \u001b[22mPhase 3: installShellShims\u001b[2m > \u001b[22mcreates capture directory\n\u001b[31m\u001b[1mError\u001b[22m: depose-shim binary not found. Build it first:\n  (cd apps/capture-shim && make build-local)\nOr install a release that includes depose-shim. Refusing to install shell shims because that would leave dangling symlinks (including \"rm\") on your PATH.\u001b[39m\n\u001b[36m \u001b[2m❯\u001b[22m installShellShims packages/cli/src/commands/install-shell.ts:\u001b[2m85:11\u001b[22m\u001b[39m\n    \u001b[90m 83| \u001b[39m  \u001b[35mconst\u001b[39m shimBinary \u001b[33m=\u001b[39m options\u001b[33m.\u001b[39mshimBinary \u001b[33m||\u001b[39m \u001b[34mfindShimBinary\u001b[39m()\u001b[33m;\u001b[39m\n    \u001b[90m 84| \u001b[39m  \u001b[35mif\u001b[39m (\u001b[33m!\u001b[39mshimBinary \u001b[33m||\u001b[39m \u001b[33m!\u001b[39m\u001b[34mexistsSync\u001b[39m(shimBinary)) {\n    \u001b[90m 85| \u001b[39m    \u001b[35mthrow\u001b[39m \u001b[35mnew\u001b[39m \u001b[33mError\u001b[39m(\n    \u001b[90m   | \u001b[39m          \u001b[31m^\u001b[39m\n    \u001b[90m 86| \u001b[39m      \u001b[32m'depose-shim binary not found. Build it first:\\n'\u001b[39m \u001b[33m+\u001b[39m\n    \u001b[90m 87| \u001b[39m      \u001b[32m'  (cd apps/capture-shim && make build-local)\\n'\u001b[39m \u001b[33m+\u001b[39m\n\u001b[90m \u001b[2m❯\u001b[22m packages/cli/test/commands.install.test.ts:\u001b[2m142:5\u001b[22m\u001b[39m\n\n\u001b[31m\u001b[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/17]⎯\u001b[22m\u001b[39m\n\n\u001b[41m\u001b[1m FAIL \u001b[22m\u001b[49m packages/cli/test/commands.install.test.ts\u001b[2m > \u001b[22mPhase 3: installShellShims\u001b[2m > \u001b[22mreturns empty installed binaries without real shim binary\n\u001b[31m\u001b[1mError\u001b[22m: depose-shim binary not found. Build it first:\n  (cd apps/capture-shim && make build-local)\nOr install a release that includes depose-shim. Refusing to install shell shims because that would leave dangling symlinks (including \"rm\") on your PATH.\u001b[39m\n\u001b[36m \u001b[2m❯\u001b[22m installShellShims packages/cli/src/commands/install-shell.ts:\u001b[2m85:11\u001b[22m\u001b[39m\n    \u001b[90m 83| \u001b[39m  \u001b[35mconst\u001b[39m shimBinary \u001b[33m=\u001b[39m options\u001b[33m.\u001b[39mshimBinary \u001b[33m||\u001b[39m \u001b[34mfindShimBinary\u001b[39m()\u001b[33m;\u001b[39m\n    \u001b[90m 84| \u001b[39m  \u001b[35mif\u001b[39m (\u001b[33m!\u001b[39mshimBinary \u001b[33m||\u001b[39m \u001b[33m!\u001b[39m\u001b[34mexistsSync\u001b[39m(shimBinary)) {\n    \u001b[90m 85| \u001b[39m    \u001b[35mthrow\u001b[39m \u001b[35mnew\u001b[39m \u001b[33mError\u001b[39m(\n    \u001b[90m   | \u001b[39m          \u001b[31m^\u001b[39m\n    \u001b[90m 86| \u001b[39m      \u001b[32m'depose-shim binary not found. Build it first:\\n'\u001b[39m \u001b[33m+\u001b[39m\n    \u001b[90m 87| \u001b[39m      \u001b[32m'  (cd apps/capture-shim && make build-local)\\n'\u001b[39m \u001b[33m+\u001b[39m\n\u001b[90m \u001b[2m❯\u001b[22m packages/cli/test/commands.install.test.ts:\u001b[2m153:20\u001b[22m\u001b[39m\n\n\u001b[31m\u001b[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/17]⎯\u001b[22m\u001b[39m\n\n\n\n$ pnpm run typecheck\n\n> depose@0.1.0 typecheck /Users/brad/.swarm/work/swarm-verify-QsfO3p/tree\n> tsc --build --noEmit\n\npackages/chain/src/hash-chain.ts(18,59): error TS2307: Cannot find module '@depose/core' or its corresponding type declarations.\npackages/narrative/tsconfig.json(12,5): error TS6310: Referenced project '/Users/brad/.swarm/work/swarm-verify-QsfO3p/tree/packages/core' may not disable emit.\npackages/bundle/tsconfig.json(13,5): error TS6310: Referenced project '/Users/brad/.swarm/work/swarm-verify-QsfO3p/tree/packages/core' may not disable emit.\npackages/bundle/tsconfig.json(14,5): error TS6310: Referenced project '/Users/brad/.swarm/work/swarm-verify-QsfO3p/tree/packages/chain' may not disable emit.\npackages/bundle/tsconfig.json(15,5): error TS6310: Referenced project '/Users/brad/.swarm/work/swarm-verify-QsfO3p/tree/packages/narrative' may not disable emit.\npackages/capture-claude/tsconfig.json(12,18): error TS6310: Referenced project '/Users/brad/.swarm/work/swarm-verify-QsfO3p/tree/packages/core' may not disable emit.\npackages/bundle/tsconfig.json(14,5): error TS6310: Referenced project '/Users/brad/.swarm/work/swarm-verify-QsfO3p/tree/packages/chain' may not disable emit.\npackages/bundle/tsconfig.json(15,5): error TS6310: Referenced project '/Users/brad/.swarm/work/swarm-verify-QsfO3p/tree/packages/narrative' may not disable emit.\npackages/cli/tsconfig.json(12,18): error TS6310: Referenced project '/Users/brad/.swarm/work/swarm-verify-QsfO3p/tree/packages/core' may not disable emit.\npackages/cli/tsconfig.json(12,41): error TS6310: Referenced project '/Users/brad/.swarm/work/swarm-verify-QsfO3p/tree/packages/bundle' may not disable emit.\n ELIFECYCLE  Command failed with exit code 2.\n\n\n$ pnpm run build\n\n> depose@0.1.0 build /Users/brad/.swarm/work/swarm-verify-QsfO3p/tree\n> tsc --build && npm run build:shim && npm run build:bundle\n\n\n> depose@0.1.0 build:shim\n> cd apps/capture-shim && make build-local\n\ngo build -ldflags \"-s -w\" -o depose-shim .\n ELIFECYCLE  Command failed with exit code 2.\n/bin/sh: 1: go: not found\nmake: *** [Makefile:21: build-local] Error 127\n"
+}

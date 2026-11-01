@@ -1,0 +1,60 @@
+$ find . -type f -name "*.py" | head -50
+$ find . -type f -name "*.py" | grep -E "(history|mypy|pyproject|hatch)" | head -30
+$ ls -la core/history_io.py core/history_store.py 2>/dev/null; ls -la tracemantle/ 2>/dev/null; cat pyproject.toml 2>/dev/null | head -80
+$ cat pyproject.toml | grep -A 30 "\[tool.mypy\]"
+$ ls -la core/ 2>/dev/null; ls -la src/tracemantle/ 2>/dev/null | head -30
+$ ls -la core/; cat core/history_io.py | head -20; echo "---"; cat core/history_store.py | head -20
+$ find . -name "history_io.py" -o -name "history_store.py" | grep -v ".venv"
+$ cat src/tracemantle/core/history_io.py | head -30
+$ cat src/tracemantle/history_store.py | head -30
+$ cat src/tracemantle/core/history.py | head -30
+$ cat src/tracemantle/core/history.py | wc -l; cat src/tracemantle/core/history_io.py | wc -l; cat src/tracemantle/history_store.py | wc -l
+$ cat src/tracemantle/core/history.py
+$ cat src/tracemantle/core/history_io.py
+$ cat src/tracemantle/history_store.py
+$ cat src/tracemantle/core/__init__.py
+$ cat src/tracemantle/__init__.py | head -30
+$ cat tests/test_history_io.py | head -30
+$ cat tests/test_history_model.py | head -30
+$ cat tests/test_history_regression.py | head -30
+$ grep -r "from tracemantle.history_store\|from tracemantle.core.history_io\|import history_store\|import.*history_io" --include="*.py" src/ | grep -v ".venv"
+$ cat src/skillcheck/core/history_io.py
+$ grep -A 5 "packages" pyproject.toml
+$ ls -la src/tracemantle/history/ 2>/dev/null; echo "---"; ls -la src/skillcheck/core/ 2>/dev/null
+$ cat src/skillcheck/core/history.py
+requirements R1
+$ mkdir -p src/tracemantle/history && cp src/tracemantle/core/history_io.py src/tracemantle/history/history_io.py && cp src/tracemantle/history_store.py src/tracemantle/history/history_store.py
+$ cat > src/tracemantle/history/__init__.py << 'EOF'
+$ cat > src/tracemantle/history/history_io.py << 'PYEOF'
+$ cat > src/tracemantle/history/history_store.py << 'PYEOF'
+$ cat > src/tracemantle/core/history_io.py << 'EOF'
+$ cat > src/tracemantle/history_store.py << 'EOF'
+$ sed -i 's/from tracemantle.history_store import/from tracemantle.history.history_store import/g' src/tracemantle/product_commands.py src/tracemantle/commands.py
+$ sed -i '' 's/from tracemantle\.history_store import/from tracemantle.history.history_store import/g' src/tracemantle/product_commands.py src/tracemantle/commands.py
+$ sed -i '' 's/from tracemantle\.history_store import/from tracemantle.history.history_store import/g' src/tracemantle/history/history_io.py
+$ sed -i '' 's/from tracemantle\.core\.history_io import/from tracemantle.history.history_io import/g' src/tracemantle/history/history_store.py
+$ sed -i '' 's/from tracemantle\.core\.history_io import/from tracemantle.history.history_io import/g' src/tracemantle/core/history.py
+$ mkdir -p tests/history && mv tests/test_history_io.py tests/history/ && mv tests/test_history_model.py tests/history/ && mv tests/test_history_regression.py tests/history/
+$ grep -A 5 "\[tool.mypy\]" pyproject.toml
+$ grep -A 8 "\[tool.mypy\]" pyproject.toml
+$ grep -B 2 -A 5 "packages" pyproject.toml
+$ cat src/tracemantle/core/history.py | grep -A 3 "from tracemantle"
+$ cat src/tracemantle/core/history_io.py && echo "===" && cat src/tracemantle/history_store.py
+$ ls -la src/tracemantle/history/ && echo "===" && ls -la tests/history/
+$ cd . && python -m pytest tests/history/ -v --no-cov 2>&1 | tail -40
+$ which python3 && python3 -m pytest tests/history/ -v --no-cov 2>&1 | tail -40
+$ python3 -m pytest tests/history/ -v 2>&1 | tail -40
+$ python3 -m pytest tests/history/ -v -p no:cov 2>&1 | tail -40
+$ cd . && PYTHONPATH=src python3 -c "from tracemantle.history import load_ledger, save_ledger, append_run; print('history package OK')" && PYTHONPATH=src python3 -c "from tracemantle.core.history_io import load_ledger; print('shim history_io OK')" && PYTHONPATH=src python3 -c "from tracemantle.history_store import append_history; print('shim history_store OK')"
+$ cat > src/tracemantle/history/history_store.py << 'PYEOF'
+$ cd . && PYTHONPATH=src python3 -c "from tracemantle.history import load_ledger, save_ledger, append_run; print('history package OK')" && PYTHONPATH=src python3 -c "from tracemantle.core.history_io import load_ledger; print('shim history_io OK')" && PYTHONPATH=src python3 -c "from tracemantle.history_store import append_history; print('shim history_store OK')"
+requirements R1
+$ grep "from tracemantle.core.history" src/tracemantle/history/history_store.py
+$ cat > src/tracemantle/history/__init__.py << 'EOF'
+$ cd . && PYTHONPATH=src python3 -c "from tracemantle.history import load_ledger, save_ledger, append_run; print('history package OK')" && PYTHONPATH=src python3 -c "from tracemantle.core.history_io import load_ledger; print('shim history_io OK')" && PYTHONPATH=src python3 -c "from tracemantle.history_store import append_history; print('shim history_store OK')"
+$ cat > src/tracemantle/history/history_store.py << 'PYEOF'
+$ cd . && PYTHONPATH=src python3 -c "from tracemantle.history import load_ledger, save_ledger, append_run; print('history package OK')" && PYTHONPATH=src python3 -c "from tracemantle.core.history_io import load_ledger; print('shim history_io OK')" && PYTHONPATH=src python3 -c "from tracemantle.history_store import append_history; print('shim history_store OK')"
+$ cat > src/tracemantle/core/history_io.py << 'EOF'
+$ cat > src/tracemantle/history_store.py << 'EOF'
+$ cd . && PYTHONPATH=src python3 -c "from tracemantle.history import load_ledger, save_ledger, append_run; print('history package OK')" && PYTHONPATH=src python3 -c "from tracemantle.core.history_io import load_ledger; print('shim history_io OK')" && PYTHONPATH=src python3 -c "from tracemantle.history_store import append_history; print('shim history_store OK')"
+$ cd . && PYTHONPATH=src python3 -m pytest tests/history/ -v 2>&1 | tail -50

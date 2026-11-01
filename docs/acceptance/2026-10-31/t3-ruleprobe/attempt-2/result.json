@@ -1,0 +1,332 @@
+{
+  "state": "incomplete",
+  "scope": "requirements",
+  "reasons": [],
+  "base": {
+    "commit": "e8e265610cc910949546a47436c985d42a588b1e"
+  },
+  "change": {
+    "source": "patch",
+    "applied": true,
+    "files": [
+      {
+        "path": "src/utils/safe-path.ts",
+        "status": "modified"
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "resolveSafePath rejects paths inside cwd on macOS because the boundary is not realpath'd (src/utils/safe-path.ts). Fix the boundary comparison without changing tests.",
+      "source": "user",
+      "kind": "fix",
+      "required": true,
+      "assumptions": [
+        "The issue is that the current implementation compares paths without resolving symlinks/real paths, which causes incorrect behavior on macOS where /var/folders and /private/var/folders are the same directory but different strings"
+      ],
+      "expected": {
+        "tests": [
+          {
+            "name": "tests/utils/safe-path.test.ts > resolveSafePath > accepts a path resolving inside cwd"
+          },
+          {
+            "name": "tests/utils/safe-path.test.ts > resolveSafePath > accepts cwd itself as a valid path"
+          },
+          {
+            "name": "tests/utils/safe-path.test.ts > resolveSafePath > follows a symlink to a file inside cwd"
+          }
+        ],
+        "checks": [
+          "build"
+        ],
+        "structure": [
+          {
+            "path": "src/utils/safe-path.ts",
+            "contains": "resolveSafePath"
+          }
+        ],
+        "packages": []
+      },
+      "status": "unverified",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/utils/safe-path.test.ts::resolveSafePath > accepts a path resolving inside cwd",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/utils/safe-path.test.ts::resolveSafePath > accepts cwd itself as a valid path",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/utils/safe-path.test.ts::resolveSafePath > follows a symlink to a file inside cwd",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "check",
+          "ref": "build",
+          "authority": "pre-existing",
+          "outcome": "pass",
+          "detail": "pass"
+        },
+        {
+          "kind": "structure",
+          "ref": "src/utils/safe-path.ts contains \"resolveSafePath\"",
+          "authority": "pre-existing",
+          "outcome": "observed",
+          "detail": "expected contains"
+        }
+      ],
+      "limitation": "no mapped test fails before the change and passes after it",
+      "nextAction": "add a test that fails against the base and passes with the change"
+    }
+  ],
+  "regression": {
+    "status": "none",
+    "newFailures": [],
+    "inherited": [],
+    "removed": [],
+    "unresolved": []
+  },
+  "checks": [
+    {
+      "name": "test",
+      "command": "npm run test",
+      "kind": "test",
+      "authority": "pre-existing",
+      "result": "pass",
+      "collected": 1357,
+      "exitCode": 0,
+      "durationMs": 47224,
+      "outputSha256": "451a85324570767a1347cc889adad24501a45877373e0b9707c58d1e1c4232da",
+      "tests": {
+        "runner": "vitest",
+        "collected": {
+          "base": 1357,
+          "candidate": 1357
+        },
+        "counts": {
+          "preserved": 1348,
+          "renamed": 0,
+          "fixed": 9,
+          "newFailures": 0,
+          "inherited": 0,
+          "removed": 0,
+          "superseded": 0,
+          "expectationChanges": 0,
+          "added": 0,
+          "addedFailing": 0,
+          "witnesses": 0,
+          "skipped": 0
+        },
+        "fixed": [
+          "tests/cli/changed-since.test.ts::verify --changed-since (real git fixture) > full run reports the violation in both clean.ts and dirty.ts",
+          "tests/cli/changed-since.test.ts::verify --changed-since (real git fixture) > --changed-since base reports only clean.ts, not dirty.ts",
+          "tests/cli/changed-since.test.ts::verify --changed-since (real git fixture) > --changed-since accepts a commit SHA in addition to tags",
+          "tests/cli/changed-since.test.ts::verify --changed-since (real git fixture) > --changed-since HEAD (empty diff) reports no per-file violations",
+          "tests/cli/changed-since.test.ts::verify --changed-since (real git fixture) > invalid ref exits 2 with the ref name in stderr",
+          "tests/cli/changed-since.test.ts::verify --changed-since (real git fixture) > missing git on PATH exits 2 and names git in the error",
+          "tests/cli/changed-since.test.ts::verify --changed-since (real git fixture) > flag omitted produces no error and reports both violations",
+          "tests/cli/semantic-flags.test.ts::analyze command semantic flags > shows semantic section when --semantic flag is used without a key",
+          "tests/cli/semantic-flags.test.ts::analyze command semantic flags > runs deterministic analysis without --semantic flag"
+        ],
+        "newFailures": [],
+        "inherited": [],
+        "removed": [],
+        "renamed": [],
+        "superseded": [],
+        "expectationChanges": [],
+        "added": [],
+        "addedFailing": [],
+        "witnesses": []
+      }
+    },
+    {
+      "name": "lint",
+      "command": "npm run lint",
+      "kind": "other",
+      "authority": "pre-existing",
+      "result": "pass",
+      "collected": null,
+      "exitCode": 0,
+      "durationMs": 2385,
+      "outputSha256": "333e5b53d2edf9f695dc365b4af6f0e61d9bb82c74b393ef4016760a8dc40ac7"
+    },
+    {
+      "name": "build",
+      "command": "npm run build",
+      "kind": "other",
+      "authority": "pre-existing",
+      "result": "pass",
+      "collected": null,
+      "exitCode": 0,
+      "durationMs": 2869,
+      "outputSha256": "f35caa99ffa7a4e65c61a08772653db66556db43a84727981e821eee72876d4a"
+    }
+  ],
+  "baseline": {
+    "status": "measured",
+    "cached": false,
+    "environmentSha256": "f926fb5fa71d2cb8e3210e5d87b76bc99f35826d60e2da1448614614a4994070",
+    "checks": [
+      {
+        "name": "test",
+        "command": "npm run test",
+        "kind": "test",
+        "authority": "pre-existing",
+        "result": "fail",
+        "collected": 1357,
+        "exitCode": 1,
+        "durationMs": 29142,
+        "outputSha256": "58aeaa73014dba5e3f1ded3c8380ce9b08b0e9b67f3e078b589c52102001a5e5"
+      },
+      {
+        "name": "lint",
+        "command": "npm run lint",
+        "kind": "other",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": null,
+        "exitCode": 0,
+        "durationMs": 2465,
+        "outputSha256": "333e5b53d2edf9f695dc365b4af6f0e61d9bb82c74b393ef4016760a8dc40ac7"
+      },
+      {
+        "name": "build",
+        "command": "npm run build",
+        "kind": "other",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": null,
+        "exitCode": 0,
+        "durationMs": 2820,
+        "outputSha256": "f35caa99ffa7a4e65c61a08772653db66556db43a84727981e821eee72876d4a"
+      }
+    ],
+    "heldOut": []
+  },
+  "heldOut": {
+    "status": "unmeasured",
+    "reason": "no held-out checks are sealed for this workspace"
+  },
+  "artifacts": [
+    {
+      "path": "src/utils/safe-path.ts",
+      "category": "source"
+    }
+  ],
+  "testFiles": {
+    "added": [],
+    "modified": [],
+    "deleted": [],
+    "moved": [],
+    "relocated": []
+  },
+  "coverage": {
+    "status": "unmeasured",
+    "reason": "the V8 offsets for src/utils/safe-path.ts run past the file, so a transform ran first"
+  },
+  "mutation": {
+    "status": "killed",
+    "path": "src/utils/safe-path.ts",
+    "line": 57,
+    "operator": "+ to -",
+    "syntax": "valid",
+    "rejected": 0
+  },
+  "producer": {
+    "name": "swarm-orchestrator",
+    "version": "15.0.0",
+    "model": "swarm-redesign-qwen36-32k:latest",
+    "promptSha256": "c838864e548e5222ed8bc315f75b0425d236e7474c19fb1c39b74eb5a7bc6d29",
+    "ledgerSha256": "3a92614ac74384add63252c2be1bb0282379d9e46b629a5226a6874b8b41fd8a",
+    "ledgerRecords": 127,
+    "reportSha256": "7678db9eaa0029c663b8094f8cfe78330c3f5e1c112bf565a742c4b7dccd9472",
+    "instructions": [
+      {
+        "path": "AGENTS.md",
+        "sha256": "910b63c3d595cb18b0e460d7122fb1c0c78a4d074c1011ed4db6d3dd3f3872b2"
+      }
+    ]
+  },
+  "environment": {
+    "sha256": "f926fb5fa71d2cb8e3210e5d87b76bc99f35826d60e2da1448614614a4994070",
+    "node": "in node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 (sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413)",
+    "platform": "linux-arm64",
+    "git": "2.54.0 (Apple Git-157)",
+    "dependencies": "prepared",
+    "dependencyTreeSha256": "1ad95fd5cc941b58e05cc5456c823344644f827ebdf2c1381f6864708aa7054f",
+    "reproducible": true
+  },
+  "execution": {
+    "mode": "isolated",
+    "statement": "isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared",
+    "network": "closed",
+    "image": "node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 (sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 arm64)",
+    "dependencies": {
+      "mode": "prepared",
+      "reproducible": true,
+      "lockfiles": {
+        "package-lock.json": "51d95a490777a3c38058e7477ebf799e55fd4cfd284db71938fb4b91a9f105a1"
+      },
+      "treeSha256": "1ad95fd5cc941b58e05cc5456c823344644f827ebdf2c1381f6864708aa7054f",
+      "note": "prepared from the lockfile and digested"
+    },
+    "policyMet": true,
+    "problems": []
+  },
+  "policy": {
+    "behaviorChange": "none"
+  },
+  "unmeasured": [
+    "held-out: no held-out checks are sealed for this workspace",
+    "coverage: the V8 offsets for src/utils/safe-path.ts run past the file, so a transform ran first"
+  ],
+  "logs": [
+    {
+      "name": "logs/test.txt",
+      "sha256": "451a85324570767a1347cc889adad24501a45877373e0b9707c58d1e1c4232da"
+    },
+    {
+      "name": "logs/lint.txt",
+      "sha256": "333e5b53d2edf9f695dc365b4af6f0e61d9bb82c74b393ef4016760a8dc40ac7"
+    },
+    {
+      "name": "logs/build.txt",
+      "sha256": "f35caa99ffa7a4e65c61a08772653db66556db43a84727981e821eee72876d4a"
+    }
+  ],
+  "verifier": {
+    "name": "swarm-verify",
+    "version": "2.0.0"
+  },
+  "version": "swarm-verify.result/v1",
+  "snapshot": {
+    "base": "e8e265610cc910949546a47436c985d42a588b1e",
+    "patchSha256": "5c645448457d33ee2f3f56240fa5383d5a655c7573ff4de7a877a5370bee998a",
+    "treeSha256": "02adc85ab20c6a0cd47f8ba86e207817de94e7a3e1f8edf93d90cffe125d93ee"
+  },
+  "integrity": {
+    "signed": true,
+    "signer": {
+      "kind": "key",
+      "fingerprint": "8c5ed5b218745e42c16a99d98024241cbf74c7aa7bf570fd6e5495491d0b5dae"
+    },
+    "statementSha256": "38f30b18d75d7c664f52087eb0c9a02c11b2a590a20a706368f41692576e2ece",
+    "problems": []
+  },
+  "evidence": {
+    "directory": "/Users/brad/.swarm/sessions/20261101T041551-8a6555/verifications/3",
+    "bundle": "/Users/brad/.swarm/sessions/20261101T041551-8a6555/verifications/3/attestation.sigstore.json",
+    "statement": "/Users/brad/.swarm/sessions/20261101T041551-8a6555/verifications/3/statement.json",
+    "patch": "/Users/brad/.swarm/sessions/20261101T041551-8a6555/verifications/3/change.patch",
+    "publicKey": "/Users/brad/.swarm/sessions/20261101T041551-8a6555/verifications/3/attestation.pub.pem"
+  },
+  "failureOutput": ""
+}

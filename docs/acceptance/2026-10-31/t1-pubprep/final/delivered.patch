@@ -1,0 +1,74 @@
+diff --git a/src/cli.ts b/src/cli.ts
+index 3eae9fd..d741f78 100644
+--- a/src/cli.ts
++++ b/src/cli.ts
+@@ -58,6 +58,19 @@ export function parseArgs(argv: readonly string[]): CliArgs {
+   };
+   for (let i = 0; i < argv.length; i++) {
+     const a = argv[i];
++    if (a === undefined) continue;
++    if (a.startsWith("--max-budget-usd=")) {
++      // --max-budget-usd=<value>
++      const raw = a.slice("--max-budget-usd=".length);
++      const n = Number(raw);
++      if (raw === "" || !Number.isFinite(n) || n < 0) {
++        throw new Error(
++          `--max-budget-usd requires a non-negative number, got: ${raw}`,
++        );
++      }
++      args.maxBudgetUsd = n;
++      continue;
++    }
+     switch (a) {
+       case "--dry-run":
+         args.dryRun = true;
+@@ -83,14 +96,16 @@ export function parseArgs(argv: readonly string[]): CliArgs {
+         args.openPr = false;
+         break;
+       case "--max-budget-usd": {
+-        const raw = argv[i + 1];
+-        if (raw === undefined) {
+-          throw new Error("--max-budget-usd requires a numeric value (USD).");
++        const next = argv[i + 1];
++        if (next === undefined || next.startsWith("--")) {
++          throw new Error(
++            "--max-budget-usd requires a numeric value (USD).",
++          );
+         }
+-        const n = Number(raw);
++        const n = Number(next);
+         if (!Number.isFinite(n) || n < 0) {
+           throw new Error(
+-            `--max-budget-usd requires a non-negative number, got: ${raw}`,
++            `--max-budget-usd requires a non-negative number, got: ${next}`,
+           );
+         }
+         args.maxBudgetUsd = n;
+diff --git a/test/cli.test.ts b/test/cli.test.ts
+index 4d95c69..70bd80f 100644
+--- a/test/cli.test.ts
++++ b/test/cli.test.ts
+@@ -47,6 +47,23 @@ describe("parseArgs", () => {
+     );
+   });
+ 
++  it("parses --max-budget-usd=<n>", () => {
++    expect(parseArgs(["--max-budget-usd=5"]).maxBudgetUsd).toBe(5);
++    expect(parseArgs(["--max-budget-usd=0"]).maxBudgetUsd).toBe(0);
++  });
++
++  it("rejects --max-budget-usd= with an empty value", () => {
++    expect(() => parseArgs(["--max-budget-usd="])).toThrow(
++      /non-negative number/,
++    );
++  });
++
++  it("rejects --max-budget-usd followed by another flag", () => {
++    expect(() => parseArgs(["--max-budget-usd", "--dry-run"])).toThrow(
++      /requires a numeric value/,
++    );
++  });
++
+   it("parses --dry-run", () => {
+     expect(parseArgs(["--dry-run"]).dryRun).toBe(true);
+   });

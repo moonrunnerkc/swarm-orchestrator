@@ -1,0 +1,60 @@
+requirements R1
+requirements R1
+$ find . -type f -name "*.ts" | head -50 && echo "---" && find . -type f -name "*.json" | grep -v node_modules | head -20
+$ find . -path ./node_modules -prune -o -type f -name "*.ts" -print | sort
+$ cat src/config/schema.ts
+$ cat src/detection/semgrep.ts
+$ cat src/config/loader.ts
+$ cat test/config.test.ts
+$ cat src/detection/scan.ts
+$ cat crossfire.sample.json
+$ cat test/scanner.test.ts
+$ cat test/gates.test.ts
+$ cat src/gates/verify.ts
+$ cat src/detection/exec.ts
+$ cat src/detection/types.ts
+$ cat src/detection/index.ts
+$ cat src/gates/refuzz.ts
+$ cat -n src/config/schema.ts | head -120
+$ cat > /tmp/patch_schema.py << 'PYEOF'
+$ cat > .swarm/scratch/patch_schema.py << 'PYEOF'
+$ mkdir -p .swarm/scratch && cat > .swarm/scratch/patch_schema.py << 'PYEOF'
+$ cat src/config/schema.ts | grep -n "ruleset"
+$ cat > .swarm/scratch/patch_semgrep.py << 'PYEOF'
+$ cat src/detection/semgrep.ts | grep -n "ruleset\|configArgs\|--config"
+$ cat -n src/detection/semgrep.ts | sed -n '65,80p'
+$ cat -n src/detection/semgrep.ts | sed -n '205,230p'
+$ cat >> test/config.test.ts << 'TESTEOF'
+$ cat >> test/scanner.test.ts << 'TESTEOF'
+$ npx vitest run test/config.test.ts test/scanner.test.ts --reporter=verbose 2>&1 | tail -80
+$ npx vitest run test/scanner.test.ts -t "surfaces the seeded finding" 2>&1 | grep -A5 "error"
+$ npx vitest run test/scanner.test.ts -t "surfaces the seeded finding" 2>&1 | grep -i "semgrep\|error\|note"
+$ command -v semgrep && semgrep --version 2>&1 || echo "semgrep not found"
+$ which semgrep 2>/dev/null || echo "not available"
+$ ls fixtures/vulnerable-repo/.semgrep/ 2>/dev/null || echo "no .semgrep dir"
+$ cat fixtures/vulnerable-repo/.semgrep/crossfire-c.yml
+$ cat > .swarm/scratch/fix_array_min.py << 'PYEOF'
+$ npx vitest run test/config.test.ts -t "semgrep ruleset accepts arrays" --reporter=verbose 2>&1
+$ npx vitest run test/scanner.test.ts -t "semgrep ruleset as array" --reporter=verbose 2>&1
+$ npx vitest run --reporter=verbose 2>&1 | tail -60
+$ grep -n "hasBinary.*semgrep" test/scanner.test.ts | head -5
+$ npx vitest run --reporter=verbose 2>&1 | grep -E "^(  ✓|  ✗|  ↓|Test Files|Tests)" | tail -30
+$ npx vitest run 2>&1 | grep -E "Test Files|Tests"
+$ git stash && npx vitest run test/scanner.test.ts -t "surfaces the seeded finding" 2>&1 | grep -E "FAIL|passed|failed" && git stash pop
+$ npx tsc --noEmit 2>&1 | tail -5
+$ npx tsc --noEmit 2>&1
+$ git diff --stat && echo "---" && git diff src/config/schema.ts
+$ git diff src/detection/semgrep.ts
+$ git diff test/config.test.ts
+$ git diff test/scanner.test.ts
+verifying the working tree
+verifying the working tree
+requirements R1
+requirements R1
+compacted earlier turns (40220 of 65536 context tokens)
+$ grep -n "ruleset" src/config/schema.ts
+$ grep -n "ruleset\|--config" src/detection/semgrep.ts
+$ grep -n "ruleset" test/config.test.ts | head -30
+$ grep -n "ruleset\|--config" test/scanner.test.ts | head -30
+requirements R1
+requirements R1

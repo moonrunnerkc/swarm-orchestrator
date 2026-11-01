@@ -1,0 +1,69 @@
+diff --git a/config/allowlist.toml b/config/allowlist.toml
+index 2cc0e23..010fc55 100644
+--- a/config/allowlist.toml
++++ b/config/allowlist.toml
+@@ -56,7 +56,7 @@ subcommands = []
+ 
+ [commands.rg]
+ subcommands = []
+-deny_flags = ["--files-without-match-and-replace"]
++deny_flags = ["--files-without-match-and-replace", "--pre"]
+ 
+ [commands.find]
+ # -delete and -exec turn find into an arbitrary-command runner.
+@@ -68,6 +68,7 @@ subcommands = [
+     "status", "log", "diff", "show", "branch", "remote",
+     "rev-parse", "describe", "blame", "shortlog", "ls-files", "tag",
+ ]
++deny_flags = ["--output"]
+ 
+ [commands.uv]
+ subcommands = ["run", "tree", "lock", "sync", "pip"]
+diff --git a/tests/test_allowlist.py b/tests/test_allowlist.py
+index a1d23db..6a95e41 100644
+--- a/tests/test_allowlist.py
++++ b/tests/test_allowlist.py
+@@ -109,3 +109,43 @@ def test_the_shipped_allowlist_has_the_expected_shape(allowlist: Allowlist) -> N
+     assert "ls" in allowlist.binaries
+     assert "rm" not in allowlist.binaries
+     assert allowlist.source == ALLOWLIST_PATH
++
++
++def test_rg_deny_flag_pre_blocks_arbitrary_program_execution(allowlist: Allowlist) -> None:
++    """--pre lets rg run an arbitrary program, so it must be denied."""
++    verdict = allowlist.check("rg --pre=cat .")
++    assert not verdict
++    assert "--pre" in verdict.reason
++
++
++def test_rg_deny_flag_pre_equals_blocks_arbitrary_program_execution(allowlist: Allowlist) -> None:
++    """--pre=value form must also be denied."""
++    verdict = allowlist.check("rg --pre=cat .")
++    assert not verdict
++    assert "--pre" in verdict.reason
++
++
++def test_git_deny_flag_output_blocks_file_write(allowlist: Allowlist) -> None:
++    """git diff/log --output writes files, so it must be denied."""
++    verdict = allowlist.check("git diff --output /tmp/diff.txt")
++    assert not verdict
++    assert "--output" in verdict.reason
++
++
++def test_git_deny_flag_output_equals_blocks_file_write(allowlist: Allowlist) -> None:
++    """--output=value form must also be denied."""
++    verdict = allowlist.check("git diff --output=/tmp/diff.txt")
++    assert not verdict
++    assert "--output" in verdict.reason
++
++
++def test_git_without_output_is_allowed(allowlist: Allowlist) -> None:
++    """git diff without --output should still be allowed."""
++    verdict = allowlist.check("git diff HEAD~1")
++    assert verdict, f"git diff should be allowed: {verdict.reason}"
++
++
++def test_rg_without_pre_is_allowed(allowlist: Allowlist) -> None:
++    """rg without --pre should still be allowed."""
++    verdict = allowlist.check("rg pattern src/")
++    assert verdict, f"rg should be allowed: {verdict.reason}"

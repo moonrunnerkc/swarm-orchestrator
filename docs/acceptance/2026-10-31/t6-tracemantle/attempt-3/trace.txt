@@ -1,0 +1,60 @@
+$ find . -type f -name "*.py" | head -50
+$ find . -type f -name "*.py" | grep -E "(history|mypy|pyproject|hatch)" | head -30
+$ ls -la core/history_io.py core/history_store.py 2>/dev/null; ls -la tracemantle/ 2>/dev/null; cat pyproject.toml 2>/dev/null | head -80
+$ cat pyproject.toml | grep -A 30 "\[tool.mypy\]"
+$ ls -la core/ 2>/dev/null; ls -la src/tracemantle/ 2>/dev/null | head -30
+$ ls -la src/tracemantle/core/ | head -30; echo "---"; cat src/tracemantle/history_store.py
+$ cat src/tracemantle/core/history_io.py
+$ cat src/tracemantle/core/history.py | head -50
+$ cat src/tracemantle/core/history.py | tail -100
+$ cat src/tracemantle/core/__init__.py
+$ cat src/tracemantle/__init__.py | head -30; echo "---"; grep -r "from tracemantle.core.history_io\|from tracemantle.core.history_store\|from tracemantle.history_io\|from tracemantle.history_store\|import history_io\|import history_store" src/ --include="*.py" | head -30
+$ cat src/tracemantle/core/history.py | grep -n "def \|class \|_entry_to_dict\|_entry_from_dict\|load_ledger\|save_ledger\|append_run\|Ledger\|LedgerEntry\|LedgerError\|ResultCounts\|RunAgents\|ValidationModes"
+$ cat src/tracemantle/core/history.py | sed -n '1,100p'
+$ cat tests/test_history_io.py | head -30; echo "==="; cat tests/test_history_model.py | head -30; echo "==="; cat tests/test_history_regression.py | head -30
+$ grep -r "from tracemantle.core.history_io\|from tracemantle.core.history_store\|from tracemantle.history_io\|from tracemantle.history_store" src/ tests/ --include="*.py" 2>/dev/null
+$ cat src/skillcheck/core/history_io.py
+$ cat src/tracemantle/storage.py | head -20
+$ cat pyproject.toml | grep -A 5 "\[tool.hatch.build"
+$ cat src/tracemantle/history_store.py
+requirements R1
+$ # Step 1: Create the new history package directory and __init__.py
+$ # Step 2: Move history_io.py content to the new package (as history/io.py)
+$ # Step 3: Move history_store.py content to the new package (as history/store.py)
+$ # Step 4: Create the __init__.py for the new history package with re-exports
+$ # Fix io.py - it references tracemantle.core.history which is fine, but we need to check if it has any self-references
+$ # Fix io.py: update the internal reference to history_store -> history.store
+$ # Fix io.py: update the internal reference to history_store -> history.store using a different delimiter
+$ # The issue is the dot in history_store - let me escape it properly
+$ # The problem is the dot before history_store - need to escape it differently
+$ # Now fix store.py - it references tracemantle.core.history_io which should become tracemantle.history.io
+$ # Now create re-export shims at old paths
+$ # Shim for history_store.py (at root of tracemantle)
+$ # Now update all files that import from the old paths to use the new package
+$ # Update src/tracemantle/core/history.py to import from the new location
+$ # Update src/skillcheck/core/history_io.py shim to point to new location
+$ # Update all remaining imports in src/ to use new package paths
+$ # Now update test files that import from the old paths
+$ # Now move the test files into tests/history/ directory
+$ # Create __init__.py for the test history package (empty is fine)
+$ # Now update the mypy files list in pyproject.toml - it already covers "src/tracemantle" so no change needed there
+$ grep -A 5 "\[tool.mypy\]" pyproject.toml
+$ grep -A 8 "\[tool.mypy\]" pyproject.toml
+$ # The hatch build targets.wheel packages already include "src/tracemantle" which will pick up the new history/ package
+$ # The hatch packages already include "src/tracemantle" which will automatically pick up the new history/ sub-package.
+$ python -m pytest tests/history/ -v --no-cov 2>&1 | tail -40
+$ which python3 && python3 -m pytest tests/history/ -v --no-cov 2>&1 | tail -40
+$ python3 -m pytest tests/history/ -v 2>&1 | tail -40
+$ python3 -m pytest tests/history/ -v -o addopts= 2>&1 | tail -40
+$ # The module isn't installed yet. Let's install it in development mode first
+$ # Use hatch to install in dev mode
+$ # Let me try using pip with the venv that already exists
+$ # Let me check what's available in the workspace
+$ # Use uv to install the package in editable mode
+$ # Use uv venv and install there
+$ # Use the existing .venv with uv sync
+$ # Now run the tests with the venv's pytest
+$ # Install pytest in the venv
+$ # Use uv to install test deps in the venv
+$ # Let me check what's in the .venv and use it properly
+$ # The .venv has python but no pip. Let me use uv sync to install deps properly
