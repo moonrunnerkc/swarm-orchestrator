@@ -246,3 +246,7 @@ One line per open choice made during the verifier-first rebuild (ADR 0014), with
 - `git stash` that saves (bare, push, save, or with options) is refused with how to see the base instead; `list`, `show`, `pop` and `apply` run. On crossfire (session 20261101T073920-7ce037) the last step stashed the whole change to check a test at the base, and the delivered tree was empty.
 - When a fifth of the turns remain (ten at most), the model is told once, with what to do before they end. The same crossfire run spent its last steps checking the base and never asked for verification.
 - The model choice's reason counts the finished tasks a model has when they are too few to rank by, and names larger models passed over for a worse record.
+
+## 2026-11-01: the time notice
+
+- The one notice that the end is near now also comes on time: when a fifth of the wall budget remains for turns, with final verification reserved, if that comes before a fifth of the turns. On gemma4-31b (about 24 tokens a second) the hour ended first on crossfire and ironroot (sessions 20261101T092628-0b3280, 20261101T105145-405d94), at 39 and 33 of 60 steps, and the turns notice never came. Removal condition: if runs that receive either notice ask for verification no more often than runs that do not, both go.
