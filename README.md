@@ -60,6 +60,10 @@ Your existing tests keep judging the change in their original form. When the tas
 what they should expect, pass `--authorize-behavior-change`: a rewritten expectation then stands
 where its new version fails before the change and passes after it, and the report names each one.
 
+`--review` asks the same model, in a fresh context, for one case the finished change gets wrong
+and a command that shows it. Only a command that fails on the delivered tree reopens the work;
+the verifier still decides. It is off by default and costs one more model turn.
+
 ## What the evidence is, and is not
 
 The verifier signs an in-toto Statement in a DSSE envelope over the patch and the tree it

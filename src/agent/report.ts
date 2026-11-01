@@ -4,6 +4,7 @@ import type { RequirementOutcome } from "swarm-verify";
 import type { Finalized } from "./finalize.ts";
 import type { LoadedInstruction } from "./instructions.ts";
 import type { LoopResult } from "./loop.ts";
+import type { ReviewOutcome } from "./review.ts";
 import type { Delivery, StartingState } from "./workspace.ts";
 
 export const reportVersion = "swarm-orchestrator.report/v1";
@@ -36,6 +37,11 @@ export interface RunReportFile {
   readonly delivery: Delivery;
   readonly instructions: readonly Pick<LoadedInstruction, "path" | "sha256">[];
   readonly notes: readonly string[];
+  /** The one fresh-context review, where the run asked for one. */
+  readonly review: Pick<
+    ReviewOutcome,
+    "outcome" | "finding" | "command" | "exitCode" | "restored"
+  > | null;
   readonly resources: {
     readonly steps: number;
     readonly inputTokens: number;
@@ -92,6 +98,26 @@ function inferenceOf(resources: RunReportFile["resources"]): string {
     : seconds;
 }
 
+/** What the review did, said as what was executed: a finding stands only on its own check. */
+function reviewLine(review: NonNullable<RunReportFile["review"]>): string {
+  const ran =
+    review.command === null
+      ? ""
+      : ` (\`${review.command.split("\n")[0]}\` exited ${review.exitCode ?? "without running"}${review.restored ? "; it changed the tree, which was put back" : ""})`;
+  switch (review.outcome) {
+    case "confirmed":
+      return `a finding its own check confirmed, which reopened the work: ${review.finding}${ran}`;
+    case "refuted":
+      return `a finding its own check refuted: ${review.finding}${ran}`;
+    case "no-finding":
+      return "no finding";
+    case "unusable":
+      return `no usable finding${ran}`;
+    case "model-error":
+      return `not done: ${review.finding}`;
+  }
+}
+
 export function renderMarkdown(report: RunReportFile): string {
   return [
     `# swarm run: ${report.state}`,
@@ -116,6 +142,7 @@ export function renderMarkdown(report: RunReportFile): string {
     `- Attestation: ${report.attestation ?? "none"}.`,
     `- Instructions loaded: ${report.instructions.map((one) => `${one.path} (sha256 ${one.sha256})`).join(", ") || "none"}.`,
     `- Resources: ${report.resources.steps} model turn(s); ${report.resources.inputTokens} input and ${report.resources.outputTokens} output token(s)${report.resources.estimatedTurns > 0 ? ` (${report.resources.estimatedTurns} turn(s) estimated from text)` : " (reported by the runtime)"}; ${inferenceOf(report.resources)} and ${Math.round(report.resources.wallMs / 1000)} s of wall time; ${report.resources.retries} retried request(s); ${report.resources.escalations} escalation(s); ${report.resources.verifications} verification(s) in the loop; cost: ${report.resources.cost}.`,
+    ...(report.review === null ? [] : [`- Review: ${reviewLine(report.review)}.`]),
     ...report.notes.map((note) => `- Note: ${note}`),
     "",
   ].join("\n");
@@ -133,14 +160,17 @@ export function assembleReport(input: {
   readonly reason: string | null;
   readonly finalized: Finalized;
   readonly loops: readonly LoopResult[];
+  readonly review: ReviewOutcome | null;
+  readonly escalated: boolean;
   readonly digests: readonly Pick<LoadedInstruction, "path" | "sha256">[];
   readonly notes: readonly string[];
   readonly start: StartingState;
   readonly delivery: Delivery;
   readonly startedAt: number;
 }): RunReportFile {
-  const { finalized, loops } = input;
+  const { finalized, loops, review } = input;
   const result = finalized.result;
+  const reviewed = review !== null && review.outcome !== "model-error" ? 1 : 0;
   const sum = (pick: (loop: LoopResult) => number) =>
     loops.reduce((total, loop) => total + pick(loop), 0);
   const inherited = result?.regression.inherited.length ?? 0;
@@ -148,10 +178,9 @@ export function assembleReport(input: {
     version: reportVersion,
     task: input.options.task,
     model: {
-      name:
-        loops.length > 1
-          ? `${input.options.model.model}, then escalated`
-          : input.options.model.model,
+      name: input.escalated
+        ? `${input.options.model.model}, then escalated`
+        : input.options.model.model,
       reason: input.options.modelReason,
     },
     stop: input.stop,
@@ -175,16 +204,28 @@ export function assembleReport(input: {
     delivery: input.delivery,
     instructions: input.digests,
     notes: [...input.notes, ...finalized.notes],
+    review:
+      review === null
+        ? null
+        : {
+            outcome: review.outcome,
+            finding: review.finding,
+            command: review.command,
+            exitCode: review.exitCode,
+            restored: review.restored,
+          },
     resources: {
-      steps: sum((loop) => loop.steps),
-      inputTokens: sum((loop) => loop.usage.inputTokens),
-      outputTokens: sum((loop) => loop.usage.outputTokens),
+      // The review's model turn counts like any other.
+      steps: sum((loop) => loop.steps) + reviewed,
+      inputTokens: sum((loop) => loop.usage.inputTokens) + (review?.inputTokens ?? 0),
+      outputTokens: sum((loop) => loop.usage.outputTokens) + (review?.outputTokens ?? 0),
       estimatedTurns: sum((loop) => loop.usage.estimatedTurns),
-      inferenceMs: sum((loop) => loop.usage.inferenceMs),
-      inferenceTurns: sum((loop) => loop.usage.inferenceTurns),
+      inferenceMs: sum((loop) => loop.usage.inferenceMs) + (review?.inferenceMs ?? 0),
+      inferenceTurns:
+        sum((loop) => loop.usage.inferenceTurns) + (review?.inferenceMs == null ? 0 : 1),
       wallMs: Date.now() - input.startedAt,
       retries: sum((loop) => loop.usage.retries),
-      escalations: Math.max(0, loops.length - 1),
+      escalations: input.escalated ? 1 : 0,
       verifications: sum((loop) => loop.verifications),
       cost: input.options.cost,
     },

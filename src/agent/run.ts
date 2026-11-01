@@ -10,10 +10,11 @@ import {
   createChokepoint,
 } from "../tools/chokepoint.ts";
 import { createPolicyGuard, defaultShellAllowlist } from "../tools/policy-guard.ts";
+import { type Progress, runAttempts } from "./attempts.ts";
 import { finalize } from "./finalize.ts";
 import { gitText } from "./git.ts";
 import { loadInstructions, renderInstructions } from "./instructions.ts";
-import { type LoopResult, runLoop, type StopReason } from "./loop.ts";
+import type { StopReason } from "./loop.ts";
 import type { ModelClient } from "./model.ts";
 import { systemPrompt } from "./prompt.ts";
 import { assembleReport, type RunReportFile, writeReport } from "./report.ts";
@@ -44,6 +45,8 @@ export interface RunOptions {
   readonly approval: ApprovalMode;
   /** The user's authorization to change what existing tests expect; never the model's. */
   readonly behaviorChange?: "none" | "authorized";
+  /** One fresh-context review of a completed change; off unless asked for. */
+  readonly review?: boolean;
   readonly confirm: ConfirmationPrompt;
   readonly version: string;
   readonly signal?: AbortSignal | undefined;
@@ -59,9 +62,6 @@ export interface RunReport {
 }
 
 export { swarmHome };
-
-/** Stops that say the model, not the environment, was the problem: worth one stronger model. */
-const modelRelated: ReadonlySet<StopReason> = new Set(["no-progress", "unusable-replies"]);
 
 /**
  * Runs the loop in a managed worktree seeded with the user's tree as it stands, finalizes the
@@ -130,7 +130,13 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
       },
     });
 
-    let model = options.model;
+    const progress: Progress = {
+      model: options.model,
+      loops: [],
+      record: initialRecord(options.task),
+      review: null,
+      escalated: false,
+    };
     const deadline =
       options.maxWallMs === null ? Number.POSITIVE_INFINITY : started + options.maxWallMs;
     const verifier = createVerifier({
@@ -145,7 +151,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
         promptSha256,
         instructions: digests,
       },
-      model: () => model.model,
+      model: () => progress.model.model,
       signal: options.signal,
     });
     const chokepoint = createChokepoint({
@@ -157,57 +163,34 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
       signal: options.signal,
     });
 
-    const loops: LoopResult[] = [];
     let stop: RunReport["stop"] = "interrupted";
     let reason: string | null = null;
-    let record = initialRecord(options.task);
-    let handoff: string | null = null;
     try {
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        const spent = loops.reduce(
-          (sum, one) => sum + one.usage.inputTokens + one.usage.outputTokens,
-          0,
-        );
-        const loop = await runLoop({
+      ({ stop, reason } = await runAttempts({
+        shared: {
           task: options.task,
-          model,
           chokepoint,
           evidence,
           instructions: rendered,
-          record,
           status: () => gitText(workspace, ["status", "--short", "--", ".", ":(exclude).swarm"]),
           verify: verifier.tree,
-          maxSteps: options.maxSteps - loops.reduce((sum, one) => sum + one.steps, 0),
-          maxTokens: options.maxTokens - spent,
           turnTokens: options.turnTokens,
           timeLeft: () => Date.now() + verifier.reserveMs() < deadline,
           contextTokens: options.contextTokens,
           outputs: { directory: join(workspace, ".swarm", "outputs"), root: workspace },
-          handoff,
           signal: options.signal,
           log: options.log,
-        });
-        loops.push(loop);
-        ({ stop, reason, record } = loop);
-        const stronger = options.escalation ?? null;
-        if (attempt > 0 || stronger === null || !modelRelated.has(loop.stop)) break;
-        options.log(`escalating from ${model.model} to ${stronger.model}: ${loop.stop}`);
-        await evidence.record({
-          type: "model-error",
-          actor: "harness",
-          provenance: ["tool-output"],
-          payload: {
-            escalation: {
-              from: model.model,
-              to: stronger.model,
-              because: loop.stop,
-              reason: loop.reason,
-            },
-          },
-        });
-        model = stronger;
-        handoff = `Another model worked on this task before you and stopped (${loop.stop}: ${loop.reason ?? "no reason given"}). The working tree holds its changes; check them before building on them.${loop.verification === null ? "" : `\n\nThe verifier's latest findings:\n${loop.verification.feedback}`}`;
-      }
+        },
+        escalation: options.escalation ?? null,
+        review: options.review === true,
+        maxSteps: options.maxSteps,
+        maxTokens: options.maxTokens,
+        verifier,
+        evidence,
+        base,
+        reviewDirectory: join(evidence.directory, "review"),
+        progress,
+      }));
     } catch (error) {
       stop = options.signal?.aborted ? "cancelled" : "interrupted";
       // A cancelled run says why it was cancelled, not which operation the abort interrupted.
@@ -220,7 +203,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
       workspace,
       base,
       directory: final,
-      record,
+      record: progress.record,
       held: verifier.held(),
       cannotVerify:
         stop === "cancelled"
@@ -228,7 +211,8 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
           : Date.now() >= deadline
             ? "the run's time budget was spent"
             : null,
-      verify: (snapshot) => verifier.snapshot(snapshot, record, join(final, "verification")),
+      verify: (snapshot) =>
+        verifier.snapshot(snapshot, progress.record, join(final, "verification")),
     });
     const delivery =
       options.apply && finalized.snapshot.sha256 !== emptySha256
@@ -242,7 +226,9 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
       stop,
       reason,
       finalized,
-      loops,
+      loops: progress.loops,
+      review: progress.review,
+      escalated: progress.escalated,
       digests,
       notes: [
         ...instructions.notes,
