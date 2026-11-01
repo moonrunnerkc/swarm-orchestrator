@@ -166,3 +166,11 @@ One line per open choice made during the verifier-first rebuild (ADR 0014), with
 - Verification installs dependencies from the lockfile where the repository has one the verifier can install from (npm, pnpm, yarn, bun, uv); without one, the workspace's tree is linked and the result says it is not reproducible.
 - Instruction files are loaded from git's tracked list, so an untracked AGENTS.md in a working copy does not change what the agent is told; the budget is 24,000 bytes.
 - Exit codes of `swarm run`: 0 complete, 1 a requirement failed, 4 incomplete with nothing failed, 5 blocked.
+
+## 2026-10-31: execution trust, agent side
+
+- `swarm run` verifies in a container by default with dependencies prepared from the lockfile and the network closed for checks; `--host` is the explicit way to verify on the host, with dependencies prepared where a lockfile allows and linked otherwise. A docker daemon that does not answer blocks the run's verification with the step to take; nothing falls back to the host.
+- The final verification binds the ledger as written at that moment (`ledgerSha256` over its bytes, `ledgerRecords` lines), since the session keeps appending after it; `verify.mjs --ledger` checks the ledger still begins with those bytes.
+- `replay` stays a `swarm-verify` command and is not added to `swarm`, which keeps its five subcommands.
+- The verification request and its helpers moved to src/agent/verification.ts to keep run.ts within 300 lines.
+- Isolated agent tests root their fixtures under `~/.swarm/test-work-agent` and remove it afterwards, because a docker VM shares the user's home and not the system temporary directory.

@@ -40,7 +40,8 @@ afterEach(async () => {
 /** `swarm run` as a child, so the stub endpoint in this process can answer it. */
 function swarmRun(endpoint: string, extra: readonly string[] = []) {
   const args = [cli, "run", "Make half(n) return n / 2."];
-  args.push("--endpoint", endpoint, "--model", "stub", "--approve", "auto", ...extra);
+  // The host, said by name: these tests are about the loop and its endpoint, not isolation.
+  args.push("--endpoint", endpoint, "--model", "stub", "--approve", "auto", "--host", ...extra);
   const child = spawn(process.execPath, args, {
     cwd: repo,
     env: { ...process.env, SWARM_HOME: join(root, "home"), SWARM_SIGNING_KEY: signingKey },

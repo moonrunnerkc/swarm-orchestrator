@@ -112,6 +112,7 @@ describe("the packed agent against the packed verifier", () => {
         "stub",
         "--approve",
         "auto",
+        "--host",
       ],
       {
         cwd: repo,

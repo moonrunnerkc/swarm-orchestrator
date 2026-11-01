@@ -46,6 +46,7 @@ function unmeasured(record: RequirementRecord, why: string): RequirementOutcome[
     kind: one.kind,
     required: one.required,
     assumptions: [...one.assumptions],
+    expected: one.evidence,
     status: "unverified",
     evidence: [],
     limitation: `final verification did not run: ${why}`,

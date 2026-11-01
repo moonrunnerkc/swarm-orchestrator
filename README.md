@@ -22,8 +22,10 @@ authority that judges it.
    chokepoint under a lexical path policy and lands on a hash-chained ledger outside the
    workspace.
 4. [Swarm Verify](https://github.com/moonrunnerkc/swarm-verify), the standalone verifier, measures
-   the candidate: the base commit's tests against the new source, new tests as labeled
-   evidence, test by test against the base.
+   the candidate in a container from a pinned image, network closed, with dependencies installed
+   fresh from the lockfile: the base commit's tests against the new source, new tests as labeled
+   evidence, test by test against the base. `--host` runs the checks on your machine instead, and
+   the report says `host, not isolated`.
 5. A supported failure goes back to the model for repair while the run budget allows.
 6. Every exit, including a budget running out or an interrupted run, ends in one finalization
    that verifies the exact delivered snapshot, or writes an incomplete report bound to it.
@@ -34,8 +36,9 @@ satisfied, no new regression is unresolved, and the evidence matches the deliver
 
 ## Install
 
-Node 22 or newer and git. Swarm runs against a local model: Ollama, or any OpenAI-compatible
-endpoint you name with `--endpoint`.
+Node 22 or newer, git, and a docker daemon for isolated verification (colima or Docker Desktop
+on macOS). Swarm runs against a local model: Ollama, or any OpenAI-compatible endpoint you name
+with `--endpoint`.
 
 ```sh
 npm install -g swarm-orchestrator

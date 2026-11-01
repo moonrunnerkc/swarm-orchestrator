@@ -48,6 +48,7 @@ export async function run(args: readonly string[]): Promise<number> {
       "max-tokens": { type: "string" },
       "turn-tokens": { type: "string" },
       "max-minutes": { type: "string" },
+      host: { type: "boolean" },
       approve: { type: "string" },
     },
   });
@@ -83,6 +84,7 @@ export async function run(args: readonly string[]): Promise<number> {
     // Room for a reasoning model's thinking and one command, and a bound on a looping reply.
     turnTokens: count(values["turn-tokens"], "--turn-tokens") ?? agent?.turnTokens ?? 16_384,
     maxWallMs: maxMinutes === undefined ? null : maxMinutes * 60_000,
+    isolation: values.host === true ? "host" : "isolated",
     approval,
     confirm: terminalPrompt(),
     version: buildVersion,

@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Message, ModelClient } from "./model.ts";
 import { completionMarker } from "./prompt.ts";
@@ -45,12 +45,21 @@ process.env.SWARM_SIGNING_KEY ??= generateKeyPairSync("ed25519")
   .privateKey.export({ type: "pkcs8", format: "pem" })
   .toString();
 
-/** A repository with `half(n)` broken and one node:test test that says so, committed as the base. */
+/** Where isolated runs keep their fixtures: under the user's home, which a docker VM shares. */
+export const isolatedParent = join(homedir(), ".swarm", "test-work-agent");
+
+/**
+ * A repository with `half(n)` broken and one node:test test that says so, committed as the base.
+ * An isolated fixture lives under the user's home so its verifier home can be mounted.
+ */
 export async function fixture(
   files: Readonly<Record<string, string>> = {},
   task = "Make half(n) return n / 2.",
+  isolation: "isolated" | "host" = "host",
 ): Promise<Fixture> {
-  const root = await mkdtemp(join(tmpdir(), "agent-run-"));
+  const parent = isolation === "isolated" ? isolatedParent : tmpdir();
+  await mkdir(parent, { recursive: true });
+  const root = await mkdtemp(join(parent, "agent-run-"));
   const repo = join(root, "repo");
   await mkdir(repo, { recursive: true });
   const git = (...args: string[]) =>
@@ -87,6 +96,7 @@ export async function fixture(
         maxTokens: 100_000,
         turnTokens: 1000,
         maxWallMs: null,
+        isolation,
         approval: "auto",
         confirm: null,
         version: "test",

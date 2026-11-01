@@ -11,12 +11,12 @@ export const commandDefinitions: readonly CommandDefinition[] = [
   {
     name: "run",
     syntax:
-      'run "<task>" [--endpoint <url>] [--model <name>] [--max-steps <n>] [--max-tokens <n>] [--turn-tokens <n>] [--max-minutes <n>] [--approve ask|auto]',
+      'run "<task>" [--endpoint <url>] [--model <name>] [--max-steps <n>] [--max-tokens <n>] [--turn-tokens <n>] [--max-minutes <n>] [--approve ask|auto] [--host]',
     description:
       "make the change, check each requirement, and report what is complete and what is not",
   },
   // The verifier's own commands, described where they are implemented.
-  ...verifierDefinitions,
+  ...verifierDefinitions.filter((command) => ["verify", "init", "ci"].includes(command.name)),
   {
     name: "doctor",
     syntax: "doctor [--fix] [--offline]",

@@ -1,19 +1,50 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { join } from "node:path";
-import { describe, expect, it } from "vitest";
-import { bash, fixture, halfTest, recordAndComplete, scripted, write } from "./test-doubles.ts";
+import { dirname, join } from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
+import type { RunReport } from "./run.ts";
+import {
+  bash,
+  type Fixture,
+  halfTest,
+  fixture as hostFixture,
+  isolatedParent,
+  recordAndComplete,
+  scripted,
+  write,
+} from "./test-doubles.ts";
 
 /**
- * One task of each kind, end to end through the installed verifier, with scripted model replies
- * so the semantics are proven before any live model is involved.
+ * One task of each kind, end to end through the installed verifier in a container, with scripted
+ * model replies so the semantics are proven before any live model is involved. Each final
+ * verification is then replayed in a fresh container and must agree with what was recorded.
  */
-const checker = join(
+const verifierRoot = join(
   createRequire(import.meta.url).resolve("swarm-verify/package.json"),
   "..",
-  "verify.mjs",
 );
+const checker = join(verifierRoot, "verify.mjs");
+const verifierCli = join(verifierRoot, "dist", "swarm-verify.js");
+const fixture = (files: Readonly<Record<string, string>> = {}, task?: string) =>
+  hostFixture(files, task, "isolated");
+afterAll(async () => {
+  await rm(isolatedParent, { recursive: true, force: true });
+});
+
+/** The final verification replayed by the installed verifier: it must reproduce every result. */
+function replays(probe: Fixture, ran: RunReport): void {
+  const evidence = dirname(ran.report.attestation ?? "");
+  const replayed = spawnSync(
+    process.execPath,
+    [verifierCli, "replay", evidence, "--workspace", probe.repo],
+    { encoding: "utf8", env: { ...process.env, SWARM_HOME: join(probe.root, "home") } },
+  );
+  expect(replayed.stdout).toContain(
+    "agreement    every recorded check, test and requirement result was reproduced",
+  );
+  expect(replayed.status).toBe(0);
+}
 
 describe("a task of each kind, end to end", () => {
   it("completes a feature with new tests, and its evidence checks offline", async () => {
@@ -115,6 +146,7 @@ describe("a task of each kind, end to end", () => {
     ]);
     expect(ran.report.requirements[0]).toMatchObject({ status: "satisfied" });
     expect(ran.report.state).toBe("complete");
+    replays(probe, ran);
   });
 
   it("completes an upgrade judged on dependencies installed fresh from each lockfile", async () => {
@@ -176,5 +208,6 @@ describe("a task of each kind, end to end", () => {
     });
     expect(ran.report.requirements[0]).toMatchObject({ status: "satisfied" });
     expect(ran.report.state).toBe("complete");
+    replays(probe, ran);
   });
 });

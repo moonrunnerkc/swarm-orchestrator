@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { access, mkdir } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
@@ -25,6 +25,7 @@ import type { ModelClient } from "./model.ts";
 import { systemPrompt } from "./prompt.ts";
 import { type RunReportFile, reportVersion, writeReport } from "./report.ts";
 import { initialRecord, type RequirementRecord, recordSha256 } from "./requirement-record.ts";
+import { dependencyPolicy, ledgerPrefix, swarmHome } from "./verification.ts";
 
 export interface RunOptions {
   readonly workspace: string;
@@ -37,6 +38,11 @@ export interface RunOptions {
   readonly turnTokens: number;
   /** One wall-time budget for the whole run, final verification included; null for none. */
   readonly maxWallMs: number | null;
+  /**
+   * Where the verifier runs the checks: in a container (the default), or on the host, which the
+   * report states as not isolated.
+   */
+  readonly isolation: "isolated" | "host";
   readonly approval: ApprovalMode;
   readonly confirm: ConfirmationPrompt;
   readonly version: string;
@@ -50,39 +56,6 @@ export interface RunReport {
   readonly sessionDirectory: string;
   readonly reportPath: string;
   readonly result: VerifyResult | null;
-}
-
-/** Where sessions, baselines and sealed checks live: SWARM_HOME, or ~/.swarm. */
-export function swarmHome(env: Readonly<Record<string, string | undefined>> = process.env): string {
-  return env.SWARM_HOME ?? join(homedir(), ".swarm");
-}
-
-const installable = [
-  "package-lock.json",
-  "npm-shrinkwrap.json",
-  "pnpm-lock.yaml",
-  "yarn.lock",
-  "bun.lock",
-  "bun.lockb",
-  "uv.lock",
-];
-
-/**
- * Dependencies are installed fresh from the lockfile where the repository has one the verifier
- * installs from, so results are reproducible and upgrades are judged on their own lockfile.
- * Without one, the workspace's installed tree is linked, which the result reports as not
- * reproducible.
- */
-export async function dependencyPolicy(workspace: string): Promise<"prepare" | "linked"> {
-  const found = await Promise.all(
-    installable.map((name) =>
-      access(join(workspace, name)).then(
-        () => true,
-        () => false,
-      ),
-    ),
-  );
-  return found.some(Boolean) ? "prepare" : "linked";
 }
 
 /** Time held back for final verification before the first one has been timed. */
@@ -109,7 +82,15 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
     deniedRoots: [home],
     childHomeDir: childHome,
   });
-  const dependencies = await dependencyPolicy(workspace);
+  // Isolation installs from the lockfile in the container; the host links where there is none.
+  const execution =
+    options.isolation === "isolated"
+      ? ({ mode: "isolated", network: "closed", dependencies: "prepare" } as const)
+      : ({
+          mode: "host",
+          network: "open",
+          dependencies: await dependencyPolicy(workspace),
+        } as const);
   const instructions = await loadInstructions(workspace);
   const rendered = renderInstructions(instructions);
   const digests = instructions.loaded.map(({ path, sha256 }) => ({ path, sha256 }));
@@ -147,7 +128,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
         base: { commit: base },
         candidate: { kind: "patch", path: snapshot.path, sha256: snapshot.sha256 },
         requirements: [...record.requirements],
-        policy: { execution: { mode: "host", network: "open", dependencies } },
+        policy: { execution },
         artifacts: { directory },
         producer: {
           name: "swarm-orchestrator",
@@ -156,6 +137,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
           promptSha256,
           reportSha256: recordSha256(record),
           instructions: digests,
+          ...(await ledgerPrefix(evidence.ledgerPath)),
         },
       },
       { verifierVersion, ...(options.signal === undefined ? {} : { signal: options.signal }) },
