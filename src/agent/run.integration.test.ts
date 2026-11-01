@@ -2,8 +2,8 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type ModelClient, ModelError } from "./model.ts";
-import { completionMarker } from "./prompt.ts";
-import { fixture, recordAndComplete, scripted, write } from "./test-doubles.ts";
+import { completionMarker, systemPrompt } from "./prompt.ts";
+import { bash, fixture, recordAndComplete, scripted, write } from "./test-doubles.ts";
 
 const fix = write("half.mjs", "export const half = (n) => n / 2;");
 const mapped = recordAndComplete([
@@ -101,6 +101,16 @@ describe("swarm run", () => {
     expect(allowed.report.notes).toContain(
       "The user authorized a change of tested behavior (--authorize-behavior-change); expectations it superseded: test/half.test.mjs::half.",
     );
+  });
+
+  it("keeps scratch files under .swarm/scratch out of the delivered patch, as the prompt says", async () => {
+    const scratch = bash("mkdir -p .swarm/scratch && echo 'print(1)' > .swarm/scratch/patch.py");
+    const ran = await (await fixture()).run(scripted([scratch, fix, mapped]));
+    expect(ran.report.state).toBe("complete");
+    const delivered = await readFile(ran.report.snapshot.patch, "utf8");
+    expect(delivered).toContain("half.mjs");
+    expect(delivered).not.toContain("patch.py");
+    expect(systemPrompt).toContain(".swarm/scratch/");
   });
 
   it("never renders a pass from the model's own say-so", async () => {

@@ -38,6 +38,9 @@ export const systemPrompt = [
   "passing; an upgrade needs the new version in the lockfile. If anything is not satisfied, the",
   "verifier's findings come back to you and you continue.",
   "",
+  "Write scratch files (helper scripts, notes) under .swarm/scratch/: nothing under .swarm/ is",
+  "delivered, and paths outside the repository are refused.",
+  "",
   "Change source, tests, manifests and lockfiles as the task needs. The base commit's own tests",
   "still judge your change: rewriting a test's expectation does not make a failing original pass.",
 ].join("\n");
