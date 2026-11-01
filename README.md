@@ -54,10 +54,11 @@ one, and a named model or server gets 32,768 unless you set it. Probe results ar
 any OpenAI-compatible server (Rapid-MLX, vLLM, llama.cpp) with `--endpoint`. Nothing is
 downloaded and nothing remote is chosen for you.
 
-The run works in a git worktree beside your repository, starting from your tree as it is (staged,
+The run works in a clone beside your repository that shares its objects but not its branches,
+tags or config, starting from your tree as it is (staged,
 unstaged and untracked edits included), and applies its patch to your working tree at the end
 only if nothing changed there meanwhile; `--no-apply` keeps it as a patch. A Python project's
-`.venv` is not copied there: the worktree gets its own, built with your `[verify] setup` command
+`.venv` is not copied there: the clone gets its own, built with your `[verify] setup` command
 or else `uv sync --frozen` from `uv.lock`, and the report names its interpreter or says why it has
 none.
 
