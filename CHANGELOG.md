@@ -3,7 +3,12 @@
 The agent. The verifier it consumes, `swarm-verify`, has its own changelog in
 [moonrunnerkc/swarm-verify](https://github.com/moonrunnerkc/swarm-verify/blob/main/CHANGELOG.md).
 
-## Unreleased
+## 16.0.0 - 2026-11-01
+
+Swarm Orchestrator is the coding product again, and `swarm-verify` 2.0.0 is the verifier it
+consumes at an exact version. A task runs on a local model found on this machine, every
+requirement is checked against executed evidence, and the delivered patch comes with a signed
+attestation an independent replay can rerun. 15.0.0 was tagged but never published to npm.
 
 ### Changed
 
@@ -14,7 +19,6 @@ The agent. The verifier it consumes, `swarm-verify`, has its own changelog in
   packed-consumer test installs both tarballs into a fresh prefix and runs a task through them.
 - Verification artifacts of `swarm run` are written into the session directory, outside the
   workspace, one directory per verification.
-
 - `swarm verify` judges a declared test check test by test. It recognizes pytest, jest,
   vitest, mocha and go test in the command, or in the `package.json` script the command names,
   appends the runner's machine-readable report at base and with the change, and reads each
@@ -25,6 +29,61 @@ The agent. The verifier it consumes, `swarm-verify`, has its own changelog in
   not run, its report could not be parsed, or no test in it passes with the change. A command
   with no recognized runner is judged by exit code as before, and the verdict says so. See
   [docs/verifying.md](https://github.com/moonrunnerkc/swarm-verify/blob/main/docs/verifying.md).
+
+### Added
+
+- **`swarm run` finds a local model itself.** With no `--model` or `--endpoint`, it lists
+  Ollama's installed models, estimates each one's memory at the context it would use (65,536
+  tokens, then 32,768), probes the ones that fit with a real turn of the shell protocol, and
+  chooses by the share of finished tasks each completed on this machine, recorded in
+  `~/.swarm/profiles/`; with too few recorded, the largest that fits. The reason is printed and
+  reported. `swarm doctor --models` shows the same survey; when nothing fits, it says what would.
+- **A requirement record**: R1 is the user's task verbatim; the model may add R2 and on and map
+  tests, checks, structure and package versions to each, and only the verifier sets a status.
+  The report lists every requirement with its evidence, the changed files (deletions named), the
+  model and why it was chosen, and the run's tokens, turns, inference and wall time.
+- **Repository instructions** (`AGENTS.md`, `CLAUDE.md`) load deterministically, digested into the
+  evidence, within a byte budget; they are input to the task, never to the security policy.
+- `--authorize-behavior-change` lets a test the base passes change its expectation where the change
+  witnesses the new behavior, and the report says so. `--review` adds one fresh-context review of a
+  completed change; it is off by default. `--host --linked-dependencies` verifies on the host with
+  the workspace's installed dependencies, reported as not isolated and not reproducible.
+
+### Fixed
+
+Root causes found running real tasks on local models (docs/acceptance/2026-10-31/):
+
+- **The agent pushed a branch to the repository its workspace came from**, in auto approval, and
+  cloned it to `/tmp` inside a `$(...)` command whose paths nothing checked. Pushes and package
+  publishes are refused in every approval mode; a command the shell reader cannot read is refused
+  under auto approval and asked of a person otherwise; `git stash`, which took a whole change out
+  of the delivered tree on a run's last step, is refused with how to see the base instead. The
+  reader now reads backslashes in double quotes and comments as the shell does.
+- **A slow model's last turn ran past the deadline** and final verification never ran: no turn
+  starts that the time left cannot pay for, measured by the longest turn so far. The model is told
+  once when a fifth of its turns or of its time remains.
+- **A Rapid-MLX reasoning parser moved the reply into `reasoning_content`**, which was dropped;
+  the reply is read from it where the content holds no reply form.
+- Ollama connections dropped mid-turn are sent again and counted; a non-JSON reply stops the run
+  with what to do instead of crashing it; SIGTERM and SIGHUP finalize a run as Ctrl-C does.
+- Compaction no longer tells the model to reread every file; a discovered model gets the largest
+  context it fits; the token budget defaults to what the steps could use at that context.
+- A completion repeated on an unchanged tree is answered once with the open findings, and a
+  command repeated while findings are open points back at them.
+- A blocked run stops with the verifier's reason; a run where no check ran says why; the summary
+  printed "0 s of inference" for an endpoint that reports none, and now says so.
+- The managed worktree sits beside the repository, so relative dependencies resolve.
+
+### Migration
+
+- `swarm run` no longer needs `--model` and `--endpoint`; they still name a model and an
+  OpenAI-compatible endpoint where given. `--context` sets the context for a named model.
+- Commands that were run in auto approval and contained `$(...)`, backticks, subshells, brace
+  groups or `sh -c` are refused: write the inner command first and its result literally.
+- `swarm verify`, `swarm init` and `swarm ci` are the installed `swarm-verify` 2.0.0 commands; their
+  states, exit codes and predicate are described in swarm-verify's docs/migration-2.md.
+- The report is `swarm-orchestrator.report/v1` in `report.json` beside `report.md`, in the
+  session directory.
 
 ## 15.0.0 - 2026-10-29
 
