@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { bash, fixture, scripted } from "./test-doubles.ts";
+import { bash, fixture, recordAndComplete, scripted, write } from "./test-doubles.ts";
+
+const fix = write("half.mjs", "export const half = (n) => n / 2;");
 
 describe("a run's turn budget", () => {
   it("tells the model once, near the end, that its turns are running out", async () => {
@@ -36,5 +38,20 @@ describe("a run's turn budget", () => {
     expect(ran.stop).toBe("time-budget");
     expect(ran.report.resources.steps).toBe(1);
     expect(ran.report.verification).toBe("fresh");
+  });
+
+  // claimcheck on Rapid-MLX: after one verification left R1 open, the model repeated a status
+  // command until the run stopped for no progress, its record never corrected.
+  it("points a repeated command back at the verifier's open findings", async () => {
+    const unmapped = recordAndComplete([
+      { id: "R1", text: "x", kind: "fix", evidence: { tests: [{ name: "no such test" }] } },
+    ]);
+    const model = scripted([fix, unmapped, bash("ls"), bash("ls"), bash("ls")]);
+    await (await fixture()).run(model, { maxSteps: 6 });
+    const said = model.seen.map((turn) => turn.at(-1)?.content ?? "");
+    expect(said[3]).not.toContain("The verifier's findings are still open");
+    expect(said[4]).toContain("This is the command you ran last turn");
+    expect(said[4]).toContain("The verifier's findings are still open");
+    expect(said[4]).toContain("R1 unverified");
   });
 });

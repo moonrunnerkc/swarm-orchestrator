@@ -210,6 +210,16 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
         );
       }
       note = ran.note;
+      // A command repeated while findings are open is the run circling: point back at them.
+      const open = (findings ?? "").split("\n").filter((line) => /^R\d+ /.test(line));
+      if (ran.repeats >= 2 && open.length > 0) {
+        note = [
+          note,
+          "The verifier's findings are still open:",
+          ...open,
+          "Act on them: change the tree, or send the corrected requirements block, then mark the task complete.",
+        ].join("\n");
+      }
       continue;
     }
     if (parsed.kind === "requirements") {
