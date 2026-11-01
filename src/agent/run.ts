@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { homedir } from "node:os";
+import { basename, dirname, join } from "node:path";
 import type { VerifyResult } from "swarm-verify";
 import { createSessionId, openEvidenceSession } from "../evidence/session.ts";
 import {
@@ -77,9 +77,11 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
   });
   const final = join(evidence.directory, "final");
   await mkdir(final, { recursive: true, mode: 0o700 });
+  // Beside the repository, so a dependency it names by a relative path (file:../sibling) resolves
+  // from the worktree as it does from the repository.
   const managed = await openWorkspace(
     repository,
-    join(tmpdir(), `swarm-${evidence.sessionId}`),
+    join(dirname(repository), `.${basename(repository)}.swarm-${evidence.sessionId}`),
     final,
   );
   try {
