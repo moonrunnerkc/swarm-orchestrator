@@ -73,6 +73,26 @@ Root causes found running real tasks on local models (docs/acceptance/2026-10-31
 - A blocked run stops with the verifier's reason; a run where no check ran says why; the summary
   printed "0 s of inference" for an endpoint that reports none, and now says so.
 - The managed worktree sits beside the repository, so relative dependencies resolve.
+- **A run wrote into the user's repository through its git worktree.** A worktree shares the
+  repository's refs and config, so `git branch`, `git tag` and `git config` in auto approval
+  changed the user's own `.git`. The workspace is now a clone that reads the user's objects and
+  shares no refs, config or remote.
+- **"The latest 9.x" was delivered as Stryker 10.1.1 and reported complete**, twice: the only
+  version read was the model's own claim. The version constraints a task's wording states are
+  read into its first requirement by code, no proposal can change them, and the verifier holds
+  the lockfile to them. The summary and report show each requirement as worded, as the model read
+  it, the versions it is held to, and its status.
+- **The prompt grew with every turn**, the whole history resent on each: the
+  task and requirements stay at the front, recent turns are sent whole and older output as a
+  bounded excerpt with a reference to the whole, kept readable under `.swarm/outputs/`, and old
+  exploration is compacted without a model call only under measured pressure. `report.json`
+  records each turn's tokens.
+- **Path-shaped text in a quoted script was refused as a path** (a sed address, test source
+  written through printf): only the words a program opens are offered to the path check, sed and
+  awk scripts are read for the files they open, and a redirect target is checked wherever it is
+  written. A path after an option's equals sign (`--git-dir=/elsewhere`) is checked; it was not.
+- **A copied `.venv` ran the user's unchanged source.** The workspace's environment is built from
+  `uv.lock` (or the declared setup command) and the report names its interpreter.
 
 ### Migration
 
