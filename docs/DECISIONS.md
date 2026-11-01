@@ -261,3 +261,7 @@ One line per open choice made during the verifier-first rebuild (ADR 0014), with
 - Runs on Rapid-MLX name the model and endpoint and, where a task's reading needs it, a 65,536-token context; automatic selection is shown by the Ollama runs. The record-based ranking chose gemma4-31b for most later Ollama runs, and its turns, at about 24 tokens a second, reached the hour before the steps.
 - The review stays off by default: one trial, no finding, against a false completion it missed.
 - The false completion on claimcheck (Stryker 10.1.1 delivered against "the latest 9.x") stays a known residual: the verifier reads no prose, and holds a version only where the claim states the range.
+
+## 2026-11-01: release preparation
+
+- Version 16.0.0 with an exact `swarm-verify` 2.0.0 dependency, pinned to the tarball the packed-consumer test and the packed-install smoke run used (`sha512-tCWl67YK...WrpMA==`). CI and the release workflow run `npm run gates`, which installs both tarballs into a fresh prefix before any publish step. Publishing, tags and merges are Brad's: docs/plans/2026-10-31-recovery-run-report.md lists the commands. swarm-verify must be published first, because this lockfile resolves it from the registry.
