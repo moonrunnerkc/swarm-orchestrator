@@ -73,9 +73,30 @@ export function choose(
     chosen.probe.tokensPerSecond === null
       ? ""
       : `, ${chosen.probe.tokensPerSecond} tok/s in its probe`;
+  const outcome = profile.outcomes[model.digest];
+  const finished = outcome === undefined ? 0 : outcome.complete + outcome.other;
+  const history =
+    finished === 0
+      ? "no finished tasks recorded for it here yet"
+      : `${finished} finished task${finished === 1 ? "" : "s"} recorded for it here (${outcome?.complete ?? 0} complete), too few to rank by`;
+  // Models at least as large, ranked below the chosen one for their record alone.
+  const passed = ranked.filter(
+    (one) =>
+      (one.eligibility.model.parameters ?? 0) >= (model.parameters ?? 0) &&
+      expectedRate(profile, one.eligibility.model.digest) < expectedRate(profile, model.digest),
+  );
+  const records = passed.map((one) => {
+    const record = profile.outcomes[one.eligibility.model.digest];
+    const total = (record?.complete ?? 0) + (record?.other ?? 0);
+    return `${one.eligibility.model.name} (${record?.complete ?? 0} of ${total} finished tasks complete)`;
+  });
+  const lead =
+    records.length === 0
+      ? "conservative default: the largest installed model that fits and passed its readiness probe"
+      : `ranked above ${records.join(" and ")}, whose record${records.length === 1 ? " is" : "s are"} worse`;
   const reason =
     rate === null
-      ? `conservative default: the largest installed model that fits and passed its readiness probe${size}${speed}; no finished tasks recorded for it here yet`
+      ? `${lead}${size}${speed}; ${history}`
       : `the best record here: ${Math.round(rate * 100)}% of its finished tasks complete${size}${speed}`;
   const stronger = ranked.find(
     (one) => (one.eligibility.model.parameters ?? 0) > (model.parameters ?? 0),

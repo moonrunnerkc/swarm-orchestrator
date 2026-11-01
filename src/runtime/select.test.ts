@@ -83,6 +83,20 @@ describe("choosing a model", () => {
       32768,
     );
     expect(choice?.chosen.eligibility.model.name).toBe("small");
+    // Not "the largest installed model": a larger one was passed over for its record.
+    expect(choice?.reason).toMatch(
+      /^ranked above large \(0 of 3 finished tasks complete\), whose record is worse/,
+    );
+  });
+
+  it("counts finished tasks that are too few to rank by, rather than saying there are none", () => {
+    const outcomes = { "digest-large": { complete: 1, other: 1 } };
+    const choice = choose([candidate("large", 3e10)], profile(outcomes), 32768);
+    expect(choice?.reason).toMatch(/^conservative default: the largest installed model that fits/);
+    expect(choice?.reason).toContain(
+      "2 finished tasks recorded for it here (1 complete), too few to rank by",
+    );
+    expect(choice?.reason).not.toContain("no finished tasks");
   });
 });
 
