@@ -3,6 +3,7 @@ import {
   completionMarker,
   parseReply,
   readReply,
+  stepsLeftNotice,
   systemPrompt,
   truncate,
   turnHeader,
@@ -107,5 +108,17 @@ describe("the system prompt", () => {
     expect(systemPrompt).toContain("Change only what the task needs");
     expect(systemPrompt).toContain("keep\nto the versions and limits it states");
     expect(systemPrompt).toContain("a range such as 9.x where the\n   task gives one");
+  });
+});
+
+// A run spent its last steps checking the base, never verified a finished change, and stashed it.
+describe("the notice that the turns are running out", () => {
+  it("comes once, a fifth of the way from the end and at most ten turns out, and not on short runs", () => {
+    expect(stepsLeftNotice(10, 60)).toContain("10 turns remain of 60");
+    expect(stepsLeftNotice(11, 60)).toBeNull();
+    expect(stepsLeftNotice(9, 60)).toBeNull();
+    expect(stepsLeftNotice(4, 20)).toContain("4 turns remain of 20");
+    expect(stepsLeftNotice(0, 3)).toBeNull();
+    expect(stepsLeftNotice(10, 60)).toContain("mark the task complete");
   });
 });

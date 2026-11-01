@@ -132,3 +132,14 @@ export function truncate(text: string, cap: number = outputCap): string {
   const omitted = bytes.length - 2 * half;
   return `${bytes.subarray(0, half).toString()}\n[... ${omitted} bytes omitted ...]\n${bytes.subarray(bytes.length - half).toString()}`;
 }
+
+/**
+ * Said once, when a fifth of the turns remain (ten at most), so a run does not spend its end on
+ * checks that are not the change. Runs of fewer than five turns get no notice.
+ */
+export function stepsLeftNotice(left: number, max: number): string | null {
+  const at = Math.min(10, Math.floor(max / 5));
+  if (at < 1 || left !== at) return null;
+  const turns = left === 1 ? "1 turn remains" : `${left} turns remain`;
+  return `${turns} of ${max}. Whatever stands when they end is verified as it is: send the requirements block that maps the tests showing your change, and mark the task complete once it is done. The verifier runs every check at the base too, so there is no need to check the base yourself.`;
+}

@@ -2,8 +2,7 @@ import { runCommandStep } from "./command-step.ts";
 import { type CommandFact, compacted } from "./context.ts";
 import type { LoopOptions, LoopResult, StopReason, Usage, Verification } from "./loop-types.ts";
 import { type Message, ModelError, type Reply } from "./model.ts";
-import { readReply, systemPrompt, turnHeader } from "./prompt.ts";
-import type { RequirementRecord } from "./requirement-record.ts";
+import { readReply, stepsLeftNotice, systemPrompt, turnHeader } from "./prompt.ts";
 import { runRequirementsStep } from "./requirements-step.ts";
 
 export type { LoopOptions, LoopResult, StopReason, Usage, Verification } from "./loop-types.ts";
@@ -87,6 +86,8 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
     if (!options.timeLeft())
       return result("time-budget", "the time left is reserved for final verification");
     options.signal?.throwIfAborted();
+    const notice = stepsLeftNotice(options.maxSteps - steps, options.maxSteps);
+    if (notice !== null) note = `${note}\n\n${notice}`;
     const header = turnHeader(options.task, await options.status(), findings);
     messages.push({ role: "user", content: `${header}\n${note}` });
     // Old exploration is compacted only when the prompt measurably presses on the context.
