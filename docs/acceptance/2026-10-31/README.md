@@ -24,15 +24,20 @@ ledger and the signed attestation). What each failed attempt taught, and the fix
 | --- | --- | --- | --- |
 | Feature with a boundary case | t1 pubprep | complete | agrees |
 | Multi-file feature, backward compatible | t2 crossfire | complete | agrees |
-| Fix a real defect | t3 ruleprobe, h1 crossfire | complete, complete | see t3; agrees |
-| Fix beside an inherited failure | t3 ruleprobe (t4 resident could not be verified here) | complete | see t3 |
+| Fix a real defect | t3 ruleprobe | complete, on the macOS host | diverges: replayed in a Linux container |
+| Fix beside an unrelated inherited failure | t4 resident | incomplete, not verifiable here | open |
 | Refactor: move without behavior change | t5b ironroot (t5a depose incomplete) | complete | agrees |
 | Refactor across modules, tests and config | t6 tracemantle | incomplete | diverges by one test |
 | Upgrade a dependency | t7b dependency detector (t7a claimcheck incomplete) | complete | agrees |
 | Upgrade the runtime | t8 quantproof | complete | agrees |
 
-Seven of the eight categories have a complete, replayable run. The cross-module refactor does not:
-see t6. Of the two held-back tasks, h1 completed on its first run and h2 did not.
+Five of the eight categories have a complete run of their own task whose replay agrees: t1, t2,
+t5b, t7b and t8. The fix category's run (t3) completed on the macOS host, and its replay, which
+always ran in a Linux container, cannot reproduce a macOS-only defect. Fix beside an unrelated
+inherited failure has no run of its own: t3 did tell its seven unrelated host failures apart from
+the three it fixed, but it is already the fix category's run, and t4 resident never completed. The
+cross-module refactor (t6) has no complete run. Of the two held-back tasks, h1 (also a fix)
+completed on its first run with a replay that agrees, and h2 did not.
 
 ## Final runs
 
@@ -102,8 +107,8 @@ and the reports say so rather than print zero.
   nothing to replace.
 - **t4 resident.** Not verifiable on this machine: its lockfile does not install in a clean
   environment, and its suite runs live inference against whatever Ollama answers, which loaded
-  about 24 GB of models beside the coding model. The fix-beside-inherited-failure category is
-  shown by t3 instead, and the upgrade substitute for resident is t7b.
+  about 24 GB of models beside the coding model. The fix-beside-inherited-failure category has no
+  run of its own for that reason, and the upgrade substitute for resident is t7b.
 
 ## Safety
 
