@@ -215,3 +215,9 @@ One line per open choice made during the verifier-first rebuild (ADR 0014), with
 ## 2026-11-01: approved behavior changes
 
 - `swarm run --authorize-behavior-change` is the user's authorization to change what existing tests expect. It goes into every verification request and the session-started evidence, and the report names the expectations it superseded. It is a command-line flag only: neither `swarm.toml`'s `[agent]` table, the repository's instruction files nor the model can set it, since it changes acceptance authority.
+
+## 2026-11-01: the optional review
+
+- `swarm run --review` runs one fresh-context review after a loop ends complete: the same model, shown only the task, the requirement record and the delivered diff, either finds nothing or names one case with a command that should exit 0 when the behavior is right. Only that command's failure on the delivered tree reopens the work, once, with the finding and the command's output; a model's opinion is never a status, and the verifier judges the result as before. A command that changes the tree is undone from a snapshot taken just before it.
+- User outcome: a case the tests did not cover is shown failing, by execution, before the patch is delivered. Behavioral test: src/agent/review.integration.test.ts. Removal condition: if on the acceptance tasks it adds tokens without a confirmed finding that changes the delivered work, it stays off by default, and is removed if no later trial shows a catch.
+- The attempt sequence moved from run.ts to attempts.ts. The report now counts an escalation from the run's own record rather than from the number of loops, which a review that reopens the work also raises.
