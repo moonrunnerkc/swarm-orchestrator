@@ -43,7 +43,14 @@ describe("the chat client", () => {
       },
     });
     const reply = await client.complete([{ role: "user", content: "go" }], turn);
-    expect(reply).toEqual({ content: "```bash\nls\n```", tokens: 15, truncated: false });
+    expect(reply).toEqual({
+      content: "```bash\nls\n```",
+      inputTokens: 10,
+      outputTokens: 5,
+      inferenceMs: null,
+      retries: 0,
+      truncated: false,
+    });
     expect(sent[0]).toEqual([
       "http://model.test/v1/chat/completions",
       {
@@ -63,7 +70,9 @@ describe("the chat client", () => {
       apiKey: null,
       post: async () => answer({ choices: [{ message: { content: "x" } }] }),
     });
-    expect((await client.complete([], turn)).tokens).toBeNull();
+    const reply = await client.complete([], turn);
+    expect(reply.inputTokens).toBeNull();
+    expect(reply.outputTokens).toBeNull();
   });
 
   it("retries a server error and fails plainly on a client error", async () => {

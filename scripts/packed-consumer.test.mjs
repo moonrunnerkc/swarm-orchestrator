@@ -95,11 +95,11 @@ describe("the packed agent against the packed verifier", () => {
     );
     git("add", "-A");
     git("commit", "-qm", "base");
-    await writeFile(join(repo, "half.mjs"), "export const half = (n) => n / 2;\n");
 
     const record = [{ id: "R1", text: "x", kind: "fix", evidence: { tests: [{ name: "half" }] } }];
     const reply = `\`\`\`requirements\n${JSON.stringify(record)}\n\`\`\`\n${completionMarker}`;
-    const stub = await startStubModel({ replies: [reply] });
+    const fix = "```bash\ncat > half.mjs <<'EOF'\nexport const half = (n) => n / 2;\nEOF\n```";
+    const stub = await startStubModel({ replies: [fix, reply] });
     const swarm = join(prefix, "node_modules", ".bin", "swarm");
     const child = spawn(
       swarm,
@@ -129,6 +129,10 @@ describe("the packed agent against the packed verifier", () => {
     expect(stdout).toMatch(/^stop {9}complete$/m);
     expect(stdout).toMatch(/^state {8}complete$/m);
     expect(stdout).toMatch(/^R1 {11}satisfied/m);
+    expect(stdout).toMatch(/^applied {6}yes$/m);
+    expect(await readFile(join(repo, "half.mjs"), "utf8")).toBe(
+      "export const half = (n) => n / 2;\n",
+    );
     expect(code).toBe(0);
     const attestation = /^attestation {2}(.+)$/m.exec(stdout)?.[1] ?? "";
     const statement = JSON.parse(await readFile(join(attestation, "..", "statement.json"), "utf8"));

@@ -32,7 +32,14 @@ describe("swarm run", () => {
       stop: "complete",
       report: { state: "complete", verification: "reused" },
     });
-    expect(ran.report.resources).toMatchObject({ steps: 2, verifications: 1, tokens: 200 });
+    expect(ran.report.resources).toMatchObject({
+      steps: 2,
+      verifications: 1,
+      inputTokens: 180,
+      outputTokens: 20,
+      estimatedTurns: 0,
+      escalations: 0,
+    });
   });
 
   it("hands the verifier's findings back and continues from the same budgets", async () => {
@@ -61,16 +68,23 @@ describe("swarm run", () => {
   });
 
   it("finalizes on the step and token budgets", async () => {
-    const steps = await (await fixture()).run(scripted(["```bash\nls\n```"]), { maxSteps: 3 });
+    // Distinct commands, so neither run reads as a cycle of the same command.
+    const exploring = Array.from({ length: 30 }, (_, at) => `\`\`\`bash\necho ${at}\n\`\`\``);
+    const steps = await (await fixture()).run(scripted(exploring), { maxSteps: 3 });
     expect(steps).toMatchObject({
       stop: "step-budget",
       report: { verification: "fresh", resources: { steps: 3 } },
     });
-    const tokens = await (await fixture()).run(scripted(["```bash\nls\n```"]), { maxTokens: 250 });
-    expect(tokens).toMatchObject({
-      stop: "token-budget",
-      report: { verification: "fresh", resources: { steps: 3 } },
+    const tokens = await (await fixture()).run(scripted(exploring), {
+      maxSteps: 30,
+      maxTokens: 1500,
+      turnTokens: 1000,
     });
+    expect(tokens).toMatchObject({ stop: "token-budget", report: { verification: "fresh" } });
+    // No turn began that the allowance could not pay for.
+    const spent = tokens.report.resources.inputTokens + tokens.report.resources.outputTokens;
+    expect(spent).toBeLessThanOrEqual(1500);
+    expect(tokens.report.resources.steps).toBeGreaterThan(0);
   });
 
   it("stops before a turn that would eat the time reserved for final verification, then verifies", async () => {
@@ -88,7 +102,15 @@ describe("swarm run", () => {
       model: "failing",
       async complete() {
         turns += 1;
-        if (turns === 1) return { content: fix, tokens: 10, truncated: false };
+        if (turns === 1)
+          return {
+            content: fix,
+            inputTokens: 9,
+            outputTokens: 1,
+            inferenceMs: 1,
+            retries: 0,
+            truncated: false,
+          };
         throw new ModelError("HTTP 500: overloaded (three attempts in a row)");
       },
     };
@@ -106,7 +128,15 @@ describe("swarm run", () => {
       model: "cancelling",
       async complete() {
         turns += 1;
-        if (turns === 1) return { content: fix, tokens: 10, truncated: false };
+        if (turns === 1)
+          return {
+            content: fix,
+            inputTokens: 9,
+            outputTokens: 1,
+            inferenceMs: 1,
+            retries: 0,
+            truncated: false,
+          };
         controller.abort(new Error("interrupted"));
         throw controller.signal.reason;
       },
@@ -146,6 +176,6 @@ describe("swarm run", () => {
   it("keeps the token count in the evidence instead of redacting it", async () => {
     const ran = await (await fixture()).run(scripted(["```bash\nls\n```"]), { maxSteps: 2 });
     const stopped = (await ledger(ran.sessionDirectory)).find((one) => one.type === "model-call");
-    expect(stopped?.payload).toMatchObject({ tokensUsed: 100 });
+    expect(stopped?.payload).toMatchObject({ inputTokens: 90, outputTokens: 10, estimated: false });
   });
 });

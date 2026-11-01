@@ -9,8 +9,16 @@ export interface Message {
 
 export interface Reply {
   readonly content: string;
-  /** Tokens the endpoint reported, or null where it reported none. */
-  readonly tokens: number | null;
+  /** Prompt tokens the runtime reported for this turn, or null where it reported none. */
+  readonly inputTokens: number | null;
+  /** Completion tokens the runtime reported, or null where it reported none. */
+  readonly outputTokens: number | null;
+  /** Time the runtime spent on the turn, where it reported it; otherwise null. */
+  readonly inferenceMs: number | null;
+  /** Of that, the time spent generating output, where reported: the basis of a speed. */
+  readonly outputMs?: number | null;
+  /** Requests sent again after a transient failure before this reply came. */
+  readonly retries: number;
   /** The endpoint stopped at the turn's completion cap. */
   readonly truncated: boolean;
 }
@@ -157,7 +165,10 @@ export function openAiCompatible(options: {
         const usage = parsed.usage;
         return {
           content: (parsed.choices[0]?.message.content ?? "").replace(thinking, "").trim(),
-          tokens: usage === undefined ? null : usage.prompt_tokens + usage.completion_tokens,
+          inputTokens: usage?.prompt_tokens ?? null,
+          outputTokens: usage?.completion_tokens ?? null,
+          inferenceMs: null,
+          retries: failures + waits,
           truncated: parsed.choices[0]?.finish_reason === "length",
         };
       }

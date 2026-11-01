@@ -2,10 +2,12 @@ import { spawn } from "node:child_process";
 import { readFile, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { swarmHome } from "./agent/verification.ts";
 import { describeRunningVersion } from "./build-version.ts";
 import { diagnose, remediesFor, runtimeFinding } from "./install/health.ts";
 import { inspectInstall } from "./install/inspect.ts";
 import { describeInstall } from "./install/report.ts";
+import { surveyModels } from "./runtime/survey.ts";
 
 export interface DoctorCommand {
   readonly fix: boolean;
@@ -92,11 +94,37 @@ export async function runningVersion(packageRoot: string): Promise<string> {
   }
 }
 
+/** `doctor --models`: every installed model, what it needs here, and whether it is ready. */
+async function modelsReport(contextTokens: number): Promise<number> {
+  const { runtime, rows } = await surveyModels({
+    contextTokens,
+    home: swarmHome(),
+    log: (line) => process.stderr.write(`${line}\n`),
+  });
+  process.stdout.write(`${runtime}, ${contextTokens}-token context\n\n`);
+  for (const row of rows) {
+    const probe =
+      row.probe === null
+        ? "not probed: excluded before loading"
+        : `${row.probe.ready ? "ready" : "not ready"}: ${row.probe.reason}${row.probe.tokensPerSecond === null ? "" : `, ${row.probe.tokensPerSecond} tok/s`}, ${Math.round(row.probe.latencyMs / 1000)} s`;
+    process.stdout.write(
+      `${row.name}\n  capacity  ${row.eligible ? "eligible" : "excluded"}: ${row.capacity}\n  probe     ${probe}\n`,
+    );
+  }
+  return rows.some((row) => row.probe?.ready === true) ? 0 : 1;
+}
+
 /** `doctor`, from its command line. */
 export function doctorCommand(args: readonly string[]): Promise<number> {
   const { values } = parseArgs({
     args: [...args],
-    options: { fix: { type: "boolean" }, offline: { type: "boolean" } },
+    options: {
+      fix: { type: "boolean" },
+      offline: { type: "boolean" },
+      models: { type: "boolean" },
+      context: { type: "string" },
+    },
   });
+  if (values.models === true) return modelsReport(Number(values.context ?? 32_768));
   return doctor({ fix: values.fix === true, askRegistry: values.offline !== true });
 }

@@ -1,7 +1,9 @@
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import type { Chokepoint } from "../tools/chokepoint.ts";
+import { runCommandStep } from "./command-step.ts";
+import { type CommandFact, compacted } from "./context.ts";
 import { type Message, type ModelClient, ModelError, type Reply } from "./model.ts";
-import { parseReply, systemPrompt, truncate, turnHeader } from "./prompt.ts";
+import { parseReply, systemPrompt, turnHeader } from "./prompt.ts";
 import { applyProposal, type RequirementRecord, recordSha256 } from "./requirement-record.ts";
 
 /** One verification of the working tree, as the loop reads it. */
@@ -32,9 +34,22 @@ export interface LoopOptions {
   readonly turnTokens: number;
   /** Whether time remains for another model turn with final verification still reserved. */
   readonly timeLeft: () => boolean;
+  /** The model's context window, which compaction keeps the prompt within. */
+  readonly contextTokens: number;
+  /** Where full command outputs are written, or null to keep only what a turn carries. */
+  readonly outputs: { readonly directory: string; readonly root: string } | null;
+  /** What a model taking over from another reads first, or null for a fresh start. */
+  readonly handoff?: string | null;
   readonly signal?: AbortSignal | undefined;
   readonly log: (line: string) => void;
 }
+
+/** The smallest reply worth asking for: one command and its fence. */
+const minimumReplyTokens = 256;
+/** Turns in a row with the same command and output before the loop calls it no progress. */
+const repeatLimit = 3;
+/** Replies in a row that follow no reply form before the model is called unusable here. */
+const unusableAfter = 4;
 
 export type StopReason =
   | "complete"
@@ -44,7 +59,21 @@ export type StopReason =
   | "step-budget"
   | "token-budget"
   | "time-budget"
-  | "model-error";
+  | "model-error"
+  | "unusable-replies";
+
+/** What the model turns cost, input and output apart, and which counts were estimated. */
+export interface Usage {
+  readonly turns: number;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  /** Turns where the runtime reported no count and the loop estimated it from the text. */
+  readonly estimatedTurns: number;
+  /** Inference time the runtime reported; turns that reported none are not in it. */
+  readonly inferenceMs: number;
+  /** Requests the client sent again after a transient failure. */
+  readonly retries: number;
+}
 
 export interface LoopResult {
   readonly stop: StopReason;
@@ -54,11 +83,12 @@ export interface LoopResult {
   /** The last verification, or null where none ran. Finalization decides whether it is stale. */
   readonly verification: Verification | null;
   readonly steps: number;
-  readonly tokens: number;
-  /** Turns whose token count was estimated because the endpoint reported none. */
-  readonly estimatedTurns: number;
+  readonly usage: Usage;
   readonly verifications: number;
 }
+
+/** A text's size in tokens, estimated at four characters each where the runtime gives no count. */
+export const estimateTokens = (text: string) => Math.ceil(text.length / 4);
 
 /**
  * One model turn at a time: a command, a requirement record, or completion. Completion asks the
@@ -71,21 +101,28 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
   const messages: Message[] = [{ role: "system", content: preamble.join("\n\n") }];
   let record = options.record;
   let findings: string | null = null;
-  let note = "Begin.";
+  let note = options.handoff ?? "Begin.";
   let steps = 0;
-  let tokens = 0;
-  let estimatedTurns = 0;
+  let usage: Usage = {
+    turns: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    estimatedTurns: 0,
+    inferenceMs: 0,
+    retries: 0,
+  };
   let verifications = 0;
   let verification: Verification | null = null;
-  let previous = { command: "", output: "" };
+  let previous = { command: "", output: "", repeats: 0 };
+  let malformed = 0;
+  const facts: CommandFact[] = [];
   const result = (stop: StopReason, reason: string | null = null): LoopResult => ({
     stop,
     reason,
     record,
     verification,
     steps,
-    tokens,
-    estimatedTurns,
+    usage,
     verifications,
   });
   /** The verification, and whether it measured the same tree and record as the one before. */
@@ -116,18 +153,36 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
 
   while (true) {
     if (steps >= options.maxSteps) return result("step-budget");
-    if (tokens >= options.maxTokens) return result("token-budget");
+    const spent = usage.inputTokens + usage.outputTokens;
     if (!options.timeLeft())
       return result("time-budget", "the time left is reserved for final verification");
     options.signal?.throwIfAborted();
     const header = turnHeader(options.task, await options.status(), findings);
     messages.push({ role: "user", content: `${header}\n${note}` });
+    // Old exploration is compacted only when the prompt measurably presses on the context.
+    const measured = estimateTokens(messages.map((message) => message.content).join(""));
+    const shorter = compacted(messages, facts, measured, options.contextTokens);
+    if (shorter !== null) {
+      messages.splice(0, messages.length, ...shorter);
+      options.log(
+        `compacted earlier turns (${measured} of ${options.contextTokens} context tokens)`,
+      );
+    }
+    // No turn starts that the allowance cannot pay for: its prompt, and a useful reply.
+    const prompt = estimateTokens(messages.map((message) => message.content).join(""));
+    const room = options.maxTokens - spent - prompt;
+    if (room < Math.min(options.turnTokens, minimumReplyTokens)) {
+      return result(
+        "token-budget",
+        `the next turn needs about ${prompt} prompt tokens and ${options.maxTokens - spent} remain`,
+      );
+    }
 
     let reply: Reply;
     try {
       reply = await options.model.complete(messages, {
         signal: options.signal,
-        maxTokens: Math.min(options.turnTokens, options.maxTokens - tokens),
+        maxTokens: Math.min(options.turnTokens, room),
       });
     } catch (error) {
       if (!(error instanceof ModelError)) throw error;
@@ -140,15 +195,17 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
       return result("model-error", error.message);
     }
     steps += 1;
-    const used =
-      reply.tokens ??
-      Math.ceil(
-        (messages.reduce((sum, message) => sum + message.content.length, 0) +
-          reply.content.length) /
-          4,
-      );
-    if (reply.tokens === null) estimatedTurns += 1;
-    tokens += used;
+    const input = reply.inputTokens ?? prompt;
+    const output = reply.outputTokens ?? estimateTokens(reply.content);
+    const estimated = reply.inputTokens === null || reply.outputTokens === null;
+    usage = {
+      turns: usage.turns + 1,
+      inputTokens: usage.inputTokens + input,
+      outputTokens: usage.outputTokens + output,
+      estimatedTurns: usage.estimatedTurns + (estimated ? 1 : 0),
+      inferenceMs: usage.inferenceMs + (reply.inferenceMs ?? 0),
+      retries: usage.retries + reply.retries,
+    };
     messages.push({ role: "assistant", content: reply.content });
     await options.evidence.record({
       type: "model-call",
@@ -157,27 +214,45 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
       payload: {
         step: steps,
         reply: reply.content,
-        tokensUsed: used,
-        estimated: reply.tokens === null,
+        inputTokens: input,
+        outputTokens: output,
+        estimated,
+        inferenceMs: reply.inferenceMs,
+        retries: reply.retries,
       },
     });
 
     const parsed = parseReply(reply.content);
+    malformed = parsed.kind === "malformed" ? malformed + 1 : 0;
     if (parsed.kind === "malformed") {
+      if (malformed >= unusableAfter) {
+        return result(
+          "unusable-replies",
+          `${malformed} replies in a row followed no reply form: ${parsed.reason}`,
+        );
+      }
       const cut = reply.truncated ? ` (it was cut off at ${options.turnTokens} tokens)` : "";
       note = `Your reply was not used: ${parsed.reason}${cut}. Reply with exactly one bash block, one requirements block, or the completion marker alone.`;
       continue;
     }
     if (parsed.kind === "command") {
       options.log(`$ ${parsed.command.split("\n")[0]}`);
-      const outcome = await options.chokepoint.run(parsed.command);
-      // At temperature 0 a repeated command and its unchanged output can repeat forever.
-      const repeated = parsed.command === previous.command && outcome.output === previous.output;
-      previous = { command: parsed.command, output: outcome.output };
-      const again = repeated
-        ? "This is the command you ran last turn, and its output is unchanged.\n"
-        : "";
-      note = `${again}${outcome.decision === "allowed" ? `exit code: ${outcome.exitCode}` : outcome.decision}\n${truncate(outcome.output)}`;
+      const ran = await runCommandStep({
+        chokepoint: options.chokepoint,
+        command: parsed.command,
+        step: steps,
+        outputs: options.outputs,
+        previous,
+      });
+      previous = { command: parsed.command, output: ran.output, repeats: ran.repeats };
+      facts.push(ran.fact);
+      if (ran.repeats >= repeatLimit) {
+        return result(
+          "no-progress",
+          `the same command printed the same output ${ran.repeats} turns running`,
+        );
+      }
+      note = ran.note;
       continue;
     }
     if (parsed.kind === "requirements") {

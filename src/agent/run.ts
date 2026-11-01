@@ -1,14 +1,8 @@
 import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  requestVersion,
-  snapshotWorkingTree,
-  type VerifyResult,
-  verifierVersion,
-  verify,
-} from "swarm-verify";
+import type { VerifyResult } from "swarm-verify";
 import { createSessionId, openEvidenceSession } from "../evidence/session.ts";
 import {
   type ApprovalMode,
@@ -16,16 +10,16 @@ import {
   createChokepoint,
 } from "../tools/chokepoint.ts";
 import { createPolicyGuard, defaultShellAllowlist } from "../tools/policy-guard.ts";
-import { feedbackOf } from "./feedback.ts";
-import { finalize, type HeldResult, type Snapshot } from "./finalize.ts";
+import { finalize } from "./finalize.ts";
 import { gitText } from "./git.ts";
 import { loadInstructions, renderInstructions } from "./instructions.ts";
-import { type LoopResult, runLoop, type StopReason, type Verification } from "./loop.ts";
+import { type LoopResult, runLoop, type StopReason } from "./loop.ts";
 import type { ModelClient } from "./model.ts";
 import { systemPrompt } from "./prompt.ts";
-import { type RunReportFile, reportVersion, writeReport } from "./report.ts";
-import { initialRecord, type RequirementRecord, recordSha256 } from "./requirement-record.ts";
-import { dependencyPolicy, ledgerPrefix, swarmHome } from "./verification.ts";
+import { assembleReport, type RunReportFile, writeReport } from "./report.ts";
+import { initialRecord } from "./requirement-record.ts";
+import { createVerifier, dependencyPolicy, swarmHome } from "./verification.ts";
+import { deliver, openWorkspace } from "./workspace.ts";
 
 export interface RunOptions {
   readonly workspace: string;
@@ -33,16 +27,20 @@ export interface RunOptions {
   readonly model: ModelClient;
   /** Why this model, in one line, for the report. */
   readonly modelReason: string;
+  /** A stronger model to hand the run to once, when this one stops making progress. */
+  readonly escalation?: ModelClient | null;
+  /** The money a turn costs where it is known; "none (local runtime)" for a local model. */
+  readonly cost: string;
+  readonly contextTokens: number;
   readonly maxSteps: number;
   readonly maxTokens: number;
   readonly turnTokens: number;
   /** One wall-time budget for the whole run, final verification included; null for none. */
   readonly maxWallMs: number | null;
-  /**
-   * Where the verifier runs the checks: in a container (the default), or on the host, which the
-   * report states as not isolated.
-   */
+  /** Where the verifier runs the checks: a container (the default), or the host, reported so. */
   readonly isolation: "isolated" | "host";
+  /** Whether to apply the delivered patch to the workspace when it is still as the run found it. */
+  readonly apply: boolean;
   readonly approval: ApprovalMode;
   readonly confirm: ConfirmationPrompt;
   readonly version: string;
@@ -58,205 +56,217 @@ export interface RunReport {
   readonly result: VerifyResult | null;
 }
 
-/** Time held back for final verification before the first one has been timed. */
-const defaultVerificationReserveMs = 120_000;
+export { swarmHome };
 
-/** Runs the loop on a workspace and finalizes the tree it leaves, whatever ends the loop. */
+/** Stops that say the model, not the environment, was the problem: worth one stronger model. */
+const modelRelated: ReadonlySet<StopReason> = new Set(["no-progress", "unusable-replies"]);
+
+/**
+ * Runs the loop in a managed worktree seeded with the user's tree as it stands, finalizes the
+ * tree it leaves whatever ends the loop, and delivers the patch to the workspace only where the
+ * workspace has not changed meanwhile.
+ */
 export async function runAgent(options: RunOptions): Promise<RunReport> {
   const started = Date.now();
-  const workspace = await gitText(options.workspace, ["rev-parse", "--show-toplevel"]);
-  const base = await gitText(workspace, ["rev-parse", "--verify", "HEAD^{commit}"]);
+  const repository = await gitText(options.workspace, ["rev-parse", "--show-toplevel"]);
   const home = swarmHome();
   const evidence = await openEvidenceSession({
     root: join(home, "sessions"),
     sessionId: createSessionId(Date.now()),
     now: Date.now,
   });
-  const childHome = join(evidence.directory, "home");
-  await mkdir(childHome, { recursive: true, mode: 0o700 });
-  const guard = createPolicyGuard({
-    workspaceRoot: workspace,
-    homeDir: homedir(),
-    shellAllowlist: defaultShellAllowlist,
-    // The session store, its verifications and the sealed held-out checks are never the agent's to read.
-    deniedRoots: [home],
-    childHomeDir: childHome,
-  });
-  // Isolation installs from the lockfile in the container; the host links where there is none.
-  const execution =
-    options.isolation === "isolated"
-      ? ({ mode: "isolated", network: "closed", dependencies: "prepare" } as const)
-      : ({
-          mode: "host",
-          network: "open",
-          dependencies: await dependencyPolicy(workspace),
-        } as const);
-  const instructions = await loadInstructions(workspace);
-  const rendered = renderInstructions(instructions);
-  const digests = instructions.loaded.map(({ path, sha256 }) => ({ path, sha256 }));
-  const promptSha256 = createHash("sha256")
-    .update(`${systemPrompt}\n${rendered}\n${options.task}`)
-    .digest("hex");
-  await evidence.record({
-    type: "session-started",
-    actor: "harness",
-    provenance: ["user"],
-    payload: {
-      task: options.task,
-      model: options.model.model,
-      base,
-      promptSha256,
-      instructions: digests,
-      instructionNotes: instructions.notes,
-    },
-  });
-
-  let held: HeldResult | null = null;
-  let reserveMs = defaultVerificationReserveMs;
-  const deadline =
-    options.maxWallMs === null ? Number.POSITIVE_INFINITY : started + options.maxWallMs;
-  const verifySnapshot = async (
-    snapshot: Snapshot,
-    record: RequirementRecord,
-    directory: string,
-  ): Promise<VerifyResult> => {
-    const began = Date.now();
-    const result = await verify(
-      {
-        version: requestVersion,
-        repository: workspace,
-        base: { commit: base },
-        candidate: { kind: "patch", path: snapshot.path, sha256: snapshot.sha256 },
-        requirements: [...record.requirements],
-        policy: { execution },
-        artifacts: { directory },
-        producer: {
-          name: "swarm-orchestrator",
-          version: options.version,
-          model: options.model.model,
-          promptSha256,
-          reportSha256: recordSha256(record),
-          instructions: digests,
-          ...(await ledgerPrefix(evidence.ledgerPath)),
-        },
-      },
-      { verifierVersion, ...(options.signal === undefined ? {} : { signal: options.signal }) },
-    );
-    // The next reservation is what the last verification took, with room to spare.
-    reserveMs = Math.max(30_000, Math.ceil((Date.now() - began) * 1.5));
-    held = { patchSha256: snapshot.sha256, recordSha256: recordSha256(record), result };
-    return result;
-  };
-  let judged = 0;
-  const verifyTree = async (record: RequirementRecord): Promise<Verification> => {
-    judged += 1;
-    const directory = join(evidence.directory, "verifications", String(judged));
-    await mkdir(directory, { recursive: true, mode: 0o700 });
-    const snapshot = await snapshotWorkingTree(workspace, base, join(directory, "candidate.patch"));
-    const result = await verifySnapshot(snapshot, record, directory);
-    return {
-      state: result.state,
-      patchSha256: snapshot.sha256,
-      recordSha256: recordSha256(record),
-      feedback: feedbackOf(result),
-    };
-  };
-
-  let loop: LoopResult | null = null;
-  let stop: RunReport["stop"];
-  let reason: string | null = null;
-  let record = initialRecord(options.task);
+  const final = join(evidence.directory, "final");
+  await mkdir(final, { recursive: true, mode: 0o700 });
+  const managed = await openWorkspace(
+    repository,
+    join(tmpdir(), `swarm-${evidence.sessionId}`),
+    final,
+  );
   try {
-    loop = await runLoop({
-      task: options.task,
-      model: options.model,
-      chokepoint: createChokepoint({
-        guard,
-        evidence,
-        approval: options.approval,
-        confirm: options.confirm,
-        timeoutMs: 600_000,
-        signal: options.signal,
-      }),
-      evidence,
-      instructions: rendered,
-      record,
-      status: () => gitText(workspace, ["status", "--short", "--", ".", ":(exclude).swarm"]),
-      verify: verifyTree,
-      maxSteps: options.maxSteps,
-      maxTokens: options.maxTokens,
-      turnTokens: options.turnTokens,
-      timeLeft: () => Date.now() + reserveMs < deadline,
-      signal: options.signal,
-      log: options.log,
+    const workspace = managed.directory;
+    const base = managed.start.base;
+    const childHome = join(evidence.directory, "home");
+    await mkdir(childHome, { recursive: true, mode: 0o700 });
+    const guard = createPolicyGuard({
+      workspaceRoot: workspace,
+      homeDir: homedir(),
+      shellAllowlist: defaultShellAllowlist,
+      // The session store, its verifications and the sealed held-out checks are never the agent's to read.
+      deniedRoots: [home],
+      childHomeDir: childHome,
     });
-    ({ stop, reason, record } = loop);
-  } catch (error) {
-    stop = options.signal?.aborted ? "cancelled" : "interrupted";
-    reason = error instanceof Error ? error.message : String(error);
-  }
+    const execution =
+      options.isolation === "isolated"
+        ? ({ mode: "isolated", network: "closed", dependencies: "prepare" } as const)
+        : ({
+            mode: "host",
+            network: "open",
+            dependencies: await dependencyPolicy(repository),
+          } as const);
+    const instructions = await loadInstructions(workspace);
+    const rendered = renderInstructions(instructions);
+    const digests = instructions.loaded.map(({ path, sha256 }) => ({ path, sha256 }));
+    const promptSha256 = createHash("sha256")
+      .update(`${systemPrompt}\n${rendered}\n${options.task}`)
+      .digest("hex");
+    await evidence.record({
+      type: "session-started",
+      actor: "harness",
+      provenance: ["user"],
+      payload: {
+        task: options.task,
+        model: options.model.model,
+        base,
+        head: managed.start.head,
+        startingEdits: [...managed.start.paths],
+        promptSha256,
+        instructions: digests,
+        instructionNotes: instructions.notes,
+      },
+    });
 
-  options.log("finalizing the delivered tree");
-  const final = await finalize({
-    workspace,
-    base,
-    directory: join(evidence.directory, "final"),
-    record,
-    held,
-    cannotVerify:
-      stop === "cancelled"
-        ? "the run was cancelled"
-        : Date.now() >= deadline
-          ? "the run's time budget was spent"
-          : null,
-    verify: (snapshot) =>
-      verifySnapshot(snapshot, record, join(evidence.directory, "final", "verification")),
-  });
-  const result = final.result;
-  const report: RunReportFile = {
-    version: reportVersion,
-    task: options.task,
-    model: { name: options.model.model, reason: options.modelReason },
-    stop,
-    reason,
-    state: final.state,
-    snapshot: {
+    let model = options.model;
+    const deadline =
+      options.maxWallMs === null ? Number.POSITIVE_INFINITY : started + options.maxWallMs;
+    const verifier = createVerifier({
+      workspace,
       base,
-      patchSha256: final.snapshot.sha256,
-      patch: final.snapshot.path,
-      treeSha256: result?.snapshot.treeSha256 ?? null,
-    },
-    verification: final.verification,
-    requirements: final.requirements,
-    regression:
-      result === null
-        ? null
-        : `${result.regression.status}${result.regression.inherited.length > 0 ? ` (${result.regression.inherited.length} inherited failure(s))` : ""}`,
-    execution: result?.execution.statement ?? null,
-    attestation: result?.evidence.bundle ?? null,
-    instructions: digests,
-    notes: [...instructions.notes, ...final.notes],
-    resources: {
-      steps: loop?.steps ?? 0,
-      tokens: loop?.tokens ?? 0,
-      estimatedTurns: loop?.estimatedTurns ?? 0,
-      verifications: loop?.verifications ?? 0,
-      wallMs: Date.now() - started,
-    },
-  };
-  const paths = await writeReport(join(evidence.directory, "final"), report);
-  await evidence.record({
-    type: "session-stopped",
-    actor: "harness",
-    provenance: ["tool-output"],
-    payload: {
+      execution,
+      evidence,
+      producer: {
+        name: "swarm-orchestrator",
+        version: options.version,
+        promptSha256,
+        instructions: digests,
+      },
+      model: () => model.model,
+      signal: options.signal,
+    });
+    const chokepoint = createChokepoint({
+      guard,
+      evidence,
+      approval: options.approval,
+      confirm: options.confirm,
+      timeoutMs: 600_000,
+      signal: options.signal,
+    });
+
+    const loops: LoopResult[] = [];
+    let stop: RunReport["stop"] = "interrupted";
+    let reason: string | null = null;
+    let record = initialRecord(options.task);
+    let handoff: string | null = null;
+    try {
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const spent = loops.reduce(
+          (sum, one) => sum + one.usage.inputTokens + one.usage.outputTokens,
+          0,
+        );
+        const loop = await runLoop({
+          task: options.task,
+          model,
+          chokepoint,
+          evidence,
+          instructions: rendered,
+          record,
+          status: () => gitText(workspace, ["status", "--short", "--", ".", ":(exclude).swarm"]),
+          verify: verifier.tree,
+          maxSteps: options.maxSteps - loops.reduce((sum, one) => sum + one.steps, 0),
+          maxTokens: options.maxTokens - spent,
+          turnTokens: options.turnTokens,
+          timeLeft: () => Date.now() + verifier.reserveMs() < deadline,
+          contextTokens: options.contextTokens,
+          outputs: { directory: join(workspace, ".swarm", "outputs"), root: workspace },
+          handoff,
+          signal: options.signal,
+          log: options.log,
+        });
+        loops.push(loop);
+        ({ stop, reason, record } = loop);
+        const stronger = options.escalation ?? null;
+        if (attempt > 0 || stronger === null || !modelRelated.has(loop.stop)) break;
+        options.log(`escalating from ${model.model} to ${stronger.model}: ${loop.stop}`);
+        await evidence.record({
+          type: "model-error",
+          actor: "harness",
+          provenance: ["tool-output"],
+          payload: {
+            escalation: {
+              from: model.model,
+              to: stronger.model,
+              because: loop.stop,
+              reason: loop.reason,
+            },
+          },
+        });
+        model = stronger;
+        handoff = `Another model worked on this task before you and stopped (${loop.stop}: ${loop.reason ?? "no reason given"}). The working tree holds its changes; check them before building on them.${loop.verification === null ? "" : `\n\nThe verifier's latest findings:\n${loop.verification.feedback}`}`;
+      }
+    } catch (error) {
+      stop = options.signal?.aborted ? "cancelled" : "interrupted";
+      reason = error instanceof Error ? error.message : String(error);
+    }
+
+    options.log("finalizing the delivered tree");
+    const finalized = await finalize({
+      workspace,
+      base,
+      directory: final,
+      record,
+      held: verifier.held(),
+      cannotVerify:
+        stop === "cancelled"
+          ? "the run was cancelled"
+          : Date.now() >= deadline
+            ? "the run's time budget was spent"
+            : null,
+      verify: (snapshot) => verifier.snapshot(snapshot, record, join(final, "verification")),
+    });
+    const delivery =
+      options.apply && finalized.snapshot.sha256 !== emptySha256
+        ? await deliver(repository, managed.start, finalized.snapshot.path, final)
+        : {
+            applied: false as const,
+            reason: options.apply ? "the run changed nothing" : "kept as a patch, as asked",
+          };
+    const report = assembleReport({
+      options,
       stop,
       reason,
-      state: final.state,
-      patchSha256: final.snapshot.sha256,
-      verification: final.verification,
-      report: paths.json,
-    },
-  });
-  return { stop, report, sessionDirectory: evidence.directory, reportPath: paths.markdown, result };
+      finalized,
+      loops,
+      digests,
+      notes: instructions.notes,
+      start: managed.start,
+      delivery,
+      startedAt: started,
+    });
+    const paths = await writeReport(final, report);
+    await evidence.record({
+      type: "session-stopped",
+      actor: "harness",
+      provenance: ["tool-output"],
+      payload: {
+        stop,
+        reason,
+        state: finalized.state,
+        patchSha256: finalized.snapshot.sha256,
+        verification: finalized.verification,
+        applied: delivery.applied,
+        report: paths.json,
+      },
+    });
+    return {
+      stop,
+      report,
+      sessionDirectory: evidence.directory,
+      reportPath: paths.markdown,
+      result: finalized.result,
+    };
+  } finally {
+    await managed.remove();
+  }
 }
+
+/** sha256 of no bytes: a patch that changes nothing. */
+const emptySha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";

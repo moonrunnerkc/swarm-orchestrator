@@ -9,7 +9,7 @@ Two evaluations produce every number in [results.md](results.md): the three-arm 
 `eval/tasks/` (the first 100 SWE-bench Verified and first 50 Terminal-Bench 2.0 tasks in byte
 order) through [Harbor](https://github.com/laude-institute/harbor). Harbor runs each agent in the
 task's own container and judges the result with the benchmark's own tests. Every arm uses the
-endpoint and model in this repository's `swarm.toml` `[agent]` table. Tasks run in list order,
+endpoint and model `evaluationModel` names in eval/run.mjs (overridable with `SWARM_EVAL_ENDPOINT` and `SWARM_EVAL_MODEL`). Tasks run in list order,
 every arm on a task before the next task starts, and each trial appends one JSONL row to
 `eval/results/<run>/<arm>.jsonl`, which is committed.
 
@@ -41,7 +41,7 @@ the outcome block the trial printed, and the page counts them beside the benchma
   Docker's buildx plugin must be installed (`brew install docker-buildx`, linked into
   `~/.docker/cli-plugins`).
 - Harbor: `uv tool install harbor`.
-- The model endpoint in `swarm.toml` `[agent]`, here Ollama serving `qwen3.6:35b-a3b`. One model
+- The model endpoint `evaluationModel` in eval/run.mjs names, here Ollama serving `qwen3.6:35b-a3b`. One model
   at a time: the trials run one after another, never in parallel.
 
 ## Tamper evaluation

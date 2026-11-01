@@ -17,7 +17,10 @@ export function scripted(replies: readonly string[]): ModelClient & { seen: Mess
       seen.push([...messages]);
       return {
         content: replies[seen.length - 1] ?? replies.at(-1) ?? "",
-        tokens: 100,
+        inputTokens: 90,
+        outputTokens: 10,
+        inferenceMs: 1,
+        retries: 0,
         truncated: false,
       };
     },
@@ -92,10 +95,13 @@ export async function fixture(
         task,
         model,
         modelReason: "scripted for the test",
+        cost: "none (scripted)",
         maxSteps: 10,
         maxTokens: 100_000,
         turnTokens: 1000,
         maxWallMs: null,
+        contextTokens: 32_768,
+        apply: false,
         isolation,
         approval: "auto",
         confirm: null,

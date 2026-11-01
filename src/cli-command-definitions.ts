@@ -11,7 +11,7 @@ export const commandDefinitions: readonly CommandDefinition[] = [
   {
     name: "run",
     syntax:
-      'run "<task>" [--endpoint <url>] [--model <name>] [--max-steps <n>] [--max-tokens <n>] [--turn-tokens <n>] [--max-minutes <n>] [--approve ask|auto] [--host]',
+      'run "<task>" [--model <name>|auto] [--endpoint <url>] [--context <tokens>] [--max-steps <n>] [--max-tokens <n>] [--turn-tokens <n>] [--max-minutes <n>] [--approve ask|auto] [--host] [--no-apply]',
     description:
       "make the change, check each requirement, and report what is complete and what is not",
   },
@@ -19,8 +19,8 @@ export const commandDefinitions: readonly CommandDefinition[] = [
   ...verifierDefinitions.filter((command) => ["verify", "init", "ci"].includes(command.name)),
   {
     name: "doctor",
-    syntax: "doctor [--fix] [--offline]",
-    description: "report what owns the installed command",
+    syntax: "doctor [--fix] [--offline] [--models [--context <tokens>]]",
+    description: "report what owns the installed command, or which local models can run the agent",
   },
 ];
 

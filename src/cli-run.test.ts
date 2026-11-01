@@ -76,11 +76,12 @@ describe("swarm run against the stub endpoint", () => {
     const ran = await swarmRun(`http://127.0.0.1:${stub.port}/v1`);
     await stub.close();
     expect(stub.requests).toHaveLength(1);
-    // The fix is in the tree but no evidence was mapped to the task, so R1 stays unverified.
+    // The fix was already in the working tree when the run began: part of its starting state, so
+    // the run itself changed nothing and R1 is unverified.
     expect(ran.code).toBe(4);
     expect(ran.stdout).toMatch(/^stop {9}model-error: the model endpoint failed: HTTP 404/m);
     expect(ran.stdout).toMatch(/^state {8}incomplete$/m);
-    expect(ran.stdout).toMatch(/^R1 {11}unverified {3}no executed evidence is mapped/m);
+    expect(ran.stdout).toMatch(/^R1 {11}unverified {3}no change observed/m);
     expect(ran.stdout).toMatch(/^regression {3}none$/m);
   });
 
