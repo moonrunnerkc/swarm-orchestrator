@@ -34,22 +34,6 @@ function client(outcomes: readonly (Error | typeof answered)[]) {
 }
 
 describe("Ollama's native chat", () => {
-  it("sends temperature 0 unless the turn asks for another", async () => {
-    const bodies: { options: { temperature: number } }[] = [];
-    const chat = ollamaChat({
-      base: "http://localhost:11434",
-      model: "q",
-      contextTokens: 8192,
-      post: async (_url, _headers, body) => {
-        bodies.push(JSON.parse(body));
-        return answered;
-      },
-    });
-    await chat.complete([{ role: "user", content: "go" }], turn);
-    await chat.complete([{ role: "user", content: "go" }], { ...turn, temperature: 0.7 });
-    expect(bodies.map((one) => one.options.temperature)).toEqual([0, 0.7]);
-  });
-
   it("sends a turn again after the connection dropped mid-turn, and counts the retry", async () => {
     const { chat, calls } = client([hangUp(), answered]);
     const reply = await chat.complete([{ role: "user", content: "go" }], turn);

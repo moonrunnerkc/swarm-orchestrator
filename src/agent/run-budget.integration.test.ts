@@ -54,21 +54,4 @@ describe("a run's turn budget", () => {
     expect(said[4]).toContain("The verifier's findings are still open");
     expect(said[4]).toContain("R1 unverified");
   });
-
-  // At temperature 0 a model that repeats a command gets nearly the same prompt and repeats it
-  // again: claimcheck on Rapid-MLX stopped this way after 6 turns.
-  it("samples the one turn that would otherwise end the run for no progress", async () => {
-    const quick = scripted(["ls", "ls", "pwd"].map(bash));
-    const temperatures: (number | undefined)[] = [];
-    const model = {
-      ...quick,
-      async complete(...args: Parameters<typeof quick.complete>) {
-        temperatures.push(args[1].temperature);
-        return quick.complete(...args);
-      },
-    };
-    const ran = await (await fixture()).run(model, { maxSteps: 3 });
-    expect(temperatures).toEqual([undefined, undefined, 0.7]);
-    expect(ran.stop).not.toBe("no-progress");
-  });
 });

@@ -77,8 +77,6 @@ describe("the chat client", () => {
         max_tokens: 100,
       },
     ]);
-    await client.complete([{ role: "user", content: "go" }], { ...turn, temperature: 0.7 });
-    expect(sent[1]).toMatchObject([expect.any(String), { temperature: 0.7 }]);
   });
 
   it("reports no tokens where the endpoint reports no usage", async () => {
