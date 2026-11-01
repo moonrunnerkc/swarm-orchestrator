@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { completionMarker, parseReply, readReply, truncate, turnHeader } from "./prompt.ts";
+import {
+  completionMarker,
+  parseReply,
+  readReply,
+  systemPrompt,
+  truncate,
+  turnHeader,
+} from "./prompt.ts";
 
 describe("reading a reply", () => {
   it("takes the one bash block as the command", () => {
@@ -92,5 +99,12 @@ describe("the output cap", () => {
     expect(cut.startsWith("a".repeat(500))).toBe(true);
     expect(cut.endsWith("b".repeat(500))).toBe(true);
     expect(cut).toContain("15000 bytes omitted");
+  });
+});
+
+describe("the system prompt", () => {
+  it("keeps the change to the task's scope, its files and the versions it states", () => {
+    expect(systemPrompt).toContain("Change only what the task needs");
+    expect(systemPrompt).toContain("keep\nto the versions and limits it states");
   });
 });

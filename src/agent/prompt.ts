@@ -41,6 +41,9 @@ export const systemPrompt = [
   "Write scratch files (helper scripts, notes) under .swarm/scratch/: nothing under .swarm/ is",
   "delivered, and paths outside the repository are refused.",
   "",
+  "Change only what the task needs: do not delete or rewrite files it does not concern, and keep",
+  "to the versions and limits it states. Your report lists every file you change.",
+  "",
   "Change source, tests, manifests and lockfiles as the task needs. The base commit's own tests",
   "still judge your change: rewriting a test's expectation does not make a failing original pass.",
 ].join("\n");
