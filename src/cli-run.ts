@@ -7,7 +7,12 @@ import { swarmHome } from "./agent/verification.ts";
 import { buildVersion } from "./build-version.ts";
 import { UsageError } from "./cli-command-definitions.ts";
 import { readAgentConfig } from "./config/agent-config.ts";
-import { NoModelError, type ResolvedModel, resolveModel } from "./runtime/resolve.ts";
+import {
+  NoModelError,
+  type ResolvedModel,
+  resolveAtContexts,
+  resolveModel,
+} from "./runtime/resolve.ts";
 import type { ConfirmationPrompt } from "./tools/chokepoint.ts";
 
 const write = (text: string) => process.stdout.write(`${text}\n`);
@@ -73,19 +78,32 @@ export async function run(args: readonly string[]): Promise<number> {
   for (const name of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
     process.once(name, () => controller.abort(new Error(`stopped by ${name}`)));
   }
-  const contextTokens = count(values.context, "--context") ?? defaultContextTokens;
+  const modelName = values.model ?? agent?.model ?? "auto";
+  const endpoint = values.endpoint ?? agent?.endpoint ?? null;
+  const named = count(values.context, "--context");
+  // A discovered Ollama model gets the largest context it fits; a named model or server, whose
+  // capacity is not estimated here, the smaller one.
+  const contexts =
+    named !== undefined
+      ? [named]
+      : endpoint === null && modelName === "auto"
+        ? discoveredContexts
+        : [defaultContextTokens];
 
   write(`task         ${task}`);
   let model: ResolvedModel;
+  let contextTokens: number;
   try {
-    model = await resolveModel({
-      model: values.model ?? agent?.model ?? "auto",
-      endpoint: values.endpoint ?? agent?.endpoint ?? null,
-      apiKey: process.env[keyName] ?? null,
-      contextTokens,
-      home: swarmHome(),
-      log: (line) => process.stderr.write(`${line}\n`),
-    });
+    ({ resolved: model, contextTokens } = await resolveAtContexts(contexts, (context) =>
+      resolveModel({
+        model: modelName,
+        endpoint,
+        apiKey: process.env[keyName] ?? null,
+        contextTokens: context,
+        home: swarmHome(),
+        log: (line) => process.stderr.write(`${line}\n`),
+      }),
+    ));
   } catch (error) {
     if (!(error instanceof NoModelError)) throw error;
     write(`blocked      ${error.message}`);
@@ -123,8 +141,10 @@ export async function run(args: readonly string[]): Promise<number> {
   return exitCodeOf(ran.report.state, ran.report.requirements);
 }
 
-/** The context a discovered model is loaded with: room for the task, instructions and a diff. */
+/** The context a named model or server is used with: room for the task, instructions and a diff. */
 const defaultContextTokens = 32_768;
+/** Contexts tried for a discovered model, largest first: more of a repository before compaction. */
+const discoveredContexts = [65_536, 32_768];
 
 /** 0 complete, 1 a requirement failed or the run stopped short, 4 unverified only, 5 blocked. */
 function exitCodeOf(state: string, requirements: RunReport["report"]["requirements"]): number {

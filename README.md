@@ -45,9 +45,10 @@ swarm run "<task>"
 ```
 
 With no model named, Swarm asks Ollama what is installed, leaves out cloud entries, embedding
-models and anything that would not fit in memory at the configured context (weights plus KV
-cache), probes the strongest candidates until one follows its shell protocol, and prints the one
-it chose and why. Probe results are kept per machine and model digest under `~/.swarm/profiles`.
+models and anything that would not fit in memory at the context (weights plus KV cache), probes
+the strongest candidates until one follows its shell protocol, and prints the one it chose and
+why. It tries a 65,536-token context first and 32,768 where nothing fits there; `--context` sets
+one, and a named model or server gets 32,768 unless you set it. Probe results are kept per machine and model digest under `~/.swarm/profiles`.
 `swarm doctor --models` shows every installed model's verdict. Name a model with `--model`, or
 any OpenAI-compatible server (Rapid-MLX, vLLM, llama.cpp) with `--endpoint`. Nothing is
 downloaded and nothing remote is chosen for you.

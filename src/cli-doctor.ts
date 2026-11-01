@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { swarmHome } from "./agent/verification.ts";
 import { describeRunningVersion } from "./build-version.ts";
+import { UsageError } from "./cli-command-definitions.ts";
 import { diagnose, remediesFor, runtimeFinding } from "./install/health.ts";
 import { inspectInstall } from "./install/inspect.ts";
 import { describeInstall } from "./install/report.ts";
@@ -125,6 +126,13 @@ export function doctorCommand(args: readonly string[]): Promise<number> {
       context: { type: "string" },
     },
   });
-  if (values.models === true) return modelsReport(Number(values.context ?? 32_768));
+  if (values.models === true) {
+    // The context a run tries first for a discovered model.
+    const context = values.context === undefined ? 65_536 : Number(values.context);
+    if (!Number.isInteger(context) || context <= 0) {
+      return Promise.reject(new UsageError("--context needs a positive whole number"));
+    }
+    return modelsReport(context);
+  }
   return doctor({ fix: values.fix === true, askRegistry: values.offline !== true });
 }

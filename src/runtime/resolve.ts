@@ -43,6 +43,35 @@ export class NoModelError extends Error {
   }
 }
 
+/** No installed model fits and passes its probe at the configured context. */
+export class NoFittingModelError extends NoModelError {
+  constructor(problem: string, step: string) {
+    super(problem, step);
+    this.name = "NoFittingModelError";
+  }
+}
+
+/**
+ * Resolves at the first of `contexts` at which a model fits: a larger context holds more of a
+ * repository before compaction, and a machine where none fits there still runs at the next.
+ * Only a failure to fit moves on; any other failure is the answer.
+ */
+export async function resolveAtContexts<T>(
+  contexts: readonly number[],
+  resolveAt: (contextTokens: number) => Promise<T>,
+): Promise<{ readonly resolved: T; readonly contextTokens: number }> {
+  let last: NoFittingModelError | null = null;
+  for (const contextTokens of contexts) {
+    try {
+      return { resolved: await resolveAt(contextTokens), contextTokens };
+    } catch (error) {
+      if (!(error instanceof NoFittingModelError)) throw error;
+      last = error;
+    }
+  }
+  throw last ?? new NoModelError("no context to try", "pass --context");
+}
+
 export interface ResolveInput {
   /** A model name, or "auto". */
   readonly model: string;
@@ -208,7 +237,7 @@ export async function resolveModel(input: ResolveInput): Promise<ResolvedModel> 
       .join("; ");
     // Nothing fit: say what would. Something fit and failed its probe: say which, and how to look.
     const advice = capacityAdvice(installed, input.contextTokens);
-    throw new NoModelError(
+    throw new NoFittingModelError(
       `no installed Ollama model can run the agent at a ${input.contextTokens}-token context${tried.length > 0 ? ` (${tried})` : ""}`,
       advice === null
         ? "Every model that fits failed its readiness probe: `swarm doctor --models` shows each one's result; name one with --model to use it anyway"
