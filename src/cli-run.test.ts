@@ -1,6 +1,6 @@
 import { execFileSync, spawn } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -39,6 +39,10 @@ afterEach(async () => {
 
 /** `swarm run` as a child, so the stub endpoint in this process can answer it. */
 function swarmRun(endpoint: string, extra: readonly string[] = []) {
+  return started(endpoint, extra).done;
+}
+
+function started(endpoint: string, extra: readonly string[] = []) {
   const args = [cli, "run", "Make half(n) return n / 2."];
   // The host, said by name: these tests are about the loop and its endpoint, not isolation.
   args.push("--endpoint", endpoint, "--model", "stub", "--approve", "auto", "--host", ...extra);
@@ -51,9 +55,10 @@ function swarmRun(endpoint: string, extra: readonly string[] = []) {
     stdout += chunk;
   });
   child.stderr.resume();
-  return new Promise<{ code: number | null; stdout: string }>((settle) =>
+  const done = new Promise<{ code: number | null; stdout: string }>((settle) =>
     child.on("close", (code) => settle({ code, stdout })),
   );
+  return { child, done };
 }
 
 describe("swarm run against the stub endpoint", () => {
@@ -94,5 +99,19 @@ describe("swarm run against the stub endpoint", () => {
       /^stop {9}model-error: the model endpoint failed: connection refused at/m,
     );
     expect(ran.stdout).toMatch(/^regression {3}none$/m);
+  });
+
+  it("finalizes a run stopped by SIGTERM or SIGHUP as cancelled and removes its worktree", async () => {
+    for (const signal of ["SIGTERM", "SIGHUP"] as const) {
+      const stub = await startStubModel();
+      const run = started(`http://127.0.0.1:${stub.port}/v1`);
+      while (stub.requests.length === 0) await new Promise((wait) => setTimeout(wait, 50));
+      run.child.kill(signal);
+      const ran = await run.done;
+      await stub.close();
+      expect(ran.stdout).toContain(`\nstop         cancelled: stopped by ${signal}\n`);
+      expect(ran.code).toBe(4);
+      expect((await readdir(root)).filter((name) => name.includes(".swarm-"))).toEqual([]);
+    }
   });
 });

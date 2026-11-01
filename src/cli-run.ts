@@ -67,7 +67,10 @@ export async function run(args: readonly string[]): Promise<number> {
   if (approval !== "ask" && approval !== "auto") throw new UsageError("--approve is ask or auto");
   const keyName = agent?.apiKeyEnv ?? "SWARM_API_KEY";
   const controller = new AbortController();
-  process.once("SIGINT", () => controller.abort(new Error("interrupted")));
+  // The first of these cancels and finalizes the run; a second one ends the process as usual.
+  for (const name of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
+    process.once(name, () => controller.abort(new Error(`stopped by ${name}`)));
+  }
   const contextTokens = count(values.context, "--context") ?? defaultContextTokens;
 
   write(`task         ${task}`);

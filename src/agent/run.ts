@@ -206,7 +206,9 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
       }
     } catch (error) {
       stop = options.signal?.aborted ? "cancelled" : "interrupted";
-      reason = error instanceof Error ? error.message : String(error);
+      // A cancelled run says why it was cancelled, not which operation the abort interrupted.
+      const cause = options.signal?.aborted ? options.signal.reason : error;
+      reason = cause instanceof Error ? cause.message : String(cause);
     }
 
     options.log("finalizing the delivered tree");
