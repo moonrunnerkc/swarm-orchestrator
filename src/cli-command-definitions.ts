@@ -11,7 +11,7 @@ export const commandDefinitions: readonly CommandDefinition[] = [
   {
     name: "run",
     syntax:
-      'run "<task>" [--model <name>|auto] [--endpoint <url>] [--context <tokens>] [--max-steps <n>] [--max-tokens <n>] [--turn-tokens <n>] [--max-minutes <n>] [--approve ask|auto] [--host] [--no-apply]',
+      'run "<task>" [--model <name>|auto] [--endpoint <url>] [--context <tokens>] [--max-steps <n>] [--max-tokens <n>] [--turn-tokens <n>] [--max-minutes <n>] [--approve ask|auto] [--host] [--no-apply] [--authorize-behavior-change]',
     description:
       "make the change, check each requirement, and report what is complete and what is not",
   },

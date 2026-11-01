@@ -77,6 +77,32 @@ describe("swarm run", () => {
     expect(call?.payload).toMatchObject({ reasoning: fix, replyFromReasoning: true });
   });
 
+  it("lets an existing expectation change only when the user authorized a behavior change", async () => {
+    const roundsDown = (name: string) =>
+      `import { test } from "node:test";\nimport assert from "node:assert/strict";\nimport { half } from "../half.mjs";\ntest("${name}", () => assert.equal(half(5), ${name === "half" ? "2.5" : "2"}));\n`;
+    const files = {
+      "half.mjs": "export const half = (n) => n / 2;\n",
+      "test/half.test.mjs": roundsDown("half"),
+    };
+    const task = "Make half(n) round down, so half(5) is 2.";
+    const replies = [
+      write("half.mjs", "export const half = (n) => Math.floor(n / 2);"),
+      write("test/half.test.mjs", roundsDown("half").replace("2.5", "2")),
+      mapped,
+    ];
+    const refused = await (await fixture(files, task)).run(scripted(replies), { maxSteps: 3 });
+    expect(refused.report.state).not.toBe("complete");
+    const allowed = await (await fixture(files, task)).run(scripted(replies), {
+      maxSteps: 3,
+      behaviorChange: "authorized",
+    });
+    expect(allowed.report.state).toBe("complete");
+    expect(allowed.result?.checks[0]?.tests?.superseded).toEqual(["test/half.test.mjs::half"]);
+    expect(allowed.report.notes).toContain(
+      "The user authorized a change of tested behavior (--authorize-behavior-change); expectations it superseded: test/half.test.mjs::half.",
+    );
+  });
+
   it("never renders a pass from the model's own say-so", async () => {
     const probe = await fixture();
     const ran = await probe.run(scripted([`It is fixed and all tests pass.\n${completionMarker}`]));

@@ -55,6 +55,7 @@ export async function run(args: readonly string[]): Promise<number> {
       "max-minutes": { type: "string" },
       host: { type: "boolean" },
       "no-apply": { type: "boolean" },
+      "authorize-behavior-change": { type: "boolean" },
       approve: { type: "string" },
     },
   });
@@ -99,6 +100,8 @@ export async function run(args: readonly string[]): Promise<number> {
     escalation: model.escalation?.client ?? null,
     contextTokens,
     apply: values["no-apply"] !== true,
+    // Only the user changes what existing tests may expect; nothing the model says can.
+    behaviorChange: values["authorize-behavior-change"] === true ? "authorized" : "none",
     cost: model.cost,
     maxSteps: count(values["max-steps"], "--max-steps") ?? agent?.maxSteps ?? 50,
     maxTokens: count(values["max-tokens"], "--max-tokens") ?? agent?.maxTokens ?? 1_000_000,

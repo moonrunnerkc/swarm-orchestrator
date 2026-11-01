@@ -56,6 +56,10 @@ The run works in a git worktree beside your repository, starting from your tree 
 unstaged and untracked edits included), and applies its patch to your working tree at the end
 only if nothing changed there meanwhile; `--no-apply` keeps it as a patch.
 
+Your existing tests keep judging the change in their original form. When the task itself changes
+what they should expect, pass `--authorize-behavior-change`: a rewritten expectation then stands
+where its new version fails before the change and passes after it, and the report names each one.
+
 ## What the evidence is, and is not
 
 The verifier signs an in-toto Statement in a DSSE envelope over the patch and the tree it

@@ -18,7 +18,7 @@ import type { ModelClient } from "./model.ts";
 import { systemPrompt } from "./prompt.ts";
 import { assembleReport, type RunReportFile, writeReport } from "./report.ts";
 import { initialRecord } from "./requirement-record.ts";
-import { createVerifier, dependencyPolicy, swarmHome } from "./verification.ts";
+import { behaviorChangeNote, createVerifier, dependencyPolicy, swarmHome } from "./verification.ts";
 import { deliver, openWorkspace } from "./workspace.ts";
 
 export interface RunOptions {
@@ -42,6 +42,8 @@ export interface RunOptions {
   /** Whether to apply the delivered patch to the workspace when it is still as the run found it. */
   readonly apply: boolean;
   readonly approval: ApprovalMode;
+  /** The user's authorization to change what existing tests expect; never the model's. */
+  readonly behaviorChange?: "none" | "authorized";
   readonly confirm: ConfirmationPrompt;
   readonly version: string;
   readonly signal?: AbortSignal | undefined;
@@ -124,6 +126,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
         promptSha256,
         instructions: digests,
         instructionNotes: instructions.notes,
+        behaviorChange: options.behaviorChange ?? "none",
       },
     });
 
@@ -134,6 +137,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
       workspace,
       base,
       execution,
+      behaviorChange: options.behaviorChange ?? "none",
       evidence,
       producer: {
         name: "swarm-orchestrator",
@@ -240,7 +244,10 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
       finalized,
       loops,
       digests,
-      notes: instructions.notes,
+      notes: [
+        ...instructions.notes,
+        ...(options.behaviorChange === "authorized" ? [behaviorChangeNote(finalized.result)] : []),
+      ],
       start: managed.start,
       delivery,
       startedAt: started,

@@ -77,6 +77,7 @@ export function createVerifier(input: {
   readonly workspace: string;
   readonly base: string;
   readonly execution: ExecutionPolicy;
+  readonly behaviorChange: "none" | "authorized";
   readonly evidence: EvidenceRecorder;
   readonly producer: Pick<Producer, "name" | "version" | "promptSha256" | "instructions">;
   readonly model: () => string;
@@ -94,7 +95,7 @@ export function createVerifier(input: {
         base: { commit: input.base },
         candidate: { kind: "patch", path: candidate.path, sha256: candidate.sha256 },
         requirements: [...record.requirements],
-        policy: { execution: input.execution },
+        policy: { behaviorChange: input.behaviorChange, execution: input.execution },
         artifacts: { directory },
         producer: {
           ...input.producer,
@@ -131,4 +132,10 @@ export function createVerifier(input: {
     held: () => held,
     reserveMs: () => reserve,
   };
+}
+
+/** What a run the user authorized to change tested behavior says it changed, from the result. */
+export function behaviorChangeNote(result: VerifyResult | null): string {
+  const superseded = (result?.checks ?? []).flatMap((check) => check.tests?.superseded ?? []);
+  return `The user authorized a change of tested behavior (--authorize-behavior-change); expectations it superseded: ${superseded.length === 0 ? "none" : superseded.join(", ")}.`;
 }

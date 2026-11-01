@@ -1,6 +1,6 @@
 import { execFileSync, spawn } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -113,5 +113,19 @@ describe("swarm run against the stub endpoint", () => {
       expect(ran.code).toBe(4);
       expect((await readdir(root)).filter((name) => name.includes(".swarm-"))).toEqual([]);
     }
+  });
+
+  it("passes the user's authorization to change tested behavior to the verifier and the report", async () => {
+    const stub = await startStubModel();
+    const ran = await swarmRun(`http://127.0.0.1:${stub.port}/v1`, [
+      "--max-steps",
+      "1",
+      "--authorize-behavior-change",
+    ]);
+    await stub.close();
+    const report = ran.stdout.match(/^report {7}(.+)$/m)?.[1] ?? "";
+    expect(await readFile(report, "utf8")).toContain(
+      "The user authorized a change of tested behavior (--authorize-behavior-change); expectations it superseded: none.",
+    );
   });
 });
