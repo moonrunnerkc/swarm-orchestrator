@@ -211,3 +211,7 @@ One line per open choice made during the verifier-first rebuild (ADR 0014), with
 
 - When no installed model fits, the blocked run names the largest context (halving from the configured one, down to 8,192) at which a model fits under the same eligibility rules, stated context included, and the model selection would favor there; otherwise it says to install a smaller chat model. It never suggests closing other programs: the budget is fixed by total memory, not by what is free. Where a model fit but failed its probe, the step is `swarm doctor --models`.
 - SIGTERM and SIGHUP cancel and finalize a run like SIGINT; a second signal ends the process. Found when a stopped run left its managed worktree beside the repository and wrote no report.
+
+## 2026-11-01: approved behavior changes
+
+- `swarm run --authorize-behavior-change` is the user's authorization to change what existing tests expect. It goes into every verification request and the session-started evidence, and the report names the expectations it superseded. It is a command-line flag only: neither `swarm.toml`'s `[agent]` table, the repository's instruction files nor the model can set it, since it changes acceptance authority.
