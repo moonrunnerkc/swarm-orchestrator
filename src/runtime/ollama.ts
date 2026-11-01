@@ -193,33 +193,40 @@ export function ollamaChat(options: {
   return {
     model: options.model,
     async complete(messages: readonly Message[], { signal, maxTokens }) {
-      const timeout = AbortSignal.timeout(options.timeoutMs ?? 900_000);
-      let response: { readonly status: number; readonly text: string };
-      try {
-        response = await send(
-          url,
-          { "content-type": "application/json" },
-          JSON.stringify({
-            model: options.model,
-            messages,
-            stream: false,
-            think: false,
-            keep_alive: options.keepAlive ?? "10m",
-            options: { num_ctx: options.contextTokens, num_predict: maxTokens, temperature: 0 },
-          }),
-          { signal: signal === undefined ? timeout : AbortSignal.any([signal, timeout]) },
-        );
-      } catch (error) {
-        if (signal?.aborted) throw error;
-        const code = (error as NodeJS.ErrnoException).code;
-        if (code === "ECONNREFUSED") {
-          throw new ModelError(
-            `Ollama is not answering at ${options.base}: start it with \`ollama serve\` (or open the Ollama app), then run again`,
-          );
+      const body = JSON.stringify({
+        model: options.model,
+        messages,
+        stream: false,
+        think: false,
+        keep_alive: options.keepAlive ?? "10m",
+        options: { num_ctx: options.contextTokens, num_predict: maxTokens, temperature: 0 },
+      });
+      let response: { readonly status: number; readonly text: string } | null = null;
+      let retries = 0;
+      // A connection dropped mid-turn is sent again: Ollama may be restarting. One that is gone
+      // refuses the next attempt, which names the step to take.
+      while (response === null) {
+        const timeout = AbortSignal.timeout(options.timeoutMs ?? 900_000);
+        try {
+          response = await send(url, { "content-type": "application/json" }, body, {
+            signal: signal === undefined ? timeout : AbortSignal.any([signal, timeout]),
+          });
+        } catch (error) {
+          if (signal?.aborted) throw error;
+          const code = (error as NodeJS.ErrnoException).code;
+          if (code === "ECONNREFUSED") {
+            throw new ModelError(
+              `Ollama is not answering at ${options.base}: start it with \`ollama serve\` (or open the Ollama app), then run again`,
+            );
+          }
+          if (retries === 2) {
+            const problem = (error instanceof Error && error.message) || code || String(error);
+            throw new ModelError(
+              `Ollama dropped the connection at ${options.base} (${problem}, three attempts in a row): check that \`ollama serve\` is running and that ${options.model} loads (\`ollama run ${options.model}\`), then run again`,
+            );
+          }
+          retries += 1;
         }
-        throw new ModelError(
-          `${error instanceof Error ? error.message : String(error)} from ${url}`,
-        );
       }
       if (response.status !== 200)
         throw new ModelError(`HTTP ${response.status} from ${url}: ${response.text.slice(0, 300)}`);
@@ -236,7 +243,7 @@ export function ollamaChat(options: {
         inferenceMs:
           reply.total_duration === undefined ? null : Math.round(reply.total_duration / 1e6),
         outputMs: reply.eval_duration === undefined ? null : Math.round(reply.eval_duration / 1e6),
-        retries: 0,
+        retries,
         truncated: reply.done_reason === "length",
       };
     },

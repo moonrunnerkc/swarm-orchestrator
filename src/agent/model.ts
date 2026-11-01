@@ -145,7 +145,11 @@ export function openAiCompatible(options: {
           const code = (error as NodeJS.ErrnoException).code;
           // A refused connection to localhost arrives as an AggregateError with no message.
           const problem = (error instanceof Error && error.message) || code || String(error);
-          if (code === "ECONNREFUSED") throw new ModelError(`connection refused at ${url}`);
+          if (code === "ECONNREFUSED") {
+            throw new ModelError(
+              `connection refused at ${url}: start the server that serves ${options.model}, or name a running one with --endpoint, then run again`,
+            );
+          }
           lastProblem = problem;
           failures += 1;
           continue;
@@ -182,7 +186,9 @@ export function openAiCompatible(options: {
           truncated: parsed.choices[0]?.finish_reason === "length",
         };
       }
-      throw new ModelError(`${lastProblem} (three attempts in a row)`);
+      throw new ModelError(
+        `${lastProblem} (three attempts in a row): check that the server at ${options.endpoint.replace(/\/+$/, "")} serves ${options.model}, then run again`,
+      );
     },
   };
 }

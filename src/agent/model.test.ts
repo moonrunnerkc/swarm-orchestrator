@@ -131,10 +131,14 @@ describe("the chat client", () => {
     const refused = failing(async () => {
       throw Object.assign(new AggregateError([], ""), { code: "ECONNREFUSED" });
     });
-    await expect(refused.client.complete([], turn)).rejects.toThrow(/connection refused at/);
+    await expect(refused.client.complete([], turn)).rejects.toThrow(
+      "connection refused at http://model.test/v1/chat/completions: start the server that serves m, or name a running one with --endpoint, then run again",
+    );
     expect(refused.calls()).toBe(1);
     const down = failing(() => answer({}, 502));
-    await expect(down.client.complete([], turn)).rejects.toThrow(/three attempts in a row/);
+    await expect(down.client.complete([], turn)).rejects.toThrow(
+      /three attempts in a row\): check that the server at http:\/\/model\.test\/v1 serves m, then run again$/,
+    );
     expect(down.calls()).toBe(3);
   });
 
