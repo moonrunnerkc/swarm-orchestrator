@@ -61,6 +61,22 @@ describe("swarm run", () => {
     expect(afterFindings).toContain("AssertionError");
   });
 
+  it("acts on a reply form a server's reasoning parser moved out of the content", async () => {
+    // Rapid-MLX with thinking off moves everything before a stray </think> into
+    // reasoning_content (seen on dossier, 2026-11-01).
+    const probe = await fixture();
+    const model = scripted([{ content: "I'll fix it.", reasoning: fix }, mapped]);
+    const ran = await probe.run(model);
+    expect(ran.stop).toBe("complete");
+    expect(model.seen[1]?.find((message) => message.role === "assistant")?.content).toContain(
+      "half.mjs",
+    );
+    const call = (await ledger(ran.sessionDirectory)).find(
+      (record) => record.type === "model-call",
+    );
+    expect(call?.payload).toMatchObject({ reasoning: fix, replyFromReasoning: true });
+  });
+
   it("never renders a pass from the model's own say-so", async () => {
     const probe = await fixture();
     const ran = await probe.run(scripted([`It is fixed and all tests pass.\n${completionMarker}`]));

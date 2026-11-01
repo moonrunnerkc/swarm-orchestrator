@@ -7,16 +7,25 @@ import type { Message, ModelClient } from "./model.ts";
 import { completionMarker } from "./prompt.ts";
 import { type RunOptions, runAgent } from "./run.ts";
 
+/** A reply the endpoint split: its content, and what a reasoning parser moved out of it. */
+export interface SplitReply {
+  readonly content: string;
+  readonly reasoning: string;
+}
+
 /** A model that replies from a script, repeating its last reply, and keeps what it was shown. */
-export function scripted(replies: readonly string[]): ModelClient & { seen: Message[][] } {
+export function scripted(
+  replies: readonly (string | SplitReply)[],
+): ModelClient & { seen: Message[][] } {
   const seen: Message[][] = [];
   return {
     model: "scripted",
     seen,
     async complete(messages) {
       seen.push([...messages]);
+      const next = replies[seen.length - 1] ?? replies.at(-1) ?? "";
       return {
-        content: replies[seen.length - 1] ?? replies.at(-1) ?? "",
+        ...(typeof next === "string" ? { content: next } : next),
         inputTokens: 90,
         outputTokens: 10,
         inferenceMs: 1,

@@ -28,6 +28,22 @@ describe("the chat client", () => {
     server.close();
   });
 
+  it("keeps what a server's reasoning parser split out of the content, under either name", async () => {
+    for (const field of ["reasoning_content", "reasoning"]) {
+      const client = openAiCompatible({
+        endpoint: "http://model.test/v1",
+        model: "m",
+        apiKey: null,
+        post: async () =>
+          answer({
+            choices: [{ message: { content: "I'll look.", [field]: "```bash\nls\n```" } }],
+          }),
+      });
+      const reply = await client.complete([{ role: "user", content: "go" }], turn);
+      expect(reply).toMatchObject({ content: "I'll look.", reasoning: "```bash\nls\n```" });
+    }
+  });
+
   it("returns the content without a reasoning preamble, and the tokens reported", async () => {
     const sent: unknown[] = [];
     const client = openAiCompatible({

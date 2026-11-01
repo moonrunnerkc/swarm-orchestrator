@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { completionMarker, parseReply, truncate, turnHeader } from "./prompt.ts";
+import { completionMarker, parseReply, readReply, truncate, turnHeader } from "./prompt.ts";
 
 describe("reading a reply", () => {
   it("takes the one bash block as the command", () => {
@@ -42,6 +42,33 @@ describe("reading a reply", () => {
     expect(parseReply(`\`\`\`bash\nnpm test && echo ${completionMarker}\n\`\`\``).kind).toBe(
       "command",
     );
+  });
+});
+
+describe("reading a reply a server split", () => {
+  it("reads the content first, and the reasoning beside it only when the content holds no reply form", () => {
+    expect(readReply("```bash\nls\n```", "```bash\npwd\n```")).toEqual({
+      text: "```bash\nls\n```",
+      parsed: { kind: "command", command: "ls" },
+      fromReasoning: false,
+    });
+    expect(readReply("I'll look.", "```bash\nls\n```")).toEqual({
+      text: "```bash\nls\n```\n\nI'll look.",
+      parsed: { kind: "command", command: "ls" },
+      fromReasoning: true,
+    });
+  });
+
+  it("leaves a reply with no form in either part, or no reasoning at all, as the content", () => {
+    expect(readReply("I'll look.", "Thinking about it.")).toMatchObject({
+      text: "I'll look.",
+      parsed: { kind: "malformed" },
+      fromReasoning: false,
+    });
+    expect(readReply("I'll look.", undefined)).toMatchObject({
+      text: "I'll look.",
+      fromReasoning: false,
+    });
   });
 });
 

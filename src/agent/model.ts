@@ -9,6 +9,8 @@ export interface Message {
 
 export interface Reply {
   readonly content: string;
+  /** What the server's reasoning parser moved out of the content, where it moved anything. */
+  readonly reasoning?: string;
   /** Prompt tokens the runtime reported for this turn, or null where it reported none. */
   readonly inputTokens: number | null;
   /** Completion tokens the runtime reported, or null where it reported none. */
@@ -38,7 +40,12 @@ const responseSchema = z.object({
   choices: z
     .array(
       z.object({
-        message: z.object({ content: z.string().nullable().optional() }),
+        message: z.object({
+          content: z.string().nullable().optional(),
+          // vLLM and Rapid-MLX name it reasoning_content; Ollama's /v1 and others, reasoning.
+          reasoning_content: z.string().nullable().optional(),
+          reasoning: z.string().nullable().optional(),
+        }),
         finish_reason: z.string().nullable().optional(),
       }),
     )
@@ -163,8 +170,11 @@ export function openAiCompatible(options: {
           throw new ModelError(`the response is not a chat completion: ${text.slice(0, 300)}`);
         }
         const usage = parsed.usage;
+        const message = parsed.choices[0]?.message;
+        const reasoning = (message?.reasoning_content ?? message?.reasoning ?? "").trim();
         return {
-          content: (parsed.choices[0]?.message.content ?? "").replace(thinking, "").trim(),
+          content: (message?.content ?? "").replace(thinking, "").trim(),
+          ...(reasoning.length > 0 ? { reasoning } : {}),
           inputTokens: usage?.prompt_tokens ?? null,
           outputTokens: usage?.completion_tokens ?? null,
           inferenceMs: null,

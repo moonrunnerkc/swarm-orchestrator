@@ -3,8 +3,9 @@ import type { Chokepoint } from "../tools/chokepoint.ts";
 import { runCommandStep } from "./command-step.ts";
 import { type CommandFact, compacted } from "./context.ts";
 import { type Message, type ModelClient, ModelError, type Reply } from "./model.ts";
-import { completionMarker, parseReply, systemPrompt, turnHeader } from "./prompt.ts";
-import { applyProposal, type RequirementRecord, recordSha256 } from "./requirement-record.ts";
+import { readReply, systemPrompt, turnHeader } from "./prompt.ts";
+import type { RequirementRecord } from "./requirement-record.ts";
+import { runRequirementsStep } from "./requirements-step.ts";
 
 /** One verification of the working tree, as the loop reads it. */
 export interface Verification {
@@ -206,7 +207,8 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
       inferenceMs: usage.inferenceMs + (reply.inferenceMs ?? 0),
       retries: usage.retries + reply.retries,
     };
-    messages.push({ role: "assistant", content: reply.content });
+    const read = readReply(reply.content, reply.reasoning);
+    messages.push({ role: "assistant", content: read.text });
     await options.evidence.record({
       type: "model-call",
       actor: options.model.model,
@@ -214,6 +216,8 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
       payload: {
         step: steps,
         reply: reply.content,
+        ...(reply.reasoning === undefined ? {} : { reasoning: reply.reasoning }),
+        ...(read.fromReasoning ? { replyFromReasoning: true } : {}),
         inputTokens: input,
         outputTokens: output,
         estimated,
@@ -222,7 +226,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
       },
     });
 
-    const parsed = parseReply(reply.content);
+    const parsed = read.parsed;
     malformed = parsed.kind === "malformed" ? malformed + 1 : 0;
     if (parsed.kind === "malformed") {
       if (malformed >= unusableAfter) {
@@ -256,27 +260,16 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
       continue;
     }
     if (parsed.kind === "requirements") {
-      record = applyProposal(options.task, record, parsed.json);
-      await options.evidence.record({
-        type: "requirements",
+      const proposed = await runRequirementsStep({
+        task: options.task,
+        record,
+        json: parsed.json,
+        evidence: options.evidence,
         actor: options.model.model,
-        provenance: ["model"],
-        // Through JSON, so the ledger stores the record as plain data.
-        payload: JSON.parse(
-          JSON.stringify({
-            recordSha256: recordSha256(record),
-            requirements: record.requirements,
-            notes: record.notes,
-          }),
-        ),
       });
-      const ids = record.requirements.map((one) => one.id).join(", ");
-      options.log(`requirements ${ids}`);
-      note = [
-        `Recorded ${ids}.`,
-        ...record.notes,
-        `When the task is done, reply with ${completionMarker} on a line of its own, outside any block.`,
-      ].join("\n");
+      record = proposed.record;
+      note = proposed.note;
+      options.log(`requirements ${proposed.ids}`);
       if (!parsed.complete) continue;
     }
 

@@ -94,6 +94,26 @@ export function parseReply(content: string): ParsedReply {
     : { kind: "command", command: command.body };
 }
 
+/**
+ * The reply as the loop reads it. The content comes first. A server's reasoning parser moves
+ * everything before a stray `</think>` out of it (Rapid-MLX with thinking off, 2026-11-01), so a
+ * reply form found only with the reasoning put back is still the model's reply.
+ */
+export function readReply(
+  content: string,
+  reasoning: string | undefined,
+): { readonly text: string; readonly parsed: ParsedReply; readonly fromReasoning: boolean } {
+  const parsed = parseReply(content);
+  if (parsed.kind !== "malformed" || reasoning === undefined) {
+    return { text: content, parsed, fromReasoning: false };
+  }
+  const text = `${reasoning}\n\n${content}`.trim();
+  const whole = parseReply(text);
+  return whole.kind === "malformed"
+    ? { text: content, parsed, fromReasoning: false }
+    : { text, parsed: whole, fromReasoning: true };
+}
+
 /** Keeps the start and the end, which is where a command's errors and summaries are. */
 export function truncate(text: string, cap: number = outputCap): string {
   const bytes = Buffer.from(text);
