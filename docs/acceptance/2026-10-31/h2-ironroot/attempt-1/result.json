@@ -1,0 +1,256 @@
+{
+  "state": "incomplete",
+  "scope": "requirements",
+  "reasons": [
+    "check test: 11 test(s) pass at the base commit and fail against the candidate: tests.unit.test_no_random_in_core_guard.TestGuardOnCurrentTree::test_current_tree_passes, tests.unit.test_promote::test_no_random_fails_for_cognition_strategies, tests.unit.test_promote::test_typed_belief_writes_flags_free_form_create_belief, tests.unit.test_promote::test_falsifiable_claim_passes_for_world_models, tests.unit.test_promote::test_regression_suite_passes_for_world_models and 6 more"
+  ],
+  "base": {
+    "commit": "1d325c297757e83f048be593b59cfda7681a5448"
+  },
+  "change": {
+    "source": "patch",
+    "applied": true,
+    "files": [
+      {
+        "path": "src/ironroot/cli/promote.py",
+        "status": "modified"
+      },
+      {
+        "path": "tests/integrity/test_promote_scan.py",
+        "status": "added"
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "_scan_for_patterns in cli/promote.py strips multi-line docstrings including their newlines, so reported line numbers after a docstring are wrong; keep the newlines, with a test.",
+      "source": "user",
+      "kind": "other",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "status": "unverified",
+      "evidence": [],
+      "limitation": "no executed evidence is mapped to this requirement",
+      "nextAction": "map the tests that exercise it; these fail before the change and pass after it: test_scan_for_patterns_preserves_newlines"
+    }
+  ],
+  "regression": {
+    "status": "found",
+    "newFailures": [
+      "tests.unit.test_no_random_in_core_guard.TestGuardOnCurrentTree::test_current_tree_passes",
+      "tests.unit.test_promote::test_no_random_fails_for_cognition_strategies",
+      "tests.unit.test_promote::test_typed_belief_writes_flags_free_form_create_belief",
+      "tests.unit.test_promote::test_falsifiable_claim_passes_for_world_models",
+      "tests.unit.test_promote::test_regression_suite_passes_for_world_models",
+      "tests.unit.test_promote::test_promotion_fixtures_fail_when_file_absent",
+      "tests.unit.test_promote::test_audit_world_models_is_fully_eligible",
+      "tests.unit.test_promote::test_audit_unknown_subsystem_short_circuits",
+      "tests.unit.test_promote::test_audit_still_quarantined_subsystem_has_failures",
+      "tests.unit.test_promote::test_cli_world_models_returns_zero",
+      "tests.unit.test_promote::test_cli_emits_json_with_stable_shape"
+    ],
+    "inherited": [],
+    "removed": [],
+    "unresolved": []
+  },
+  "checks": [
+    {
+      "name": "test",
+      "command": "python3 -m pytest -q",
+      "kind": "test",
+      "authority": "pre-existing",
+      "result": "fail",
+      "collected": 333,
+      "exitCode": 1,
+      "durationMs": 36888,
+      "outputSha256": "6f7c7e588586a32f1519e997649b8885bfb15d47a351b4c2b3b894761cd634f0",
+      "tests": {
+        "runner": "pytest",
+        "collected": {
+          "base": 331,
+          "candidate": 333
+        },
+        "counts": {
+          "preserved": 320,
+          "renamed": 0,
+          "fixed": 0,
+          "newFailures": 11,
+          "inherited": 0,
+          "removed": 0,
+          "superseded": 0,
+          "expectationChanges": 0,
+          "added": 2,
+          "addedFailing": 0,
+          "witnesses": 1,
+          "skipped": 0
+        },
+        "fixed": [],
+        "newFailures": [
+          "tests.unit.test_no_random_in_core_guard.TestGuardOnCurrentTree::test_current_tree_passes",
+          "tests.unit.test_promote::test_no_random_fails_for_cognition_strategies",
+          "tests.unit.test_promote::test_typed_belief_writes_flags_free_form_create_belief",
+          "tests.unit.test_promote::test_falsifiable_claim_passes_for_world_models",
+          "tests.unit.test_promote::test_regression_suite_passes_for_world_models",
+          "tests.unit.test_promote::test_promotion_fixtures_fail_when_file_absent",
+          "tests.unit.test_promote::test_audit_world_models_is_fully_eligible",
+          "tests.unit.test_promote::test_audit_unknown_subsystem_short_circuits",
+          "tests.unit.test_promote::test_audit_still_quarantined_subsystem_has_failures",
+          "tests.unit.test_promote::test_cli_world_models_returns_zero",
+          "tests.unit.test_promote::test_cli_emits_json_with_stable_shape"
+        ],
+        "inherited": [],
+        "removed": [],
+        "renamed": [],
+        "superseded": [],
+        "expectationChanges": [],
+        "added": [
+          "tests.integrity.test_promote_scan::test_scan_for_patterns_preserves_newlines",
+          "tests.integrity.test_promote_scan::test_scan_for_patterns_ignores_docstring_content"
+        ],
+        "addedFailing": [],
+        "witnesses": [
+          "tests.integrity.test_promote_scan::test_scan_for_patterns_preserves_newlines"
+        ]
+      }
+    }
+  ],
+  "baseline": {
+    "status": "measured",
+    "cached": false,
+    "environmentSha256": "5da0b0f95ec353877aa7971cf220670eeb8fde4738d6e714a15db29171f94853",
+    "checks": [
+      {
+        "name": "test",
+        "command": "python3 -m pytest -q",
+        "kind": "test",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": 331,
+        "exitCode": 0,
+        "durationMs": 39000,
+        "outputSha256": "29a98702567e086404b36ebe547068d33eb9a832c6a6135b1e26eab6ec66e4ef"
+      }
+    ],
+    "heldOut": []
+  },
+  "heldOut": {
+    "status": "unmeasured",
+    "reason": "no held-out checks are sealed for this workspace"
+  },
+  "artifacts": [
+    {
+      "path": "src/ironroot/cli/promote.py",
+      "category": "source"
+    },
+    {
+      "path": "tests/integrity/test_promote_scan.py",
+      "category": "tests"
+    }
+  ],
+  "testFiles": {
+    "added": [
+      "tests/integrity/test_promote_scan.py"
+    ],
+    "modified": [],
+    "deleted": [],
+    "moved": [],
+    "relocated": []
+  },
+  "coverage": {
+    "status": "unmeasured",
+    "reason": "the project measures coverage itself (pytest-cov in its pytest options), which a second coverage run would break"
+  },
+  "mutation": {
+    "status": "unmeasured",
+    "reason": "a check failed, so no mutant can be told apart from that failure"
+  },
+  "producer": {
+    "name": "swarm-orchestrator",
+    "version": "15.0.0",
+    "model": "gemma4-31b-greedy-128k:latest",
+    "promptSha256": "e91e41a53751ce4b72d63f781aaa6141b2518fc229771344e5f9bf8dc7fbbfbb",
+    "ledgerSha256": "7b49ba0bc2e27ddc24f731589c5ae7d0e3112af57f7fe89099b2e582136ecdfe",
+    "ledgerRecords": 121,
+    "reportSha256": "53e7cd4ab8b8bf18401b3280696c9e4bff5ed11d00c62cf46c13ded15a24ff8e",
+    "instructions": [
+      {
+        "path": "CLAUDE.md",
+        "sha256": "ed6eeb9c65511c2f23fcaf1a57177860324b6f0203054fb483758a70ceaa41d9"
+      }
+    ]
+  },
+  "environment": {
+    "sha256": "5da0b0f95ec353877aa7971cf220670eeb8fde4738d6e714a15db29171f94853",
+    "node": "in ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248 (sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248)",
+    "platform": "linux-arm64",
+    "git": "2.54.0 (Apple Git-157)",
+    "dependencies": "prepared",
+    "dependencyTreeSha256": "036a8a86a1ac6fa558144177c1ed544dcd1a43d12efee88e783b0967d01fadc8",
+    "reproducible": true
+  },
+  "execution": {
+    "mode": "isolated",
+    "statement": "isolated: docker ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248, network closed for checks and open only while dependencies were prepared",
+    "network": "closed",
+    "image": "ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248 (sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248 arm64)",
+    "dependencies": {
+      "mode": "prepared",
+      "reproducible": true,
+      "lockfiles": {
+        "uv.lock": "b73f370d398e8e304ac83f64a76459850ad6d9dbc5f07d6018ed71504ffce309"
+      },
+      "treeSha256": "036a8a86a1ac6fa558144177c1ed544dcd1a43d12efee88e783b0967d01fadc8",
+      "note": "prepared from the lockfile and digested"
+    },
+    "policyMet": true,
+    "problems": []
+  },
+  "policy": {
+    "behaviorChange": "none"
+  },
+  "unmeasured": [
+    "held-out: no held-out checks are sealed for this workspace",
+    "coverage: the project measures coverage itself (pytest-cov in its pytest options), which a second coverage run would break",
+    "mutation: a check failed, so no mutant can be told apart from that failure"
+  ],
+  "logs": [
+    {
+      "name": "logs/test.txt",
+      "sha256": "6f7c7e588586a32f1519e997649b8885bfb15d47a351b4c2b3b894761cd634f0"
+    }
+  ],
+  "verifier": {
+    "name": "swarm-verify",
+    "version": "2.0.0"
+  },
+  "version": "swarm-verify.result/v1",
+  "snapshot": {
+    "base": "1d325c297757e83f048be593b59cfda7681a5448",
+    "patchSha256": "e79b05c2509d9180256f23cc27b26f044953f65c4cba2b0219668beba62bdaf9",
+    "treeSha256": "30c5b54d13f78c97df2f1caaf5b2f993a678caa63492a45c24a7027a4daa2860"
+  },
+  "integrity": {
+    "signed": true,
+    "signer": {
+      "kind": "key",
+      "fingerprint": "8c5ed5b218745e42c16a99d98024241cbf74c7aa7bf570fd6e5495491d0b5dae"
+    },
+    "statementSha256": "c29e663439045e6e0a335af53b8f7477a79b45cdf353caa21ff526cc09525bdd",
+    "problems": []
+  },
+  "evidence": {
+    "directory": "/Users/brad/.swarm/sessions/20261101T105145-405d94/final/verification",
+    "bundle": "/Users/brad/.swarm/sessions/20261101T105145-405d94/final/verification/attestation.sigstore.json",
+    "statement": "/Users/brad/.swarm/sessions/20261101T105145-405d94/final/verification/statement.json",
+    "patch": "/Users/brad/.swarm/sessions/20261101T105145-405d94/final/verification/change.patch",
+    "publicKey": "/Users/brad/.swarm/sessions/20261101T105145-405d94/final/verification/attestation.pub.pem"
+  },
+  "failureOutput": "$ python3 -m pytest -q\n_2.typed_writes       no untyped belief writes found\n    [FAIL] criterion_3.falsifiable_claim  no FalsifiableClaim registration found for world_models\n            → register at least one claim in the falsification gate\n    [FAIL] criterion_4.regression_suite   no regression suite found for world_models_promotion\n            → register a suite with run_kind='world_models_promotion'\n    [OK  ] criterion_4.test_fixture       test fixture test_world_models_promotion.py present\n    [OK  ] criterion_5.invariants_doc     docs/invariants/world_models.md present (4648 bytes)\n    [OK  ] status.experimental_manifest   'world_models' is no longer in EXPERIMENTAL_MODULE_PREFIXES\n  \n    worst: FAIL  eligible: False\n  \nassert 1 == 0\n +  where 1 = CompletedProcess(args=['/Users/brad/.swarm/work/swarm-verify-CN1fTZ/tree/.venv/bin/python3', '-m', 'ironroot.cli.promo...manifest   'world_models' is no longer in EXPERIMENTAL_MODULE_PREFIXES\\n\\n  worst: FAIL  eligible: False\\n\", stderr='').returncode\nFAILED tests/unit/test_promote.py::test_cli_emits_json_with_stable_shape - AssertionError: {\n    \"prefix\": \"world_models\",\n    \"worst\": \"fail\",\n    \"eligible\": false,\n    \"findings\": [\n      {\n        \"check\": \"sanity.exists\",\n        \"severity\": \"ok\",\n        \"message\": \"subsystem world_models found\",\n        \"recommendation\": null,\n        \"details\": {}\n      },\n      {\n        \"check\": \"criterion_1.no_random\",\n        \"severity\": \"ok\",\n        \"message\": \"no RNG usages found\",\n        \"recommendation\": null,\n        \"details\": {}\n      },\n      {\n        \"check\": \"criterion_2.typed_writes\",\n        \"severity\": \"ok\",\n        \"message\": \"no untyped belief writes found\",\n        \"recommendation\": null,\n        \"details\": {}\n      },\n      {\n        \"check\": \"criterion_3.falsifiable_claim\",\n        \"severity\": \"fail\",\n        \"message\": \"no FalsifiableClaim registration found for world_models\",\n        \"recommendation\": \"register at least one claim in the falsification gate\",\n        \"details\": {}\n      },\n      {\n        \"check\": \"criterion_4.regression_suite\",\n        \"severity\": \"fail\",\n        \"message\": \"no regression suite found for world_models_promotion\",\n        \"recommendation\": \"register a suite with run_kind='world_models_promotion'\",\n        \"details\": {}\n      },\n      {\n        \"check\": \"criterion_4.test_fixture\",\n        \"severity\": \"ok\",\n        \"message\": \"test fixture test_world_models_promotion.py present\",\n        \"recommendation\": null,\n        \"details\": {}\n      },\n      {\n        \"check\": \"criterion_5.invariants_doc\",\n        \"severity\": \"ok\",\n        \"message\": \"docs/invariants/world_models.md present (4648 bytes)\",\n        \"recommendation\": null,\n        \"details\": {}\n      },\n      {\n        \"check\": \"status.experimental_manifest\",\n        \"severity\": \"ok\",\n        \"message\": \"'world_models' is no longer in EXPERIMENTAL_MODULE_PREFIXES\",\n        \"recommendation\": null,\n        \"details\": {}\n      }\n    ]\n  }\n  \nassert 1 == 0\n +  where 1 = CompletedProcess(args=['/Users/brad/.swarm/work/swarm-verify-CN1fTZ/tree/.venv/bin/python3', '-m', 'ironroot.cli.promo...ger in EXPERIMENTAL_MODULE_PREFIXES\",\\n      \"recommendation\": null,\\n      \"details\": {}\\n    }\\n  ]\\n}\\n', stderr='').returncode\n================= 11 failed, 322 passed, 4 warnings in 34.30s ==================\n/Users/brad/.swarm/work/swarm-verify-CN1fTZ/tree/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
+}

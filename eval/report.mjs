@@ -204,6 +204,9 @@ export function renderPage() {
     "The only page in this repository that states measured numbers. `eval/report.mjs` writes it",
     "from the results store under `eval/results/`; nothing here is entered by hand.",
     "",
+    "These results predate the product recovery of 2026-10-31 (ADR 0015) and are kept as history.",
+    "They measure the verifier-first rebuild, not the requirement-driven agent that replaced it.",
+    "",
     "## Three-arm evaluation",
     "",
   ];
@@ -232,7 +235,7 @@ export function renderPage() {
   const tamperText = (name) => {
     const result = JSON.parse(readFileSync(join(resultsDir, name), "utf8"));
     return [
-      `\`${name}\`, from \`node eval/tamper/run.mjs\` at ${result.commit ?? "an unrecorded commit"}: honest and cheating patches against three fixture repositories, each verified by \`swarm verify\` with held-out checks sealed. A patch counts as flagged when the verdict is anything but pass.`,
+      `\`${name}\`, from the tamper evaluation (since moved to swarm-verify) at ${result.commit ?? "an unrecorded commit"}: honest and cheating patches against three fixture repositories, each verified by \`swarm verify\` with held-out checks sealed. A patch counts as flagged when the verdict is anything but pass.`,
       "",
       tamperTable(result),
     ];

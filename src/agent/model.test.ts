@@ -28,6 +28,22 @@ describe("the chat client", () => {
     server.close();
   });
 
+  it("keeps what a server's reasoning parser split out of the content, under either name", async () => {
+    for (const field of ["reasoning_content", "reasoning"]) {
+      const client = openAiCompatible({
+        endpoint: "http://model.test/v1",
+        model: "m",
+        apiKey: null,
+        post: async () =>
+          answer({
+            choices: [{ message: { content: "I'll look.", [field]: "```bash\nls\n```" } }],
+          }),
+      });
+      const reply = await client.complete([{ role: "user", content: "go" }], turn);
+      expect(reply).toMatchObject({ content: "I'll look.", reasoning: "```bash\nls\n```" });
+    }
+  });
+
   it("returns the content without a reasoning preamble, and the tokens reported", async () => {
     const sent: unknown[] = [];
     const client = openAiCompatible({
@@ -43,7 +59,14 @@ describe("the chat client", () => {
       },
     });
     const reply = await client.complete([{ role: "user", content: "go" }], turn);
-    expect(reply).toEqual({ content: "```bash\nls\n```", tokens: 15, truncated: false });
+    expect(reply).toEqual({
+      content: "```bash\nls\n```",
+      inputTokens: 10,
+      outputTokens: 5,
+      inferenceMs: null,
+      retries: 0,
+      truncated: false,
+    });
     expect(sent[0]).toEqual([
       "http://model.test/v1/chat/completions",
       {
@@ -63,7 +86,9 @@ describe("the chat client", () => {
       apiKey: null,
       post: async () => answer({ choices: [{ message: { content: "x" } }] }),
     });
-    expect((await client.complete([], turn)).tokens).toBeNull();
+    const reply = await client.complete([], turn);
+    expect(reply.inputTokens).toBeNull();
+    expect(reply.outputTokens).toBeNull();
   });
 
   it("retries a server error and fails plainly on a client error", async () => {
@@ -106,10 +131,14 @@ describe("the chat client", () => {
     const refused = failing(async () => {
       throw Object.assign(new AggregateError([], ""), { code: "ECONNREFUSED" });
     });
-    await expect(refused.client.complete([], turn)).rejects.toThrow(/connection refused at/);
+    await expect(refused.client.complete([], turn)).rejects.toThrow(
+      "connection refused at http://model.test/v1/chat/completions: start the server that serves m, or name a running one with --endpoint, then run again",
+    );
     expect(refused.calls()).toBe(1);
     const down = failing(() => answer({}, 502));
-    await expect(down.client.complete([], turn)).rejects.toThrow(/three attempts in a row/);
+    await expect(down.client.complete([], turn)).rejects.toThrow(
+      /three attempts in a row\): check that the server at http:\/\/model\.test\/v1 serves m, then run again$/,
+    );
     expect(down.calls()).toBe(3);
   });
 

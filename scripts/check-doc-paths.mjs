@@ -21,13 +21,10 @@ const runGit = promisify(execFile);
 const linkPattern = /\[[^\]]*\]\(([^)\s]+)\)/g;
 const backtickPattern = /`([^`\n]+)`/g;
 const releasedHeading = /^## (\d+\.\d+\.\d+) - \d{4}-\d{2}-\d{2}/;
-const rootedPrefixes = ["src/", "docs/", "scripts/", ".github/", "dist/", "packages/", "eval/"];
+const rootedPrefixes = ["src/", "docs/", "scripts/", ".github/", "dist/", "eval/"];
 const pathSuffixes = [".ts", ".mjs", ".js", ".json", ".md", ".yml", ".yaml", ".toml", ".sh"];
 /** Changelogs and the tag prefix their releases carry. */
-const changelogTags = new Map([
-  ["CHANGELOG.md", "v"],
-  ["packages/swarm-verify/CHANGELOG.md", "swarm-verify-v"],
-]);
+const changelogTags = new Map([["CHANGELOG.md", "v"]]);
 
 function looksLikeAPath(raw) {
   if (/[\s*?<>{}$|]/.test(raw) || raw.includes("://")) return false;

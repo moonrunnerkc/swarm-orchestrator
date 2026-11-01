@@ -1,122 +1,167 @@
-import type { EvidenceRecorder } from "../evidence/session.ts";
-import type { Chokepoint } from "../tools/chokepoint.ts";
-import { type Message, type ModelClient, ModelError, type Reply } from "./model.ts";
-import { parseReply, systemPrompt, truncate, turnHeader } from "./prompt.ts";
+import { runCommandStep } from "./command-step.ts";
+import { type CommandFact, compacted } from "./context.ts";
+import type { LoopOptions, LoopResult, StopReason, Usage, Verification } from "./loop-types.ts";
+import { type Message, ModelError, type Reply } from "./model.ts";
+import { readReply, stepsLeftNotice, systemPrompt, timeLeftNotice, turnHeader } from "./prompt.ts";
+import { runRequirementsStep } from "./requirements-step.ts";
 
-export interface Verification {
-  readonly verdict: "pass" | "fail" | "unmeasured";
-  /** What the verifier printed about a refusal, handed back to the model verbatim. */
-  readonly feedback: string;
-  /** `path:line` of a changed line whose mutant the checks did not kill, or null. */
-  readonly survivedMutant: string | null;
-  /** A failure, or a check that fails at base and still fails: something the model can fix. */
-  readonly actionable: boolean;
-  /** The verdict's reasons, which stay the same while nothing the checks report changes. */
-  readonly reasons: string;
-}
+export type { LoopOptions, LoopResult, StopReason, Usage, Verification } from "./loop-types.ts";
 
-export interface LoopOptions {
-  readonly task: string;
-  readonly model: ModelClient;
-  readonly chokepoint: Chokepoint;
-  readonly evidence: EvidenceRecorder;
-  /** `git status --short` of the working tree, read fresh every turn. */
-  readonly status: () => Promise<string>;
-  readonly verify: () => Promise<Verification>;
-  readonly maxSteps: number;
-  readonly maxTokens: number;
-  /** The completion cap of one turn; a turn never asks for more than the run has left. */
-  readonly turnTokens: number;
-  readonly signal?: AbortSignal | undefined;
-  readonly log: (line: string) => void;
-}
+/** The smallest reply worth asking for: one command and its fence. */
+const minimumReplyTokens = 256;
+/** Turns in a row with the same command and output before the loop calls it no progress. */
+const repeatLimit = 3;
+/** Replies in a row that follow no reply form before the model is called unusable here. */
+const unusableAfter = 4;
 
-export type StopReason = "verified" | "unmeasured" | "step-budget" | "token-budget" | "model-error";
-
-export interface LoopResult {
-  readonly stop: StopReason;
-  /** Why a run stopped that the budgets or the verifier did not stop. */
-  readonly reason: string | null;
-  /** The last verdict on the working tree, or null where the verifier never ran. */
-  readonly verification: Verification | null;
-  readonly steps: number;
-  readonly tokens: number;
-  /** Turns whose token count was estimated because the endpoint reported none. */
-  readonly estimatedTurns: number;
-  readonly verifications: number;
-}
+/** A text's size in tokens, estimated at four characters each where the runtime gives no count. */
+export const estimateTokens = (text: string) => Math.ceil(text.length / 4);
 
 /**
- * One model turn, one command, until the model says it is done and the verifier agrees, or a
- * budget runs out. Nothing watches the work in between: the verifier measures the final tree,
- * and a refusal goes back to the model with the budgets as they stood.
+ * One model turn at a time: a command, a requirement record, or completion. Completion asks the
+ * verifier, whose findings go back to the model until the record is complete, the run is
+ * blocked, a completion repeats on an unchanged tree and record, or a budget ends it. Whatever
+ * stops the loop, finalization judges the tree it leaves.
  */
 export async function runLoop(options: LoopOptions): Promise<LoopResult> {
-  const messages: Message[] = [{ role: "system", content: systemPrompt }];
-  let failure: string | null = null;
-  let note = "Begin.";
+  const preamble = [systemPrompt, options.instructions].filter((part) => part.length > 0);
+  const messages: Message[] = [{ role: "system", content: preamble.join("\n\n") }];
+  let record = options.record;
+  let findings: string | null = null;
+  let note = options.handoff ?? "Begin.";
   let steps = 0;
-  let tokens = 0;
-  let estimatedTurns = 0;
+  let usage: Usage = {
+    turns: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    estimatedTurns: 0,
+    inferenceMs: 0,
+    inferenceTurns: 0,
+    retries: 0,
+  };
   let verifications = 0;
+  let nudged = false;
+  let noticed = false;
+  let turnStarted: number | null = null;
+  let longestTurnMs = 0;
   let verification: Verification | null = null;
-  let lastReasons: string | null = null;
-  let previous = { command: "", output: "" };
+  let previous = { command: "", output: "", repeats: 0 };
+  let malformed = 0;
+  const facts: CommandFact[] = [];
   const result = (stop: StopReason, reason: string | null = null): LoopResult => ({
     stop,
     reason,
+    record,
     verification,
     steps,
-    tokens,
-    estimatedTurns,
+    usage,
     verifications,
   });
-
-  const judge = async (): Promise<Verification> => {
-    verifications += 1;
+  /** The verification, and whether it measured the same tree and record as the one before. */
+  const judge = async (): Promise<{
+    readonly judged: Verification;
+    readonly repeated: boolean;
+  }> => {
     options.log("verifying the working tree");
-    verification = await options.verify();
+    const judged = await options.verify(record);
+    if (judged.reused !== true) verifications += 1;
+    const repeated =
+      verification !== null &&
+      verification.patchSha256 === judged.patchSha256 &&
+      verification.recordSha256 === judged.recordSha256;
+    verification = judged;
     await options.evidence.record({
       type: "verification",
       actor: "harness",
       provenance: ["tool-output"],
-      payload: { verdict: verification.verdict, feedback: verification.feedback },
+      payload: {
+        state: judged.state,
+        patchSha256: judged.patchSha256,
+        recordSha256: judged.recordSha256,
+      },
     });
-    return verification;
+    return { judged, repeated };
   };
 
   while (true) {
     if (steps >= options.maxSteps) return result("step-budget");
-    if (tokens >= options.maxTokens) return result("token-budget");
+    const spent = usage.inputTokens + usage.outputTokens;
+    const time = options.turnTime();
+    // No turn starts that the time left cannot pay for either: the longest turn so far is the
+    // measure, so a slow model's last turn does not eat the time final verification needs.
+    if (turnStarted !== null) longestTurnMs = Math.max(longestTurnMs, Date.now() - turnStarted);
+    turnStarted = Date.now();
+    if (time.leftMs <= 0)
+      return result("time-budget", "the time left is reserved for final verification");
+    if (time.leftMs < longestTurnMs) {
+      return result(
+        "time-budget",
+        `the next turn may take ${Math.ceil(longestTurnMs / 1000)} s, as the longest has, and ${Math.floor(time.leftMs / 1000)} s remain before the time reserved for final verification`,
+      );
+    }
     options.signal?.throwIfAborted();
-    const header = turnHeader(options.task, await options.status(), failure);
+    // Said once, for whichever budget runs short first.
+    const notice = noticed
+      ? null
+      : (stepsLeftNotice(options.maxSteps - steps, options.maxSteps) ??
+        timeLeftNotice(time.leftMs, time.wallMs));
+    if (notice !== null) {
+      noticed = true;
+      note = `${note}\n\n${notice}`;
+    }
+    const header = turnHeader(options.task, await options.status(), findings);
     messages.push({ role: "user", content: `${header}\n${note}` });
+    // Old exploration is compacted only when the prompt measurably presses on the context.
+    const measured = estimateTokens(messages.map((message) => message.content).join(""));
+    const shorter = compacted(messages, facts, measured, options.contextTokens);
+    if (shorter !== null) {
+      messages.splice(0, messages.length, ...shorter);
+      options.log(
+        `compacted earlier turns (${measured} of ${options.contextTokens} context tokens)`,
+      );
+    }
+    // No turn starts that the allowance cannot pay for: its prompt, and a useful reply.
+    const prompt = estimateTokens(messages.map((message) => message.content).join(""));
+    const room = options.maxTokens - spent - prompt;
+    if (room < Math.min(options.turnTokens, minimumReplyTokens)) {
+      return result(
+        "token-budget",
+        `the next turn needs about ${prompt} prompt tokens and ${options.maxTokens - spent} remain`,
+      );
+    }
 
     let reply: Reply;
     try {
       reply = await options.model.complete(messages, {
         signal: options.signal,
-        maxTokens: Math.min(options.turnTokens, options.maxTokens - tokens),
+        maxTokens: Math.min(options.turnTokens, room),
       });
     } catch (error) {
       if (!(error instanceof ModelError)) throw error;
+      usage = { ...usage, retries: usage.retries + error.retries };
       await options.evidence.record({
         type: "model-error",
         actor: "harness",
         provenance: ["tool-output"],
         payload: { step: steps + 1, error: error.message },
       });
-      // The run ends here, but whatever tree it left is still judged and reported.
-      await judge();
       return result("model-error", error.message);
     }
     steps += 1;
-    const used =
-      reply.tokens ??
-      Math.ceil(messages.reduce((sum, message) => sum + message.content.length, 0) / 4);
-    if (reply.tokens === null) estimatedTurns += 1;
-    tokens += used;
-    messages.push({ role: "assistant", content: reply.content });
+    const input = reply.inputTokens ?? prompt;
+    const output = reply.outputTokens ?? estimateTokens(reply.content);
+    const estimated = reply.inputTokens === null || reply.outputTokens === null;
+    usage = {
+      turns: usage.turns + 1,
+      inputTokens: usage.inputTokens + input,
+      outputTokens: usage.outputTokens + output,
+      estimatedTurns: usage.estimatedTurns + (estimated ? 1 : 0),
+      inferenceMs: usage.inferenceMs + (reply.inferenceMs ?? 0),
+      inferenceTurns: usage.inferenceTurns + (reply.inferenceMs === null ? 0 : 1),
+      retries: usage.retries + reply.retries,
+    };
+    const read = readReply(reply.content, reply.reasoning);
+    messages.push({ role: "assistant", content: read.text });
     await options.evidence.record({
       type: "model-call",
       actor: options.model.model,
@@ -124,41 +169,96 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
       payload: {
         step: steps,
         reply: reply.content,
-        tokensUsed: used,
-        estimated: reply.tokens === null,
+        ...(reply.reasoning === undefined ? {} : { reasoning: reply.reasoning }),
+        ...(read.fromReasoning ? { replyFromReasoning: true } : {}),
+        inputTokens: input,
+        outputTokens: output,
+        estimated,
+        inferenceMs: reply.inferenceMs,
+        retries: reply.retries,
       },
     });
 
-    const parsed = parseReply(reply.content);
+    const parsed = read.parsed;
+    malformed = parsed.kind === "malformed" ? malformed + 1 : 0;
     if (parsed.kind === "malformed") {
+      if (malformed >= unusableAfter) {
+        return result(
+          "unusable-replies",
+          `${malformed} replies in a row followed no reply form: ${parsed.reason}`,
+        );
+      }
       const cut = reply.truncated ? ` (it was cut off at ${options.turnTokens} tokens)` : "";
-      note = `Your reply was not used: ${parsed.reason}${cut}. Reply with exactly one bash block, or the completion marker alone.`;
+      note = `Your reply was not used: ${parsed.reason}${cut}. Reply with exactly one bash block, one requirements block, or the completion marker alone.`;
       continue;
     }
     if (parsed.kind === "command") {
       options.log(`$ ${parsed.command.split("\n")[0]}`);
-      const outcome = await options.chokepoint.run(parsed.command);
-      // At temperature 0 a repeated command and its unchanged output can repeat forever.
-      const repeated = parsed.command === previous.command && outcome.output === previous.output;
-      previous = { command: parsed.command, output: outcome.output };
-      const again = repeated
-        ? "This is the command you ran last turn, and its output is unchanged.\n"
-        : "";
-      note = `${again}${outcome.decision === "allowed" ? `exit code: ${outcome.exitCode}` : outcome.decision}\n${truncate(outcome.output)}`;
+      const ran = await runCommandStep({
+        chokepoint: options.chokepoint,
+        command: parsed.command,
+        step: steps,
+        outputs: options.outputs,
+        previous,
+      });
+      previous = { command: parsed.command, output: ran.output, repeats: ran.repeats };
+      facts.push(ran.fact);
+      if (ran.repeats >= repeatLimit) {
+        return result(
+          "no-progress",
+          `the same command printed the same output ${ran.repeats} turns running`,
+        );
+      }
+      note = ran.note;
+      // A command repeated while findings are open is the run circling: point back at them.
+      const open = (findings ?? "").split("\n").filter((line) => /^R\d+ /.test(line));
+      if (ran.repeats >= 2 && open.length > 0) {
+        note = [
+          note,
+          "The verifier's findings are still open:",
+          ...open,
+          "Act on them: change the tree, or send the corrected requirements block, then mark the task complete.",
+        ].join("\n");
+      }
       continue;
     }
+    if (parsed.kind === "requirements") {
+      const proposed = await runRequirementsStep({
+        task: options.task,
+        record,
+        json: parsed.json,
+        evidence: options.evidence,
+        actor: options.model.model,
+      });
+      record = proposed.record;
+      note = proposed.note;
+      options.log(`requirements ${proposed.ids}`);
+      if (!parsed.complete) continue;
+    }
 
-    const judged = await judge();
-    if (judged.verdict === "pass") return result("verified");
-    if (!judged.actionable) return result("unmeasured");
-    // Completing again over the same unmeasured reasons says the inherited failure is not its own.
-    if (judged.verdict === "unmeasured" && judged.reasons === lastReasons)
-      return result("unmeasured");
-    lastReasons = judged.verdict === "unmeasured" ? judged.reasons : null;
-    failure = judged.feedback;
+    const { judged, repeated } = await judge();
+    if (judged.state === "complete") return result("complete");
+    if (judged.state === "blocked") return result("blocked", judged.reasons?.[0] ?? null);
+    // Completing again on the same tree and record only repeats the same findings: say so once,
+    // with the findings, then stop.
+    if (repeated && nudged) {
+      return result(
+        "no-progress",
+        "the task was marked complete again with no change since the last verification",
+      );
+    }
+    if (repeated) {
+      nudged = true;
+      const open = judged.feedback.split("\n").filter((line) => /^R\d+ /.test(line));
+      note = [
+        "Marking the task complete again changes nothing: the tree and the requirements are the ones just verified, so the findings are the same:",
+        ...open,
+        "Change the tree, or send a requirements block that maps the evidence the findings name, before marking it complete.",
+      ].join("\n");
+      continue;
+    }
+    findings = judged.feedback;
     note =
-      judged.verdict === "fail"
-        ? "The verifier refused the change. Fix what it reports, then mark the task complete again."
-        : "The verifier could not measure the change: a check fails at the base commit and still fails. Fix it if the task needs that; otherwise mark the task complete again.";
+      "The verifier did not find the task complete. Act on its findings, then mark the task complete again.";
   }
 }

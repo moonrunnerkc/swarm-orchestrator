@@ -9,8 +9,18 @@ export interface Message {
 
 export interface Reply {
   readonly content: string;
-  /** Tokens the endpoint reported, or null where it reported none. */
-  readonly tokens: number | null;
+  /** What the server's reasoning parser moved out of the content, where it moved anything. */
+  readonly reasoning?: string;
+  /** Prompt tokens the runtime reported for this turn, or null where it reported none. */
+  readonly inputTokens: number | null;
+  /** Completion tokens the runtime reported, or null where it reported none. */
+  readonly outputTokens: number | null;
+  /** Time the runtime spent on the turn, where it reported it; otherwise null. */
+  readonly inferenceMs: number | null;
+  /** Of that, the time spent generating output, where reported: the basis of a speed. */
+  readonly outputMs?: number | null;
+  /** Requests sent again after a transient failure before this reply came. */
+  readonly retries: number;
   /** The endpoint stopped at the turn's completion cap. */
   readonly truncated: boolean;
 }
@@ -30,7 +40,12 @@ const responseSchema = z.object({
   choices: z
     .array(
       z.object({
-        message: z.object({ content: z.string().nullable().optional() }),
+        message: z.object({
+          content: z.string().nullable().optional(),
+          // vLLM and Rapid-MLX name it reasoning_content; Ollama's /v1 and others, reasoning.
+          reasoning_content: z.string().nullable().optional(),
+          reasoning: z.string().nullable().optional(),
+        }),
         finish_reason: z.string().nullable().optional(),
       }),
     )
@@ -45,9 +60,12 @@ const responseSchema = z.object({
 
 /** The endpoint failed for good: the run stops, and the verifier judges the tree as it is. */
 export class ModelError extends Error {
-  constructor(detail: string) {
+  /** Requests the client sent again during the turn that failed. */
+  readonly retries: number;
+  constructor(detail: string, retries = 0) {
     super(`the model endpoint failed: ${detail}`);
     this.name = "ModelError";
+    this.retries = retries;
   }
 }
 
@@ -130,7 +148,12 @@ export function openAiCompatible(options: {
           const code = (error as NodeJS.ErrnoException).code;
           // A refused connection to localhost arrives as an AggregateError with no message.
           const problem = (error instanceof Error && error.message) || code || String(error);
-          if (code === "ECONNREFUSED") throw new ModelError(`connection refused at ${url}`);
+          if (code === "ECONNREFUSED") {
+            throw new ModelError(
+              `connection refused at ${url}: start the server that serves ${options.model}, or name a running one with --endpoint, then run again`,
+              failures + waits,
+            );
+          }
           lastProblem = problem;
           failures += 1;
           continue;
@@ -147,21 +170,33 @@ export function openAiCompatible(options: {
           continue;
         }
         if (status < 200 || status >= 300)
-          throw new ModelError(`HTTP ${status}: ${text.slice(0, 300)}`);
+          throw new ModelError(`HTTP ${status}: ${text.slice(0, 300)}`, failures + waits);
         let parsed: z.infer<typeof responseSchema>;
         try {
           parsed = responseSchema.parse(JSON.parse(text));
         } catch {
-          throw new ModelError(`the response is not a chat completion: ${text.slice(0, 300)}`);
+          throw new ModelError(
+            `the response is not a chat completion: ${text.slice(0, 300)}`,
+            failures + waits,
+          );
         }
         const usage = parsed.usage;
+        const message = parsed.choices[0]?.message;
+        const reasoning = (message?.reasoning_content ?? message?.reasoning ?? "").trim();
         return {
-          content: (parsed.choices[0]?.message.content ?? "").replace(thinking, "").trim(),
-          tokens: usage === undefined ? null : usage.prompt_tokens + usage.completion_tokens,
+          content: (message?.content ?? "").replace(thinking, "").trim(),
+          ...(reasoning.length > 0 ? { reasoning } : {}),
+          inputTokens: usage?.prompt_tokens ?? null,
+          outputTokens: usage?.completion_tokens ?? null,
+          inferenceMs: null,
+          retries: failures + waits,
           truncated: parsed.choices[0]?.finish_reason === "length",
         };
       }
-      throw new ModelError(`${lastProblem} (three attempts in a row)`);
+      throw new ModelError(
+        `${lastProblem} (three attempts in a row): check that the server at ${options.endpoint.replace(/\/+$/, "")} serves ${options.model}, then run again`,
+        failures - 1 + waits,
+      );
     },
   };
 }

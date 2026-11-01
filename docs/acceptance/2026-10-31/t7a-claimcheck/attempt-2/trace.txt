@@ -1,0 +1,59 @@
+requirements R1
+$ cat package.json | grep -E '"vitest"|"@stryker-mutator'
+$ npm view @stryker-mutator/core version 2>/dev/null && npm view @stryker-mutator/vitest-runner version 2>/dev/null
+requirements R1
+$ cat src/adapters/worktree-toolchain.ts | grep -n "strykerVersionFor"
+$ cat -n src/adapters/worktree-toolchain.ts | sed -n '40,80p'
+$ cat -n src/adapters/worktree-toolchain.ts | sed -n '45,47p'
+$ find . -name "*.test.ts" -o -name "*.spec.ts" | xargs grep -l "strykerVersionFor" 2>/dev/null
+$ find . -path "*/tests/*" -name "*.ts" | xargs grep -l "strykerVersionFor\|worktree-toolchain" 2>/dev/null
+$ find . -name "*.test.ts" | head -20
+$ find . -path "./node_modules" -prune -o -name "*.test.ts" -print | head -30
+$ find . -path "./node_modules" -prune -o -name "*.test.ts" -print | grep -i "worktree\|toolchain\|adapter"
+$ grep -n "strykerVersionFor" ./src/adapters/*.test.ts
+$ grep -rn "strykerVersionFor" ./src/
+$ grep -rn "strykerVersionFor\|worktree-toolchain" ./test/ --include="*.ts" 2>/dev/null
+$ grep -rn "worktree-toolchain\|strykerVersion" ./src/ --include="*.test.ts" 2>/dev/null
+$ ls ./src/adapters/
+$ cat ./src/adapters/toolchain.ts
+$ cat ./src/adapters/worktree-toolchain.ts | head -50
+$ npm view @stryker-mutator/core@10.1.1 --json | grep -E '"version"|"peerDependencies"'
+$ npm view @stryker-mutator/core@10.1.1 peerDependencies --json 2>/dev/null; npm view @stryker-mutator/vitest-runner@10.1.1 peerDependencies --json 2>/dev/null
+$ cat package.json | sed 's/"@stryker-mutator\/core": "\^9.6.1"/"@stryker-mutator\/core": "^10.1.1"/' | sed 's/"@stryker-mutator\/vitest-runner": "\^9.6.1"/"@stryker-mutator\/vitest-runner": "^10.1.1"/' > package.json.tmp && mv package.json.tmp package.json
+$ cat package.json | grep -E '"@stryker-mutator|"vitest'
+$ sed -i 's/"9\.6\.1"/"10.1.1"/' src/adapters/worktree-toolchain.ts
+$ sed -i 's/"9\.6\.1"/"10.1.1"/g' src/adapters/worktree-toolchain.ts
+$ cat src/adapters/worktree-toolchain.ts | grep "9.6.1"
+$ sed -i 's/9\.6\.1/10.1.1/g' src/adapters/worktree-toolchain.ts
+$ perl -pi -e 's/9\.6\.1/10.1.1/g' src/adapters/worktree-toolchain.ts
+$ grep "10.1.1" src/adapters/worktree-toolchain.ts
+$ npm install --package-lock-only 2>&1 | tail -5
+$ grep '"@stryker-mutator/core"' package-lock.json | head -3
+$ cat ./src/adapters/install-strategy.test.ts | head -30
+$ cat ./src/adapters/vitest-run.test.ts | head -30
+$ grep -n "^export" src/adapters/worktree-toolchain.ts
+$ cat src/adapters/worktree-toolchain.ts | sed -n '45,47p'
+$ sed -i 's/^function strykerVersionFor/export function strykerVersionFor/' src/adapters/worktree-toolchain.ts
+$ perl -pi -e 's/^function strykerVersionFor/export function strykerVersionFor/' src/adapters/worktree-toolchain.ts
+$ grep -n "^export function strykerVersionFor" src/adapters/worktree-toolchain.ts
+$ cat > src/adapters/stryker-version.test.ts << 'EOF'
+$ npm test -- --testPathPattern="stryker-version" 2>&1
+$ npx vitest run src/adapters/stryker-version.test.ts 2>&1
+$ npm test 2>&1 | tail -30
+$ git diff --stat
+$ git diff package.json
+$ git diff src/adapters/worktree-toolchain.ts
+$ cat src/adapters/stryker-version.test.ts
+$ cat src/adapters/stryker-version.test.ts
+verifying the working tree
+requirements R1
+$ npm test 2>&1 | tail -10
+verifying the working tree
+requirements R1
+$ npm ls @stryker-mutator/core @stryker-mutator/vitest-runner 2>&1
+$ npm install 2>&1 | tail -5
+$ npm ls @stryker-mutator/core @stryker-mutator/vitest-runner 2>&1
+$ npm test 2>&1 | tail -10
+verifying the working tree
+reviewing the change with a fresh context
+review: no-finding

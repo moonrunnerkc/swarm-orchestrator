@@ -1,0 +1,429 @@
+{
+  "state": "incomplete",
+  "scope": "requirements",
+  "reasons": [
+    "check test: 14 test(s) pass at the base commit and fail against the candidate: packages/capture-claude/test/hook-entry.test.ts, packages/bundle/test/e2e.acceptance.test.ts, packages/bundle/test/phase3-acceptance.test.ts, packages/bundle/test/roundtrip.test.ts, packages/bundle/test/writer.deterministic.test.ts and 9 more",
+    "check test: 3 test(s) fail at the base commit and still fail, which does not block: packages/cli/test/commands.install.test.ts::Phase 3: installShellShims > creates shim directory and reports installed binaries, packages/cli/test/commands.install.test.ts::Phase 3: installShellShims > creates capture directory, packages/cli/test/commands.install.test.ts::Phase 3: installShellShims > returns empty installed binaries without real shim binary",
+    "check build is unresolved: it fails at the base commit and with the candidate, and no per-test report tells a new failure from an old one"
+  ],
+  "base": {
+    "commit": "830f36638df85eb611912ff89a305d4a326af3c7"
+  },
+  "change": {
+    "source": "patch",
+    "applied": true,
+    "files": []
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "Move MD_TEMPLATE and HTML_TEMPLATE out of packages/narrative/src/render.ts into a new templates.ts with no change to output.",
+      "source": "user",
+      "kind": "other",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "status": "unverified",
+      "evidence": [],
+      "limitation": "no change observed",
+      "nextAction": "make the change the requirement asks for"
+    }
+  ],
+  "regression": {
+    "status": "found",
+    "newFailures": [
+      "packages/capture-claude/test/hook-entry.test.ts",
+      "packages/bundle/test/e2e.acceptance.test.ts",
+      "packages/bundle/test/phase3-acceptance.test.ts",
+      "packages/bundle/test/roundtrip.test.ts",
+      "packages/bundle/test/writer.deterministic.test.ts",
+      "packages/bundle/test/writer.mode-contract.test.ts",
+      "packages/bundle/test/writer.ruleset-integrity.test.ts",
+      "packages/chain/test/hash-chain.test.ts",
+      "packages/chain/test/key-fingerprint.test.ts",
+      "packages/cli/test/commands.captures.test.ts",
+      "packages/cli/test/commands.commander.test.ts",
+      "packages/cli/test/commands.key.test.ts",
+      "packages/cli/test/commands.reconstruct.test.ts",
+      "packages/cli/test/commands.rules-default.test.ts"
+    ],
+    "inherited": [
+      "packages/cli/test/commands.install.test.ts::Phase 3: installShellShims > creates shim directory and reports installed binaries",
+      "packages/cli/test/commands.install.test.ts::Phase 3: installShellShims > creates capture directory",
+      "packages/cli/test/commands.install.test.ts::Phase 3: installShellShims > returns empty installed binaries without real shim binary"
+    ],
+    "removed": [],
+    "unresolved": [
+      "check build"
+    ]
+  },
+  "checks": [
+    {
+      "name": "test",
+      "command": "pnpm run test",
+      "kind": "test",
+      "authority": "pre-existing",
+      "result": "fail",
+      "collected": 320,
+      "exitCode": 1,
+      "durationMs": 5011,
+      "outputSha256": "285e75c686e618ac3ea299202c9d53237234679d3ba098fe651ede9c587bf5d1",
+      "tests": {
+        "runner": "vitest",
+        "collected": {
+          "base": 217,
+          "candidate": 320
+        },
+        "counts": {
+          "preserved": 200,
+          "renamed": 0,
+          "fixed": 0,
+          "newFailures": 14,
+          "inherited": 3,
+          "removed": 0,
+          "superseded": 0,
+          "expectationChanges": 0,
+          "added": 117,
+          "addedFailing": 0,
+          "witnesses": 0,
+          "skipped": 0
+        },
+        "fixed": [],
+        "newFailures": [
+          "packages/capture-claude/test/hook-entry.test.ts",
+          "packages/bundle/test/e2e.acceptance.test.ts",
+          "packages/bundle/test/phase3-acceptance.test.ts",
+          "packages/bundle/test/roundtrip.test.ts",
+          "packages/bundle/test/writer.deterministic.test.ts",
+          "packages/bundle/test/writer.mode-contract.test.ts",
+          "packages/bundle/test/writer.ruleset-integrity.test.ts",
+          "packages/chain/test/hash-chain.test.ts",
+          "packages/chain/test/key-fingerprint.test.ts",
+          "packages/cli/test/commands.captures.test.ts",
+          "packages/cli/test/commands.commander.test.ts",
+          "packages/cli/test/commands.key.test.ts",
+          "packages/cli/test/commands.reconstruct.test.ts",
+          "packages/cli/test/commands.rules-default.test.ts"
+        ],
+        "inherited": [
+          "packages/cli/test/commands.install.test.ts::Phase 3: installShellShims > creates shim directory and reports installed binaries",
+          "packages/cli/test/commands.install.test.ts::Phase 3: installShellShims > creates capture directory",
+          "packages/cli/test/commands.install.test.ts::Phase 3: installShellShims > returns empty installed binaries without real shim binary"
+        ],
+        "removed": [],
+        "renamed": [],
+        "superseded": [],
+        "expectationChanges": [],
+        "added": [
+          "packages/bundle/test/e2e.acceptance.test.ts::Phase 2 acceptance: signed bundle pipeline > produces a signed bundle with hash chain, signature, and chain validation",
+          "packages/bundle/test/e2e.acceptance.test.ts::Phase 2 acceptance: signed bundle pipeline > verifies hash chain independently via verifyHashChain",
+          "packages/bundle/test/e2e.acceptance.test.ts::Phase 2 acceptance: signed bundle pipeline > detects tampered event payload (chain hash mismatch)",
+          "packages/bundle/test/e2e.acceptance.test.ts::Phase 2 acceptance: signed bundle pipeline > detects tampered artifact file (depose-verify artifact hash mismatch)",
+          "packages/bundle/test/e2e.acceptance.test.ts::Phase 2 acceptance: signed bundle pipeline > detects missing signature (unsigned bundle fails signature check)",
+          "packages/bundle/test/e2e.acceptance.test.ts::Phase 2 acceptance: signed bundle pipeline > produces deterministic chain hashes for same input",
+          "packages/bundle/test/e2e.acceptance.test.ts::Phase 2 acceptance: depose-verify binary > verifies a signed bundle with depose-verify (happy path)",
+          "packages/bundle/test/e2e.acceptance.test.ts::Phase 2 acceptance: depose-verify binary > detects tampered events with depose-verify",
+          "packages/bundle/test/e2e.acceptance.test.ts::Phase 2 acceptance: depose-verify binary > detects stripped signature with depose-verify",
+          "packages/bundle/test/e2e.acceptance.test.ts::Phase 2 acceptance: depose-verify binary > detects backdated manifest (producedAt after TSA timestamp)",
+          "packages/bundle/test/phase3-acceptance.test.ts::Phase 3 acceptance: capture -> merge -> bundle pipeline > capture records flow through full pipeline to signed bundle",
+          "packages/bundle/test/roundtrip.test.ts::roundtrip > writes and reads back a complete bundle from terraform-destroy.jsonl",
+          "packages/bundle/test/roundtrip.test.ts::roundtrip > verifies all expected directories exist",
+          "packages/bundle/test/roundtrip.test.ts::roundtrip > verifies empty attestations (unsigned mode)",
+          "packages/bundle/test/writer.deterministic.test.ts::writeBundle (unsigned mode) > directory structure > creates correct directory layout (BUILD_PLAN.md §5)",
+          "packages/bundle/test/writer.deterministic.test.ts::writeBundle (unsigned mode) > manifest > produces correct manifest (counts, metadata)",
+          "packages/bundle/test/writer.deterministic.test.ts::writeBundle (unsigned mode) > events.jsonl > writes events sorted by id (ULID)",
+          "packages/bundle/test/writer.deterministic.test.ts::writeBundle (unsigned mode) > verify.txt > produces attorney-friendly verify instructions",
+          "packages/bundle/test/writer.deterministic.test.ts::writeBundle (unsigned mode) > determinism > produces byte-identical output for same input (unsigned mode)",
+          "packages/bundle/test/writer.mode-contract.test.ts::mode contract > dev-unsigned bundle lands in incident-unsigned-<id> with banner",
+          "packages/bundle/test/writer.mode-contract.test.ts::mode contract > signed bundle lands in incident-<id> without banner",
+          "packages/bundle/test/writer.mode-contract.test.ts::mode contract > signed mode without keyPair throws",
+          "packages/bundle/test/writer.mode-contract.test.ts::mode contract > verifier prints \"PASS (dev-unsigned, not evidence)\" for clean dev-unsigned",
+          "packages/bundle/test/writer.mode-contract.test.ts::mode contract > verifier fails when a dev-unsigned bundle smuggles a signature",
+          "packages/bundle/test/writer.mode-contract.test.ts::mode contract > verifier fails when a signed bundle has its timestamp stripped",
+          "packages/bundle/test/writer.mode-contract.test.ts::mode contract > verifier fails when producer.mode is missing",
+          "packages/bundle/test/writer.mode-contract.test.ts::mode contract > verifier accepts the correct --expected-key-fingerprint (C4)",
+          "packages/bundle/test/writer.mode-contract.test.ts::mode contract > verifier rejects a mismatched --expected-key-fingerprint (C4)",
+          "packages/bundle/test/writer.mode-contract.test.ts::mode contract > verifier rejects an unsupported schemaVersion",
+          "packages/bundle/test/writer.ruleset-integrity.test.ts::bundle ruleset integrity > writes the ruleset bytes verbatim and the manifest hash matches",
+          "packages/bundle/test/writer.ruleset-integrity.test.ts::bundle ruleset integrity > flipping a byte in the embedded ruleset breaks the rulesetHash match",
+          "packages/chain/test/hash-chain.test.ts::extractEventMetadata > extracts the 8 required fields",
+          "packages/chain/test/hash-chain.test.ts::extractEventMetadata > includes payloadHash in metadata (IRONROOT intentional duplication)",
+          "packages/chain/test/hash-chain.test.ts::computeChainHash > produces a 32-byte SHA-256 hash",
+          "packages/chain/test/hash-chain.test.ts::computeChainHash > is deterministic for same inputs",
+          "packages/chain/test/hash-chain.test.ts::computeChainHash > differs for different payloadHash",
+          "packages/chain/test/hash-chain.test.ts::computeChainHash > differs for different metadata",
+          "packages/chain/test/hash-chain.test.ts::computeChainHash > differs for different prevHash",
+          "packages/chain/test/hash-chain.test.ts::buildHashChain > returns empty results for empty events",
+          "packages/chain/test/hash-chain.test.ts::buildHashChain > chains a single event using zero32 as prev",
+          "packages/chain/test/hash-chain.test.ts::buildHashChain > chains multiple events in order",
+          "packages/chain/test/hash-chain.test.ts::buildHashChain > preserves all original event fields",
+          "packages/chain/test/hash-chain.test.ts::buildHashChain > produces deterministic results for same inputs",
+          "packages/chain/test/hash-chain.test.ts::verifyHashChain > accepts a valid chain",
+          "packages/chain/test/hash-chain.test.ts::verifyHashChain > rejects empty chain with non-empty expected rootHash",
+          "packages/chain/test/hash-chain.test.ts::verifyHashChain > accepts empty chain with empty expected rootHash",
+          "packages/chain/test/hash-chain.test.ts::verifyHashChain > detects tampered payload",
+          "packages/chain/test/hash-chain.test.ts::verifyHashChain > detects wrong rootHash",
+          "packages/chain/test/hash-chain.test.ts::verifyHashChain > detects event reordering",
+          "packages/chain/test/key-fingerprint.test.ts::fingerprintPublicKeyPem > returns a 64-char lowercase hex string",
+          "packages/chain/test/key-fingerprint.test.ts::fingerprintPublicKeyPem > is stable for the same key",
+          "packages/chain/test/key-fingerprint.test.ts::fingerprintPublicKeyPem > differs across distinct keys",
+          "packages/chain/test/key-fingerprint.test.ts::formatFingerprintSshStyle > renders SHA256:<base64> from a hex fingerprint",
+          "packages/capture-claude/test/hook-entry.test.ts::hook-entry > writes a capture record for Bash tool",
+          "packages/capture-claude/test/hook-entry.test.ts::hook-entry > records the capture time so the event is not stamped at bundle time",
+          "packages/capture-claude/test/hook-entry.test.ts::hook-entry > records the agent session id so captures can be scoped to a session",
+          "packages/capture-claude/test/hook-entry.test.ts::hook-entry > leaves sessionId null when the hook payload carries no session",
+          "packages/capture-claude/test/hook-entry.test.ts::hook-entry > writes a capture record for Edit tool",
+          "packages/capture-claude/test/hook-entry.test.ts::hook-entry > writes a capture record for Write tool",
+          "packages/capture-claude/test/hook-entry.test.ts::hook-entry > includes env subset and env hash",
+          "packages/capture-claude/test/hook-entry.test.ts::hook-entry > includes parent process tree (best-effort)",
+          "packages/capture-claude/test/hook-entry.test.ts::hook-entry > never throws; errors are swallowed",
+          "packages/capture-claude/test/hook-entry.test.ts::env-allowlist > allows AWS_ prefixed keys",
+          "packages/capture-claude/test/hook-entry.test.ts::env-allowlist > allows GH_ prefixed keys",
+          "packages/capture-claude/test/hook-entry.test.ts::env-allowlist > allows OPENAI_ prefixed keys",
+          "packages/capture-claude/test/hook-entry.test.ts::env-allowlist > allows ANTHROPIC_ prefixed keys",
+          "packages/capture-claude/test/hook-entry.test.ts::env-allowlist > allows RAILWAY_ prefixed keys",
+          "packages/capture-claude/test/hook-entry.test.ts::env-allowlist > rejects non-allowlisted keys",
+          "packages/capture-claude/test/hook-entry.test.ts::env-allowlist > supports extra prefixes",
+          "packages/capture-claude/test/hook-entry.test.ts::env-allowlist > filterEnv returns subset and hash",
+          "packages/capture-claude/test/hook-entry.test.ts::env-allowlist > filterEnv includes extra prefixes",
+          "packages/capture-claude/test/hook-entry.test.ts::file-hash > hashFile returns null for non-existent file",
+          "packages/capture-claude/test/hook-entry.test.ts::file-hash > fileSize returns null for non-existent file",
+          "packages/capture-claude/test/hook-entry.test.ts::file-hash > hashFile returns hex digest for existing file",
+          "packages/capture-claude/test/hook-entry.test.ts::file-hash > hashFileArgs extracts file_path from Edit tool",
+          "packages/capture-claude/test/hook-entry.test.ts::file-hash > hashFileArgs extracts file_path from Write tool",
+          "packages/capture-claude/test/hook-entry.test.ts::file-hash > hashFileArgs returns empty for Bash with no file paths",
+          "packages/capture-claude/test/hook-entry.test.ts::file-hash > hashFileArgs deduplicates paths",
+          "packages/capture-claude/test/hook-entry.test.ts::capture-record > writeCaptureRecord creates a file",
+          "packages/capture-claude/test/hook-entry.test.ts::capture-record > readCaptureRecords returns sorted records",
+          "packages/capture-claude/test/hook-entry.test.ts::capture-record > getCaptureDir creates directory with 0700 if not exists",
+          "packages/cli/test/commands.captures.test.ts::parseDuration > parses days, hours, minutes, and seconds",
+          "packages/cli/test/commands.captures.test.ts::parseDuration > rejects a duration with no unit",
+          "packages/cli/test/commands.captures.test.ts::parseDuration > rejects an unsupported unit",
+          "packages/cli/test/commands.captures.test.ts::parseDuration > names the accepted units in the error so the fix is obvious",
+          "packages/cli/test/commands.captures.test.ts::statCaptureStore > counts records and reports the age range",
+          "packages/cli/test/commands.captures.test.ts::statCaptureStore > returns zeroes for a store that does not exist",
+          "packages/cli/test/commands.captures.test.ts::statCaptureStore > ignores files that are not capture records",
+          "packages/cli/test/commands.captures.test.ts::captureStoreWarning > stays quiet for a small store",
+          "packages/cli/test/commands.captures.test.ts::captureStoreWarning > warns once the store passes the record threshold",
+          "packages/cli/test/commands.captures.test.ts::depose captures prune > deletes nothing without --yes",
+          "packages/cli/test/commands.captures.test.ts::depose captures prune > reports what a dry run would remove",
+          "packages/cli/test/commands.captures.test.ts::depose captures prune > removes only records older than the window when --yes is given",
+          "packages/cli/test/commands.captures.test.ts::depose captures prune > keeps everything when nothing is old enough",
+          "packages/cli/test/commands.captures.test.ts::depose captures prune > refuses to run without an explicit retention window",
+          "packages/cli/test/commands.commander.test.ts::commander argument parsing > accepts --key=value form",
+          "packages/cli/test/commands.commander.test.ts::commander argument parsing > accepts an output dir whose value starts with \"-.\" or \"./-\"",
+          "packages/cli/test/commands.commander.test.ts::commander argument parsing > rejects unknown options instead of silently accepting them",
+          "packages/cli/test/commands.key.test.ts::depose key fingerprint > generates a key and prints a 64-char lowercase hex fingerprint",
+          "packages/cli/test/commands.key.test.ts::depose key fingerprint > prints ssh-style SHA256:<base64> when --ssh is set"
+        ],
+        "addedFailing": [],
+        "witnesses": []
+      }
+    },
+    {
+      "name": "lint",
+      "command": "pnpm run lint",
+      "kind": "other",
+      "authority": "pre-existing",
+      "result": "pass",
+      "collected": null,
+      "exitCode": 0,
+      "durationMs": 2846,
+      "outputSha256": "19b37849e49fdd910ba1e0b7687da132ed07aecdefa5180b266ad7a3d1b2aa0b"
+    },
+    {
+      "name": "typecheck",
+      "command": "pnpm run typecheck",
+      "kind": "other",
+      "authority": "pre-existing",
+      "result": "pass",
+      "collected": null,
+      "exitCode": 0,
+      "durationMs": 1866,
+      "outputSha256": "c18c64a4cf3154da7af0aabb6d0df1d29e47688c19374c619a9486769776af43"
+    },
+    {
+      "name": "build",
+      "command": "pnpm run build",
+      "kind": "other",
+      "authority": "pre-existing",
+      "result": "unresolved",
+      "collected": null,
+      "exitCode": 2,
+      "durationMs": 1917,
+      "outputSha256": "c5a17d123db10daca30212230fa5443de2a3e6370ef65522197fd1826c483289"
+    }
+  ],
+  "baseline": {
+    "status": "measured",
+    "cached": false,
+    "environmentSha256": "6853a44cfecf9da9efabad043b4bf457c4863a7d63218b1a5fdfb71257f320ff",
+    "checks": [
+      {
+        "name": "test",
+        "command": "pnpm run test",
+        "kind": "test",
+        "authority": "pre-existing",
+        "result": "fail",
+        "collected": 217,
+        "exitCode": 1,
+        "durationMs": 4103,
+        "outputSha256": "43883e8a3cd2426d1c2a64051bf2fbdf82e352d5b0e87f00dd1fde9b33ee8e26"
+      },
+      {
+        "name": "lint",
+        "command": "pnpm run lint",
+        "kind": "other",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": null,
+        "exitCode": 0,
+        "durationMs": 2947,
+        "outputSha256": "19b37849e49fdd910ba1e0b7687da132ed07aecdefa5180b266ad7a3d1b2aa0b"
+      },
+      {
+        "name": "typecheck",
+        "command": "pnpm run typecheck",
+        "kind": "other",
+        "authority": "pre-existing",
+        "result": "fail",
+        "collected": null,
+        "exitCode": 2,
+        "durationMs": 2457,
+        "outputSha256": "b20c358b1f234e16edefab8a2ec0e9e2f8d8c332d7bf6cc72622df2fd0f38026"
+      },
+      {
+        "name": "build",
+        "command": "pnpm run build",
+        "kind": "other",
+        "authority": "pre-existing",
+        "result": "fail",
+        "collected": null,
+        "exitCode": 2,
+        "durationMs": 2817,
+        "outputSha256": "c5a17d123db10daca30212230fa5443de2a3e6370ef65522197fd1826c483289"
+      }
+    ],
+    "heldOut": []
+  },
+  "heldOut": {
+    "status": "unmeasured",
+    "reason": "no held-out checks are sealed for this workspace"
+  },
+  "artifacts": [],
+  "testFiles": {
+    "added": [],
+    "modified": [],
+    "deleted": [],
+    "moved": [],
+    "relocated": []
+  },
+  "coverage": {
+    "status": "unmeasured",
+    "reason": "the change adds no source lines"
+  },
+  "mutation": {
+    "status": "unmeasured",
+    "reason": "a check failed, so no mutant can be told apart from that failure"
+  },
+  "producer": {
+    "name": "swarm-orchestrator",
+    "version": "15.0.0",
+    "model": "qwen3.8:27b",
+    "promptSha256": "3cba86804639790c62d8880cde4afb9182aa70bd113006061d47e55e836978e0",
+    "ledgerSha256": "8ccd0ac8d0d5b99d89ce891af7c392bc29581b5d69abb4296f68bb5ea80939c2",
+    "ledgerRecords": 45,
+    "reportSha256": "ac499c61c7276d577f511cc4ffb7deef6ceae9625afd340975eab7538e88e2c6",
+    "instructions": [
+      {
+        "path": "CLAUDE.md",
+        "sha256": "4103e80d78d0eb89d23120221d48d8f735665612df5edbe175c8dd9808ca04eb"
+      }
+    ]
+  },
+  "environment": {
+    "sha256": "6853a44cfecf9da9efabad043b4bf457c4863a7d63218b1a5fdfb71257f320ff",
+    "node": "in node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 (sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413)",
+    "platform": "linux-arm64",
+    "git": "2.54.0 (Apple Git-157)",
+    "dependencies": "prepared",
+    "dependencyTreeSha256": "7f5595b7450a85b798229e5014696ca89524c0b9350863b9104dd7e7e7e2d3dd",
+    "reproducible": true
+  },
+  "execution": {
+    "mode": "isolated",
+    "statement": "isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared",
+    "network": "closed",
+    "image": "node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 (sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 arm64)",
+    "dependencies": {
+      "mode": "prepared",
+      "reproducible": true,
+      "lockfiles": {
+        "pnpm-lock.yaml": "adda6ac5da6a84d08099160c0515b2e9eaa833c63d5c3663e22588018ef10373"
+      },
+      "treeSha256": "7f5595b7450a85b798229e5014696ca89524c0b9350863b9104dd7e7e7e2d3dd",
+      "note": "prepared from the lockfile and digested"
+    },
+    "policyMet": true,
+    "problems": []
+  },
+  "policy": {
+    "behaviorChange": "none"
+  },
+  "unmeasured": [
+    "check build: it fails at the base commit and with the candidate, and no per-test report tells a new failure from an old one",
+    "held-out: no held-out checks are sealed for this workspace",
+    "coverage: the change adds no source lines",
+    "mutation: a check failed, so no mutant can be told apart from that failure"
+  ],
+  "logs": [
+    {
+      "name": "logs/test.txt",
+      "sha256": "285e75c686e618ac3ea299202c9d53237234679d3ba098fe651ede9c587bf5d1"
+    },
+    {
+      "name": "logs/lint.txt",
+      "sha256": "19b37849e49fdd910ba1e0b7687da132ed07aecdefa5180b266ad7a3d1b2aa0b"
+    },
+    {
+      "name": "logs/typecheck.txt",
+      "sha256": "c18c64a4cf3154da7af0aabb6d0df1d29e47688c19374c619a9486769776af43"
+    },
+    {
+      "name": "logs/build.txt",
+      "sha256": "c5a17d123db10daca30212230fa5443de2a3e6370ef65522197fd1826c483289"
+    }
+  ],
+  "verifier": {
+    "name": "swarm-verify",
+    "version": "2.0.0"
+  },
+  "version": "swarm-verify.result/v1",
+  "snapshot": {
+    "base": "830f36638df85eb611912ff89a305d4a326af3c7",
+    "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "treeSha256": "9248e0ca32fef9eb584369d2408764f83da8258e69687278380c99e3be678dd8"
+  },
+  "integrity": {
+    "signed": true,
+    "signer": {
+      "kind": "key",
+      "fingerprint": "8c5ed5b218745e42c16a99d98024241cbf74c7aa7bf570fd6e5495491d0b5dae"
+    },
+    "statementSha256": "8326dbe23de3764cf40b08c9909b4c323bd1049044b9d88c298021f18d73c624",
+    "problems": []
+  },
+  "evidence": {
+    "directory": "/Users/brad/.swarm/sessions/20261101T154330-6eee82/final/verification",
+    "bundle": "/Users/brad/.swarm/sessions/20261101T154330-6eee82/final/verification/attestation.sigstore.json",
+    "statement": "/Users/brad/.swarm/sessions/20261101T154330-6eee82/final/verification/statement.json",
+    "patch": "/Users/brad/.swarm/sessions/20261101T154330-6eee82/final/verification/change.patch",
+    "publicKey": "/Users/brad/.swarm/sessions/20261101T154330-6eee82/final/verification/attestation.pub.pem"
+  },
+  "failureOutput": "$ pnpm run test\nptures               Inspect and prune the local capture store\n  key                    Inspect the local Ed25519 signing key\n  uninstall [options]    Remove the Claude Code hook and/or shell shims\n  help [command]         display help for command\n\n\u001b[31m⎯⎯⎯⎯⎯⎯⎯\u001b[39m\u001b[1m\u001b[41m Failed Tests 3 \u001b[49m\u001b[22m\u001b[31m⎯⎯⎯⎯⎯⎯⎯\u001b[39m\n\n\u001b[41m\u001b[1m FAIL \u001b[22m\u001b[49m packages/cli/test/commands.install.test.ts\u001b[2m > \u001b[22mPhase 3: installShellShims\u001b[2m > \u001b[22mcreates shim directory and reports installed binaries\n\u001b[31m\u001b[1mError\u001b[22m: depose-shim binary not found. Build it first:\n  (cd apps/capture-shim && make build-local)\nOr install a release that includes depose-shim. Refusing to install shell shims because that would leave dangling symlinks (including \"rm\") on your PATH.\u001b[39m\n\u001b[36m \u001b[2m❯\u001b[22m installShellShims packages/cli/src/commands/install-shell.ts:\u001b[2m85:11\u001b[22m\u001b[39m\n    \u001b[90m 83| \u001b[39m  \u001b[35mconst\u001b[39m shimBinary \u001b[33m=\u001b[39m options\u001b[33m.\u001b[39mshimBinary \u001b[33m||\u001b[39m \u001b[34mfindShimBinary\u001b[39m()\u001b[33m;\u001b[39m\n    \u001b[90m 84| \u001b[39m  \u001b[35mif\u001b[39m (\u001b[33m!\u001b[39mshimBinary \u001b[33m||\u001b[39m \u001b[33m!\u001b[39m\u001b[34mexistsSync\u001b[39m(shimBinary)) {\n    \u001b[90m 85| \u001b[39m    \u001b[35mthrow\u001b[39m \u001b[35mnew\u001b[39m \u001b[33mError\u001b[39m(\n    \u001b[90m   | \u001b[39m          \u001b[31m^\u001b[39m\n    \u001b[90m 86| \u001b[39m      \u001b[32m'depose-shim binary not found. Build it first:\\n'\u001b[39m \u001b[33m+\u001b[39m\n    \u001b[90m 87| \u001b[39m      \u001b[32m'  (cd apps/capture-shim && make build-local)\\n'\u001b[39m \u001b[33m+\u001b[39m\n\u001b[90m \u001b[2m❯\u001b[22m packages/cli/test/commands.install.test.ts:\u001b[2m130:20\u001b[22m\u001b[39m\n\n\u001b[31m\u001b[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯\u001b[22m\u001b[39m\n\n\u001b[41m\u001b[1m FAIL \u001b[22m\u001b[49m packages/cli/test/commands.install.test.ts\u001b[2m > \u001b[22mPhase 3: installShellShims\u001b[2m > \u001b[22mcreates capture directory\n\u001b[31m\u001b[1mError\u001b[22m: depose-shim binary not found. Build it first:\n  (cd apps/capture-shim && make build-local)\nOr install a release that includes depose-shim. Refusing to install shell shims because that would leave dangling symlinks (including \"rm\") on your PATH.\u001b[39m\n\u001b[36m \u001b[2m❯\u001b[22m installShellShims packages/cli/src/commands/install-shell.ts:\u001b[2m85:11\u001b[22m\u001b[39m\n    \u001b[90m 83| \u001b[39m  \u001b[35mconst\u001b[39m shimBinary \u001b[33m=\u001b[39m options\u001b[33m.\u001b[39mshimBinary \u001b[33m||\u001b[39m \u001b[34mfindShimBinary\u001b[39m()\u001b[33m;\u001b[39m\n    \u001b[90m 84| \u001b[39m  \u001b[35mif\u001b[39m (\u001b[33m!\u001b[39mshimBinary \u001b[33m||\u001b[39m \u001b[33m!\u001b[39m\u001b[34mexistsSync\u001b[39m(shimBinary)) {\n    \u001b[90m 85| \u001b[39m    \u001b[35mthrow\u001b[39m \u001b[35mnew\u001b[39m \u001b[33mError\u001b[39m(\n    \u001b[90m   | \u001b[39m          \u001b[31m^\u001b[39m\n    \u001b[90m 86| \u001b[39m      \u001b[32m'depose-shim binary not found. Build it first:\\n'\u001b[39m \u001b[33m+\u001b[39m\n    \u001b[90m 87| \u001b[39m      \u001b[32m'  (cd apps/capture-shim && make build-local)\\n'\u001b[39m \u001b[33m+\u001b[39m\n\u001b[90m \u001b[2m❯\u001b[22m packages/cli/test/commands.install.test.ts:\u001b[2m142:5\u001b[22m\u001b[39m\n\n\u001b[31m\u001b[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯\u001b[22m\u001b[39m\n\n\u001b[41m\u001b[1m FAIL \u001b[22m\u001b[49m packages/cli/test/commands.install.test.ts\u001b[2m > \u001b[22mPhase 3: installShellShims\u001b[2m > \u001b[22mreturns empty installed binaries without real shim binary\n\u001b[31m\u001b[1mError\u001b[22m: depose-shim binary not found. Build it first:\n  (cd apps/capture-shim && make build-local)\nOr install a release that includes depose-shim. Refusing to install shell shims because that would leave dangling symlinks (including \"rm\") on your PATH.\u001b[39m\n\u001b[36m \u001b[2m❯\u001b[22m installShellShims packages/cli/src/commands/install-shell.ts:\u001b[2m85:11\u001b[22m\u001b[39m\n    \u001b[90m 83| \u001b[39m  \u001b[35mconst\u001b[39m shimBinary \u001b[33m=\u001b[39m options\u001b[33m.\u001b[39mshimBinary \u001b[33m||\u001b[39m \u001b[34mfindShimBinary\u001b[39m()\u001b[33m;\u001b[39m\n    \u001b[90m 84| \u001b[39m  \u001b[35mif\u001b[39m (\u001b[33m!\u001b[39mshimBinary \u001b[33m||\u001b[39m \u001b[33m!\u001b[39m\u001b[34mexistsSync\u001b[39m(shimBinary)) {\n    \u001b[90m 85| \u001b[39m    \u001b[35mthrow\u001b[39m \u001b[35mnew\u001b[39m \u001b[33mError\u001b[39m(\n    \u001b[90m   | \u001b[39m          \u001b[31m^\u001b[39m\n    \u001b[90m 86| \u001b[39m      \u001b[32m'depose-shim binary not found. Build it first:\\n'\u001b[39m \u001b[33m+\u001b[39m\n    \u001b[90m 87| \u001b[39m      \u001b[32m'  (cd apps/capture-shim && make build-local)\\n'\u001b[39m \u001b[33m+\u001b[39m\n\u001b[90m \u001b[2m❯\u001b[22m packages/cli/test/commands.install.test.ts:\u001b[2m153:20\u001b[22m\u001b[39m\n\n\u001b[31m\u001b[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯\u001b[22m\u001b[39m\n\n\n\n$ pnpm run build\n\n> depose@0.1.0 build /Users/brad/.swarm/work/swarm-verify-LwjzlK/tree\n> tsc --build && npm run build:shim && npm run build:bundle\n\n\n> depose@0.1.0 build:shim\n> cd apps/capture-shim && make build-local\n\ngo build -ldflags \"-s -w\" -o depose-shim .\n ELIFECYCLE  Command failed with exit code 2.\n/bin/sh: 1: go: not found\nmake: *** [Makefile:21: build-local] Error 127\n"
+}

@@ -28,16 +28,38 @@ import {
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { parseSwarmToml } from "../src/config/swarm-toml.ts";
 import { evaluationRows, writeReport } from "./report.mjs";
 import { startStubModel } from "./stub-model.mjs";
+
+/**
+ * The model every arm of the frozen evaluation points at. It lived in the repository's
+ * swarm.toml until that file stopped pinning a model, so a fresh checkout runs with discovery;
+ * the evaluation keeps it here, where only the evaluation reads it.
+ */
+export const evaluationModel = {
+  endpoint: process.env.SWARM_EVAL_ENDPOINT ?? "http://localhost:11434/v1",
+  model: process.env.SWARM_EVAL_MODEL ?? "qwen3.6:35b-a3b",
+  maxSteps: 50,
+};
 
 const root = resolve(import.meta.dirname, "..");
 const cache = process.env.SWARM_EVAL_CACHE ?? join(homedir(), ".cache", "swarm-eval");
 
 export const suites = {
-  "swebench-verified": { list: "tasks/swebench-verified.txt", dataset: "swebench-verified@1.0" },
-  "terminal-bench-2": { list: "tasks/terminal-bench-2.txt", dataset: "terminal-bench@2.0" },
+  "swebench-verified": {
+    list: "tasks/swebench-verified.txt",
+    dataset: "swebench-verified@1.0",
+    // The images activate the task's conda environment only in .bashrc, which an agent's
+    // commands never source; without this every arm's python3 is the base one, without pytest.
+    env: {
+      PATH: "/opt/miniconda3/envs/testbed/bin:/opt/miniconda3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    },
+  },
+  "terminal-bench-2": {
+    list: "tasks/terminal-bench-2.txt",
+    dataset: "terminal-bench@2.0",
+    env: {},
+  },
 };
 
 export const arms = {
@@ -152,11 +174,9 @@ async function main() {
     writeReport();
     return;
   }
-  const agent = parseSwarmToml(readFileSync(join(root, "swarm.toml"), "utf8"), "swarm.toml").agent;
   const stub = values.stub ? await startStubModel() : null;
-  const endpoint = stub === null ? agent.endpoint : `http://127.0.0.1:${stub.port}/v1`;
-  const model = stub === null ? agent.model : "stub";
-  if (!endpoint || !model) throw new Error("swarm.toml needs [agent] endpoint and model");
+  const endpoint = stub === null ? evaluationModel.endpoint : `http://127.0.0.1:${stub.port}/v1`;
+  const model = stub === null ? evaluationModel.model : "stub";
   const chosenSuites = values.smoke
     ? ["swebench-verified"]
     : values.suite === "all"
@@ -205,7 +225,7 @@ async function main() {
     SWARM_EVAL_API_KEY: "local",
     SWARM_EVAL_PACKAGE: join(packDir, packed),
     SWARM_EVAL_ENDPOINT: containerEndpoint(endpoint),
-    SWARM_EVAL_MAX_STEPS: values["max-steps"] ?? String(agent.maxSteps ?? 50),
+    SWARM_EVAL_MAX_STEPS: values["max-steps"] ?? String(evaluationModel.maxSteps),
     PYTHONPATH: join(root, "eval", "harbor"),
     DOCKER_DEFAULT_PLATFORM: process.env.DOCKER_DEFAULT_PLATFORM ?? "linux/amd64",
   };
@@ -234,7 +254,9 @@ async function main() {
               "SWARM_EVAL_API_KEY",
             ]
           : []),
-        ...Object.entries(arms[armName].env).flatMap(([key, value]) => ["--ae", `${key}=${value}`]),
+        ...Object.entries({ ...suites[suite].env, ...arms[armName].env }).flatMap(
+          ([key, value]) => ["--ae", `${key}=${value}`],
+        ),
         ...Object.entries(arms[armName].kwargs ?? {}).flatMap(([key, value]) => [
           "--ak",
           `${key}=${value}`,

@@ -1,0 +1,75 @@
+diff --git a/src/cli.ts b/src/cli.ts
+index 3eae9fd..8cd8a39 100644
+--- a/src/cli.ts
++++ b/src/cli.ts
+@@ -83,8 +83,14 @@ export function parseArgs(argv: readonly string[]): CliArgs {
+         args.openPr = false;
+         break;
+       case "--max-budget-usd": {
+-        const raw = argv[i + 1];
+-        if (raw === undefined) {
++        let raw: string | undefined;
++        // Support --max-budget-usd=<n> inline format
++        if (a.startsWith("--max-budget-usd=")) {
++          raw = a.slice("--max-budget-usd=".length);
++        } else {
++          raw = argv[i + 1];
++        }
++        if (raw === undefined || raw === "") {
+           throw new Error("--max-budget-usd requires a numeric value (USD).");
+         }
+         const n = Number(raw);
+@@ -94,7 +100,11 @@ export function parseArgs(argv: readonly string[]): CliArgs {
+           );
+         }
+         args.maxBudgetUsd = n;
+-        i++;
++        if (a.startsWith("--max-budget-usd=")) {
++          // inline format, no need to skip next token
++        } else {
++          i++;
++        }
+         break;
+       }
+       default:
+@@ -160,31 +170,25 @@ export async function main(
+     process.stdout.write(USAGE);
+     return 0;
+   }
++
+   if (parsed.version) {
+     process.stdout.write(`${VERSION}\n`);
+     return 0;
+   }
+ 
+   const projectRoot = options.cwd ?? process.cwd();
+-  if (options.home !== undefined) {
+-    loadEnv(projectRoot, options.home);
+-  } else {
+-    loadEnv(projectRoot);
++  const homeDir = options.home ?? process.env.HOME;
++
++  if (!homeDir) {
++    process.stderr.write("error: $HOME is not set\n");
++    return 1;
+   }
+ 
+-  const claudeBinary = findClaudeCodeBinary();
+-  const usingSubscription = claudeBinary !== null;
++  const usingSubscription = await findClaudeCodeBinary(homeDir);
++
+   if (usingSubscription) {
+-    process.stdout.write(`auth: Claude Code subscription via ${claudeBinary}\n`);
+-    delete process.env.ANTHROPIC_API_KEY;
++    process.stdout.write("auth: Claude Code subscription\n");
+   } else {
+-    const hasApiKey = (process.env.ANTHROPIC_API_KEY ?? "").trim().length > 0;
+-    if (!hasApiKey) {
+-      process.stderr.write(
+-        "error: no auth available. Install Claude Code (https://claude.ai/code) and log in, or export ANTHROPIC_API_KEY.\n",
+-      );
+-      return 1;
+-    }
+     try {
+       requireApiKey();
+     } catch (err) {

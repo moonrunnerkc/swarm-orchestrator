@@ -1,14 +1,13 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * Two products ship from this tree: Swarm Orchestrator, the coding agent, from the root
- * package, and Swarm Verify, the standalone verifier, from packages/swarm-verify. Their
- * identities inverted once, in the 14.3.0 README and the repository description, with the
- * agent described as an optional beta of the verifier it is built on. This holds the front
- * matter of each product to what it is, and the package metadata to the product it names, so
- * the inversion cannot return quietly through a documentation edit.
+ * Swarm Orchestrator is the coding agent and Swarm Verify the standalone verifier it consumes
+ * (ADR 0015). Their identities inverted twice: in the 14.3.0 README, and in 15.0.0, whose
+ * README was headed swarm-verify while the verifier's source lived here. This holds the front
+ * matter to the agent, and the verifier to an installed dependency reached only through its
+ * public exports.
  */
 const root = resolve(import.meta.dirname, "..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
@@ -20,58 +19,61 @@ interface Manifest {
   readonly homepage: string;
   readonly dependencies: Readonly<Record<string, string>>;
   readonly files: readonly string[];
-  readonly repository: { readonly url: string; readonly directory?: string };
+  readonly workspaces?: unknown;
 }
 
 const orchestrator = JSON.parse(read("package.json")) as Manifest;
-const verifier = JSON.parse(read("packages/swarm-verify/package.json")) as Manifest;
 
-describe("the two products' identities", () => {
+function sourceFiles(directory: string): string[] {
+  return readdirSync(join(root, directory), { withFileTypes: true, recursive: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".ts"))
+    .map((entry) => join(entry.parentPath, entry.name));
+}
+
+describe("the agent and the verifier it consumes", () => {
+  it("heads the root README with the agent and its product promise", () => {
+    const readme = read("README.md");
+    expect(readme.startsWith("# swarm-orchestrator\n")).toBe(true);
+    expect(readme).toMatch(
+      /^Give Swarm an engineering task\. It makes the change, checks each requirement/m,
+    );
+  });
+
   it("names the root package as the coding agent and its binary as swarm", () => {
     expect(orchestrator.name).toBe("swarm-orchestrator");
     expect(orchestrator.bin).toEqual({ swarm: "dist/cli.js" });
     expect(orchestrator.description).toMatch(/coding agent/i);
+    expect(orchestrator.description).not.toMatch(/judged by|refuse/i);
     expect(orchestrator.homepage).toBe("https://github.com/moonrunnerkc/swarm-orchestrator#readme");
   });
 
-  it("names the verifier package as the standalone verifier, with its CLI and MCP binaries", () => {
-    expect(verifier.name).toBe("swarm-verify");
-    expect(verifier.bin).toEqual({
-      "swarm-verify": "dist/swarm-verify.js",
-      "swarm-verify-mcp": "mcp.mjs",
-    });
-    expect(verifier.description).toMatch(/^Rerun a project's own checks/);
-    expect(verifier.description).toMatch(/in-toto/);
-    expect(verifier.homepage).toBe(
-      "https://github.com/moonrunnerkc/swarm-orchestrator/tree/v13-main/packages/swarm-verify#readme",
-    );
+  it("depends on one exact swarm-verify version, with no workspace copy of it", () => {
+    expect(orchestrator.dependencies["swarm-verify"]).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(orchestrator.workspaces).toBeUndefined();
+    expect(existsSync(join(root, "packages"))).toBe(false);
+    expect(existsSync(join(root, "src", "verify"))).toBe(false);
   });
 
-  it("builds the verifier from this tree, which its provenance record has to name", () => {
-    expect(verifier.repository.url).toBe(
-      "git+https://github.com/moonrunnerkc/swarm-orchestrator.git",
-    );
-    expect(verifier.repository.directory).toBe("packages/swarm-verify");
-  });
-
-  it("gives the verifier no model provider dependency", () => {
-    expect(Object.keys(verifier.dependencies).sort()).toEqual(["smol-toml", "zod"]);
-    for (const name of Object.keys(orchestrator.dependencies)) {
-      if (name.startsWith("@ai-sdk/") || name === "ai") {
-        expect(verifier.dependencies).not.toHaveProperty(name);
+  it("reaches the verifier only through its package exports", () => {
+    const allowed = new Set(["swarm-verify", "swarm-verify/cli", "swarm-verify/execution"]);
+    const crossings: string[] = [];
+    for (const file of sourceFiles("src")) {
+      const text = readFileSync(file, "utf8");
+      for (const match of text.matchAll(/from\s+"(swarm-verify[^"]*)"/g)) {
+        const specifier = match[1] ?? "";
+        if (!allowed.has(specifier)) crossings.push(`${file}: ${specifier}`);
       }
+      if (/from\s+"[./]+(?:verify|exec)\//.test(text))
+        crossings.push(`${file}: a relative verifier path`);
     }
+    expect(crossings).toEqual([]);
   });
 
-  it("ships each product's own changelog, and the dependency-free checker with the verifier", () => {
-    expect(verifier.files).toContain("verify.mjs");
+  it("ships its own changelog, which points at the verifier's", () => {
     expect(orchestrator.files).toContain("CHANGELOG.md");
-    expect(verifier.files).toContain("CHANGELOG.md");
-    expect(read("CHANGELOG.md").startsWith("# Changelog: swarm-orchestrator\n")).toBe(true);
-    expect(
-      read("packages/swarm-verify/CHANGELOG.md").startsWith("# Changelog: swarm-verify\n"),
-    ).toBe(true);
-    expect(read("packages/swarm-verify/CHANGELOG.md")).toMatch(/^## 1\.\d+\.\d+/m);
-    expect(read("CHANGELOG.md")).not.toMatch(/^## 1\.\d+\.\d+ /m);
+    const changelog = read("CHANGELOG.md");
+    expect(changelog.startsWith("# Changelog: swarm-orchestrator\n")).toBe(true);
+    expect(changelog).toContain("moonrunnerkc/swarm-verify");
+    expect(changelog).not.toMatch(/^## 1\.\d+\.\d+ /m);
   });
 });

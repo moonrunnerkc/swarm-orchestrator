@@ -1,0 +1,96 @@
+{
+  "version": "swarm-orchestrator.report/v1",
+  "task": "Let detectors.semgrep.ruleset be either a string or an array of strings, and pass one --config per ruleset to semgrep and to the repro command. Existing string configs must behave exactly as before.",
+  "model": {
+    "name": "swarm-redesign-qwen36-32k:latest",
+    "reason": "conservative default: the largest installed model that fits and passed its readiness probe, needs 27.2 GiB at a 65536-token context, 121.6 tok/s in its probe; no finished tasks recorded for it here yet"
+  },
+  "stop": "no-progress",
+  "reason": "the task was marked complete again with no change since the last verification",
+  "state": "incomplete",
+  "snapshot": {
+    "base": "cd76297e5dff5a31436d6c6419f69dab1f6260af",
+    "patchSha256": "ada9b523160588bddff5a3e617a70e6ab109e5cb2ad7e52106c748658043e8c2",
+    "patch": "/Users/brad/.swarm/sessions/20261101T031355-abb05d/final/delivered.patch",
+    "treeSha256": "3d36d8d6ce9467d8684437d425c0ad17d4eabefe083a8385c9598ded64b2b6f2"
+  },
+  "verification": "reused",
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "Let detectors.semgrep.ruleset be either a string or an array of strings, and pass one --config per ruleset to semgrep and to the repro command. Existing string configs must behave exactly as before.",
+      "source": "user",
+      "kind": "feature",
+      "required": true,
+      "assumptions": [
+        "The config schema is defined in config/ and validated with zod"
+      ],
+      "expected": {
+        "tests": [],
+        "checks": [],
+        "structure": [
+          {
+            "path": "config/",
+            "contains": "semgrep"
+          },
+          {
+            "path": "detection/",
+            "contains": "semgrep"
+          }
+        ],
+        "packages": []
+      },
+      "status": "unverified",
+      "evidence": [
+        {
+          "kind": "structure",
+          "ref": "config/ contains \"semgrep\"",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "no file at config/"
+        },
+        {
+          "kind": "structure",
+          "ref": "detection/ contains \"semgrep\"",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "no file at detection/"
+        }
+      ],
+      "limitation": "not observed: config/ contains \"semgrep\", detection/ contains \"semgrep\"",
+      "nextAction": "fix or drop the structure claims that do not hold (config/ contains \"semgrep\": no file at config/; detection/ contains \"semgrep\": no file at detection/); these tests fail before the change and pass after it, and this requirement does not map them: semgrep ruleset accepts arrays > accepts an array of rulesets, semgrep ruleset as array > passes one --config per ruleset entry, semgrep ruleset as array > reproCommand includes all configs when ruleset is an array"
+    }
+  ],
+  "regression": "none (1 inherited failure(s))",
+  "execution": "isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared",
+  "attestation": "/Users/brad/.swarm/sessions/20261101T031355-abb05d/verifications/2/attestation.sigstore.json",
+  "startingState": {
+    "head": "cd76297e5dff5a31436d6c6419f69dab1f6260af",
+    "base": "cd76297e5dff5a31436d6c6419f69dab1f6260af",
+    "edits": []
+  },
+  "delivery": {
+    "applied": true
+  },
+  "instructions": [
+    {
+      "path": "CLAUDE.md",
+      "sha256": "47b46c17b5e57e9b1e6a2295c2432bb3ff336a50fcf69e36fec1c6ddc319a0a8"
+    }
+  ],
+  "notes": [],
+  "review": null,
+  "resources": {
+    "steps": 40,
+    "inputTokens": 907329,
+    "outputTokens": 3988,
+    "estimatedTurns": 0,
+    "inferenceMs": 78123,
+    "inferenceTurns": 40,
+    "wallMs": 851477,
+    "retries": 0,
+    "escalations": 0,
+    "verifications": 2,
+    "cost": "none (local runtime)"
+  }
+}

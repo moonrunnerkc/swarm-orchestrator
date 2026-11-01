@@ -9,7 +9,7 @@ Two evaluations produce every number in [results.md](results.md): the three-arm 
 `eval/tasks/` (the first 100 SWE-bench Verified and first 50 Terminal-Bench 2.0 tasks in byte
 order) through [Harbor](https://github.com/laude-institute/harbor). Harbor runs each agent in the
 task's own container and judges the result with the benchmark's own tests. Every arm uses the
-endpoint and model in this repository's `swarm.toml` `[agent]` table. Tasks run in list order,
+endpoint and model `evaluationModel` names in eval/run.mjs (overridable with `SWARM_EVAL_ENDPOINT` and `SWARM_EVAL_MODEL`). Tasks run in list order,
 every arm on a task before the next task starts, and each trial appends one JSONL row to
 `eval/results/<run>/<arm>.jsonl`, which is committed.
 
@@ -41,22 +41,22 @@ the outcome block the trial printed, and the page counts them beside the benchma
   Docker's buildx plugin must be installed (`brew install docker-buildx`, linked into
   `~/.docker/cli-plugins`).
 - Harbor: `uv tool install harbor`.
-- The model endpoint in `swarm.toml` `[agent]`, here Ollama serving `qwen3.6:35b-a3b`. One model
+- The model endpoint `evaluationModel` in eval/run.mjs names, here Ollama serving `qwen3.6:35b-a3b`. One model
   at a time: the trials run one after another, never in parallel.
 
 ## Tamper evaluation
 
-`node eval/tamper/run.mjs` builds three fixture repositories, seals their held-out tests, and runs
-`swarm verify` on honest patches and on cheating ones in five techniques: edited expectations,
-deleted assertions, hard-coded inputs, overridden equality and a patched scorer.
-`eval/tamper/oracle.mjs` decides which patches are really correct without going through `node:assert`. A
-patch counts as flagged when the verdict is anything but pass. It needs only Node, git and
-Python 3, and writes `eval/results/tamper-<time>.json`.
+The tamper evaluation measures the verifier, so it moved with the verifier's source to
+[moonrunnerkc/swarm-verify](https://github.com/moonrunnerkc/swarm-verify) on 2026-10-31, where
+`node eval/tamper/run.mjs` builds three fixture repositories, seals their held-out tests, and
+verifies honest patches and cheating ones in five techniques: edited expectations, deleted
+assertions, hard-coded inputs, overridden equality and a patched scorer. The tamper results
+stored under `eval/results/` here are its earlier runs from this repository.
 
-## Nightly
+## Manual runs
 
-`.github/workflows/nightly-eval.yml` runs `node eval/run.mjs --next 10` at 06:00 UTC and on
-demand, on a self-hosted runner labeled `swarm-eval`: each arm's next ten unrun tasks from the
+`.github/workflows/nightly-eval.yml` runs `node eval/run.mjs --next 10` when started by hand
+(its daily schedule stopped on 2026-10-31, ADR 0015), on a self-hosted runner labeled `swarm-eval`: each arm's next ten unrun tasks from the
 frozen lists, SWE-bench Verified first. It commits the new rows and the rewritten
 `docs/results.md` and pushes them. Every ref of this repository is under a ruleset that only a
 bypass actor may update, and the workflow's own token is not one, so the job checks out and
@@ -83,4 +83,4 @@ foreground instead. `./config.sh remove --token "$token"` unregisters it.
 
 Status on 2026-10-29: no self-hosted runner is registered for this repository
 (`gh api repos/moonrunnerkc/swarm-orchestrator/actions/runners` lists none) and the push secret
-is not set, so the nightly job waits in the queue until both exist.
+is not set, so a started job waits in the queue until both exist.

@@ -1,0 +1,483 @@
+{
+  "state": "incomplete",
+  "scope": "requirements",
+  "reasons": [
+    "check test: 30 test(s) pass at the base commit and fail against the candidate: tests.test_build_plan_acceptance::test_malformed_history_blocks_final_gate[bundle_sha256], tests.test_build_plan_product::test_migration_is_explicit_idempotent_and_preserves_source, tests.test_cli_history::test_history_creates_ledger_with_one_run, tests.test_cli_history::test_history_run_twice_creates_two_entries, tests.test_cli_history::test_history_fans_out_across_multiple_paths and 25 more",
+    "check test: 3 test(s) fail at the base commit and still fail, which does not block: tests.test_build_plan_core::test_explicit_tokenizer_provenance_and_special_markers, tests.test_pre_commit::test_pre_commit_pass, tests.test_pre_commit::test_pre_commit_fail"
+  ],
+  "base": {
+    "commit": "47203d2903394cbb8904637cad71b7b525b9ada7"
+  },
+  "change": {
+    "source": "patch",
+    "applied": true,
+    "files": [
+      {
+        "path": "src/tracemantle/commands.py",
+        "status": "modified"
+      },
+      {
+        "path": "src/tracemantle/core/history.py",
+        "status": "modified"
+      },
+      {
+        "path": "src/tracemantle/core/history_io.py",
+        "status": "modified"
+      },
+      {
+        "path": "src/tracemantle/history/__init__.py",
+        "status": "added"
+      },
+      {
+        "path": "src/tracemantle/history/history_io.py",
+        "status": "added"
+      },
+      {
+        "path": "src/tracemantle/history/history_store.py",
+        "status": "added"
+      },
+      {
+        "path": "src/tracemantle/history_store.py",
+        "status": "modified"
+      },
+      {
+        "path": "src/tracemantle/product_commands.py",
+        "status": "modified"
+      },
+      {
+        "path": "tests/history/test_history_io.py",
+        "status": "added"
+      },
+      {
+        "path": "tests/history/test_history_model.py",
+        "status": "added"
+      },
+      {
+        "path": "tests/history/test_history_regression.py",
+        "status": "added"
+      },
+      {
+        "path": "tests/test_history_io.py",
+        "status": "deleted"
+      },
+      {
+        "path": "tests/test_history_model.py",
+        "status": "deleted"
+      },
+      {
+        "path": "tests/test_history_regression.py",
+        "status": "deleted"
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "Move core/history_io.py and history_store.py into a new tracemantle/history/ package, leaving re-export shims at the old paths, and move tests/test_history_{io,model,regression}.py into tests/history/; update the mypy files list and hatch packages.",
+      "source": "user",
+      "kind": "refactor",
+      "required": true,
+      "assumptions": [
+        "The task refers to src/tracemantle/core/history_io.py and src/tracemantle/history_store.py as 'core/history_io.py' and 'history_store.py'",
+        "Re-export shims should be at src/tracemantle/core/history_io.py and src/tracemantle/history_store.py",
+        "Tests should be moved to tests/history/ directory"
+      ],
+      "expected": {
+        "tests": [
+          {
+            "name": "test_history_io"
+          },
+          {
+            "name": "test_history_model"
+          },
+          {
+            "name": "test_history_regression"
+          }
+        ],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "status": "unverified",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "test_history_io",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "no executed test has this name"
+        },
+        {
+          "kind": "test",
+          "ref": "test_history_model",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "no executed test has this name"
+        },
+        {
+          "kind": "test",
+          "ref": "test_history_regression",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "no executed test has this name"
+        },
+        {
+          "kind": "change",
+          "ref": "src/tracemantle/commands.py, src/tracemantle/core/history.py, src/tracemantle/core/history_io.py, src/tracemantle/history/__init__.py, src/tracemantle/history/history_io.py",
+          "authority": "pre-existing",
+          "outcome": "observed",
+          "detail": "8 source file(s) changed"
+        }
+      ],
+      "limitation": "not observed: test_history_io, test_history_model, test_history_regression",
+      "nextAction": "name tests as they ran (a title, a suite, or a path such as suite > test title) in place of test_history_io, test_history_model, test_history_regression"
+    }
+  ],
+  "regression": {
+    "status": "found",
+    "newFailures": [
+      "tests.test_build_plan_acceptance::test_malformed_history_blocks_final_gate[bundle_sha256]",
+      "tests.test_build_plan_product::test_migration_is_explicit_idempotent_and_preserves_source",
+      "tests.test_cli_history::test_history_creates_ledger_with_one_run",
+      "tests.test_cli_history::test_history_run_twice_creates_two_entries",
+      "tests.test_cli_history::test_history_fans_out_across_multiple_paths",
+      "tests.test_cli_history::test_show_history_warns_on_extra_paths",
+      "tests.test_cli_history::test_history_records_correct_modes_symbolic_only",
+      "tests.test_cli_history::test_history_records_both_critique_and_graph_agents",
+      "tests.test_cli_history::test_history_schema_keys_present",
+      "tests.test_cli_history::test_show_history_json_is_valid_json",
+      "tests.test_cli_history::test_show_history_json_top_level_keys",
+      "tests.test_cli_history::test_show_history_text_contains_timestamps",
+      "tests.test_cli_history::test_show_history_text_contains_pass_or_fail",
+      "tests.test_cli_history::test_history_regression_emits_warning",
+      "tests.test_fail_on_regression.TestFailOnRegressionCLI::test_flag_unset_regression_warns_exit_0",
+      "tests.test_history_io::test_load_raises_on_malformed_json",
+      "tests.test_history_io::test_load_raises_error_includes_path",
+      "tests.test_history_io::test_load_from_fixture_one_run",
+      "tests.test_history_io::test_load_from_fixture_multi_run",
+      "tests.test_history_io::test_load_from_fixture_malformed_raises",
+      "tests.test_history_io::test_load_raises_when_root_is_not_object",
+      "tests.test_history_io::test_load_raises_when_runs_is_not_a_list",
+      "tests.test_history_io::test_load_raises_on_schema_version_mismatch",
+      "tests.test_history_io::test_load_raises_on_malformed_run_entry",
+      "tests.test_io_limits::test_oversized_ledger_is_refused",
+      "tests.test_self_host::test_self_host_history_round_trip",
+      "tests.test_untrusted_input::test_non_utf8_ledger_raises_instead_of_crashing",
+      "tests.test_untrusted_input::test_nul_laden_ledger_is_rejected",
+      "tests.test_untrusted_input::test_oversized_ledger_is_rejected",
+      "tests.test_untrusted_input::test_poisoned_ledger_exits_two_without_a_traceback"
+    ],
+    "inherited": [
+      "tests.test_build_plan_core::test_explicit_tokenizer_provenance_and_special_markers",
+      "tests.test_pre_commit::test_pre_commit_pass",
+      "tests.test_pre_commit::test_pre_commit_fail"
+    ],
+    "removed": [],
+    "unresolved": []
+  },
+  "checks": [
+    {
+      "name": "test",
+      "command": "python3 -m pytest -q",
+      "kind": "test",
+      "authority": "pre-existing",
+      "result": "fail",
+      "collected": 1407,
+      "exitCode": 1,
+      "durationMs": 310778,
+      "outputSha256": "8674110e9c0da66d57f43ca2c7945937f5ac3730f2827fe7f7992d75ab3ce9e8",
+      "tests": {
+        "runner": "pytest",
+        "collected": {
+          "base": 1407,
+          "candidate": 1407
+        },
+        "counts": {
+          "preserved": 1330,
+          "renamed": 39,
+          "fixed": 0,
+          "newFailures": 30,
+          "inherited": 3,
+          "removed": 0,
+          "superseded": 0,
+          "expectationChanges": 0,
+          "added": 0,
+          "addedFailing": 0,
+          "witnesses": 0,
+          "skipped": 5
+        },
+        "fixed": [],
+        "newFailures": [
+          "tests.test_build_plan_acceptance::test_malformed_history_blocks_final_gate[bundle_sha256]",
+          "tests.test_build_plan_product::test_migration_is_explicit_idempotent_and_preserves_source",
+          "tests.test_cli_history::test_history_creates_ledger_with_one_run",
+          "tests.test_cli_history::test_history_run_twice_creates_two_entries",
+          "tests.test_cli_history::test_history_fans_out_across_multiple_paths",
+          "tests.test_cli_history::test_show_history_warns_on_extra_paths",
+          "tests.test_cli_history::test_history_records_correct_modes_symbolic_only",
+          "tests.test_cli_history::test_history_records_both_critique_and_graph_agents",
+          "tests.test_cli_history::test_history_schema_keys_present",
+          "tests.test_cli_history::test_show_history_json_is_valid_json",
+          "tests.test_cli_history::test_show_history_json_top_level_keys",
+          "tests.test_cli_history::test_show_history_text_contains_timestamps",
+          "tests.test_cli_history::test_show_history_text_contains_pass_or_fail",
+          "tests.test_cli_history::test_history_regression_emits_warning",
+          "tests.test_fail_on_regression.TestFailOnRegressionCLI::test_flag_unset_regression_warns_exit_0",
+          "tests.test_history_io::test_load_raises_on_malformed_json",
+          "tests.test_history_io::test_load_raises_error_includes_path",
+          "tests.test_history_io::test_load_from_fixture_one_run",
+          "tests.test_history_io::test_load_from_fixture_multi_run",
+          "tests.test_history_io::test_load_from_fixture_malformed_raises",
+          "tests.test_history_io::test_load_raises_when_root_is_not_object",
+          "tests.test_history_io::test_load_raises_when_runs_is_not_a_list",
+          "tests.test_history_io::test_load_raises_on_schema_version_mismatch",
+          "tests.test_history_io::test_load_raises_on_malformed_run_entry",
+          "tests.test_io_limits::test_oversized_ledger_is_refused",
+          "tests.test_self_host::test_self_host_history_round_trip",
+          "tests.test_untrusted_input::test_non_utf8_ledger_raises_instead_of_crashing",
+          "tests.test_untrusted_input::test_nul_laden_ledger_is_rejected",
+          "tests.test_untrusted_input::test_oversized_ledger_is_rejected",
+          "tests.test_untrusted_input::test_poisoned_ledger_exits_two_without_a_traceback"
+        ],
+        "inherited": [
+          "tests.test_build_plan_core::test_explicit_tokenizer_provenance_and_special_markers",
+          "tests.test_pre_commit::test_pre_commit_pass",
+          "tests.test_pre_commit::test_pre_commit_fail"
+        ],
+        "removed": [],
+        "renamed": [
+          "tests.test_history_io::test_load_returns_none_for_missing_file => tests.history.test_history_io::test_load_returns_none_for_missing_file",
+          "tests.test_history_io::test_load_raises_on_missing_top_level_field => tests.history.test_history_io::test_load_raises_on_missing_top_level_field",
+          "tests.test_history_io::test_save_writes_valid_json => tests.history.test_history_io::test_save_writes_valid_json",
+          "tests.test_history_io::test_load_preserves_other_writers_temporary_files => tests.history.test_history_io::test_load_preserves_other_writers_temporary_files",
+          "tests.test_history_io::test_save_atomic_original_intact_on_failure => tests.history.test_history_io::test_save_atomic_original_intact_on_failure",
+          "tests.test_history_io::test_save_field_order_matches_schema => tests.history.test_history_io::test_save_field_order_matches_schema",
+          "tests.test_history_io::test_append_run_initializes_new_ledger => tests.history.test_history_io::test_append_run_initializes_new_ledger",
+          "tests.test_history_io::test_append_run_preserves_prior_runs => tests.history.test_history_io::test_append_run_preserves_prior_runs",
+          "tests.test_history_io::test_append_run_mismatched_skill_path_raises => tests.history.test_history_io::test_append_run_mismatched_skill_path_raises",
+          "tests.test_history_model::test_hash_is_16_hex_chars => tests.history.test_history_model::test_hash_is_16_hex_chars",
+          "tests.test_history_model::test_hash_is_deterministic => tests.history.test_history_model::test_hash_is_deterministic",
+          "tests.test_history_model::test_hash_differs_with_different_content => tests.history.test_history_model::test_hash_differs_with_different_content",
+          "tests.test_history_model::test_hash_is_lowercase => tests.history.test_history_model::test_hash_is_lowercase",
+          "tests.test_history_model::test_build_entry_timestamp_format => tests.history.test_history_model::test_build_entry_timestamp_format",
+          "tests.test_history_model::test_build_entry_timestamp_no_microseconds => tests.history.test_history_model::test_build_entry_timestamp_no_microseconds",
+          "tests.test_history_model::test_build_entry_uses_injected_now => tests.history.test_history_model::test_build_entry_uses_injected_now",
+          "tests.test_history_model::test_build_entry_counts_diagnostics => tests.history.test_history_model::test_build_entry_counts_diagnostics",
+          "tests.test_history_model::test_build_entry_valid_reflects_result => tests.history.test_history_model::test_build_entry_valid_reflects_result",
+          "tests.test_history_model::test_build_entry_version_recorded => tests.history.test_history_model::test_build_entry_version_recorded",
+          "tests.test_history_model::test_build_entry_hash_matches_skill => tests.history.test_history_model::test_build_entry_hash_matches_skill",
+          "tests.test_history_model::test_ledger_entry_is_frozen => tests.history.test_history_model::test_ledger_entry_is_frozen",
+          "tests.test_history_model::test_ledger_is_frozen => tests.history.test_history_model::test_ledger_is_frozen",
+          "tests.test_history_model::test_result_counts_is_frozen => tests.history.test_history_model::test_result_counts_is_frozen",
+          "tests.test_history_model::test_validation_modes_is_frozen => tests.history.test_history_model::test_validation_modes_is_frozen",
+          "tests.test_history_model::test_ledger_entry_is_hashable => tests.history.test_history_model::test_ledger_entry_is_hashable",
+          "tests.test_history_model::test_ledger_is_hashable => tests.history.test_history_model::test_ledger_is_hashable",
+          "tests.test_history_model::test_ledger_path_for_is_outside_bundle => tests.history.test_history_model::test_ledger_path_for_is_outside_bundle",
+          "tests.test_history_model::test_ledger_path_for_is_pure => tests.history.test_history_model::test_ledger_path_for_is_pure",
+          "tests.test_history_model::test_round_trip_single_entry => tests.history.test_history_model::test_round_trip_single_entry",
+          "tests.test_history_model::test_round_trip_multiple_entries => tests.history.test_history_model::test_round_trip_multiple_entries",
+          "tests.test_history_model::test_round_trip_with_agent_fields => tests.history.test_history_model::test_round_trip_with_agent_fields",
+          "tests.test_history_regression::test_no_prior_runs_returns_empty => tests.history.test_history_regression::test_no_prior_runs_returns_empty",
+          "tests.test_history_regression::test_prior_passing_same_hash_current_failing_emits_warning => tests.history.test_history_regression::test_prior_passing_same_hash_current_failing_emits_warning",
+          "tests.test_history_regression::test_prior_passing_same_hash_current_passing_returns_empty => tests.history.test_history_regression::test_prior_passing_same_hash_current_passing_returns_empty",
+          "tests.test_history_regression::test_prior_failing_same_hash_current_failing_returns_empty => tests.history.test_history_regression::test_prior_failing_same_hash_current_failing_returns_empty",
+          "tests.test_history_regression::test_prior_passing_different_hash_returns_empty => tests.history.test_history_regression::test_prior_passing_different_hash_returns_empty",
+          "tests.test_history_regression::test_multiple_matching_priors_emits_one_warning_with_most_recent => tests.history.test_history_regression::test_multiple_matching_priors_emits_one_warning_with_most_recent",
+          "tests.test_history_regression::test_regression_message_includes_result_counts => tests.history.test_history_regression::test_regression_message_includes_result_counts",
+          "tests.test_history_regression::test_recovery_does_not_trigger_regression => tests.history.test_history_regression::test_recovery_does_not_trigger_regression"
+        ],
+        "superseded": [],
+        "expectationChanges": [],
+        "added": [],
+        "addedFailing": [],
+        "witnesses": []
+      }
+    }
+  ],
+  "baseline": {
+    "status": "measured",
+    "cached": false,
+    "environmentSha256": "9284d2a7b86238f81338b675f3acf3921c393d29c55fbe1b9f3e0753ddd9dd95",
+    "checks": [
+      {
+        "name": "test",
+        "command": "python3 -m pytest -q",
+        "kind": "test",
+        "authority": "pre-existing",
+        "result": "fail",
+        "collected": 1407,
+        "exitCode": 1,
+        "durationMs": 312605,
+        "outputSha256": "48978d811c214e61e7f0a635f30850b83eb583910edef714a46050917e2969b8"
+      }
+    ],
+    "heldOut": []
+  },
+  "heldOut": {
+    "status": "unmeasured",
+    "reason": "no held-out checks are sealed for this workspace"
+  },
+  "artifacts": [
+    {
+      "path": "src/tracemantle/commands.py",
+      "category": "source"
+    },
+    {
+      "path": "src/tracemantle/core/history.py",
+      "category": "source"
+    },
+    {
+      "path": "src/tracemantle/core/history_io.py",
+      "category": "source"
+    },
+    {
+      "path": "src/tracemantle/history/__init__.py",
+      "category": "source"
+    },
+    {
+      "path": "src/tracemantle/history/history_io.py",
+      "category": "source"
+    },
+    {
+      "path": "src/tracemantle/history/history_store.py",
+      "category": "source"
+    },
+    {
+      "path": "src/tracemantle/history_store.py",
+      "category": "source"
+    },
+    {
+      "path": "src/tracemantle/product_commands.py",
+      "category": "source"
+    },
+    {
+      "path": "tests/history/test_history_io.py",
+      "category": "tests"
+    },
+    {
+      "path": "tests/history/test_history_model.py",
+      "category": "tests"
+    },
+    {
+      "path": "tests/history/test_history_regression.py",
+      "category": "tests"
+    },
+    {
+      "path": "tests/test_history_io.py",
+      "category": "tests"
+    },
+    {
+      "path": "tests/test_history_model.py",
+      "category": "tests"
+    },
+    {
+      "path": "tests/test_history_regression.py",
+      "category": "tests"
+    }
+  ],
+  "testFiles": {
+    "added": [],
+    "modified": [],
+    "deleted": [],
+    "moved": [
+      {
+        "from": "tests/test_history_io.py",
+        "to": "tests/history/test_history_io.py"
+      },
+      {
+        "from": "tests/test_history_model.py",
+        "to": "tests/history/test_history_model.py"
+      },
+      {
+        "from": "tests/test_history_regression.py",
+        "to": "tests/history/test_history_regression.py"
+      }
+    ],
+    "relocated": []
+  },
+  "coverage": {
+    "status": "unmeasured",
+    "reason": "the project measures coverage itself (pytest-cov in its pytest options), which a second coverage run would break"
+  },
+  "mutation": {
+    "status": "unmeasured",
+    "reason": "a check failed, so no mutant can be told apart from that failure"
+  },
+  "producer": {
+    "name": "swarm-orchestrator",
+    "version": "15.0.0",
+    "model": "swarm-redesign-qwen36-32k:latest",
+    "promptSha256": "6b3fb17999bc932f8e5d22d590ed22f73bf3217c5fb8de56852f577747720ff6",
+    "ledgerSha256": "34b0cc1bbc2338f9ee7bd45b3b62211da3450ceb795387547aee3d1dd53f6adc",
+    "ledgerRecords": 195,
+    "reportSha256": "250dcbc9de8b1a6b094f77e029b83f39d998cbbfa644c4a84c94d51b758f9c65",
+    "instructions": []
+  },
+  "environment": {
+    "sha256": "9284d2a7b86238f81338b675f3acf3921c393d29c55fbe1b9f3e0753ddd9dd95",
+    "node": "in ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248 (sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248)",
+    "platform": "linux-arm64",
+    "git": "2.54.0 (Apple Git-157)",
+    "dependencies": "prepared",
+    "dependencyTreeSha256": "819d85c45e4504de379f373d6b979296a7f6e699b28c6b6f3a8acfea14b2069d",
+    "reproducible": true
+  },
+  "execution": {
+    "mode": "isolated",
+    "statement": "isolated: docker ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248, network closed for checks and open only while dependencies were prepared",
+    "network": "closed",
+    "image": "ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248 (sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248 arm64)",
+    "dependencies": {
+      "mode": "prepared",
+      "reproducible": true,
+      "lockfiles": {
+        "uv.lock": "52a0d148c378e8d9fec2fca3de971ab3bf0688256a4010f377a02894db54490e"
+      },
+      "treeSha256": "819d85c45e4504de379f373d6b979296a7f6e699b28c6b6f3a8acfea14b2069d",
+      "note": "prepared from the lockfile and digested"
+    },
+    "policyMet": true,
+    "problems": []
+  },
+  "policy": {
+    "behaviorChange": "none"
+  },
+  "unmeasured": [
+    "held-out: no held-out checks are sealed for this workspace",
+    "coverage: the project measures coverage itself (pytest-cov in its pytest options), which a second coverage run would break",
+    "mutation: a check failed, so no mutant can be told apart from that failure"
+  ],
+  "logs": [
+    {
+      "name": "logs/test.txt",
+      "sha256": "8674110e9c0da66d57f43ca2c7945937f5ac3730f2827fe7f7992d75ab3ce9e8"
+    }
+  ],
+  "verifier": {
+    "name": "swarm-verify",
+    "version": "2.0.0"
+  },
+  "version": "swarm-verify.result/v1",
+  "snapshot": {
+    "base": "47203d2903394cbb8904637cad71b7b525b9ada7",
+    "patchSha256": "328fb27fb24f806c18e6fbd46d5b2f4b13747900ddfe6e903f83ea66c19a4dce",
+    "treeSha256": "936756c236b31c1c19739e3fa590bce382281853cea3311a40439ac9bd963c08"
+  },
+  "integrity": {
+    "signed": true,
+    "signer": {
+      "kind": "key",
+      "fingerprint": "8c5ed5b218745e42c16a99d98024241cbf74c7aa7bf570fd6e5495491d0b5dae"
+    },
+    "statementSha256": "358715c76e6e7aabfe0b5f66e06e29f9ce35fbe8f9f02679a7544de79be79dd0",
+    "problems": []
+  },
+  "evidence": {
+    "directory": "/Users/brad/.swarm/sessions/20261101T150922-f837ff/final/verification",
+    "bundle": "/Users/brad/.swarm/sessions/20261101T150922-f837ff/final/verification/attestation.sigstore.json",
+    "statement": "/Users/brad/.swarm/sessions/20261101T150922-f837ff/final/verification/statement.json",
+    "patch": "/Users/brad/.swarm/sessions/20261101T150922-f837ff/final/verification/change.patch",
+    "publicKey": "/Users/brad/.swarm/sessions/20261101T150922-f837ff/final/verification/attestation.pub.pem"
+  },
+  "failureOutput": "$ python3 -m pytest -q\n file or reduce its size.\nFAILED tests/test_pre_commit.py::test_pre_commit_pass - AssertionError: assert 3 == 0\n +  where 3 = CompletedProcess(args=['pre-commit', 'run', 'tracemantle', '--all-files'], returncode=3, stdout='[INFO] Installing env...cies\\nCheck the log at /Users/brad/.swarm/work/swarm-verify-CD9ssk/home/.cache/pre-commit/pre-commit.log\\n', stderr='').returncode\nFAILED tests/test_pre_commit.py::test_pre_commit_fail - AssertionError: assert 3 == 1\n +  where 3 = CompletedProcess(args=['pre-commit', 'run', 'tracemantle', '--all-files'], returncode=3, stdout='[INFO] Installing env...cies\\nCheck the log at /Users/brad/.swarm/work/swarm-verify-CD9ssk/home/.cache/pre-commit/pre-commit.log\\n', stderr='').returncode\nFAILED tests/test_self_host.py::test_self_host_history_round_trip - AssertionError: --show-history exited 1: Traceback (most recent call last):\n    File \"<frozen runpy>\", line 198, in _run_module_as_main\n    File \"<frozen runpy>\", line 88, in _run_code\n    File \"/Users/brad/.swarm/work/swarm-verify-CD9ssk/tree/src/tracemantle/__main__.py\", line 6, in <module>\n      main()\n    File \"/Users/brad/.swarm/work/swarm-verify-CD9ssk/tree/src/tracemantle/cli.py\", line 408, in main\n      run_show_history(args, paths)\n    File \"/Users/brad/.swarm/work/swarm-verify-CD9ssk/tree/src/tracemantle/commands.py\", line 384, in run_show_history\n      ledger = load_ledger(lp)\n               ^^^^^^^^^^^^^^^\n    File \"/Users/brad/.swarm/work/swarm-verify-CD9ssk/tree/src/tracemantle/history/history_io.py\", line 117, in load_ledger\n      entries = [entry for _, entry in iter_history_records(path)]\n                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^\n    File \"/Users/brad/.swarm/work/swarm-verify-CD9ssk/tree/src/tracemantle/history/history_store.py\", line 55, in iter_history_records\n      data, entry, size = read_history_record(path, max_bytes=min(MAX_LEDGER_BYTES, MAX_SCAN_BYTES - total))\n                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    File \"/Users/brad/.swarm/work/swarm-verify-CD9ssk/tree/src/tracemantle/history/history_store.py\", line 44, in read_history_record\n      return data, _entry_from_dict(data['entry'], path), len(raw)\n                   ^^^^^^^^^^^^^^^^\n  NameError: name '_entry_from_dict' is not defined. Did you mean: '_entry_to_dict'?\n  \nassert 1 == 0\n +  where 1 = CompletedProcess(args=['/Users/brad/.swarm/work/swarm-verify-CD9ssk/tree/.venv/bin/python3', '-m', 'tracemantle', '/tm...           ^^^^^^^^^^^^^^^^\\nNameError: name \\'_entry_from_dict\\' is not defined. Did you mean: \\'_entry_to_dict\\'?\\n').returncode\nFAILED tests/test_untrusted_input.py::test_non_utf8_ledger_raises_instead_of_crashing - tracemantle.io_limits.UntrustedInputError: History ledger at .skillcheck-history.json is not valid UTF-8: byte 0xff at offset 0 is not decodable. The file may be binary or saved in another encoding. Re-save it as UTF-8.\nFAILED tests/test_untrusted_input.py::test_nul_laden_ledger_is_rejected - tracemantle.io_limits.UntrustedInputError: History ledger at .skillcheck-history.json contains the control character 0x00 at offset 43. Control characters other than tab, newline, and carriage return are refused before parsing. The file may be binary or corrupt.\nFAILED tests/test_untrusted_input.py::test_oversized_ledger_is_rejected - tracemantle.io_limits.UntrustedInputError: History ledger at .skillcheck-history.json is 8388609 bytes, over the 8388608-byte limit. tracemantle refuses to load it. Split the file or reduce its size.\nFAILED tests/test_untrusted_input.py::test_poisoned_ledger_exits_two_without_a_traceback - AssertionError: assert 1 == 2\n +  where 1 = CompletedProcess(args=['/Users/brad/.swarm/work/swarm-verify-CD9ssk/tree/.venv/bin/python3', '-m', 'tracemantle', '/tm...: byte 0xff at offset 0 is not decodable. The file may be binary or saved in another encoding. Re-save it as UTF-8.\\n').returncode\n33 failed, 1369 passed, 5 skipped in 308.95s (0:05:08)\n"
+}

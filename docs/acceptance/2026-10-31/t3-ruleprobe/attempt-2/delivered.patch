@@ -1,0 +1,44 @@
+diff --git a/src/utils/safe-path.ts b/src/utils/safe-path.ts
+index 846c3f2..6473280 100644
+--- a/src/utils/safe-path.ts
++++ b/src/utils/safe-path.ts
+@@ -44,10 +44,19 @@ export function resolveSafePath(
+     real = resolved;
+   }
+ 
++  let realBoundary: string;
++  try {
++    realBoundary = realpathSync(boundary);
++  } catch {
++    // If the boundary itself doesn't exist or can't be resolved, fall back
++    // to using the raw boundary for comparison.
++    realBoundary = boundary;
++  }
++
+   if (!options?.allowExternal) {
+-    const normalizedBoundary = boundary.endsWith(sep) ? boundary : boundary + sep;
++    const normalizedBoundary = realBoundary.endsWith(sep) ? realBoundary : realBoundary + sep;
+ 
+-    if (real !== boundary && !real.startsWith(normalizedBoundary)) {
++    if (real !== realBoundary && !real.startsWith(normalizedBoundary)) {
+       throw new Error(
+         `Path ${real} is outside the working directory ${boundary}. ` +
+         'Use --allow-symlinks if this is intentional.',
+@@ -55,6 +64,17 @@ export function resolveSafePath(
+     }
+   }
+ 
++  // Normalize the return value: replace the realpath'd boundary prefix with
++  // the original boundary so callers get paths consistent with their input.
++  if (real.startsWith(realBoundary + sep) || real === realBoundary) {
++    const normalizedReal = real.replace(realBoundary, boundary);
++    // Ensure we don't strip a leading slash when boundary is '/'
++    if (boundary === '/' && normalizedReal.length > 1 && normalizedReal[0] !== '/') {
++      return '/' + normalizedReal;
++    }
++    return normalizedReal;
++  }
++
+   return real;
+ }
+ 

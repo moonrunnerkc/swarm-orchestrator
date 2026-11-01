@@ -1,4 +1,4 @@
-import { assignmentLabel, isCredentialName, knownSecretPatterns } from "./credential-names.ts";
+import { assignmentLabel, isCredentialName, knownSecretPatterns } from "swarm-verify/execution";
 
 /**
  * A value that already carries a redaction is not a secret: the sensitive span is the one

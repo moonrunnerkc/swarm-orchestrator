@@ -1,0 +1,294 @@
+{
+  "state": "incomplete",
+  "scope": "requirements",
+  "reasons": [],
+  "base": {
+    "commit": "99d8d054753b4e8979431eb58792895c754fbdc9"
+  },
+  "change": {
+    "source": "patch",
+    "applied": true,
+    "files": [
+      {
+        "path": "src/cli.ts",
+        "status": "modified"
+      },
+      {
+        "path": "test/cli.test.ts",
+        "status": "modified"
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "Make --max-budget-usd also accept --max-budget-usd=<n>. Reject an empty value (--max-budget-usd=). When the next token is another flag (--max-budget-usd --dry-run), report that it requires a numeric value instead of 'got: --dry-run'. 0 stays valid.",
+      "source": "user",
+      "kind": "fix",
+      "required": true,
+      "assumptions": [
+        "The project has existing tests for --max-budget-usd that I need to preserve and extend"
+      ],
+      "expected": {
+        "tests": [],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "status": "unverified",
+      "evidence": [],
+      "limitation": "no executed evidence is mapped to this requirement",
+      "nextAction": "map a test or check that exercises it"
+    }
+  ],
+  "regression": {
+    "status": "none",
+    "newFailures": [],
+    "inherited": [],
+    "removed": [],
+    "unresolved": []
+  },
+  "checks": [
+    {
+      "name": "test",
+      "command": "npm run test",
+      "kind": "test",
+      "authority": "pre-existing",
+      "result": "pass",
+      "collected": 98,
+      "exitCode": 0,
+      "durationMs": 3211,
+      "outputSha256": "bc893b3c182e165da58d4ee910cfc2166bd74cf074a86bb932a47a4391c1bf23",
+      "tests": {
+        "runner": "vitest",
+        "collected": {
+          "base": 98,
+          "candidate": 101
+        },
+        "counts": {
+          "preserved": 98,
+          "renamed": 0,
+          "fixed": 0,
+          "newFailures": 0,
+          "inherited": 0,
+          "removed": 0,
+          "superseded": 0,
+          "expectationChanges": 0,
+          "added": 3,
+          "addedFailing": 0,
+          "witnesses": 3,
+          "skipped": 0
+        },
+        "fixed": [],
+        "newFailures": [],
+        "inherited": [],
+        "removed": [],
+        "renamed": [],
+        "superseded": [],
+        "expectationChanges": [],
+        "added": [
+          "test/cli.test.ts:: > parseArgs > parses --max-budget-usd=<n> inline format",
+          "test/cli.test.ts:: > parseArgs > rejects --max-budget-usd= with empty value",
+          "test/cli.test.ts:: > parseArgs > reports missing value when next token is another flag"
+        ],
+        "addedFailing": [],
+        "witnesses": [
+          "test/cli.test.ts:: > parseArgs > parses --max-budget-usd=<n> inline format",
+          "test/cli.test.ts:: > parseArgs > rejects --max-budget-usd= with empty value",
+          "test/cli.test.ts:: > parseArgs > reports missing value when next token is another flag"
+        ]
+      }
+    },
+    {
+      "name": "typecheck",
+      "command": "npm run typecheck",
+      "kind": "other",
+      "authority": "pre-existing",
+      "result": "pass",
+      "collected": null,
+      "exitCode": 0,
+      "durationMs": 1998,
+      "outputSha256": "b6652eb70d76698652f8b1a399f51d25ecd0298f54db900b7b0ae7f8a459a2b8"
+    },
+    {
+      "name": "build",
+      "command": "npm run build",
+      "kind": "other",
+      "authority": "pre-existing",
+      "result": "pass",
+      "collected": null,
+      "exitCode": 0,
+      "durationMs": 2054,
+      "outputSha256": "8d04e5c3aa7f22ed93fae0bd7f93cfa65fba4e9aaaaeb76b6e03e59c7420f6fb"
+    }
+  ],
+  "baseline": {
+    "status": "measured",
+    "cached": true,
+    "environmentSha256": "c02b38fa9528fba62aac82392ef588fcd0409e2cdd8df657c93cb2037567b48e",
+    "checks": [
+      {
+        "name": "test",
+        "command": "npm run test",
+        "kind": "test",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": 98,
+        "exitCode": 0,
+        "durationMs": 3158,
+        "outputSha256": "16d2484a98d262c05749431fe397a4f33199733a39a5225d7f466a0bcd6fe74f"
+      },
+      {
+        "name": "typecheck",
+        "command": "npm run typecheck",
+        "kind": "other",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": null,
+        "exitCode": 0,
+        "durationMs": 2020,
+        "outputSha256": "b6652eb70d76698652f8b1a399f51d25ecd0298f54db900b7b0ae7f8a459a2b8"
+      },
+      {
+        "name": "build",
+        "command": "npm run build",
+        "kind": "other",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": null,
+        "exitCode": 0,
+        "durationMs": 2043,
+        "outputSha256": "8d04e5c3aa7f22ed93fae0bd7f93cfa65fba4e9aaaaeb76b6e03e59c7420f6fb"
+      }
+    ],
+    "heldOut": []
+  },
+  "heldOut": {
+    "status": "unmeasured",
+    "reason": "no held-out checks are sealed for this workspace"
+  },
+  "artifacts": [
+    {
+      "path": "src/cli.ts",
+      "category": "source"
+    },
+    {
+      "path": "test/cli.test.ts",
+      "category": "tests"
+    }
+  ],
+  "testFiles": {
+    "added": [],
+    "modified": [
+      "test/cli.test.ts"
+    ],
+    "deleted": [],
+    "moved": [],
+    "relocated": []
+  },
+  "coverage": {
+    "status": "unmeasured",
+    "reason": "the V8 offsets for src/cli.ts run past the file, so a transform ran first"
+  },
+  "mutation": {
+    "status": "killed",
+    "path": "src/cli.ts",
+    "line": 62,
+    "operator": "!= to ==",
+    "syntax": "valid",
+    "rejected": 0
+  },
+  "producer": {
+    "name": "swarm-orchestrator",
+    "version": "15.0.0",
+    "model": "qwen3.6:35b-a3b",
+    "promptSha256": "c36f09a1a815958a2b38c29e0308cd430e582a47c152321807c38dd1a8dac8d3",
+    "ledgerSha256": "a03b130e9ce52eb99d2261e9ab046152ec833dfb7f982440110f7344ab71488f",
+    "ledgerRecords": 185,
+    "reportSha256": "d61c61a460c43f8e29044e662ca673905cc4c365e617654c428ace4a5588aabc",
+    "instructions": []
+  },
+  "environment": {
+    "sha256": "c02b38fa9528fba62aac82392ef588fcd0409e2cdd8df657c93cb2037567b48e",
+    "node": "in node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 (sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413)",
+    "platform": "linux-arm64",
+    "git": "2.54.0 (Apple Git-157)",
+    "dependencies": "prepared",
+    "dependencyTreeSha256": "463290721f5522f7c1dfa5d2749ccfe9756d16c10420e544f8d338ba6bd921af",
+    "reproducible": true
+  },
+  "execution": {
+    "mode": "isolated",
+    "statement": "isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared",
+    "network": "closed",
+    "image": "node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 (sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 arm64)",
+    "dependencies": {
+      "mode": "prepared",
+      "reproducible": true,
+      "lockfiles": {
+        "package-lock.json": "42aaee4eb1e81dd26bb63d1abd96ca4018759bfff3bc8b6c72cf6573ce83e3b3"
+      },
+      "treeSha256": "463290721f5522f7c1dfa5d2749ccfe9756d16c10420e544f8d338ba6bd921af",
+      "note": "prepared from the lockfile and digested"
+    },
+    "policyMet": true,
+    "problems": []
+  },
+  "unmeasured": [
+    "held-out: no held-out checks are sealed for this workspace",
+    "coverage: the V8 offsets for src/cli.ts run past the file, so a transform ran first"
+  ],
+  "logs": [
+    {
+      "name": "logs/test.txt",
+      "sha256": "46731e5d20749c29deb71b8d4b76c3e5d36e3549e0a506a4b2af476f90bcc753"
+    },
+    {
+      "name": "logs/test.base-tests.txt",
+      "sha256": "bc893b3c182e165da58d4ee910cfc2166bd74cf074a86bb932a47a4391c1bf23"
+    },
+    {
+      "name": "logs/typecheck.txt",
+      "sha256": "b6652eb70d76698652f8b1a399f51d25ecd0298f54db900b7b0ae7f8a459a2b8"
+    },
+    {
+      "name": "logs/typecheck.base-tests.txt",
+      "sha256": "b6652eb70d76698652f8b1a399f51d25ecd0298f54db900b7b0ae7f8a459a2b8"
+    },
+    {
+      "name": "logs/build.txt",
+      "sha256": "8d04e5c3aa7f22ed93fae0bd7f93cfa65fba4e9aaaaeb76b6e03e59c7420f6fb"
+    },
+    {
+      "name": "logs/build.base-tests.txt",
+      "sha256": "8d04e5c3aa7f22ed93fae0bd7f93cfa65fba4e9aaaaeb76b6e03e59c7420f6fb"
+    }
+  ],
+  "verifier": {
+    "name": "swarm-verify",
+    "version": "2.0.0"
+  },
+  "version": "swarm-verify.result/v1",
+  "snapshot": {
+    "base": "99d8d054753b4e8979431eb58792895c754fbdc9",
+    "patchSha256": "c03a31f69cc157d98fd55eec998a58a6d6996e97d2907683865561754b741868",
+    "treeSha256": "cb126bd3c46b5a1bb5f2dd3d4891a646092bbbdb5b786b58521424300af44a0c"
+  },
+  "integrity": {
+    "signed": true,
+    "signer": {
+      "kind": "key",
+      "fingerprint": "8c5ed5b218745e42c16a99d98024241cbf74c7aa7bf570fd6e5495491d0b5dae"
+    },
+    "statementSha256": "d492c046c6dd9060d3cfd7b4138c92d0f6068eab38cf002a2f8abc8db734669e",
+    "problems": []
+  },
+  "evidence": {
+    "directory": "/Users/brad/.swarm/sessions/20261101T012351-0807c2/final/verification",
+    "bundle": "/Users/brad/.swarm/sessions/20261101T012351-0807c2/final/verification/attestation.sigstore.json",
+    "statement": "/Users/brad/.swarm/sessions/20261101T012351-0807c2/final/verification/statement.json",
+    "patch": "/Users/brad/.swarm/sessions/20261101T012351-0807c2/final/verification/change.patch",
+    "publicKey": "/Users/brad/.swarm/sessions/20261101T012351-0807c2/final/verification/attestation.pub.pem"
+  },
+  "failureOutput": ""
+}

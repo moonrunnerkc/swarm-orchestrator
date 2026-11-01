@@ -1,0 +1,189 @@
+{
+  "state": "incomplete",
+  "scope": "requirements",
+  "reasons": [
+    "the change does not apply: error: uv.lock: already exists in working directory"
+  ],
+  "base": {
+    "commit": "47203d2903394cbb8904637cad71b7b525b9ada7"
+  },
+  "change": {
+    "source": "patch",
+    "applied": false,
+    "files": []
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "Move core/history_io.py and history_store.py into a new tracemantle/history/ package, leaving re-export shims at the old paths, and move tests/test_history_{io,model,regression}.py into tests/history/; update the mypy files list and hatch packages.",
+      "source": "user",
+      "kind": "refactor",
+      "required": true,
+      "assumptions": [
+        "The existing imports in other modules will be updated to use the new package path",
+        "Re-export shims at old paths must maintain backward compatibility"
+      ],
+      "expected": {
+        "tests": [
+          {
+            "name": "test_history_io"
+          },
+          {
+            "name": "test_history_model"
+          },
+          {
+            "name": "test_history_regression"
+          }
+        ],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "status": "unverified",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "test_history_io",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "no executed test has this name"
+        },
+        {
+          "kind": "test",
+          "ref": "test_history_model",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "no executed test has this name"
+        },
+        {
+          "kind": "test",
+          "ref": "test_history_regression",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "no executed test has this name"
+        }
+      ],
+      "limitation": "not observed: test_history_io, test_history_model, test_history_regression",
+      "nextAction": "name tests as they ran (a title, a suite, or a path such as suite > test title) in place of test_history_io, test_history_model, test_history_regression"
+    }
+  ],
+  "regression": {
+    "status": "none",
+    "newFailures": [],
+    "inherited": [],
+    "removed": [],
+    "unresolved": []
+  },
+  "checks": [],
+  "baseline": {
+    "status": "measured",
+    "cached": false,
+    "environmentSha256": "1217da9a5cea0e2daf324c4ecc98c5b3dd667c1386fa1d63a87938252cb14ca5",
+    "checks": [
+      {
+        "name": "test",
+        "command": "python3 -m pytest -q",
+        "kind": "test",
+        "authority": "pre-existing",
+        "result": "fail",
+        "collected": 1407,
+        "exitCode": 1,
+        "durationMs": 317294,
+        "outputSha256": "f5b27d6f6f3c217634ef2f8a77125c37ada478bfaf7855288a048bb5ed3c1218"
+      }
+    ],
+    "heldOut": []
+  },
+  "heldOut": {
+    "status": "unmeasured",
+    "reason": "no held-out checks are sealed for this workspace"
+  },
+  "artifacts": [],
+  "testFiles": {
+    "added": [],
+    "modified": [],
+    "deleted": [],
+    "moved": [],
+    "relocated": []
+  },
+  "coverage": {
+    "status": "unmeasured",
+    "reason": "the checks did not run"
+  },
+  "mutation": {
+    "status": "unmeasured",
+    "reason": "the checks did not run"
+  },
+  "producer": {
+    "name": "swarm-orchestrator",
+    "version": "15.0.0",
+    "model": "swarm-redesign-qwen36-32k:latest",
+    "promptSha256": "6b3fb17999bc932f8e5d22d590ed22f73bf3217c5fb8de56852f577747720ff6",
+    "ledgerSha256": "fb62a026154175a5ab41ef04c2f408527f1238a6659871f2e83788b1ae46f415",
+    "ledgerRecords": 200,
+    "reportSha256": "f7fc8bdc66fc4e44380cac532cb1737612a4444197bbda69afc8328ff6c01ec1",
+    "instructions": []
+  },
+  "environment": {
+    "sha256": "1217da9a5cea0e2daf324c4ecc98c5b3dd667c1386fa1d63a87938252cb14ca5",
+    "node": "in ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248 (sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248)",
+    "platform": "linux-arm64",
+    "git": "2.54.0 (Apple Git-157)",
+    "dependencies": "prepared",
+    "dependencyTreeSha256": "a4b962a2d917c186eee5c0644ffcd8a7b2e75888b8b9cfe54656b8771616c2ce",
+    "reproducible": true
+  },
+  "execution": {
+    "mode": "isolated",
+    "statement": "isolated: docker ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248, network closed for checks and open only while dependencies were prepared",
+    "network": "closed",
+    "image": "ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248 (sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248 arm64)",
+    "dependencies": {
+      "mode": "prepared",
+      "reproducible": true,
+      "lockfiles": {
+        "uv.lock": "52a0d148c378e8d9fec2fca3de971ab3bf0688256a4010f377a02894db54490e"
+      },
+      "treeSha256": "a4b962a2d917c186eee5c0644ffcd8a7b2e75888b8b9cfe54656b8771616c2ce",
+      "note": "prepared from the lockfile and digested"
+    },
+    "policyMet": true,
+    "problems": []
+  },
+  "policy": {
+    "behaviorChange": "none"
+  },
+  "unmeasured": [
+    "held-out: no held-out checks are sealed for this workspace",
+    "coverage: the checks did not run",
+    "mutation: the checks did not run"
+  ],
+  "logs": [],
+  "verifier": {
+    "name": "swarm-verify",
+    "version": "2.0.0"
+  },
+  "version": "swarm-verify.result/v1",
+  "snapshot": {
+    "base": "47203d2903394cbb8904637cad71b7b525b9ada7",
+    "patchSha256": "77a66b35aa48dd8728fcfd6265c5e389b8ef123bb9f2c8efcfc9bd3e2d724c09",
+    "treeSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "integrity": {
+    "signed": true,
+    "signer": {
+      "kind": "key",
+      "fingerprint": "8c5ed5b218745e42c16a99d98024241cbf74c7aa7bf570fd6e5495491d0b5dae"
+    },
+    "statementSha256": "ed202e3835013890f3e7fcaf6e0a6dcaa6bd41a8227a5926ab4d8397f157d7f6",
+    "problems": []
+  },
+  "evidence": {
+    "directory": "/Users/brad/.swarm/sessions/20261101T125501-97efc9/final/verification",
+    "bundle": "/Users/brad/.swarm/sessions/20261101T125501-97efc9/final/verification/attestation.sigstore.json",
+    "statement": "/Users/brad/.swarm/sessions/20261101T125501-97efc9/final/verification/statement.json",
+    "patch": "/Users/brad/.swarm/sessions/20261101T125501-97efc9/final/verification/change.patch",
+    "publicKey": "/Users/brad/.swarm/sessions/20261101T125501-97efc9/final/verification/attestation.pub.pem"
+  },
+  "failureOutput": "the change does not apply: error: uv.lock: already exists in working directory"
+}

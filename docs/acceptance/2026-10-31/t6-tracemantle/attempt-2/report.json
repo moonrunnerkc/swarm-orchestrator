@@ -1,0 +1,226 @@
+{
+  "version": "swarm-orchestrator.report/v1",
+  "task": "Move core/history_io.py and history_store.py into a new tracemantle/history/ package, leaving re-export shims at the old paths, and move tests/test_history_{io,model,regression}.py into tests/history/; update the mypy files list and hatch packages.",
+  "model": {
+    "name": "gemma4-31b-greedy-128k:latest, then escalated",
+    "reason": "conservative default: the largest installed model that fits and passed its readiness probe, needs 25.3 GiB at a 65536-token context, 23.8 tok/s in its probe; no finished tasks recorded for it here yet"
+  },
+  "stop": "no-progress",
+  "reason": "the same command printed the same output 3 turns running",
+  "state": "incomplete",
+  "snapshot": {
+    "base": "47203d2903394cbb8904637cad71b7b525b9ada7",
+    "patchSha256": "325a5b478bfd98668429d6ded939e4d59c7489f36fb684b36b891adf6043633b",
+    "patch": "/Users/brad/.swarm/sessions/20261101T074854-1f4432/final/delivered.patch",
+    "treeSha256": "2bdc37d2f1762d6f6a3a4011401986d753588e83f1fe03e4122aeec2c1198885"
+  },
+  "verification": "fresh",
+  "blocked": null,
+  "changed": [
+    {
+      "path": "src/tracemantle/core/history_io.py",
+      "status": "modified"
+    },
+    {
+      "path": "src/tracemantle/history/__init__.py",
+      "status": "added"
+    },
+    {
+      "path": "src/tracemantle/history/history_io.py",
+      "status": "added"
+    },
+    {
+      "path": "src/tracemantle/history/history_store.py",
+      "status": "added"
+    },
+    {
+      "path": "src/tracemantle/history_store.py",
+      "status": "modified"
+    },
+    {
+      "path": "tests/history/test_history_io.py",
+      "status": "added"
+    },
+    {
+      "path": "tests/history/test_history_model.py",
+      "status": "added"
+    },
+    {
+      "path": "tests/history/test_history_regression.py",
+      "status": "added"
+    },
+    {
+      "path": "tests/test_history_io.py",
+      "status": "deleted"
+    },
+    {
+      "path": "tests/test_history_model.py",
+      "status": "deleted"
+    },
+    {
+      "path": "tests/test_history_regression.py",
+      "status": "deleted"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "Move core/history_io.py and history_store.py into a new tracemantle/history/ package, leaving re-export shims at the old paths, and move tests/test_history_{io,model,regression}.py into tests/history/; update the mypy files list and hatch packages.",
+      "source": "user",
+      "kind": "refactor",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [],
+        "checks": [],
+        "structure": [
+          {
+            "path": "src/tracemantle/history/history_io.py",
+            "contains": "def"
+          },
+          {
+            "path": "src/tracemantle/history/history_store.py",
+            "contains": "class"
+          }
+        ],
+        "packages": []
+      },
+      "status": "unverified",
+      "evidence": [
+        {
+          "kind": "structure",
+          "ref": "src/tracemantle/history/history_io.py contains \"def\"",
+          "authority": "pre-existing",
+          "outcome": "observed",
+          "detail": "expected contains"
+        },
+        {
+          "kind": "structure",
+          "ref": "src/tracemantle/history/history_store.py contains \"class\"",
+          "authority": "pre-existing",
+          "outcome": "observed",
+          "detail": "expected contains"
+        }
+      ],
+      "limitation": "behavior is not shown preserved: regression found",
+      "nextAction": "keep every base test passing"
+    },
+    {
+      "id": "R2",
+      "text": "Move tests/test_history_{io,model,regression}.py into tests/history/",
+      "source": "inferred",
+      "kind": "refactor",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [],
+        "checks": [],
+        "structure": [
+          {
+            "path": "tests/history/test_history_io.py",
+            "contains": "import"
+          },
+          {
+            "path": "tests/history/test_history_model.py",
+            "contains": "import"
+          },
+          {
+            "path": "tests/history/test_history_regression.py",
+            "contains": "import"
+          }
+        ],
+        "packages": []
+      },
+      "status": "unverified",
+      "evidence": [
+        {
+          "kind": "structure",
+          "ref": "tests/history/test_history_io.py contains \"import\"",
+          "authority": "pre-existing",
+          "outcome": "observed",
+          "detail": "expected contains"
+        },
+        {
+          "kind": "structure",
+          "ref": "tests/history/test_history_model.py contains \"import\"",
+          "authority": "pre-existing",
+          "outcome": "observed",
+          "detail": "expected contains"
+        },
+        {
+          "kind": "structure",
+          "ref": "tests/history/test_history_regression.py contains \"import\"",
+          "authority": "pre-existing",
+          "outcome": "observed",
+          "detail": "expected contains"
+        }
+      ],
+      "limitation": "behavior is not shown preserved: regression found",
+      "nextAction": "keep every base test passing"
+    },
+    {
+      "id": "R3",
+      "text": "Update mypy files list and hatch packages",
+      "source": "inferred",
+      "kind": "refactor",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [],
+        "checks": [
+          "mypy"
+        ],
+        "structure": [],
+        "packages": []
+      },
+      "status": "unverified",
+      "evidence": [
+        {
+          "kind": "check",
+          "ref": "mypy",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "no such check ran"
+        },
+        {
+          "kind": "change",
+          "ref": "src/tracemantle/core/history_io.py, src/tracemantle/history/__init__.py, src/tracemantle/history/history_io.py, src/tracemantle/history/history_store.py, src/tracemantle/history_store.py",
+          "authority": "pre-existing",
+          "outcome": "observed",
+          "detail": "5 source file(s) changed"
+        }
+      ],
+      "limitation": "not observed: mypy",
+      "nextAction": "name only checks that ran (test) in place of mypy"
+    }
+  ],
+  "regression": "found (3 inherited failure(s))",
+  "execution": "isolated: docker ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248, network closed for checks and open only while dependencies were prepared",
+  "attestation": "/Users/brad/.swarm/sessions/20261101T074854-1f4432/final/verification/attestation.sigstore.json",
+  "startingState": {
+    "head": "47203d2903394cbb8904637cad71b7b525b9ada7",
+    "base": "47203d2903394cbb8904637cad71b7b525b9ada7",
+    "edits": []
+  },
+  "delivery": {
+    "applied": true
+  },
+  "instructions": [],
+  "notes": [
+    "the last verification described an earlier tree or record, so the delivered one was verified again"
+  ],
+  "review": null,
+  "resources": {
+    "steps": 41,
+    "inputTokens": 594902,
+    "outputTokens": 7789,
+    "estimatedTurns": 0,
+    "inferenceMs": 664283,
+    "inferenceTurns": 41,
+    "wallMs": 2401992,
+    "retries": 0,
+    "escalations": 1,
+    "verifications": 1,
+    "cost": "none (local runtime)"
+  }
+}

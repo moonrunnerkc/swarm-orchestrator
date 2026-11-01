@@ -1,0 +1,15 @@
+$ cat cli/promote.py
+$ find . -name "promote.py" -not -path "*/node_modules/*" -not -path "*/.venv/*"
+$ cat src/ironroot/cli/promote.py
+$ sed -n '100,180p' src/ironroot/cli/promote.py
+$ ls tests/ && find tests -name "*promote*"
+$ cat tests/unit/test_promote.py
+$ cat > .swarm/scratch/repro.py <<'EOF'
+$ mkdir -p .swarm/scratch
+$ grep -n "_TRIPLE_QUOTED" src/ironroot/cli/promote.py
+$ sed -i 's/_TRIPLE_QUOTED = re.compile(r"(?s)(\\"\\\\".*?\\"\\\\"|'"'"''"'"''"'"'.*?'"'"''"'"''"'"')")/_TRIPLE_QUOTED = re.compile(r"(?s)(\\"\\\\"(?:[^"]|"(?!"\\"\\")|(?:"(?!"\\"\\")(?!"\\"\\")(?!"\\"\\")).*?)\\"\\\\"|'"'"''"'"''"'"'(?:[^'"'"']|'"'"'(?!"'"'"''"'"')|(?:"'"'"'(?!"'"'"''"'"')(?!"'"'"''"'"')(?!"'"'"''"'"')).*?)'"'"''"'"''"'"')")/' src/ironroot/cli/promote.py
+$ python - <<'EOF'
+$ .venv/bin/python - <<'EOF'
+$ .venv/bin/python - <<'PYEOF'
+$ .venv/bin/python - <<'PYEOF'
+$ .venv/bin/python - <<'PYEOF'

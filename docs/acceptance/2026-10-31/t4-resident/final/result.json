@@ -1,0 +1,247 @@
+{
+  "state": "incomplete",
+  "scope": "requirements",
+  "reasons": [
+    "check test is unresolved: against the base's tests, the command could not run: it timed out"
+  ],
+  "base": {
+    "commit": "d52f141e16b3142d6830e79923d67ff4a3783e23"
+  },
+  "change": {
+    "source": "patch",
+    "applied": true,
+    "files": [
+      {
+        "path": "config/allowlist.toml",
+        "status": "modified"
+      },
+      {
+        "path": "tests/test_allowlist.py",
+        "status": "modified"
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "The allowlist lets rg --pre=<prog> run any program and git diff/log --output=<file> write files. Add --pre to rg's deny_flags and --output to git's, with tests.",
+      "source": "user",
+      "kind": "fix",
+      "required": true,
+      "assumptions": [
+        "The deny_flags are defined in a configuration or code structure that supports per-tool flag lists"
+      ],
+      "expected": {
+        "tests": [
+          {
+            "name": "test_rg_deny_flag_pre_is_denied"
+          },
+          {
+            "name": "test_rg_deny_flag_pre_equals_form_is_denied"
+          },
+          {
+            "name": "test_git_deny_flag_output_is_denied"
+          },
+          {
+            "name": "test_git_deny_flag_output_equals_form_is_denied"
+          }
+        ],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "status": "unverified",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "test_rg_deny_flag_pre_is_denied",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "no executed test has this name"
+        },
+        {
+          "kind": "test",
+          "ref": "test_rg_deny_flag_pre_equals_form_is_denied",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "no executed test has this name"
+        },
+        {
+          "kind": "test",
+          "ref": "test_git_deny_flag_output_is_denied",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "no executed test has this name"
+        },
+        {
+          "kind": "test",
+          "ref": "test_git_deny_flag_output_equals_form_is_denied",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "no executed test has this name"
+        }
+      ],
+      "limitation": "not observed: test_rg_deny_flag_pre_is_denied, test_rg_deny_flag_pre_equals_form_is_denied, test_git_deny_flag_output_is_denied, test_git_deny_flag_output_equals_form_is_denied",
+      "nextAction": "name tests as they ran (a title, a suite, or a path such as suite > test title) in place of test_rg_deny_flag_pre_is_denied, test_rg_deny_flag_pre_equals_form_is_denied, test_git_deny_flag_output_is_denied, test_git_deny_flag_output_equals_form_is_denied"
+    }
+  ],
+  "regression": {
+    "status": "unresolved",
+    "newFailures": [],
+    "inherited": [],
+    "removed": [],
+    "unresolved": [
+      "check test"
+    ]
+  },
+  "checks": [
+    {
+      "name": "test",
+      "command": "uv run pytest -q",
+      "kind": "test",
+      "authority": "pre-existing",
+      "result": "unresolved",
+      "collected": null,
+      "exitCode": null,
+      "durationMs": 1200059,
+      "outputSha256": "71a285f172127ecb9affbc79d4c6d56ab0a64478217b1a89c44beccd0954bcc5"
+    }
+  ],
+  "baseline": {
+    "status": "measured",
+    "cached": false,
+    "environmentSha256": "a79736ef33f58595dd5aba496a3e2a86ca75b971696556328ac9186416c047ce",
+    "checks": [
+      {
+        "name": "test",
+        "command": "uv run pytest -q",
+        "kind": "test",
+        "authority": "pre-existing",
+        "result": "fail",
+        "collected": 491,
+        "exitCode": 1,
+        "durationMs": 68136,
+        "outputSha256": "714744a2572a2ebeeb6e4c2febe37e76e86c7cf1099fcc00f438092e9a91d73b"
+      }
+    ],
+    "heldOut": []
+  },
+  "heldOut": {
+    "status": "unmeasured",
+    "reason": "no held-out checks are sealed for this workspace"
+  },
+  "artifacts": [
+    {
+      "path": "config/allowlist.toml",
+      "category": "source"
+    },
+    {
+      "path": "tests/test_allowlist.py",
+      "category": "tests"
+    }
+  ],
+  "testFiles": {
+    "added": [],
+    "modified": [
+      "tests/test_allowlist.py"
+    ],
+    "deleted": [],
+    "moved": [],
+    "relocated": []
+  },
+  "coverage": {
+    "status": "unmeasured",
+    "reason": "the change spans languages, and coverage is measured for one at a time"
+  },
+  "mutation": {
+    "status": "unmeasured",
+    "reason": "no changed source line has an operator to mutate"
+  },
+  "producer": {
+    "name": "swarm-orchestrator",
+    "version": "15.0.0",
+    "model": "swarm-redesign-qwen36-32k:latest",
+    "promptSha256": "392998827daf56ac3c0a1cc2ca09bf9f852278903ed688fd92f24a5ae74bf435",
+    "ledgerSha256": "743b2dca25d402de8e09f2b660583e50a2bb592bc111f05f812d5c156487772d",
+    "ledgerRecords": 71,
+    "reportSha256": "2b99618c903b316c4aafb8261f5b1d59e5fb8e7e217534e48bb2ee1271f2265e",
+    "instructions": [
+      {
+        "path": "CLAUDE.md",
+        "sha256": "3684053f4291555021ef687bd48e6e81fe6c53fcb5a53ec17e1b6cdfde00d108"
+      }
+    ]
+  },
+  "environment": {
+    "sha256": "a79736ef33f58595dd5aba496a3e2a86ca75b971696556328ac9186416c047ce",
+    "node": "v24.15.0",
+    "platform": "darwin-arm64",
+    "git": "2.54.0 (Apple Git-157)",
+    "dependencies": "linked",
+    "dependencyTreeSha256": null,
+    "reproducible": false
+  },
+  "execution": {
+    "mode": "host",
+    "statement": "host, not isolated",
+    "network": "open",
+    "image": null,
+    "dependencies": {
+      "mode": "linked",
+      "reproducible": false,
+      "lockfiles": {
+        "uv.lock": "75a60c873c1ff42ddc78dfe8a3ad5d1763e83c18d391b8abd5351166d42a1e0a"
+      },
+      "treeSha256": null,
+      "note": "linked, not reproducible: the caller's installed tree was used as it stood"
+    },
+    "policyMet": true,
+    "problems": []
+  },
+  "policy": {
+    "behaviorChange": "none"
+  },
+  "unmeasured": [
+    "check test: against the base's tests, the command could not run: it timed out",
+    "held-out: no held-out checks are sealed for this workspace",
+    "coverage: the change spans languages, and coverage is measured for one at a time",
+    "mutation: no changed source line has an operator to mutate"
+  ],
+  "logs": [
+    {
+      "name": "logs/test.txt",
+      "sha256": "b219b325dcc6d902a5343d00d3dc9f813249f9c70c985d3bde31a6c12b9cc03b"
+    },
+    {
+      "name": "logs/test.base-tests.txt",
+      "sha256": "71a285f172127ecb9affbc79d4c6d56ab0a64478217b1a89c44beccd0954bcc5"
+    }
+  ],
+  "verifier": {
+    "name": "swarm-verify",
+    "version": "2.0.0"
+  },
+  "version": "swarm-verify.result/v1",
+  "snapshot": {
+    "base": "d52f141e16b3142d6830e79923d67ff4a3783e23",
+    "patchSha256": "d08c949963a8a22b61ad2899c1873aba4f8f3c14729ebeedbfd02731cef5e8ee",
+    "treeSha256": "bb26e011020459df47cdd607a99b6f780580c0667badfb64358d3de5bd2ea338"
+  },
+  "integrity": {
+    "signed": true,
+    "signer": {
+      "kind": "key",
+      "fingerprint": "8c5ed5b218745e42c16a99d98024241cbf74c7aa7bf570fd6e5495491d0b5dae"
+    },
+    "statementSha256": "55ef7713a8b3bd1301808da18b0ccb3f10b5f857b9fa15ef31e76d85b3c372b9",
+    "problems": []
+  },
+  "evidence": {
+    "directory": "/Users/brad/.swarm/sessions/20261101T044405-e32622/verifications/2",
+    "bundle": "/Users/brad/.swarm/sessions/20261101T044405-e32622/verifications/2/attestation.sigstore.json",
+    "statement": "/Users/brad/.swarm/sessions/20261101T044405-e32622/verifications/2/statement.json",
+    "patch": "/Users/brad/.swarm/sessions/20261101T044405-e32622/verifications/2/change.patch",
+    "publicKey": "/Users/brad/.swarm/sessions/20261101T044405-e32622/verifications/2/attestation.pub.pem"
+  },
+  "failureOutput": ""
+}

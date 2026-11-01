@@ -1,0 +1,182 @@
+{
+  "version": "swarm-orchestrator.report/v1",
+  "task": "Let detectors.semgrep.ruleset be either a string or an array of strings, and pass one --config per ruleset to semgrep and to the repro command. Existing string configs must behave exactly as before.",
+  "model": {
+    "name": "qwen3.8:27b",
+    "reason": "named by --model"
+  },
+  "stop": "complete",
+  "reason": null,
+  "state": "complete",
+  "snapshot": {
+    "base": "cd76297e5dff5a31436d6c6419f69dab1f6260af",
+    "patchSha256": "e6472cf1cd81486bed0c943597865c88e12faf91a30ca9a08bc941ab445b05f8",
+    "patch": "/Users/brad/.swarm/sessions/20261101T142858-cff296/final/delivered.patch",
+    "treeSha256": "ee293af8f62a111c3617d8c2c5812b7f3432daa6f1ba6cc374cd6e344456ac06"
+  },
+  "verification": "reused",
+  "blocked": null,
+  "unchecked": null,
+  "changed": [
+    {
+      "path": "src/config/schema.ts",
+      "status": "modified"
+    },
+    {
+      "path": "src/detection/semgrep.ts",
+      "status": "modified"
+    },
+    {
+      "path": "test/config.test.ts",
+      "status": "modified"
+    },
+    {
+      "path": "test/scanner.test.ts",
+      "status": "modified"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "Let detectors.semgrep.ruleset be either a string or an array of strings, and pass one --config per ruleset to semgrep and to the repro command. Existing string configs must behave exactly as before.",
+      "source": "user",
+      "kind": "feature",
+      "required": true,
+      "assumptions": [
+        "Empty ruleset arrays are rejected (fail closed); a string ruleset produces a single --config identical to the prior command."
+      ],
+      "expected": {
+        "tests": [
+          {
+            "name": "semgrep scanner > a string ruleset produces a single --config in the repro command"
+          },
+          {
+            "name": "semgrep scanner > an array ruleset produces one --config per ruleset in the repro command"
+          },
+          {
+            "name": "loadRunConfig > accepts a semgrep ruleset as a string or an array of strings"
+          },
+          {
+            "name": "loadRunConfig > rejects an empty semgrep ruleset array"
+          }
+        ],
+        "checks": [
+          "typecheck",
+          "lint",
+          "test"
+        ],
+        "structure": [
+          {
+            "path": "src/config/schema.ts",
+            "contains": "z.union([z.string().min(1), z.array(z.string().min(1)).min(1)])"
+          },
+          {
+            "path": "src/detection/semgrep.ts",
+            "contains": "rulesets(config).flatMap((ruleset) => [\"--config\", ruleset])"
+          }
+        ],
+        "packages": []
+      },
+      "status": "satisfied",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::semgrep scanner > a string ruleset produces a single --config in the repro command",
+          "authority": "implementation-authored",
+          "outcome": "passes before and after",
+          "detail": "passes against the base's source too"
+        },
+        {
+          "kind": "test",
+          "ref": "test/scanner.test.ts::semgrep scanner > an array ruleset produces one --config per ruleset in the repro command",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        },
+        {
+          "kind": "test",
+          "ref": "test/config.test.ts::loadRunConfig > accepts a semgrep ruleset as a string or an array of strings",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        },
+        {
+          "kind": "test",
+          "ref": "test/config.test.ts::loadRunConfig > rejects an empty semgrep ruleset array",
+          "authority": "implementation-authored",
+          "outcome": "passes before and after",
+          "detail": "passes against the base's source too"
+        },
+        {
+          "kind": "check",
+          "ref": "typecheck",
+          "authority": "pre-existing",
+          "outcome": "pass",
+          "detail": "pass"
+        },
+        {
+          "kind": "check",
+          "ref": "lint",
+          "authority": "pre-existing",
+          "outcome": "pass",
+          "detail": "pass"
+        },
+        {
+          "kind": "check",
+          "ref": "test",
+          "authority": "pre-existing",
+          "outcome": "passes but for inherited failures",
+          "detail": "inherited-failures"
+        },
+        {
+          "kind": "structure",
+          "ref": "src/config/schema.ts contains \"z.union([z.string().min(1), z.array(z.string().min(1)).min(1)])\"",
+          "authority": "pre-existing",
+          "outcome": "observed",
+          "detail": "expected contains"
+        },
+        {
+          "kind": "structure",
+          "ref": "src/detection/semgrep.ts contains \"rulesets(config).flatMap((ruleset) => [\\\"--config\\\", ruleset])\"",
+          "authority": "pre-existing",
+          "outcome": "observed",
+          "detail": "expected contains"
+        }
+      ],
+      "limitation": null,
+      "nextAction": null
+    }
+  ],
+  "regression": "none (1 inherited failure(s))",
+  "execution": "isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared",
+  "attestation": "/Users/brad/.swarm/sessions/20261101T142858-cff296/verifications/1/attestation.sigstore.json",
+  "startingState": {
+    "head": "cd76297e5dff5a31436d6c6419f69dab1f6260af",
+    "base": "cd76297e5dff5a31436d6c6419f69dab1f6260af",
+    "edits": []
+  },
+  "delivery": {
+    "applied": true
+  },
+  "instructions": [
+    {
+      "path": "CLAUDE.md",
+      "sha256": "47b46c17b5e57e9b1e6a2295c2432bb3ff336a50fcf69e36fec1c6ddc319a0a8"
+    }
+  ],
+  "notes": [],
+  "review": null,
+  "resources": {
+    "steps": 38,
+    "inputTokens": 646974,
+    "outputTokens": 4653,
+    "estimatedTurns": 0,
+    "inferenceMs": 0,
+    "inferenceTurns": 0,
+    "wallMs": 686745,
+    "retries": 0,
+    "escalations": 0,
+    "verifications": 1,
+    "cost": "unknown: the endpoint reports no price"
+  }
+}

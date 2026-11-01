@@ -1,0 +1,397 @@
+{
+  "version": "swarm-orchestrator.report/v1",
+  "task": "Make the suite pass on Node 24: rebuild or bump better-sqlite3 within 12.x, set engines.node to >=22 <27, add .nvmrc, and add Node 24 to the CI matrix.",
+  "model": {
+    "name": "qwen3.6:35b-a3b",
+    "reason": "conservative default: the largest installed model that fits and passed its readiness probe, needs 27.2 GiB at a 65536-token context, 118.4 tok/s in its probe; no finished tasks recorded for it here yet"
+  },
+  "stop": "complete",
+  "reason": null,
+  "state": "complete",
+  "snapshot": {
+    "base": "9d6b6fed2eb3c25a90fedf43a615fe410f9a2f50",
+    "patchSha256": "b6ce3bfea75d68435c3226b6f72d2717d411173e0a2fa78855c6a812a53b4e6f",
+    "patch": "/Users/brad/.swarm/sessions/20261101T073344-9bf3e4/final/delivered.patch",
+    "treeSha256": "83c56496a336f34e6bfeb105b7a6021120baf383d0f3a6a675efc29e7d61a32b"
+  },
+  "verification": "reused",
+  "blocked": null,
+  "changed": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "status": "modified"
+    },
+    {
+      "path": ".nvmrc",
+      "status": "added"
+    },
+    {
+      "path": "package-lock.json",
+      "status": "modified"
+    },
+    {
+      "path": "package.json",
+      "status": "modified"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "Make the suite pass on Node 24: rebuild or bump better-sqlite3 within 12.x, set engines.node to >=22 <27, add .nvmrc, and add Node 24 to the CI matrix.",
+      "source": "user",
+      "kind": "other",
+      "required": true,
+      "assumptions": [
+        "better-sqlite3 12.11.1 has a prebuilt binary for Node 24 on macOS ARM64"
+      ],
+      "expected": {
+        "tests": [
+          {
+            "name": "tests/telemetry/probe-select.test.ts"
+          },
+          {
+            "name": "tests/telemetry/vram-probe.test.ts"
+          },
+          {
+            "name": "tests/telemetry/unified-memory-probe.test.ts"
+          },
+          {
+            "name": "tests/orchestrator/run-executor.test.ts"
+          },
+          {
+            "name": "tests/cli/command-ingest.test.ts"
+          }
+        ],
+        "checks": [
+          "test",
+          "typecheck",
+          "lint"
+        ],
+        "structure": [],
+        "packages": []
+      },
+      "status": "satisfied",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/telemetry/probe-select.test.ts::selectMemoryProbes > prefers nvidia-smi when it answers the identity query",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/telemetry/probe-select.test.ts::selectMemoryProbes > falls back to unified memory on Apple Silicon without nvidia-smi",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/telemetry/probe-select.test.ts::selectMemoryProbes > falls back to system memory when there is no GPU telemetry at all",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/telemetry/probe-select.test.ts::selectMemoryProbes > refuses the RSS fallback when an NVIDIA device exists without nvidia-smi",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/telemetry/probe-select.test.ts::selectMemoryProbes > reports no telemetry with the reason when no source works",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/telemetry/probe-select.test.ts::selectMemoryProbes > polls the rapid-mlx server status instead of process memory for that backend",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/telemetry/probe-select.test.ts::selectMemoryProbes > measures nothing for the api backend, by design",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/telemetry/vram-probe.test.ts::startVramProbe > exposes gpu identity at start so the run record can carry it",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/telemetry/vram-probe.test.ts::startVramProbe > reports unavailable with the reason when the binary does not exist",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/telemetry/vram-probe.test.ts::startVramProbe > reports unavailable when the binary exists but fails the identity query",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/telemetry/vram-probe.test.ts::startVramProbe > tracks peak and timeline from loop-mode samples and parses gpu identity",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/telemetry/vram-probe.test.ts::startVramProbe > caps the timeline by decimation while the peak keeps full precision",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/telemetry/vram-probe.test.ts::startVramProbe > still returns collected samples when the sampler exits before stop",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/telemetry/vram-probe.test.ts::startVramProbe > reports unavailable when loop mode produces no parseable samples",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/telemetry/unified-memory-probe.test.ts::queryUnifiedIdentity > reports the chip, macOS version, and total memory in MiB",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/telemetry/unified-memory-probe.test.ts::queryUnifiedIdentity > returns null off macOS so the selector can fall through",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/telemetry/unified-memory-probe.test.ts::queryUnifiedIdentity > returns null when sysctl fails instead of guessing",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/telemetry/unified-memory-probe.test.ts::queryUnifiedMemoryOnce > sums only the backend processes and derives free from the 75% budget",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/telemetry/unified-memory-probe.test.ts::queryUnifiedMemoryOnce > floors free at zero rather than reporting negative headroom",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/telemetry/unified-memory-probe.test.ts::queryUnifiedMemoryOnce > returns null when ps fails instead of fabricating a sample",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/telemetry/unified-memory-probe.test.ts::startUnifiedMemoryProbe > exposes machine identity at start for the run record",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/telemetry/unified-memory-probe.test.ts::startUnifiedMemoryProbe > reports unavailable with the reason off Apple Silicon macOS",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/telemetry/unified-memory-probe.test.ts::startUnifiedMemoryProbe > tracks the peak across growing samples via a counter-driven fake ps",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/telemetry/unified-memory-probe.test.ts::startUnifiedMemoryProbe > caps the timeline by decimation while the peak keeps full precision",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/telemetry/unified-memory-probe.test.ts::startUnifiedMemoryProbe > reports unavailable when ps never produces a sample",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/orchestrator/run-executor.test.ts::executeSweep > runs candidates sequentially, unloading each before the next starts",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/orchestrator/run-executor.test.ts::executeSweep > classifies a memory-pattern load failure as oom, skips its units, and finishes the sweep",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/orchestrator/run-executor.test.ts::executeSweep > classifies a cuda error mid-generation as oom and never retries that configuration",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/orchestrator/run-executor.test.ts::executeSweep > treats a plain generation error as a unit failure, not an oom",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/orchestrator/run-executor.test.ts::executeSweep > retries transport errors twice with growing backoff before failing the unit",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/orchestrator/run-executor.test.ts::executeSweep > warns when vram does not return to baseline between candidates",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/orchestrator/run-executor.test.ts::executeSweep > refines the time estimate after the first candidate completes",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/orchestrator/run-executor.test.ts::executeSweep > flags a throughput collapse against similar-size candidates as suspected offload",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/cli/command-ingest.test.ts::ingestCommand > drafts a pack the strict loader accepts, provenance recorded",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/cli/command-ingest.test.ts::ingestCommand > feeds validation errors back and succeeds on the repair round",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/cli/command-ingest.test.ts::ingestCommand > writes a still-broken draft as-is and prints the errors",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/cli/command-ingest.test.ts::ingestCommand > keeps an unsalvageable response on disk and says what to try",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/cli/command-ingest.test.ts::ingestCommand > errors on an unreadable source with the path named",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/cli/command-ingest.test.ts::ingestCommand > picks the largest local model that fits when none is named",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/cli/command-ingest.test.ts::ingestCommand > falls back to the largest local model when free memory is unknown",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/cli/command-ingest.test.ts::ingestCommand > refuses an existing non-empty target before spending a drafting generation",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/cli/command-ingest.test.ts::ingestCommand > saves the draft response when the derived directory collides after drafting",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/cli/command-ingest.test.ts::ingestCommand > writes the unsalvageable response even when the target parent does not exist",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/cli/command-ingest.test.ts::ingestCommand > never prints \"labels: undefined\" for a salvaged draft without labels",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "check",
+          "ref": "test",
+          "authority": "pre-existing",
+          "outcome": "pass",
+          "detail": "pass"
+        },
+        {
+          "kind": "check",
+          "ref": "typecheck",
+          "authority": "pre-existing",
+          "outcome": "pass",
+          "detail": "pass"
+        },
+        {
+          "kind": "check",
+          "ref": "lint",
+          "authority": "pre-existing",
+          "outcome": "pass",
+          "detail": "pass"
+        }
+      ],
+      "limitation": null,
+      "nextAction": null
+    }
+  ],
+  "regression": "none",
+  "execution": "isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared",
+  "attestation": "/Users/brad/.swarm/sessions/20261101T073344-9bf3e4/verifications/4/attestation.sigstore.json",
+  "startingState": {
+    "head": "9d6b6fed2eb3c25a90fedf43a615fe410f9a2f50",
+    "base": "9d6b6fed2eb3c25a90fedf43a615fe410f9a2f50",
+    "edits": []
+  },
+  "delivery": {
+    "applied": true
+  },
+  "instructions": [
+    {
+      "path": "CLAUDE.md",
+      "sha256": "5d41673e76b0578946517b9e53e25cda093a838ed08a6ed5b50f9233b2e89848"
+    }
+  ],
+  "notes": [],
+  "review": null,
+  "resources": {
+    "steps": 34,
+    "inputTokens": 222006,
+    "outputTokens": 1990,
+    "estimatedTurns": 0,
+    "inferenceMs": 25173,
+    "inferenceTurns": 34,
+    "wallMs": 225828,
+    "retries": 0,
+    "escalations": 0,
+    "verifications": 3,
+    "cost": "none (local runtime)"
+  }
+}

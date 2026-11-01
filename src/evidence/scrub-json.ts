@@ -1,5 +1,5 @@
+import { fieldLabel, isCredentialName, isMetricName } from "swarm-verify/execution";
 import type { JsonValue } from "./canonical-json.ts";
-import { fieldLabel, isCredentialName, isMetricName } from "./credential-names.ts";
 import { nameFinding, type ScrubOutcome, type SecretFinding, scrubTextInto } from "./scrub.ts";
 import { classifyValue } from "./secret-spans.ts";
 

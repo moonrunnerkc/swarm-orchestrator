@@ -1,0 +1,2256 @@
+diff --git a/src/skillcheck/core/history_io.py b/src/skillcheck/core/history_io.py
+index 25eeec8..3a5c59f 100644
+--- a/src/skillcheck/core/history_io.py
++++ b/src/skillcheck/core/history_io.py
+@@ -1,2 +1,4 @@
+-"""Deprecated compatibility imports; use tracemantle.core.history_io."""
+-from tracemantle.core.history_io import *  # noqa: F403
++"""Deprecated compatibility imports; use tracemantle.history directly."""
++from __future__ import annotations
++
++from tracemantle.history.io import *  # noqa: F401, F403
+diff --git a/src/tracemantle/_version.py b/src/tracemantle/_version.py
+new file mode 100644
+index 0000000..0b5f775
+--- /dev/null
++++ b/src/tracemantle/_version.py
+@@ -0,0 +1,4 @@
++"""Package version - imported before core modules to avoid circular imports."""
++from __future__ import annotations
++
++__version__: str = "1.6.1"
+diff --git a/src/tracemantle/commands.py b/src/tracemantle/commands.py
+index 51c1288..0b42fee 100644
+--- a/src/tracemantle/commands.py
++++ b/src/tracemantle/commands.py
+@@ -57,7 +57,7 @@ from tracemantle.formatters import (
+     _format_markdown,
+     _format_text,
+ )
+-from tracemantle.history_store import append_history, comparable_runs, history_identity
++from tracemantle.history.store import append_history, comparable_runs, history_identity
+ from tracemantle.io_limits import (
+     MAX_SCAN_BYTES,
+     MAX_SCAN_FILES,
+diff --git a/src/tracemantle/core/history.py b/src/tracemantle/core/history.py
+index df4df2d..99043fa 100644
+--- a/src/tracemantle/core/history.py
++++ b/src/tracemantle/core/history.py
+@@ -328,7 +328,7 @@ def render_ledger_json(ledger: Ledger) -> str:
+ # serializer above). Re-exported here so the historical public surface
+ # ``from tracemantle.core.history import load_ledger`` keeps working. The import
+ # sits at the bottom because history_io depends on this module's definitions.
+-from tracemantle.core.history_io import (  # noqa: E402
++from tracemantle.history.io import (  # noqa: E402
+     append_run,
+     load_ledger,
+     save_ledger,
+diff --git a/src/tracemantle/core/history_io.py b/src/tracemantle/core/history_io.py
+index 2b18d75..de9354c 100644
+--- a/src/tracemantle/core/history_io.py
++++ b/src/tracemantle/core/history_io.py
+@@ -1,276 +1,16 @@
+-"""Filesystem I/O for the validation history ledger.
+-
+-Serialization, atomic writes, and load/append of ``.skillcheck-history.json``
+-live here, separated from the model, regression, and rendering logic in
+-``history.py``. ``history.py`` re-exports ``load_ledger``, ``save_ledger``, and
+-``append_run`` so ``from tracemantle.core.history import load_ledger`` still works.
+-
+-The legacy save/append API remains single-writer compatibility code. New CLI
+-writes use immutable per-run records in history_store outside the bundle.
+-Ordinary reads never remove temporary files or migrate user data.
+-
+-Module dependency rule: imports only from stdlib plus the ``history`` model and
+-the ``parser`` sibling module. No ``agents`` imports. No ``cli`` imports.
+-"""
+-
++"""Deprecated compatibility import; use ``tracemantle.history`` directly."""
+ from __future__ import annotations
+ 
+-import json
+-import os
+-import tempfile
+-from pathlib import Path
+-from typing import Any
+-
+-from tracemantle.core.history import (
+-    LEDGER_SCHEMA_VERSION,
+-    Ledger,
+-    LedgerEntry,
+-    LedgerError,
+-    ResultCounts,
+-    RunAgents,
+-    ValidationModes,
+-    _entry_to_dict,
++from tracemantle.history.io import (  # noqa: F401
++    _entry_from_dict,
++    append_run,
++    load_ledger,
++    save_ledger,
+ )
+-from tracemantle.io_limits import MAX_LEDGER_BYTES, read_guarded_text
+-from tracemantle.parser import ParsedSkill
+-
+-
+-def _entry_from_dict(data: Any, path: Path) -> LedgerEntry:
+-    """Deserialize a LedgerEntry from a dict. Raises LedgerError on missing keys."""
+-    try:
+-        if not isinstance(data, dict):
+-            raise LedgerError(f"Malformed history entry at {path}: expected an object.")
+-        for name in ('timestamp_utc', 'skillcheck_version', 'skill_content_hash'):
+-            if not isinstance(data[name], str) or not data[name]:
+-                raise LedgerError(f"History {name} must be a nonempty string.")
+-        from datetime import datetime
+-        try:
+-            timestamp = datetime.fromisoformat(data['timestamp_utc'].replace('Z', '+00:00'))
+-            if timestamp.tzinfo is None:
+-                raise ValueError('timezone is missing')
+-        except ValueError as exc:
+-            raise LedgerError(f"Invalid history timestamp_utc: {exc}") from exc
+-        if type(data['exit_code']) is not int or data['exit_code'] not in (0, 1, 2, 3):
+-            raise LedgerError('History exit_code must be an integer from 0 to 3.')
+-        for section in ('validation_modes', 'agents', 'result'):
+-            if not isinstance(data[section], dict):
+-                raise LedgerError(f'History {section} must be an object.')
+-        for key in ('symbolic', 'critique', 'graph'):
+-            if type(data['validation_modes'][key]) is not bool:
+-                raise LedgerError(f'History validation_modes.{key} must be a boolean.')
+-        for key in ('error', 'warning', 'info'):
+-            if type(data['result'][key]) is not int or data['result'][key] < 0:
+-                raise LedgerError(f'History result.{key} must be a nonnegative integer.')
+-        if type(data['result']['valid']) is not bool or data['result']['valid'] != (data['result']['error'] == 0):
+-            raise LedgerError('History result.valid must be a boolean consistent with error counts.')
+-        for key in ('critique_agent', 'graph_agent'):
+-            if data['agents'][key] is not None and not isinstance(data['agents'][key], str):
+-                raise LedgerError(f'History agents.{key} must be a string or null.')
+-        modes_d = data["validation_modes"]
+-        agents_d = data["agents"]
+-        result_d = data["result"]
+-        return LedgerEntry(
+-            timestamp_utc=data["timestamp_utc"],
+-            skillcheck_version=data["skillcheck_version"],
+-            skill_content_hash=data["skill_content_hash"],
+-            validation_modes=ValidationModes(
+-                symbolic=modes_d["symbolic"],
+-                critique=modes_d["critique"],
+-                graph=modes_d["graph"],
+-            ),
+-            agents=RunAgents(
+-                critique_agent=agents_d["critique_agent"],
+-                graph_agent=agents_d["graph_agent"],
+-            ),
+-            result=ResultCounts(
+-                error=result_d["error"],
+-                warning=result_d["warning"],
+-                info=result_d["info"],
+-                valid=result_d["valid"],
+-            ),
+-            exit_code=data["exit_code"],
+-        )
+-    except KeyError as exc:
+-        raise LedgerError(
+-            f"Ledger at {path} is missing required field {exc}. "
+-            f"The file may be from a different schema version or is corrupt. "
+-            f"Delete it and re-run with --history to start fresh."
+-        ) from exc
+-
+-
+-def load_ledger(path: Path) -> Ledger | None:
+-    """Load and parse the ledger file at *path*.
+-
+-    Args:
+-        path: Path to a ``.skillcheck-history.json`` file.
+-
+-    Returns:
+-        Parsed Ledger, or None if the file does not exist.
+-
+-    Raises:
+-        LedgerError: If the file exists but cannot be read or parsed.
+-    """
+-    if not path.exists():
+-        return None
+-    if path.is_dir():
+-        from tracemantle.history_store import iter_history_records
+-        entries = [entry for _, entry in iter_history_records(path)]
+-        return Ledger(LEDGER_SCHEMA_VERSION, str(path), tuple(sorted(entries, key=lambda e: e.timestamp_utc)))
+-    try:
+-        raw = read_guarded_text(path, max_bytes=MAX_LEDGER_BYTES, what="Ledger", error_cls=LedgerError)
+-    except OSError as exc:
+-        raise LedgerError(
+-            f"Cannot read ledger at {path}: {exc}. "
+-            f"Check file permissions and retry."
+-        ) from exc
+-    try:
+-        from tracemantle.storage import EvidenceError, decode_json
+-        data = decode_json(raw, max_bytes=MAX_LEDGER_BYTES)
+-    except EvidenceError as exc:
+-        raise LedgerError(
+-            f"Ledger at {path} is not valid JSON: {exc}. "
+-            f"The file may be corrupt. Delete it and re-run with --history to start fresh."
+-        ) from exc
+-
+-    if not isinstance(data, dict):
+-        raise LedgerError(
+-            f"Ledger at {path} must be a JSON object, got {type(data).__name__}. "
+-            f"The file is corrupt. Delete it and re-run with --history to start fresh."
+-        )
+-
+-    try:
+-        version = data["version"]
+-        skill_path = data["skill_path"]
+-        runs_raw = data["runs"]
+-    except KeyError as exc:
+-        raise LedgerError(
+-            f"Ledger at {path} is missing top-level field {exc}. "
+-            f"The file may be incomplete or from an incompatible schema version."
+-        ) from exc
+-
+-    if type(version) is not int or version != LEDGER_SCHEMA_VERSION:
+-        raise LedgerError(
+-            f"Ledger at {path} has schema version {version!r}, but this tracemantle "
+-            f"expects version {LEDGER_SCHEMA_VERSION}. Delete it and re-run with "
+-            f"--history to start fresh under the current schema."
+-        )
+-
+-    if not isinstance(skill_path, str):
+-        raise LedgerError("History skill_path must be a string.")
+-    if not isinstance(runs_raw, list):
+-        raise LedgerError(
+-            f"Ledger at {path} field 'runs' must be a list, got {type(runs_raw).__name__}. "
+-            f"The file is corrupt. Delete it and re-run with --history to start fresh."
+-        )
+-
+-    try:
+-        runs = tuple(_entry_from_dict(r, path) for r in runs_raw)
+-    except TypeError as exc:
+-        raise LedgerError(
+-            f"Ledger at {path} contains a malformed run entry: {exc}. "
+-            f"The file is corrupt. Delete it and re-run with --history to start fresh."
+-        ) from exc
+-    return Ledger(version=version, skill_path=skill_path, runs=runs)
+-
+-
+-def save_ledger(path: Path, ledger: Ledger) -> None:
+-    """Serialize and write the ledger atomically via tempfile + rename.
+-
+-    Writes to a temp file in the same directory as *path*, then uses
+-    ``os.replace`` (atomic on POSIX; best-effort on Windows). If the
+-    directory does not exist, the OS error propagates as LedgerError.
+-
+-    Args:
+-        path: Destination path for the ledger file.
+-        ledger: Ledger to serialize.
+-
+-    Raises:
+-        LedgerError: If the write or rename fails.
+-    """
+-    payload = {
+-        "version": ledger.version,
+-        "skill_path": ledger.skill_path,
+-        "runs": [_entry_to_dict(e) for e in ledger.runs],
+-    }
+-    serialized = json.dumps(payload, indent=2, sort_keys=False, ensure_ascii=False)
+-
+-    try:
+-        fd, tmp_path = tempfile.mkstemp(dir=path.parent, prefix=".skillcheck-tmp-")
+-        try:
+-            with os.fdopen(fd, "w", encoding="utf-8") as f:
+-                f.write(serialized)
+-                f.write("\n")
+-                # Force the bytes to disk before the rename so a crash between
+-                # replace and the OS flushing its cache cannot leave a truncated
+-                # ledger. The temp fd is fsynced while still open.
+-                f.flush()
+-                os.fsync(f.fileno())
+-            os.replace(tmp_path, path)
+-        except Exception:
+-            try:
+-                os.unlink(tmp_path)
+-            except OSError:
+-                pass
+-            raise
+-    except OSError as exc:
+-        raise LedgerError(
+-            f"Cannot write ledger to {path}: {exc}. "
+-            f"Check directory permissions or disk space."
+-        ) from exc
+-
+-
+-def append_run(
+-    path: Path,
+-    skill: ParsedSkill,
+-    entry: LedgerEntry,
+-) -> Ledger:
+-    """Load or initialize the ledger, append the entry, save, and return the new ledger.
+-
+-    On first call (no ledger file), initializes with ``version=LEDGER_SCHEMA_VERSION``
+-    and ``skill_path`` set to the relative path of the skill from the ledger directory.
+-
+-    On subsequent calls, verifies that the existing ledger's ``skill_path`` matches
+-    before appending. A mismatch means the ledger file landed in the wrong place.
+-
+-    Args:
+-        path: Path to the ``.skillcheck-history.json`` ledger file.
+-        skill: The skill that was validated (used to derive ``skill_path``).
+-        entry: The entry to append.
+-
+-    Returns:
+-        The updated Ledger with the new entry appended.
+-
+-    Raises:
+-        LedgerError: If the existing ledger is for a different skill, or if any
+-            I/O operation fails.
+-    """
+-    existing = load_ledger(path)
+-
+-    try:
+-        relative_skill_path = str(skill.path.relative_to(path.parent))
+-    except ValueError:
+-        # Skill is not beneath the ledger directory (e.g., different drive on Windows).
+-        # Fall back to the absolute path as a string so the ledger is still useful.
+-        relative_skill_path = str(skill.path)
+-
+-    if existing is None:
+-        ledger = Ledger(
+-            version=LEDGER_SCHEMA_VERSION,
+-            skill_path=relative_skill_path,
+-            runs=(entry,),
+-        )
+-    else:
+-        if existing.skill_path != relative_skill_path:
+-            raise LedgerError(
+-                f"Ledger at {path} is for skill '{existing.skill_path}' but the current skill "
+-                f"resolves to '{relative_skill_path}'. The ledger file may have been moved or "
+-                f"the skill was renamed. Delete the ledger and re-run with --history to restart."
+-            )
+-        ledger = Ledger(
+-            version=existing.version,
+-            skill_path=existing.skill_path,
+-            runs=existing.runs + (entry,),
+-        )
+ 
+-    save_ledger(path, ledger)
+-    return ledger
++__all__ = [
++    "_entry_from_dict",
++    "append_run",
++    "load_ledger",
++    "save_ledger",
++]
+diff --git a/src/tracemantle/history/__init__.py b/src/tracemantle/history/__init__.py
+new file mode 100644
+index 0000000..9dcacd3
+--- /dev/null
++++ b/src/tracemantle/history/__init__.py
+@@ -0,0 +1,44 @@
++"""History I/O and store for tracemantle.
++
++This package contains the ledger filesystem I/O (``io``) and the new
++immutable record store (``store``).  Public symbols are re-exported at the
++legacy paths so existing imports continue to work:
++
++* ``from tracemantle.core.history_io import load_ledger`` → shim in
++  ``tracemantle/core/history_io.py``
++* ``from tracemantle.history_store import append_history`` → shim in
++  ``tracemantle/history_store.py``
++"""
++
++from __future__ import annotations
++
++# Re-export everything from io (the former history_io module)
++from tracemantle.history.io import (
++    _entry_from_dict,
++    append_run,
++    load_ledger,
++    save_ledger,
++)
++
++# Re-export everything from store (the former history_store module)
++from tracemantle.history.store import (
++    append_history,
++    comparable_runs,
++    history_identity,
++    iter_history_records,
++    migrate_legacy,
++    read_history_record,
++)
++
++__all__ = [
++    "_entry_from_dict",
++    "append_history",
++    "append_run",
++    "comparable_runs",
++    "history_identity",
++    "iter_history_records",
++    "load_ledger",
++    "migrate_legacy",
++    "read_history_record",
++    "save_ledger",
++]
+diff --git a/src/tracemantle/history/io.py b/src/tracemantle/history/io.py
+new file mode 100644
+index 0000000..0b96fbf
+--- /dev/null
++++ b/src/tracemantle/history/io.py
+@@ -0,0 +1,276 @@
++"""Filesystem I/O for the validation history ledger.
++
++Serialization, atomic writes, and load/append of ``.skillcheck-history.json``
++live here, separated from the model, regression, and rendering logic in
++``history.py``. ``history.py`` re-exports ``load_ledger``, ``save_ledger``, and
++``append_run`` so ``from tracemantle.core.history import load_ledger`` still works.
++
++The legacy save/append API remains single-writer compatibility code. New CLI
++writes use immutable per-run records in history_store outside the bundle.
++Ordinary reads never remove temporary files or migrate user data.
++
++Module dependency rule: imports only from stdlib plus the ``history`` model and
++the ``parser`` sibling module. No ``agents`` imports. No ``cli`` imports.
++"""
++
++from __future__ import annotations
++
++import json
++import os
++import tempfile
++from pathlib import Path
++from typing import Any
++
++from tracemantle.core.history import (
++    LEDGER_SCHEMA_VERSION,
++    Ledger,
++    LedgerEntry,
++    LedgerError,
++    ResultCounts,
++    RunAgents,
++    ValidationModes,
++    _entry_to_dict,
++)
++from tracemantle.io_limits import MAX_LEDGER_BYTES, read_guarded_text
++from tracemantle.parser import ParsedSkill
++
++
++def _entry_from_dict(data: Any, path: Path) -> LedgerEntry:
++    """Deserialize a LedgerEntry from a dict. Raises LedgerError on missing keys."""
++    try:
++        if not isinstance(data, dict):
++            raise LedgerError(f"Malformed history entry at {path}: expected an object.")
++        for name in ('timestamp_utc', 'skillcheck_version', 'skill_content_hash'):
++            if not isinstance(data[name], str) or not data[name]:
++                raise LedgerError(f"History {name} must be a nonempty string.")
++        from datetime import datetime
++        try:
++            timestamp = datetime.fromisoformat(data['timestamp_utc'].replace('Z', '+00:00'))
++            if timestamp.tzinfo is None:
++                raise ValueError('timezone is missing')
++        except ValueError as exc:
++            raise LedgerError(f"Invalid history timestamp_utc: {exc}") from exc
++        if type(data['exit_code']) is not int or data['exit_code'] not in (0, 1, 2, 3):
++            raise LedgerError('History exit_code must be an integer from 0 to 3.')
++        for section in ('validation_modes', 'agents', 'result'):
++            if not isinstance(data[section], dict):
++                raise LedgerError(f'History {section} must be an object.')
++        for key in ('symbolic', 'critique', 'graph'):
++            if type(data['validation_modes'][key]) is not bool:
++                raise LedgerError(f'History validation_modes.{key} must be a boolean.')
++        for key in ('error', 'warning', 'info'):
++            if type(data['result'][key]) is not int or data['result'][key] < 0:
++                raise LedgerError(f'History result.{key} must be a nonnegative integer.')
++        if type(data['result']['valid']) is not bool or data['result']['valid'] != (data['result']['error'] == 0):
++            raise LedgerError('History result.valid must be a boolean consistent with error counts.')
++        for key in ('critique_agent', 'graph_agent'):
++            if data['agents'][key] is not None and not isinstance(data['agents'][key], str):
++                raise LedgerError(f'History agents.{key} must be a string or null.')
++        modes_d = data["validation_modes"]
++        agents_d = data["agents"]
++        result_d = data["result"]
++        return LedgerEntry(
++            timestamp_utc=data["timestamp_utc"],
++            skillcheck_version=data["skillcheck_version"],
++            skill_content_hash=data["skill_content_hash"],
++            validation_modes=ValidationModes(
++                symbolic=modes_d["symbolic"],
++                critique=modes_d["critique"],
++                graph=modes_d["graph"],
++            ),
++            agents=RunAgents(
++                critique_agent=agents_d["critique_agent"],
++                graph_agent=agents_d["graph_agent"],
++            ),
++            result=ResultCounts(
++                error=result_d["error"],
++                warning=result_d["warning"],
++                info=result_d["info"],
++                valid=result_d["valid"],
++            ),
++            exit_code=data["exit_code"],
++        )
++    except KeyError as exc:
++        raise LedgerError(
++            f"Ledger at {path} is missing required field {exc}. "
++            f"The file may be from a different schema version or is corrupt. "
++            f"Delete it and re-run with --history to start fresh."
++        ) from exc
++
++
++def load_ledger(path: Path) -> Ledger | None:
++    """Load and parse the ledger file at *path*.
++
++    Args:
++        path: Path to a ``.skillcheck-history.json`` file.
++
++    Returns:
++        Parsed Ledger, or None if the file does not exist.
++
++    Raises:
++        LedgerError: If the file exists but cannot be read or parsed.
++    """
++    if not path.exists():
++        return None
++    if path.is_dir():
++        from tracemantle.history.store import iter_history_records
++        entries = [entry for _, entry in iter_history_records(path)]
++        return Ledger(LEDGER_SCHEMA_VERSION, str(path), tuple(sorted(entries, key=lambda e: e.timestamp_utc)))
++    try:
++        raw = read_guarded_text(path, max_bytes=MAX_LEDGER_BYTES, what="Ledger", error_cls=LedgerError)
++    except OSError as exc:
++        raise LedgerError(
++            f"Cannot read ledger at {path}: {exc}. "
++            f"Check file permissions and retry."
++        ) from exc
++    try:
++        from tracemantle.storage import EvidenceError, decode_json
++        data = decode_json(raw, max_bytes=MAX_LEDGER_BYTES)
++    except EvidenceError as exc:
++        raise LedgerError(
++            f"Ledger at {path} is not valid JSON: {exc}. "
++            f"The file may be corrupt. Delete it and re-run with --history to start fresh."
++        ) from exc
++
++    if not isinstance(data, dict):
++        raise LedgerError(
++            f"Ledger at {path} must be a JSON object, got {type(data).__name__}. "
++            f"The file is corrupt. Delete it and re-run with --history to start fresh."
++        )
++
++    try:
++        version = data["version"]
++        skill_path = data["skill_path"]
++        runs_raw = data["runs"]
++    except KeyError as exc:
++        raise LedgerError(
++            f"Ledger at {path} is missing top-level field {exc}. "
++            f"The file may be incomplete or from an incompatible schema version."
++        ) from exc
++
++    if type(version) is not int or version != LEDGER_SCHEMA_VERSION:
++        raise LedgerError(
++            f"Ledger at {path} has schema version {version!r}, but this tracemantle "
++            f"expects version {LEDGER_SCHEMA_VERSION}. Delete it and re-run with "
++            f"--history to start fresh under the current schema."
++        )
++
++    if not isinstance(skill_path, str):
++        raise LedgerError("History skill_path must be a string.")
++    if not isinstance(runs_raw, list):
++        raise LedgerError(
++            f"Ledger at {path} field 'runs' must be a list, got {type(runs_raw).__name__}. "
++            f"The file is corrupt. Delete it and re-run with --history to start fresh."
++        )
++
++    try:
++        runs = tuple(_entry_from_dict(r, path) for r in runs_raw)
++    except TypeError as exc:
++        raise LedgerError(
++            f"Ledger at {path} contains a malformed run entry: {exc}. "
++            f"The file is corrupt. Delete it and re-run with --history to start fresh."
++        ) from exc
++    return Ledger(version=version, skill_path=skill_path, runs=runs)
++
++
++def save_ledger(path: Path, ledger: Ledger) -> None:
++    """Serialize and write the ledger atomically via tempfile + rename.
++
++    Writes to a temp file in the same directory as *path*, then uses
++    ``os.replace`` (atomic on POSIX; best-effort on Windows). If the
++    directory does not exist, the OS error propagates as LedgerError.
++
++    Args:
++        path: Destination path for the ledger file.
++        ledger: Ledger to serialize.
++
++    Raises:
++        LedgerError: If the write or rename fails.
++    """
++    payload = {
++        "version": ledger.version,
++        "skill_path": ledger.skill_path,
++        "runs": [_entry_to_dict(e) for e in ledger.runs],
++    }
++    serialized = json.dumps(payload, indent=2, sort_keys=False, ensure_ascii=False)
++
++    try:
++        fd, tmp_path = tempfile.mkstemp(dir=path.parent, prefix=".skillcheck-tmp-")
++        try:
++            with os.fdopen(fd, "w", encoding="utf-8") as f:
++                f.write(serialized)
++                f.write("\n")
++                # Force the bytes to disk before the rename so a crash between
++                # replace and the OS flushing its cache cannot leave a truncated
++                # ledger. The temp fd is fsynced while still open.
++                f.flush()
++                os.fsync(f.fileno())
++            os.replace(tmp_path, path)
++        except Exception:
++            try:
++                os.unlink(tmp_path)
++            except OSError:
++                pass
++            raise
++    except OSError as exc:
++        raise LedgerError(
++            f"Cannot write ledger to {path}: {exc}. "
++            f"Check directory permissions or disk space."
++        ) from exc
++
++
++def append_run(
++    path: Path,
++    skill: ParsedSkill,
++    entry: LedgerEntry,
++) -> Ledger:
++    """Load or initialize the ledger, append the entry, save, and return the new ledger.
++
++    On first call (no ledger file), initializes with ``version=LEDGER_SCHEMA_VERSION``
++    and ``skill_path`` set to the relative path of the skill from the ledger directory.
++
++    On subsequent calls, verifies that the existing ledger's ``skill_path`` matches
++    before appending. A mismatch means the ledger file landed in the wrong place.
++
++    Args:
++        path: Path to the ``.skillcheck-history.json`` ledger file.
++        skill: The skill that was validated (used to derive ``skill_path``).
++        entry: The entry to append.
++
++    Returns:
++        The updated Ledger with the new entry appended.
++
++    Raises:
++        LedgerError: If the existing ledger is for a different skill, or if any
++            I/O operation fails.
++    """
++    existing = load_ledger(path)
++
++    try:
++        relative_skill_path = str(skill.path.relative_to(path.parent))
++    except ValueError:
++        # Skill is not beneath the ledger directory (e.g., different drive on Windows).
++        # Fall back to the absolute path as a string so the ledger is still useful.
++        relative_skill_path = str(skill.path)
++
++    if existing is None:
++        ledger = Ledger(
++            version=LEDGER_SCHEMA_VERSION,
++            skill_path=relative_skill_path,
++            runs=(entry,),
++        )
++    else:
++        if existing.skill_path != relative_skill_path:
++            raise LedgerError(
++                f"Ledger at {path} is for skill '{existing.skill_path}' but the current skill "
++                f"resolves to '{relative_skill_path}'. The ledger file may have been moved or "
++                f"the skill was renamed. Delete the ledger and re-run with --history to restart."
++            )
++        ledger = Ledger(
++            version=existing.version,
++            skill_path=existing.skill_path,
++            runs=existing.runs + (entry,),
++        )
++
++    save_ledger(path, ledger)
++    return ledger
+diff --git a/src/tracemantle/history/store.py b/src/tracemantle/history/store.py
+new file mode 100644
+index 0000000..b5ee043
+--- /dev/null
++++ b/src/tracemantle/history/store.py
+@@ -0,0 +1,82 @@
++"""New history writes never update a shared ledger or alter a skill bundle."""
++from __future__ import annotations
++
++import re
++import uuid
++from collections.abc import Iterator
++from dataclasses import asdict
++from itertools import islice
++from pathlib import Path
++from typing import Any
++
++from tracemantle._version import __version__
++from tracemantle.bundle import create_manifest
++from tracemantle.core.history import LedgerEntry, LedgerError, _entry_to_dict
++from tracemantle.history.io import load_ledger
++from tracemantle.history.io import _entry_from_dict
++from tracemantle.io_limits import MAX_LEDGER_BYTES, MAX_SCAN_BYTES, read_bounded_bytes
++from tracemantle.parser import ParsedSkill
++from tracemantle.storage import EvidenceError, decode_json, digest, outside_bundle, put_bytes, put_record
++
++
++def history_identity(skill: ParsedSkill, options: dict[str, Any]) -> tuple[str, str]:
++    manifest = create_manifest(skill.path.parent, document=skill)
++    return manifest.sha256, digest({'document': asdict(skill.settings), 'options': options, 'checker_version': __version__})
++
++
++def append_history(root: Path, skill: ParsedSkill, entry: LedgerEntry, identity: tuple[str, str]) -> Path:
++    outside_bundle(root, skill.path.parent)
++    return put_record(root, {'schema_version': 2, 'kind': 'validation-history', 'run_id': uuid.uuid4().hex,
++                            'bundle_sha256': identity[0], 'configuration_sha256': identity[1], 'entry': _entry_to_dict(entry)})
++
++
++def read_history_record(path: Path, *, max_bytes: int = MAX_LEDGER_BYTES) -> tuple[dict[str, Any], LedgerEntry, int]:
++    try:
++        raw = read_bounded_bytes(path, max_bytes=max_bytes, what="History record", error_cls=EvidenceError)
++        data = decode_json(raw, max_bytes=max_bytes)
++        fields = {'schema_version', 'kind', 'run_id', 'bundle_sha256', 'configuration_sha256', 'entry'}
++        if not isinstance(data, dict) or set(data) != fields or type(data['schema_version']) is not int or data['schema_version'] != 2 or data['kind'] != 'validation-history':
++            raise EvidenceError('Expected exactly the version-two validation-history fields.')
++        if not isinstance(data['run_id'], str) or not data['run_id'] or len(data['run_id']) > 128:
++            raise EvidenceError('History run_id must be a nonempty bounded string.')
++        for field in ('bundle_sha256', 'configuration_sha256'):
++            if not isinstance(data[field], str) or not re.fullmatch('[0-9a-f]{64}', data[field]):
++                raise EvidenceError(f'History {field} requires a full SHA-256 digest.')
++        if path.stem != digest(data):
++            raise EvidenceError('History filename does not match its immutable content digest.')
++        return data, _entry_from_dict(data['entry'], path), len(raw)
++    except EvidenceError as exc:
++        raise LedgerError(f'Malformed history record at {path}: {exc}. Preserve it for inspection.') from exc
++
++
++def iter_history_records(root: Path) -> Iterator[tuple[dict[str, Any], LedgerEntry]]:
++    paths = sorted(islice(root.glob('*.json'), 10001)) if root.is_dir() else []
++    if len(paths) > 10000:
++        raise LedgerError('History exceeds the 10000-record limit; archive older records.')
++    total = 0
++    for path in paths:
++        data, entry, size = read_history_record(path, max_bytes=min(MAX_LEDGER_BYTES, MAX_SCAN_BYTES - total))
++        total += size
++        yield data, entry
++
++
++def comparable_runs(root: Path, identity: tuple[str, str]) -> tuple[LedgerEntry, ...]:
++    runs = [entry for data, entry in iter_history_records(root)
++            if (data['bundle_sha256'], data['configuration_sha256']) == identity]
++    return tuple(sorted(runs, key=lambda r: r.timestamp_utc))
++
++
++def migrate_legacy(source: Path, destination: Path) -> dict[str, object]:
++    outside_bundle(destination, source.parent)
++    ledger = load_ledger(source)
++    if ledger is None:
++        raise EvidenceError(f'Legacy ledger {source} does not exist.')
++    raw = read_bounded_bytes(source, max_bytes=MAX_LEDGER_BYTES, what='Legacy history', error_cls=EvidenceError)
++    artifact = put_bytes(destination / 'sources', raw)
++    records = []
++    for index, entry in enumerate(ledger.runs):
++        record = {'schema_version': 2, 'kind': 'legacy-history', 'source_sha256': artifact.stem,
++                  'source_index': index, 'entry': _entry_to_dict(entry), 'comparison_state': 'unknown',
++                  'reason': 'Version-one history lacks bundle, checker, fixture and execution identities.'}
++        records.append(str(put_record(destination / 'records', record)))
++    return {'source_preserved': str(source), 'source_copy': str(artifact), 'records': records, 'state': 'unknown'}
+diff --git a/src/tracemantle/history_store.py b/src/tracemantle/history_store.py
+index 6238c60..13e4cb6 100644
+--- a/src/tracemantle/history_store.py
++++ b/src/tracemantle/history_store.py
+@@ -1,81 +1,20 @@
+-"""New history writes never update a shared ledger or alter a skill bundle."""
++"""Deprecated compatibility import; use ``tracemantle.history`` directly."""
+ from __future__ import annotations
+ 
+-import re
+-import uuid
+-from collections.abc import Iterator
+-from dataclasses import asdict
+-from itertools import islice
+-from pathlib import Path
+-from typing import Any
+-
+-from tracemantle import __version__
+-from tracemantle.bundle import create_manifest
+-from tracemantle.core.history import LedgerEntry, LedgerError, _entry_to_dict, load_ledger
+-from tracemantle.core.history_io import _entry_from_dict
+-from tracemantle.io_limits import MAX_LEDGER_BYTES, MAX_SCAN_BYTES, read_bounded_bytes
+-from tracemantle.parser import ParsedSkill
+-from tracemantle.storage import EvidenceError, decode_json, digest, outside_bundle, put_bytes, put_record
+-
+-
+-def history_identity(skill: ParsedSkill, options: dict[str, Any]) -> tuple[str, str]:
+-    manifest = create_manifest(skill.path.parent, document=skill)
+-    return manifest.sha256, digest({'document': asdict(skill.settings), 'options': options, 'checker_version': __version__})
+-
+-
+-def append_history(root: Path, skill: ParsedSkill, entry: LedgerEntry, identity: tuple[str, str]) -> Path:
+-    outside_bundle(root, skill.path.parent)
+-    return put_record(root, {'schema_version': 2, 'kind': 'validation-history', 'run_id': uuid.uuid4().hex,
+-                            'bundle_sha256': identity[0], 'configuration_sha256': identity[1], 'entry': _entry_to_dict(entry)})
+-
+-
+-def read_history_record(path: Path, *, max_bytes: int = MAX_LEDGER_BYTES) -> tuple[dict[str, Any], LedgerEntry, int]:
+-    try:
+-        raw = read_bounded_bytes(path, max_bytes=max_bytes, what="History record", error_cls=EvidenceError)
+-        data = decode_json(raw, max_bytes=max_bytes)
+-        fields = {'schema_version', 'kind', 'run_id', 'bundle_sha256', 'configuration_sha256', 'entry'}
+-        if not isinstance(data, dict) or set(data) != fields or type(data['schema_version']) is not int or data['schema_version'] != 2 or data['kind'] != 'validation-history':
+-            raise EvidenceError('Expected exactly the version-two validation-history fields.')
+-        if not isinstance(data['run_id'], str) or not data['run_id'] or len(data['run_id']) > 128:
+-            raise EvidenceError('History run_id must be a nonempty bounded string.')
+-        for field in ('bundle_sha256', 'configuration_sha256'):
+-            if not isinstance(data[field], str) or not re.fullmatch('[0-9a-f]{64}', data[field]):
+-                raise EvidenceError(f'History {field} requires a full SHA-256 digest.')
+-        if path.stem != digest(data):
+-            raise EvidenceError('History filename does not match its immutable content digest.')
+-        return data, _entry_from_dict(data['entry'], path), len(raw)
+-    except EvidenceError as exc:
+-        raise LedgerError(f'Malformed history record at {path}: {exc}. Preserve it for inspection.') from exc
+-
+-
+-def iter_history_records(root: Path) -> Iterator[tuple[dict[str, Any], LedgerEntry]]:
+-    paths = sorted(islice(root.glob('*.json'), 10001)) if root.is_dir() else []
+-    if len(paths) > 10000:
+-        raise LedgerError('History exceeds the 10000-record limit; archive older records.')
+-    total = 0
+-    for path in paths:
+-        data, entry, size = read_history_record(path, max_bytes=min(MAX_LEDGER_BYTES, MAX_SCAN_BYTES - total))
+-        total += size
+-        yield data, entry
+-
+-
+-def comparable_runs(root: Path, identity: tuple[str, str]) -> tuple[LedgerEntry, ...]:
+-    runs = [entry for data, entry in iter_history_records(root)
+-            if (data['bundle_sha256'], data['configuration_sha256']) == identity]
+-    return tuple(sorted(runs, key=lambda r: r.timestamp_utc))
+-
+-
+-def migrate_legacy(source: Path, destination: Path) -> dict[str, object]:
+-    outside_bundle(destination, source.parent)
+-    ledger = load_ledger(source)
+-    if ledger is None:
+-        raise EvidenceError(f'Legacy ledger {source} does not exist.')
+-    raw = read_bounded_bytes(source, max_bytes=MAX_LEDGER_BYTES, what='Legacy history', error_cls=EvidenceError)
+-    artifact = put_bytes(destination / 'sources', raw)
+-    records = []
+-    for index, entry in enumerate(ledger.runs):
+-        record = {'schema_version': 2, 'kind': 'legacy-history', 'source_sha256': artifact.stem,
+-                  'source_index': index, 'entry': _entry_to_dict(entry), 'comparison_state': 'unknown',
+-                  'reason': 'Version-one history lacks bundle, checker, fixture and execution identities.'}
+-        records.append(str(put_record(destination / 'records', record)))
+-    return {'source_preserved': str(source), 'source_copy': str(artifact), 'records': records, 'state': 'unknown'}
++from tracemantle.history.store import (  # noqa: F401
++    append_history,
++    comparable_runs,
++    history_identity,
++    iter_history_records,
++    migrate_legacy,
++    read_history_record,
++)
++
++__all__ = [
++    "append_history",
++    "comparable_runs",
++    "history_identity",
++    "iter_history_records",
++    "migrate_legacy",
++    "read_history_record",
++]
+diff --git a/src/tracemantle/product_commands.py b/src/tracemantle/product_commands.py
+index 40a1130..f56b2b6 100644
+--- a/src/tracemantle/product_commands.py
++++ b/src/tracemantle/product_commands.py
+@@ -14,7 +14,7 @@ from tracemantle.core.history import LedgerError
+ from tracemantle.display import terminal
+ from tracemantle.evidence import evidence_from_dict
+ from tracemantle.formatters import _escape_data, _escape_property
+-from tracemantle.history_store import migrate_legacy
++from tracemantle.history.store import migrate_legacy
+ from tracemantle.io_limits import MAX_INGEST_BYTES, MAX_SCAN_BYTES, read_bounded_bytes
+ from tracemantle.policy import load_trusted_policy
+ from tracemantle.promptfoo import import_promptfoo
+diff --git a/tests/history/__init__.py b/tests/history/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/tests/history/test_io.py b/tests/history/test_io.py
+new file mode 100644
+index 0000000..3746d42
+--- /dev/null
++++ b/tests/history/test_io.py
+@@ -0,0 +1,276 @@
++"""Tests for ledger I/O: load_ledger, save_ledger, append_run."""
++
++from __future__ import annotations
++
++import os
++import re
++import stat
++import sys
++from datetime import datetime, timezone
++from pathlib import Path
++
++import pytest
++
++from tracemantle.core.history import (
++    Ledger,
++    LedgerEntry,
++    LedgerError,
++    RunAgents,
++    ValidationModes,
++    append_run,
++    build_entry,
++    load_ledger,
++    save_ledger,
++)
++from tracemantle.parser import ParsedSkill
++from tracemantle.result import ValidationResult
++
++# ---------------------------------------------------------------------------
++# Helpers
++# ---------------------------------------------------------------------------
++
++
++def _make_skill(path: Path, raw: str = "---\nname: t\ndescription: Does x.\n---\n") -> ParsedSkill:
++    return ParsedSkill(
++        path=path,
++        frontmatter={"name": "t", "description": "Does x."},
++        body="",
++        body_lines=0,
++        raw_text=raw,
++    )
++
++
++def _make_result(path: Path, valid: bool = True) -> ValidationResult:
++    return ValidationResult(path=path, diagnostics=[])
++
++
++def _fixed_entry(path: Path, ts: str = "2026-04-24T10:00:00Z") -> LedgerEntry:
++    skill = _make_skill(path)
++    result = _make_result(path)
++    now = datetime(2026, 4, 24, 10, 0, 0, tzinfo=timezone.utc)
++    return build_entry(
++        skill,
++        result,
++        ValidationModes(symbolic=True, critique=False, graph=False),
++        RunAgents(critique_agent=None, graph_agent=None),
++        exit_code=0,
++        version="0.2.0",
++        now=now,
++    )
++
++
++# ---------------------------------------------------------------------------
++# load_ledger
++# ---------------------------------------------------------------------------
++
++
++def test_load_returns_none_for_missing_file(tmp_path: Path):
++    lp = tmp_path / ".skillcheck-history.json"
++    assert load_ledger(lp) is None
++
++
++def test_load_raises_on_malformed_json(tmp_path: Path):
++    lp = tmp_path / ".skillcheck-history.json"
++    lp.write_text("{ not valid json }", encoding="utf-8")
++    with pytest.raises(LedgerError, match="not valid JSON"):
++        load_ledger(lp)
++
++
++def test_load_raises_on_missing_top_level_field(tmp_path: Path):
++    lp = tmp_path / ".skillcheck-history.json"
++    lp.write_text('{"version": 1, "runs": []}', encoding="utf-8")
++    with pytest.raises(LedgerError):
++        load_ledger(lp)
++
++
++def test_load_raises_error_includes_path(tmp_path: Path):
++    lp = tmp_path / ".skillcheck-history.json"
++    lp.write_text("bad json!", encoding="utf-8")
++    with pytest.raises(LedgerError, match=re.escape(str(lp))):
++        load_ledger(lp)
++
++
++def test_load_from_fixture_one_run():
++    lp = Path(__file__).parent.parent / "fixtures" / "history" / "ledger_one_run.json"
++    ledger = load_ledger(lp)
++    assert ledger is not None
++    assert ledger.version == 1
++    assert len(ledger.runs) == 1
++    assert ledger.runs[0].result.valid
++
++
++def test_load_from_fixture_multi_run():
++    lp = Path(__file__).parent.parent / "fixtures" / "history" / "ledger_multi_run_passing.json"
++    ledger = load_ledger(lp)
++    assert ledger is not None
++    assert len(ledger.runs) == 3
++    assert all(r.result.valid for r in ledger.runs)
++
++
++def test_load_from_fixture_malformed_raises():
++    lp = Path(__file__).parent.parent / "fixtures" / "history" / "ledger_malformed.json"
++    with pytest.raises(LedgerError):
++        load_ledger(lp)
++
++
++_HISTORY_FIXTURES = Path(__file__).parent.parent / "fixtures" / "history"
++
++
++def test_load_raises_when_root_is_not_object():
++    with pytest.raises(LedgerError, match="must be a JSON object, got list"):
++        load_ledger(_HISTORY_FIXTURES / "ledger_root_list.json")
++
++
++def test_load_raises_when_runs_is_not_a_list():
++    with pytest.raises(LedgerError, match="field 'runs' must be a list, got str"):
++        load_ledger(_HISTORY_FIXTURES / "ledger_runs_not_list.json")
++
++
++def test_load_raises_on_schema_version_mismatch():
++    with pytest.raises(LedgerError, match="schema version 999, but this tracemantle expects version 1"):
++        load_ledger(_HISTORY_FIXTURES / "ledger_bad_version.json")
++
++
++def test_load_raises_on_malformed_run_entry():
++    with pytest.raises(LedgerError, match="[Mm]alformed.*entry"):
++        load_ledger(_HISTORY_FIXTURES / "ledger_malformed_entry.json")
++
++
++# ---------------------------------------------------------------------------
++# save_ledger (atomic write)
++# ---------------------------------------------------------------------------
++
++
++def test_save_writes_valid_json(tmp_path: Path):
++    import json
++    skill_path = tmp_path / "SKILL.md"
++    entry = _fixed_entry(skill_path)
++    ledger = Ledger(version=1, skill_path="SKILL.md", runs=(entry,))
++    lp = tmp_path / ".skillcheck-history.json"
++    save_ledger(lp, ledger)
++    raw = lp.read_text(encoding="utf-8")
++    data = json.loads(raw)
++    assert data["version"] == 1
++    assert data["skill_path"] == "SKILL.md"
++    assert len(data["runs"]) == 1
++
++
++def test_load_preserves_other_writers_temporary_files(tmp_path: Path):
++    """Read-only history loading must not delete a concurrent writer's temporary files."""
++    lp = tmp_path / ".skillcheck-history.json"
++    save_ledger(lp, Ledger(version=1, skill_path="SKILL.md", runs=()))
++    orphan = tmp_path / ".skillcheck-tmp-orphan"
++    orphan.write_text("partial write", encoding="utf-8")
++    load_ledger(lp)
++    assert orphan.read_text() == "partial write"
++    # The real ledger is untouched.
++    assert load_ledger(lp) is not None
++
++
++@pytest.mark.skipif(sys.platform == "win32", reason="chmod restrictions differ on Windows")
++def test_save_atomic_original_intact_on_failure(tmp_path: Path):
++    """Original ledger survives a failed write (read-only directory)."""
++
++    skill_path = tmp_path / "SKILL.md"
++    entry = _fixed_entry(skill_path)
++    ledger = Ledger(version=1, skill_path="SKILL.md", runs=(entry,))
++    lp = tmp_path / ".skillcheck-history.json"
++    save_ledger(lp, ledger)
++
++    original_content = lp.read_text(encoding="utf-8")
++
++    # Make the directory read-only so a new write attempt will fail.
++    old_mode = tmp_path.stat().st_mode
++    try:
++        os.chmod(tmp_path, stat.S_IRUSR | stat.S_IXUSR)
++        entry2 = _fixed_entry(skill_path)
++        ledger2 = Ledger(version=1, skill_path="SKILL.md", runs=(entry, entry2))
++        with pytest.raises(LedgerError):
++            save_ledger(lp, ledger2)
++    finally:
++        os.chmod(tmp_path, old_mode)
++
++    # Original file must be intact.
++    assert lp.read_text(encoding="utf-8") == original_content
++
++
++def test_save_field_order_matches_schema(tmp_path: Path):
++    """Serialized field order follows dataclass declaration order, not sort_keys."""
++    import json
++    skill_path = tmp_path / "SKILL.md"
++    entry = _fixed_entry(skill_path)
++    ledger = Ledger(version=1, skill_path="SKILL.md", runs=(entry,))
++    lp = tmp_path / ".skillcheck-history.json"
++    save_ledger(lp, ledger)
++    raw = lp.read_text(encoding="utf-8")
++    # Top-level key order
++    data = json.loads(raw)
++    keys = list(data.keys())
++    assert keys == ["version", "skill_path", "runs"]
++    # Run key order
++    run_keys = list(data["runs"][0].keys())
++    expected = ["timestamp_utc", "skillcheck_version", "skill_content_hash",
++                "validation_modes", "agents", "result", "exit_code"]
++    assert run_keys == expected
++
++
++# ---------------------------------------------------------------------------
++# append_run
++# ---------------------------------------------------------------------------
++
++
++def test_append_run_initializes_new_ledger(tmp_path: Path):
++    skill_path = tmp_path / "SKILL.md"
++    skill_path.write_text("---\nname: t\ndescription: D.\n---\n", encoding="utf-8")
++    skill = _make_skill(skill_path)
++    entry = _fixed_entry(skill_path)
++    lp = tmp_path / ".skillcheck-history.json"
++
++    ledger = append_run(lp, skill, entry)
++    assert ledger.version == 1
++    assert len(ledger.runs) == 1
++    assert ledger.runs[0] == entry
++
++
++def test_append_run_preserves_prior_runs(tmp_path: Path):
++    skill_path = tmp_path / "SKILL.md"
++    skill_path.write_text("---\nname: t\ndescription: D.\n---\n", encoding="utf-8")
++    skill = _make_skill(skill_path)
++    lp = tmp_path / ".skillcheck-history.json"
++
++    e1 = _fixed_entry(skill_path)
++    append_run(lp, skill, e1)
++
++    e2 = build_entry(
++        skill,
++        _make_result(skill_path),
++        ValidationModes(symbolic=True, critique=False, graph=False),
++        RunAgents(critique_agent=None, graph_agent=None),
++        exit_code=0,
++        version="0.2.0",
++        now=datetime(2026, 4, 25, 10, 0, 0, tzinfo=timezone.utc),
++    )
++    ledger = append_run(lp, skill, e2)
++    assert len(ledger.runs) == 2
++    assert ledger.runs[0] == e1
++    assert ledger.runs[1] == e2
++
++
++def test_append_run_mismatched_skill_path_raises(tmp_path: Path):
++    skill_path_a = tmp_path / "SKILL.md"
++    skill_path_a.write_text("---\nname: a\ndescription: A.\n---\n", encoding="utf-8")
++    skill_a = _make_skill(skill_path_a)
++    lp = tmp_path / ".skillcheck-history.json"
++    e1 = _fixed_entry(skill_path_a)
++    append_run(lp, skill_a, e1)
++
++    # Now try to append with a skill from a different directory.
++    other_dir = tmp_path / "other"
++    other_dir.mkdir()
++    skill_path_b = other_dir / "SKILL.md"
++    skill_path_b.write_text("---\nname: b\ndescription: B.\n---\n", encoding="utf-8")
++    skill_b = _make_skill(skill_path_b)
++    e2 = _fixed_entry(skill_path_b)
++
++    with pytest.raises(LedgerError, match="skill was renamed"):
++        append_run(lp, skill_b, e2)
+diff --git a/tests/history/test_model.py b/tests/history/test_model.py
+new file mode 100644
+index 0000000..da616c9
+--- /dev/null
++++ b/tests/history/test_model.py
+@@ -0,0 +1,259 @@
++"""Tests for history data model: compute_skill_hash, build_entry, frozen types."""
++
++from __future__ import annotations
++
++import re
++from datetime import datetime, timezone
++from pathlib import Path
++
++import pytest
++
++from tracemantle.core.history import (
++    Ledger,
++    LedgerEntry,
++    ResultCounts,
++    RunAgents,
++    ValidationModes,
++    build_entry,
++    compute_skill_hash,
++    ledger_path_for,
++    load_ledger,
++    save_ledger,
++)
++from tracemantle.parser import ParsedSkill
++from tracemantle.result import Diagnostic, Severity, ValidationResult
++
++# ---------------------------------------------------------------------------
++# Helpers
++# ---------------------------------------------------------------------------
++
++_TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
++
++
++def _make_skill(raw_text: str = "---\nname: test-skill\ndescription: Does a thing.\n---\nBody.\n") -> ParsedSkill:
++    return ParsedSkill(
++        path=Path("/tmp/SKILL.md"),
++        frontmatter={"name": "test-skill", "description": "Does a thing."},
++        body="Body.\n",
++        body_lines=1,
++        raw_text=raw_text,
++    )
++
++
++def _make_result(valid: bool = True, diagnostics: list[Diagnostic] | None = None) -> ValidationResult:
++    diags = diagnostics or []
++    return ValidationResult(path=Path("/tmp/SKILL.md"), diagnostics=diags)
++
++
++def _make_modes(symbolic: bool = True, critique: bool = False, graph: bool = False) -> ValidationModes:
++    return ValidationModes(symbolic=symbolic, critique=critique, graph=graph)
++
++
++def _make_agents(critique: str | None = None, graph: str | None = None) -> RunAgents:
++    return RunAgents(critique_agent=critique, graph_agent=graph)
++
++
++def _make_entry(
++    skill: ParsedSkill | None = None,
++    result: ValidationResult | None = None,
++    exit_code: int = 0,
++    now: datetime | None = None,
++) -> LedgerEntry:
++    s = skill or _make_skill()
++    r = result or _make_result()
++    fixed_now = now or datetime(2026, 4, 24, 15, 30, 0, tzinfo=timezone.utc)
++    return build_entry(s, r, _make_modes(), _make_agents(), exit_code, "0.2.0", now=fixed_now)
++
++
++# ---------------------------------------------------------------------------
++# compute_skill_hash
++# ---------------------------------------------------------------------------
++
++
++def test_hash_is_16_hex_chars():
++    skill = _make_skill()
++    h = compute_skill_hash(skill)
++    assert len(h) == 16
++    assert re.fullmatch(r"[0-9a-f]{16}", h), f"Not hex: {h!r}"
++
++
++def test_hash_is_deterministic():
++    skill = _make_skill("some content")
++    assert compute_skill_hash(skill) == compute_skill_hash(skill)
++
++
++def test_hash_differs_with_different_content():
++    a = compute_skill_hash(_make_skill("content A"))
++    b = compute_skill_hash(_make_skill("content B"))
++    assert a != b
++
++
++def test_hash_is_lowercase():
++    h = compute_skill_hash(_make_skill())
++    assert h == h.lower()
++
++
++# ---------------------------------------------------------------------------
++# build_entry timestamp format
++# ---------------------------------------------------------------------------
++
++
++def test_build_entry_timestamp_format():
++    entry = _make_entry(now=datetime(2026, 4, 24, 15, 30, 0, tzinfo=timezone.utc))
++    assert _TS_RE.match(entry.timestamp_utc), f"Bad timestamp: {entry.timestamp_utc!r}"
++
++
++def test_build_entry_timestamp_no_microseconds():
++    entry = _make_entry(now=datetime(2026, 4, 24, 9, 5, 3, 123456, tzinfo=timezone.utc))
++    # Must be exactly "2026-04-24T09:05:03Z" -- no fractional seconds
++    assert entry.timestamp_utc == "2026-04-24T09:05:03Z"
++
++
++def test_build_entry_uses_injected_now():
++    fixed = datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
++    entry = _make_entry(now=fixed)
++    assert entry.timestamp_utc == "2026-01-01T00:00:00Z"
++
++
++# ---------------------------------------------------------------------------
++# build_entry counts and fields
++# ---------------------------------------------------------------------------
++
++
++def test_build_entry_counts_diagnostics():
++    diags = [
++        Diagnostic(rule="x.a", severity=Severity.ERROR, message="e"),
++        Diagnostic(rule="x.b", severity=Severity.WARNING, message="w"),
++        Diagnostic(rule="x.c", severity=Severity.WARNING, message="w2"),
++        Diagnostic(rule="x.d", severity=Severity.INFO, message="i"),
++    ]
++    result = ValidationResult(path=Path("/tmp/SKILL.md"), diagnostics=diags)
++    entry = _make_entry(result=result, exit_code=1)
++    assert entry.result.error == 1
++    assert entry.result.warning == 2
++    assert entry.result.info == 1
++    assert not entry.result.valid
++
++
++def test_build_entry_valid_reflects_result():
++    result = _make_result(valid=True)
++    entry = _make_entry(result=result, exit_code=0)
++    assert entry.result.valid
++    assert entry.exit_code == 0
++
++
++def test_build_entry_version_recorded():
++    entry = _make_entry()
++    assert entry.skillcheck_version == "0.2.0"
++
++
++def test_build_entry_hash_matches_skill():
++    skill = _make_skill("unique content xyz")
++    entry = _make_entry(skill=skill)
++    assert entry.skill_content_hash == compute_skill_hash(skill)
++
++
++# ---------------------------------------------------------------------------
++# Frozen / hashable dataclasses
++# ---------------------------------------------------------------------------
++
++
++def test_ledger_entry_is_frozen():
++    entry = _make_entry()
++    with pytest.raises(AttributeError):
++        entry.exit_code = 99  # type: ignore[misc]
++
++
++def test_ledger_is_frozen():
++    entry = _make_entry()
++    ledger = Ledger(version=1, skill_path="SKILL.md", runs=(entry,))
++    with pytest.raises(AttributeError):
++        ledger.version = 2  # type: ignore[misc]
++
++
++def test_result_counts_is_frozen():
++    rc = ResultCounts(error=0, warning=0, info=0, valid=True)
++    with pytest.raises(AttributeError):
++        rc.error = 1  # type: ignore[misc]
++
++
++def test_validation_modes_is_frozen():
++    vm = ValidationModes(symbolic=True, critique=False, graph=False)
++    with pytest.raises(AttributeError):
++        vm.symbolic = False  # type: ignore[misc]
++
++
++def test_ledger_entry_is_hashable():
++    entry = _make_entry()
++    s = {entry}
++    assert entry in s
++
++
++def test_ledger_is_hashable():
++    entry = _make_entry()
++    ledger = Ledger(version=1, skill_path="SKILL.md", runs=(entry,))
++    s = {ledger}
++    assert ledger in s
++
++
++# ---------------------------------------------------------------------------
++# ledger_path_for
++# ---------------------------------------------------------------------------
++
++
++def test_ledger_path_for_is_outside_bundle():
++    skill_path = Path("/home/user/skills/my-skill/SKILL.md")
++    actual = ledger_path_for(skill_path)
++    assert actual.parent.name == "history"
++    assert actual.parent.parent.name == ".tracemantle"
++    assert not actual.is_relative_to(skill_path.parent.resolve())
++
++
++def test_ledger_path_for_is_pure():
++    p = Path("/some/path/SKILL.md")
++    assert ledger_path_for(p) == ledger_path_for(p)
++
++
++# ---------------------------------------------------------------------------
++# Round-trip: save then load equals the original
++# ---------------------------------------------------------------------------
++
++
++def test_round_trip_single_entry(tmp_path: Path):
++    entry = _make_entry()
++    ledger = Ledger(version=1, skill_path="SKILL.md", runs=(entry,))
++    lp = tmp_path / ".skillcheck-history.json"
++    save_ledger(lp, ledger)
++    loaded = load_ledger(lp)
++    assert loaded is not None
++    assert loaded == ledger
++
++
++def test_round_trip_multiple_entries(tmp_path: Path):
++    e1 = _make_entry(now=datetime(2026, 4, 1, 0, 0, 0, tzinfo=timezone.utc))
++    e2 = _make_entry(now=datetime(2026, 4, 2, 0, 0, 0, tzinfo=timezone.utc))
++    ledger = Ledger(version=1, skill_path="SKILL.md", runs=(e1, e2))
++    lp = tmp_path / ".skillcheck-history.json"
++    save_ledger(lp, ledger)
++    loaded = load_ledger(lp)
++    assert loaded == ledger
++    assert len(loaded.runs) == 2
++
++
++def test_round_trip_with_agent_fields(tmp_path: Path):
++    entry = build_entry(
++        _make_skill(),
++        _make_result(),
++        ValidationModes(symbolic=True, critique=True, graph=True),
++        RunAgents(critique_agent="claude", graph_agent="codex"),
++        exit_code=0,
++        version="0.2.0",
++        now=datetime(2026, 4, 24, 12, 0, 0, tzinfo=timezone.utc),
++    )
++    ledger = Ledger(version=1, skill_path="SKILL.md", runs=(entry,))
++    lp = tmp_path / ".skillcheck-history.json"
++    save_ledger(lp, ledger)
++    loaded = load_ledger(lp)
++    assert loaded == ledger
++    assert loaded.runs[0].agents.critique_agent == "claude"
++    assert loaded.runs[0].agents.graph_agent == "codex"
+diff --git a/tests/history/test_regression.py b/tests/history/test_regression.py
+new file mode 100644
+index 0000000..c88ecbe
+--- /dev/null
++++ b/tests/history/test_regression.py
+@@ -0,0 +1,135 @@
++"""Tests for check_regression: the history.skill.regressed analyzer."""
++
++from __future__ import annotations
++
++from datetime import datetime, timezone
++from pathlib import Path
++
++from tracemantle.core.history import (
++    LedgerEntry,
++    ResultCounts,
++    RunAgents,
++    ValidationModes,
++    build_entry,
++    check_regression,
++)
++from tracemantle.parser import ParsedSkill
++from tracemantle.result import Severity, ValidationResult
++
++# ---------------------------------------------------------------------------
++# Helpers
++# ---------------------------------------------------------------------------
++
++
++def _make_skill(raw: str = "content") -> ParsedSkill:
++    return ParsedSkill(
++        path=Path("/tmp/SKILL.md"),
++        frontmatter={"name": "test", "description": "Tests things."},
++        body="",
++        body_lines=0,
++        raw_text=raw,
++    )
++
++
++def _make_result(valid: bool = True) -> ValidationResult:
++    return ValidationResult(path=Path("/tmp/SKILL.md"), diagnostics=[])
++
++
++_MODES = ValidationModes(symbolic=True, critique=False, graph=False)
++_AGENTS = RunAgents(critique_agent=None, graph_agent=None)
++
++
++def _entry(raw: str, valid: bool, ts: str) -> LedgerEntry:
++    # Parse timestamp to produce the right hash and validity.
++    year, month, rest = ts[:4], ts[5:7], ts[8:]
++    day, time_part = rest[:2], rest[3:11]
++    h, m, s = time_part[:2], time_part[3:5], time_part[6:8]
++    now = datetime(int(year), int(month), int(day), int(h), int(m), int(s), tzinfo=timezone.utc)
++    skill = _make_skill(raw)
++    result = _make_result(valid=valid)
++    entry = build_entry(skill, result, _MODES, _AGENTS, exit_code=0 if valid else 1, version="0.2.0", now=now)
++    # Override the result.valid since build_entry counts diagnostics (all zero here).
++    # Build a new entry with the right valid flag by patching ResultCounts.
++    patched_result = ResultCounts(
++        error=0 if valid else 1,
++        warning=entry.result.warning,
++        info=entry.result.info,
++        valid=valid,
++    )
++    return LedgerEntry(
++        timestamp_utc=entry.timestamp_utc,
++        skillcheck_version=entry.skillcheck_version,
++        skill_content_hash=entry.skill_content_hash,
++        validation_modes=entry.validation_modes,
++        agents=entry.agents,
++        result=patched_result,
++        exit_code=0 if valid else 1,
++    )
++
++
++# ---------------------------------------------------------------------------
++# Tests
++# ---------------------------------------------------------------------------
++
++
++def test_no_prior_runs_returns_empty():
++    current = _entry("content", valid=False, ts="2026-04-24T15:00:00Z")
++    assert check_regression((), current) == []
++
++
++def test_prior_passing_same_hash_current_failing_emits_warning():
++    prior = _entry("same content", valid=True, ts="2026-04-20T10:00:00Z")
++    current = _entry("same content", valid=False, ts="2026-04-24T15:00:00Z")
++    diags = check_regression((prior,), current)
++    assert len(diags) == 1
++    assert diags[0].severity == Severity.WARNING
++    assert diags[0].rule == "history.skill.regressed"
++    assert "2026-04-20T10:00:00Z" in diags[0].message
++
++
++def test_prior_passing_same_hash_current_passing_returns_empty():
++    prior = _entry("same content", valid=True, ts="2026-04-20T10:00:00Z")
++    current = _entry("same content", valid=True, ts="2026-04-24T15:00:00Z")
++    assert check_regression((prior,), current) == []
++
++
++def test_prior_failing_same_hash_current_failing_returns_empty():
++    prior = _entry("same content", valid=False, ts="2026-04-20T10:00:00Z")
++    current = _entry("same content", valid=False, ts="2026-04-24T15:00:00Z")
++    assert check_regression((prior,), current) == []
++
++
++def test_prior_passing_different_hash_returns_empty():
++    prior = _entry("content A", valid=True, ts="2026-04-20T10:00:00Z")
++    current = _entry("content B", valid=False, ts="2026-04-24T15:00:00Z")
++    # Hashes differ because raw text differs.
++    assert prior.skill_content_hash != current.skill_content_hash
++    assert check_regression((prior,), current) == []
++
++
++def test_multiple_matching_priors_emits_one_warning_with_most_recent():
++    prior_old = _entry("same", valid=True, ts="2026-04-10T08:00:00Z")
++    prior_recent = _entry("same", valid=True, ts="2026-04-20T12:00:00Z")
++    current = _entry("same", valid=False, ts="2026-04-24T15:00:00Z")
++    diags = check_regression((prior_old, prior_recent), current)
++    assert len(diags) == 1
++    # Most recent prior timestamp appears in the message.
++    assert "2026-04-20T12:00:00Z" in diags[0].message
++    assert "2026-04-10T08:00:00Z" not in diags[0].message
++
++
++def test_regression_message_includes_result_counts():
++    prior = _entry("same", valid=True, ts="2026-04-20T10:00:00Z")
++    current = _entry("same", valid=False, ts="2026-04-24T15:00:00Z")
++    diags = check_regression((prior,), current)
++    msg = diags[0].message
++    # Message must reference both prior and current result summaries.
++    assert "prior" in msg
++    assert "current" in msg
++
++
++def test_recovery_does_not_trigger_regression():
++    """Passing after a prior failure on same content is not a regression."""
++    prior_fail = _entry("same", valid=False, ts="2026-04-20T10:00:00Z")
++    current_pass = _entry("same", valid=True, ts="2026-04-24T15:00:00Z")
++    assert check_regression((prior_fail,), current_pass) == []
+diff --git a/tests/test_history_io.py b/tests/test_history_io.py
+deleted file mode 100644
+index 619271f..0000000
+--- a/tests/test_history_io.py
++++ /dev/null
+@@ -1,276 +0,0 @@
+-"""Tests for ledger I/O: load_ledger, save_ledger, append_run."""
+-
+-from __future__ import annotations
+-
+-import os
+-import re
+-import stat
+-import sys
+-from datetime import datetime, timezone
+-from pathlib import Path
+-
+-import pytest
+-
+-from tracemantle.core.history import (
+-    Ledger,
+-    LedgerEntry,
+-    LedgerError,
+-    RunAgents,
+-    ValidationModes,
+-    append_run,
+-    build_entry,
+-    load_ledger,
+-    save_ledger,
+-)
+-from tracemantle.parser import ParsedSkill
+-from tracemantle.result import ValidationResult
+-
+-# ---------------------------------------------------------------------------
+-# Helpers
+-# ---------------------------------------------------------------------------
+-
+-
+-def _make_skill(path: Path, raw: str = "---\nname: t\ndescription: Does x.\n---\n") -> ParsedSkill:
+-    return ParsedSkill(
+-        path=path,
+-        frontmatter={"name": "t", "description": "Does x."},
+-        body="",
+-        body_lines=0,
+-        raw_text=raw,
+-    )
+-
+-
+-def _make_result(path: Path, valid: bool = True) -> ValidationResult:
+-    return ValidationResult(path=path, diagnostics=[])
+-
+-
+-def _fixed_entry(path: Path, ts: str = "2026-04-24T10:00:00Z") -> LedgerEntry:
+-    skill = _make_skill(path)
+-    result = _make_result(path)
+-    now = datetime(2026, 4, 24, 10, 0, 0, tzinfo=timezone.utc)
+-    return build_entry(
+-        skill,
+-        result,
+-        ValidationModes(symbolic=True, critique=False, graph=False),
+-        RunAgents(critique_agent=None, graph_agent=None),
+-        exit_code=0,
+-        version="0.2.0",
+-        now=now,
+-    )
+-
+-
+-# ---------------------------------------------------------------------------
+-# load_ledger
+-# ---------------------------------------------------------------------------
+-
+-
+-def test_load_returns_none_for_missing_file(tmp_path: Path):
+-    lp = tmp_path / ".skillcheck-history.json"
+-    assert load_ledger(lp) is None
+-
+-
+-def test_load_raises_on_malformed_json(tmp_path: Path):
+-    lp = tmp_path / ".skillcheck-history.json"
+-    lp.write_text("{ not valid json }", encoding="utf-8")
+-    with pytest.raises(LedgerError, match="not valid JSON"):
+-        load_ledger(lp)
+-
+-
+-def test_load_raises_on_missing_top_level_field(tmp_path: Path):
+-    lp = tmp_path / ".skillcheck-history.json"
+-    lp.write_text('{"version": 1, "runs": []}', encoding="utf-8")
+-    with pytest.raises(LedgerError):
+-        load_ledger(lp)
+-
+-
+-def test_load_raises_error_includes_path(tmp_path: Path):
+-    lp = tmp_path / ".skillcheck-history.json"
+-    lp.write_text("bad json!", encoding="utf-8")
+-    with pytest.raises(LedgerError, match=re.escape(str(lp))):
+-        load_ledger(lp)
+-
+-
+-def test_load_from_fixture_one_run():
+-    lp = Path(__file__).parent / "fixtures" / "history" / "ledger_one_run.json"
+-    ledger = load_ledger(lp)
+-    assert ledger is not None
+-    assert ledger.version == 1
+-    assert len(ledger.runs) == 1
+-    assert ledger.runs[0].result.valid
+-
+-
+-def test_load_from_fixture_multi_run():
+-    lp = Path(__file__).parent / "fixtures" / "history" / "ledger_multi_run_passing.json"
+-    ledger = load_ledger(lp)
+-    assert ledger is not None
+-    assert len(ledger.runs) == 3
+-    assert all(r.result.valid for r in ledger.runs)
+-
+-
+-def test_load_from_fixture_malformed_raises():
+-    lp = Path(__file__).parent / "fixtures" / "history" / "ledger_malformed.json"
+-    with pytest.raises(LedgerError):
+-        load_ledger(lp)
+-
+-
+-_HISTORY_FIXTURES = Path(__file__).parent / "fixtures" / "history"
+-
+-
+-def test_load_raises_when_root_is_not_object():
+-    with pytest.raises(LedgerError, match="must be a JSON object, got list"):
+-        load_ledger(_HISTORY_FIXTURES / "ledger_root_list.json")
+-
+-
+-def test_load_raises_when_runs_is_not_a_list():
+-    with pytest.raises(LedgerError, match="field 'runs' must be a list, got str"):
+-        load_ledger(_HISTORY_FIXTURES / "ledger_runs_not_list.json")
+-
+-
+-def test_load_raises_on_schema_version_mismatch():
+-    with pytest.raises(LedgerError, match="schema version 999, but this tracemantle expects version 1"):
+-        load_ledger(_HISTORY_FIXTURES / "ledger_bad_version.json")
+-
+-
+-def test_load_raises_on_malformed_run_entry():
+-    with pytest.raises(LedgerError, match="[Mm]alformed.*entry"):
+-        load_ledger(_HISTORY_FIXTURES / "ledger_malformed_entry.json")
+-
+-
+-# ---------------------------------------------------------------------------
+-# save_ledger (atomic write)
+-# ---------------------------------------------------------------------------
+-
+-
+-def test_save_writes_valid_json(tmp_path: Path):
+-    import json
+-    skill_path = tmp_path / "SKILL.md"
+-    entry = _fixed_entry(skill_path)
+-    ledger = Ledger(version=1, skill_path="SKILL.md", runs=(entry,))
+-    lp = tmp_path / ".skillcheck-history.json"
+-    save_ledger(lp, ledger)
+-    raw = lp.read_text(encoding="utf-8")
+-    data = json.loads(raw)
+-    assert data["version"] == 1
+-    assert data["skill_path"] == "SKILL.md"
+-    assert len(data["runs"]) == 1
+-
+-
+-def test_load_preserves_other_writers_temporary_files(tmp_path: Path):
+-    """Read-only history loading must not delete a concurrent writer's temporary files."""
+-    lp = tmp_path / ".skillcheck-history.json"
+-    save_ledger(lp, Ledger(version=1, skill_path="SKILL.md", runs=()))
+-    orphan = tmp_path / ".skillcheck-tmp-orphan"
+-    orphan.write_text("partial write", encoding="utf-8")
+-    load_ledger(lp)
+-    assert orphan.read_text() == "partial write"
+-    # The real ledger is untouched.
+-    assert load_ledger(lp) is not None
+-
+-
+-@pytest.mark.skipif(sys.platform == "win32", reason="chmod restrictions differ on Windows")
+-def test_save_atomic_original_intact_on_failure(tmp_path: Path):
+-    """Original ledger survives a failed write (read-only directory)."""
+-
+-    skill_path = tmp_path / "SKILL.md"
+-    entry = _fixed_entry(skill_path)
+-    ledger = Ledger(version=1, skill_path="SKILL.md", runs=(entry,))
+-    lp = tmp_path / ".skillcheck-history.json"
+-    save_ledger(lp, ledger)
+-
+-    original_content = lp.read_text(encoding="utf-8")
+-
+-    # Make the directory read-only so a new write attempt will fail.
+-    old_mode = tmp_path.stat().st_mode
+-    try:
+-        os.chmod(tmp_path, stat.S_IRUSR | stat.S_IXUSR)
+-        entry2 = _fixed_entry(skill_path)
+-        ledger2 = Ledger(version=1, skill_path="SKILL.md", runs=(entry, entry2))
+-        with pytest.raises(LedgerError):
+-            save_ledger(lp, ledger2)
+-    finally:
+-        os.chmod(tmp_path, old_mode)
+-
+-    # Original file must be intact.
+-    assert lp.read_text(encoding="utf-8") == original_content
+-
+-
+-def test_save_field_order_matches_schema(tmp_path: Path):
+-    """Serialized field order follows dataclass declaration order, not sort_keys."""
+-    import json
+-    skill_path = tmp_path / "SKILL.md"
+-    entry = _fixed_entry(skill_path)
+-    ledger = Ledger(version=1, skill_path="SKILL.md", runs=(entry,))
+-    lp = tmp_path / ".skillcheck-history.json"
+-    save_ledger(lp, ledger)
+-    raw = lp.read_text(encoding="utf-8")
+-    # Top-level key order
+-    data = json.loads(raw)
+-    keys = list(data.keys())
+-    assert keys == ["version", "skill_path", "runs"]
+-    # Run key order
+-    run_keys = list(data["runs"][0].keys())
+-    expected = ["timestamp_utc", "skillcheck_version", "skill_content_hash",
+-                "validation_modes", "agents", "result", "exit_code"]
+-    assert run_keys == expected
+-
+-
+-# ---------------------------------------------------------------------------
+-# append_run
+-# ---------------------------------------------------------------------------
+-
+-
+-def test_append_run_initializes_new_ledger(tmp_path: Path):
+-    skill_path = tmp_path / "SKILL.md"
+-    skill_path.write_text("---\nname: t\ndescription: D.\n---\n", encoding="utf-8")
+-    skill = _make_skill(skill_path)
+-    entry = _fixed_entry(skill_path)
+-    lp = tmp_path / ".skillcheck-history.json"
+-
+-    ledger = append_run(lp, skill, entry)
+-    assert ledger.version == 1
+-    assert len(ledger.runs) == 1
+-    assert ledger.runs[0] == entry
+-
+-
+-def test_append_run_preserves_prior_runs(tmp_path: Path):
+-    skill_path = tmp_path / "SKILL.md"
+-    skill_path.write_text("---\nname: t\ndescription: D.\n---\n", encoding="utf-8")
+-    skill = _make_skill(skill_path)
+-    lp = tmp_path / ".skillcheck-history.json"
+-
+-    e1 = _fixed_entry(skill_path)
+-    append_run(lp, skill, e1)
+-
+-    e2 = build_entry(
+-        skill,
+-        _make_result(skill_path),
+-        ValidationModes(symbolic=True, critique=False, graph=False),
+-        RunAgents(critique_agent=None, graph_agent=None),
+-        exit_code=0,
+-        version="0.2.0",
+-        now=datetime(2026, 4, 25, 10, 0, 0, tzinfo=timezone.utc),
+-    )
+-    ledger = append_run(lp, skill, e2)
+-    assert len(ledger.runs) == 2
+-    assert ledger.runs[0] == e1
+-    assert ledger.runs[1] == e2
+-
+-
+-def test_append_run_mismatched_skill_path_raises(tmp_path: Path):
+-    skill_path_a = tmp_path / "SKILL.md"
+-    skill_path_a.write_text("---\nname: a\ndescription: A.\n---\n", encoding="utf-8")
+-    skill_a = _make_skill(skill_path_a)
+-    lp = tmp_path / ".skillcheck-history.json"
+-    e1 = _fixed_entry(skill_path_a)
+-    append_run(lp, skill_a, e1)
+-
+-    # Now try to append with a skill from a different directory.
+-    other_dir = tmp_path / "other"
+-    other_dir.mkdir()
+-    skill_path_b = other_dir / "SKILL.md"
+-    skill_path_b.write_text("---\nname: b\ndescription: B.\n---\n", encoding="utf-8")
+-    skill_b = _make_skill(skill_path_b)
+-    e2 = _fixed_entry(skill_path_b)
+-
+-    with pytest.raises(LedgerError, match="skill was renamed"):
+-        append_run(lp, skill_b, e2)
+diff --git a/tests/test_history_model.py b/tests/test_history_model.py
+deleted file mode 100644
+index da616c9..0000000
+--- a/tests/test_history_model.py
++++ /dev/null
+@@ -1,259 +0,0 @@
+-"""Tests for history data model: compute_skill_hash, build_entry, frozen types."""
+-
+-from __future__ import annotations
+-
+-import re
+-from datetime import datetime, timezone
+-from pathlib import Path
+-
+-import pytest
+-
+-from tracemantle.core.history import (
+-    Ledger,
+-    LedgerEntry,
+-    ResultCounts,
+-    RunAgents,
+-    ValidationModes,
+-    build_entry,
+-    compute_skill_hash,
+-    ledger_path_for,
+-    load_ledger,
+-    save_ledger,
+-)
+-from tracemantle.parser import ParsedSkill
+-from tracemantle.result import Diagnostic, Severity, ValidationResult
+-
+-# ---------------------------------------------------------------------------
+-# Helpers
+-# ---------------------------------------------------------------------------
+-
+-_TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+-
+-
+-def _make_skill(raw_text: str = "---\nname: test-skill\ndescription: Does a thing.\n---\nBody.\n") -> ParsedSkill:
+-    return ParsedSkill(
+-        path=Path("/tmp/SKILL.md"),
+-        frontmatter={"name": "test-skill", "description": "Does a thing."},
+-        body="Body.\n",
+-        body_lines=1,
+-        raw_text=raw_text,
+-    )
+-
+-
+-def _make_result(valid: bool = True, diagnostics: list[Diagnostic] | None = None) -> ValidationResult:
+-    diags = diagnostics or []
+-    return ValidationResult(path=Path("/tmp/SKILL.md"), diagnostics=diags)
+-
+-
+-def _make_modes(symbolic: bool = True, critique: bool = False, graph: bool = False) -> ValidationModes:
+-    return ValidationModes(symbolic=symbolic, critique=critique, graph=graph)
+-
+-
+-def _make_agents(critique: str | None = None, graph: str | None = None) -> RunAgents:
+-    return RunAgents(critique_agent=critique, graph_agent=graph)
+-
+-
+-def _make_entry(
+-    skill: ParsedSkill | None = None,
+-    result: ValidationResult | None = None,
+-    exit_code: int = 0,
+-    now: datetime | None = None,
+-) -> LedgerEntry:
+-    s = skill or _make_skill()
+-    r = result or _make_result()
+-    fixed_now = now or datetime(2026, 4, 24, 15, 30, 0, tzinfo=timezone.utc)
+-    return build_entry(s, r, _make_modes(), _make_agents(), exit_code, "0.2.0", now=fixed_now)
+-
+-
+-# ---------------------------------------------------------------------------
+-# compute_skill_hash
+-# ---------------------------------------------------------------------------
+-
+-
+-def test_hash_is_16_hex_chars():
+-    skill = _make_skill()
+-    h = compute_skill_hash(skill)
+-    assert len(h) == 16
+-    assert re.fullmatch(r"[0-9a-f]{16}", h), f"Not hex: {h!r}"
+-
+-
+-def test_hash_is_deterministic():
+-    skill = _make_skill("some content")
+-    assert compute_skill_hash(skill) == compute_skill_hash(skill)
+-
+-
+-def test_hash_differs_with_different_content():
+-    a = compute_skill_hash(_make_skill("content A"))
+-    b = compute_skill_hash(_make_skill("content B"))
+-    assert a != b
+-
+-
+-def test_hash_is_lowercase():
+-    h = compute_skill_hash(_make_skill())
+-    assert h == h.lower()
+-
+-
+-# ---------------------------------------------------------------------------
+-# build_entry timestamp format
+-# ---------------------------------------------------------------------------
+-
+-
+-def test_build_entry_timestamp_format():
+-    entry = _make_entry(now=datetime(2026, 4, 24, 15, 30, 0, tzinfo=timezone.utc))
+-    assert _TS_RE.match(entry.timestamp_utc), f"Bad timestamp: {entry.timestamp_utc!r}"
+-
+-
+-def test_build_entry_timestamp_no_microseconds():
+-    entry = _make_entry(now=datetime(2026, 4, 24, 9, 5, 3, 123456, tzinfo=timezone.utc))
+-    # Must be exactly "2026-04-24T09:05:03Z" -- no fractional seconds
+-    assert entry.timestamp_utc == "2026-04-24T09:05:03Z"
+-
+-
+-def test_build_entry_uses_injected_now():
+-    fixed = datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+-    entry = _make_entry(now=fixed)
+-    assert entry.timestamp_utc == "2026-01-01T00:00:00Z"
+-
+-
+-# ---------------------------------------------------------------------------
+-# build_entry counts and fields
+-# ---------------------------------------------------------------------------
+-
+-
+-def test_build_entry_counts_diagnostics():
+-    diags = [
+-        Diagnostic(rule="x.a", severity=Severity.ERROR, message="e"),
+-        Diagnostic(rule="x.b", severity=Severity.WARNING, message="w"),
+-        Diagnostic(rule="x.c", severity=Severity.WARNING, message="w2"),
+-        Diagnostic(rule="x.d", severity=Severity.INFO, message="i"),
+-    ]
+-    result = ValidationResult(path=Path("/tmp/SKILL.md"), diagnostics=diags)
+-    entry = _make_entry(result=result, exit_code=1)
+-    assert entry.result.error == 1
+-    assert entry.result.warning == 2
+-    assert entry.result.info == 1
+-    assert not entry.result.valid
+-
+-
+-def test_build_entry_valid_reflects_result():
+-    result = _make_result(valid=True)
+-    entry = _make_entry(result=result, exit_code=0)
+-    assert entry.result.valid
+-    assert entry.exit_code == 0
+-
+-
+-def test_build_entry_version_recorded():
+-    entry = _make_entry()
+-    assert entry.skillcheck_version == "0.2.0"
+-
+-
+-def test_build_entry_hash_matches_skill():
+-    skill = _make_skill("unique content xyz")
+-    entry = _make_entry(skill=skill)
+-    assert entry.skill_content_hash == compute_skill_hash(skill)
+-
+-
+-# ---------------------------------------------------------------------------
+-# Frozen / hashable dataclasses
+-# ---------------------------------------------------------------------------
+-
+-
+-def test_ledger_entry_is_frozen():
+-    entry = _make_entry()
+-    with pytest.raises(AttributeError):
+-        entry.exit_code = 99  # type: ignore[misc]
+-
+-
+-def test_ledger_is_frozen():
+-    entry = _make_entry()
+-    ledger = Ledger(version=1, skill_path="SKILL.md", runs=(entry,))
+-    with pytest.raises(AttributeError):
+-        ledger.version = 2  # type: ignore[misc]
+-
+-
+-def test_result_counts_is_frozen():
+-    rc = ResultCounts(error=0, warning=0, info=0, valid=True)
+-    with pytest.raises(AttributeError):
+-        rc.error = 1  # type: ignore[misc]
+-
+-
+-def test_validation_modes_is_frozen():
+-    vm = ValidationModes(symbolic=True, critique=False, graph=False)
+-    with pytest.raises(AttributeError):
+-        vm.symbolic = False  # type: ignore[misc]
+-
+-
+-def test_ledger_entry_is_hashable():
+-    entry = _make_entry()
+-    s = {entry}
+-    assert entry in s
+-
+-
+-def test_ledger_is_hashable():
+-    entry = _make_entry()
+-    ledger = Ledger(version=1, skill_path="SKILL.md", runs=(entry,))
+-    s = {ledger}
+-    assert ledger in s
+-
+-
+-# ---------------------------------------------------------------------------
+-# ledger_path_for
+-# ---------------------------------------------------------------------------
+-
+-
+-def test_ledger_path_for_is_outside_bundle():
+-    skill_path = Path("/home/user/skills/my-skill/SKILL.md")
+-    actual = ledger_path_for(skill_path)
+-    assert actual.parent.name == "history"
+-    assert actual.parent.parent.name == ".tracemantle"
+-    assert not actual.is_relative_to(skill_path.parent.resolve())
+-
+-
+-def test_ledger_path_for_is_pure():
+-    p = Path("/some/path/SKILL.md")
+-    assert ledger_path_for(p) == ledger_path_for(p)
+-
+-
+-# ---------------------------------------------------------------------------
+-# Round-trip: save then load equals the original
+-# ---------------------------------------------------------------------------
+-
+-
+-def test_round_trip_single_entry(tmp_path: Path):
+-    entry = _make_entry()
+-    ledger = Ledger(version=1, skill_path="SKILL.md", runs=(entry,))
+-    lp = tmp_path / ".skillcheck-history.json"
+-    save_ledger(lp, ledger)
+-    loaded = load_ledger(lp)
+-    assert loaded is not None
+-    assert loaded == ledger
+-
+-
+-def test_round_trip_multiple_entries(tmp_path: Path):
+-    e1 = _make_entry(now=datetime(2026, 4, 1, 0, 0, 0, tzinfo=timezone.utc))
+-    e2 = _make_entry(now=datetime(2026, 4, 2, 0, 0, 0, tzinfo=timezone.utc))
+-    ledger = Ledger(version=1, skill_path="SKILL.md", runs=(e1, e2))
+-    lp = tmp_path / ".skillcheck-history.json"
+-    save_ledger(lp, ledger)
+-    loaded = load_ledger(lp)
+-    assert loaded == ledger
+-    assert len(loaded.runs) == 2
+-
+-
+-def test_round_trip_with_agent_fields(tmp_path: Path):
+-    entry = build_entry(
+-        _make_skill(),
+-        _make_result(),
+-        ValidationModes(symbolic=True, critique=True, graph=True),
+-        RunAgents(critique_agent="claude", graph_agent="codex"),
+-        exit_code=0,
+-        version="0.2.0",
+-        now=datetime(2026, 4, 24, 12, 0, 0, tzinfo=timezone.utc),
+-    )
+-    ledger = Ledger(version=1, skill_path="SKILL.md", runs=(entry,))
+-    lp = tmp_path / ".skillcheck-history.json"
+-    save_ledger(lp, ledger)
+-    loaded = load_ledger(lp)
+-    assert loaded == ledger
+-    assert loaded.runs[0].agents.critique_agent == "claude"
+-    assert loaded.runs[0].agents.graph_agent == "codex"
+diff --git a/tests/test_history_regression.py b/tests/test_history_regression.py
+deleted file mode 100644
+index c88ecbe..0000000
+--- a/tests/test_history_regression.py
++++ /dev/null
+@@ -1,135 +0,0 @@
+-"""Tests for check_regression: the history.skill.regressed analyzer."""
+-
+-from __future__ import annotations
+-
+-from datetime import datetime, timezone
+-from pathlib import Path
+-
+-from tracemantle.core.history import (
+-    LedgerEntry,
+-    ResultCounts,
+-    RunAgents,
+-    ValidationModes,
+-    build_entry,
+-    check_regression,
+-)
+-from tracemantle.parser import ParsedSkill
+-from tracemantle.result import Severity, ValidationResult
+-
+-# ---------------------------------------------------------------------------
+-# Helpers
+-# ---------------------------------------------------------------------------
+-
+-
+-def _make_skill(raw: str = "content") -> ParsedSkill:
+-    return ParsedSkill(
+-        path=Path("/tmp/SKILL.md"),
+-        frontmatter={"name": "test", "description": "Tests things."},
+-        body="",
+-        body_lines=0,
+-        raw_text=raw,
+-    )
+-
+-
+-def _make_result(valid: bool = True) -> ValidationResult:
+-    return ValidationResult(path=Path("/tmp/SKILL.md"), diagnostics=[])
+-
+-
+-_MODES = ValidationModes(symbolic=True, critique=False, graph=False)
+-_AGENTS = RunAgents(critique_agent=None, graph_agent=None)
+-
+-
+-def _entry(raw: str, valid: bool, ts: str) -> LedgerEntry:
+-    # Parse timestamp to produce the right hash and validity.
+-    year, month, rest = ts[:4], ts[5:7], ts[8:]
+-    day, time_part = rest[:2], rest[3:11]
+-    h, m, s = time_part[:2], time_part[3:5], time_part[6:8]
+-    now = datetime(int(year), int(month), int(day), int(h), int(m), int(s), tzinfo=timezone.utc)
+-    skill = _make_skill(raw)
+-    result = _make_result(valid=valid)
+-    entry = build_entry(skill, result, _MODES, _AGENTS, exit_code=0 if valid else 1, version="0.2.0", now=now)
+-    # Override the result.valid since build_entry counts diagnostics (all zero here).
+-    # Build a new entry with the right valid flag by patching ResultCounts.
+-    patched_result = ResultCounts(
+-        error=0 if valid else 1,
+-        warning=entry.result.warning,
+-        info=entry.result.info,
+-        valid=valid,
+-    )
+-    return LedgerEntry(
+-        timestamp_utc=entry.timestamp_utc,
+-        skillcheck_version=entry.skillcheck_version,
+-        skill_content_hash=entry.skill_content_hash,
+-        validation_modes=entry.validation_modes,
+-        agents=entry.agents,
+-        result=patched_result,
+-        exit_code=0 if valid else 1,
+-    )
+-
+-
+-# ---------------------------------------------------------------------------
+-# Tests
+-# ---------------------------------------------------------------------------
+-
+-
+-def test_no_prior_runs_returns_empty():
+-    current = _entry("content", valid=False, ts="2026-04-24T15:00:00Z")
+-    assert check_regression((), current) == []
+-
+-
+-def test_prior_passing_same_hash_current_failing_emits_warning():
+-    prior = _entry("same content", valid=True, ts="2026-04-20T10:00:00Z")
+-    current = _entry("same content", valid=False, ts="2026-04-24T15:00:00Z")
+-    diags = check_regression((prior,), current)
+-    assert len(diags) == 1
+-    assert diags[0].severity == Severity.WARNING
+-    assert diags[0].rule == "history.skill.regressed"
+-    assert "2026-04-20T10:00:00Z" in diags[0].message
+-
+-
+-def test_prior_passing_same_hash_current_passing_returns_empty():
+-    prior = _entry("same content", valid=True, ts="2026-04-20T10:00:00Z")
+-    current = _entry("same content", valid=True, ts="2026-04-24T15:00:00Z")
+-    assert check_regression((prior,), current) == []
+-
+-
+-def test_prior_failing_same_hash_current_failing_returns_empty():
+-    prior = _entry("same content", valid=False, ts="2026-04-20T10:00:00Z")
+-    current = _entry("same content", valid=False, ts="2026-04-24T15:00:00Z")
+-    assert check_regression((prior,), current) == []
+-
+-
+-def test_prior_passing_different_hash_returns_empty():
+-    prior = _entry("content A", valid=True, ts="2026-04-20T10:00:00Z")
+-    current = _entry("content B", valid=False, ts="2026-04-24T15:00:00Z")
+-    # Hashes differ because raw text differs.
+-    assert prior.skill_content_hash != current.skill_content_hash
+-    assert check_regression((prior,), current) == []
+-
+-
+-def test_multiple_matching_priors_emits_one_warning_with_most_recent():
+-    prior_old = _entry("same", valid=True, ts="2026-04-10T08:00:00Z")
+-    prior_recent = _entry("same", valid=True, ts="2026-04-20T12:00:00Z")
+-    current = _entry("same", valid=False, ts="2026-04-24T15:00:00Z")
+-    diags = check_regression((prior_old, prior_recent), current)
+-    assert len(diags) == 1
+-    # Most recent prior timestamp appears in the message.
+-    assert "2026-04-20T12:00:00Z" in diags[0].message
+-    assert "2026-04-10T08:00:00Z" not in diags[0].message
+-
+-
+-def test_regression_message_includes_result_counts():
+-    prior = _entry("same", valid=True, ts="2026-04-20T10:00:00Z")
+-    current = _entry("same", valid=False, ts="2026-04-24T15:00:00Z")
+-    diags = check_regression((prior,), current)
+-    msg = diags[0].message
+-    # Message must reference both prior and current result summaries.
+-    assert "prior" in msg
+-    assert "current" in msg
+-
+-
+-def test_recovery_does_not_trigger_regression():
+-    """Passing after a prior failure on same content is not a regression."""
+-    prior_fail = _entry("same", valid=False, ts="2026-04-20T10:00:00Z")
+-    current_pass = _entry("same", valid=True, ts="2026-04-24T15:00:00Z")
+-    assert check_regression((prior_fail,), current_pass) == []

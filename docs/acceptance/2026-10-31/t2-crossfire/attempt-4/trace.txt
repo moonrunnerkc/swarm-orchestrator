@@ -1,0 +1,59 @@
+requirements R1
+requirements R1
+$ find . -type f -name "*.ts" | head -50 && echo "---" && find . -type f -name "*.json" | grep -v node_modules | head -20
+$ find . -path ./node_modules -prune -o -type f -name "*.ts" -print | sort
+$ cat src/config/schema.ts
+$ cat src/detection/semgrep.ts
+$ cat src/config/loader.ts
+$ cat test/config.test.ts
+$ cat src/detection/scan.ts
+$ cat crossfire.sample.json
+$ cat test/scanner.test.ts
+$ cat test/gates.test.ts
+$ cat src/gates/verify.ts
+$ cat src/detection/exec.ts
+$ cat src/detection/types.ts
+$ cat src/detection/index.ts
+$ cat src/gates/refuzz.ts
+$ cat -n src/config/schema.ts | head -120
+$ cat > /tmp/patch_schema.py << 'PYEOF'
+$ cat > .swarm/scratch/patch_schema.py << 'PYEOF'
+$ mkdir -p .swarm/scratch && cat > .swarm/scratch/patch_schema.py << 'PYEOF'
+$ cat src/config/schema.ts | grep -n "ruleset"
+$ cat > .swarm/scratch/patch_semgrep.py << 'PYEOF'
+$ cat src/detection/semgrep.ts | grep -n "config" | head -30
+$ sed -n '70,82p' src/detection/semgrep.ts
+$ cat src/detection/semgrep.ts | sed -n '70,85p'
+$ sed -n '205,230p' src/detection/semgrep.ts
+$ cat > .swarm/scratch/add_tests.py << 'PYEOF'
+$ cat > .swarm/scratch/add_scanner_tests.py << 'PYEOF'
+$ npx vitest run test/config.test.ts --reporter=verbose 2>&1 | tail -60
+$ sed -i 's/z.union(\[z.string().min(1), z.array(z.string().min(1))\])/z.union([z.string().min(1), z.array(z.string().min(1)).min(1, "at least one ruleset is required")])/' src/config/schema.ts
+$ cat > .swarm/scratch/fix_array_min.py << 'PYEOF'
+$ npx vitest run test/config.test.ts --reporter=verbose 2>&1 | tail -40
+$ npx vitest run test/scanner.test.ts --reporter=verbose 2>&1 | tail -60
+$ which semgrep && semgrep --version 2>&1 || echo "semgrep not found"
+$ npx vitest run test/scanner.test.ts --reporter=verbose 2>&1 | grep -A5 "passes one --config"
+$ npx vitest run 2>&1 | tail -30
+$ grep -n "runIf.*hasBinary" test/scanner.test.ts | head -10
+$ git stash && npx vitest run test/scanner.test.ts --reporter=verbose 2>&1 | grep -E "(FAIL|PASS|✓|×)" | head -20
+$ git stash pop
+$ npx tsc --noEmit 2>&1 | tail -20
+$ npx tsc --noEmit 2>&1
+$ git diff src/config/schema.ts src/detection/semgrep.ts test/config.test.ts test/scanner.test.ts
+$ npx vitest run 2>&1 | tail -10
+$ npx tsc --noEmit 2>&1; echo "exit: $?"
+verifying the working tree
+requirements R1
+verifying the working tree
+requirements R1
+compacted earlier turns (39538 of 65536 context tokens)
+$ cat src/config/schema.ts | grep -n "ruleset"
+$ cat src/detection/semgrep.ts | grep -n "ruleset\|config"
+$ cat test/scanner.test.ts | grep -n "ruleset\|array\|--config"
+$ sed -n '151,180p' test/scanner.test.ts
+$ sed -n '100,150p' test/scanner.test.ts
+$ grep -n "array\|ruleset" test/config.test.ts | head -30
+$ npx vitest run --reporter=verbose 2>&1 | grep -E "(FAIL|PASS|✓|×)" | head -40
+verifying the working tree
+verifying the working tree

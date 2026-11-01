@@ -1,0 +1,67 @@
+diff --git a/src/policy/exclusions.ts b/src/policy/exclusions.ts
+index 723f844..6aca0ca 100644
+--- a/src/policy/exclusions.ts
++++ b/src/policy/exclusions.ts
+@@ -53,7 +53,7 @@ function toPosix(path: string): string {
+ 
+ /**
+  * The single gate every path crosses: agents through the ACP filesystem and
+- * permission handlers, detectors through their own scope checks. A path is
++ * permission handlers, detectors through their scope checks. A path is
+  * usable only when it resolves inside the target repo and matches no exclusion
+  * pattern. Symlinks are resolved first, so a link pointing at /etc or at .env
+  * is denied on where it lands rather than on how it is spelled.
+@@ -90,7 +90,9 @@ export function createPathScope(repoPath: string, excludedPaths: readonly string
+       const real = realPathOfNearestExisting(absolute);
+       const rel = relative(root, real);
+ 
+-      if (rel.startsWith("..") || isAbsolute(rel)) {
++      const isOutside = isAbsolute(rel) || rel.split(sep)[0] === "..";
++
++      if (isOutside) {
+         return { allowed: false, reason: `${path} resolves outside the target repo` };
+       }
+ 
+diff --git a/test/policy-repro.test.ts b/test/policy-repro.test.ts
+new file mode 100644
+index 0000000..68c82d3
+--- /dev/null
++++ b/test/policy-repro.test.ts
+@@ -0,0 +1,37 @@
++import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++import { describe, expect, test } from "vitest";
++import { createPathScope } from "../src/policy/index.js";
++
++function makeRepo(): string {
++  const repo = mkdtempSync(join(tmpdir(), "crossfire-repro-"));
++  mkdirSync(join(repo, "src"), { recursive: true });
++  return repo;
++}
++
++describe("path scope '..' prefix bug", () => {
++  test("allows a file starting with '..' inside the repo", () => {
++    const repo = makeRepo();
++    const scope = createPathScope(repo, []);
++    
++    const fileName = "..notes.md";
++    const filePath = join(repo, fileName);
++    writeFileSync(filePath, "some notes");
++
++    const decision = scope.check(filePath);
++    expect(decision.allowed).toBe(true);
++    expect(decision.relativePath).toBe(fileName);
++  });
++
++  test("still denies a path that actually escapes the repo", () => {
++    const repo = makeRepo();
++    const scope = createPathScope(repo, []);
++    
++    const filePath = join(repo, "../outside.txt");
++    const decision = scope.check(filePath);
++    
++    expect(decision.allowed).toBe(false);
++    expect(decision.reason).toContain("outside the target repo");
++  });
++});

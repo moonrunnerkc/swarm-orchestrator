@@ -1,6 +1,6 @@
 # 0014. Rebuild as a small verifier and a plain agent loop on one implementation
 
-**Status:** approved 2026-10-28, supersedes 0013 (in the archive named in [README.md](README.md))
+**Status:** superseded 2026-10-31 by [0015](0015-coding-agent-consumes-standalone-verifier.md); approved 2026-10-28, superseded 0013 (in the archive named in [README.md](README.md))
 
 ## Context
 

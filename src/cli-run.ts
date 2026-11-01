@@ -1,11 +1,19 @@
 import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
-import { openAiCompatible } from "./agent/model.ts";
-import { runAgent } from "./agent/run.ts";
+import { summaryLines } from "./agent/report.ts";
+import { type RunReport, runAgent } from "./agent/run.ts";
+import { swarmHome } from "./agent/verification.ts";
 import { buildVersion } from "./build-version.ts";
 import { UsageError } from "./cli-command-definitions.ts";
-import { readSwarmToml } from "./config/swarm-toml.ts";
+import { readAgentConfig } from "./config/agent-config.ts";
+import { finishedOutcome, recordOutcome } from "./runtime/profile.ts";
+import {
+  NoModelError,
+  type ResolvedModel,
+  resolveAtContexts,
+  resolveModel,
+} from "./runtime/resolve.ts";
 import type { ConfirmationPrompt } from "./tools/chokepoint.ts";
 
 const write = (text: string) => process.stdout.write(`${text}\n`);
@@ -34,7 +42,10 @@ function terminalPrompt(): ConfirmationPrompt {
   };
 }
 
-/** `run <task>`: the single-bash-tool loop on the workspace, judged by the verifier. */
+/**
+ * `run <task>`: discover or take the model, make the change in the workspace, check each
+ * requirement with the verifier, and report what is complete and what is not.
+ */
 export async function run(args: readonly string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args: [...args],
@@ -43,54 +54,120 @@ export async function run(args: readonly string[]): Promise<number> {
       workspace: { type: "string" },
       endpoint: { type: "string" },
       model: { type: "string" },
+      context: { type: "string" },
       "max-steps": { type: "string" },
       "max-tokens": { type: "string" },
       "turn-tokens": { type: "string" },
+      "max-minutes": { type: "string" },
+      host: { type: "boolean" },
+      "no-apply": { type: "boolean" },
+      "authorize-behavior-change": { type: "boolean" },
+      review: { type: "boolean" },
+      "linked-dependencies": { type: "boolean" },
       approve: { type: "string" },
     },
   });
   const task = positionals.join(" ").trim();
   if (task.length === 0) throw new UsageError("run needs the task, in quotes");
-  const workspace = resolve(values.workspace ?? process.cwd());
-  const agent = (await readSwarmToml(workspace))?.agent;
-  const endpoint = values.endpoint ?? agent?.endpoint;
-  const model = values.model ?? agent?.model;
-  if (endpoint === undefined || endpoint === null || model === undefined || model === null) {
+  if (values["linked-dependencies"] === true && values.host !== true) {
     throw new UsageError(
-      "run needs a model: --endpoint and --model, or [agent] endpoint and model in swarm.toml",
+      "--linked-dependencies needs --host: a container never runs on the workspace's installed dependencies",
     );
   }
+  const workspace = resolve(values.workspace ?? process.cwd());
+  // swarm.toml is optional: without one, the model is discovered and the defaults below apply.
+  const agent = await readAgentConfig(workspace);
   const approval = values.approve ?? agent?.approval ?? "ask";
   if (approval !== "ask" && approval !== "auto") throw new UsageError("--approve is ask or auto");
   const keyName = agent?.apiKeyEnv ?? "SWARM_API_KEY";
   const controller = new AbortController();
-  process.once("SIGINT", () => controller.abort(new Error("interrupted")));
+  // The first of these cancels and finalizes the run; a second one ends the process as usual.
+  for (const name of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
+    process.once(name, () => controller.abort(new Error(`stopped by ${name}`)));
+  }
+  const modelName = values.model ?? agent?.model ?? "auto";
+  const endpoint = values.endpoint ?? agent?.endpoint ?? null;
+  const named = count(values.context, "--context");
+  // A discovered Ollama model gets the largest context it fits; a named model or server, whose
+  // capacity is not estimated here, the smaller one.
+  const contexts =
+    named !== undefined
+      ? [named]
+      : endpoint === null && modelName === "auto"
+        ? discoveredContexts
+        : [defaultContextTokens];
 
-  const report = await runAgent({
+  write(`task         ${task}`);
+  let model: ResolvedModel;
+  let contextTokens: number;
+  try {
+    ({ resolved: model, contextTokens } = await resolveAtContexts(contexts, (context) =>
+      resolveModel({
+        model: modelName,
+        endpoint,
+        apiKey: process.env[keyName] ?? null,
+        contextTokens: context,
+        home: swarmHome(),
+        log: (line) => process.stderr.write(`${line}\n`),
+      }),
+    ));
+  } catch (error) {
+    if (!(error instanceof NoModelError)) throw error;
+    write(`blocked      ${error.message}`);
+    return 5;
+  }
+  write(`model        ${model.name} (${model.reason})`);
+  const maxMinutes = count(values["max-minutes"], "--max-minutes");
+  const maxSteps = count(values["max-steps"], "--max-steps") ?? agent?.maxSteps ?? 50;
+  const ran = await runAgent({
     workspace,
     task,
-    model: openAiCompatible({ endpoint, model, apiKey: process.env[keyName] ?? null }),
-    maxSteps: count(values["max-steps"], "--max-steps") ?? agent?.maxSteps ?? 50,
-    maxTokens: count(values["max-tokens"], "--max-tokens") ?? agent?.maxTokens ?? 1_000_000,
+    model: model.client,
+    modelReason: model.reason,
+    escalation: model.escalation?.client ?? null,
+    contextTokens,
+    apply: values["no-apply"] !== true,
+    // Only the user changes what existing tests may expect; nothing the model says can.
+    behaviorChange: values["authorize-behavior-change"] === true ? "authorized" : "none",
+    review: values.review === true,
+    cost: model.cost,
+    maxSteps,
+    // Unset, the token budget is what the steps could use at this context, so steps and time end
+    // a local run; set it to bound what a priced endpoint may spend.
+    maxTokens:
+      count(values["max-tokens"], "--max-tokens") ?? agent?.maxTokens ?? maxSteps * contextTokens,
     // Room for a reasoning model's thinking and one command, and a bound on a looping reply.
     turnTokens: count(values["turn-tokens"], "--turn-tokens") ?? agent?.turnTokens ?? 16_384,
+    maxWallMs: maxMinutes === undefined ? null : maxMinutes * 60_000,
+    isolation: values.host === true ? "host" : "isolated",
+    ...(values["linked-dependencies"] === true ? { dependencies: "linked" as const } : {}),
     approval,
     confirm: terminalPrompt(),
     version: buildVersion,
     signal: controller.signal,
     log: (line) => process.stderr.write(`${line}\n`),
   });
-  write(`stop         ${report.stop}`);
-  if (report.reason !== null) write(`reason       ${report.reason}`);
-  write(`verdict      ${report.verification?.verdict ?? "not verified"}`);
-  const mutant = report.verification?.survivedMutant ?? null;
-  if (mutant !== null) write(`mutant       survived at ${mutant}: no check failed when it changed`);
-  write(`steps        ${report.steps}`);
-  write(
-    `tokens       ${report.tokens}${report.estimatedTurns > 0 ? ` (${report.estimatedTurns} turn(s) estimated: the endpoint reported no usage)` : ""}`,
-  );
-  write(`verified     ${report.verifications} time(s)`);
-  write(`evidence     ${report.sessionDirectory}`);
-  if (report.attestation !== null) write(`attestation  ${report.attestation}`);
-  return report.stop === "verified" ? 0 : report.stop === "unmeasured" ? 4 : 1;
+  // A finished run joins its model's record here, which selection reads once there are enough.
+  const finished = finishedOutcome({
+    stop: ran.stop,
+    state: ran.report.state,
+    escalated: ran.report.resources.escalations > 0,
+  });
+  if (finished !== null) await recordOutcome(swarmHome(), model.digest, finished);
+  for (const line of summaryLines(ran.report, { markdown: ran.reportPath })) write(line);
+  write(`evidence     ${ran.sessionDirectory}`);
+  if (ran.report.attestation !== null) write(`attestation  ${ran.report.attestation}`);
+  return exitCodeOf(ran.report.state, ran.report.requirements);
+}
+
+/** The context a named model or server is used with: room for the task, instructions and a diff. */
+const defaultContextTokens = 32_768;
+/** Contexts tried for a discovered model, largest first: more of a repository before compaction. */
+const discoveredContexts = [65_536, 32_768];
+
+/** 0 complete, 1 a requirement failed or the run stopped short, 4 unverified only, 5 blocked. */
+function exitCodeOf(state: string, requirements: RunReport["report"]["requirements"]): number {
+  if (state === "complete") return 0;
+  if (state === "blocked") return 5;
+  return requirements.some((one) => one.status === "failed") ? 1 : 4;
 }

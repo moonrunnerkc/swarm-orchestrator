@@ -1,0 +1,229 @@
+{
+  "state": "blocked",
+  "scope": "requirements",
+  "reasons": [
+    "the base's dependencies did not install from its lockfile: fix the dependency the setup output names, or use the workspace's installed dependencies (dependencies: linked), reported as not reproducible"
+  ],
+  "base": {
+    "commit": "d52f141e16b3142d6830e79923d67ff4a3783e23"
+  },
+  "change": {
+    "source": "patch",
+    "applied": true,
+    "files": [
+      {
+        "path": "config/allowlist.toml",
+        "status": "modified"
+      },
+      {
+        "path": "tests/test_allowlist.py",
+        "status": "modified"
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "The allowlist lets rg --pre=<prog> run any program and git diff/log --output=<file> write files. Add --pre to rg's deny_flags and --output to git's, with tests.",
+      "source": "user",
+      "kind": "fix",
+      "required": true,
+      "assumptions": [
+        "The deny_flags are defined in a configuration or code structure that supports per-tool flag lists"
+      ],
+      "expected": {
+        "tests": [
+          {
+            "name": "test_rg_deny_flag_pre_blocks_arbitrary_program_execution"
+          },
+          {
+            "name": "test_rg_deny_flag_pre_equals_blocks_arbitrary_program_execution"
+          },
+          {
+            "name": "test_git_deny_flag_output_blocks_file_write"
+          },
+          {
+            "name": "test_git_deny_flag_output_equals_blocks_file_write"
+          },
+          {
+            "name": "test_git_without_output_is_allowed"
+          },
+          {
+            "name": "test_rg_without_pre_is_allowed"
+          }
+        ],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "status": "unverified",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "test_rg_deny_flag_pre_blocks_arbitrary_program_execution",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "no executed test has this name"
+        },
+        {
+          "kind": "test",
+          "ref": "test_rg_deny_flag_pre_equals_blocks_arbitrary_program_execution",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "no executed test has this name"
+        },
+        {
+          "kind": "test",
+          "ref": "test_git_deny_flag_output_blocks_file_write",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "no executed test has this name"
+        },
+        {
+          "kind": "test",
+          "ref": "test_git_deny_flag_output_equals_blocks_file_write",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "no executed test has this name"
+        },
+        {
+          "kind": "test",
+          "ref": "test_git_without_output_is_allowed",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "no executed test has this name"
+        },
+        {
+          "kind": "test",
+          "ref": "test_rg_without_pre_is_allowed",
+          "authority": "pre-existing",
+          "outcome": "not observed",
+          "detail": "no executed test has this name"
+        }
+      ],
+      "limitation": "not observed: test_rg_deny_flag_pre_blocks_arbitrary_program_execution, test_rg_deny_flag_pre_equals_blocks_arbitrary_program_execution, test_git_deny_flag_output_blocks_file_write, test_git_deny_flag_output_equals_blocks_file_write, test_git_without_output_is_allowed, test_rg_without_pre_is_allowed",
+      "nextAction": "name tests as they ran (a title, a suite, or a path such as suite > test title) in place of test_rg_deny_flag_pre_blocks_arbitrary_program_execution, test_rg_deny_flag_pre_equals_blocks_arbitrary_program_execution, test_git_deny_flag_output_blocks_file_write, test_git_deny_flag_output_equals_blocks_file_write, test_git_without_output_is_allowed, test_rg_without_pre_is_allowed"
+    }
+  ],
+  "regression": {
+    "status": "none",
+    "newFailures": [],
+    "inherited": [],
+    "removed": [],
+    "unresolved": []
+  },
+  "checks": [],
+  "baseline": {
+    "status": "unmeasured",
+    "reason": "no checks are declared"
+  },
+  "heldOut": {
+    "status": "unmeasured",
+    "reason": "no held-out checks are sealed for this workspace"
+  },
+  "artifacts": [
+    {
+      "path": "config/allowlist.toml",
+      "category": "source"
+    },
+    {
+      "path": "tests/test_allowlist.py",
+      "category": "tests"
+    }
+  ],
+  "testFiles": {
+    "added": [],
+    "modified": [
+      "tests/test_allowlist.py"
+    ],
+    "deleted": [],
+    "moved": [],
+    "relocated": []
+  },
+  "coverage": {
+    "status": "unmeasured",
+    "reason": "the checks did not run"
+  },
+  "mutation": {
+    "status": "unmeasured",
+    "reason": "the checks did not run"
+  },
+  "producer": {
+    "name": "swarm-orchestrator",
+    "version": "15.0.0",
+    "model": "swarm-redesign-qwen36-32k:latest",
+    "promptSha256": "392998827daf56ac3c0a1cc2ca09bf9f852278903ed688fd92f24a5ae74bf435",
+    "ledgerSha256": "c4e657387170ee66105c3c21792a8eaafb882ba4b720947c3a3cc773e0684d72",
+    "ledgerRecords": 70,
+    "reportSha256": "6ac59da38b44c1a356484b0c80b9ffb012884218073d98d25e7b7afb33398f7a",
+    "instructions": [
+      {
+        "path": "CLAUDE.md",
+        "sha256": "3684053f4291555021ef687bd48e6e81fe6c53fcb5a53ec17e1b6cdfde00d108"
+      }
+    ]
+  },
+  "environment": {
+    "sha256": "a0515052d8c550f72cef837463643ceccd2e5a5d07a48b6d9b796d91e0eacc4d",
+    "node": "v24.15.0",
+    "platform": "darwin-arm64",
+    "git": "2.54.0 (Apple Git-157)",
+    "dependencies": "prepared",
+    "dependencyTreeSha256": "5229ca7343b43db9fcc65817d6db3021ba33e26a46f1934d81b266ea139667c3",
+    "reproducible": true
+  },
+  "execution": {
+    "mode": "host",
+    "statement": "host, not isolated",
+    "network": "open",
+    "image": null,
+    "dependencies": {
+      "mode": "prepared",
+      "reproducible": true,
+      "lockfiles": {
+        "uv.lock": "75a60c873c1ff42ddc78dfe8a3ad5d1763e83c18d391b8abd5351166d42a1e0a"
+      },
+      "treeSha256": "5229ca7343b43db9fcc65817d6db3021ba33e26a46f1934d81b266ea139667c3",
+      "note": "prepared from the lockfile and digested"
+    },
+    "policyMet": true,
+    "problems": []
+  },
+  "policy": {
+    "behaviorChange": "none"
+  },
+  "unmeasured": [
+    "baseline: no checks are declared",
+    "held-out: no held-out checks are sealed for this workspace",
+    "coverage: the checks did not run",
+    "mutation: the checks did not run"
+  ],
+  "logs": [],
+  "verifier": {
+    "name": "swarm-verify",
+    "version": "2.0.0"
+  },
+  "version": "swarm-verify.result/v1",
+  "snapshot": {
+    "base": "d52f141e16b3142d6830e79923d67ff4a3783e23",
+    "patchSha256": "6282b30e5dd4eabe99cd077c19ee05ce14175533f3ba4d86e22b242f4d9e540c",
+    "treeSha256": "a50df8289b77a48857026c739100f8926a17d8a8bd9b6681639ec494b33d7673"
+  },
+  "integrity": {
+    "signed": true,
+    "signer": {
+      "kind": "key",
+      "fingerprint": "8c5ed5b218745e42c16a99d98024241cbf74c7aa7bf570fd6e5495491d0b5dae"
+    },
+    "statementSha256": "f78c955e4246a92b7aed6fdf5b36a07302f35d67a92346b4be1b61a39ef3b48b",
+    "problems": []
+  },
+  "evidence": {
+    "directory": "/Users/brad/.swarm/sessions/20261101T043924-47da42/verifications/1",
+    "bundle": "/Users/brad/.swarm/sessions/20261101T043924-47da42/verifications/1/attestation.sigstore.json",
+    "statement": "/Users/brad/.swarm/sessions/20261101T043924-47da42/verifications/1/statement.json",
+    "patch": "/Users/brad/.swarm/sessions/20261101T043924-47da42/verifications/1/change.patch",
+    "publicKey": "/Users/brad/.swarm/sessions/20261101T043924-47da42/verifications/1/attestation.pub.pem"
+  },
+  "failureOutput": "setup failed:\ne_name = '',\n          punycode_class_name = 'ByteBPEProcessor',\n          visibility = 'private')\n      CClassDefNode.body = StatListNode(_bbpe.pyx:51:4)\n      StatListNode.stats[0] = DefNode(_bbpe.pyx:58:4,\n          modifiers = [...]/0,\n          name = '__init__',\n          node_positions = [...]/65,\n          np_args_idx = [...]/0,\n          num_required_args = 3,\n          outer_attrs = [...]/2,\n          py_wrapper_required = True,\n          reqd_kw_flags_cname = '0',\n          used = True)\n      DefNode.body = StatListNode(_bbpe.pyx:59:8)\n      StatListNode.stats[4] = SingleAssignmentNode(_bbpe.pyx:63:28)\n      SingleAssignmentNode.rhs = ComprehensionNode(_bbpe.pyx:63:28,\n          has_local_scope = True,\n          is_temp = True,\n          result_is_used = True,\n          use_managed_ref = True)\n      ComprehensionNode.loop = ForInStatNode(_bbpe.pyx:63:34)\n      ForInStatNode.iterator = IteratorNode(_bbpe.pyx:63:46,\n          is_temp = 1,\n          result_is_used = True,\n          use_managed_ref = True)\n      IteratorNode.sequence = SimpleCallNode(_bbpe.pyx:63:57,\n          analysed = True,\n          is_temp = 1,\n          result_is_used = True,\n          use_managed_ref = True)\n\n      Compiler crash traceback from this point on:\n        File \"Cython/Compiler/Visitor.py\", line 174, in\n      Cython.Compiler.Visitor.TreeVisitor._visit\n        File \"Cython/Compiler/Visitor.py\", line 578, in\n      Cython.Compiler.Visitor.MethodDispatcherTransform.visit_SimpleCallNode\n          return self._dispatch_to_handler(node, function, args, None)\n        File \"Cython/Compiler/Visitor.py\", line 699, in\n      Cython.Compiler.Visitor.MethodDispatcherTransform._dispatch_to_handler\n          arg_list = arg_list[1:]  # drop CloneNode of self argument\n      TypeError: 'NoneType' object is unsliceable\n      Traceback (most recent call last):\n        File \"<string>\", line 14, in <module>\n          requires = get_requires_for_build({})\n        File\n      \"/private/var/folders/1q/2_tt_q515bs98g0f5v17_sdc0000gn/T/swarm-verify-OuRC6O/home/.cache/uv/builds-v0/.tmpfVSwLu/lib/python3.13/site-packages/setuptools/build_meta.py\",\n      line 333, in get_requires_for_build_wheel\n          return self._get_build_requires(config_settings, requirements=[])\n                 ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n        File\n      \"/private/var/folders/1q/2_tt_q515bs98g0f5v17_sdc0000gn/T/swarm-verify-OuRC6O/home/.cache/uv/builds-v0/.tmpfVSwLu/lib/python3.13/site-packages/setuptools/build_meta.py\",\n      line 301, in _get_build_requires\n          self.run_setup()\n          ~~~~~~~~~~~~~~^^\n        File\n      \"/private/var/folders/1q/2_tt_q515bs98g0f5v17_sdc0000gn/T/swarm-verify-OuRC6O/home/.cache/uv/builds-v0/.tmpfVSwLu/lib/python3.13/site-packages/setuptools/build_meta.py\",\n      line 317, in run_setup\n          exec(code, locals())  # noqa: S102 # exec is intentional here\n          ~~~~^^^^^^^^^^^^^^^^\n        File \"<string>\", line 185, in <module>\n        File \"<string>\", line 172, in setup_package\n        File\n      \"/private/var/folders/1q/2_tt_q515bs98g0f5v17_sdc0000gn/T/swarm-verify-OuRC6O/home/.cache/uv/builds-v0/.tmpfVSwLu/lib/python3.13/site-packages/Cython/Build/Dependencies.py\",\n      line 1153, in cythonize\n          cythonize_one(*args)\n          ~~~~~~~~~~~~~^^^^^^^\n        File\n      \"/private/var/folders/1q/2_tt_q515bs98g0f5v17_sdc0000gn/T/swarm-verify-OuRC6O/home/.cache/uv/builds-v0/.tmpfVSwLu/lib/python3.13/site-packages/Cython/Build/Dependencies.py\",\n      line 1264, in cythonize_one\n          raise CompileError(None, pyx_file)\n      Cython.Compiler.Errors.CompileError: curated_tokenizers/_bbpe.pyx\n\n      hint: This usually indicates a problem with the package or the build\n      environment.\n  help: `curated-tokenizers` (v0.0.9) was included because `resident`\n        (v0.1.0) depends on `misaki[en]` (v0.9.4) which depends\n        on `spacy-curated-transformers` (v0.3.1) which depends on\n        `curated-tokenizers`\n"
+}
