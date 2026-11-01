@@ -199,3 +199,10 @@ One line per open choice made during the verifier-first rebuild (ADR 0014), with
 - The model-call evidence records the reasoning text and whether the reply came from it, so a run like that one can be read afterwards.
 - Applying a requirements block moved from loop.ts to requirements-step.ts, beside command-step.ts.
 - The system prompt says how a requirements block names evidence: a test by title, suite or `suite > title` path; a check only as one the project declares. The verifier's next action names what ran when a cited name matched nothing.
+
+## 2026-10-31: automatic local use, measured readiness
+
+- Readiness of every installed model, from `swarm doctor --models` (docs/acceptance/2026-10-31/models-survey.txt): of 17 installed, 10 passed the readiness probe at a 32,768-token context and 7 were excluded before loading: the four `:cloud` entries (no local weights), two embedding models, and resident-fast:2b, whose metadata states no attention shape. No eligible model failed its probe. The probe's tok/s is output tokens over Ollama's `eval_duration`; an earlier survey divided by the whole request time, prefill included, and is not used.
+- Selection chose qwen3.6:35b-a3b (largest ready model, conservative default; swarm-redesign-qwen36-32k, a copy of the same weights, ties it on parameter count and probe speed and sorts after it by name). It completed the dossier walkRepo task: session 20261101T003354-c4d1fc, R1 satisfied, isolated verification.
+- The same task on Rapid-MLX through `--endpoint` completed after the reasoning-field fix (session 20261101T005703-cef65a, qwen3.8:27b), and the report now says inference time was not reported where the endpoint gives none.
+- Stopping `ollama serve` during a run ends it as `model-error` with the step to take, verifies the tree as it stands and writes an incomplete report (session 20261101T010603-264071). A connection dropped mid-turn is sent again before the run stops, so an Ollama that restarts on its own does not end the run.
