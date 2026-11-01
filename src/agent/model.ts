@@ -29,6 +29,8 @@ export interface TurnOptions {
   readonly signal?: AbortSignal | undefined;
   /** The completion cap for this turn, sent as max_tokens. */
   readonly maxTokens: number;
+  /** Sampling temperature for this turn; 0 where unset. */
+  readonly temperature?: number | undefined;
 }
 
 export interface ModelClient {
@@ -120,7 +122,7 @@ export function openAiCompatible(options: {
   const url = `${options.endpoint.replace(/\/+$/, "")}/chat/completions`;
   return {
     model: options.model,
-    async complete(messages, { signal, maxTokens }) {
+    async complete(messages, { signal, maxTokens, temperature }) {
       let lastProblem = "";
       let failures = 0;
       let waits = 0;
@@ -137,7 +139,7 @@ export function openAiCompatible(options: {
             JSON.stringify({
               model: options.model,
               messages,
-              temperature: 0,
+              temperature: temperature ?? 0,
               stream: false,
               max_tokens: maxTokens,
             }),

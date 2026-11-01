@@ -13,6 +13,8 @@ const minimumReplyTokens = 256;
 const repeatLimit = 3;
 /** Replies in a row that follow no reply form before the model is called unusable here. */
 const unusableAfter = 4;
+/** The temperature of the one turn sampled to break a repeat. */
+const resampleTemperature = 0.7;
 
 /** A text's size in tokens, estimated at four characters each where the runtime gives no count. */
 export const estimateTokens = (text: string) => Math.ceil(text.length / 4);
@@ -130,11 +132,15 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
       );
     }
 
+    // The reply that would end the run for no progress is sampled rather than greedy: at
+    // temperature 0 a nearly unchanged prompt brings back the same command.
+    const resampled = previous.repeats === repeatLimit - 1;
     let reply: Reply;
     try {
       reply = await options.model.complete(messages, {
         signal: options.signal,
         maxTokens: Math.min(options.turnTokens, room),
+        temperature: resampled ? resampleTemperature : undefined,
       });
     } catch (error) {
       if (!(error instanceof ModelError)) throw error;
@@ -176,6 +182,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
         estimated,
         inferenceMs: reply.inferenceMs,
         retries: reply.retries,
+        ...(resampled ? { temperature: resampleTemperature } : {}),
       },
     });
 

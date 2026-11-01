@@ -200,14 +200,18 @@ export function ollamaChat(options: {
   const url = `${options.base}/api/chat`;
   return {
     model: options.model,
-    async complete(messages: readonly Message[], { signal, maxTokens }) {
+    async complete(messages: readonly Message[], { signal, maxTokens, temperature }) {
       const body = JSON.stringify({
         model: options.model,
         messages,
         stream: false,
         think: false,
         keep_alive: options.keepAlive ?? "10m",
-        options: { num_ctx: options.contextTokens, num_predict: maxTokens, temperature: 0 },
+        options: {
+          num_ctx: options.contextTokens,
+          num_predict: maxTokens,
+          temperature: temperature ?? 0,
+        },
       });
       let response: { readonly status: number; readonly text: string } | null = null;
       let retries = 0;
