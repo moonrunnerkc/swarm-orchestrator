@@ -40,7 +40,8 @@ function replays(probe: Fixture, ran: RunReport): void {
     [verifierCli, "replay", evidence, "--workspace", probe.repo],
     { encoding: "utf8", env: { ...process.env, SWARM_HOME: join(probe.root, "home") } },
   );
-  expect(replayed.stdout).toContain(
+  const why = `replay exited ${replayed.status} (signal ${replayed.signal}): ${replayed.stderr}`;
+  expect(replayed.stdout, why).toContain(
     "agreement    every recorded check, test and requirement result was reproduced",
   );
   expect(replayed.status).toBe(0);
@@ -150,64 +151,84 @@ describe("a task of each kind, end to end", () => {
   });
 
   it("completes an upgrade judged on dependencies installed fresh from each lockfile", async () => {
-    const probe = await fixture(
-      {
-        "half.mjs": 'import { divide } from "dep";\nexport const half = (n) => divide(n, 2);\n',
-        "package.json":
-          '{ "name": "fixture", "version": "1.0.0", "type": "module", "private": true }\n',
-      },
-      "Upgrade dep to 2.0.0 and adapt half to its API.",
-    );
-    const vendor = join(probe.repo, "vendor");
-    for (const [version, body] of [
-      ["1.0.0", "export const divide = (a, b) => a / b;\n"],
-      ["2.0.0", "export const quotient = ({ dividend, divisor }) => dividend / divisor;\n"],
-    ] as const) {
-      const dir = join(probe.root, `dep-${version}`);
-      await mkdir(dir, { recursive: true });
-      await writeFile(
-        join(dir, "package.json"),
-        `{ "name": "dep", "version": "${version}", "type": "module", "main": "index.js" }\n`,
-      );
-      await writeFile(join(dir, "index.js"), body);
-      await mkdir(vendor, { recursive: true });
-      execFileSync("npm", ["pack", "--silent", "--pack-destination", vendor], { cwd: dir });
-    }
-    execFileSync(
-      "npm",
-      ["install", "--save-exact", "--no-audit", "--no-fund", "./vendor/dep-1.0.0.tgz"],
-      { cwd: probe.repo, stdio: "ignore" },
-    );
-    await rm(join(probe.repo, "node_modules"), { recursive: true, force: true });
-    await probe.put(".gitignore", "node_modules/\n");
-    probe.git("add", "-A");
-    probe.git("commit", "-qm", "depend on dep 1.0.0");
-    const ran = await probe.run(
-      scripted([
-        bash("npm install --save-exact --no-audit --no-fund ./vendor/dep-2.0.0.tgz"),
-        write(
-          "half.mjs",
-          'import { quotient } from "dep";\nexport const half = (n) => quotient({ dividend: n, divisor: 2 });',
-        ),
-        recordAndComplete([
-          {
-            id: "R1",
-            text: "x",
-            kind: "upgrade",
-            evidence: {
-              tests: [{ name: "half" }],
-              packages: [{ name: "dep", ecosystem: "npm", version: "2.0.0" }],
-            },
-          },
-        ]),
-      ]),
-    );
+    const probe = await dependingOnDep("Upgrade dep to 2.0.0 and adapt half to its API.");
+    const ran = await probe.run(upgradedToTwo());
     expect(ran.result?.execution.dependencies).toMatchObject({
       mode: "prepared",
       reproducible: true,
     });
     expect(ran.report.requirements[0]).toMatchObject({ status: "satisfied" });
+    expect(ran.report.requirements[0]?.versions).toMatchObject([{ name: "dep", range: "2.0.0" }]);
     expect(ran.report.state).toBe("complete");
     replays(probe, ran);
   });
+
+  it("fails an upgrade past the version the task's wording allows, whatever the model claims", async () => {
+    const probe = await dependingOnDep("Upgrade dep within 1.x and adapt half to its API.");
+    const ran = await probe.run(upgradedToTwo());
+    expect(ran.report.requirements[0]).toMatchObject({
+      status: "failed",
+      limitation: "failing: npm:dep within 1.x",
+    });
+    expect(ran.report.state).toBe("incomplete");
+    replays(probe, ran);
+  });
 });
+
+/** A repository whose half() divides through dep 1.0.0, with dep 2.0.0 packed beside it. */
+async function dependingOnDep(task: string): Promise<Fixture> {
+  const probe = await fixture(
+    {
+      "half.mjs": 'import { divide } from "dep";\nexport const half = (n) => divide(n, 2);\n',
+      "package.json":
+        '{ "name": "fixture", "version": "1.0.0", "type": "module", "private": true }\n',
+    },
+    task,
+  );
+  const vendor = join(probe.repo, "vendor");
+  for (const [version, body] of [
+    ["1.0.0", "export const divide = (a, b) => a / b;\n"],
+    ["2.0.0", "export const quotient = ({ dividend, divisor }) => dividend / divisor;\n"],
+  ] as const) {
+    const dir = join(probe.root, `dep-${version}`);
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, "package.json"),
+      `{ "name": "dep", "version": "${version}", "type": "module", "main": "index.js" }\n`,
+    );
+    await writeFile(join(dir, "index.js"), body);
+    await mkdir(vendor, { recursive: true });
+    execFileSync("npm", ["pack", "--silent", "--pack-destination", vendor], { cwd: dir });
+  }
+  execFileSync(
+    "npm",
+    ["install", "--save-exact", "--no-audit", "--no-fund", "./vendor/dep-1.0.0.tgz"],
+    { cwd: probe.repo, stdio: "ignore" },
+  );
+  await rm(join(probe.repo, "node_modules"), { recursive: true, force: true });
+  await probe.put(".gitignore", "node_modules/\n");
+  probe.git("add", "-A");
+  probe.git("commit", "-qm", "depend on dep 1.0.0");
+  return probe;
+}
+
+/** A model that moves to dep 2.0.0, adapts half, and claims 2.0.0 for its upgrade. */
+const upgradedToTwo = () =>
+  scripted([
+    bash("npm install --save-exact --no-audit --no-fund ./vendor/dep-2.0.0.tgz"),
+    write(
+      "half.mjs",
+      'import { quotient } from "dep";\nexport const half = (n) => quotient({ dividend: n, divisor: 2 });',
+    ),
+    recordAndComplete([
+      {
+        id: "R1",
+        text: "x",
+        kind: "upgrade",
+        evidence: {
+          tests: [{ name: "half" }],
+          packages: [{ name: "dep", ecosystem: "npm", version: "2.0.0" }],
+        },
+      },
+    ]),
+  ]);

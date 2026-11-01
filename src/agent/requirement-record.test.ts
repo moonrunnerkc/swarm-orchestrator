@@ -60,6 +60,40 @@ describe("the requirement record", () => {
     expect(bad.notes[0]).toMatch(/^Q9 was not recorded: id/);
   });
 
+  it("holds the task's version constraints on R1, and no proposal rewrites, drops or adds one", () => {
+    const upgrade =
+      "Bump vitest from 4.1.8 to 4.1.10 (or both Stryker packages to the latest 9.x if one exists).";
+    const stryker = {
+      name: "@stryker-mutator/core",
+      ecosystem: "npm" as const,
+      range: "9.x",
+      latest: true,
+      wording: "Stryker packages to the latest 9.x",
+    };
+    const start = initialRecord(upgrade, [stryker]);
+    const rewritten = { ...stryker, range: "10.x", latest: false };
+    const record = applyProposal(
+      upgrade,
+      start,
+      JSON.stringify([
+        { id: "R1", text: upgrade, source: "user", kind: "upgrade", versions: [rewritten] },
+        { id: "R2", text: "keep the tests green", kind: "other", versions: [rewritten] },
+      ]),
+    );
+    expect(record.requirements[0]).toMatchObject({ kind: "upgrade", versions: [stryker] });
+    expect(record.requirements[1]?.versions).toEqual([]);
+    expect(record.notes).toEqual([
+      "R1's versions come from the task's wording and are kept as read; a proposal cannot change them",
+      "R2's versions come from the task's wording and are kept as read; a proposal cannot change them",
+    ]);
+    const dropped = applyProposal(
+      upgrade,
+      start,
+      JSON.stringify([{ id: "R1", text: upgrade, kind: "upgrade", versions: [] }]),
+    );
+    expect(dropped.requirements[0]?.versions).toEqual([stryker]);
+  });
+
   it("digests the record so a later report cannot swap it", () => {
     const a = recordSha256(initialRecord(task));
     expect(a).toMatch(/^[0-9a-f]{64}$/);

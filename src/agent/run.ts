@@ -20,6 +20,7 @@ import { systemPrompt } from "./prompt.ts";
 import { assembleReport, type RunReportFile, writeReport } from "./report.ts";
 import { initialRecord } from "./requirement-record.ts";
 import { behaviorChangeNote, createVerifier, dependencyPolicy, swarmHome } from "./verification.ts";
+import { versionConstraintsOf, workspaceDependencies } from "./version-constraints.ts";
 import { deliver, openWorkspace } from "./workspace.ts";
 
 export interface RunOptions {
@@ -132,10 +133,12 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
       },
     });
 
+    const declared = await workspaceDependencies(workspace);
+    const stated = versionConstraintsOf(options.task, declared.dependencies);
     const progress: Progress = {
       model: options.model,
       loops: [],
-      record: initialRecord(options.task),
+      record: initialRecord(options.task, stated.constraints, [...declared.notes, ...stated.notes]),
       review: null,
       escalated: false,
     };
