@@ -42,6 +42,8 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
   let verifications = 0;
   let nudged = false;
   let noticed = false;
+  let turnStarted: number | null = null;
+  let longestTurnMs = 0;
   let verification: Verification | null = null;
   let previous = { command: "", output: "", repeats: 0 };
   let malformed = 0;
@@ -85,8 +87,18 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
     if (steps >= options.maxSteps) return result("step-budget");
     const spent = usage.inputTokens + usage.outputTokens;
     const time = options.turnTime();
+    // No turn starts that the time left cannot pay for either: the longest turn so far is the
+    // measure, so a slow model's last turn does not eat the time final verification needs.
+    if (turnStarted !== null) longestTurnMs = Math.max(longestTurnMs, Date.now() - turnStarted);
+    turnStarted = Date.now();
     if (time.leftMs <= 0)
       return result("time-budget", "the time left is reserved for final verification");
+    if (time.leftMs < longestTurnMs) {
+      return result(
+        "time-budget",
+        `the next turn may take ${Math.ceil(longestTurnMs / 1000)} s, as the longest has, and ${Math.floor(time.leftMs / 1000)} s remain before the time reserved for final verification`,
+      );
+    }
     options.signal?.throwIfAborted();
     // Said once, for whichever budget runs short first.
     const notice = noticed

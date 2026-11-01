@@ -20,4 +20,21 @@ describe("a run's turn budget", () => {
       1,
     );
   });
+
+  // A slow model's turn outlasted the time reserved for final verification, which then never ran.
+  it("starts no turn that would run into the time reserved for final verification", async () => {
+    const quick = scripted(["ls", "pwd", "ls -a"].map(bash));
+    const slow = {
+      ...quick,
+      async complete(...args: Parameters<typeof quick.complete>) {
+        await new Promise((wait) => setTimeout(wait, 1_500));
+        return quick.complete(...args);
+      },
+    };
+    // 120 s of the wall are the verification reserve; 2.5 s remain for 1.5 s turns.
+    const ran = await (await fixture()).run(slow, { maxSteps: 3, maxWallMs: 122_500 });
+    expect(ran.stop).toBe("time-budget");
+    expect(ran.report.resources.steps).toBe(1);
+    expect(ran.report.verification).toBe("fresh");
+  });
 });
