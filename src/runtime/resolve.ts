@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { type ModelClient, openAiCompatible } from "../agent/model.ts";
-import { eligibility } from "./capacity.ts";
+import { capacityAdvice, eligibility } from "./capacity.ts";
 import {
   type InstalledModel,
   listOllama,
@@ -206,9 +206,13 @@ export async function resolveModel(input: ResolveInput): Promise<ResolvedModel> 
     const tried = candidates
       .map((one) => `${one.eligibility.model.name}: ${one.probe.reason}`)
       .join("; ");
+    // Nothing fit: say what would. Something fit and failed its probe: say which, and how to look.
+    const advice = capacityAdvice(installed, input.contextTokens);
     throw new NoModelError(
       `no installed Ollama model can run the agent at a ${input.contextTokens}-token context${tried.length > 0 ? ` (${tried})` : ""}`,
-      "Install a chat model that fits this machine, for example `ollama pull qwen2.5-coder:14b`, or lower the context with --context",
+      advice === null
+        ? "Every model that fits failed its readiness probe: `swarm doctor --models` shows each one's result; name one with --model to use it anyway"
+        : `${advice[0]?.toUpperCase()}${advice.slice(1)}`,
     );
   }
   const model = choice.chosen.eligibility.model;

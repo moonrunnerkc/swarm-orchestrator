@@ -98,3 +98,48 @@ export function eligibility(
     };
   });
 }
+
+/** The smallest context a run is worth starting with: the prompt, instructions and a few turns. */
+const smallestUsefulContext = 8192;
+
+/**
+ * The step to take when no installed model fits, or null where one does (then the failure was a
+ * probe, not capacity). The budget is fixed by total memory, so the steps are a smaller context
+ * or a smaller model, never closing other programs. A suggested context passes the same rules as
+ * the configured one, stated context included, and names the model selection would favor there.
+ */
+export function capacityAdvice(
+  models: readonly InstalledModel[],
+  contextTokens: number,
+  budget = modelMemoryBudget(),
+): string | null {
+  const chat = models.filter(
+    (one) =>
+      !one.remote &&
+      one.capabilities.includes("completion") &&
+      !one.capabilities.includes("embedding"),
+  );
+  if (chat.length === 0) {
+    return "no local chat model is installed: install one with `ollama pull <model>`, or name an OpenAI-compatible server with --endpoint";
+  }
+  if (chat.every((one) => one.attention === null || one.sizeBytes === null)) {
+    return "the installed chat models state no attention shape, so their memory cannot be estimated: name one with --model to use it without the estimate";
+  }
+  const fitting = (context: number) =>
+    eligibility(chat, context, budget)
+      .filter((one) => one.eligible && one.need !== null)
+      .sort(
+        (a, b) =>
+          (b.model.parameters ?? 0) - (a.model.parameters ?? 0) ||
+          a.model.name.localeCompare(b.model.name),
+      );
+  if (fitting(contextTokens).length > 0) return null;
+  const head = `no local chat model fits a ${contextTokens}-token context in the ${format(budget)} models may use here`;
+  for (let context = contextTokens / 2; context >= smallestUsefulContext; context /= 2) {
+    const [best] = fitting(context);
+    if (best?.need) {
+      return `${head}: run with --context ${context}, where ${best.model.name} fits (it needs ${format(best.need.totalBytes)}), or install a smaller chat model`;
+    }
+  }
+  return `${head}, nor an ${smallestUsefulContext}-token one: install a smaller chat model`;
+}
