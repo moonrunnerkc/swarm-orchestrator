@@ -38,6 +38,11 @@ export function compacted(
     (fact) =>
       `- step ${fact.step}: \`${fact.command.split("\n")[0]}\` exited ${fact.exitCode ?? "without running"}${fact.output === null ? "" : `; full output in ${fact.output}`}`,
   );
+  const runs = new Map<string, number>();
+  for (const fact of facts) runs.set(fact.command, (runs.get(fact.command) ?? 0) + 1);
+  const repeated = [...runs]
+    .filter(([, count]) => count > 1)
+    .map(([command, count]) => `\`${command.split("\n")[0]}\` (${count} times)`);
   const failed = facts
     .filter((fact) => fact.exitCode !== 0)
     .map((fact) => `\`${fact.command.split("\n")[0]}\``);
@@ -49,8 +54,10 @@ export function compacted(
       ...(failed.length > 0
         ? ["", `Commands that failed, worth not repeating as they were: ${failed.join(", ")}.`]
         : []),
+      ...(repeated.length > 0 ? ["", `Ran more than once: ${repeated.join(", ")}.`] : []),
       "",
-      "The working tree holds every change made so far; read files again rather than relying on memory.",
+      "The working tree holds every change made so far. Whole files read again will be compacted",
+      "away again. Read only the lines you need (grep -n, sed -n 'a,bp'), and make the change.",
     ].join("\n"),
   };
   // The kept turns must open with the model's reply to a user turn, never mid-pair.

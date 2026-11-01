@@ -34,4 +34,16 @@ describe("compacting old turns", () => {
     // Roles still alternate after the compacted block.
     expect(result[4]?.role).toBe("user");
   });
+
+  it("says which reads are being repeated and to read only the lines needed, not whole files again", () => {
+    const facts = [
+      { step: 1, command: "cat src/a.ts", exitCode: 0, output: null },
+      { step: 2, command: "cat src/b.ts", exitCode: 0, output: null },
+      { step: 3, command: "cat src/a.ts", exitCode: 0, output: null },
+    ];
+    const digest = compacted(turns(20), facts, 25_000, 32768)?.[2]?.content ?? "";
+    expect(digest).toContain("Ran more than once: `cat src/a.ts` (2 times).");
+    expect(digest).toContain("Read only the lines you need (grep -n, sed -n 'a,bp')");
+    expect(digest).not.toContain("read files again");
+  });
 });
