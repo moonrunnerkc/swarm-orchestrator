@@ -3,7 +3,7 @@ import type { Chokepoint } from "../tools/chokepoint.ts";
 import { runCommandStep } from "./command-step.ts";
 import { type CommandFact, compacted } from "./context.ts";
 import { type Message, type ModelClient, ModelError, type Reply } from "./model.ts";
-import { parseReply, systemPrompt, turnHeader } from "./prompt.ts";
+import { completionMarker, parseReply, systemPrompt, turnHeader } from "./prompt.ts";
 import { applyProposal, type RequirementRecord, recordSha256 } from "./requirement-record.ts";
 
 /** One verification of the working tree, as the loop reads it. */
@@ -272,7 +272,11 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
       });
       const ids = record.requirements.map((one) => one.id).join(", ");
       options.log(`requirements ${ids}`);
-      note = [`Recorded ${ids}.`, ...record.notes].join("\n");
+      note = [
+        `Recorded ${ids}.`,
+        ...record.notes,
+        `When the task is done, reply with ${completionMarker} on a line of its own, outside any block.`,
+      ].join("\n");
       if (!parsed.complete) continue;
     }
 

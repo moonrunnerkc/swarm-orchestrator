@@ -60,6 +60,7 @@ export type ParsedReply =
   | { readonly kind: "malformed"; readonly reason: string };
 
 const fenced = /```([a-z]*)[ \t]*\n([\s\S]*?)\n?```/g;
+const markerCommand = new RegExp(`^(?:echo\\s+)?(["']?)${completionMarker}\\1$`);
 const shells = new Set(["", "bash", "sh", "shell"]);
 
 export function parseReply(content: string): ParsedReply {
@@ -76,6 +77,10 @@ export function parseReply(content: string): ParsedReply {
   const [record] = records;
   if (record !== undefined) return { kind: "requirements", json: record.body, complete: marked };
   const [command] = commands;
+  // The marker put in a bash block, bare or echoed, says the same thing as the marker alone; local
+  // models do it after a requirements block (seen on dossier, 2026-10-31), and running it as a
+  // command would only print it back.
+  if (command !== undefined && markerCommand.test(command.body)) return { kind: "complete" };
   if (command === undefined) {
     return marked
       ? { kind: "complete" }

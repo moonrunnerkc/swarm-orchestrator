@@ -81,14 +81,14 @@ async function probed(
   identityOf: (model: InstalledModel) => ProbeIdentity,
   clientOf: (model: InstalledModel) => ModelClient,
   input: ResolveInput,
-  enough: (candidates: readonly Candidate[]) => boolean,
+  enough: (candidates: readonly Candidate[], next: InstalledModel | null) => boolean,
 ): Promise<Candidate[]> {
   const path = profilePath(input.home);
   let profile = await readProfile(path);
   const listed = eligibility(models, input.contextTokens).filter((one) => one.eligible);
   listed.sort((a, b) => (b.model.parameters ?? 0) - (a.model.parameters ?? 0));
   const candidates: Candidate[] = [];
-  for (const one of listed) {
+  for (const [at, one] of listed.entries()) {
     const identity = identityOf(one.model);
     let result = cachedProbe(profile, identity);
     if (result === null) {
@@ -98,7 +98,7 @@ async function probed(
       await writeProfile(path, profile);
     }
     candidates.push({ eligibility: one, probe: result });
-    if (enough(candidates)) break;
+    if (enough(candidates, listed[at + 1]?.model ?? null)) break;
   }
   return candidates;
 }
@@ -194,9 +194,13 @@ export async function resolveModel(input: ResolveInput): Promise<ResolvedModel> 
   // A probe loads the model; unloading it at once keeps one model resident at a time.
   const probeClient = (model: InstalledModel) =>
     ollamaChat({ base, model: model.name, contextTokens: input.contextTokens, keepAlive: "0" });
-  const candidates = await probed(installed, identityOf, probeClient, input, (found) =>
-    found.some((one) => one.probe.ready),
-  );
+  // Strongest first, until a ready model is found and the next is smaller: models tied at the top
+  // are all probed, so the tie is settled by the policy rather than by listing order.
+  const candidates = await probed(installed, identityOf, probeClient, input, (found, next) => {
+    const ready = found.filter((one) => one.probe.ready);
+    const best = Math.max(...ready.map((one) => one.eligibility.model.parameters ?? 0));
+    return ready.length > 0 && (next === null || (next.parameters ?? 0) < best);
+  });
   const choice = choose(candidates, profile, input.contextTokens);
   if (choice === null) {
     const tried = candidates

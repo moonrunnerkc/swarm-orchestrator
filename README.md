@@ -37,13 +37,24 @@ satisfied, no new regression is unresolved, and the evidence matches the deliver
 ## Install
 
 Node 22 or newer, git, and a docker daemon for isolated verification (colima or Docker Desktop
-on macOS). Swarm runs against a local model: Ollama, or any OpenAI-compatible endpoint you name
-with `--endpoint`.
+on macOS). Swarm runs against a local model.
 
 ```sh
 npm install -g swarm-orchestrator
-swarm run "<task>" --endpoint http://localhost:11434/v1 --model <name>
+swarm run "<task>"
 ```
+
+With no model named, Swarm asks Ollama what is installed, leaves out cloud entries, embedding
+models and anything that would not fit in memory at the configured context (weights plus KV
+cache), probes the strongest candidates until one follows its shell protocol, and prints the one
+it chose and why. Probe results are kept per machine and model digest under `~/.swarm/profiles`.
+`swarm doctor --models` shows every installed model's verdict. Name a model with `--model`, or
+any OpenAI-compatible server (Rapid-MLX, vLLM, llama.cpp) with `--endpoint`. Nothing is
+downloaded and nothing remote is chosen for you.
+
+The run works in a git worktree beside your repository, starting from your tree as it is (staged,
+unstaged and untracked edits included), and applies its patch to your working tree at the end
+only if nothing changed there meanwhile; `--no-apply` keeps it as a patch.
 
 ## What the evidence is, and is not
 

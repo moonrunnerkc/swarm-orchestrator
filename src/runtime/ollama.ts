@@ -147,7 +147,7 @@ export async function listOllama(base: string): Promise<InstalledModel[]> {
               window: sliding ? window : null,
             };
           });
-    const stated = attention !== null && attention.every((layer) => Number.isFinite(layer.kvHeads));
+    const stated = attention?.every((layer) => Number.isFinite(layer.kvHeads)) === true;
     models.push({
       runtime: "ollama",
       name: tag.name,

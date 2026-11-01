@@ -31,8 +31,17 @@ describe("reading a reply", () => {
     });
   });
 
-  it("does not read the marker inside a block as completion", () => {
-    expect(parseReply(`\`\`\`bash\necho ${completionMarker}\n\`\`\``).kind).toBe("command");
+  it("reads the marker put in a bash block, bare or echoed, as completion, and nothing more", () => {
+    for (const body of [
+      completionMarker,
+      `echo ${completionMarker}`,
+      `echo "${completionMarker}"`,
+    ]) {
+      expect(parseReply(`\`\`\`bash\n${body}\n\`\`\``)).toEqual({ kind: "complete" });
+    }
+    expect(parseReply(`\`\`\`bash\nnpm test && echo ${completionMarker}\n\`\`\``).kind).toBe(
+      "command",
+    );
   });
 });
 
