@@ -1,4 +1,5 @@
 import type { Eligibility } from "./capacity.ts";
+import type { InstalledModel } from "./ollama.ts";
 import type { ProbeResult } from "./probe.ts";
 import type { Profile } from "./profile.ts";
 
@@ -25,15 +26,24 @@ function completionRate(profile: Profile, digest: string): number | null {
 }
 
 /**
+ * The share of finished tasks a model is expected to complete: its record where three or more
+ * are recorded, otherwise an even prior, so a model that keeps failing ranks below one not tried.
+ */
+function expectedRate(profile: Profile, digest: string): number {
+  return completionRate(profile, digest) ?? 0.5;
+}
+
+/**
  * Ready candidates, best first: by the share of finished tasks that ended complete where at
- * least three are recorded, then by parameter count, then by measured throughput, then by name. Without
- * outcomes the order is a conservative default, and the reason says so.
+ * least three are recorded (an even prior otherwise), then by parameter count, then by measured
+ * throughput, then by name. Without outcomes the order is a conservative default, and the reason
+ * says so.
  */
 export function rank(candidates: readonly Candidate[], profile: Profile): Candidate[] {
   const ready = candidates.filter((one) => one.probe.ready && one.eligibility.eligible);
   return [...ready].sort((a, b) => {
-    const rateA = completionRate(profile, a.eligibility.model.digest) ?? -1;
-    const rateB = completionRate(profile, b.eligibility.model.digest) ?? -1;
+    const rateA = expectedRate(profile, a.eligibility.model.digest);
+    const rateB = expectedRate(profile, b.eligibility.model.digest);
     if (rateA !== rateB) return rateB - rateA;
     const sizeA = a.eligibility.model.parameters ?? 0;
     const sizeB = b.eligibility.model.parameters ?? 0;
@@ -71,4 +81,21 @@ export function choose(
     (one) => (one.eligibility.model.parameters ?? 0) > (model.parameters ?? 0),
   );
   return { chosen, reason, escalation: stronger ?? null };
+}
+
+/**
+ * Whether probing, strongest first, can stop: a model is ready, and the next is smaller with no
+ * better expected record than the best ready one, so it could not be chosen over it.
+ */
+export function probedEnough(
+  found: readonly Candidate[],
+  next: InstalledModel | null,
+  profile: Profile,
+): boolean {
+  const ready = found.filter((one) => one.probe.ready);
+  if (ready.length === 0) return false;
+  if (next === null) return true;
+  const largest = Math.max(...ready.map((one) => one.eligibility.model.parameters ?? 0));
+  const best = Math.max(...ready.map((one) => expectedRate(profile, one.eligibility.model.digest)));
+  return (next.parameters ?? 0) < largest && expectedRate(profile, next.digest) <= best;
 }

@@ -17,7 +17,7 @@ import {
   withProbe,
   writeProfile,
 } from "./profile.ts";
-import { type Candidate, choose } from "./select.ts";
+import { type Candidate, choose, probedEnough } from "./select.ts";
 
 export interface ResolvedModel {
   readonly client: ModelClient;
@@ -225,11 +225,9 @@ export async function resolveModel(input: ResolveInput): Promise<ResolvedModel> 
     ollamaChat({ base, model: model.name, contextTokens: input.contextTokens, keepAlive: "0" });
   // Strongest first, until a ready model is found and the next is smaller: models tied at the top
   // are all probed, so the tie is settled by the policy rather than by listing order.
-  const candidates = await probed(installed, identityOf, probeClient, input, (found, next) => {
-    const ready = found.filter((one) => one.probe.ready);
-    const best = Math.max(...ready.map((one) => one.eligibility.model.parameters ?? 0));
-    return ready.length > 0 && (next === null || (next.parameters ?? 0) < best);
-  });
+  const candidates = await probed(installed, identityOf, probeClient, input, (found, next) =>
+    probedEnough(found, next, profile),
+  );
   const choice = choose(candidates, profile, input.contextTokens);
   if (choice === null) {
     const tried = candidates

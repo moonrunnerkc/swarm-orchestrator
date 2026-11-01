@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Eligibility } from "./capacity.ts";
 import type { InstalledModel } from "./ollama.ts";
 import type { Profile } from "./profile.ts";
-import { type Candidate, choose } from "./select.ts";
+import { type Candidate, choose, probedEnough } from "./select.ts";
 
 const model = (name: string, parameters: number): InstalledModel => ({
   runtime: "ollama",
@@ -73,5 +73,35 @@ describe("choosing a model", () => {
 
   it("chooses nothing where no model is ready", () => {
     expect(choose([candidate("broken", 7e10, false)], profile(), 32768)).toBeNull();
+  });
+
+  it("ranks a model that keeps failing below one not tried yet", () => {
+    const outcomes = { "digest-large": { complete: 0, other: 3 } };
+    const choice = choose(
+      [candidate("large", 3e10), candidate("small", 4e9)],
+      profile(outcomes),
+      32768,
+    );
+    expect(choice?.chosen.eligibility.model.name).toBe("small");
+  });
+});
+
+describe("probing strongest first", () => {
+  const large = candidate("large", 3e10);
+  const next = model("small", 4e9);
+
+  it("stops at the first ready model when the next is smaller and has no better record", () => {
+    expect(probedEnough([large], next, profile())).toBe(true);
+    expect(probedEnough([large], null, profile())).toBe(true);
+    expect(probedEnough([candidate("large", 3e10, false)], next, profile())).toBe(false);
+  });
+
+  it("goes on to a smaller model whose record is better than what was found", () => {
+    expect(
+      probedEnough([large], next, profile({ "digest-large": { complete: 0, other: 3 } })),
+    ).toBe(false);
+    expect(
+      probedEnough([large], next, profile({ "digest-small": { complete: 3, other: 0 } })),
+    ).toBe(false);
   });
 });
