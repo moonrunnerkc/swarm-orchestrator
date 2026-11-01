@@ -23,6 +23,8 @@ export const systemPrompt = [
   '   "structure": [{"path": "file", "contains": "text"}], "packages": [{"name": "pkg", "ecosystem": "npm", "version": "x.y.z"}]}}.',
   '   A test is named by its title, its suite, or a path such as "suite > title". A check is one',
   "   the project declares (package scripts such as test, lint, build); a command you ran is not.",
+  "   A package's version is the one the task asks for: exact, or a range such as 9.x where the",
+  "   task gives one, never simply what you installed.",
   "   Send it early and again whenever the mapping changes.",
   "",
   "```requirements",

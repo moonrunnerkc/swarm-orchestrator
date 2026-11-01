@@ -106,5 +106,6 @@ describe("the system prompt", () => {
   it("keeps the change to the task's scope, its files and the versions it states", () => {
     expect(systemPrompt).toContain("Change only what the task needs");
     expect(systemPrompt).toContain("keep\nto the versions and limits it states");
+    expect(systemPrompt).toContain("a range such as 9.x where the\n   task gives one");
   });
 });
