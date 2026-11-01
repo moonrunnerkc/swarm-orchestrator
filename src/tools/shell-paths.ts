@@ -253,8 +253,8 @@ const namesAScheme = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
  *     the workspace that does not exist and matches no pattern. A revision and a path share one
  *     word, so what is after the colon is offered as well.
  *   - `sed -n 'w /home/dev/.ssh/authorized_keys'` writes outside the workspace, and the operand
- *     is the whole script. A shell hands a quoted word over whole, and the program then reads a
- *     path out of the middle of it, so the whitespace-separated pieces are offered too.
+ *     is the whole script. A program can read a path out of the middle of a quoted word, so for
+ *     a program with no table in argument-grammars.ts the whitespace-separated pieces are offered.
  *
  * Offered rather than decided: each candidate goes through the same guard the word does, so being
  * wrong costs a denial or a confirmation on a word that was not a path, which is the guard's own

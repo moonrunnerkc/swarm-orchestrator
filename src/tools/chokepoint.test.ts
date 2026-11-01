@@ -112,4 +112,16 @@ describe("the chokepoint", () => {
     expect((await chokepoint("auto").run("git stash list")).decision).toBe("allowed");
     expect((await chokepoint("auto").run("grep -rn 'git push' .")).decision).toBe("allowed");
   });
+
+  // A model lost a turn each time a sed address or printed test source was refused as a path.
+  it("runs a command whose quoted text looks like a path, and refuses the file it writes outside", async () => {
+    const run = chokepoint("auto");
+    const written = await run.run("printf 'f(/--max-budget-usd/);\\n}\\n' > a.ts");
+    expect(written).toMatchObject({ decision: "allowed", exitCode: 0 });
+    const printed = await run.run("sed -n '/max-budget/,/}/p' a.ts");
+    expect(printed).toMatchObject({ decision: "allowed", output: "f(/--max-budget-usd/);\n}\n" });
+    const outside = await run.run("sed -n '/max-budget/w ../escaped.ts' a.ts");
+    expect(outside.decision).toBe("denied");
+    expect(outside.output).toContain("resolves outside the workspace");
+  });
 });

@@ -11,22 +11,14 @@
 export interface ShellCommand {
   /** The first word of every simple command the string would run. */
   readonly executables: readonly string[];
-  /** Every other word, and every redirect target: whatever could name a path. */
+  /** The paths the commands could open: the operands each program reads as files, and every redirect target. */
   readonly operands: readonly string[];
 }
 
-import {
-  inlineProgram,
-  interpreterLanguage,
-  pathsAWordCouldOpen,
-  pathsInlineCodeCouldOpen,
-} from "./shell-paths.ts";
+import { pathsACommandCouldOpen } from "./command-operands.ts";
 import { type ShellOperator, tokenize } from "./shell-tokens.ts";
 
 export type { ShellOperator } from "./shell-tokens.ts";
-
-/** Interpreters whose heredoc is another shell program, which this reader does not follow. */
-const shells = new Set(["sh", "bash", "zsh", "dash", "ksh"]);
 
 /** One simple command of a string: its program, and the words it was given, in order. */
 export interface SimpleShellCommand {
@@ -140,33 +132,13 @@ export function readShellCommand(command: string): ShellCommand | null {
   if (pipeline === null) {
     return null;
   }
-  // A heredoc or `-c` string handed to a shell is a program this reader does not follow.
-  if (
-    pipeline.some(
-      (one) =>
-        shells.has(one.executable.split("/").at(-1) ?? "") &&
-        (one.heredocs.length > 0 || one.arguments.some((word) => /^-[a-z]*c[a-z]*$/.test(word))),
-    )
-  ) {
-    return null;
+  const operands: string[] = [];
+  for (const one of pipeline) {
+    const paths = pathsACommandCouldOpen(one);
+    if (paths === null) {
+      return null;
+    }
+    operands.push(...paths);
   }
-  return {
-    executables: pipeline.map((one) => one.executable),
-    operands: pipeline.flatMap((one) => {
-      const language = interpreterLanguage(one.executable);
-      return [
-        ...one.arguments.flatMap((argument, index) => {
-          const inline = inlineProgram(one.executable, one.arguments, index);
-          return inline === null
-            ? pathsAWordCouldOpen(argument)
-            : pathsInlineCodeCouldOpen(argument, inline);
-        }),
-        // A heredoc is data for most programs and the program itself for an interpreter.
-        ...(language === null
-          ? []
-          : one.heredocs.flatMap((body) => pathsInlineCodeCouldOpen(body, language))),
-        ...one.redirects.flatMap(pathsAWordCouldOpen),
-      ];
-    }),
-  };
+  return { executables: pipeline.map((one) => one.executable), operands };
 }

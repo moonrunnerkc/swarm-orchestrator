@@ -50,9 +50,13 @@ describe("reading a shell command without a shell", () => {
   // POSIX: inside double quotes a backslash escapes only $ ` " \ and a newline; before anything
   // else it is itself. A grep alternation is the common case, and was read as unreadable.
   it("reads backslashes inside double quotes as the shell does", () => {
-    expect(readShellCommand(`grep -n "ruleset\\|--config" src/a.ts`)?.operands).toEqual([
+    expect(readShellPipeline(`grep -n "ruleset\\|--config" src/a.ts`)?.[0]?.arguments).toEqual([
       "-n",
       "ruleset\\|--config",
+      "src/a.ts",
+    ]);
+    // The pattern is text grep matches, not a file it opens.
+    expect(readShellCommand(`grep -n "ruleset\\|--config" src/a.ts`)?.operands).toEqual([
       "src/a.ts",
     ]);
     expect(readShellCommand(`git commit -m "say \\"hi\\" for \\$5"`)?.operands).toContain(
@@ -66,7 +70,7 @@ describe("reading a shell command without a shell", () => {
     const read = readShellCommand("# the import (circular) is `store.py`\ncat a.py # and $(this)");
     expect(read?.executables).toEqual(["cat"]);
     expect(read?.operands).toEqual(["a.py"]);
-    expect(readShellCommand("echo a#b")?.operands).toEqual(["a#b"]);
+    expect(readShellCommand("cat a#b")?.operands).toEqual(["a#b"]);
     expect(readShellCommand(`bash -c "git push"`)).toBeNull();
   });
 

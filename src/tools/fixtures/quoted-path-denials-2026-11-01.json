@@ -1,0 +1,138 @@
+[
+  {
+    "session": "20261101T012351-0807c2",
+    "sequence": 30,
+    "kind": "outside-path",
+    "detail": "/private/tmp/patch.py resolves outside the workspace /Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t1-pubprep/.pubprep.swarm-20261101T012351-0807c2",
+    "workspace": "/Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t1-pubprep/.pubprep.swarm-20261101T012351-0807c2",
+    "command": "cat > /tmp/patch.py << 'PYEOF'\nimport re\n\nwith open(\"src/cli.ts\", \"r\") as f:\n    content = f.read()\n\n# Replace the --max-budget-usd case block\nold_block = '''      case \"--max-budget-usd\": {\n        const raw = argv[i + 1];\n        if (raw === undefined) {\n          throw new Error(\"--max-budget-usd requires a numeric value (USD).\");\n        }\n        const n = Number(raw);\n        if (!Number.isFinite(n) || n < 0) {\n          throw new Error(\n            `--max-budget-usd requires a non-negative number, got: ${raw}`,\n          );\n        }\n        args.maxBudgetUsd = n;\n        i++;\n        break;\n      }'''\n\nnew_block = '''      case \"--max-budget-usd\": {\n        // Support --max-budget-usd=<n> inline format\n        if (a.startsWith(\"--max-budget-usd=\")) {\n          const raw = a.slice(\"--max-budget-usd=\".length);\n          if (raw === \"\") {\n            throw new Error(\"--max-budget-usd requires a numeric value (USD).\");\n          }\n          const n = Number(raw);\n          if (!Number.isFinite(n) || n < 0) {\n            throw new Error(\n              `--max-budget-usd requires a non-negative number, got: ${raw}`,\n            );\n          }\n          args.maxBudgetUsd = n;\n          break;\n        }\n        const raw = argv[i + 1];\n        if (raw === undefined) {\n          throw new Error(\"--max-budget-usd requires a numeric value (USD).\");\n        }\n        // If the next token looks like another flag, report it as missing value\n        if (raw.startsWith(\"-\")) {\n          throw new Error(\n            `--max-budget-usd requires a numeric value (USD), got: ${raw}`,\n          );\n        }\n        const n = Number(raw);\n        if (!Number.isFinite(n) || n < 0) {\n          throw new Error(\n            `--max-budget-usd requires a non-negative number, got: ${raw}`,\n          );\n        }\n        args.maxBudgetUsd = n;\n        i++;\n        break;\n      }'''\n\ncontent = content.replace(old_block, new_block)\n\nwith open(\"src/cli.ts\", \"w\") as f:\n    f.write(content)\n\nprint(\"Done\")\nPYEOF\npython3 /tmp/patch.py"
+  },
+  {
+    "session": "20261101T013406-9a84a6",
+    "sequence": 48,
+    "kind": "quoted-text",
+    "detail": "/--max-budget-usd resolves outside the workspace /Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t1-pubprep/.pubprep.swarm-20261101T013406-9a84a6",
+    "workspace": "/Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t1-pubprep/.pubprep.swarm-20261101T013406-9a84a6",
+    "command": "cat test/cli.test.ts | sed '47a\\\n\\\n  it(\"parses --max-budget-usd=<n> inline format\", () => {\\\n    expect(parseArgs([\"--max-budget-usd=5\"]).maxBudgetUsd).toBe(5);\\\n    expect(parseArgs([\"--max-budget-usd=0\"]).maxBudgetUsd).toBe(0);\\\n  });\\\n\\\n  it(\"rejects --max-budget-usd= with empty value\", () => {\\\n    expect(() => parseArgs([\"--max-budget-usd=\"])).toThrow(\\\n      /--max-budget-usd requires a numeric value/,\\\n    );\\\n  });\\\n\\\n  it(\"reports next token when --max-budget-usd is followed by a flag\", () => {\\\n    expect(() => parseArgs([\"--max-budget-usd\", \"--dry-run\"])).toThrow(\\\n      /requires a non-negative number, got: --dry-run/,\\\n    );\\\n  });' > /tmp/cli_test_new.ts && mv /tmp/cli_test_new.ts test/cli.test.ts"
+  },
+  {
+    "session": "20261101T013406-9a84a6",
+    "sequence": 51,
+    "kind": "quoted-text",
+    "detail": "/--max-budget-usd resolves outside the workspace /Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t1-pubprep/.pubprep.swarm-20261101T013406-9a84a6",
+    "workspace": "/Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t1-pubprep/.pubprep.swarm-20261101T013406-9a84a6",
+    "command": "cd /Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t1-pubprep/.pubprep.swarm-20261101T013406-9a84a6 && cat test/cli.test.ts | sed '47a\\\n\\\n  it(\"parses --max-budget-usd=<n> inline format\", () => {\\\n    expect(parseArgs([\"--max-budget-usd=5\"]).maxBudgetUsd).toBe(5);\\\n    expect(parseArgs([\"--max-budget-usd=0\"]).maxBudgetUsd).toBe(0);\\\n  });\\\n\\\n  it(\"rejects --max-budget-usd= with empty value\", () => {\\\n    expect(() => parseArgs([\"--max-budget-usd=\"])).toThrow(\\\n      /--max-budget-usd requires a numeric value/,\\\n    );\\\n  });\\\n\\\n  it(\"reports next token when --max-budget-usd is followed by a flag\", () => {\\\n    expect(() => parseArgs([\"--max-budget-usd\", \"--dry-run\"])).toThrow(\\\n      /requires a non-negative number, got: --dry-run/,\\\n    );\\\n  });' > test/cli.test.ts.new && mv test/cli.test.ts.new test/cli.test.ts"
+  },
+  {
+    "session": "20261101T013406-9a84a6",
+    "sequence": 57,
+    "kind": "quoted-text",
+    "detail": "/--max-budget-usd resolves outside the workspace /Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t1-pubprep/.pubprep.swarm-20261101T013406-9a84a6",
+    "workspace": "/Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t1-pubprep/.pubprep.swarm-20261101T013406-9a84a6",
+    "command": "cat test/cli.test.ts | sed '47a\\\n\\\n  it(\"parses --max-budget-usd=<n> inline format\", () => {\\\n    expect(parseArgs([\"--max-budget-usd=5\"]).maxBudgetUsd).toBe(5);\\\n    expect(parseArgs([\"--max-budget-usd=0\"]).maxBudgetUsd).toBe(0);\\\n  });\\\n\\\n  it(\"rejects --max-budget-usd= with empty value\", () => {\\\n    expect(() => parseArgs([\"--max-budget-usd=\"])).toThrow(\\\n      /--max-budget-usd requires a numeric value/,\\\n    );\\\n  });\\\n\\\n  it(\"reports next token when --max-budget-usd is followed by a flag\", () => {\\\n    expect(() => parseArgs([\"--max-budget-usd\", \"--dry-run\"])).toThrow(\\\n      /requires a non-negative number, got: --dry-run/,\\\n    );\\\n  });' > test/cli.test.ts.new && mv test/cli.test.ts.new test/cli.test.ts"
+  },
+  {
+    "session": "20261101T013406-9a84a6",
+    "sequence": 60,
+    "kind": "quoted-text",
+    "detail": "/--max-budget-usd resolves outside the workspace /Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t1-pubprep/.pubprep.swarm-20261101T013406-9a84a6",
+    "workspace": "/Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t1-pubprep/.pubprep.swarm-20261101T013406-9a84a6",
+    "command": "cat test/cli.test.ts | sed '47a\\\n\\\n  it(\"parses --max-budget-usd-inline\", () => {\\\n    expect(parseArgs([\"--max-budget-usd=5\"]).maxBudgetUsd).toBe(5);\\\n    expect(parseArgs([\"--max-budget-usd=0\"]).maxBudgetUsd).toBe(0);\\\n  });\\\n\\\n  it(\"rejects --max-budget-usd-empty\", () => {\\\n    expect(() => parseArgs([\"--max-budget-usd=\"])).toThrow(\\\n      /--max-budget-usd requires a numeric value/,\\\n    );\\\n  });\\\n\\\n  it(\"reports next token when --max-budget-usd is followed by a flag\", () => {\\\n    expect(() => parseArgs([\"--max-budget-usd\", \"--dry-run\"])).toThrow(\\\n      /requires a non-negative number, got: --dry-run/,\\\n    );\\\n  });' > test/cli.test.ts.new && mv test/cli.test.ts.new test/cli.test.ts"
+  },
+  {
+    "session": "20261101T013406-9a84a6",
+    "sequence": 63,
+    "kind": "quoted-text",
+    "detail": "/requires resolves outside the workspace /Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t1-pubprep/.pubprep.swarm-20261101T013406-9a84a6",
+    "workspace": "/Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t1-pubprep/.pubprep.swarm-20261101T013406-9a84a6",
+    "command": "cat test/cli.test.ts | sed '47a\\\n\\\n  it(\"parses inline budget format\", () => {\\\n    expect(parseArgs([\"--max-budget-usd=5\"]).maxBudgetUsd).toBe(5);\\\n    expect(parseArgs([\"--max-budget-usd=0\"]).maxBudgetUsd).toBe(0);\\\n  });\\\n\\\n  it(\"rejects empty inline budget\", () => {\\\n    expect(() => parseArgs([\"--max-budget-usd=\"])).toThrow(\\\n      /requires a numeric value/,\\\n    );\\\n  });\\\n\\\n  it(\"reports next token when followed by a flag\", () => {\\\n    expect(() => parseArgs([\"--max-budget-usd\", \"--dry-run\"])).toThrow(\\\n      /requires a non-negative number, got: --dry-run/,\\\n    );\\\n  });' > test/cli.test.ts.new && mv test/cli.test.ts.new test/cli.test.ts"
+  },
+  {
+    "session": "20261101T013406-9a84a6",
+    "sequence": 66,
+    "kind": "quoted-text",
+    "detail": "/requires resolves outside the workspace /Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t1-pubprep/.pubprep.swarm-20261101T013406-9a84a6",
+    "workspace": "/Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t1-pubprep/.pubprep.swarm-20261101T013406-9a84a6",
+    "command": "cat test/cli.test.ts | sed '47a\\\n\\\n  it(\"parses inline budget format\", () => {\\\n    expect(parseArgs([\"--max-budget-usd=5\"]).maxBudgetUsd).toBe(5);\\\n    expect(parseArgs([\"--max-budget-usd=0\"]).maxBudgetUsd).toBe(0);\\\n  });\\\n\\\n  it(\"rejects empty inline budget\", () => {\\\n    expect(() => parseArgs([\"--max-budget-usd=\"])).toThrow(\\\n      /requires a numeric value/,\\\n    );\\\n  });\\\n\\\n  it(\"reports next token when followed by a flag\", () => {\\\n    expect(() => parseArgs([\"--max-budget-usd\", \"--dry-run\"])).toThrow(\\\n      /requires a non-negative number, got: --dry-run/,\\\n    );\\\n  });' > test/cli.test.ts.new && mv test/cli.test.ts.new test/cli.test.ts"
+  },
+  {
+    "session": "20261101T013406-9a84a6",
+    "sequence": 69,
+    "kind": "quoted-text",
+    "detail": "/requires resolves outside the workspace /Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t1-pubprep/.pubprep.swarm-20261101T013406-9a84a6",
+    "workspace": "/Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t1-pubprep/.pubprep.swarm-20261101T013406-9a84a6",
+    "command": "cat test/cli.test.ts | sed '47a\\\n\\\n  it(\"parses inline budget format\", () => {\\\n    expect(parseArgs([\"--max-budget-usd=5\"]).maxBudgetUsd).toBe(5);\\\n    expect(parseArgs([\"--max-budget-usd=0\"]).maxBudgetUsd).toBe(0);\\\n  });\\\n\\\n  it(\"rejects empty inline budget\", () => {\\\n    expect(() => parseArgs([\"--max-budget-usd=\"])).toThrow(\\\n      /requires a numeric value/,\\\n    );\\\n  });\\\n\\\n  it(\"reports next token when followed by a flag\", () => {\\\n    expect(() => parseArgs([\"--max-budget-usd\", \"--dry-run\"])).toThrow(\\\n      /requires a non-negative number, got: --dry-run/,\\\n    );\\\n  });' > test/cli.test.ts.new && mv test/cli.test.ts.new test/cli.test.ts"
+  },
+  {
+    "session": "20261101T054629-c967ab",
+    "sequence": 46,
+    "kind": "outside-path",
+    "detail": "/ resolves outside the workspace /Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t5a-depose/.depose.swarm-20261101T054629-c967ab",
+    "workspace": "/Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t5a-depose/.depose.swarm-20261101T054629-c967ab",
+    "command": "cd / && ls -la node_modules/@depose/core 2>&1 | head -5"
+  },
+  {
+    "session": "20261101T054629-c967ab",
+    "sequence": 200,
+    "kind": "outside-path",
+    "detail": "/private/tmp/render-new.ts resolves outside the workspace /Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t5a-depose/.depose.swarm-20261101T054629-c967ab",
+    "workspace": "/Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t5a-depose/.depose.swarm-20261101T054629-c967ab",
+    "command": "# Insert import line after line 27 using a temp file approach\nawk 'NR==27{print; print \"import { MD_TEMPLATE, HTML_TEMPLATE } from '\\''./templates.js'\\'';\"; next}1' packages/narrative/src/render.ts > /tmp/render-new.ts && mv /tmp/render-new.ts packages/narrative/src/render.ts && echo ok"
+  },
+  {
+    "session": "20261101T054940-b71a2a",
+    "sequence": 61,
+    "kind": "outside-path",
+    "detail": "/System/Volumes/Data/home/user/repo resolves outside the workspace /Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t5b-ironroot/.ironroot.swarm-20261101T054940-b71a2a",
+    "workspace": "/Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t5b-ironroot/.ironroot.swarm-20261101T054940-b71a2a",
+    "command": "cd /home/user/repo && python3 -c \"from ironroot.cli.promote import Severity, Finding, PromotionReport; print('Severity:', Severity); print('Finding:', Finding); print('PromotionReport:', PromotionReport)\""
+  },
+  {
+    "session": "20261101T084321-1087ff",
+    "sequence": 147,
+    "kind": "outside-path",
+    "detail": "/Users/brad/projects/dependency-detector resolves outside the workspace /Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t7b-dependency-detector/.dependency-detector.swarm-20261101T084321-1087ff",
+    "workspace": "/Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t7b-dependency-detector/.dependency-detector.swarm-20261101T084321-1087ff",
+    "command": "git -C /Users/brad/projects/dependency-detector config receive.denyCurrentBranch updateInstead && git push origin pytest-upgrade:main"
+  },
+  {
+    "session": "20261101T084321-1087ff",
+    "sequence": 183,
+    "kind": "outside-path",
+    "detail": "/Users/brad/projects/dependency-detector/HEAD resolves outside the workspace /Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t7b-dependency-detector/.dependency-detector.swarm-20261101T084321-1087ff",
+    "workspace": "/Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t7b-dependency-detector/.dependency-detector.swarm-20261101T084321-1087ff",
+    "command": "cat /Users/brad/projects/dependency-detector/HEAD && ls /Users/brad/projects/dependency-detector/refs/heads/ 2>/dev/null"
+  },
+  {
+    "session": "20261101T092628-0b3280",
+    "sequence": 78,
+    "kind": "quoted-text",
+    "detail": "/function reproCommand/,/}/p resolves outside the workspace /Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t2-crossfire/.crossfire.swarm-20261101T092628-0b3280",
+    "workspace": "/Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t2-crossfire/.crossfire.swarm-20261101T092628-0b3280",
+    "command": "# I need to check the reproCommand function in src/detection/semgrep.ts\n# It was omitted from the previous cat output.\nsed -n '/function reproCommand/,/}/p' src/detection/semgrep.ts"
+  },
+  {
+    "session": "20261101T092628-0b3280",
+    "sequence": 113,
+    "kind": "quoted-text",
+    "detail": "/test(\"generates correct repro command for multiple rulesets\", () => {/,/expect(findings\\[0\\]?.repro_command).not.toContain(\"--config 'rules2.yml');\\n  });/d resolves outside the workspace /Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t2-crossfire/.crossfire.swarm-20261101T092628-0b3280",
+    "workspace": "/Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t2-crossfire/.crossfire.swarm-20261101T092628-0b3280",
+    "command": "# I will remove the temporary tests from test/scanner.test.ts to leave the repository clean.\n# I'll use sed to remove the block of tests I inserted.\n\nsed -i '/test(\"generates correct repro command for multiple rulesets\", () => {/,/expect(findings\\[0\\]?.repro_command).not.toContain(\"--config '\\''rules2.yml'\\'');\\n  });/d' test/scanner.test.ts"
+  },
+  {
+    "session": "20261101T140245-7b55bf",
+    "sequence": 23,
+    "kind": "outside-path",
+    "detail": "/private/tmp/patch.txt resolves outside the workspace /Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t1-pubprep/.pubprep.swarm-20261101T140245-7b55bf",
+    "workspace": "/Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t1-pubprep/.pubprep.swarm-20261101T140245-7b55bf",
+    "command": "cat > /tmp/patch.txt << 'EOF'\n      case \"--max-budget-usd\": {\n        const raw = argv[i + 1];\n        if (raw === undefined) {\n          throw new Error(\"--max-budget-usd requires a numeric value (USD).\");\n        }\n        const n = Number(raw);\n        if (!Number.isFinite(n) || n < 0) {\n          throw new Error(\n            `--max-budget-usd requires a non-negative number, got: ${raw}`,\n          );\n        }\n        args.maxBudgetUsd = n;\n        i++;\n        break;\n      }\nEOF\necho done"
+  },
+  {
+    "session": "20261101T142858-cff296",
+    "sequence": 37,
+    "kind": "outside-path",
+    "detail": "/workspace resolves outside the workspace /Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t2-crossfire/.crossfire.swarm-20261101T142858-cff296",
+    "workspace": "/Users/brad/projects/recovery-2026-10-31/acceptance/phase6/t2-crossfire/.crossfire.swarm-20261101T142858-cff296",
+    "command": "cd /workspace && git status --short && ls"
+  }
+]
