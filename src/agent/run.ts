@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import type { VerifyResult } from "swarm-verify";
+import { snapshotWorkingTree, type VerifyResult } from "swarm-verify";
 import { createSessionId, openEvidenceSession } from "../evidence/session.ts";
 import {
   type ApprovalMode,
@@ -187,6 +187,13 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
           evidence,
           instructions: rendered,
           status: () => gitText(workspace, ["status", "--short", "--", ".", ":(exclude).swarm"]),
+          // The patch the verifier would judge, new files included, kept in the session.
+          diff: async () =>
+            readFile(
+              (await snapshotWorkingTree(workspace, base, join(evidence.directory, "turn.patch")))
+                .path,
+              "utf8",
+            ),
           verify: verifier.tree,
           turnTokens: options.turnTokens,
           turnTime: () => ({

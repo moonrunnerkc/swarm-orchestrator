@@ -1,9 +1,13 @@
 import { runCommandStep } from "./command-step.ts";
-import { type CommandFact, compacted } from "./context.ts";
+import { diffSections, estimateTokens, movedFiles, unresolvedOf } from "./context.ts";
+import { createConversation } from "./conversation.ts";
+import { commandExchange, noteExchange } from "./exchange.ts";
 import type { LoopOptions, LoopResult, StopReason, Usage, Verification } from "./loop-types.ts";
-import { type Message, ModelError, type Reply } from "./model.ts";
-import { readReply, stepsLeftNotice, systemPrompt, timeLeftNotice, turnHeader } from "./prompt.ts";
+import { ModelError, type Reply } from "./model.ts";
+import { readReply, stepsLeftNotice, systemPrompt, timeLeftNotice } from "./prompt.ts";
 import { runRequirementsStep } from "./requirements-step.ts";
+import { noUsage, withTurn } from "./usage.ts";
+import { runVerificationStep } from "./verification-step.ts";
 
 export type { LoopOptions, LoopResult, StopReason, Usage, Verification } from "./loop-types.ts";
 
@@ -14,8 +18,8 @@ const repeatLimit = 3;
 /** Replies in a row that follow no reply form before the model is called unusable here. */
 const unusableAfter = 4;
 
-/** A text's size in tokens, estimated at four characters each where the runtime gives no count. */
-export const estimateTokens = (text: string) => Math.ceil(text.length / 4);
+const openFindings = (findings: string | null) =>
+  (findings ?? "").split("\n").filter((line) => /^R\d+ /.test(line));
 
 /**
  * One model turn at a time: a command, a requirement record, or completion. Completion asks the
@@ -24,21 +28,20 @@ export const estimateTokens = (text: string) => Math.ceil(text.length / 4);
  * stops the loop, finalization judges the tree it leaves.
  */
 export async function runLoop(options: LoopOptions): Promise<LoopResult> {
-  const preamble = [systemPrompt, options.instructions].filter((part) => part.length > 0);
-  const messages: Message[] = [{ role: "system", content: preamble.join("\n\n") }];
+  const conversation = createConversation({
+    system: [systemPrompt, options.instructions].filter((part) => part.length > 0).join("\n\n"),
+    task: options.task,
+    opening: options.handoff ?? "Begin.",
+  });
   let record = options.record;
   let findings: string | null = null;
-  let note = options.handoff ?? "Begin.";
+  // The ledger record of the verification the findings come from.
+  let checked: string | null = null;
   let steps = 0;
-  let usage: Usage = {
-    turns: 0,
-    inputTokens: 0,
-    outputTokens: 0,
-    estimatedTurns: 0,
-    inferenceMs: 0,
-    inferenceTurns: 0,
-    retries: 0,
-  };
+  let usage: Usage = noUsage;
+  // The last reported input count over the estimate of the prompt it counted.
+  let calibration = 1;
+  let sections = new Map<string, string>();
   let verifications = 0;
   let nudged = false;
   let noticed = false;
@@ -47,7 +50,6 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
   let verification: Verification | null = null;
   let previous = { command: "", output: "", repeats: 0 };
   let malformed = 0;
-  const facts: CommandFact[] = [];
   const result = (stop: StopReason, reason: string | null = null): LoopResult => ({
     stop,
     reason,
@@ -57,31 +59,6 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
     usage,
     verifications,
   });
-  /** The verification, and whether it measured the same tree and record as the one before. */
-  const judge = async (): Promise<{
-    readonly judged: Verification;
-    readonly repeated: boolean;
-  }> => {
-    options.log("verifying the working tree");
-    const judged = await options.verify(record);
-    if (judged.reused !== true) verifications += 1;
-    const repeated =
-      verification !== null &&
-      verification.patchSha256 === judged.patchSha256 &&
-      verification.recordSha256 === judged.recordSha256;
-    verification = judged;
-    await options.evidence.record({
-      type: "verification",
-      actor: "harness",
-      provenance: ["tool-output"],
-      payload: {
-        state: judged.state,
-        patchSha256: judged.patchSha256,
-        recordSha256: judged.recordSha256,
-      },
-    });
-    return { judged, repeated };
-  };
 
   while (true) {
     if (steps >= options.maxSteps) return result("step-budget");
@@ -105,21 +82,27 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
       ? null
       : (stepsLeftNotice(options.maxSteps - steps, options.maxSteps) ??
         timeLeftNotice(time.leftMs, time.wallMs));
-    if (notice !== null) {
-      noticed = true;
-      note = `${note}\n\n${notice}`;
-    }
-    const header = turnHeader(options.task, await options.status(), findings);
-    messages.push({ role: "user", content: `${header}\n${note}` });
+    if (notice !== null) noticed = true;
+    const diff = await options.diff();
+    const now = diffSections(diff);
+    conversation.edited(movedFiles(sections, now));
+    sections = now;
+    const state = { status: await options.status(), diff, findings, notice };
     // Old exploration is compacted only when the prompt measurably presses on the context.
-    const measured = estimateTokens(messages.map((message) => message.content).join(""));
-    const shorter = compacted(messages, facts, measured, options.contextTokens);
-    if (shorter !== null) {
-      messages.splice(0, messages.length, ...shorter);
+    const relieved = conversation.relieve({
+      record,
+      state,
+      calibration,
+      contextTokens: options.contextTokens,
+      unresolved: unresolvedOf(record, findings),
+      verification: checked,
+    });
+    if (relieved !== null) {
       options.log(
-        `compacted earlier turns (${measured} of ${options.contextTokens} context tokens)`,
+        `compacted earlier turns (${relieved.before} of ${options.contextTokens} context tokens, ${relieved.after} after)`,
       );
     }
+    const messages = conversation.messages(record, state);
     // No turn starts that the allowance cannot pay for: its prompt, and a useful reply.
     const prompt = estimateTokens(messages.map((message) => message.content).join(""));
     const room = options.maxTokens - spent - prompt;
@@ -148,20 +131,9 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
       return result("model-error", error.message);
     }
     steps += 1;
-    const input = reply.inputTokens ?? prompt;
-    const output = reply.outputTokens ?? estimateTokens(reply.content);
-    const estimated = reply.inputTokens === null || reply.outputTokens === null;
-    usage = {
-      turns: usage.turns + 1,
-      inputTokens: usage.inputTokens + input,
-      outputTokens: usage.outputTokens + output,
-      estimatedTurns: usage.estimatedTurns + (estimated ? 1 : 0),
-      inferenceMs: usage.inferenceMs + (reply.inferenceMs ?? 0),
-      inferenceTurns: usage.inferenceTurns + (reply.inferenceMs === null ? 0 : 1),
-      retries: usage.retries + reply.retries,
-    };
+    usage = withTurn(usage, reply, prompt);
+    if (reply.inputTokens !== null && prompt > 0) calibration = reply.inputTokens / prompt;
     const read = readReply(reply.content, reply.reasoning);
-    messages.push({ role: "assistant", content: read.text });
     await options.evidence.record({
       type: "model-call",
       actor: options.model.model,
@@ -171,9 +143,9 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
         reply: reply.content,
         ...(reply.reasoning === undefined ? {} : { reasoning: reply.reasoning }),
         ...(read.fromReasoning ? { replyFromReasoning: true } : {}),
-        inputTokens: input,
-        outputTokens: output,
-        estimated,
+        inputTokens: reply.inputTokens ?? prompt,
+        outputTokens: reply.outputTokens ?? estimateTokens(reply.content),
+        estimated: reply.inputTokens === null || reply.outputTokens === null,
         inferenceMs: reply.inferenceMs,
         retries: reply.retries,
       },
@@ -189,7 +161,15 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
         );
       }
       const cut = reply.truncated ? ` (it was cut off at ${options.turnTokens} tokens)` : "";
-      note = `Your reply was not used: ${parsed.reason}${cut}. Reply with exactly one bash block, one requirements block, or the completion marker alone.`;
+      conversation.add(
+        noteExchange({
+          step: steps,
+          reply: read.text,
+          brief: "(a reply that followed no reply form)",
+          result: `Your reply was not used: ${parsed.reason}${cut}. Reply with exactly one bash block, one requirements block, or the completion marker alone.`,
+          fact: `a reply that was not used: ${parsed.reason}`,
+        }),
+      );
       continue;
     }
     if (parsed.kind === "command") {
@@ -202,26 +182,29 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
         previous,
       });
       previous = { command: parsed.command, output: ran.output, repeats: ran.repeats };
-      facts.push(ran.fact);
       if (ran.repeats >= repeatLimit) {
         return result(
           "no-progress",
           `the same command printed the same output ${ran.repeats} turns running`,
         );
       }
-      note = ran.note;
       // A command repeated while findings are open is the run circling: point back at them.
-      const open = (findings ?? "").split("\n").filter((line) => /^R\d+ /.test(line));
-      if (ran.repeats >= 2 && open.length > 0) {
-        note = [
-          note,
-          "The verifier's findings are still open:",
-          ...open,
-          "Act on them: change the tree, or send the corrected requirements block, then mark the task complete.",
-        ].join("\n");
-      }
+      const open = openFindings(findings);
+      const note =
+        ran.repeats >= 2 && open.length > 0
+          ? [
+              ran.note,
+              "The verifier's findings are still open:",
+              ...open,
+              "Act on them: change the tree, or send the corrected requirements block, then mark the task complete.",
+            ].join("\n")
+          : ran.note;
+      conversation.add(
+        commandExchange({ reply: read.text, result: note, fact: ran.fact, output: ran.output }),
+      );
       continue;
     }
+    let proposal = "";
     if (parsed.kind === "requirements") {
       const proposed = await runRequirementsStep({
         task: options.task,
@@ -231,12 +214,31 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
         actor: options.model.model,
       });
       record = proposed.record;
-      note = proposed.note;
       options.log(`requirements ${proposed.ids}`);
-      if (!parsed.complete) continue;
+      proposal = `a requirements block, recorded as ${proposed.ids} [evidence ${proposed.evidence}]`;
+      if (!parsed.complete) {
+        conversation.add(
+          noteExchange({
+            step: steps,
+            reply: read.text,
+            brief: `(${proposal}; the record as it stands is at the top)`,
+            result: proposed.note,
+            fact: proposal,
+          }),
+        );
+        continue;
+      }
     }
 
-    const { judged, repeated } = await judge();
+    options.log("verifying the working tree");
+    const { judged, repeated, evidence } = await runVerificationStep({
+      verify: options.verify,
+      record,
+      last: verification,
+      evidence: options.evidence,
+    });
+    verification = judged;
+    if (judged.reused !== true) verifications += 1;
     if (judged.state === "complete") return result("complete");
     if (judged.state === "blocked") return result("blocked", judged.reasons?.[0] ?? null);
     // Completing again on the same tree and record only repeats the same findings: say so once,
@@ -247,18 +249,32 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
         "the task was marked complete again with no change since the last verification",
       );
     }
+    const marked = `${proposal.length > 0 ? `${proposal}, then ` : ""}the task marked complete; the verifier found it ${judged.state} [evidence ${evidence}]`;
+    const answer = (note: string) =>
+      conversation.add(
+        noteExchange({
+          step: steps,
+          reply: read.text,
+          brief: `(${marked})`,
+          result: note,
+          fact: marked,
+        }),
+      );
     if (repeated) {
       nudged = true;
-      const open = judged.feedback.split("\n").filter((line) => /^R\d+ /.test(line));
-      note = [
-        "Marking the task complete again changes nothing: the tree and the requirements are the ones just verified, so the findings are the same:",
-        ...open,
-        "Change the tree, or send a requirements block that maps the evidence the findings name, before marking it complete.",
-      ].join("\n");
+      answer(
+        [
+          "Marking the task complete again changes nothing: the tree and the requirements are the ones just verified, so the findings are the same:",
+          ...openFindings(judged.feedback),
+          "Change the tree, or send a requirements block that maps the evidence the findings name, before marking it complete.",
+        ].join("\n"),
+      );
       continue;
     }
     findings = judged.feedback;
-    note =
-      "The verifier did not find the task complete. Act on its findings, then mark the task complete again.";
+    checked = evidence;
+    answer(
+      "The verifier did not find the task complete. Act on its findings, then mark the task complete again.",
+    );
   }
 }

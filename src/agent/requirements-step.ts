@@ -1,4 +1,5 @@
 import type { EvidenceRecorder } from "../evidence/session.ts";
+import { evidenceRef } from "./exchange.ts";
 import { completionMarker } from "./prompt.ts";
 import { applyProposal, type RequirementRecord, recordSha256 } from "./requirement-record.ts";
 
@@ -8,6 +9,8 @@ export interface RequirementsStep {
   readonly ids: string;
   /** What the model reads next turn. */
   readonly note: string;
+  /** The ledger record that holds the record as proposed. */
+  readonly evidence: string;
 }
 
 /** Applies a proposed requirements block to the record and keeps the result as evidence. */
@@ -19,7 +22,7 @@ export async function runRequirementsStep(input: {
   readonly actor: string;
 }): Promise<RequirementsStep> {
   const record = applyProposal(input.task, input.record, input.json);
-  await input.evidence.record({
+  const recorded = await input.evidence.record({
     type: "requirements",
     actor: input.actor,
     provenance: ["model"],
@@ -38,5 +41,5 @@ export async function runRequirementsStep(input: {
     ...record.notes,
     `When the task is done, reply with ${completionMarker} on a line of its own, outside any block.`,
   ].join("\n");
-  return { record, ids, note };
+  return { record, ids, note, evidence: evidenceRef(recorded.record.payloadDigest) };
 }

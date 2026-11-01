@@ -70,7 +70,7 @@ export async function runAttempts(input: {
         task: shared.task,
         record: progress.record,
         diff,
-        workspace: shared.outputs?.root ?? "",
+        workspace: shared.outputs.root,
         base: input.base,
         directory: input.reviewDirectory,
         turnTokens: shared.turnTokens,

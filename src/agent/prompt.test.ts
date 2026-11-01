@@ -7,7 +7,6 @@ import {
   systemPrompt,
   timeLeftNotice,
   truncate,
-  turnHeader,
 } from "./prompt.ts";
 
 describe("reading a reply", () => {
@@ -78,19 +77,6 @@ describe("reading a reply a server split", () => {
       text: "I'll look.",
       fromReasoning: false,
     });
-  });
-});
-
-describe("a turn's header", () => {
-  it("carries the task, the status and the last failure verbatim", () => {
-    const header = turnHeader("Fix clamp.", " M src/clamp.mjs\n", "check test failed");
-    expect(header).toContain("Fix clamp.");
-    expect(header).toContain(" M src/clamp.mjs");
-    expect(header).toContain("check test failed");
-  });
-
-  it("says a clean tree is clean", () => {
-    expect(turnHeader("t", "", null)).toContain("(clean)");
   });
 });
 

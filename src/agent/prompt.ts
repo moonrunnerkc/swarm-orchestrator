@@ -50,19 +50,6 @@ export const systemPrompt = [
   "still judge your change: rewriting a test's expectation does not make a failing original pass.",
 ].join("\n");
 
-/** The top of every turn: the task, the tree's status and the latest findings, all verbatim. */
-export function turnHeader(task: string, status: string, findings: string | null): string {
-  return [
-    "Task:",
-    task,
-    "",
-    "git status --short:",
-    status.trim().length === 0 ? "(clean)" : status.trimEnd(),
-    ...(findings === null ? [] : ["", "Latest verifier findings:", truncate(findings)]),
-    "",
-  ].join("\n");
-}
-
 export type ParsedReply =
   | { readonly kind: "command"; readonly command: string }
   | { readonly kind: "requirements"; readonly json: string; readonly complete: boolean }
