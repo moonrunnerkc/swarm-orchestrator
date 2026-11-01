@@ -88,3 +88,59 @@ describe("the worktree's Python environment in the report", () => {
     );
   });
 });
+
+describe("each requirement as asked, as read, and as judged", () => {
+  // claimcheck (session 20261101T064120-2e5241): the summary printed "R1 satisfied" and nothing
+  // else, so Stryker 10.1.1 against "the latest 9.x" could only be seen in the session directory.
+  const task =
+    "Bump vitest from 4.1.8 to 4.1.10 (or both Stryker packages to the latest 9.x if one exists).";
+  const outcome: RunReportFile["requirements"][number] = {
+    id: "R1",
+    text: task,
+    source: "user",
+    kind: "upgrade",
+    required: true,
+    assumptions: ["npm can resolve a newer Stryker 9.x release"],
+    expected: {
+      tests: [{ name: "strykerVersionFor > returns the Stryker version for vitest major 4" }],
+      checks: ["test"],
+      structure: [{ path: "src/adapters/worktree-toolchain.ts", contains: "strykerVersionFor" }],
+      packages: [{ name: "@stryker-mutator/core", ecosystem: "npm", version: "10.1.1" }],
+    },
+    versions: [
+      {
+        name: "@stryker-mutator/core",
+        ecosystem: "npm",
+        range: "9.x",
+        latest: true,
+        wording: "Stryker packages to the latest 9.x",
+      },
+    ],
+    status: "failed",
+    evidence: [],
+    limitation: "failing: npm:@stryker-mutator/core within the latest 9.x",
+    nextAction: "repair the failing evidence",
+  };
+  const judged = { ...report, task, requirements: [outcome] };
+
+  it("prints the wording, then the model's reading, then the status, in the summary", () => {
+    const lines = summaryLines(judged, { markdown: "/x/report.md" });
+    const at = lines.findIndex((line) => line.startsWith("R1 "));
+    expect(lines.slice(at, at + 4)).toEqual([
+      `R1           asked    ${task}`,
+      '             read as  upgrade: npm:@stryker-mutator/core 10.1.1; tests strykerVersionFor > returns the Stryker version for vitest major 4; checks test; src/adapters/worktree-toolchain.ts contains "strykerVersionFor"; assumes npm can resolve a newer Stryker 9.x release',
+      '             held to  npm:@stryker-mutator/core within the latest 9.x (from "Stryker packages to the latest 9.x")',
+      "             status   failed: failing: npm:@stryker-mutator/core within the latest 9.x",
+    ]);
+  });
+
+  it("puts the reading beside the wording in the report's table", () => {
+    const markdown = renderMarkdown(judged);
+    expect(markdown).toContain(
+      "| Requirement | Source | Read as | Held to | Status | Evidence | Limitation |",
+    );
+    expect(markdown).toContain(
+      `| R1: ${task} | user | upgrade: npm:@stryker-mutator/core 10.1.1; tests strykerVersionFor > returns the Stryker version for vitest major 4; checks test; src/adapters/worktree-toolchain.ts contains "strykerVersionFor"; assumes npm can resolve a newer Stryker 9.x release | npm:@stryker-mutator/core within the latest 9.x (from "Stryker packages to the latest 9.x") | failed |`,
+    );
+  });
+});

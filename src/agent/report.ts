@@ -6,6 +6,11 @@ import type { LoadedInstruction } from "./instructions.ts";
 import type { LoopResult } from "./loop.ts";
 import type { TurnUsage } from "./loop-types.ts";
 import { describePythonEnvironment, type PythonEnvironment } from "./python-environment.ts";
+import {
+  requirementRow,
+  requirementTableHeader,
+  summaryRequirementLines,
+} from "./requirement-lines.ts";
 import type { ReviewOutcome } from "./review.ts";
 import type { Delivery, StartingState } from "./workspace.ts";
 
@@ -91,10 +96,7 @@ export function summaryLines(
   const python = report.startingState.python;
   if (python?.state === "not-prepared")
     lines.push(`${pad("python env", 12)} not prepared: ${python.limitation}`);
-  for (const one of report.requirements) {
-    const why = one.limitation === null ? "" : `  ${one.limitation}`;
-    lines.push(`${pad(one.id, 12)} ${pad(one.status, 11)}${why}`);
-  }
+  for (const one of report.requirements) lines.push(...summaryRequirementLines(one));
   if (report.changed.length > 0) {
     const deleted = report.changed.filter((one) => one.status === "deleted").map((one) => one.path);
     const also = deleted.length === 0 ? "" : `, deleting ${deleted.join(", ")}`;
@@ -110,8 +112,6 @@ export function summaryLines(
   lines.push(`${pad("report", 12)} ${paths.markdown}`);
   return lines;
 }
-
-const cell = (text: string) => text.replaceAll("|", "\\|").replaceAll("\n", " ");
 
 /** Inference time as measured: never a zero for turns whose runtime reported none. */
 function inferenceOf(resources: RunReportFile["resources"]): string {
@@ -159,12 +159,8 @@ export function renderMarkdown(report: RunReportFile): string {
     "",
     `Model: ${report.model.name} (${report.model.reason}). Stopped: ${report.stop}${report.reason === null ? "" : `, ${report.reason}`}.`,
     "",
-    "| Requirement | Kind | Source | Status | Evidence | Limitation |",
-    "| --- | --- | --- | --- | --- | --- |",
-    ...report.requirements.map(
-      (one) =>
-        `| ${one.id}: ${cell(one.text)} | ${one.kind} | ${one.source} | ${one.status} | ${cell(one.evidence.map((ref) => `${ref.ref} (${ref.outcome}, ${ref.authority})`).join("; ") || "none")} | ${cell(one.limitation ?? "")} |`,
-    ),
+    ...requirementTableHeader,
+    ...report.requirements.map(requirementRow),
     "",
     `- Delivered patch: \`${report.snapshot.patch}\`, sha256 ${report.snapshot.patchSha256}, against base ${report.snapshot.base}.`,
     `- Verification of that patch: ${report.verification}.`,

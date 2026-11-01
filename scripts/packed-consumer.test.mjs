@@ -128,7 +128,7 @@ describe("the packed agent against the packed verifier", () => {
     await stub.close();
     expect(stdout).toMatch(/^stop {9}complete$/m);
     expect(stdout).toMatch(/^state {8}complete$/m);
-    expect(stdout).toMatch(/^R1 {11}satisfied/m);
+    expect(stdout).toMatch(/^ {13}status {3}satisfied$/m);
     expect(stdout).toMatch(/^applied {6}yes$/m);
     expect(await readFile(join(repo, "half.mjs"), "utf8")).toBe(
       "export const half = (n) => n / 2;\n",
