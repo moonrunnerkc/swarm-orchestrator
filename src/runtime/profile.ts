@@ -106,3 +106,30 @@ export function withOutcome(profile: Profile, digest: string, complete: boolean)
     : { ...before, other: before.other + 1 };
   return { ...profile, outcomes: { ...profile.outcomes, [digest]: after } };
 }
+
+/** Stops that say nothing about the model: the user, the endpoint or an interruption ended them. */
+const notTheModels = new Set(["cancelled", "interrupted", "model-error"]);
+
+/**
+ * Whether a run counts toward its model's record, and as complete or not: null where the model
+ * did not finish it on its own (an escalation, a stop the model did not cause, or a verification
+ * the environment blocked).
+ */
+export function finishedOutcome(run: {
+  readonly stop: string;
+  readonly state: string;
+  readonly escalated: boolean;
+}): boolean | null {
+  if (run.escalated || run.state === "blocked" || notTheModels.has(run.stop)) return null;
+  return run.state === "complete";
+}
+
+/** Adds one finished run to the model's record in this machine's profile. */
+export async function recordOutcome(
+  home: string,
+  digest: string,
+  complete: boolean,
+): Promise<void> {
+  const path = profilePath(home);
+  await writeProfile(path, withOutcome(await readProfile(path), digest, complete));
+}

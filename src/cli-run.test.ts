@@ -189,4 +189,15 @@ describe("swarm run against the stub endpoint", () => {
     expect(ran.stderr).toContain("--linked-dependencies needs --host");
     expect(ran.status).not.toBe(0);
   });
+
+  it("records a finished run in the model's record on this machine", async () => {
+    const stub = await startStubModel();
+    const endpoint = `http://127.0.0.1:${stub.port}/v1`;
+    await swarmRun(endpoint, ["--max-steps", "1"]);
+    await stub.close();
+    const profiles = join(root, "home", "profiles");
+    const [file] = await readdir(profiles);
+    const profile = JSON.parse(await readFile(join(profiles, file ?? ""), "utf8"));
+    expect(profile.outcomes[`${endpoint}#stub`]).toEqual({ complete: 0, other: 1 });
+  });
 });

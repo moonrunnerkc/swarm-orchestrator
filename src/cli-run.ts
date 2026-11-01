@@ -7,6 +7,7 @@ import { swarmHome } from "./agent/verification.ts";
 import { buildVersion } from "./build-version.ts";
 import { UsageError } from "./cli-command-definitions.ts";
 import { readAgentConfig } from "./config/agent-config.ts";
+import { finishedOutcome, recordOutcome } from "./runtime/profile.ts";
 import {
   NoModelError,
   type ResolvedModel,
@@ -146,6 +147,13 @@ export async function run(args: readonly string[]): Promise<number> {
     signal: controller.signal,
     log: (line) => process.stderr.write(`${line}\n`),
   });
+  // A finished run joins its model's record here, which selection reads once there are enough.
+  const finished = finishedOutcome({
+    stop: ran.stop,
+    state: ran.report.state,
+    escalated: ran.report.resources.escalations > 0,
+  });
+  if (finished !== null) await recordOutcome(swarmHome(), model.digest, finished);
   for (const line of summaryLines(ran.report, { markdown: ran.reportPath })) write(line);
   write(`evidence     ${ran.sessionDirectory}`);
   if (ran.report.attestation !== null) write(`attestation  ${ran.report.attestation}`);
