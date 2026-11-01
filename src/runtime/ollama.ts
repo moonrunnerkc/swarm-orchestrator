@@ -179,6 +179,14 @@ const chatSchema = z.object({
  * Ollama's own chat API, which takes the context size and turns thinking off; its
  * OpenAI-compatible endpoint does neither. Counts and durations come from the runtime.
  */
+const readJson = (text: string): unknown => {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+};
+
 export function ollamaChat(options: {
   readonly base: string;
   readonly model: string;
@@ -217,23 +225,29 @@ export function ollamaChat(options: {
           if (code === "ECONNREFUSED") {
             throw new ModelError(
               `Ollama is not answering at ${options.base}: start it with \`ollama serve\` (or open the Ollama app), then run again`,
+              retries,
             );
           }
           if (retries === 2) {
             const problem = (error instanceof Error && error.message) || code || String(error);
             throw new ModelError(
               `Ollama dropped the connection at ${options.base} (${problem}, three attempts in a row): check that \`ollama serve\` is running and that ${options.model} loads (\`ollama run ${options.model}\`), then run again`,
+              retries,
             );
           }
           retries += 1;
         }
       }
       if (response.status !== 200)
-        throw new ModelError(`HTTP ${response.status} from ${url}: ${response.text.slice(0, 300)}`);
-      const parsed = chatSchema.safeParse(JSON.parse(response.text));
+        throw new ModelError(
+          `HTTP ${response.status} from ${url}: ${response.text.slice(0, 300)}`,
+          retries,
+        );
+      const parsed = chatSchema.safeParse(readJson(response.text));
       if (!parsed.success)
         throw new ModelError(
           `the reply is not an Ollama chat response: ${response.text.slice(0, 300)}`,
+          retries,
         );
       const reply = parsed.data;
       return {

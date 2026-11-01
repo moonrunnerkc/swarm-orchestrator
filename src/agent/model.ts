@@ -60,9 +60,12 @@ const responseSchema = z.object({
 
 /** The endpoint failed for good: the run stops, and the verifier judges the tree as it is. */
 export class ModelError extends Error {
-  constructor(detail: string) {
+  /** Requests the client sent again during the turn that failed. */
+  readonly retries: number;
+  constructor(detail: string, retries = 0) {
     super(`the model endpoint failed: ${detail}`);
     this.name = "ModelError";
+    this.retries = retries;
   }
 }
 
@@ -148,6 +151,7 @@ export function openAiCompatible(options: {
           if (code === "ECONNREFUSED") {
             throw new ModelError(
               `connection refused at ${url}: start the server that serves ${options.model}, or name a running one with --endpoint, then run again`,
+              failures + waits,
             );
           }
           lastProblem = problem;
@@ -166,12 +170,15 @@ export function openAiCompatible(options: {
           continue;
         }
         if (status < 200 || status >= 300)
-          throw new ModelError(`HTTP ${status}: ${text.slice(0, 300)}`);
+          throw new ModelError(`HTTP ${status}: ${text.slice(0, 300)}`, failures + waits);
         let parsed: z.infer<typeof responseSchema>;
         try {
           parsed = responseSchema.parse(JSON.parse(text));
         } catch {
-          throw new ModelError(`the response is not a chat completion: ${text.slice(0, 300)}`);
+          throw new ModelError(
+            `the response is not a chat completion: ${text.slice(0, 300)}`,
+            failures + waits,
+          );
         }
         const usage = parsed.usage;
         const message = parsed.choices[0]?.message;
@@ -188,6 +195,7 @@ export function openAiCompatible(options: {
       }
       throw new ModelError(
         `${lastProblem} (three attempts in a row): check that the server at ${options.endpoint.replace(/\/+$/, "")} serves ${options.model}, then run again`,
+        failures - 1 + waits,
       );
     },
   };

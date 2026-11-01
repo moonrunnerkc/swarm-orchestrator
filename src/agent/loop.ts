@@ -190,6 +190,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
       });
     } catch (error) {
       if (!(error instanceof ModelError)) throw error;
+      usage = { ...usage, retries: usage.retries + error.retries };
       await options.evidence.record({
         type: "model-error",
         actor: "harness",

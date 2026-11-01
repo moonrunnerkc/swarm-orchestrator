@@ -152,11 +152,13 @@ describe("swarm run", () => {
             retries: 0,
             truncated: false,
           };
-        throw new ModelError("HTTP 500: overloaded (three attempts in a row)");
+        throw new ModelError("HTTP 500: overloaded (three attempts in a row)", 2);
       },
     };
     const ran = await probe.run(failing);
     expect(ran.stop).toBe("model-error");
+    // The failed turn's own retries are counted with the rest.
+    expect(ran.report.resources.retries).toBe(2);
     expect(ran.report.verification).toBe("fresh");
     expect(ran.result?.checks[0]?.tests?.fixed).toEqual(["test/half.test.mjs::half"]);
   });

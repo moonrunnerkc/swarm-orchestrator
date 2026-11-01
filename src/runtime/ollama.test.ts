@@ -47,6 +47,8 @@ describe("Ollama's native chat", () => {
       "Ollama is not answering at http://localhost:11434: start it with `ollama serve` (or open the Ollama app), then run again",
     );
     expect(calls()).toBe(2);
+    const again = client([hangUp(), refused()]);
+    await expect(again.chat.complete([], turn)).rejects.toMatchObject({ retries: 1 });
   });
 
   it("stops on the third dropped connection in a row with the step to take", async () => {
@@ -55,5 +57,13 @@ describe("Ollama's native chat", () => {
       "Ollama dropped the connection at http://localhost:11434 (socket hang up, three attempts in a row): check that `ollama serve` is running and that q loads (`ollama run q`), then run again",
     );
     expect(calls()).toBe(3);
+  });
+
+  it("stops the run on a reply that is not JSON instead of crashing it", async () => {
+    const { chat } = client([{ status: 200, text: "<html>proxy error</html>" }]);
+    await expect(chat.complete([], turn)).rejects.toThrow(
+      "the reply is not an Ollama chat response: <html>proxy error</html>",
+    );
+    await expect(chat.complete([], turn)).rejects.toMatchObject({ name: "ModelError" });
   });
 });
