@@ -34,6 +34,7 @@ const report: RunReportFile = {
     escalations: 0,
     verifications: 0,
     cost: "none (local runtime)",
+    turns: [],
   },
 };
 

@@ -4,6 +4,7 @@ import type { RequirementOutcome } from "swarm-verify";
 import type { Finalized } from "./finalize.ts";
 import type { LoadedInstruction } from "./instructions.ts";
 import type { LoopResult } from "./loop.ts";
+import type { TurnUsage } from "./loop-types.ts";
 import { describePythonEnvironment, type PythonEnvironment } from "./python-environment.ts";
 import type { ReviewOutcome } from "./review.ts";
 import type { Delivery, StartingState } from "./workspace.ts";
@@ -69,6 +70,8 @@ export interface RunReportFile {
     readonly verifications: number;
     /** The money the run cost where it is known; a local runtime's is none. */
     readonly cost: string;
+    /** Every loop turn's counts in order, each reported by the runtime or estimated. */
+    readonly turns: readonly TurnUsage[];
   };
 }
 
@@ -276,6 +279,8 @@ export function assembleReport(input: {
       escalations: input.escalated ? 1 : 0,
       verifications: sum((loop) => loop.verifications),
       cost: input.options.cost,
+      // The review's turn is in the totals above; these are the loop's turns.
+      turns: loops.flatMap((loop) => loop.usage.perTurn),
     },
   };
 }
