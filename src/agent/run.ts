@@ -17,6 +17,7 @@ import { loadInstructions, renderInstructions } from "./instructions.ts";
 import type { StopReason } from "./loop.ts";
 import type { ModelClient } from "./model.ts";
 import { systemPrompt } from "./prompt.ts";
+import { preparePythonEnvironment } from "./python-environment.ts";
 import { assembleReport, type RunReportFile, writeReport } from "./report.ts";
 import { initialRecord } from "./requirement-record.ts";
 import { behaviorChangeNote, createVerifier, dependencyPolicy, swarmHome } from "./verification.ts";
@@ -102,6 +103,15 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
       deniedRoots: [home],
       childHomeDir: childHome,
     });
+    const deadline =
+      options.maxWallMs === null ? Number.POSITIVE_INFINITY : started + options.maxWallMs;
+    const python = await preparePythonEnvironment({
+      worktree: workspace,
+      repository,
+      env: guard.childEnvironment.variables,
+      deadline,
+      signal: options.signal,
+    });
     const execution =
       options.isolation === "isolated"
         ? ({ mode: "isolated", network: "closed", dependencies: "prepare" } as const)
@@ -126,6 +136,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
         base,
         head: managed.start.head,
         startingEdits: [...managed.start.paths],
+        python: python === null ? null : { ...python },
         promptSha256,
         instructions: digests,
         instructionNotes: instructions.notes,
@@ -142,8 +153,6 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
       review: null,
       escalated: false,
     };
-    const deadline =
-      options.maxWallMs === null ? Number.POSITIVE_INFINITY : started + options.maxWallMs;
     const verifier = createVerifier({
       workspace,
       base,
@@ -243,6 +252,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
         ...(options.behaviorChange === "authorized" ? [behaviorChangeNote(finalized.result)] : []),
       ],
       start: managed.start,
+      python,
       delivery,
       startedAt: started,
     });

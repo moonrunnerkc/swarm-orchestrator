@@ -30,12 +30,17 @@ const run = (command: string, args: readonly string[], cwd: string) =>
     );
   });
 
-/** Installed dependency trees are copied, copy-on-write where the filesystem allows. */
-const installed = ["node_modules", ".venv"];
+/**
+ * node_modules is copied, copy-on-write where the filesystem allows; the links npm makes there are
+ * relative, so a workspace package resolves inside the copy. A .venv is never copied: it is built
+ * in the worktree from its lockfile (python-environment.ts), since a copy runs through the original
+ * environment.
+ */
+const installed = ["node_modules"];
 
 /**
  * A detached git worktree of HEAD outside the user's tree, with the user's uncommitted edits
- * applied and committed there as the run's base, and copies of the installed dependency trees.
+ * applied and committed there as the run's base, and a copy of the installed node_modules.
  * Nothing in the user's working tree, index or branches changes.
  */
 export async function openWorkspace(
