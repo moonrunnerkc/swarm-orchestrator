@@ -21,6 +21,8 @@ export const systemPrompt = [
   '   Each entry: {"id": "R1", "text": "...", "kind": "fix" | "feature" | "refactor" | "upgrade" | "other",',
   '   "assumptions": ["..."], "evidence": {"tests": [{"name": "test name"}], "checks": ["check name"],',
   '   "structure": [{"path": "file", "contains": "text"}], "packages": [{"name": "pkg", "ecosystem": "npm", "version": "x.y.z"}]}}.',
+  '   A test is named by its title, its suite, or a path such as "suite > title". A check is one',
+  "   the project declares (package scripts such as test, lint, build); a command you ran is not.",
   "   Send it early and again whenever the mapping changes.",
   "",
   "```requirements",
