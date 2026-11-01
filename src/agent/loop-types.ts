@@ -33,8 +33,11 @@ export interface LoopOptions {
   readonly maxTokens: number;
   /** The completion cap of one turn; a turn never asks for more than the run has left. */
   readonly turnTokens: number;
-  /** Whether time remains for another model turn with final verification still reserved. */
-  readonly timeLeft: () => boolean;
+  /**
+   * The time left for model turns with final verification still reserved, and the run's whole
+   * wall budget; both infinite where the run has none.
+   */
+  readonly turnTime: () => { readonly leftMs: number; readonly wallMs: number };
   /** The model's context window, which compaction keeps the prompt within. */
   readonly contextTokens: number;
   /** Where full command outputs are written, or null to keep only what a turn carries. */

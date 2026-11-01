@@ -5,6 +5,7 @@ import {
   readReply,
   stepsLeftNotice,
   systemPrompt,
+  timeLeftNotice,
   truncate,
   turnHeader,
 } from "./prompt.ts";
@@ -120,5 +121,17 @@ describe("the notice that the turns are running out", () => {
     expect(stepsLeftNotice(4, 20)).toContain("4 turns remain of 20");
     expect(stepsLeftNotice(0, 3)).toBeNull();
     expect(stepsLeftNotice(10, 60)).toContain("mark the task complete");
+  });
+});
+
+// On a slow model the hour ends before the steps do: two held-back runs stopped on time with no
+// verification asked for.
+describe("the notice that the time is running out", () => {
+  it("comes when a fifth of the wall budget remains for turns, and never without a budget", () => {
+    const minute = 60_000;
+    expect(timeLeftNotice(12 * minute, 60 * minute)).toContain("About 12 minutes remain");
+    expect(timeLeftNotice(13 * minute, 60 * minute)).toBeNull();
+    expect(timeLeftNotice(5 * minute, Number.POSITIVE_INFINITY)).toBeNull();
+    expect(timeLeftNotice(12 * minute, 60 * minute)).toContain("mark the task complete");
   });
 });

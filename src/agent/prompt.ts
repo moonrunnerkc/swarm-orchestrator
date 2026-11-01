@@ -133,13 +133,24 @@ export function truncate(text: string, cap: number = outputCap): string {
   return `${bytes.subarray(0, half).toString()}\n[... ${omitted} bytes omitted ...]\n${bytes.subarray(bytes.length - half).toString()}`;
 }
 
+const beforeTheEnd =
+  "Whatever stands when they end is verified as it is: send the requirements block that maps the tests showing your change, and mark the task complete once it is done. The verifier runs every check at the base too, so there is no need to check the base yourself.";
+
 /**
- * Said once, when a fifth of the turns remain (ten at most), so a run does not spend its end on
- * checks that are not the change. Runs of fewer than five turns get no notice.
+ * Said when a fifth of the turns remain (ten at most), so a run does not spend its end on checks
+ * that are not the change. Runs of fewer than five turns get no notice.
  */
 export function stepsLeftNotice(left: number, max: number): string | null {
   const at = Math.min(10, Math.floor(max / 5));
   if (at < 1 || left !== at) return null;
   const turns = left === 1 ? "1 turn remains" : `${left} turns remain`;
-  return `${turns} of ${max}. Whatever stands when they end is verified as it is: send the requirements block that maps the tests showing your change, and mark the task complete once it is done. The verifier runs every check at the base too, so there is no need to check the base yourself.`;
+  return `${turns} of ${max}. ${beforeTheEnd}`;
+}
+
+/** The same, when a fifth of the wall budget remains for turns; a slow model meets it first. */
+export function timeLeftNotice(leftMs: number, wallMs: number): string | null {
+  if (!Number.isFinite(wallMs) || leftMs > wallMs / 5) return null;
+  const minutes = Math.max(1, Math.round(leftMs / 60_000));
+  const time = minutes === 1 ? "About 1 minute remains" : `About ${minutes} minutes remain`;
+  return `${time} for turns, with final verification reserved after them. ${beforeTheEnd}`;
 }

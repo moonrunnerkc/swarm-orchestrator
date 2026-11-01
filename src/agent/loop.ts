@@ -2,7 +2,7 @@ import { runCommandStep } from "./command-step.ts";
 import { type CommandFact, compacted } from "./context.ts";
 import type { LoopOptions, LoopResult, StopReason, Usage, Verification } from "./loop-types.ts";
 import { type Message, ModelError, type Reply } from "./model.ts";
-import { readReply, stepsLeftNotice, systemPrompt, turnHeader } from "./prompt.ts";
+import { readReply, stepsLeftNotice, systemPrompt, timeLeftNotice, turnHeader } from "./prompt.ts";
 import { runRequirementsStep } from "./requirements-step.ts";
 
 export type { LoopOptions, LoopResult, StopReason, Usage, Verification } from "./loop-types.ts";
@@ -41,6 +41,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
   };
   let verifications = 0;
   let nudged = false;
+  let noticed = false;
   let verification: Verification | null = null;
   let previous = { command: "", output: "", repeats: 0 };
   let malformed = 0;
@@ -83,11 +84,19 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
   while (true) {
     if (steps >= options.maxSteps) return result("step-budget");
     const spent = usage.inputTokens + usage.outputTokens;
-    if (!options.timeLeft())
+    const time = options.turnTime();
+    if (time.leftMs <= 0)
       return result("time-budget", "the time left is reserved for final verification");
     options.signal?.throwIfAborted();
-    const notice = stepsLeftNotice(options.maxSteps - steps, options.maxSteps);
-    if (notice !== null) note = `${note}\n\n${notice}`;
+    // Said once, for whichever budget runs short first.
+    const notice = noticed
+      ? null
+      : (stepsLeftNotice(options.maxSteps - steps, options.maxSteps) ??
+        timeLeftNotice(time.leftMs, time.wallMs));
+    if (notice !== null) {
+      noticed = true;
+      note = `${note}\n\n${notice}`;
+    }
     const header = turnHeader(options.task, await options.status(), findings);
     messages.push({ role: "user", content: `${header}\n${note}` });
     // Old exploration is compacted only when the prompt measurably presses on the context.

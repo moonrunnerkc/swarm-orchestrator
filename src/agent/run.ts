@@ -177,7 +177,10 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
           status: () => gitText(workspace, ["status", "--short", "--", ".", ":(exclude).swarm"]),
           verify: verifier.tree,
           turnTokens: options.turnTokens,
-          timeLeft: () => Date.now() + verifier.reserveMs() < deadline,
+          turnTime: () => ({
+            leftMs: deadline - Date.now() - verifier.reserveMs(),
+            wallMs: options.maxWallMs ?? Number.POSITIVE_INFINITY,
+          }),
           contextTokens: options.contextTokens,
           outputs: { directory: join(workspace, ".swarm", "outputs"), root: workspace },
           signal: options.signal,
