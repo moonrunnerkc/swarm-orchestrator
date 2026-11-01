@@ -40,6 +40,8 @@ export interface RunOptions {
   readonly maxWallMs: number | null;
   /** Where the verifier runs the checks: a container (the default), or the host, reported so. */
   readonly isolation: "isolated" | "host";
+  /** On the host, verify with the workspace's installed dependencies, reported as not reproducible. */
+  readonly dependencies?: "linked";
   /** Whether to apply the delivered patch to the workspace when it is still as the run found it. */
   readonly apply: boolean;
   readonly approval: ApprovalMode;
@@ -105,7 +107,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
         : ({
             mode: "host",
             network: "open",
-            dependencies: await dependencyPolicy(repository),
+            dependencies: options.dependencies ?? (await dependencyPolicy(repository)),
           } as const);
     const instructions = await loadInstructions(workspace);
     const rendered = renderInstructions(instructions);

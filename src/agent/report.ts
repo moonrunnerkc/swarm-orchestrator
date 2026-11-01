@@ -23,6 +23,8 @@ export interface RunReportFile {
     readonly treeSha256: string | null;
   };
   readonly verification: Finalized["verification"];
+  /** Why the final verification is blocked, in the verifier's words, where it is. */
+  readonly blocked: string | null;
   readonly requirements: readonly RequirementOutcome[];
   readonly regression: string | null;
   readonly execution: string | null;
@@ -71,6 +73,7 @@ export function summaryLines(
   const lines = [
     `${pad("state", 12)} ${report.state}`,
     `${pad("stop", 12)} ${report.stop}${report.reason === null ? "" : `: ${report.reason}`}`,
+    ...(report.blocked === null ? [] : [`${pad("blocked", 12)} ${report.blocked}`]),
   ];
   for (const one of report.requirements) {
     const why = one.limitation === null ? "" : `  ${one.limitation}`;
@@ -135,6 +138,7 @@ export function renderMarkdown(report: RunReportFile): string {
     "",
     `- Delivered patch: \`${report.snapshot.patch}\`, sha256 ${report.snapshot.patchSha256}, against base ${report.snapshot.base}.`,
     `- Verification of that patch: ${report.verification}.`,
+    ...(report.blocked === null ? [] : [`- Blocked: ${report.blocked}.`]),
     `- Starting state: HEAD ${report.startingState.head}${report.startingState.edits.length > 0 ? ` with your uncommitted edits to ${report.startingState.edits.join(", ")}` : ", no uncommitted edits"}.`,
     `- Applied to the workspace: ${report.delivery.applied ? "yes" : `no, ${report.delivery.reason}`}.`,
     `- Regression: ${report.regression ?? "not measured"}.`,
@@ -193,6 +197,7 @@ export function assembleReport(input: {
       treeSha256: result?.snapshot.treeSha256 ?? null,
     },
     verification: finalized.verification,
+    blocked: result?.state === "blocked" ? (result.reasons[0] ?? null) : null,
     requirements: finalized.requirements,
     regression:
       result === null

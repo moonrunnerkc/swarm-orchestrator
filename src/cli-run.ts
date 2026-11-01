@@ -62,11 +62,17 @@ export async function run(args: readonly string[]): Promise<number> {
       "no-apply": { type: "boolean" },
       "authorize-behavior-change": { type: "boolean" },
       review: { type: "boolean" },
+      "linked-dependencies": { type: "boolean" },
       approve: { type: "string" },
     },
   });
   const task = positionals.join(" ").trim();
   if (task.length === 0) throw new UsageError("run needs the task, in quotes");
+  if (values["linked-dependencies"] === true && values.host !== true) {
+    throw new UsageError(
+      "--linked-dependencies needs --host: a container never runs on the workspace's installed dependencies",
+    );
+  }
   const workspace = resolve(values.workspace ?? process.cwd());
   // swarm.toml is optional: without one, the model is discovered and the defaults below apply.
   const agent = await readAgentConfig(workspace);
@@ -133,6 +139,7 @@ export async function run(args: readonly string[]): Promise<number> {
     turnTokens: count(values["turn-tokens"], "--turn-tokens") ?? agent?.turnTokens ?? 16_384,
     maxWallMs: maxMinutes === undefined ? null : maxMinutes * 60_000,
     isolation: values.host === true ? "host" : "isolated",
+    ...(values["linked-dependencies"] === true ? { dependencies: "linked" as const } : {}),
     approval,
     confirm: terminalPrompt(),
     version: buildVersion,

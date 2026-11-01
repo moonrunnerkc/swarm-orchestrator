@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -146,5 +146,47 @@ describe("swarm run against the stub endpoint", () => {
     ]);
     await stub.close();
     expect(ran.stdout).toContain("stop         step-budget");
+  });
+
+  it("verifies with the installed dependencies when asked, where the lockfile does not install", async () => {
+    // The manifest asks for a package the lockfile does not hold, so npm ci refuses.
+    await writeFile(
+      join(repo, "package.json"),
+      '{"name":"f","version":"1.0.0","type":"module","dependencies":{"left-pad":"1.3.0"}}\n',
+    );
+    await writeFile(
+      join(repo, "package-lock.json"),
+      '{"name":"f","version":"1.0.0","lockfileVersion":3,"requires":true,"packages":{"":{"name":"f","version":"1.0.0"}}}\n',
+    );
+    execFileSync("git", ["add", "-A"], { cwd: repo });
+    execFileSync("git", ["commit", "-qm", "lockfile"], { cwd: repo });
+    const stub = await startStubModel();
+    const endpoint = `http://127.0.0.1:${stub.port}/v1`;
+    const prepared = await swarmRun(endpoint, ["--max-steps", "1"]);
+    expect(prepared.stdout).toMatch(/^state {8}blocked$/m);
+    expect(prepared.stdout).toMatch(/^blocked {6}the base's dependencies did not install/m);
+    const linked = await swarmRun(endpoint, ["--max-steps", "1", "--linked-dependencies"]);
+    await stub.close();
+    expect(linked.stdout).toMatch(/^stop {9}step-budget$/m);
+    expect(linked.stdout).toMatch(/^execution {4}host, not isolated/m);
+  });
+
+  it("refuses linked dependencies in a container, which the verifier would refuse", async () => {
+    const ran = spawnSync(
+      process.execPath,
+      [
+        cli,
+        "run",
+        "task",
+        "--linked-dependencies",
+        "--endpoint",
+        "http://127.0.0.1:9/v1",
+        "--model",
+        "m",
+      ],
+      { cwd: repo, encoding: "utf8", env: { ...process.env, SWARM_HOME: join(root, "home") } },
+    );
+    expect(ran.stderr).toContain("--linked-dependencies needs --host");
+    expect(ran.status).not.toBe(0);
   });
 });

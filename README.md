@@ -25,7 +25,8 @@ authority that judges it.
    the candidate in a container from a pinned image, network closed, with dependencies installed
    fresh from the lockfile: the base commit's tests against the new source, new tests as labeled
    evidence, test by test against the base. `--host` runs the checks on your machine instead, and
-   the report says `host, not isolated`.
+   the report says `host, not isolated`; add `--linked-dependencies` where the lockfile does not
+   install in a clean checkout, and the report says the dependencies are not reproducible.
 5. A supported failure goes back to the model for repair while the run budget allows.
 6. Every exit, including a budget running out or an interrupted run, ends in one finalization
    that verifies the exact delivered snapshot, or writes an incomplete report bound to it.
