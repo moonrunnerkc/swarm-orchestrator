@@ -26,7 +26,7 @@ const run = (command: string, args: readonly string[], cwd: string) =>
     execFile(command, [...args], { cwd, maxBuffer: 64 * 1024 * 1024 }, (error, _stdout, stderr) =>
       error === null
         ? settle()
-        : fail(new Error(`${command} ${args.join(" ")} failed: ${stderr.trim()}`)),
+        : fail(new Error(`${command} ${args.join(" ")} failed: ${stderr.trim() || error.message}`)),
     );
   });
 
