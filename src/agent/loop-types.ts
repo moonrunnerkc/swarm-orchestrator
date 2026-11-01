@@ -14,6 +14,8 @@ export interface Verification {
   readonly feedback: string;
   /** The tree and record were those of the held result, which was returned without a new run. */
   readonly reused?: boolean;
+  /** The verifier's reasons, the first of which says why a blocked verification is blocked. */
+  readonly reasons?: readonly string[];
 }
 
 export interface LoopOptions {

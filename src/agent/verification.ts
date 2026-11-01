@@ -131,6 +131,7 @@ export function createVerifier(input: {
         recordSha256: digest,
         feedback: feedbackOf(result),
         reused: same,
+        reasons: result.reasons,
       };
     },
     held: () => held,

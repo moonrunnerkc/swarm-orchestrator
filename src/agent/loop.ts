@@ -206,8 +206,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
 
     const { judged, repeated } = await judge();
     if (judged.state === "complete") return result("complete");
-    if (judged.state === "blocked")
-      return result("blocked", judged.feedback.split("\n")[0] ?? null);
+    if (judged.state === "blocked") return result("blocked", judged.reasons?.[0] ?? null);
     // Completing again on the same tree and record only repeats the same findings: say so once,
     // with the findings, then stop.
     if (repeated && nudged) {

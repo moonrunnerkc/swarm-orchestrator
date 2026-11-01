@@ -127,6 +127,14 @@ describe("swarm run", () => {
     expect(nudge).toContain("R1 unverified");
   });
 
+  it("stops a blocked run with the verifier's reason, not just its state", async () => {
+    const ran = await (await fixture({ "swarm.toml": "[checks]\n" })).run(scripted([fix, mapped]));
+    expect(ran.stop).toBe("blocked");
+    expect(ran.report.reason).toBe(
+      "no checks are declared in swarm.toml or the project's manifests",
+    );
+  });
+
   it("never renders a pass from the model's own say-so", async () => {
     const probe = await fixture();
     const ran = await probe.run(scripted([`It is fixed and all tests pass.\n${completionMarker}`]));
