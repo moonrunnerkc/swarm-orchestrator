@@ -121,12 +121,16 @@ export function createVerifier(input: {
         input.base,
         join(directory, "candidate.patch"),
       );
-      const result = await snapshot(taken, record, directory);
+      const digest = recordSha256(record);
+      // The same patch under the same record is the same immutable input: its result stands.
+      const same = held?.patchSha256 === taken.sha256 && held.recordSha256 === digest;
+      const result = same && held !== null ? held.result : await snapshot(taken, record, directory);
       return {
         state: result.state,
         patchSha256: taken.sha256,
-        recordSha256: recordSha256(record),
+        recordSha256: digest,
         feedback: feedbackOf(result),
+        reused: same,
       };
     },
     held: () => held,

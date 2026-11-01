@@ -113,6 +113,20 @@ describe("swarm run", () => {
     expect(systemPrompt).toContain(".swarm/scratch/");
   });
 
+  it("answers a completion repeated on an unchanged tree with the findings, once, without verifying again", async () => {
+    const unmapped = recordAndComplete([
+      { id: "R1", text: "x", kind: "fix", evidence: { tests: [{ name: "no such test" }] } },
+    ]);
+    const model = scripted([fix, unmapped, completionMarker, mapped]);
+    const ran = await (await fixture()).run(model);
+    expect(ran.stop).toBe("complete");
+    // The repeat on the same tree and record reused the held result rather than verifying again.
+    expect(ran.report.resources.verifications).toBe(2);
+    const nudge = model.seen[3]?.at(-1)?.content ?? "";
+    expect(nudge).toContain("Marking the task complete again changes nothing");
+    expect(nudge).toContain("R1 unverified");
+  });
+
   it("never renders a pass from the model's own say-so", async () => {
     const probe = await fixture();
     const ran = await probe.run(scripted([`It is fixed and all tests pass.\n${completionMarker}`]));
