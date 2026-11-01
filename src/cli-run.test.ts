@@ -128,4 +128,23 @@ describe("swarm run against the stub endpoint", () => {
       "The user authorized a change of tested behavior (--authorize-behavior-change); expectations it superseded: none.",
     );
   });
+
+  it("lets the step budget, not a fixed token count, end a run where no token budget is set", async () => {
+    // 60 turns that each add some 4,000 tokens pass 1,000,000 prompt tokens in all, and every one
+    // of them fits a budget of steps times context.
+    const stub = await startStubModel({
+      replies: Array.from(
+        { length: 60 },
+        (_, at) => `\`\`\`bash\necho ${at} ${"x".repeat(8000)}\n\`\`\``,
+      ),
+    });
+    const ran = await swarmRun(`http://127.0.0.1:${stub.port}/v1`, [
+      "--max-steps",
+      "60",
+      "--context",
+      "100000",
+    ]);
+    await stub.close();
+    expect(ran.stdout).toContain("stop         step-budget");
+  });
 });

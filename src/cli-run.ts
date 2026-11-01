@@ -111,6 +111,7 @@ export async function run(args: readonly string[]): Promise<number> {
   }
   write(`model        ${model.name} (${model.reason})`);
   const maxMinutes = count(values["max-minutes"], "--max-minutes");
+  const maxSteps = count(values["max-steps"], "--max-steps") ?? agent?.maxSteps ?? 50;
   const ran = await runAgent({
     workspace,
     task,
@@ -123,8 +124,11 @@ export async function run(args: readonly string[]): Promise<number> {
     behaviorChange: values["authorize-behavior-change"] === true ? "authorized" : "none",
     review: values.review === true,
     cost: model.cost,
-    maxSteps: count(values["max-steps"], "--max-steps") ?? agent?.maxSteps ?? 50,
-    maxTokens: count(values["max-tokens"], "--max-tokens") ?? agent?.maxTokens ?? 1_000_000,
+    maxSteps,
+    // Unset, the token budget is what the steps could use at this context, so steps and time end
+    // a local run; set it to bound what a priced endpoint may spend.
+    maxTokens:
+      count(values["max-tokens"], "--max-tokens") ?? agent?.maxTokens ?? maxSteps * contextTokens,
     // Room for a reasoning model's thinking and one command, and a bound on a looping reply.
     turnTokens: count(values["turn-tokens"], "--turn-tokens") ?? agent?.turnTokens ?? 16_384,
     maxWallMs: maxMinutes === undefined ? null : maxMinutes * 60_000,
