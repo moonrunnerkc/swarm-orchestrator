@@ -101,8 +101,8 @@ describe("swarm run against the stub endpoint", () => {
     expect(ran.stdout).toMatch(/^regression {3}none$/m);
   });
 
-  it("finalizes a run stopped by SIGTERM or SIGHUP as cancelled and removes its worktree", async () => {
-    for (const signal of ["SIGTERM", "SIGHUP"] as const) {
+  it("finalizes a run stopped by SIGINT, SIGTERM or SIGHUP as cancelled and removes its worktree", async () => {
+    for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
       const stub = await startStubModel();
       const run = started(`http://127.0.0.1:${stub.port}/v1`);
       while (stub.requests.length === 0) await new Promise((wait) => setTimeout(wait, 50));
