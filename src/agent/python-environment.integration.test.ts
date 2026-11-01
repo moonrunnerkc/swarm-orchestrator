@@ -89,6 +89,28 @@ describe("the worktree's Python environment", () => {
     );
   });
 
+  // ironroot (session 20261101T203914-4e0ccd): a pyproject.toml and an editable .venv, no uv.lock;
+  // the agent ran with no environment at all while the verifier resolved one for itself.
+  it("is resolved and built the verifier's way where the project has no uv.lock, and the lock stays out of the patch", async () => {
+    const probe = await fixture({
+      ".gitignore": ".venv/\n__pycache__/\n",
+      "pyproject.toml": pyproject,
+      "src/mod/__init__.py": "value = 1\n",
+    });
+    await mkdir(join(probe.repo, ".venv", "bin"), { recursive: true });
+    const model = scripted([write("src/mod/__init__.py", "value = 2"), bash(importProbe), done]);
+    const ran = await probe.run(model);
+
+    expect(model.seen[2]?.at(-1)?.content).toMatch(/^2 \S*\/src\/mod\/__init__\.py$/m);
+    expect(ran.report.startingState.python).toMatchObject({
+      state: "prepared",
+      command: "uv lock && uv sync --frozen --all-extras",
+      lockfile: null,
+      limitation: null,
+    });
+    expect(ran.report.changed.map((one) => one.path)).toEqual(["src/mod/__init__.py"]);
+  });
+
   it("is not copied from the user's tree when there is nothing to build it from, and the run says so", async () => {
     const probe = await fixture({ ".gitignore": ".venv/\n" });
     await mkdir(join(probe.repo, ".venv", "bin"), { recursive: true });

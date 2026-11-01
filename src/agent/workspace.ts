@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { access, rm } from "node:fs/promises";
+import { access, appendFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { snapshotWorkingTree } from "swarm-verify";
 import { gitText } from "./git.ts";
@@ -62,6 +62,8 @@ export async function openWorkspace(
   );
   await run("git", ["remote", "remove", "origin"], directory);
   await run("git", ["checkout", "--quiet", "--detach", head], directory);
+  // The environment built in the clone is never part of the change it delivers.
+  await appendFile(join(directory, ".git", "info", "exclude"), "/.venv/\n");
   const paths: string[] = [];
   let base = head;
   if (

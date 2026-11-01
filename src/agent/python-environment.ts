@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { access, constants, lstat, readFile, realpath, rm } from "node:fs/promises";
+import { access, appendFile, constants, lstat, readFile, realpath, rm } from "node:fs/promises";
 import { delimiter, join, sep } from "node:path";
 import { runProcessGroup } from "swarm-verify/execution";
 import { z } from "zod";
@@ -19,6 +19,7 @@ export interface PythonEnvironment {
 }
 
 const uvSync = "uv sync --frozen";
+const lockThenSync = "uv lock && uv sync --frozen --all-extras";
 const setupTimeoutMs = 600_000;
 
 /**
@@ -48,8 +49,8 @@ export interface PythonEnvironmentInput {
  * Builds the worktree's `.venv` from the lockfile, in the worktree, rather than copying the
  * user's: a copy keeps the original interpreter in its console scripts and an editable install's
  * path to the user's source. The command is the repository's `[verify] setup` where it declares
- * one, and `uv sync --frozen` for a uv.lock otherwise, the order the verifier prepares a checkout
- * in. Null where the project has neither a uv.lock nor a `.venv` of its own.
+ * one, `uv sync --frozen` for a uv.lock, and for a pyproject.toml with no lock `uv lock` first, as
+ * the verifier prepares a checkout. Null where the project has neither a uv.lock nor a `.venv`.
  */
 export async function preparePythonEnvironment(
   input: PythonEnvironmentInput,
@@ -80,7 +81,12 @@ export async function preparePythonEnvironment(
     if (!(error instanceof UnreadableSetupError)) throw error;
     return unprepared(null, `${error.message}; the agent's commands ran without a .venv`);
   }
-  const command = setup ?? (lockfile === null ? null : uvSync);
+  // Without a uv.lock, the verifier resolves one first; the run's environment is made the same way.
+  const pyproject = await access(join(input.worktree, "pyproject.toml")).then(
+    () => true,
+    () => false,
+  );
+  const command = setup ?? (lockfile !== null ? uvSync : pyproject ? lockThenSync : null);
   if (command === null) {
     return unprepared(
       null,
@@ -96,11 +102,18 @@ export async function preparePythonEnvironment(
         `uv is not on PATH, so \`${command}\` could not build the worktree's .venv; the agent's commands ran without one. Install uv (https://docs.astral.sh/uv/) and run again`,
       );
     }
-    program = { file: uv, args: ["sync", "--frozen"] };
+    program =
+      lockfile !== null
+        ? { file: uv, args: ["sync", "--frozen"] }
+        : { file: "/bin/sh", args: ["-c", `"$0" lock && "$0" sync --frozen --all-extras`, uv] };
   } else {
     program = { file: "/bin/sh", args: ["-c", setup] };
   }
 
+  // A lock resolved here is the run's, not the change: the clone's own exclude file keeps it out.
+  if (lockfile === null && setup === null) {
+    await appendFile(join(input.worktree, ".git", "info", "exclude"), "/uv.lock\n");
+  }
   const options = {
     cwd: input.worktree,
     env: { ...input.env },
