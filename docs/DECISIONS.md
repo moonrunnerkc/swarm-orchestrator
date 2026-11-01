@@ -192,3 +192,10 @@ One line per open choice made during the verifier-first rebuild (ADR 0014), with
 - swarm.toml no longer pins a model; the evaluation names its own (`evaluationModel` in eval/run.mjs), so a fresh checkout runs with discovery.
 - `swarm doctor --models` probes every eligible installed model and prints what each needs and whether it is ready; it is how a user (and this run) sees the readiness of every model.
 - The managed worktree moved from the system temporary directory to a hidden directory beside the repository (`.<name>.swarm-<session>`), because a dependency named by a relative path (dossier's `file:../ironroot/packages/core-ts`, and the relative symlink npm makes for it) resolved from the temporary directory to nothing. It is removed at the end of the run like before.
+
+## 2026-11-01: replies a server split, and naming evidence
+
+- The chat client keeps `reasoning_content` (vLLM, Rapid-MLX) or `reasoning` (Ollama's `/v1` and others) beside the content. The loop reads the content first; only when it holds no reply form is the reasoning put back before it and read again. Found on Rapid-MLX serving Qwen3.8 with `--no-thinking --reasoning-parser qwen3`: the parser moved a bash block written before a stray `</think>` out of the content, the model saw only its prose in the history, repeated it, and the run stopped as unusable (session 20261101T003843-a75aa0; the 38 output tokens of step 1 against a 14-token content). Reading the reasoning first instead would run a command the model drafted while thinking and then replaced; content first keeps the reply the model gave.
+- The model-call evidence records the reasoning text and whether the reply came from it, so a run like that one can be read afterwards.
+- Applying a requirements block moved from loop.ts to requirements-step.ts, beside command-step.ts.
+- The system prompt says how a requirements block names evidence: a test by title, suite or `suite > title` path; a check only as one the project declares. The verifier's next action names what ran when a cited name matched nothing.
