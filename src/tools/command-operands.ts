@@ -1,12 +1,8 @@
 import { argumentGrammars, printsItsArguments } from "./argument-grammars.ts";
 import { pathsInArguments } from "./program-arguments.ts";
 import type { SimpleShellCommand } from "./shell-command.ts";
-import {
-  inlineProgram,
-  interpreterLanguage,
-  pathsAWordCouldOpen,
-  pathsInlineCodeCouldOpen,
-} from "./shell-paths.ts";
+import { inlineProgram, interpreterLanguage, pathsInlineCodeCouldOpen } from "./shell-paths.ts";
+import { pathsAWordCouldOpen } from "./word-paths.ts";
 
 /** Interpreters whose heredoc is another shell program, which this reader does not follow. */
 const shells = new Set(["sh", "bash", "zsh", "dash", "ksh"]);

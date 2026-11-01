@@ -1,7 +1,7 @@
 import type { ArgumentGrammar, WordRole } from "./argument-grammars.ts";
 import { readAwkProgram } from "./awk-program.ts";
 import { readSedScript } from "./sed-script.ts";
-import { pathsAWordCouldOpen } from "./shell-paths.ts";
+import { pathsAWordCouldOpen } from "./word-paths.ts";
 
 /**
  * How one implementation parses options. GNU tools keep reading options after the first operand
