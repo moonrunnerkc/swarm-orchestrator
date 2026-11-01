@@ -206,3 +206,8 @@ One line per open choice made during the verifier-first rebuild (ADR 0014), with
 - Selection chose qwen3.6:35b-a3b (largest ready model, conservative default; swarm-redesign-qwen36-32k, a copy of the same weights, ties it on parameter count and probe speed and sorts after it by name). It completed the dossier walkRepo task: session 20261101T003354-c4d1fc, R1 satisfied, isolated verification.
 - The same task on Rapid-MLX through `--endpoint` completed after the reasoning-field fix (session 20261101T005703-cef65a, qwen3.8:27b), and the report now says inference time was not reported where the endpoint gives none.
 - Stopping `ollama serve` during a run ends it as `model-error` with the step to take, verifies the tree as it stands and writes an incomplete report (session 20261101T010603-264071). A connection dropped mid-turn is sent again before the run stops, so an Ollama that restarts on its own does not end the run.
+
+## 2026-10-31: recovery steps when nothing can run
+
+- When no installed model fits, the blocked run names the largest context (halving from the configured one, down to 8,192) at which a model fits under the same eligibility rules, stated context included, and the model selection would favor there; otherwise it says to install a smaller chat model. It never suggests closing other programs: the budget is fixed by total memory, not by what is free. Where a model fit but failed its probe, the step is `swarm doctor --models`.
+- SIGTERM and SIGHUP cancel and finalize a run like SIGINT; a second signal ends the process. Found when a stopped run left its managed worktree beside the repository and wrote no report.
