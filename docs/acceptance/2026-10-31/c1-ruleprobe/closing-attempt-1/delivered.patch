@@ -1,0 +1,61 @@
+diff --git a/src/verifier/filesystem-checks.ts b/src/verifier/filesystem-checks.ts
+index 136f582..c98dfb4 100644
+--- a/src/verifier/filesystem-checks.ts
++++ b/src/verifier/filesystem-checks.ts
+@@ -223,7 +223,7 @@ export function checkMaxFileLength(
+     }
+     try {
+       const content = readFileSync(filePath, 'utf-8');
+-      const lineCount = content.split('\n').length;
++      const lineCount = (content.match(/\n/g) || []).length;
+ 
+       if (lineCount > maxLines) {
+         evidence.push({
+diff --git a/tests/fixtures/sample-output/failing/src/long-file.ts b/tests/fixtures/sample-output/failing/src/long-file.ts
+index 1cd12b3..1972846 100644
+--- a/tests/fixtures/sample-output/failing/src/long-file.ts
++++ b/tests/fixtures/sample-output/failing/src/long-file.ts
+@@ -506,3 +506,4 @@ export function processItem100(value: string): string {
+ export function processItem101(value: string): string {
+   return value.trim();
+ }
++
+diff --git a/tests/verifier/filesystem-checks.test.ts b/tests/verifier/filesystem-checks.test.ts
+new file mode 100644
+index 0000000..93f760b
+--- /dev/null
++++ b/tests/verifier/filesystem-checks.test.ts
+@@ -0,0 +1,33 @@
++import { describe, it, expect } from 'vitest';
++import { writeFileSync, mkdirSync, rmSync } from 'node:fs';
++import { join } from 'node:path';
++import { checkMaxFileLength } from '../../src/verifier/filesystem-checks';
++
++describe('checkMaxFileLength', () => {
++  const testDir = join(process.cwd(), 'test-max-length');
++
++  it('should count lines like wc -l (ignoring trailing newline)', () => {
++    if (!mkdirSync(testDir, { recursive: true })) {}
++    
++    const file1 = join(testDir, 'file1.ts');
++    const file2 = join(testDir, 'file2.ts');
++    
++    // 3 lines, ends with newline. wc -l says 3.
++    writeFileSync(file1, 'line1\nline2\nline3\n');
++    // 3 lines, does NOT end with newline. wc -l says 2.
++    writeFileSync(file2, 'line1\nline2\nline3');
++
++    const files = [file1, file2];
++    const results = checkMaxFileLength(files, testDir, 3);
++
++    // Both should pass if limit is 3
++    expect(results).toHaveLength(0);
++
++    const resultsStrict = checkMaxFileLength(files, testDir, 2);
++    // file1 (3 lines) should fail, file2 (2 lines according to wc -l) should pass
++    expect(resultsStrict).toHaveLength(1);
++    expect(resultsStrict[0].file).toContain('file1.ts');
++
++    rmSync(testDir, { recursive: true, force: true });
++  });
++});

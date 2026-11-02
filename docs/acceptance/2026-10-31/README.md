@@ -1,43 +1,48 @@
-# Product acceptance, 2026-10-31 to 2026-11-01
+# Product acceptance, 2026-10-31 to 2026-11-02
 
 Eight real tasks across Brad's own repositories, Node/TypeScript and Python, and two held back for
-the release check. Every run used a local model with nobody in the loop:
+the release check, run in two rounds: the acceptance run (2026-10-31 to 2026-11-01) and a closing
+run (2026-11-01 to 2026-11-02) after the defects the first exposed were fixed. Every run used a
+local model with nobody in the loop:
 
-    swarm run "<task>" --approve auto --max-steps 60 --max-minutes 60 [--endpoint ... --model ... --context ...]
+    swarm run "<task>" --approve auto --max-steps 60 --max-minutes 60 [--host] [--endpoint ... --model ... --context ...]
 
 on a fresh clone of the source repository with its dependencies installed as a user's checkout has
 them, followed by `swarm-verify replay` of the final verification with the pinned verifier package.
 No run needed Brad's intervention. The figures below are copied from each run's `report.json`;
 nothing here is measured anew.
 
-Each task directory holds `final/` (the last run) and `attempt-N/` (every earlier one): `task.txt`
-(the request), `start.txt` (the starting commit), `delivered.patch` (the change), `report.md` and
-`report.json` (the requirement report, model, resources), `result.json` where kept, `run.out` (the
-printed summary), `replay.out` (the independent replay), `trace.txt` (every command the model ran)
-and `session.txt` (the evidence session under `~/.swarm/sessions/`, which holds the hash-chained
-ledger and the signed attestation). What each failed attempt taught, and the fix it led to, is in
-`docs/DECISIONS.md` under 2026-11-01.
+Each task directory holds `final/` (the last run of the first round), `attempt-N/` (its earlier
+runs) and `closing-attempt-N/` (the closing run's): `task.txt` (the request), `start.txt` (the
+starting commit), `delivered.patch` (the change), `report.md` and `report.json` (the requirement
+report, model, resources), `result.json` where kept, `run.out` (the printed summary), `replay.out`
+(the independent replay), `trace.txt` (every command the model ran), `session.txt` (the evidence
+session under `~/.swarm/sessions/`, which holds the hash-chained ledger and the signed attestation)
+and, for closing runs, `source-check.txt` (the source repository's refs, stash, status and
+worktrees compared before and after). What each failed attempt taught, and the fix it led to, is
+in `docs/DECISIONS.md` under 2026-11-01.
 
 ## Categories
 
-| Category | Task | Final run | Replay |
-| --- | --- | --- | --- |
-| Feature with a boundary case | t1 pubprep | complete | agrees |
-| Multi-file feature, backward compatible | t2 crossfire | complete | agrees |
-| Fix a real defect | t3 ruleprobe | complete, on the macOS host | diverges: replayed in a Linux container |
-| Fix beside an unrelated inherited failure | t4 resident | incomplete, not verifiable here | open |
-| Refactor: move without behavior change | t5b ironroot (t5a depose incomplete) | complete | agrees |
-| Refactor across modules, tests and config | t6 tracemantle | incomplete | diverges by one test |
-| Upgrade a dependency | t7b dependency detector (t7a claimcheck incomplete) | complete | agrees |
-| Upgrade the runtime | t8 quantproof | complete | agrees |
+A category counts only with a complete run of its own task whose replay agrees; no run counts twice.
 
-Five of the eight categories have a complete run of their own task whose replay agrees: t1, t2,
-t5b, t7b and t8. The fix category's run (t3) completed on the macOS host, and its replay, which
-always ran in a Linux container, cannot reproduce a macOS-only defect. Fix beside an unrelated
-inherited failure has no run of its own: t3 did tell its seven unrelated host failures apart from
-the three it fixed, but it is already the fix category's run, and t4 resident never completed. The
-cross-module refactor (t6) has no complete run. Of the two held-back tasks, h1 (also a fix)
-completed on its first run with a replay that agrees, and h2 did not.
+| Category | Task | Session | State | Model | Input / output tokens | Replay | Open reason |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Feature with a boundary case | t1 pubprep | 20261101T140245-7b55bf | complete | qwen3.8:27b, Rapid-MLX | 290,094 / 6,135 | agrees | |
+| Multi-file feature, backward compatible | t2 crossfire | 20261101T142858-cff296 | complete | qwen3.8:27b, Rapid-MLX, 65,536 | 646,974 / 4,653 | agrees | |
+| Fix a real defect | t3 ruleprobe (`--host`) | 20261101T042617-8a01e0 | complete | swarm-redesign-qwen36-32k, Ollama auto | 560,835 / 4,765 | agrees on the host (`final/replay-host.out`); the first replay ran in a container and diverged | |
+| Fix beside an unrelated inherited failure | c1 ruleprobe (`--host`) | 20261101T205458-33e203 | complete | gemma4:31b, Ollama auto | 499,019 / 9,095 | agrees, on the host | |
+| Refactor: move without behavior change | t5b ironroot | 20261101T054940-b71a2a | complete | swarm-redesign-qwen36-32k, Ollama auto | 735,845 / 7,243 | agrees | |
+| Refactor across modules, tests and config | t6 tracemantle | 20261101T221712-67545b | incomplete | gemma4-31b-greedy-128k, Ollama named, 65,536 | 388,458 / 12,946 | agrees | open: 8 attempts and a narrower variant, none complete (see below) |
+| Upgrade a dependency | t7a claimcheck | 20261101T235811-1133bb | complete | gemma4:31b, Ollama auto | 133,999 / 1,099 | agrees | |
+| Upgrade the runtime | t8 quantproof | 20261101T073344-9bf3e4 | complete | qwen3.6:35b-a3b, Ollama auto | 222,006 / 1,990 | agrees | |
+
+Seven of the eight categories have a complete run of their own task whose replay agrees. The
+cross-module refactor (t6 tracemantle) does not. t7b dependency detector (20261101T102609-e587a2,
+complete, replay agrees), the upgrade substitute of the first round, completed as well. Of the two
+held-back tasks, h1 completed on its first run with a replay that agrees, and h2 did not complete
+in either round. No known false completion remains: claimcheck's "latest 9.x" is now held by the
+verifier, and its complete run resolves Stryker 9.6.1, the registry's latest 9.x.
 
 ## Final runs
 
@@ -46,15 +51,34 @@ completed on its first run with a replay that agrees, and h2 did not.
 | t1 pubprep | qwen3.8:27b (Rapid-MLX) | complete | complete | 32 | 290,094 / 6,135 | 425 s | 5 |
 | t2 crossfire | qwen3.8:27b (Rapid-MLX, 65,536 context) | complete | complete | 38 | 646,974 / 4,653 | 687 s | 9 |
 | t3 ruleprobe | swarm-redesign-qwen36-32k (Ollama, auto) | complete | complete | 30 | 560,835 / 4,765 | 322 s | 2 |
+| c1 ruleprobe | gemma4:31b (Ollama, auto, `--host`) | complete | complete | 56 | 499,019 / 9,095 | 2,220 s | 0 |
 | t4 resident | swarm-redesign-qwen36-32k (Ollama, auto) | incomplete | time-budget | 22 | 209,209 / 2,642 | 2,910 s | 2 |
-| t5a depose | qwen3.8:27b (Rapid-MLX, 65,536 context) | incomplete | no-progress | 46 | 844,628 / 5,808 | 438 s | 3 |
+| t5a depose | qwen3.8:27b (Rapid-MLX, 65,536 context) | incomplete | no-progress | 6 | 32,669 / 450 | 102 s | 4 |
 | t5b ironroot | swarm-redesign-qwen36-32k (Ollama, auto) | complete | complete | 39 | 735,845 / 7,243 | 224 s | 0 |
-| t6 tracemantle | swarm-redesign-qwen36-32k (Ollama, named, 65,536 context) | incomplete | step-budget | 60 | 1,075,815 / 10,300 | 1,065 s | 5 |
-| t7a claimcheck | qwen3.8:27b (Rapid-MLX) | incomplete | no-progress | 19 | 161,280 / 1,236 | 151 s | 4 |
+| t6 tracemantle | gemma4-31b-greedy-128k (Ollama, named, 65,536 context) | incomplete | no-progress | 42 | 388,458 / 12,946 | 3,127 s | 7 |
+| t6n tracemantle (narrower) | qwen3.6:35b-a3b (Ollama, auto) | incomplete | no-progress | 25 | 103,121 / 1,287 | 683 s | 0 |
+| t7a claimcheck | gemma4:31b (Ollama, auto) | complete | complete | 16 | 133,999 / 1,099 | 558 s | 7 |
 | t7b dependency detector | gemma4-31b-greedy-128k (Ollama, auto) | complete | complete | 11 | 56,251 / 302 | 224 s | 2 |
 | t8 quantproof | qwen3.6:35b-a3b (Ollama, auto) | complete | complete | 34 | 222,006 / 1,990 | 226 s | 1 |
 | h1 crossfire | gemma4-31b-greedy-128k (Ollama, auto) | complete | complete | 23 | 299,897 / 3,421 | 944 s | 0 |
-| h2 ironroot | qwen3.8:27b (Rapid-MLX) | incomplete | no-progress | 15 | 127,365 / 1,860 | 211 s | 1 |
+| h2 ironroot | qwen3.8:27b (Rapid-MLX) | incomplete | no-progress | 18 | 128,114 / 1,992 | 428 s | 2 |
+
+## Input tokens before and after context management
+
+The same task, model and context, before the loop kept its prompt bounded and after. The reruns
+stopped at different turns, so input per turn is the comparison; totals are given as recorded.
+
+| Task | Before (session, turns, input) | Per turn | After (session, turns, input) | Per turn |
+| --- | --- | --- | --- | --- |
+| t5a depose, qwen3.8:27b, 65,536 | 20261101T155037-25f560, 46, 844,628 | 18,362 | 20261101T204818-5e8a9e, 6, 32,669 | 5,445 |
+| h2 ironroot, qwen3.8:27b | 20261101T142202-e94107, 15, 127,365 | 8,491 | 20261101T203914-4e0ccd, 18, 128,114 | 7,117 |
+| t7a claimcheck, qwen3.8:27b | 20261101T133613-26acb8, 19, 161,280 | 8,488 | 20261101T203312-ed53d4, 11, 60,747 | 5,522 |
+
+The long closing runs show the bound: input per turn levels off rather than growing with the turn.
+c1 ruleprobe (56 turns) peaked at 12,172 with its last ten turns averaging 11,843; t7a's 60-turn
+attempt (20261101T213431-7eaedd) peaked at 16,676; t6's 42-turn attempt at 14,814. The first
+round's 60-turn t6 attempt averaged 17,930 a turn over 1,075,815 tokens. Per-turn counts are in
+each closing run's `report.json` under `resources.turns`.
 
 Cost is none for every run: local runtimes. Ollama reports inference time; Rapid-MLX reports none,
 and the reports say so rather than print zero.
@@ -73,11 +97,28 @@ and the reports say so rather than print zero.
   executed test. The 32,768-token attempts cycled through compaction; 65,536 fit what it read.
 - **t3 ruleprobe**, `--host`. The macOS-only path boundary fixed with realpath; three
   `resolveSafePath` tests fail at the base on macOS and pass after, two preserved, seven unrelated
-  host failures inherited and not blocking. The replay, which runs in a Linux container, diverges
-  as it must for a macOS-only defect: those three tests pass at the base there. Replay is
-  container-only by design; this run's agreement can only be checked on another macOS host.
+  host failures inherited and not blocking. Its first replay ran in a Linux container, where those
+  three tests pass at the base, and diverged. Replay now runs as the recording ran; replayed on this
+  Mac with the closing release candidate it agrees (`final/replay-host.out`).
+- **c1 ruleprobe**, `--host`, the fix beside an unrelated inherited failure. `checkMaxFileLength`
+  counted `content.split('\n').length`, one line too many for a file ending in a newline; it now
+  counts newlines as `wc -l` does. The new test "checkMaxFileLength > should count lines like wc -l
+  (ignoring trailing newline)" fails against the base's source and passes after. Ten failures the
+  base already has on this host (three safe-path, two semantic-flags, five git-history-verifier,
+  none in the changed module) are classified inherited; no new failure. The patch also adds a
+  trailing newline to one sample fixture so its count stays what its expectation says.
+  quantproof, the contract's first candidate, has no inherited failure on the host or in a
+  container (635 of 635 tests pass), and ruleprobe has none in a container, so this run is on the
+  host.
 - **t5b ironroot.** Three classes moved to `cli/promote_report.py` and re-exported; the suite passes
   at the base and with the change, in a closed container.
+- **t7a claimcheck.** vitest 4.1.8 to 4.1.10; both Stryker packages stay at 9.6.1, which the
+  registry, read while dependencies were prepared, names the latest 9.x. The task's three version
+  constraints (vitest within 4.1.10, each Stryker package within the latest 9.x) were read from its
+  wording by code and each observed against the candidate's lockfile. Limitation: "adapt any
+  hard-coded version ... with a test" rests on a structure claim (`strykerVersionFor` still
+  present); vitest stayed on major 4, so the mapping it holds needed no change, and no test was
+  added for it.
 - **t7b dependency detector.** pytest resolved 9.0.2 at the base and 9.2.0 in the candidate, from a
   fresh install of the candidate's lockfile; no new failure beside 43 the base already had. The
   patch is `pyproject.toml` and `uv.lock`.
@@ -89,26 +130,30 @@ and the reports say so rather than print zero.
 
 ## What remains incomplete, and why
 
-- **t6 tracemantle.** Six attempts. The verifier's own defects in this task (coverage wrapping a
-  self-measuring suite, an untracked `uv.lock` left by the base run) are fixed. The last attempt
-  made most of the move, 39 moved tests recognized as renamed, but broke 30 history CLI tests, which
-  the verifier found. Its replay agrees on the state and on 30 of the 31 failures: one
-  parametrized case failed in the replay and not in the recording, against a broken candidate.
-- **t5a depose.** The move was made; no evidence was mapped to the requirement, and the model
-  repeated a command until the run stopped. Replayed with the corrected verifier: agreement.
-- **t7a claimcheck.** Attempts 1 and 2 completed falsely: the task allowed Stryker "to the latest
-  9.x" and both delivered 10.1.1, which the model's own package claim named and the verifier
-  confirmed. The verifier now takes a version range in a package claim and fails a version outside
-  it, and the prompt says a claim names the version the task asks for; the verifier still reads no
-  prose, so a claim that names the wrong version still passes. Attempt 3 made the correct upgrade
-  (vitest 4.1.10, Stryker on 9.x) but cited an undeclared check; attempts 4 and 5 stalled reading.
-  This false completion is a known residual: see Limitations.
-- **h2 ironroot** (held back). Gemma ran out of time; Qwen3.8 repeated a patch script that found
-  nothing to replace.
+- **t6 tracemantle**, open. Eight attempts and a narrower variant. In the first round the
+  verifier's own defects in this task (coverage wrapping a self-measuring suite, an untracked
+  `uv.lock` left by the base run, a flaky parametrized case read as a divergence) were found and
+  fixed. In the closing round, attempt 1 was stopped by me seconds in (it was on a build that gave
+  the agent no Python environment for a project without `uv.lock`). Attempt 2, gemma4-31b-greedy-128k
+  at 65,536 tokens with the environment built in its clone, made the package and moved the tests
+  (21 files) but broke `history_io.py`: the verifier found 7 new failures in `tests.test_history_io`
+  and attributed them, the model's own commands said the file was "still corrupted", and it
+  repeated that until the run stopped. The narrower variant (history_io alone, its test and the mypy
+  list; t6n, qwen3.6:35b-a3b chosen automatically) read for 25 turns and changed nothing. Both
+  replays agree. On this evidence the task is within what the verifier judges correctly and beyond
+  what these local models finish: every failed attempt either changed nothing or broke what the
+  verifier then named.
+- **t5a depose.** In the first round the move was made without evidence mapped; rerun with the same
+  model after context management, Qwen3.8 read the test file three turns running and stopped for no
+  progress after 6 turns, nothing changed. Replays agree. t5b ironroot holds the category.
+- **h2 ironroot** (held back). First round: Gemma ran out of time; Qwen3.8 repeated a patch script.
+  Closing round, Qwen3.8: the one-line source fix was made, no test was written, and the same read
+  was repeated until the run stopped (18 turns). This run also found that a project with a
+  pyproject.toml and no uv.lock gave the agent no environment, fixed before t6 ran.
 - **t4 resident.** Not verifiable on this machine: its lockfile does not install in a clean
   environment, and its suite runs live inference against whatever Ollama answers, which loaded
-  about 24 GB of models beside the coding model. The fix-beside-inherited-failure category has no
-  run of its own for that reason, and the upgrade substitute for resident is t7b.
+  about 24 GB of models beside the coding model. The fix beside an inherited failure is shown by c1
+  ruleprobe instead, and the upgrade substitute for resident is t7b.
 
 ## Safety
 
@@ -120,10 +165,17 @@ recorded state. The chokepoint now refuses pushes and package publishes in every
 command it cannot read under auto approval, and refuses `git stash`. Every later run was watched
 for new refs in the source repositories; none appeared.
 
+Before the closing runs a scripted integrity case tried thirteen ways out of the workspace in auto
+approval, and three got through: `git branch`, `git tag` and `git config` run in the managed `git
+worktree` wrote into the user's own repository, which a worktree shares. The workspace is now a
+clone that reads the user's objects and shares no refs, config or remote. The closing driver also
+recorded each source repository's refs, stash, status and worktrees before and after every run
+(`source-check.txt`): unchanged in all of them.
+
 ## The optional review
 
-One trial (t7a attempt 2, `--review`): one extra model turn, no finding, and the run was a false
-completion the review missed. The review stays off by default.
+One trial (t7a attempt 2 of the first round, `--review`): one extra model turn, no finding, and the
+run was a false completion the review missed. The review stays off by default; it was not rerun.
 
 ## Deterministic integrity checks
 
@@ -146,16 +198,22 @@ Each is a test that runs without a live model (`npm run gates` in each repositor
 | Pre-existing user edits | swarm-orchestrator | `src/agent/workspace.integration.test.ts`: "starts from the user's edits, staged, unstaged and untracked, and leaves them as they were" |
 | Honest test additions | swarm-verify | `swarm-verify/src/probes/probes.integration.test.ts`: "accepts a correct source fix that adds its own regression test"; `swarm-verify/src/probes/allowed-changes.integration.test.ts`: "accepts a feature with new tests, witnessed failing before and passing after" |
 | Approved behavior change | swarm-verify, swarm-orchestrator | `swarm-verify/src/probes/allowed-changes.integration.test.ts`: "supersedes an old expectation only when the request authorizes it, and records that it did"; orchestrator `src/agent/run.integration.test.ts`: "lets an existing expectation change only when the user authorized a behavior change" |
+| Version constraint rewritten by the model | swarm-verify, swarm-orchestrator | `swarm-verify/src/verify/version-constraints.test.ts`: "fails Stryker 10.1.1 against the latest 9.x, whatever the model claimed"; orchestrator `src/agent/requirement-record.test.ts`: "holds the task's version constraints on R1, and no proposal rewrites, drops or adds one"; `src/agent/slices.integration.test.ts`: "fails an upgrade past the version the task's wording allows, whatever the model claims" |
+| Flaky test misreported as a regression | swarm-verify | `swarm-verify/src/verify/reruns.integration.test.ts`: "is flaky at the candidate: recorded run by run, and neither a regression nor a pass", "is flaky at the base: the candidate is not credited with fixing it", "stays a new failure after its reruns, which are recorded"; `swarm-verify/src/api/divergences.test.ts`: "names a test the replay found flaky and the recording let one run decide" |
+| Auto approval touching a path outside its workspace | swarm-orchestrator | `src/agent/outside-worktree.integration.test.ts`: "leaves the user's repository, its remote and the files beside it as they were"; `src/tools/guard-attacks.test.ts`: "refuses an outside path written after an option's equals sign" |
 | Publishing and unreadable commands | swarm-orchestrator | `src/tools/chokepoint.test.ts`: "refuses publishing outside the workspace in every mode, however it is wrapped", "refuses in auto mode a command whose paths it cannot read, and asks a person in ask mode" |
 
 ## Limitations
 
-- The verifier judges a requirement by the evidence the requirement names. It reads no prose: a
-  model that writes the wrong version into its own claim, or names no behavior it skipped, is held
-  only by what the executed checks show. t7a's first two runs are the instance.
-- Evidence is tamper-evident, not tamper-proof. Runs on the host (`--host`) are not isolated and
-  their replay, which runs in a container, may legitimately diverge (t3).
-- The chokepoint's reading is lexical: a program an interpreter starts on its own is not seen.
+- The verifier judges a requirement by the evidence it names and by the version constraints read
+  from the task's wording. It reads no other prose: a behavior the wording asks for and no check
+  exercises is held only by what the producer maps to it (t7a's "with a test" is the instance).
+- Version constraints are read from the shapes a task uses ("to the latest 9.x", "from 4.1.8 to
+  4.1.10", "within 12.x", "^19", "pin to ..."), matched to packages a manifest declares. Other
+  wordings are not read, and a package no manifest declares is noted rather than guessed.
+- Evidence is tamper-evident, not tamper-proof. Runs on the host (`--host`) are not isolated, and
+  a host recording replays only on the platform it recorded.
+- The chokepoint's reading is lexical: a program an interpreter starts on its own is not seen, and
+  a relative path after a `cd` is resolved against the workspace root (refused, never allowed).
 - Local models stall in ways the loop can report but not repair: repeating a read until the run
-  stops for no progress was the most common ending of an incomplete run here. A sampled turn tried
-  against it broke none of three repeats and was removed.
+  stops for no progress was the most common ending of an incomplete run in both rounds.

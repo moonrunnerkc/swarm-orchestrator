@@ -1,0 +1,13 @@
+diff --git a/src/ironroot/cli/promote.py b/src/ironroot/cli/promote.py
+index ccc48d9..08bc88c 100644
+--- a/src/ironroot/cli/promote.py
++++ b/src/ironroot/cli/promote.py
+@@ -140,7 +140,7 @@ def _scan_for_patterns(
+         if "__pycache__" in path.parts:
+             continue
+         text = path.read_text(encoding="utf-8", errors="ignore")
+-        cleaned = _TRIPLE_QUOTED.sub("", text)
++        cleaned = _TRIPLE_QUOTED.sub(lambda m: "\n" * m.group(0).count("\n"), text)
+         cleaned = _LINE_COMMENT.sub("", cleaned)
+         for lineno, line in enumerate(cleaned.splitlines(), start=1):
+             for pat in patterns:

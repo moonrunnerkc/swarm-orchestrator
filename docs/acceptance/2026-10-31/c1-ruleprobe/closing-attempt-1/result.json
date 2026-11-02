@@ -1,0 +1,347 @@
+{
+  "state": "complete",
+  "scope": "requirements",
+  "reasons": [
+    "check test: 10 test(s) fail at the base commit and still fail, which does not block: tests/cli/semantic-flags.test.ts::analyze command semantic flags > runs deterministic analysis without --semantic flag, tests/cli/semantic-flags.test.ts::analyze command semantic flags > shows semantic section when --semantic flag is used without a key, tests/utils/safe-path.test.ts::resolveSafePath > accepts a path resolving inside cwd, tests/utils/safe-path.test.ts::resolveSafePath > accepts cwd itself as a valid path, tests/utils/safe-path.test.ts::resolveSafePath > follows a symlink to a file inside cwd and 5 more"
+  ],
+  "base": {
+    "commit": "e8e265610cc910949546a47436c985d42a588b1e"
+  },
+  "change": {
+    "source": "patch",
+    "applied": true,
+    "files": [
+      {
+        "path": "src/verifier/filesystem-checks.ts",
+        "status": "modified"
+      },
+      {
+        "path": "tests/fixtures/sample-output/failing/src/long-file.ts",
+        "status": "modified"
+      },
+      {
+        "path": "tests/verifier/filesystem-checks.test.ts",
+        "status": "added"
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "checkMaxFileLength in src/verifier/filesystem-checks.ts counts one extra line for files ending in a newline, so a 300-line file fails a 300-line limit; make it count lines the way wc -l does, with a test.",
+      "source": "user",
+      "kind": "fix",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [
+          {
+            "name": "checkMaxFileLength > should count lines like wc -l (ignoring trailing newline)"
+          }
+        ],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "versions": [],
+      "status": "satisfied",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/verifier/filesystem-checks.test.ts::checkMaxFileLength > should count lines like wc -l (ignoring trailing newline)",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        }
+      ],
+      "limitation": null,
+      "nextAction": null
+    }
+  ],
+  "regression": {
+    "status": "none",
+    "newFailures": [],
+    "inherited": [
+      "tests/cli/semantic-flags.test.ts::analyze command semantic flags > runs deterministic analysis without --semantic flag",
+      "tests/cli/semantic-flags.test.ts::analyze command semantic flags > shows semantic section when --semantic flag is used without a key",
+      "tests/utils/safe-path.test.ts::resolveSafePath > accepts a path resolving inside cwd",
+      "tests/utils/safe-path.test.ts::resolveSafePath > accepts cwd itself as a valid path",
+      "tests/utils/safe-path.test.ts::resolveSafePath > follows a symlink to a file inside cwd",
+      "tests/verifier/git-history-verifier.test.ts::git-history verifier: branch-naming > fails when branch does not match the pattern",
+      "tests/verifier/git-history-verifier.test.ts::git-history verifier: commit-message-pattern > handles invalid regex gracefully",
+      "tests/verifier/git-history-verifier.test.ts::git-history verifier: commit-message-prefix > fails when commits lack the prefix",
+      "tests/verifier/git-history-verifier.test.ts::git-history verifier: conventional-commits > fails when commits do not follow conventional format",
+      "tests/verifier/git-history-verifier.test.ts::git-history verifier: conventional-commits > gives partial compliance with mixed commit styles"
+    ],
+    "removed": [],
+    "unresolved": [],
+    "flaky": []
+  },
+  "checks": [
+    {
+      "name": "test",
+      "command": "npm run test",
+      "kind": "test",
+      "authority": "pre-existing",
+      "result": "inherited-failures",
+      "collected": 1358,
+      "exitCode": 1,
+      "durationMs": 34061,
+      "outputSha256": "baa648f458d491309d7656567f212b5ac4a33689ec9aefbb7f97b2f3fb0e0eb4",
+      "tests": {
+        "runner": "vitest",
+        "collected": {
+          "base": 1357,
+          "candidate": 1358
+        },
+        "counts": {
+          "preserved": 1340,
+          "renamed": 0,
+          "fixed": 0,
+          "newFailures": 0,
+          "inherited": 10,
+          "removed": 0,
+          "superseded": 0,
+          "expectationChanges": 0,
+          "added": 1,
+          "addedFailing": 0,
+          "witnesses": 1,
+          "skipped": 7,
+          "flaky": 0
+        },
+        "fixed": [],
+        "newFailures": [],
+        "inherited": [
+          "tests/cli/semantic-flags.test.ts::analyze command semantic flags > runs deterministic analysis without --semantic flag",
+          "tests/cli/semantic-flags.test.ts::analyze command semantic flags > shows semantic section when --semantic flag is used without a key",
+          "tests/utils/safe-path.test.ts::resolveSafePath > accepts a path resolving inside cwd",
+          "tests/utils/safe-path.test.ts::resolveSafePath > accepts cwd itself as a valid path",
+          "tests/utils/safe-path.test.ts::resolveSafePath > follows a symlink to a file inside cwd",
+          "tests/verifier/git-history-verifier.test.ts::git-history verifier: branch-naming > fails when branch does not match the pattern",
+          "tests/verifier/git-history-verifier.test.ts::git-history verifier: commit-message-pattern > handles invalid regex gracefully",
+          "tests/verifier/git-history-verifier.test.ts::git-history verifier: commit-message-prefix > fails when commits lack the prefix",
+          "tests/verifier/git-history-verifier.test.ts::git-history verifier: conventional-commits > fails when commits do not follow conventional format",
+          "tests/verifier/git-history-verifier.test.ts::git-history verifier: conventional-commits > gives partial compliance with mixed commit styles"
+        ],
+        "removed": [],
+        "renamed": [],
+        "superseded": [],
+        "expectationChanges": [],
+        "added": [
+          "tests/verifier/filesystem-checks.test.ts::checkMaxFileLength > should count lines like wc -l (ignoring trailing newline)"
+        ],
+        "addedFailing": [],
+        "witnesses": [
+          "tests/verifier/filesystem-checks.test.ts::checkMaxFileLength > should count lines like wc -l (ignoring trailing newline)"
+        ],
+        "flaky": [],
+        "reruns": [
+          {
+            "id": "tests/verifier/filesystem-checks.test.ts::checkMaxFileLength > should count lines like wc -l (ignoring trailing newline)",
+            "snapshot": "witness",
+            "results": [
+              "fail",
+              "fail",
+              "fail",
+              "fail"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "lint",
+      "command": "npm run lint",
+      "kind": "other",
+      "authority": "pre-existing",
+      "result": "pass",
+      "collected": null,
+      "exitCode": 0,
+      "durationMs": 802,
+      "outputSha256": "333e5b53d2edf9f695dc365b4af6f0e61d9bb82c74b393ef4016760a8dc40ac7"
+    },
+    {
+      "name": "build",
+      "command": "npm run build",
+      "kind": "other",
+      "authority": "pre-existing",
+      "result": "pass",
+      "collected": null,
+      "exitCode": 0,
+      "durationMs": 778,
+      "outputSha256": "f35caa99ffa7a4e65c61a08772653db66556db43a84727981e821eee72876d4a"
+    }
+  ],
+  "baseline": {
+    "status": "measured",
+    "cached": true,
+    "environmentSha256": "1dc82d1349a5b1bced22371deae057b9640d423a9c1d741ed6c746a30991762d",
+    "checks": [
+      {
+        "name": "test",
+        "command": "npm run test",
+        "kind": "test",
+        "authority": "pre-existing",
+        "result": "fail",
+        "collected": 1357,
+        "exitCode": 1,
+        "durationMs": 18855,
+        "outputSha256": "52ac7175b147ea15fecf3506ba395e3e9ca973138accdddfc0339f5620c9e7d8"
+      },
+      {
+        "name": "lint",
+        "command": "npm run lint",
+        "kind": "other",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": null,
+        "exitCode": 0,
+        "durationMs": 784,
+        "outputSha256": "333e5b53d2edf9f695dc365b4af6f0e61d9bb82c74b393ef4016760a8dc40ac7"
+      },
+      {
+        "name": "build",
+        "command": "npm run build",
+        "kind": "other",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": null,
+        "exitCode": 0,
+        "durationMs": 745,
+        "outputSha256": "f35caa99ffa7a4e65c61a08772653db66556db43a84727981e821eee72876d4a"
+      }
+    ],
+    "heldOut": []
+  },
+  "heldOut": {
+    "status": "unmeasured",
+    "reason": "no held-out checks are sealed for this workspace"
+  },
+  "artifacts": [
+    {
+      "path": "src/verifier/filesystem-checks.ts",
+      "category": "source"
+    },
+    {
+      "path": "tests/fixtures/sample-output/failing/src/long-file.ts",
+      "category": "tests"
+    },
+    {
+      "path": "tests/verifier/filesystem-checks.test.ts",
+      "category": "tests"
+    }
+  ],
+  "testFiles": {
+    "added": [
+      "tests/verifier/filesystem-checks.test.ts"
+    ],
+    "modified": [],
+    "deleted": [],
+    "moved": [],
+    "relocated": [
+      "tests/fixtures/sample-output/failing/src/long-file.ts"
+    ]
+  },
+  "coverage": {
+    "status": "unmeasured",
+    "reason": "the V8 offsets for src/verifier/filesystem-checks.ts run past the file, so a transform ran first"
+  },
+  "mutation": {
+    "status": "killed",
+    "path": "src/verifier/filesystem-checks.ts",
+    "line": 226,
+    "operator": "|| to &&",
+    "syntax": "valid",
+    "rejected": 0
+  },
+  "producer": {
+    "name": "swarm-orchestrator",
+    "version": "16.0.0",
+    "model": "gemma4:31b",
+    "promptSha256": "f780275ec58ff91052b5036533c47b22a8b8c99efc28bd95ce56562438a3e71c",
+    "ledgerSha256": "ac023c6a3ecd13862c4d74c7e5cf251602d7dbe081fa1953cc544259d0f6c0f2",
+    "ledgerRecords": 176,
+    "reportSha256": "b47fd3ff9faff42e2cbd2b67de89467e105082da899660a754d80c16b3b55bd2",
+    "instructions": [
+      {
+        "path": "AGENTS.md",
+        "sha256": "910b63c3d595cb18b0e460d7122fb1c0c78a4d074c1011ed4db6d3dd3f3872b2"
+      }
+    ]
+  },
+  "environment": {
+    "sha256": "1dc82d1349a5b1bced22371deae057b9640d423a9c1d741ed6c746a30991762d",
+    "node": "v24.15.0",
+    "platform": "darwin-arm64",
+    "git": "2.54.0 (Apple Git-157)",
+    "dependencies": "prepared",
+    "dependencyTreeSha256": "987d3dda3af1ab159d63dbc2c759cff17d2caed3d4903fb8e255a3359b8fb772",
+    "reproducible": true
+  },
+  "execution": {
+    "mode": "host",
+    "statement": "host, not isolated",
+    "network": "open",
+    "image": null,
+    "dependencies": {
+      "mode": "prepared",
+      "reproducible": true,
+      "lockfiles": {
+        "package-lock.json": "51d95a490777a3c38058e7477ebf799e55fd4cfd284db71938fb4b91a9f105a1"
+      },
+      "treeSha256": "987d3dda3af1ab159d63dbc2c759cff17d2caed3d4903fb8e255a3359b8fb772",
+      "note": "prepared from the lockfile and digested"
+    },
+    "policyMet": true,
+    "problems": []
+  },
+  "policy": {
+    "behaviorChange": "none",
+    "reruns": 3
+  },
+  "unmeasured": [
+    "held-out: no held-out checks are sealed for this workspace",
+    "coverage: the V8 offsets for src/verifier/filesystem-checks.ts run past the file, so a transform ran first"
+  ],
+  "logs": [
+    {
+      "name": "logs/test.txt",
+      "sha256": "baa648f458d491309d7656567f212b5ac4a33689ec9aefbb7f97b2f3fb0e0eb4"
+    },
+    {
+      "name": "logs/lint.txt",
+      "sha256": "333e5b53d2edf9f695dc365b4af6f0e61d9bb82c74b393ef4016760a8dc40ac7"
+    },
+    {
+      "name": "logs/build.txt",
+      "sha256": "f35caa99ffa7a4e65c61a08772653db66556db43a84727981e821eee72876d4a"
+    }
+  ],
+  "verifier": {
+    "name": "swarm-verify",
+    "version": "2.0.0"
+  },
+  "version": "swarm-verify.result/v1",
+  "snapshot": {
+    "base": "e8e265610cc910949546a47436c985d42a588b1e",
+    "patchSha256": "58ef5829edda785b8eab94aa9d26c5392871aad175765287171de395d5175a23",
+    "treeSha256": "47b9a7f5024e0c62aa575d3455c90ed2a0ea9bbc5fb6366f86f1e002ed348042"
+  },
+  "integrity": {
+    "signed": true,
+    "signer": {
+      "kind": "key",
+      "fingerprint": "8c5ed5b218745e42c16a99d98024241cbf74c7aa7bf570fd6e5495491d0b5dae"
+    },
+    "statementSha256": "9760906bda4bfa1dfd36e4090451ddb38fbbad4ffa5b7aa6ab21eb5fb3752090",
+    "problems": []
+  },
+  "evidence": {
+    "directory": "/Users/brad/.swarm/sessions/20261101T205458-33e203/verifications/3",
+    "bundle": "/Users/brad/.swarm/sessions/20261101T205458-33e203/verifications/3/attestation.sigstore.json",
+    "statement": "/Users/brad/.swarm/sessions/20261101T205458-33e203/verifications/3/statement.json",
+    "patch": "/Users/brad/.swarm/sessions/20261101T205458-33e203/verifications/3/change.patch",
+    "publicKey": "/Users/brad/.swarm/sessions/20261101T205458-33e203/verifications/3/attestation.pub.pem"
+  },
+  "failureOutput": "$ npm run test\n22m\u001b[39m tests/verifier/git-history-verifier.test.ts\u001b[2m > \u001b[22mgit-history verifier: conventional-commits\u001b[2m > \u001b[22mgives partial compliance with mixed commit styles\n\u001b[31m\u001b[1mAssertionError\u001b[22m: expected 1 to be close to 0.6666666666666666, received difference is 0.33333333333333337, but expected 0.05\u001b[39m\n\u001b[36m \u001b[2m❯\u001b[22m tests/verifier/git-history-verifier.test.ts:\u001b[2m93:31\u001b[22m\u001b[39m\n    \u001b[90m 91| \u001b[39m    \u001b[35mconst\u001b[39m result \u001b[33m=\u001b[39m \u001b[34mverifyGitHistoryRule\u001b[39m(\u001b[34mmakeRule\u001b[39m(\u001b[32m'conventional-commits\u001b[39m…\n    \u001b[90m 92| \u001b[39m    \u001b[90m// 2 out of 3 pass = ~0.67 compliance (below 0.8 threshold)\u001b[39m\n    \u001b[90m 93| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mcompliance)\u001b[33m.\u001b[39m\u001b[34mtoBeCloseTo\u001b[39m(\u001b[34m2\u001b[39m \u001b[33m/\u001b[39m \u001b[34m3\u001b[39m\u001b[33m,\u001b[39m \u001b[34m1\u001b[39m)\u001b[33m;\u001b[39m\n    \u001b[90m   | \u001b[39m                              \u001b[31m^\u001b[39m\n    \u001b[90m 94| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mpassed)\u001b[33m.\u001b[39m\u001b[34mtoBe\u001b[39m(\u001b[35mfalse\u001b[39m)\u001b[33m;\u001b[39m\n    \u001b[90m 95| \u001b[39m  })\u001b[33m;\u001b[39m\n\n\u001b[31m\u001b[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/10]⎯\u001b[22m\u001b[39m\n\n\u001b[31m\u001b[1m\u001b[7m FAIL \u001b[27m\u001b[22m\u001b[39m tests/verifier/git-history-verifier.test.ts\u001b[2m > \u001b[22mgit-history verifier: commit-message-prefix\u001b[2m > \u001b[22mfails when commits lack the prefix\n\u001b[31m\u001b[1mAssertionError\u001b[22m: expected true to be false // Object.is equality\u001b[39m\n\n\u001b[32m- Expected\u001b[39m\n\u001b[31m+ Received\u001b[39m\n\n\u001b[32m- false\u001b[39m\n\u001b[31m+ true\u001b[39m\n\n\u001b[36m \u001b[2m❯\u001b[22m tests/verifier/git-history-verifier.test.ts:\u001b[2m122:27\u001b[22m\u001b[39m\n    \u001b[90m120| \u001b[39m    \u001b[34maddCommit\u001b[39m(tempDir\u001b[33m,\u001b[39m \u001b[32m'fix bug'\u001b[39m)\u001b[33m;\u001b[39m\n    \u001b[90m121| \u001b[39m    \u001b[35mconst\u001b[39m result \u001b[33m=\u001b[39m \u001b[34mverifyGitHistoryRule\u001b[39m(\u001b[34mmakeRule\u001b[39m(\u001b[32m'commit-message-prefi\u001b[39m…\n    \u001b[90m122| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mpassed)\u001b[33m.\u001b[39m\u001b[34mtoBe\u001b[39m(\u001b[35mfalse\u001b[39m)\u001b[33m;\u001b[39m\n    \u001b[90m   | \u001b[39m                          \u001b[31m^\u001b[39m\n    \u001b[90m123| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mcompliance)\u001b[33m.\u001b[39m\u001b[34mtoBe\u001b[39m(\u001b[34m0\u001b[39m)\u001b[33m;\u001b[39m\n    \u001b[90m124| \u001b[39m  })\u001b[33m;\u001b[39m\n\n\u001b[31m\u001b[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/10]⎯\u001b[22m\u001b[39m\n\n\u001b[31m\u001b[1m\u001b[7m FAIL \u001b[27m\u001b[22m\u001b[39m tests/verifier/git-history-verifier.test.ts\u001b[2m > \u001b[22mgit-history verifier: commit-message-pattern\u001b[2m > \u001b[22mhandles invalid regex gracefully\n\u001b[31m\u001b[1mAssertionError\u001b[22m: expected 'not a git repository, skipping git hi…' to contain 'invalid regex'\u001b[39m\n\nExpected: \u001b[32m\"invalid regex\"\u001b[39m\nReceived: \u001b[31m\"not a git repository, skipping git history check\"\u001b[39m\n\n\u001b[36m \u001b[2m❯\u001b[22m tests/verifier/git-history-verifier.test.ts:\u001b[2m144:39\u001b[22m\u001b[39m\n    \u001b[90m142| \u001b[39m    \u001b[35mconst\u001b[39m result \u001b[33m=\u001b[39m \u001b[34mverifyGitHistoryRule\u001b[39m(\u001b[34mmakeRule\u001b[39m(\u001b[32m'commit-message-patte\u001b[39m…\n    \u001b[90m143| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mpassed)\u001b[33m.\u001b[39m\u001b[34mtoBe\u001b[39m(\u001b[35mtrue\u001b[39m)\u001b[33m;\u001b[39m\n    \u001b[90m144| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mevidence[\u001b[34m0\u001b[39m]\u001b[33m?.\u001b[39mfound)\u001b[33m.\u001b[39m\u001b[34mtoContain\u001b[39m(\u001b[32m'invalid regex'\u001b[39m)\u001b[33m;\u001b[39m\n    \u001b[90m   | \u001b[39m                                      \u001b[31m^\u001b[39m\n    \u001b[90m145| \u001b[39m  })\u001b[33m;\u001b[39m\n    \u001b[90m146| \u001b[39m})\u001b[33m;\u001b[39m\n\n\u001b[31m\u001b[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/10]⎯\u001b[22m\u001b[39m\n\n\u001b[31m\u001b[1m\u001b[7m FAIL \u001b[27m\u001b[22m\u001b[39m tests/verifier/git-history-verifier.test.ts\u001b[2m > \u001b[22mgit-history verifier: branch-naming\u001b[2m > \u001b[22mfails when branch does not match the pattern\n\u001b[31m\u001b[1mAssertionError\u001b[22m: expected true to be false // Object.is equality\u001b[39m\n\n\u001b[32m- Expected\u001b[39m\n\u001b[31m+ Received\u001b[39m\n\n\u001b[32m- false\u001b[39m\n\u001b[31m+ true\u001b[39m\n\n\u001b[36m \u001b[2m❯\u001b[22m tests/verifier/git-history-verifier.test.ts:\u001b[2m182:27\u001b[22m\u001b[39m\n    \u001b[90m180| \u001b[39m      tempDir\u001b[33m,\u001b[39m\n    \u001b[90m181| \u001b[39m    )\u001b[33m;\u001b[39m\n    \u001b[90m182| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mpassed)\u001b[33m.\u001b[39m\u001b[34mtoBe\u001b[39m(\u001b[35mfalse\u001b[39m)\u001b[33m;\u001b[39m\n    \u001b[90m   | \u001b[39m                          \u001b[31m^\u001b[39m\n    \u001b[90m183| \u001b[39m  })\u001b[33m;\u001b[39m\n    \u001b[90m184| \u001b[39m})\u001b[33m;\u001b[39m\n\n\u001b[31m\u001b[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/10]⎯\u001b[22m\u001b[39m\n\n"
+}
