@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { access, readFile } from "node:fs/promises";
+import { access, readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { bash, fixture, scripted } from "./test-doubles.ts";
@@ -49,5 +49,31 @@ describe("a run in auto approval, against everything outside its worktree", () =
     }
     expect(probe.git("worktree", "list").split("\n")).toHaveLength(1);
     expect(ran.report.stop).not.toBe("model-error");
+  });
+
+  it("works in a clone with its own .git, and leaves the user's objects and hooks untouched", async () => {
+    const probe = await fixture();
+    const gitDir = join(probe.repo, ".git");
+    const listing = async (dir: string) =>
+      (await readdir(dir, { recursive: true })).map(String).sort();
+    const hooksBefore = await listing(join(gitDir, "hooks"));
+    const objectsBefore = await listing(join(gitDir, "objects"));
+    const refsBefore = probe.git("for-each-ref", "--format=%(refname) %(objectname)");
+    const commands = [
+      "git rev-parse --absolute-git-dir --git-common-dir",
+      "git -c user.name=a -c user.email=a@b commit -q --allow-empty -m escaped",
+      "git gc --quiet",
+      "printf '#!/bin/sh\\nexit 1\\n' > .git/hooks/pre-commit",
+    ];
+    const model = scripted(commands.map(bash));
+    await probe.run(model, { maxSteps: commands.length + 1 });
+
+    const seen = model.seen[1]?.at(-1)?.content ?? "";
+    const own = /^(\S+\/\.git)$/m.exec(seen)?.[1];
+    expect(own, seen).toMatch(/\.swarm-[^/]+\/\.git$/);
+    expect(own?.startsWith(gitDir)).toBe(false);
+    expect(await listing(join(gitDir, "hooks"))).toEqual(hooksBefore);
+    expect(await listing(join(gitDir, "objects"))).toEqual(objectsBefore);
+    expect(probe.git("for-each-ref", "--format=%(refname) %(objectname)")).toBe(refsBefore);
   });
 });
