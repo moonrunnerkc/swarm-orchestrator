@@ -1,0 +1,27 @@
+[
+  {
+    "id": "R1",
+    "text": "Move core/history_io.py and history_store.py into a new tracemantle/history/ package, leaving re-export shims at the old paths, and move tests/test_history_{io,model,regression}.py into tests/history/; update the mypy files list and hatch packages.",
+    "source": "user",
+    "kind": "refactor",
+    "assumptions": [
+      "history_store.py is src/tracemantle/history_store.py; core/history_io.py is src/tracemantle/core/history_io.py",
+      "the module names inside the new package are the mover's choice, so only the package itself is named",
+      "the mypy files list (src/tracemantle, scripts) and hatch packages (src/tracemantle, src/skillcheck) already cover a new subpackage, so neither needs an edit to include it"
+    ],
+    "evidence": {
+      "checks": ["test"],
+      "structure": [
+        { "path": "src/tracemantle/history/__init__.py" },
+        { "path": "src/tracemantle/core/history_io.py" },
+        { "path": "src/tracemantle/history_store.py" },
+        { "path": "tests/history/test_history_io.py" },
+        { "path": "tests/history/test_history_model.py" },
+        { "path": "tests/history/test_history_regression.py" },
+        { "path": "tests/test_history_io.py", "absent": true },
+        { "path": "tests/test_history_model.py", "absent": true },
+        { "path": "tests/test_history_regression.py", "absent": true }
+      ]
+    }
+  }
+]

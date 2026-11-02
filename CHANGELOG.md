@@ -95,6 +95,14 @@ Root causes found running real tasks on local models (docs/acceptance/2026-10-31
   `uv.lock` (or the declared setup command, or, with no lock, `uv lock` first as the verifier
   does) and the report names its interpreter.
 
+### Known limits
+
+- The cross-module refactor acceptance task (tracemantle: move two modules into a new package with
+  shims, and move their tests) has no complete run on the local models tried. The best attempt
+  broke the module it moved and the verifier found the regression; a narrower attempt changed
+  nothing. docs/acceptance/2026-10-31/t6-comparison/ holds the task, its base and a fixed
+  requirement record, so another agent's patch can be judged by the same verifier.
+
 ### Migration
 
 - `swarm run` no longer needs `--model` and `--endpoint`; they still name a model and an

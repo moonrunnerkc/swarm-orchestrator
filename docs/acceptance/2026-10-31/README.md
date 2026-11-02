@@ -33,12 +33,14 @@ A category counts only with a complete run of its own task whose replay agrees; 
 | Fix a real defect | t3 ruleprobe (`--host`) | 20261101T042617-8a01e0 | complete | swarm-redesign-qwen36-32k, Ollama auto | 560,835 / 4,765 | agrees on the host (`final/replay-host.out`); the first replay ran in a container and diverged | |
 | Fix beside an unrelated inherited failure | c1 ruleprobe (`--host`) | 20261101T205458-33e203 | complete | gemma4:31b, Ollama auto | 499,019 / 9,095 | agrees, on the host | |
 | Refactor: move without behavior change | t5b ironroot | 20261101T054940-b71a2a | complete | swarm-redesign-qwen36-32k, Ollama auto | 735,845 / 7,243 | agrees | |
-| Refactor across modules, tests and config | t6 tracemantle | 20261101T221712-67545b | incomplete | gemma4-31b-greedy-128k, Ollama named, 65,536 | 388,458 / 12,946 | agrees | open: 8 attempts and a narrower variant, none complete (see below) |
+| Refactor across modules, tests and config | t6 tracemantle | 20261101T221712-67545b | incomplete | gemma4-31b-greedy-128k, Ollama named, 65,536 | 388,458 / 12,946 | agrees | open, a recorded limitation: local models broke history_io.py on the cross-module move in the best attempt and changed nothing in the narrower attempt; the verifier found the regression both times it occurred (see `t6-comparison/` to judge another agent on the same base) |
 | Upgrade a dependency | t7a claimcheck | 20261101T235811-1133bb | complete | gemma4:31b, Ollama auto | 133,999 / 1,099 | agrees | |
 | Upgrade the runtime | t8 quantproof | 20261101T073344-9bf3e4 | complete | qwen3.6:35b-a3b, Ollama auto | 222,006 / 1,990 | agrees | |
 
 Seven of the eight categories have a complete run of their own task whose replay agrees. The
-cross-module refactor (t6 tracemantle) does not. t7b dependency detector (20261101T102609-e587a2,
+cross-module refactor (t6 tracemantle) does not, and is recorded as a limitation rather than
+retried: `t6-comparison/` holds the task, its base, a fixed requirement record and both attempts,
+so another agent's patch can be judged by the same verifier on the same base. t7b dependency detector (20261101T102609-e587a2,
 complete, replay agrees), the upgrade substitute of the first round, completed as well. Of the two
 held-back tasks, h1 completed on its first run with a replay that agrees, and h2 did not complete
 in either round. No known false completion remains: claimcheck's "latest 9.x" is now held by the
