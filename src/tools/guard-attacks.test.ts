@@ -251,3 +251,32 @@ describe("the same attacks against a real workspace", () => {
     expect(realGuard.checkPath(join(workspace, ".Env")).allowed).toBe(false);
   });
 });
+
+describe("naming a path as the value of an option", () => {
+  /**
+   * Found by reading the reader, not by a run: a word offered whole resolves as a relative name
+   * inside the workspace, so `--git-dir=/elsewhere/.git` passed where `/elsewhere/.git` alone is
+   * refused. dd needs no dash at all.
+   */
+  it("refuses an outside path written after an option's equals sign", () => {
+    for (const command of [
+      "git --git-dir=/elsewhere/.git log",
+      "node --require=/tmp/x.js src/index.js",
+      "dd if=src/a.ts of=/tmp/copy",
+      "git log --output=../outside.txt",
+    ]) {
+      expect(shellCallIsRefused(command), command).toBe(true);
+    }
+  });
+
+  it("still runs options whose values are inside the workspace, or are not files", () => {
+    for (const command of [
+      "git log --format=%H -n 1",
+      "node --require=./setup.js src/index.js",
+      "git log --since=2026-01-01 --author=moonrunnerkc",
+      "git diff --stat=200",
+    ]) {
+      expect(shellCallIsRefused(command), command).toBe(false);
+    }
+  });
+});

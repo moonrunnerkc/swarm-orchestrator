@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readShellCommand } from "./shell-command.ts";
+import { readShellCommand, readShellPipeline } from "./shell-command.ts";
 
 describe("reading a shell command without a shell", () => {
   it("names every command a chain would run", () => {
@@ -50,9 +50,13 @@ describe("reading a shell command without a shell", () => {
   // POSIX: inside double quotes a backslash escapes only $ ` " \ and a newline; before anything
   // else it is itself. A grep alternation is the common case, and was read as unreadable.
   it("reads backslashes inside double quotes as the shell does", () => {
-    expect(readShellCommand(`grep -n "ruleset\\|--config" src/a.ts`)?.operands).toEqual([
+    expect(readShellPipeline(`grep -n "ruleset\\|--config" src/a.ts`)?.[0]?.arguments).toEqual([
       "-n",
       "ruleset\\|--config",
+      "src/a.ts",
+    ]);
+    // The pattern is text grep matches, not a file it opens.
+    expect(readShellCommand(`grep -n "ruleset\\|--config" src/a.ts`)?.operands).toEqual([
       "src/a.ts",
     ]);
     expect(readShellCommand(`git commit -m "say \\"hi\\" for \\$5"`)?.operands).toContain(
@@ -66,12 +70,36 @@ describe("reading a shell command without a shell", () => {
     const read = readShellCommand("# the import (circular) is `store.py`\ncat a.py # and $(this)");
     expect(read?.executables).toEqual(["cat"]);
     expect(read?.operands).toEqual(["a.py"]);
-    expect(readShellCommand("echo a#b")?.operands).toEqual(["a#b"]);
+    expect(readShellCommand("cat a#b")?.operands).toEqual(["a#b"]);
     expect(readShellCommand(`bash -c "git push"`)).toBeNull();
   });
 
   it("has nothing to say about an empty string", () => {
     expect(readShellCommand("   ")).toBeNull();
+  });
+});
+
+describe("a redirect", () => {
+  it("opens its target wherever it is written in the command", () => {
+    expect(readShellPipeline("> /tmp/x echo hi")?.[0]).toMatchObject({
+      executable: "echo",
+      arguments: ["hi"],
+      redirects: ["/tmp/x"],
+    });
+    // bash reads `>&name` as both streams into the file `name`.
+    expect(readShellPipeline("echo hi >&/tmp/x")?.[0]).toMatchObject({
+      arguments: ["hi"],
+      redirects: ["/tmp/x"],
+    });
+    expect(readShellPipeline("echo hi 2>&1 >&2 2>&- >/dev/null")?.[0]?.redirects).toEqual([
+      "/dev/null",
+    ]);
+    expect(readShellCommand("> /tmp/x cat a")?.operands).toEqual(["a", "/tmp/x"]);
+  });
+
+  it("is unreadable where it has no target this reader can name", () => {
+    expect(readShellCommand("echo hi >| /tmp/x")).toBeNull();
+    expect(readShellCommand("cat a; > /tmp/x")).toBeNull();
   });
 });
 

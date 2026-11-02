@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
-import { type Requirement, requirementSchema } from "swarm-verify";
+import { type Requirement, requirementSchema, type VersionConstraint } from "swarm-verify";
 import { z } from "zod";
 
 /**
  * The run's requirement record. R1 is the user's task, verbatim, and the model can neither drop
  * it nor reword it; the model may propose its kind and evidence, add requirements of its own,
- * and record assumptions. Statuses are never set here: the verifier derives them.
+ * and record assumptions. The version constraints the task's wording states are read by code and
+ * held on R1 alone. Statuses are never set here: the verifier derives them.
  */
 export interface RequirementRecord {
   readonly requirements: readonly Requirement[];
@@ -22,12 +23,16 @@ const proposalSchema = z.array(
 
 const normalize = (text: string) => text.toLowerCase().replace(/\s+/g, " ").trim();
 
-export function initialRecord(task: string): RequirementRecord {
+export function initialRecord(
+  task: string,
+  versions: readonly VersionConstraint[] = [],
+  notes: readonly string[] = [],
+): RequirementRecord {
   return {
     requirements: [
-      requirementSchema.parse({ id: "R1", text: task, source: "user", kind: "other" }),
+      requirementSchema.parse({ id: "R1", text: task, source: "user", kind: "other", versions }),
     ],
-    notes: [],
+    notes,
   };
 }
 
@@ -59,11 +64,22 @@ export function applyProposal(
   }
   const notes: string[] = [];
   const accepted = new Map<string, Requirement>();
+  const held = record.requirements.find((one) => one.id === "R1")?.versions ?? [];
   for (const entry of entries.data) {
     const isTask = entry.id === "R1";
+    const versions = isTask ? held : [];
+    if (
+      entry.versions !== undefined &&
+      JSON.stringify(entry.versions) !== JSON.stringify(versions)
+    ) {
+      notes.push(
+        `${entry.id}'s versions come from the task's wording and are kept as read; a proposal cannot change them`,
+      );
+    }
     const quoted = normalize(task).includes(normalize(entry.text));
     const shaped = {
       ...entry,
+      versions,
       text: isTask ? task : entry.text,
       source: isTask
         ? "user"

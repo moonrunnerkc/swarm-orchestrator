@@ -28,6 +28,8 @@ export interface LoopOptions {
   readonly record: RequirementRecord;
   /** `git status --short` of the working tree, read fresh every turn. */
   readonly status: () => Promise<string>;
+  /** The working tree's change against the base, as the verifier would read it, every turn. */
+  readonly diff: () => Promise<string>;
   readonly verify: (record: RequirementRecord) => Promise<Verification>;
   readonly maxSteps: number;
   readonly maxTokens: number;
@@ -40,8 +42,11 @@ export interface LoopOptions {
   readonly turnTime: () => { readonly leftMs: number; readonly wallMs: number };
   /** The model's context window, which compaction keeps the prompt within. */
   readonly contextTokens: number;
-  /** Where full command outputs are written, or null to keep only what a turn carries. */
-  readonly outputs: { readonly directory: string; readonly root: string } | null;
+  /**
+   * Where full command outputs are copied for the model to read again, inside the workspace it
+   * may read, and the workspace root that paths are shown relative to.
+   */
+  readonly outputs: { readonly directory: string; readonly root: string };
   /** What a model taking over from another reads first, or null for a fresh start. */
   readonly handoff?: string | null;
   readonly signal?: AbortSignal | undefined;
@@ -59,6 +64,14 @@ export type StopReason =
   | "model-error"
   | "unusable-replies";
 
+/** One model turn's token counts, each either reported by the runtime or estimated from text. */
+export interface TurnUsage {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly inputCount: "reported" | "estimated";
+  readonly outputCount: "reported" | "estimated";
+}
+
 /** What the model turns cost, input and output apart, and which counts were estimated. */
 export interface Usage {
   readonly turns: number;
@@ -72,6 +85,8 @@ export interface Usage {
   readonly inferenceTurns: number;
   /** Requests the client sent again after a transient failure. */
   readonly retries: number;
+  /** Every turn's counts in order, so a prompt that grows with the run shows as it grows. */
+  readonly perTurn: readonly TurnUsage[];
 }
 
 export interface LoopResult {

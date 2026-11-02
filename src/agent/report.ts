@@ -4,6 +4,13 @@ import type { RequirementOutcome } from "swarm-verify";
 import type { Finalized } from "./finalize.ts";
 import type { LoadedInstruction } from "./instructions.ts";
 import type { LoopResult } from "./loop.ts";
+import type { TurnUsage } from "./loop-types.ts";
+import { describePythonEnvironment, type PythonEnvironment } from "./python-environment.ts";
+import {
+  requirementRow,
+  requirementTableHeader,
+  summaryRequirementLines,
+} from "./requirement-lines.ts";
 import type { ReviewOutcome } from "./review.ts";
 import type { Delivery, StartingState } from "./workspace.ts";
 
@@ -33,11 +40,15 @@ export interface RunReportFile {
   readonly regression: string | null;
   readonly execution: string | null;
   readonly attestation: string | null;
-  /** The user's tree as the run began: HEAD, and the paths of their own uncommitted edits. */
+  /**
+   * The user's tree as the run began: HEAD, the paths of their own uncommitted edits, and the
+   * worktree's Python environment, null where the project has none.
+   */
   readonly startingState: {
     readonly head: string;
     readonly base: string;
     readonly edits: readonly string[];
+    readonly python: PythonEnvironment | null;
   };
   /** Whether the patch was applied to the workspace, and why not where it was not. */
   readonly delivery: Delivery;
@@ -64,6 +75,8 @@ export interface RunReportFile {
     readonly verifications: number;
     /** The money the run cost where it is known; a local runtime's is none. */
     readonly cost: string;
+    /** Every loop turn's counts in order, each reported by the runtime or estimated. */
+    readonly turns: readonly TurnUsage[];
   };
 }
 
@@ -80,10 +93,10 @@ export function summaryLines(
     ...(report.blocked === null ? [] : [`${pad("blocked", 12)} ${report.blocked}`]),
     ...(report.unchecked === null ? [] : [`${pad("not checked", 12)} ${report.unchecked}`]),
   ];
-  for (const one of report.requirements) {
-    const why = one.limitation === null ? "" : `  ${one.limitation}`;
-    lines.push(`${pad(one.id, 12)} ${pad(one.status, 11)}${why}`);
-  }
+  const python = report.startingState.python;
+  if (python?.state === "not-prepared")
+    lines.push(`${pad("python env", 12)} not prepared: ${python.limitation}`);
+  for (const one of report.requirements) lines.push(...summaryRequirementLines(one));
   if (report.changed.length > 0) {
     const deleted = report.changed.filter((one) => one.status === "deleted").map((one) => one.path);
     const also = deleted.length === 0 ? "" : `, deleting ${deleted.join(", ")}`;
@@ -99,8 +112,6 @@ export function summaryLines(
   lines.push(`${pad("report", 12)} ${paths.markdown}`);
   return lines;
 }
-
-const cell = (text: string) => text.replaceAll("|", "\\|").replaceAll("\n", " ");
 
 /** Inference time as measured: never a zero for turns whose runtime reported none. */
 function inferenceOf(resources: RunReportFile["resources"]): string {
@@ -148,12 +159,8 @@ export function renderMarkdown(report: RunReportFile): string {
     "",
     `Model: ${report.model.name} (${report.model.reason}). Stopped: ${report.stop}${report.reason === null ? "" : `, ${report.reason}`}.`,
     "",
-    "| Requirement | Kind | Source | Status | Evidence | Limitation |",
-    "| --- | --- | --- | --- | --- | --- |",
-    ...report.requirements.map(
-      (one) =>
-        `| ${one.id}: ${cell(one.text)} | ${one.kind} | ${one.source} | ${one.status} | ${cell(one.evidence.map((ref) => `${ref.ref} (${ref.outcome}, ${ref.authority})`).join("; ") || "none")} | ${cell(one.limitation ?? "")} |`,
-    ),
+    ...requirementTableHeader,
+    ...report.requirements.map(requirementRow),
     "",
     `- Delivered patch: \`${report.snapshot.patch}\`, sha256 ${report.snapshot.patchSha256}, against base ${report.snapshot.base}.`,
     `- Verification of that patch: ${report.verification}.`,
@@ -161,6 +168,9 @@ export function renderMarkdown(report: RunReportFile): string {
     ...(report.blocked === null ? [] : [`- Blocked: ${report.blocked}.`]),
     ...(report.unchecked === null ? [] : [`- Not checked: ${report.unchecked}.`]),
     `- Starting state: HEAD ${report.startingState.head}${report.startingState.edits.length > 0 ? ` with your uncommitted edits to ${report.startingState.edits.join(", ")}` : ", no uncommitted edits"}.`,
+    ...(report.startingState.python === null
+      ? []
+      : [`- Python environment: ${describePythonEnvironment(report.startingState.python)}.`]),
     `- Applied to the workspace: ${report.delivery.applied ? "yes" : `no, ${report.delivery.reason}`}.`,
     `- Regression: ${report.regression ?? "not measured"}.`,
     `- Execution: ${report.execution ?? "not measured"}.`,
@@ -190,6 +200,7 @@ export function assembleReport(input: {
   readonly digests: readonly Pick<LoadedInstruction, "path" | "sha256">[];
   readonly notes: readonly string[];
   readonly start: StartingState;
+  readonly python: PythonEnvironment | null;
   readonly delivery: Delivery;
   readonly startedAt: number;
 }): RunReportFile {
@@ -231,7 +242,12 @@ export function assembleReport(input: {
         : `${result.regression.status}${inherited > 0 ? ` (${inherited} inherited failure(s))` : ""}`,
     execution: result?.execution.statement ?? null,
     attestation: result?.evidence.bundle ?? null,
-    startingState: { head: input.start.head, base: input.start.base, edits: input.start.paths },
+    startingState: {
+      head: input.start.head,
+      base: input.start.base,
+      edits: input.start.paths,
+      python: input.python,
+    },
     delivery: input.delivery,
     instructions: input.digests,
     notes: [...input.notes, ...finalized.notes],
@@ -259,6 +275,8 @@ export function assembleReport(input: {
       escalations: input.escalated ? 1 : 0,
       verifications: sum((loop) => loop.verifications),
       cost: input.options.cost,
+      // The review's turn is in the totals above; these are the loop's turns.
+      turns: loops.flatMap((loop) => loop.usage.perTurn),
     },
   };
 }

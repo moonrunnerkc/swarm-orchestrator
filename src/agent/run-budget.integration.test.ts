@@ -1,7 +1,12 @@
+import { readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { bash, fixture, recordAndComplete, scripted, write } from "./test-doubles.ts";
 
 const fix = write("half.mjs", "export const half = (n) => n / 2;");
+const mapped = recordAndComplete([
+  { id: "R1", text: "x", kind: "fix", evidence: { tests: [{ name: "half" }] } },
+]);
 
 describe("a run's turn budget", () => {
   it("tells the model once, near the end, that its turns are running out", async () => {
@@ -53,5 +58,32 @@ describe("a run's turn budget", () => {
     expect(said[4]).toContain("This is the command you ran last turn");
     expect(said[4]).toContain("The verifier's findings are still open");
     expect(said[4]).toContain("R1 unverified");
+  });
+});
+
+describe("a run's token accounting", () => {
+  it("writes each turn's counts to report.json, saying which the runtime reported", async () => {
+    const turnsOf = async (counts: "reported" | "unreported") => {
+      const ran = await (await fixture()).run(scripted([fix, mapped], { counts }));
+      const written = await readFile(join(dirname(ran.reportPath), "report.json"), "utf8");
+      return { ran, turns: JSON.parse(written).resources.turns };
+    };
+    const reported = await turnsOf("reported");
+    const counts = { inputTokens: 90, outputTokens: 10 };
+    const both = { inputCount: "reported", outputCount: "reported" };
+    expect(reported.turns).toEqual([
+      { ...counts, ...both },
+      { ...counts, ...both },
+    ]);
+    const unreported = await turnsOf("unreported");
+    expect(unreported.turns).toHaveLength(2);
+    for (const turn of unreported.turns) {
+      expect(turn).toMatchObject({ inputCount: "estimated", outputCount: "estimated" });
+    }
+    const sum = unreported.turns.reduce(
+      (total: number, turn: { inputTokens: number }) => total + turn.inputTokens,
+      0,
+    );
+    expect(unreported.ran.report.resources.inputTokens).toBe(sum);
   });
 });

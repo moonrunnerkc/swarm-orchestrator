@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { access, rm } from "node:fs/promises";
+import { access, appendFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { snapshotWorkingTree } from "swarm-verify";
 import { gitText } from "./git.ts";
@@ -26,17 +26,27 @@ const run = (command: string, args: readonly string[], cwd: string) =>
     execFile(command, [...args], { cwd, maxBuffer: 64 * 1024 * 1024 }, (error, _stdout, stderr) =>
       error === null
         ? settle()
-        : fail(new Error(`${command} ${args.join(" ")} failed: ${stderr.trim()}`)),
+        : fail(new Error(`${command} ${args.join(" ")} failed: ${stderr.trim() || error.message}`)),
     );
   });
 
-/** Installed dependency trees are copied, copy-on-write where the filesystem allows. */
-const installed = ["node_modules", ".venv"];
+/**
+ * node_modules is copied, copy-on-write where the filesystem allows; the links npm makes there are
+ * relative, so a workspace package resolves inside the copy. A .venv is never copied: it is built
+ * in the managed clone from its lockfile (python-environment.ts), since a copy runs through the original
+ * environment.
+ */
+const installed = ["node_modules"];
 
 /**
- * A detached git worktree of HEAD outside the user's tree, with the user's uncommitted edits
- * applied and committed there as the run's base, and copies of the installed dependency trees.
- * Nothing in the user's working tree, index or branches changes.
+ * A clone of HEAD outside the user's tree, with the user's uncommitted edits applied and committed
+ * there as the run's base, and a copy of the installed node_modules. Nothing in the user's working
+ * tree, index, refs or config changes.
+ *
+ * A clone and not a `git worktree`: a worktree shares the repository's refs and config, so a
+ * branch, tag, fetch or `git config` run in it wrote into the user's own .git. The clone reads the
+ * user's objects through alternates (`--shared`) and writes only its own, and has no remote, so
+ * nothing the run does in it reaches the user's repository.
  */
 export async function openWorkspace(
   repository: string,
@@ -45,7 +55,15 @@ export async function openWorkspace(
 ): Promise<ManagedWorkspace> {
   const head = await gitText(repository, ["rev-parse", "--verify", "HEAD^{commit}"]);
   const edits = await snapshotWorkingTree(repository, head, join(scratch, "starting-state.patch"));
-  await run("git", ["worktree", "add", "--quiet", "--detach", directory, head], repository);
+  await run(
+    "git",
+    ["clone", "--quiet", "--shared", "--no-checkout", repository, directory],
+    scratch,
+  );
+  await run("git", ["remote", "remove", "origin"], directory);
+  await run("git", ["checkout", "--quiet", "--detach", head], directory);
+  // The environment built in the clone is never part of the change it delivers.
+  await appendFile(join(directory, ".git", "info", "exclude"), "/.venv/\n");
   const paths: string[] = [];
   let base = head;
   if (
@@ -99,12 +117,7 @@ export async function openWorkspace(
   return {
     directory,
     start: { head, base, patch: edits.path, patchSha256: edits.sha256, paths },
-    remove: async () => {
-      await run("git", ["worktree", "remove", "--force", directory], repository).catch(() =>
-        rm(directory, { recursive: true, force: true }),
-      );
-      await run("git", ["worktree", "prune"], repository);
-    },
+    remove: () => rm(directory, { recursive: true, force: true }),
   };
 }
 

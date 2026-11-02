@@ -13,11 +13,16 @@ export interface SplitReply {
   readonly reasoning: string;
 }
 
-/** A model that replies from a script, repeating its last reply, and keeps what it was shown. */
+/**
+ * A model that replies from a script, repeating its last reply, and keeps what it was shown. It
+ * reports 90 input and 10 output tokens a turn, or no counts at all, as some runtimes do.
+ */
 export function scripted(
   replies: readonly (string | SplitReply)[],
+  options: { readonly counts: "reported" | "unreported" } = { counts: "reported" },
 ): ModelClient & { seen: Message[][] } {
   const seen: Message[][] = [];
+  const reported = options.counts === "reported";
   return {
     model: "scripted",
     seen,
@@ -26,8 +31,8 @@ export function scripted(
       const next = replies[seen.length - 1] ?? replies.at(-1) ?? "";
       return {
         ...(typeof next === "string" ? { content: next } : next),
-        inputTokens: 90,
-        outputTokens: 10,
+        inputTokens: reported ? 90 : null,
+        outputTokens: reported ? 10 : null,
         inferenceMs: 1,
         retries: 0,
         truncated: false,
@@ -57,8 +62,11 @@ process.env.SWARM_SIGNING_KEY ??= generateKeyPairSync("ed25519")
   .privateKey.export({ type: "pkcs8", format: "pem" })
   .toString();
 
-/** Where isolated runs keep their fixtures: under the user's home, which a docker VM shares. */
-export const isolatedParent = join(homedir(), ".swarm", "test-work-agent");
+/**
+ * Where isolated runs keep their fixtures: under the user's home, which a docker VM shares, and
+ * apart for each test process, since the suite removes it and other checkouts run at once.
+ */
+export const isolatedParent = join(homedir(), ".swarm", "test-work-agent", `${process.pid}`);
 
 /**
  * A repository with `half(n)` broken and one node:test test that says so, committed as the base.

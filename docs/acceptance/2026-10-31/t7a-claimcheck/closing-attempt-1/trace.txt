@@ -1,0 +1,11 @@
+$ cat package.json && echo "---" && cat src/adapters/worktree-toolchain.ts | head -100
+$ grep -rn "strykerVersionFor\|9.6.1\|8.7.1" src/ tests/ 2>/dev/null | head -50; echo "---"; npm view @stryker-mutator/core version 2>/dev/null; npm view @stryker-mutator/vitest-runner version 2>/dev/null; npm view vitest version 2>/dev/null
+$ npm view @stryker-mutator/core versions --json 2>/dev/null | grep -o '"9\.[0-9.]*"' | sort -V | tail -5; echo "---"; npm view @stryker-mutator/vitest-runner versions --json 2>/dev/null | grep -o '"9\.[0-9.]*"' | sort -V | tail -5; echo "---"; npm view vitest versions --json 2>/dev/null | grep -o '"4\.1\.[0-9]*"' | sort -V | tail -5
+$ grep -rn "strykerVersionFor\|8.7.1\|9.6.1\|vitest" tests/ 2>/dev/null | grep -i "version\|8.7\|9.6" | head -30; echo "---"; ls tests/
+$ find . -path ./node_modules -prune -o -name "*.test.ts" -print | head -30; echo "---"; grep -rn "strykerVersionFor\|8.7.1\|9.6.1" --include="*.ts" . 2>/dev/null | grep -v node_modules | head -20
+$ find . -path ./node_modules -prune -o -name "*worktree*" -print; echo "---"; cat src/adapters/worktree-toolchain.ts
+$ find . -path ./node_modules -prune -o -name "*toolchain*" -print -o -name "*install-strategy*" -print; echo "---"; cat package.json
+$ find . -path ./node_modules -prune -o -name "*worktree-toolchain*test*" -print; echo "---"; grep -rn "strykerVersionFor\|8.7.1\|9.6.1\|prepareToolchain\|overlayMutationTooling" --include="*.test.ts" . 2>/dev/null | grep -v node_modules | head -20
+$ find . -path ./node_modules -prune -o -name "*worktree*test*" -print; echo "---"; grep -rn "prepareToolchain\|strykerVersionFor\|8.7.1\|9.6.1\|overlayMutationTooling\|repoVitestMajor" --include="*.ts" . 2>/dev/null | grep -v node_modules | grep -v "\.live\." | head -30
+$ find . -path ./node_modules -prune -o -name "*worktree*test*" -print; echo "---"; grep -rn "prepareToolchain\|strykerVersionFor\|8.7.1\|9.6.1\|overlayMutationTooling\|repoVitestMajor" --include="*.ts" . 2>/dev/null | grep -v node_modules | grep -v "\.live\." | head -30
+$ find . -path ./node_modules -prune -o -name "*worktree*test*" -print; echo "---"; grep -rn "prepareToolchain\|strykerVersionFor\|8.7.1\|9.6.1\|overlayMutationTooling\|repoVitestMajor" --include="*.ts" . 2>/dev/null | grep -v node_modules | grep -v "\.live\." | head -30

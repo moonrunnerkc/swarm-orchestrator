@@ -86,7 +86,8 @@ describe("swarm run against the stub endpoint", () => {
     expect(ran.code).toBe(4);
     expect(ran.stdout).toMatch(/^stop {9}model-error: the model endpoint failed: HTTP 404/m);
     expect(ran.stdout).toMatch(/^state {8}incomplete$/m);
-    expect(ran.stdout).toMatch(/^R1 {11}unverified {3}no change observed/m);
+    expect(ran.stdout).toMatch(/^R1 {11}asked {4}Make half\(n\) return n \/ 2\.$/m);
+    expect(ran.stdout).toMatch(/^ {13}status {3}unverified: no change observed$/m);
     expect(ran.stdout).toMatch(/^regression {3}none$/m);
   });
 

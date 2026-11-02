@@ -1,0 +1,38 @@
+import { estimateTokens } from "./context.ts";
+import type { TurnUsage, Usage } from "./loop-types.ts";
+import type { Reply } from "./model.ts";
+
+export const noUsage: Usage = {
+  turns: 0,
+  inputTokens: 0,
+  outputTokens: 0,
+  estimatedTurns: 0,
+  inferenceMs: 0,
+  inferenceTurns: 0,
+  retries: 0,
+  perTurn: [],
+};
+
+/**
+ * The usage after one more turn: the runtime's counts where it reported them, otherwise the
+ * estimate of the prompt sent and of the reply's text.
+ */
+export function withTurn(usage: Usage, reply: Reply, prompt: number): Usage {
+  const turn: TurnUsage = {
+    inputTokens: reply.inputTokens ?? prompt,
+    outputTokens: reply.outputTokens ?? estimateTokens(reply.content),
+    inputCount: reply.inputTokens === null ? "estimated" : "reported",
+    outputCount: reply.outputTokens === null ? "estimated" : "reported",
+  };
+  const estimated = turn.inputCount === "estimated" || turn.outputCount === "estimated";
+  return {
+    turns: usage.turns + 1,
+    inputTokens: usage.inputTokens + turn.inputTokens,
+    outputTokens: usage.outputTokens + turn.outputTokens,
+    estimatedTurns: usage.estimatedTurns + (estimated ? 1 : 0),
+    inferenceMs: usage.inferenceMs + (reply.inferenceMs ?? 0),
+    inferenceTurns: usage.inferenceTurns + (reply.inferenceMs === null ? 0 : 1),
+    retries: usage.retries + reply.retries,
+    perTurn: [...usage.perTurn, turn],
+  };
+}

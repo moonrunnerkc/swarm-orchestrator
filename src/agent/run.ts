@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import type { VerifyResult } from "swarm-verify";
+import { snapshotWorkingTree, type VerifyResult } from "swarm-verify";
 import { createSessionId, openEvidenceSession } from "../evidence/session.ts";
 import {
   type ApprovalMode,
@@ -17,9 +17,11 @@ import { loadInstructions, renderInstructions } from "./instructions.ts";
 import type { StopReason } from "./loop.ts";
 import type { ModelClient } from "./model.ts";
 import { systemPrompt } from "./prompt.ts";
+import { preparePythonEnvironment } from "./python-environment.ts";
 import { assembleReport, type RunReportFile, writeReport } from "./report.ts";
 import { initialRecord } from "./requirement-record.ts";
 import { behaviorChangeNote, createVerifier, dependencyPolicy, swarmHome } from "./verification.ts";
+import { versionConstraintsOf, workspaceDependencies } from "./version-constraints.ts";
 import { deliver, openWorkspace } from "./workspace.ts";
 
 export interface RunOptions {
@@ -101,6 +103,15 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
       deniedRoots: [home],
       childHomeDir: childHome,
     });
+    const deadline =
+      options.maxWallMs === null ? Number.POSITIVE_INFINITY : started + options.maxWallMs;
+    const python = await preparePythonEnvironment({
+      worktree: workspace,
+      repository,
+      env: guard.childEnvironment.variables,
+      deadline,
+      signal: options.signal,
+    });
     const execution =
       options.isolation === "isolated"
         ? ({ mode: "isolated", network: "closed", dependencies: "prepare" } as const)
@@ -125,6 +136,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
         base,
         head: managed.start.head,
         startingEdits: [...managed.start.paths],
+        python: python === null ? null : { ...python },
         promptSha256,
         instructions: digests,
         instructionNotes: instructions.notes,
@@ -132,15 +144,15 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
       },
     });
 
+    const declared = await workspaceDependencies(workspace);
+    const stated = versionConstraintsOf(options.task, declared.dependencies);
     const progress: Progress = {
       model: options.model,
       loops: [],
-      record: initialRecord(options.task),
+      record: initialRecord(options.task, stated.constraints, [...declared.notes, ...stated.notes]),
       review: null,
       escalated: false,
     };
-    const deadline =
-      options.maxWallMs === null ? Number.POSITIVE_INFINITY : started + options.maxWallMs;
     const verifier = createVerifier({
       workspace,
       base,
@@ -175,6 +187,13 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
           evidence,
           instructions: rendered,
           status: () => gitText(workspace, ["status", "--short", "--", ".", ":(exclude).swarm"]),
+          // The patch the verifier would judge, new files included, kept in the session.
+          diff: async () =>
+            readFile(
+              (await snapshotWorkingTree(workspace, base, join(evidence.directory, "turn.patch")))
+                .path,
+              "utf8",
+            ),
           verify: verifier.tree,
           turnTokens: options.turnTokens,
           turnTime: () => ({
@@ -240,6 +259,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
         ...(options.behaviorChange === "authorized" ? [behaviorChangeNote(finalized.result)] : []),
       ],
       start: managed.start,
+      python,
       delivery,
       startedAt: started,
     });
