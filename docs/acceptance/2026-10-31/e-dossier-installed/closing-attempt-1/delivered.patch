@@ -1,0 +1,57 @@
+diff --git a/src/adversarial/fs-walk.ts b/src/adversarial/fs-walk.ts
+index 9f3eda5..a4395ae 100644
+--- a/src/adversarial/fs-walk.ts
++++ b/src/adversarial/fs-walk.ts
+@@ -7,7 +7,7 @@
+ import { readdirSync, statSync } from 'fs';
+ import { join, relative } from 'path';
+ 
+-const EXCLUDED_DIRS = new Set(['node_modules', '.git', '.dossier', 'dist', 'out', 'build', 'coverage']);
++const EXCLUDED_DIRS = new Set(['node_modules', '.venv', '.git', '.dossier', 'dist', 'out', 'build', 'coverage']);
+ 
+ export function walkRepo(repo: string): string[] {
+   const out: string[] = [];
+diff --git a/tests/adversarial/fs-walk.test.ts b/tests/adversarial/fs-walk.test.ts
+new file mode 100644
+index 0000000..f7c3dd4
+--- /dev/null
++++ b/tests/adversarial/fs-walk.test.ts
+@@ -0,0 +1,38 @@
++import { walkRepo } from '../../src/adversarial/fs-walk';
++import { writeFileSync, mkdirSync, rmSync } from 'fs';
++import { join } from 'path';
++import { tmpdir } from 'os';
++
++describe('walkRepo', () => {
++  const testDir = join(tmpdir(), 'dossier-walk-test-' + Date.now());
++
++  beforeAll(() => {
++    mkdirSync(testDir, { recursive: true });
++  });
++
++  afterAll(() => {
++    rmSync(testDir, { recursive: true, force: true });
++  });
++
++  it('should skip .venv directory', () => {
++    const venvDir = join(testDir, '.venv');
++    mkdirSync(venvDir, { recursive: true });
++    writeFileSync(join(venvDir, 'pyvenv.cfg'), 'test');
++    writeFileSync(join(testDir, 'main.py'), 'test');
++
++    const files = walkRepo(testDir);
++    expect(files).toContain('main.py');
++    expect(files).not.toContain('.venv/pyvenv.cfg');
++  });
++
++  it('should skip node_modules directory', () => {
++    const nodeModulesDir = join(testDir, 'node_modules');
++    mkdirSync(nodeModulesDir, { recursive: true });
++    writeFileSync(join(nodeModulesDir, 'package.json'), 'test');
++    writeFileSync(join(testDir, 'index.ts'), 'test');
++
++    const files = walkRepo(testDir);
++    expect(files).toContain('index.ts');
++    expect(files).not.toContain('node_modules/package.json');
++  });
++});

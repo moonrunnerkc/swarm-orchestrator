@@ -45,6 +45,15 @@ npm install -g swarm-orchestrator
 swarm run "<task>"
 ```
 
+A run prints the directory of its evidence and the attestation of its final verification. The
+verifier is its own package; installed beside Swarm, it reruns that verification from the record
+and says whether it agrees:
+
+```sh
+npm install -g swarm-verify
+swarm-verify replay <directory holding the printed attestation> --workspace <repo>
+```
+
 With no model named, Swarm asks Ollama what is installed, leaves out cloud entries, embedding
 models and anything that would not fit in memory at the context (weights plus KV cache), probes
 the strongest candidates until one follows its shell protocol, and prints the one it chose and
