@@ -92,7 +92,8 @@ Root causes found running real tasks on local models (docs/acceptance/2026-10-31
   awk scripts are read for the files they open, and a redirect target is checked wherever it is
   written. A path after an option's equals sign (`--git-dir=/elsewhere`) is checked; it was not.
 - **A copied `.venv` ran the user's unchanged source.** The workspace's environment is built from
-  `uv.lock` (or the declared setup command) and the report names its interpreter.
+  `uv.lock` (or the declared setup command, or, with no lock, `uv lock` first as the verifier
+  does) and the report names its interpreter.
 
 ### Migration
 
