@@ -53,6 +53,49 @@ describe("reading a reply", () => {
   });
 });
 
+describe("reading an edit or write block", () => {
+  const edit = "```edit src/a.ts\n<<<<<<< SEARCH\n  a\n=======\n  b\n>>>>>>> REPLACE\n```";
+
+  it("takes an edit block as the file and its pairs, indentation kept", () => {
+    expect(parseReply(`Now the fix.\n${edit}`)).toEqual({
+      kind: "edit",
+      edit: { mode: "replace", path: "src/a.ts", pairs: [{ search: "  a", replace: "  b" }] },
+    });
+  });
+
+  it("takes a write block of four backticks whose text holds a fence of three", () => {
+    const text = "# Title\n\n```bash\nnpm test\n```";
+    expect(parseReply(`\`\`\`\`write README.md\n${text}\n\`\`\`\``)).toEqual({
+      kind: "edit",
+      edit: { mode: "write", path: "README.md", content: `${text}\n` },
+    });
+  });
+
+  it("refuses a write block its own text closed early, rather than write half of it", () => {
+    for (const reply of [
+      "```write README.md\n# Title\n```bash\nnpm test\n```\n```",
+      "```write README.md\n# Title\n```\nmore text\n```",
+    ]) {
+      expect(parseReply(reply)).toMatchObject({
+        kind: "malformed",
+        reason: expect.stringContaining("fence the block with four"),
+      });
+    }
+  });
+
+  it("refuses an edit block beside another block", () => {
+    expect(parseReply(`${edit}\n\`\`\`bash\nls\n\`\`\``)).toMatchObject({
+      kind: "malformed",
+      reason: expect.stringContaining("the reply has more than one fenced block"),
+    });
+  });
+
+  it("describes both blocks in the system prompt", () => {
+    expect(systemPrompt).toContain("```edit path/to/file");
+    expect(systemPrompt).toContain("```write path/to/file");
+  });
+});
+
 describe("reading a reply a server split", () => {
   it("reads the content first, and the reasoning beside it only when the content holds no reply form", () => {
     expect(readReply("```bash\nls\n```", "```bash\npwd\n```")).toEqual({

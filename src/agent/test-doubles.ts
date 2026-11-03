@@ -129,3 +129,10 @@ export async function fixture(
     },
   };
 }
+
+/** For a fake chokepoint whose test's model sends no edit block: one arriving is the test's error. */
+export const noEdits = {
+  async edit(): Promise<never> {
+    throw new Error("this test's model sends no edit block");
+  },
+};

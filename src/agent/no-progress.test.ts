@@ -7,7 +7,7 @@ import type { Chokepoint } from "../tools/chokepoint.ts";
 import recorded from "./fixtures/no-progress-2026-11-02.json" with { type: "json" };
 import { type LoopOptions, runLoop } from "./loop.ts";
 import { initialRecord } from "./requirement-record.ts";
-import { bash, scripted } from "./test-doubles.ts";
+import { bash, noEdits, scripted } from "./test-doubles.ts";
 
 /**
  * Two cycles from the post-publish dossier runs, replayed from their ledgers: 36 passing runs of
@@ -29,6 +29,7 @@ async function replayOptions(
       sessionId: "s",
       now: Date.now,
     }),
+    environment: "",
     instructions: "",
     record: initialRecord(task),
     status: async () => "",
@@ -57,6 +58,7 @@ describe("session 20261102T210229-519ea0: one passing vitest file, run 36 times"
   it("stops as no progress at the second result identical to the first", async () => {
     let at = 0;
     const replay: Chokepoint = {
+      ...noEdits,
       async run(ran) {
         expect(ran).toBe(command);
         const output = runs[at]?.output ?? "";
@@ -78,6 +80,7 @@ describe("session 20261102T210229-519ea0: one passing vitest file, run 36 times"
 describe("session 20261102T211404-06df43: one requirements block, resent without the marker", () => {
   const { task, replies, outputs } = recorded.requirements;
   const replay: Chokepoint = {
+    ...noEdits,
     async run(command) {
       const output = outputs[command as keyof typeof outputs];
       if (output === undefined) throw new Error(`not in the recording: ${command}`);

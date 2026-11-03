@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { mkdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -13,13 +12,12 @@ import { createPolicyGuard, defaultShellAllowlist } from "../tools/policy-guard.
 import { type Progress, runAttempts } from "./attempts.ts";
 import { finalize } from "./finalize.ts";
 import { gitText } from "./git.ts";
-import { loadInstructions, renderInstructions } from "./instructions.ts";
 import type { StopReason } from "./loop.ts";
 import type { ModelClient } from "./model.ts";
-import { systemPrompt } from "./prompt.ts";
 import { preparePythonEnvironment } from "./python-environment.ts";
 import { assembleReport, type RunReportFile, writeReport } from "./report.ts";
 import { initialRecord } from "./requirement-record.ts";
+import { stablePrefix } from "./stable-prefix.ts";
 import { behaviorChangeNote, createVerifier, dependencyPolicy, swarmHome } from "./verification.ts";
 import { versionConstraintsOf, workspaceDependencies } from "./version-constraints.ts";
 import { deliver, openWorkspace } from "./workspace.ts";
@@ -120,12 +118,15 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
             network: "open",
             dependencies: options.dependencies ?? (await dependencyPolicy(repository)),
           } as const);
-    const instructions = await loadInstructions(workspace);
-    const rendered = renderInstructions(instructions);
-    const digests = instructions.loaded.map(({ path, sha256 }) => ({ path, sha256 }));
-    const promptSha256 = createHash("sha256")
-      .update(`${systemPrompt}\n${rendered}\n${options.task}`)
-      .digest("hex");
+    // After the Python environment, so the probe and the layout see the .venv the model will.
+    const prefix = await stablePrefix({
+      workspace,
+      env: guard.childEnvironment.variables,
+      task: options.task,
+      checks: options.isolation,
+      signal: options.signal,
+    });
+    const { instructions, rendered, digests, promptSha256 } = prefix;
     await evidence.record({
       type: "session-started",
       actor: "harness",
@@ -138,6 +139,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
         startingEdits: [...managed.start.paths],
         python: python === null ? null : { ...python },
         promptSha256,
+        environment: prefix.environment,
         instructions: digests,
         instructionNotes: instructions.notes,
         behaviorChange: options.behaviorChange ?? "none",
@@ -185,6 +187,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
           task: options.task,
           chokepoint,
           evidence,
+          environment: prefix.environment.block,
           instructions: rendered,
           status: () => gitText(workspace, ["status", "--short", "--", ".", ":(exclude).swarm"]),
           // The patch the verifier would judge, new files included, kept in the session.

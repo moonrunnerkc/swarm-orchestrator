@@ -23,6 +23,8 @@ export interface LoopOptions {
   readonly model: ModelClient;
   readonly chokepoint: Chokepoint;
   readonly evidence: EvidenceRecorder;
+  /** The machine the model's commands run on, probed at session start (platform-facts.ts). */
+  readonly environment: string;
   /** Repository instructions as the model reads them, or "" where there are none. */
   readonly instructions: string;
   readonly record: RequirementRecord;

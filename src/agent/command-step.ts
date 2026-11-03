@@ -1,6 +1,7 @@
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import type { Chokepoint } from "../tools/chokepoint.ts";
+import { editText, type FileEdit } from "../tools/file-edit.ts";
 import { readShellCommand } from "../tools/shell-command.ts";
 import { comparableOutput } from "./comparable-output.ts";
 import { type CommandFact, evidenceRef, excerptBytes } from "./exchange.ts";
@@ -14,6 +15,8 @@ export interface CommandStep {
   readonly repeats: number;
   /** The output as the no-progress rule compares it, with clocks and durations taken out. */
   readonly comparable: string;
+  /** For an edit, what an old turn shows in place of a long block; null for a command. */
+  readonly brief: string | null;
 }
 
 /** Files one command can name in a digest line; the rest are left out. */
@@ -45,7 +48,8 @@ async function filesNamed(command: string, root: string): Promise<string[]> {
  */
 export async function runCommandStep(input: {
   readonly chokepoint: Chokepoint;
-  readonly command: string;
+  /** A shell command, or an edit block, which goes through the same chokepoint. */
+  readonly action: { readonly command: string } | { readonly edit: FileEdit };
   readonly step: number;
   /** Where whole outputs are copied, and the workspace root paths are shown relative to. */
   readonly outputs: { readonly directory: string; readonly root: string };
@@ -55,7 +59,12 @@ export async function runCommandStep(input: {
     readonly repeats: number;
   };
 }): Promise<CommandStep & { readonly output: string }> {
-  const outcome = await input.chokepoint.run(input.command);
+  const isEdit = "edit" in input.action;
+  const command = "edit" in input.action ? editText(input.action.edit) : input.action.command;
+  const outcome =
+    "edit" in input.action
+      ? await input.chokepoint.edit(input.action.edit)
+      : await input.chokepoint.run(input.action.command);
   const evidence = evidenceRef(outcome.record);
   const bytes = Buffer.byteLength(outcome.output);
   let saved: string | null = null;
@@ -68,11 +77,11 @@ export async function runCommandStep(input: {
   // A runner that prints its clock never prints the same bytes twice, so the result is compared
   // without clocks, durations and temporary paths.
   const comparable = comparableOutput(outcome.output);
-  const same = input.command === input.previous.command && comparable === input.previous.comparable;
+  const same = command === input.previous.command && comparable === input.previous.comparable;
   const repeats = same ? input.previous.repeats + 1 : 1;
   // At temperature 0 a repeated command and its unchanged output can repeat forever.
   const again = same
-    ? "This is the command you ran last turn, and its result is unchanged (times and durations aside).\n"
+    ? `This is the ${isEdit ? "edit you sent" : "command you ran"} last turn, and its result is unchanged (times and durations aside).\n`
     : "";
   const exitCode = outcome.decision === "allowed" ? outcome.exitCode : null;
   const status = outcome.decision === "allowed" ? `exit code: ${exitCode}` : outcome.decision;
@@ -83,16 +92,23 @@ export async function runCommandStep(input: {
     note: `${again}${status}\n${truncate(outcome.output)}${where}`,
     fact: {
       step: input.step,
-      command: input.command,
+      command,
       decision: outcome.decision,
       exitCode,
       evidence,
       output: saved,
-      files: await filesNamed(input.command, input.outputs.root),
+      files:
+        "edit" in input.action
+          ? [input.action.edit.path]
+          : await filesNamed(input.action.command, input.outputs.root),
       why: ok || lastLine.length === 0 ? null : lastLine,
     },
     repeats,
     comparable,
+    brief:
+      "edit" in input.action
+        ? `(a ${input.action.edit.mode} block for ${input.action.edit.path}; not repeated here)`
+        : null,
     output: outcome.output,
   };
 }
