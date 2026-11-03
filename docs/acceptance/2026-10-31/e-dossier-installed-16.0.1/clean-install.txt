@@ -1,0 +1,66 @@
+Clean install, 2026-11-03, into an empty prefix (npm i -g --prefix <empty>):
+$ npm i -g swarm-orchestrator@16.0.1 && npm i -g swarm-verify@2.0.1
+$ swarm --version
+16.0.1
+$ swarm-verify --version
+2.0.1
+swarm-orchestrator's own swarm-verify: 2.0.1
+
+$ swarm doctor --models   (Ollama 0.32.14 running)
+Ollama 0.32.14 at http://localhost:11434, 65536-token context
+
+gemma4-31b-greedy-128k:latest
+  capacity  eligible: needs 25.3 GiB (weights 18.5 GiB, KV cache 5.8 GiB) of a 48.0 GiB budget
+  probe     ready: followed the shell protocol after a 16384-token prompt at a 65536-token context, 23.8 tok/s, 58 s
+swarm-redesign-qwen36-32k:latest
+  capacity  eligible: needs 27.2 GiB (weights 21.1 GiB, KV cache 5.1 GiB) of a 48.0 GiB budget
+  probe     ready: followed the shell protocol after a 16384-token prompt at a 65536-token context, 121.6 tok/s, 13 s
+qwen3.6:35b-a3b
+  capacity  eligible: needs 27.2 GiB (weights 21.1 GiB, KV cache 5.1 GiB) of a 48.0 GiB budget
+  probe     ready: followed the shell protocol after a 16384-token prompt at a 65536-token context, 118.4 tok/s, 10 s
+qwen3:0.6b
+  capacity  excluded: its context is 40960 tokens, under the configured 65536 (0.5 GiB on disk)
+  probe     not probed: excluded before loading
+gemma4:e2b-it-q8_0
+  capacity  eligible: needs 9.5 GiB (weights 7.6 GiB, KV cache 0.9 GiB) of a 48.0 GiB budget
+  probe     ready: followed the shell protocol after a 16384-token prompt at a 65536-token context, 128.2 tok/s, 7 s
+resident-reason:e4b
+  capacity  eligible: needs 13.6 GiB (weights 10.8 GiB, KV cache 1.8 GiB) of a 48.0 GiB budget
+  probe     ready: followed the shell protocol after a 16384-token prompt at a 65536-token context, 80.6 tok/s, 10 s
+resident-heavy:24b
+  capacity  eligible: needs 25.1 GiB (weights 14.1 GiB, KV cache 10.0 GiB) of a 48.0 GiB budget
+  probe     ready: followed the shell protocol after a 16384-token prompt at a 65536-token context, 32.2 tok/s, 35 s
+resident-fast:2b
+  capacity  excluded: its metadata does not state an attention shape, so its memory at the configured context cannot be estimated (2.9 GiB on disk)
+  probe     not probed: excluded before loading
+resident-embed:0.6b
+  capacity  excluded: not a chat model (tools, thinking, embedding) (0.6 GiB on disk)
+  probe     not probed: excluded before loading
+mistral-small3.2:24b
+  capacity  eligible: needs 25.1 GiB (weights 14.1 GiB, KV cache 10.0 GiB) of a 48.0 GiB budget
+  probe     ready: followed the shell protocol after a 16384-token prompt at a 65536-token context, 33.6 tok/s, 36 s
+qwen3-embedding:0.6b
+  capacity  excluded: not a chat model (tools, thinking, embedding) (0.6 GiB on disk)
+  probe     not probed: excluded before loading
+deepseek-v4-pro:cloud
+  capacity  excluded: served remotely, with no local weights (0.0 GiB on disk)
+  probe     not probed: excluded before loading
+kimi-k2:1t-cloud
+  capacity  excluded: served remotely, with no local weights (0.0 GiB on disk)
+  probe     not probed: excluded before loading
+kimi-k2.6:cloud
+  capacity  excluded: served remotely, with no local weights (0.0 GiB on disk)
+  probe     not probed: excluded before loading
+gemma4:e4b-it-q8_0
+  capacity  eligible: needs 13.6 GiB (weights 10.8 GiB, KV cache 1.8 GiB) of a 48.0 GiB budget
+  probe     ready: followed the shell protocol after a 16384-token prompt at a 65536-token context, 78.7 tok/s, 9 s
+glm-5.1:cloud
+  capacity  excluded: served remotely, with no local weights (0.0 GiB on disk)
+  probe     not probed: excluded before loading
+gemma4:31b
+  capacity  eligible: needs 25.3 GiB (weights 18.5 GiB, KV cache 5.8 GiB) of a 48.0 GiB budget
+  probe     ready: followed the shell protocol after a 16384-token prompt at a 65536-token context, 24.1 tok/s, 55 s
+doctor exit 0
+
+$ run-task.sh smoke-dossier --model auto   (CLI and VERIFY the installed commands; ironroot cloned beside dossier, packages/core-ts built)
+session 20261103T205635-acc4bd, 2026-11-03T20:56:34Z to 2026-11-03T20:58:35Z; attempt-1/

@@ -1,0 +1,106 @@
+diff --git a/src/adversarial/fs-walk.test.ts b/src/adversarial/fs-walk.test.ts
+new file mode 100644
+index 0000000..96bc5ae
+--- /dev/null
++++ b/src/adversarial/fs-walk.test.ts
+@@ -0,0 +1,100 @@
++/** fs-walk directory exclusion tests. */
++
++import { describe, it, expect } from 'vitest';
++import { walkRepo } from '../../src/adversarial/fs-walk.js';
++import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs';
++import { tmpdir } from 'os';
++import { join } from 'path';
++
++describe('walkRepo', () => {
++  it('skips node_modules directories', () => {
++    const repo = mkdtempSync(join(tmpdir(), 'dossier-walk-'));
++    mkdirSync(join(repo, 'node_modules', 'pkg'), { recursive: true });
++    writeFileSync(join(repo, 'node_modules', 'pkg', 'index.js'), 'module.exports = {}');
++    writeFileSync(join(repo, 'src', 'main.ts'), '');
++    const files = walkRepo(repo);
++    expect(files.some((f) => f.startsWith('node_modules/'))).toBe(false);
++  });
++
++  it('skips .venv directories', () => {
++    const repo = mkdtempSync(join(tmpdir(), 'dossier-walk-'));
++    mkdirSync(join(repo, '.venv', 'lib'), { recursive: true });
++    writeFileSync(join(repo, '.venv', 'lib', 'site-packages.py'), '');
++    writeFileSync(join(repo, 'src', 'main.ts'), '');
++    const files = walkRepo(repo);
++    expect(files.some((f) => f.startsWith('.venv/'))).toBe(false);
++  });
++
++  it('skips .git directories', () => {
++    const repo = mkdtempSync(join(tmpdir(), 'dossier-walk-'));
++    mkdirSync(join(repo, '.git', 'objects'), { recursive: true });
++    writeFileSync(join(repo, '.git', 'config'), '[core]');
++    writeFileSync(join(repo, 'src', 'main.ts'), '');
++    const files = walkRepo(repo);
++    expect(files.some((f) => f.startsWith('.git/'))).toBe(false);
++  });
++
++  it('skips .dossier directories', () => {
++    const repo = mkdtempSync(join(tmpdir(), 'dossier-walk-'));
++    mkdirSync(join(repo, '.dossier', 'ledger'), { recursive: true });
++    writeFileSync(join(repo, '.dossier', 'ledger.db'), '');
++    writeFileSync(join(repo, 'src', 'main.ts'), '');
++    const files = walkRepo(repo);
++    expect(files.some((f) => f.startsWith('.dossier/'))).toBe(false);
++  });
++
++  it('skips dist directories', () => {
++    const repo = mkdtempSync(join(tmpdir(), 'dossier-walk-'));
++    mkdirSync(join(repo, 'dist'), { recursive: true });
++    writeFileSync(join(repo, 'dist', 'bundle.js'), '');
++    writeFileSync(join(repo, 'src', 'main.ts'), '');
++    const files = walkRepo(repo);
++    expect(files.some((f) => f.startsWith('dist/'))).toBe(false);
++  });
++
++  it('skips out directories', () => {
++    const repo = mkdtempSync(join(tmpdir(), 'dossier-walk-'));
++    mkdirSync(join(repo, 'out'), { recursive: true });
++    writeFileSync(join(repo, 'out', 'result.txt'), '');
++    writeFileSync(join(repo, 'src', 'main.ts'), '');
++    const files = walkRepo(repo);
++    expect(files.some((f) => f.startsWith('out/'))).toBe(false);
++  });
++
++  it('skips build directories', () => {
++    const repo = mkdtempSync(join(tmpdir(), 'dossier-walk-'));
++    mkdirSync(join(repo, 'build'), { recursive: true });
++    writeFileSync(join(repo, 'build', 'output.o'), '');
++    writeFileSync(join(repo, 'src', 'main.ts'), '');
++    const files = walkRepo(repo);
++    expect(files.some((f) => f.startsWith('build/'))).toBe(false);
++  });
++
++  it('skips coverage directories', () => {
++    const repo = mkdtempSync(join(tmpdir(), 'dossier-walk-'));
++    mkdirSync(join(repo, 'coverage'), { recursive: true });
++    writeFileSync(join(repo, 'coverage', 'lcov.info'), '');
++    writeFileSync(join(repo, 'src', 'main.ts'), '');
++    const files = walkRepo(repo);
++    expect(files.some((f) => f.startsWith('coverage/'))).toBe(false);
++  });
++
++  it('returns repo-relative POSIX paths for included files', () => {
++    const repo = mkdtempSync(join(tmpdir(), 'dossier-walk-'));
++    mkdirSync(join(repo, 'src', 'lib'), { recursive: true });
++    writeFileSync(join(repo, 'src', 'lib', 'util.ts'), '');
++    writeFileSync(join(repo, 'README.md'), '');
++    const files = walkRepo(repo);
++    expect(files).toContain('README.md');
++    expect(files).toContain('src/lib/util.ts');
++  });
++
++  it('sorts output alphabetically', () => {
++    const repo = mkdtempSync(join(tmpdir(), 'dossier-walk-'));
++    writeFileSync(join(repo, 'z.txt'), '');
++    writeFileSync(join(repo, 'a.txt'), '');
++    writeFileSync(join(repo, 'm.txt'), '');
++    const files = walkRepo(repo);
++    expect(files).toEqual(['a.txt', 'm.txt', 'z.txt']);
++  });
++});

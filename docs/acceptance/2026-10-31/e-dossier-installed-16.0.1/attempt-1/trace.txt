@@ -1,0 +1,15 @@
+requirements R1
+$ cat src/adversarial/fs-walk.ts
+$ cat src/adversarial/fs-walk.test.ts 2>/dev/null || echo "NO TEST FILE FOUND"
+$ find . -name "*.test.*" -path "*/adversarial/*" 2>/dev/null; find . -name "*.spec.*" -path "*/adversarial/*" 2>/dev/null; ls src/adversarial/
+$ cat tests/adversarial/boundary.test.ts
+$ cat tests/adversarial/targets.test.ts
+$ cat src/adversarial/fs-walk.ts
+$ cat > src/adversarial/fs-walk.test.ts << 'EOF'
+$ sed -i "s/const EXCLUDED_DIRS = new Set(\['node_modules', '\.git', '\.dossier', 'dist', 'out', 'build', 'coverage'\]);/const EXCLUDED_DIRS = new Set(['node_modules', '.git', '.dossier', 'dist', 'out', 'build', 'coverage', '.venv']);/" src/adversarial/fs-walk.ts
+$ sed -i "s|const EXCLUDED_DIRS = new Set(\['node_modules', '\.git', '\.dossier', 'dist', 'out', 'build', 'coverage'\]);|const EXCLUDED_DIRS = new Set(['node_modules', '.git', '.dossier', 'dist', 'out', 'build', 'coverage', '.venv']);|" src/adversarial/fs-walk.ts
+$ cat src/adversarial/fs-walk.ts | head -15
+$ cat src/adversarial/fs-walk.ts
+$ cat src/adversarial/fs-walk.ts
+$ cat src/adversarial/fs-walk.ts
+finalizing the delivered tree
