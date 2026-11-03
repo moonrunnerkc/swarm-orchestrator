@@ -9,7 +9,7 @@ import { dirname } from "node:path";
 export type FileEdit =
   | { readonly mode: "write"; readonly path: string; readonly content: string }
   | {
-      readonly mode: "replace";
+      readonly mode: "edit";
       readonly path: string;
       readonly pairs: readonly { readonly search: string; readonly replace: string }[];
     };
@@ -59,7 +59,7 @@ export function readEditBlock(
   if (pairs.some((pair) => pair.search.trim() === "")) {
     return { malformed: "a SEARCH part is empty; use a write block to create a file" };
   }
-  return { mode: "replace", path, pairs };
+  return { mode: "edit", path, pairs };
 }
 
 export function readWriteBlock(

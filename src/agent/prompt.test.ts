@@ -59,7 +59,7 @@ describe("reading an edit or write block", () => {
   it("takes an edit block as the file and its pairs, indentation kept", () => {
     expect(parseReply(`Now the fix.\n${edit}`)).toEqual({
       kind: "edit",
-      edit: { mode: "replace", path: "src/a.ts", pairs: [{ search: "  a", replace: "  b" }] },
+      edit: { mode: "edit", path: "src/a.ts", pairs: [{ search: "  a", replace: "  b" }] },
     });
   });
 

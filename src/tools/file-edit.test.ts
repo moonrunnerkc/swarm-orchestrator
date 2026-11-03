@@ -10,7 +10,7 @@ const pair = (search: string, replace: string) =>
 describe("reading an edit block", () => {
   it("reads one or more SEARCH and REPLACE parts, lines kept as written", () => {
     expect(readEditBlock("src/a.ts", `${pair("  a", "  b")}\n${pair("c\nd", "")}`)).toEqual({
-      mode: "replace",
+      mode: "edit",
       path: "src/a.ts",
       pairs: [
         { search: "  a", replace: "  b" },
@@ -73,7 +73,7 @@ describe("replacing exactly once", () => {
     const file = join(await mkdtemp(join(tmpdir(), "edit-")), "a.txt");
     await writeFile(file, "a\nb\n");
     const result = await applyFileEdit(file, {
-      mode: "replace",
+      mode: "edit",
       path: "a.txt",
       pairs: [
         { search: "a", replace: "x" },
@@ -99,7 +99,7 @@ describe("replacing exactly once", () => {
     expect(await readFile(join(root, "a", "b.txt"), "utf8")).toBe("x\n");
     expect(
       await applyFileEdit(join(root, "c.txt"), {
-        mode: "replace",
+        mode: "edit",
         path: "c.txt",
         pairs: [{ search: "a", replace: "b" }],
       }),

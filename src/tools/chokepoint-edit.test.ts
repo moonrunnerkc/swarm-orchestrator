@@ -42,7 +42,7 @@ const chokepoint = () =>
   });
 
 const replace = (path: string, search: string, value: string) =>
-  ({ mode: "replace", path, pairs: [{ search, replace: value }] }) as const;
+  ({ mode: "edit", path, pairs: [{ search, replace: value }] }) as const;
 
 describe("an edit through the chokepoint", () => {
   it("applies it and records the request before and the outcome after, with both digests", async () => {
