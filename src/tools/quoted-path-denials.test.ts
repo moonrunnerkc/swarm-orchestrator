@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import denials from "./fixtures/quoted-path-denials-2026-11-01.json" with { type: "json" };
 import { createPolicyGuard } from "./policy-guard.ts";
-import { readShellCommand, readShellPipeline } from "./shell-command.ts";
+import { readShellPipeline } from "./shell-command.ts";
+import { pathsWhereTheyRun } from "./working-directories.ts";
 
 /**
  * Path refusals from the acceptance sessions of 2026-11-01, verbatim from their ledgers. Of the
@@ -25,10 +26,10 @@ function guardFor(denial: Denial) {
 
 /** The chokepoint's path check: every offered operand through the guard, first refusal wins. */
 function firstDenial(denial: Denial): string | null {
-  const read = readShellCommand(denial.command);
-  if (read === null) return "unreadable";
+  const paths = pathsWhereTheyRun(denial.command, () => false);
+  if (paths === null) return "unreadable";
   const guard = guardFor(denial);
-  for (const operand of read.operands) {
+  for (const operand of paths) {
     const verdict = guard.checkPath(operand);
     if (!verdict.allowed) return verdict.reason;
   }

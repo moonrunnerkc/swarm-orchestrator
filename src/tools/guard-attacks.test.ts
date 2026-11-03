@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createPolicyGuard, defaultShellAllowlist, type PolicyGuardRules } from "./policy-guard.ts";
-import { readShellCommand } from "./shell-command.ts";
+import { pathsWhereTheyRun } from "./working-directories.ts";
 
 /**
  * Attacks written to get past the guard as it stands, rather than cases written to confirm it.
@@ -40,7 +40,7 @@ function shellCallIsRefused(command: string): boolean {
   if (!guard.isCommandAllowed(command)) {
     return true;
   }
-  return (readShellCommand(command)?.operands ?? []).some((word) => denies(word));
+  return (pathsWhereTheyRun(command, () => false) ?? []).some((word) => denies(word));
 }
 
 describe("reaching a credential file by spelling its name differently", () => {

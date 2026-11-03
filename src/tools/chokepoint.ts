@@ -1,8 +1,11 @@
+import { statSync } from "node:fs";
+import { resolve } from "node:path";
 import { runProcessGroup } from "swarm-verify/execution";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import type { PolicyGuard } from "./policy-guard.ts";
 import { refusedAction } from "./refused-actions.ts";
-import { readShellCommand, readShellPipeline } from "./shell-command.ts";
+import { readShellPipeline } from "./shell-command.ts";
+import { pathsWhereTheyRun } from "./working-directories.ts";
 
 /** Whether an off-allowlist command is answered by the run (auto) or by a person (ask). */
 export type ApprovalMode = "ask" | "auto";
@@ -51,7 +54,7 @@ const nothingToRun =
   "the command holds only comments, so there is nothing to run. Reply with a command that acts.";
 
 const unreadable =
-  "this command cannot be read without running a shell (a substitution such as $(...), an expansion, a subshell, a brace group, or a program handed to a shell), so the paths it opens cannot be checked. Run the inner command on its own and write its result into the next command literally.";
+  "this command cannot be read without running a shell (a substitution such as $(...), an expansion, a subshell, a brace group, a program handed to a shell, or a cd to somewhere other than one named directory), so the paths it opens cannot be checked. Run the inner command on its own and write its result into the next command literally.";
 
 /**
  * The single way a command the model wrote runs. The request is on the ledger before anything
@@ -93,21 +96,22 @@ export function createChokepoint(options: ChokepointOptions): Chokepoint {
       const pipeline = readShellPipeline(command);
       const refused = pipeline === null ? null : refusedAction(pipeline);
       if (refused !== null) return settle("denied", `denied: ${refused}`, null);
-      const read = readShellCommand(command);
+      const root = options.guard.workspaceRoot;
+      const paths = pathsWhereTheyRun(command, (path) => isDirectory(resolve(root, path)));
       // A string the reader cannot read names paths nothing here checked. A person may still run
       // it; auto approval has nobody to judge it, so it is refused rather than run unchecked.
-      if (read === null && options.approval === "auto") {
+      if (paths === null && options.approval === "auto") {
         return settle(
           "denied",
           `denied: ${onlyComments(command) ? nothingToRun : unreadable}`,
           null,
         );
       }
-      for (const path of read?.operands ?? []) {
+      for (const path of paths ?? []) {
         const verdict = options.guard.checkPath(path);
         if (!verdict.allowed) return settle("denied", `denied: ${verdict.reason}`, null);
       }
-      if (!options.guard.isCommandAllowed(command)) {
+      if (paths === null || !options.guard.isCommandAllowed(command)) {
         const programs = options.guard.disallowedExecutables(command) ?? [];
         const answer = await decide(options, allowance, { command, programs, explanation: "" });
         await options.evidence.record({
@@ -139,6 +143,14 @@ export function createChokepoint(options: ChokepointOptions): Chokepoint {
       });
     },
   };
+}
+
+function isDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 async function decide(

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createPolicyGuard } from "./policy-guard.ts";
-import { readShellCommand } from "./shell-command.ts";
+import { pathsWhereTheyRun } from "./working-directories.ts";
 
 const guard = createPolicyGuard({
   workspaceRoot: "/work/repo",
@@ -13,9 +13,9 @@ const guard = createPolicyGuard({
 
 /** What the chokepoint's path check would say: unreadable, the first refused operand, or null. */
 function refusal(command: string): string | null {
-  const read = readShellCommand(command);
-  if (read === null) return "unreadable";
-  return read.operands.find((operand) => !guard.checkPath(operand).allowed) ?? null;
+  const paths = pathsWhereTheyRun(command, () => false);
+  if (paths === null) return "unreadable";
+  return paths.find((operand) => !guard.checkPath(operand).allowed) ?? null;
 }
 
 describe("arguments a program reads as text", () => {

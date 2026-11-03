@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import denials from "./fixtures/inline-program-denials-2026-10-20.json" with { type: "json" };
 import { createPolicyGuard } from "./policy-guard.ts";
 import { readShellCommand } from "./shell-command.ts";
+import { pathsWhereTheyRun } from "./working-directories.ts";
 
 /**
  * The four shell calls the policy guard denied during the Swarm launch of 2026-10-20 on
@@ -25,9 +26,9 @@ const guard = createPolicyGuard({
 
 /** What the chokepoint does with a shell call: every offered operand through the guard, first refusal wins. */
 function firstDenial(command: string): string | null {
-  const read = readShellCommand(command);
-  if (read === null) return "unreadable";
-  for (const operand of read.operands) {
+  const paths = pathsWhereTheyRun(command, () => false);
+  if (paths === null) return "unreadable";
+  for (const operand of paths) {
     const verdict = guard.checkPath(operand);
     if (!verdict.allowed) return verdict.reason;
   }
