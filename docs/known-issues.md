@@ -25,16 +25,6 @@ limit of the models tried, not a verifier defect, and is recorded rather than re
 `acceptance/closing/run-task.sh t6-tracemantle` in the work root, or judge any agent's patch with
 the command in docs/acceptance/2026-10-31/t6-comparison/README.md.
 
-## An unchanged requirements block resent without the completion marker has no limit
-
-A requirements block is recorded and answered with a reminder to reply with the completion marker
-(`src/agent/requirements-step.ts`); nothing counts the same block arriving again on an unchanged
-tree and record. In the second post-publish dossier run (session 20261102T211404-06df43) the
-escalated model sent the same block 29 times, writing "The task is complete" in prose but never the
-marker, so the verifier ran only after the step budget ended the run. The outcome was right
-(complete, replay agrees); 51 of its 60 turns were spent after the work was done.
-Reproduce: have the model answer each reminder with the same requirements block and no marker.
-
 ## swarm-verify: replay of a refused dependency preparation diverges
 
 When the lockfile installs a package from beside the repository and that directory is missing,

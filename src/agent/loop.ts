@@ -50,6 +50,8 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
   let verification: Verification | null = null;
   let previous = { command: "", comparable: "", repeats: 0 };
   let malformed = 0;
+  // Whether the last turn was a requirements block without the completion marker.
+  let proposedLast = false;
   const result = (stop: StopReason, reason: string | null = null): LoopResult => ({
     stop,
     reason,
@@ -152,6 +154,8 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
     });
 
     const parsed = read.parsed;
+    const afterProposal = proposedLast;
+    proposedLast = false;
     malformed = parsed.kind === "malformed" ? malformed + 1 : 0;
     if (parsed.kind === "malformed") {
       if (malformed >= unusableAfter) {
@@ -217,6 +221,14 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
       options.log(`requirements ${proposed.ids}`);
       proposal = `a requirements block, recorded as ${proposed.ids} [evidence ${proposed.evidence}]`;
       if (!parsed.complete) {
+        // The same record twice running with no marker: the model is not going to send it.
+        if (afterProposal && proposed.unchanged) {
+          return result(
+            "no-progress",
+            "the same requirements block arrived twice running without the completion marker, and the record did not change",
+          );
+        }
+        proposedLast = true;
         conversation.add(
           noteExchange({
             step: steps,
