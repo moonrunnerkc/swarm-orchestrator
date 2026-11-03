@@ -3,6 +3,55 @@
 The agent. The verifier it consumes, `swarm-verify`, has its own changelog in
 [moonrunnerkc/swarm-verify](https://github.com/moonrunnerkc/swarm-verify/blob/main/CHANGELOG.md).
 
+## 16.0.1 - 2026-11-03
+
+A patch release: three agent-loop defects and the swarm-verify 2.0.1 pin, from the follow-ups
+of the 16.0.0 acceptance run. No new option, command or format.
+
+### Fixed
+
+- **A rerun of a passing test command counted as progress.** The no-progress rule compared a
+  command's output byte for byte, and vitest prints its start time and duration on every run, so
+  one model ran the same passing test file 36 times until the step budget. The comparison now
+  takes out colour codes, clock times, timestamps, durations and temporary paths; the model still
+  reads the output as printed.
+- **The same requirements block, sent again without the completion marker, kept the run going.**
+  A model wrote "The task is complete" in prose 29 times running and never sent the marker. A
+  block that leaves the requirement record unchanged, right after another block, now stops the
+  loop as no progress, and finalization judges the tree.
+- **A relative path after `cd` was read from the workspace root.** `cd src/pkg && grep x
+  ../../tests` was refused as outside the workspace, and `cd .git && cat config` was checked as a
+  root file named `config` and allowed, though it reads `.git/config`, which the credential
+  denylist refuses. Each path is now read from the directory the command would open it in,
+  following `cd`, `pushd` and `chdir`; a `cd` the reader cannot name makes the command unreadable.
+- **swarm-verify 2.0.1**, pinned exactly. A refused dependency preparation is recorded as refused
+  and its replay meets the same refusal, where 2.0.0 recorded no preparation and the replay
+  diverged. A test file moved and edited (one more `.parent` to reach its fixtures) is judged by
+  its base version at the new path, where 2.0.0 read it as deleted and ran both copies. A judged
+  process ended by a signal no longer reads as tampering, and a worker thread its runner
+  terminated is named as unchecked rather than failing the held-out check; a relative `SWARM_HOME` keeps its sealed checks; the mutation pass no longer mutates
+  inside multi-line strings and comments. See swarm-verify's changelog.
+
+### Corrected
+
+- 16.0.0's known limit said the best cross-module refactor attempt (tracemantle) "broke the
+  module it moved". It did not: `history_io.py` was a working re-export, and the seven failures
+  are the tests that read fixtures, in a test file moved without the path to them. swarm-verify
+  2.0.0 also refused the correct move, which edits that path; that was the verifier defect fixed
+  in 2.0.1.
+- Rerun once against 2.0.1 with the same local model (gemma4-31b-greedy-128k, isolated, session
+  20261103T175257-900062), the task is still incomplete: the model moved both modules with working
+  shims and moved the three test files byte for byte, so the same seven fixture tests fail. 2.0.1
+  read the three moves and attributed the seven failures to them; the replay agrees. The
+  limitation stands, as a limit of the models tried: no local model has completed the task.
+
+### Added
+
+- docs/acceptance/2026-10-31/: the two isolated fix runs from real bug-fix commits, with the fix
+  commit's test sealed as a held-out check (`f-fix-isolated/`; neither completed, so the fix
+  category stays host-verified only), the comparison of t6 and h2 done by hand with the local
+  runs (`comparison/`), and the t6 rerun against 2.0.1 (`t6-tracemantle/closing-attempt-3/`).
+
 ## 16.0.0 - 2026-11-01
 
 Swarm Orchestrator is the coding product again, and `swarm-verify` 2.0.0 is the verifier it
