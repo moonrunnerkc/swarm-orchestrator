@@ -11,8 +11,9 @@ complete on any local model this machine runs: the best attempt (gemma4-31b-gree
 read, and the narrower version (qwen3.6:35b-a3b, session 20261101T233622-12a75b) changed nothing.
 This was recorded as a limit of the models and not a verifier defect; that is withdrawn. swarm-verify
 2.0.0 also refused the correct move, which edits that path, reading the file as deleted (fixed in
-2.0.1; docs/acceptance/2026-10-31/README.md, Comparison). No local model has run the task against
-2.0.1. Reproduce: `acceptance/closing/run-task.sh t6-tracemantle` in the work root, or judge any
+2.0.1; docs/acceptance/2026-10-31/README.md, Comparison). Rerun once against 2.0.1 with the same
+model (session 20261103T175257-900062), it moved the three test files byte for byte again, the same
+7 fixture tests failed, and 2.0.1 read the moves and attributed the failures correctly. Reproduce: `acceptance/closing/run-task.sh t6-tracemantle` in the work root, or judge any
 agent's patch with the command in docs/acceptance/2026-10-31/t6-comparison/README.md.
 
 ## swarm-verify: replay of a refused dependency preparation diverges

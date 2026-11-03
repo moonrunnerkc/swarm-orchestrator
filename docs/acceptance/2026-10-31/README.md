@@ -33,14 +33,16 @@ A category counts only with a complete run of its own task whose replay agrees; 
 | Fix a real defect | t3 ruleprobe (`--host`) | 20261101T042617-8a01e0 | complete | swarm-redesign-qwen36-32k, Ollama auto | 560,835 / 4,765 | agrees on the host (`final/replay-host.out`); the first replay ran in a container and diverged | |
 | Fix beside an unrelated inherited failure | c1 ruleprobe (`--host`) | 20261101T205458-33e203 | complete | gemma4:31b, Ollama auto | 499,019 / 9,095 | agrees, on the host | |
 | Refactor: move without behavior change | t5b ironroot | 20261101T054940-b71a2a | complete | swarm-redesign-qwen36-32k, Ollama auto | 735,845 / 7,243 | agrees | |
-| Refactor across modules, tests and config | t6 tracemantle | 20261101T221712-67545b | incomplete | gemma4-31b-greedy-128k, Ollama named, 65,536 | 388,458 / 12,946 | agrees | open: the best attempt moved its tests without the fixture path they read, 7 new failures; the narrower attempt changed nothing. Corrected 2026-11-02: under 2.0.0 the move with that path fixed was refused as well, a verifier defect fixed in 2.0.1 (see Comparison) |
+| Refactor across modules, tests and config | t6 tracemantle | 20261101T221712-67545b | incomplete | gemma4-31b-greedy-128k, Ollama named, 65,536 | 388,458 / 12,946 | agrees | open: the best attempt moved its tests without the fixture path they read, 7 new failures; the narrower attempt changed nothing. Corrected 2026-11-02: under 2.0.0 the move with that path fixed was refused as well, a verifier defect fixed in 2.0.1 (see Comparison). Rerun against 2.0.1 (20261103T175257-900062, same model): incomplete, the same 7 failures, the moves read correctly, replay agrees |
 | Upgrade a dependency | t7a claimcheck | 20261101T235811-1133bb | complete | gemma4:31b, Ollama auto | 133,999 / 1,099 | agrees | |
 | Upgrade the runtime | t8 quantproof | 20261101T073344-9bf3e4 | complete | qwen3.6:35b-a3b, Ollama auto | 222,006 / 1,990 | agrees | |
 
 Seven of the eight categories have a complete run of their own task whose replay agrees. The
 cross-module refactor (t6 tracemantle) does not. It was recorded as a limit of the models; the
 Comparison below found that swarm-verify 2.0.0 refused the correct move too, so that reading is
-withdrawn: no local model has run t6 against 2.0.1. `t6-comparison/` holds the task, its base, a fixed requirement record and both attempts,
+withdrawn. Rerun once against 2.0.1 with the same model (session 20261103T175257-900062), it
+made the same mistake: the test file moved unchanged, its 7 fixture tests failing, which 2.0.1
+read and attributed correctly; the replay agrees. `t6-comparison/` holds the task, its base, a fixed requirement record and both attempts,
 so another agent's patch can be judged by the same verifier on the same base. t7b dependency detector (20261101T102609-e587a2,
 complete, replay agrees), the upgrade substitute of the first round, completed as well. Of the two
 held-back tasks, h1 completed on its first run with a replay that agrees, and h2 did not complete
@@ -65,6 +67,7 @@ base's own typecheck and build failing in the container, and claimcheck d2f136c 
 | t5a depose | qwen3.8:27b (Rapid-MLX, 65,536 context) | incomplete | no-progress | 6 | 32,669 / 450 | 102 s | 4 |
 | t5b ironroot | swarm-redesign-qwen36-32k (Ollama, auto) | complete | complete | 39 | 735,845 / 7,243 | 224 s | 0 |
 | t6 tracemantle | gemma4-31b-greedy-128k (Ollama, named, 65,536 context) | incomplete | no-progress | 42 | 388,458 / 12,946 | 3,127 s | 7 |
+| t6 tracemantle, against 2.0.1 | gemma4-31b-greedy-128k (Ollama, named, 65,536 context) | incomplete | time-budget | 59 | 702,202 / 24,439 | 4,880 s | 8 |
 | t6n tracemantle (narrower) | qwen3.6:35b-a3b (Ollama, auto) | incomplete | no-progress | 25 | 103,121 / 1,287 | 683 s | 0 |
 | t7a claimcheck | gemma4:31b (Ollama, auto) | complete | complete | 16 | 133,999 / 1,099 | 558 s | 7 |
 | t7b dependency detector | gemma4-31b-greedy-128k (Ollama, auto) | complete | complete | 11 | 56,251 / 302 | 224 s | 2 |
@@ -139,7 +142,7 @@ and the reports say so rather than print zero.
 
 ## What remains incomplete, and why
 
-- **t6 tracemantle**, open. Eight attempts and a narrower variant. In the first round the
+- **t6 tracemantle**, open. Nine attempts and a narrower variant. In the first round the
   verifier's own defects in this task (coverage wrapping a self-measuring suite, an untracked
   `uv.lock` left by the base run, a flaky parametrized case read as a divergence) were found and
   fixed. In the closing round, attempt 1 was stopped by me seconds in (it was on a build that gave
@@ -156,6 +159,15 @@ and the reports say so rather than print zero.
   old and moved copies together, which also broke the README's test count. So 2.0.0 refused every
   form of this move short of moving the fixtures as well, and "within what the verifier judges
   correctly" was wrong. 2.0.1 judges a moved and edited test file by its base version (Comparison).
+  Rerun once against 2.0.1 (closing attempt 3, session 20261103T175257-900062, the same model and
+  flags, isolated): 59 turns to the time budget, no verification asked for in the loop, 20 files.
+  It moved both modules into `tracemantle/history/` with working shims and moved the three test
+  files unchanged, so `tests/history/test_history_io.py` again looked for
+  `tests/history/fixtures/history/`, which does not exist; `load_ledger` returns `None` for a
+  missing file, and the same 7 tests failed. 2.0.1 read the three files as moved (41 tests renamed,
+  1,351 preserved, 3 inherited) and attributed the 7; the replay agrees. The model's own notes
+  again called `history_io.py` corrupted; it was a working re-export. Evidence:
+  `t6-tracemantle/closing-attempt-3/`.
 - **t5a depose.** In the first round the move was made without evidence mapped; rerun with the same
   model after context management, Qwen3.8 read the test file three turns running and stopped for no
   progress after 6 turns, nothing changed. Replays agree. t5b ironroot holds the category.
@@ -199,7 +211,8 @@ two tasks. Evidence is in `comparison/`.
   that are not there.
 - What this shows: on t6 the correct move was refused by 2.0.0 whoever made it; on h2 a complete
   fix with a test exists and was judged complete by the verifier the local run met. It does not
-  show how a local model would do on t6 against 2.0.1, which has not been run.
+  show a local model completing t6: the one rerun against 2.0.1 (above, What remains incomplete)
+  repeated the unchanged move and its 7 failures.
 
 ## Safety
 

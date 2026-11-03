@@ -52,6 +52,9 @@ attempts here.
 
 Applied to the full-scope attempt's patch, this command printed the result in
 `attempt-full-scope/judged-with-requirements.txt`: state incomplete, R1 failed, seven new failures
-in `tests.test_history_io` (the module the attempt broke), three failures the base already has
-(a tiktoken cache, two pre-commit network tests) inherited. That matches the attempt's own final
-verification.
+in `tests.test_history_io`, three failures the base already has (a tiktoken cache, two
+pre-commit network tests) inherited. That matches the attempt's own final verification. The 7 are
+the tests that read `tests/fixtures/history`: the attempt moved `test_history_io.py` without
+changing it, so it looks for its fixtures beside itself, and `history_io.py` is a working
+re-export. A rerun against 2.0.1 with the same model (`../t6-tracemantle/closing-attempt-3/`)
+made the same move with the same 7 failures.
