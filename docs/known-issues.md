@@ -25,15 +25,6 @@ limit of the models tried, not a verifier defect, and is recorded rather than re
 `acceptance/closing/run-task.sh t6-tracemantle` in the work root, or judge any agent's patch with
 the command in docs/acceptance/2026-10-31/t6-comparison/README.md.
 
-## A repeated test run never counts as a repeat when the runner prints its clock
-
-The no-progress rule counts a command as repeated only when its output is byte-identical to the
-last turn's (`src/agent/command-step.ts`). vitest prints `Start at` and `Duration` on every run,
-so the same passing test run is never the same output. In the post-publish dossier run (session
-20261102T210229-519ea0) the escalated model ran `npx vitest run tests/adversarial/fs-walk.test.ts`
-36 times, every run exit 0 and 36 distinct outputs, until the 60-step budget ended the run.
-Reproduce: in a vitest repository, have the model rerun one passing test file.
-
 ## An unchanged requirements block resent without the completion marker has no limit
 
 A requirements block is recorded and answered with a reminder to reply with the completion marker

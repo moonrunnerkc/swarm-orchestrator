@@ -177,7 +177,7 @@ describe("an unchanged command and output", () => {
     const ran = await runLoop({ ...(await loopOptions(model, 65_536)), maxSteps: 10 });
     expect(ran).toMatchObject({
       stop: "no-progress",
-      reason: "the same command printed the same output 3 turns running",
+      reason: "the same command printed the same result 3 turns running",
       steps: 3,
     });
     expect(model.seen[1]?.at(-1)?.content).not.toContain("command you ran last turn");

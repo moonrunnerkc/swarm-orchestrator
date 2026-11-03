@@ -2,6 +2,7 @@ import { mkdir, stat, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import type { Chokepoint } from "../tools/chokepoint.ts";
 import { readShellCommand } from "../tools/shell-command.ts";
+import { comparableOutput } from "./comparable-output.ts";
 import { type CommandFact, evidenceRef, excerptBytes } from "./exchange.ts";
 import { outputCap, truncate } from "./prompt.ts";
 
@@ -9,8 +10,10 @@ export interface CommandStep {
   /** What the model reads next turn. */
   readonly note: string;
   readonly fact: CommandFact;
-  /** How many turns in a row ran this command and got this output. */
+  /** How many turns in a row ran this command and got this result. */
   readonly repeats: number;
+  /** The output as the no-progress rule compares it, with clocks and durations taken out. */
+  readonly comparable: string;
 }
 
 /** Files one command can name in a digest line; the rest are left out. */
@@ -48,7 +51,7 @@ export async function runCommandStep(input: {
   readonly outputs: { readonly directory: string; readonly root: string };
   readonly previous: {
     readonly command: string;
-    readonly output: string;
+    readonly comparable: string;
     readonly repeats: number;
   };
 }): Promise<CommandStep & { readonly output: string }> {
@@ -62,10 +65,15 @@ export async function runCommandStep(input: {
     await writeFile(path, outcome.output);
     saved = relative(input.outputs.root, path);
   }
-  const same = input.command === input.previous.command && outcome.output === input.previous.output;
+  // A runner that prints its clock never prints the same bytes twice, so the result is compared
+  // without clocks, durations and temporary paths.
+  const comparable = comparableOutput(outcome.output);
+  const same = input.command === input.previous.command && comparable === input.previous.comparable;
   const repeats = same ? input.previous.repeats + 1 : 1;
   // At temperature 0 a repeated command and its unchanged output can repeat forever.
-  const again = same ? "This is the command you ran last turn, and its output is unchanged.\n" : "";
+  const again = same
+    ? "This is the command you ran last turn, and its result is unchanged (times and durations aside).\n"
+    : "";
   const exitCode = outcome.decision === "allowed" ? outcome.exitCode : null;
   const status = outcome.decision === "allowed" ? `exit code: ${exitCode}` : outcome.decision;
   const where = saved !== null && bytes > outputCap ? `\n[full output: ${saved}]` : "";
@@ -84,6 +92,7 @@ export async function runCommandStep(input: {
       why: ok || lastLine.length === 0 ? null : lastLine,
     },
     repeats,
+    comparable,
     output: outcome.output,
   };
 }

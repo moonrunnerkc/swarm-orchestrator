@@ -48,7 +48,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
   let turnStarted: number | null = null;
   let longestTurnMs = 0;
   let verification: Verification | null = null;
-  let previous = { command: "", output: "", repeats: 0 };
+  let previous = { command: "", comparable: "", repeats: 0 };
   let malformed = 0;
   const result = (stop: StopReason, reason: string | null = null): LoopResult => ({
     stop,
@@ -181,11 +181,11 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
         outputs: options.outputs,
         previous,
       });
-      previous = { command: parsed.command, output: ran.output, repeats: ran.repeats };
+      previous = { command: parsed.command, comparable: ran.comparable, repeats: ran.repeats };
       if (ran.repeats >= repeatLimit) {
         return result(
           "no-progress",
-          `the same command printed the same output ${ran.repeats} turns running`,
+          `the same command printed the same result ${ran.repeats} turns running`,
         );
       }
       // A command repeated while findings are open is the run circling: point back at them.
