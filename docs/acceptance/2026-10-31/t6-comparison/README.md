@@ -30,14 +30,14 @@ The module names inside the new package are left to the mover.
 
 ## Judging a patch
 
-With swarm-verify 2.0.0 and docker (the image is pulled on first use), in a clone of the
+With swarm-verify 2.0.1 and docker (the image is pulled on first use), in a clone of the
 repository at the starting commit:
 
 ```sh
 git clone https://github.com/moonrunnerkc/tracemantle.git
 cd tracemantle
 git checkout 47203d2903394cbb8904637cad71b7b525b9ada7
-npx -y swarm-verify@2.0.0 verify \
+npx -y swarm-verify@2.0.1 verify \
   --base 47203d2903394cbb8904637cad71b7b525b9ada7 \
   --patch /path/to/their.patch \
   --requirements /path/to/t6-comparison/requirements.json \
@@ -50,7 +50,7 @@ regression, with a signed statement in `./verdict`; `exit 0` means complete. Che
 in a container with the network closed after dependencies are prepared, as they did for the
 attempts here.
 
-Applied to the full-scope attempt's patch, this command printed the result in
+Applied to the full-scope attempt's patch, this command with 2.0.0 printed the result in
 `attempt-full-scope/judged-with-requirements.txt`: state incomplete, R1 failed, seven new failures
 in `tests.test_history_io`, three failures the base already has (a tiktoken cache, two
 pre-commit network tests) inherited. That matches the attempt's own final verification. The 7 are
