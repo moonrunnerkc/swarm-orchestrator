@@ -1,7 +1,9 @@
+import { createHash } from "node:crypto";
 import { statSync } from "node:fs";
 import { resolve } from "node:path";
 import { runProcessGroup } from "swarm-verify/execution";
 import type { EvidenceRecorder } from "../evidence/session.ts";
+import { applyFileEdit, editText, type FileEdit } from "./file-edit.ts";
 import type { PolicyGuard } from "./policy-guard.ts";
 import { refusedAction } from "./refused-actions.ts";
 import { readShellPipeline } from "./shell-command.ts";
@@ -34,6 +36,8 @@ export interface ShellOutcome {
 
 export interface Chokepoint {
   run(command: string): Promise<ShellOutcome>;
+  /** One file edit block, under the same path policy and on the same ledger as a command. */
+  edit(edit: FileEdit): Promise<ShellOutcome>;
 }
 
 export interface ChokepointOptions {
@@ -67,30 +71,52 @@ export function createChokepoint(options: ChokepointOptions): Chokepoint {
   const allowance = new Set<string>();
   let calls = 0;
 
-  return {
-    async run(command: string): Promise<ShellOutcome> {
-      calls += 1;
-      const callId = `call-${calls}`;
-      await options.evidence.record({
+  // The request is on the ledger before anything happens; what settles it is recorded after.
+  const open = async (tool: string, request: Record<string, string>) => {
+    calls += 1;
+    const callId = `call-${calls}`;
+    await options.evidence.record({
+      type: "tool-call",
+      actor: "harness",
+      provenance: ["model"],
+      payload: { callId, tool, decision: "requested", ...request },
+    });
+    const settle = async (
+      decision: ShellOutcome["decision"],
+      output: string,
+      exitCode: number | null,
+      detail: Record<string, string | number | boolean | null> = {},
+    ): Promise<ShellOutcome> => {
+      const recorded = await options.evidence.record({
         type: "tool-call",
         actor: "harness",
-        provenance: ["model"],
-        payload: { callId, tool: "bash", decision: "requested", command },
+        provenance: ["model", "tool-output"],
+        payload: { callId, tool, decision, ...request, output, exitCode, ...detail },
       });
-      const settle = async (
-        decision: ShellOutcome["decision"],
-        output: string,
-        exitCode: number | null,
-        detail: Record<string, string | number | boolean | null> = {},
-      ): Promise<ShellOutcome> => {
-        const recorded = await options.evidence.record({
-          type: "tool-call",
-          actor: "harness",
-          provenance: ["model", "tool-output"],
-          payload: { callId, tool: "bash", decision, command, output, exitCode, ...detail },
-        });
-        return { decision, output, exitCode, record: recorded.record.payloadDigest };
-      };
+      return { decision, output, exitCode, record: recorded.record.payloadDigest };
+    };
+    return { callId, settle };
+  };
+
+  return {
+    async edit(edit: FileEdit): Promise<ShellOutcome> {
+      const { settle } = await open(edit.mode, { path: edit.path, command: editText(edit) });
+      if (options.signal?.aborted) return settle("failed", "cancelled before the edit", null);
+      const verdict = options.guard.checkPath(edit.path);
+      if (!verdict.allowed) return settle("denied", `denied: ${verdict.reason}`, null);
+      const result = await applyFileEdit(verdict.absolutePath, edit).catch((error: unknown) => ({
+        applied: false as const,
+        refused: error instanceof Error ? error.message : String(error),
+      }));
+      if (!result.applied) return settle("failed", `not applied: ${result.refused}`, null);
+      return settle("allowed", result.summary, 0, {
+        beforeSha256: result.before === null ? null : sha256(result.before),
+        afterSha256: sha256(result.after),
+      });
+    },
+
+    async run(command: string): Promise<ShellOutcome> {
+      const { callId, settle } = await open("bash", { command });
 
       if (options.signal?.aborted) return settle("failed", "cancelled before execution", null);
       const pipeline = readShellPipeline(command);
@@ -144,6 +170,8 @@ export function createChokepoint(options: ChokepointOptions): Chokepoint {
     },
   };
 }
+
+const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 
 function isDirectory(path: string): boolean {
   try {

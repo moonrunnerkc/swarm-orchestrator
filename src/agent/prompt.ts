@@ -1,3 +1,5 @@
+import { type FileEdit, readEditBlock, readWriteBlock } from "../tools/file-edit.ts";
+
 /** What the model writes, alone on a line, when it considers the task done. */
 export const completionMarker = "SWARM_TASK_COMPLETE";
 
@@ -5,7 +7,8 @@ export const completionMarker = "SWARM_TASK_COMPLETE";
 export const outputCap = 10_000;
 
 export const systemPrompt = [
-  "You are a software engineer working in a git repository. Your only tool is bash.",
+  "You are a software engineer working in a git repository. You run commands with bash and change",
+  "files with edit and write blocks.",
   "",
   "Every reply contains exactly one of these:",
   "",
@@ -16,7 +19,27 @@ export const systemPrompt = [
   "your command here",
   "```",
   "",
-  "2. One fenced requirements block: a JSON array that records what the task requires and which",
+  "2. One fenced edit block, naming one file after `edit`, with one or more SEARCH and REPLACE",
+  "   parts. Each SEARCH part must match the file exactly once, whitespace included; if one matches",
+  "   nothing or several places, nothing in the file changes and you are told which.",
+  "",
+  "```edit path/to/file",
+  "<<<<<<< SEARCH",
+  "the lines as the file has them now",
+  "=======",
+  "the lines that replace them",
+  ">>>>>>> REPLACE",
+  "```",
+  "",
+  "   Or one fenced write block, naming one file after `write`, holding the file's whole new text.",
+  "   It creates the file, and its directories, or replaces all of it. Where the text holds a line",
+  "   of three backticks, open and close the block with four.",
+  "",
+  "```write path/to/file",
+  "the whole text of the file",
+  "```",
+  "",
+  "3. One fenced requirements block: a JSON array that records what the task requires and which",
   "   tests show it. R1 is the task itself; keep its id. Add R2 and on for parts you separate.",
   '   Each entry: {"id": "R1", "text": "...", "kind": "fix" | "feature" | "refactor" | "upgrade" | "other",',
   '   "assumptions": ["..."], "evidence": {"tests": [{"name": "test name"}], "checks": ["check name"],',
@@ -31,7 +54,7 @@ export const systemPrompt = [
   '[{"id": "R1", "text": "...", "kind": "feature", "evidence": {"tests": [{"name": "..."}]}}]',
   "```",
   "",
-  `3. ${completionMarker} on a line of its own, when the task is done.`,
+  `4. ${completionMarker} on a line of its own, when the task is done.`,
   "",
   "An independent verifier then runs the project's checks on your working tree in a clean checkout",
   "and decides each requirement's status from executed results only: satisfied, failed,",
@@ -52,24 +75,53 @@ export const systemPrompt = [
 
 export type ParsedReply =
   | { readonly kind: "command"; readonly command: string }
+  | { readonly kind: "edit"; readonly edit: FileEdit }
   | { readonly kind: "requirements"; readonly json: string; readonly complete: boolean }
   | { readonly kind: "complete" }
   | { readonly kind: "malformed"; readonly reason: string };
 
-const fenced = /```([a-z]*)[ \t]*\n([\s\S]*?)\n?```/g;
+// A fence of three or more backticks closes on the same number, so a write block of four can
+// hold a file whose text has a line of three. What follows the language names the edited file.
+const fenced = /(?<!`)(`{3,})([a-z]*)(?:[ \t]+([^\n]*?))?[ \t]*\n([\s\S]*?)\n?(?<!`)\1(?!`)/g;
 const markerCommand = new RegExp(`^(?:echo\\s+)?(["']?)${completionMarker}\\1$`);
 const shells = new Set(["", "bash", "sh", "shell"]);
+const editors = new Set(["edit", "write"]);
 
 export function parseReply(content: string): ParsedReply {
   const blocks = [...content.matchAll(fenced)].map((match) => ({
-    language: match[1] ?? "",
-    body: (match[2] ?? "").trim(),
+    language: match[2] ?? "",
+    info: match[3] ?? "",
+    raw: match[4] ?? "",
+    body: (match[4] ?? "").trim(),
   }));
   const commands = blocks.filter((block) => shells.has(block.language));
   const records = blocks.filter((block) => block.language === "requirements");
-  const marked = new RegExp(`^\\s*${completionMarker}\\s*$`, "m").test(content.replace(fenced, ""));
-  if (commands.length + records.length > 1) {
-    return { kind: "malformed", reason: "the reply has more than one fenced block" };
+  const edits = blocks.filter((block) => editors.has(block.language));
+  const outside = content.replace(fenced, "");
+  const marked = new RegExp(`^\\s*${completionMarker}\\s*$`, "m").test(outside);
+  // An edit or write block whose own text holds a fence closes early, and its rest reads as more.
+  const fourBackticks =
+    "where a block's text holds a line of three backticks, fence the block with four";
+  if (commands.length + records.length + edits.length > 1) {
+    const reason = "the reply has more than one fenced block";
+    return { kind: "malformed", reason: edits.length > 0 ? `${reason}; ${fourBackticks}` : reason };
+  }
+  const [edit] = edits;
+  if (edit !== undefined) {
+    // A fence left over means the block closed early, on a line of its own text.
+    if (/^`{3,}/m.test(outside)) {
+      return {
+        kind: "malformed",
+        reason: `the ${edit.language} block closed before its end; ${fourBackticks}`,
+      };
+    }
+    const read =
+      edit.language === "edit"
+        ? readEditBlock(edit.info, edit.raw)
+        : readWriteBlock(edit.info, edit.raw);
+    return "malformed" in read
+      ? { kind: "malformed", reason: read.malformed }
+      : { kind: "edit", edit: read };
   }
   const [record] = records;
   if (record !== undefined) return { kind: "requirements", json: record.body, complete: marked };
@@ -83,7 +135,8 @@ export function parseReply(content: string): ParsedReply {
       ? { kind: "complete" }
       : {
           kind: "malformed",
-          reason: "the reply has no bash block, requirements block or completion marker",
+          reason:
+            "the reply has no bash, edit, write or requirements block, and no completion marker",
         };
   }
   return command.body.length === 0

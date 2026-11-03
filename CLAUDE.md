@@ -33,7 +33,8 @@ commits, pushed code, passing CI and published packages are separate facts.
 - `src/cli.ts`: the `swarm` entry and its subcommands (`run`, `verify`, `init`, `ci`, `doctor`),
   one small module each, dispatched by `src/cli-main.ts`.
   `verify`, `init` and `ci` are the installed verifier's own commands (`swarm-verify/cli`).
-- `src/agent`: the `run` loop. One bash tool, one command per turn, the verifier as the judge.
+- `src/agent`: the `run` loop. One bash command or one file edit block per turn, a probed
+  platform block at the head of the prompt, the verifier as the judge.
 - `src/tools`: the one execution chokepoint and the lexical path policy. Child environments and
   process groups come from `swarm-verify/execution`, so agent commands and checks are run alike.
 - `src/evidence`: append-only hash-chained records, canonical JSON, scrubbing with the

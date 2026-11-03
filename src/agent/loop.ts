@@ -29,7 +29,9 @@ const openFindings = (findings: string | null) =>
  */
 export async function runLoop(options: LoopOptions): Promise<LoopResult> {
   const conversation = createConversation({
-    system: [systemPrompt, options.instructions].filter((part) => part.length > 0).join("\n\n"),
+    system: [systemPrompt, options.environment, options.instructions]
+      .filter((part) => part.length > 0)
+      .join("\n\n"),
     task: options.task,
     opening: options.handoff ?? "Begin.",
   });
@@ -170,22 +172,26 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
           step: steps,
           reply: read.text,
           brief: "(a reply that followed no reply form)",
-          result: `Your reply was not used: ${parsed.reason}${cut}. Reply with exactly one bash block, one requirements block, or the completion marker alone.`,
+          result: `Your reply was not used: ${parsed.reason}${cut}. Reply with exactly one bash, edit, write or requirements block, or the completion marker alone.`,
           fact: `a reply that was not used: ${parsed.reason}`,
         }),
       );
       continue;
     }
-    if (parsed.kind === "command") {
-      options.log(`$ ${parsed.command.split("\n")[0]}`);
+    if (parsed.kind === "command" || parsed.kind === "edit") {
+      options.log(
+        parsed.kind === "edit"
+          ? `${parsed.edit.mode} ${parsed.edit.path}`
+          : `$ ${parsed.command.split("\n")[0]}`,
+      );
       const ran = await runCommandStep({
         chokepoint: options.chokepoint,
-        command: parsed.command,
+        action: parsed.kind === "edit" ? { edit: parsed.edit } : { command: parsed.command },
         step: steps,
         outputs: options.outputs,
         previous,
       });
-      previous = { command: parsed.command, comparable: ran.comparable, repeats: ran.repeats };
+      previous = { command: ran.fact.command, comparable: ran.comparable, repeats: ran.repeats };
       if (ran.repeats >= repeatLimit) {
         return result(
           "no-progress",
@@ -203,9 +209,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
               "Act on them: change the tree, or send the corrected requirements block, then mark the task complete.",
             ].join("\n")
           : ran.note;
-      conversation.add(
-        commandExchange({ reply: read.text, result: note, fact: ran.fact, output: ran.output }),
-      );
+      conversation.add(commandExchange({ ...ran, reply: read.text, result: note }));
       continue;
     }
     let proposal = "";

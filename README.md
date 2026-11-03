@@ -18,9 +18,12 @@ authority that judges it.
 
 1. Swarm reads the task and the repository's `AGENTS.md` (or `CLAUDE.md`) instructions.
 2. It records the requirements it was given, with stable IDs, and the assumptions it made.
-3. A local model edits the code through one bash tool. Every command goes through one
-   chokepoint under a lexical path policy and lands on a hash-chained ledger outside the
-   workspace.
+3. A local model works through bash, and changes files with edit blocks (exact replacements) or
+   write blocks (whole files), which mean the same on macOS and Linux. The prompt opens with the
+   machine as probed when the run started: operating system, shell, whether `sed`, `grep`,
+   `find`, `awk` and `xargs` are BSD or GNU, and the programs on PATH. Every command and edit goes
+   through one chokepoint under a lexical path policy and lands on a hash-chained ledger outside
+   the workspace.
 4. [Swarm Verify](https://github.com/moonrunnerkc/swarm-verify), the standalone verifier, measures
    the candidate in a container from a pinned image, network closed, with dependencies installed
    fresh from the lockfile: the base commit's tests against the new source, new tests as labeled

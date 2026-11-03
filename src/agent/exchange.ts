@@ -80,6 +80,8 @@ export function commandExchange(input: {
   readonly result: string;
   readonly fact: CommandFact;
   readonly output: string;
+  /** What an old turn shows for a long reply that was not a shell command. */
+  readonly brief?: string | null;
 }): Exchange {
   const { fact } = input;
   const lines = fact.command.split("\n");
@@ -91,7 +93,8 @@ export function commandExchange(input: {
   return {
     step: fact.step,
     reply: input.reply,
-    brief: Buffer.byteLength(input.reply) <= briefBytes ? input.reply : bash(command),
+    brief:
+      Buffer.byteLength(input.reply) <= briefBytes ? input.reply : (input.brief ?? bash(command)),
     result: input.result,
     summary: `${endingOf(fact)}\n${excerptOf(input.output)}\n[evidence ${fact.evidence}${where}]`,
     fact: `\`${firstLine(fact.command)}\` ${fact.decision === "allowed" ? `exited ${fact.exitCode}` : `was ${fact.decision}`} [evidence ${fact.evidence}${where}]`,

@@ -8,7 +8,7 @@ import type { Chokepoint } from "../tools/chokepoint.ts";
 import { estimateTokens } from "./context.ts";
 import { type LoopOptions, runLoop } from "./loop.ts";
 import { initialRecord } from "./requirement-record.ts";
-import { bash, scripted } from "./test-doubles.ts";
+import { bash, noEdits, scripted } from "./test-doubles.ts";
 
 /** Some 7 KB a command, different every turn, as a file read or a test run prints. */
 const printed = (command: string) =>
@@ -16,6 +16,7 @@ const printed = (command: string) =>
 
 /** Every command prints its 7 KB; `npm test` fails, saying which module, as a test run would. */
 const sizeable: Chokepoint = {
+  ...noEdits,
   async run(command) {
     const failing = command.startsWith("npm test");
     const output = failing ? `${printed(command)}\nFAIL src/module-3.ts` : printed(command);
@@ -57,6 +58,7 @@ async function loopOptions(model: LoopOptions["model"], contextTokens: number) {
       sessionId: "s",
       now: Date.now,
     }),
+    environment: "",
     instructions: "",
     record: initialRecord(task),
     status: async () => "",
@@ -187,6 +189,7 @@ describe("an unchanged command and output", () => {
   it("does not stop a command whose output changes", async () => {
     let calls = 0;
     const changing: Chokepoint = {
+      ...noEdits,
       async run() {
         calls += 1;
         return { decision: "allowed", output: `${calls}`, exitCode: 0, record: `sha256:${calls}` };
