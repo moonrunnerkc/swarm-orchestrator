@@ -5,6 +5,7 @@ import {
   estimateTokens,
   measuredTokens,
 } from "./context.ts";
+import { diffView } from "./diff-view.ts";
 import type { Exchange } from "./exchange.ts";
 import type { Message } from "./model.ts";
 import { truncate } from "./prompt.ts";
@@ -13,7 +14,7 @@ import type { RequirementRecord } from "./requirement-record.ts";
 /** Turns kept in full at the end of the conversation; older ones are bounded excerpts. */
 export const windowTurns = 4;
 
-/** Bytes of the current diff a turn carries; the rest is cut from the middle. */
+/** Bytes of the current diff a turn carries; each file's change is shortened to fit (diff-view.ts). */
 export const diffCap = 6_000;
 
 /** What the last message of every turn carries, read fresh, never accumulated copies. */
@@ -50,7 +51,7 @@ export function stateBlock(state: CurrentState): string {
     state.status.trim().length === 0 ? "(clean)" : state.status.trimEnd(),
     "",
     "Diff against the base:",
-    state.diff.trim().length === 0 ? "(no change yet)" : truncate(state.diff.trimEnd(), diffCap),
+    state.diff.trim().length === 0 ? "(no change yet)" : diffView(state.diff.trimEnd(), diffCap),
     ...(state.findings === null ? [] : ["", "Latest verifier findings:", truncate(state.findings)]),
     ...(state.notice === null ? [] : ["", state.notice]),
   ].join("\n");

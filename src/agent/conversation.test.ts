@@ -42,9 +42,9 @@ describe("the state a turn ends with", () => {
     expect(stateBlock(quiet)).not.toContain("Latest verifier findings");
   });
 
-  it("cuts a long diff from the middle", () => {
+  it("shortens a long diff file by file, from the middle of each", () => {
     const diff = `diff --git a/x b/x\n${"+a\n".repeat(5000)}`;
-    expect(stateBlock({ ...quiet, diff })).toContain("bytes omitted");
+    expect(stateBlock({ ...quiet, diff })).toContain("lines of x's change omitted");
   });
 });
 
