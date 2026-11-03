@@ -2,10 +2,12 @@ import { runCommandStep } from "./command-step.ts";
 import { diffSections, estimateTokens, movedFiles, unresolvedOf } from "./context.ts";
 import { createConversation } from "./conversation.ts";
 import { commandExchange, noteExchange } from "./exchange.ts";
+import { circlingNote, openFindings } from "./findings.ts";
 import type { LoopOptions, LoopResult, StopReason, Usage, Verification } from "./loop-types.ts";
 import { ModelError, type Reply } from "./model.ts";
 import { readReply, stepsLeftNotice, systemPrompt, timeLeftNotice } from "./prompt.ts";
 import { runRequirementsStep } from "./requirements-step.ts";
+import { treeCycles } from "./tree-cycles.ts";
 import { noUsage, withTurn } from "./usage.ts";
 import { runVerificationStep } from "./verification-step.ts";
 
@@ -17,9 +19,6 @@ const minimumReplyTokens = 256;
 const repeatLimit = 3;
 /** Replies in a row that follow no reply form before the model is called unusable here. */
 const unusableAfter = 4;
-
-const openFindings = (findings: string | null) =>
-  (findings ?? "").split("\n").filter((line) => /^R\d+ /.test(line));
 
 /**
  * One model turn at a time: a command, a requirement record, or completion. Completion asks the
@@ -51,6 +50,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
   let longestTurnMs = 0;
   let verification: Verification | null = null;
   let previous = { command: "", comparable: "", repeats: 0 };
+  const cycles = treeCycles(repeatLimit);
   let malformed = 0;
   // Whether the last turn was a requirements block without the completion marker.
   let proposedLast = false;
@@ -88,10 +88,12 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
         timeLeftNotice(time.leftMs, time.wallMs));
     if (notice !== null) noticed = true;
     const diff = await options.diff();
+    const cycle = cycles(diff, notice);
+    if (cycle.stop !== null) return result("no-progress", cycle.stop);
     const now = diffSections(diff);
     conversation.edited(movedFiles(sections, now));
     sections = now;
-    const state = { status: await options.status(), diff, findings, notice };
+    const state = { status: await options.status(), diff, findings, notice: cycle.notice };
     // Old exploration is compacted only when the prompt measurably presses on the context.
     const relieved = conversation.relieve({
       record,
@@ -198,17 +200,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
           `the same command printed the same result ${ran.repeats} turns running`,
         );
       }
-      // A command repeated while findings are open is the run circling: point back at them.
-      const open = openFindings(findings);
-      const note =
-        ran.repeats >= 2 && open.length > 0
-          ? [
-              ran.note,
-              "The verifier's findings are still open:",
-              ...open,
-              "Act on them: change the tree, or send the corrected requirements block, then mark the task complete.",
-            ].join("\n")
-          : ran.note;
+      const note = circlingNote(ran.note, ran.repeats, findings);
       conversation.add(commandExchange({ ...ran, reply: read.text, result: note }));
       continue;
     }
