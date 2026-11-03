@@ -21,7 +21,8 @@ export const systemPrompt = [
   "",
   "2. One fenced edit block, naming one file after `edit`, with one or more SEARCH and REPLACE",
   "   parts. Each SEARCH part must match the file exactly once, whitespace included; if one matches",
-  "   nothing or several places, nothing in the file changes and you are told which.",
+  "   nothing or several places, nothing in the file changes and you are told which. The harness",
+  "   reads edit and write blocks itself: `edit` and `write` are not shell commands.",
   "",
   "```edit path/to/file",
   "<<<<<<< SEARCH",
@@ -103,8 +104,15 @@ export function parseReply(content: string): ParsedReply {
   const fourBackticks =
     "where a block's text holds a line of three backticks, fence the block with four";
   if (commands.length + records.length + edits.length > 1) {
-    const reason = "the reply has more than one fenced block";
-    return { kind: "malformed", reason: edits.length > 0 ? `${reason}; ${fourBackticks}` : reason };
+    // A bare fence after an edit or write block is that block's own text closing it early; two
+    // whole blocks are two changes, which go in two replies (t6, 2026-11-03, sent two writes).
+    const closedEarly = edits.length > 0 && blocks.some((block) => block.language === "");
+    return {
+      kind: "malformed",
+      reason: closedEarly
+        ? `the reply has more than one fenced block; ${fourBackticks}`
+        : "the reply has more than one fenced block; send one block a reply, and the next in the next",
+    };
   }
   const [edit] = edits;
   if (edit !== undefined) {

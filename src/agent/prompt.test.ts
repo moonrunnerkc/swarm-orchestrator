@@ -83,6 +83,15 @@ describe("reading an edit or write block", () => {
     }
   });
 
+  it("asks for one block a reply when two whole blocks arrive, without the fence advice", () => {
+    const write = (path: string) => `\`\`\`write ${path}\nx\n\`\`\``;
+    expect(parseReply(`${write("a.py")}\n\n${write("b.py")}`)).toEqual({
+      kind: "malformed",
+      reason:
+        "the reply has more than one fenced block; send one block a reply, and the next in the next",
+    });
+  });
+
   it("refuses an edit block beside another block", () => {
     expect(parseReply(`${edit}\n\`\`\`bash\nls\n\`\`\``)).toMatchObject({
       kind: "malformed",
