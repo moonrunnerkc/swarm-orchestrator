@@ -1,0 +1,39 @@
+
+ RUN  v3.2.4 /Users/brad/projects/recovery-2026-10-31/patch-run/fix-depose/attempt-1/depose
+
+ ❯ packages/core/test/events.ids.test.ts (12 tests | 1 failed) 4ms
+   ✓ generateUlid > produces a 26-character Crockford Base32 string 1ms
+   × generateUlid > encodes the current time in the timestamp prefix 2ms
+     → expected 84538519416947 to be less than or equal to 1793670115838
+   ✓ generateUlid > sorts lexicographically in creation order 0ms
+   ✓ generateUlid > returns a different value on each call 0ms
+   ✓ generateUlid > stays deterministic under a fixed seed 0ms
+   ✓ ulidFromTime and ulidToTime > round-trips a millisecond timestamp 0ms
+   ✓ ulidFromTime and ulidToTime > round-trips the top of the 48-bit range 0ms
+   ✓ ulidFromTime and ulidToTime > round-trips the epoch 0ms
+   ✓ isValidUlid > accepts a generated ULID 0ms
+   ✓ isValidUlid > rejects a string of the wrong length 0ms
+   ✓ isValidUlid > rejects the ambiguous Crockford characters I, L, O, and U 0ms
+   ✓ isValidUlid > rejects a non-string input 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/core/test/events.ids.test.ts > generateUlid > encodes the current time in the timestamp prefix
+AssertionError: expected 84538519416947 to be less than or equal to 1793670115838
+ ❯ packages/core/test/events.ids.test.ts:32:21
+     30| 
+     31|     expect(decoded).toBeGreaterThanOrEqual(before);
+     32|     expect(decoded).toBeLessThanOrEqual(after);
+       |                     ^
+     33|   });
+     34| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 11 passed (12)
+   Start at  18:41:55
+   Duration  145ms (transform 17ms, setup 9ms, collect 9ms, tests 4ms, environment 0ms, prepare 28ms)
+
+exit 1

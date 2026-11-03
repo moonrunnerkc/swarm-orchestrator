@@ -1,0 +1,86 @@
+diff --git a/src/adapters/vitest-run.test.ts b/src/adapters/vitest-run.test.ts
+new file mode 100644
+index 0000000..0c8917e
+--- /dev/null
++++ b/src/adapters/vitest-run.test.ts
+@@ -0,0 +1,40 @@
++import { describe, it, expect, vi } from "vitest";
++import { runVitest } from "./vitest-run.js";
++import type { VitestRunOptions } from "./vitest-run.js";
++import { exec } from "../util/exec.js";
++
++vi.mock("../util/exec.js");
++vi.mock("node:fs/promises", async () => {
++  const actual = await vi.importActual("node:fs/promises");
++  return {
++    ...actual,
++    readFile: vi.fn(),
++    mkdtemp: vi.fn().mockResolvedValue("/tmp/claimcheck-vitest-123"),
++    rm: vi.fn().mockResolvedValue(undefined),
++  };
++});
++
++import { readFile } from "node:fs/promises";
++
++describe("runVitest", () => {
++  it("reports failedToRun when vitest fails to produce a results file and is not a 'no tests' case", async () => {
++    (exec as any).mockResolvedValue({
++      code: 1,
++      stdout: "",
++      stderr: "Error: Cannot find module 'missing-dep'",
++    });
++    (readFile as any).mockRejectedValue(new Error("File not found"));
++
++    const options: VitestRunOptions = {
++      cwd: "/tmp/repo",
++      testFiles: ["test.ts"],
++    };
++
++    const result = await runVitest(options);
++
++    expect(result).toHaveProperty("failedToRun");
++    expect(result.failedToRun).toBe(true);
++    expect(result.passed).toBe(false);
++    expect(result.noTests).toBe(false);
++  });
++});
+diff --git a/src/adapters/vitest-run.ts b/src/adapters/vitest-run.ts
+index e564dc8..cfa87cd 100644
+--- a/src/adapters/vitest-run.ts
++++ b/src/adapters/vitest-run.ts
+@@ -23,6 +23,8 @@ export interface VitestResult {
+   readonly passed: boolean;
+   /** True when vitest found no test files to run. */
+   readonly noTests: boolean;
++  /** True when the runner failed to execute (e.g. config error, missing dep). */
++  readonly failedToRun: boolean;
+   readonly outcomes: readonly TestOutcome[];
+   readonly exitCode: number;
+   readonly stderr: string;
+@@ -131,8 +133,10 @@ export async function runVitest(
+     });
+ 
+     let outcomes: TestOutcome[] = [];
++    let resultsFileRead = false;
+     try {
+       outcomes = parseOutcomes(JSON.parse(await readFile(resultsFile, "utf8")));
++      resultsFileRead = true;
+     } catch {
+       // No results file: vitest failed to start or found no tests.
+     }
+@@ -141,12 +145,15 @@ export async function runVitest(
+       /No test files found|no test (files|suite)/i.test(
+         result.stderr + result.stdout,
+       );
++    const failedToRun = !resultsFileRead && !noTests;
+     const passed =
++      !failedToRun &&
+       result.code === 0 && !outcomes.some((o) => o.status === "fail");
+ 
+     return {
+       passed,
+       noTests,
++      failedToRun,
+       outcomes,
+       exitCode: result.code,
+       stderr: result.stderr,

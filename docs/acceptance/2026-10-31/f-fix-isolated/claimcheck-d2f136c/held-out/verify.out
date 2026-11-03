@@ -1,0 +1,100 @@
+(node:17359) ExperimentalWarning: stripTypeScriptTypes is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+state        incomplete
+reason       check test: 4 test(s) fail at the base commit and still fail, which does not block: eval/corpus.test.ts, src/cli/run.integration.test.ts, src/core/pipeline.integration.test.ts, src/determinism/sandbox.test.ts::sandbox crypto pins > makes crypto.randomUUID deterministic across separate processes
+reason       check typecheck is unresolved: it fails at the base commit and with the candidate, and no per-test report tells a new failure from an old one
+reason       check build is unresolved: it fails at the base commit and with the candidate, and no per-test report tells a new failure from an old one
+reason       a held-out check failed
+requirement  R1 satisfied (When a test file cannot load (a missing dependency, a transform or a config error), runVitest in src/adapters/vitest-run.ts returns no outcomes, and the pipeline reads that empty set as passes-on-head, so ClaimCheck gives a PASS built on a suite that never ran. runVitest should report such a run as failedToRun (and not passed), and the pipeline should not count it as passing on head; add a test.)
+regression   unresolved; 4 inherited; unresolved check build, check typecheck
+base         8efdaa0363b522dc1064e8ae72c0e3c18f2ff6c5
+change       2 file(s) from the patch
+check        test: inherited-failures (npm run test, pre-existing)
+check        typecheck: unresolved (npm run typecheck, pre-existing)
+check        build: unresolved (npm run build, pre-existing)
+baseline     0 of 3 check(s) pass at the base commit
+held-out     visible 100%, held-out 0%, gap 100%, judged in 3 process(es)
+test files   1 added
+coverage     unmeasured: the V8 offsets for src/adapters/vitest-run.ts run past the file, so a transform ran first
+mutation     survived: True to False at src/adapters/vitest-run.ts:26
+execution    isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared; dependencies prepared from the lockfile and digested
+environment  sha256:e638057cdd533ef045c640ddcdf5b788edd2a8d1864f0d75c3fcbd21d8a3e34d
+
+$ npm run test
+us.test.ts  (0 test)
+ ✓ src/analysis/nondeterminism-scan.test.ts  (6 tests) 6ms
+ ✓ src/analysis/instrument.test.ts  (6 tests) 8ms
+ ✓ src/checks/test-weakening.test.ts  (5 tests) 7ms
+ ✓ src/analysis/mutant-equivalence.test.ts  (4 tests) 1ms
+ ✓ src/cache/analysis-cache.test.ts  (4 tests) 3ms
+ ✓ src/checks/error-suppression.test.ts  (4 tests) 5ms
+ ✓ src/adapters/vitest-run.test.ts  (1 test) 1ms
+ ✓ src/cli/args.test.ts  (6 tests) 2ms
+ ✓ src/determinism/flake-fallback.test.ts  (4 tests) 2ms
+ ✓ src/cli/format.test.ts  (2 tests) 1ms
+ ✓ src/core/verdict.test.ts  (5 tests) 1ms
+ ✓ src/mutation/concurrency.test.ts  (3 tests)
+ ✓ src/mutation/stryker-runner.integration.test.ts  (2 tests) 4727ms
+
+ Test Files  4 failed | 22 passed (26)
+      Tests  1 failed | 141 passed (142)
+   Start at  02:21:45
+   Duration  7.65s (transform 3.26s, setup 1ms, collect 4.64s, tests 4.89s, environment 2ms, prepare 2.38s)
+
+JSON report written to /Users/brad/projects/recovery-2026-10-31/patch-run/fix-claimcheck/attempt-1/witness/home/work/swarm-verify-BxhyWL/reports/candidate-test.report
+⎯⎯⎯⎯⎯⎯ Failed Suites 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/cli/run.integration.test.ts [ src/cli/run.integration.test.ts ]
+ FAIL  src/core/pipeline.integration.test.ts [ src/core/pipeline.integration.test.ts ]
+ FAIL  eval/corpus.test.ts [ eval/corpus.test.ts ]
+Error: Failed to load url ../coverage/collect.js (resolved id: ../coverage/collect.js) in /Users/brad/projects/recovery-2026-10-31/patch-run/fix-claimcheck/attempt-1/witness/home/work/swarm-verify-BxhyWL/tree/src/core/pipeline.ts. Does the file exist?
+ ❯ loadAndTransform node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:51969:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/determinism/sandbox.test.ts > sandbox crypto pins > makes crypto.randomUUID deterministic across separate processes
+AssertionError: expected '{"a":"c8950450-a8af-4b5a-8640-b50f303…' to deeply equal '{"a":"dea1e5cd-42d7-45ad-accb-d05ff14…'
+
+- Expected
++ Received
+
+- {"a":"dea1e5cd-42d7-45ad-accb-d05ff1461931","b":"bbf79abb-7388-421b-9576-284a95907e6d","buf":[13,238,207,50]}
++ {"a":"c8950450-a8af-4b5a-8640-b50f303bb4b9","b":"b2fef282-d46d-4d19-b2d0-9389237b343d","buf":[108,218,23,27]}
+
+ ❯ src/determinism/sandbox.test.ts:42:19
+     40|     const first = await runUnderSandbox(script);
+     41|     const second = await runUnderSandbox(script);
+     42|     expect(first).toEqual(second);
+       |                   ^
+     43|   });
+     44| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+
+
+$ npm run typecheck
+
+> claimcheck@0.1.0 typecheck
+> tsc -p tsconfig.json --noEmit
+
+src/core/pipeline.ts(27,56): error TS2307: Cannot find module '../coverage/collect.js' or its corresponding type declarations.
+src/core/pipeline.ts(178,8): error TS7006: Parameter 'o' implicitly has an 'any' type.
+src/core/pipeline.ts(183,30): error TS7006: Parameter 'o' implicitly has an 'any' type.
+
+
+$ npm run build
+
+> claimcheck@0.1.0 build
+> tsc -p tsconfig.build.json
+
+src/core/pipeline.ts(27,56): error TS2307: Cannot find module '../coverage/collect.js' or its corresponding type declarations.
+src/core/pipeline.ts(178,8): error TS7006: Parameter 'o' implicitly has an 'any' type.
+src/core/pipeline.ts(183,30): error TS7006: Parameter 'o' implicitly has an 'any' type.
+
+
+attestation  /Users/brad/projects/recovery-2026-10-31/patch-run/fix-claimcheck/attempt-1/witness/verdict/attestation.sigstore.json
+public key   /Users/brad/projects/recovery-2026-10-31/patch-run/fix-claimcheck/attempt-1/witness/verdict/attestation.pub.pem
+exit 1
